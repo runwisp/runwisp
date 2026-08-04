@@ -22,18 +22,18 @@ import (
 // healthy — the readiness bar a dependent waits on.
 func bootTestService(name string, healthyAfter time.Duration, dependsOn ...string) *model.Task {
 	return &model.Task{
-		Name:           name,
-		Kind:           model.KindService,
-		Run:            "sleep 1",
-		Restart:        model.RestartAlways,
-		MaxConcurrent:  1,
-		OnOverlap:      model.PolicySkip,
-		Instances:      1,
-		Autostart:      true,
-		HealthyAfter:   healthyAfter,
-		StartRetries:   3,
-		RestartBackoff: model.BackoffConstant,
-		DependsOn:      dependsOn,
+		Name:            name,
+		Kind:            model.KindService,
+		Run:             "sleep 1",
+		Restart:         model.RestartAlways,
+		MaxConcurrent:   1,
+		OnOverlap:       model.PolicySkip,
+		Instances:       1,
+		Autostart:       true,
+		HealthyAfter:    healthyAfter,
+		RestartAttempts: 3,
+		RestartBackoff:  model.BackoffConstant,
+		DependsOn:       dependsOn,
 	}
 }
 

@@ -28,7 +28,7 @@ export function formatTaskLastRunLabel(task: TaskOverview, now: Date = new Date(
         return "No runs yet";
     }
 
-    return formatRelativeTimeWithAbsolute(task.lastRun.start_at ?? task.lastRun.created_at, now);
+    return formatRelativeTimeWithAbsolute(task.lastRun.startAt ?? task.lastRun.createdAt, now);
 }
 
 export function formatTaskLastResultLabel(task: TaskOverview): string {
@@ -74,7 +74,7 @@ export function taskTriggerIsHumanizedCron(task: TaskOverview): boolean {
 }
 
 export function formatRunStartedLabel(run: Run, now: Date = new Date()): string {
-    return formatRelativeTime(run.start_at ?? run.created_at, now);
+    return formatRelativeTime(run.startAt ?? run.createdAt, now);
 }
 
 export function formatRunDurationLabel(run: Run): string {

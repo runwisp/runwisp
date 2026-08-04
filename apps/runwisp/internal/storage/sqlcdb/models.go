@@ -35,7 +35,7 @@ type PendingLogUpload struct {
 	ExternalExecutionID string `json:"external_execution_id"`
 	UploadUrl           string `json:"upload_url"`
 	LogPath             string `json:"log_path"`
-	InsertedAt          int64  `json:"inserted_at"`
+	InsertedAtUnix      int64  `json:"inserted_at_unix"`
 }
 
 type Run struct {
@@ -45,8 +45,8 @@ type Run struct {
 	Status              model.RunPhase    `json:"status"`
 	EndReason           *model.EndReason  `json:"end_reason"`
 	ExitCode            int               `json:"exit_code"`
-	StartAt             *time.Time        `json:"start_at"`
-	EndAt               *time.Time        `json:"end_at"`
+	StartedAt           *time.Time        `json:"started_at"`
+	EndedAt             *time.Time        `json:"ended_at"`
 	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
 	CreatedAt           time.Time         `json:"created_at"`
 	RetryAttempt        int               `json:"retry_attempt"`

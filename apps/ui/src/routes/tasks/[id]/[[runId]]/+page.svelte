@@ -41,7 +41,7 @@
 
     $effect(() => {
         if (!taskName) return;
-        source.setFilters({ ...filters, task_name: taskName });
+        source.setFilters({ ...filters, taskName: taskName });
     });
 
     const DEFAULT_CONCURRENCY_LIMIT = 1;
@@ -54,7 +54,7 @@
     });
 
     let task = $derived(taskData.data ?? null);
-    let concurrencyLimit = $derived(task?.max_concurrent ?? DEFAULT_CONCURRENCY_LIMIT);
+    let concurrencyLimit = $derived(task?.maxConcurrent ?? DEFAULT_CONCURRENCY_LIMIT);
     let concurrencyReached = $derived(triggering || activeRunCount >= concurrencyLimit);
 
     const logSession = createLogSession({
@@ -65,11 +65,11 @@
     $effect(() => {
         return runUpdatesStore.subscribeToUpdates((event) => {
             if (event.type === "run.deleted") {
-                if (event.data.task_name !== taskName) return;
-                source.remove(event.data.run_id);
+                if (event.data.taskName !== taskName) return;
+                source.remove(event.data.runId);
                 return;
             }
-            if (event.data.run.task_name !== taskName) return;
+            if (event.data.run.taskName !== taskName) return;
             source.upsert(event.data.run);
         });
     });

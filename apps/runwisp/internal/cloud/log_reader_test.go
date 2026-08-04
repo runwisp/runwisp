@@ -173,7 +173,7 @@ func TestHandleLogReplayRequest_WithValidRun(t *testing.T) {
 	h := newDispatchInboundHandler(nil, repo, executor.Availability{})
 
 	chunk, err := h.HandleLogReplayRequest(context.Background(), protocol.LogReplayRequestMessage{
-		ID:          "req-1",
+		RequestID:   "req-1",
 		ExecutionID: "exec-1",
 	})
 	require.NoError(t, err)

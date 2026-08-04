@@ -111,7 +111,7 @@ func TestComposeExpansion_PerServiceOverrideServiceKnobs(t *testing.T) {
 [compose.myapp.web]
 stop_signal   = "SIGINT"
 exit_codes    = [0, 42]
-start_retries = 1
+restart_attempts = 1
 priority      = 5
 autostart     = false
 `))
@@ -120,7 +120,7 @@ autostart     = false
 	web := findTask(t, cfg, "myapp.web")
 	assert.Equal(t, "SIGINT", web.StopSignal)
 	assert.Equal(t, []int{0, 42}, web.ExitCodes)
-	assert.Equal(t, 1, web.StartRetries)
+	assert.Equal(t, 1, web.RestartAttempts)
 	assert.Equal(t, 5, web.Priority)
 	assert.False(t, web.Autostart)
 

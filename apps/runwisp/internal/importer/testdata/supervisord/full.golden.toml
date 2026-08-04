@@ -7,7 +7,7 @@ working_dir = "/srv/app"
 user = "www-data"
 autostart = true
 healthy_after = "10s"
-start_retries = 3
+restart_attempts = 3
 stop_signal = "SIGINT"
 graceful_stop = "30s"
 

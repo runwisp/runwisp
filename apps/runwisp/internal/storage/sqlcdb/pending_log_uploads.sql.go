@@ -19,7 +19,7 @@ func (q *Queries) DeletePendingLogUpload(ctx context.Context, externalExecutionI
 }
 
 const listPendingLogUploads = `-- name: ListPendingLogUploads :many
-SELECT external_execution_id, upload_url, log_path, inserted_at FROM pending_log_uploads
+SELECT external_execution_id, upload_url, log_path, inserted_at_unix FROM pending_log_uploads
 `
 
 func (q *Queries) ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload, error) {
@@ -35,7 +35,7 @@ func (q *Queries) ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload
 			&i.ExternalExecutionID,
 			&i.UploadUrl,
 			&i.LogPath,
-			&i.InsertedAt,
+			&i.InsertedAtUnix,
 		); err != nil {
 			return nil, err
 		}
@@ -52,19 +52,19 @@ func (q *Queries) ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload
 
 const upsertPendingLogUpload = `-- name: UpsertPendingLogUpload :exec
 
-INSERT INTO pending_log_uploads (external_execution_id, upload_url, log_path, inserted_at)
+INSERT INTO pending_log_uploads (external_execution_id, upload_url, log_path, inserted_at_unix)
 VALUES (?, ?, ?, ?)
 ON CONFLICT(external_execution_id) DO UPDATE SET
   upload_url = excluded.upload_url,
   log_path = excluded.log_path,
-  inserted_at = excluded.inserted_at
+  inserted_at_unix = excluded.inserted_at_unix
 `
 
 type UpsertPendingLogUploadParams struct {
 	ExternalExecutionID string `json:"external_execution_id"`
 	UploadUrl           string `json:"upload_url"`
 	LogPath             string `json:"log_path"`
-	InsertedAt          int64  `json:"inserted_at"`
+	InsertedAtUnix      int64  `json:"inserted_at_unix"`
 }
 
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
@@ -74,7 +74,7 @@ func (q *Queries) UpsertPendingLogUpload(ctx context.Context, arg UpsertPendingL
 		arg.ExternalExecutionID,
 		arg.UploadUrl,
 		arg.LogPath,
-		arg.InsertedAt,
+		arg.InsertedAtUnix,
 	)
 	return err
 }

@@ -181,10 +181,10 @@ type composeServiceOverrideWire struct {
 	Restart      model.RestartPolicy     `toml:"restart,omitempty"`
 	Instances    int                     `toml:"instances,omitempty"`
 
-	RestartDelay   string `toml:"restart_delay,omitempty"`
-	RestartBackoff string `toml:"restart_backoff,omitempty"`
-	HealthyAfter   string `toml:"healthy_after,omitempty"`
-	StartRetries   int    `toml:"start_retries,omitempty"`
+	RestartDelay    string `toml:"restart_delay,omitempty"`
+	RestartBackoff  string `toml:"restart_backoff,omitempty"`
+	HealthyAfter    string `toml:"healthy_after,omitempty"`
+	RestartAttempts int    `toml:"restart_attempts,omitempty"`
 
 	// Priority orders boot start; Autostart is a pointer so an omitted key
 	// (nil → keep the compose-import default of true) is distinguishable from
@@ -197,7 +197,7 @@ type composeServiceOverrideWire struct {
 	LogMaxSize string `toml:"log_max_size,omitempty"`
 	LogOnFull  string `toml:"log_on_full,omitempty"`
 
-	KeepRuns int    `toml:"keep_runs,omitempty"`
+	KeepRuns *int   `toml:"keep_runs,omitempty"`
 	KeepFor  string `toml:"keep_for,omitempty"`
 
 	Env         map[string]string `toml:"env,omitempty"`
@@ -620,8 +620,8 @@ func applyComposeOverrideSupervision(task *model.Task, w *composeServiceOverride
 	if w.ExitCodes != nil {
 		task.ExitCodes = w.ExitCodes
 	}
-	if w.StartRetries != 0 {
-		task.StartRetries = w.StartRetries
+	if w.RestartAttempts != 0 {
+		task.RestartAttempts = w.RestartAttempts
 	}
 	if w.Priority != 0 {
 		task.Priority = w.Priority
@@ -635,7 +635,7 @@ func applyComposeOverrideSupervision(task *model.Task, w *composeServiceOverride
 	if w.RestartBackoff != "" {
 		task.RestartBackoff = w.RestartBackoff
 	}
-	if w.KeepRuns != 0 {
+	if w.KeepRuns != nil {
 		task.KeepRuns = w.KeepRuns
 	}
 }

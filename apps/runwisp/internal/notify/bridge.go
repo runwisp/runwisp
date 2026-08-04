@@ -104,7 +104,7 @@ func mapRunEventType(t events.EventType, run *model.Run) (Kind, Severity, bool) 
 		case model.ReasonMissed:
 			// A scheduled run that never happened. Treated as failure-level:
 			// it reaches whoever already gets failure alerts. Per-task muting
-			// (notify_on_missed = false) is applied downstream at ingress, not
+			// (treat_missed_as_failure = false) is applied downstream at ingress, not
 			// here, so the browsable run row is always recorded regardless.
 			return KindRunMissed, SevError, true
 		case model.ReasonSkipped:

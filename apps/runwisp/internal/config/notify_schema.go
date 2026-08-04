@@ -20,7 +20,7 @@ var allowedNotifierTypes = []string{"slack", "discord", "telegram", "smtp", "sen
 // allowedSMTPTLSModes enumerates the values accepted for [[notifier]].tls. An
 // empty string falls back to a port-derived default (465 → implicit; everything
 // else → starttls).
-var allowedSMTPTLSModes = []string{"starttls", "implicit", "none"}
+var allowedSMTPTLSModes = []string{"starttls", "implicit", "off"}
 
 const (
 	inappNotifierID       = "inapp"
@@ -73,7 +73,7 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 
 	for _, r := range t.Routes {
 		out.Routes = append(out.Routes, NotificationRoute{
-			Kinds:      append([]string(nil), r.Match.Kind...),
+			Kinds:      append([]string(nil), r.Match.Kinds...),
 			Severity:   strings.TrimSpace(r.Match.Severity),
 			TaskGlob:   strings.TrimSpace(r.Match.Task),
 			NotifierID: append([]string(nil), r.Notify...),
@@ -302,7 +302,7 @@ func resolveGlobalNotifiers(raw *[]string) []string {
 // channel IDs across matching rules, so this is harmless when the same task
 // also has explicit notify_on_failure sugar. run.missed rides this route by
 // default (decision: misses reach whoever gets failures); a task silences it
-// with notify_on_missed = false, applied as a mute in the notify subsystem.
+// with treat_missed_as_failure = false, applied as a mute in the notify subsystem.
 func appendCatchAllRoute(out *NotifyConfig) {
 	if len(out.GlobalNotifiers) == 0 {
 		return
@@ -342,7 +342,7 @@ func appendSynthRoutes(out *NotifyConfig, taskName string, onFailure, onSuccess 
 	if len(onFailure) > 0 {
 		// run.missed joins the failure kinds so notify_on_failure = ["slack"]
 		// also pages Slack on a missed run — the operator opted into failure
-		// alerts there. Silencing misses is a one-line notify_on_missed = false,
+		// alerts there. Silencing misses is a one-line treat_missed_as_failure = false,
 		// not a rewrite of this list into a hand-authored route.
 		out.Routes = append(out.Routes, NotificationRoute{
 			Kinds:      []string{"run.failed", "run.timeout", "run.crashed", "run.missed", "service.fatal"},
@@ -529,7 +529,7 @@ func validateSMTPAuth(spec *NotifierSpec) error {
 	if hasUser != hasPassword {
 		return fmt.Errorf("notifier %q: username and password must be set together (or both omitted for auth-less relays)", spec.ID)
 	}
-	if hasPassword && strings.TrimSpace(spec.TLSMode) == "none" {
+	if hasPassword && strings.TrimSpace(spec.TLSMode) == "off" {
 		return fmt.Errorf("notifier %q: tls=\"none\" is not allowed with credentials — refuse to send PLAIN auth over cleartext", spec.ID)
 	}
 	return nil
@@ -600,7 +600,7 @@ func buildKnownNotifierSet(seenID map[string]struct{}) map[string]struct{} {
 func validateRoute(idx int, r NotificationRoute, known map[string]struct{}) error {
 	scope := fmt.Sprintf("notification_route #%d", idx)
 	for _, k := range r.Kinds {
-		if err := requireOneOf(scope+" match.kind", k, kinds.AllKindStrings, false); err != nil {
+		if err := requireOneOf(scope+" match.kinds", k, kinds.AllKindStrings, false); err != nil {
 			return err
 		}
 	}

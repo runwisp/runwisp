@@ -21,7 +21,7 @@ either matches or it doesn't.
 
 ```toml
 [[notification_route]]
-match  = { kind = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+match  = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
 notify = ["slack-ops", "tg-oncall", "inapp"]
 ```
 
@@ -29,24 +29,24 @@ notify = ["slack-ops", "tg-oncall", "inapp"]
 
 | Field            | Required | What it does                                                                 |
 | ---------------- | -------- | ---------------------------------------------------------------------------- |
-| `match.kind`     | no       | Event kinds this rule applies to. Omit (or leave empty) to match all kinds.  |
+| `match.kinds`    | no       | Event kinds this rule applies to. Omit (or leave empty) to match all kinds.  |
 | `match.task`     | no       | Shell-style glob on the task name. Omit to match every task.                 |
 | `match.severity` | no       | Threshold: `"info"`, `"warn"`, `"error"`. `warn` matches `warn` and `error`. |
 
 Valid `kind` values:
 
-| Kind                     | Fires when                                                                                      |
-| ------------------------ | ----------------------------------------------------------------------------------------------- |
-| `run.started`            | A run starts. Opt-in only — not on by default.                                                  |
-| `run.succeeded`          | A run ends with success.                                                                        |
-| `run.failed`             | A run ends with a non-zero exit code.                                                           |
-| `run.timeout`            | A run is killed for exceeding its `timeout`.                                                    |
-| `run.stopped`            | A run is cancelled (manual stop, or `on_overlap = "terminate"`).                                |
-| `run.crashed`            | A run is reconciled as crashed after the daemon was killed mid-flight.                          |
-| `run.missed`             | A scheduled run was missed while the daemon was down (detected on restart).                     |
-| `service.fatal`          | A service slot gave up after exhausting `start_retries` fast failures.                          |
-| `log.disk_pressure`      | Free disk space dipped below `min_free_space` mid-run.                                          |
-| `notify.delivery_failed` | A notifier exhausted its retries. Delivered only to the bell; cannot be used as a `match.kind`. |
+| Kind                     | Fires when                                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------------ |
+| `run.started`            | A run starts. Opt-in only — not on by default.                                                   |
+| `run.succeeded`          | A run ends with success.                                                                         |
+| `run.failed`             | A run ends with a non-zero exit code.                                                            |
+| `run.timeout`            | A run is killed for exceeding its `timeout`.                                                     |
+| `run.stopped`            | A run is cancelled (manual stop, or `on_overlap = "terminate"`).                                 |
+| `run.crashed`            | A run is reconciled as crashed after the daemon was killed mid-flight.                           |
+| `run.missed`             | A scheduled run was missed while the daemon was down (detected on restart).                      |
+| `service.fatal`          | A service slot gave up after exhausting `restart_attempts` fast failures.                        |
+| `log.disk_pressure`      | Free disk space dipped below `min_free_space` mid-run.                                           |
+| `notify.delivery_failed` | A notifier exhausted its retries. Delivered only to the bell; cannot be used as a `match.kinds`. |
 
 The `task` glob uses standard shell-style patterns: `*` matches any
 sequence except `/`, `?` matches any single character except `/`, and
@@ -103,12 +103,12 @@ delivery fails the other is unaffected.
 ```toml
 # Every failed/timeout/crashed run is sent to the team channel
 [[notification_route]]
-match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
 notify = ["slack-ops"]
 
 # Backups also send to the on-call channel
 [[notification_route]]
-match  = { kind = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+match  = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
 notify = ["tg-oncall"]
 ```
 
@@ -121,7 +121,7 @@ to `slack-ops` and adds one row to the bell.
 
 The loader rejects routes that reference a notifier `id` not declared
 in `[[notifier]]` (and not `"inapp"`); empty `notify` lists;
-`match.kind` values that aren't one of the valid kinds listed above;
+`match.kinds` values that aren't one of the valid kinds listed above;
 `match.task` globs that can't be parsed (e.g. unmatched `[`); inline
 overrides whose parent isn't declared, whose target is empty, or —
 for Slack — doesn't start with `#` or `@`; `"inapp:something"` (the

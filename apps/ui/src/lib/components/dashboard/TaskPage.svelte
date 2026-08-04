@@ -162,7 +162,7 @@
             if (seq !== outputSearchSeq) return; // a newer query superseded this one
             const map = new SvelteMap<string, RunOutputMatch>();
             for (const hit of res.hits) {
-                if (!map.has(hit.run_id)) map.set(hit.run_id, { line: hit.n, text: hit.text });
+                if (!map.has(hit.runId)) map.set(hit.runId, { line: hit.n, text: hit.text });
             }
             outputMatches = map;
         } catch {
@@ -214,7 +214,7 @@
     // A run can always be *triggered* — at max concurrency it queues (the modal
     // says so), so concurrency must not gate the button, only its warning.
     // Disabled only when the task forbids API triggering or a trigger is mid-flight.
-    const runTriggerable = $derived(!taskIsService && (task.api_trigger ?? true) && !triggering);
+    const runTriggerable = $derived(!taskIsService && (task.apiTrigger ?? true) && !triggering);
 
     // In cloud mode the cloud owns scheduling/dispatch; triggering here is the
     // operator's "run it here, now" escape hatch against the local runner.
@@ -277,7 +277,7 @@
     const envEntries = $derived(
         task.env ? Object.entries(task.env).sort(([a], [b]) => a.localeCompare(b)) : [],
     );
-    const showEnvPanel = $derived(envEntries.length > 0 || !!task.env_file || !!task.secrets_file);
+    const showEnvPanel = $derived(envEntries.length > 0 || !!task.envFile || !!task.secretsFile);
 </script>
 
 <!-- Card-less, full-bleed: the rail and detail panel fill the content area
@@ -300,14 +300,14 @@
                     {/each}
                 </dl>
             {/if}
-            {#if task.env_file}
+            {#if task.envFile}
                 <p class="mt-2 font-mono text-xs text-on-surface-faint">
-                    Includes values from {task.env_file}
+                    Includes values from {task.envFile}
                 </p>
             {/if}
-            {#if task.secrets_file}
+            {#if task.secretsFile}
                 <p class="mt-2 font-mono text-xs text-on-surface-faint">
-                    Secrets from {task.secrets_file} (values not exposed)
+                    Secrets from {task.secretsFile} (values not exposed)
                 </p>
             {/if}
         </section>

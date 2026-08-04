@@ -41,29 +41,29 @@ func dispatchQueryRuns(
 	params sqlcdb.QueryRunsCreatedAtAscParams,
 ) ([]model.Run, error) {
 	switch queryRunsSortKey(col, dir) {
-	case "created_at_asc":
+	case "createdAt_asc":
 		return finishQueryRuns(q.QueryRunsCreatedAtAsc(ctx, params))
-	case "created_at_desc":
+	case "createdAt_desc":
 		rows, err := q.QueryRunsCreatedAtDesc(ctx, sqlcdb.QueryRunsCreatedAtDescParams(params))
 		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsCreatedAtDescRow) sqlcdb.QueryRunsCreatedAtAscRow {
 			return sqlcdb.QueryRunsCreatedAtAscRow(r)
 		}), err)
-	case "start_at_asc":
+	case "startAt_asc":
 		rows, err := q.QueryRunsStartAtAsc(ctx, sqlcdb.QueryRunsStartAtAscParams(params))
 		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsStartAtAscRow) sqlcdb.QueryRunsCreatedAtAscRow {
 			return sqlcdb.QueryRunsCreatedAtAscRow(r)
 		}), err)
-	case "start_at_desc":
+	case "startAt_desc":
 		rows, err := q.QueryRunsStartAtDesc(ctx, sqlcdb.QueryRunsStartAtDescParams(params))
 		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsStartAtDescRow) sqlcdb.QueryRunsCreatedAtAscRow {
 			return sqlcdb.QueryRunsCreatedAtAscRow(r)
 		}), err)
-	case "task_name_asc":
+	case "taskName_asc":
 		rows, err := q.QueryRunsTaskNameAsc(ctx, sqlcdb.QueryRunsTaskNameAscParams(params))
 		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsTaskNameAscRow) sqlcdb.QueryRunsCreatedAtAscRow {
 			return sqlcdb.QueryRunsCreatedAtAscRow(r)
 		}), err)
-	case "task_name_desc":
+	case "taskName_desc":
 		rows, err := q.QueryRunsTaskNameDesc(ctx, sqlcdb.QueryRunsTaskNameDescParams(params))
 		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsTaskNameDescRow) sqlcdb.QueryRunsCreatedAtAscRow {
 			return sqlcdb.QueryRunsCreatedAtAscRow(r)
@@ -78,12 +78,12 @@ func dispatchQueryRuns(
 		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsStatusDescRow) sqlcdb.QueryRunsCreatedAtAscRow {
 			return sqlcdb.QueryRunsCreatedAtAscRow(r)
 		}), err)
-	case "exit_code_asc":
+	case "exitCode_asc":
 		rows, err := q.QueryRunsExitCodeAsc(ctx, sqlcdb.QueryRunsExitCodeAscParams(params))
 		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsExitCodeAscRow) sqlcdb.QueryRunsCreatedAtAscRow {
 			return sqlcdb.QueryRunsCreatedAtAscRow(r)
 		}), err)
-	case "exit_code_desc":
+	case "exitCode_desc":
 		rows, err := q.QueryRunsExitCodeDesc(ctx, sqlcdb.QueryRunsExitCodeDescParams(params))
 		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsExitCodeDescRow) sqlcdb.QueryRunsCreatedAtAscRow {
 			return sqlcdb.QueryRunsCreatedAtAscRow(r)
@@ -133,8 +133,8 @@ func finishQueryRuns(rows []sqlcdb.QueryRunsCreatedAtAscRow, err error) ([]model
 			Status:              r.Status,
 			EndReason:           r.EndReason,
 			ExitCode:            r.ExitCode,
-			StartAt:             r.StartAt,
-			EndAt:               r.EndAt,
+			StartAt:             r.StartedAt,
+			EndAt:               r.EndedAt,
 			TriggeredBy:         r.TriggeredBy,
 			CreatedAt:           r.CreatedAt,
 			RetryAttempt:        r.RetryAttempt,

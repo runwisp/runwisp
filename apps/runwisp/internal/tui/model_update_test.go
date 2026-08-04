@@ -420,7 +420,7 @@ func TestHandleNotificationStreamConnected_ReturnsListenerCmd(t *testing.T) {
 
 func TestHandleNotificationEvent_CreatedAppendsToPanel(t *testing.T) {
 	m := newTestModel(nil)
-	payload := []byte(`{"notification":{"id":"n-1","severity":"info","title":"hi","count":1,"last_occurred_at":"2026-01-01T00:00:00Z"},"unread_count":1}`)
+	payload := []byte(`{"notification":{"id":"n-1","severity":"info","title":"hi","count":1,"lastOccurredAt":"2026-01-01T00:00:00Z"},"unreadCount":1}`)
 	out, _ := m.handleNotificationEvent(uikit.NotificationEventMsg{
 		Event: apiclient.NotificationStreamEvent{Type: "notification.created", Data: payload},
 	})
@@ -441,7 +441,7 @@ func TestHandleNotificationEvent_CreatedInvalidJSON(t *testing.T) {
 
 func TestHandleNotificationEvent_UnreadCountChanged(t *testing.T) {
 	m := newTestModel(nil)
-	payload := []byte(`{"unread_count":7}`)
+	payload := []byte(`{"unreadCount":7}`)
 	out, _ := m.handleNotificationEvent(uikit.NotificationEventMsg{
 		Event: apiclient.NotificationStreamEvent{Type: "notifications.unread_count_changed", Data: payload},
 	})

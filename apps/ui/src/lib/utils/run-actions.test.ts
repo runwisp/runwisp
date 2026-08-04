@@ -45,14 +45,14 @@ import { createRunActions } from "./run-actions";
 function makeRun(id: string, overrides: Partial<Run> = {}): Run {
     return {
         id,
-        task_name: "backup-db",
-        created_at: "2026-06-22T12:00:00.000Z",
+        taskName: "backup-db",
+        createdAt: "2026-06-22T12:00:00.000Z",
         status: "ended",
-        end_reason: "success",
-        triggered_by: "api",
-        exit_code: 0,
-        instance_index: 0,
-        retry_attempt: 0,
+        endReason: "success",
+        triggeredBy: "api",
+        exitCode: 0,
+        instanceIndex: 0,
+        retryAttempt: 0,
         ...overrides,
     };
 }
@@ -80,7 +80,7 @@ function lastUndoHandler(): (() => void) | undefined {
     return toastMocks.success.mock.calls.at(-1)?.[1]?.action?.onClick;
 }
 
-const idsSelector = (ids: string[]): RunSelector => ({ match_all: false, ids });
+const idsSelector = (ids: string[]): RunSelector => ({ matchAll: false, ids });
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -201,7 +201,7 @@ describe("handleBulkRerun", () => {
         const run = makeRun("a");
         const { actions } = setup([run]);
         vi.mocked(runsApi.bulkRerun).mockResolvedValue({
-            triggered: [{ task_name: "backup-db", run_id: "r1" }],
+            triggered: [{ taskName: "backup-db", runId: "r1" }],
         });
 
         await actions.handleBulkRerun(idsSelector(["a"]), [run]);
@@ -213,8 +213,8 @@ describe("handleBulkRerun", () => {
         const { actions } = setup();
         vi.mocked(runsApi.bulkRerun).mockResolvedValue({
             triggered: [
-                { task_name: "a", run_id: "r1" },
-                { task_name: "b", run_id: "r2" },
+                { taskName: "a", runId: "r1" },
+                { taskName: "b", runId: "r2" },
             ],
         });
 
@@ -245,7 +245,7 @@ describe("handleBulkRerun", () => {
     it("undo cancels then deletes the freshly triggered runs", async () => {
         const { actions } = setup();
         vi.mocked(runsApi.bulkRerun).mockResolvedValue({
-            triggered: [{ task_name: "backup-db", run_id: "r1" }],
+            triggered: [{ taskName: "backup-db", runId: "r1" }],
         });
         vi.mocked(runsApi.bulkCancel).mockResolvedValue(1);
         vi.mocked(runsApi.bulkDelete).mockResolvedValue(1);
@@ -263,7 +263,7 @@ describe("handleBulkRerun", () => {
     it("undo swallows a cancel failure but still reports a delete failure", async () => {
         const { actions } = setup();
         vi.mocked(runsApi.bulkRerun).mockResolvedValue({
-            triggered: [{ task_name: "backup-db", run_id: "r1" }],
+            triggered: [{ taskName: "backup-db", runId: "r1" }],
         });
         vi.mocked(runsApi.bulkCancel).mockRejectedValue(new Error("already done"));
         vi.mocked(runsApi.bulkDelete).mockRejectedValue(new Error("undo delete failed"));

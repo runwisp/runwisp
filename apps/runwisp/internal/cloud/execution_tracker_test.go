@@ -56,7 +56,7 @@ func TestQueueUpdateWithNilTrySend(t *testing.T) {
 
 func TestQueueUpdateTrySendSuccess(t *testing.T) {
 	tracker := NewExecutionTracker()
-	update := NewExecutionUpdateMessage("exec-2", protocol.ExecutionStatusOk, nil, nil, nil)
+	update := NewExecutionUpdateMessage("exec-2", protocol.ExecutionStatusSucceeded, nil, nil, nil)
 
 	var sent []any
 	tracker.QueueUpdate(update, func(msg any) error {
@@ -76,7 +76,7 @@ func TestQueueUpdateTrySendSuccess(t *testing.T) {
 
 func TestQueueUpdateTrySendFailure(t *testing.T) {
 	tracker := NewExecutionTracker()
-	update := NewExecutionUpdateMessage("exec-3", protocol.ExecutionStatusErr, nil, nil, nil)
+	update := NewExecutionUpdateMessage("exec-3", protocol.ExecutionStatusFailed, nil, nil, nil)
 
 	tracker.QueueUpdate(update, func(any) error {
 		return errors.New("send failed")
@@ -133,7 +133,7 @@ func TestMapRunToExecutionUpdateEndedSuccess(t *testing.T) {
 	require.NotNil(t, result)
 	assert.Equal(t, execID, result.ExecutionID)
 	require.NotNil(t, result.Status)
-	assert.Equal(t, protocol.ExecutionStatusOk, *result.Status)
+	assert.Equal(t, protocol.ExecutionStatusSucceeded, *result.Status)
 }
 
 func TestMapRunToExecutionUpdateEndedStartFailed(t *testing.T) {
@@ -154,7 +154,7 @@ func TestMapRunToExecutionUpdateEndedStartFailed(t *testing.T) {
 	result := mapRunToExecutionUpdate(run)
 	require.NotNil(t, result)
 	require.NotNil(t, result.Status)
-	assert.Equal(t, protocol.ExecutionStatusErr, *result.Status)
+	assert.Equal(t, protocol.ExecutionStatusFailed, *result.Status)
 }
 
 func TestMapRunToExecutionUpdateEndedNilReason(t *testing.T) {
@@ -174,18 +174,18 @@ func TestMapRunToExecutionUpdateEndedNilReason(t *testing.T) {
 // were previously dropped to nil.
 func TestMapRunToExecutionUpdateTerminalReasonsExhaustive(t *testing.T) {
 	cases := map[model.EndReason]protocol.ExecutionStatus{
-		model.ReasonSuccess:       protocol.ExecutionStatusOk,
+		model.ReasonSuccess:       protocol.ExecutionStatusSucceeded,
 		model.ReasonStopped:       protocol.ExecutionStatusStopped,
 		model.ReasonTimeout:       protocol.ExecutionStatusTimeout,
-		model.ReasonFailed:        protocol.ExecutionStatusErr,
-		model.ReasonCrashed:       protocol.ExecutionStatusErr,
-		model.ReasonLogOverflow:   protocol.ExecutionStatusErr,
-		model.ReasonStartFailed:   protocol.ExecutionStatusErr,
+		model.ReasonFailed:        protocol.ExecutionStatusFailed,
+		model.ReasonCrashed:       protocol.ExecutionStatusFailed,
+		model.ReasonLogOverflow:   protocol.ExecutionStatusFailed,
+		model.ReasonStartFailed:   protocol.ExecutionStatusFailed,
 		model.ReasonDaemonStopped: protocol.ExecutionStatusStopped,
-		model.ReasonSkipped:       protocol.ExecutionStatusErr,
-		model.ReasonQueueFull:     protocol.ExecutionStatusErr,
-		model.ReasonDSTSkipped:    protocol.ExecutionStatusErr,
-		model.ReasonMissed:        protocol.ExecutionStatusErr,
+		model.ReasonSkipped:       protocol.ExecutionStatusFailed,
+		model.ReasonQueueFull:     protocol.ExecutionStatusFailed,
+		model.ReasonDSTSkipped:    protocol.ExecutionStatusFailed,
+		model.ReasonMissed:        protocol.ExecutionStatusFailed,
 	}
 	execID := "ext-terminal"
 	now := time.Now()
@@ -223,7 +223,7 @@ func TestMapRunToExecutionUpdateUnknownReasonFailsSafe(t *testing.T) {
 	result := mapRunToExecutionUpdate(run)
 	require.NotNil(t, result)
 	require.NotNil(t, result.Status)
-	assert.Equal(t, protocol.ExecutionStatusErr, *result.Status)
+	assert.Equal(t, protocol.ExecutionStatusFailed, *result.Status)
 }
 
 // FlushPending must include synthetic "running" snapshots for every currently
@@ -235,7 +235,7 @@ func TestFlushPendingEmitsRunningSnapshotsForActiveExecutions(t *testing.T) {
 
 	// Buffer one terminal update.
 	tracker.QueueUpdate(
-		NewExecutionUpdateMessage("buffered-1", protocol.ExecutionStatusOk, nil, nil, nil),
+		NewExecutionUpdateMessage("buffered-1", protocol.ExecutionStatusSucceeded, nil, nil, nil),
 		nil,
 	)
 
@@ -260,14 +260,14 @@ func TestBufferUpdateDropsOldestAtCap(t *testing.T) {
 
 	// Fill the buffer to its capacity by directly invoking bufferUpdate.
 	for i := 0; i < maxPendingExecutionUpdates; i++ {
-		tracker.bufferUpdate(NewExecutionUpdateMessage("first-batch", protocol.ExecutionStatusOk, nil, nil, nil))
+		tracker.bufferUpdate(NewExecutionUpdateMessage("first-batch", protocol.ExecutionStatusSucceeded, nil, nil, nil))
 	}
 	tracker.mu.Lock()
 	assert.Equal(t, maxPendingExecutionUpdates, len(tracker.pendingExecutionUpdates))
 	tracker.mu.Unlock()
 
 	// One more update — the oldest must be dropped, the newest appended.
-	tracker.bufferUpdate(NewExecutionUpdateMessage("overflow", protocol.ExecutionStatusOk, nil, nil, nil))
+	tracker.bufferUpdate(NewExecutionUpdateMessage("overflow", protocol.ExecutionStatusSucceeded, nil, nil, nil))
 
 	tracker.mu.Lock()
 	defer tracker.mu.Unlock()
@@ -291,9 +291,9 @@ func TestFlushPendingDoesNotAliasBufferDuringSend(t *testing.T) {
 	// No active executions → runningSnapshots is empty, so the pre-fix
 	// `append(pending, nothing...)` returned the same backing array — the exact
 	// aliasing condition. Buffer three updates directly into that array.
-	tracker.bufferUpdate(NewExecutionUpdateMessage("a", protocol.ExecutionStatusOk, nil, nil, nil))
-	tracker.bufferUpdate(NewExecutionUpdateMessage("b", protocol.ExecutionStatusOk, nil, nil, nil))
-	tracker.bufferUpdate(NewExecutionUpdateMessage("c", protocol.ExecutionStatusOk, nil, nil, nil))
+	tracker.bufferUpdate(NewExecutionUpdateMessage("a", protocol.ExecutionStatusSucceeded, nil, nil, nil))
+	tracker.bufferUpdate(NewExecutionUpdateMessage("b", protocol.ExecutionStatusSucceeded, nil, nil, nil))
+	tracker.bufferUpdate(NewExecutionUpdateMessage("c", protocol.ExecutionStatusSucceeded, nil, nil, nil))
 
 	var delivered []string
 	first := true
@@ -306,8 +306,8 @@ func TestFlushPendingDoesNotAliasBufferDuringSend(t *testing.T) {
 			// A concurrent-style write during the flush: on the pre-fix code these
 			// append into the shared backing array (len 0 after the [:0] reset),
 			// clobbering the not-yet-sent "b" and "c" slots the flush still holds.
-			tracker.bufferUpdate(NewExecutionUpdateMessage("X", protocol.ExecutionStatusErr, nil, nil, nil))
-			tracker.bufferUpdate(NewExecutionUpdateMessage("Y", protocol.ExecutionStatusErr, nil, nil, nil))
+			tracker.bufferUpdate(NewExecutionUpdateMessage("X", protocol.ExecutionStatusFailed, nil, nil, nil))
+			tracker.bufferUpdate(NewExecutionUpdateMessage("Y", protocol.ExecutionStatusFailed, nil, nil, nil))
 		}
 		return nil
 	})
@@ -320,9 +320,9 @@ func TestFlushPendingDoesNotAliasBufferDuringSend(t *testing.T) {
 // send returns an error part-way through the slice.
 func TestFlushPendingPartialFailureRequeuesRemainder(t *testing.T) {
 	tracker := NewExecutionTracker()
-	tracker.QueueUpdate(NewExecutionUpdateMessage("first", protocol.ExecutionStatusOk, nil, nil, nil), nil)
-	tracker.QueueUpdate(NewExecutionUpdateMessage("second", protocol.ExecutionStatusOk, nil, nil, nil), nil)
-	tracker.QueueUpdate(NewExecutionUpdateMessage("third", protocol.ExecutionStatusOk, nil, nil, nil), nil)
+	tracker.QueueUpdate(NewExecutionUpdateMessage("first", protocol.ExecutionStatusSucceeded, nil, nil, nil), nil)
+	tracker.QueueUpdate(NewExecutionUpdateMessage("second", protocol.ExecutionStatusSucceeded, nil, nil, nil), nil)
+	tracker.QueueUpdate(NewExecutionUpdateMessage("third", protocol.ExecutionStatusSucceeded, nil, nil, nil), nil)
 
 	delivered := 0
 	tracker.FlushPending(func(any) error {

@@ -12,12 +12,12 @@ describe("runUpdateEventSchema", () => {
             data: {
                 run: {
                     id: "01J0000000000000000000000",
-                    task_name: "backup-db",
+                    taskName: "backup-db",
                     status: "running",
-                    exit_code: 0,
-                    triggered_by: "api",
-                    created_at: "2026-05-05T12:00:00.000Z",
-                    retry_attempt: 0,
+                    exitCode: 0,
+                    triggeredBy: "api",
+                    createdAt: "2026-05-05T12:00:00.000Z",
+                    retryAttempt: 0,
                     params: { TARGET: "prod", DRY_RUN: "false" },
                 },
             },

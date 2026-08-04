@@ -232,7 +232,7 @@ func TestSMTP_NormalizeTLSMode(t *testing.T) {
 	}{
 		{"starttls", 587, "starttls"},
 		{"implicit", 465, "implicit"},
-		{"none", 25, "none"},
+		{"off", 25, "off"},
 		{"", 465, "implicit"},
 		{"", 587, "starttls"},
 		{"", 25, "starttls"},
@@ -364,7 +364,7 @@ func TestSMTP_DefaultClient_ImplicitTLSWithSkipVerify(t *testing.T) {
 }
 
 func TestSMTP_DefaultClient_NoTLSNoAuth(t *testing.T) {
-	s, err := defaultClient("smtp.example.test", 25, "none", false, "", "")
+	s, err := defaultClient("smtp.example.test", 25, "off", false, "", "")
 	require.NoError(t, err)
 	assert.NotNil(t, s)
 }

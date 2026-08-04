@@ -280,7 +280,7 @@ func TestDeleteOldRunsByCount(t *testing.T) {
 
 	task := &model.Task{
 		Name:     "task1",
-		KeepRuns: 2,
+		KeepRuns: intPtr(2),
 	}
 
 	deleted, err := db.DeleteOldRuns(ctx, task)
@@ -910,7 +910,7 @@ func TestSQLiteDatabase_ErrorPathsAfterClose(t *testing.T) {
 	_, err = db.DeleteOldRuns(ctx, &model.Task{Name: "t", KeepFor: 24 * time.Hour})
 	assert.Error(t, err)
 
-	_, err = db.DeleteOldRuns(ctx, &model.Task{Name: "t", KeepRuns: 5})
+	_, err = db.DeleteOldRuns(ctx, &model.Task{Name: "t", KeepRuns: intPtr(5)})
 	assert.Error(t, err)
 
 	_, err = db.MarkCrashedRuns(ctx)

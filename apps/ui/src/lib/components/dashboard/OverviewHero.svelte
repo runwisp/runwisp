@@ -346,8 +346,8 @@
                     <span class="flex items-baseline gap-2">
                         {#if latestSample}
                             <span class="font-mono text-xs text-on-surface-faint tabular-nums">
-                                {formatBytes(latestSample.mem_used)} / {formatBytes(
-                                    latestSample.mem_total,
+                                {formatBytes(latestSample.memUsed)} / {formatBytes(
+                                    latestSample.memTotal,
                                 )}
                             </span>
                         {/if}

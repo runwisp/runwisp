@@ -4,11 +4,11 @@
 /** Shared sort utilities for runs. */
 
 interface HasCreatedAt {
-    created_at: string;
+    createdAt: string;
 }
 
 export function sortByCreatedAtDesc<T extends HasCreatedAt>(items: T[]): T[] {
     return [...items].sort(
-        (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
+        (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
     );
 }

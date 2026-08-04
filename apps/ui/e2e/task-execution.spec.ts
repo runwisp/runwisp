@@ -27,8 +27,8 @@ test.describe("task execution", () => {
         // Poll the API for this run's terminal record before asserting on it —
         // this is the source of truth for the outcome, exit code, and timing.
         const apiRun = await waitForRunEnded(page, "echo-task", triggered.id, daemonState.token);
-        expect(apiRun.end_reason).toBe("success");
-        expect(apiRun.exit_code).toBe(0);
+        expect(apiRun.endReason).toBe("success");
+        expect(apiRun.exitCode).toBe(0);
 
         // The panel settles on SUCCESS (exact match avoids the lowercase
         // "success" in the run list, which uses CSS capitalize) and must show
@@ -56,8 +56,8 @@ test.describe("task execution", () => {
         const triggered = await triggerRunViaUI(page, "fail-task");
 
         const apiRun = await waitForRunEnded(page, "fail-task", triggered.id, daemonState.token);
-        expect(apiRun.end_reason).toBe("failed");
-        expect(apiRun.exit_code).toBe(1);
+        expect(apiRun.endReason).toBe("failed");
+        expect(apiRun.exitCode).toBe(1);
 
         await expect(runVerdict(page, "failed")).toBeVisible({ timeout: 30_000 });
         await expectRunDetailMatchesApi(page, apiRun);

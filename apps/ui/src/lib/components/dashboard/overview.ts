@@ -51,18 +51,18 @@ export function buildTaskOverviews(
     recentRuns: Run[],
     runningRuns: Run[],
 ): TaskOverview[] {
-    const recentRunsByTask = buildLatestRunByTask(recentRuns, (run) => toTimestamp(run.created_at));
+    const recentRunsByTask = buildLatestRunByTask(recentRuns, (run) => toTimestamp(run.createdAt));
     const runningRunsByTask = buildLatestRunByTask(
         runningRuns,
-        (run) => toTimestamp(run.start_at) ?? toTimestamp(run.created_at),
+        (run) => toTimestamp(run.startAt) ?? toTimestamp(run.createdAt),
     );
 
     return tasks.map((task) => {
         const activeRun = runningRunsByTask.get(task.name);
         const lastRun = activeRun ?? recentRunsByTask.get(task.name);
-        const lastStatus = lastRun ? displayStatus(lastRun.status, lastRun.end_reason) : undefined;
-        const nextRunMs = toTimestamp(task.next_run_at);
-        const isApiOnly = task.api_trigger && !task.cron;
+        const lastStatus = lastRun ? displayStatus(lastRun.status, lastRun.endReason) : undefined;
+        const nextRunMs = toTimestamp(task.nextRunAt);
+        const isApiOnly = task.apiTrigger && !task.cron;
 
         let state: OverviewTaskState = "idle";
         if (activeRun) {
@@ -135,15 +135,15 @@ export function filterTaskOverviews(
 export function sortRunsByStartDesc(runs: Run[]): Run[] {
     return [...runs].sort((left, right) => {
         const leftTime =
-            toTimestamp(left.start_at) ?? toTimestamp(left.created_at) ?? LOWEST_PRIORITY_TIME;
+            toTimestamp(left.startAt) ?? toTimestamp(left.createdAt) ?? LOWEST_PRIORITY_TIME;
         const rightTime =
-            toTimestamp(right.start_at) ?? toTimestamp(right.created_at) ?? LOWEST_PRIORITY_TIME;
+            toTimestamp(right.startAt) ?? toTimestamp(right.createdAt) ?? LOWEST_PRIORITY_TIME;
         return rightTime - leftTime;
     });
 }
 
 function lastTaskActivityAt(task: TaskOverview): number | undefined {
-    return toTimestamp(task.lastRun?.start_at) ?? toTimestamp(task.lastRun?.created_at);
+    return toTimestamp(task.lastRun?.startAt) ?? toTimestamp(task.lastRun?.createdAt);
 }
 
 function buildLatestRunByTask(
@@ -158,8 +158,8 @@ function buildLatestRunByTask(
 
     const runsByTask = new Map<string, Run>();
     for (const run of sortedRuns) {
-        if (!runsByTask.has(run.task_name)) {
-            runsByTask.set(run.task_name, run);
+        if (!runsByTask.has(run.taskName)) {
+            runsByTask.set(run.taskName, run);
         }
     }
     return runsByTask;

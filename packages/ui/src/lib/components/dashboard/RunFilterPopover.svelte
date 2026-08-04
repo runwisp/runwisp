@@ -65,7 +65,7 @@
 
     let advancedOpen = $state(false);
 
-    const count = $derived(activeFilterCount(filters) + (showTask && filters.task_name ? 1 : 0));
+    const count = $derived(activeFilterCount(filters) + (showTask && filters.taskName ? 1 : 0));
 
     const headerClass =
         "font-mono text-xs font-semibold tracking-[0.14em] text-on-surface-muted uppercase";
@@ -103,37 +103,37 @@
     // both captures the whole day.
 
     function setFrom(value: string) {
-        filters = { ...filters, created_after: value ? dayStartIso(value) : undefined };
+        filters = { ...filters, createdAfter: value ? dayStartIso(value) : undefined };
     }
 
     function setTo(value: string) {
-        filters = { ...filters, created_before: value ? dayEndIso(value) : undefined };
+        filters = { ...filters, createdBefore: value ? dayEndIso(value) : undefined };
     }
 
     // --- Other dimensions -------------------------------------------------
 
     function setTask(value: string) {
-        filters = { ...filters, task_name: value || undefined };
+        filters = { ...filters, taskName: value || undefined };
     }
 
     function setTrigger(value: string) {
-        filters = { ...filters, triggered_by: value || undefined };
+        filters = { ...filters, triggeredBy: value || undefined };
     }
 
     // Exit code: a free-form expression (`137`, `>100`, `>100 <150`) normalized
     // to an inclusive range at the wire. Edited in a local buffer for smooth
     // typing and committed on change; the popover content remounts on each open,
     // so the buffer re-seeds from `filters` every time it opens.
-    let exitCodeInput = $state(filters.exit_code ?? "");
+    let exitCodeInput = $state(filters.exitCode ?? "");
     const exitCodeValid = $derived(isExitCodeExprValid(exitCodeInput));
 
     function commitExitCode() {
         const trimmed = exitCodeInput.trim();
-        filters = { ...filters, exit_code: trimmed || undefined };
+        filters = { ...filters, exitCode: trimmed || undefined };
     }
 
     function setRetriesOnly(checked: boolean) {
-        filters = { ...filters, retries_only: checked ? true : undefined };
+        filters = { ...filters, retriesOnly: checked ? true : undefined };
     }
 </script>
 
@@ -212,7 +212,7 @@
             </details>
         </section>
 
-        <!-- Date range (filters on created_at). Independent From/To bounds: a
+        <!-- Date range (filters on createdAt). Independent From/To bounds: a
              bare date is that day's 00:00 (From) or its end (To), so either edge
              applies on its own and the same date in both captures the day. -->
         <section class="flex flex-col gap-2">
@@ -222,7 +222,7 @@
                     <span class={labelClass}>From</span>
                     <input
                         type="date"
-                        value={filters.created_after ? isoToDayInput(filters.created_after) : ""}
+                        value={filters.createdAfter ? isoToDayInput(filters.createdAfter) : ""}
                         onchange={(e) => setFrom(e.currentTarget.value)}
                         class={selectClass}
                     />
@@ -231,7 +231,7 @@
                     <span class={labelClass}>To</span>
                     <input
                         type="date"
-                        value={filters.created_before ? isoToDayInput(filters.created_before) : ""}
+                        value={filters.createdBefore ? isoToDayInput(filters.createdBefore) : ""}
                         onchange={(e) => setTo(e.currentTarget.value)}
                         class={selectClass}
                     />
@@ -245,7 +245,7 @@
                 <span class={headerClass}>Task</span>
                 <select
                     class={selectClass}
-                    value={filters.task_name ?? ""}
+                    value={filters.taskName ?? ""}
                     onchange={(e) => setTask(e.currentTarget.value)}
                 >
                     <option value="">Any task</option>
@@ -261,7 +261,7 @@
             <span class={headerClass}>Triggered by</span>
             <select
                 class={selectClass}
-                value={filters.triggered_by ?? ""}
+                value={filters.triggeredBy ?? ""}
                 onchange={(e) => setTrigger(e.currentTarget.value)}
             >
                 <option value="">Any trigger</option>
@@ -296,7 +296,7 @@
             <span class={headerClass}>Retries</span>
             <Toggle
                 size="sm"
-                checked={Boolean(filters.retries_only)}
+                checked={Boolean(filters.retriesOnly)}
                 label="Only retried runs"
                 onchange={setRetriesOnly}
             />

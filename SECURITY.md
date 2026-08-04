@@ -61,7 +61,7 @@ We welcome reports against:
 - Injection into the REST API, SSE log stream, or notification channels (Slack, Telegram, in-app)
 - Path traversal or arbitrary file disclosure via the daemon
 - TOML parser bugs that escalate privilege beyond what `run = "..."` already permits
-- Misuse of `X-Forwarded-*` headers — spoofing the source IP or scheme past `RUNWISP_TRUST_PROXY`
+- Misuse of `X-Forwarded-*` headers — spoofing the source IP or scheme past `RUNWISP_TRUSTED_PROXIES`
 - Insecure defaults in the binary or the installer at `get.runwisp.com`
 - Vulnerabilities in direct dependencies that meaningfully affect RunWisp
 
@@ -84,7 +84,7 @@ If you're running RunWisp in production, here's the short list:
 1. **Keep the data directory at `0700`.** Local-socket trust assumes only the daemon's user can read it. Don't loosen perms; don't share the data dir across users.
 2. **Set `RUNWISP_PASSWORD` for network clients.** If unset, the daemon mints a random ephemeral password every boot — fine for a local workstation, lousy for shared servers because every restart logs every browser session out. Source the password from a Docker secret, systemd `LoadCredential=`, or your sealed-secrets workflow.
 3. **Keep `--host 127.0.0.1`.** The daemon binds to loopback by default. If you must expose it, terminate TLS at a reverse proxy (nginx, Caddy, Traefik) and forward over the loopback interface — the challenge-response handshake protects the password on the wire, but the session cookie does not.
-4. **Set `RUNWISP_TRUST_PROXY` to your proxy's CIDR** (e.g. `127.0.0.1/32`). The daemon will then honour `X-Forwarded-Proto: https` for secure cookie issuance and `X-Forwarded-For` for rate-limit accounting. Catch-all ranges (`0.0.0.0/0`, `::/0`) are rejected — trusting the entire internet would let any client spoof their IP.
+4. **Set `RUNWISP_TRUSTED_PROXIES` to your proxy's CIDR** (e.g. `127.0.0.1/32`). The daemon will then honour `X-Forwarded-Proto: https` for secure cookie issuance and `X-Forwarded-For` for rate-limit accounting. Catch-all ranges (`0.0.0.0/0`, `::/0`) are rejected — trusting the entire internet would let any client spoof their IP.
 5. **Don't ignore the non-loopback warning banner.** The daemon prints it to stderr when it starts on a non-loopback address without a trusted proxy. It exists for a reason.
 6. **Run as an unprivileged user** wherever possible. The daemon needs only the permissions required to execute its tasks and own its data dir.
 7. **Stay on the latest release.** Watch [GitHub Releases](https://github.com/runwisp/runwisp/releases) — pre-1.0, security fixes ship on the moving train.
@@ -97,7 +97,7 @@ The recommended deployment for any non-loopback exposure:
 
 1. Keep `--host 127.0.0.1` (or `::1`).
 2. Run a reverse proxy on the same host that terminates TLS and forwards to the daemon over loopback.
-3. Set `RUNWISP_TRUST_PROXY` to the CIDR of that proxy.
+3. Set `RUNWISP_TRUSTED_PROXIES` to the CIDR of that proxy.
 
 ## Acknowledgments
 

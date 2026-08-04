@@ -57,7 +57,7 @@ func TestConnectionManager_FlushPendingUpdates_NotReadyIsNoop(t *testing.T) {
 	tracker := NewExecutionTracker()
 	cm := newConnectionManager(tracker)
 
-	tracker.QueueUpdate(NewExecutionUpdateMessage("exec-1", protocol.ExecutionStatusOk, nil, nil, nil), nil)
+	tracker.QueueUpdate(NewExecutionUpdateMessage("exec-1", protocol.ExecutionStatusSucceeded, nil, nil, nil), nil)
 
 	// Not ready — must not panic, must not flush.
 	cm.flushPendingUpdates()
@@ -77,8 +77,8 @@ func TestConnectionManager_FlushPendingUpdates_DrainsThroughSession(t *testing.T
 	session := &wsSession{outbound: make(chan []byte, 4)}
 	cm.attachSession(session)
 
-	tracker.QueueUpdate(NewExecutionUpdateMessage("exec-1", protocol.ExecutionStatusOk, nil, nil, nil), nil)
-	tracker.QueueUpdate(NewExecutionUpdateMessage("exec-2", protocol.ExecutionStatusOk, nil, nil, nil), nil)
+	tracker.QueueUpdate(NewExecutionUpdateMessage("exec-1", protocol.ExecutionStatusSucceeded, nil, nil, nil), nil)
+	tracker.QueueUpdate(NewExecutionUpdateMessage("exec-2", protocol.ExecutionStatusSucceeded, nil, nil, nil), nil)
 
 	cm.flushPendingUpdates()
 

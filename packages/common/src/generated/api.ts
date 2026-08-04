@@ -147,7 +147,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/notifications/{id}/read": {
+    "/api/notifications/{notificationId}/read": {
         parameters: {
             query?: never;
             header?: never;
@@ -164,7 +164,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/notifications/{id}/unread": {
+    "/api/notifications/{notificationId}/unread": {
         parameters: {
             query?: never;
             header?: never;
@@ -209,26 +209,9 @@ export interface paths {
             cookie?: never;
         };
         /** List all runs */
-        get: operations["getAllRuns"];
+        get: operations["listRuns"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/runs/bulk/cancel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Cancel every running run matched by the selector */
-        post: operations["bulkCancelRuns"];
         delete?: never;
         options?: never;
         head?: never;
@@ -289,6 +272,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/bulk/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop every running run matched by the selector */
+        post: operations["bulkStopRuns"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/summary": {
         parameters: {
             query?: never;
@@ -314,7 +314,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get a single run by ID */
-        get: operations["getRunById"];
+        get: operations["getRun"];
         put?: never;
         post?: never;
         delete?: never;
@@ -385,7 +385,7 @@ export interface paths {
             cookie?: never;
         };
         /** List all tasks */
-        get: operations["getTasks"];
+        get: operations["listTasks"];
         put?: never;
         post?: never;
         delete?: never;
@@ -424,7 +424,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Restart all instances of a service */
-        post: operations["restartService"];
+        post: operations["restartTask"];
         delete?: never;
         options?: never;
         head?: never;
@@ -459,7 +459,7 @@ export interface paths {
             cookie?: never;
         };
         /** List runs for a task */
-        get: operations["getTaskRuns"];
+        get: operations["listTaskRuns"];
         put?: never;
         post?: never;
         delete?: never;
@@ -475,8 +475,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get a single run */
-        get: operations["getRun"];
+        get?: never;
         put?: never;
         post?: never;
         /** Delete a run */
@@ -596,7 +595,7 @@ export interface paths {
          * Stop a service for the daemon's lifetime
          * @description Cancels every live instance and marks the service stopped. The supervisor stops refilling slots until a restart is issued or the daemon is restarted.
          */
-        post: operations["stopService"];
+        post: operations["stopTask"];
         delete?: never;
         options?: never;
         head?: never;
@@ -645,24 +644,24 @@ export interface components {
              * @example http://localhost:9477/schemas/DaemonInfo.json
              */
             readonly $schema?: string;
-            auth_disabled: boolean;
+            authDisabled: boolean;
             capabilities: components["schemas"]["CapInfo"][] | null;
-            cloud_enabled: boolean;
+            cloudEnabled: boolean;
             /** Format: date-time */
-            config_loaded_at: string;
-            config_stale: boolean;
+            configLoadedAt: string;
+            configStale: boolean;
             /** @description Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads. */
-            config_warnings?: string[] | null;
-            external_url: string;
+            configWarnings?: string[] | null;
+            externalUrl: string;
             fingerprint: string;
             /** Format: int64 */
             port: number;
-            resolved_timezone: string;
-            scheduling_active: boolean;
-            service_managed: boolean;
+            resolvedTimezone: string;
+            schedulingActive: boolean;
+            serviceManaged: boolean;
             tasks: components["schemas"]["TaskBrief"][] | null;
             /** @enum {string} */
-            timezone_source: "config" | "system";
+            timezoneSource: "config" | "system";
             version: string;
         };
         DaemonLogLineEvent: {
@@ -730,12 +729,12 @@ export interface components {
             readonly $schema?: string;
             /** @description Always "runwisp"; lets a caller confirm the port-holder is a RunWisp daemon. */
             app: string;
-            config_path: string;
-            data_dir: string;
+            configPath: string;
+            dataDir: string;
             fingerprint: string;
             /** Format: int64 */
             pid: number;
-            socket_path: string;
+            socketPath: string;
             version: string;
         };
         LocalCredentialsBody: {
@@ -755,7 +754,7 @@ export interface components {
              * Format: int64
              * @description Last line number emitted before the run terminated
              */
-            final_line: number;
+            finalLine: number;
             /** @description Reason the stream is closing (e.g. 'ended') */
             status: string;
         };
@@ -778,7 +777,7 @@ export interface components {
              * Format: int64
              * @description Number of recorded prior frames if this line is a settled progress bar / redraw anchor; 0 otherwise
              */
-            frame_count?: number;
+            frameCount?: number;
             /**
              * Format: int64
              * @description Absolute line number
@@ -811,7 +810,7 @@ export interface components {
              * Format: int64
              * @description Number of recorded prior frames if this line is a settled progress bar / redraw anchor; 0 otherwise
              */
-            frame_count?: number;
+            frameCount?: number;
             /**
              * Format: int64
              * @description Absolute line number
@@ -840,14 +839,14 @@ export interface components {
              * Format: int64
              * @description Lowest line number still on disk; lines below were rotated away
              */
-            first_available: number;
+            firstAvailable: number;
             /** @description Returned lines, ascending by n */
             lines: components["schemas"]["LogLineEntry"][] | null;
             /**
              * Format: int64
              * @description Total lines produced across all segments
              */
-            total_lines: number;
+            totalLines: number;
             /** @description True if rotation has dropped lines below first_available */
             truncated: boolean;
         };
@@ -867,7 +866,7 @@ export interface components {
              * Format: int64
              * @description Lowest line number still on disk after rotation
              */
-            first_available: number;
+            firstAvailable: number;
         };
         LogSearchBody: {
             /**
@@ -881,12 +880,12 @@ export interface components {
             /** @description Hits ordered newest-run-first, then ascending line within a run */
             hits: components["schemas"]["LogSearchHit"][] | null;
             /** @description Opaque token to fetch the next page; empty when the scan is exhausted */
-            next_cursor?: string;
+            nextCursor?: string;
             /**
              * Format: int64
              * @description Number of runs visited by this request
              */
-            scanned_runs: number;
+            scannedRuns: number;
         };
         LogSearchHit: {
             /**
@@ -895,7 +894,7 @@ export interface components {
              */
             n: number;
             /** @description ULID of the run containing this line */
-            run_id: string;
+            runId: string;
             /** @description Stream identifier (stdout/stderr/system) */
             stream: string;
             /** @description Matched line content without trailing newline */
@@ -921,12 +920,12 @@ export interface components {
              * Format: int64
              * @description Total memory in bytes
              */
-            mem_total: number;
+            memTotal: number;
             /**
              * Format: int64
              * @description Used memory in bytes
              */
-            mem_used: number;
+            memUsed: number;
             /**
              * Format: int64
              * @description Unix timestamp (seconds)
@@ -936,7 +935,7 @@ export interface components {
         NotificationCreatedEvent: {
             notification: components["schemas"]["NotificationDTO"];
             /** Format: int64 */
-            unread_count: number;
+            unreadCount: number;
         };
         NotificationDTO: {
             /** @description Pre-rendered body text */
@@ -950,7 +949,7 @@ export interface components {
              * Format: date-time
              * @description First time this notification was raised
              */
-            created_at: string;
+            createdAt: string;
             /** @description Coalescing key (FNV1a hex) */
             fingerprint: string;
             /** @description Stable ULID identifier */
@@ -961,20 +960,20 @@ export interface components {
              * Format: date-time
              * @description Most recent occurrence
              */
-            last_occurred_at: string;
+            lastOccurredAt: string;
             /** @description Most-recent timestamps (newest first), ISO8601 */
             occurrences: string[] | null;
             /**
              * Format: date-time
              * @description When the operator marked this row read; null/absent when unread
              */
-            read_at?: string;
+            readAt?: string;
             /** @description Run that produced this notification (empty when not run-derived) */
-            run_id: string;
+            runId: string;
             /** @description info | warn | error */
             severity: string;
             /** @description Task that produced this notification (empty for daemon-level events) */
-            task_name: string;
+            taskName: string;
             /** @description Human-readable title */
             title: string;
         };
@@ -993,12 +992,12 @@ export interface components {
         };
         NotificationUnreadCountEvent: {
             /** Format: int64 */
-            unread_count: number;
+            unreadCount: number;
         };
         NotificationUpdatedEvent: {
             notification: components["schemas"]["NotificationDTO"];
             /** Format: int64 */
-            unread_count: number;
+            unreadCount: number;
         };
         NotificationsListBody: {
             /**
@@ -1010,7 +1009,7 @@ export interface components {
             /** @description Notifications in id-DESC order */
             items: components["schemas"]["NotificationDTO"][] | null;
             /** @description Cursor to pass as 'before' on the next page; empty when exhausted */
-            next_cursor?: string;
+            nextCursor?: string;
         };
         PingEvent: Record<string, never>;
         ReloadResult: {
@@ -1043,35 +1042,35 @@ export interface components {
              */
             readonly $schema?: string;
             /** Format: date-time */
-            created_at: string;
+            createdAt: string;
             /** Format: date-time */
-            end_at?: string;
-            end_reason?: components["schemas"]["EndReason"];
+            endAt?: string;
+            endReason?: components["schemas"]["EndReason"];
             /** Format: int64 */
-            exit_code: number;
-            external_execution_id?: string;
+            exitCode: number;
+            externalExecutionId?: string;
             id: string;
             /** Format: int64 */
-            instance_index: number;
+            instanceIndex: number;
             params?: {
                 [key: string]: string;
             };
             /** Format: int64 */
-            retry_attempt: number;
-            retry_of_run_id?: string;
+            retryAttempt: number;
+            retryOfRunId?: string;
             /** Format: date-time */
-            start_at?: string;
+            startAt?: string;
             /**
              * @description Run lifecycle phase
              * @enum {string}
              */
             status: "pending" | "running" | "ended";
-            task_name: string;
+            taskName: string;
             /**
              * @description How the run was triggered
              * @enum {string}
              */
-            triggered_by: "cron" | "api" | "cloud" | "service" | "startup";
+            triggeredBy: "cron" | "api" | "cloud" | "service" | "startup";
         };
         RunCompletedEvent: {
             error?: string;
@@ -1082,8 +1081,8 @@ export interface components {
             run: components["schemas"]["Run"];
         };
         RunDeletedSSEEvent: {
-            run_id: string;
-            task_name: string;
+            runId: string;
+            taskName: string;
         };
         RunFailedEvent: {
             error?: string;
@@ -1094,32 +1093,32 @@ export interface components {
              * Format: date-time
              * @description Only runs created at or after this time
              */
-            created_after?: string;
+            createdAfter?: string;
             /**
              * Format: date-time
              * @description Only runs created at or before this time
              */
-            created_before?: string;
+            createdBefore?: string;
             /**
              * Format: int64
              * @description Only runs whose exit code is <= this (inclusive)
              */
-            exit_code_max?: number;
+            exitCodeMax?: number;
             /**
              * Format: int64
              * @description Only runs whose exit code is >= this (inclusive)
              */
-            exit_code_min?: number;
+            exitCodeMin?: number;
             /** @description Only runs that are a retry (retry_attempt > 0) */
-            retries_only?: boolean;
+            retriesOnly?: boolean;
             /** @description Search query against task_name / id */
             search?: string;
             /** @description Comma-separated run statuses (phase or end reason); a run matches any listed value */
             status?: string;
             /** @description Filter by task name */
-            task_name?: string;
+            taskName?: string;
             /** @description Filter by what triggered the run (cron/api/cloud/service/startup) */
-            triggered_by?: string;
+            triggeredBy?: string;
         };
         RunSelector: {
             /**
@@ -1129,13 +1128,13 @@ export interface components {
              */
             readonly $schema?: string;
             /** @description IDs to exclude when MatchAll is true */
-            except_ids?: string[] | null;
+            exceptIds?: string[] | null;
             /** @description Filter to apply when MatchAll is true */
             filter?: components["schemas"]["RunFilter"];
             /** @description Explicit run IDs to select when MatchAll is false */
             ids?: string[] | null;
             /** @description When true, selects every run matching Filter except those listed in ExceptIDs */
-            match_all?: boolean;
+            matchAll?: boolean;
         };
         RunStartedEvent: {
             error?: string;
@@ -1157,7 +1156,7 @@ export interface components {
              * Format: date-time
              * @description Timestamp of most recent failure
              */
-            last_failure?: string;
+            lastFailure?: string;
             /**
              * Format: int64
              * @description Number of scheduled runs missed during downtime
@@ -1193,16 +1192,6 @@ export interface components {
              */
             total: number;
         };
-        StopRunOutputBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example http://localhost:9477/schemas/StopRunOutputBody.json
-             */
-            readonly $schema?: string;
-            /** @description Result message */
-            message: string;
-        };
         SystemSampleSSEEvent: {
             /** @description Resource snapshot, same shape as a metrics-history entry */
             sample: components["schemas"]["MetricsSample"];
@@ -1222,29 +1211,29 @@ export interface components {
              * Format: int64
              * @description Number of CPU cores
              */
-            cpu_cores: number;
+            cpuCores: number;
             /**
              * Format: double
              * @description CPU usage percentage (0-100)
              */
-            cpu_usage: number;
+            cpuUsage: number;
             /** @description Hostname */
             host: string;
             /**
              * Format: int64
              * @description Total memory in bytes
              */
-            mem_total: number;
+            memTotal: number;
             /**
              * Format: double
              * @description Memory usage percentage (0-100)
              */
-            mem_usage: number;
+            memUsage: number;
             /**
              * Format: int64
              * @description Used memory in bytes
              */
-            mem_used: number;
+            memUsed: number;
             /** @description Application name */
             name: string;
             /** @description Operating system (e.g. linux, darwin, windows) */
@@ -1254,37 +1243,37 @@ export interface components {
             /** @description RunWisp version */
             version: string;
             /** @description Working directory of the daemon process */
-            work_dir: string;
+            workDir: string;
         };
         TaskBrief: {
-            api_trigger: boolean;
-            catch_up?: string;
+            apiTrigger: boolean;
+            catchUp?: string;
             compose?: components["schemas"]["TaskComposeRef"];
             cron?: string;
-            depends_on?: string[] | null;
+            dependsOn?: string[] | null;
             group?: string;
             /**
              * @description Set when something other than RunWisp owns this task's schedule, so it is listed but not fired on its cron. 'cron' means a live system cron daemon still reads its crontab. Manual triggers still work.
              * @enum {string}
              */
-            held_by?: "cron";
+            heldBy?: "cron";
             /** Format: int64 */
             instances?: number;
             /** @enum {string} */
             kind?: "task" | "service";
             /** Format: int64 */
-            max_concurrent?: number;
+            maxConcurrent?: number;
             name: string;
-            on_overlap?: string;
+            onOverlap?: string;
             parameters?: components["schemas"]["TaskParam"][] | null;
             restart?: string;
             /** @enum {string} */
             source?: "staged" | "cron";
-            source_file?: string;
+            sourceFile?: string;
         };
         TaskComposeRef: {
             file: string;
-            project_name: string;
+            projectName: string;
             service?: string;
         };
         TaskParam: {
@@ -1312,46 +1301,46 @@ export interface components {
             type?: "string" | "number";
         };
         TaskResponse: {
-            api_trigger: boolean;
+            apiTrigger: boolean;
             /** @description For services: whether instances start at boot. False boots in the stopped state until started via API/UI. */
             autostart: boolean;
             /**
              * @description What to do when cron ticks are missed during downtime
              * @enum {string}
              */
-            catch_up?: "latest" | "all" | "skip";
+            catchUp?: "latest" | "all" | "skip";
             /** @description Provenance metadata for tasks imported from a docker compose file */
             compose?: components["schemas"]["TaskComposeRef"];
             cron?: string;
             /** @description For services: service names that must be healthy before this one starts at boot — boot ordering only, not a workflow DAG */
-            depends_on?: string[] | null;
+            dependsOn?: string[] | null;
             description?: string;
             /** @description Environment variables overlaid on the task's process env. Values are visible to authenticated operators in the API/UI; env_file values merge in beneath the inline entries. */
             env?: {
                 [key: string]: string;
             };
             /** @description What the run's environment starts from: 'inherit' (the daemon's, the default) or 'clean' (PATH, SHELL, HOME, USER/LOGNAME only, as crond gives a job) */
-            env_base?: string;
+            envBase?: string;
             /** @description Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env. */
-            env_file?: string;
+            envFile?: string;
             /** @description Process exit codes treated as success; defaults to [0] */
-            exit_codes?: number[] | null;
+            exitCodes?: number[] | null;
             /**
              * Format: int64
              * @description Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds
              */
-            graceful_stop?: number;
+            gracefulStop?: number;
             group?: string;
             /**
              * Format: int64
-             * @description For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward start_retries, in nanoseconds
+             * @description For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds
              */
-            healthy_after?: number;
+            healthyAfter?: number;
             /**
              * @description Why this task is loaded but not on the scheduler: 'cron' means a live system cron daemon still reads the crontab it came from and is running it, so RunWisp stands down. Manual triggers still work. Empty means RunWisp owns the schedule.
              * @enum {string}
              */
-            held_by?: "cron";
+            heldBy?: "cron";
             /**
              * Format: int64
              * @description For services: number of always-running instances
@@ -1366,12 +1355,12 @@ export interface components {
              * Format: int64
              * @description Retention window in nanoseconds; 0 means no cap was configured
              */
-            keep_for?: number;
+            keepFor?: number;
             /**
              * Format: int64
-             * @description Row-count retention cap; 0 means no cap was configured
+             * @description Row-count retention cap; 0 keeps no completed runs, omitted inherits the [defaults] value (or no cap)
              */
-            keep_runs?: number;
+            keepRuns?: number;
             /**
              * @description Whether this is a scheduled task or an always-on service
              * @enum {string}
@@ -1381,29 +1370,29 @@ export interface components {
              * Format: int64
              * @description Per-run log size cap in bytes
              */
-            log_max_size?: number;
+            logMaxSize?: number;
             /**
              * @description What to do when log output exceeds log_max_size
              * @enum {string}
              */
-            log_on_full?: "drop_new" | "drop_old" | "kill_task";
+            logOnFull?: "drop_new" | "drop_old" | "kill_task";
             /**
              * Format: int64
              * @description Cap on catch-up runs triggered when catch_up = all
              */
-            max_catch_up_runs?: number;
+            maxCatchUpRuns?: number;
             /**
              * Format: int64
              * @description Maximum overlapping runs allowed for this task
              */
-            max_concurrent?: number;
+            maxConcurrent?: number;
             name: string;
-            next_run_at?: string;
+            nextRunAt?: string;
             /**
              * @description How overlapping runs are handled
              * @enum {string}
              */
-            on_overlap?: "queue" | "skip" | "terminate";
+            onOverlap?: "queue" | "skip" | "terminate";
             /** @description Per-execution parameters an operator may supply at manual trigger time; scheduled runs use the declared defaults */
             parameters?: components["schemas"]["TaskParam"][] | null;
             /**
@@ -1415,38 +1404,43 @@ export interface components {
              * Format: int64
              * @description Maximum runs that can wait when on_overlap = queue
              */
-            queue_max?: number;
+            queueMax?: number;
             /**
              * @description Whether and when a task is restarted after completion
              * @enum {string}
              */
             restart?: "never" | "always" | "on_failure";
             /**
+             * Format: int64
+             * @description For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting
+             */
+            restartAttempts?: number;
+            /**
              * @description Backoff curve between consecutive restarts
              * @enum {string}
              */
-            restart_backoff?: "constant" | "linear" | "exponential";
+            restartBackoff?: "constant" | "linear" | "exponential";
             /**
              * Format: int64
              * @description Base delay before each restart, in nanoseconds
              */
-            restart_delay?: number;
+            restartDelay?: number;
             /** Format: int64 */
-            retry_attempts?: number;
+            retryAttempts?: number;
             /**
              * @description Backoff curve between consecutive retries
              * @enum {string}
              */
-            retry_backoff?: "constant" | "linear" | "exponential";
+            retryBackoff?: "constant" | "linear" | "exponential";
             /**
              * Format: int64
              * @description Base delay before each retry, in nanoseconds
              */
-            retry_delay?: number;
+            retryDelay?: number;
             /** @description For tasks: fire once at daemon startup, in addition to any cron schedule */
-            run_on_start?: boolean;
+            runOnStart?: boolean;
             /** @description Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values never leave the daemon. */
-            secrets_file?: string;
+            secretsFile?: string;
             /** @description Absolute path to the shell interpreter for run scripts; defaults to /bin/sh */
             shell?: string;
             /**
@@ -1455,17 +1449,12 @@ export interface components {
              */
             source?: "staged" | "cron";
             /** @description Absolute path of the crontab or staging file this task's definition was read from; empty for hand-authored TOML */
-            source_file?: string;
-            /**
-             * Format: int64
-             * @description For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting
-             */
-            start_retries?: number;
+            sourceFile?: string;
             /**
              * @description Signal sent to stop a run before SIGKILL; defaults to SIGTERM
              * @enum {string}
              */
-            stop_signal?: "SIGTERM" | "SIGINT" | "SIGQUIT" | "SIGHUP" | "SIGKILL" | "SIGUSR1" | "SIGUSR2";
+            stopSignal?: "SIGTERM" | "SIGINT" | "SIGQUIT" | "SIGHUP" | "SIGKILL" | "SIGUSR1" | "SIGUSR2";
             /**
              * Format: int64
              * @description Per-run timeout in nanoseconds
@@ -1478,7 +1467,7 @@ export interface components {
             /** @description Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root. */
             user?: string;
             /** @description Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal "~" means the run-as user's home, resolved at run time */
-            working_dir?: string;
+            workingDir?: string;
         };
         TriggerRunInputBody: {
             /**
@@ -1493,8 +1482,8 @@ export interface components {
             };
         };
         TriggeredRunRef: {
-            run_id: string;
-            task_name: string;
+            runId: string;
+            taskName: string;
         };
     };
     responses: never;
@@ -1802,7 +1791,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Notification ULID */
-                id: string;
+                notificationId: string;
             };
             cookie?: never;
         };
@@ -1832,7 +1821,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Notification ULID */
-                id: string;
+                notificationId: string;
             };
             cookie?: never;
         };
@@ -1885,7 +1874,7 @@ export interface operations {
             };
         };
     };
-    getAllRuns: {
+    listRuns: {
         parameters: {
             query?: {
                 /** @description Max results per page */
@@ -1895,23 +1884,23 @@ export interface operations {
                 /** @description Comma-separated run statuses (phase or end reason); a run matches any listed value */
                 status?: string;
                 /** @description Filter by task name */
-                task_name?: string;
+                taskName?: string;
                 /** @description Filter by what triggered the run */
-                triggered_by?: "cron" | "api" | "cloud" | "service" | "startup" | "";
+                triggeredBy?: "cron" | "api" | "cloud" | "service" | "startup" | "";
                 /** @description Only runs created at or after this RFC3339 time */
-                created_after?: string;
+                createdAfter?: string;
                 /** @description Only runs created at or before this RFC3339 time */
-                created_before?: string;
+                createdBefore?: string;
                 /** @description Only runs whose exit code is >= this (inclusive) */
-                exit_code_min?: string;
+                exitCodeMin?: string;
                 /** @description Only runs whose exit code is <= this (inclusive) */
-                exit_code_max?: string;
+                exitCodeMax?: string;
                 /** @description Only runs that are a retry (retry_attempt > 0) */
-                retries_only?: boolean;
+                retriesOnly?: boolean;
                 /** @description Field to sort by */
-                sort_field?: "task_name" | "status" | "start_at" | "exit_code" | "duration" | "created_at" | "";
+                sortField?: "taskName" | "status" | "startAt" | "exitCode" | "duration" | "createdAt" | "";
                 /** @description Sort direction */
-                sort_direction?: "asc" | "desc" | "";
+                sortDirection?: "asc" | "desc" | "";
                 /** @description Search query */
                 search?: string;
             };
@@ -1928,39 +1917,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunsResponseBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    bulkCancelRuns: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RunSelector"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BulkAffectedBody"];
                 };
             };
             /** @description Error */
@@ -2073,6 +2029,39 @@ export interface operations {
             };
         };
     };
+    bulkStopRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunSelector"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkAffectedBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     getRunSummary: {
         parameters: {
             query?: never;
@@ -2102,7 +2091,7 @@ export interface operations {
             };
         };
     };
-    getRunById: {
+    getRun: {
         parameters: {
             query?: never;
             header?: never;
@@ -2353,7 +2342,7 @@ export interface operations {
             };
         };
     };
-    getTasks: {
+    listTasks: {
         parameters: {
             query?: never;
             header?: never;
@@ -2386,7 +2375,7 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description Restrict the search to one run (ULID). Empty searches every non-deleted run of the task. */
-                run_id?: string;
+                runId?: string;
                 /** @description Substring (or regex when regex=true) to search for */
                 q?: string;
                 /** @description Treat q as an RE2 regular expression */
@@ -2427,7 +2416,7 @@ export interface operations {
             };
         };
     };
-    restartService: {
+    restartTask: {
         parameters: {
             query?: never;
             header?: never;
@@ -2439,14 +2428,12 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["StopRunOutputBody"];
-                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -2465,7 +2452,7 @@ export interface operations {
                 /** @description Block until the run finishes and return the completed run (with exit_code and end_reason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead. */
                 wait?: boolean;
                 /** @description With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state. */
-                wait_timeout?: number;
+                waitTimeout?: number;
             };
             header?: never;
             path: {
@@ -2500,7 +2487,7 @@ export interface operations {
             };
         };
     };
-    getTaskRuns: {
+    listTaskRuns: {
         parameters: {
             query?: {
                 /** @description Max results per page */
@@ -2510,23 +2497,23 @@ export interface operations {
                 /** @description Comma-separated run statuses (phase or end reason); a run matches any listed value */
                 status?: string;
                 /** @description Filter by task name */
-                task_name?: string;
+                taskName?: string;
                 /** @description Filter by what triggered the run */
-                triggered_by?: "cron" | "api" | "cloud" | "service" | "startup" | "";
+                triggeredBy?: "cron" | "api" | "cloud" | "service" | "startup" | "";
                 /** @description Only runs created at or after this RFC3339 time */
-                created_after?: string;
+                createdAfter?: string;
                 /** @description Only runs created at or before this RFC3339 time */
-                created_before?: string;
+                createdBefore?: string;
                 /** @description Only runs whose exit code is >= this (inclusive) */
-                exit_code_min?: string;
+                exitCodeMin?: string;
                 /** @description Only runs whose exit code is <= this (inclusive) */
-                exit_code_max?: string;
+                exitCodeMax?: string;
                 /** @description Only runs that are a retry (retry_attempt > 0) */
-                retries_only?: boolean;
+                retriesOnly?: boolean;
                 /** @description Field to sort by */
-                sort_field?: "task_name" | "status" | "start_at" | "exit_code" | "duration" | "created_at" | "";
+                sortField?: "taskName" | "status" | "startAt" | "exitCode" | "duration" | "createdAt" | "";
                 /** @description Sort direction */
-                sort_direction?: "asc" | "desc" | "";
+                sortDirection?: "asc" | "desc" | "";
                 /** @description Search query */
                 search?: string;
             };
@@ -2546,40 +2533,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunsResponseBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    getRun: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Task name */
-                taskName: string;
-                /** @description Run ULID */
-                runId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Run"];
                 };
             };
             /** @description Error */
@@ -2741,7 +2694,7 @@ export interface operations {
                 /** @description Anchor line number; 0 is the first line, negative values count from end (default -1000) */
                 from?: number;
                 /** @description Cap on backfilled lines (default 5000) */
-                replay_limit?: number;
+                replayLimit?: number;
             };
             header?: {
                 /** @description Native SSE resume cursor; takes precedence over the from query */
@@ -2846,14 +2799,12 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["StopRunOutputBody"];
-                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -2866,7 +2817,7 @@ export interface operations {
             };
         };
     };
-    stopService: {
+    stopTask: {
         parameters: {
             query?: never;
             header?: never;
@@ -2878,14 +2829,12 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
-            200: {
+            /** @description No Content */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["StopRunOutputBody"];
-                };
+                content?: never;
             };
             /** @description Error */
             default: {

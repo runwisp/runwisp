@@ -17,7 +17,7 @@ const logPageLineSchema = z.object({
     stream: z.string(),
     text: z.string(),
     continued: z.boolean().optional(),
-    frame_count: z.number().int().nonnegative().optional(),
+    frameCount: z.number().int().nonnegative().optional(),
 });
 
 export const logLineHistorySchema = z.object({
@@ -28,8 +28,8 @@ export type LogLineHistory = z.infer<typeof logLineHistorySchema>;
 
 export const logPageSchema = z.object({
     lines: z.array(logPageLineSchema),
-    first_available: z.number().int().nonnegative(),
-    total_lines: z.number().int().nonnegative(),
+    firstAvailable: z.number().int().nonnegative(),
+    totalLines: z.number().int().nonnegative(),
     truncated: z.boolean(),
     finalized: z.boolean(),
 });
@@ -40,13 +40,13 @@ const regionSchema = z.object({
     rows: z.array(z.string()),
 });
 
-const rotatedSchema = z.object({ first_available: z.number().int().nonnegative() });
+const rotatedSchema = z.object({ firstAvailable: z.number().int().nonnegative() });
 const droppedSchema = z.object({
     after: z.number().int(),
     count: z.number().int().nonnegative(),
 });
 const doneSchema = z.object({
-    final_line: z.number().int(),
+    finalLine: z.number().int(),
     status: z.string(),
 });
 
@@ -54,7 +54,7 @@ export type LogPageLine = z.infer<typeof logPageLineSchema>;
 export type LogPage = z.infer<typeof logPageSchema>;
 
 const logSearchHitSchema = z.object({
-    run_id: z.string(),
+    runId: z.string(),
     n: z.number().int().nonnegative(),
     stream: z.string(),
     text: z.string(),
@@ -63,9 +63,9 @@ const logSearchHitSchema = z.object({
 
 export const logSearchResponseSchema = z.object({
     hits: z.array(logSearchHitSchema),
-    next_cursor: z.string().optional().default(""),
+    nextCursor: z.string().optional().default(""),
     exhausted: z.boolean(),
-    scanned_runs: z.number().int().nonnegative(),
+    scannedRuns: z.number().int().nonnegative(),
 });
 
 export type LogSearchHit = z.infer<typeof logSearchHitSchema>;
@@ -77,15 +77,15 @@ export function parseLogPage(page: LogPage): LogEvent {
     const frameCounts: Record<number, number> = {};
     for (const l of page.lines) {
         slice[l.n] = l.text;
-        if (l.frame_count !== undefined && l.frame_count > 0) frameCounts[l.n] = l.frame_count;
+        if (l.frameCount !== undefined && l.frameCount > 0) frameCounts[l.n] = l.frameCount;
     }
     const out: LogEvent = {
         lines: slice,
-        sizeLines: page.total_lines,
+        sizeLines: page.totalLines,
         finished: page.finalized,
     };
-    if (page.first_available > 0) {
-        out.firstAvailableLine = page.first_available;
+    if (page.firstAvailable > 0) {
+        out.firstAvailableLine = page.firstAvailable;
     }
     if (Object.keys(frameCounts).length > 0) out.frameCounts = frameCounts;
     return out;
@@ -109,8 +109,8 @@ function buildLineEvent(state: StreamerState, line: LogPageLine): LogEvent {
         finished: false,
     };
     if (state.firstAvailable > 0) evt.firstAvailableLine = state.firstAvailable;
-    if (line.frame_count !== undefined && line.frame_count > 0) {
-        evt.frameCounts = { [line.n]: line.frame_count };
+    if (line.frameCount !== undefined && line.frameCount > 0) {
+        evt.frameCounts = { [line.n]: line.frameCount };
     }
     return evt;
 }
@@ -145,8 +145,8 @@ function handleRotatedEvent(
 ) {
     const result = rotatedSchema.safeParse(JSON.parse(data));
     if (!result.success) return;
-    if (result.data.first_available > state.firstAvailable) {
-        state.firstAvailable = result.data.first_available;
+    if (result.data.firstAvailable > state.firstAvailable) {
+        state.firstAvailable = result.data.firstAvailable;
         onEvent({
             lines: {},
             sizeLines: state.totalLines,
@@ -174,7 +174,7 @@ function handleDoneEvent(
     const result = doneSchema.safeParse(JSON.parse(data));
     if (!result.success) return false;
     state.finished = true;
-    const sz = Math.max(result.data.final_line + 1, state.totalLines);
+    const sz = Math.max(result.data.finalLine + 1, state.totalLines);
     const evt: LogEvent = { lines: {}, sizeLines: sz, finished: true };
     if (state.firstAvailable > 0) evt.firstAvailableLine = state.firstAvailable;
     onEvent(evt);

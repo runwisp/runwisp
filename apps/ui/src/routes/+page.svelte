@@ -49,14 +49,14 @@
             tasksApi.getAll(),
             runsApi.getAll({
                 limit: RECENT_RUN_LIMIT,
-                sort_field: "start_at",
-                sort_direction: "desc",
+                sortField: "startAt",
+                sortDirection: "desc",
             }),
             runsApi.getAll({
                 limit: RUNNING_RUN_LIMIT,
                 status: "running",
-                sort_field: "start_at",
-                sort_direction: "desc",
+                sortField: "startAt",
+                sortDirection: "desc",
             }),
         ]);
         return {
@@ -88,7 +88,7 @@
         for (const r of dashState.recentRuns) {
             if (r.status === "ended") {
                 completed++;
-                if (r.end_reason === "success") successes++;
+                if (r.endReason === "success") successes++;
             }
         }
 
@@ -105,8 +105,8 @@
     $effect(() => {
         const unsubscribe = runUpdatesStore.subscribeToUpdates((event) => {
             if (event.type === "run.deleted") {
-                dashState.recentRuns = removeRun(dashState.recentRuns, event.data.run_id);
-                dashState.runningRuns = removeRun(dashState.runningRuns, event.data.run_id);
+                dashState.recentRuns = removeRun(dashState.recentRuns, event.data.runId);
+                dashState.runningRuns = removeRun(dashState.runningRuns, event.data.runId);
                 return;
             }
             const run = event.data.run;
@@ -114,10 +114,10 @@
             dashState.recentRuns = upsertRun(dashState.recentRuns, run).slice(0, RECENT_RUN_LIMIT);
             dashState.runningRuns = upsertRunningRun(dashState.runningRuns, run, RUNNING_RUN_LIMIT);
 
-            // A new run means the scheduler advanced that task's next_run_at —
+            // A new run means the scheduler advanced that task's nextRunAt —
             // refetch tasks so "Up next" and next-run columns stay current.
             // Pointless when the local scheduler is inactive (cloud mode):
-            // next_run_at is always empty and that UI is hidden anyway.
+            // nextRunAt is always empty and that UI is hidden anyway.
             if (event.type === "run.created" && systemStore.schedulingActive) {
                 scheduleTasksRefresh();
             }

@@ -211,14 +211,14 @@ notification is suppressed):
 ```toml
 [tasks.daytime-only]
 cron             = "*/30 9-17 * * 1-5"
-notify_on_missed = false   # expected to be down overnight; don't page
+treat_missed_as_failure = false   # expected to be down overnight; don't page
 
 # Or quiet every task at once:
 [defaults]
-notify_on_missed = false
+treat_missed_as_failure = false
 ```
 
-`notify_on_missed` defaults to `true` and inherits from `[defaults]`
+`treat_missed_as_failure` defaults to `true` and inherits from `[defaults]`
 like the other per-task flags. See
 [Per-task notifications](/notifications/per-task/#missed-run-alerts) for
 how it fits with `notify_on_failure`.

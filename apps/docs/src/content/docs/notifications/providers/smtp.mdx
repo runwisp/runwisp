@@ -39,7 +39,7 @@ password from an env var or a file —
 | ----------------- | -------- | ---------------------------------------------------------------------------- |
 | `host`            | yes      | SMTP relay hostname (e.g. `smtp.gmail.com`).                                 |
 | `port`            | no       | TCP port. Defaults to 25; common values: 587 (STARTTLS), 465 (implicit TLS). |
-| `tls`             | no       | `"starttls"` (default for 25/587), `"implicit"` (default for 465), `"none"`. |
+| `tls`             | no       | `"starttls"` (default for 25/587), `"implicit"` (default for 465), `"off"`.  |
 | `tls_skip_verify` | no       | Skip TLS certificate verification. **Do not** set this in production.        |
 | `username`        | no       | SMTP AUTH username. Required when sending creds.                             |
 | `password`        | no       | SMTP AUTH password — inline, `${VAR}`, or `${file:path}`.                    |
@@ -139,7 +139,7 @@ password from an env var or a file —
     <TabItem label="Local Postfix" icon="seti:shell">
         A relay you already trust on the same host — no auth, no
         TLS. The daemon refuses to send credentials over cleartext,
-        so `tls = "none"` only works alongside an auth-less relay.
+        so `tls = "off"` only works alongside an auth-less relay.
 
         ```toml
         [[notifier]]
@@ -147,7 +147,7 @@ password from an env var or a file —
         type = "smtp"
         host = "127.0.0.1"
         port = 25
-        tls  = "none"
+        tls  = "off"
         from = "runwisp@myhost"
         to   = ["ops@example.com"]
         ```
@@ -238,7 +238,7 @@ notify_on_failure = ["email-ops"]
 
 # Or in a notification rule:
 [[notification_route]]
-match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
 notify = ["email-ops"]
 ```
 
@@ -322,7 +322,7 @@ as your starting point. The helpers `statusEmoji`, `statusVerb`,
 
 - `username` set without `password` — or `password` set without
   `username`. Either both or neither.
-- `tls = "none"` combined with credentials — RunWisp refuses to
+- `tls = "off"` combined with credentials — RunWisp refuses to
   send PLAIN auth over cleartext.
 - A `from`, `reply_to`, `to`, `cc`, or `bcc` value that doesn't
   parse as an RFC 5322 address.

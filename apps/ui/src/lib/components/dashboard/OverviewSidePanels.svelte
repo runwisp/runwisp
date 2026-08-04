@@ -43,7 +43,7 @@
     }
 
     function viewRun(run: Run): void {
-        onRunClick?.(run.task_name, run.id);
+        onRunClick?.(run.taskName, run.id);
     }
 </script>
 
@@ -97,9 +97,9 @@
                             class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-on-surface-muted"
                         >
                             <span>Next {formatTaskNextRunLabel(task, now)}</span>
-                            {#if isFailureEndReason(task.lastRun?.end_reason)}
+                            {#if isFailureEndReason(task.lastRun?.endReason)}
                                 <span class="font-mono text-danger-soft-text tabular-nums">
-                                    Exit {task.lastRun?.exit_code}
+                                    Exit {task.lastRun?.exitCode}
                                 </span>
                             {/if}
                         </div>
@@ -127,8 +127,8 @@
             <div class="mt-4 space-y-2">
                 {#each runningNow as run (run.id)}
                     {@const suffix = instanceSuffix(
-                        run.instance_index,
-                        getInstanceCount(run.task_name),
+                        run.instanceIndex,
+                        getInstanceCount(run.taskName),
                     )}
                     <TaskCard accent="wisp" onclick={() => viewRun(run)}>
                         <div class="flex items-start justify-between gap-2">
@@ -145,7 +145,7 @@
                                     <span
                                         class="truncate font-mono text-sm font-medium text-on-surface"
                                     >
-                                        {run.task_name}{#if suffix}<span
+                                        {run.taskName}{#if suffix}<span
                                                 class="text-on-surface-muted">{suffix}</span
                                             >{/if}
                                     </span>
@@ -154,7 +154,7 @@
                                     class="mt-1 font-mono text-xs text-on-surface-muted tabular-nums"
                                 >
                                     {formatRunDurationLabel(run)} &middot; {formatTriggeredByLabel(
-                                        run.triggered_by,
+                                        run.triggeredBy,
                                     )}
                                 </p>
                             </div>
@@ -205,14 +205,14 @@
                                             <ComposeBadge
                                                 file={task.task.compose.file}
                                                 service={task.task.compose.service}
-                                                projectName={task.task.compose.project_name}
+                                                projectName={task.task.compose.projectName}
                                             />
                                         {/if}
                                         {#if task.task.source}
                                             <TaskSourceBadge
                                                 name={task.task.name}
                                                 source={task.task.source}
-                                                sourceFile={task.task.source_file}
+                                                sourceFile={task.task.sourceFile}
                                             />
                                         {/if}
                                     </div>

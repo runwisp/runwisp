@@ -122,7 +122,7 @@ daemon is reachable:
    reverse proxy and require authentication on `/metrics` there (basic
    auth, mTLS, or a bearer token your scraper supplies). The same
    [reverse-proxy guidance](/operations/auth/#reverse-proxies) that
-   applies to the Web UI applies here — `RUNWISP_TRUST_PROXY` controls
+   applies to the Web UI applies here — `RUNWISP_TRUSTED_PROXIES` controls
    which proxies the daemon trusts for `X-Forwarded-*`.
 
 This is the same posture the rest of the ecosystem takes: Prometheus,
@@ -155,7 +155,7 @@ watch -n1 'curl -s http://localhost:9477/metrics | grep runwisp_task_active_runs
     <LinkCard
         title="Auth"
         href="/operations/auth/"
-        description="Reverse proxies, RUNWISP_TRUST_PROXY, and the public endpoints."
+        description="Reverse proxies, RUNWISP_TRUSTED_PROXIES, and the public endpoints."
     />
     <LinkCard
         title="Logging"

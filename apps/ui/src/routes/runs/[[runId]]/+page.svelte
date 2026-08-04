@@ -35,13 +35,13 @@
 
     const logSession = createLogSession({
         findRun: (runId) => source.items.find((r) => r.id === runId),
-        getTaskName: (run) => run.task_name,
+        getTaskName: (run) => run.taskName,
     });
 
     $effect(() => {
         return runUpdatesStore.subscribeToUpdates((event) => {
             if (event.type === "run.deleted") {
-                source.remove(event.data.run_id);
+                source.remove(event.data.runId);
                 return;
             }
             source.upsert(event.data.run);

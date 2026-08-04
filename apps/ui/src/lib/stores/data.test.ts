@@ -9,21 +9,21 @@ import type { Run, Task } from "$lib/types";
 function makeRun(id: string, overrides: Partial<Run> = {}): Run {
     return {
         id,
-        task_name: "backup-db",
-        created_at: "2026-05-05T12:00:00.000Z",
+        taskName: "backup-db",
+        createdAt: "2026-05-05T12:00:00.000Z",
         status: "running",
-        triggered_by: "cron",
-        exit_code: 0,
-        instance_index: 0,
-        retry_attempt: 0,
+        triggeredBy: "cron",
+        exitCode: 0,
+        instanceIndex: 0,
+        retryAttempt: 0,
         ...overrides,
     };
 }
 
 describe("upsertRun", () => {
-    it("prepends a new run and keeps the list sorted by created_at desc", () => {
-        const older = makeRun("a", { created_at: "2026-05-05T11:00:00.000Z" });
-        const incoming = makeRun("b", { created_at: "2026-05-05T13:00:00.000Z" });
+    it("prepends a new run and keeps the list sorted by createdAt desc", () => {
+        const older = makeRun("a", { createdAt: "2026-05-05T11:00:00.000Z" });
+        const incoming = makeRun("b", { createdAt: "2026-05-05T13:00:00.000Z" });
 
         const result = upsertRun([older], incoming);
 
@@ -32,13 +32,13 @@ describe("upsertRun", () => {
 
     it("updates an existing run in place when its status advances", () => {
         const existing = makeRun("a", { status: "running" });
-        const advanced = makeRun("a", { status: "ended", end_reason: "success" });
+        const advanced = makeRun("a", { status: "ended", endReason: "success" });
 
         const result = upsertRun([existing], advanced);
 
         expect(result).toHaveLength(1);
         expect(result[0]?.status).toBe("ended");
-        expect(result[0]?.end_reason).toBe("success");
+        expect(result[0]?.endReason).toBe("success");
     });
 
     it("rejects a status regression (stale update arriving after a later phase)", () => {
@@ -65,7 +65,7 @@ describe("removeRun", () => {
 });
 
 describe("TaskStore.loadIfNeeded", () => {
-    const tasks: Task[] = [{ name: "t1", api_trigger: false, autostart: false }];
+    const tasks: Task[] = [{ name: "t1", apiTrigger: false, autostart: false }];
 
     it("populates items and marks loaded on success", async () => {
         const store = createTaskStore({

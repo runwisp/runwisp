@@ -93,7 +93,7 @@
             "readOnly": true,
             "type": "string"
           },
-          "auth_disabled": {
+          "authDisabled": {
             "type": "boolean"
           },
           "capabilities": {
@@ -105,17 +105,17 @@
               "null"
             ]
           },
-          "cloud_enabled": {
+          "cloudEnabled": {
             "type": "boolean"
           },
-          "config_loaded_at": {
+          "configLoadedAt": {
             "format": "date-time",
             "type": "string"
           },
-          "config_stale": {
+          "configStale": {
             "type": "boolean"
           },
-          "config_warnings": {
+          "configWarnings": {
             "description": "Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads.",
             "items": {
               "type": "string"
@@ -125,7 +125,7 @@
               "null"
             ]
           },
-          "external_url": {
+          "externalUrl": {
             "type": "string"
           },
           "fingerprint": {
@@ -135,13 +135,13 @@
             "format": "int64",
             "type": "integer"
           },
-          "resolved_timezone": {
+          "resolvedTimezone": {
             "type": "string"
           },
-          "scheduling_active": {
+          "schedulingActive": {
             "type": "boolean"
           },
-          "service_managed": {
+          "serviceManaged": {
             "type": "boolean"
           },
           "tasks": {
@@ -153,7 +153,7 @@
               "null"
             ]
           },
-          "timezone_source": {
+          "timezoneSource": {
             "enum": [
               "config",
               "system"
@@ -168,15 +168,15 @@
           "version",
           "fingerprint",
           "port",
-          "external_url",
-          "cloud_enabled",
-          "scheduling_active",
-          "service_managed",
-          "auth_disabled",
-          "config_loaded_at",
-          "config_stale",
-          "resolved_timezone",
-          "timezone_source",
+          "externalUrl",
+          "cloudEnabled",
+          "schedulingActive",
+          "serviceManaged",
+          "authDisabled",
+          "configLoadedAt",
+          "configStale",
+          "resolvedTimezone",
+          "timezoneSource",
           "tasks",
           "capabilities"
         ],
@@ -310,10 +310,10 @@
             "description": "Always \"runwisp\"; lets a caller confirm the port-holder is a RunWisp daemon.",
             "type": "string"
           },
-          "config_path": {
+          "configPath": {
             "type": "string"
           },
-          "data_dir": {
+          "dataDir": {
             "type": "string"
           },
           "fingerprint": {
@@ -323,7 +323,7 @@
             "format": "int64",
             "type": "integer"
           },
-          "socket_path": {
+          "socketPath": {
             "type": "string"
           },
           "version": {
@@ -335,9 +335,9 @@
           "version",
           "fingerprint",
           "pid",
-          "data_dir",
-          "config_path",
-          "socket_path"
+          "dataDir",
+          "configPath",
+          "socketPath"
         ],
         "type": "object"
       },
@@ -371,7 +371,7 @@
       "LogDoneEvent": {
         "additionalProperties": false,
         "properties": {
-          "final_line": {
+          "finalLine": {
             "description": "Last line number emitted before the run terminated",
             "format": "int64",
             "type": "integer"
@@ -382,7 +382,7 @@
           }
         },
         "required": [
-          "final_line",
+          "finalLine",
           "status"
         ],
         "type": "object"
@@ -414,7 +414,7 @@
             "description": "True if this segment continues an oversized split line",
             "type": "boolean"
           },
-          "frame_count": {
+          "frameCount": {
             "description": "Number of recorded prior frames if this line is a settled progress bar / redraw anchor; 0 otherwise",
             "format": "int64",
             "type": "integer"
@@ -487,7 +487,7 @@
             "description": "True if this segment continues an oversized split line",
             "type": "boolean"
           },
-          "frame_count": {
+          "frameCount": {
             "description": "Number of recorded prior frames if this line is a settled progress bar / redraw anchor; 0 otherwise",
             "format": "int64",
             "type": "integer"
@@ -535,7 +535,7 @@
             "description": "True if the run has ended and the log is final",
             "type": "boolean"
           },
-          "first_available": {
+          "firstAvailable": {
             "description": "Lowest line number still on disk; lines below were rotated away",
             "format": "int64",
             "type": "integer"
@@ -550,7 +550,7 @@
               "null"
             ]
           },
-          "total_lines": {
+          "totalLines": {
             "description": "Total lines produced across all segments",
             "format": "int64",
             "type": "integer"
@@ -562,8 +562,8 @@
         },
         "required": [
           "lines",
-          "first_available",
-          "total_lines",
+          "firstAvailable",
+          "totalLines",
           "truncated",
           "finalized"
         ],
@@ -602,14 +602,14 @@
       "LogRotatedEvent": {
         "additionalProperties": false,
         "properties": {
-          "first_available": {
+          "firstAvailable": {
             "description": "Lowest line number still on disk after rotation",
             "format": "int64",
             "type": "integer"
           }
         },
         "required": [
-          "first_available"
+          "firstAvailable"
         ],
         "type": "object"
       },
@@ -639,11 +639,11 @@
               "null"
             ]
           },
-          "next_cursor": {
+          "nextCursor": {
             "description": "Opaque token to fetch the next page; empty when the scan is exhausted",
             "type": "string"
           },
-          "scanned_runs": {
+          "scannedRuns": {
             "description": "Number of runs visited by this request",
             "format": "int64",
             "type": "integer"
@@ -652,7 +652,7 @@
         "required": [
           "hits",
           "exhausted",
-          "scanned_runs"
+          "scannedRuns"
         ],
         "type": "object"
       },
@@ -664,7 +664,7 @@
             "format": "int64",
             "type": "integer"
           },
-          "run_id": {
+          "runId": {
             "description": "ULID of the run containing this line",
             "type": "string"
           },
@@ -683,7 +683,7 @@
           }
         },
         "required": [
-          "run_id",
+          "runId",
           "n",
           "stream",
           "text",
@@ -704,13 +704,13 @@
             "format": "double",
             "type": "number"
           },
-          "mem_total": {
+          "memTotal": {
             "description": "Total memory in bytes",
             "format": "int64",
             "minimum": 0,
             "type": "integer"
           },
-          "mem_used": {
+          "memUsed": {
             "description": "Used memory in bytes",
             "format": "int64",
             "minimum": 0,
@@ -726,8 +726,8 @@
           "ts",
           "cpu",
           "mem",
-          "mem_used",
-          "mem_total"
+          "memUsed",
+          "memTotal"
         ],
         "type": "object"
       },
@@ -737,14 +737,14 @@
           "notification": {
             "$ref": "#/components/schemas/NotificationDTO"
           },
-          "unread_count": {
+          "unreadCount": {
             "format": "int64",
             "type": "integer"
           }
         },
         "required": [
           "notification",
-          "unread_count"
+          "unreadCount"
         ],
         "type": "object"
       },
@@ -760,7 +760,7 @@
             "format": "int64",
             "type": "integer"
           },
-          "created_at": {
+          "createdAt": {
             "description": "First time this notification was raised",
             "format": "date-time",
             "type": "string"
@@ -777,7 +777,7 @@
             "description": "Event kind (run.failed, notify.delivery_failed, ...)",
             "type": "string"
           },
-          "last_occurred_at": {
+          "lastOccurredAt": {
             "description": "Most recent occurrence",
             "format": "date-time",
             "type": "string"
@@ -792,12 +792,12 @@
               "null"
             ]
           },
-          "read_at": {
+          "readAt": {
             "description": "When the operator marked this row read; null/absent when unread",
             "format": "date-time",
             "type": "string"
           },
-          "run_id": {
+          "runId": {
             "description": "Run that produced this notification (empty when not run-derived)",
             "type": "string"
           },
@@ -805,7 +805,7 @@
             "description": "info | warn | error",
             "type": "string"
           },
-          "task_name": {
+          "taskName": {
             "description": "Task that produced this notification (empty for daemon-level events)",
             "type": "string"
           },
@@ -819,14 +819,14 @@
           "fingerprint",
           "kind",
           "severity",
-          "task_name",
-          "run_id",
+          "taskName",
+          "runId",
           "title",
           "body",
           "count",
           "occurrences",
-          "created_at",
-          "last_occurred_at"
+          "createdAt",
+          "lastOccurredAt"
         ],
         "type": "object"
       },
@@ -856,13 +856,13 @@
       "NotificationUnreadCountEvent": {
         "additionalProperties": false,
         "properties": {
-          "unread_count": {
+          "unreadCount": {
             "format": "int64",
             "type": "integer"
           }
         },
         "required": [
-          "unread_count"
+          "unreadCount"
         ],
         "type": "object"
       },
@@ -872,14 +872,14 @@
           "notification": {
             "$ref": "#/components/schemas/NotificationDTO"
           },
-          "unread_count": {
+          "unreadCount": {
             "format": "int64",
             "type": "integer"
           }
         },
         "required": [
           "notification",
-          "unread_count"
+          "unreadCount"
         ],
         "type": "object"
       },
@@ -905,7 +905,7 @@
               "null"
             ]
           },
-          "next_cursor": {
+          "nextCursor": {
             "description": "Cursor to pass as 'before' on the next page; empty when exhausted",
             "type": "string"
           }
@@ -1015,28 +1015,28 @@
             "readOnly": true,
             "type": "string"
           },
-          "created_at": {
+          "createdAt": {
             "format": "date-time",
             "type": "string"
           },
-          "end_at": {
+          "endAt": {
             "format": "date-time",
             "type": "string"
           },
-          "end_reason": {
+          "endReason": {
             "$ref": "#/components/schemas/EndReason"
           },
-          "exit_code": {
+          "exitCode": {
             "format": "int64",
             "type": "integer"
           },
-          "external_execution_id": {
+          "externalExecutionId": {
             "type": "string"
           },
           "id": {
             "type": "string"
           },
-          "instance_index": {
+          "instanceIndex": {
             "format": "int64",
             "type": "integer"
           },
@@ -1046,14 +1046,14 @@
             },
             "type": "object"
           },
-          "retry_attempt": {
+          "retryAttempt": {
             "format": "int64",
             "type": "integer"
           },
-          "retry_of_run_id": {
+          "retryOfRunId": {
             "type": "string"
           },
-          "start_at": {
+          "startAt": {
             "format": "date-time",
             "type": "string"
           },
@@ -1066,10 +1066,10 @@
             ],
             "type": "string"
           },
-          "task_name": {
+          "taskName": {
             "type": "string"
           },
-          "triggered_by": {
+          "triggeredBy": {
             "description": "How the run was triggered",
             "enum": [
               "cron",
@@ -1083,13 +1083,13 @@
         },
         "required": [
           "id",
-          "task_name",
+          "taskName",
           "status",
-          "exit_code",
-          "triggered_by",
-          "created_at",
-          "retry_attempt",
-          "instance_index"
+          "exitCode",
+          "triggeredBy",
+          "createdAt",
+          "retryAttempt",
+          "instanceIndex"
         ],
         "type": "object"
       },
@@ -1126,16 +1126,16 @@
       "RunDeletedSSEEvent": {
         "additionalProperties": false,
         "properties": {
-          "run_id": {
+          "runId": {
             "type": "string"
           },
-          "task_name": {
+          "taskName": {
             "type": "string"
           }
         },
         "required": [
-          "run_id",
-          "task_name"
+          "runId",
+          "taskName"
         ],
         "type": "object"
       },
@@ -1157,27 +1157,27 @@
       "RunFilter": {
         "additionalProperties": false,
         "properties": {
-          "created_after": {
+          "createdAfter": {
             "description": "Only runs created at or after this time",
             "format": "date-time",
             "type": "string"
           },
-          "created_before": {
+          "createdBefore": {
             "description": "Only runs created at or before this time",
             "format": "date-time",
             "type": "string"
           },
-          "exit_code_max": {
+          "exitCodeMax": {
             "description": "Only runs whose exit code is \u003c= this (inclusive)",
             "format": "int64",
             "type": "integer"
           },
-          "exit_code_min": {
+          "exitCodeMin": {
             "description": "Only runs whose exit code is \u003e= this (inclusive)",
             "format": "int64",
             "type": "integer"
           },
-          "retries_only": {
+          "retriesOnly": {
             "description": "Only runs that are a retry (retry_attempt \u003e 0)",
             "type": "boolean"
           },
@@ -1189,11 +1189,11 @@
             "description": "Comma-separated run statuses (phase or end reason); a run matches any listed value",
             "type": "string"
           },
-          "task_name": {
+          "taskName": {
             "description": "Filter by task name",
             "type": "string"
           },
-          "triggered_by": {
+          "triggeredBy": {
             "description": "Filter by what triggered the run (cron/api/cloud/service/startup)",
             "type": "string"
           }
@@ -1212,7 +1212,7 @@
             "readOnly": true,
             "type": "string"
           },
-          "except_ids": {
+          "exceptIds": {
             "description": "IDs to exclude when MatchAll is true",
             "items": {
               "type": "string"
@@ -1236,7 +1236,7 @@
               "null"
             ]
           },
-          "match_all": {
+          "matchAll": {
             "description": "When true, selects every run matching Filter except those listed in ExceptIDs",
             "type": "boolean"
           }
@@ -1275,7 +1275,7 @@
             "format": "int64",
             "type": "integer"
           },
-          "last_failure": {
+          "lastFailure": {
             "description": "Timestamp of most recent failure",
             "format": "date-time",
             "type": "string"
@@ -1353,28 +1353,6 @@
         ],
         "type": "object"
       },
-      "StopRunOutputBody": {
-        "additionalProperties": false,
-        "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "http://localhost:9477/schemas/StopRunOutputBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
-          "message": {
-            "description": "Result message",
-            "type": "string"
-          }
-        },
-        "required": [
-          "message"
-        ],
-        "type": "object"
-      },
       "SystemSampleSSEEvent": {
         "additionalProperties": false,
         "properties": {
@@ -1409,12 +1387,12 @@
             "description": "CPU architecture (e.g. amd64, arm64)",
             "type": "string"
           },
-          "cpu_cores": {
+          "cpuCores": {
             "description": "Number of CPU cores",
             "format": "int64",
             "type": "integer"
           },
-          "cpu_usage": {
+          "cpuUsage": {
             "description": "CPU usage percentage (0-100)",
             "format": "double",
             "type": "number"
@@ -1423,18 +1401,18 @@
             "description": "Hostname",
             "type": "string"
           },
-          "mem_total": {
+          "memTotal": {
             "description": "Total memory in bytes",
             "format": "int64",
             "minimum": 0,
             "type": "integer"
           },
-          "mem_usage": {
+          "memUsage": {
             "description": "Memory usage percentage (0-100)",
             "format": "double",
             "type": "number"
           },
-          "mem_used": {
+          "memUsed": {
             "description": "Used memory in bytes",
             "format": "int64",
             "minimum": 0,
@@ -1456,34 +1434,34 @@
             "description": "RunWisp version",
             "type": "string"
           },
-          "work_dir": {
+          "workDir": {
             "description": "Working directory of the daemon process",
             "type": "string"
           }
         },
         "required": [
-          "cpu_usage",
-          "mem_usage",
-          "mem_total",
-          "mem_used",
+          "cpuUsage",
+          "memUsage",
+          "memTotal",
+          "memUsed",
           "uptime",
           "version",
           "name",
-          "cpu_cores",
+          "cpuCores",
           "host",
           "os",
           "arch",
-          "work_dir"
+          "workDir"
         ],
         "type": "object"
       },
       "TaskBrief": {
         "additionalProperties": false,
         "properties": {
-          "api_trigger": {
+          "apiTrigger": {
             "type": "boolean"
           },
-          "catch_up": {
+          "catchUp": {
             "type": "string"
           },
           "compose": {
@@ -1492,7 +1470,7 @@
           "cron": {
             "type": "string"
           },
-          "depends_on": {
+          "dependsOn": {
             "items": {
               "type": "string"
             },
@@ -1504,7 +1482,7 @@
           "group": {
             "type": "string"
           },
-          "held_by": {
+          "heldBy": {
             "description": "Set when something other than RunWisp owns this task's schedule, so it is listed but not fired on its cron. 'cron' means a live system cron daemon still reads its crontab. Manual triggers still work.",
             "enum": [
               "cron"
@@ -1522,14 +1500,14 @@
             ],
             "type": "string"
           },
-          "max_concurrent": {
+          "maxConcurrent": {
             "format": "int64",
             "type": "integer"
           },
           "name": {
             "type": "string"
           },
-          "on_overlap": {
+          "onOverlap": {
             "type": "string"
           },
           "parameters": {
@@ -1551,13 +1529,13 @@
             ],
             "type": "string"
           },
-          "source_file": {
+          "sourceFile": {
             "type": "string"
           }
         },
         "required": [
           "name",
-          "api_trigger"
+          "apiTrigger"
         ],
         "type": "object"
       },
@@ -1567,7 +1545,7 @@
           "file": {
             "type": "string"
           },
-          "project_name": {
+          "projectName": {
             "type": "string"
           },
           "service": {
@@ -1576,7 +1554,7 @@
         },
         "required": [
           "file",
-          "project_name"
+          "projectName"
         ],
         "type": "object"
       },
@@ -1641,14 +1619,14 @@
       "TaskResponse": {
         "additionalProperties": false,
         "properties": {
-          "api_trigger": {
+          "apiTrigger": {
             "type": "boolean"
           },
           "autostart": {
             "description": "For services: whether instances start at boot. False boots in the stopped state until started via API/UI.",
             "type": "boolean"
           },
-          "catch_up": {
+          "catchUp": {
             "description": "What to do when cron ticks are missed during downtime",
             "enum": [
               "latest",
@@ -1664,7 +1642,7 @@
           "cron": {
             "type": "string"
           },
-          "depends_on": {
+          "dependsOn": {
             "description": "For services: service names that must be healthy before this one starts at boot — boot ordering only, not a workflow DAG",
             "items": {
               "type": "string"
@@ -1684,15 +1662,15 @@
             "description": "Environment variables overlaid on the task's process env. Values are visible to authenticated operators in the API/UI; env_file values merge in beneath the inline entries.",
             "type": "object"
           },
-          "env_base": {
+          "envBase": {
             "description": "What the run's environment starts from: 'inherit' (the daemon's, the default) or 'clean' (PATH, SHELL, HOME, USER/LOGNAME only, as crond gives a job)",
             "type": "string"
           },
-          "env_file": {
+          "envFile": {
             "description": "Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env.",
             "type": "string"
           },
-          "exit_codes": {
+          "exitCodes": {
             "description": "Process exit codes treated as success; defaults to [0]",
             "items": {
               "format": "int64",
@@ -1703,7 +1681,7 @@
               "null"
             ]
           },
-          "graceful_stop": {
+          "gracefulStop": {
             "description": "Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds",
             "format": "int64",
             "type": "integer"
@@ -1711,12 +1689,12 @@
           "group": {
             "type": "string"
           },
-          "healthy_after": {
-            "description": "For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward start_retries, in nanoseconds",
+          "healthyAfter": {
+            "description": "For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds",
             "format": "int64",
             "type": "integer"
           },
-          "held_by": {
+          "heldBy": {
             "description": "Why this task is loaded but not on the scheduler: 'cron' means a live system cron daemon still reads the crontab it came from and is running it, so RunWisp stands down. Manual triggers still work. Empty means RunWisp owns the schedule.",
             "enum": [
               "cron"
@@ -1733,13 +1711,13 @@
             "format": "int64",
             "type": "integer"
           },
-          "keep_for": {
+          "keepFor": {
             "description": "Retention window in nanoseconds; 0 means no cap was configured",
             "format": "int64",
             "type": "integer"
           },
-          "keep_runs": {
-            "description": "Row-count retention cap; 0 means no cap was configured",
+          "keepRuns": {
+            "description": "Row-count retention cap; 0 keeps no completed runs, omitted inherits the [defaults] value (or no cap)",
             "format": "int64",
             "type": "integer"
           },
@@ -1751,12 +1729,12 @@
             ],
             "type": "string"
           },
-          "log_max_size": {
+          "logMaxSize": {
             "description": "Per-run log size cap in bytes",
             "format": "int64",
             "type": "integer"
           },
-          "log_on_full": {
+          "logOnFull": {
             "description": "What to do when log output exceeds log_max_size",
             "enum": [
               "drop_new",
@@ -1765,12 +1743,12 @@
             ],
             "type": "string"
           },
-          "max_catch_up_runs": {
+          "maxCatchUpRuns": {
             "description": "Cap on catch-up runs triggered when catch_up = all",
             "format": "int64",
             "type": "integer"
           },
-          "max_concurrent": {
+          "maxConcurrent": {
             "description": "Maximum overlapping runs allowed for this task",
             "format": "int64",
             "type": "integer"
@@ -1778,10 +1756,10 @@
           "name": {
             "type": "string"
           },
-          "next_run_at": {
+          "nextRunAt": {
             "type": "string"
           },
-          "on_overlap": {
+          "onOverlap": {
             "description": "How overlapping runs are handled",
             "enum": [
               "queue",
@@ -1805,7 +1783,7 @@
             "format": "int64",
             "type": "integer"
           },
-          "queue_max": {
+          "queueMax": {
             "description": "Maximum runs that can wait when on_overlap = queue",
             "format": "int64",
             "type": "integer"
@@ -1819,7 +1797,12 @@
             ],
             "type": "string"
           },
-          "restart_backoff": {
+          "restartAttempts": {
+            "description": "For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting",
+            "format": "int64",
+            "type": "integer"
+          },
+          "restartBackoff": {
             "description": "Backoff curve between consecutive restarts",
             "enum": [
               "constant",
@@ -1828,16 +1811,16 @@
             ],
             "type": "string"
           },
-          "restart_delay": {
+          "restartDelay": {
             "description": "Base delay before each restart, in nanoseconds",
             "format": "int64",
             "type": "integer"
           },
-          "retry_attempts": {
+          "retryAttempts": {
             "format": "int64",
             "type": "integer"
           },
-          "retry_backoff": {
+          "retryBackoff": {
             "description": "Backoff curve between consecutive retries",
             "enum": [
               "constant",
@@ -1846,16 +1829,16 @@
             ],
             "type": "string"
           },
-          "retry_delay": {
+          "retryDelay": {
             "description": "Base delay before each retry, in nanoseconds",
             "format": "int64",
             "type": "integer"
           },
-          "run_on_start": {
+          "runOnStart": {
             "description": "For tasks: fire once at daemon startup, in addition to any cron schedule",
             "type": "boolean"
           },
-          "secrets_file": {
+          "secretsFile": {
             "description": "Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values never leave the daemon.",
             "type": "string"
           },
@@ -1871,16 +1854,11 @@
             ],
             "type": "string"
           },
-          "source_file": {
+          "sourceFile": {
             "description": "Absolute path of the crontab or staging file this task's definition was read from; empty for hand-authored TOML",
             "type": "string"
           },
-          "start_retries": {
-            "description": "For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting",
-            "format": "int64",
-            "type": "integer"
-          },
-          "stop_signal": {
+          "stopSignal": {
             "description": "Signal sent to stop a run before SIGKILL; defaults to SIGTERM",
             "enum": [
               "SIGTERM",
@@ -1910,14 +1888,14 @@
             "description": "Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root.",
             "type": "string"
           },
-          "working_dir": {
+          "workingDir": {
             "description": "Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal \"~\" means the run-as user's home, resolved at run time",
             "type": "string"
           }
         },
         "required": [
           "name",
-          "api_trigger",
+          "apiTrigger",
           "autostart"
         ],
         "type": "object"
@@ -1950,16 +1928,16 @@
       "TriggeredRunRef": {
         "additionalProperties": false,
         "properties": {
-          "run_id": {
+          "runId": {
             "type": "string"
           },
-          "task_name": {
+          "taskName": {
             "type": "string"
           }
         },
         "required": [
-          "task_name",
-          "run_id"
+          "taskName",
+          "runId"
         ],
         "type": "object"
       }
@@ -2391,14 +2369,14 @@
         ]
       }
     },
-    "/api/notifications/{id}/read": {
+    "/api/notifications/{notificationId}/read": {
       "post": {
         "operationId": "markNotificationRead",
         "parameters": [
           {
             "description": "Notification ULID",
             "in": "path",
-            "name": "id",
+            "name": "notificationId",
             "required": true,
             "schema": {
               "description": "Notification ULID",
@@ -2427,14 +2405,14 @@
         ]
       }
     },
-    "/api/notifications/{id}/unread": {
+    "/api/notifications/{notificationId}/unread": {
       "post": {
         "operationId": "markNotificationUnread",
         "parameters": [
           {
             "description": "Notification ULID",
             "in": "path",
-            "name": "id",
+            "name": "notificationId",
             "required": true,
             "schema": {
               "description": "Notification ULID",
@@ -2497,7 +2475,7 @@
     },
     "/api/runs": {
       "get": {
-        "operationId": "getAllRuns",
+        "operationId": "listRuns",
         "parameters": [
           {
             "description": "Max results per page",
@@ -2540,7 +2518,7 @@
             "description": "Filter by task name",
             "explode": false,
             "in": "query",
-            "name": "task_name",
+            "name": "taskName",
             "schema": {
               "description": "Filter by task name",
               "type": "string"
@@ -2550,7 +2528,7 @@
             "description": "Filter by what triggered the run",
             "explode": false,
             "in": "query",
-            "name": "triggered_by",
+            "name": "triggeredBy",
             "schema": {
               "description": "Filter by what triggered the run",
               "enum": [
@@ -2568,7 +2546,7 @@
             "description": "Only runs created at or after this RFC3339 time",
             "explode": false,
             "in": "query",
-            "name": "created_after",
+            "name": "createdAfter",
             "schema": {
               "description": "Only runs created at or after this RFC3339 time",
               "format": "date-time",
@@ -2579,7 +2557,7 @@
             "description": "Only runs created at or before this RFC3339 time",
             "explode": false,
             "in": "query",
-            "name": "created_before",
+            "name": "createdBefore",
             "schema": {
               "description": "Only runs created at or before this RFC3339 time",
               "format": "date-time",
@@ -2590,7 +2568,7 @@
             "description": "Only runs whose exit code is \u003e= this (inclusive)",
             "explode": false,
             "in": "query",
-            "name": "exit_code_min",
+            "name": "exitCodeMin",
             "schema": {
               "description": "Only runs whose exit code is \u003e= this (inclusive)",
               "pattern": "^-?[0-9]+$",
@@ -2601,7 +2579,7 @@
             "description": "Only runs whose exit code is \u003c= this (inclusive)",
             "explode": false,
             "in": "query",
-            "name": "exit_code_max",
+            "name": "exitCodeMax",
             "schema": {
               "description": "Only runs whose exit code is \u003c= this (inclusive)",
               "pattern": "^-?[0-9]+$",
@@ -2612,7 +2590,7 @@
             "description": "Only runs that are a retry (retry_attempt \u003e 0)",
             "explode": false,
             "in": "query",
-            "name": "retries_only",
+            "name": "retriesOnly",
             "schema": {
               "description": "Only runs that are a retry (retry_attempt \u003e 0)",
               "type": "boolean"
@@ -2622,16 +2600,16 @@
             "description": "Field to sort by",
             "explode": false,
             "in": "query",
-            "name": "sort_field",
+            "name": "sortField",
             "schema": {
               "description": "Field to sort by",
               "enum": [
-                "task_name",
+                "taskName",
                 "status",
-                "start_at",
-                "exit_code",
+                "startAt",
+                "exitCode",
                 "duration",
-                "created_at",
+                "createdAt",
                 ""
               ],
               "type": "string"
@@ -2641,7 +2619,7 @@
             "description": "Sort direction",
             "explode": false,
             "in": "query",
-            "name": "sort_direction",
+            "name": "sortDirection",
             "schema": {
               "description": "Sort direction",
               "enum": [
@@ -2686,47 +2664,6 @@
           }
         },
         "summary": "List all runs",
-        "tags": [
-          "Runs"
-        ]
-      }
-    },
-    "/api/runs/bulk/cancel": {
-      "post": {
-        "operationId": "bulkCancelRuns",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RunSelector"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BulkAffectedBody"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Cancel every running run matched by the selector",
         "tags": [
           "Runs"
         ]
@@ -2856,6 +2793,47 @@
         ]
       }
     },
+    "/api/runs/bulk/stop": {
+      "post": {
+        "operationId": "bulkStopRuns",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunSelector"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkAffectedBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Stop every running run matched by the selector",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
     "/api/runs/summary": {
       "get": {
         "operationId": "getRunSummary",
@@ -2889,7 +2867,7 @@
     },
     "/api/runs/{runId}": {
       "get": {
-        "operationId": "getRunById",
+        "operationId": "getRun",
         "parameters": [
           {
             "description": "Run ULID",
@@ -3353,7 +3331,7 @@
     },
     "/api/tasks": {
       "get": {
-        "operationId": "getTasks",
+        "operationId": "listTasks",
         "responses": {
           "200": {
             "content": {
@@ -3410,7 +3388,7 @@
             "description": "Restrict the search to one run (ULID). Empty searches every non-deleted run of the task.",
             "explode": false,
             "in": "query",
-            "name": "run_id",
+            "name": "runId",
             "schema": {
               "description": "Restrict the search to one run (ULID). Empty searches every non-deleted run of the task.",
               "type": "string"
@@ -3502,7 +3480,7 @@
     },
     "/api/tasks/{taskName}/restart": {
       "post": {
-        "operationId": "restartService",
+        "operationId": "restartTask",
         "parameters": [
           {
             "description": "Task name",
@@ -3519,15 +3497,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StopRunOutputBody"
-                }
-              }
-            },
-            "description": "OK"
+          "204": {
+            "description": "No Content"
           },
           "default": {
             "content": {
@@ -3578,7 +3549,7 @@
             "description": "With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state.",
             "explode": false,
             "in": "query",
-            "name": "wait_timeout",
+            "name": "waitTimeout",
             "schema": {
               "default": 300,
               "description": "With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state.",
@@ -3628,7 +3599,7 @@
     },
     "/api/tasks/{taskName}/runs": {
       "get": {
-        "operationId": "getTaskRuns",
+        "operationId": "listTaskRuns",
         "parameters": [
           {
             "description": "Task name",
@@ -3684,7 +3655,7 @@
             "description": "Filter by task name",
             "explode": false,
             "in": "query",
-            "name": "task_name",
+            "name": "taskName",
             "schema": {
               "description": "Filter by task name",
               "type": "string"
@@ -3694,7 +3665,7 @@
             "description": "Filter by what triggered the run",
             "explode": false,
             "in": "query",
-            "name": "triggered_by",
+            "name": "triggeredBy",
             "schema": {
               "description": "Filter by what triggered the run",
               "enum": [
@@ -3712,7 +3683,7 @@
             "description": "Only runs created at or after this RFC3339 time",
             "explode": false,
             "in": "query",
-            "name": "created_after",
+            "name": "createdAfter",
             "schema": {
               "description": "Only runs created at or after this RFC3339 time",
               "format": "date-time",
@@ -3723,7 +3694,7 @@
             "description": "Only runs created at or before this RFC3339 time",
             "explode": false,
             "in": "query",
-            "name": "created_before",
+            "name": "createdBefore",
             "schema": {
               "description": "Only runs created at or before this RFC3339 time",
               "format": "date-time",
@@ -3734,7 +3705,7 @@
             "description": "Only runs whose exit code is \u003e= this (inclusive)",
             "explode": false,
             "in": "query",
-            "name": "exit_code_min",
+            "name": "exitCodeMin",
             "schema": {
               "description": "Only runs whose exit code is \u003e= this (inclusive)",
               "pattern": "^-?[0-9]+$",
@@ -3745,7 +3716,7 @@
             "description": "Only runs whose exit code is \u003c= this (inclusive)",
             "explode": false,
             "in": "query",
-            "name": "exit_code_max",
+            "name": "exitCodeMax",
             "schema": {
               "description": "Only runs whose exit code is \u003c= this (inclusive)",
               "pattern": "^-?[0-9]+$",
@@ -3756,7 +3727,7 @@
             "description": "Only runs that are a retry (retry_attempt \u003e 0)",
             "explode": false,
             "in": "query",
-            "name": "retries_only",
+            "name": "retriesOnly",
             "schema": {
               "description": "Only runs that are a retry (retry_attempt \u003e 0)",
               "type": "boolean"
@@ -3766,16 +3737,16 @@
             "description": "Field to sort by",
             "explode": false,
             "in": "query",
-            "name": "sort_field",
+            "name": "sortField",
             "schema": {
               "description": "Field to sort by",
               "enum": [
-                "task_name",
+                "taskName",
                 "status",
-                "start_at",
-                "exit_code",
+                "startAt",
+                "exitCode",
                 "duration",
-                "created_at",
+                "createdAt",
                 ""
               ],
               "type": "string"
@@ -3785,7 +3756,7 @@
             "description": "Sort direction",
             "explode": false,
             "in": "query",
-            "name": "sort_direction",
+            "name": "sortDirection",
             "schema": {
               "description": "Sort direction",
               "enum": [
@@ -3882,63 +3853,6 @@
           }
         },
         "summary": "Delete a run",
-        "tags": [
-          "Runs"
-        ]
-      },
-      "get": {
-        "operationId": "getRun",
-        "parameters": [
-          {
-            "description": "Task name",
-            "in": "path",
-            "name": "taskName",
-            "required": true,
-            "schema": {
-              "description": "Task name",
-              "maxLength": 100,
-              "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._:-]+$",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Run ULID",
-            "in": "path",
-            "name": "runId",
-            "required": true,
-            "schema": {
-              "description": "Run ULID",
-              "maxLength": 26,
-              "minLength": 26,
-              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Run"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Get a single run",
         "tags": [
           "Runs"
         ]
@@ -4216,7 +4130,7 @@
             "description": "Cap on backfilled lines (default 5000)",
             "explode": false,
             "in": "query",
-            "name": "replay_limit",
+            "name": "replayLimit",
             "schema": {
               "description": "Cap on backfilled lines (default 5000)",
               "format": "int64",
@@ -4431,15 +4345,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StopRunOutputBody"
-                }
-              }
-            },
-            "description": "OK"
+          "204": {
+            "description": "No Content"
           },
           "default": {
             "content": {
@@ -4461,7 +4368,7 @@
     "/api/tasks/{taskName}/stop": {
       "post": {
         "description": "Cancels every live instance and marks the service stopped. The supervisor stops refilling slots until a restart is issued or the daemon is restarted.",
-        "operationId": "stopService",
+        "operationId": "stopTask",
         "parameters": [
           {
             "description": "Task name",
@@ -4478,15 +4385,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StopRunOutputBody"
-                }
-              }
-            },
-            "description": "OK"
+          "204": {
+            "description": "No Content"
           },
           "default": {
             "content": {

@@ -288,10 +288,10 @@
         run.status === "running" ? durationTicker.now.getTime() : undefined,
     )}
     {@const startDelay = runStartDelay(run)}
-    {@const startedAt = run.start_at ?? run.created_at}
+    {@const startedAt = run.startAt ?? run.createdAt}
     {@const retry = runRetryLabel(run)}
     {@const paramEntries = run.params ? Object.entries(run.params) : []}
-    {@const suffix = instanceSuffix(run.instance_index, getInstanceCount(run.task_name))}
+    {@const suffix = instanceSuffix(run.instanceIndex, getInstanceCount(run.taskName))}
     {@const spine = config.dot.replace(" animate-pulse", "")}
     {@const isRunning = run.status === "running"}
     <!-- A code is worth the ink only when it is news: `exit 0` restates
@@ -340,7 +340,7 @@
                             <div
                                 class="mb-1.5 font-mono text-[11.5px] font-medium tracking-[0.06em] text-on-surface-muted"
                             >
-                                {showTaskName ? `${run.task_name}${suffix}` : `instance ${suffix}`}
+                                {showTaskName ? `${run.taskName}${suffix}` : `instance ${suffix}`}
                             </div>
                         {/if}
 
@@ -385,7 +385,7 @@
                                             >·</span
                                         >
                                         <span class="text-danger-surface" data-testid="run-exit"
-                                            >exit {run.exit_code}</span
+                                            >exit {run.exitCode}</span
                                         >
                                     </span>
                                 {/if}
@@ -403,12 +403,12 @@
                              repeat it. The line wraps at narrow widths instead of
                              dropping the date and hiding it behind a hover. -->
                             <span data-testid="run-started" class="text-on-surface-muted"
-                                >{run.start_at ? formatClockTime(run.start_at) : "—"}</span
+                                >{run.startAt ? formatClockTime(run.startAt) : "—"}</span
                             >
                             <span class="text-outline-hover" aria-hidden="true">·</span>
                             <span>{formatCalendarDate(startedAt)}</span>
                             <span class="text-outline-hover" aria-hidden="true">·</span>
-                            <span>via {formatTriggeredByLabel(run.triggered_by).toLowerCase()}</span
+                            <span>via {formatTriggeredByLabel(run.triggeredBy).toLowerCase()}</span
                             >
                             {#if startDelay}
                                 <span class="text-outline-hover" aria-hidden="true">·</span>
@@ -422,8 +422,8 @@
                                 <span class="text-outline-hover" aria-hidden="true">·</span>
                                 <span class="inline-flex items-center gap-1">
                                     <RotateCw size={11} />
-                                    retry #{run.retry_attempt}{#if run.retry_of_run_id}&nbsp;of
-                                        {formatShortId(run.retry_of_run_id)}{/if}
+                                    retry #{run.retryAttempt}{#if run.retryOfRunId}&nbsp;of
+                                        {formatShortId(run.retryOfRunId)}{/if}
                                 </span>
                             {/if}
                             {#if paramEntries.length > 0}
@@ -603,9 +603,9 @@
                         {/if}
                         <a
                             href="/api/tasks/{encodeURIComponent(
-                                run.task_name,
+                                run.taskName,
                             )}/runs/{encodeURIComponent(run.id)}/log/raw"
-                            download="{run.task_name}-{run.id}.log"
+                            download="{run.taskName}-{run.id}.log"
                             class="inline-flex items-center justify-center rounded-[3px] border border-outline-faint bg-surface-raised p-2 text-on-surface-muted hover:border-outline-hover hover:bg-surface-sunken hover:text-primary"
                             title="Download the full log (rotated and current parts as one file)"
                             aria-label="Download log"
@@ -682,7 +682,7 @@
                         <span class="flex min-w-0 items-center gap-2">
                             <span class="h-2 w-2 shrink-0 rounded-full {spine}"></span>
                             <span class="truncate font-medium text-[var(--rw-con-text)]">
-                                {run.task_name}{suffix}
+                                {run.taskName}{suffix}
                             </span>
                             <span class="text-[var(--rw-con-gutter)]">·</span>
                             <span class="font-semibold capitalize {config.color}">{status}</span>

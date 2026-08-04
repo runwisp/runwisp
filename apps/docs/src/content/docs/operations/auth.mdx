@@ -243,11 +243,11 @@ serves plain HTTP on its private side, and tell the daemon which IP
 ranges that proxy will be calling from:
 
 ```bash
-export RUNWISP_TRUST_PROXY='10.0.0.0/8,2001:db8::/32'
+export RUNWISP_TRUSTED_PROXIES='10.0.0.0/8,2001:db8::/32'
 runwisp daemon --host 127.0.0.1 --port 9477
 ```
 
-`RUNWISP_TRUST_PROXY` is a comma-separated list of CIDR ranges
+`RUNWISP_TRUSTED_PROXIES` is a comma-separated list of CIDR ranges
 whose `X-Forwarded-Proto` and `X-Forwarded-For` headers the daemon
 will trust. When a request comes in from one of those ranges with
 `X-Forwarded-Proto: https`, the daemon treats the connection as

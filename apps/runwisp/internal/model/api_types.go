@@ -6,7 +6,7 @@ package model
 // TaskResponse extends a Task with the optional next scheduled run time.
 type TaskResponse struct {
 	Task
-	NextRunAt *string `json:"next_run_at,omitempty"`
+	NextRunAt *string `json:"nextRunAt,omitempty"`
 }
 
 // ReloadResult is the diff produced by an explicit config reload: which tasks
@@ -37,18 +37,18 @@ func (r ReloadResult) IsEmpty() bool {
 
 // SystemStats holds live system resource and identity information.
 type SystemStats struct {
-	CPUUsage float64 `json:"cpu_usage" doc:"CPU usage percentage (0-100)"`
-	MemUsage float64 `json:"mem_usage" doc:"Memory usage percentage (0-100)"`
-	MemTotal uint64  `json:"mem_total" doc:"Total memory in bytes"`
-	MemUsed  uint64  `json:"mem_used" doc:"Used memory in bytes"`
+	CPUUsage float64 `json:"cpuUsage" doc:"CPU usage percentage (0-100)"`
+	MemUsage float64 `json:"memUsage" doc:"Memory usage percentage (0-100)"`
+	MemTotal uint64  `json:"memTotal" doc:"Total memory in bytes"`
+	MemUsed  uint64  `json:"memUsed" doc:"Used memory in bytes"`
 	Uptime   string  `json:"uptime" doc:"Human-readable uptime"`
 	Version  string  `json:"version" doc:"RunWisp version"`
 	Name     string  `json:"name" doc:"Application name"`
-	CPUCores int     `json:"cpu_cores" doc:"Number of CPU cores"`
+	CPUCores int     `json:"cpuCores" doc:"Number of CPU cores"`
 	Host     string  `json:"host" doc:"Hostname"`
 	OS       string  `json:"os" doc:"Operating system (e.g. linux, darwin, windows)"`
 	Arch     string  `json:"arch" doc:"CPU architecture (e.g. amd64, arm64)"`
-	WorkDir  string  `json:"work_dir" doc:"Working directory of the daemon process"`
+	WorkDir  string  `json:"workDir" doc:"Working directory of the daemon process"`
 }
 
 // MetricsSample is a single timestamped snapshot of system resource usage.
@@ -56,6 +56,6 @@ type MetricsSample struct {
 	Timestamp int64   `json:"ts" doc:"Unix timestamp (seconds)"`
 	CPUUsage  float64 `json:"cpu" doc:"CPU usage percentage (0-100)"`
 	MemUsage  float64 `json:"mem" doc:"Memory usage percentage (0-100)"`
-	MemUsed   uint64  `json:"mem_used" doc:"Used memory in bytes"`
-	MemTotal  uint64  `json:"mem_total" doc:"Total memory in bytes"`
+	MemUsed   uint64  `json:"memUsed" doc:"Used memory in bytes"`
+	MemTotal  uint64  `json:"memTotal" doc:"Total memory in bytes"`
 }

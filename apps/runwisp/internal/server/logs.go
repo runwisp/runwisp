@@ -57,14 +57,14 @@ type LogLineEntry struct {
 	Stream     string `json:"stream" doc:"Stream identifier (stdout/stderr/system)"`
 	Text       string `json:"text" doc:"Line content without trailing newline"`
 	Continued  bool   `json:"continued,omitempty" doc:"True if this segment continues an oversized split line"`
-	FrameCount int    `json:"frame_count,omitempty" doc:"Number of recorded prior frames if this line is a settled progress bar / redraw anchor; 0 otherwise"`
+	FrameCount int    `json:"frameCount,omitempty" doc:"Number of recorded prior frames if this line is a settled progress bar / redraw anchor; 0 otherwise"`
 }
 
 // LogPageBody is the response shape for the line-page endpoint.
 type LogPageBody struct {
 	Lines          []LogLineEntry `json:"lines" doc:"Returned lines, ascending by n"`
-	FirstAvailable int64          `json:"first_available" doc:"Lowest line number still on disk; lines below were rotated away"`
-	TotalLines     int64          `json:"total_lines" doc:"Total lines produced across all segments"`
+	FirstAvailable int64          `json:"firstAvailable" doc:"Lowest line number still on disk; lines below were rotated away"`
+	TotalLines     int64          `json:"totalLines" doc:"Total lines produced across all segments"`
 	Truncated      bool           `json:"truncated" doc:"True if rotation has dropped lines below first_available"`
 	Finalized      bool           `json:"finalized" doc:"True if the run has ended and the log is final"`
 }
@@ -220,7 +220,7 @@ type LogStreamInput struct {
 	TaskName    string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
 	RunID       string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
 	From        int64  `query:"from" default:"-1000" doc:"Anchor line number; 0 is the first line, negative values count from end (default -1000)"`
-	ReplayLimit int64  `query:"replay_limit" minimum:"1" maximum:"50000" doc:"Cap on backfilled lines (default 5000)"`
+	ReplayLimit int64  `query:"replayLimit" minimum:"1" maximum:"50000" doc:"Cap on backfilled lines (default 5000)"`
 	LastEventID string `header:"Last-Event-ID" doc:"Native SSE resume cursor; takes precedence over the from query"`
 }
 

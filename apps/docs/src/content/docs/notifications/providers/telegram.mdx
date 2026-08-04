@@ -147,7 +147,7 @@ notify_on_failure = ["tg-oncall"]
 
 # Or in a notification rule:
 [[notification_route]]
-match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
 notify = ["tg-oncall"]
 ```
 

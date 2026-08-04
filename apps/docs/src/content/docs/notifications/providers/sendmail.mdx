@@ -93,7 +93,7 @@ Or once, for everything:
 
 ```toml
 [[notification_route]]
-match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
 notify = ["mta"]
 ```
 

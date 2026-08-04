@@ -114,7 +114,7 @@ func TestSearchLogs_SingleRun(t *testing.T) {
 	repo.On("GetRun", mock.Anything, run.ID).Return(&run, nil)
 
 	req := httptest.NewRequest(http.MethodGet,
-		"/api/tasks/task1/log/search?q=beta&run_id="+run.ID, nil)
+		"/api/tasks/task1/log/search?q=beta&runId="+run.ID, nil)
 	w := httptest.NewRecorder()
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
@@ -135,7 +135,7 @@ func TestSearchLogs_SingleRun_WrongTask(t *testing.T) {
 	repo.On("GetRun", mock.Anything, id).Return(run, nil)
 
 	req := httptest.NewRequest(http.MethodGet,
-		fmt.Sprintf("/api/tasks/task1/log/search?q=foo&run_id=%s", id), nil)
+		fmt.Sprintf("/api/tasks/task1/log/search?q=foo&runId=%s", id), nil)
 	w := httptest.NewRecorder()
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)

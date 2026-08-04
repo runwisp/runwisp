@@ -35,7 +35,7 @@ UPDATE runs SET deleted_at = NULL
 WHERE deleted_at IS NOT NULL
   AND id IN (sqlc.slice('ids'))
 RETURNING id, external_execution_id, task_name, status, end_reason, exit_code,
-  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
   instance_index, params_json, deleted_at;
 
 -- name: RestoreRunsByFilter :many
@@ -54,7 +54,7 @@ WHERE deleted_at IS NOT NULL
   AND (sqlc.arg(search_filter) IS NULL OR (task_name LIKE sqlc.arg(search_pattern) OR id LIKE sqlc.arg(search_pattern)))
   AND id NOT IN (sqlc.slice('except_ids'))
 RETURNING id, external_execution_id, task_name, status, end_reason, exit_code,
-  start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
   instance_index, params_json, deleted_at;
 
 -- name: ResolveSelectorIDsByIDs :many

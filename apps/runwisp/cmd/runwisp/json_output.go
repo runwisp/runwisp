@@ -50,17 +50,17 @@ func taskKindString(k model.TaskKind) string {
 // live snapshot: daemon reachability, a system summary, and every task with
 // its last run. See statusTaskJSON / lastRunJSON.
 type statusJSONDoc struct {
-	SchemaVersion    int              `json:"schema_version"`
+	SchemaVersion    int              `json:"schemaVersion"`
 	Healthy          bool             `json:"healthy"`
 	Error            string           `json:"error,omitempty"`
 	Version          string           `json:"version,omitempty"`
 	Port             int              `json:"port,omitempty"`
-	ExternalURL      string           `json:"external_url,omitempty"`
-	SchedulingActive bool             `json:"scheduling_active"`
-	ConfigStale      bool             `json:"config_stale"`
-	ConfigWarnings   []string         `json:"config_warnings,omitempty"`
-	ResolvedTimezone string           `json:"resolved_timezone,omitempty"`
-	TimezoneSource   string           `json:"timezone_source,omitempty"`
+	ExternalURL      string           `json:"externalUrl,omitempty"`
+	SchedulingActive bool             `json:"schedulingActive"`
+	ConfigStale      bool             `json:"configStale"`
+	ConfigWarnings   []string         `json:"configWarnings,omitempty"`
+	ResolvedTimezone string           `json:"resolvedTimezone,omitempty"`
+	TimezoneSource   string           `json:"timezoneSource,omitempty"`
 	System           *statusSystem    `json:"system,omitempty"`
 	Tasks            []statusTaskJSON `json:"tasks"`
 }
@@ -71,24 +71,24 @@ type statusJSONDoc struct {
 type statusSystem struct {
 	Version  string `json:"version"`
 	Uptime   string `json:"uptime"`
-	CPUCores int    `json:"cpu_cores"`
+	CPUCores int    `json:"cpuCores"`
 	Host     string `json:"host"`
 	OS       string `json:"os"`
 	Arch     string `json:"arch"`
 	Name     string `json:"name"`
-	WorkDir  string `json:"work_dir"`
+	WorkDir  string `json:"workDir"`
 }
 
 type statusTaskJSON struct {
 	Name       string       `json:"name"`
 	Kind       string       `json:"kind"`
 	Cron       string       `json:"cron,omitempty"`
-	APITrigger bool         `json:"api_trigger"`
+	APITrigger bool         `json:"apiTrigger"`
 	Source     string       `json:"source,omitempty"`
-	SourceFile string       `json:"source_file,omitempty"`
-	HeldBy     string       `json:"held_by,omitempty"`
-	NextRunAt  *string      `json:"next_run_at,omitempty"`
-	LastRun    *lastRunJSON `json:"last_run"`
+	SourceFile string       `json:"sourceFile,omitempty"`
+	HeldBy     string       `json:"heldBy,omitempty"`
+	NextRunAt  *string      `json:"nextRunAt,omitempty"`
+	LastRun    *lastRunJSON `json:"lastRun"`
 }
 
 // lastRunJSON is the most recent run of a task. failed/missed are precomputed
@@ -97,12 +97,12 @@ type statusTaskJSON struct {
 type lastRunJSON struct {
 	ID          string     `json:"id"`
 	Status      string     `json:"status"`
-	EndReason   *string    `json:"end_reason,omitempty"`
-	ExitCode    int        `json:"exit_code"`
-	TriggeredBy string     `json:"triggered_by"`
-	StartAt     *time.Time `json:"start_at,omitempty"`
-	EndAt       *time.Time `json:"end_at,omitempty"`
-	DurationMS  *int64     `json:"duration_ms,omitempty"`
+	EndReason   *string    `json:"endReason,omitempty"`
+	ExitCode    int        `json:"exitCode"`
+	TriggeredBy string     `json:"triggeredBy"`
+	StartAt     *time.Time `json:"startAt,omitempty"`
+	EndAt       *time.Time `json:"endAt,omitempty"`
+	DurationMS  *int64     `json:"durationMs,omitempty"`
 	Failed      bool       `json:"failed"`
 	Missed      bool       `json:"missed"`
 }
@@ -171,24 +171,24 @@ func newLastRunJSON(r *model.Run) lastRunJSON {
 // stays a single JSON document. failed is precomputed (retry.IsFailureReason)
 // so an agent branches on one boolean without knowing the end-reason taxonomy.
 type execJSONDoc struct {
-	SchemaVersion int    `json:"schema_version"`
+	SchemaVersion int    `json:"schemaVersion"`
 	Task          string `json:"task"`
 	// Error is set only when the run never reached a terminal state (unknown
 	// task, daemon unreachable, auth failure). The identity fields below are then
 	// empty and omitted; on a real run they are always populated, so omitempty
 	// never hides them for a genuine outcome.
 	Error     string  `json:"error,omitempty"`
-	RunID     string  `json:"run_id,omitempty"`
+	RunID     string  `json:"runId,omitempty"`
 	Status    string  `json:"status,omitempty"`
-	EndReason *string `json:"end_reason,omitempty"`
+	EndReason *string `json:"endReason,omitempty"`
 	// ExitCode is a pointer so the error document (no run) omits it rather than
 	// emitting a misleading "exit_code": 0, while a genuine success still reports
 	// an explicit 0.
-	ExitCode    *int       `json:"exit_code,omitempty"`
-	TriggeredBy string     `json:"triggered_by,omitempty"`
-	StartAt     *time.Time `json:"start_at,omitempty"`
-	EndAt       *time.Time `json:"end_at,omitempty"`
-	DurationMS  *int64     `json:"duration_ms,omitempty"`
+	ExitCode    *int       `json:"exitCode,omitempty"`
+	TriggeredBy string     `json:"triggeredBy,omitempty"`
+	StartAt     *time.Time `json:"startAt,omitempty"`
+	EndAt       *time.Time `json:"endAt,omitempty"`
+	DurationMS  *int64     `json:"durationMs,omitempty"`
 	Failed      bool       `json:"failed"`
 }
 
@@ -235,7 +235,7 @@ func newExecJSONDoc(taskName string, r *model.Run) execJSONDoc {
 // table it is offline and config-only — no last-run state (that lives in
 // `status --json`, which talks to the daemon).
 type listJSONDoc struct {
-	SchemaVersion int            `json:"schema_version"`
+	SchemaVersion int            `json:"schemaVersion"`
 	Error         string         `json:"error,omitempty"`
 	Tasks         []listTaskJSON `json:"tasks"`
 }
@@ -248,12 +248,12 @@ type listTaskJSON struct {
 	// MaxConcurrent is a pointer so it can be omitted for services, which have no
 	// max_concurrent at all — their copy count is governed by `instances`, not an
 	// overlap cap. Emitting a fabricated `1` here would contradict the config docs.
-	MaxConcurrent *int   `json:"max_concurrent,omitempty"`
-	OnOverlap     string `json:"on_overlap"`
-	APITrigger    bool   `json:"api_trigger"`
+	MaxConcurrent *int   `json:"maxConcurrent,omitempty"`
+	OnOverlap     string `json:"onOverlap"`
+	APITrigger    bool   `json:"apiTrigger"`
 	Source        string `json:"source,omitempty"`
-	SourceFile    string `json:"source_file,omitempty"`
-	HeldBy        string `json:"held_by,omitempty"`
+	SourceFile    string `json:"sourceFile,omitempty"`
+	HeldBy        string `json:"heldBy,omitempty"`
 	Description   string `json:"description,omitempty"`
 }
 
@@ -285,11 +285,11 @@ func newListTaskJSON(t model.Task) listTaskJSON {
 // human messages. On failure the document is still emitted and the command
 // still exits non-zero.
 type validateJSONDoc struct {
-	SchemaVersion  int           `json:"schema_version"`
+	SchemaVersion  int           `json:"schemaVersion"`
 	Valid          bool          `json:"valid"`
-	ConfigPath     string        `json:"config_path"`
+	ConfigPath     string        `json:"configPath"`
 	Timezone       string        `json:"timezone,omitempty"`
-	TimezoneSource string        `json:"timezone_source,omitempty"`
+	TimezoneSource string        `json:"timezoneSource,omitempty"`
 	Tasks          int           `json:"tasks"`
 	Services       int           `json:"services"`
 	Warnings       []messageJSON `json:"warnings"`

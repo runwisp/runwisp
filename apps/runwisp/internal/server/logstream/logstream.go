@@ -41,7 +41,7 @@ type LineEvent struct {
 	Stream     string `json:"stream" doc:"Stream identifier (stdout/stderr/system)"`
 	Text       string `json:"text" doc:"Line content without trailing newline"`
 	Continued  bool   `json:"continued,omitempty" doc:"True if this segment continues an oversized split line"`
-	FrameCount int    `json:"frame_count,omitempty" doc:"Number of recorded prior frames if this line is a settled progress bar / redraw anchor; 0 otherwise"`
+	FrameCount int    `json:"frameCount,omitempty" doc:"Number of recorded prior frames if this line is a settled progress bar / redraw anchor; 0 otherwise"`
 }
 
 // RegionEvent is a live snapshot of a still-animating output region (a `\r`
@@ -56,7 +56,7 @@ type RegionEvent struct {
 
 // RotatedEvent fires when rotation has dropped lines below FirstAvailable.
 type RotatedEvent struct {
-	FirstAvailable int64 `json:"first_available" doc:"Lowest line number still on disk after rotation"`
+	FirstAvailable int64 `json:"firstAvailable" doc:"Lowest line number still on disk after rotation"`
 }
 
 // DroppedEvent fires when the bounded pending buffer overflowed.
@@ -68,7 +68,7 @@ type DroppedEvent struct {
 // DoneEvent is the final event of a stream. FinalLine is the last line
 // emitted; Status echoes the reason ("ended").
 type DoneEvent struct {
-	FinalLine int64  `json:"final_line" doc:"Last line number emitted before the run terminated"`
+	FinalLine int64  `json:"finalLine" doc:"Last line number emitted before the run terminated"`
 	Status    string `json:"status" doc:"Reason the stream is closing (e.g. 'ended')"`
 }
 

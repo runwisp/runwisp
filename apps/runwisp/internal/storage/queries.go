@@ -26,11 +26,11 @@ type SortColumn string
 
 const (
 	SortColumnDefault   SortColumn = ""
-	SortColumnCreatedAt SortColumn = "created_at"
-	SortColumnStartAt   SortColumn = "start_at"
-	SortColumnTaskName  SortColumn = "task_name"
+	SortColumnCreatedAt SortColumn = "createdAt"
+	SortColumnStartAt   SortColumn = "startAt"
+	SortColumnTaskName  SortColumn = "taskName"
 	SortColumnStatus    SortColumn = "status"
-	SortColumnExitCode  SortColumn = "exit_code"
+	SortColumnExitCode  SortColumn = "exitCode"
 	SortColumnDuration  SortColumn = "duration"
 )
 

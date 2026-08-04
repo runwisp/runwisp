@@ -22,16 +22,16 @@ func TestRecordExitTripsFatalAfterStartRetries(t *testing.T) {
 	const startRetries = 2
 	s := newFatalSupervisor(1)
 
-	// The first start_retries fast failures are tolerated.
+	// The first restart_attempts fast failures are tolerated.
 	for i := 1; i <= startRetries; i++ {
 		_, fatal := s.RecordExit(0, time.Millisecond, startRetries, true)
 		require.Falsef(t, fatal, "fast failure %d should not be FATAL yet", i)
 		require.False(t, s.IsFatal(0))
 	}
 
-	// The (start_retries+1)th consecutive fast failure trips FATAL.
+	// The (restart_attempts+1)th consecutive fast failure trips FATAL.
 	_, fatal := s.RecordExit(0, time.Millisecond, startRetries, true)
-	require.True(t, fatal, "exceeding start_retries must trip FATAL")
+	require.True(t, fatal, "exceeding restart_attempts must trip FATAL")
 	assert.True(t, s.IsFatal(0))
 	assert.True(t, s.IsAnyFatal())
 	assert.Equal(t, startRetries+1, s.StartFails(0))
@@ -54,7 +54,7 @@ func TestRecordExitHealthyRunClearsStartFails(t *testing.T) {
 }
 
 func TestRecordExitNonFailureNeverFatal(t *testing.T) {
-	// start_retries=0 would trip FATAL on the first *failure*; a clean exit must
+	// restart_attempts=0 would trip FATAL on the first *failure*; a clean exit must
 	// not — this is the exit_codes tie-in (a success-listed fast exit is healthy).
 	s := newFatalSupervisor(1)
 	for i := 0; i < 5; i++ {

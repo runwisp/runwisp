@@ -170,7 +170,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		PasswordEphemeral: cfg.PasswordEphemeral,
 		JWTSecret:         cfg.JWTSecret,
 		NoAuth:            cfg.NoAuth,
-		TrustedProxies:    os.Getenv("RUNWISP_TRUST_PROXY"),
+		TrustedProxies:    os.Getenv("RUNWISP_TRUSTED_PROXIES"),
 		DaemonInfo:        daemonInfo,
 		ConfigStale:       configSnap.Stale,
 		ConfigWarnings:    configWarningsFn(reconciler, cfg.Config),
@@ -643,7 +643,7 @@ func printNonLoopbackBanner(host string) {
 			"  SECURITY: HTTP server is binding to %q (not loopback).\n"+
 			"  The web UI and API will be reachable from the network in cleartext HTTP.\n"+
 			"  Auth tokens travel over the wire — terminate TLS at a reverse proxy\n"+
-			"  (nginx, caddy, traefik) and set RUNWISP_TRUST_PROXY=<proxy-CIDR> so the\n"+
+			"  (nginx, caddy, traefik) and set RUNWISP_TRUSTED_PROXIES=<proxy-CIDR> so the\n"+
 			"  daemon honors X-Forwarded-Proto. Do not expose plaintext HTTP to the\n"+
 			"  public internet.\n"+
 			"================================================================================\n",

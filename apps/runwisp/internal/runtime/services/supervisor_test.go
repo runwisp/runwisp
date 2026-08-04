@@ -16,7 +16,7 @@ func newSupervisorForTest(name string, instances int) *Supervisor {
 }
 
 // recordExitBackoff drives RecordExit for the restart-backoff tests: each exit
-// is a failure, but start_retries is set high enough that FATAL never trips, so
+// is a failure, but restart_attempts is set high enough that FATAL never trips, so
 // the assertions isolate the backoff counter. Returns the next restart attempt.
 func recordExitBackoff(s *Supervisor, idx int, runDuration time.Duration) int {
 	const neverFatal = 1_000_000

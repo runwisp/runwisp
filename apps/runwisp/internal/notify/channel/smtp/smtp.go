@@ -30,7 +30,7 @@ import (
 const (
 	tlsModeSTARTTLS = "starttls"
 	tlsModeImplicit = "implicit"
-	tlsModeNone     = "none"
+	tlsModeOff      = "off"
 )
 
 // Channel is an SMTP notifier. The struct stores resolved config + a hook for
@@ -62,7 +62,7 @@ type Config struct {
 	ID            string
 	Host          string
 	Port          int
-	TLSMode       string // "starttls" | "implicit" | "none" | "" (port-derived)
+	TLSMode       string // "starttls" | "implicit" | "off" | "" (port-derived)
 	TLSSkipVerify bool
 	Username      string
 	Password      string
@@ -265,7 +265,7 @@ func defaultClient(host string, port int, tlsMode string, tlsSkipVerify bool, us
 	switch tlsMode {
 	case tlsModeImplicit:
 		opts = append(opts, gomail.WithSSL())
-	case tlsModeNone:
+	case tlsModeOff:
 		opts = append(opts, gomail.WithTLSPolicy(gomail.NoTLS))
 	default: // starttls
 		opts = append(opts, gomail.WithTLSPolicy(gomail.TLSMandatory))
@@ -324,7 +324,7 @@ func (c *Channel) classify(err error) error {
 func normalizeTLSMode(mode string, port int) string {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	switch mode {
-	case tlsModeSTARTTLS, tlsModeImplicit, tlsModeNone:
+	case tlsModeSTARTTLS, tlsModeImplicit, tlsModeOff:
 		return mode
 	}
 	if port == 465 {

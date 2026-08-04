@@ -44,7 +44,7 @@ type Supervisor struct {
 
 	// startFails counts consecutive fast failures per slot — exits that
 	// happened before the instance reached healthy_after of uptime. A healthy
-	// run (or a clean, non-failure exit) resets it; exceeding start_retries
+	// run (or a clean, non-failure exit) resets it; exceeding restart_attempts
 	// trips the slot into the FATAL state.
 	startFails map[int]int
 	// fatal flags slots that exhausted their start-retry budget. A FATAL slot

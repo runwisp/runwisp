@@ -74,18 +74,18 @@ chat_id   = "-1001234567890"
 # Any backup-* failure pages ops and on-call; inline override sends Slack to
 # the dedicated #backups channel.
 [[notification_route]]
-match  = { kind = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+match  = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
 notify = ["slack-ops:#backups", "telegram-oncall"]
 
 # Surface successful deploys to the deploys channel.
 [[notification_route]]
-match  = { kind = ["run.succeeded"], task = "deploy-*" }
+match  = { kinds = ["run.succeeded"], task = "deploy-*" }
 notify = ["slack-deploys"]
 
 # Mirror notifier-delivery failures into the in-app bell so the operator
 # notices a broken webhook without staring at the daemon log.
 [[notification_route]]
-match  = { kind = ["notify.delivery_failed"] }
+match  = { kinds = ["notify.delivery_failed"] }
 notify = ["inapp"]
 
 # ── Backups ──────────────────────────────────────────────────────────────────

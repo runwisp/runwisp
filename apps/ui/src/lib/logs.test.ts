@@ -9,8 +9,8 @@ import { parseLogPage, type LogPage } from "./logs";
 describe("parseLogPage", () => {
     const makePage = (overrides: Partial<LogPage> = {}): LogPage => ({
         lines: [],
-        first_available: 0,
-        total_lines: 0,
+        firstAvailable: 0,
+        totalLines: 0,
         truncated: false,
         finalized: false,
         ...overrides,
@@ -22,7 +22,7 @@ describe("parseLogPage", () => {
                 { n: 0, stream: "stdout", text: "first" },
                 { n: 1, stream: "stdout", text: "second" },
             ],
-            total_lines: 2,
+            totalLines: 2,
         });
         const evt = parseLogPage(page);
         expect(evt.lines).toEqual({ 0: "first", 1: "second" });
@@ -35,14 +35,14 @@ describe("parseLogPage", () => {
         expect(evt.finished).toBe(true);
     });
 
-    it("does NOT set firstAvailableLine when first_available is 0 (zero branch)", () => {
-        const page = makePage({ first_available: 0 });
+    it("does NOT set firstAvailableLine when firstAvailable is 0 (zero branch)", () => {
+        const page = makePage({ firstAvailable: 0 });
         const evt = parseLogPage(page);
         expect(evt.firstAvailableLine).toBeUndefined();
     });
 
-    it("sets firstAvailableLine when first_available > 0 (non-zero branch)", () => {
-        const page = makePage({ first_available: 5 });
+    it("sets firstAvailableLine when firstAvailable > 0 (non-zero branch)", () => {
+        const page = makePage({ firstAvailable: 5 });
         const evt = parseLogPage(page);
         expect(evt.firstAvailableLine).toBe(5);
     });
@@ -53,7 +53,7 @@ describe("parseLogPage", () => {
                 { n: 3, stream: "stderr", text: "boom" },
                 { n: 7, stream: "stdout", text: "ok" },
             ],
-            total_lines: 8,
+            totalLines: 8,
         });
         const evt = parseLogPage(page);
         expect(evt.lines).toEqual({ 3: "boom", 7: "ok" });

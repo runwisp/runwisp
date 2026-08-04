@@ -46,13 +46,13 @@ function filtersEqual(a: RunsFilters | null, b: RunsFilters): boolean {
     return (
         a.search === b.search &&
         arraysEqual(a.statuses, b.statuses) &&
-        a.sort_direction === b.sort_direction &&
-        a.task_name === b.task_name &&
-        a.created_after === b.created_after &&
-        a.created_before === b.created_before &&
-        a.triggered_by === b.triggered_by &&
-        a.exit_code === b.exit_code &&
-        a.retries_only === b.retries_only
+        a.sortDirection === b.sortDirection &&
+        a.taskName === b.taskName &&
+        a.createdAfter === b.createdAfter &&
+        a.createdBefore === b.createdBefore &&
+        a.triggeredBy === b.triggeredBy &&
+        a.exitCode === b.exitCode &&
+        a.retriesOnly === b.retriesOnly
     );
 }
 
@@ -67,15 +67,15 @@ function buildQuery(offset: number, f: RunsFilters): RunsQuery {
     const search = f.search.trim();
     if (search) params.search = search;
     if (f.statuses.length > 0) params.status = f.statuses.join(",");
-    if (f.sort_direction) params.sort_direction = f.sort_direction;
-    if (f.created_after) params.created_after = f.created_after;
-    if (f.created_before) params.created_before = f.created_before;
-    const trigger = asTrigger(f.triggered_by);
-    if (trigger) params.triggered_by = trigger;
-    const exit = exitCodeRange(f.exit_code);
-    if (exit.min !== undefined) params.exit_code_min = String(exit.min);
-    if (exit.max !== undefined) params.exit_code_max = String(exit.max);
-    if (f.retries_only === true) params.retries_only = true;
+    if (f.sortDirection) params.sortDirection = f.sortDirection;
+    if (f.createdAfter) params.createdAfter = f.createdAfter;
+    if (f.createdBefore) params.createdBefore = f.createdBefore;
+    const trigger = asTrigger(f.triggeredBy);
+    if (trigger) params.triggeredBy = trigger;
+    const exit = exitCodeRange(f.exitCode);
+    if (exit.min !== undefined) params.exitCodeMin = String(exit.min);
+    if (exit.max !== undefined) params.exitCodeMax = String(exit.max);
+    if (f.retriesOnly === true) params.retriesOnly = true;
     return params;
 }
 
@@ -84,45 +84,45 @@ function buildQuery(offset: number, f: RunsFilters): RunsQuery {
 // matched an ended run; this fixes that.)
 function matchesStatus(run: Run, statuses: string[]): boolean {
     if (statuses.length === 0) return true;
-    const display = displayStatus(run.status, run.end_reason);
+    const display = displayStatus(run.status, run.endReason);
     return statuses.includes(display) || statuses.includes(run.status);
 }
 
 function matchesTimeRange(run: Run, after?: string, before?: string): boolean {
-    const created = Date.parse(run.created_at);
+    const created = Date.parse(run.createdAt);
     if (after && created < Date.parse(after)) return false;
     if (before && created > Date.parse(before)) return false;
     return true;
 }
 
 // Exit-code gating mirrors the server's inclusive [min, max] range. In-flight
-// runs carry exit_code 0, so a positive lower bound drops them — exactly as the
+// runs carry exitCode 0, so a positive lower bound drops them — exactly as the
 // server query would.
 function matchesExitCode(run: Run, range: ExitCodeRange): boolean {
-    if (range.min !== undefined && run.exit_code < range.min) return false;
-    if (range.max !== undefined && run.exit_code > range.max) return false;
+    if (range.min !== undefined && run.exitCode < range.min) return false;
+    if (range.max !== undefined && run.exitCode > range.max) return false;
     return true;
 }
 
 function matchesSearch(run: Run, search: string): boolean {
     const query = search.trim().toLowerCase();
     if (!query) return true;
-    return run.id.toLowerCase().includes(query) || run.task_name.toLowerCase().includes(query);
+    return run.id.toLowerCase().includes(query) || run.taskName.toLowerCase().includes(query);
 }
 
 function matchesFilters(run: Run, f: RunsFilters): boolean {
-    if (f.task_name && run.task_name !== f.task_name) return false;
+    if (f.taskName && run.taskName !== f.taskName) return false;
     if (!matchesStatus(run, f.statuses)) return false;
-    if (!matchesTimeRange(run, f.created_after, f.created_before)) return false;
-    if (f.triggered_by && run.triggered_by !== f.triggered_by) return false;
-    if (!matchesExitCode(run, exitCodeRange(f.exit_code))) return false;
-    if (f.retries_only === true && run.retry_attempt <= 0) return false;
+    if (!matchesTimeRange(run, f.createdAfter, f.createdBefore)) return false;
+    if (f.triggeredBy && run.triggeredBy !== f.triggeredBy) return false;
+    if (!matchesExitCode(run, exitCodeRange(f.exitCode))) return false;
+    if (f.retriesOnly === true && run.retryAttempt <= 0) return false;
     return matchesSearch(run, f.search);
 }
 
-/** True when filters use the server default sort (created_at DESC). */
+/** True when filters use the server default sort (createdAt DESC). */
 function isCreatedAtDesc(f: RunsFilters): boolean {
-    return f.sort_direction !== "asc";
+    return f.sortDirection !== "asc";
 }
 
 export function createRunsSource(): RunsSource {
@@ -143,8 +143,8 @@ export function createRunsSource(): RunsSource {
         loading = true;
         try {
             const query = buildQuery(offset, f);
-            const res = f.task_name
-                ? await tasksApi.getRuns(f.task_name, query)
+            const res = f.taskName
+                ? await tasksApi.getRuns(f.taskName, query)
                 : await runsApi.getAll(query);
             if (token !== fetchToken) return;
             items = replace ? res.runs : [...items, ...res.runs];
@@ -196,8 +196,8 @@ export function createRunsSource(): RunsSource {
     function insertNew(run: Run, f: RunsFilters): void {
         if (!matchesFilters(run, f)) return;
         if (isCreatedAtDesc(f)) {
-            const ts = Date.parse(run.created_at);
-            const insertAt = items.findIndex((r) => Date.parse(r.created_at) < ts);
+            const ts = Date.parse(run.createdAt);
+            const insertAt = items.findIndex((r) => Date.parse(r.createdAt) < ts);
             const next = [...items];
             if (insertAt === -1) next.push(run);
             else next.splice(insertAt, 0, run);

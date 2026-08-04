@@ -33,10 +33,10 @@ func serviceTask(name string, instances int) *model.Task {
 		// counts as a successful start — these helpers model services that come
 		// up fine and later exit (refill), not ones that fail to start (FATAL).
 		// Tests exercising FATAL or backoff accumulation set HealthyAfter /
-		// StartRetries explicitly.
-		HealthyAfter:   time.Nanosecond,
-		StartRetries:   3,
-		RestartBackoff: model.BackoffConstant,
+		// RestartAttempts explicitly.
+		HealthyAfter:    time.Nanosecond,
+		RestartAttempts: 3,
+		RestartBackoff:  model.BackoffConstant,
 	}
 }
 
@@ -231,7 +231,7 @@ func TestRestartAttemptsIncrementOnQuickExit(t *testing.T) {
 	// exit stays a "fast failure": the backoff counter (the subject here) climbs
 	// without the instance going FATAL and halting the climb.
 	task.HealthyAfter = time.Hour
-	task.StartRetries = 1_000_000
+	task.RestartAttempts = 1_000_000
 	jm.UpsertTask(task)
 
 	// Each instance run exits quickly with failure; well under the healthy_after
@@ -256,8 +256,8 @@ func TestRestartAttemptsIncrementOnQuickExit(t *testing.T) {
 
 // TestServiceFatalAfterStartRetries is the bug-first guard for B3: a service
 // that can never stay up must reach a loud terminal FATAL state instead of
-// flapping forever (which is what happens without start_retries). It asserts
-// the supervisor gives up after start_retries+1 fast failures, stops refilling,
+// flapping forever (which is what happens without restart_attempts). It asserts
+// the supervisor gives up after restart_attempts+1 fast failures, stops refilling,
 // records the give-up as a start_failed run, and fires a single service.fatal
 // event — then an operator restart re-attempts with a fresh budget.
 func TestServiceFatalAfterStartRetries(t *testing.T) {
@@ -285,7 +285,7 @@ func TestServiceFatalAfterStartRetries(t *testing.T) {
 	})
 
 	task := serviceTask("flapper", 1)
-	task.StartRetries = 2
+	task.RestartAttempts = 2
 	task.HealthyAfter = 2 * time.Second // every quick exit is a "fast failure"
 	task.RestartDelay = time.Millisecond
 	jm.UpsertTask(task)
@@ -322,7 +322,7 @@ func TestServiceFatalAfterStartRetries(t *testing.T) {
 	assert.Equal(t, model.ServiceInstanceFatal, snap.Instances[0].State)
 
 	callsAtFatal := execCalls.Load()
-	assert.Equal(t, int64(3), callsAtFatal, "start_retries=2 → 3 fast failures, then give up")
+	assert.Equal(t, int64(3), callsAtFatal, "restart_attempts=2 → 3 fast failures, then give up")
 	time.Sleep(150 * time.Millisecond)
 	assert.Equal(t, callsAtFatal, execCalls.Load(), "no restarts after FATAL")
 

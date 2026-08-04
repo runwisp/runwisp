@@ -29,8 +29,8 @@
     let rhythm = $derived(
         phrase({
             count: notification.count,
-            createdAt: notification.created_at,
-            lastOccurredAt: notification.last_occurred_at,
+            createdAt: notification.createdAt,
+            lastOccurredAt: notification.lastOccurredAt,
             occurrences: notification.occurrences,
             now,
         }),
@@ -64,17 +64,17 @@
             <p class="line-clamp-2 text-xs text-on-surface-muted">{notification.body}</p>
         {/if}
 
-        {#if notification.run_id}
+        {#if notification.runId}
             <span
                 class="inline-flex items-center gap-1 rounded-[3px] border border-primary-soft-border bg-primary-soft px-1.5 py-0.5 font-mono text-2xs font-medium text-primary-soft-text"
             >
-                View run #{formatShortId(notification.run_id)} <span aria-hidden="true">→</span>
+                View run #{formatShortId(notification.runId)} <span aria-hidden="true">→</span>
             </span>
         {/if}
 
         <div class="flex items-center justify-between gap-2 text-2xs text-on-surface-faint">
-            {#if notification.task_name}
-                <span class="truncate font-mono">{notification.task_name}</span>
+            {#if notification.taskName}
+                <span class="truncate font-mono">{notification.taskName}</span>
             {:else}
                 <span></span>
             {/if}
@@ -87,13 +87,13 @@
     </div>
 {/snippet}
 
-{#if notification.task_name}
+{#if notification.taskName}
     <a
-        href={notification.run_id
+        href={notification.runId
             ? resolve(
-                  `/tasks/${encodeURIComponent(notification.task_name)}/${encodeURIComponent(notification.run_id)}`,
+                  `/tasks/${encodeURIComponent(notification.taskName)}/${encodeURIComponent(notification.runId)}`,
               )
-            : resolve(`/tasks/${encodeURIComponent(notification.task_name)}`)}
+            : resolve(`/tasks/${encodeURIComponent(notification.taskName)}`)}
         {onclick}
         data-testid="notification-item"
         class="flex gap-3 rounded-[4px] border border-outline-faint bg-surface-raised p-3 no-underline hover:border-outline-hover hover:bg-surface-sunken"

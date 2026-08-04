@@ -132,7 +132,7 @@ of options, including `notify_on_success`.
 
 ```toml
 [[notification_route]]
-match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
 notify = ["discord-ops"]
 ```
 
@@ -142,7 +142,7 @@ pattern for finer control:
 ```toml
 # Backup failures also ping the on-call channel
 [[notification_route]]
-match  = { kind = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+match  = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
 notify = ["discord-ops", "discord-oncall"]
 ```
 

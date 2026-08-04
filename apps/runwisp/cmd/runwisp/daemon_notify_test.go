@@ -241,8 +241,8 @@ func TestMutedMissedTasks(t *testing.T) {
 
 	t.Run("nil when nothing is muted", func(t *testing.T) {
 		tasks := []model.Task{
-			{Name: "a"},                            // omitted → notifies
-			{Name: "b", NotifyOnMissed: &muteTrue}, // explicit true → notifies
+			{Name: "a"}, // omitted → notifies
+			{Name: "b", TreatMissedAsFailure: &muteTrue}, // explicit true → notifies
 		}
 		assert.Nil(t, mutedMissedTasks(tasks),
 			"the common case must allocate nothing")
@@ -251,8 +251,8 @@ func TestMutedMissedTasks(t *testing.T) {
 	t.Run("collects only the explicit-false tasks", func(t *testing.T) {
 		tasks := []model.Task{
 			{Name: "loud"},
-			{Name: "quiet", NotifyOnMissed: &muteFalse},
-			{Name: "also-quiet", NotifyOnMissed: &muteFalse},
+			{Name: "quiet", TreatMissedAsFailure: &muteFalse},
+			{Name: "also-quiet", TreatMissedAsFailure: &muteFalse},
 		}
 		muted := mutedMissedTasks(tasks)
 		require.Len(t, muted, 2)

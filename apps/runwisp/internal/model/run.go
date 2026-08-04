@@ -68,7 +68,7 @@ const (
 	// -1, like other never-executed reasons.
 	ReasonMissed EndReason = "missed"
 	// ReasonStartFailed marks the final, FATAL instance run of a service that
-	// fast-failed more than `start_retries` times in a row without ever
+	// fast-failed more than `restart_attempts` times in a row without ever
 	// reaching `healthy_after` of uptime. The supervisor stops restarting it;
 	// this run row is the durable record of the give-up. Treated as a failure
 	// for retry/notify/cloud classification.
@@ -135,18 +135,18 @@ const (
 // no consumer outside storage sees row-internal fields.
 type Run struct {
 	ID                  string      `json:"id"`
-	ExternalExecutionID *string     `json:"external_execution_id,omitempty"`
-	TaskName            string      `json:"task_name"`
+	ExternalExecutionID *string     `json:"externalExecutionId,omitempty"`
+	TaskName            string      `json:"taskName"`
 	Status              RunPhase    `json:"status" enum:"pending,running,ended" doc:"Run lifecycle phase"`
-	EndReason           *EndReason  `json:"end_reason,omitempty"`
-	ExitCode            int         `json:"exit_code"`
-	StartAt             *time.Time  `json:"start_at,omitempty"`
-	EndAt               *time.Time  `json:"end_at,omitempty"`
-	TriggeredBy         TriggeredBy `json:"triggered_by" enum:"cron,api,cloud,service,startup" doc:"How the run was triggered"`
-	CreatedAt           time.Time   `json:"created_at"`
-	RetryAttempt        int         `json:"retry_attempt"`
-	RetryOfRunID        *string     `json:"retry_of_run_id,omitempty"`
-	InstanceIndex       int         `json:"instance_index"`
+	EndReason           *EndReason  `json:"endReason,omitempty"`
+	ExitCode            int         `json:"exitCode"`
+	StartAt             *time.Time  `json:"startAt,omitempty"`
+	EndAt               *time.Time  `json:"endAt,omitempty"`
+	TriggeredBy         TriggeredBy `json:"triggeredBy" enum:"cron,api,cloud,service,startup" doc:"How the run was triggered"`
+	CreatedAt           time.Time   `json:"createdAt"`
+	RetryAttempt        int         `json:"retryAttempt"`
+	RetryOfRunID        *string     `json:"retryOfRunId,omitempty"`
+	InstanceIndex       int         `json:"instanceIndex"`
 	// Params holds the resolved per-execution parameter values used for this
 	// run (identity key → value). Nil for tasks without declared parameters, so
 	// it is omitted from JSON/storage and adds no behaviour for the common case.
@@ -232,5 +232,5 @@ type RunSummary struct {
 	Success     int64      `json:"success" doc:"Number of successful runs"`
 	Failed      int64      `json:"failed" doc:"Number of failed runs"`
 	Missed      int64      `json:"missed" doc:"Number of scheduled runs missed during downtime"`
-	LastFailure *time.Time `json:"last_failure,omitempty" doc:"Timestamp of most recent failure"`
+	LastFailure *time.Time `json:"lastFailure,omitempty" doc:"Timestamp of most recent failure"`
 }

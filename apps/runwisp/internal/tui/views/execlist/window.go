@@ -231,7 +231,7 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() ([]uikit.ExecListIte
 			Limit:         windowSize,
 			Offset:        offset,
 			Status:        statusFilter,
-			SortField:     "created_at",
+			SortField:     "createdAt",
 			SortDirection: "desc",
 			TaskName:      filter,
 		}

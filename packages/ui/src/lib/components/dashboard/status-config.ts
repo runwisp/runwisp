@@ -151,7 +151,7 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
         dot: "bg-danger-surface",
         badge: "bg-danger-soft text-danger-soft-text",
         description:
-            "The service kept failing to stay up for healthy_after; after start_retries the supervisor gave up and stopped restarting it.",
+            "The service kept failing to stay up for healthy_after; after restart_attempts the supervisor gave up (FATAL) and stopped restarting it.",
     },
     pending: {
         icon: Clock,
@@ -177,6 +177,6 @@ export function getRunStatusConfig(status: RunStatus): RunStatusConfig {
     return RUN_STATUS_CONFIG[status];
 }
 
-export function runDisplayStatus(run: Pick<Run, "status" | "end_reason">): RunStatus {
-    return displayStatus(run.status, run.end_reason);
+export function runDisplayStatus(run: Pick<Run, "status" | "endReason">): RunStatus {
+    return displayStatus(run.status, run.endReason);
 }

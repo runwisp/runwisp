@@ -28,7 +28,7 @@ type TaskNameInput struct {
 type TriggerRunInput struct {
 	TaskName    string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
 	Wait        bool   `query:"wait" doc:"Block until the run finishes and return the completed run (with exit_code and end_reason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead."`
-	WaitTimeout int    `query:"wait_timeout" minimum:"1" maximum:"3600" default:"300" doc:"With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state."`
+	WaitTimeout int    `query:"waitTimeout" minimum:"1" maximum:"3600" default:"300" doc:"With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state."`
 	// Body is a pointer so it is optional — a zero-param trigger can POST with
 	// no payload at all.
 	Body *struct {
@@ -52,15 +52,15 @@ type RunsQueryInput struct {
 	Limit         int       `query:"limit" minimum:"1" maximum:"1000" default:"50" doc:"Max results per page"`
 	Offset        int       `query:"offset" minimum:"0" default:"0" doc:"Pagination offset"`
 	Status        string    `query:"status" doc:"Comma-separated run statuses (phase or end reason); a run matches any listed value"`
-	TaskName      string    `query:"task_name" doc:"Filter by task name"`
-	TriggeredBy   string    `query:"triggered_by" enum:"cron,api,cloud,service,startup," doc:"Filter by what triggered the run"`
-	CreatedAfter  time.Time `query:"created_after" doc:"Only runs created at or after this RFC3339 time"`
-	CreatedBefore time.Time `query:"created_before" doc:"Only runs created at or before this RFC3339 time"`
-	ExitCodeMin   string    `query:"exit_code_min" pattern:"^-?[0-9]+$" doc:"Only runs whose exit code is >= this (inclusive)"`
-	ExitCodeMax   string    `query:"exit_code_max" pattern:"^-?[0-9]+$" doc:"Only runs whose exit code is <= this (inclusive)"`
-	RetriesOnly   bool      `query:"retries_only" doc:"Only runs that are a retry (retry_attempt > 0)"`
-	SortField     string    `query:"sort_field" enum:"task_name,status,start_at,exit_code,duration,created_at," doc:"Field to sort by"`
-	SortDirection string    `query:"sort_direction" enum:"asc,desc," doc:"Sort direction"`
+	TaskName      string    `query:"taskName" doc:"Filter by task name"`
+	TriggeredBy   string    `query:"triggeredBy" enum:"cron,api,cloud,service,startup," doc:"Filter by what triggered the run"`
+	CreatedAfter  time.Time `query:"createdAfter" doc:"Only runs created at or after this RFC3339 time"`
+	CreatedBefore time.Time `query:"createdBefore" doc:"Only runs created at or before this RFC3339 time"`
+	ExitCodeMin   string    `query:"exitCodeMin" pattern:"^-?[0-9]+$" doc:"Only runs whose exit code is >= this (inclusive)"`
+	ExitCodeMax   string    `query:"exitCodeMax" pattern:"^-?[0-9]+$" doc:"Only runs whose exit code is <= this (inclusive)"`
+	RetriesOnly   bool      `query:"retriesOnly" doc:"Only runs that are a retry (retry_attempt > 0)"`
+	SortField     string    `query:"sortField" enum:"taskName,status,startAt,exitCode,duration,createdAt," doc:"Field to sort by"`
+	SortDirection string    `query:"sortDirection" enum:"asc,desc," doc:"Sort direction"`
 	Search        string    `query:"search" doc:"Search query"`
 }
 
@@ -140,12 +140,6 @@ type TriggerRunOutput struct {
 	Body model.Run
 }
 
-type StopRunOutput struct {
-	Body struct {
-		Message string `json:"message" doc:"Result message"`
-	}
-}
-
 // BulkRunSelectorInput is the shared request body for every /api/runs/bulk/*
 // endpoint. The selector is the same object the UI builds locally and any
 // other client could reuse — one shape, four operations.
@@ -170,8 +164,8 @@ type BulkRerunBody struct {
 }
 
 type TriggeredRunRef struct {
-	TaskName string `json:"task_name"`
-	RunID    string `json:"run_id"`
+	TaskName string `json:"taskName"`
+	RunID    string `json:"runId"`
 }
 
 type DaemonInfoOutput struct {
@@ -201,7 +195,7 @@ type AuthStatusOutput struct {
 }
 
 type AuthStatusBody struct {
-	AuthRequired  bool `json:"auth_required" doc:"Whether authentication is required"`
+	AuthRequired  bool `json:"authRequired" doc:"Whether authentication is required"`
 	Authenticated bool `json:"authenticated" doc:"Whether the current request is already authenticated via cookie"`
 }
 
@@ -261,7 +255,7 @@ type LogRegionSSEEvent struct {
 }
 
 type LogRotatedEvent struct {
-	FirstAvailable int64 `json:"first_available" doc:"Lowest line number still on disk after rotation"`
+	FirstAvailable int64 `json:"firstAvailable" doc:"Lowest line number still on disk after rotation"`
 }
 
 type LogDroppedEvent struct {
@@ -270,7 +264,7 @@ type LogDroppedEvent struct {
 }
 
 type LogDoneEvent struct {
-	FinalLine int64  `json:"final_line" doc:"Last line number emitted before the run terminated"`
+	FinalLine int64  `json:"finalLine" doc:"Last line number emitted before the run terminated"`
 	Status    string `json:"status" doc:"Reason the stream is closing (e.g. 'ended')"`
 }
 

@@ -964,7 +964,7 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 	if task.Kind.IsService() {
 		wasFailure := retry.IsFailureReason(endReason)
 		nextRestartAttempt, serviceFatal = ts.supervisor.RecordExit(
-			run.InstanceIndex, runDuration, task.StartRetries, wasFailure)
+			run.InstanceIndex, runDuration, task.RestartAttempts, wasFailure)
 		if serviceFatal {
 			fatalAttempts = ts.supervisor.StartFails(run.InstanceIndex)
 		}

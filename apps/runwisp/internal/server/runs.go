@@ -66,20 +66,20 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaGetMetricsHistory)
 
 	huma.Register(protectedAPI, huma.Operation{
-		OperationID: "getTasks",
+		OperationID: "listTasks",
 		Method:      http.MethodGet,
 		Path:        "/api/tasks",
 		Summary:     "List all tasks",
 		Tags:        []string{"Tasks"},
-	}, srv.humaGetTasks)
+	}, srv.humaListTasks)
 
 	huma.Register(protectedAPI, huma.Operation{
-		OperationID: "getAllRuns",
+		OperationID: "listRuns",
 		Method:      http.MethodGet,
 		Path:        "/api/runs",
 		Summary:     "List all runs",
 		Tags:        []string{"Runs"},
-	}, srv.humaGetAllRuns)
+	}, srv.humaListRuns)
 
 	huma.Register(protectedAPI, huma.Operation{
 		OperationID: "getRunSummary",
@@ -90,28 +90,20 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaGetRunSummary)
 
 	huma.Register(protectedAPI, huma.Operation{
-		OperationID: "getRunById",
+		OperationID: "getRun",
 		Method:      http.MethodGet,
 		Path:        "/api/runs/{runId}",
 		Summary:     "Get a single run by ID",
 		Tags:        []string{"Runs"},
-	}, srv.humaGetRunByID)
+	}, srv.humaGetRun)
 
 	huma.Register(protectedAPI, huma.Operation{
-		OperationID: "getTaskRuns",
+		OperationID: "listTaskRuns",
 		Method:      http.MethodGet,
 		Path:        "/api/tasks/{taskName}/runs",
 		Summary:     "List runs for a task",
 		Tags:        []string{"Runs"},
-	}, srv.humaGetTaskRuns)
-
-	huma.Register(protectedAPI, huma.Operation{
-		OperationID: "getRun",
-		Method:      http.MethodGet,
-		Path:        "/api/tasks/{taskName}/runs/{runId}",
-		Summary:     "Get a single run",
-		Tags:        []string{"Runs"},
-	}, srv.humaGetRun)
+	}, srv.humaListTaskRuns)
 
 	huma.Register(protectedAPI, huma.Operation{
 		OperationID:   "triggerRun",
@@ -124,21 +116,23 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaTriggerRun)
 
 	huma.Register(protectedAPI, huma.Operation{
-		OperationID: "restartService",
-		Method:      http.MethodPost,
-		Path:        "/api/tasks/{taskName}/restart",
-		Summary:     "Restart all instances of a service",
-		Tags:        []string{"Runs"},
-	}, srv.humaRestartService)
+		OperationID:   "restartTask",
+		Method:        http.MethodPost,
+		Path:          "/api/tasks/{taskName}/restart",
+		Summary:       "Restart all instances of a service",
+		Tags:          []string{"Runs"},
+		DefaultStatus: http.StatusNoContent,
+	}, srv.humaRestartTask)
 
 	huma.Register(protectedAPI, huma.Operation{
-		OperationID: "stopService",
-		Method:      http.MethodPost,
-		Path:        "/api/tasks/{taskName}/stop",
-		Summary:     "Stop a service for the daemon's lifetime",
-		Description: "Cancels every live instance and marks the service stopped. The supervisor stops refilling slots until a restart is issued or the daemon is restarted.",
-		Tags:        []string{"Runs"},
-	}, srv.humaStopService)
+		OperationID:   "stopTask",
+		Method:        http.MethodPost,
+		Path:          "/api/tasks/{taskName}/stop",
+		Summary:       "Stop a service for the daemon's lifetime",
+		Description:   "Cancels every live instance and marks the service stopped. The supervisor stops refilling slots until a restart is issued or the daemon is restarted.",
+		Tags:          []string{"Runs"},
+		DefaultStatus: http.StatusNoContent,
+	}, srv.humaStopTask)
 
 	huma.Register(protectedAPI, huma.Operation{
 		OperationID:   "deleteRun",
@@ -150,11 +144,12 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaDeleteRun)
 
 	huma.Register(protectedAPI, huma.Operation{
-		OperationID: "stopRun",
-		Method:      http.MethodPost,
-		Path:        "/api/tasks/{taskName}/runs/{runId}/stop",
-		Summary:     "Stop a running task",
-		Tags:        []string{"Runs"},
+		OperationID:   "stopRun",
+		Method:        http.MethodPost,
+		Path:          "/api/tasks/{taskName}/runs/{runId}/stop",
+		Summary:       "Stop a running task",
+		Tags:          []string{"Runs"},
+		DefaultStatus: http.StatusNoContent,
 	}, srv.humaStopRun)
 
 	huma.Register(protectedAPI, huma.Operation{
@@ -175,12 +170,12 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaBulkRestoreRuns)
 
 	huma.Register(protectedAPI, huma.Operation{
-		OperationID: "bulkCancelRuns",
+		OperationID: "bulkStopRuns",
 		Method:      http.MethodPost,
-		Path:        "/api/runs/bulk/cancel",
-		Summary:     "Cancel every running run matched by the selector",
+		Path:        "/api/runs/bulk/stop",
+		Summary:     "Stop every running run matched by the selector",
 		Tags:        []string{"Runs"},
-	}, srv.humaBulkCancelRuns)
+	}, srv.humaBulkStopRuns)
 
 	huma.Register(protectedAPI, huma.Operation{
 		OperationID: "bulkRerunRuns",
@@ -233,11 +228,11 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	srv.registerNotificationsRoutes(protectedAPI)
 }
 
-func (srv *Server) humaGetTasks(ctx context.Context, input *struct{}) (*TasksOutput, error) {
+func (srv *Server) humaListTasks(ctx context.Context, input *struct{}) (*TasksOutput, error) {
 	return &TasksOutput{Body: srv.runService.ListTasks()}, nil
 }
 
-func (srv *Server) humaGetAllRuns(ctx context.Context, input *RunsQueryInput) (*RunsOutput, error) {
+func (srv *Server) humaListRuns(ctx context.Context, input *RunsQueryInput) (*RunsOutput, error) {
 	p := input.toPaginationParams()
 	result, err := srv.runService.ListRuns(ctx, "", p)
 	if err != nil {
@@ -254,7 +249,7 @@ func (srv *Server) humaGetRunSummary(ctx context.Context, input *struct{}) (*Run
 	return &RunSummaryOutput{Body: *summary}, nil
 }
 
-func (srv *Server) humaGetTaskRuns(ctx context.Context, input *TaskRunsQueryInput) (*RunsOutput, error) {
+func (srv *Server) humaListTaskRuns(ctx context.Context, input *TaskRunsQueryInput) (*RunsOutput, error) {
 	p := input.toPaginationParams()
 	result, err := srv.runService.ListRuns(ctx, input.TaskName, p)
 	if err != nil {
@@ -282,33 +277,21 @@ func (srv *Server) humaTriggerRun(ctx context.Context, input *TriggerRunInput) (
 	return &TriggerRunOutput{Body: *run}, nil
 }
 
-func (srv *Server) humaRestartService(ctx context.Context, input *TaskNameInput) (*StopRunOutput, error) {
+func (srv *Server) humaRestartTask(ctx context.Context, input *TaskNameInput) (*struct{}, error) {
 	if err := srv.runService.RestartService(input.TaskName); err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to restart service")
 	}
-	out := &StopRunOutput{}
-	out.Body.Message = "Service instances restarting"
-	return out, nil
+	return nil, nil
 }
 
-func (srv *Server) humaStopService(ctx context.Context, input *TaskNameInput) (*StopRunOutput, error) {
+func (srv *Server) humaStopTask(ctx context.Context, input *TaskNameInput) (*struct{}, error) {
 	if err := srv.runService.StopService(input.TaskName); err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to stop service")
 	}
-	out := &StopRunOutput{}
-	out.Body.Message = "Service stopped"
-	return out, nil
+	return nil, nil
 }
 
-func (srv *Server) humaGetRun(ctx context.Context, input *TaskRunInput) (*RunOutput, error) {
-	run, err := srv.runService.GetRun(ctx, input.RunID)
-	if err != nil {
-		return nil, mapDomainError(ctx, err, "Failed to fetch run")
-	}
-	return &RunOutput{Body: *run}, nil
-}
-
-func (srv *Server) humaGetRunByID(ctx context.Context, input *RunIDInput) (*RunOutput, error) {
+func (srv *Server) humaGetRun(ctx context.Context, input *RunIDInput) (*RunOutput, error) {
 	run, err := srv.runService.GetRun(ctx, input.RunID)
 	if err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to fetch run")
@@ -323,13 +306,11 @@ func (srv *Server) humaDeleteRun(ctx context.Context, input *TaskRunInput) (*str
 	return nil, nil
 }
 
-func (srv *Server) humaStopRun(ctx context.Context, input *TaskRunInput) (*StopRunOutput, error) {
+func (srv *Server) humaStopRun(ctx context.Context, input *TaskRunInput) (*struct{}, error) {
 	if err := srv.runService.StopRun(ctx, input.RunID); err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to stop run")
 	}
-	out := &StopRunOutput{}
-	out.Body.Message = "Run stop signal sent"
-	return out, nil
+	return nil, nil
 }
 
 func (srv *Server) humaBulkDeleteRuns(ctx context.Context, input *BulkRunSelectorInput) (*BulkAffectedOutput, error) {
@@ -348,7 +329,7 @@ func (srv *Server) humaBulkRestoreRuns(ctx context.Context, input *BulkRunSelect
 	return &BulkAffectedOutput{Body: BulkAffectedBody{Affected: n}}, nil
 }
 
-func (srv *Server) humaBulkCancelRuns(ctx context.Context, input *BulkRunSelectorInput) (*BulkAffectedOutput, error) {
+func (srv *Server) humaBulkStopRuns(ctx context.Context, input *BulkRunSelectorInput) (*BulkAffectedOutput, error) {
 	n, err := srv.runService.bulkCancel(ctx, input.Body)
 	if err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to cancel runs")

@@ -77,7 +77,7 @@ func TestGetDaemonInfo(t *testing.T) {
 func TestAuthStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/auth/status", r.URL.Path)
-		_ = json.NewEncoder(w).Encode(map[string]bool{"auth_required": true})
+		_ = json.NewEncoder(w).Encode(map[string]bool{"authRequired": true})
 	}))
 	defer srv.Close()
 

@@ -16,19 +16,19 @@ import {
 } from "./overview-format";
 
 function makeTask(overrides: Partial<Task> = {}): TaskWithId {
-    return { id: "task-id-1", name: "my-task", api_trigger: false, autostart: true, ...overrides };
+    return { id: "task-id-1", name: "my-task", apiTrigger: false, autostart: true, ...overrides };
 }
 
 function makeRun(overrides: Partial<Run> = {}): Run {
     return {
         id: "run-1",
-        task_name: "my-task",
-        created_at: new Date("2024-01-01T00:00:00Z").toISOString(),
+        taskName: "my-task",
+        createdAt: new Date("2024-01-01T00:00:00Z").toISOString(),
         status: "ended",
-        exit_code: 0,
-        triggered_by: "cron",
-        retry_attempt: 0,
-        instance_index: 0,
+        exitCode: 0,
+        triggeredBy: "cron",
+        retryAttempt: 0,
+        instanceIndex: 0,
         ...overrides,
     };
 }
@@ -163,7 +163,7 @@ describe("taskTriggerIsHumanizedCron", () => {
 });
 
 describe("formatRunDurationLabel", () => {
-    it("returns 'Starting' when run has no end_at and no start_at", () => {
+    it("returns 'Starting' when run has no endAt and no startAt", () => {
         const run = makeRun({});
         expect(formatRunDurationLabel(run)).toBe("Starting");
     });
