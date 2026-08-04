@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`runwisp import cron` now scopes a crontab's settings to that crontab's own tasks**, instead of applying them globally. See [How cron maps to TOML](https://docs.runwisp.com/replacing-cron/cron-mapping/#the-mapping-table).
 - **Imported jobs skip catch-up runs, like cron did** — a missed run is still recorded, just not re-fired. See [How cron maps to TOML](https://docs.runwisp.com/replacing-cron/cron-mapping/#the-mapping-table).
 - **`runwisp import --quiet` now only silences clean imports** — jobs that need a fix are still listed. See [CLI](https://docs.runwisp.com/operations/cli/#migrate-an-existing-setup).
+- **`[daemon] tls` now defaults to `"off"`.** A non-loopback bind used to self-sign a certificate and serve HTTPS automatically; it now serves plain HTTP unless you opt in with `tls = "auto"` (self-signed HTTPS) or supply `tls_cert`/`tls_key`. See [`[daemon]`](https://docs.runwisp.com/configuration/daemon/#tls-tls_cert-tls_key).
 
 ### Fixed
 

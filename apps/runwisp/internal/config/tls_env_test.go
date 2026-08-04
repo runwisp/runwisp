@@ -24,14 +24,14 @@ run = "/bin/true"
 		assert.Equal(t, TLSModeOff, cfg.Daemon.TLS)
 	})
 
-	t.Run("unset leaves default auto untouched", func(t *testing.T) {
+	t.Run("unset leaves default off untouched", func(t *testing.T) {
 		path := writeTOML(t, `
 [tasks.t]
 run = "/bin/true"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		assert.Equal(t, TLSModeAuto, cfg.Daemon.TLS)
+		assert.Equal(t, TLSModeOff, cfg.Daemon.TLS)
 	})
 
 	t.Run("env off overrides TOML auto", func(t *testing.T) {

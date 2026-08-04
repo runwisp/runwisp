@@ -482,7 +482,7 @@ func validateDefaults(d *Defaults) error {
 // must exist and load as a usable key pair, so a typo'd path fails at boot
 // rather than when the first HTTPS request arrives.
 func validateTLS(d *Daemon) error {
-	// "" is the not-yet-defaulted state (ApplyDefaults fills it with "auto");
+	// "" is the not-yet-defaulted state (ApplyDefaults fills it with "off");
 	// accept it so Validate is order-independent with respect to ApplyDefaults.
 	switch d.TLS {
 	case "", TLSModeAuto, TLSModeOff:
@@ -1245,7 +1245,8 @@ const (
 
 // TLS modes for [daemon] tls. TLSModeAuto serves HTTP on loopback and
 // self-signed HTTPS on a non-loopback bind; TLSModeOff is plain HTTP on every
-// bind (operator terminates TLS upstream or trusts the network).
+// bind (operator terminates TLS upstream or trusts the network) and is the
+// default.
 const (
 	TLSModeAuto = "auto"
 	TLSModeOff  = "off"
@@ -1291,7 +1292,7 @@ func ApplyDefaults(cfg *Config) {
 		cfg.Daemon.ShutdownTimeout = DefaultDaemonShutdown
 	}
 	if cfg.Daemon.TLS == "" {
-		cfg.Daemon.TLS = TLSModeAuto
+		cfg.Daemon.TLS = TLSModeOff
 	}
 	if cfg.Defaults.HealthyAfter == 0 {
 		cfg.Defaults.HealthyAfter = DefaultHealthyAfter

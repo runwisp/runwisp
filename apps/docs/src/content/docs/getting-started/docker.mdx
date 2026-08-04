@@ -294,13 +294,13 @@ docker run --rm -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro \
 Everything else the image presets is a container-appropriate default you
 can override with a normal `-e`:
 
-| Variable             | Image default               | Why                                                                                                                  |
-| -------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `RUNWISP_CONFIG`     | `/etc/runwisp/runwisp.toml` | Where the entrypoint looks for your mounted config.                                                                  |
-| `RUNWISP_DATA`       | `/var/lib/runwisp`          | SQLite database, per-task logs, and the control socket — mount a volume here so state survives a container recreate. |
-| `RUNWISP_HOST`       | `0.0.0.0`                   | Containers need a non-loopback bind for port mapping to reach anything.                                              |
-| `RUNWISP_TLS`        | `off`                       | See [Plain HTTP by default](#plain-http-by-default).                                                                 |
-| `RUNWISP_LOG_FORMAT` | `text`                      | Human-readable `docker logs`. Set `json` if something downstream parses them.                                        |
+| Variable             | Image default                      | Why                                                                                                                  |
+| -------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `RUNWISP_CONFIG`     | `/etc/runwisp/runwisp.toml`        | Where the entrypoint looks for your mounted config.                                                                  |
+| `RUNWISP_DATA`       | `/var/lib/runwisp`                 | SQLite database, per-task logs, and the control socket — mount a volume here so state survives a container recreate. |
+| `RUNWISP_HOST`       | `0.0.0.0`                          | Containers need a non-loopback bind for port mapping to reach anything.                                              |
+| `RUNWISP_TLS`        | _unset_ (daemon defaults to `off`) | See [Plain HTTP by default](#plain-http-by-default).                                                                 |
+| `RUNWISP_LOG_FORMAT` | `text`                             | Human-readable `docker logs`. Set `json` if something downstream parses them.                                        |
 
 Prefer `-e RUNWISP_DATA=…` over `--data` on the command line. Both reach
 the daemon, but the healthcheck reads only the environment, so a flag
@@ -333,17 +333,16 @@ if you'd rather supply your own.
 
 ## Plain HTTP by default
 
-Outside a container, RunWisp's [auto-TLS](/configuration/daemon/#tls-tls_cert-tls_key)
-generates a self-signed certificate the moment you bind anywhere other
-than loopback. Good default on a bare host, wrong one here, where a
-reverse proxy is usually already terminating TLS. So the image sets
-`RUNWISP_TLS=off` and expects you to either:
+RunWisp serves plain HTTP by default on every bind address, so the image
+doesn't need to set `RUNWISP_TLS` at all — a reverse proxy is usually
+already terminating TLS in front of a container anyway. You either:
 
 - put a proxy in front and set `RUNWISP_TRUST_PROXY` to its CIDR, so the
   daemon honors `X-Forwarded-Proto` and still marks session cookies
   `Secure`; or
 - set `-e RUNWISP_TLS=auto` and let RunWisp terminate TLS itself with a
-  self-signed cert you trust out of band.
+  [self-signed cert](/configuration/daemon/#tls-tls_cert-tls_key) you
+  trust out of band.
 
 ## Timezone
 

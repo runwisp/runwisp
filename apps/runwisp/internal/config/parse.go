@@ -157,7 +157,7 @@ func parseExternalURL(raw string) (string, error) {
 	return trimmed, nil
 }
 
-// parseTLSMode validates [daemon] tls: empty (apply the "auto" default later),
+// parseTLSMode validates [daemon] tls: empty (apply the "off" default later),
 // "auto", or "off". The literal is normalised to lower case so "AUTO"/"Off"
 // don't trip validation. The actual auto-vs-off behaviour (loopback stays HTTP,
 // non-loopback self-signs) is resolved at boot against the bind host.

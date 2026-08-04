@@ -122,7 +122,7 @@
         "external_url": { "type": "string", "description": "Public Web UI base for notification deep-links; absolute http(s) with host." },
         "metrics_enabled": { "type": "boolean", "default": false, "description": "Master switch for /metrics." },
         "metrics_listen": { "type": "string", "description": "Dedicated metrics listener host:port; requires metrics_enabled=true." },
-        "tls": { "type": "string", "description": "TLS mode for the HTTP server." },
+        "tls": { "type": "string", "default": "off", "description": "TLS mode for the HTTP server." },
         "tls_cert": { "type": "string", "description": "Path to the TLS certificate." },
         "tls_key": { "type": "string", "description": "Path to the TLS private key." },
         "include": {
