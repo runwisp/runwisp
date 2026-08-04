@@ -467,6 +467,33 @@ func TestCronDetectHeaderLegendSwitchesToSystem(t *testing.T) {
 	mustNotContain(t, out, "dom mon dow")
 }
 
+// TestCronStockDebianNamesAndLegend covers the default, un-edited cron content
+// every Debian/Ubuntu box ships. The old deriver named these after the first
+// slash-bearing token — a redirect target, a `cd /`, or a `test -e` argument —
+// yielding `job`, `null`, `system`; and Debian's real `* * * * * user-name …`
+// legend, which the field-word matcher missed, rode onto the first job as its
+// description. Every job here must be named after its actual program instead.
+func TestCronStockDebianNamesAndLegend(t *testing.T) {
+	const in = "# .---------------- minute (0 - 59)\n" +
+		"# |  |  |  |  |\n" +
+		"# *  *  *  *  * user-name command to be executed\n" +
+		"17 *	* * *	root    cd / && run-parts --report /etc/cron.hourly\n" +
+		"30 3 * * 0 root test -e /run/systemd/system || SERVICE_MODE=1 /sbin/e2scrub_all -A -r\n" +
+		"5-55/10 * * * * root command -v debian-sa1 > /dev/null && debian-sa1 1 1\n"
+	res := parseCron(t, in, CronOptions{System: true})
+	out := res.TOML()
+
+	mustContain(t, out, "[tasks.run-parts]")
+	mustContain(t, out, "[tasks.e2scrub_all]")
+	mustContain(t, out, "[tasks.debian-sa1]")
+	// None of the garbage identities the old heuristic produced.
+	mustNotContain(t, out, "[tasks.job]")
+	mustNotContain(t, out, "[tasks.null]")
+	mustNotContain(t, out, "[tasks.system]")
+	// The column legend never becomes a job's description.
+	mustNotContain(t, out, "user-name command to be executed")
+}
+
 func TestCronDetectAmbiguousUserColumnWarns(t *testing.T) {
 	// No header legend, but the sixth token looks like a username. We must not
 	// silently fold it into run; instead flag it (inline banner + note).
