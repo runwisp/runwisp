@@ -256,10 +256,10 @@
     --rw-outline-faint: #1d2932;
     --rw-ring: #2fd4dd;
     --rw-backdrop: rgba(4, 10, 12, 0.7);
-    /* Primary */
-    --rw-primary: #15a0a8;
-    --rw-primary-hover: #2fd4dd;
-    --rw-primary-active: #2fd4dd;
+    /* Primary — bright teal in dark, matches info */
+    --rw-primary: #2fd4dd;
+    --rw-primary-hover: #5fe3ea;
+    --rw-primary-active: #5fe3ea;
     --rw-on-primary: #04181a;
     --rw-primary-soft: rgba(21, 160, 168, 0.14);
     --rw-primary-soft-text: #2fd4dd;

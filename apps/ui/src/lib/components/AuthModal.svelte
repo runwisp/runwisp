@@ -123,11 +123,13 @@
                         RunWisp
                     </span>
                 </div>
+                <p class="font-sans text-sm text-on-surface-muted">Sign in to this instance</p>
             </div>
 
             <form onsubmit={handleSubmit} class="mt-6 space-y-4">
                 <Input
                     type="password"
+                    aria-label="Password"
                     placeholder="Enter password"
                     bind:value={password}
                     error={error || undefined}
@@ -162,8 +164,8 @@
                     {/snippet}
                     <p class="max-w-[16rem] text-xs leading-relaxed text-on-surface-muted">
                         It's <code class={chip}>RUNWISP_PASSWORD</code> if that's set.
-                        <br>Otherwise the daemon randomizes one each boot. 
-                        Run <code class={chip}>runwisp password</code> on the host to print it.
+                        <br />Otherwise the daemon randomizes one each boot. Run
+                        <code class={chip}>runwisp password</code> on the host to print it.
                     </p>
                 </Popover>
             </div>
