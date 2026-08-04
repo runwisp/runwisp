@@ -25,7 +25,6 @@
 
 [daemon]
 shutdown_timeout = "15s"
-external_url     = "https://runwisp.acme-notes.example"
 
 [scheduler]
 timezone = "Europe/Bratislava"

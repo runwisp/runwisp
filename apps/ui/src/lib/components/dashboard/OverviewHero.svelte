@@ -14,15 +14,15 @@
     type BadgeTone = "default" | "primary" | "success" | "warning" | "danger" | "info";
 
     // A stat pane, in the website's tmux-pane language: the label rides the top
-    // hairline as a lowercase tab, the state rides the same line on the right as
-    // a status tag. Only a real alarm tints the pane, so when something breaks
-    // it is the single lit thing on the page.
+    // hairline as a lowercase tab. State is carried by the number itself — it
+    // stays neutral while things are fine and takes on a tone when they aren't,
+    // so a bad pane is the single lit thing on the page instead of a second
+    // label in the opposite corner arguing with the first.
     interface SummaryCard {
         label: string;
         value: string;
         detail: string;
-        tag: string;
-        tagClass: string;
+        valueClass: string;
         accentClass: string;
     }
 
@@ -102,6 +102,12 @@
     const CALM_PANE = "border-outline bg-surface-raised";
     const ALARM_PANE = "border-danger-soft-border bg-danger-soft/60";
 
+    const NEUTRAL_VALUE = "text-on-surface";
+    const IDLE_VALUE = "text-on-surface-faint";
+    const WARNING_VALUE = "text-warning-soft-text";
+    const DANGER_VALUE = "text-danger-soft-text";
+    const LIVE_VALUE = "text-primary";
+
     function createHealthyTasksCard(
         currentSummary: OverviewSummary,
         currentHealthyTasksCount: number,
@@ -115,12 +121,7 @@
             detail: hasTasks
                 ? `${currentHealthyTasksCount} task${pluralize(currentHealthyTasksCount)} without active failures`
                 : "No tasks loaded yet",
-            tag: !hasTasks ? "empty" : isFullyHealthy ? "all ok" : "degraded",
-            tagClass: !hasTasks
-                ? "text-on-surface-faint"
-                : isFullyHealthy
-                  ? "text-success-soft-text"
-                  : "text-warning-soft-text",
+            valueClass: !hasTasks ? IDLE_VALUE : isFullyHealthy ? NEUTRAL_VALUE : WARNING_VALUE,
             accentClass: CALM_PANE,
         };
     }
@@ -134,8 +135,7 @@
             detail: hasAttentionTasks
                 ? "Failures, crashes, stops, and timeouts"
                 : "No incidents waiting",
-            tag: hasAttentionTasks ? "triage" : "clear",
-            tagClass: hasAttentionTasks ? "text-danger-soft-text" : "text-on-surface-faint",
+            valueClass: hasAttentionTasks ? DANGER_VALUE : IDLE_VALUE,
             accentClass: hasAttentionTasks ? ALARM_PANE : CALM_PANE,
         };
     }
@@ -149,8 +149,7 @@
             detail: hasRunningTasks
                 ? `${activeRunsCount} live execution${pluralize(activeRunsCount)}`
                 : "Nothing executing",
-            tag: hasRunningTasks ? "live" : "idle",
-            tagClass: hasRunningTasks ? "text-primary" : "text-on-surface-faint",
+            valueClass: hasRunningTasks ? LIVE_VALUE : IDLE_VALUE,
             accentClass: CALM_PANE,
         };
     }
@@ -168,12 +167,11 @@
             detail: hasCompletedRuns
                 ? `Across ${currentCompletedRunsCount} completed run${pluralize(currentCompletedRunsCount)}`
                 : "Waiting for first completed run",
-            tag: !hasCompletedRuns ? "no data" : isPerfectSuccessRate ? "clean" : "watch",
-            tagClass: !hasCompletedRuns
-                ? "text-on-surface-faint"
+            valueClass: !hasCompletedRuns
+                ? IDLE_VALUE
                 : isPerfectSuccessRate
-                  ? "text-success-soft-text"
-                  : "text-warning-soft-text",
+                  ? NEUTRAL_VALUE
+                  : WARNING_VALUE,
             accentClass: CALM_PANE,
         };
     }
@@ -226,7 +224,7 @@
 </script>
 
 <section class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-    <div class="space-y-5">
+    <div class="flex flex-col gap-5">
         {#if cloudMode}
             <p class="flex items-center gap-1.5 text-xs text-on-surface-muted">
                 <Cloud size={12} class="shrink-0 text-info" />
@@ -264,23 +262,19 @@
             </button>
         </Card>
 
-        <!-- Stat panes. Label and state sit ON the top hairline as a tmux pane
-             title + tag; the number owns the body; the sentence is the pane foot. -->
+        <!-- Stat panes. The label sits ON the top hairline as a tmux pane title;
+             the number owns the body and carries the state in its tone; the
+             sentence is the pane foot. -->
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {#each summaryCards as card (card.label)}
                 <div class="relative rounded-[4px] border shadow-sm {card.accentClass}">
                     <span
-                        class="absolute top-0 left-3.5 max-w-[calc(100%-5.5rem)] -translate-y-1/2 truncate bg-surface-sunken px-2 font-mono text-[10.5px] leading-[1.6] font-medium tracking-[0.06em] text-on-surface-muted"
+                        class="absolute top-0 left-3.5 max-w-[calc(100%-2rem)] -translate-y-1/2 truncate bg-surface-sunken px-2 font-mono text-[10.5px] leading-[1.6] font-medium tracking-[0.06em] text-on-surface-muted"
                     >
                         {card.label}
                     </span>
-                    <span
-                        class="absolute top-0 right-3.5 -translate-y-1/2 bg-surface-sunken px-2 font-mono text-[10.5px] leading-[1.6] tracking-[0.06em] whitespace-nowrap {card.tagClass}"
-                    >
-                        {card.tag}
-                    </span>
                     <p
-                        class="px-4 pt-5 pb-4 font-mono text-[28px] leading-none font-extrabold tracking-[-0.02em] text-on-surface tabular-nums"
+                        class="px-4 pt-5 pb-4 font-mono text-[28px] leading-none font-extrabold tracking-[-0.02em] tabular-nums {card.valueClass}"
                     >
                         {card.value}
                     </p>
@@ -293,21 +287,29 @@
             {/each}
         </div>
 
-        <!-- Runner facts -->
+        <!-- Runner facts. Grows to eat the leftover height so its bottom edge
+             lands on the resources card's. -->
         <div
-            class="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-[4px] border border-outline-faint bg-surface-sunken/60 px-5 py-3 text-sm"
+            class="flex grow flex-wrap content-center items-center gap-x-4 gap-y-2 rounded-[4px] border border-outline-faint bg-surface-sunken/60 px-5 py-3 text-sm lg:gap-x-6"
         >
             {#each daemonFacts as fact, i (fact.label)}
-                {#if i > 0}
-                    <span class="hidden text-on-surface-faint sm:inline">|</span>
-                {/if}
-                <span>
-                    <span class="font-mono text-xs font-medium tracking-wide text-on-surface-muted"
-                        >{fact.label}</span
-                    >
-                    <span class="ml-1.5 font-mono text-xs text-on-surface tabular-nums"
-                        >{fact.value}</span
-                    >
+                <!-- The separator travels inside its fact so a wrap never leaves
+                     a dangling | at the end of a line. -->
+                <span class="inline-flex items-center gap-x-4 lg:gap-x-6">
+                    {#if i > 0}
+                        <span class="hidden text-on-surface-faint sm:inline" aria-hidden="true"
+                            >|</span
+                        >
+                    {/if}
+                    <span>
+                        <span
+                            class="font-mono text-xs font-medium tracking-wide text-on-surface-muted"
+                            >{fact.label}</span
+                        >
+                        <span class="ml-1.5 font-mono text-xs text-on-surface tabular-nums"
+                            >{fact.value}</span
+                        >
+                    </span>
                 </span>
             {/each}
         </div>
