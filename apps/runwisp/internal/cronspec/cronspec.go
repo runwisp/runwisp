@@ -9,6 +9,9 @@
 package cronspec
 
 import (
+	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -25,8 +28,23 @@ import (
 const ParseOptions = cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor
 
 // NewParser returns a parser for the RunWisp cron grammar.
-func NewParser() cron.Parser {
-	return cron.NewParser(ParseOptions)
+//
+// It hands back a cron.ScheduleParser rather than robfig's concrete cron.Parser
+// so every spec goes through sundayAliased first: robfig bounds day-of-week at
+// 0-6, and traditional cron accepts 0-7 with both ends meaning Sunday. A
+// caller holding a bare cron.Parser would parse around that.
+func NewParser() cron.ScheduleParser {
+	return specParser{inner: cron.NewParser(ParseOptions)}
+}
+
+// specParser is the RunWisp grammar: robfig's parser with the day-of-week field
+// normalized on the way in.
+type specParser struct {
+	inner cron.Parser
+}
+
+func (p specParser) Parse(spec string) (cron.Schedule, error) {
+	return p.inner.Parse(sundayAliased(spec))
 }
 
 // NewScheduleParser returns a cron.ScheduleParser for the RunWisp cron grammar
@@ -42,7 +60,7 @@ func NewScheduleParser() cron.ScheduleParser {
 // scheduleParser delegates parsing to the RunWisp grammar and wraps the
 // resulting wall-clock schedule so its Next recovers spring-forward gap ticks.
 type scheduleParser struct {
-	inner cron.Parser
+	inner cron.ScheduleParser
 }
 
 func (p scheduleParser) Parse(spec string) (cron.Schedule, error) {
@@ -136,4 +154,92 @@ func Validate(spec, timezone string) error {
 	}
 	_, err := NewParser().Parse(full)
 	return err
+}
+
+// sundayAliased rewrites the day-of-week field so 7 means Sunday, the vixie-cron
+// convention robfig/cron does not implement (its dow bounds are 0-6, and a 7
+// fails with "end of range (7) above maximum (6)").
+//
+// This is not a nicety: Debian and Ubuntu's own /etc/crontab ships
+// `47 6 * * 7 root … run-parts /etc/cron.weekly`, so without this a stock box's
+// weekly housekeeping is dropped the moment RunWisp reads its crontabs.
+//
+// Only the last field of a 5- or 6-field spec is touched, so a `*/7` step
+// elsewhere, a minute or month value of 7, and every @descriptor pass through
+// unchanged. An unrecognized field count is left alone for robfig to reject.
+func sundayAliased(spec string) string {
+	fields := strings.Fields(spec)
+	body := fields
+	// robfig peels a TZ= / CRON_TZ= prefix off before counting fields, so it must
+	// not be counted here either.
+	if len(body) > 0 && (strings.HasPrefix(body[0], "TZ=") || strings.HasPrefix(body[0], "CRON_TZ=")) {
+		body = body[1:]
+	}
+	if len(body) != 5 && len(body) != 6 {
+		return spec
+	}
+	// dow is the last field of both the 5-field and the seconds-prefixed 6-field
+	// form, so no index arithmetic can get the position wrong.
+	last := len(fields) - 1
+	dow := dowField(fields[last])
+	if dow == fields[last] {
+		return spec
+	}
+	out := slices.Clone(fields)
+	out[last] = dow
+	return strings.Join(out, " ")
+}
+
+// dowField rewrites one day-of-week field, term by comma-separated term.
+func dowField(field string) string {
+	if !strings.Contains(field, "7") {
+		return field
+	}
+	terms := strings.Split(field, ",")
+	for i, term := range terms {
+		terms[i] = dowTerm(term)
+	}
+	return strings.Join(terms, ",")
+}
+
+// dowTerm rewrites one term of a day-of-week field: a value, a range, either
+// with an optional step.
+func dowTerm(term string) string {
+	base, step, hasStep := strings.Cut(term, "/")
+	lo, hi, isRange := strings.Cut(base, "-")
+	if (!isRange && base == "7") || (isRange && lo == "7" && hi != "7") {
+		// A bare 7, a 7 with a step, or a range starting at 7: the value is Sunday,
+		// so 0 says the same thing in robfig's bounds.
+		return "0" + term[1:]
+	}
+	if !isRange || hi != "7" {
+		// A named day, a 7 that is only a step (*/7), or no 7 in a value position.
+		return term
+	}
+	// A range ending at 7 has to be expanded rather than clamped. vixie folds day 7
+	// into day 0 *after* expanding the range, so `1-7` is the whole week — clamping
+	// it to `1-0` would be an inverted range robfig rejects, and `0-7` clamped to
+	// `0-0` would silently shrink every day to Sunday.
+	from, err := strconv.Atoi(lo)
+	if err != nil {
+		return term
+	}
+	by := 1
+	if hasStep {
+		if by, err = strconv.Atoi(step); err != nil || by < 1 {
+			return term
+		}
+	}
+	var days []string
+	var seen [7]bool
+	for v := from; v >= 0 && v <= 7; v += by {
+		if d := v % 7; !seen[d] {
+			seen[d] = true
+			days = append(days, strconv.Itoa(d))
+		}
+	}
+	if len(days) == 0 {
+		return term
+	}
+	return strings.Join(days, ",")
 }

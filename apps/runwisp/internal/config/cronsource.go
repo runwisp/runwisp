@@ -75,8 +75,13 @@ func (f CronFinding) String() string {
 // cronMerge is what mergeCronSources folded in, for the caller to record on the
 // Config.
 type cronMerge struct {
-	globs    []string
-	files    []string
+	globs []string
+	files []string
+	// matched is every path the globs resolved to and crond would itself have
+	// read, including the ones that then failed to parse. Snapshot pins this
+	// rather than files: "what do these globs match" and "which of those loaded"
+	// are different questions, and staleness is the first one.
+	matched  []string
 	findings []CronFinding
 	// blocks maps each live task name to the TOML that produced it, kept so
 	// `runwisp promote` can move a cron-sourced definition into the operator's own
@@ -139,6 +144,7 @@ func mergeCronSources(root *tomlConfig, patterns []string, rootDir, rootPath str
 		return cronMerge{}, err
 	}
 	m.globs = globs
+	m.matched = matched
 	m.findings = append(m.findings, ignoredFindings(ignored)...)
 	if err := assertNoIncludeOverlap(matched, tomlMatched); err != nil {
 		return cronMerge{}, err

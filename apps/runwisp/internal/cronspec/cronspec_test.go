@@ -27,6 +27,11 @@ func TestValidate(t *testing.T) {
 		{name: "six fields with seconds", spec: "0 0 3 * * *"},
 		{name: "six fields sub-minute step", spec: "*/30 * * * * *"},
 		{name: "six fields with timezone", spec: "*/30 * * * * *", timezone: "Europe/Bratislava"},
+		{name: "day-of-week 7 is sunday", spec: "47 6 * * 7"},
+		{name: "day-of-week list with 7", spec: "0 3 * * 1,7"},
+		{name: "day-of-week range ending in 7", spec: "0 3 * * 5-7"},
+		{name: "six fields with day-of-week 7", spec: "0 47 6 * * 7"},
+		{name: "day-of-week 7 with a timezone", spec: "47 6 * * 7", timezone: "Europe/Bratislava"},
 		{name: "four fields", spec: "* * * *", wantErr: true},
 		{name: "seven fields", spec: "0 0 0 3 * * *", wantErr: true},
 		{name: "out of range minute", spec: "61 * * * *", wantErr: true},
@@ -44,6 +49,66 @@ func TestValidate(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSundayIsSeven is the regression test for the day-of-week 7 rejection.
+// robfig/cron bounds dow at 0-6, so `47 6 * * 7` — the line Debian's and
+// Ubuntu's own /etc/crontab ships to run /etc/cron.weekly — was refused with
+// "end of range (7) above maximum (6)" and the box's housekeeping silently
+// stopped being scheduled. Every 7-form must now parse and fire exactly like the
+// 0-form it means.
+func TestSundayIsSeven(t *testing.T) {
+	// tuesday is an ordinary evaluation point with no DST transition near it.
+	tuesday := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name  string
+		spec  string
+		equiv string
+	}{
+		{name: "bare 7", spec: "47 6 * * 7", equiv: "47 6 * * 0"},
+		{name: "list containing 7", spec: "0 3 * * 1,7", equiv: "0 3 * * 0,1"},
+		{name: "range ending in 7", spec: "0 3 * * 5-7", equiv: "0 3 * * 0,5,6"},
+		{name: "range starting at 7", spec: "0 3 * * 7-1", equiv: "0 3 * * 0-1"},
+		// vixie folds day 7 into day 0 after expanding the range, so 1-7 is the
+		// whole week — not an inverted range, and not Monday alone.
+		{name: "range 1-7 is every day", spec: "0 3 * * 1-7", equiv: "0 3 * * *"},
+		{name: "range 0-7 is every day", spec: "0 3 * * 0-7", equiv: "0 3 * * *"},
+		{name: "range with a step", spec: "0 3 * * 5-7/2", equiv: "0 3 * * 0,5"},
+		{name: "six-field form", spec: "30 47 6 * * 7", equiv: "30 47 6 * * 0"},
+		{name: "with a CRON_TZ prefix", spec: "CRON_TZ=UTC 47 6 * * 7", equiv: "CRON_TZ=UTC 47 6 * * 0"},
+		// The rewrite must not reach any other field, nor a step of 7.
+		{name: "step of 7 in dow untouched", spec: "0 3 * * */7", equiv: "0 3 * * 0"},
+		{name: "step of 7 in minutes untouched", spec: "*/7 * * * *", equiv: "*/7 * * * *"},
+		{name: "7 in the other fields untouched", spec: "7 7 7 7 *", equiv: "7 7 7 7 *"},
+		{name: "named sunday still works", spec: "0 3 * * SUN", equiv: "0 3 * * 0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sched, err := NewScheduleParser().Parse(tt.spec)
+			require.NoError(t, err)
+			want, err := NewScheduleParser().Parse(tt.equiv)
+			require.NoError(t, err)
+
+			from := tuesday
+			for i := 0; i < 10; i++ {
+				got := sched.Next(from)
+				assert.Equal(t, want.Next(from), got, "firing %d from %s", i, from)
+				from = got
+			}
+		})
+	}
+}
+
+// TestStockDebianWeeklyLineFiresOnSunday pins the actual behaviour the alias
+// exists for, rather than only an equivalence between two specs.
+func TestStockDebianWeeklyLineFiresOnSunday(t *testing.T) {
+	sched, err := NewScheduleParser().Parse("47 6 * * 7")
+	require.NoError(t, err)
+
+	next := sched.Next(time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC))
+	assert.Equal(t, time.Sunday, next.Weekday())
+	assert.Equal(t, time.Date(2026, 8, 9, 6, 47, 0, 0, time.UTC), next)
 }
 
 // TestSupersetOfStandardParser guards the contract that cronspec's grammar is a

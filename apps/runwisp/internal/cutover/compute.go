@@ -270,18 +270,30 @@ func includeCronMismatchBlocker(path string, ev Evidence) Blocker {
 	}
 }
 
-// cronSourceBlockers reports the cron sources that won't load: both the ones the
-// pre-config sweep refused outright (an untrusted file, an owner this daemon
-// can't become) and the ones a loaded config skipped job by job. One blocker
-// with one override, because it is one question to the operator — "some of your
-// jobs won't run under RunWisp; hand cron over anyway?"
+// cronSourceBlockers reports the cron sources that won't load: the ones refused
+// outright (an untrusted file, an owner this daemon can't become) and the ones
+// skipped job by job. One blocker with one override, because it is one question
+// to the operator — "some of your jobs won't run under RunWisp; hand cron over
+// anyway?"
+//
+// Both halves come from the pre-config scan, which sees them whether or not a
+// runwisp.toml exists yet. Reading the per-job skips only off a loaded config was
+// why the first `takeover` on a bare box asked for nothing and the second one —
+// same box, nothing changed, and a re-run the command promises is safe — hard
+// blocked demanding --allow-skipped-cron-jobs.
+//
+// A loaded config is still consulted, for the skips in a crontab the operator's
+// own include_cron reaches and the machine sweep does not. Deduplicated by the
+// rendered reason: scan and config render the same finding identically, so the
+// same skip counted twice would make the gate disagree with itself again.
 func (c *Cutover) cronSourceBlockers(ev Evidence) []Blocker {
 	var out []Blocker
 
 	reasons := slices.Clone(ev.Scan.Blocked)
+	reasons = append(reasons, ev.Scan.Skipped...)
 	if ev.Cfg != nil {
 		for _, f := range ev.Cfg.CronFindings {
-			if f.Skipped {
+			if f.Skipped && !slices.Contains(reasons, f.String()) {
 				reasons = append(reasons, f.String())
 			}
 		}

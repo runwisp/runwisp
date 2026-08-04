@@ -18,6 +18,13 @@ import (
 // oneJob is a crontab RunWisp can read and reproduce.
 const oneJob = "17 3 * * * /usr/bin/backup\n"
 
+// skippedJob is a readable crontab holding one job RunWisp will not schedule:
+// crond pipes the text after the '%' to the command on stdin, which no TOML task
+// expresses, so the job is read and deliberately left unscheduled. The good job
+// beside it keeps the file itself parseable — this is a per-job skip, not a
+// whole-source refusal.
+const skippedJob = "17 3 * * * /usr/bin/backup\n0 5 * * * /usr/bin/wall %the box is going down\n"
+
 // writeWired is the WireCron fake: it appends include_cron the way the real
 // configedit.WireCronInclude would, so the loader sees a config that reads the
 // crontabs.
@@ -213,6 +220,76 @@ func TestCompute_SkippedCronSourcesBlockUnlessAllowed(t *testing.T) {
 	p, err = c.Compute(context.Background())
 	require.NoError(t, err)
 	assert.False(t, hasBlocker(p, BlockerCronSourcesFailed), "the override must clear it")
+}
+
+// TestCompute_SkippedJobBlocksWithNoConfigOnDisk is the first half of the gate
+// inconsistency: a job that won't run inside an otherwise-readable crontab was
+// only ever read off a loaded config, so the documented starting point for
+// `takeover` — a box with no runwisp.toml — sailed through with no override
+// asked for at all.
+func TestCompute_SkippedJobBlocksWithNoConfigOnDisk(t *testing.T) {
+	fx := fixture{
+		crontabs:   map[string]string{"backup": skippedJob},
+		cronUnit:   "cron.service",
+		cronActive: true,
+	}
+
+	c, _, cfgPath := fx.build(t)
+	_, err := os.Stat(cfgPath)
+	require.Error(t, err, "this test is about the no-config case")
+
+	p, err := c.Compute(context.Background())
+	require.NoError(t, err)
+	require.True(t, hasBlocker(p, BlockerCronSourcesFailed), "%v", blockerKinds(p))
+	b, _ := p.FirstBlocker()
+	assert.Equal(t, "--allow-skipped-cron-jobs", b.Override)
+
+	fx.allowSkipped = true
+	c, _, _ = fx.build(t)
+	p, err = c.Compute(context.Background())
+	require.NoError(t, err)
+	assert.False(t, hasBlocker(p, BlockerCronSourcesFailed), "the override must clear it")
+}
+
+// TestCompute_SameBoxTwiceAgreesOnTheCronGate is the regression test for the
+// inconsistency itself, whichever per-job failure triggers it: `takeover`
+// promises a finished run is a safe no-op, and it used to ask for nothing on the
+// first pass and then hard-block the identical box on the second — the only thing
+// that had changed being the runwisp.toml RunWisp itself wrote.
+func TestCompute_SameBoxTwiceAgreesOnTheCronGate(t *testing.T) {
+	fx := fixture{
+		crontabs:   map[string]string{"backup": skippedJob},
+		cronUnit:   "cron.service",
+		cronActive: true,
+	}
+	c, _, cfgPath := fx.build(t)
+
+	first, err := c.Compute(context.Background())
+	require.NoError(t, err)
+
+	// Write the config the way Execute's StepWriteConfig would, then plan again
+	// against a box that is otherwise byte-identical.
+	require.NoError(t, c.deps.WriteConfig(cfgPath, first.Evidence.Patterns))
+	second, err := c.Compute(context.Background())
+	require.NoError(t, err)
+
+	require.Equal(t, blockerKinds(first), blockerKinds(second),
+		"the gate must not depend on whether runwisp.toml exists yet")
+	firstBlocker, ok := first.FirstBlocker()
+	require.True(t, ok, "%v", blockerKinds(first))
+	secondBlocker, _ := second.FirstBlocker()
+	assert.Equal(t, firstBlocker, secondBlocker, "the same skip must not be counted twice")
+
+	// And the override clears it on both passes, not just the second.
+	fx.allowSkipped = true
+	c, _, cfgPath = fx.build(t)
+	bare, err := c.Compute(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, c.deps.WriteConfig(cfgPath, bare.Evidence.Patterns))
+	wired, err := c.Compute(context.Background())
+	require.NoError(t, err)
+	assert.False(t, hasBlocker(bare, BlockerCronSourcesFailed))
+	assert.False(t, hasBlocker(wired, BlockerCronSourcesFailed))
 }
 
 func TestCompute_UntrustedConfigIsABlockerSoDryRunCanReportIt(t *testing.T) {

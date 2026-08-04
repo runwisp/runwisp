@@ -387,6 +387,27 @@ func TestCronSystemUserColumn(t *testing.T) {
 	mustContain(t, out, `run = "/usr/bin/cleanup"`)
 }
 
+// TestCronStockDebianWeeklyLine is the line the `cron` package's own
+// /etc/crontab ships on every Debian and Ubuntu box. Its day-of-week is 7,
+// which traditional cron reads as Sunday — and which RunWisp used to refuse,
+// dropping the box's cron.weekly housekeeping on every import and every
+// include_cron load.
+func TestCronStockDebianWeeklyLine(t *testing.T) {
+	in := "47 6 * * 7 root test -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.weekly )\n"
+	res := parseCron(t, in, CronOptions{System: true})
+
+	out := res.TOML()
+	mustContain(t, out, `cron = "47 6 * * 7"`)
+	mustContain(t, out, `user = "root"`)
+	mustNotContain(t, out, "TODO")
+	if got := res.Items()[0].Status(); got != StatusClean {
+		t.Fatalf("status = %v, want clean: %+v", got, allNotes(res))
+	}
+	if !res.Items()[0].LiveEligible() {
+		t.Fatalf("the stock weekly job must be schedulable live: %+v", allNotes(res))
+	}
+}
+
 func TestCronSystemUserColumnOnDescriptorLine(t *testing.T) {
 	// Vixie cron allows `@reboot root /usr/bin/foo` in /etc/crontab. The user
 	// column has to come off the descriptor form too, or it rides into `run`.

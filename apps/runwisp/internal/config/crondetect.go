@@ -4,7 +4,6 @@
 package config
 
 import (
-	"fmt"
 	"path/filepath"
 
 	"github.com/runwisp/runwisp/internal/importer"
@@ -71,6 +70,15 @@ type CronScan struct {
 	// are the caller's signal to fall back to the plain starter instead of
 	// scaffolding an include_cron that can't do anything on its first load.
 	Blocked []string
+	// Skipped lists one reason per job that would not run inside a crontab
+	// RunWisp *did* read, plus the glob hits it passed over that crond itself
+	// would have run. It is the per-job half of Blocked — Jobs minus Live is
+	// its count — and it exists so a caller that has no config to load (a
+	// first `runwisp takeover` on a box with no runwisp.toml) sees the same
+	// skips a loaded config reports as CronFinding.Skipped. Rendered by the
+	// same CronFinding.String, so the two sets are comparable rather than
+	// merely similar.
+	Skipped []string
 }
 
 // ScanCronSources globs patterns exactly like `[daemon] include_cron` would
@@ -86,21 +94,28 @@ func ScanCronSources(patterns []string, cfgPath string) CronScan {
 		return scan
 	}
 	rootDir := filepath.Dir(cfgPath)
-	globs, matched, _, err := resolveCronIncludes(patterns, rootDir, cfgPath)
+	globs, matched, ignored, err := resolveCronIncludes(patterns, rootDir, cfgPath)
 	if err != nil {
 		return scan
 	}
 	scan.Globs = globs
+	scan.Skipped = appendSkipped(scan.Skipped, ignoredFindings(ignored))
 
 	owned := importer.Owned{}
 	for _, path := range matched {
 		res, err := parseCronSource(path, owned)
 		if err != nil {
-			scan.Blocked = append(scan.Blocked, fmt.Sprintf("%s: %v", path, err))
+			// Rendered as the CronFinding mergeCronSources would make of the same
+			// refusal, so a caller comparing the two sees one reason, not two
+			// spellings of it.
+			scan.Blocked = append(scan.Blocked, CronFinding{
+				File: path, Source: filepath.Base(path), Reason: err.Error(), Skipped: true,
+			}.String())
 			continue
 		}
 		scan.Files = append(scan.Files, path)
 		claimOwned(owned, res)
+		scan.Skipped = appendSkipped(scan.Skipped, findingsFrom(res, path))
 		for _, it := range res.Items() {
 			scan.Jobs++
 			if it.LiveEligible() {
@@ -109,4 +124,15 @@ func ScanCronSources(patterns []string, cfgPath string) CronScan {
 		}
 	}
 	return scan
+}
+
+// appendSkipped renders the findings that mean "this is not running" onto a
+// reason list, dropping the ones that are merely worth knowing.
+func appendSkipped(reasons []string, findings []CronFinding) []string {
+	for _, f := range findings {
+		if f.Skipped {
+			reasons = append(reasons, f.String())
+		}
+	}
+	return reasons
 }

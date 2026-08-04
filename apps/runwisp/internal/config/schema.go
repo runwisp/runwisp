@@ -39,7 +39,14 @@ type Config struct {
 
 	// cronFiles are the absolute paths of the crontabs read as live task sources
 	// via [daemon].include_cron at this load, in the order they were merged.
-	cronFiles []string
+	// cronGlobs are those patterns resolved against the root config dir, and
+	// cronMatched every path they matched — including a crontab that then failed
+	// to load, since staleness asks what the globs match, not what parsed. Kept
+	// apart from includeGlobs/includeFiles because the two are expanded by
+	// different rules; see snapshotPins.
+	cronFiles   []string
+	cronGlobs   []string
+	cronMatched []string
 
 	// cronDaemon records whether a system cron daemon looked live when this config
 	// was resolved, and in what sense ("is running", "is enabled and will start on

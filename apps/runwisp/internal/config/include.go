@@ -76,8 +76,10 @@ func loadWithIncludes(path string) (*Config, entrySources, error) {
 	cfg.origins = src.byName
 	markProvenance(cfg, rootDir, cron.originSet())
 	cfg.includeFiles = matched
-	cfg.includeGlobs = append(globs, cron.globs...)
+	cfg.includeGlobs = globs
 	cfg.cronFiles = cron.files
+	cfg.cronGlobs = cron.globs
+	cfg.cronMatched = cron.matched
 	cfg.CronFindings = cron.findings
 	cfg.cronBlocks = cron.blocks
 	// After markProvenance, which is what says which tasks came from a crontab,

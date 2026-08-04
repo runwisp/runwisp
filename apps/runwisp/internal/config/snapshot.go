@@ -38,16 +38,32 @@ func digestFile(path string) fileDigest {
 // as stale. The mutex guards against Stale (per /api/info request) racing a
 // concurrent Refresh.
 //
-// globs / bootMatched let Stale re-evaluate the include patterns: a file newly
-// dropped into (or removed from) a watched conf.d/ flips stale even though it
-// wasn't hashed at boot.
+// The glob/bootMatched pairs let Stale re-evaluate the include patterns: a file
+// newly dropped into (or removed from) a watched conf.d/ flips stale even though
+// it wasn't hashed at boot.
 type Snapshot struct {
-	mu          sync.Mutex
-	files       []fileDigest
-	root        string
+	mu       sync.Mutex
+	pins     snapshotPins
+	loadedAt time.Time
+}
+
+// snapshotPins is the on-disk identity a snapshot was taken of. The two glob
+// sets are kept apart because they are expanded by different rules: an
+// include_cron glob only ever reads what crond itself would read
+// (partitionCrondEligible), and re-globbing it with a plain filepath.Glob is why
+// /etc/cron.d/.placeholder — a file the Debian cron package installs on every box
+// — made `status` report "config changed" forever after an untouched take-over.
+type snapshotPins struct {
+	files []fileDigest
+	root  string
+	// globs are the [daemon].include patterns and bootMatched the files they
+	// resolved to at load time.
 	globs       []string
 	bootMatched []string
-	loadedAt    time.Time
+	// cronGlobs are the [daemon].include_cron patterns and bootCron the crontabs
+	// they resolved to, crond-eligibility filter already applied.
+	cronGlobs []string
+	bootCron  []string
 }
 
 // NewSnapshot hashes the config file at path, every included TOML file, and
@@ -55,46 +71,40 @@ type Snapshot struct {
 // declaring file's dir in collectWatchFiles). now is injected so callers
 // control the clock.
 func NewSnapshot(path string, cfg *Config, now time.Time) *Snapshot {
-	files, root, globs, bootMatched := snapshotInputs(path, cfg)
-	return &Snapshot{files: files, root: root, globs: globs, bootMatched: bootMatched, loadedAt: now}
+	return &Snapshot{pins: snapshotInputs(path, cfg), loadedAt: now}
 }
 
 // Refresh re-pins the snapshot to the config inputs as they are now, marking
 // `now` as the new load time. Called after a successful reload so config_stale
 // reflects the newly-live config rather than the boot-time one.
 func (s *Snapshot) Refresh(path string, cfg *Config, now time.Time) {
-	files, root, globs, bootMatched := snapshotInputs(path, cfg)
+	pins := snapshotInputs(path, cfg)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.files = files
-	s.root = root
-	s.globs = globs
-	s.bootMatched = bootMatched
+	s.pins = pins
 	s.loadedAt = now
 }
 
 // snapshotInputs hashes runwisp.toml plus every included TOML file and
-// referenced env_file, and returns the include globs / boot-matched set so
+// referenced env_file, and records the include globs and what they matched so
 // Stale can re-evaluate the patterns later.
-func snapshotInputs(path string, cfg *Config) (files []fileDigest, root string, globs, bootMatched []string) {
+func snapshotInputs(path string, cfg *Config) snapshotPins {
+	var pins snapshotPins
 	paths := []string{path}
-	root = path
+	pins.root = path
 	if abs, err := filepath.Abs(path); err == nil {
-		root = abs
+		pins.root = abs
 	}
 	if cfg != nil {
 		paths = append(paths, cfg.watchFiles...)
-		globs = cfg.includeGlobs
-		// includeGlobs covers both [daemon].include and [daemon].include_cron, so
-		// bootMatched must cover both too: Stale compares one against the other, and
-		// a glob whose matches were never recorded reads as "a file appeared" on
-		// every single call.
-		bootMatched = append(append([]string(nil), cfg.includeFiles...), cfg.cronFiles...)
-		sort.Strings(bootMatched)
+		pins.globs = cfg.includeGlobs
+		pins.bootMatched = slices.Sorted(slices.Values(cfg.includeFiles))
+		pins.cronGlobs = cfg.cronGlobs
+		pins.bootCron = slices.Sorted(slices.Values(cfg.cronMatched))
 	}
 
 	seen := make(map[string]struct{}, len(paths))
-	files = make([]fileDigest, 0, len(paths))
+	pins.files = make([]fileDigest, 0, len(paths))
 	for _, p := range paths {
 		if abs, err := filepath.Abs(p); err == nil {
 			p = abs
@@ -103,9 +113,9 @@ func snapshotInputs(path string, cfg *Config) (files []fileDigest, root string, 
 			continue
 		}
 		seen[p] = struct{}{}
-		files = append(files, digestFile(p))
+		pins.files = append(pins.files, digestFile(p))
 	}
-	return files, root, globs, bootMatched
+	return pins
 }
 
 // LoadedAt reports when the snapshot was taken (i.e. when this config
@@ -116,6 +126,15 @@ func (s *Snapshot) LoadedAt() time.Time {
 	return s.loadedAt
 }
 
+// pinned returns the snapshot's pins under the lock. The slices inside are
+// replaced wholesale by Refresh, never mutated, so the copy is safe to read
+// after the lock is dropped.
+func (s *Snapshot) pinned() snapshotPins {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pins
+}
+
 // Stale re-reads every watched file and reports whether any differs from the
 // last pin — edited content, a deleted file, or a file that newly appeared all
 // count. It also re-evaluates the include globs so a file freshly added to (or
@@ -123,18 +142,16 @@ func (s *Snapshot) LoadedAt() time.Time {
 // called per /api/info request rather than from a watcher, so the answer is
 // always current and the daemon never reacts on its own.
 func (s *Snapshot) Stale() bool {
-	s.mu.Lock()
-	files := s.files
-	globs := s.globs
-	root := s.root
-	bootMatched := s.bootMatched
-	s.mu.Unlock()
-	for _, f := range files {
+	pins := s.pinned()
+	for _, f := range pins.files {
 		if digestFile(f.path) != f {
 			return true
 		}
 	}
-	if len(globs) > 0 && !slices.Equal(globMatches(globs, root), bootMatched) {
+	if len(pins.globs) > 0 && !slices.Equal(globMatches(pins.globs, pins.root, false), pins.bootMatched) {
+		return true
+	}
+	if len(pins.cronGlobs) > 0 && !slices.Equal(globMatches(pins.cronGlobs, pins.root, true), pins.bootCron) {
 		return true
 	}
 	return false
@@ -144,30 +161,33 @@ func (s *Snapshot) Stale() bool {
 // deduplicated, lexically sorted set of matched files, mirroring how
 // resolveIncludes computed bootMatched. A bad pattern yields no matches rather
 // than an error — Stale must never panic on a config edit.
-func globMatches(globs []string, root string) []string {
+//
+// crond applies resolveCronIncludes' own eligibility filter, which is what
+// makes this comparable with an include_cron boot set: crond skips a
+// .placeholder or a .dpkg-old, so the loader skips them too, and a plain re-glob
+// that kept them would differ from the boot set forever. The filter is gated on
+// hasGlobMeta for the same reason there: a path the operator typed out is read
+// whatever it is called.
+func globMatches(globs []string, root string, crond bool) []string {
 	seen := make(map[string]struct{})
 	var matched []string
 	for _, g := range globs {
-		hits, err := filepath.Glob(g)
-		if err != nil {
-			continue
-		}
-		for _, h := range hits {
-			if abs, err := filepath.Abs(h); err == nil {
-				h = abs
-			}
-			if h == root {
-				continue
-			}
-			if _, dup := seen[h]; dup {
-				continue
-			}
-			seen[h] = struct{}{}
-			matched = append(matched, h)
-		}
+		matched = appendGlobHits(matched, globHits(g, crond), root, seen)
 	}
 	sort.Strings(matched)
 	return matched
+}
+
+// globHits expands one pattern the way the loader that recorded it did.
+func globHits(pattern string, crond bool) []string {
+	hits, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil
+	}
+	if crond && hasGlobMeta(pattern) {
+		hits, _ = partitionCrondEligible(hits, nil)
+	}
+	return hits
 }
 
 func resolveAgainst(baseDir, path string) string {
