@@ -118,7 +118,7 @@ func (s *systemdInstaller) resolveMaskedCronUnit(ctx context.Context, opts Insta
 // stopped, so the caller must not roll back a take-over that never took —
 // unmasking a unit that was never masked, or starting one that was never
 // stopped, would just poke cron for no reason.
-func (s *systemdInstaller) stopAndMaskCron(ctx context.Context, unit string, out io.Writer) (wasActive bool, stopped bool, err error) {
+func (s *systemdInstaller) stopAndMaskCron(ctx context.Context, unit string, out io.Writer) (wasActive, stopped bool, err error) {
 	_, activeState, _, err := s.probeCronUnit(ctx, unit)
 	if err != nil {
 		return false, false, fmt.Errorf("systemctl show %s: %w", unit, err)
