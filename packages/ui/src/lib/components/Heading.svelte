@@ -40,6 +40,9 @@
     const tag = $derived(`h${level}` as const);
 </script>
 
-<svelte:element this={tag} class="text-on-surface {sizeClasses[resolvedSize]} {className}">
+<svelte:element
+    this={tag}
+    class="font-mono tracking-tight text-on-surface {sizeClasses[resolvedSize]} {className}"
+>
     {@render children()}
 </svelte:element>

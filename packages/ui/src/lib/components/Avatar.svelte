@@ -68,7 +68,7 @@
 				{colors[colorIndex]}
 				flex
 				items-center justify-center rounded-full
-				font-medium text-white shadow-sm
+				font-mono text-white shadow-sm
 			"
         >
             {initials || "?"}

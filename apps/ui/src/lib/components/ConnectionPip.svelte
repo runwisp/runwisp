@@ -70,7 +70,7 @@
 
 {#if status === "connected" || status === "stalled"}
     <span
-        class="duration-normal inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors {theme.container}"
+        class="inline-flex items-center gap-1.5 rounded-[3px] border px-2.5 py-1 font-mono text-xs {theme.container}"
         title={theme.title}
         aria-label={theme.label}
     >
@@ -83,7 +83,7 @@
         disabled={status === "connecting"}
         title={theme.title}
         aria-label={theme.label}
-        class="duration-normal inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-progress {theme.container}"
+        class="inline-flex items-center gap-1.5 rounded-[3px] border px-2.5 py-1 font-mono text-xs disabled:cursor-progress {theme.container}"
     >
         {@render body()}
     </button>

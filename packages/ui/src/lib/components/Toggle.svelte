@@ -55,7 +55,6 @@
         class="
 			relative inline-flex shrink-0 items-center rounded-full
 			{sizeConfig.track}
-			transition-colors duration-200
 			focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
 			{checked ? 'bg-primary' : 'bg-outline-hover'}
 			{disabled ? 'cursor-not-allowed' : 'cursor-pointer'}
@@ -65,7 +64,7 @@
             class="
 				inline-block rounded-full bg-surface-raised shadow-sm
 				{sizeConfig.thumb}
-				transform transition-transform duration-200
+				transform transition-transform duration-[120ms]
 				{checked ? sizeConfig.translate : 'translate-x-0.5'}
 			"
         ></span>
@@ -74,7 +73,7 @@
     {#if label || description}
         <div class="flex flex-col gap-0.5">
             {#if label}
-                <span class="{sizeConfig.text} font-medium text-on-surface">{label}</span>
+                <span class="{sizeConfig.text} font-mono font-medium text-on-surface">{label}</span>
             {/if}
             {#if description}
                 <span class="text-sm text-on-surface-muted">{description}</span>

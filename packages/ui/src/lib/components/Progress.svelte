@@ -45,19 +45,21 @@
     {#if showLabel || label}
         <div class="mb-1.5 flex items-center justify-between">
             {#if label}
-                <span class="text-sm font-medium text-on-surface-muted">{label}</span>
+                <span class="font-mono text-sm text-on-surface-muted">{label}</span>
             {/if}
             {#if showLabel}
-                <span class="text-sm text-on-surface-muted">{Math.round(percentage)}%</span>
+                <span class="font-mono text-sm text-on-surface-muted"
+                    >{Math.round(percentage)}%</span
+                >
             {/if}
         </div>
     {/if}
 
-    <div class="w-full {sizeClasses[size]} overflow-hidden rounded-full bg-outline">
+    <div class="w-full {sizeClasses[size]} overflow-hidden rounded-full bg-surface-sunken">
         <div
             class="{sizeClasses[size]} {variantClasses[
                 variant
-            ]} rounded-full transition-all duration-300"
+            ]} rounded-full transition-[width] duration-200"
             style="width: {percentage}%"
             role="progressbar"
             aria-valuenow={value}

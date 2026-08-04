@@ -37,7 +37,7 @@
     aria-pressed={isDark}
     aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
     title={isDark ? "Switch to light theme" : "Switch to dark theme"}
-    class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-outline bg-surface-raised text-on-surface-muted transition-colors hover:border-outline-hover hover:text-on-surface {className}"
+    class="inline-flex h-9 w-9 items-center justify-center rounded-[3px] border border-outline bg-surface-raised text-on-surface-muted hover:border-outline-hover hover:text-on-surface {className}"
 >
     {#if mounted && isDark}
         <Sun size={16} />

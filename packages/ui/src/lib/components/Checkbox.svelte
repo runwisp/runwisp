@@ -45,20 +45,20 @@
             bind:checked
             {disabled}
             class="
-				peer {sizeClasses[size].box} duration-fast
-				cursor-pointer appearance-none rounded
-				border-2 border-outline-hover
-				bg-surface-raised transition-colors checked:border-primary
-				checked:bg-primary hover:border-on-surface-faint checked:hover:border-primary-hover checked:hover:bg-primary-hover
-				focus:ring-2 focus:ring-ring/20
-				focus:ring-offset-0 focus:outline-none
-				disabled:cursor-not-allowed disabled:hover:border-outline-hover
+				peer {sizeClasses[size].box}
+				cursor-pointer appearance-none rounded-[3px]
+				border border-outline
+				bg-surface-raised checked:border-primary
+				checked:bg-primary hover:border-outline-hover checked:hover:border-primary-hover checked:hover:bg-primary-hover
+				focus:ring-2 focus:ring-ring focus:ring-offset-2
+				focus:outline-none
+				disabled:cursor-not-allowed disabled:hover:border-outline
 				disabled:checked:hover:bg-primary
 			"
             {...restProps}
         />
         <div
-            class="duration-fast pointer-events-none absolute text-on-primary opacity-0 transition-opacity peer-checked:opacity-100"
+            class="pointer-events-none absolute text-on-primary opacity-0 peer-checked:opacity-100"
         >
             {#if indeterminate}
                 <svg
@@ -80,7 +80,9 @@
     {#if label || description}
         <div class="flex flex-col gap-0.5">
             {#if label}
-                <span class="{sizeClasses[size].text} font-medium text-on-surface">{label}</span>
+                <span class="{sizeClasses[size].text} font-mono font-medium text-on-surface"
+                    >{label}</span
+                >
             {/if}
             {#if description}
                 <span class="text-sm text-on-surface-muted">{description}</span>

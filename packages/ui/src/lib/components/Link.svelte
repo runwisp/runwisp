@@ -27,9 +27,8 @@
 
     const baseClasses = `
         inline-flex items-center gap-1
-        transition-colors duration-normal ease-out
-        focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/10 focus-visible:border-ring
-        rounded-sm
+                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2
+        rounded-[3px]
     `;
 
     const variantClasses: Record<LinkVariant, string> = {

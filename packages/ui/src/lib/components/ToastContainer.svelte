@@ -62,7 +62,7 @@
         <div
             in:fly={{ y: 20, duration: 300 }}
             out:fade={{ duration: 200 }}
-            class="pointer-events-auto isolate flex max-w-md min-w-[320px] items-start gap-3 rounded-xl border bg-surface-overlay/95 px-4 py-3 shadow-lg ring-1 ring-on-surface/5 backdrop-blur-md {getColorClasses(
+            class="pointer-events-auto isolate flex max-w-md min-w-[320px] items-start gap-3 rounded-[4px] border bg-surface-overlay px-4 py-3 shadow-lg {getColorClasses(
                 toastItem.type,
             )}"
             role="alert"
@@ -79,14 +79,14 @@
                         action.onClick();
                         toast.remove(toastItem.id);
                     }}
-                    class="flex-shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-on-surface underline-offset-2 transition-colors hover:bg-surface-sunken hover:underline"
+                    class="flex-shrink-0 rounded-[3px] px-2 py-1 font-mono text-xs font-semibold text-on-surface underline-offset-2 hover:bg-surface-sunken hover:underline"
                 >
                     {action.label}
                 </button>
             {/if}
             <button
                 onclick={() => toast.remove(toastItem.id)}
-                class="flex-shrink-0 rounded-lg p-1 text-on-surface-muted transition-colors hover:bg-surface-sunken hover:text-on-surface"
+                class="flex-shrink-0 rounded-[3px] p-1 text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface"
                 aria-label="Close notification"
             >
                 <X class="h-4 w-4" aria-hidden="true" />

@@ -46,15 +46,15 @@
     };
 
     const inputClasses = `
-        w-full rounded-lg border
+        w-full rounded-[3px] border font-mono
         bg-surface-raised text-on-surface placeholder:text-on-surface-faint
-        focus:outline-none focus:ring-4 focus:ring-ring/10 focus:border-ring
+        focus:outline-none focus:border-ring focus:ring-2 focus:ring-ring focus:ring-offset-2
         disabled:bg-surface-sunken disabled:text-on-surface-muted disabled:cursor-not-allowed
-        transition-all duration-normal ease-in-out
-    `;
+            `;
 
     const normalBorder = "border-outline hover:border-outline-hover shadow-sm";
-    const errorBorder = "border-danger-400 focus:border-danger-500 focus:ring-danger-500/20";
+    const errorBorder =
+        "border-danger-surface focus:border-danger-surface focus:ring-danger-surface";
 
     function formatMs(msValue: number): string {
         if (typeof msValue !== "number" || isNaN(msValue)) return "";
@@ -113,14 +113,14 @@
 
 <div class="space-y-1.5 {className}">
     {#if label}
-        <label for={inputId} class="block text-sm font-medium text-on-surface-muted">
+        <label for={inputId} class="block font-mono text-xs font-medium text-on-surface-muted">
             {label}
         </label>
     {/if}
 
     <div class="group relative">
         <div
-            class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-on-surface-faint transition-colors group-focus-within:text-primary"
+            class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-on-surface-faint group-focus-within:text-primary"
         >
             <Clock size={16} />
         </div>
@@ -155,18 +155,14 @@
     </div>
 
     {#if parsedHuman && isFocused}
-        <p
-            class="animate-in slide-in-from-top-1 fade-in text-xs font-medium text-primary duration-200"
-        >
+        <p class="font-sans text-xs font-medium text-primary">
             {parsedHuman}
         </p>
     {:else if error}
-        <p
-            class="animate-in slide-in-from-top-1 fade-in text-sm text-danger-soft-text duration-200"
-        >
+        <p class="font-sans text-xs text-danger-soft-text">
             {error}
         </p>
     {:else if hint}
-        <p class="text-sm text-on-surface-muted">{hint}</p>
+        <p class="font-sans text-xs text-on-surface-muted">{hint}</p>
     {/if}
 </div>

@@ -30,24 +30,22 @@
     const STATUS_CONFIG: Record<Status, { label: string; classes: string; iconColor: string }> = {
         running: {
             label: "Running",
-            classes: "bg-info-soft text-info-soft-text border-info-soft ring-1 ring-info-soft",
+            classes: "bg-info-soft text-info-soft-text border-info-soft-border",
             iconColor: "text-info-surface",
         },
         success: {
             label: "Success",
-            classes:
-                "bg-success-soft text-success-soft-text border-success-soft ring-1 ring-success-soft/50",
+            classes: "bg-success-soft text-success-soft-text border-success-soft-border",
             iconColor: "text-success-surface",
         },
         failed: {
             label: "Failed",
-            classes:
-                "bg-danger-soft text-danger-soft-text border-danger-soft ring-1 ring-danger-soft/50",
+            classes: "bg-danger-soft text-danger-soft-text border-danger-soft-border",
             iconColor: "text-danger-surface",
         },
         pending: {
             label: "Pending",
-            classes: "bg-warning-soft text-warning-soft-text border-warning-soft",
+            classes: "bg-warning-soft text-warning-soft-text border-warning-soft-border",
             iconColor: "text-warning-surface",
         },
         paused: {
@@ -57,7 +55,7 @@
         },
         scheduled: {
             label: "Scheduled",
-            classes: "bg-primary-soft text-primary-soft-text border-primary-soft",
+            classes: "bg-primary-soft text-primary-soft-text border-primary-soft-border",
             iconColor: "text-primary",
         },
         cancelled: {
@@ -79,7 +77,7 @@
 </script>
 
 <div
-    class="duration-normal inline-flex items-center justify-center rounded-full border font-medium transition-all {config.classes} {sizeConfig.classes} {className}"
+    class="inline-flex items-center justify-center rounded-full border font-mono tracking-wide {config.classes} {sizeConfig.classes} {className}"
     role="status"
     in:fade={{ duration: 150 }}
 >

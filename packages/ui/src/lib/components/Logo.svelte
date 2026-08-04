@@ -20,7 +20,9 @@
     };
 </script>
 
-<span class="inline-flex {sizeClasses[size]} {className}" aria-hidden="true">
+<!-- The mark is flat currentColor (matching the website's brand mark), so the
+     brand teal comes from text-primary and any caller can override it. -->
+<span class="inline-flex text-primary {sizeClasses[size]} {className}" aria-hidden="true">
     <!-- SVG body is a static, repo-vendored asset imported via Vite's ?raw loader. -->
     <!-- eslint-disable-next-line svelte/no-at-html-tags -->
     {@html logoSvg}

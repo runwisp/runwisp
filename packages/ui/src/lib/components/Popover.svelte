@@ -6,8 +6,7 @@
     import type { Placement } from "@floating-ui/dom";
     import { onDestroy } from "svelte";
     import { computePosition, autoUpdate, flip, shift, offset } from "@floating-ui/dom";
-    import { scale, fade } from "svelte/transition";
-    import { quintOut } from "svelte/easing";
+    import { fade } from "svelte/transition";
     import { portal } from "../actions/portal.js";
 
     interface Props {
@@ -139,20 +138,19 @@
             <div
                 use:portal
                 transition:fade={{ duration: 120 }}
-                class="fixed inset-0 z-[9998] bg-on-surface/40"
+                class="fixed inset-0 z-[9998] bg-backdrop"
                 aria-hidden="true"
             ></div>
         {/if}
         <div
             use:portal
             bind:this={contentEl}
-            transition:scale={{ duration: 150, start: 0.95, easing: quintOut }}
             class="
                 z-[9999] max-h-[80vh] overflow-y-auto
-                border border-outline bg-surface-overlay shadow-xl shadow-on-surface/5
+                border border-outline bg-surface-overlay shadow-lg
                 {asSheet
-                ? 'fixed inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl border-x-0 border-b-0 p-5'
-                : 'rounded-xl p-4'}
+                ? 'fixed inset-x-0 bottom-0 max-h-[85vh] rounded-t-[4px] border-x-0 border-b-0 p-5'
+                : 'rounded-[4px] p-4'}
             "
         >
             {#if children}

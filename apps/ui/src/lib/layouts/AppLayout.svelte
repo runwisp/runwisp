@@ -104,24 +104,26 @@
     <aside
         id="app-sidebar"
         aria-label="Primary"
-        class="duration-normal fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-outline bg-surface-raised shadow-sm transition-transform ease-out md:static md:translate-x-0 {sidebarOpen
+        class="fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-outline bg-surface-raised transition-transform duration-150 ease-out md:static md:translate-x-0 {sidebarOpen
             ? 'translate-x-0'
             : '-translate-x-full'}"
     >
-        <!-- Brand -->
+        <!-- Brand — the same lockup as the website nav: teal mark at 21px,
+             wordmark in the body sans at 700. Brand voice, not chrome, so it
+             deliberately stays out of the mono. -->
         <div
-            class="flex h-16 items-center gap-3 border-b border-outline-faint px-5 transition-all hover:bg-surface-sunken/50"
+            class="flex h-[52px] items-center gap-[9px] border-b border-outline px-5 hover:bg-surface-sunken/50"
         >
-            <div class="flex h-8 w-8 items-center justify-center rounded-lg">
-                <Logo size="lg" />
-            </div>
+            <Logo size="md" />
             <div class="flex flex-1 flex-col leading-none">
-                <span class="text-base font-bold tracking-tight text-on-surface">RunWisp</span>
+                <span class="font-sans text-[18px] font-bold tracking-[-0.02em] text-on-surface"
+                    >RunWisp</span
+                >
             </div>
             <button
                 type="button"
                 aria-label="Close navigation"
-                class="rounded-md p-1 text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface md:hidden"
+                class="rounded-[3px] p-1 text-on-surface-muted hover:bg-surface-sunken hover:text-primary md:hidden"
                 onclick={closeDrawer}
             >
                 <X size={18} />
@@ -134,31 +136,31 @@
                 <a
                     bind:this={firstLink}
                     href={resolve(urls.overview)}
-                    class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all {activePage ===
+                    class="group flex items-center gap-3 rounded-[3px] px-3 py-2 font-mono text-sm font-medium {activePage ===
                     'overview'
-                        ? 'bg-primary-soft text-primary-soft-text shadow-sm shadow-wisp-500/5'
-                        : 'text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface'}"
+                        ? 'bg-primary-soft text-primary-soft-text'
+                        : 'text-on-surface-muted hover:bg-surface-sunken hover:text-primary'}"
                 >
                     <Activity
                         size={18}
                         class={activePage === "overview"
                             ? "text-primary"
-                            : "text-on-surface-faint transition-colors group-hover:text-on-surface-muted"}
+                            : "text-on-surface-faint group-hover:text-on-surface-muted"}
                     />
                     Overview
                 </a>
                 <a
                     href={resolve(urls.runs)}
-                    class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all {activePage ===
+                    class="group flex items-center gap-3 rounded-[3px] px-3 py-2 font-mono text-sm font-medium {activePage ===
                     'runs'
-                        ? 'bg-primary-soft text-primary-soft-text shadow-sm shadow-wisp-500/5'
-                        : 'text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface'}"
+                        ? 'bg-primary-soft text-primary-soft-text'
+                        : 'text-on-surface-muted hover:bg-surface-sunken hover:text-primary'}"
                 >
                     <RotateCcwClock
                         size={18}
                         class={activePage === "runs"
                             ? "text-primary"
-                            : "text-on-surface-faint transition-colors group-hover:text-on-surface-muted"}
+                            : "text-on-surface-faint group-hover:text-on-surface-muted"}
                     />
                     All Runs
                 </a>
@@ -167,7 +169,7 @@
             {#if showGroupHeaders}
                 {#each taskGroups as group (group.name)}
                     <div
-                        class="mt-4 mb-2 px-3 text-2xs font-bold tracking-wider text-on-surface-faint uppercase first:mt-0"
+                        class="mt-4 mb-2 px-3 font-mono text-2xs font-medium tracking-[0.16em] text-on-surface-faint uppercase first:mt-0"
                     >
                         {group.name}
                     </div>
@@ -176,16 +178,16 @@
                             {@const TaskIcon = task.icon}
                             <a
                                 href={resolve(task.href || "#")}
-                                class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all {activePage ===
+                                class="group flex items-center gap-3 rounded-[3px] px-3 py-2 font-mono text-sm font-medium {activePage ===
                                 task.id
-                                    ? 'bg-primary-soft text-primary-soft-text shadow-sm shadow-wisp-500/5'
-                                    : 'text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface'}"
+                                    ? 'bg-primary-soft text-primary-soft-text'
+                                    : 'text-on-surface-muted hover:bg-surface-sunken hover:text-primary'}"
                             >
                                 <TaskIcon
                                     size={18}
                                     class={activePage === task.id
                                         ? "text-primary"
-                                        : "text-on-surface-faint transition-colors group-hover:text-on-surface-muted"}
+                                        : "text-on-surface-faint group-hover:text-on-surface-muted"}
                                 />
                                 {task.name}
                             </a>
@@ -194,7 +196,7 @@
                 {/each}
             {:else}
                 <div
-                    class="mb-2 px-3 text-2xs font-bold tracking-wider text-on-surface-faint uppercase"
+                    class="mb-2 px-3 font-mono text-2xs font-medium tracking-[0.16em] text-on-surface-faint uppercase"
                 >
                     Tasks
                 </div>
@@ -203,16 +205,16 @@
                         {@const TaskIcon = task.icon}
                         <a
                             href={resolve(task.href || "#")}
-                            class="group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all {activePage ===
+                            class="group flex items-center gap-3 rounded-[3px] px-3 py-2 font-mono text-sm font-medium {activePage ===
                             task.id
-                                ? 'bg-primary-soft text-primary-soft-text shadow-sm shadow-wisp-500/5'
-                                : 'text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface'}"
+                                ? 'bg-primary-soft text-primary-soft-text'
+                                : 'text-on-surface-muted hover:bg-surface-sunken hover:text-primary'}"
                         >
                             <TaskIcon
                                 size={18}
                                 class={activePage === task.id
                                     ? "text-primary"
-                                    : "text-on-surface-faint transition-colors group-hover:text-on-surface-muted"}
+                                    : "text-on-surface-faint group-hover:text-on-surface-muted"}
                             />
                             {task.name}
                         </a>
@@ -229,7 +231,7 @@
     <main class="flex flex-1 flex-col overflow-hidden">
         <!-- Topbar -->
         <header
-            class="flex h-16 items-center justify-between border-b border-outline bg-surface-raised px-6 shadow-sm"
+            class="flex h-[52px] items-center justify-between border-b border-outline bg-surface-raised px-6"
         >
             <!-- Breadcrumb / Title -->
             <div class="flex min-w-0 items-center gap-3">
@@ -238,21 +240,21 @@
                     aria-label="Open navigation"
                     aria-expanded={sidebarOpen}
                     aria-controls="app-sidebar"
-                    class="-ml-2 rounded-md p-2 text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface md:hidden"
+                    class="-ml-2 rounded-[3px] p-2 text-on-surface-muted hover:bg-surface-sunken hover:text-primary md:hidden"
                     onclick={openDrawer}
                 >
                     <Menu size={20} />
                 </button>
-                <span class="hidden text-on-surface-faint sm:inline">RunWisp</span>
-                <span class="hidden text-on-surface-faint sm:inline">/</span>
+                <span class="hidden font-mono text-on-surface-faint sm:inline">RunWisp</span>
+                <span class="hidden font-mono text-on-surface-faint sm:inline">/</span>
                 {#if activeTaskName}
                     <!-- On a task page the breadcrumb is the page's primary heading:
                          the task name appears here and nowhere else. -->
-                    <h1 class="min-w-0 truncate text-base font-semibold text-on-surface">
+                    <h1 class="min-w-0 truncate font-mono text-base font-extrabold text-on-surface">
                         {activeTaskName}
                     </h1>
                 {:else}
-                    <span class="font-semibold text-on-surface capitalize"
+                    <span class="font-mono font-semibold text-on-surface capitalize"
                         >{activePage.replace("task_", "").replace(/_/g, " ")}</span
                     >
                 {/if}
@@ -267,7 +269,7 @@
             <div class="flex shrink-0 items-center gap-2 sm:gap-3">
                 {#if systemStore.timezone}
                     <span
-                        class="hidden items-center gap-1.5 rounded-full border border-outline bg-surface-sunken px-2.5 py-1 text-xs font-medium whitespace-nowrap text-on-surface-muted lg:flex"
+                        class="hidden items-center gap-1.5 rounded-[3px] border border-outline bg-surface-sunken px-2.5 py-1 font-mono text-xs whitespace-nowrap text-on-surface-muted lg:flex"
                         title={systemStore.timezoneSource === "system"
                             ? "Detected from the host system; pin [scheduler] timezone in runwisp.toml to make it explicit."
                             : "Set in runwisp.toml under [scheduler] timezone."}

@@ -29,7 +29,8 @@
             <h1 class="text-2xl font-bold text-on-surface">Notifications</h1>
             <p class="text-sm text-on-surface-muted">
                 Recent notifications across all tasks
-                {#if unread > 0}· <span class="font-medium text-primary-soft-text"
+                {#if unread > 0}· <span
+                        class="font-mono font-medium text-primary-soft-text tabular-nums"
                         >{unread} unread</span
                     >{/if}
             </p>
@@ -37,14 +38,14 @@
         {#if unread > 0}
             <button
                 type="button"
-                class="rounded-md bg-primary-soft px-3 py-1.5 text-sm font-medium text-primary-soft-text hover:bg-primary-soft"
+                class="rounded-[3px] border border-primary-soft-border bg-primary-soft px-3 py-1.5 font-mono text-sm font-medium text-primary-soft-text hover:border-outline-hover"
                 onclick={() => void markAllRead()}>Mark all read</button
             >
         {/if}
     </header>
 
     {#if items.length === 0}
-        <div class="rounded-xl border border-dashed border-outline bg-surface-raised">
+        <div class="rounded-[4px] border border-dashed border-outline bg-surface-raised">
             <EmptyState
                 title="No notifications yet"
                 description="Failed runs and notifier delivery problems will appear here. Configure Slack or Telegram notifiers in your runwisp.toml."
@@ -73,7 +74,7 @@
             <div class="flex justify-center pt-4">
                 <button
                     type="button"
-                    class="rounded-md border border-outline bg-surface-raised px-4 py-1.5 text-sm font-medium text-on-surface-muted hover:bg-surface-sunken"
+                    class="rounded-[3px] border border-outline bg-surface-raised px-4 py-1.5 font-mono text-sm font-medium text-on-surface-muted hover:border-outline-hover hover:text-primary"
                     onclick={() => void loadMore()}>Load more</button
                 >
             </div>

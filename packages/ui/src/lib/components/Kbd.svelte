@@ -16,7 +16,7 @@
         min-w-[1.5em] px-1.5 py-0.5
         text-xs font-mono font-medium
         bg-surface-sunken text-on-surface-muted
-        border border-outline rounded-md
+        border border-outline rounded-[3px]
         shadow-sm
     `;
 </script>

@@ -14,10 +14,6 @@
 
 @import "tailwindcss";
 @import "./theme-tokens.css";
-@import "@fontsource/tasa-orbiter/400.css";
-@import "@fontsource/tasa-orbiter/500.css";
-@import "@fontsource/tasa-orbiter/600.css";
-@import "@fontsource/tasa-orbiter/700.css";
 
 @plugin "@tailwindcss/forms";
 @plugin "@tailwindcss/typography";
@@ -87,9 +83,10 @@
     --color-warning-600: var(--rw-color-warning-600);
     --color-warning-700: var(--rw-color-warning-700);
 
-    /* Typography */
-    --font-sans: "TASA Orbiter", system-ui, -apple-system, sans-serif;
-    --font-mono: "JetBrains Mono", "Fira Code", monospace;
+    /* Typography — stacks and @font-face live in theme-tokens.css so the
+     * non-Tailwind consumers (apps/docs) share one definition. */
+    --font-sans: var(--rw-font-sans);
+    --font-mono: var(--rw-font-mono);
 
     /* Font sizes */
     --text-2xs: 0.625rem;
@@ -125,31 +122,24 @@
     --spacing-20: 5rem;
     --spacing-24: 6rem;
 
-    /* Border radius */
+    /* Border radius — runbook scale (small radii are signature). lg/xl/2xl/3xl
+     * remain for legacy call sites but should not be used going forward. */
     --radius-none: 0;
-    --radius-sm: 0.25rem;
-    --radius-md: 0.375rem;
+    --radius-sm: 0.1875rem; /* 3px — controls */
+    --radius-md: 0.25rem; /* 4px — panels / cards */
     --radius-lg: 0.5rem;
     --radius-xl: 0.75rem;
     --radius-2xl: 1rem;
     --radius-3xl: 1.5rem;
     --radius-full: 9999px;
 
-    /* Shadows — soft, ethereal */
-    --shadow-xs: 0 1px 2px 0 oklch(0.18 0.02 280 / 0.05);
-    --shadow-sm:
-        0 1px 3px 0 oklch(0.18 0.02 280 / 0.08), 0 1px 2px -1px oklch(0.18 0.02 280 / 0.08);
-    --shadow-md:
-        0 4px 6px -1px oklch(0.18 0.02 280 / 0.08), 0 2px 4px -2px oklch(0.18 0.02 280 / 0.08);
-    --shadow-lg:
-        0 10px 15px -3px oklch(0.18 0.02 280 / 0.08), 0 4px 6px -4px oklch(0.18 0.02 280 / 0.08);
-    --shadow-xl:
-        0 20px 25px -5px oklch(0.18 0.02 280 / 0.1), 0 8px 10px -6px oklch(0.18 0.02 280 / 0.1);
-
-    /* Glow effects for wisp theme */
-    --shadow-glow-sm: 0 0 10px oklch(0.58 0.18 270 / 0.15);
-    --shadow-glow-md: 0 0 20px oklch(0.58 0.18 270 / 0.2);
-    --shadow-glow-lg: 0 0 30px oklch(0.58 0.18 270 / 0.25);
+    /* Shadows — mapped to the flip tokens in theme-tokens.css so every
+     * shadow-* utility resolves to `none` in dark (borders-only look). */
+    --shadow-xs: var(--rw-shadow-xs);
+    --shadow-sm: var(--rw-shadow-sm);
+    --shadow-md: var(--rw-shadow-md);
+    --shadow-lg: var(--rw-shadow-lg);
+    --shadow-xl: var(--rw-shadow-xl);
 }
 
 /* Semantic Design Tokens — Tailwind utility aliases.
@@ -212,14 +202,30 @@
     --color-warning-soft-border: var(--rw-warning-soft-border);
     --color-info-soft-border: var(--rw-info-soft-border);
 
-    /* Transition durations */
-    --duration-fast: 100ms;
-    --duration-normal: 200ms;
-    --duration-slow: 300ms;
+    /* Terminal surface — fixed dark in both themes */
+    --color-term: var(--rw-term);
+    --color-term-2: var(--rw-term-2);
+    --color-term-line: var(--rw-term-line);
+    --color-term-line-2: var(--rw-term-line-2);
+    --color-term-text: var(--rw-term-text);
+    --color-term-muted: var(--rw-term-muted);
+    --color-term-faint: var(--rw-term-faint);
+    --color-term-teal: var(--rw-term-teal);
+    --color-term-ok: var(--rw-term-ok);
+    --color-term-warn: var(--rw-term-warn);
+    --color-term-bad: var(--rw-term-bad);
+    /* Syntax highlighting */
+    --color-syn-comment: var(--rw-syn-comment);
+    --color-syn-kw: var(--rw-syn-kw);
+    --color-syn-str: var(--rw-syn-str);
+    --color-syn-num: var(--rw-syn-num);
+    --color-syn-punc: var(--rw-syn-punc);
+    --color-syn-fn: var(--rw-syn-fn);
 
-    /* Easings */
-    --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
-    --ease-in: cubic-bezier(0.4, 0, 1, 1);
+    /* Motion. Deliberately minimal: hover, focus and state changes are
+     * instant, so there is no scale of durations to pick from. The few things
+     * that still move — a drawer sliding, a toggle knob, an accordion's
+     * height, a progress bar's width — set their own timing inline. */
     --ease-out: cubic-bezier(0, 0, 0.2, 1);
 }
 
@@ -243,6 +249,17 @@ body {
     padding: 0;
     background-color: var(--rw-surface);
     color: var(--rw-on-surface);
+}
+
+/* Headings are mono chrome — the runbook voice. Components should not fight this. */
+h1,
+h2,
+h3 {
+    font-family: var(--font-mono);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
 }
 
 /* Utility classes for the design system */
@@ -278,9 +295,6 @@ body {
     }
 }
 
-.btn-scale {
-    transition: all 0.15s ease-in-out;
-}
 .btn-scale:active {
     transform: scale(0.97);
 }

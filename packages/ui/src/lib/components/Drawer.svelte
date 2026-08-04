@@ -100,7 +100,7 @@
         <div
             class="
                 absolute z-10 flex flex-col
-                bg-surface-overlay shadow-xl
+                border border-outline bg-surface-overlay shadow-lg
                 {positionClasses[side]}
                 {className}
             "
@@ -112,16 +112,19 @@
         >
             <!-- Header -->
             {#if header}
-                <div class="border-b border-outline-faint px-6 py-4">
+                <div class="border-b border-outline px-6 py-4">
                     {@render header()}
                 </div>
             {:else if title || closable}
                 <div
-                    class="flex items-start justify-between gap-4 border-b border-outline-faint px-6 py-4"
+                    class="flex items-start justify-between gap-4 border-b border-outline px-6 py-4"
                 >
                     <div>
                         {#if title}
-                            <h2 id="drawer-title" class="text-lg font-semibold text-on-surface">
+                            <h2
+                                id="drawer-title"
+                                class="font-mono text-lg font-semibold text-on-surface"
+                            >
                                 {title}
                             </h2>
                         {/if}
@@ -129,7 +132,7 @@
                     {#if closable}
                         <button
                             onclick={handleClose}
-                            class="-m-2 shrink-0 rounded-lg p-2 text-on-surface-faint transition-colors hover:bg-surface-sunken hover:text-on-surface-muted"
+                            class="-m-2 shrink-0 rounded-[3px] p-2 text-on-surface-faint hover:bg-surface-sunken hover:text-on-surface-muted"
                             aria-label="Close"
                         >
                             <X size={20} />
@@ -147,7 +150,7 @@
 
             <!-- Footer -->
             {#if footer}
-                <div class="border-t border-outline-faint bg-surface-sunken/50 px-6 py-4">
+                <div class="border-t border-outline bg-surface-sunken px-6 py-4">
                     {@render footer()}
                 </div>
             {/if}

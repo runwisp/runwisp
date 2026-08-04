@@ -362,7 +362,7 @@
                 <div class="flex items-start gap-4">
                     <!-- Verdict tile -->
                     <div
-                        class="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[11px] {config.bg} {config.color} ring-1 ring-current/25 ring-inset"
+                        class="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[4px] {config.bg} {config.color} ring-1 ring-current/25 ring-inset"
                     >
                         <DetailIcon size={20} class={isRunning ? "animate-spin" : ""} />
                     </div>
@@ -388,7 +388,7 @@
                              outcome, so stopped reads amber, not red. -->
                             <Tooltip content={config.description} position="bottom" wide>
                                 <span
-                                    class="rounded-full border px-2.5 py-0.5 text-2xs font-bold tracking-wider uppercase {config.color} {config.bg} {config.border}"
+                                    class="rounded-[3px] border px-2.5 py-0.5 font-mono text-2xs font-bold tracking-wider uppercase {config.color} {config.bg} {config.border}"
                                 >
                                     {status.toUpperCase()}
                                 </span>
@@ -402,7 +402,7 @@
                                 <!-- When the title carries the task name, the run's
                                  date/time lives here in the sub-line (otherwise it's
                                  already the title, so don't repeat it). -->
-                                <span title={formatFullDateTime(startedAt)}>
+                                <span class="font-mono" title={formatFullDateTime(startedAt)}>
                                     Run · {formatCalendarDate(startedAt)}
                                     {formatTimeHM(startedAt)}
                                 </span>
@@ -412,7 +412,7 @@
                                 type="button"
                                 onclick={() => copyRunId(run.id)}
                                 title="Copy run ID"
-                                class="inline-flex items-center gap-1.5 rounded-md border border-outline-faint bg-surface-sunken px-1.5 py-0.5 font-mono text-2xs text-on-surface-faint transition-colors hover:border-outline hover:text-on-surface-muted"
+                                class="inline-flex items-center gap-1.5 rounded-[3px] border border-outline-faint bg-surface-sunken px-1.5 py-0.5 font-mono text-2xs text-on-surface-faint hover:border-outline-hover hover:text-primary"
                             >
                                 {#if copiedId}
                                     <Check size={11} class="text-success-surface" />Copied
@@ -423,7 +423,7 @@
                             {#if retry}
                                 <span class="hidden h-1 w-1 rounded-full bg-outline-faint sm:block"
                                 ></span>
-                                <span class="inline-flex items-center gap-1.5">
+                                <span class="inline-flex items-center gap-1.5 font-mono">
                                     <RotateCw size={14} />
                                     Retry #{run.retry_attempt}{#if run.retry_of_run_id}
                                         <span class="text-on-surface-faint"
@@ -437,7 +437,7 @@
                                 <Popover placement="bottom-start">
                                     {#snippet trigger()}
                                         <span
-                                            class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-outline-faint bg-surface-sunken px-2.5 py-0.5 text-xs font-medium text-on-surface-muted transition-colors hover:border-outline hover:text-on-surface"
+                                            class="inline-flex cursor-pointer items-center gap-1.5 rounded-[3px] border border-outline-faint bg-surface-sunken px-2.5 py-0.5 font-mono text-xs font-medium text-on-surface-muted hover:border-outline-hover hover:text-primary"
                                             title="View run parameters"
                                         >
                                             <SlidersHorizontal size={12} />
@@ -447,7 +447,7 @@
                                     {/snippet}
                                     <div class="max-w-md min-w-48">
                                         <span
-                                            class="text-xs font-semibold tracking-wide text-on-surface-faint uppercase"
+                                            class="font-mono text-xs font-semibold tracking-[0.14em] text-on-surface-faint uppercase"
                                             >Parameters</span
                                         >
                                         <dl
@@ -477,7 +477,7 @@
                             <button
                                 type="button"
                                 onclick={() => onToggleHistory()}
-                                class="inline-flex items-center justify-center rounded-lg border border-outline-faint bg-surface-raised p-2 text-on-surface-muted transition-colors hover:bg-surface-sunken hover:text-on-surface"
+                                class="inline-flex items-center justify-center rounded-[3px] border border-outline-faint bg-surface-raised p-2 text-on-surface-muted hover:border-outline-hover hover:bg-surface-sunken hover:text-primary"
                                 title={historyVisible ? "Hide run history" : "Show run history"}
                                 aria-label={historyVisible
                                     ? "Hide run history"
@@ -505,7 +505,7 @@
                                     title={serviceStopped
                                         ? "Starts the service"
                                         : "Cancels and respawns every instance"}
-                                    class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-primary-soft bg-surface-raised px-3 text-sm font-medium text-primary transition-colors hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
+                                    class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-[3px] border border-primary-soft-border bg-surface-raised px-3 font-mono text-sm font-medium text-primary hover:bg-primary-soft active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                     {#if serviceStopped}
                                         <Play size={15} fill="currentColor" stroke="none" />
@@ -523,7 +523,7 @@
                                     onclick={() => onStopService()}
                                     disabled={serviceBusy}
                                     title="Stops the service for the rest of the daemon's lifetime"
-                                    class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-danger-soft bg-surface-raised px-3 text-sm font-medium text-danger-surface transition-colors hover:bg-danger-soft disabled:cursor-not-allowed disabled:opacity-60"
+                                    class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-[3px] border border-danger-soft-border bg-surface-raised px-3 font-mono text-sm font-medium text-danger-surface hover:bg-danger-soft active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                     <Square size={15} fill="currentColor" stroke="none" />
                                     <span class="@max-md:hidden">Stop Service</span>
@@ -534,13 +534,13 @@
                                 <!-- Split button: Run (defaults) + an arrow for the
                                  reuse-parameters variant, shown only when there is one. -->
                                 <div
-                                    class="inline-flex overflow-hidden rounded-lg border border-primary-soft"
+                                    class="inline-flex overflow-hidden rounded-[3px] border border-primary-soft-border"
                                 >
                                     <button
                                         type="button"
                                         onclick={() => onRun()}
                                         title="Run this task now with default options"
-                                        class="inline-flex h-9 cursor-pointer items-center gap-1.5 bg-surface-raised px-3 text-sm font-medium text-primary transition-colors hover:bg-primary-soft"
+                                        class="inline-flex h-9 cursor-pointer items-center gap-1.5 bg-surface-raised px-3 font-mono text-sm font-medium text-primary hover:bg-primary-soft active:translate-y-px"
                                     >
                                         <Play size={15} fill="currentColor" stroke="none" />
                                         <span class="@max-md:hidden">Run</span>
@@ -549,7 +549,7 @@
                                         <Popover bind:open={runMenuOpen} placement="bottom-end">
                                             {#snippet trigger()}
                                                 <span
-                                                    class="flex h-9 cursor-pointer items-center border-l border-primary-soft bg-surface-raised px-2 text-primary transition-colors hover:bg-primary-soft"
+                                                    class="flex h-9 cursor-pointer items-center border-l border-primary-soft-border bg-surface-raised px-2 text-primary hover:bg-primary-soft"
                                                     title="More run options"
                                                     aria-label="More run options"
                                                 >
@@ -570,7 +570,7 @@
                                                 />
                                                 <span class="flex flex-col">
                                                     <span
-                                                        class="text-sm font-medium text-on-surface"
+                                                        class="font-mono text-sm font-medium text-on-surface"
                                                         >Run again</span
                                                     >
                                                     <span class="text-xs text-on-surface-muted"
@@ -586,7 +586,7 @@
                                 <button
                                     type="button"
                                     onclick={() => onStop(run.id)}
-                                    class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-danger-soft bg-surface-raised px-3 text-sm font-medium text-danger-surface transition-colors hover:bg-danger-soft"
+                                    class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-[3px] border border-danger-soft-border bg-surface-raised px-3 font-mono text-sm font-medium text-danger-surface hover:bg-danger-soft active:translate-y-px"
                                 >
                                     <Square size={15} fill="currentColor" stroke="none" />
                                     <span class="@max-md:hidden">Stop</span>
@@ -598,7 +598,7 @@
                                 run.task_name,
                             )}/runs/{encodeURIComponent(run.id)}/log/raw"
                             download="{run.task_name}-{run.id}.log"
-                            class="inline-flex items-center justify-center rounded-lg border border-outline-faint bg-surface-raised p-2 text-on-surface-muted transition-colors hover:bg-surface-sunken hover:text-on-surface"
+                            class="inline-flex items-center justify-center rounded-[3px] border border-outline-faint bg-surface-raised p-2 text-on-surface-muted hover:border-outline-hover hover:bg-surface-sunken hover:text-primary"
                             title="Download the full log (rotated and current parts as one file)"
                             aria-label="Download log"
                         >
@@ -608,7 +608,7 @@
                             <Popover bind:open={confirmDeleteOpen} placement="bottom-end">
                                 {#snippet trigger()}
                                     <span
-                                        class="flex cursor-pointer items-center justify-center rounded-lg border border-outline-faint bg-surface-raised p-2 text-on-surface-muted transition-colors hover:border-danger-soft hover:bg-danger-soft hover:text-danger-surface"
+                                        class="flex cursor-pointer items-center justify-center rounded-[3px] border border-outline-faint bg-surface-raised p-2 text-on-surface-muted hover:border-danger-soft-border hover:bg-danger-soft hover:text-danger-surface"
                                         title="Delete this run"
                                         aria-label="Delete run"
                                     >
@@ -616,7 +616,7 @@
                                     </span>
                                 {/snippet}
                                 <div class="w-60">
-                                    <div class="text-sm font-semibold text-on-surface">
+                                    <div class="font-mono text-sm font-semibold text-on-surface">
                                         Delete this run?
                                     </div>
                                     <div class="mt-1 text-xs leading-relaxed text-on-surface-muted">
@@ -651,13 +651,13 @@
                 <!-- Instrument cluster: the run's vital readout — value over a one-word
                  context line, hairline-divided. -->
                 <div
-                    class="mt-4 flex flex-wrap overflow-hidden rounded-xl border border-outline-faint bg-surface-raised"
+                    class="mt-4 flex flex-wrap overflow-hidden rounded-[4px] border border-outline-faint bg-surface-raised"
                 >
                     <div
                         class="flex min-w-30 flex-1 flex-col gap-0.5 border-l border-outline-faint px-4 py-2.5 first:border-l-0"
                     >
                         <span
-                            class="text-2xs font-bold tracking-wider text-on-surface-faint uppercase"
+                            class="font-mono text-2xs font-bold tracking-[0.12em] text-on-surface-faint uppercase"
                             >Queued</span
                         >
                         <span
@@ -666,7 +666,7 @@
                         >
                             {formatClockTime(run.created_at)}
                         </span>
-                        <span class="text-2xs text-on-surface-muted"
+                        <span class="font-mono text-2xs text-on-surface-muted"
                             >+{startDelay ?? "0s"} queued</span
                         >
                     </div>
@@ -675,7 +675,7 @@
                         class="flex min-w-30 flex-1 flex-col gap-0.5 border-l border-outline-faint px-4 py-2.5 first:border-l-0"
                     >
                         <span
-                            class="text-2xs font-bold tracking-wider text-on-surface-faint uppercase"
+                            class="font-mono text-2xs font-bold tracking-[0.12em] text-on-surface-faint uppercase"
                             >Started</span
                         >
                         <span
@@ -683,7 +683,7 @@
                         >
                             {run.start_at ? formatClockTime(run.start_at) : "—"}
                         </span>
-                        <span class="text-2xs text-on-surface-muted">
+                        <span class="font-mono text-2xs text-on-surface-muted">
                             {run.start_at ? formatCalendarDate(run.start_at) : "not started"}
                         </span>
                     </div>
@@ -692,7 +692,7 @@
                         class="flex min-w-30 flex-1 flex-col gap-0.5 border-l border-outline-faint px-4 py-2.5 first:border-l-0"
                     >
                         <span
-                            class="text-2xs font-bold tracking-wider text-on-surface-faint uppercase"
+                            class="font-mono text-2xs font-bold tracking-[0.12em] text-on-surface-faint uppercase"
                             >Ran for</span
                         >
                         <span
@@ -700,7 +700,7 @@
                         >
                             {duration ?? "—"}
                         </span>
-                        <span class="text-2xs text-on-surface-muted">
+                        <span class="font-mono text-2xs text-on-surface-muted">
                             {isRunning ? "and counting" : run.end_at ? "wall clock" : "—"}
                         </span>
                     </div>
@@ -709,7 +709,7 @@
                         class="flex min-w-30 flex-1 flex-col gap-0.5 border-l border-outline-faint px-4 py-2.5 first:border-l-0"
                     >
                         <span
-                            class="text-2xs font-bold tracking-wider text-on-surface-faint uppercase"
+                            class="font-mono text-2xs font-bold tracking-[0.12em] text-on-surface-faint uppercase"
                             >Exit</span
                         >
                         <span
@@ -722,26 +722,28 @@
                             <span>{showCode ? run.exit_code : "—"}</span>
                             {#if exitFail}
                                 <span
-                                    class="rounded bg-danger-soft px-1 py-px text-[9px] font-bold tracking-wide text-danger-surface uppercase"
+                                    class="rounded-[3px] bg-danger-soft px-1 py-px font-mono text-[9px] font-bold tracking-wide text-danger-surface uppercase"
                                     >fail</span
                                 >
                             {/if}
                         </span>
-                        <span class="text-2xs text-on-surface-muted">{exitSubLabel(status)}</span>
+                        <span class="font-mono text-2xs text-on-surface-muted"
+                            >{exitSubLabel(status)}</span
+                        >
                     </div>
 
                     <div
                         class="flex min-w-30 flex-1 flex-col gap-0.5 border-l border-outline-faint px-4 py-2.5 first:border-l-0"
                     >
                         <span
-                            class="text-2xs font-bold tracking-wider text-on-surface-faint uppercase"
+                            class="font-mono text-2xs font-bold tracking-[0.12em] text-on-surface-faint uppercase"
                             >Trigger</span
                         >
                         <span
                             class="font-mono text-base font-medium tracking-tight whitespace-nowrap text-on-surface tabular-nums"
                             >{formatTriggeredByLabel(run.triggered_by)}</span
                         >
-                        <span class="text-2xs text-on-surface-muted"
+                        <span class="font-mono text-2xs text-on-surface-muted"
                             >{triggerSub(run.triggered_by)}</span
                         >
                     </div>
@@ -761,25 +763,27 @@
         <div
             use:maximizePortal={consoleMaximized}
             class={consoleMaximized
-                ? "console-zoom fixed inset-3 z-50 flex flex-col overflow-hidden rounded-xl bg-[var(--rw-con-bg)] shadow-2xl ring-1 ring-[rgb(255_255_255_/_0.08)] sm:inset-6"
-                : "ml-1 flex min-h-[300px] flex-1 flex-col overflow-hidden border-t border-[rgb(255_255_255_/_0.06)] bg-[var(--rw-con-bg)]"}
+                ? "console-zoom fixed inset-3 z-50 flex flex-col overflow-hidden rounded-[4px] bg-[var(--rw-con-bg)] shadow-2xl ring-1 ring-[var(--rw-con-gutter)] sm:inset-6"
+                : "ml-1 flex min-h-[300px] flex-1 flex-col overflow-hidden border-t border-[var(--rw-con-gutter)] bg-[var(--rw-con-bg)]"}
         >
             <div
-                class="flex shrink-0 items-center justify-between gap-3 border-b border-[rgb(255_255_255_/_0.06)] bg-[var(--rw-con-panel)] px-3.5 py-[9px] font-mono text-[11.5px] text-[var(--rw-con-dim)]"
+                class="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--rw-con-gutter)] bg-[var(--rw-con-panel)] px-3.5 py-[9px] font-mono text-[11.5px] text-[var(--rw-con-dim)]"
             >
                 <div class="flex min-w-0 items-center gap-3">
                     {#if consoleMaximized}
                         <!-- Focus-mode identity: which run is filling the screen -->
                         <span class="flex min-w-0 items-center gap-2">
                             <span class="h-2 w-2 shrink-0 rounded-full {spine}"></span>
-                            <span class="truncate font-medium text-[#b8c5d1]">
+                            <span class="truncate font-medium text-[var(--rw-con-text)]">
                                 {run.task_name}{suffix}
                             </span>
                             <span class="text-[var(--rw-con-gutter)]">·</span>
                             <span class="font-semibold capitalize {config.color}">{status}</span>
                         </span>
                     {:else}
-                        <span class="flex items-center gap-2 font-semibold text-[#98a7b5]">
+                        <span
+                            class="flex items-center gap-2 font-semibold text-[var(--rw-con-text)]"
+                        >
                             <TerminalIcon size={14} class="opacity-70" />
                             Console output
                         </span>
@@ -792,8 +796,8 @@
                     <button
                         type="button"
                         onclick={() => (consoleWrap = !consoleWrap)}
-                        class="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-[rgb(255_255_255_/_0.05)] hover:text-[#b8c5d1] {consoleWrap
-                            ? 'text-[#b8c5d1]'
+                        class="flex cursor-pointer items-center gap-1.5 rounded-[3px] px-2 py-1 hover:bg-[var(--rw-con-gutter)]/30 hover:text-[var(--rw-con-text)] {consoleWrap
+                            ? 'text-[var(--rw-con-text)]'
                             : 'text-[var(--rw-con-dim)]'}"
                         title={consoleWrap ? "Unwrap lines" : "Wrap long lines"}
                         aria-pressed={consoleWrap}
@@ -805,14 +809,14 @@
                     <button
                         type="button"
                         onclick={() => (consoleMaximized = !consoleMaximized)}
-                        class="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-[var(--rw-con-dim)] transition-colors hover:bg-[rgb(255_255_255_/_0.05)] hover:text-[#b8c5d1]"
+                        class="flex cursor-pointer items-center gap-1.5 rounded-[3px] px-2 py-1 text-[var(--rw-con-dim)] hover:bg-[var(--rw-con-gutter)]/30 hover:text-[var(--rw-con-text)]"
                         title={consoleMaximized ? "Restore console (Esc)" : "Maximize console · F"}
                         aria-label={consoleMaximized ? "Restore console" : "Maximize console"}
                     >
                         {#if consoleMaximized}
                             <Minimize2 size={13} />
                             <span
-                                class="rounded border border-[var(--rw-con-gutter)] px-1.5 text-[10px] tracking-wide"
+                                class="rounded-[3px] border border-[var(--rw-con-gutter)] px-1.5 text-[10px] tracking-wide"
                                 >Esc</span
                             >
                         {:else}
@@ -855,7 +859,7 @@
             <button
                 type="button"
                 onclick={() => onRunTask()}
-                class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-primary-soft bg-surface-raised px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary-soft"
+                class="inline-flex cursor-pointer items-center gap-1.5 rounded-[3px] border border-primary-soft-border bg-surface-raised px-3 py-2 font-mono text-sm font-medium text-primary hover:bg-primary-soft active:translate-y-px"
             >
                 <Play size={15} fill="currentColor" stroke="none" />
                 Run task
@@ -874,7 +878,7 @@
 
     /* Gentle fade for the maximize backdrop; disabled under reduced motion. */
     .console-backdrop {
-        animation: console-backdrop-in 150ms ease-out;
+        animation: console-backdrop-in 150ms;
     }
     @keyframes console-backdrop-in {
         from {

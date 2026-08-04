@@ -289,7 +289,7 @@
             aria-label="Task environment"
             class="shrink-0 border-b border-outline bg-surface-raised px-6 py-3"
         >
-            <h2 class="text-xs font-semibold tracking-wide text-on-surface-muted uppercase">
+            <h2 class="font-mono text-2xs font-medium tracking-[0.16em] text-info uppercase">
                 Environment
             </h2>
             {#if envEntries.length > 0}

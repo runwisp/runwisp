@@ -29,15 +29,15 @@ const ctaAlign = align === "center" && !hasMedia ? "justify-center" : "";
             <div class={textAlign}>
                 {
                     eyebrow && (
-                        <p class="text-primary-soft-text mb-4 text-sm font-semibold tracking-wider uppercase">
+                        <p class="text-info mb-4 font-mono text-[11.5px] font-medium tracking-[0.16em] uppercase">
                             {eyebrow}
                         </p>
                     )
                 }
-                <h1 class:list={["text-on-surface font-bold tracking-tight", headlineSize]}>
+                <h1 class:list={["text-on-surface font-mono font-extrabold", headlineSize]}>
                     {headline}
                 </h1>
-                {sub && <p class="text-on-surface-muted mt-6 text-lg sm:text-xl">{sub}</p>}
+                {sub && <p class="text-on-surface-muted mt-6 font-sans text-lg sm:text-xl">{sub}</p>}
                 {
                     hasCtas && (
                         <div class:list={["mt-8 flex flex-wrap items-center gap-3", ctaAlign]}>

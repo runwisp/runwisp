@@ -57,7 +57,7 @@
                     <a
                         href={resolve("/notifications")}
                         onclick={onClose}
-                        class="block rounded-md px-2 py-2 text-center text-xs text-on-surface-muted hover:bg-surface-sunken hover:text-on-surface"
+                        class="block rounded-[3px] px-2 py-2 text-center font-mono text-xs text-on-surface-muted hover:bg-surface-sunken hover:text-primary"
                         >+{extra} more — View all</a
                     >
                 {/if}

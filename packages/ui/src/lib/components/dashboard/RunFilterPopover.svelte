@@ -47,10 +47,13 @@
         filters = $bindable(),
         showTask = false,
         tasks = [],
+        compact = false,
     }: {
         filters: RunsListFilters;
         showTask?: boolean;
         tasks?: { name: string }[];
+        // Icon-only trigger for narrow rails where a "Filter" label wouldn't fit.
+        compact?: boolean;
     } = $props();
 
     // The individual statuses behind the "Advanced" expander, grouped the way
@@ -64,10 +67,11 @@
 
     const count = $derived(activeFilterCount(filters) + (showTask && filters.task_name ? 1 : 0));
 
-    const headerClass = "text-xs font-semibold tracking-wide text-on-surface-muted uppercase";
-    const labelClass = "text-2xs text-on-surface-faint uppercase";
+    const headerClass =
+        "font-mono text-xs font-semibold tracking-[0.14em] text-on-surface-muted uppercase";
+    const labelClass = "font-mono text-2xs tracking-[0.12em] text-on-surface-faint uppercase";
     const selectClass =
-        "h-9 w-full appearance-none rounded-md border border-outline bg-surface-raised px-2.5 text-sm text-on-surface focus:border-ring focus:outline-none";
+        "h-9 w-full appearance-none rounded-[3px] border border-outline bg-surface-raised px-2.5 font-mono text-sm text-on-surface focus:border-ring focus:outline-none";
 
     function statusDot(status: RunStatus): string {
         return RUN_STATUS_CONFIG[status].dot.replace(" animate-pulse", "");
@@ -136,14 +140,16 @@
 <Popover placement="right-start" mobileSheet>
     {#snippet trigger()}
         <span
-            class="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs font-medium transition-colors {count >
-            0
-                ? 'border-wisp-300 bg-primary-soft text-primary-soft-text'
-                : 'border-transparent text-on-surface-muted hover:bg-surface-sunken'}"
+            class="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-[3px] border font-mono text-xs font-medium {compact &&
+            count === 0
+                ? 'w-7 justify-center px-0'
+                : 'px-2'} {count > 0
+                ? 'border-primary-soft-border bg-primary-soft text-primary-soft-text'
+                : 'border-transparent text-on-surface-muted hover:border-outline-hover hover:bg-surface-sunken hover:text-primary'}"
             title="Filter runs"
         >
             <Funnel size={13} />
-            Filter
+            {#if !compact}Filter{/if}
             {#if count > 0}
                 <Badge variant="primary" size="sm" class="px-1.5 py-0">{count}</Badge>
             {/if}
@@ -167,14 +173,14 @@
                             class="size-4 shrink-0 cursor-pointer rounded border-outline accent-primary"
                         />
                         <span class="size-2.5 shrink-0 rounded-full {bucket.dot}"></span>
-                        <span class="text-sm text-on-surface">{bucket.label}</span>
+                        <span class="font-mono text-sm text-on-surface">{bucket.label}</span>
                     </label>
                 {/each}
             </div>
 
             <details class="mt-0.5" bind:open={advancedOpen}>
                 <summary
-                    class="flex cursor-pointer items-center gap-1 text-2xs font-medium text-on-surface-muted transition-colors select-none marker:content-none hover:text-on-surface [&::-webkit-details-marker]:hidden"
+                    class="flex cursor-pointer items-center gap-1 font-mono text-2xs font-medium text-on-surface-muted select-none marker:content-none hover:text-on-surface [&::-webkit-details-marker]:hidden"
                 >
                     <ChevronRight size={12} class={advancedOpen ? "rotate-90" : ""} />
                     Advanced — pick exact statuses
@@ -185,7 +191,7 @@
                         <div class="grid grid-cols-2 gap-x-2 gap-y-1">
                             {#each group.values as status (status)}
                                 <label
-                                    class="flex cursor-pointer items-center gap-1.5 truncate text-xs"
+                                    class="flex cursor-pointer items-center gap-1.5 truncate font-mono text-xs"
                                 >
                                     <input
                                         type="checkbox"

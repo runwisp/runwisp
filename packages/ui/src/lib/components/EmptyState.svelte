@@ -32,7 +32,7 @@
         <Icon size={iconSize} class="text-on-surface-faint" />
     </div>
 
-    <h3 class="mb-1 text-lg font-semibold text-on-surface">{title}</h3>
+    <h3 class="mb-1 font-mono text-lg font-semibold text-on-surface">{title}</h3>
 
     {#if description}
         <p class="mb-6 max-w-sm text-sm text-on-surface-muted">{description}</p>

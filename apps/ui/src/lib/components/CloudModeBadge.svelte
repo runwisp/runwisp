@@ -13,7 +13,7 @@
 
 {#if visible}
     <span
-        class="flex shrink-0 items-center gap-1.5 rounded-full border border-info-soft-border bg-info-soft px-2.5 py-1 text-xs font-medium whitespace-nowrap text-info-soft-text"
+        class="flex shrink-0 items-center gap-1.5 rounded-[3px] border border-info-soft-border bg-info-soft px-2.5 py-1 font-mono text-xs whitespace-nowrap text-info-soft-text"
         title="This runner is managed by RunWisp Cloud — scheduling and dispatch happen in the cloud; this page shows what runs on this machine."
     >
         <Cloud size={12} class="shrink-0" />

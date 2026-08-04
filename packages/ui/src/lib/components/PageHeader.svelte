@@ -16,7 +16,7 @@
 
 <div class="flex shrink-0 flex-wrap items-start justify-between gap-3 px-1 {className}">
     <div class="min-w-0">
-        <h1 class="text-2xl font-bold tracking-tight text-on-surface">{title}</h1>
+        <h1 class="font-mono text-2xl font-bold tracking-tight text-on-surface">{title}</h1>
         {#if subtitle}
             <p class="mt-0.5 text-sm text-on-surface-muted">{subtitle}</p>
         {/if}

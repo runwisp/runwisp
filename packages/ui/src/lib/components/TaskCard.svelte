@@ -15,16 +15,19 @@
 
     let { accent = "wisp", onclick, children, class: className = "" }: Props = $props();
 
+    // Each accent maps to a left keyline in the matching semantic colour. The
+    // other three sides stay a neutral hairline (set per-side so the shorthand
+    // never overrides the accent left-colour), and hover lifts the surface.
     const accentClasses: Record<TaskCardAccent, string> = {
-        danger: "hover:border-danger-soft-border",
-        wisp: "hover:border-primary-soft-border",
-        aurora: "hover:border-info-soft-border",
+        danger: "border-l-danger-surface",
+        wisp: "border-l-primary",
+        aurora: "border-l-info",
     };
 </script>
 
 <button
     type="button"
-    class="group w-full rounded-lg border border-outline-faint bg-surface-raised p-3 text-left transition-all hover:shadow-sm {accentClasses[
+    class="group w-full rounded-[4px] border border-l-2 border-t-outline border-r-outline border-b-outline bg-surface-raised p-3 text-left hover:bg-surface-sunken {accentClasses[
         accent
     ]} {className}"
     {onclick}

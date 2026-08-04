@@ -30,7 +30,7 @@
 
 {#if shape === "circle"}
     <div
-        class="animate-pulse rounded-full bg-outline {className}"
+        class="animate-pulse rounded-full bg-surface-sunken {className}"
         style="width: {width ?? '2.5rem'}; height: {height ?? width ?? '2.5rem'}"
         role="status"
         aria-label="Loading"
@@ -39,7 +39,7 @@
     </div>
 {:else if shape === "rect"}
     <div
-        class="animate-pulse rounded-lg bg-outline {className}"
+        class="animate-pulse rounded-[4px] bg-surface-sunken {className}"
         style="width: {width ?? '100%'}; height: {height ?? '2rem'}"
         role="status"
         aria-label="Loading"
@@ -50,8 +50,8 @@
     <div class="animate-pulse space-y-6 p-6 {className}" role="status" aria-label="Loading content">
         {#if header}
             <div class="space-y-3">
-                <div class="h-7 w-48 rounded-lg bg-outline"></div>
-                <div class="h-4 w-72 rounded bg-outline-faint"></div>
+                <div class="h-7 w-48 rounded-[4px] bg-surface-sunken"></div>
+                <div class="h-4 w-72 rounded-[3px] bg-surface-sunken"></div>
             </div>
         {/if}
 
@@ -59,11 +59,11 @@
             {#each Array.from({ length: rows }, (_, i) => i) as i (i)}
                 <div class="space-y-2">
                     <div
-                        class="h-4 rounded bg-outline-faint"
+                        class="h-4 rounded-[3px] bg-surface-sunken"
                         style="width: {70 + ((i * 17) % 30)}%"
                     ></div>
                     <div
-                        class="h-4 rounded bg-surface-sunken"
+                        class="h-4 rounded-[3px] bg-surface-sunken"
                         style="width: {40 + ((i * 23) % 40)}%"
                     ></div>
                 </div>

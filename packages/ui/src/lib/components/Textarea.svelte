@@ -34,21 +34,21 @@
     };
 
     const textareaClasses = `
-		w-full px-3.5 py-2.5 rounded-lg border
+		w-full px-3.5 py-2.5 rounded-[3px] border font-mono
 		text-sm bg-surface-raised text-on-surface placeholder:text-on-surface-faint
-		focus:outline-none focus:ring-2 focus:ring-offset-0
+		focus:outline-none focus:ring-2 focus:ring-offset-2
 		disabled:bg-surface-sunken disabled:text-on-surface-muted disabled:cursor-not-allowed
-		transition-colors duration-fast
-	`;
+			`;
 
     const normalBorder =
-        "border-outline hover:border-outline-hover focus:border-ring focus:ring-ring/20";
-    const errorBorder = "border-danger-400 focus:border-danger-500 focus:ring-danger-500/20";
+        "border-outline hover:border-outline-hover shadow-sm focus:border-ring focus:ring-ring";
+    const errorBorder =
+        "border-danger-surface focus:border-danger-surface focus:ring-danger-surface";
 </script>
 
 <div class="space-y-1.5 {className}">
     {#if label}
-        <label class="block text-sm font-medium text-on-surface-muted" for={id}>
+        <label class="block font-mono text-xs font-medium text-on-surface-muted" for={id}>
             {label}
         </label>
     {/if}
@@ -73,8 +73,8 @@
     </div>
 
     {#if error}
-        <p class="text-sm text-danger-soft-text">{error}</p>
+        <p class="font-sans text-xs text-danger-soft-text">{error}</p>
     {:else if hint}
-        <p class="text-sm text-on-surface-muted">{hint}</p>
+        <p class="font-sans text-xs text-on-surface-muted">{hint}</p>
     {/if}
 </div>

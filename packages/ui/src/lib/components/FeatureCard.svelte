@@ -15,19 +15,19 @@
 </script>
 
 <article
-    class="overflow-hidden rounded-xl border border-outline bg-surface-raised p-6 shadow-sm transition-colors hover:border-outline-hover {className}"
+    class="overflow-hidden rounded-[4px] border border-outline bg-surface-raised p-6 hover:border-outline-hover {className}"
 >
     <div class="flex flex-col gap-3">
         {#if Icon}
             <span
-                class="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-primary-soft text-primary-soft-text"
+                class="inline-flex h-10 w-10 items-center justify-center rounded-[3px] border border-primary-soft-border bg-primary-soft text-primary-soft-text"
             >
                 <Icon size={20} />
             </span>
         {/if}
-        <h3 class="text-lg font-semibold text-on-surface">{title}</h3>
+        <h3 class="font-mono text-base text-primary">{title}</h3>
         {#if children}
-            <div class="text-sm leading-relaxed text-on-surface-muted">
+            <div class="font-sans text-sm leading-relaxed text-on-surface-muted">
                 {@render children()}
             </div>
         {/if}
