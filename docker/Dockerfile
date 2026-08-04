@@ -40,15 +40,13 @@ COPY context/${TARGETARCH}/runwisp /usr/local/bin/runwisp
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/runwisp /usr/local/bin/docker-entrypoint.sh
 
-# Bind 0.0.0.0 and keep plain HTTP by default: a container is meant to sit
-# behind a reverse proxy or be port-mapped directly, and the daemon's
-# auto-TLS (self-signed HTTPS on any non-loopback bind) is a worse default
-# here than it is on a laptop. Operators wanting the daemon to terminate TLS
-# itself can set RUNWISP_TLS=auto.
+# Bind 0.0.0.0 and rely on the daemon's own plain-HTTP-by-default: a
+# container is meant to sit behind a reverse proxy or be port-mapped
+# directly. Operators wanting the daemon to terminate TLS itself (self-signed
+# HTTPS) can set RUNWISP_TLS=auto.
 ENV RUNWISP_CONFIG=/etc/runwisp/runwisp.toml \
 	RUNWISP_DATA=/var/lib/runwisp \
 	RUNWISP_HOST=0.0.0.0 \
-	RUNWISP_TLS=off \
 	RUNWISP_LOG_FORMAT=text
 
 EXPOSE 9477

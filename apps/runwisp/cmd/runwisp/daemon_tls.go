@@ -25,8 +25,8 @@ type tlsSetup struct {
 // resolveTLS decides how the main listener serves, generating a self-signed
 // cert when auto-HTTPS engages. The matrix (see config.Daemon docs):
 //   - operator-supplied tls_cert/tls_key  → HTTPS with those files (any host)
-//   - tls = "off"                          → plain HTTP (operator owns TLS upstream)
-//   - tls = "auto" + non-loopback bind     → self-signed HTTPS (the secure default)
+//   - tls = "off" (the default)            → plain HTTP (operator owns TLS upstream)
+//   - tls = "auto" + non-loopback bind     → self-signed HTTPS (opt-in)
 //   - tls = "auto" + loopback bind         → plain HTTP (no eavesdrop risk locally)
 //
 // It is called once at boot, before the server is constructed, so a cert

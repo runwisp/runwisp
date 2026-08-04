@@ -162,7 +162,7 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 // reportDemoNoTUI leaves the background daemon running and prints its Web UI password to stdout.
 // This is the --no-tui path that mirrors the TUI's "Keep Running" quit. Returns a passwordExit* code.
 func reportDemoNoTUI(stdout, stderr io.Writer, client credentialsFetcher, f Flags) int {
-	fmt.Fprintf(stderr, "RunWisp demo is running at %s\n", localBindURL(tlsScheme(config.Daemon{}, f.Host), f.Host, f.Port))
+	fmt.Fprintf(stderr, "RunWisp demo is running at %s\n", localBindURL(tlsScheme(config.Daemon{TLS: config.TLSModeOff}, f.Host), f.Host, f.Port))
 	fmt.Fprintf(stderr, "Stop it with: runwisp stop --data %s\n", f.DataDir)
 	fmt.Fprintln(stderr, "Web UI password:")
 	return runPassword(stdout, stderr, client, localAPISocketPath(f))

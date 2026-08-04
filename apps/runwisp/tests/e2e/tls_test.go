@@ -46,13 +46,26 @@ func (s *mapPinStore) Store(k, v string) {
 	s.m[k] = v
 }
 
-// startTLSDaemon boots a daemon bound to 0.0.0.0, which triggers auto-HTTPS
-// (loopback would stay plain HTTP). It returns the daemon process handle and
-// the https base URL reachable over loopback — the self-signed cert's SANs
-// include 127.0.0.1, and pinning skips hostname verification anyway.
+// startTLSDaemon boots a daemon bound to 0.0.0.0 with tls = "auto", which
+// triggers auto-HTTPS (loopback would stay plain HTTP; tls off, the default,
+// would too). It returns the daemon process handle and the https base URL
+// reachable over loopback — the self-signed cert's SANs include 127.0.0.1,
+// and pinning skips hostname verification anyway.
 func startTLSDaemon(t *testing.T) *daemonProcess {
 	t.Helper()
-	return startNonLoopbackDaemon(t, writeE2EConfig(t, t.TempDir()), "https")
+
+	configPath := filepath.Join(t.TempDir(), "runwisp.tls-auto.toml")
+	config := `
+[daemon]
+tls = "auto"
+shutdown_timeout = "500ms"
+
+[tasks.noop]
+run = "true"
+`
+	require.NoError(t, os.WriteFile(configPath, []byte(config), 0o600))
+
+	return startNonLoopbackDaemon(t, configPath, "https")
 }
 
 // startNonLoopbackDaemon boots a daemon bound to 0.0.0.0 with the given config
