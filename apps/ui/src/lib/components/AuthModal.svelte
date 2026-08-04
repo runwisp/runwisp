@@ -114,7 +114,7 @@
                 <!-- The canonical brand lockup (same as the app nav): bare teal
                      mark beside the wordmark in the body sans at 700 — brand
                      voice, deliberately out of the mono chrome. -->
-                <div class="flex items-center gap-2.5">
+                <div class="flex items-center gap-1">
                     <Logo size="lg" />
                     <span
                         id="auth-title"
