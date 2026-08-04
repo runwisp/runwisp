@@ -860,6 +860,35 @@ include_cron = ["crontabs/*"]
 	assert.Empty(t, cfg.CronFindings, "and nothing to warn about")
 }
 
+// TestIncludeCron_BareDescriptorNoCommandIsSkippedNotEmptyRun guards the live
+// include_cron path against a bare descriptor (`@daily` with nothing after it)
+// becoming a task with `run = ""`. crond never runs a descriptor with no
+// command — RunWisp must treat the line the same way it treats any other
+// unparseable line: skipped and reported, with the rest of the file still
+// loading.
+func TestIncludeCron_BareDescriptorNoCommandIsSkippedNotEmptyRun(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["crontabs/*"]
+`,
+		"crontabs/jobs": "@daily\n0 3 * * * /usr/local/bin/good.sh\n",
+	})
+
+	cfg := loadTree(t, dir)
+	assert.Equal(t, []string{"good"}, taskNames(cfg))
+	for _, task := range cfg.Tasks {
+		assert.NotEmpty(t, task.Run, "task %q must not have an empty run command", task.Name)
+	}
+
+	require.Len(t, cfg.CronFindings, 1)
+	skip := cfg.CronFindings[0]
+	assert.True(t, skip.Skipped)
+	assert.Empty(t, skip.Task, "a job that isn't running has no task name")
+	assert.Equal(t, 1, skip.Line)
+	assert.Equal(t, "@daily", skip.Source)
+}
+
 // stubCronServiceProbe replaces the systemctl-backed liveness probe for the
 // duration of one test, so a test can assert both branches (active/enabled
 // via the init system, and the pid-file fallback when it's unavailable)

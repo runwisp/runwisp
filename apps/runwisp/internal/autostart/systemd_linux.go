@@ -345,27 +345,32 @@ func (s *systemdInstaller) enableLingerIfNeeded(ctx context.Context, opts Instal
 }
 
 // takeOverCronIfRequested stops and masks the detected cron unit when the
-// caller asked for a take-over.
+// caller asked for a take-over. A stop that lands but a mask that fails would
+// otherwise leave the box with cron stopped, unmasked, and never restarted —
+// no scheduler at all — so a failure here rolls back the same way a failed
+// `enable --now` does, before the error reaches the caller.
 func (s *systemdInstaller) takeOverCronIfRequested(ctx context.Context, opts InstallOptions, plan Plan, out io.Writer) (bool, error) {
 	if !opts.TakeOverCron {
 		return false, nil
 	}
 	cronWasActive, err := s.stopAndMaskCron(ctx, plan.CronUnit, out)
 	if err != nil {
+		s.rollbackCronTakeover(ctx, opts, plan, cronWasActive, out)
 		return false, fmt.Errorf("take over cron: %w", err)
 	}
 	return cronWasActive, nil
 }
 
-// rollbackCronTakeover restores cron after `enable --now` fails. Best-effort:
-// the install has already failed, so a restore failure gets a warning rather
-// than masking the original error.
+// rollbackCronTakeover restores cron after a take-over step fails partway —
+// either stopAndMaskCron itself, or a later `enable --now`. Best-effort: the
+// install has already failed, so a restore failure gets a warning rather than
+// masking the original error.
 func (s *systemdInstaller) rollbackCronTakeover(ctx context.Context, opts InstallOptions, plan Plan, cronWasActive bool, out io.Writer) {
 	if !opts.TakeOverCron {
 		return
 	}
 	if rbErr := s.unmaskCron(ctx, plan.CronUnit, cronWasActive, out); rbErr != nil {
-		fmt.Fprintf(out, "Warning: RunWisp failed to start AND cron could not be restored: %v\n", rbErr)
+		fmt.Fprintf(out, "Warning: cron could not be restored: %v\n", rbErr)
 		fmt.Fprintf(out, "Warning: run 'sudo systemctl unmask %s' by hand to bring back a scheduler.\n", plan.CronUnit)
 	}
 }

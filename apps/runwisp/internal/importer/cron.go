@@ -466,6 +466,8 @@ func splitCronJobLine(line string, system bool) (cronJobLine, bool) {
 				return cronJobLine{}, false // a user column with no command isn't a job
 			}
 			j.user, j.command = userTok[0], command
+		} else if rest == "" {
+			return cronJobLine{}, false // a descriptor with no command isn't a job
 		}
 		return j, true
 	}

@@ -180,6 +180,7 @@ func (s *systemdInstaller) reassertCronTakeover(ctx context.Context, opts Instal
 	fmt.Fprintf(out, "%s is back since the take-over — it and RunWisp are both running your jobs.\n", plan.CronUnit)
 	cronWasActive, err := s.stopAndMaskCron(ctx, plan.CronUnit, out)
 	if err != nil {
+		s.rollbackCronTakeover(ctx, opts, plan, cronWasActive, out)
 		return fmt.Errorf("take over cron: %w", err)
 	}
 	// The unit was already on disk, but nothing so far proves the service is

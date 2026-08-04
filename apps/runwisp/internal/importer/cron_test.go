@@ -105,6 +105,31 @@ func TestCronReboot(t *testing.T) {
 	}
 }
 
+// TestCronBareDescriptorNoCommandIsUnparseable: a per-user crontab line that is
+// just a descriptor with no trailing command (`@daily` with nothing after it) is
+// not a job crond would ever run — it must become an unparseable-line note, not
+// a task with an empty `run`. A valid job elsewhere in the file must still
+// import.
+func TestCronBareDescriptorNoCommandIsUnparseable(t *testing.T) {
+	res := parseCron(t, "@daily\n0 3 * * * /bin/good\n", CronOptions{})
+	out := res.TOML()
+	mustNotContain(t, out, `run = ""`)
+	mustContain(t, out, "[tasks.good]")
+	mustContain(t, out, `run = "/bin/good"`)
+
+	items := res.Items()
+	if len(items) != 2 {
+		t.Fatalf("expected two report rows, got %+v", items)
+	}
+	if got := items[0].Status(); got != StatusBlocked {
+		t.Errorf("status of the bare descriptor = %v, want blocked", got)
+	}
+	if got := items[0].Source; got != "@daily" {
+		t.Errorf("Source = %q, want the line verbatim", got)
+	}
+	findNote(t, res, NoteLineUnparseable)
+}
+
 func TestCronDescriptors(t *testing.T) {
 	res := parseCron(t, "@daily /bin/rotate\n@midnight /bin/nightly\n@annually /bin/yearly\n", CronOptions{})
 	out := res.TOML()
