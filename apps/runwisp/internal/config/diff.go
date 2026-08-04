@@ -50,9 +50,18 @@ type Diff struct {
 	Added   []string
 	Removed []string
 	Changed []TaskChange
+	// Restamped names tasks whose definition is identical but whose derived
+	// provenance differs — in practice, a task `runwisp promote` moved out of the
+	// staging file into the operator's own config. The live task set has to pick
+	// up the new value so the API/UI stop reporting it as staged, but nothing
+	// about what runs changed, so it is deliberately not a Changed entry: see
+	// ChangeReason's users, which reschedule cron entries and recycle services.
+	Restamped []string
 }
 
-// IsEmpty reports whether nothing differs.
+// IsEmpty reports whether nothing differs. Restamped is excluded on purpose:
+// provenance is not a task change, so a reload that only promotes tasks reports
+// "no task changes" — which is the honest answer to "did anything I run change?".
 func (d Diff) IsEmpty() bool {
 	return len(d.Added) == 0 && len(d.Removed) == 0 && len(d.Changed) == 0
 }
@@ -72,6 +81,10 @@ func DiffTasks(old, updated map[string]*model.Task) Diff {
 		}
 		if reasons := changeReasons(oldTask, newTask); len(reasons) > 0 {
 			d.Changed = append(d.Changed, TaskChange{Name: name, Reasons: reasons})
+			continue
+		}
+		if oldTask.Source != newTask.Source || oldTask.SourceFile != newTask.SourceFile {
+			d.Restamped = append(d.Restamped, name)
 		}
 	}
 
@@ -83,6 +96,7 @@ func DiffTasks(old, updated map[string]*model.Task) Diff {
 
 	sort.Strings(d.Added)
 	sort.Strings(d.Removed)
+	sort.Strings(d.Restamped)
 	sort.Slice(d.Changed, func(i, j int) bool { return d.Changed[i].Name < d.Changed[j].Name })
 	return d
 }
@@ -90,13 +104,23 @@ func DiffTasks(old, updated map[string]*model.Task) Diff {
 // changeReasons returns the reasons two definitions of one task differ, or nil
 // when they are identical. The whole-struct DeepEqual short-circuits the common
 // "nothing changed" case; the grouped comparisons then attribute the diff.
+//
+// Provenance is masked out before the comparison because it is derived,
+// not definition: `runwisp promote` moves a task's block from the staging file
+// into the root without touching a single thing about what it runs. Leaving it in
+// would make a promote look like a settings change and bounce a running service
+// for no reason. DiffTasks records that case as Restamped instead.
 func changeReasons(oldTask, newTask *model.Task) []ChangeReason {
-	if reflect.DeepEqual(oldTask, newTask) {
+	if sameDefinition(oldTask, newTask) {
 		return nil
 	}
 
 	var reasons []ChangeReason
-	if oldTask.Cron != newTask.Cron || oldTask.Timezone != newTask.Timezone {
+	// HeldBy belongs with the schedule fields: it decides whether the cron entry
+	// exists at all, so a flip has to route through the reconciler's reschedule
+	// path — registering the entry when a hold lifts, dropping it when one lands.
+	if oldTask.Cron != newTask.Cron || oldTask.Timezone != newTask.Timezone ||
+		oldTask.HeldBy != newTask.HeldBy {
 		reasons = append(reasons, ReasonSchedule)
 	}
 	if oldTask.Kind != newTask.Kind {
@@ -117,6 +141,28 @@ func changeReasons(oldTask, newTask *model.Task) []ChangeReason {
 	return reasons
 }
 
+// sameDefinition reports whether two resolved definitions of one task are
+// identical apart from derived provenance. The structs are copied so masking
+// never mutates the caller's config; the copies share the same maps and slices,
+// which DeepEqual compares by value anyway.
+//
+// Both provenance fields are masked, not just Source. A cron-sourced task whose
+// crontab was renamed, or one promoted into the root, changes SourceFile without
+// changing a thing about what runs — and an unmasked field here would report it
+// as Changed, which reschedules the cron entry and recycles a service.
+//
+// HeldBy is derived too, but is deliberately NOT masked. It is not provenance: it
+// decides whether the task fires at all. Masking it would make retiring cron and
+// reloading a Restamped no-op — the registry would take the new pointer, the
+// scheduler would never be told, and jobs the operator just handed over would go
+// from "held, and visibly so" to silently never running.
+func sameDefinition(oldTask, newTask *model.Task) bool {
+	a, b := *oldTask, *newTask
+	a.Source, b.Source = model.SourceNative, model.SourceNative
+	a.SourceFile, b.SourceFile = "", ""
+	return reflect.DeepEqual(&a, &b)
+}
+
 func commandChanged(oldTask, newTask *model.Task) bool {
 	return oldTask.Run != newTask.Run ||
 		oldTask.Shell != newTask.Shell ||
@@ -128,7 +174,8 @@ func commandChanged(oldTask, newTask *model.Task) bool {
 }
 
 func envChanged(oldTask, newTask *model.Task) bool {
-	return oldTask.EnvFile != newTask.EnvFile ||
+	return oldTask.EnvBase != newTask.EnvBase ||
+		oldTask.EnvFile != newTask.EnvFile ||
 		oldTask.SecretsFile != newTask.SecretsFile ||
 		!reflect.DeepEqual(oldTask.Env, newTask.Env) ||
 		!reflect.DeepEqual(oldTask.Secrets, newTask.Secrets)

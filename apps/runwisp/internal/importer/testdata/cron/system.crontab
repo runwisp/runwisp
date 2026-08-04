@@ -8,3 +8,6 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 # Per-user maintenance
 */10 * * * * deploy /usr/local/bin/cleanup --quiet
 0 4 * * 1 postgres /usr/bin/vacuumdb --all
+
+# A descriptor line carries the user column too
+@reboot root /usr/bin/warmup

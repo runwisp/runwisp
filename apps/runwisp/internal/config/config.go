@@ -75,10 +75,13 @@ func applyTLSEnvOverride(cfg *Config) error {
 
 // collectWatchFiles resolves every on-disk input Snapshot should watch beyond
 // the root config: included TOML files plus each env_file, each against the dir
-// of the config that declared it. secrets_file is intentionally excluded,
-// matching the pre-include behavior.
-func collectWatchFiles(cfg *Config, dirs sourceDirs) []string {
+// of the config that declared it, plus every crontab read via include_cron — so
+// `crontab -e` makes Snapshot.Stale() report "config changed on disk" with no
+// machinery of its own. secrets_file is intentionally excluded, matching the
+// pre-include behavior.
+func collectWatchFiles(cfg *Config, dirs entrySources) []string {
 	files := append([]string(nil), cfg.includeFiles...)
+	files = append(files, cfg.cronFiles...)
 	if cfg.Defaults.EnvFile != "" {
 		files = append(files, resolveAgainst(dirs.root, cfg.Defaults.EnvFile))
 	}
@@ -90,20 +93,22 @@ func collectWatchFiles(cfg *Config, dirs sourceDirs) []string {
 	return files
 }
 
-// sourceDirs maps each task/service/compose-alias name to the directory of the
-// config file that defined it, so an included file's relative paths (env_file,
-// secrets_file, compose_file, working_dir) resolve against its own location
-// rather than the root config. Names with no recorded origin — compose-
-// generated tasks, or any task in a single-file config — fall back to root.
-type sourceDirs struct {
+// entrySources maps each task/service/compose-alias name to the absolute path of
+// the config file that defined it. It answers two questions with one map: which
+// directory an entry's relative paths (env_file, secrets_file, compose_file,
+// working_dir) resolve against, and which file an entry came from — the latter
+// being what Task.Staged is derived from and what `promote` needs to know.
+// Names with no recorded origin — compose-generated tasks — fall back to the
+// root config dir.
+type entrySources struct {
 	root   string
 	byName map[string]string
 }
 
 // dir returns the base directory for the named entry's relative paths.
-func (s sourceDirs) dir(name string) string {
-	if d, ok := s.byName[name]; ok {
-		return d
+func (s entrySources) dir(name string) string {
+	if f, ok := s.byName[name]; ok {
+		return filepath.Dir(f)
 	}
 	return s.root
 }
@@ -113,7 +118,7 @@ func (s sourceDirs) dir(name string) string {
 // inline entries override file entries, docker-compose-style. Relative paths
 // are resolved against baseDir (the runwisp.toml directory). Dotenv file
 // contents are taken literally; ${...} substitution applies only to TOML.
-func resolveEnvLayers(cfg *Config, dirs sourceDirs) error {
+func resolveEnvLayers(cfg *Config, dirs entrySources) error {
 	var err error
 	// [defaults] is root-only, so its env_file/secrets_file always resolve
 	// against the root config dir.
@@ -155,7 +160,7 @@ func mergeEnvFileLayer(baseDir, file string, inline map[string]string, scope str
 // path already resolves to absolute during expansion, so those are skipped by
 // the IsAbs guard. WorkingDir defaults to the file's directory so the CLI runs
 // from there, matching docker compose's own behaviour.
-func resolveComposePaths(cfg *Config, dirs sourceDirs) error {
+func resolveComposePaths(cfg *Config, dirs entrySources) error {
 	for i := range cfg.Tasks {
 		ce, ok := cfg.Tasks[i].ExecutionDef.(*model.ComposeExecution)
 		if !ok || ce.File == "" || filepath.IsAbs(ce.File) {
@@ -180,10 +185,13 @@ func resolveComposePaths(cfg *Config, dirs sourceDirs) error {
 // Existence is checked at run time, not load — like shell, host paths are
 // resolved against the daemon's namespace, which may differ from the one
 // `runwisp validate` runs in.
-func resolveWorkingDirs(cfg *Config, dirs sourceDirs) error {
+//
+// A `~` on a task that also sets `user` is the one path left unresolved here;
+// see homeIsTheRunUsers.
+func resolveWorkingDirs(cfg *Config, dirs entrySources) error {
 	for i := range cfg.Tasks {
 		task := &cfg.Tasks[i]
-		if task.WorkingDir == "" {
+		if task.WorkingDir == "" || homeIsTheRunUsers(task) {
 			continue
 		}
 		resolved, err := resolvePath(dirs.dir(task.Name), task.WorkingDir)
@@ -198,12 +206,31 @@ func resolveWorkingDirs(cfg *Config, dirs sourceDirs) error {
 	return nil
 }
 
+// homeIsTheRunUsers reports whether a task's working_dir is a `~` that has to
+// stay literal until the executor knows whose home it means.
+//
+// `~` on a task with no `user` is the daemon's own home and resolves here, which
+// is both correct and what `runwisp validate` can check. `~` on a task that
+// drops to another user means *that* user's home — cron's rule, and the reason a
+// system crontab is importable at all — and the daemon can't resolve it at load
+// for the same reason resolveRunAs doesn't: the account may not exist on the
+// machine running `runwisp validate`, and looking it up here would make a config
+// mean different things in different places. The executor resolves it from the
+// credential it just looked up.
+func homeIsTheRunUsers(task *model.Task) bool {
+	if task.RunUser == "" {
+		return false
+	}
+	return task.WorkingDir == "~" || strings.HasPrefix(task.WorkingDir, "~/")
+}
+
 // Warnings reports non-fatal findings an operator should see after a
 // successful config load. Both daemon boot and `runwisp validate` print from
 // here, so future advisory checks land in one place and stay in sync.
 func Warnings(cfg *Config) []string {
 	w := append(gracefulStopWarnings(cfg), nonPosixShellWarnings(cfg)...)
-	return append(w, composeExecServiceWarnings(cfg)...)
+	w = append(w, composeExecServiceWarnings(cfg)...)
+	return append(w, cronSourceWarnings(cfg)...)
 }
 
 // composeExecServiceWarnings reports long-running services running in compose

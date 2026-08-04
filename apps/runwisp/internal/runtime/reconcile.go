@@ -13,6 +13,7 @@ import (
 	"log/slog"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
 )
@@ -99,13 +100,93 @@ func (r *Reconciler) Reconcile() (model.ReloadResult, error) {
 	r.snapshot.Refresh(r.configPath, newCfg, r.now())
 
 	result := diff.ToResult()
+	result.Warnings = config.Warnings(newCfg)
 	slog.Info("Configuration reloaded",
 		"added", len(result.Added), "removed", len(result.Removed), "changed", len(result.Changed))
 	return result, nil
 }
 
+// CronHoldChange is what a cron-liveness refresh moved: the tasks whose hold was
+// released (RunWisp now owns their schedule) and the tasks newly held (a cron
+// daemon came back and owns them again). Both empty means the machine's answer
+// did not change anything.
+type CronHoldChange struct {
+	Released []string
+	Held     []string
+}
+
+func (c CronHoldChange) Any() bool { return len(c.Released) > 0 || len(c.Held) > 0 }
+
+// RefreshCronHolds applies a fresh cron-liveness answer to the live task set.
+//
+// It is not a reload. runwisp.toml is not re-read and no edit the operator has
+// made since boot is picked up — config reload stays explicit. The only thing
+// re-derived is the machine fact "does a live cron daemon own this crontab",
+// which RunWisp asked about once at load and, without this, would never ask
+// about again. A hold that only lifts on an explicit reload leaves an operator
+// who retires cron and forgets to reload with jobs *neither* scheduler runs,
+// which is the exact class of silent failure the hold exists to prevent.
+func (r *Reconciler) RefreshCronHolds(state cronprobe.State) CronHoldChange {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	updated, changed := config.WithCronHold(r.baseline, state)
+	if len(changed) == 0 {
+		return CronHoldChange{}
+	}
+	newTasks := tasksByName(updated)
+
+	var out CronHoldChange
+	for _, name := range changed {
+		newTask, ok := newTasks[name]
+		if !ok {
+			continue
+		}
+		oldTask, ok := r.registry.Get(name)
+		if !ok {
+			// Removed from the registry since the baseline was pinned. Nothing live
+			// to re-own, and inventing a registration here would resurrect it.
+			continue
+		}
+		// The same sequence applyChanged runs for a schedule change, which is what
+		// this is: anchorUnheld stamps the catch-up anchor at the moment RunWisp
+		// becomes responsible for the ticks, and rescheduleChanged adds or drops the
+		// cron entry according to the new Schedulable().
+		r.registry.Set(newTask)
+		r.manager.UpsertTask(newTask)
+		r.anchorUnheld(oldTask, newTask)
+		if r.scheduler != nil {
+			r.rescheduleChanged(newTask)
+		}
+		if newTask.Held() {
+			out.Held = append(out.Held, name)
+		} else {
+			out.Released = append(out.Released, name)
+		}
+	}
+
+	// Last, so Warnings and config.Held answer from the config whose holds are now
+	// the ones in force.
+	r.baseline = updated
+	return out
+}
+
+// Warnings reports the live config's non-fatal findings — chiefly the crontab
+// jobs include_cron declined to schedule.
+//
+// It reads the reconciler's baseline rather than a boot-time copy because a
+// reload can introduce a skip (or fix one), and a count captured at startup would
+// keep saying whatever was true then. The whole point of reporting a skipped job
+// is that nothing else will.
+func (r *Reconciler) Warnings() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return config.Warnings(r.baseline)
+}
+
 // apply mutates the live set in an order that never leaves a half-state:
-// removals first, then additions, then in-place changes.
+// removals first, then additions, then in-place changes, then the provenance-only
+// restamps.
 func (r *Reconciler) apply(diff config.Diff, oldTasks, newTasks map[string]*model.Task) {
 	for _, name := range diff.Removed {
 		r.applyRemoved(name, oldTasks[name])
@@ -115,6 +196,9 @@ func (r *Reconciler) apply(diff config.Diff, oldTasks, newTasks map[string]*mode
 	}
 	for _, change := range diff.Changed {
 		r.applyChanged(change, oldTasks[change.Name], newTasks[change.Name])
+	}
+	for _, name := range diff.Restamped {
+		r.applyRestamped(newTasks[name])
 	}
 }
 
@@ -134,8 +218,15 @@ func (r *Reconciler) applyRemoved(name string, _ *model.Task) {
 // does NOT run catch-up — those are boot-only.
 func (r *Reconciler) applyAdded(task *model.Task) {
 	r.registry.Set(task)
-	if err := r.db.EnsureTaskRegistered(context.Background(), task.Name, r.now()); err != nil {
-		slog.Warn("Failed to register added task for catch-up tracking", "task", task.Name, "err", err)
+	// A held task is deliberately left unregistered: the anchor is what catch-up
+	// measures the downtime gap from, and stamping it now would make the whole
+	// hold window look like RunWisp's missed ticks the moment the hold lifts. It
+	// gets its anchor on the first load where it is schedulable, which is exactly
+	// when RunWisp starts being responsible for it.
+	if !task.Held() {
+		if err := r.db.EnsureTaskRegistered(context.Background(), task.Name, r.now()); err != nil {
+			slog.Warn("Failed to register added task for catch-up tracking", "task", task.Name, "err", err)
+		}
 	}
 	r.manager.UpsertTask(task)
 
@@ -147,7 +238,7 @@ func (r *Reconciler) applyAdded(task *model.Task) {
 		}
 		return
 	}
-	if r.scheduler != nil && task.Cron != "" {
+	if r.scheduler != nil && task.Schedulable() {
 		if err := r.scheduler.AddTask(task); err != nil {
 			slog.Warn("Failed to schedule added task", "task", task.Name, "err", err)
 		}
@@ -170,6 +261,7 @@ func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *mo
 	}
 
 	r.manager.UpsertTask(newTask)
+	r.anchorUnheld(oldTask, newTask)
 
 	if r.scheduler != nil && (change.Has(config.ReasonSchedule) || change.Has(config.ReasonKind)) {
 		r.rescheduleChanged(newTask)
@@ -180,14 +272,45 @@ func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *mo
 	}
 }
 
+// applyRestamped swaps in a definition that differs only in derived provenance —
+// a task `runwisp promote` graduated out of the staging file into the operator's
+// own config. The registry and manager take the new pointer so the API, UI and
+// TUI stop reporting it as staged, and that is all: nothing is rescheduled and no
+// service is recycled, because what the task runs did not change. Bouncing a
+// running service because its definition moved between two files would be a
+// surprise the operator never asked for.
+func (r *Reconciler) applyRestamped(task *model.Task) {
+	r.registry.Set(task)
+	r.manager.UpsertTask(task)
+}
+
 // rescheduleChanged drops the cron entry for a changed task and re-adds it under
-// the new definition when it still has a schedule.
+// the new definition when the schedule is still RunWisp's to fire. A task that
+// just became held loses its entry here and gains nothing back, which is how
+// retiring-cron-in-reverse (cron coming back) stops RunWisp firing again.
 func (r *Reconciler) rescheduleChanged(newTask *model.Task) {
 	r.scheduler.RemoveTask(newTask.Name)
-	if newTask.Cron != "" {
+	if newTask.Schedulable() {
 		if err := r.scheduler.AddTask(newTask); err != nil {
 			slog.Warn("Failed to reschedule changed task", "task", newTask.Name, "err", err)
 		}
+	}
+}
+
+// anchorUnheld stamps the catch-up anchor at the moment a task stops being held,
+// because that is the moment RunWisp becomes responsible for its ticks. Without
+// it the task would carry no anchor until the next boot's catch-up pass, and a
+// crash in between would leave the real downtime gap unmeasurable — the anchor
+// would be stamped at the *restart*, silently swallowing it.
+//
+// INSERT OR IGNORE, so a task that already has an anchor keeps it.
+func (r *Reconciler) anchorUnheld(oldTask, newTask *model.Task) {
+	if !oldTask.Held() || newTask.Held() {
+		return
+	}
+	if err := r.db.EnsureTaskRegistered(context.Background(), newTask.Name, r.now()); err != nil {
+		slog.Warn("Failed to register unheld task for catch-up tracking",
+			"task", newTask.Name, "err", err)
 	}
 }
 

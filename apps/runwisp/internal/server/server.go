@@ -29,13 +29,17 @@ import (
 
 // Server exposes the HTTP API and serves the UI.
 type Server struct {
-	router            *chi.Mux
-	api               huma.API
-	db                storage.RunRepository
-	notifyRepo        storage.NotificationRepository
-	notifyHub         NotificationHub
-	taskManager       runtime.TaskRunner
-	scheduler         runtime.NextRunGetter
+	router      *chi.Mux
+	api         huma.API
+	db          storage.RunRepository
+	notifyRepo  storage.NotificationRepository
+	notifyHub   NotificationHub
+	taskManager runtime.TaskRunner
+	scheduler   runtime.NextRunGetter
+	// tasks is the live task set, read per /api/info request so derived state that
+	// changes while the daemon runs — a cron hold releasing itself, a reload adding
+	// or removing tasks — is reported as it is now, not as it was at boot.
+	tasks             *runtime.TaskRegistry
 	host              string
 	port              int
 	dataDir           string
@@ -50,6 +54,7 @@ type Server struct {
 	runService        *runService
 	stats             *statsProvider
 	configStale       func() bool
+	configWarnings    func() []string
 	// configStaleLast tracks the last staleness value broadcast over the event
 	// bus so the collector goroutine only emits an EventConfigStale when it
 	// flips. Touched solely by the metrics onSample callback (single goroutine).
@@ -103,6 +108,7 @@ type Options struct {
 	TrustedProxies    string                             // RUNWISP_TRUST_PROXY value (comma-separated CIDRs/IPs); read by the caller, parsed here
 	DaemonInfo        *model.DaemonInfo                  // Static identity/config info for /api/info
 	ConfigStale       func() bool                        // Per-request staleness probe for /api/info (optional; nil reports never-stale)
+	ConfigWarnings    func() []string                    // Per-request live-config warnings for /api/info (optional; nil reports none)
 	DaemonLogBuffer   *DaemonLogBuffer                   // Ring buffer for daemon log streaming (optional)
 	MetricsEnabled    bool                               // When false, /metrics is not mounted anywhere
 	MetricsListen     string                             // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
@@ -137,6 +143,7 @@ func New(opts Options) (*Server, error) {
 		notifyHub:         opts.NotificationHub,
 		taskManager:       opts.TaskManager,
 		scheduler:         opts.Scheduler,
+		tasks:             opts.Tasks,
 		host:              opts.Host,
 		port:              opts.Port,
 		dataDir:           opts.DataDir,
@@ -160,6 +167,7 @@ func New(opts Options) (*Server, error) {
 	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.LogDir, opts.EventBus)
 	s.stats = newStatsProvider(opts.DaemonInfo, time.Now())
 	s.configStale = opts.ConfigStale
+	s.configWarnings = opts.ConfigWarnings
 	s.metrics = NewMetricsCollector(32) // ~2.5 min at 5s intervals; sampling starts in Start()
 	s.daemonLogBuffer = opts.DaemonLogBuffer
 	s.streams = newStreamLimiter(maxConcurrentStreams, maxStreamsPerIP)

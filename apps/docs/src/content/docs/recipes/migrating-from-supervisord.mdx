@@ -67,14 +67,104 @@ run = "/srv/app/worker --idx %(process_num)s"
 instances = 4
 ```
 
-Save it, `runwisp validate`, then `runwisp daemon` — your processes come up
-under RunWisp, and you can watch them from the dashboard.
+On stderr you get an account of every program, so you know which ones came
+across untouched and which ones want a look:
+
+```
+Imported supervisord config → 2 services
+  ~ web      service
+      /usr/bin/gunicorn app:app
+      • log file settings were dropped — RunWisp captures stdout and stderr
+        per run automatically (see log_max_size / keep_runs to tune).
+  ! worker   service
+      /srv/app/worker --idx %(process_num)s
+      ! command uses supervisord %(...)s expansions RunWisp doesn't fill in
+        (e.g. %(ENV_x)s, %(process_num)s). Review the run line.
+      • numprocs=4 became instances. Each instance gets a distinct
+        RUNWISP_INSTANCE_INDEX (0-based) in place of %(process_num)s.
+
+1 item carries a # TODO — fix it before you rely on it.
+
+Review the TOML above, save it as runwisp.toml, then run `runwisp validate`.
+
+! supervisord still manages these programs. Stop them there before starting
+  RunWisp, or each one runs twice.
+```
+
+`~` means it's imported but something changed, `!` that it needs you before you
+rely on it, `✓` that it mapped cleanly, and `-` that your `runwisp.toml` already
+had it. Every `[program]` in the file gets a row either way — including the ones
+that produced no TOML at all, which is the case worth seeing.
+
+Save it and run `runwisp validate`. Then stop the programs in supervisord —
+see [nothing has retired supervisord yet](#nothing-has-retired-supervisord-yet)
+— and `runwisp daemon` brings them up under RunWisp, where you can watch them
+from the dashboard.
 
 :::note[Piping vs. a path]
 When you pipe a config in, `[include]` directives can't be resolved — there's no
 file to resolve the paths against. Pass the file path (not a pipe) if you use
 includes, and everything comes across in one shot.
 :::
+
+### If you already have a runwisp.toml
+
+`-o` writes one flat file, which is what you want when you're starting fresh.
+When you already have a `runwisp.toml` of your own, use `--write` instead:
+
+```bash
+runwisp import supervisord /etc/supervisor/supervisord.conf --write --dry-run
+runwisp import supervisord /etc/supervisor/supervisord.conf --write
+```
+
+`--dry-run` first is worth the extra command: you get the same summary plus the
+exact files a real run would create or change, and it changes none of them.
+
+The imported services land in a machine-owned `runwisp.d/imported.toml` and your
+root config is wired to load it, so nothing you hand-wrote is touched. They show
+up as `staged` — imported, not native yet — and run exactly like any other
+service in the meantime. When you're happy with one:
+
+```bash
+runwisp promote web        # move it into your runwisp.toml
+runwisp promote --all      # or move all of them
+```
+
+The block moves verbatim, comments and `# TODO` notes included, and the service
+keeps running while it happens. Re-running the import later skips programs you've
+already promoted rather than tripping over the duplicate name. The
+[cron recipe](/replacing-cron/converting-crontabs/#keeping-your-own-config-separate) has
+the full picture of the two-tier layout, which works identically here.
+
+## Nothing has retired supervisord yet
+
+An import **copies** your programs into `runwisp.toml`. It doesn't stop
+supervisord, and it doesn't edit its config — that's yours. So if you start the
+daemon while supervisord is still running the same programs, you get two of
+every process, each with its own supervisor determined to restart it.
+
+That's not a subtle problem for services the way it is for cron jobs: two
+`gunicorn` instances fight over a port, two workers double-consume a queue, and
+whichever one loses the race gets restarted by its supervisor, forever. Worth
+doing first, then:
+
+```bash
+sudo supervisorctl stop web worker     # just the ones you imported
+sudo supervisorctl stop all           # or everything
+```
+
+Then take them out of supervisord's config for good, so a `supervisorctl
+reload` or a host reboot doesn't quietly bring the second copy back:
+
+```bash
+sudo cp /etc/supervisor/supervisord.conf ~/supervisord.conf.backup
+sudo $EDITOR /etc/supervisor/supervisord.conf   # or the conf.d/ file
+sudo supervisorctl reread && sudo supervisorctl update
+```
+
+Once nothing is left in there, `sudo systemctl disable --now supervisor`
+retires the daemon itself. Migrating a few programs at a time works fine too —
+just never leave one enabled in both places.
 
 ## How the pieces map
 
@@ -102,10 +192,10 @@ RunWisp **service**. Most keys carry straight over:
 
 ## What needs a human
 
-The importer flags everything it can't map cleanly with a `# TODO` and a note
-for well-known keys it recognises but can't convert. Anything it doesn't
-recognise at all is skipped quietly — you won't lose it, but you won't
-get a warning either. The ones to know about:
+The importer flags everything it can't map cleanly with a `# TODO` in the TOML
+and a note on that program's row. A key it doesn't recognise at all is dropped —
+but the row says which keys, by name, so you can decide whether any of them
+mattered. The ones to know about:
 
 - **`autorestart`.** RunWisp services are _always-on_ — they restart whenever
   they exit. `autorestart=true` (and supervisord's default, `unexpected`) map to
@@ -127,10 +217,11 @@ get a warning either. The ones to know about:
   `[inet_http_server]`, and `[rpcinterface]` are supervisord's own plumbing and
   have no RunWisp equivalent — RunWisp's daemon is configured in
   [`[daemon]`](/configuration/daemon/) and served over HTTP out of the box.
-  They're skipped.
+  They're skipped, with a note at the bottom of the summary.
 - **`[eventlistener]` / `[fcgi-program]`.** Not supported — RunWisp has no event
-  listener bus or FastCGI process manager. They're skipped with a note so you
-  know to handle them another way.
+  listener bus or FastCGI process manager. Nothing is generated for them, but
+  they still get a `!` row: they're not "nothing to do", they're "go do this
+  another way".
 
 ## What you get that supervisord didn't
 
@@ -148,8 +239,8 @@ get a warning either. The ones to know about:
   TUI, or REST API; stops are graceful, honoring your `stop_signal` and
   `graceful_stop`.
 
-Once it's running and you're happy, stop supervisord and let RunWisp own
-supervision. `runwisp.toml` is now the single place your processes are defined.
+With supervisord out of the picture, `runwisp.toml` is the single place your
+processes are defined.
 
 ---
 
@@ -171,7 +262,7 @@ supervision. `runwisp.toml` is now the single place your processes are defined.
     />
     <LinkCard
         title="Migrating from cron"
-        href="/recipes/migrating-from-cron/"
+        href="/replacing-cron/take-over-from-cron/"
         description="For the scheduled half of your crontab + supervisord setup."
     />
 </CardGrid>

@@ -67,6 +67,8 @@ func resolveNotifier(n config.NotifierSpec, renderCtx render.TemplateContext) ch
 		spec.BotToken = n.BotToken
 	case "smtp":
 		fillSMTPSpec(&spec, n)
+	case "sendmail":
+		fillSendmailSpec(&spec, n)
 	case "webhook":
 		spec.URL = n.URL
 		if n.Headers != nil {
@@ -78,6 +80,18 @@ func resolveNotifier(n config.NotifierSpec, renderCtx render.TemplateContext) ch
 		}
 	}
 	return spec
+}
+
+// fillSendmailSpec copies the addressing a local-MTA notifier needs. It shares
+// From/To/CC/BCC with SMTP and takes none of the relay settings: the MTA
+// already knows where to relay, which is the point of using it.
+func fillSendmailSpec(spec *channel.NotifierSpec, n config.NotifierSpec) {
+	spec.SendmailPath = n.SendmailPath
+	spec.From = n.From
+	spec.ReplyTo = n.ReplyTo
+	spec.Recipients = append([]string(nil), n.Recipients...)
+	spec.CC = append([]string(nil), n.CC...)
+	spec.BCC = append([]string(nil), n.BCC...)
 }
 
 func fillSMTPSpec(spec *channel.NotifierSpec, n config.NotifierSpec) {

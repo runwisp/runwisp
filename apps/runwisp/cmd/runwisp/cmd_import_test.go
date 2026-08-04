@@ -8,24 +8,6 @@ import (
 	"testing"
 )
 
-func TestIsSystemCrontabPath(t *testing.T) {
-	cases := map[string]bool{
-		"/etc/crontab":              true,
-		"/etc/cron.d/backup":        true,
-		"/etc/cron.d/sub/thing":     true,
-		"/home/me/crontab":          false,
-		"crontab":                   false,
-		"-":                         false,
-		"":                          false,
-		"/etc/cron.daily/logrotate": false, // scripts, not crontab-format
-	}
-	for path, want := range cases {
-		if got := isSystemCrontabPath(path); got != want {
-			t.Errorf("isSystemCrontabPath(%q) = %v, want %v", path, got, want)
-		}
-	}
-}
-
 func TestResolveCronOptions(t *testing.T) {
 	// Explicit --system=false forces per-user and disables detection.
 	if o := resolveCronOptions("/etc/crontab", false, true); o.System || o.Detect {

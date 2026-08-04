@@ -108,10 +108,12 @@ func isUserFacing(err error) (*userFacingError, bool) {
 // It is the single renderer behind every CLI error path (cobra/generic,
 // userFacingError, and cmd_password). Kept in lipgloss v1 so the badge colors
 // come from the same shared brand hex constants as the rest of the CLI;
-// lipgloss falls back to plain ASCII when the destination is not a terminal or
-// styling is disabled by the environment (NO_COLOR, non-TTY).
+// The profile comes from w via rendererFor, not from lipgloss's package-level
+// renderer: errors go to stderr, and styling them by what os.Stdout happens to
+// be writes escape sequences into a redirected error log.
 func renderError(w io.Writer, title, details, hint string) {
-	badge := lipgloss.NewStyle().
+	r := rendererFor(w)
+	badge := r.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color(brandErrorFgHex)).
 		Background(lipgloss.Color(brandErrorHex)).
@@ -121,7 +123,7 @@ func renderError(w io.Writer, title, details, hint string) {
 
 	if details != "" {
 		fmt.Fprintln(w)
-		bullet := lipgloss.NewStyle().Foreground(lipgloss.Color(brandErrorHex)).Render("•")
+		bullet := r.NewStyle().Foreground(lipgloss.Color(brandErrorHex)).Render("•")
 		for _, line := range strings.Split(strings.TrimRight(details, "\n"), "\n") {
 			if strings.HasPrefix(line, "  - ") {
 				fmt.Fprintln(w, "  "+bullet+" "+strings.TrimPrefix(line, "  - "))
@@ -133,7 +135,7 @@ func renderError(w io.Writer, title, details, hint string) {
 
 	if hint != "" {
 		fmt.Fprintln(w)
-		fmt.Fprintln(w, lipgloss.NewStyle().Faint(true).Render(hint))
+		fmt.Fprintln(w, r.NewStyle().Faint(true).Render(hint))
 	}
 }
 

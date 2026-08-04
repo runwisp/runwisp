@@ -7,8 +7,10 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -80,7 +82,36 @@ func (srv *Server) humaGetInfo(ctx context.Context, input *struct{}) (*DaemonInf
 	if srv.configStale != nil {
 		info.ConfigStale = srv.configStale()
 	}
+	// Same reasoning as staleness: a reload can add or clear a warning, and the
+	// DaemonInfo the provider holds was built at boot.
+	if srv.configWarnings != nil {
+		info.ConfigWarnings = srv.configWarnings()
+	}
+	// And the task list itself, for the same reason once more. A reload adds,
+	// removes and changes tasks, and the cron hold releases itself the moment a
+	// system cron daemon goes away — so the boot-time list would keep reporting a
+	// job as held by cron long after RunWisp took it over, on the two surfaces that
+	// read it (`runwisp status` and the TUI header). Cheap: a registry snapshot and
+	// a field copy per task.
+	if tasks := srv.currentTaskBriefs(); tasks != nil {
+		info.Tasks = tasks
+	}
 	return &DaemonInfoOutput{Body: info}, nil
+}
+
+// currentTaskBriefs rebuilds /api/info's task list from the live registry, in the
+// same name order the boot path used. nil when there is no registry to read, which
+// leaves the boot-time list in place.
+func (srv *Server) currentTaskBriefs() []model.TaskBrief {
+	if srv.tasks == nil {
+		return nil
+	}
+	snapshot := srv.tasks.Snapshot()
+	briefs := make([]model.TaskBrief, 0, len(snapshot))
+	for _, name := range slices.Sorted(maps.Keys(snapshot)) {
+		briefs = append(briefs, model.NewTaskBrief(snapshot[name]))
+	}
+	return briefs
 }
 
 func (srv *Server) humaGetSystemStats(ctx context.Context, input *struct{}) (*SystemStatsOutput, error) {

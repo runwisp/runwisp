@@ -14,6 +14,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var stopOpts struct {
+	Local bool
+}
+
 var stopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop the background daemon",
@@ -28,17 +32,24 @@ enabled, and the daemon will come back on the next boot or
 Otherwise the daemon receives SIGTERM and we wait for a graceful exit.
 In-flight runs get [daemon] shutdown_timeout to finish; anything still
 running after that is recorded with a terminal status — nothing is lost
-silently.`,
+silently.
+
+The delegation finds whichever unit is installed on its own. Pass --local to
+pin the per-user one when both a system and a user unit are present.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return runStop(cmd, flags)
 	},
 }
 
+func init() {
+	stopCmd.Flags().BoolVar(&stopOpts.Local, "local", false, localFlagUsage)
+}
+
 func runStop(cmd *cobra.Command, f Flags) error {
 	out := cmd.OutOrStdout()
 
-	installer, opts, st, ok := serviceState(cmd, f)
+	installer, opts, st, ok := serviceState(cmd, f, stopOpts.Local)
 	if ok && shouldDelegateStop(st) {
 		return stopViaService(out, installer, opts, st, f)
 	}

@@ -60,6 +60,7 @@ provider — see the **Providers** section:
 [Discord](/notifications/providers/discord/) ·
 [Telegram](/notifications/providers/telegram/) ·
 [Email (SMTP)](/notifications/providers/smtp/) ·
+[Email (local MTA)](/notifications/providers/sendmail/) ·
 [Webhook](/notifications/providers/webhook/).
 
 ## `[[notifier]]` — declaring a channel
@@ -69,7 +70,7 @@ Every notifier needs two things:
 | Key    | Type   | Required | What it does                                                                                                                                                                                                                |
 | ------ | ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`   | string | yes      | Name you use to refer to the channel from routes and per-task fields. Must be unique. `"inapp"` is reserved. Cannot contain `:` (reserved for [inline target overrides](/notifications/per-task/#inline-target-overrides)). |
-| `type` | enum   | yes      | `"slack"`, `"discord"`, `"telegram"`, `"smtp"`, or `"webhook"`.                                                                                                                                                             |
+| `type` | enum   | yes      | `"slack"`, `"discord"`, `"telegram"`, `"smtp"`, `"sendmail"`, or `"webhook"`.                                                                                                                                               |
 
 Everything beyond those two depends on the `type` — the provider page
 has the full list for each.
@@ -176,8 +177,8 @@ occurrence_ring = 5
 ```
 
 Outbound channels coalesce on that same key by default. The first
-failure in a window goes out right away. After that, the rest are held
-back until one of two things happens: either `occurrence_ring` events
+failure in a window goes out right away. After that, the rest are queued
+until one of two things happens: either `occurrence_ring` events
 pile up (and the Nth goes out as a "check-in"), or the window runs out
 (and a single closing "summary" goes out). So in the channel you get the
 first failure, the occasional check-in, and one summary — not 60
@@ -194,17 +195,17 @@ A `*/1 * * * *` task that starts failing at `T+0`, with defaults
 (`coalesce_window = 1h`, `occurrence_ring = 10`,
 `coalesce_outbound = true`):
 
-| When          | Failure #          | Bell row                       | Outbound delivery                                                               |
-| ------------- | ------------------ | ------------------------------ | ------------------------------------------------------------------------------- |
-| `T+0`         | 1                  | new row, `count=1`             | **first** — sent immediately                                                    |
-| `T+1m`        | 2                  | same row, `count=2`            | held                                                                            |
-| `T+2m..+9m`   | 3 … 10             | same row, `count` keeps rising | held                                                                            |
-| `T+10m`       | 11                 | same row, `count=11`           | **check-in** — `coalesced_count=10`                                             |
-| `T+11m..+19m` | 12 … 20            | same row                       | held                                                                            |
-| `T+20m`       | 21                 | same row, `count=21`           | **check-in** — `coalesced_count=10`                                             |
-| `T+30m`       | task stops failing |                                | (nothing yet)                                                                   |
-| `T+1h10m`     | —                  | row stays as-is                | **summary** — `coalesced_summary=true`, count = events held since last check-in |
-| `T+25h`       | (new failure)      | new row in the next window     | first again                                                                     |
+| When          | Failure #          | Bell row                       | Outbound delivery                                                                 |
+| ------------- | ------------------ | ------------------------------ | --------------------------------------------------------------------------------- |
+| `T+0`         | 1                  | new row, `count=1`             | **first** — sent immediately                                                      |
+| `T+1m`        | 2                  | same row, `count=2`            | queued                                                                            |
+| `T+2m..+9m`   | 3 … 10             | same row, `count` keeps rising | queued                                                                            |
+| `T+10m`       | 11                 | same row, `count=11`           | **check-in** — `coalesced_count=10`                                               |
+| `T+11m..+19m` | 12 … 20            | same row                       | queued                                                                            |
+| `T+20m`       | 21                 | same row, `count=21`           | **check-in** — `coalesced_count=10`                                               |
+| `T+30m`       | task stops failing |                                | (nothing yet)                                                                     |
+| `T+1h10m`     | —                  | row stays as-is                | **summary** — `coalesced_summary=true`, count = events queued since last check-in |
+| `T+25h`       | (new failure)      | new row in the next window     | first again                                                                       |
 
 The window resets every time something goes out. After a check-in or a
 summary, the next failure kicks off a fresh window — so the "first"

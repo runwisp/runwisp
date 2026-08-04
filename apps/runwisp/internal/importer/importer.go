@@ -23,35 +23,8 @@ import (
 	"strings"
 )
 
-// Level classifies a Note. Info notes explain a mapping decision the operator
-// should know about; Attention notes flag something that needs a human before
-// the config is trustworthy.
-type Level int
-
-const (
-	LevelInfo Level = iota
-	LevelAttention
-)
-
-// Note is a single human-readable observation about the conversion. Scope is
-// the task/service name it concerns, or "" for file-level notes.
-type Note struct {
-	Level   Level
-	Scope   string
-	Message string
-}
-
-// Item is a summary row for one imported task or service, used by the CLI to
-// print the "✓ name  schedule" overview without re-parsing the TOML.
-type Item struct {
-	Name      string
-	Kind      string // "task" or "service"
-	Schedule  string // human-friendly: a cron expr, "@reboot", or "service"
-	Attention bool   // true when this item carries an unresolved TODO
-}
-
-// Result is the outcome of a conversion: the emitted TOML (built from blocks),
-// the notes, and per-item summaries.
+// Result is the outcome of a conversion: the emitted TOML (built from blocks)
+// and the report (rows and file-level notes, see report.go).
 type Result struct {
 	blocks []block
 	// topComments are `#` lines emitted at the very top of the TOML, right after
@@ -59,56 +32,28 @@ type Result struct {
 	// valid TOML) and land in the saved file where a reviewer will see them — the
 	// right place for a "this might need a human" banner.
 	topComments []string
-	Notes       []Note
+	// items and notes are the report. An item's status is derived on read (see
+	// Item.Status), never stored, so a row's mark can't drift from the notes under
+	// it. Blocks are only ever appended by itemRef.emit, so a table can't reach the
+	// TOML without a row here to account for it.
+	items []Item
+	notes []Note
 }
 
-// AddNote appends a note. attention=true escalates the most recent summary
-// item so the CLI flags it.
-func (r *Result) addNote(level Level, scope, msg string) {
-	r.Notes = append(r.Notes, Note{Level: level, Scope: scope, Message: msg})
-}
-
-// Items returns the summary rows in emission order.
-func (r *Result) Items() []Item {
-	items := make([]Item, 0, len(r.blocks))
-	for i := range r.blocks {
-		b := &r.blocks[i]
-		if !b.isItem {
-			continue
+// tableNames lists the top-level tables the emitted TOML defines — the
+// [tasks.x] / [services.x] headers, without their .env children. It exists for
+// the test that checks the emitted file against the report; nothing in the
+// package's behavior depends on it.
+func (r *Result) tableNames() []string {
+	var out []string
+	for _, b := range r.blocks {
+		path := strings.Split(b.header, ".")
+		if len(path) != 2 {
+			continue // a .env child, or a table that names no job
 		}
-		items = append(items, Item{
-			Name:      b.name,
-			Kind:      b.kind,
-			Schedule:  b.schedule,
-			Attention: b.attention,
-		})
+		out = append(out, path[1])
 	}
-	return items
-}
-
-// Counts returns the number of imported tasks and services.
-func (r *Result) Counts() (tasks, services int) {
-	for i := range r.blocks {
-		switch {
-		case !r.blocks[i].isItem:
-		case r.blocks[i].kind == "service":
-			services++
-		default:
-			tasks++
-		}
-	}
-	return tasks, services
-}
-
-// AttentionCount returns how many notes need a human.
-func (r *Result) AttentionCount() int {
-	n := 0
-	for _, note := range r.Notes {
-		if note.Level == LevelAttention {
-			n++
-		}
-	}
-	return n
+	return out
 }
 
 // field is one `key = value` line. value is already TOML-formatted.
@@ -119,18 +64,17 @@ type field struct {
 }
 
 // block is one TOML table — a [tasks.x] / [services.x] / [defaults] header, the
-// comment lines that precede it, and its fields. A block may also describe a
-// summary item (isItem) for the CLI overview.
+// comment lines that precede it, and its fields. Nothing more: what the CLI
+// prints about a job is an Item (report.go), so a job that emits no block still
+// gets a row.
 type block struct {
 	header string   // dotted path, e.g. "tasks.backup" or "defaults.env"
 	lead   []string // comment lines emitted above the header, without "# "
 	fields []field
-
-	isItem    bool
-	name      string
-	kind      string
-	schedule  string
-	attention bool
+	// item indexes the Result row that emitted this block. Stamped by
+	// itemRef.emit, which is the only writer of Result.blocks, so every block has
+	// one — that is what makes TOMLFor's filter exact rather than a guess.
+	item int
 }
 
 func (b *block) set(key, value string) {
@@ -141,10 +85,39 @@ func (b *block) setComment(key, value, comment string) {
 	b.fields = append(b.fields, field{key: key, value: value, comment: comment})
 }
 
-// TOML renders the full annotated configuration. Blocks are emitted in the
-// order the parser produced them; fields keep their insertion order so the
-// output mirrors the source file's logical flow.
-func (r *Result) TOML() string {
+// TOML renders the full annotated configuration — every block, including the
+// ones carrying an unresolved `# TODO`. This is what `runwisp import` writes: the
+// operator is being handed a file to review, so a job that needs a fix has to be
+// in it.
+func (r *Result) TOML() string { return r.TOMLFor(func(Item) bool { return true }) }
+
+// LiveTOML renders only the blocks belonging to rows that may be scheduled
+// as-imported. This is what `[daemon] include_cron` loads: the daemon is being
+// handed a config to *run*, so a job whose imported form isn't what the source
+// would have run must not be in it. See Item.LiveEligible.
+func (r *Result) LiveTOML() string { return r.TOMLFor(Item.LiveEligible) }
+
+// SkippedLive lists the rows LiveTOML left out, so the caller can say which jobs
+// aren't running and why. Dropping a job without a way to name it is the failure
+// mode this exists to prevent.
+func (r *Result) SkippedLive() []Item {
+	var out []Item
+	for _, it := range r.items {
+		if !it.LiveEligible() {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// TOMLFor renders the annotated configuration for the rows keep accepts. Blocks
+// are emitted in the order the parser produced them; fields keep their insertion
+// order so the output mirrors the source file's logical flow.
+//
+// One renderer with a predicate rather than two renderers: a second copy is how
+// the live path and the import path would drift, and the whole reason
+// include_cron reuses this package is that they must not.
+func (r *Result) TOMLFor(keep func(Item) bool) string {
 	var sb strings.Builder
 	sb.WriteString("# Generated by `runwisp import`. Review the notes below, then\n")
 	sb.WriteString("# validate with `runwisp validate`.\n")
@@ -153,8 +126,33 @@ func (r *Result) TOML() string {
 		sb.WriteString(line)
 		sb.WriteByte('\n')
 	}
+	r.renderBlocks(&sb, keep)
+	return sb.String()
+}
+
+// BlockTOML renders just the blocks belonging to the named entry — its table and
+// any child tables like [tasks.x.env] — with no generated-file banner, so the
+// result can be appended to a config the operator maintains.
+//
+// This is what `runwisp promote` moves for a cron-sourced task. A crontab has no
+// TOML bytes on disk to move, so the promoted definition is the same rendering the
+// live loader decoded, which is what makes the promotion provably behaviour-
+// preserving rather than a re-derivation that might differ.
+func (r *Result) BlockTOML(name string) string {
+	var sb strings.Builder
+	r.renderBlocks(&sb, func(it Item) bool { return it.Name == name })
+	return strings.TrimPrefix(sb.String(), "\n")
+}
+
+// renderBlocks writes every block whose owning row keep accepts. Blocks are
+// emitted in the order the parser produced them; fields keep their insertion order
+// so the output mirrors the source file's logical flow.
+func (r *Result) renderBlocks(sb *strings.Builder, keep func(Item) bool) {
 	for i := range r.blocks {
 		b := &r.blocks[i]
+		if !keep(r.items[b.item]) {
+			continue
+		}
 		sb.WriteByte('\n')
 		for _, line := range b.lead {
 			sb.WriteString("# ")
@@ -175,15 +173,36 @@ func (r *Result) TOML() string {
 			sb.WriteByte('\n')
 		}
 	}
-	return sb.String()
 }
 
 // --- TOML value formatting helpers ---
 
-// tomlString formats a Go string as a TOML basic string, switching to a
-// multi-line basic string when the value contains newlines (the common case
-// for multi-step `run` scripts).
+// tomlString formats an imported value as a TOML string, escaping it so the
+// config loader hands it back unchanged.
+//
+// The escaping is the part that matters. config.Load runs ${...} substitution
+// over every string field except the handful tagged expand:"-", so a `${DB}`
+// that appears anywhere in a crontab or supervisord config — a comment that
+// becomes a description, an environment value, a CRON_TZ — would either fail the
+// load outright ("environment variable DB is not set") or, worse, substitute a
+// value the original supervisor never would have. Neither program does ${...}
+// substitution, so the imported config must not either: `${` is emitted as the
+// `$${` the expander unescapes back to a literal `${`.
+//
+// This is the default on purpose. Use tomlVerbatimString only for a field the
+// loader is documented to skip, so a new call site is safe by default rather
+// than safe by whoever wrote it having remembered.
 func tomlString(s string) string {
+	return tomlVerbatimString(strings.ReplaceAll(s, "${", "$${"))
+}
+
+// tomlVerbatimString formats a Go string as a TOML basic string with no
+// substitution escaping, switching to a multi-line basic string when the value
+// contains newlines (the common case for multi-step `run` scripts).
+//
+// Only for fields config.Load tags expand:"-" — in practice `run`, where the
+// shell does its own expansion and an escaped `$${` would reach it literally.
+func tomlVerbatimString(s string) string {
 	if !strings.Contains(s, "\n") {
 		return strconv.Quote(s)
 	}
@@ -230,12 +249,49 @@ type deduper struct {
 
 func newDeduper() *deduper { return &deduper{seen: map[string]int{}} }
 
+// reserve claims a name up front so a later unique() for the same base skips
+// straight to base-2. Used to seed names the live config already owns, so a
+// re-import never emits a duplicate that would fail the merged load.
+func (d *deduper) taken(name string) bool { _, ok := d.seen[name]; return ok }
+
+func (d *deduper) reserve(name string) {
+	if _, ok := d.seen[name]; !ok {
+		d.seen[name] = 1
+	}
+}
+
 // unique returns base if unused, otherwise base-2, base-3, … The first
 // collision for a base claims "-2" so the suffixes read naturally.
-func (d *deduper) unique(base string) string {
+func (d *deduper) unique(base string) string { return d.uniqueIn(base, "") }
+
+// uniqueIn is unique with a stable tie-breaker: when base is taken and seed is
+// non-empty, the collision resolves to base-seed rather than base-2.
+//
+// This exists because a positional suffix is only stable while the input order
+// is. `[daemon] include_cron` reads a set of files that grows and shrinks — drop
+// a lexically-earlier file into /etc/cron.d and every -2 after it renumbers,
+// which detaches run history, breaks a notification route matching on the task
+// name, and re-anchors catch-up. Deriving the suffix from where the job came from
+// instead makes the name a function of the source, so adding an unrelated file
+// leaves existing names alone.
+func (d *deduper) uniqueIn(base, seed string) string {
 	if _, ok := d.seen[base]; !ok {
 		d.seen[base] = 1
 		return base
+	}
+	if seed != "" {
+		if candidate := base + "-" + seed; !d.taken(candidate) {
+			d.seen[candidate] = 1
+			return candidate
+		}
+		// Two jobs in the same file deriving the same name: fall through to the
+		// positional suffix, which is stable *within* a file because the file's own
+		// line order is.
+		base += "-" + seed
+		if _, ok := d.seen[base]; !ok {
+			d.seen[base] = 1
+			return base
+		}
 	}
 	for {
 		d.seen[base]++

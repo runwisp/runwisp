@@ -11,11 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"text/tabwriter"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-isatty"
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/configedit"
 	"github.com/runwisp/runwisp/internal/importer"
 	"github.com/spf13/cobra"
 )
@@ -29,6 +28,7 @@ type importOpts struct {
 	force  bool   // overwrite an existing file without prompting
 	system bool   // cron: treat input as a system crontab (user column)
 	quiet  bool   // suppress the stderr summary
+	dryRun bool   // --dry-run: print the summary, write nothing
 }
 
 var importFlags importOpts
@@ -42,7 +42,10 @@ annotated runwisp.toml.
 The generated TOML is printed to stdout by default so you can review it (and
 pipe it). Use -o/--output to save it, or --write to save it to the --config
 path. Anything that can't map cleanly onto a RunWisp setting becomes an inline
-# TODO comment and a note in the summary, so nothing is silently dropped.`,
+# TODO comment and a note in the summary, so nothing is silently dropped.
+
+Add --dry-run to a saving import to see the summary and every file it would
+touch, without touching any of them.`,
 	SilenceErrors: true,
 	SilenceUsage:  true,
 }
@@ -100,6 +103,7 @@ func init() {
 		c.Flags().BoolVar(&importFlags.write, "write", false, "write to the --config path (default runwisp.toml)")
 		c.Flags().BoolVar(&importFlags.force, "force", false, "overwrite the target file without prompting")
 		c.Flags().BoolVar(&importFlags.quiet, "quiet", false, "suppress the summary on stderr")
+		c.Flags().BoolVar(&importFlags.dryRun, "dry-run", false, "print the summary without writing anything")
 	}
 	importCronCmd.Flags().BoolVar(&importFlags.system, "system", false, "force system-crontab parsing (user column); --system=false forces per-user. Auto-detected when unset")
 
@@ -108,6 +112,11 @@ func init() {
 }
 
 func runImportCron(stdout, stderr io.Writer, stdin *os.File, source string, cronOpts importer.CronOptions, f Flags, opts importOpts) error {
+	if err := checkImportFlags(opts); err != nil {
+		return err
+	}
+	cronOpts.Existing = ownedEntries(f, opts)
+
 	r, closeFn, err := openImportSource(source, stdin)
 	if err != nil {
 		return err
@@ -118,10 +127,14 @@ func runImportCron(stdout, stderr io.Writer, stdin *os.File, source string, cron
 	if err != nil {
 		return &userFacingError{title: "failed to read crontab", details: err.Error()}
 	}
-	return emitImport(stdout, stderr, stdin, res, "crontab", f, opts)
+	return emitImport(stdout, stderr, stdin, res, sourceCrontab, f, opts)
 }
 
 func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []string, f Flags, opts importOpts) error {
+	if err := checkImportFlags(opts); err != nil {
+		return err
+	}
+	svOpts := importer.SupervisordOptions{Existing: ownedEntries(f, opts)}
 	var res *importer.Result
 	var err error
 	switch {
@@ -133,21 +146,53 @@ func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []st
 				details: "Pass a config file, or pipe one in — e.g. `cat supervisord.conf | runwisp import supervisord`.",
 			}
 		}
-		res, err = importer.ParseSupervisordReader(stdin)
+		res, err = importer.ParseSupervisordReader(stdin, svOpts)
 	case len(sources) == 1 && sources[0] == "-":
-		res, err = importer.ParseSupervisordReader(stdin)
+		res, err = importer.ParseSupervisordReader(stdin, svOpts)
 	default:
 		for _, s := range sources {
 			if s == "-" {
 				return &userFacingError{title: "can't mix - (stdin) with file paths for supervisord import"}
 			}
 		}
-		res, err = importer.ParseSupervisordFiles(sources)
+		res, err = importer.ParseSupervisordFiles(sources, svOpts)
 	}
 	if err != nil {
 		return &userFacingError{title: "failed to read supervisord config", details: err.Error()}
 	}
-	return emitImport(stdout, stderr, stdin, res, "supervisord config", f, opts)
+	return emitImport(stdout, stderr, stdin, res, sourceSupervisord, f, opts)
+}
+
+// checkImportFlags rejects a combination that can't mean anything, before the
+// source is even opened. A dry run's entire output *is* the summary, so
+// suppressing it would leave a command that reads a file, writes nothing, and
+// says nothing — a request the operator can't have meant.
+func checkImportFlags(opts importOpts) error {
+	if opts.dryRun && opts.quiet {
+		return &userFacingError{
+			title:   "--dry-run and --quiet contradict each other",
+			details: "A dry run writes nothing, so the summary is all it has to show you. Drop one of the two.",
+		}
+	}
+	return nil
+}
+
+// ownedEntries snapshots what the live config already owns, so a two-tier
+// re-import skips a job it already holds and renames a genuine clash instead of
+// colliding on the merged load. Only the two-tier `--write` path merges into an
+// existing config; -o and stdout produce a standalone file that reserves
+// nothing. A config that doesn't load reserves nothing either — the write is
+// gated on the merged load anyway, and configedit reports an already-broken
+// config as such rather than blaming the import.
+func ownedEntries(f Flags, opts importOpts) importer.Owned {
+	if !opts.write || opts.output != "" {
+		return nil
+	}
+	cfg, err := config.Load(f.CfgFile)
+	if err != nil {
+		return nil
+	}
+	return importer.OwnedFrom(cfg.Tasks)
 }
 
 // resolveImportSource returns the given file path or "-" (stdin) for piped input.
@@ -165,33 +210,27 @@ func resolveImportSource(args []string, stdin *os.File, what string) (string, er
 }
 
 // resolveCronOptions decides whether to parse as a system crontab.
+//
+// A file path is one of this machine's crontabs, so the user column of a system
+// line is checked against the account database — the same check the live
+// include_cron loader makes, which is what keeps `import cron` and `promote`
+// agreeing with what the daemon would schedule. A piped crontab is not
+// necessarily ours: `crontab -l` from another host names accounts that don't
+// exist here and legitimately so, so that case stays shape-only.
 func resolveCronOptions(source string, systemFlag, systemSet bool) importer.CronOptions {
+	opts := importer.CronOptions{}
+	if source != "" && source != "-" {
+		opts.UserExists = importer.SystemUserExists
+	}
 	switch {
 	case systemSet:
-		return importer.CronOptions{System: systemFlag}
-	case isSystemCrontabPath(source):
-		return importer.CronOptions{System: true}
+		opts.System = systemFlag
+	case importer.IsSystemCrontabPath(source):
+		opts.System = true
 	default:
-		return importer.CronOptions{Detect: true}
+		opts.Detect = true
 	}
-}
-
-// isSystemCrontabPath reports whether a source path is a conventional
-// system-crontab location, whose lines carry a user column.
-func isSystemCrontabPath(source string) bool {
-	if source == "" || source == "-" {
-		return false
-	}
-	clean := filepath.Clean(source)
-	if clean == "/etc/crontab" {
-		return true
-	}
-	for _, part := range strings.Split(clean, string(filepath.Separator)) {
-		if part == "cron.d" {
-			return true
-		}
-	}
-	return false
+	return opts
 }
 
 // openImportSource returns a reader for a file path, or stdin when source is
@@ -210,33 +249,144 @@ func openImportSource(source string, stdin *os.File) (io.Reader, func(), error) 
 	return file, func() { _ = file.Close() }, nil
 }
 
-// emitImport renders the result, validates it, and either prints it to stdout
-// or writes it to the target file, then prints the summary to stderr.
-func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, sourceLabel string, f Flags, opts importOpts) error {
+// emitImport renders the result, validates it, and delivers it: stdout by
+// default, a standalone file with -o, or the two-tier managed layout with
+// --write. The summary always goes to stderr.
+func emitImport(stdout, stderr io.Writer, stdin *os.File, res *importer.Result, src importSource, f Flags, opts importOpts) error {
 	// Prepend the schema directive so the imported file is editor-validated the
 	// moment it lands, just like a scaffolded one. It is a TOML comment.
 	toml := config.SchemaDirective + res.TOML()
-	validationErr := validateGeneratedTOML(toml)
+	rep := importReport{res: res, source: src, validationErr: validateGeneratedTOML(toml)}
 
-	target := opts.output
-	if target == "" && opts.write {
-		target = f.CfgFile
+	// --dry-run only has something to hold back when a write was going to happen.
+	// Plain stdout mode already writes nothing and already says so, so it keeps its
+	// own epilogue rather than growing a second way to phrase the same thing.
+	if opts.dryRun && (opts.write || opts.output != "") {
+		return printImportPlan(stderr, rep, f, opts)
 	}
 
-	if target == "" {
+	// --write (without an explicit -o path) installs the import in the two-tier
+	// managed layout: tasks land in the machine-owned runwisp.d/imported.toml and
+	// the root config's include is wired to pick them up. -o always means "give
+	// me a standalone file at this path", the unchanged single-file flow.
+	if opts.write && opts.output == "" {
+		return stageImport(stderr, f.CfgFile, toml, rep, opts)
+	}
+
+	if opts.output == "" {
 		// stdout mode: TOML to stdout, summary to stderr.
 		if _, err := io.WriteString(stdout, toml); err != nil {
 			return err
 		}
-		printImportSummary(stderr, res, sourceLabel, "", validationErr, opts)
+		printImportSummary(stderr, rep, opts, singleFileEpilogue(rep, ""))
 		return nil
 	}
 
-	if err := confirmAndWrite(stderr, stdin, target, toml, opts); err != nil {
+	if err := confirmAndWrite(stderr, stdin, opts.output, toml, opts); err != nil {
 		return err
 	}
-	printImportSummary(stderr, res, sourceLabel, target, validationErr, opts)
+	printImportSummary(stderr, rep, opts, singleFileEpilogue(rep, opts.output))
 	return nil
+}
+
+// printImportPlan is --dry-run for a saving import: the same report a real run
+// prints, with an epilogue naming every file that run would touch and then
+// saying plainly that none of them were.
+//
+// What a dry run does prove is that the generated content loads —
+// rep.validationErr comes from the same temp-file round-trip either way. What it
+// can't prove for the two-tier layout is that the *merge* loads, because that
+// means writing both files and loading the result, which is the thing being
+// deferred. The one merge failure knowable up front — a root config that doesn't
+// load as it stands — is reported.
+func printImportPlan(stderr io.Writer, rep importReport, f Flags, opts importOpts) error {
+	if opts.output != "" {
+		_, err := os.Stat(opts.output)
+		printImportSummary(stderr, rep, opts,
+			singleFilePlanEpilogue(rep, opts.output, err == nil && !opts.force))
+		return nil
+	}
+
+	layout := configedit.NewLayout(f.CfgFile)
+	plan, err := configedit.PlanStage(layout)
+	if err != nil {
+		return stageError(err, layout)
+	}
+	printImportSummary(stderr, rep, opts, twoTierPlanEpilogue(rep, plan, layout))
+	return nil
+}
+
+// stageImport installs the import in the two-tier managed layout and reports
+// what happened. configedit owns the write itself — the atomic two-file
+// transaction, the include wiring, and the merged-load gate; this function maps
+// its outcomes onto the CLI's voice.
+//
+// rep.validationErr is the pre-known validation error of the generated content
+// itself (an unparseable cron that became a `# TODO`). When set, the write skips
+// the load gate so the files are kept for the operator to fix in place —
+// matching the single-file --write behavior, and the reason the TODO was emitted
+// at all.
+func stageImport(stderr io.Writer, rootPath, stagingContent string, rep importReport, opts importOpts) error {
+	layout := configedit.NewLayout(rootPath)
+	staged, err := configedit.Stage(configedit.StageRequest{
+		Layout:   layout,
+		Staging:  []byte(stagingContent),
+		Validate: rep.validationErr == nil,
+	})
+	if err != nil {
+		return stageError(err, layout)
+	}
+	printImportSummary(stderr, rep, opts, twoTierEpilogue(rep, staged, layout))
+	return nil
+}
+
+// stageError translates a configedit failure into the CLI's voice. Every case
+// here left the operator's config exactly as it was.
+func stageError(err error, layout configedit.Layout) error {
+	rootName := filepath.Base(layout.RootPath)
+
+	if errors.Is(err, configedit.ErrIncludeNeedsManualWiring) {
+		return &userFacingError{
+			title: fmt.Sprintf("%s already sets a custom [daemon].include", rootName),
+			details: fmt.Sprintf(
+				"Add %q to that list, then re-run `runwisp import cron --write`. Nothing was written.",
+				config.StagingIncludeGlob),
+		}
+	}
+	var conflict *configedit.ConflictError
+	if errors.As(err, &conflict) {
+		return &userFacingError{
+			title:   "import conflicts with your existing config — nothing was written",
+			details: conflict.Err.Error(),
+		}
+	}
+	var preexisting *configedit.PreexistingError
+	if errors.As(err, &preexisting) {
+		return &userFacingError{
+			title: fmt.Sprintf("%s didn't load before this import either — nothing was written", rootName),
+			details: preexisting.Err.Error() +
+				"\n\nThat's a pre-existing problem, not a conflict with the import. Fix it, then re-run.",
+		}
+	}
+	return configEditError(err, layout)
+}
+
+// configEditError is the tail every config-writing command shares: a filesystem
+// failure names the file it couldn't touch, and anything else falls back to the
+// root config. Both `import --write` and `promote` end here, so the two never
+// drift in how they phrase "we couldn't update your config".
+func configEditError(err error, layout configedit.Layout) error {
+	var write *configedit.WriteError
+	if errors.As(err, &write) {
+		return &userFacingError{
+			title:   fmt.Sprintf("can't write %s", write.Path),
+			details: write.Err.Error(),
+		}
+	}
+	return &userFacingError{
+		title:   fmt.Sprintf("can't update %s", filepath.Base(layout.RootPath)),
+		details: err.Error(),
+	}
 }
 
 // confirmAndWrite writes toml to target, prompting before clobbering an
@@ -286,79 +436,4 @@ func validateGeneratedTOML(toml string) error {
 	}
 	_, err = config.Load(path)
 	return err
-}
-
-// printImportSummary writes the human-friendly overview to stderr: counts, a
-// per-item list (✓ clean, ! needs attention), the notes, and next steps.
-func printImportSummary(w io.Writer, res *importer.Result, sourceLabel, target string, validationErr error, opts importOpts) {
-	if opts.quiet {
-		return
-	}
-	okStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "2", Dark: "10"})
-	attnStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "3", Dark: "11"})
-	dimStyle := lipgloss.NewStyle().Faint(true)
-
-	tasks, services := res.Counts()
-	fmt.Fprintf(w, "\nImported %s → %s\n", sourceLabel, pluralizeCounts(tasks, services))
-
-	items := res.Items()
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	for _, it := range items {
-		mark := okStyle.Render("✓")
-		if it.Attention {
-			mark = attnStyle.Render("!")
-		}
-		fmt.Fprintf(tw, "  %s\t%s\t%s\n", mark, it.Name, dimStyle.Render(it.Schedule))
-	}
-	_ = tw.Flush()
-
-	if len(res.Notes) > 0 {
-		fmt.Fprintln(w, "\nNotes:")
-		for _, n := range res.Notes {
-			bullet := dimStyle.Render("•")
-			if n.Level == importer.LevelAttention {
-				bullet = attnStyle.Render("!")
-			}
-			scope := ""
-			if n.Scope != "" {
-				scope = dimStyle.Render("[" + n.Scope + "] ")
-			}
-			fmt.Fprintf(w, "  %s %s%s\n", bullet, scope, n.Message)
-		}
-	}
-
-	fmt.Fprintln(w)
-	if validationErr != nil {
-		fmt.Fprintf(w, "%s the generated config didn't validate yet:\n  %s\n",
-			attnStyle.Render("!"), validationErr.Error())
-		fmt.Fprintln(w, "Fix the items above, then re-run `runwisp validate`.")
-		return
-	}
-	switch {
-	case target != "":
-		fmt.Fprintf(w, "Wrote %s. Review it, then run `runwisp validate`.\n", target)
-	default:
-		fmt.Fprintln(w, "Review the TOML above, save it as runwisp.toml, then run `runwisp validate`.")
-	}
-}
-
-func pluralizeCounts(tasks, services int) string {
-	var parts []string
-	if tasks > 0 {
-		parts = append(parts, fmt.Sprintf("%d %s", tasks, plural(tasks, "task", "tasks")))
-	}
-	if services > 0 {
-		parts = append(parts, fmt.Sprintf("%d %s", services, plural(services, "service", "services")))
-	}
-	if len(parts) == 0 {
-		return "nothing"
-	}
-	return strings.Join(parts, ", ")
-}
-
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
 }

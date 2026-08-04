@@ -20,6 +20,10 @@ const (
 	serviceStatusExitNotInstalled = 2
 )
 
+var serviceStatusOpts struct {
+	Local bool
+}
+
 var serviceStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show autostart status (is the daemon wired into systemd / launchd?)",
@@ -30,6 +34,10 @@ recorded settings hash, on-disk unit, and binary SHA.
 This answers "will the daemon come up after a reboot?". For
 "is the daemon alive right now?" use 'runwisp status'.
 
+With no flags this reports on whichever unit is installed — the system-wide
+service or a per-user one. Pass --local to pin the per-user unit when both
+are present.
+
 Exit codes:
   0  healthy (installed, enabled, running, no drift)
   1  degraded (installed but disabled / stopped / drift detected)
@@ -39,8 +47,17 @@ Exit codes:
 	},
 }
 
+func init() {
+	serviceStatusCmd.Flags().BoolVar(&serviceStatusOpts.Local, "local", false, localFlagUsage)
+}
+
 func runServiceStatus(cmd *cobra.Command, f Flags) error {
 	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, true)
+	if err != nil {
+		return err
+	}
+
+	systemWide, err := resolveManagedScope(deps, serviceStatusOpts.Local)
 	if err != nil {
 		return err
 	}
@@ -50,7 +67,7 @@ func runServiceStatus(cmd *cobra.Command, f Flags) error {
 		return err
 	}
 
-	opts, err := resolveStatusOptions(f)
+	opts, err := resolveStatusOptions(f, systemWide)
 	if err != nil {
 		return err
 	}
@@ -72,7 +89,9 @@ func runServiceStatus(cmd *cobra.Command, f Flags) error {
 // prompt — it tolerates ambiguous defaults and only complains when a
 // caller-supplied explicit value is invalid. Also reused by
 // `runwisp stop` / `runwisp restart` for their service-managed probe.
-func resolveStatusOptions(f Flags) (autostart.InstallOptions, error) {
+// systemWide comes from resolveManagedScope — it picks the unit path and
+// the systemctl scope, not just a display detail.
+func resolveStatusOptions(f Flags, systemWide bool) (autostart.InstallOptions, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return autostart.InstallOptions{}, fmt.Errorf("locate runwisp binary: %w", err)
@@ -83,6 +102,7 @@ func resolveStatusOptions(f Flags) (autostart.InstallOptions, error) {
 		DataDir: f.DataDir,
 		Host:    f.Host,
 		Port:    f.Port,
+		System:  systemWide,
 	}, nil
 }
 
@@ -109,6 +129,7 @@ func renderServiceStatus(w io.Writer, st autostart.Status) int {
 	degraded = renderBinaryLine(w, st) || degraded
 	degraded = renderDataDirLine(w, st) || degraded
 	degraded = renderLingerLine(w, st) || degraded
+	degraded = renderCronLine(w, st) || degraded
 	renderLastStartLine(w, st)
 	renderLogsHintLine(w, st)
 
@@ -187,6 +208,26 @@ func renderLingerLine(w io.Writer, st autostart.Status) bool {
 		return false
 	}
 	fmt.Fprintf(w, "  Linger:     OFF — user sessions exit will stop the daemon\n")
+	return true
+}
+
+// renderCronLine shows the standing post-cutover check once this instance
+// has recorded a take-over marker. Omitted entirely for an operator who
+// never retired cron — there is nothing to report and nothing
+// was probed to find that out.
+func renderCronLine(w io.Writer, st autostart.Status) bool {
+	if st.CronUnit == "" {
+		return false
+	}
+	if st.CronActive {
+		fmt.Fprintf(w, "  Cron:       %s active — jobs may be firing twice\n", st.CronUnit)
+		return true
+	}
+	if st.CronMasked {
+		fmt.Fprintf(w, "  Cron:       %s masked by this instance\n", st.CronUnit)
+		return false
+	}
+	fmt.Fprintf(w, "  Cron:       %s unmasked but not running (unexpected — check by hand)\n", st.CronUnit)
 	return true
 }
 

@@ -48,6 +48,7 @@ type taskServiceWireCore struct {
 	WorkingDir string `toml:"working_dir,omitempty"`
 	Shell      string `toml:"shell,omitempty"`
 	Umask      string `toml:"umask,omitempty"`
+	EnvBase    string `toml:"env_base,omitempty"`
 	User       string `toml:"user,omitempty"`
 
 	LogMaxSize string `toml:"log_max_size,omitempty"`
@@ -252,6 +253,10 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid umask for %s %q: %w", label, name, err)
 	}
+	envBase, err := parseEnvBase(w.EnvBase)
+	if err != nil {
+		return model.Task{}, fmt.Errorf("invalid env_base for %s %q: %w", label, name, err)
+	}
 	task := model.Task{
 		Name:           name,
 		Kind:           kind,
@@ -269,6 +274,7 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 		WorkingDir:     w.WorkingDir,
 		Shell:          w.Shell,
 		Umask:          umask,
+		EnvBase:        envBase,
 		RunUser:        w.User,
 		ExitCodes:      w.ExitCodes,
 		Run:            w.Run,
@@ -310,6 +316,9 @@ func (w *taskServiceWireCore) applyComposeBackend(task *model.Task, name, label 
 	}
 	if w.User != "" {
 		return fmt.Errorf("user is not supported on compose-backed %s %q; the container runtime owns the container's user", label, name)
+	}
+	if w.EnvBase != "" {
+		return fmt.Errorf("env_base is not supported on compose-backed %s %q; a container never inherits the daemon's environment, so there is no base to choose", label, name)
 	}
 	svc := w.ComposeService
 	if svc == "" {
@@ -603,11 +612,13 @@ func (w *storageWire) toStorage() (Storage, error) {
 // daemonWire mirrors [daemon] before parsing — the duration string for
 // shutdown_timeout is parsed at config-load time.
 //
-// Include is consumed entirely at load time by loadWithIncludes (glob, merge)
-// and is deliberately absent from the Daemon model: it never reaches the API,
-// UI, or any runtime consumer — the merged task set is the only observable
-// result. Only the root config may set it; [daemon].include in an included
-// file is a hard error.
+// Include and IncludeCron are consumed entirely at load time by loadWithIncludes
+// (glob, merge) and are deliberately absent from the Daemon model: they never
+// reach the API, UI, or any runtime consumer — the merged task set is the only
+// observable result. That absence is what makes editing either one a *reloadable*
+// change: checkNonReloadable compares the Daemon structs, so a field there would
+// make adding a crontab require a restart. Only the root config may set them;
+// either key in an included file is a hard error.
 type daemonWire struct {
 	AllowCloudDispatch bool     `toml:"allow_cloud_dispatch,omitempty"`
 	ShutdownTimeout    string   `toml:"shutdown_timeout,omitempty"`
@@ -618,6 +629,7 @@ type daemonWire struct {
 	TLSCert            string   `toml:"tls_cert,omitempty"`
 	TLSKey             string   `toml:"tls_key,omitempty"`
 	Include            []string `toml:"include,omitempty"`
+	IncludeCron        []string `toml:"include_cron,omitempty"`
 }
 
 func (w *daemonWire) toDaemon() (Daemon, error) {
@@ -697,6 +709,8 @@ type notifierWire struct {
 	To            []string `toml:"to,omitempty"`
 	CC            []string `toml:"cc,omitempty"`
 	BCC           []string `toml:"bcc,omitempty"`
+
+	SendmailPath string `toml:"sendmail_path,omitempty"`
 
 	URL     string            `toml:"url,omitempty"`
 	Headers map[string]string `toml:"headers,omitempty"`

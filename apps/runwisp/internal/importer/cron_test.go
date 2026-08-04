@@ -6,6 +6,8 @@ package importer
 import (
 	"strings"
 	"testing"
+
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 func parseCron(t *testing.T, in string, opts CronOptions) *Result {
@@ -31,13 +33,49 @@ func mustNotContain(t *testing.T, haystack, needle string) {
 	}
 }
 
-func hasAttentionNote(r *Result, substr string) bool {
-	for _, n := range r.Notes {
-		if n.Level == LevelAttention && strings.Contains(n.Message, substr) {
+// allNotes flattens the report — the file-level notes plus every row's own —
+// for assertions that care that something was explained, not where it was said.
+func allNotes(r *Result) []Note {
+	notes := append([]Note(nil), r.Notes()...)
+	for _, it := range r.Items() {
+		notes = append(notes, it.Notes...)
+	}
+	return notes
+}
+
+// hasBlockingNote reports whether anything in the report says, in words
+// containing substr, that a human is needed.
+func hasBlockingNote(r *Result, substr string) bool {
+	for _, n := range allNotes(r) {
+		if n.Blocking() && strings.Contains(n.Message, substr) {
 			return true
 		}
 	}
 	return false
+}
+
+// hasNoteKind asserts on a note's identity rather than its prose, so rewording
+// a message isn't a test edit.
+func hasNoteKind(r *Result, kind NoteKind) bool {
+	for _, n := range allNotes(r) {
+		if n.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// findNote returns the one note of a kind, for the cases where the note's prose
+// is the deliverable — a paste-able config block, say — and not just a marker.
+func findNote(t *testing.T, r *Result, kind NoteKind) Note {
+	t.Helper()
+	for _, n := range allNotes(r) {
+		if n.Kind == kind {
+			return n
+		}
+	}
+	t.Fatalf("no note of kind %q in the report: %+v", kind.Slug(), allNotes(r))
+	return Note{}
 }
 
 func TestCronBasicFiveField(t *testing.T) {
@@ -47,9 +85,8 @@ func TestCronBasicFiveField(t *testing.T) {
 	mustContain(t, out, `cron = "30 2 * * *"`)
 	mustContain(t, out, `run = "/usr/local/bin/backup.sh --full"`)
 
-	tasks, services := res.Counts()
-	if tasks != 1 || services != 0 {
-		t.Fatalf("counts: got tasks=%d services=%d, want 1/0", tasks, services)
+	if tally := res.Tally(); tally.Tasks != 1 || tally.Services != 0 {
+		t.Fatalf("counts: got %+v, want 1 task / 0 services", tally)
 	}
 	items := res.Items()
 	if len(items) != 1 || items[0].Name != "backup" || items[0].Schedule != "30 2 * * *" {
@@ -78,8 +115,8 @@ func TestCronDescriptors(t *testing.T) {
 
 func TestCronMailto(t *testing.T) {
 	res := parseCron(t, "MAILTO=ops@example.com\n0 * * * * /bin/hourly\n", CronOptions{})
-	if !hasAttentionNote(res, "MAILTO") {
-		t.Fatalf("expected MAILTO attention note, got %+v", res.Notes)
+	if !hasBlockingNote(res, "MAILTO") {
+		t.Fatalf("expected MAILTO note, got %+v", allNotes(res))
 	}
 	mustNotContain(t, res.TOML(), "MAILTO")
 }
@@ -88,17 +125,20 @@ func TestCronShellAndEnv(t *testing.T) {
 	in := "SHELL=/bin/bash\nPATH=/usr/local/bin:/usr/bin\nHOME=/home/deploy\n0 1 * * * /bin/job\n"
 	res := parseCron(t, in, CronOptions{})
 	out := res.TOML()
-	mustContain(t, out, "[defaults]")
+	// SHELL / env fold onto the task, not daemon-wide singletons, so the output
+	// is safe to live in an included staging file.
+	mustNotContain(t, out, "[defaults]")
+	mustContain(t, out, "[tasks.job]")
 	mustContain(t, out, `shell = "/bin/bash"`)
-	mustContain(t, out, "[defaults.env]")
+	mustContain(t, out, "[tasks.job.env]")
 	mustContain(t, out, `PATH = "/usr/local/bin:/usr/bin"`)
 	mustContain(t, out, `HOME = "/home/deploy"`)
 }
 
 func TestCronRelativeShellNoted(t *testing.T) {
 	res := parseCron(t, "SHELL=bash\n0 1 * * * /bin/job\n", CronOptions{})
-	if !hasAttentionNote(res, "absolute path") {
-		t.Fatalf("expected relative-shell attention note, got %+v", res.Notes)
+	if !hasBlockingNote(res, "absolute path") {
+		t.Fatalf("expected relative-shell note, got %+v", allNotes(res))
 	}
 	mustNotContain(t, res.TOML(), "shell =")
 }
@@ -106,8 +146,67 @@ func TestCronRelativeShellNoted(t *testing.T) {
 func TestCronTimezone(t *testing.T) {
 	res := parseCron(t, "CRON_TZ=Europe/Bratislava\n0 4 * * * /bin/job\n", CronOptions{})
 	out := res.TOML()
-	mustContain(t, out, "[scheduler]")
+	// CRON_TZ/TZ folds onto each task's timezone, not the [scheduler] singleton.
+	mustNotContain(t, out, "[scheduler]")
+	mustContain(t, out, "[tasks.job]")
 	mustContain(t, out, `timezone = "Europe/Bratislava"`)
+}
+
+func TestCronExistingSkipsSameCommand(t *testing.T) {
+	// A job whose derived name AND command already exist in the live config
+	// (typically promoted into the root TOML) is skipped on re-import, with an
+	// info note so the skip is never silent.
+	opts := CronOptions{Existing: Owned{"backup": {Kind: model.KindTask, Run: "/usr/bin/backup.sh --full"}}}
+	res := parseCron(t, "30 2 * * * /usr/bin/backup.sh --full\n", opts)
+	if tasks := res.Tally().Tasks; tasks != 0 {
+		t.Fatalf("expected the matching job to be skipped, got %d tasks", tasks)
+	}
+	mustNotContain(t, res.TOML(), "[tasks.backup]")
+	if !hasNoteKind(res, NoteAlreadyDefined) {
+		t.Fatalf("expected a skip note, got %+v", allNotes(res))
+	}
+	// The skip still gets a row: a job that vanishes from the report is a job
+	// that was silently dropped, which is the whole point of the report.
+	items := res.Items()
+	if len(items) != 1 || items[0].Status() != StatusSkipped || items[0].Source != "backup" {
+		t.Fatalf("expected one skipped row named backup, got %+v", items)
+	}
+}
+
+func TestCronExistingRenamesDifferentCommand(t *testing.T) {
+	// Same derived name but a DIFFERENT command is a genuine clash: the job is
+	// preserved under name-2 rather than colliding with the existing task.
+	opts := CronOptions{Existing: Owned{"backup": {Kind: model.KindTask, Run: "/opt/something-else"}}}
+	res := parseCron(t, "30 2 * * * /usr/bin/backup.sh --full\n", opts)
+	out := res.TOML()
+	mustNotContain(t, out, "[tasks.backup]")
+	mustContain(t, out, "[tasks.backup-2]")
+	mustContain(t, out, `run = "/usr/bin/backup.sh --full"`)
+	if !hasNoteKind(res, NoteRenamedOwned) {
+		t.Fatalf("expected a rename note, got %+v", allNotes(res))
+	}
+	// Renamed is not the same as imported-as-written, so the row can't read clean.
+	if got := res.Items()[0].Status(); got != StatusChanged {
+		t.Fatalf("a renamed job is a difference, got %v", got)
+	}
+}
+
+func TestCronExistingServiceForcesRename(t *testing.T) {
+	// A clash against a service always renames, never skips — a service and a
+	// task are different things even at the same name with the same command.
+	opts := CronOptions{Existing: Owned{"worker": {Kind: model.KindService, Run: "/usr/bin/worker"}}}
+	res := parseCron(t, "* * * * * /usr/bin/worker\n", opts)
+	out := res.TOML()
+	mustNotContain(t, out, "[tasks.worker]")
+	mustContain(t, out, "[tasks.worker-2]")
+}
+
+func TestCronExistingCommandlessEntryForcesRename(t *testing.T) {
+	// A compose-backed task has no comparable one-shot command. Two entries that
+	// merely both lack a command are not the same job, so this renames.
+	opts := CronOptions{Existing: Owned{"worker": {Kind: model.KindTask, Run: ""}}}
+	res := parseCron(t, "* * * * * \n", opts)
+	mustNotContain(t, res.TOML(), "[tasks.worker]")
 }
 
 func TestCronNameDedupe(t *testing.T) {
@@ -117,6 +216,107 @@ func TestCronNameDedupe(t *testing.T) {
 	mustContain(t, out, "[tasks.job]")
 	mustContain(t, out, "[tasks.job-2]")
 	mustContain(t, out, "[tasks.job-3]")
+	// An in-import collision renamed two of the three jobs, and a rename is a
+	// difference the operator has to know about — it used to happen in silence.
+	var got []ItemStatus
+	for _, it := range res.Items() {
+		got = append(got, it.Status())
+	}
+	want := []ItemStatus{StatusClean, StatusChanged, StatusChanged}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("statuses: got %v, want %v", got, want)
+	}
+	if !hasNoteKind(res, NoteRenamedCollision) {
+		t.Fatalf("expected an in-import collision note, got %+v", allNotes(res))
+	}
+}
+
+// TestCronImportsCronsEnvironment: a job that worked under crond was written
+// against crond's near-empty environment. Importing it without saying so hands
+// it the daemon's instead, which is how a `✓ clean` import starts behaving
+// differently the first time the daemon is launched from a different shell.
+func TestCronImportsCronsEnvironment(t *testing.T) {
+	res := parseCron(t, "0 4 * * * /bin/rollup\n", CronOptions{})
+	mustContain(t, res.TOML(), `env_base = "clean"`)
+	// It is fidelity, not a compromise, so it must not make the row read as a
+	// difference the operator has to review.
+	if got := res.Items()[0].Status(); got != StatusClean {
+		t.Fatalf("status = %v, want clean", got)
+	}
+}
+
+// TestCronPathLayersOverTheCleanBase is the pair to it: a crontab's own PATH is
+// imported as task env, which the executor layers over the clean base. If the
+// importer ever stopped emitting one, jobs would silently drop to /usr/bin:/bin.
+func TestCronPathLayersOverTheCleanBase(t *testing.T) {
+	res := parseCron(t, "PATH=/opt/bin:/usr/bin\n0 4 * * * /bin/rollup\n", CronOptions{})
+	out := res.TOML()
+	mustContain(t, out, `env_base = "clean"`)
+	mustContain(t, out, `PATH = "/opt/bin:/usr/bin"`)
+}
+
+// TestCronRunsInTheHomeDirectory: crond runs a job in the invoking user's home,
+// RunWisp defaults to the daemon's working directory. A per-user crontab emits
+// no `user`, so the task runs as the daemon's account and `~` is that same
+// account's home — the rule holds without knowing who either of them is.
+func TestCronRunsInTheHomeDirectory(t *testing.T) {
+	res := parseCron(t, "0 4 * * * ./maintenance.sh\n", CronOptions{})
+	mustContain(t, res.TOML(), `working_dir = "~"`)
+	if got := res.Items()[0].Status(); got != StatusClean {
+		t.Fatalf("status = %v, want clean", got)
+	}
+}
+
+// TestCronSystemWorkingDirIsTheUsersHome is the half that used to be left out.
+// A system crontab's job runs as its user column, and crond runs it in that
+// user's home — so `~` is the right answer for both crontab formats. It only
+// became expressible once the executor resolved `~` from the credential it looks
+// up per run, instead of the config loader resolving it once against the daemon's
+// own home.
+func TestCronSystemWorkingDirIsTheUsersHome(t *testing.T) {
+	res := parseCron(t, "0 5 * * * deploy ./cleanup.sh\n", CronOptions{System: true})
+	out := res.TOML()
+	mustContain(t, out, `user = "deploy"`)
+	mustContain(t, out, `working_dir = "~"`)
+	// Reproducing crond exactly is fidelity, not a compromise, so it must not
+	// make the row read as a difference the operator has to review.
+	if got := res.Items()[0].Status(); got != StatusClean {
+		t.Fatalf("status = %v, want clean", got)
+	}
+}
+
+// TestCronMailtoHandsOverTheNotifier: "wire a notifier instead" reads as
+// complete advice and isn't — a notifier needs a type, an id, a from, and a
+// route, and the operator finds that out only after their cron mail has been
+// off for a week. The note carries the block to paste.
+func TestCronMailtoHandsOverTheNotifier(t *testing.T) {
+	res := parseCron(t, "MAILTO=ops@example.com\n0 4 * * * /bin/rollup\n", CronOptions{})
+	note := findNote(t, res, NoteMailto)
+
+	for _, want := range []string{
+		`type = "sendmail"`,          // the type that reuses the MTA cron already used
+		`to   = ["ops@example.com"]`, // their address, not a placeholder
+		"notify_on_failure",          // the half that actually routes it
+	} {
+		if !strings.Contains(note.Message, want) {
+			t.Errorf("MAILTO note is missing %q:\n%s", want, note.Message)
+		}
+	}
+	// cron mailed any output; RunWisp mails an event. Handing over a config
+	// without saying that is how the difference gets discovered in production.
+	if !strings.Contains(note.Message, "failures") {
+		t.Errorf("MAILTO note doesn't name the behaviour difference:\n%s", note.Message)
+	}
+}
+
+// TestCronEmptyMailtoIsNotAGapToFill: MAILTO= means "mail nobody", so proposing
+// a mail notifier for it would invent a requirement the crontab disclaimed.
+func TestCronEmptyMailtoIsNotAGapToFill(t *testing.T) {
+	res := parseCron(t, "MAILTO=\"\"\n0 4 * * * /bin/rollup\n", CronOptions{})
+	note := findNote(t, res, NoteMailto)
+	if strings.Contains(note.Message, "sendmail") {
+		t.Errorf("an empty MAILTO should not propose a notifier:\n%s", note.Message)
+	}
 }
 
 func TestCronCommentBecomesDescription(t *testing.T) {
@@ -129,11 +329,53 @@ func TestCronInvalidExpression(t *testing.T) {
 	res := parseCron(t, "99 99 * * * /bin/bad\n", CronOptions{})
 	out := res.TOML()
 	mustContain(t, out, "TODO:")
-	if !hasAttentionNote(res, "didn't parse") {
-		t.Fatalf("expected parse-failure note, got %+v", res.Notes)
+	if !hasBlockingNote(res, "didn't parse") {
+		t.Fatalf("expected parse-failure note, got %+v", allNotes(res))
 	}
-	if !res.Items()[0].Attention {
-		t.Fatalf("expected item flagged for attention")
+	if got := res.Items()[0].Status(); got != StatusBlocked {
+		t.Fatalf("expected the row blocked, got %v", got)
+	}
+}
+
+// TestCronBadTimezoneBlocksTheJob is the timezone-blind-validation bug: the cron
+// expression was validated with an empty timezone even when the crontab set
+// CRON_TZ, so a zone RunWisp can't load imported as a clean ✓ and then failed
+// config.Load. The report must not call a job clean when it cannot run.
+func TestCronBadTimezoneBlocksTheJob(t *testing.T) {
+	res := parseCron(t, "CRON_TZ=Mars/Olympus\n0 4 * * * /bin/rollup\n", CronOptions{})
+	out := res.TOML()
+	// The TODO goes on the timezone line, not the cron line: the expression is
+	// fine, the zone isn't, and two problems deserve two fixes.
+	mustContain(t, out, `timezone = "Mars/Olympus"  # TODO`)
+	mustContain(t, out, `cron = "0 4 * * *"`)
+	mustNotContain(t, out, `cron = "0 4 * * *"  # TODO`)
+	if got := res.Items()[0].Status(); got != StatusBlocked {
+		t.Fatalf("status = %v, want blocked", got)
+	}
+	if !hasNoteKind(res, NoteTimezoneInvalid) {
+		t.Fatalf("expected a timezone note, got %+v", allNotes(res))
+	}
+}
+
+// TestCronBadTimezoneBlocksARebootJob is the half a one-line fix would miss.
+// @reboot consults no cron grammar, so validating the expression with the
+// timezone attached would never look at the zone — but the job still runs under
+// it.
+func TestCronBadTimezoneBlocksARebootJob(t *testing.T) {
+	res := parseCron(t, "CRON_TZ=Mars/Olympus\n@reboot /bin/warmup\n", CronOptions{})
+	mustContain(t, res.TOML(), `timezone = "Mars/Olympus"  # TODO`)
+	if got := res.Items()[0].Status(); got != StatusBlocked {
+		t.Fatalf("status = %v, want blocked", got)
+	}
+}
+
+// TestCronGoodTimezoneStaysClean is the other side of the same fix: a valid zone
+// must not start reading as a problem.
+func TestCronGoodTimezoneStaysClean(t *testing.T) {
+	res := parseCron(t, "CRON_TZ=Europe/Bratislava\n0 4 * * * /bin/rollup\n", CronOptions{})
+	mustNotContain(t, res.TOML(), "TODO")
+	if got := res.Items()[0].Status(); got != StatusClean {
+		t.Fatalf("status = %v, want clean", got)
 	}
 }
 
@@ -145,6 +387,58 @@ func TestCronSystemUserColumn(t *testing.T) {
 	mustContain(t, out, `run = "/usr/bin/cleanup"`)
 }
 
+// TestCronStockDebianWeeklyLine is the line the `cron` package's own
+// /etc/crontab ships on every Debian and Ubuntu box. Its day-of-week is 7,
+// which traditional cron reads as Sunday — and which RunWisp used to refuse,
+// dropping the box's cron.weekly housekeeping on every import and every
+// include_cron load.
+func TestCronStockDebianWeeklyLine(t *testing.T) {
+	in := "47 6 * * 7 root test -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.weekly )\n"
+	res := parseCron(t, in, CronOptions{System: true})
+
+	out := res.TOML()
+	mustContain(t, out, `cron = "47 6 * * 7"`)
+	mustContain(t, out, `user = "root"`)
+	mustNotContain(t, out, "TODO")
+	if got := res.Items()[0].Status(); got != StatusClean {
+		t.Fatalf("status = %v, want clean: %+v", got, allNotes(res))
+	}
+	if !res.Items()[0].LiveEligible() {
+		t.Fatalf("the stock weekly job must be schedulable live: %+v", allNotes(res))
+	}
+}
+
+func TestCronSystemUserColumnOnDescriptorLine(t *testing.T) {
+	// Vixie cron allows `@reboot root /usr/bin/foo` in /etc/crontab. The user
+	// column has to come off the descriptor form too, or it rides into `run`.
+	res := parseCron(t, "@reboot root /usr/bin/warmup\n", CronOptions{System: true})
+	out := res.TOML()
+	mustContain(t, out, "run_on_start = true")
+	mustContain(t, out, `user = "root"`)
+	mustContain(t, out, `run = "/usr/bin/warmup"`)
+	mustNotContain(t, out, `run = "root /usr/bin/warmup"`)
+}
+
+func TestCronSystemUserColumnOnLongDescriptorLine(t *testing.T) {
+	// The other half of the same bug: the user used to be recovered by a second
+	// six-field split of the line, so a descriptor job with enough arguments
+	// handed a command argument to `user =` instead of dropping it.
+	res := parseCron(t, "@reboot deploy /usr/bin/warmup --a --b --c --d\n", CronOptions{System: true})
+	out := res.TOML()
+	mustContain(t, out, `user = "deploy"`)
+	mustContain(t, out, `run = "/usr/bin/warmup --a --b --c --d"`)
+	mustNotContain(t, out, `user = "--b"`)
+}
+
+func TestCronDescriptorLinePerUserInventsNoUser(t *testing.T) {
+	// Per-user mode has no user column, so the same line keeps every token in
+	// run — peeling one off here would invent a user the crontab never named.
+	res := parseCron(t, "@reboot root /usr/bin/warmup\n", CronOptions{})
+	out := res.TOML()
+	mustContain(t, out, `run = "root /usr/bin/warmup"`)
+	mustNotContain(t, out, `user =`)
+}
+
 func TestCronWrapperNameSkip(t *testing.T) {
 	res := parseCron(t, "0 1 * * * /usr/bin/nice -n 19 /opt/sync.sh\n", CronOptions{})
 	mustContain(t, res.TOML(), "[tasks.sync]")
@@ -152,7 +446,7 @@ func TestCronWrapperNameSkip(t *testing.T) {
 
 func TestCronSkipsBlankAndComments(t *testing.T) {
 	res := parseCron(t, "\n# a header comment\n\n0 1 * * * /bin/job\n", CronOptions{})
-	tasks, _ := res.Counts()
+	tasks := res.Tally().Tasks
 	if tasks != 1 {
 		t.Fatalf("expected 1 task, got %d", tasks)
 	}
@@ -173,6 +467,33 @@ func TestCronDetectHeaderLegendSwitchesToSystem(t *testing.T) {
 	mustNotContain(t, out, "dom mon dow")
 }
 
+// TestCronStockDebianNamesAndLegend covers the default, un-edited cron content
+// every Debian/Ubuntu box ships. The old deriver named these after the first
+// slash-bearing token — a redirect target, a `cd /`, or a `test -e` argument —
+// yielding `job`, `null`, `system`; and Debian's real `* * * * * user-name …`
+// legend, which the field-word matcher missed, rode onto the first job as its
+// description. Every job here must be named after its actual program instead.
+func TestCronStockDebianNamesAndLegend(t *testing.T) {
+	const in = "# .---------------- minute (0 - 59)\n" +
+		"# |  |  |  |  |\n" +
+		"# *  *  *  *  * user-name command to be executed\n" +
+		"17 *	* * *	root    cd / && run-parts --report /etc/cron.hourly\n" +
+		"30 3 * * 0 root test -e /run/systemd/system || SERVICE_MODE=1 /sbin/e2scrub_all -A -r\n" +
+		"5-55/10 * * * * root command -v debian-sa1 > /dev/null && debian-sa1 1 1\n"
+	res := parseCron(t, in, CronOptions{System: true})
+	out := res.TOML()
+
+	mustContain(t, out, "[tasks.run-parts]")
+	mustContain(t, out, "[tasks.e2scrub_all]")
+	mustContain(t, out, "[tasks.debian-sa1]")
+	// None of the garbage identities the old heuristic produced.
+	mustNotContain(t, out, "[tasks.job]")
+	mustNotContain(t, out, "[tasks.null]")
+	mustNotContain(t, out, "[tasks.system]")
+	// The column legend never becomes a job's description.
+	mustNotContain(t, out, "user-name command to be executed")
+}
+
 func TestCronDetectAmbiguousUserColumnWarns(t *testing.T) {
 	// No header legend, but the sixth token looks like a username. We must not
 	// silently fold it into run; instead flag it (inline banner + note).
@@ -183,8 +504,8 @@ func TestCronDetectAmbiguousUserColumnWarns(t *testing.T) {
 	// Per-user parsing is unchanged: the token stays in run, nothing invented.
 	mustContain(t, out, `run = "deploy /usr/bin/cleanup"`)
 	mustNotContain(t, out, `user =`)
-	if !hasAttentionNote(res, "system crontab") {
-		t.Fatalf("expected system-crontab attention note, got %+v", res.Notes)
+	if !hasBlockingNote(res, "system crontab") {
+		t.Fatalf("expected system-crontab note, got %+v", allNotes(res))
 	}
 }
 
@@ -195,8 +516,8 @@ func TestCronDetectDoesNotWarnOnInterpreterCommand(t *testing.T) {
 	out := res.TOML()
 	mustNotContain(t, out, "TODO")
 	mustNotContain(t, out, "--system")
-	if hasAttentionNote(res, "system crontab") {
-		t.Fatalf("did not expect a system-crontab note, got %+v", res.Notes)
+	if hasBlockingNote(res, "system crontab") {
+		t.Fatalf("did not expect a system-crontab note, got %+v", allNotes(res))
 	}
 }
 
@@ -207,7 +528,170 @@ func TestCronForcedPerUserSilencesDetection(t *testing.T) {
 	out := res.TOML()
 	mustContain(t, out, `run = "deploy /usr/bin/cleanup"`)
 	mustNotContain(t, out, "TODO")
-	if hasAttentionNote(res, "system crontab") {
-		t.Fatalf("did not expect a note when detection is off, got %+v", res.Notes)
+	if hasBlockingNote(res, "system crontab") {
+		t.Fatalf("did not expect a note when detection is off, got %+v", allNotes(res))
 	}
+}
+
+// TestCronEscapesSubstitutionSyntaxEverywhereButRun is the bug: config.Load runs
+// ${...} substitution over every string field except `run`, and cron does no
+// substitution at all. A `${DB}` in a crontab comment therefore used to import as
+// `description = "nightly ${DB} dump"`, which either failed the load outright or
+// — with DB set in whatever shell the daemon was launched from — quietly
+// substituted a value crond would never have produced.
+//
+// Every position the importer can put crontab text in is checked, because the
+// escaping has to be a property of the formatter and not of the six call sites
+// that happened to remember.
+func TestCronEscapesSubstitutionSyntaxEverywhereButRun(t *testing.T) {
+	in := "SHELL=/bin/${SH}sh\n" +
+		"FOO=${BAR}\n" +
+		"CRON_TZ=${ZONE}\n" +
+		"# nightly ${DB} dump\n" +
+		"0 3 * * * /bin/dump --to ${DEST}\n"
+	out := parseCron(t, in, CronOptions{}).TOML()
+
+	mustContain(t, out, `description = "nightly $${DB} dump"`)
+	mustContain(t, out, `shell = "/bin/$${SH}sh"`)
+	mustContain(t, out, `FOO = "$${BAR}"`)
+	mustContain(t, out, `timezone = "$${ZONE}"`)
+
+	// `run` is expand:"-", so escaping it would send a literal `$${DEST}` to the
+	// shell — the same class of bug pointing the other way.
+	mustContain(t, out, `run = "/bin/dump --to ${DEST}"`)
+}
+
+// The system crontab's `user` column is the one position no ${} can reach:
+// isLikelyUsername only admits [a-z0-9_-], so a column carrying a substitution
+// is refused outright — see TestCronSystemLineMissingItsUserColumnIsNotImported.
+
+// TestCronLeavesNoUnescapedSubstitutionOutsideRun is the structural form of the
+// two tests above: it does not name the fields, so a field added later is covered
+// without anyone extending a list.
+func TestCronLeavesNoUnescapedSubstitutionOutsideRun(t *testing.T) {
+	in := "SHELL=/bin/${SH}sh\nFOO=${BAR}\nCRON_TZ=${ZONE}\n# ${DB} dump\n0 3 * * * /bin/dump ${DEST}\n"
+	for _, line := range strings.Split(parseCron(t, in, CronOptions{}).TOML(), "\n") {
+		key, value, ok := strings.Cut(line, " = ")
+		if !ok || key == "run" {
+			continue
+		}
+		// An escaped `$${` still contains `${`, so look for a `${` whose preceding
+		// byte is not a `$`.
+		for i := strings.Index(value, "${"); i >= 0; {
+			if i == 0 || value[i-1] != '$' {
+				t.Errorf("%s carries an unescaped ${ that config.Load would substitute: %s", key, line)
+				break
+			}
+			next := strings.Index(value[i+2:], "${")
+			if next < 0 {
+				break
+			}
+			i += 2 + next
+		}
+	}
+}
+
+// TestCronSystemLineMissingItsUserColumnIsNotImported is the bug: a /etc/cron.d
+// line written without its user column split six ways anyway, so `/usr/bin/foo`
+// became `user =` and the rest of the line became `run =`. Both halves were
+// wrong, model.ParseRunUserSpec accepts any string, config.Load passed, and the
+// row read clean — the job then failed once per firing, forever, as
+// `unknown user "/usr/bin/foo"`.
+func TestCronSystemLineMissingItsUserColumnIsNotImported(t *testing.T) {
+	res := parseCron(t, "0 3 * * * /usr/bin/foo --flag\n", CronOptions{System: true})
+	out := res.TOML()
+	mustNotContain(t, out, "[tasks.")
+	mustNotContain(t, out, "user =")
+
+	items := res.Items()
+	if len(items) != 1 {
+		t.Fatalf("expected the line to still get a row, got %+v", items)
+	}
+	if got := items[0].Status(); got != StatusBlocked {
+		t.Errorf("status = %v, want blocked", got)
+	}
+	if got := items[0].Source; got != "0 3 * * * /usr/bin/foo --flag" {
+		t.Errorf("Source = %q, want the line verbatim", got)
+	}
+	note := findNote(t, res, NoteUserColumnSuspect)
+	mustContain(t, note.Message, "/usr/bin/foo")
+}
+
+// TestCronSystemLineWithARealUserColumnStillImports is the other side: the sniff
+// must not start rejecting the ordinary case it was added to protect.
+func TestCronSystemLineWithARealUserColumnStillImports(t *testing.T) {
+	res := parseCron(t, "0 3 * * * postgres /usr/bin/vacuumdb --all\n", CronOptions{System: true})
+	out := res.TOML()
+	mustContain(t, out, `user = "postgres"`)
+	mustContain(t, out, `run = "/usr/bin/vacuumdb --all"`)
+	if got := res.Items()[0].Status(); got != StatusClean {
+		t.Errorf("status = %v, want clean", got)
+	}
+}
+
+// TestCronSystemUserColumnMustNameARealAccount closes the half of the missing
+// user column the shape sniff cannot see: `echo` is a flawless login name by
+// shape, so `* * * * * echo "hi"` in /etc/cron.d imported as user `echo` running
+// `"hi"` — a job the crontab never described, under an identity that doesn't
+// exist. With an account database to ask, the line is declined the way crond
+// declines it.
+func TestCronSystemUserColumnMustNameARealAccount(t *testing.T) {
+	exists := func(name string) bool { return name == "deploy" }
+	res := parseCron(t, "* * * * * echo \"hi\"\n", CronOptions{System: true, UserExists: exists})
+
+	mustNotContain(t, res.TOML(), "[tasks.")
+	if got := res.Items()[0].Status(); got != StatusBlocked {
+		t.Errorf("status = %v, want blocked", got)
+	}
+	note := findNote(t, res, NoteUserColumnSuspect)
+	mustContain(t, note.Message, "echo")
+	mustContain(t, note.Message, "no account on this machine")
+}
+
+// TestCronSystemUserColumnSuspectNoteNamesTheNSSCaveat: the note used to claim
+// "crond skips it too," which is only true when both schedulers see the same
+// account database. A RunWisp binary built with CGO_ENABLED=0 (the default
+// release build) resolves os/user through /etc/passwd alone, so on an
+// NSS/LDAP/SSSD box it can decline a line that a dynamically-linked crond runs
+// just fine — the opposite of what the old wording promised.
+func TestCronSystemUserColumnSuspectNoteNamesTheNSSCaveat(t *testing.T) {
+	exists := func(name string) bool { return name == "deploy" }
+	res := parseCron(t, "* * * * * echo \"hi\"\n", CronOptions{System: true, UserExists: exists})
+
+	note := findNote(t, res, NoteUserColumnSuspect)
+	mustNotContain(t, note.Message, "crond skips it too")
+	mustContain(t, note.Message, "CGO_ENABLED=0")
+	mustContain(t, note.Message, "NSS")
+}
+
+// TestCronSystemUserColumnAccountCheckAcceptsRealUsers is the other side: a line
+// naming an account that does exist is an ordinary system crontab line.
+func TestCronSystemUserColumnAccountCheckAcceptsRealUsers(t *testing.T) {
+	exists := func(name string) bool { return name == "deploy" }
+	res := parseCron(t, "0 3 * * * deploy /usr/local/bin/backup.sh\n",
+		CronOptions{System: true, UserExists: exists})
+
+	mustContain(t, res.TOML(), `user = "deploy"`)
+	if got := res.Items()[0].Status(); got != StatusClean {
+		t.Errorf("status = %v, want clean", got)
+	}
+}
+
+// TestCronSystemUserColumnUncheckedWithoutAnAccountDatabase: a crontab piped in
+// from another host names accounts that are legitimately absent here, so with no
+// UserExists the shape sniff stands alone rather than rejecting every job.
+func TestCronSystemUserColumnUncheckedWithoutAnAccountDatabase(t *testing.T) {
+	res := parseCron(t, "0 3 * * * someoneelse /usr/local/bin/backup.sh\n", CronOptions{System: true})
+	mustContain(t, res.TOML(), `user = "someoneelse"`)
+}
+
+// TestCronSystemUserColumnSniffCoversTheDescriptorForm: @reboot carries a user
+// column in /etc/crontab too, so the same line can be malformed the same way.
+func TestCronSystemUserColumnSniffCoversTheDescriptorForm(t *testing.T) {
+	res := parseCron(t, "@reboot /usr/bin/warmup --now\n", CronOptions{System: true})
+	mustNotContain(t, res.TOML(), "[tasks.")
+	if got := res.Items()[0].Status(); got != StatusBlocked {
+		t.Errorf("status = %v, want blocked", got)
+	}
+	findNote(t, res, NoteUserColumnSuspect)
 }

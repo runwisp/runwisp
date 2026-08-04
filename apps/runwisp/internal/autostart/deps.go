@@ -44,6 +44,13 @@ type Deps struct {
 
 	// StdinIsTTY reflects whether stdin is attached to a terminal.
 	StdinIsTTY bool
+
+	// Euid is os.Geteuid(), injected rather than read inline so a test can
+	// describe a root-image machine (no `sudo` binary) without actually
+	// running as root. It decides whether a systemWide systemctl call gets
+	// a "sudo" prefix: root already has the privilege, and a minimal
+	// Debian/Alpine root image may not have sudo installed at all.
+	Euid int
 }
 
 // DefaultDeps returns a Deps with production seams, sniffing the
@@ -71,6 +78,7 @@ func DefaultDeps(stdout, stderr io.Writer, stdin *os.File, autoOK bool) (Deps, e
 		Fingerprint: fingerprint.Generate(),
 		AutoOK:      autoOK,
 		StdinIsTTY:  isTTY,
+		Euid:        os.Geteuid(),
 	}
 	var stdinReader io.Reader = os.Stdin
 	if stdin != nil {

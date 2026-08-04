@@ -60,6 +60,7 @@ surfaces for scripts and AI agents:
   runwisp exec <t> --json  run a task and print its outcome as JSON
   runwisp status --json    daemon + task snapshot as JSON
   runwisp openapi          the REST API's OpenAPI 3.1 spec
+On a box that already runs cron: sudo runwisp takeover retires cron and adopts its jobs.
 Dense agent reference: https://docs.runwisp.com/agents/reference.md`,
 	Version: version.Version,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -74,6 +75,7 @@ Dense agent reference: https://docs.runwisp.com/agents/reference.md`,
 		if err := resolvePortConfig(cmd); err != nil {
 			return err
 		}
+		resolvePathDefaults(os.Geteuid())
 		return datadir.EnsureDir(flags.DataDir)
 	},
 }
@@ -83,8 +85,13 @@ func init() {
 	// PersistentPreRunE finalizes level/format from flags + env.
 	clilog.Configure(clilog.Options{Level: slog.LevelInfo, Format: clilog.FormatAuto})
 
-	rootCmd.PersistentFlags().StringVarP(&flags.CfgFile, "config", "c", firstNonEmpty(os.Getenv("RUNWISP_CONFIG"), "runwisp.toml"), "path to configuration file (env: RUNWISP_CONFIG)")
-	rootCmd.PersistentFlags().StringVar(&flags.DataDir, "data", firstNonEmpty(os.Getenv("RUNWISP_DATA"), ".runwisp"), "directory for all persistent data (db, logs, secrets) (env: RUNWISP_DATA)")
+	// "" (not a literal default) so PersistentPreRunE can tell "flag left
+	// alone" from "flag set to what the default would produce anyway" and
+	// apply the env var / euid-derived default in its place. Cobra evaluates
+	// flag defaults once in init(), before os.Geteuid() or an env read would
+	// matter, so the real default is filled in there instead.
+	rootCmd.PersistentFlags().StringVarP(&flags.CfgFile, "config", "c", "", "path to configuration file (default: ./runwisp.toml, or /etc/runwisp/runwisp.toml as root; env: RUNWISP_CONFIG)")
+	rootCmd.PersistentFlags().StringVar(&flags.DataDir, "data", "", "directory for all persistent data (default: ./.runwisp, or /var/lib/runwisp as root; env: RUNWISP_DATA)")
 	rootCmd.PersistentFlags().StringVar(&flags.Socket, "socket", os.Getenv("RUNWISP_SOCKET"), "control socket path; daemon binds it, CLI connects to it (default: <data>/runwisp.sock; env: RUNWISP_SOCKET)")
 	rootCmd.PersistentFlags().IntVarP(&flags.Port, "port", "p", 9477, "HTTP server port (env: RUNWISP_PORT)")
 	rootCmd.PersistentFlags().StringVar(&flags.Host, "host", firstNonEmpty(os.Getenv("RUNWISP_HOST"), "127.0.0.1"), "HTTP server bind address (use 0.0.0.0 to listen on all interfaces) (env: RUNWISP_HOST)")
@@ -96,6 +103,7 @@ func init() {
 	rootCmd.AddCommand(tuiCmd)
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(importCmd)
+	rootCmd.AddCommand(promoteCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(execCmd)
 	rootCmd.AddCommand(statusCmd)
@@ -107,6 +115,7 @@ func init() {
 	rootCmd.AddCommand(schemaCmd)
 	rootCmd.AddCommand(agentGuideCmd)
 	rootCmd.AddCommand(serviceCmd)
+	rootCmd.AddCommand(takeoverCmd)
 	rootCmd.AddCommand(demoCmd)
 }
 
@@ -150,6 +159,54 @@ func resolvePortConfig(cmd *cobra.Command) error {
 	}
 	flags.Port = port
 	return nil
+}
+
+// resolvePathDefaults fills flags.CfgFile / flags.DataDir when the operator
+// left --config / --data unset, with precedence flag > env > euid-derived
+// default. It must run before anything reads either field — daemon boot,
+// EnsureDir, the socket path derived from DataDir, and the child-process args
+// a spawned daemon is handed all depend on the result.
+//
+// The euid check exists for one reason: `sudo runwisp reload` against a
+// system install has to find the same runwisp.toml / data dir the daemon
+// itself defaulted to when it (also root) started with no flags. Without
+// this, root's default was the cwd-relative "./runwisp.toml" / "./.runwisp"
+// same as any other user, so a `sudo runwisp reload` run from anywhere but
+// the exact directory the daemon happened to boot in silently talked to the
+// wrong (or no) socket.
+func resolvePathDefaults(euid int) {
+	if flags.CfgFile == "" {
+		flags.CfgFile = defaultConfigPath(euid, os.Getenv("RUNWISP_CONFIG"))
+	}
+	if flags.DataDir == "" {
+		flags.DataDir = defaultDataDir(euid, os.Getenv("RUNWISP_DATA"))
+	}
+}
+
+// defaultConfigPath resolves the --config default: an explicit RUNWISP_CONFIG
+// wins over everything (including euid), then root gets /etc/runwisp/runwisp.toml,
+// then everyone else keeps the pre-existing cwd-relative default. euid is a
+// parameter rather than an inline os.Geteuid() call so a test can describe a
+// machine other than the one running the test.
+func defaultConfigPath(euid int, env string) string {
+	if env != "" {
+		return env
+	}
+	if euid == 0 {
+		return "/etc/runwisp/runwisp.toml"
+	}
+	return "runwisp.toml"
+}
+
+// defaultDataDir is defaultConfigPath's counterpart for --data.
+func defaultDataDir(euid int, env string) string {
+	if env != "" {
+		return env
+	}
+	if euid == 0 {
+		return "/var/lib/runwisp"
+	}
+	return ".runwisp"
 }
 
 func firstNonEmpty(a, b string) string {

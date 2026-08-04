@@ -35,16 +35,16 @@ const (
 	systemctlDaemonReload = "daemon-reload"
 )
 
-// New returns the systemd installer.
+// New returns the systemd installer. It deliberately does not require a
+// fingerprint: the default (system-wide) install names its unit
+// `runwisp.service` and never reads one. The user scope does, and says so
+// at the entry points via requireFingerprint.
 func New(deps Deps) (Installer, error) {
 	if deps.Home == "" {
 		return nil, errors.New("autostart: HOME is not set")
 	}
 	if deps.User == "" {
 		return nil, errors.New("autostart: user is not set")
-	}
-	if deps.Fingerprint == "" {
-		return nil, errors.New("autostart: fingerprint is required")
 	}
 	return &systemdInstaller{deps: deps}, nil
 }
@@ -53,19 +53,79 @@ type systemdInstaller struct {
 	deps Deps
 }
 
-// serviceName returns the per-instance unit basename, e.g.
-// "runwisp-bright-falcon.service". The suffix lets multiple RunWisp
-// daemons coexist on one host without clobbering each other.
-func (s *systemdInstaller) serviceName() string {
+// requireFingerprint guards the operations whose unit name is a function of
+// the per-instance fingerprint. Only the user scope is; the system unit has
+// a fixed name.
+func (s *systemdInstaller) requireFingerprint(systemWide bool) error {
+	if systemWide || s.deps.Fingerprint != "" {
+		return nil
+	}
+	return errors.New("autostart: fingerprint is required for a user-scoped unit")
+}
+
+// serviceName returns the unit basename. A system-wide install drops the
+// per-instance fingerprint suffix: there is exactly one system daemon per
+// host, the suffix exists only to let several user-scoped daemons (several
+// data dirs / cwd) coexist, and keeping it would make the unit name a
+// function of the directory `service install` happened to run from — so
+// `cd /etc && sudo runwisp service status` would report "not installed"
+// against the unit `cd /` created.
+func (s *systemdInstaller) serviceName(systemWide bool) string {
+	if systemWide {
+		return "runwisp.service"
+	}
 	return "runwisp-" + s.deps.Fingerprint + ".service"
 }
 
 // unitPath returns where the unit file will be written.
 func (s *systemdInstaller) unitPath(systemWide bool) string {
 	if systemWide {
-		return filepath.Join(systemdSystemUnitDir, s.serviceName())
+		return filepath.Join(systemdSystemUnitDir, s.serviceName(systemWide))
 	}
-	return filepath.Join(s.deps.Home, systemdUserUnitDir, s.serviceName())
+	return filepath.Join(s.deps.Home, systemdUserUnitDir, s.serviceName(systemWide))
+}
+
+// ScopeCandidates implements the per-OS half of DetectScope.
+func ScopeCandidates(deps Deps) (systemPath, userPath string) {
+	s := &systemdInstaller{deps: deps}
+	systemPath = s.unitPath(true)
+	if deps.Fingerprint != "" {
+		userPath = s.unitPath(false)
+	}
+	return systemPath, userPath
+}
+
+// systemctlInvocation is the one place that decides how a systemctl call is
+// scoped and privileged, replacing what used to be five hand-copied
+// sudo-vs-`--user` branches (install, uninstall, stop/restart, and each of
+// Status's four probes) that had already drifted out of sync with each
+// other. Element 0 of the result is the program to run.
+//
+// euid is a parameter rather than an inline os.Geteuid() call so a test can
+// describe a root-image machine — where "sudo" may not even be
+// installed — without the test process actually running as root.
+func systemctlInvocation(systemWide bool, euid int, args ...string) []string {
+	if !systemWide {
+		return append([]string{"systemctl", systemctlUserFlag}, args...)
+	}
+	if euid == 0 {
+		return append([]string{"systemctl"}, args...)
+	}
+	return append([]string{"sudo", "systemctl"}, args...)
+}
+
+// systemctlCommandLine renders a systemctlInvocation as the text a human
+// would type, for the confirmation banner and dry-run plans. Sharing
+// systemctlInvocation with runSystemctl means the text shown to the
+// operator can never drift from the argv actually executed.
+func systemctlCommandLine(systemWide bool, euid int, args ...string) string {
+	return strings.Join(systemctlInvocation(systemWide, euid, args...), " ")
+}
+
+// runSystemctl executes a systemctl call scoped per systemctlInvocation.
+func (s *systemdInstaller) runSystemctl(ctx context.Context, systemWide bool, args ...string) ([]byte, []byte, error) {
+	argv := systemctlInvocation(systemWide, s.deps.Euid, args...)
+	return s.deps.Cmd.Run(ctx, argv[0], argv[1:]...)
 }
 
 // renderUnit assembles the SystemdParams + renders the template.
@@ -76,15 +136,17 @@ func (s *systemdInstaller) renderUnit(opts InstallOptions) ([]byte, string, erro
 	}
 	configHash := SettingsHash(opts.Binary, opts.Config, opts.DataDir, opts.Host, opts.Port)
 	body, err := RenderSystemdUnit(SystemdParams{
-		Binary:     opts.Binary,
-		Config:     opts.Config,
-		DataDir:    opts.DataDir,
-		Host:       opts.Host,
-		Port:       opts.Port,
-		Home:       s.deps.Home,
-		Path:       envPath(),
-		ConfigHash: configHash,
-		BinarySHA:  binarySHA,
+		Binary:         opts.Binary,
+		Config:         opts.Config,
+		DataDir:        opts.DataDir,
+		Host:           opts.Host,
+		Port:           opts.Port,
+		Home:           s.deps.Home,
+		Path:           envPath(),
+		ConfigHash:     configHash,
+		BinarySHA:      binarySHA,
+		System:         opts.System,
+		MaskedCronUnit: opts.maskedCronUnit,
 	})
 	return body, binarySHA, err
 }
@@ -92,13 +154,32 @@ func (s *systemdInstaller) renderUnit(opts InstallOptions) ([]byte, string, erro
 // Render returns the rendered unit file without touching disk. Used
 // by `service install --print`.
 func (s *systemdInstaller) Render(opts InstallOptions) ([]byte, error) {
-	body, _, err := s.renderUnit(opts)
+	if err := s.requireFingerprint(opts.System); err != nil {
+		return nil, err
+	}
+	resolved := opts
+	maskedUnit, err := s.resolveMaskedCronUnit(context.Background(), opts)
+	if err != nil {
+		return nil, err
+	}
+	resolved.maskedCronUnit = maskedUnit
+	body, _, err := s.renderUnit(resolved)
 	return body, err
 }
 
 // ComputePlan implements Installer.
-func (s *systemdInstaller) ComputePlan(_ context.Context, opts InstallOptions) (Plan, error) {
-	desired, _, err := s.renderUnit(opts)
+func (s *systemdInstaller) ComputePlan(ctx context.Context, opts InstallOptions) (Plan, error) {
+	if err := s.requireFingerprint(opts.System); err != nil {
+		return Plan{}, err
+	}
+	resolved := opts
+	maskedUnit, err := s.resolveMaskedCronUnit(ctx, opts)
+	if err != nil {
+		return Plan{}, err
+	}
+	resolved.maskedCronUnit = maskedUnit
+
+	desired, _, err := s.renderUnit(resolved)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -108,7 +189,12 @@ func (s *systemdInstaller) ComputePlan(_ context.Context, opts InstallOptions) (
 		return Plan{}, err
 	}
 
-	lingerOn, _ := s.checkLinger(context.Background())
+	// loginctl linger is a per-user-session concept; it has nothing to say
+	// about a system-wide unit, which starts under PID 1 regardless.
+	var lingerOn bool
+	if !opts.System {
+		lingerOn, _ = s.checkLinger(ctx)
+	}
 	plan.UnitPath = unitPath
 	plan.Binary = opts.Binary
 	plan.Config = opts.Config
@@ -116,6 +202,7 @@ func (s *systemdInstaller) ComputePlan(_ context.Context, opts InstallOptions) (
 	plan.Host = opts.Host
 	plan.Port = opts.Port
 	plan.LingerOn = lingerOn
+	plan.CronUnit = maskedUnit
 	plan.Steps = s.planSteps(plan, opts)
 	return plan, nil
 }
@@ -141,6 +228,12 @@ func (s *systemdInstaller) planSteps(plan Plan, opts InstallOptions) []Step {
 			Description: fmt.Sprintf("Run:  loginctl enable-linger %s         ← needs sudo", s.deps.User),
 		})
 	}
+	if opts.TakeOverCron && plan.CronUnit != "" {
+		steps = append(steps,
+			Step{Action: ActionStopCron, Description: "Run:  " + systemctlCommandLine(true, s.deps.Euid, "stop", plan.CronUnit)},
+			Step{Action: ActionMaskCron, Description: "Run:  " + systemctlCommandLine(true, s.deps.Euid, "mask", plan.CronUnit)},
+		)
+	}
 	steps = append(steps, Step{
 		Action:      ActionEnableService,
 		Description: s.enableNowCmd(opts.System),
@@ -155,17 +248,11 @@ func (s *systemdInstaller) planSteps(plan Plan, opts InstallOptions) []Step {
 }
 
 func (s *systemdInstaller) daemonReloadCmd(systemWide bool) string {
-	if systemWide {
-		return "Run:  sudo systemctl " + systemctlDaemonReload
-	}
-	return "Run:  systemctl " + systemctlUserFlag + " " + systemctlDaemonReload
+	return "Run:  " + systemctlCommandLine(systemWide, s.deps.Euid, systemctlDaemonReload)
 }
 
 func (s *systemdInstaller) enableNowCmd(systemWide bool) string {
-	if systemWide {
-		return "Run:  sudo systemctl enable --now " + s.serviceName()
-	}
-	return "Run:  systemctl " + systemctlUserFlag + " enable --now " + s.serviceName()
+	return "Run:  " + systemctlCommandLine(systemWide, s.deps.Euid, "enable", "--now", s.serviceName(systemWide))
 }
 
 // Install implements Installer.
@@ -180,21 +267,23 @@ func (s *systemdInstaller) Install(ctx context.Context, opts InstallOptions, out
 		return fmt.Errorf("%w: %s", ErrConflict, plan.UnitPath)
 	case PlanNoop:
 		fmt.Fprintf(out, "Already installed. ✓\n  Unit: %s\n", plan.UnitPath)
-		return nil
+		return s.reassertCronTakeover(ctx, opts, plan, out)
 	}
 
 	if err := s.preflight(ctx, opts); err != nil {
 		return err
 	}
 
-	renderInstallBanner(out, plan)
+	if !opts.PreConfirmed {
+		renderInstallBanner(out, plan, opts)
 
-	ok, err := s.deps.Prompter.Confirm("Proceed?", false)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return ErrAborted
+		ok, err := s.deps.Prompter.Confirm("Proceed?", false)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrAborted
+		}
 	}
 
 	return s.applyInstall(ctx, plan, opts, out)
@@ -223,13 +312,17 @@ func (s *systemdInstaller) applyInstall(ctx context.Context, plan Plan, opts Ins
 		return err
 	}
 
-	if !opts.System && !plan.LingerOn {
-		if err := s.enableLinger(ctx, out); err != nil {
-			return err
-		}
+	if err := s.enableLingerIfNeeded(ctx, opts, plan, out); err != nil {
+		return err
+	}
+
+	cronWasActive, err := s.takeOverCronIfRequested(ctx, opts, plan, out)
+	if err != nil {
+		return err
 	}
 
 	if err := s.runEnableNow(ctx, opts.System); err != nil {
+		s.rollbackCronTakeover(ctx, opts, plan, cronWasActive, out)
 		return err
 	}
 
@@ -241,17 +334,56 @@ func (s *systemdInstaller) applyInstall(ctx context.Context, plan Plan, opts Ins
 	return nil
 }
 
-func (s *systemdInstaller) runDaemonReload(ctx context.Context, systemWide bool) error {
-	if systemWide {
-		_, stderr, err := s.deps.Cmd.Run(ctx, "sudo", "systemctl", systemctlDaemonReload)
-		if err != nil {
-			return fmt.Errorf("systemctl daemon-reload: %w: %s", err, string(stderr))
-		}
+// enableLingerIfNeeded runs loginctl enable-linger when the unit is a
+// per-user unit that needs it to survive logout. System-wide units start
+// under PID 1 and have no session to linger.
+func (s *systemdInstaller) enableLingerIfNeeded(ctx context.Context, opts InstallOptions, plan Plan, out io.Writer) error {
+	if opts.System || plan.LingerOn {
 		return nil
 	}
-	_, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, systemctlDaemonReload)
+	return s.enableLinger(ctx, out)
+}
+
+// takeOverCronIfRequested stops and masks the detected cron unit when the
+// caller asked for a take-over.
+func (s *systemdInstaller) takeOverCronIfRequested(ctx context.Context, opts InstallOptions, plan Plan, out io.Writer) (bool, error) {
+	if !opts.TakeOverCron {
+		return false, nil
+	}
+	cronWasActive, err := s.stopAndMaskCron(ctx, plan.CronUnit, out)
 	if err != nil {
-		return fmt.Errorf("systemctl --user daemon-reload: %w: %s", err, string(stderr))
+		return false, fmt.Errorf("take over cron: %w", err)
+	}
+	return cronWasActive, nil
+}
+
+// rollbackCronTakeover restores cron after `enable --now` fails. Best-effort:
+// the install has already failed, so a restore failure gets a warning rather
+// than masking the original error.
+func (s *systemdInstaller) rollbackCronTakeover(ctx context.Context, opts InstallOptions, plan Plan, cronWasActive bool, out io.Writer) {
+	if !opts.TakeOverCron {
+		return
+	}
+	if rbErr := s.unmaskCron(ctx, plan.CronUnit, cronWasActive, out); rbErr != nil {
+		fmt.Fprintf(out, "Warning: RunWisp failed to start AND cron could not be restored: %v\n", rbErr)
+		fmt.Fprintf(out, "Warning: run 'sudo systemctl unmask %s' by hand to bring back a scheduler.\n", plan.CronUnit)
+	}
+}
+
+// systemctlErrLabel names a systemctl call for an error message. It omits
+// the sudo prefix regardless of euid — the prefix is a privilege-escalation
+// detail, not part of what failed.
+func systemctlErrLabel(systemWide bool, args ...string) string {
+	if systemWide {
+		return "systemctl " + strings.Join(args, " ")
+	}
+	return "systemctl " + systemctlUserFlag + " " + strings.Join(args, " ")
+}
+
+func (s *systemdInstaller) runDaemonReload(ctx context.Context, systemWide bool) error {
+	_, stderr, err := s.runSystemctl(ctx, systemWide, systemctlDaemonReload)
+	if err != nil {
+		return fmt.Errorf("%s: %w: %s", systemctlErrLabel(systemWide, systemctlDaemonReload), err, string(stderr))
 	}
 	return nil
 }
@@ -266,16 +398,9 @@ func (s *systemdInstaller) enableLinger(ctx context.Context, out io.Writer) erro
 }
 
 func (s *systemdInstaller) runEnableNow(ctx context.Context, systemWide bool) error {
-	if systemWide {
-		_, stderr, err := s.deps.Cmd.Run(ctx, "sudo", "systemctl", "enable", "--now", s.serviceName())
-		if err != nil {
-			return fmt.Errorf("systemctl enable --now: %w: %s", err, string(stderr))
-		}
-		return nil
-	}
-	_, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, "enable", "--now", s.serviceName())
+	_, stderr, err := s.runSystemctl(ctx, systemWide, "enable", "--now", s.serviceName(systemWide))
 	if err != nil {
-		return fmt.Errorf("systemctl --user enable --now: %w: %s", err, string(stderr))
+		return fmt.Errorf("%s: %w: %s", systemctlErrLabel(systemWide, "enable", "--now"), err, string(stderr))
 	}
 	return nil
 }
@@ -291,34 +416,44 @@ func (s *systemdInstaller) Restart(ctx context.Context, opts InstallOptions) err
 }
 
 func (s *systemdInstaller) runSystemctlVerb(ctx context.Context, systemWide bool, verb string) error {
-	if systemWide {
-		_, stderr, err := s.deps.Cmd.Run(ctx, "sudo", "systemctl", verb, s.serviceName())
-		if err != nil {
-			return fmt.Errorf("sudo systemctl %s: %w: %s", verb, err, string(stderr))
-		}
-		return nil
+	if err := s.requireFingerprint(systemWide); err != nil {
+		return err
 	}
-	_, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, verb, s.serviceName())
+	_, stderr, err := s.runSystemctl(ctx, systemWide, verb, s.serviceName(systemWide))
 	if err != nil {
-		return fmt.Errorf("systemctl --user %s: %w: %s", verb, err, string(stderr))
+		return fmt.Errorf("%s: %w: %s", systemctlErrLabel(systemWide, verb), err, string(stderr))
 	}
 	return nil
 }
 
 // ComputeUninstallPlan implements Installer.
 func (s *systemdInstaller) ComputeUninstallPlan(_ context.Context, opts UninstallOptions) (Plan, error) {
-	unitPath := s.unitPath(false)
+	if err := s.requireFingerprint(opts.System); err != nil {
+		return Plan{}, err
+	}
+	unitPath := s.unitPath(opts.System)
 	plan, err := ClassifyUninstall(s.deps.FS, unitPath, opts.Force)
 	if err != nil {
 		return Plan{}, err
 	}
 	plan.UnitPath = unitPath
 	if plan.Kind == PlanUninstall {
+		name := s.serviceName(opts.System)
 		plan.Steps = []Step{
-			{Action: ActionStopService, Description: "Run:  systemctl " + systemctlUserFlag + " stop " + s.serviceName()},
-			{Action: ActionDisableService, Description: "Run:  systemctl " + systemctlUserFlag + " disable " + s.serviceName()},
+			{Action: ActionStopService, Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, "stop", name)},
+			{Action: ActionDisableService, Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, "disable", name)},
 			{Action: ActionRemoveUnit, Description: "Remove unit file\n       " + unitPath},
-			{Action: ActionDaemonReload, Description: "Run:  systemctl " + systemctlUserFlag + " " + systemctlDaemonReload},
+			{Action: ActionDaemonReload, Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, systemctlDaemonReload)},
+		}
+		// Only ever unmask a unit this instance can prove it masked —
+		// the marker in its own unit file. Cron masked some other way
+		// (by hand, or by a different instance) is not ours to touch.
+		if unit := s.cronMarkerFromUnitFile(unitPath); unit != "" {
+			plan.CronUnit = unit
+			plan.Steps = append(plan.Steps, Step{
+				Action:      ActionUnmaskCron,
+				Description: "Run:  " + systemctlCommandLine(true, s.deps.Euid, "unmask", unit) + " (and restart it)",
+			})
 		}
 	}
 	return plan, nil
@@ -364,21 +499,31 @@ func (s *systemdInstaller) Uninstall(ctx context.Context, opts UninstallOptions,
 }
 
 func (s *systemdInstaller) applyUninstall(ctx context.Context, plan Plan, opts UninstallOptions, out io.Writer) error {
+	name := s.serviceName(opts.System)
 	// Stop and disable are best-effort: if the unit was already off
 	// (manual stop) we still want to remove the file. We log warnings
 	// but continue.
-	if _, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, "stop", s.serviceName()); err != nil {
-		fmt.Fprintf(out, "Warning: systemctl --user stop: %v %s\n", err, string(stderr))
+	if _, stderr, err := s.runSystemctl(ctx, opts.System, "stop", name); err != nil {
+		fmt.Fprintf(out, "Warning: %s: %v %s\n", systemctlErrLabel(opts.System, "stop"), err, string(stderr))
 	}
-	if _, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, "disable", s.serviceName()); err != nil {
-		fmt.Fprintf(out, "Warning: systemctl --user disable: %v %s\n", err, string(stderr))
+	if _, stderr, err := s.runSystemctl(ctx, opts.System, "disable", name); err != nil {
+		fmt.Fprintf(out, "Warning: %s: %v %s\n", systemctlErrLabel(opts.System, "disable"), err, string(stderr))
 	}
 	if err := s.deps.FS.Remove(plan.UnitPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("remove unit: %w", err)
 	}
 	fmt.Fprintf(out, "Removed %s\n", plan.UnitPath)
-	if _, stderr, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, systemctlDaemonReload); err != nil {
-		fmt.Fprintf(out, "Warning: systemctl --user daemon-reload: %v %s\n", err, string(stderr))
+	if _, stderr, err := s.runSystemctl(ctx, opts.System, systemctlDaemonReload); err != nil {
+		fmt.Fprintf(out, "Warning: %s: %v %s\n", systemctlErrLabel(opts.System, systemctlDaemonReload), err, string(stderr))
+	}
+	if plan.CronUnit != "" {
+		// Best-effort, like stop/disable above: RunWisp's own unit is
+		// already gone, so failing to restore cron must not turn into a
+		// failed uninstall — it would just leave the operator with no
+		// way to remove a unit that no longer exists.
+		if err := s.unmaskCron(ctx, plan.CronUnit, true, out); err != nil {
+			fmt.Fprintf(out, "Warning: %v\n", err)
+		}
 	}
 	if opts.Purge && opts.DataDir != "" {
 		if err := os.RemoveAll(opts.DataDir); err != nil {
@@ -392,44 +537,88 @@ func (s *systemdInstaller) applyUninstall(ctx context.Context, plan Plan, opts U
 
 // Status implements Installer.
 func (s *systemdInstaller) Status(ctx context.Context, opts InstallOptions) (Status, error) {
+	if err := s.requireFingerprint(opts.System); err != nil {
+		return Status{}, err
+	}
 	unitPath := s.unitPath(opts.System)
+	name := s.serviceName(opts.System)
 	st := Status{
 		OS:       "linux",
 		UnitPath: unitPath,
 		Binary:   opts.Binary,
 		DataDir:  opts.DataDir,
-		LogsHint: "journalctl --user -u " + s.serviceName(),
+		LogsHint: logsHint(opts.System, name),
 	}
-	if existing, err := s.deps.FS.ReadFile(unitPath); err == nil {
-		st.UnitExists = true
-		parsed := extractMarkers(existing)
-		st.UnitManaged = parsed.managed
-		st.UnitConfigHash = parsed.configHash
-		st.ExpectedBinarySHA = parsed.binarySHA
-		st.Installed = parsed.managed
-		st.ExpectedConfigHash = SettingsHash(opts.Binary, opts.Config, opts.DataDir, opts.Host, opts.Port)
-	}
+	s.populateUnitStatus(ctx, opts, unitPath, &st)
 	if data, err := os.ReadFile(opts.Binary); err == nil {
 		st.BinaryExists = true
 		st.BinaryOnDiskSHA = hashContent(data)
 	}
-	if stdout, _, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, "is-enabled", s.serviceName()); err == nil {
-		st.Autostart = strings.TrimSpace(string(stdout)) == "enabled"
-	}
-	if stdout, _, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, "is-active", s.serviceName()); err == nil {
-		st.Running = strings.TrimSpace(string(stdout)) == "active"
-	}
-	if stdout, _, err := s.deps.Cmd.Run(ctx, "systemctl", systemctlUserFlag, "show", "-p", "ActiveEnterTimestamp", "--value", s.serviceName()); err == nil {
-		st.LastStart = parseSystemdTimestamp(strings.TrimSpace(string(stdout)))
-	}
-	if lingerOn, _ := s.checkLinger(ctx); lingerOn {
-		st.Linger = true
-	}
+	s.populateRuntimeStatus(ctx, opts, name, &st)
 	if info, err := s.deps.FS.Stat(opts.DataDir); err == nil && info.IsDir() {
 		st.DataDirWritable = isDirWritable(opts.DataDir)
 		st.DataDirLastWrite = info.ModTime()
 	}
 	return st, nil
+}
+
+// populateUnitStatus fills in the fields derived from reading the unit file
+// on disk and, when it says this instance took over cron, probing that unit.
+func (s *systemdInstaller) populateUnitStatus(ctx context.Context, opts InstallOptions, unitPath string, st *Status) {
+	existing, err := s.deps.FS.ReadFile(unitPath)
+	if err != nil {
+		return
+	}
+	st.UnitExists = true
+	parsed := extractMarkers(existing)
+	st.UnitManaged = parsed.managed
+	st.UnitConfigHash = parsed.configHash
+	st.ExpectedBinarySHA = parsed.binarySHA
+	st.Installed = parsed.managed
+	st.ExpectedConfigHash = SettingsHash(opts.Binary, opts.Config, opts.DataDir, opts.Host, opts.Port)
+	// Only probe cron when this instance's own marker says it took
+	// it over — an operator who never asks for a take-over pays
+	// zero extra systemctl calls for this row.
+	if parsed.maskedCron == "" {
+		return
+	}
+	st.CronUnit = parsed.maskedCron
+	if _, activeState, unitFileState, err := s.probeCronUnit(ctx, parsed.maskedCron); err == nil {
+		st.CronMasked = unitFileState == "masked"
+		st.CronActive = activeState == "active"
+	}
+}
+
+// populateRuntimeStatus fills in the fields that come from live
+// systemctl/loginctl queries against the running unit.
+func (s *systemdInstaller) populateRuntimeStatus(ctx context.Context, opts InstallOptions, name string, st *Status) {
+	if stdout, _, err := s.runSystemctl(ctx, opts.System, "is-enabled", name); err == nil {
+		st.Autostart = strings.TrimSpace(string(stdout)) == "enabled"
+	}
+	if stdout, _, err := s.runSystemctl(ctx, opts.System, "is-active", name); err == nil {
+		st.Running = strings.TrimSpace(string(stdout)) == "active"
+	}
+	if stdout, _, err := s.runSystemctl(ctx, opts.System, "show", "-p", "ActiveEnterTimestamp", "--value", name); err == nil {
+		st.LastStart = parseSystemdTimestamp(strings.TrimSpace(string(stdout)))
+	}
+	// loginctl linger is a per-user-session concept; a system-wide unit
+	// starts under PID 1 and has no session to linger.
+	if !opts.System {
+		if lingerOn, _ := s.checkLinger(ctx); lingerOn {
+			st.Linger = true
+		}
+	}
+}
+
+// logsHint renders the journalctl invocation `service status` prints. A
+// system-wide unit's journal needs sudo to read (no --user scoping exists
+// for it), matched to how the unit was actually installed rather than
+// hardcoding --user regardless.
+func logsHint(systemWide bool, name string) string {
+	if systemWide {
+		return "sudo journalctl -u " + name
+	}
+	return "journalctl --user -u " + name
 }
 
 // checkLinger reports whether loginctl has linger enabled for this user.

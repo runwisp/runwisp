@@ -63,6 +63,11 @@
       "description": "Behavior when a run's log hits log_max_size.",
       "enum": ["drop_new", "drop_old", "kill_task"]
     },
+    "envBase": {
+      "type": "string",
+      "description": "What the run's environment starts from, before env/secrets. \"inherit\" (default) takes the daemon's; \"clean\" takes only PATH, SHELL, HOME and USER/LOGNAME, as crond gives a job. Host shell runs only.",
+      "enum": ["inherit", "clean"]
+    },
     "onOverlap": {
       "type": "string",
       "description": "What to do when a run is triggered while one is already active.",
@@ -124,6 +129,11 @@
           "type": "array",
           "description": "Glob(s) of extra TOML files merged at load. Root config only, no nesting.",
           "items": { "type": "string" }
+        },
+        "include_cron": {
+          "type": "array",
+          "description": "Glob(s) of real crontabs read as live task sources at every load and reload. Root config only. A job RunWisp can't reproduce is skipped and reported; the rest of the file still runs.",
+          "items": { "type": "string" }
         }
       }
     },
@@ -178,6 +188,7 @@
         "working_dir": { "type": "string", "description": "Process cwd; relative to runwisp.toml dir, ~ expands." },
         "shell": { "type": "string", "description": "Interpreter for run (absolute path); invoked as <shell> -e -c <script>, so a multi-line script stops at its first failing command. Non-POSIX interpreters get no -e." },
         "umask": { "type": "string", "description": "Octal file-creation mask, e.g. \"027\"." },
+        "env_base": { "$ref": "#/$defs/envBase" },
         "user": { "type": "string", "description": "Run as user or user:group; needs daemon as root." },
         "log_max_size": { "$ref": "#/$defs/byteSize" },
         "log_on_full": { "$ref": "#/$defs/logOnFull" },
@@ -212,6 +223,7 @@
         "working_dir": { "type": "string" },
         "shell": { "type": "string" },
         "umask": { "type": "string" },
+        "env_base": { "$ref": "#/$defs/envBase" },
         "user": { "type": "string" },
         "exit_codes": { "$ref": "#/$defs/exitCodes" },
         "log_max_size": { "$ref": "#/$defs/byteSize" },
@@ -330,7 +342,7 @@
       "required": ["id", "type"],
       "properties": {
         "id": { "type": "string", "description": "Notifier id; non-empty, not \"inapp\", no \":\"." },
-        "type": { "type": "string", "enum": ["slack", "discord", "telegram", "smtp", "webhook"] },
+        "type": { "type": "string", "enum": ["slack", "discord", "telegram", "smtp", "sendmail", "webhook"] },
         "template_path": { "type": "string" },
         "webhook_url": { "type": "string", "description": "slack/discord webhook URL." },
         "channel": { "type": "string", "description": "slack channel; starts with # or @." },
@@ -343,11 +355,12 @@
         "tls_skip_verify": { "type": "boolean" },
         "username": { "type": "string" },
         "password": { "type": "string" },
-        "from": { "type": "string", "description": "smtp from email." },
+        "from": { "type": "string", "description": "smtp/sendmail from email." },
         "reply_to": { "type": "string" },
         "to": { "type": "array", "items": { "type": "string" } },
         "cc": { "type": "array", "items": { "type": "string" } },
         "bcc": { "type": "array", "items": { "type": "string" } },
+        "sendmail_path": { "type": "string", "description": "sendmail: absolute path to the MTA binary. Omit to find the system one." },
         "url": { "type": "string", "description": "webhook URL (http/https)." },
         "headers": { "type": "object", "additionalProperties": { "type": "string" } }
       }

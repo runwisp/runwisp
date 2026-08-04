@@ -1,2 +1,8 @@
+# A crontab whose one job has an unparseable schedule. The PATH= line matters:
+# it makes the job emit a [tasks.x.env] child, so a live render that filtered by
+# table name instead of block ownership would leave an orphan child table behind
+# and produce a config that doesn't load at all.
+PATH=/opt/bin:/usr/bin
+
 # Broken nightly job
 99 99 * * * /bin/bad

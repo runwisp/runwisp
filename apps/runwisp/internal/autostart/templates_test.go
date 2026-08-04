@@ -53,6 +53,27 @@ func TestRenderSystemdUnit_Golden(t *testing.T) {
 	assert.Equal(t, want, string(body))
 }
 
+func TestRenderSystemdUnit_SystemWide_Golden(t *testing.T) {
+	body, err := RenderSystemdUnit(SystemdParams{
+		Binary:     "/usr/local/bin/runwisp",
+		Config:     "/etc/runwisp/runwisp.toml",
+		DataDir:    "/var/lib/runwisp",
+		Host:       "127.0.0.1",
+		Port:       9477,
+		Home:       "/root",
+		Path:       "/usr/local/bin:/usr/bin:/bin",
+		ConfigHash: "deadbeef0000",
+		BinarySHA:  "abcdef012345",
+		System:     true,
+	})
+	require.NoError(t, err)
+
+	s := string(body)
+	assert.Contains(t, s, "After=network.target remote-fs.target nss-user-lookup.target time-sync.target")
+	assert.Contains(t, s, "WantedBy=multi-user.target")
+	assert.NotContains(t, s, "default.target")
+}
+
 func TestRenderLaunchdPlist_Golden(t *testing.T) {
 	body, err := RenderLaunchdPlist(LaunchdParams{
 		Binary:     "/Users/alice/.local/bin/runwisp",

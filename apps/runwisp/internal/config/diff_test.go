@@ -43,6 +43,76 @@ func TestDiffTasks_IdenticalIsEmpty(t *testing.T) {
 	assert.True(t, DiffTasks(old, updated).IsEmpty())
 }
 
+// TestDiffTasks_ProvenanceOnlyChangeIsRestamped covers `runwisp promote`: moving a
+// task's block from the staging file into the operator's own config flips the
+// derived Staged flag and nothing else. That is not a change to what runs, so it
+// must not become a Changed entry — the reconciler acts on those by rescheduling
+// cron entries and recycling services.
+func TestDiffTasks_ProvenanceOnlyChangeIsRestamped(t *testing.T) {
+	staged := &model.Task{Name: "a", Run: "echo", Cron: "@daily", Source: model.SourceStaged}
+	promoted := *staged
+	promoted.Source = model.SourceNative
+
+	d := DiffTasks(tasksMap(staged), tasksMap(&promoted))
+
+	assert.Empty(t, d.Changed)
+	assert.Empty(t, d.Added)
+	assert.Empty(t, d.Removed)
+	assert.Equal(t, []string{"a"}, d.Restamped)
+	assert.True(t, d.IsEmpty(), "reload reports no task changes, because nothing the daemon runs changed")
+	assert.Empty(t, d.ToResult().Changed, "provenance stays off the reload wire")
+}
+
+// TestDiffTasks_RealChangeIsNotRestamped keeps the masking honest: a definition
+// that genuinely differs is still a Changed entry, even when its provenance moved
+// in the same reload.
+func TestDiffTasks_RealChangeIsNotRestamped(t *testing.T) {
+	before := &model.Task{Name: "a", Run: "echo old", Cron: "@daily", Source: model.SourceStaged}
+	after := &model.Task{Name: "a", Run: "echo new", Cron: "@daily"}
+
+	d := DiffTasks(tasksMap(before), tasksMap(after))
+
+	require.Len(t, d.Changed, 1)
+	assert.True(t, d.Changed[0].Has(ReasonCommand))
+	assert.Empty(t, d.Restamped)
+}
+
+// TestDiffTasks_HoldLiftIsAScheduleChange is the counterpart to the masking
+// above, and the reason HeldBy is deliberately left unmasked. Retiring cron and
+// reloading changes only this one derived field — if it were treated as
+// provenance the reload would be a Restamped no-op, the registry would take the
+// new pointer, the scheduler would never be told, and the jobs the operator just
+// handed over would go from "held, and visibly so" to silently never running.
+func TestDiffTasks_HoldLiftIsAScheduleChange(t *testing.T) {
+	held := &model.Task{Name: "a", Run: "echo", Cron: "@daily",
+		Source: model.SourceCron, SourceFile: "/etc/cron.d/a", HeldBy: model.HeldByCron}
+	freed := *held
+	freed.HeldBy = model.HeldByNothing
+
+	d := DiffTasks(tasksMap(held), tasksMap(&freed))
+
+	require.Len(t, d.Changed, 1)
+	assert.True(t, d.Changed[0].Has(ReasonSchedule),
+		"the reconciler reschedules on this reason; nothing else registers the cron entry")
+	assert.Empty(t, d.Restamped)
+	assert.False(t, d.IsEmpty(), "a job that starts firing is a change worth reporting")
+}
+
+// TestDiffTasks_HoldLandingIsAScheduleChange is the same flip in reverse — cron
+// came back (a package upgrade unmasked it) and RunWisp has to drop the entry.
+func TestDiffTasks_HoldLandingIsAScheduleChange(t *testing.T) {
+	free := &model.Task{Name: "a", Run: "echo", Cron: "@daily",
+		Source: model.SourceCron, SourceFile: "/etc/cron.d/a"}
+	held := *free
+	held.HeldBy = model.HeldByCron
+
+	d := DiffTasks(tasksMap(free), tasksMap(&held))
+
+	require.Len(t, d.Changed, 1)
+	assert.True(t, d.Changed[0].Has(ReasonSchedule))
+	assert.Empty(t, d.Restamped)
+}
+
 func TestDiffTasks_ChangeReasons(t *testing.T) {
 	base := func() *model.Task {
 		return &model.Task{Name: "a", Run: "echo", Cron: "0 2 * * *", Kind: model.KindTask}
@@ -60,6 +130,10 @@ func TestDiffTasks_ChangeReasons(t *testing.T) {
 		{"workdir", func(tk *model.Task) { tk.WorkingDir = "/tmp" }, ReasonCommand},
 		{"env", func(tk *model.Task) { tk.Env = map[string]string{"K": "V"} }, ReasonEnv},
 		{"env-file", func(tk *model.Task) { tk.EnvFile = ".env" }, ReasonEnv},
+		// A task switched to a clean base runs with a different environment; a
+		// reload that reported no change would leave it on the old one until the
+		// next restart.
+		{"env-base", func(tk *model.Task) { tk.EnvBase = model.EnvBaseClean }, ReasonEnv},
 		{"settings", func(tk *model.Task) { tk.MaxConcurrent = 4 }, ReasonSettings},
 	}
 

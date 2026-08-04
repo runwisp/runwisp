@@ -33,6 +33,42 @@ func TestRunValidate_JSONInvalidEmitsErrorDoc(t *testing.T) {
 	assert.Empty(t, doc.Warnings, "warnings is an empty array, not null")
 }
 
+func TestNewListTaskJSON_CarriesProvenance(t *testing.T) {
+	t.Parallel()
+	staged := newListTaskJSON(model.Task{Name: "imported", Kind: model.KindTask, Cron: "0 0 * * *",
+		Source: model.SourceStaged, SourceFile: "/etc/runwisp.d/imported.toml"})
+	assert.Equal(t, "staged", staged.Source)
+	assert.Equal(t, "/etc/runwisp.d/imported.toml", staged.SourceFile)
+
+	// A cron-sourced task reports the crontab it came from — the fact an operator
+	// needs to know which file to edit, and the reason source_file exists.
+	cron := newListTaskJSON(model.Task{Name: "backup", Kind: model.KindTask,
+		Source: model.SourceCron, SourceFile: "/etc/cron.d/backup"})
+	assert.Equal(t, "cron", cron.Source)
+	assert.Equal(t, "/etc/cron.d/backup", cron.SourceFile)
+
+	native := newListTaskJSON(model.Task{Name: "native", Kind: model.KindTask})
+	assert.Empty(t, native.Source)
+
+	// omitempty: a native task must not carry either key at all.
+	b, err := json.Marshal(native)
+	require.NoError(t, err)
+	assert.NotContains(t, string(b), "source")
+	b, err = json.Marshal(staged)
+	require.NoError(t, err)
+	assert.Contains(t, string(b), `"source":"staged"`)
+}
+
+func TestNewStatusTaskJSON_CarriesProvenance(t *testing.T) {
+	t.Parallel()
+	st := newStatusTaskJSON(model.TaskResponse{
+		Task: model.Task{Name: "imported", Kind: model.KindTask,
+			Source: model.SourceStaged, SourceFile: "/etc/runwisp.d/imported.toml"},
+	}, nil)
+	assert.Equal(t, "staged", st.Source)
+	assert.Equal(t, "/etc/runwisp.d/imported.toml", st.SourceFile)
+}
+
 func TestNewExecJSONDoc_MapsFailedAndDuration(t *testing.T) {
 	t.Parallel()
 	start := time.Date(2026, 7, 15, 3, 0, 0, 0, time.UTC)

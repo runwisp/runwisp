@@ -55,5 +55,10 @@ in ` + "`runwisp.toml`" + `.
   go to stderr).
 - **Inspect:** ` + "`runwisp status --json`" + ` (daemon + per-task snapshot),
   ` + "`runwisp list --json`" + ` (configured tasks).
+- **Migrating a box that already runs cron:** on Linux+systemd,
+  ` + "`sudo runwisp takeover`" + ` retires cron and hands its jobs to RunWisp in one
+  step (` + "`--dry-run`" + ` to preview, ` + "`-y`" + ` for scripts). Prefer it over
+  ` + "`runwisp import cron`" + `, which copies jobs and will double-fire until the
+  crontab is removed by hand.
 - Full reference for agents: https://docs.runwisp.com/agents/reference.md
 `

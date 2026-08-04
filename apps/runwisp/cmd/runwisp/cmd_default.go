@@ -34,9 +34,23 @@ func runDefault(f Flags) error {
 	}
 
 	// Spawn a background daemon or handle port conflicts.
-	if err := scaffoldIfMissing(f.CfgFile); err != nil {
+	serviceInstalled, err := scaffoldIfMissing(f)
+	if err != nil {
 		return err
 	}
+
+	// When first run performed the cron cutover, systemd already owns a daemon on
+	// this data dir and started it — spawning a second one here would fight it for
+	// the port and the SQLite file. Wait for the one systemd started (which is a
+	// health poll, not a spawn) and attach to it.
+	logPath := filepath.Join(f.DataDir, "daemon.log")
+	if serviceInstalled {
+		if err := waitForDaemon(client, logPath, 30*time.Second, f); err != nil {
+			return err
+		}
+		return runTUIConnect(client, f)
+	}
+
 	spawn, portErr := ensurePortFreeOrHandle(f)
 	if portErr != nil || !spawn {
 		return portErr
@@ -47,7 +61,6 @@ func runDefault(f Flags) error {
 		return runDaemon(modeStandalone, f, false)
 	}
 
-	logPath := filepath.Join(f.DataDir, "daemon.log")
 	if err := waitForDaemon(client, logPath, 10*time.Second, f); err != nil {
 		return err
 	}

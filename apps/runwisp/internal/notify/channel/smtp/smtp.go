@@ -200,28 +200,28 @@ func (c *Channel) buildMsg(subject, htmlBody, textBody string) (*gomail.Msg, err
 // from the rendered template; this guard catches a future code path that lets
 // untrusted text reach a header.
 func (c *Channel) rejectHeaderCRLF(subject string) error {
-	if err := rejectCRLF("subject", subject); err != nil {
+	if err := notify.RejectHeaderCRLF("smtp subject", subject); err != nil {
 		return err
 	}
-	if err := rejectCRLF("from", c.from); err != nil {
+	if err := notify.RejectHeaderCRLF("smtp from", c.from); err != nil {
 		return err
 	}
 	for _, addr := range c.to {
-		if err := rejectCRLF("to", addr); err != nil {
+		if err := notify.RejectHeaderCRLF("smtp to", addr); err != nil {
 			return err
 		}
 	}
 	for _, addr := range c.cc {
-		if err := rejectCRLF("cc", addr); err != nil {
+		if err := notify.RejectHeaderCRLF("smtp cc", addr); err != nil {
 			return err
 		}
 	}
 	for _, addr := range c.bcc {
-		if err := rejectCRLF("bcc", addr); err != nil {
+		if err := notify.RejectHeaderCRLF("smtp bcc", addr); err != nil {
 			return err
 		}
 	}
-	return rejectCRLF("reply-to", c.replyTo)
+	return notify.RejectHeaderCRLF("smtp reply-to", c.replyTo)
 }
 
 // setAddresses populates the From/To/Cc/Bcc/Reply-To headers on m.
@@ -316,17 +316,6 @@ func (c *Channel) classify(err error) error {
 		return err
 	}
 	return err
-}
-
-// rejectCRLF returns a permanent error if value contains a CR or LF, which
-// would allow injecting additional SMTP headers (BCC redirection, content
-// spoofing). Empty input is allowed — callers that require a non-empty value
-// validate that separately.
-func rejectCRLF(field, value string) error {
-	if strings.ContainsAny(value, "\r\n") {
-		return backoff.Permanent(fmt.Errorf("smtp %s contains CR or LF, which is not allowed in a header", field))
-	}
-	return nil
 }
 
 // normalizeTLSMode resolves the operator-supplied tls knob, falling back to a

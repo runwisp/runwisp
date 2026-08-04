@@ -58,6 +58,7 @@ type statusJSONDoc struct {
 	ExternalURL      string           `json:"external_url,omitempty"`
 	SchedulingActive bool             `json:"scheduling_active"`
 	ConfigStale      bool             `json:"config_stale"`
+	ConfigWarnings   []string         `json:"config_warnings,omitempty"`
 	ResolvedTimezone string           `json:"resolved_timezone,omitempty"`
 	TimezoneSource   string           `json:"timezone_source,omitempty"`
 	System           *statusSystem    `json:"system,omitempty"`
@@ -83,6 +84,9 @@ type statusTaskJSON struct {
 	Kind       string       `json:"kind"`
 	Cron       string       `json:"cron,omitempty"`
 	APITrigger bool         `json:"api_trigger"`
+	Source     string       `json:"source,omitempty"`
+	SourceFile string       `json:"source_file,omitempty"`
+	HeldBy     string       `json:"held_by,omitempty"`
 	NextRunAt  *string      `json:"next_run_at,omitempty"`
 	LastRun    *lastRunJSON `json:"last_run"`
 }
@@ -125,6 +129,9 @@ func newStatusTaskJSON(tr model.TaskResponse, last *model.Run) statusTaskJSON {
 		Kind:       taskKindString(tr.Kind),
 		Cron:       tr.Cron,
 		APITrigger: tr.APITrigger,
+		Source:     string(tr.Source),
+		SourceFile: tr.SourceFile,
+		HeldBy:     string(tr.HeldBy),
 		NextRunAt:  tr.NextRunAt,
 	}
 	if last != nil {
@@ -244,6 +251,9 @@ type listTaskJSON struct {
 	MaxConcurrent *int   `json:"max_concurrent,omitempty"`
 	OnOverlap     string `json:"on_overlap"`
 	APITrigger    bool   `json:"api_trigger"`
+	Source        string `json:"source,omitempty"`
+	SourceFile    string `json:"source_file,omitempty"`
+	HeldBy        string `json:"held_by,omitempty"`
 	Description   string `json:"description,omitempty"`
 }
 
@@ -254,6 +264,9 @@ func newListTaskJSON(t model.Task) listTaskJSON {
 		Schedule:    t.Cron,
 		OnOverlap:   string(t.OnOverlap),
 		APITrigger:  t.APITrigger,
+		Source:      string(t.Source),
+		SourceFile:  t.SourceFile,
+		HeldBy:      string(t.HeldBy),
 		Description: t.Description,
 	}
 	if t.Kind.IsService() {

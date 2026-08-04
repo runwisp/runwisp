@@ -8,6 +8,17 @@ import starlightOpenAPI, { openAPISidebarGroups } from "starlight-openapi";
 
 export default defineConfig({
     site: "https://docs.runwisp.com",
+    // The cron-migration guide grew into its own "Replacing cron" section, so
+    // the single old recipe URL — the one linked from the README and the
+    // daemon's own output — has to keep resolving. The take-over and held-jobs
+    // pages were later folded into the section index; their URLs are linked
+    // from the README, CHANGELOG, and generated runwisp.toml, so they redirect
+    // too.
+    redirects: {
+        "/recipes/migrating-from-cron": "/replacing-cron/",
+        "/replacing-cron/take-over-from-cron": "/replacing-cron/",
+        "/replacing-cron/held-jobs": "/replacing-cron/",
+    },
     integrations: [
         starlight({
             plugins: [
@@ -80,6 +91,20 @@ export default defineConfig({
                     ],
                 },
                 {
+                    label: "Replacing cron",
+                    items: [
+                        { label: "Start here", slug: "replacing-cron" },
+                        {
+                            label: "Converting crontabs",
+                            slug: "replacing-cron/converting-crontabs",
+                        },
+                        {
+                            label: "How cron maps to TOML",
+                            slug: "replacing-cron/cron-mapping",
+                        },
+                    ],
+                },
+                {
                     label: "Concepts",
                     items: [
                         { label: "Tasks vs Services", slug: "concepts/tasks-vs-services" },
@@ -123,6 +148,10 @@ export default defineConfig({
                                     slug: "notifications/providers/smtp",
                                 },
                                 {
+                                    label: "Email (local MTA)",
+                                    slug: "notifications/providers/sendmail",
+                                },
+                                {
                                     label: "Webhook",
                                     slug: "notifications/providers/webhook",
                                 },
@@ -136,10 +165,6 @@ export default defineConfig({
                 {
                     label: "Recipes",
                     items: [
-                        {
-                            label: "Migrating from cron",
-                            slug: "recipes/migrating-from-cron",
-                        },
                         {
                             label: "Migrating from supervisord",
                             slug: "recipes/migrating-from-supervisord",

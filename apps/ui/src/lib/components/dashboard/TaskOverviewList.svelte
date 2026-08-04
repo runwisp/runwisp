@@ -9,6 +9,8 @@
     import Select from "@runwisp/ui/components/Select.svelte";
     import Tooltip from "@runwisp/ui/components/Tooltip.svelte";
     import ComposeBadge from "../ComposeBadge.svelte";
+    import TaskHeldBadge from "../TaskHeldBadge.svelte";
+    import TaskSourceBadge from "../TaskSourceBadge.svelte";
     import { getRunStatusConfig } from "@runwisp/ui";
     import { isFailureEndReason } from "@runwisp/common";
     import type {
@@ -249,6 +251,16 @@ run  = "echo hello"</pre>
                                         file={task.task.compose.file}
                                         service={task.task.compose.service}
                                         projectName={task.task.compose.project_name}
+                                    />
+                                {/if}
+                                {#if task.task.held_by}
+                                    <TaskHeldBadge heldBy={task.task.held_by} />
+                                {/if}
+                                {#if task.task.source}
+                                    <TaskSourceBadge
+                                        name={task.task.name}
+                                        source={task.task.source}
+                                        sourceFile={task.task.source_file}
                                     />
                                 {/if}
                                 {#if task.task.kind === "service"}

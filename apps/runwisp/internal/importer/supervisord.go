@@ -13,10 +13,19 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
+// SupervisordOptions tunes supervisord parsing.
+type SupervisordOptions struct {
+	// Existing carries the entries the live config already defines outside the
+	// machine-owned staging file that a re-import overwrites, so importing the
+	// same supervisord config twice after a `promote` skips the program it
+	// already owns instead of colliding on the merged load. See Owned.
+	Existing Owned
+}
+
 // ParseSupervisordFiles converts one or more supervisord config files into a
 // *Result, following [include] sections relative to each file's directory.
-func ParseSupervisordFiles(paths []string) (*Result, error) {
-	sd := newSupervisordState()
+func ParseSupervisordFiles(paths []string, opts SupervisordOptions) (*Result, error) {
+	sd := newSupervisordState(opts)
 	for _, p := range paths {
 		if err := sd.loadFile(p); err != nil {
 			return nil, err
@@ -28,25 +37,30 @@ func ParseSupervisordFiles(paths []string) (*Result, error) {
 // ParseSupervisordReader converts a single supervisord config read from r.
 // [include] directives can't be resolved without a base directory, so they
 // surface as a Note rather than being followed.
-func ParseSupervisordReader(r io.Reader) (*Result, error) {
+func ParseSupervisordReader(r io.Reader, opts SupervisordOptions) (*Result, error) {
 	sections, err := parseINI(r)
 	if err != nil {
 		return nil, err
 	}
-	sd := newSupervisordState()
+	sd := newSupervisordState(opts)
 	sd.collect(sections, "")
 	return sd.finish(), nil
 }
 
 type supervisordState struct {
 	res      *Result
-	dd       *deduper
+	names    *namer
 	sections []iniSection
 	visited  map[string]bool
 }
 
-func newSupervisordState() *supervisordState {
-	return &supervisordState{res: &Result{}, dd: newDeduper(), visited: map[string]bool{}}
+func newSupervisordState(opts SupervisordOptions) *supervisordState {
+	res := &Result{}
+	return &supervisordState{
+		res:     res,
+		names:   newNamer(res, opts.Existing, ""),
+		visited: map[string]bool{},
+	}
 }
 
 func (sd *supervisordState) loadFile(path string) error {
@@ -91,7 +105,7 @@ func (sd *supervisordState) expandInclude(s *iniSection, baseDir string) {
 		return
 	}
 	if baseDir == "" {
-		sd.res.addNote(LevelAttention, "",
+		sd.res.fileNote(NoteIncludeUnresolved,
 			"[include] files="+files+" — can't resolve includes when reading from stdin. "+
 				"Run `runwisp import supervisord <file>` against the config file instead.")
 		return
@@ -102,13 +116,13 @@ func (sd *supervisordState) expandInclude(s *iniSection, baseDir string) {
 		}
 		matches, err := filepath.Glob(pattern)
 		if err != nil || len(matches) == 0 {
-			sd.res.addNote(LevelAttention, "",
+			sd.res.fileNote(NoteIncludeNoMatch,
 				"[include] pattern "+pattern+" matched no files.")
 			continue
 		}
 		for _, m := range matches {
 			if err := sd.loadFile(m); err != nil {
-				sd.res.addNote(LevelAttention, "",
+				sd.res.fileNote(NoteIncludeUnreadable,
 					"couldn't read included file "+m+": "+err.Error())
 			}
 		}
@@ -127,19 +141,25 @@ func (sd *supervisordState) finish() *Result {
 		case "program":
 			sd.processProgram(name, s, groupOf[name])
 		case "group":
-			sd.res.addNote(LevelInfo, name,
+			// A file note, not a row: a group isn't a job, it's an annotation over
+			// jobs — and it maps losslessly onto each member's `group =`.
+			sd.res.fileNote(NoteGroup,
 				"[group:"+name+"] — RunWisp has no program groups; its members were "+
 					"imported individually and tagged with the group name.")
 		case "eventlistener", "fcgi-program":
-			sd.res.addNote(LevelAttention, name,
+			// A row, because this *is* a process the operator runs today. It emits no
+			// TOML, which looks like a skip, but the work it leaves behind is "go
+			// reimplement this" rather than "nothing to do" — which is why
+			// deriveStatus ranks blocking above skipped.
+			sd.res.addItem(s.name).note(NoteSectionUnsupported,
 				"["+s.name+"] isn't supported — RunWisp has no event listeners or "+
-					"FastCGI process manager. Skipped.")
+					"FastCGI process manager. Nothing was imported for it.")
 		case "supervisord", "supervisorctl", "unix_http_server", "inet_http_server", "rpcinterface":
-			sd.res.addNote(LevelInfo, "",
+			sd.res.fileNote(NoteSectionDaemon,
 				"["+s.name+"] is supervisord daemon config with no RunWisp equivalent. "+
 					"Skipped — RunWisp's daemon is configured in [daemon]/[server].")
 		default:
-			sd.res.addNote(LevelInfo, s.name,
+			sd.res.fileNote(NoteSectionUnrecognized,
 				"["+s.name+"] wasn't recognized and was skipped.")
 		}
 	}
@@ -170,107 +190,151 @@ func (sd *supervisordState) buildGroupMap() map[string]string {
 }
 
 func (sd *supervisordState) processProgram(rawName string, s *iniSection, group string) {
-	name := sd.dd.unique(sanitizeProgramName(rawName))
-	isService := sd.resolveIsService(s, name)
-
-	prefix, kind, schedule := "services.", "service", "service"
-	if !isService {
-		prefix, kind, schedule = "tasks.", "task", "@reboot"
+	taskKind := programKind(s)
+	ref, name, skip := sd.names.resolve(rawName, sanitizeProgramName(rawName), taskKind, programCommand(s, rawName), 0)
+	if skip {
+		return
 	}
-	b := block{header: prefix + name, isItem: true, name: name, kind: kind, schedule: schedule}
+	isService := taskKind.IsService()
+	sd.noteKindChoice(s, ref)
+
+	prefix, schedule := "services.", "service"
+	if !isService {
+		prefix, schedule = "tasks.", "@reboot"
+	}
+	b := block{header: prefix + name}
 
 	if group != "" {
 		b.set("group", tomlString(group))
 	}
-	sd.applyCommand(&b, s, name, rawName)
+	run := sd.applyCommand(&b, s, ref, rawName)
 	if !isService {
-		sd.applyRunOnce(&b, s, name)
+		sd.applyRunOnce(&b, s, ref)
 	}
-	env := sd.applyProgramKeys(&b, s, name, isService)
+	env := sd.applyProgramKeys(&b, s, ref, isService)
 
-	sd.res.blocks = append(sd.res.blocks, b)
+	blocks := []block{b}
 	if eb, ok := envBlock(prefix+name+".env", env); ok {
-		sd.res.blocks = append(sd.res.blocks, eb)
+		blocks = append(blocks, eb)
 	}
+	ref.emit(name, taskKind, schedule, run, blocks...)
 }
 
-// resolveIsService decides whether a [program] maps onto a RunWisp service.
+// programKind decides whether a [program] maps onto a RunWisp service.
 // supervisord programs are long-running and restart by default, which maps onto
 // a RunWisp service (services are always-on and always restart). The one
 // exception is autorestart=false: that program runs once and is left alone,
 // which is a run-once task, not a service. supervisord's own default is
 // "unexpected", so an omitted autorestart still means service.
-func (sd *supervisordState) resolveIsService(s *iniSection, name string) bool {
+//
+// Pure, so the kind is available for identity dedup before any note is emitted —
+// noteKindChoice explains the non-obvious case once the final name is known.
+func programKind(s *iniSection) model.TaskKind {
 	v, ok := s.get("autorestart")
 	if !ok {
-		return true
+		return model.KindService
 	}
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "false":
-		return false
-	case "unexpected":
-		sd.res.addNote(LevelInfo, name,
-			"autorestart=unexpected → imported as an always-on service. RunWisp "+
-				"services restart on any exit, not only unexpected ones; set "+
-				"exit_codes if some non-zero codes should count as success.")
+	if strings.EqualFold(strings.TrimSpace(v), "false") {
+		return model.KindTask
 	}
-	return true
+	return model.KindService
+}
+
+// noteKindChoice explains an autorestart value whose mapping isn't obvious.
+func (sd *supervisordState) noteKindChoice(s *iniSection, ref itemRef) {
+	v, ok := s.get("autorestart")
+	if !ok || !strings.EqualFold(strings.TrimSpace(v), "unexpected") {
+		return
+	}
+	ref.note(NoteAutorestartUnexpected,
+		"autorestart=unexpected → imported as an always-on service. RunWisp "+
+			"services restart on any exit, not only unexpected ones; set "+
+			"exit_codes if some non-zero codes should count as success.")
+}
+
+// programCommand returns the run line a program would import to, so identity
+// dedup can compare it before the block is built. Pure — applyCommand owns
+// emitting the notes and setting the field.
+func programCommand(s *iniSection, rawName string) string {
+	command, ok := s.get("command")
+	if !ok || strings.TrimSpace(command) == "" {
+		return ""
+	}
+	expanded, _ := expandSupervisordTokens(command, rawName)
+	return expanded
 }
 
 // applyCommand sets the run line from the program's command=, expanding the
-// %(program_name)s token and flagging unresolved supervisord expansions.
-func (sd *supervisordState) applyCommand(b *block, s *iniSection, name, rawName string) {
+// %(program_name)s token and flagging unresolved supervisord expansions. It
+// returns the command that will run, empty when the program had none.
+func (sd *supervisordState) applyCommand(b *block, s *iniSection, ref itemRef, rawName string) string {
 	command, hasCmd := s.get("command")
 	if !hasCmd || strings.TrimSpace(command) == "" {
-		b.setComment("run", tomlString(""), "TODO: original [program] had no command.")
-		b.attention = true
-		sd.res.addNote(LevelAttention, name, "program has no command= line.")
-		return
+		b.setComment("run", tomlVerbatimString(""), "TODO: original [program] had no command.")
+		ref.note(NoteNoCommand, "the original [program] had no command= line, so there is nothing to run.")
+		return ""
 	}
 	expanded, unresolved := expandSupervisordTokens(command, rawName)
 	if unresolved {
-		sd.res.addNote(LevelAttention, name,
+		ref.note(NoteCommandExpansion,
 			"command uses supervisord %(...)s expansions RunWisp doesn't fill in "+
 				"(e.g. %(ENV_x)s, %(process_num)s). Review the run line.")
-		b.attention = true
 	}
-	b.set("run", tomlString(expanded))
+	b.set("run", tomlVerbatimString(expanded))
+	return expanded
 }
 
 // applyRunOnce configures a run-once task: fire at boot (honoring autostart) and
 // never restart.
-func (sd *supervisordState) applyRunOnce(b *block, s *iniSection, name string) {
+func (sd *supervisordState) applyRunOnce(b *block, s *iniSection, ref itemRef) {
 	runOnStart := true
 	if v, ok := s.get("autostart"); ok {
 		if parsed, valid := parseBool(v); valid {
 			runOnStart = parsed
+		} else {
+			sd.noteUnreadable(ref, "autostart", v)
 		}
 	}
 	if runOnStart {
 		b.set("run_on_start", "true")
 	}
 	b.set("restart", tomlString(string(model.RestartNever)))
-	sd.res.addNote(LevelInfo, name,
+	ref.note(NoteRunOnce,
 		"autorestart=false → imported as a run-once task (run_on_start, "+
 			"restart=never), since RunWisp services always restart.")
+}
+
+// supervisordCosmeticKey lists the keys RunWisp drops without a word. Each one
+// is supervisord's own bookkeeping — how it names or reports on the process —
+// rather than anything about how the process runs, so an operator loses nothing
+// by not being told. Everything else that falls through the loop is reported:
+// noting each dropped key individually would mark nearly every real service
+// "changed" and train the reader to ignore the mark, and a mark everyone ignores
+// protects nobody.
+var supervisordCosmeticKey = map[string]bool{
+	"process_name":          true, // supervisord's own process naming template
+	"serverurl":             true, // how the child talks back to supervisord
+	"stdout_events_enabled": true, // event-listener plumbing, and we have no listeners
+	"stderr_events_enabled": true,
 }
 
 // applyProgramKeys iterates the program's keys in source order, mapping the ones
 // RunWisp understands onto b, and returns the parsed environment (nil when the
 // program has no environment= line). Keys that only make sense for an always-on
-// service are dropped with a note when the program landed as a task.
-func (sd *supervisordState) applyProgramKeys(b *block, s *iniSection, name string, isService bool) map[string]string {
+// service are dropped with a note when the program landed as a task, and the
+// remaining unmapped keys are reported together at the end.
+func (sd *supervisordState) applyProgramKeys(b *block, s *iniSection, ref itemRef, isService bool) map[string]string {
 	var env map[string]string
-	loggedLogNote := false
+	var dropped []string
 	for _, key := range s.keys {
 		value, _ := s.get(key)
 		switch key {
 		case "command", "programs", "autorestart":
 			// handled above / not applicable
 		case "autostart":
-			sd.applyAutostart(b, value, isService)
+			sd.applyAutostart(b, value, ref, isService)
 		case "directory":
-			sd.applyDirectory(b, value, name)
+			sd.applyDirectory(b, value, ref)
 		case "user":
 			b.set("user", tomlString(value))
 		case "umask":
@@ -280,47 +344,68 @@ func (sd *supervisordState) applyProgramKeys(b *block, s *iniSection, name strin
 		case "stopwaitsecs":
 			if d, ok := secondsValue(value); ok {
 				b.set("graceful_stop", tomlString(d))
+			} else {
+				sd.noteUnreadable(ref, key, value)
 			}
 		case "exitcodes":
 			if codes, ok := parseExitCodes(value); ok {
 				b.set("exit_codes", tomlIntArray(codes))
+			} else {
+				sd.noteUnreadable(ref, key, value)
 			}
 		case "environment":
 			env = parseSupervisordEnv(value)
 		case "priority", "startsecs", "startretries", "numprocs":
-			sd.applyServiceKey(b, key, value, name, isService)
-		case "stdout_logfile", "stderr_logfile", "redirect_stderr", "stdout_logfile_maxbytes", "stderr_logfile_maxbytes":
-			// Captured automatically — note once, on the first log key seen.
-			if !loggedLogNote {
-				sd.res.addNote(LevelInfo, name,
-					"log file settings were dropped — RunWisp captures stdout and stderr "+
-						"per run automatically (see log_max_size / keep_runs to tune).")
-				loggedLogNote = true
-			}
+			sd.applyServiceKey(b, key, value, ref, isService)
+		case "stdout_logfile", "stderr_logfile", "redirect_stderr",
+			"stdout_logfile_maxbytes", "stderr_logfile_maxbytes",
+			"stdout_logfile_backups", "stderr_logfile_backups",
+			"stdout_capture_maxbytes", "stderr_capture_maxbytes",
+			"stdout_syslog", "stderr_syslog":
+			// Captured automatically — one note covers however many log keys appear.
+			ref.noteOnce(NoteLogsDropped,
+				"log file settings were dropped — RunWisp captures stdout and stderr "+
+					"per run automatically (see log_max_size / keep_runs to tune).")
 		case "stopasgroup", "killasgroup":
-			sd.res.addNote(LevelInfo, name,
+			ref.note(NoteSignalScope,
 				key+"="+value+" has no direct RunWisp equivalent; RunWisp signals the "+
 					"process and its children on stop.")
 		default:
-			// Quietly ignore the long tail of supervisord knobs.
+			if !supervisordCosmeticKey[key] {
+				dropped = append(dropped, key)
+			}
 		}
+	}
+	if len(dropped) > 0 {
+		ref.note(NoteKeysUnsupported,
+			"these supervisord keys have no RunWisp equivalent and were dropped: "+
+				strings.Join(dropped, ", ")+".")
 	}
 	return env
 }
 
-func (sd *supervisordState) applyAutostart(b *block, value string, isService bool) {
+// noteUnreadable reports a key RunWisp maps but whose value it couldn't read, so
+// a typo silently falling back to a default becomes a visible difference.
+func (sd *supervisordState) noteUnreadable(ref itemRef, key, value string) {
+	ref.note(NoteKeyUnreadable,
+		key+"="+value+" isn't a value RunWisp can read, so the setting was dropped.")
+}
+
+func (sd *supervisordState) applyAutostart(b *block, value string, ref itemRef, isService bool) {
 	if !isService {
 		return // task case folded into run_on_start above
 	}
 	if v, ok := parseBool(value); ok {
 		b.set("autostart", strconv.FormatBool(v))
+		return
 	}
+	sd.noteUnreadable(ref, "autostart", value)
 }
 
-func (sd *supervisordState) applyDirectory(b *block, value, name string) {
+func (sd *supervisordState) applyDirectory(b *block, value string, ref itemRef) {
 	b.set("working_dir", tomlString(value))
 	if !filepath.IsAbs(value) {
-		sd.res.addNote(LevelInfo, name,
+		ref.note(NoteRelativeDirectory,
 			"directory="+value+" is relative; RunWisp resolves working_dir "+
 				"against the runwisp.toml location.")
 	}
@@ -329,36 +414,43 @@ func (sd *supervisordState) applyDirectory(b *block, value, name string) {
 // applyServiceKey maps the supervisord keys that only make sense for an
 // always-on service. When the program imported as a run-once task the key is
 // dropped (with a note) by serviceOnly.
-func (sd *supervisordState) applyServiceKey(b *block, key, value, name string, isService bool) {
-	if !sd.serviceOnly(key, name, isService) {
+func (sd *supervisordState) applyServiceKey(b *block, key, value string, ref itemRef, isService bool) {
+	if !sd.serviceOnly(key, ref, isService) {
 		return
 	}
 	switch key {
 	case "priority":
 		if n, err := strconv.Atoi(value); err == nil {
 			b.set("priority", strconv.Itoa(n))
+		} else {
+			sd.noteUnreadable(ref, key, value)
 		}
 	case "startsecs":
 		if d, ok := secondsValue(value); ok {
 			b.set("healthy_after", tomlString(d))
+		} else {
+			sd.noteUnreadable(ref, key, value)
 		}
 	case "startretries":
 		if n, err := strconv.Atoi(value); err == nil {
 			b.set("start_retries", strconv.Itoa(n))
+		} else {
+			sd.noteUnreadable(ref, key, value)
 		}
 	case "numprocs":
-		sd.applyNumprocs(b, value, name)
+		sd.applyNumprocs(b, value, ref)
 	}
 }
 
-func (sd *supervisordState) applyNumprocs(b *block, value, name string) {
+func (sd *supervisordState) applyNumprocs(b *block, value string, ref itemRef) {
 	n, err := strconv.Atoi(value)
 	if err != nil || n <= 0 {
+		sd.noteUnreadable(ref, "numprocs", value)
 		return
 	}
 	b.set("instances", strconv.Itoa(n))
 	if n > 1 {
-		sd.res.addNote(LevelInfo, name,
+		ref.note(NoteInstances,
 			"numprocs="+value+" became instances. Each instance gets a distinct "+
 				"RUNWISP_INSTANCE_INDEX (0-based) in place of %(process_num)s.")
 	}
@@ -367,11 +459,11 @@ func (sd *supervisordState) applyNumprocs(b *block, value, name string) {
 // serviceOnly reports whether a service-only supervisord key applies. When the
 // program was imported as a run-once task it returns false and leaves a note so
 // the dropped setting isn't silently lost.
-func (sd *supervisordState) serviceOnly(key, name string, isService bool) bool {
+func (sd *supervisordState) serviceOnly(key string, ref itemRef, isService bool) bool {
 	if isService {
 		return true
 	}
-	sd.res.addNote(LevelInfo, name,
+	ref.note(NoteServiceKeyDropped,
 		key+" was dropped — it only applies to always-on services, and this "+
 			"program imported as a run-once task (autorestart=false).")
 	return false

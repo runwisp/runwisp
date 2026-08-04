@@ -5,12 +5,11 @@ package importer
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/runwisp/runwisp/internal/config"
 )
 
 // updateGolden regenerates the *.golden.toml fixtures from the current parser
@@ -26,25 +25,37 @@ var updateGolden = flag.Bool("update", false, "rewrite the .golden.toml fixtures
 // be read under. Each case's expected TOML lives next to the input with the
 // .crontab suffix replaced by .golden.toml.
 var cronGoldenCases = []struct {
-	name        string
-	file        string
-	opts        CronOptions
-	validate    bool     // false when the fixture deliberately emits a TODO that won't validate
-	expectNotes []string // substrings that must each appear in some note
+	name string
+	file string
+	opts CronOptions
+	// expectNotes is the EXACT set of note kinds the fixture must produce — not a
+	// subset. An import that starts saying something new about a fixture is a
+	// change to what the operator reads, so it should have to be written down
+	// here. Kinds rather than prose, so rewording a message isn't a test edit.
+	expectNotes []NoteKind
 }{
 	// A per-user `crontab -l` dump: descriptors, wrappers, comments, env, TZ.
-	{name: "user", file: "testdata/cron/user.crontab", validate: true},
-	// A system crontab (/etc/crontab) with the extra user column.
-	{name: "system", file: "testdata/cron/system.crontab", opts: CronOptions{System: true}, validate: true},
-	// Notes-only edge cases (MAILTO, relative SHELL, '%' command, dedupe, an
+	{name: "user", file: "testdata/cron/user.crontab"},
+	// A system crontab (/etc/crontab) with the extra user column, including a
+	// descriptor line that carries one. Every job gets `working_dir = "~"`, which
+	// the executor resolves against the user column's home — so a system crontab
+	// now imports with nothing left for a human.
+	{name: "system", file: "testdata/cron/system.crontab", opts: CronOptions{System: true}},
+	// Notes-only edge cases (MAILTO, relative SHELL, both '%' forms, dedupe, an
 	// unparseable line) that must surface but still leave a valid config.
-	{name: "messy", file: "testdata/cron/messy.crontab", validate: true, expectNotes: []string{
-		"MAILTO", "absolute shell path", "contains '%'", "couldn't parse crontab line",
+	{name: "messy", file: "testdata/cron/messy.crontab", expectNotes: []NoteKind{
+		NoteMailto, NoteShellNotAbsolute, NotePercentStdin, NotePercentTranslated,
+		NoteLineUnparseable, NoteRenamedCollision,
 	}},
 	// An invalid cron expression becomes a `# TODO` and a non-loadable config —
 	// the import still succeeds and tells the operator exactly what to fix.
-	{name: "invalid", file: "testdata/cron/invalid.crontab", validate: false, expectNotes: []string{
-		"didn't parse",
+	{name: "invalid", file: "testdata/cron/invalid.crontab", expectNotes: []NoteKind{
+		NoteCronUnparseable,
+	}},
+	// A CRON_TZ RunWisp can't load: the expression is fine, the zone isn't, and
+	// the config genuinely doesn't load — so the row must not read clean.
+	{name: "badtz", file: "testdata/cron/badtz.crontab", expectNotes: []NoteKind{
+		NoteTimezoneInvalid,
 	}},
 }
 
@@ -59,7 +70,9 @@ func TestCronGolden(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ParseCrontab: %v", err)
 			}
-			checkGolden(t, goldenPath(tc.file), res.TOML(), tc.validate)
+			assertReportAccountsForTOML(t, res)
+			checkGolden(t, goldenPath(tc.file), res.TOML())
+			checkReportGolden(t, reportGoldenPath(tc.file), res)
 			assertNotes(t, res, tc.expectNotes)
 		})
 	}
@@ -70,22 +83,27 @@ func TestCronGolden(t *testing.T) {
 var supervisordGoldenCases = []struct {
 	name        string
 	file        string
-	expectNotes []string
+	expectNotes []NoteKind
 }{
 	// Two services with the full knob set, plus skipped daemon sections and a
 	// numprocs that fans out into instances.
-	{name: "full", file: "testdata/supervisord/full.conf", expectNotes: []string{
-		"daemon config with no RunWisp equivalent", // [supervisord]/[unix_http_server]
-		"captures stdout and stderr",               // dropped log files
-		"RUNWISP_INSTANCE_INDEX",                   // numprocs=3
+	{name: "full", file: "testdata/supervisord/full.conf", expectNotes: []NoteKind{
+		NoteSectionDaemon, // [supervisord]/[unix_http_server]
+		NoteLogsDropped,   // dropped log files
+		NoteInstances,     // numprocs=3
 	}},
 	// A group, an autorestart=unexpected service, a run-once task, and an
 	// eventlistener RunWisp can't represent.
-	{name: "mixed", file: "testdata/supervisord/mixed.conf", expectNotes: []string{
-		"no program groups", // [group:site]
-		"always-on service", // autorestart=unexpected
-		"run-once task",     // autorestart=false → batch
-		"isn't supported",   // [eventlistener:memmon]
+	{name: "mixed", file: "testdata/supervisord/mixed.conf", expectNotes: []NoteKind{
+		NoteGroup,                 // [group:site]
+		NoteAutorestartUnexpected, // autorestart=unexpected
+		NoteRunOnce,               // autorestart=false → batch
+		NoteSectionUnsupported,    // [eventlistener:memmon]
+	}},
+	// A config that exercises the quiet drops: an unmapped key, a value RunWisp
+	// can't read, and a purely cosmetic key that must stay silent.
+	{name: "lossy", file: "testdata/supervisord/lossy.conf", expectNotes: []NoteKind{
+		NoteKeysUnsupported, NoteKeyUnreadable,
 	}},
 }
 
@@ -97,11 +115,13 @@ func TestSupervisordGolden(t *testing.T) {
 				t.Fatalf("open fixture: %v", err)
 			}
 			defer f.Close()
-			res, err := ParseSupervisordReader(f)
+			res, err := ParseSupervisordReader(f, SupervisordOptions{})
 			if err != nil {
 				t.Fatalf("ParseSupervisordReader: %v", err)
 			}
-			checkGolden(t, goldenPath(tc.file), res.TOML(), true)
+			assertReportAccountsForTOML(t, res)
+			checkGolden(t, goldenPath(tc.file), res.TOML())
+			checkReportGolden(t, reportGoldenPath(tc.file), res)
 			assertNotes(t, res, tc.expectNotes)
 		})
 	}
@@ -112,46 +132,118 @@ func TestSupervisordGolden(t *testing.T) {
 // on disk. This can only be tested with real files, which is the whole point of
 // fixture-based tests.
 func TestSupervisordIncludeGolden(t *testing.T) {
-	res, err := ParseSupervisordFiles([]string{"testdata/supervisord/include/supervisord.conf"})
+	res, err := ParseSupervisordFiles([]string{"testdata/supervisord/include/supervisord.conf"}, SupervisordOptions{})
 	if err != nil {
 		t.Fatalf("ParseSupervisordFiles: %v", err)
 	}
-	checkGolden(t, "testdata/supervisord/include/expected.golden.toml", res.TOML(), true)
+	assertReportAccountsForTOML(t, res)
+	checkGolden(t, "testdata/supervisord/include/expected.golden.toml", res.TOML())
+	checkReportGolden(t, "testdata/supervisord/include/expected.golden.report.txt", res)
 }
 
-// assertNotes checks that each wanted substring appears in at least one of the
-// result's notes. The notes are the other half of an import's output — the
-// human-facing "here's what needs your eyes" — so the fixtures pin them too.
-func assertNotes(t *testing.T, res *Result, want []string) {
+// assertReportAccountsForTOML is this package's central invariant, checked
+// against every fixture: the set of tables in the emitted TOML and the set of
+// rows that claim to have emitted something are the same set.
+//
+// One direction catches the bug the report was split out to fix — a table in the
+// file that no row accounts for, i.e. config appearing from nowhere. The other
+// catches its mirror image, a row claiming a name that never made it into the
+// file, which would have the operator looking for a task the daemon won't have.
+// itemRef.emit is the only path to either, so this is really a check that no
+// future code path routes around it.
+func assertReportAccountsForTOML(t *testing.T, res *Result) {
 	t.Helper()
-	for _, w := range want {
-		found := false
-		for _, n := range res.Notes {
-			if strings.Contains(n.Message, w) {
-				found = true
-				break
-			}
+	inTOML := map[string]bool{}
+	for _, name := range res.tableNames() {
+		if inTOML[name] {
+			t.Errorf("the TOML defines %q twice", name)
 		}
-		if !found {
-			t.Errorf("expected a note containing %q\n--- notes ---\n%s", w, formatNotes(res.Notes))
+		inTOML[name] = true
+	}
+	inReport := map[string]bool{}
+	for _, it := range res.Items() {
+		if it.Name == "" {
+			continue // a row that emitted nothing, which is the point of having rows
+		}
+		inReport[it.Name] = true
+		if !inTOML[it.Name] {
+			t.Errorf("the report lists %q but the TOML defines no table for it\n--- report ---\n%s",
+				it.Name, formatReport(res))
+		}
+	}
+	for name := range inTOML {
+		if !inReport[name] {
+			t.Errorf("the TOML defines %q but no report row accounts for it — a silently "+
+				"imported job is exactly what this report exists to prevent\n--- report ---\n%s",
+				name, formatReport(res))
 		}
 	}
 }
 
-func formatNotes(notes []Note) string {
+// assertNotes checks that the fixture produced EXACTLY the expected set of note
+// kinds — nothing missing and nothing new. The notes are the other half of an
+// import's output, the human-facing "here's what needs your eyes", so a fixture
+// that starts saying something else should fail until someone says it's intended.
+func assertNotes(t *testing.T, res *Result, want []NoteKind) {
+	t.Helper()
+	got := map[NoteKind]bool{}
+	for _, n := range res.Notes() {
+		got[n.Kind] = true
+	}
+	for _, it := range res.Items() {
+		for _, n := range it.Notes {
+			got[n.Kind] = true
+		}
+	}
+	wanted := map[NoteKind]bool{}
+	for _, k := range want {
+		wanted[k] = true
+		if !got[k] {
+			t.Errorf("expected a %s note\n--- report ---\n%s", k, formatReport(res))
+		}
+	}
+	for k := range got {
+		if !wanted[k] {
+			t.Errorf("unexpected %s note — add it to expectNotes if intended\n--- report ---\n%s",
+				k, formatReport(res))
+		}
+	}
+}
+
+// formatReport dumps the report as data: one line per row with its mark, name,
+// schedule, and command, and its notes by slug underneath. It is deliberately
+// NOT a rendering — the layout lives in the CLI, and duplicating it here would
+// quietly re-implement the thing this package promises not to know about.
+func formatReport(res *Result) string {
 	var sb strings.Builder
-	for _, n := range notes {
-		level := "info"
-		if n.Level == LevelAttention {
-			level = "attn"
+	for _, it := range res.Items() {
+		fmt.Fprintf(&sb, "%s\t%s\t%s\t%s\t%s\n", it.Status(), it.Source, it.Name, it.Schedule, it.Run)
+		for _, n := range it.Notes {
+			fmt.Fprintf(&sb, "\t%s\n", n.Kind)
 		}
-		sb.WriteString("  [" + level + "] ")
-		if n.Scope != "" {
-			sb.WriteString(n.Scope + ": ")
+	}
+	if notes := res.Notes(); len(notes) > 0 {
+		sb.WriteString("file\n")
+		for _, n := range notes {
+			fmt.Fprintf(&sb, "\t%s\n", n.Kind)
 		}
-		sb.WriteString(n.Message + "\n")
 	}
 	return sb.String()
+}
+
+// reportGoldenPath maps an input fixture to its report golden, the sibling of
+// the TOML golden.
+func reportGoldenPath(input string) string {
+	ext := filepath.Ext(input)
+	return strings.TrimSuffix(input, ext) + ".golden.report.txt"
+}
+
+// checkReportGolden pins the report itself, not just the TOML. The two are now
+// separate outputs, and the report is the one that accounts for the jobs the
+// TOML doesn't mention.
+func checkReportGolden(t *testing.T, path string, res *Result) {
+	t.Helper()
+	checkGolden(t, path, formatReport(res))
 }
 
 // goldenPath maps an input fixture path to its sibling golden file by swapping
@@ -162,10 +254,13 @@ func goldenPath(input string) string {
 }
 
 // checkGolden compares got against the golden file at path, or rewrites it when
-// -update is set. Every golden output is also round-tripped through
-// config.Load: the generated TOML is the import command's promise, and an
-// import that doesn't even parse would be a silent failure.
-func checkGolden(t *testing.T, path, got string, validate bool) {
+// -update is set.
+//
+// It deliberately does not round-trip through config.Load: this package's tests
+// cannot import config (see load_test.go), and the round-trip now runs against
+// the committed golden files in TestGoldenTOMLLoadBehaviour, which covers every
+// fixture instead of the ones that opted in.
+func checkGolden(t *testing.T, path, got string) {
 	t.Helper()
 	if *updateGolden {
 		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
@@ -179,24 +274,5 @@ func checkGolden(t *testing.T, path, got string, validate bool) {
 	if got != string(want) {
 		t.Errorf("output does not match %s (run with -update to refresh)\n--- got ---\n%s\n--- want ---\n%s",
 			path, got, want)
-	}
-	if validate {
-		assertGeneratedConfigLoads(t, got)
-	}
-}
-
-// assertGeneratedConfigLoads proves the emitted TOML parses and validates,
-// mirroring the config.Load round-trip the CLI performs after an import. The
-// fixtures are curated to be clean (no unresolved TODOs), so a load failure is
-// a real regression in the importer.
-func assertGeneratedConfigLoads(t *testing.T, toml string) {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "runwisp.toml")
-	if err := os.WriteFile(path, []byte(toml), 0o600); err != nil {
-		t.Fatalf("write temp config: %v", err)
-	}
-	if _, err := config.Load(path); err != nil {
-		t.Fatalf("generated TOML failed to validate via config.Load: %v\n--- toml ---\n%s", err, toml)
 	}
 }

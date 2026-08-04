@@ -61,7 +61,7 @@ var validComposePull = []string{
 // per imported service (services mode) or per project (stack mode). The
 // generated tasks flow through resolveEnvLayers, ApplyDefaults and Validate
 // like any hand-written [services.*] or [tasks.*] entry.
-func expandComposeBlocks(cfg *Config, dirs sourceDirs) error {
+func expandComposeBlocks(cfg *Config, dirs entrySources) error {
 	blocks := cfg.pendingComposeBlocks
 	cfg.pendingComposeBlocks = nil
 	if len(blocks) == 0 {

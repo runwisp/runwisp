@@ -21,6 +21,7 @@ import (
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/clilog"
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runlog"
@@ -149,6 +150,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	daemonInfo := buildDaemonInfo(cfg, svc, configSnap.LoadedAt(), f.Port)
 
 	reconciler, reloadFn := newReconciler(mode, cfg, svc, f, configSnap)
+	defer startCronHoldWatcher(reconciler, cfg.Config)()
 
 	srv, err := server.New(server.Options{
 		DB:                svc.DB,
@@ -171,6 +173,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		TrustedProxies:    os.Getenv("RUNWISP_TRUST_PROXY"),
 		DaemonInfo:        daemonInfo,
 		ConfigStale:       configSnap.Stale,
+		ConfigWarnings:    configWarningsFn(reconciler, cfg.Config),
 		DaemonLogBuffer:   logBuffer,
 		MetricsEnabled:    cfg.Config.Daemon.MetricsEnabled,
 		MetricsListen:     cfg.Config.Daemon.MetricsListen,
@@ -286,6 +289,36 @@ func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Fl
 		Now:        time.Now,
 	})
 	return r, r.Reconcile
+}
+
+// startCronHoldWatcher starts the loop that keeps the cron holds honest, so an
+// operator who retires cron gets their jobs back without running `runwisp
+// reload` — and, in the other direction, a cron that comes back reclaims them
+// before both schedulers fire the same job.
+//
+// Skipped unless this config actually reads a crontab: with no include_cron the
+// probe could not change a single decision, and starting it anyway would exec
+// systemctl every minute on every ordinary install. Also skipped in cloud mode,
+// which has no local scheduler to refresh (nil reconciler).
+//
+// Always returns a non-nil stop func so the caller can defer it unconditionally.
+func startCronHoldWatcher(r *runtime.Reconciler, cfg *config.Config) context.CancelFunc {
+	state, readsCron := config.CronHold(cfg)
+	if r == nil || !readsCron {
+		return func() {}
+	}
+	return runtime.StartCronHoldWatcher(cronprobe.Probe, r.RefreshCronHolds, state)
+}
+
+// configWarningsFn returns the hook /api/info calls for the live config's
+// non-fatal findings. It prefers the reconciler's baseline so a reload's warnings
+// replace boot's; in a mode with no reconciler (cloud) the boot config is the live
+// one and can't change.
+func configWarningsFn(r *runtime.Reconciler, boot *config.Config) func() []string {
+	if r != nil {
+		return r.Warnings
+	}
+	return func() []string { return config.Warnings(boot) }
 }
 
 // isInteractiveTerminal reports whether both stdin (TUI key input) and stdout
@@ -564,6 +597,15 @@ func logSecurityWarnings(cfg *daemonConfig, f Flags, tlsCfg tlsSetup) {
 	}
 	for _, w := range config.Warnings(cfg.Config) {
 		slog.Warn(w)
+	}
+	// Held jobs get a banner rather than a warning line: the operator has to see
+	// that a set of their jobs is deliberately not being scheduled, and a single
+	// slog.Warn among the boot INFO lines is exactly what the TUI's alt-screen
+	// switch then wipes off the terminal.
+	if held := config.Held(cfg.Config); held.Any() {
+		slog.Warn("cron still owns some tasks; RunWisp is holding them",
+			"count", len(held.Tasks), "cron", held.CronState)
+		printHeldBanner(os.Stderr, held.Tasks, held.CronState)
 	}
 }
 

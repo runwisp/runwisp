@@ -252,3 +252,129 @@ func TestInclude_NoMatchesIsNotAnError(t *testing.T) {
 	assert.ElementsMatch(t, []string{"solo"}, taskNames(cfg))
 	assert.Empty(t, cfg.includeFiles)
 }
+
+// TestInclude_StagedProvenance verifies that only tasks whose origin is the
+// machine-owned staging file (runwisp.d/imported.toml) are flagged Staged: a
+// native root task is not, a task in another included file is not, and a stray
+// file merely named imported.toml elsewhere is not (provenance is by exact
+// path, not basename).
+func TestInclude_StagedProvenance(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include = ["runwisp.d/*.toml", "conf.d/*.toml", "other/*.toml"]
+
+[tasks.native_root]
+run = "echo root"
+`,
+		"runwisp.d/imported.toml": `
+[tasks.from_cron]
+cron = "0 3 * * *"
+run = "echo imported"
+`,
+		// A generic user-chosen include dir — not the reserved staging location.
+		"conf.d/hand_authored.toml": `
+[tasks.hand]
+run = "echo hand"
+`,
+		// A file named imported.toml but NOT at the reserved runwisp.d location:
+		// its tasks must be treated as native, not staged.
+		"other/imported.toml": `
+[tasks.decoy]
+run = "echo decoy"
+`,
+	})
+	cfg, err := Load(filepath.Join(dir, "runwisp.toml"))
+	require.NoError(t, err)
+
+	assert.False(t, findTask(t, cfg, "native_root").Source == model.SourceStaged, "root task must not be staged")
+	assert.True(t, findTask(t, cfg, "from_cron").Source == model.SourceStaged, "runwisp.d/imported.toml task must be staged")
+	assert.False(t, findTask(t, cfg, "hand").Source == model.SourceStaged, "another included file must not be staged")
+	assert.False(t, findTask(t, cfg, "decoy").Source == model.SourceStaged, "a stray imported.toml elsewhere must not be staged")
+}
+
+// TestInclude_StagedProvenanceWithRelativeConfigPath covers the shape every CLI
+// invocation actually uses: the default --config is the bare relative
+// "runwisp.toml". Provenance is decided by comparing the entry's origin against
+// the staging path, and both sides have to absolutize consistently for that
+// comparison to hold — every other test here loads an absolute temp path, which
+// would hide a mismatch that breaks `promote` in a real project directory.
+func TestInclude_StagedProvenanceWithRelativeConfigPath(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include = ["runwisp.d/*.toml"]
+
+[tasks.native]
+run = "echo root"
+`,
+		"runwisp.d/imported.toml": "[tasks.from_cron]\nrun = \"echo imported\"\n",
+	})
+	t.Chdir(dir)
+
+	cfg, err := Load("runwisp.toml")
+	require.NoError(t, err)
+
+	assert.True(t, findTask(t, cfg, "from_cron").Source == model.SourceStaged, "staged provenance must survive a relative config path")
+	assert.False(t, findTask(t, cfg, "native").Source == model.SourceStaged)
+	assert.Equal(t, StagingFilePath("."), cfg.OriginFile("from_cron"))
+}
+
+// TestInclude_StagedNotSetForSingleFileConfig verifies a plain single-file
+// config (no includes) never marks tasks staged — even the root itself named
+// imported.toml is native, since staging is always an included file.
+func TestInclude_StagedNotSetForSingleFileConfig(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"imported.toml": "[tasks.solo]\nrun = \"echo hi\"\n",
+	})
+	cfg, err := Load(filepath.Join(dir, "imported.toml"))
+	require.NoError(t, err)
+	assert.False(t, findTask(t, cfg, "solo").Source == model.SourceStaged, "root config is never the staging file")
+}
+
+// TestInclude_OriginFile pins the accessor the two-tier tooling reads: which file
+// defined each entry. `promote` needs it to know which file to move a task out
+// of, and Task.Staged is derived from it.
+func TestInclude_OriginFile(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include = ["runwisp.d/*.toml", "conf.d/*.toml"]
+
+[tasks.native]
+run = "echo root"
+`,
+		"runwisp.d/imported.toml":   "[tasks.staged]\nrun = \"echo staged\"\n",
+		"conf.d/hand_authored.toml": "[tasks.hand]\nrun = \"echo hand\"\n",
+	})
+	rootPath := filepath.Join(dir, "runwisp.toml")
+	cfg, err := Load(rootPath)
+	require.NoError(t, err)
+
+	assert.Equal(t, rootPath, cfg.OriginFile("native"))
+	assert.Equal(t, StagingFilePath(dir), cfg.OriginFile("staged"))
+	assert.Equal(t, filepath.Join(dir, "conf.d", "hand_authored.toml"), cfg.OriginFile("hand"))
+	assert.Empty(t, cfg.OriginFile("nonexistent"), "an unknown name has no origin")
+}
+
+// TestInclude_OriginFileForComposeTasks documents the one gap in origin
+// tracking: compose-generated tasks are named after the alias plus the compose
+// service, so they have no TOML table of their own to point at. They are
+// consequently never staged either.
+func TestInclude_OriginFileForComposeTasks(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml":       "[daemon]\ninclude = [\"runwisp.d/*.toml\"]\n",
+		"docker-compose.yml": "services:\n  web:\n    image: nginx\n",
+		"runwisp.d/imported.toml": `
+[compose.stack]
+file = "../docker-compose.yml"
+`,
+	})
+	cfg, err := Load(filepath.Join(dir, "runwisp.toml"))
+	require.NoError(t, err)
+
+	task := findTask(t, cfg, "stack.web")
+	assert.Empty(t, cfg.OriginFile(task.Name), "a compose-generated task has no defining table")
+	assert.False(t, task.Source == model.SourceStaged)
+	assert.Equal(t, StagingFilePath(dir), cfg.OriginFile("stack"), "the alias itself has an origin")
+}

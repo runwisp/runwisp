@@ -462,7 +462,7 @@ func serviceUptime(spec *runSpec) time.Duration {
 
 // --- helpers -----------------------------------------------------------------
 
-func cronParser() cron.Parser {
+func cronParser() cron.ScheduleParser {
 	return cronspec.NewParser()
 }
 

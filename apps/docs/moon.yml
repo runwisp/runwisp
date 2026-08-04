@@ -6,7 +6,7 @@ layer: "application"
 
 tasks:
     dev:
-        script: "bun scripts/sync-openapi.ts && bunx --bun astro dev"
+        script: "bun scripts/sync-openapi.ts && bunx --bun astro dev --host 0.0.0.0 --port 4377"
         deps:
             - "runwisp:openapi"
         preset: "server"

@@ -23,6 +23,26 @@ test.describe("dashboard", () => {
         await expect(page.getByRole("button", { name: /timed-task/ })).toBeVisible();
     });
 
+    test("badges the task that lives in the staging file", async ({ authenticatedPage: page }) => {
+        await page.goto("/");
+
+        // staged-task is defined in fixtures/runwisp.d/imported.toml, so its
+        // provenance is derived by the daemon rather than declared — this asserts
+        // the whole path: two-tier TOML → Task.Source → /api/tasks → the badge.
+        const card = page.getByRole("button", { name: /staged-task/ });
+        await expect(card).toBeVisible();
+        await expect(card.getByText("staged", { exact: true })).toBeVisible();
+
+        // The badge is a nudge toward the CLI, and only the CLI: the UI never
+        // writes TOML, so there is no promote control here.
+        await expect(card.getByTitle(/runwisp promote staged-task/)).toBeVisible();
+
+        // Tasks from the root config are not badged.
+        await expect(
+            page.getByRole("button", { name: /echo-task/ }).getByText("staged", { exact: true }),
+        ).toHaveCount(0);
+    });
+
     test("displays system stats section", async ({ authenticatedPage: page }) => {
         await page.goto("/");
 

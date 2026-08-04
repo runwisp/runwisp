@@ -410,6 +410,45 @@ func exitCodeFromRunState(client *apiclient.Client, taskName, runID string) (int
 	return exitCodeFromRun(final), final, nil
 }
 
+// terminalFetchAttempts and terminalFetchBackoff bound the re-read below: one
+// second in total, far longer than a single row write needs.
+const (
+	terminalFetchAttempts = 20
+	terminalFetchBackoff  = 50 * time.Millisecond
+)
+
+// fetchTerminalRun fetches the run behind an SSE Done event, re-reading while
+// the row still reads non-terminal (or cannot be read at all).
+//
+// Done means the run has ended, so a non-terminal row is a write that has not
+// become visible yet — never the truth. Trusting it would report status
+// "running" with a nil end_reason, and exitCodeFromRun reads a nil end_reason
+// as success: a run that failed with exit 7 would exit 0 and a script chained
+// on `runwisp exec` would sail past the failure. The daemon flushes persistence
+// before publishing a terminal event, so this normally succeeds on the first
+// read; it stays as a belt against any path that publishes without the barrier.
+func fetchTerminalRun(client *apiclient.Client, taskName, runID string) (*model.Run, error) {
+	var run *model.Run
+	var err error
+	for attempt := range terminalFetchAttempts {
+		if attempt > 0 {
+			time.Sleep(terminalFetchBackoff)
+		}
+		run, err = client.GetRun(taskName, runID)
+		if err == nil && run.Status == model.PhaseEnded {
+			return run, nil
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	// Out of budget with a still-non-terminal row. Report what we have rather
+	// than fail, but say so — a wrong exit code must not pass unremarked.
+	slog.Warn("Run reported done but its state still reads non-terminal; exit code may be wrong",
+		"task", taskName, "run", runID, "status", run.Status)
+	return run, nil
+}
+
 // newSignalCancelContext returns a context cancelled either by its own cancel
 // func or by an interrupt/SIGTERM, so an exec run forwards Ctrl+C to the stream.
 func newSignalCancelContext() (context.Context, context.CancelFunc) {
@@ -443,7 +482,7 @@ func streamRunLogs(ch <-chan apiclient.LogStreamMsg, client *apiclient.Client, t
 		case apiclient.LogStreamMsgKindLine:
 			highest = printStreamedLogLine(msg, from, highest, lineOut)
 		case apiclient.LogStreamMsgKindDone:
-			run, getErr := client.GetRun(taskName, runID)
+			run, getErr := fetchTerminalRun(client, taskName, runID)
 			if getErr != nil {
 				return 0, nil, highest, true, fmt.Errorf("fetch final run state: %w", getErr)
 			}

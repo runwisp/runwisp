@@ -41,6 +41,7 @@ func newFakeInstaller(t *testing.T, wsl bool) (*systemdInstaller, *FakeFS, *Fake
 		Fingerprint: "bright-falcon",
 		AutoOK:      true,
 		StdinIsTTY:  false,
+		Euid:        1000, // alice: non-root, so a systemWide call needs "sudo".
 	}
 	return &systemdInstaller{deps: deps}, fs, cmd, prompter, binaryPath
 }
@@ -257,7 +258,6 @@ func TestSystemdNew_Validation(t *testing.T) {
 	}{
 		{"missing-home", Deps{User: "alice", Fingerprint: "fp"}, "HOME is not set"},
 		{"missing-user", Deps{Home: "/h", Fingerprint: "fp"}, "user is not set"},
-		{"missing-fingerprint", Deps{Home: "/h", User: "alice"}, "fingerprint is required"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -266,6 +266,39 @@ func TestSystemdNew_Validation(t *testing.T) {
 			assert.Contains(t, err.Error(), tc.want)
 		})
 	}
+}
+
+// The system unit is named runwisp.service outright, so a host that cannot
+// produce a fingerprint can still install, inspect, and remove it. Only the
+// user scope, whose unit name embeds the fingerprint, needs one — and it
+// says so where the name would be derived rather than at construction.
+func TestSystemdNew_FingerprintOnlyRequiredForUserScope(t *testing.T) {
+	inst, err := New(Deps{Home: "/h", User: "alice", FS: NewFakeFS()})
+	require.NoError(t, err)
+
+	// The system plan may still fail for unrelated reasons (no cron probe
+	// wired up here) — what matters is that it never fails for want of a
+	// fingerprint.
+	if _, err = inst.ComputePlan(t.Context(), InstallOptions{System: true}); err != nil {
+		assert.NotContains(t, err.Error(), "fingerprint is required")
+	}
+
+	_, err = inst.ComputePlan(t.Context(), InstallOptions{System: false})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "fingerprint is required")
+}
+
+// ScopeCandidates reports the user path only when it can actually be
+// named — DetectScope treats an empty path as "that scope does not exist
+// here" rather than statting a truncated `runwisp-.service`.
+func TestScopeCandidates_UserPathNeedsFingerprint(t *testing.T) {
+	systemPath, userPath := ScopeCandidates(Deps{Home: "/home/alice", User: "alice"})
+	assert.Equal(t, "/etc/systemd/system/runwisp.service", systemPath)
+	assert.Empty(t, userPath)
+
+	systemPath, userPath = ScopeCandidates(Deps{Home: "/home/alice", User: "alice", Fingerprint: "bright-falcon"})
+	assert.Equal(t, "/etc/systemd/system/runwisp.service", systemPath)
+	assert.Equal(t, "/home/alice/.config/systemd/user/runwisp-bright-falcon.service", userPath)
 }
 
 func TestWSLTaskSchedulerPostscript_KnownDistro(t *testing.T) {
@@ -316,6 +349,13 @@ func TestSystemdRunDaemonReload_SystemWideSuccess(t *testing.T) {
 	require.NoError(t, inst.runDaemonReload(context.Background(), true))
 }
 
+func TestSystemdRunDaemonReload_SystemWideAsRoot_SkipsSudo(t *testing.T) {
+	inst, _, cmd, _, _ := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	cmd.Expect("systemctl", []string{"daemon-reload"}, nil, nil, nil)
+	require.NoError(t, inst.runDaemonReload(context.Background(), true))
+}
+
 func TestSystemdRunDaemonReload_SystemWideError(t *testing.T) {
 	inst, _, cmd, _, _ := newFakeInstaller(t, false)
 	cmd.Expect("sudo", []string{"systemctl", "daemon-reload"}, nil, []byte("permission denied"),
@@ -337,13 +377,13 @@ func TestSystemdRunDaemonReload_UserModeError(t *testing.T) {
 
 func TestSystemdRunEnableNow_SystemWideSuccess(t *testing.T) {
 	inst, _, cmd, _, _ := newFakeInstaller(t, false)
-	cmd.Expect("sudo", []string{"systemctl", "enable", "--now", "runwisp-bright-falcon.service"}, nil, nil, nil)
+	cmd.Expect("sudo", []string{"systemctl", "enable", "--now", "runwisp.service"}, nil, nil, nil)
 	require.NoError(t, inst.runEnableNow(context.Background(), true))
 }
 
 func TestSystemdRunEnableNow_SystemWideError(t *testing.T) {
 	inst, _, cmd, _, _ := newFakeInstaller(t, false)
-	cmd.Expect("sudo", []string{"systemctl", "enable", "--now", "runwisp-bright-falcon.service"},
+	cmd.Expect("sudo", []string{"systemctl", "enable", "--now", "runwisp.service"},
 		nil, []byte("bad unit"), assertErrFake("sudo failed"))
 	err := inst.runEnableNow(context.Background(), true)
 	require.Error(t, err)
@@ -504,11 +544,26 @@ func TestSystemdStopRestart_SystemWideUsesSudo(t *testing.T) {
 	opts := defaultInstallOpts(binary)
 	opts.System = true
 
-	cmd.Expect("sudo", []string{"systemctl", "stop", "runwisp-bright-falcon.service"}, nil, nil, nil)
+	// System-wide drops the per-instance fingerprint suffix: one host has
+	// exactly one system daemon, so the name can't depend on which cwd
+	// `service install --system` happened to run from.
+	cmd.Expect("sudo", []string{"systemctl", "stop", "runwisp.service"}, nil, nil, nil)
 	require.NoError(t, inst.Stop(context.Background(), opts))
 
-	cmd.Expect("sudo", []string{"systemctl", "restart", "runwisp-bright-falcon.service"}, nil, nil, nil)
+	cmd.Expect("sudo", []string{"systemctl", "restart", "runwisp.service"}, nil, nil, nil)
 	require.NoError(t, inst.Restart(context.Background(), opts))
+
+	assert.Zero(t, cmd.Remaining())
+}
+
+func TestSystemdStopRestart_SystemWideAsRoot_SkipsSudo(t *testing.T) {
+	inst, _, cmd, _, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0 // a minimal root container image may have no `sudo` binary at all.
+	opts := defaultInstallOpts(binary)
+	opts.System = true
+
+	cmd.Expect("systemctl", []string{"stop", "runwisp.service"}, nil, nil, nil)
+	require.NoError(t, inst.Stop(context.Background(), opts))
 
 	assert.Zero(t, cmd.Remaining())
 }
@@ -521,4 +576,98 @@ func TestSystemdStop_SurfacesStderr(t *testing.T) {
 	err := inst.Stop(context.Background(), defaultInstallOpts(binary))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Failed to stop unit")
+}
+
+func TestSystemdServiceName_SystemDropsFingerprintSuffix(t *testing.T) {
+	inst, _, _, _, _ := newFakeInstaller(t, false)
+	assert.Equal(t, "runwisp-bright-falcon.service", inst.serviceName(false))
+	assert.Equal(t, "runwisp.service", inst.serviceName(true))
+}
+
+func TestSystemdUnitPath_SystemUsesSystemDir(t *testing.T) {
+	inst, _, _, _, _ := newFakeInstaller(t, false)
+	assert.Equal(t, "/home/alice/.config/systemd/user/runwisp-bright-falcon.service", inst.unitPath(false))
+	assert.Equal(t, "/etc/systemd/system/runwisp.service", inst.unitPath(true))
+}
+
+func TestSystemdComputeUninstallPlan_SystemWide(t *testing.T) {
+	inst, fs, _, _, binary := newFakeInstaller(t, false)
+	opts := defaultInstallOpts(binary)
+	opts.System = true
+	body, _, err := inst.renderUnit(opts)
+	require.NoError(t, err)
+	unitPath := "/etc/systemd/system/runwisp.service"
+	require.NoError(t, fs.WriteFile(unitPath, body, 0644))
+
+	plan, err := inst.ComputeUninstallPlan(context.Background(), UninstallOptions{System: true})
+	require.NoError(t, err)
+	assert.Equal(t, unitPath, plan.UnitPath)
+	assert.Equal(t, PlanUninstall, plan.Kind)
+
+	descriptions := make([]string, len(plan.Steps))
+	for i, step := range plan.Steps {
+		descriptions[i] = step.Description
+	}
+	assert.Contains(t, descriptions[0], "sudo systemctl stop runwisp.service")
+	assert.Contains(t, descriptions[1], "sudo systemctl disable runwisp.service")
+	assert.Contains(t, descriptions[3], "sudo systemctl daemon-reload")
+}
+
+func TestSystemdComputeUninstallPlan_UserScopedUnaffectedByOtherInstance(t *testing.T) {
+	// A user-scoped uninstall plan must never look at the system unit path —
+	// this is the regression the missing UninstallOptions.System field caused:
+	// `sudo runwisp service uninstall` against a --system install used to
+	// silently classify against the user path and report Noop.
+	inst, fs, _, _, binary := newFakeInstaller(t, false)
+	opts := defaultInstallOpts(binary)
+	opts.System = true
+	body, _, err := inst.renderUnit(opts)
+	require.NoError(t, err)
+	require.NoError(t, fs.WriteFile("/etc/systemd/system/runwisp.service", body, 0644))
+
+	plan, err := inst.ComputeUninstallPlan(context.Background(), UninstallOptions{System: false})
+	require.NoError(t, err)
+	assert.Equal(t, PlanNoop, plan.Kind, "a user-scoped uninstall must not see the system unit")
+}
+
+func TestSystemdApplyUninstall_SystemWide(t *testing.T) {
+	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
+	opts := defaultInstallOpts(binary)
+	opts.System = true
+	body, _, err := inst.renderUnit(opts)
+	require.NoError(t, err)
+	unitPath := "/etc/systemd/system/runwisp.service"
+	require.NoError(t, fs.WriteFile(unitPath, body, 0644))
+
+	cmd.Expect("sudo", []string{"systemctl", "stop", "runwisp.service"}, nil, nil, nil)
+	cmd.Expect("sudo", []string{"systemctl", "disable", "runwisp.service"}, nil, nil, nil)
+	cmd.Expect("sudo", []string{"systemctl", "daemon-reload"}, nil, nil, nil)
+
+	plan, err := inst.ComputeUninstallPlan(context.Background(), UninstallOptions{System: true})
+	require.NoError(t, err)
+
+	out := &bytes.Buffer{}
+	err = inst.applyUninstall(context.Background(), plan, UninstallOptions{System: true}, out)
+	require.NoError(t, err)
+
+	_, err = fs.ReadFile(unitPath)
+	assert.Error(t, err, "system unit file must be removed")
+	assert.Zero(t, cmd.Remaining())
+}
+
+func TestSystemdStatus_SystemWide_NoLingerRowAndSudoJournalHint(t *testing.T) {
+	inst, _, cmd, _, binary := newFakeInstaller(t, false)
+	opts := defaultInstallOpts(binary)
+	opts.System = true
+
+	cmd.Expect("sudo", []string{"systemctl", "is-enabled", "runwisp.service"}, nil, nil, assertErrFake("no unit"))
+	cmd.Expect("sudo", []string{"systemctl", "is-active", "runwisp.service"}, nil, nil, assertErrFake("no unit"))
+	cmd.Expect("sudo", []string{"systemctl", "show", "-p", "ActiveEnterTimestamp", "--value", "runwisp.service"}, []byte("n/a\n"), nil, nil)
+
+	st, err := inst.Status(context.Background(), opts)
+	require.NoError(t, err)
+	assert.Equal(t, "/etc/systemd/system/runwisp.service", st.UnitPath)
+	assert.Equal(t, "sudo journalctl -u runwisp.service", st.LogsHint)
+	assert.False(t, st.Linger, "system-wide has no per-user session to linger")
+	assert.Zero(t, cmd.Remaining(), "checkLinger must not be called for a system-wide unit")
 }

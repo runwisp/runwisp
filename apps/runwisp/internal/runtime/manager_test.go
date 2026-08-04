@@ -1371,3 +1371,57 @@ func TestRemoveTask_StopsServiceInstances(t *testing.T) {
 		return !exists
 	}, 2*time.Second, 5*time.Millisecond, "a removed service must stop and be deleted")
 }
+
+// TestTerminalEventFollowsPersistedTerminalRow is the regression test for the
+// exec --json stale-status bug: persistence is async, so publishing a terminal
+// event without flushing first let a subscriber that reads storage on the event
+// (the SSE streamer's `done` → the exec CLI's run fetch) see a stale
+// non-terminal row, and a nil end_reason reads as success — a failed run
+// reported exit 0. The hook here writes slowly, standing in for a busy SQLite
+// file on a slow disk; it only widens a window that exists on any disk.
+func TestTerminalEventFollowsPersistedTerminalRow(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).
+		Return(&executor.ExecuteResult{ExitCode: 7})
+
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb, time.Now)
+	defer jm.Shutdown()
+
+	var mu sync.Mutex
+	stored := map[string]*model.Run{}
+	jm.BindPersistenceHook(func(_ context.Context, run *model.Run, _ bool) {
+		time.Sleep(20 * time.Millisecond)
+		mu.Lock()
+		defer mu.Unlock()
+		stored[run.ID] = run
+	})
+
+	// Read storage from inside the terminal-event handler — exactly what the
+	// SSE streamer's `done` makes the exec CLI do.
+	observed := make(chan *model.Run, 1)
+	eb.Subscribe(events.EventRunFailed, func(e events.Event) {
+		re, ok := e.Data.(events.RunEvent)
+		if !ok || re.Run == nil {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		observed <- stored[re.Run.ID]
+	})
+
+	jm.UpsertTask(testTask("fastfail", model.PolicySkip, 1))
+	_, err := jm.TriggerRun("fastfail", model.TriggeredByAPI)
+	require.NoError(t, err)
+
+	select {
+	case row := <-observed:
+		require.NotNil(t, row, "the run must be readable from storage by the time its terminal event fires")
+		assert.Equal(t, model.PhaseEnded, row.Status,
+			"a terminal event must not outrun the terminal row it announces")
+		require.NotNil(t, row.EndReason, "a nil end_reason reads as success and would erase the failure")
+		assert.Equal(t, 7, row.ExitCode)
+	case <-time.After(3 * time.Second):
+		t.Fatal("no terminal event was published")
+	}
+}

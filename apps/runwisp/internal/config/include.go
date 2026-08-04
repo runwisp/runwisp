@@ -9,10 +9,14 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+
+	"github.com/runwisp/runwisp/internal/cronprobe"
+	"github.com/runwisp/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 // loadWithIncludes loads the root config and any files pulled in via
-// [daemon].include, returning the merged result as a Config plus a sourceDirs
+// [daemon].include, returning the merged result as a Config plus an entrySources
 // map so later path resolution honors each entry's origin file.
 //
 // Merge semantics:
@@ -25,51 +29,167 @@ import (
 //     [notify]) may appear only in the root — setting one in an included file
 //     is a hard error;
 //   - included files may not themselves include (flat-only).
-func loadWithIncludes(path string) (*Config, sourceDirs, error) {
+func loadWithIncludes(path string) (*Config, entrySources, error) {
 	rootDir := filepath.Dir(path)
+	rootAbs, err := filepath.Abs(path)
+	if err != nil {
+		rootAbs = path
+	}
 	rootData, err := os.ReadFile(path)
 	if err != nil {
-		return nil, sourceDirs{}, fmt.Errorf("failed to read config file: %w", err)
+		return nil, entrySources{}, fmt.Errorf("failed to read config file: %w", err)
 	}
 	root, err := parseWire(rootData, rootDir)
 	if err != nil {
-		return nil, sourceDirs{}, err
+		return nil, entrySources{}, err
 	}
 
-	dirs := sourceDirs{root: rootDir, byName: map[string]string{}}
-	// nameSource tracks which file defined each task/service/compose name so a
-	// cross-file collision can name both. Within-file collisions (a task and
-	// service sharing a name in one file) stay the job of buildConfig.
-	nameSource := map[string]string{}
+	src := entrySources{root: rootDir, byName: map[string]string{}}
 	for _, name := range entryNames(root) {
-		nameSource[name] = path
-		dirs.byName[name] = rootDir
+		src.byName[name] = rootAbs
 	}
 
 	globs, matched, err := resolveIncludes(root.Daemon.Include, rootDir, path)
 	if err != nil {
-		return nil, sourceDirs{}, err
+		return nil, entrySources{}, err
 	}
 
 	for _, incPath := range matched {
-		if err := mergeIncludeFile(root, incPath, path, nameSource, dirs.byName); err != nil {
-			return nil, sourceDirs{}, err
+		if err := mergeIncludeFile(root, incPath, path, src.byName); err != nil {
+			return nil, entrySources{}, err
 		}
+	}
+
+	// Cron sources merge after the TOML includes and before buildConfig, so
+	// defaults, validation, and the reload diff treat a cron-sourced task exactly
+	// like a hand-written one. Doing it after buildConfig would need a second,
+	// differently-behaved path from crontab to running task.
+	cron, err := mergeCronSources(root, root.Daemon.IncludeCron, rootDir, path, src.byName, matched)
+	if err != nil {
+		return nil, entrySources{}, err
 	}
 
 	cfg, err := buildConfig(root)
 	if err != nil {
-		return nil, sourceDirs{}, err
+		return nil, entrySources{}, err
 	}
+	cfg.origins = src.byName
+	markProvenance(cfg, rootDir, cron.originSet())
 	cfg.includeFiles = matched
 	cfg.includeGlobs = globs
-	return cfg, dirs, nil
+	cfg.cronFiles = cron.files
+	cfg.cronGlobs = cron.globs
+	cfg.cronMatched = cron.matched
+	cfg.CronFindings = cron.findings
+	cfg.cronBlocks = cron.blocks
+	// After markProvenance, which is what says which tasks came from a crontab,
+	// and before Warnings can be asked anything. Skipped when nothing is reading
+	// crontabs, so a config with no include_cron never execs systemctl for an
+	// answer that could not change any decision.
+	if len(cron.files) > 0 {
+		cfg.cronDaemon = cronprobe.Probe()
+	}
+	markCronHold(cfg)
+	// After buildConfig, so the notifier set is known: a crontab's MAILTO stops being
+	// something to report once the config can actually deliver mail.
+	dropAnsweredFindings(cfg)
+	return cfg, src, nil
+}
+
+// markProvenance stamps Task.Source and Task.SourceFile from each task's origin
+// file, so the API/UI can surface the "staged"/"cron" badge and the Promote
+// affordance, and so the TUI can name the file a definition actually lives in.
+//
+// Derived by exact path, not by basename, so a stray file named imported.toml
+// elsewhere is not mistaken for the staging file. Entries with no recorded origin
+// — compose-generated tasks — stay native. Re-derived every load, so promoting a
+// task into the root flips it to native on its own.
+func markProvenance(cfg *Config, rootDir string, cronFiles map[string]bool) {
+	staging := StagingFilePath(rootDir)
+	for i := range cfg.Tasks {
+		origin := cfg.OriginFile(cfg.Tasks[i].Name)
+		switch {
+		case origin == "":
+			continue
+		case cronFiles[origin]:
+			cfg.Tasks[i].Source = model.SourceCron
+		case origin == staging:
+			cfg.Tasks[i].Source = model.SourceStaged
+		default:
+			continue // the operator's own TOML
+		}
+		cfg.Tasks[i].SourceFile = origin
+	}
+}
+
+// markCronHold stamps Task.HeldBy on the cron-sourced tasks a live system cron
+// daemon is still firing itself, so the scheduler leaves them alone. This is the
+// gate that makes double execution impossible rather than merely warned about:
+// both schedulers running the same job is invisible until a non-idempotent one
+// runs twice, and by then it has already happened.
+//
+// Per source file, not per machine. `include_cron` may legitimately point at a
+// crontab-format file cron never looks at (importer.CronOwnsPath) — those jobs are
+// RunWisp's alone even while cron runs, and holding them would stop them for no
+// reason.
+//
+// Nothing persists a hold: it is re-derived from the machine like
+// markProvenance is re-derived from the origin files, so retiring cron is the
+// whole cure. Written as an idempotent assignment rather than a set-only pass
+// because WithCronHold runs it again against a fresh liveness answer on a live
+// config, where clearing a stale hold matters exactly as much as stamping a new
+// one. Returns the names whose held-ness actually changed.
+func markCronHold(cfg *Config) (changed []string) {
+	for i := range cfg.Tasks {
+		task := &cfg.Tasks[i]
+		want := model.HeldByNothing
+		if cfg.cronDaemon.Live && task.Source == model.SourceCron &&
+			importer.CronOwnsPath(task.SourceFile) {
+			want = model.HeldByCron
+		}
+		if task.HeldBy != want {
+			task.HeldBy = want
+			changed = append(changed, task.Name)
+		}
+	}
+	return changed
+}
+
+// WithCronHold re-derives the cron holds against a fresh liveness answer and
+// returns a new config plus the names whose held-ness flipped. Nil changed means
+// nothing moved and the returned config can be ignored.
+//
+// It never reads runwisp.toml. Config reload stays explicit — the operator's
+// declared task set is untouched, and the only thing re-derived is a fact about
+// the machine that RunWisp asked about once at load and would otherwise never
+// ask about again.
+//
+// The copy is not an optimisation to skip. Reconciler hands &cfg.Tasks[i]
+// straight into the TaskRegistry, and those same *model.Task values are read
+// concurrently by the API, the TUI and the Web UI; flipping HeldBy in place
+// would be a data race with every one of them. Building a new Tasks slice is the
+// same shape a reload already produces, so the reconciler applies it the same
+// way.
+func WithCronHold(cfg *Config, state cronprobe.State) (updated *Config, changed []string) {
+	if cfg == nil {
+		return nil, nil
+	}
+	next := *cfg
+	next.Tasks = make([]model.Task, len(cfg.Tasks))
+	copy(next.Tasks, cfg.Tasks)
+	next.cronDaemon = state
+
+	changed = markCronHold(&next)
+	if len(changed) == 0 {
+		return cfg, nil
+	}
+	return &next, changed
 }
 
 // mergeIncludeFile reads and parses one included file, enforces the flat-only
 // (no nested include) and root-only-singleton rules, then folds its entries
 // into root. rootPath names the including file in error messages.
-func mergeIncludeFile(root *tomlConfig, incPath, rootPath string, nameSource, byName map[string]string) error {
+func mergeIncludeFile(root *tomlConfig, incPath, rootPath string, byName map[string]string) error {
 	incDir := filepath.Dir(incPath)
 	data, err := os.ReadFile(incPath)
 	if err != nil {
@@ -85,7 +205,7 @@ func mergeIncludeFile(root *tomlConfig, incPath, rootPath string, nameSource, by
 	if err := assertNoSingletons(inc, incPath); err != nil {
 		return err
 	}
-	return mergeWire(root, inc, incPath, incDir, nameSource, byName)
+	return mergeWire(root, inc, incPath, byName)
 }
 
 // entryNames returns the task, service, and compose-alias names declared in a
@@ -175,8 +295,8 @@ func assertNoSingletons(inc *tomlConfig, file string) error {
 // mergeWire folds an included wire into the root: it accumulates the
 // collections and records each entry's origin, rejecting any task / service /
 // compose-alias name already claimed by another file.
-func mergeWire(root, inc *tomlConfig, incPath, incDir string, nameSource, byName map[string]string) error {
-	if err := recordEntryOrigins(inc, incPath, incDir, nameSource, byName); err != nil {
+func mergeWire(root, inc *tomlConfig, incPath string, byName map[string]string) error {
+	if err := recordEntryOrigins(inc, incPath, byName); err != nil {
 		return err
 	}
 	mergeEntryTables(root, inc)
@@ -186,11 +306,11 @@ func mergeWire(root, inc *tomlConfig, incPath, incDir string, nameSource, byName
 }
 
 // recordEntryOrigins records each of the included file's entry names against
-// its origin file/dir, rejecting any name already claimed by another file. A
-// name repeated within the same file is left for buildConfig to report.
-func recordEntryOrigins(inc *tomlConfig, incPath, incDir string, nameSource, byName map[string]string) error {
+// its origin file, rejecting any name already claimed by another file. A name
+// repeated within the same file is left for buildConfig to report.
+func recordEntryOrigins(inc *tomlConfig, incPath string, byName map[string]string) error {
 	for _, name := range entryNames(inc) {
-		if prev, ok := nameSource[name]; ok {
+		if prev, ok := byName[name]; ok {
 			if prev == incPath {
 				// Two tables in this same file share a name (e.g. [tasks.x] and
 				// [services.x]); let buildConfig report it with its own phrasing.
@@ -198,8 +318,7 @@ func recordEntryOrigins(inc *tomlConfig, incPath, incDir string, nameSource, byN
 			}
 			return fmt.Errorf("duplicate task/service name %q defined in both %s and %s", name, prev, incPath)
 		}
-		nameSource[name] = incPath
-		byName[name] = incDir
+		byName[name] = incPath
 	}
 	return nil
 }

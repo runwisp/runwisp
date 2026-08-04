@@ -445,22 +445,7 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time
 
 	tasks := make([]model.TaskBrief, 0, len(taskNames))
 	for _, name := range taskNames {
-		j := snapshot[name]
-		tasks = append(tasks, model.TaskBrief{
-			Name:          j.Name,
-			Kind:          j.Kind,
-			Group:         j.Group,
-			Cron:          j.Cron,
-			APITrigger:    j.APITrigger,
-			CatchUp:       j.CatchUp,
-			Restart:       j.Restart,
-			MaxConcurrent: j.MaxConcurrent,
-			OnOverlap:     j.OnOverlap,
-			Instances:     j.Instances,
-			DependsOn:     j.DependsOn,
-			Compose:       j.Compose,
-			Parameters:    j.Parameters,
-		})
+		tasks = append(tasks, model.NewTaskBrief(snapshot[name]))
 	}
 
 	capInfos := capInfosFromAvailability(svc.Executor.Availability())

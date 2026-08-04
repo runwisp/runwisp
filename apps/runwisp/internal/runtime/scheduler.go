@@ -19,7 +19,12 @@ import (
 // ScheduleResult holds the outcome of scheduling tasks.
 type ScheduleResult struct {
 	Scheduled int
-	Warnings  []string
+	// Held counts tasks that have a schedule but are owned by something else —
+	// today, crontabs a live system cron daemon is still firing itself. They are
+	// registered nowhere and fire on no clock, so boot has to report the count or
+	// a box with every job held would look identical to one with nothing to do.
+	Held     int
+	Warnings []string
 }
 
 // Scheduler wraps robfig/cron to trigger tasks on a schedule. On fall-back
@@ -131,7 +136,10 @@ func (scheduler *Scheduler) Start() (ScheduleResult, error) {
 
 	result := ScheduleResult{}
 	for _, task := range scheduler.tasks {
-		if task.Cron == "" {
+		if !task.Schedulable() {
+			if task.Held() {
+				result.Held++
+			}
 			continue
 		}
 		if err := scheduler.addTask(task); err != nil {
@@ -173,7 +181,7 @@ func (scheduler *Scheduler) computeJitterPlans() {
 	lengths := make(map[string]time.Duration)
 
 	for _, task := range scheduler.tasks {
-		if task.Jitter <= 0 || task.Cron == "" {
+		if task.Jitter <= 0 || !task.Schedulable() {
 			continue
 		}
 		spec, _ := scheduler.effectiveSpec(task)
@@ -226,13 +234,14 @@ func (scheduler *Scheduler) Stop() {
 }
 
 // AddTask schedules a single task after the scheduler has started, used by the
-// reconciler when a reload adds a cron task. Tasks without a cron expression
-// are ignored (services have no schedule). robfig/cron's AddFunc is safe to
+// reconciler when a reload adds a cron task. Tasks the scheduler doesn't own are
+// ignored — a service has no schedule, and a held task's schedule belongs to
+// something else (see model.Task.Schedulable). robfig/cron's AddFunc is safe to
 // call on a running cron.
 func (scheduler *Scheduler) AddTask(task *model.Task) error {
 	scheduler.mutex.Lock()
 	defer scheduler.mutex.Unlock()
-	if task.Cron == "" {
+	if !task.Schedulable() {
 		return nil
 	}
 	return scheduler.addTask(task)

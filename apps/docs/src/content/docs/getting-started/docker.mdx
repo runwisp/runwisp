@@ -24,6 +24,15 @@ runs `/bin/sh -c` **inside its own container**. So the image isn't just a
 home for the daemon — it's the runtime for every task you write. If your
 `run =` calls `pg_dump`, `pg_dump` has to be in the image.
 
+:::caution[`include_cron` in a container]
+The [hold](/replacing-cron/held-jobs/) that stops a cron-owned job firing
+twice depends on spotting a live cron daemon, which needs `systemctl` or
+one of cron's pidfiles. A typical container has neither, so a hold is
+generally never derived in one. If you bind-mount the host's crontabs into
+a container while the host's cron is still running them, you get two
+schedulers and nothing will tell you. Retire cron on the host first.
+:::
+
 The default Alpine base is deliberately tiny: busybox, `ca-certificates`,
 and the RunWisp binary. That means **no bash, no curl, no git, no python,
 no database clients.** Take the [nightly backup recipe](/recipes/backup/),

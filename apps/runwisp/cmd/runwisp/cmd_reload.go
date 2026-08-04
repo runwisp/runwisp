@@ -36,8 +36,13 @@ This is equivalent to sending the daemon a SIGHUP.`,
 }
 
 func runReload(cmd *cobra.Command, f Flags) error {
-	out := cmd.OutOrStdout()
+	return reloadRunningDaemon(f, cmd.OutOrStdout())
+}
 
+// reloadRunningDaemon is the cobra-free half, so callers without a command can
+// reload too — internal/cutover hands the held cron jobs to a daemon that was
+// already running, and the first-run flow has no *cobra.Command to hand it.
+func reloadRunningDaemon(f Flags, out io.Writer) error {
 	if !isDaemonRunning(f) {
 		fmt.Fprintf(out, "No daemon is running on data dir %s — nothing to reload.\n", absPathOrFallback(f.DataDir))
 		return nil
@@ -54,19 +59,31 @@ func runReload(cmd *cobra.Command, f Flags) error {
 
 // printReloadResult renders the diff the daemon applied. An empty diff is the
 // common "edits already match" case and says so rather than printing nothing.
+//
+// Warnings print either way, and after the diff: a reload that changed no tasks
+// because a crontab job stopped being schedulable is exactly the case where the
+// operator needs to be told something, and IsEmpty deliberately doesn't count
+// them so the "no task changes" line stays honest about the task set.
 func printReloadResult(out io.Writer, result *model.ReloadResult) {
-	if result == nil || result.IsEmpty() {
+	if result == nil {
 		fmt.Fprintln(out, "Configuration reloaded — no task changes.")
 		return
 	}
-	fmt.Fprintln(out, "Configuration reloaded.")
-	for _, name := range result.Added {
-		fmt.Fprintf(out, "  + added   %s\n", name)
+	if result.IsEmpty() {
+		fmt.Fprintln(out, "Configuration reloaded — no task changes.")
+	} else {
+		fmt.Fprintln(out, "Configuration reloaded.")
+		for _, name := range result.Added {
+			fmt.Fprintf(out, "  + added   %s\n", name)
+		}
+		for _, c := range result.Changed {
+			fmt.Fprintf(out, "  ~ changed %s (%s)\n", c.Name, strings.Join(c.Reasons, ", "))
+		}
+		for _, name := range result.Removed {
+			fmt.Fprintf(out, "  - removed %s\n", name)
+		}
 	}
-	for _, c := range result.Changed {
-		fmt.Fprintf(out, "  ~ changed %s (%s)\n", c.Name, strings.Join(c.Reasons, ", "))
-	}
-	for _, name := range result.Removed {
-		fmt.Fprintf(out, "  - removed %s\n", name)
+	for _, w := range result.Warnings {
+		fmt.Fprintf(out, "  ! %s\n", w)
 	}
 }

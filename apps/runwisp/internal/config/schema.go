@@ -6,6 +6,7 @@ package config
 import (
 	"time"
 
+	"github.com/runwisp/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/internal/model"
 )
 
@@ -35,6 +36,70 @@ type Config struct {
 	includeFiles []string
 	includeGlobs []string
 	watchFiles   []string
+
+	// cronFiles are the absolute paths of the crontabs read as live task sources
+	// via [daemon].include_cron at this load, in the order they were merged.
+	// cronGlobs are those patterns resolved against the root config dir, and
+	// cronMatched every path they matched — including a crontab that then failed
+	// to load, since staleness asks what the globs match, not what parsed. Kept
+	// apart from includeGlobs/includeFiles because the two are expanded by
+	// different rules; see snapshotPins.
+	cronFiles   []string
+	cronGlobs   []string
+	cronMatched []string
+
+	// cronDaemon records whether a system cron daemon looked live when this config
+	// was resolved, and in what sense ("is running", "is enabled and will start on
+	// the next boot", …). Probed once rather than per question: it costs a
+	// systemctl exec, and Warnings is answered on every /api/info request.
+	//
+	// Not fixed for the life of the config. The daemon re-probes on a timer and
+	// swaps in a re-derived config via WithCronHold, because the alternative — a
+	// hold that only lifts on an explicit reload — leaves an operator who retires
+	// cron and forgets to reload with jobs neither scheduler runs. Scheduling is
+	// still a pure function of the config the scheduler holds; what this field
+	// records is a fact about the machine, not a setting from runwisp.toml.
+	cronDaemon cronprobe.State
+
+	// cronBlocks maps a cron-sourced task name to the TOML that produced it, so
+	// `runwisp promote` can move the definition the daemon is actually running
+	// rather than re-deriving one that might differ.
+	cronBlocks map[string]string
+
+	// CronFindings lists what an operator should know about those crontabs: the
+	// jobs RunWisp declined to schedule, and the ones running under a name the
+	// crontab doesn't mention. Exported, unlike the bookkeeping above, because a
+	// skipped job is a failure with no run record to make it visible — Warnings and
+	// /api/info are the only places it can surface. See CronFinding.
+	CronFindings []CronFinding
+
+	// origins maps each task/service/compose-alias name to the absolute path of
+	// the config file that defined it. Load-time bookkeeping behind OriginFile;
+	// never reaches the API/UI, which sees the derived Task.Source instead.
+	origins map[string]string
+}
+
+// CronFiles returns the crontabs this config read live task definitions from.
+func (c *Config) CronFiles() []string { return c.cronFiles }
+
+// CronBlockTOML returns the TOML block behind a cron-sourced task, and false for
+// any other name. `runwisp promote` appends it to the operator's root config.
+func (c *Config) CronBlockTOML(name string) (string, bool) {
+	block, ok := c.cronBlocks[name]
+	return block, ok
+}
+
+// OriginFile returns the absolute path of the config file that defined the
+// named task, service, or compose alias. It returns "" for a name the config
+// doesn't define and for compose-generated tasks, whose definition comes from
+// the compose file's alias rather than a TOML table of their own.
+//
+// This is how a caller tells a hand-authored entry from one that lives in the
+// machine-owned staging file (compare against StagingFilePath) or a crontab read
+// via include_cron — the loader derives Task.Source from it, and `promote` uses it
+// to decide which file to move a task out of.
+func (c *Config) OriginFile(name string) string {
+	return c.origins[name]
 }
 
 // Scheduler holds scheduler-wide settings. Timezone is the IANA name used to
@@ -106,6 +171,10 @@ type NotifierSpec struct {
 	Recipients    []string // To:
 	CC            []string
 	BCC           []string
+
+	// sendmail-specific: an explicit MTA binary, empty meaning "find the system
+	// one". Addressing (From/Recipients/CC/BCC) is shared with SMTP.
+	SendmailPath string
 
 	// Webhook-specific
 	URL     string

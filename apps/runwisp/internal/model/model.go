@@ -147,9 +147,35 @@ type Task struct {
 	ExecutionDef ExecutionDef    `toml:"-"             json:"-"`
 	Compose      *TaskComposeRef `toml:"-"             json:"compose,omitempty" doc:"Provenance metadata for tasks imported from a docker compose file"`
 
+	// Source is where this task's definition came from, which is what the API/UI
+	// "staged"/"cron" badge and the display-only Promote affordance are built on.
+	// Derived from the entry's origin file at config load — re-derived every load,
+	// so promoting a task into the root flips it to native automatically. Never a
+	// TOML key.
+	Source TaskSource `toml:"-" json:"source,omitempty" enum:"staged,cron" doc:"Where this task's definition came from: native (hand-authored TOML), staged (imported, not yet promoted), or cron (read live from a crontab via daemon.include_cron)"`
+	// SourceFile is the absolute path of the file the definition came from, for
+	// the sources where naming it is the useful part: which crontab a cron-sourced
+	// task lives in, or which staging file to promote out of. Empty for native.
+	SourceFile string `toml:"-" json:"source_file,omitempty" doc:"Absolute path of the crontab or staging file this task's definition was read from; empty for hand-authored TOML"`
+	// HeldBy records that something other than RunWisp owns this task's schedule,
+	// so the scheduler must not register it. Derived at config load from the
+	// machine's state — currently only "a live cron daemon reads this crontab
+	// itself" — and re-derived every load, so retiring cron and reloading clears
+	// it. Never a TOML key: a hold is not something the operator configures.
+	//
+	// Unlike Source/SourceFile, this is NOT masked by config.sameDefinition: it
+	// changes what fires, so a flip has to reach the reconciler as a schedule
+	// change and get the cron entry registered (or dropped). Masking it would turn
+	// "held, and visibly so" into "silently never runs".
+	HeldBy HoldReason `toml:"-" json:"held_by,omitempty" enum:"cron" doc:"Why this task is loaded but not on the scheduler: 'cron' means a live system cron daemon still reads the crontab it came from and is running it, so RunWisp stands down. Manual triggers still work. Empty means RunWisp owns the schedule."`
+
 	// WorkingDir is resolved to an absolute path at config load (relative to
 	// the runwisp.toml directory). Empty inherits the daemon's working dir.
-	WorkingDir string `toml:"-" json:"working_dir,omitempty" doc:"Resolved working directory for the task's process; empty inherits the daemon's working directory"`
+	//
+	// One case stays literal: a `~` on a task that also sets RunUser means that
+	// user's home, which the executor resolves per run from the credential it
+	// looked up. See config.homeIsTheRunUsers and executor.resolveWorkingDir.
+	WorkingDir string `toml:"-" json:"working_dir,omitempty" doc:"Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal \"~\" means the run-as user's home, resolved at run time"`
 	// Shell is the interpreter for `run` scripts, defaulting to /bin/sh. Must
 	// be an absolute path. The invocation is `<shell> -e -c <script>` when the
 	// interpreter is a recognised POSIX shell (ShellSupportsErrexit), so a
@@ -159,6 +185,10 @@ type Task struct {
 	// Umask is the canonical 4-digit octal file-creation mask applied in the
 	// child before the run script executes. Empty inherits the daemon's umask.
 	Umask string `toml:"-" json:"umask,omitempty" doc:"Octal file-creation mask applied to the run's process; empty inherits the daemon's umask"`
+	// EnvBase selects what the run's environment starts from — the daemon's own
+	// ("inherit", the default) or crond's minimal set ("clean"). Host shell runs
+	// only; the container backends already build env from task.Env/Secrets alone.
+	EnvBase EnvBase `toml:"-" json:"env_base,omitempty" doc:"What the run's environment starts from: 'inherit' (the daemon's, the default) or 'clean' (PATH, SHELL, HOME, USER/LOGNAME only, as crond gives a job)"`
 	// RunUser drops the run's process to another OS user (and optionally group)
 	// in `user` or `user:group` form; names or numeric ids are accepted on either
 	// side. Empty runs as the daemon's own uid/gid. Switching users needs the
@@ -182,6 +212,19 @@ type Task struct {
 	Ephemeral bool `toml:"-" json:"-"`
 }
 
+// Held reports whether something other than RunWisp owns this task's firing.
+// Checked directly (rather than via Schedulable) by the boot paths that fire a
+// task without consulting a clock at all: a crontab's `@reboot` line becomes
+// run_on_start with no cron, and cron fires it too.
+func (t *Task) Held() bool { return t.HeldBy != HeldByNothing }
+
+// Schedulable reports whether the scheduler should fire this task on a clock.
+// The one predicate every clock-driven site consults, so "has no schedule" and
+// "something else owns the schedule" can never drift apart: a task that is not
+// schedulable gets no cron entry, no jitter plan, and no missed-tick accounting —
+// while staying fully visible and manually triggerable.
+func (t *Task) Schedulable() bool { return t.Cron != "" && !t.Held() }
+
 // NotifiesOnMissed reports whether missed-run alerts are enabled for this task.
 // Defaults to true when unset so a Task literal built outside the config loader
 // (tests, ad-hoc dispatch) alerts by default.
@@ -197,7 +240,7 @@ func (t *Task) ResolvedExecutionDef() ExecutionDef {
 	if strings.TrimSpace(t.Run) == "" {
 		return nil
 	}
-	return &ShellExecution{Script: t.Run, Shell: t.Shell, WorkingDir: t.WorkingDir, Umask: t.Umask}
+	return &ShellExecution{Script: t.Run, Shell: t.Shell, WorkingDir: t.WorkingDir, Umask: t.Umask, EnvBase: t.EnvBase}
 }
 
 // ConcurrencyPolicy controls how overlapping runs are handled.
@@ -208,6 +251,32 @@ const (
 	PolicySkip      ConcurrencyPolicy = "skip"
 	PolicyTerminate ConcurrencyPolicy = "terminate"
 )
+
+// EnvBase selects what a host shell run's environment starts from, before the
+// task's own env, secrets, and parameters are layered on top.
+//
+// It exists because the two schedulers RunWisp replaces disagree: crond hands a
+// job a near-empty environment, while a supervisord program — and RunWisp
+// itself, until a task says otherwise — inherits the supervisor's. Inheriting
+// is the friendlier default (a task sees the PATH you tested it with), but it
+// also means a job's behaviour depends on how the daemon happened to be
+// started, which is exactly the surprise an operator migrating off cron does
+// not want.
+type EnvBase string
+
+const (
+	// EnvBaseInherit starts from the daemon's own environment, minus its
+	// RUNWISP_* internals. The default.
+	EnvBaseInherit EnvBase = "inherit"
+	// EnvBaseClean starts from the minimal set crond guarantees a job — PATH,
+	// SHELL, HOME, USER/LOGNAME — and nothing the daemon was started with.
+	EnvBaseClean EnvBase = "clean"
+)
+
+// Valid reports whether b is a value the executor knows how to honor. The empty
+// string is not valid: the config loader resolves it to EnvBaseInherit, so a
+// zero value reaching this check means it bypassed the loader.
+func (b EnvBase) Valid() bool { return b == EnvBaseInherit || b == EnvBaseClean }
 
 // RestartPolicy controls whether and when a task is restarted after completion.
 type RestartPolicy string
@@ -230,6 +299,56 @@ const (
 
 // IsService reports whether the task is an always-on service.
 func (k TaskKind) IsService() bool { return k == KindService }
+
+// TaskSource is where a task's definition came from. It is derived provenance,
+// not part of the definition: the same task reads as SourceStaged before
+// `runwisp promote` and SourceNative after, with nothing about what runs having
+// changed. config.sameDefinition masks it for exactly that reason.
+//
+// A string enum rather than a pair of bools so the three cases stay mutually
+// exclusive by construction — "staged and cron" is not a state that exists, and a
+// bool pair would let it be represented.
+type TaskSource string
+
+const (
+	// SourceNative is a task the operator wrote in their own TOML. The zero value,
+	// so a Task nobody stamped reads as native — which is the honest answer for a
+	// compose-generated task, and the one that offers no Promote affordance.
+	SourceNative TaskSource = ""
+	// SourceStaged is a task whose definition lives in the machine-owned staging
+	// file (runwisp.d/imported.toml, written by `runwisp import` and rewritten by
+	// `runwisp promote`): imported, not yet promoted to native TOML.
+	SourceStaged TaskSource = "staged"
+	// SourceCron is a task read live from a real crontab via [daemon] include_cron.
+	// The crontab is the definition — RunWisp never writes to it — so the task
+	// changes when the operator runs `crontab -e`, not when they edit TOML.
+	SourceCron TaskSource = "cron"
+)
+
+// Promotable reports whether this source has a `runwisp promote` path into the
+// operator's own TOML.
+func (s TaskSource) Promotable() bool { return s == SourceStaged || s == SourceCron }
+
+// HoldReason names why a task is loaded and visible but deliberately not on the
+// scheduler. Derived at config load like TaskSource, never a TOML key: the
+// operator does not ask for a hold, the machine's state produces one.
+//
+// A hold withholds *automatic firing only*. A held task still appears in the task
+// list with its schedule, and `runwisp exec` / the API trigger still run it — the
+// point of a migration is to be able to check a job works under RunWisp before
+// handing the schedule over.
+type HoldReason string
+
+const (
+	// HeldByNothing is the zero value: this task is the scheduler's to fire.
+	HeldByNothing HoldReason = ""
+	// HeldByCron is a task read from a crontab that a live system cron daemon is
+	// still reading itself. Both schedulers firing the same job is invisible
+	// until a non-idempotent one runs twice, so RunWisp stands down and says so
+	// rather than racing cron for it. Cleared by retiring cron — `runwisp
+	// takeover`, or stopping cron and reloading.
+	HeldByCron HoldReason = "cron"
+)
 
 // Service instance/roll-up state strings reported to cloud. They mirror the
 // asyncapi ServiceInstanceState / ServiceState enums so the cloud bridge maps
@@ -306,7 +425,9 @@ const (
 // ConfigLoadedAt is when the daemon read runwisp.toml; ConfigStale flips to
 // true when the file (or a referenced env_file) has changed on disk since —
 // config reload is restart-only, so UIs surface a "restart to apply" hint.
-// ConfigStale is recomputed per request, not cached.
+// ConfigStale is recomputed per request, not cached. So is ConfigWarnings, which
+// carries what the daemon would print at boot — a skipped crontab job has no runs,
+// so this is one of the few places it can be seen at all.
 //
 // SchedulingActive is false when the local scheduler is inactive — e.g.
 // `runwisp cloud`, where the cloud owns scheduling — so UIs hide next-run
@@ -324,6 +445,7 @@ type DaemonInfo struct {
 	AuthDisabled     bool        `json:"auth_disabled"`
 	ConfigLoadedAt   time.Time   `json:"config_loaded_at"`
 	ConfigStale      bool        `json:"config_stale"`
+	ConfigWarnings   []string    `json:"config_warnings,omitempty" doc:"Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads."`
 	ResolvedTimezone string      `json:"resolved_timezone"`
 	TimezoneSource   string      `json:"timezone_source" enum:"config,system"`
 	Tasks            []TaskBrief `json:"tasks"`
@@ -360,7 +482,38 @@ type TaskBrief struct {
 	Instances     int               `json:"instances,omitempty"`
 	DependsOn     []string          `json:"depends_on,omitempty"`
 	Compose       *TaskComposeRef   `json:"compose,omitempty"`
+	Source        TaskSource        `json:"source,omitempty" enum:"staged,cron"`
+	SourceFile    string            `json:"source_file,omitempty"`
+	HeldBy        HoldReason        `json:"held_by,omitempty" enum:"cron" doc:"Set when something other than RunWisp owns this task's schedule, so it is listed but not fired on its cron. 'cron' means a live system cron daemon still reads its crontab. Manual triggers still work."`
 	Parameters    []TaskParam       `json:"parameters,omitempty"`
+}
+
+// NewTaskBrief trims a task down to what /api/info exposes.
+//
+// One mapping, because two callers build this list at different times and a
+// field either of them forgot would be silently absent from the API: the boot
+// path builds it once for DaemonInfo, and the server rebuilds it per request so
+// derived state that changes while the daemon runs — HeldBy above all — is
+// reported as it is now rather than as it was at boot.
+func NewTaskBrief(task *Task) TaskBrief {
+	return TaskBrief{
+		Name:          task.Name,
+		Kind:          task.Kind,
+		Group:         task.Group,
+		Cron:          task.Cron,
+		APITrigger:    task.APITrigger,
+		CatchUp:       task.CatchUp,
+		Restart:       task.Restart,
+		MaxConcurrent: task.MaxConcurrent,
+		OnOverlap:     task.OnOverlap,
+		Instances:     task.Instances,
+		DependsOn:     task.DependsOn,
+		Compose:       task.Compose,
+		Source:        task.Source,
+		SourceFile:    task.SourceFile,
+		HeldBy:        task.HeldBy,
+		Parameters:    task.Parameters,
+	}
 }
 
 // TaskComposeRef identifies the compose file and service backing a task.

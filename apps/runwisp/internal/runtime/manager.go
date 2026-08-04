@@ -469,12 +469,12 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	case actionRejected:
 		run.End(model.ReasonSkipped, -1, m.clock())
 		m.persistence.PersistExisting(run)
-		publishTerminal = func() { m.publishRun(events.EventRunFailed, run) }
+		publishTerminal = func() { m.publishTerminal(events.EventRunFailed, run) }
 		return run.Copy(), actionErr
 	case actionQueueFull:
 		run.End(model.ReasonQueueFull, -1, m.clock())
 		m.persistence.PersistExisting(run)
-		publishTerminal = func() { m.publishRun(events.EventRunFailed, run) }
+		publishTerminal = func() { m.publishTerminal(events.EventRunFailed, run) }
 		return run.Copy(), actionErr
 	case actionQueued:
 		// The run sits in the queue; queueProcessLoop will later hand it to a
@@ -557,7 +557,7 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.E
 	m.publishRun(events.EventRunCreated, run)
 	run.End(reason, -1, now)
 	m.persistence.PersistExisting(run)
-	publishTerminal = func() { m.publishRun(events.EventRunFailed, run) }
+	publishTerminal = func() { m.publishTerminal(events.EventRunFailed, run) }
 	return nil
 }
 
@@ -597,7 +597,7 @@ func (m *defaultTaskManager) RecordMissedRun(taskName string, scheduledAt time.T
 	m.publishRun(events.EventRunCreated, run)
 	run.End(model.ReasonMissed, -1, scheduledAt)
 	m.persistence.PersistExisting(run)
-	publishTerminal = func() { m.publishRunErr(events.EventRunFailed, run, reason) }
+	publishTerminal = func() { m.publishTerminalErr(events.EventRunFailed, run, reason) }
 	return nil
 }
 
@@ -927,7 +927,7 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 	run.End(outcome.endReason, result.ExitCode, endTime)
 
 	m.persistence.PersistExisting(run)
-	m.publishRun(outcome.eventType, run)
+	m.publishTerminal(outcome.eventType, run)
 
 	if serviceFatal {
 		m.publishServiceFatal(task.Name, run.InstanceIndex, fatalAttempts, result.ExitCode)
@@ -1038,6 +1038,28 @@ func (m *defaultTaskManager) publishRun(eventType events.EventType, run *model.R
 	m.eventBus.Publish(eventType, events.RunEvent{
 		Run: run.Copy(),
 	})
+}
+
+// publishTerminal publishes a run's terminal event, but only once the terminal
+// row enqueued just before it is readable from storage.
+//
+// Persistence is async (a buffered channel drained by one worker), so a bare
+// publish outruns its own DB write: a subscriber that reads storage on hearing
+// the event sees a stale non-terminal row. That is not hypothetical — the SSE
+// streamer sends `done` off this event and `runwisp exec` then fetches the run,
+// so a lagging row made a failed run report status "running", end_reason nil,
+// and — because a nil end_reason reads as success — exit code 0. Flush is the
+// barrier. It costs one DB write on a goroutine whose process has already
+// exited, once per run.
+func (m *defaultTaskManager) publishTerminal(eventType events.EventType, run *model.Run) {
+	m.persistence.Flush()
+	m.publishRun(eventType, run)
+}
+
+// publishTerminalErr is publishTerminal with an explanation string attached.
+func (m *defaultTaskManager) publishTerminalErr(eventType events.EventType, run *model.Run, errMsg string) {
+	m.persistence.Flush()
+	m.publishRunErr(eventType, run, errMsg)
 }
 
 // publishRunErr is publishRun with an error/reason string attached to the

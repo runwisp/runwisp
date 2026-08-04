@@ -12,6 +12,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/channel/discord"
+	"github.com/runwisp/runwisp/internal/notify/channel/sendmail"
 	"github.com/runwisp/runwisp/internal/notify/channel/slack"
 	"github.com/runwisp/runwisp/internal/notify/channel/smtp"
 	"github.com/runwisp/runwisp/internal/notify/channel/telegram"
@@ -43,6 +44,10 @@ type NotifierSpec struct {
 	Recipients    []string
 	CC            []string
 	BCC           []string
+
+	// sendmail-specific: an explicit MTA binary. Empty means "find the system
+	// one". From/Recipients/CC/BCC are shared with SMTP.
+	SendmailPath string
 
 	// Webhook-specific
 	URL     string
@@ -77,6 +82,8 @@ func Build(spec NotifierSpec) (notify.Channel, error) {
 		return buildTelegram(spec)
 	case "smtp":
 		return buildSMTP(spec)
+	case "sendmail":
+		return buildSendmail(spec)
 	case "webhook":
 		return buildWebhook(spec)
 	default:
@@ -156,6 +163,24 @@ func buildSMTP(spec NotifierSpec) (notify.Channel, error) {
 		BCC:           spec.BCC,
 		Backoff:       spec.Backoff,
 		Renderer:      r,
+	})
+}
+
+func buildSendmail(spec NotifierSpec) (notify.Channel, error) {
+	r, err := renderer(spec, "text/plain")
+	if err != nil {
+		return nil, err
+	}
+	return sendmail.New(sendmail.Config{
+		ID:         spec.ID,
+		Path:       spec.SendmailPath,
+		From:       spec.From,
+		ReplyTo:    spec.ReplyTo,
+		Recipients: spec.Recipients,
+		CC:         spec.CC,
+		BCC:        spec.BCC,
+		Backoff:    spec.Backoff,
+		Renderer:   r,
 	})
 }
 

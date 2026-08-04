@@ -51,3 +51,16 @@ func (u *unsupportedInstaller) Restart(_ context.Context, _ InstallOptions) erro
 func (u *unsupportedInstaller) Render(_ InstallOptions) ([]byte, error) {
 	return nil, ErrUnsupported
 }
+
+// CronStatus reports "nothing to take over" rather than ErrUnsupported: the
+// caller uses it to decide whether to ask a question, and the honest answer
+// on an OS with no installer is that there is no cron unit RunWisp manages.
+func (u *unsupportedInstaller) CronStatus(_ context.Context) (string, bool, error) {
+	return "", false, nil
+}
+
+// ScopeCandidates implements the per-OS half of DetectScope. Neither scope
+// exists on an OS without an installer.
+func ScopeCandidates(_ Deps) (systemPath, userPath string) {
+	return "", ""
+}

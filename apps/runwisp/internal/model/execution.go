@@ -28,11 +28,13 @@ type KeyValue struct {
 // (absolute path; empty falls back to /bin/sh) and WorkingDir, when set, is the
 // resolved absolute directory the process runs in. Umask, when set, is the
 // canonical octal file-creation mask applied in the child before the script.
+// EnvBase selects what the child's environment starts from.
 type ShellExecution struct {
-	Script     string `json:"script"`
-	Shell      string `json:"shell,omitempty"`
-	WorkingDir string `json:"working_dir,omitempty"`
-	Umask      string `json:"umask,omitempty"`
+	Script     string  `json:"script"`
+	Shell      string  `json:"shell,omitempty"`
+	WorkingDir string  `json:"working_dir,omitempty"`
+	Umask      string  `json:"umask,omitempty"`
+	EnvBase    EnvBase `json:"env_base,omitempty"`
 }
 
 func (e *ShellExecution) ExecType() string { return "shell" }

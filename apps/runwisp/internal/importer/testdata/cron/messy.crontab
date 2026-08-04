@@ -6,8 +6,11 @@ SHELL=bash
 0 1 * * * /bin/job
 0 2 * * * /bin/job
 
-# A percent sign means stdin to crond; RunWisp passes it to the shell verbatim.
-0 3 * * * /usr/bin/printf 'hello%world'
+# An unescaped percent ends the command; the rest is stdin, which RunWisp can't express.
+0 3 * * * /usr/bin/mail -s report ops%body line one%body line two
+
+# An escaped percent is a literal one, and the backslash is crond's, not the shell's.
+0 4 * * * /bin/date +\%Y-\%m-\%d >> /var/log/stamp
 
 # Too few fields to be a schedule+command — dropped with a note, not emitted.
 0 1 2

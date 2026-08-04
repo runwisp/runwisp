@@ -24,6 +24,10 @@ import (
 type runAs struct {
 	cred     *syscall.Credential
 	identity []string
+	// home is the target account's home directory, used to expand a
+	// working_dir of `~` — see resolveWorkingDir. Empty when the spec was a bare
+	// numeric uid with no account entry.
+	home string
 }
 
 // resolveRunAs turns a `user` / `user:group` spec into a syscall.Credential and
@@ -61,7 +65,7 @@ func resolveRunAs(spec string) (*runAs, error) {
 	cred := &syscall.Credential{Uid: ru.uid, Gid: gid}
 	applySupplementaryGroups(cred, ru.entry, userPart)
 
-	return &runAs{cred: cred, identity: identityEnv(ru.username, ru.home)}, nil
+	return &runAs{cred: cred, identity: identityEnv(ru.username, ru.home), home: ru.home}, nil
 }
 
 // resolvedUser carries the run-as user resolution. entry is nil when the spec

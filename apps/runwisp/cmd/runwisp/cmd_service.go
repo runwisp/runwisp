@@ -4,6 +4,8 @@
 package main
 
 import (
+	"os"
+
 	"github.com/spf13/cobra"
 )
 
@@ -24,10 +26,33 @@ var serviceCmd = &cobra.Command{
 This is OS integration only — it never edits runwisp.toml.
 
 For "is the daemon alive right now?" use 'runwisp status' instead.`,
-	// Service commands describe a future data dir (baked into the
-	// unit) — they do not write to it. Skip the root PersistentPreRunE
-	// that would otherwise mkdir paths the user has not consented to.
-	PersistentPreRunE: func(*cobra.Command, []string) error { return nil },
+	// Service commands describe a future data dir (baked into the unit) —
+	// they do not write to it, so this replaces the root PersistentPreRunE
+	// rather than inheriting it: that one would mkdir paths the operator
+	// has not consented to yet. Cobra runs only the nearest hook, so
+	// everything else the root one does has to be repeated here — in
+	// particular resolvePathDefaults, without which --config/--data left
+	// unset stay empty strings and a system install bakes an empty path
+	// into the unit.
+	PersistentPreRunE: servicePathPreRun,
+}
+
+// servicePathPreRun is the pre-run for commands that describe a data dir they are
+// about to bake into a unit rather than one they write to now. Shared with
+// `runwisp takeover`, which installs the same unit from outside this subtree.
+func servicePathPreRun(cmd *cobra.Command, _ []string) error {
+	if err := resolveLogConfig(); err != nil {
+		return err
+	}
+	// The port is baked into the unit, so the RUNWISP_PORT fallback has to
+	// apply here too: without it `RUNWISP_PORT=8080 sudo runwisp takeover`
+	// writes a unit pinned to a port the operator never asked for, and the
+	// daemon it starts binds somewhere they aren't looking.
+	if err := resolvePortConfig(cmd); err != nil {
+		return err
+	}
+	resolvePathDefaults(os.Geteuid())
+	return nil
 }
 
 func init() {

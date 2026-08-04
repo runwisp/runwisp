@@ -5,11 +5,13 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/home"
@@ -124,6 +126,14 @@ func (d *TaskDetailDialog) definitionRows(row func(label, value string, color li
 		}
 		add("Compose", ref)
 	}
+	if task.Source.Promotable() {
+		// Provenance, not a warning: an imported or cron-sourced task runs like any
+		// other. Two rows rather than one because the value column clips around 40
+		// columns, and the command is the half an operator actually needs. The TUI
+		// only ever names that command — writing TOML is the CLI's job.
+		add("Source", taskSourceLabel(task.Source, task.SourceFile))
+		add("Promote", "runwisp promote "+task.Name)
+	}
 	if len(task.Parameters) > 0 {
 		add("Parameters", strings.Join(paramNames(task.Parameters), ", "))
 	}
@@ -215,6 +225,23 @@ func successRate(success, failed int) (string, bool) {
 		return "", false
 	}
 	return fmt.Sprintf("%d%%", success*100/decided), true
+}
+
+// taskSourceLabel names where a promotable task's definition lives, in the
+// narrow value column the detail panel allows.
+//
+// A cron-sourced task shows its crontab's basename rather than the full path: the
+// operator needs to know *which* crontab of the several they pointed at, and the
+// leading /etc/cron.d/ is the part that clips. Staged tasks keep the relative
+// staging path, which is short and always the same file.
+func taskSourceLabel(source model.TaskSource, file string) string {
+	if source != model.SourceCron {
+		return config.StagingRelPath() + " (staged)"
+	}
+	if file == "" {
+		return "a crontab (cron)"
+	}
+	return filepath.Base(file) + " (cron)"
 }
 
 func paramNames(params []model.TaskParam) []string {

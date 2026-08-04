@@ -6,6 +6,7 @@
     import Badge from "@runwisp/ui/components/Badge.svelte";
     import Card from "@runwisp/ui/components/Card.svelte";
     import ComposeBadge from "../ComposeBadge.svelte";
+    import TaskSourceBadge from "../TaskSourceBadge.svelte";
     import { getRunStatusConfig, TaskCard, instanceSuffix } from "@runwisp/ui";
     import type { TaskOverview } from "./overview.js";
     import { isFailureEndReason, type Run } from "@runwisp/common";
@@ -195,6 +196,13 @@
                                                 file={task.task.compose.file}
                                                 service={task.task.compose.service}
                                                 projectName={task.task.compose.project_name}
+                                            />
+                                        {/if}
+                                        {#if task.task.source}
+                                            <TaskSourceBadge
+                                                name={task.task.name}
+                                                source={task.task.source}
+                                                sourceFile={task.task.source_file}
                                             />
                                         {/if}
                                     </div>

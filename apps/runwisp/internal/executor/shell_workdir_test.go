@@ -96,3 +96,59 @@ func TestShellBackend_ShellSelectsInterpreter(t *testing.T) {
 	got := drainStdout(t, task, &model.ShellExecution{Script: "echo selected", Shell: "/bin/sh"})
 	assert.Contains(t, got, "selected")
 }
+
+// TestResolveWorkingDir covers the one case config.Load leaves unresolved: a `~`
+// on a task that drops to another user means *that* user's home, and only the
+// executor knows it, because it is the only place that looks the account up.
+//
+// Unit-tested against a plain string rather than a real account: a test that
+// needed a second user on the box would be a test nobody could run.
+func TestResolveWorkingDir(t *testing.T) {
+	cases := []struct {
+		name    string
+		spec    string
+		home    string
+		want    string
+		wantErr bool
+	}{
+		{name: "absolute passes through", spec: "/srv/app", home: "/home/deploy", want: "/srv/app"},
+		{name: "empty passes through", spec: "", home: "/home/deploy", want: ""},
+		{name: "bare tilde is the home", spec: "~", home: "/home/deploy", want: "/home/deploy"},
+		{name: "tilde prefix joins", spec: "~/work", home: "/home/deploy", want: "/home/deploy/work"},
+		// A path that merely starts with the byte '~' is not a home reference —
+		// `~backup` is a directory name, and cron's own rule is the leading-~ one.
+		{name: "tilde without a slash is a name", spec: "~backup", home: "/home/deploy", want: "~backup"},
+		// No home and no fallback: the daemon's own home is a directory the dropped
+		// process may not be able to read, and running somewhere other than where
+		// the task said is how output disappears.
+		{name: "no home is an error", spec: "~", home: "", wantErr: true},
+		// A `~` with no run-as user never reaches here — config.Load resolved it
+		// against the daemon's home — but if it ever did, failing is still right.
+		{name: "absolute with no home is fine", spec: "/srv", home: "", want: "/srv"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveWorkingDir(tc.spec, tc.home)
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "home directory")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// TestShellBackend_TildeWorkingDirWithoutRunUserFailsLoudly proves the unresolved
+// `~` can't silently become the daemon's cwd. config.Load only leaves a `~`
+// literal when the task sets `user`, so reaching the executor with one and no
+// credential means something upstream changed — and a task that quietly runs in
+// the wrong directory is the failure this whole path exists to prevent.
+func TestShellBackend_TildeWorkingDirWithoutRunUserFailsLoudly(t *testing.T) {
+	backend := &ShellBackend{}
+	_, err := backend.Start(context.Background(), &model.Task{Name: "wd"}, nil,
+		&model.ShellExecution{Script: "pwd", WorkingDir: "~"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "working_dir")
+}

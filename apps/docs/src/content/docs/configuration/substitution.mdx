@@ -113,6 +113,12 @@ description = "template is $${VAR}"   # → template is ${VAR}
 - An unterminated `${` (an opening brace with no closing `}`) is a
   config-load error.
 
+`runwisp import` does this escaping for you. Cron and supervisord don't expand
+`${...}` at all, so anything the importer copies out of your old config — a
+comment that becomes a `description`, a `VAR=${OTHER}` line — comes across as
+`$${...}` and reaches your tasks as the text you wrote. If you want a value in
+an imported task to actually substitute, drop the extra `$` yourself.
+
 ## Worked example
 
 ```toml

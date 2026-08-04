@@ -84,9 +84,11 @@ Override sub-tables accept any subset of the
 `restart_delay`, `restart_backoff`, `healthy_after`, `start_retries`,
 `priority`, `autostart`.
 
-The host-process knobs — `shell`, `umask`, and `user` — are deliberately
-**not** accepted here: they configure a host shell run, while a compose
-service runs inside a container the runtime owns. (`working_dir` comes from
+The host-process knobs — `shell`, `umask`, `env_base`, and `user` — are
+deliberately **not** accepted here: they configure a host shell run, while a
+compose service runs inside a container the runtime owns. (`env_base` in
+particular has nothing to choose between — a container never inherits the
+daemon's environment either way.) (`working_dir` comes from
 the `[compose.<alias>]` block, not the per-service sub-table.)
 
 One sharp edge: a compose service that happens to share a name with one

@@ -22,13 +22,21 @@ func TestResolveStatusOptions_PullsFromFlags(t *testing.T) {
 		Port:    9911,
 	}
 
-	opts, err := resolveStatusOptions(f)
+	opts, err := resolveStatusOptions(f, false)
 	require.NoError(t, err)
 	assert.NotEmpty(t, opts.Binary, "binary path must come from os.Executable")
 	assert.Equal(t, "/tmp/status-test.toml", opts.Config)
 	assert.Equal(t, "/tmp/status-data", opts.DataDir)
 	assert.Equal(t, "10.0.0.1", opts.Host)
 	assert.Equal(t, 9911, opts.Port)
+	assert.False(t, opts.System)
+}
+
+func TestResolveStatusOptions_SystemWide(t *testing.T) {
+	t.Parallel()
+	opts, err := resolveStatusOptions(Flags{}, true)
+	require.NoError(t, err)
+	assert.True(t, opts.System)
 }
 
 func TestRenderAutostartLine(t *testing.T) {
@@ -182,6 +190,27 @@ func TestRenderLingerLine(t *testing.T) {
 		degraded := renderLingerLine(&buf, autostart.Status{OS: "linux", Linger: false})
 		assert.True(t, degraded)
 		assert.Contains(t, buf.String(), "OFF")
+	})
+}
+
+func TestRenderCronLine(t *testing.T) {
+	t.Run("no marker, omitted entirely", func(t *testing.T) {
+		var buf bytes.Buffer
+		degraded := renderCronLine(&buf, autostart.Status{})
+		assert.False(t, degraded)
+		assert.Empty(t, buf.String())
+	})
+	t.Run("masked by this instance, healthy", func(t *testing.T) {
+		var buf bytes.Buffer
+		degraded := renderCronLine(&buf, autostart.Status{CronUnit: "cron.service", CronMasked: true})
+		assert.False(t, degraded)
+		assert.Contains(t, buf.String(), "masked by this instance")
+	})
+	t.Run("active again, double-fire warning", func(t *testing.T) {
+		var buf bytes.Buffer
+		degraded := renderCronLine(&buf, autostart.Status{CronUnit: "cron.service", CronActive: true})
+		assert.True(t, degraded)
+		assert.Contains(t, buf.String(), "firing twice")
 	})
 }
 

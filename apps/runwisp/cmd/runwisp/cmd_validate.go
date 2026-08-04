@@ -100,5 +100,9 @@ func runValidate(w io.Writer, f Flags, asJSON bool) error {
 	for _, warning := range config.Warnings(cfg) {
 		fmt.Fprintf(w, "! %s\n", warning)
 	}
+	// Held tasks are not a finding — the config is fine, RunWisp is just standing
+	// down for cron — so they get their own block instead of another "!" line.
+	held := config.Held(cfg)
+	printHeldBlock(w, held.Tasks, held.CronState)
 	return nil
 }

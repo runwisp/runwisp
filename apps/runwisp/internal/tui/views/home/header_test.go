@@ -289,3 +289,42 @@ func TestRenderHeader_LaunchTicketHoveredOpenWebUI(t *testing.T) {
 	header, _ := RenderHeader(info, true, 80, -1, 0)
 	assert.Contains(t, header, "Open Web UI")
 }
+
+func TestHeldTaskCount(t *testing.T) {
+	assert.Zero(t, HeldTaskCount(nil))
+	assert.Zero(t, HeldTaskCount([]model.TaskBrief{{Name: "native"}}))
+	assert.Equal(t, 2, HeldTaskCount([]model.TaskBrief{
+		{Name: "backup", HeldBy: model.HeldByCron},
+		{Name: "native"},
+		{Name: "vacuum", HeldBy: model.HeldByCron},
+	}))
+}
+
+// The TUI switches to the alt-screen buffer on start, wiping the boot banner, so
+// this chip is the only place a held job is visible from the home view.
+func TestRenderHeader_ShowsHeldChip(t *testing.T) {
+	info := uikit.StartupInfo{
+		Port:  9477,
+		Tasks: []model.TaskBrief{{Name: "backup", Cron: "0 3 * * *", HeldBy: model.HeldByCron}},
+	}
+	out, _ := RenderHeader(info, false, 100, -1, -1)
+	assert.Contains(t, out, "1 held by cron")
+	assert.Contains(t, out, "runwisp takeover")
+}
+
+func TestRenderHeader_NoHeldChipWhenNothingIsHeld(t *testing.T) {
+	info := uikit.StartupInfo{Port: 9477, Tasks: []model.TaskBrief{{Name: "backup", Cron: "0 3 * * *"}}}
+	out, _ := RenderHeader(info, false, 100, -1, -1)
+	assert.NotContains(t, out, "held by cron")
+}
+
+// A "Next:" time on a held task is a lie: that tick comes and goes without
+// RunWisp firing anything, because the scheduler stood down for cron.
+func TestRenderTaskHeader_HeldTaskReplacesNextRunWithTheReason(t *testing.T) {
+	task := &model.TaskBrief{Kind: model.KindTask, Cron: "*/5 * * * *", HeldBy: model.HeldByCron}
+	out, _ := RenderTaskHeader("backup", task, 100, false)
+	assert.Contains(t, out, "*/5 * * * *", "the schedule is still real and still shown")
+	assert.Contains(t, out, "held")
+	assert.Contains(t, out, "cron still owns this job")
+	assert.NotContains(t, out, "Next:")
+}

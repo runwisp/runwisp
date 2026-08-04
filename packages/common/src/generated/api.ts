@@ -651,6 +651,8 @@ export interface components {
             /** Format: date-time */
             config_loaded_at: string;
             config_stale: boolean;
+            /** @description Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads. */
+            config_warnings?: string[] | null;
             external_url: string;
             fingerprint: string;
             /** Format: int64 */
@@ -1024,6 +1026,8 @@ export interface components {
             changed: components["schemas"]["ReloadTaskChange"][] | null;
             /** @description Names of tasks removed by the reload */
             removed: string[] | null;
+            /** @description Non-fatal findings in the newly-live config, e.g. crontab jobs that could not be scheduled */
+            warnings?: string[] | null;
         };
         ReloadTaskChange: {
             /** @description Task name */
@@ -1259,6 +1263,11 @@ export interface components {
             cron?: string;
             depends_on?: string[] | null;
             group?: string;
+            /**
+             * @description Set when something other than RunWisp owns this task's schedule, so it is listed but not fired on its cron. 'cron' means a live system cron daemon still reads its crontab. Manual triggers still work.
+             * @enum {string}
+             */
+            held_by?: "cron";
             /** Format: int64 */
             instances?: number;
             /** @enum {string} */
@@ -1269,6 +1278,9 @@ export interface components {
             on_overlap?: string;
             parameters?: components["schemas"]["TaskParam"][] | null;
             restart?: string;
+            /** @enum {string} */
+            source?: "staged" | "cron";
+            source_file?: string;
         };
         TaskComposeRef: {
             file: string;
@@ -1318,6 +1330,8 @@ export interface components {
             env?: {
                 [key: string]: string;
             };
+            /** @description What the run's environment starts from: 'inherit' (the daemon's, the default) or 'clean' (PATH, SHELL, HOME, USER/LOGNAME only, as crond gives a job) */
+            env_base?: string;
             /** @description Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env. */
             env_file?: string;
             /** @description Process exit codes treated as success; defaults to [0] */
@@ -1333,6 +1347,11 @@ export interface components {
              * @description For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward start_retries, in nanoseconds
              */
             healthy_after?: number;
+            /**
+             * @description Why this task is loaded but not on the scheduler: 'cron' means a live system cron daemon still reads the crontab it came from and is running it, so RunWisp stands down. Manual triggers still work. Empty means RunWisp owns the schedule.
+             * @enum {string}
+             */
+            held_by?: "cron";
             /**
              * Format: int64
              * @description For services: number of always-running instances
@@ -1431,6 +1450,13 @@ export interface components {
             /** @description Absolute path to the shell interpreter for run scripts; defaults to /bin/sh */
             shell?: string;
             /**
+             * @description Where this task's definition came from: native (hand-authored TOML), staged (imported, not yet promoted), or cron (read live from a crontab via daemon.include_cron)
+             * @enum {string}
+             */
+            source?: "staged" | "cron";
+            /** @description Absolute path of the crontab or staging file this task's definition was read from; empty for hand-authored TOML */
+            source_file?: string;
+            /**
              * Format: int64
              * @description For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting
              */
@@ -1451,7 +1477,7 @@ export interface components {
             umask?: string;
             /** @description Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root. */
             user?: string;
-            /** @description Resolved working directory for the task's process; empty inherits the daemon's working directory */
+            /** @description Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal "~" means the run-as user's home, resolved at run time */
             working_dir?: string;
         };
         TriggerRunInputBody: {

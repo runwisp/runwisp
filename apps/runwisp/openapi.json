@@ -115,6 +115,16 @@
           "config_stale": {
             "type": "boolean"
           },
+          "config_warnings": {
+            "description": "Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "external_url": {
             "type": "string"
           },
@@ -950,6 +960,16 @@
               "array",
               "null"
             ]
+          },
+          "warnings": {
+            "description": "Non-fatal findings in the newly-live config, e.g. crontab jobs that could not be scheduled",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [
@@ -1484,6 +1504,13 @@
           "group": {
             "type": "string"
           },
+          "held_by": {
+            "description": "Set when something other than RunWisp owns this task's schedule, so it is listed but not fired on its cron. 'cron' means a live system cron daemon still reads its crontab. Manual triggers still work.",
+            "enum": [
+              "cron"
+            ],
+            "type": "string"
+          },
           "instances": {
             "format": "int64",
             "type": "integer"
@@ -1515,6 +1542,16 @@
             ]
           },
           "restart": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "staged",
+              "cron"
+            ],
+            "type": "string"
+          },
+          "source_file": {
             "type": "string"
           }
         },
@@ -1647,6 +1684,10 @@
             "description": "Environment variables overlaid on the task's process env. Values are visible to authenticated operators in the API/UI; env_file values merge in beneath the inline entries.",
             "type": "object"
           },
+          "env_base": {
+            "description": "What the run's environment starts from: 'inherit' (the daemon's, the default) or 'clean' (PATH, SHELL, HOME, USER/LOGNAME only, as crond gives a job)",
+            "type": "string"
+          },
           "env_file": {
             "description": "Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env.",
             "type": "string"
@@ -1674,6 +1715,13 @@
             "description": "For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward start_retries, in nanoseconds",
             "format": "int64",
             "type": "integer"
+          },
+          "held_by": {
+            "description": "Why this task is loaded but not on the scheduler: 'cron' means a live system cron daemon still reads the crontab it came from and is running it, so RunWisp stands down. Manual triggers still work. Empty means RunWisp owns the schedule.",
+            "enum": [
+              "cron"
+            ],
+            "type": "string"
           },
           "instances": {
             "description": "For services: number of always-running instances",
@@ -1815,6 +1863,18 @@
             "description": "Absolute path to the shell interpreter for run scripts; defaults to /bin/sh",
             "type": "string"
           },
+          "source": {
+            "description": "Where this task's definition came from: native (hand-authored TOML), staged (imported, not yet promoted), or cron (read live from a crontab via daemon.include_cron)",
+            "enum": [
+              "staged",
+              "cron"
+            ],
+            "type": "string"
+          },
+          "source_file": {
+            "description": "Absolute path of the crontab or staging file this task's definition was read from; empty for hand-authored TOML",
+            "type": "string"
+          },
           "start_retries": {
             "description": "For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting",
             "format": "int64",
@@ -1851,7 +1911,7 @@
             "type": "string"
           },
           "working_dir": {
-            "description": "Resolved working directory for the task's process; empty inherits the daemon's working directory",
+            "description": "Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal \"~\" means the run-as user's home, resolved at run time",
             "type": "string"
           }
         },

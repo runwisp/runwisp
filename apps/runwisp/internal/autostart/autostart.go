@@ -79,6 +79,9 @@ const (
 	ActionPrintWSLPostscript
 	ActionLaunchctlBootstrap
 	ActionLaunchctlBootout
+	ActionStopCron
+	ActionMaskCron
+	ActionUnmaskCron
 )
 
 // Step is one entry in the confirmation banner. Description is
@@ -115,6 +118,13 @@ type Plan struct {
 
 	// LingerOn is the current loginctl linger state (Linux only).
 	LingerOn bool
+
+	// CronUnit is the systemd cron unit (e.g. "cron.service") this plan
+	// will mask, or has already recorded masking, via its own
+	// runwisp-masked-cron marker. Empty means no take-over is in play —
+	// either the install was not asked to retire cron, or an
+	// uninstall found no marker it can prove it wrote itself.
+	CronUnit string
 }
 
 // InstallOptions is the input to ComputePlan / Install.
@@ -128,6 +138,33 @@ type InstallOptions struct {
 	System bool
 	// Force overrides PlanConflict on install.
 	Force bool
+	// TakeOverCron requests that ComputePlan/Install also stop and mask
+	// the system cron unit once RunWisp is confirmed running (Linux
+	// system-wide installs only). internal/cutover decides whether the
+	// preconditions hold; this package only executes the mechanics.
+	TakeOverCron bool
+
+	// PreConfirmed says the caller has already rendered a plan covering
+	// every step below and taken the operator's consent, so Install must
+	// not banner-and-ask again. internal/cutover sets it: its plan is a
+	// superset of this one (it also writes the config), and asking twice
+	// for one decision is how an operator learns to stop reading prompts.
+	//
+	// It suppresses the up-front "Proceed?" for a plan the caller showed.
+	// Nothing further down asks either: the mask is spelled out in both that
+	// plan and this package's own banner, so consent for it has always been
+	// taken by the time any cron unit is touched.
+	PreConfirmed bool
+
+	// maskedCronUnit is the cron unit name to record in the rendered
+	// unit's marker comment. It is unexported so only this package can
+	// set it: ComputePlan resolves it (via discovery when TakeOverCron
+	// is set, or by carrying forward an existing unit's marker
+	// otherwise) on a local copy of InstallOptions before calling
+	// renderUnit, so a caller outside the package can never force a
+	// take-over marker into a rendered unit without going through the
+	// real discovery/masking path.
+	maskedCronUnit string
 }
 
 // UninstallOptions is the input to Uninstall.
@@ -141,6 +178,13 @@ type UninstallOptions struct {
 	DataDir string
 	// Force overrides PlanConflict on uninstall (hand-edited unit).
 	Force bool
+	// System must match the System the unit was installed with — it
+	// picks the unit path (system vs user dir) and the systemctl
+	// invocation (sudo systemctl vs systemctl --user). Without it,
+	// uninstalling a --system install looks at the user unit path,
+	// finds nothing, and reports "Nothing to uninstall ✓" while the
+	// system unit stays enabled and running.
+	System bool
 }
 
 // Status answers `service status` — five rows of state on one screen.
@@ -172,6 +216,17 @@ type Status struct {
 
 	LastStart time.Time
 	LogsHint  string // e.g. "journalctl --user -u runwisp.service"
+
+	// CronUnit is set once this instance's unit carries a
+	// runwisp-masked-cron marker — the standing post-cutover check.
+	// Empty means this instance has never taken over cron.
+	CronUnit string
+	// CronMasked/CronActive are probed live against CronUnit when it is
+	// non-empty. CronActive true after a take-over means cron came back
+	// (e.g. an operator manually unmasked it) and jobs may be firing
+	// twice.
+	CronMasked bool
+	CronActive bool
 }
 
 // Installer is implemented per-OS. The interface keeps the cobra
@@ -197,6 +252,13 @@ type Installer interface {
 	// Restart restarts the managed daemon through the init system
 	// (systemctl --user restart / launchctl kickstart -k).
 	Restart(ctx context.Context, opts InstallOptions) error
+
+	// CronStatus reports the host's system cron unit and whether it is
+	// currently running. An empty unit name means there is nothing to take
+	// over — no cron unit on this host, or an OS where masking cron is not
+	// something RunWisp can do. It never errors just because cron is
+	// absent; that is a legitimate answer.
+	CronStatus(ctx context.Context) (unit string, active bool, err error)
 }
 
 // ServiceManagedEnv is set to "1" in the generated systemd unit and
@@ -260,3 +322,14 @@ var ErrAlreadyRunning = errors.New("autostart: a daemon is already running again
 // ErrConfigMissing means runwisp.toml does not exist. `service install`
 // never creates one — the operator runs `runwisp` interactively first.
 var ErrConfigMissing = errors.New("autostart: runwisp.toml is missing — run `runwisp` interactively to create one first")
+
+// ErrCronTakeoverUnsupported means InstallOptions.TakeOverCron was set on an OS
+// without a systemd cron unit this package can mask. macOS's cron
+// (com.vix.cron) lives under SIP-protected /System/Library/LaunchDaemons —
+// nothing running as the operator's user can touch it — so the honest path
+// is `runwisp import cron` followed by removing the crontab by hand.
+//
+// internal/cutover reports this as a plan blocker before it ever gets here (with
+// the same manual route spelled out), so reaching this error means a caller
+// bypassed the plan.
+var ErrCronTakeoverUnsupported = errors.New("autostart: retiring cron is only supported on Linux with systemd — run `runwisp import cron` then remove the crontab yourself (`crontab -r`)")

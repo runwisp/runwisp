@@ -1194,9 +1194,6 @@ func TestHandleKeyD_FullscreenReturnsFalse(t *testing.T) {
 
 // TestHandleKeyD_LowerCaseDDownload covers the lowercase-d download branch.
 func TestHandleKeyD_LowerCaseDDownload(t *testing.T) {
-	t.Setenv("DISPLAY", "")
-	t.Setenv("WAYLAND_DISPLAY", "")
-
 	m := newTestModel(nil)
 	m.launchTicketFunc = func() (string, error) { return "tkt", nil }
 	ev := execlist.NewExecView(&model.Run{ID: "r-1234567890", TaskName: "t1"})

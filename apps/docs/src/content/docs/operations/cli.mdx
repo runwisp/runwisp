@@ -25,20 +25,28 @@ These apply to every subcommand. They decide which config gets read,
 where state lives, where the HTTP server listens, and how the daemon
 logs.
 
-| Flag             | Default        | What it does                                                                          |
-| ---------------- | -------------- | ------------------------------------------------------------------------------------- |
-| `--config`, `-c` | `runwisp.toml` | Path to the TOML config file, resolved against the working directory.                 |
-| `--data`         | `.runwisp`     | Directory for all persistent state — SQLite DB, per-task logs, PID file, Unix socket. |
-| `--port`, `-p`   | `9477`         | TCP port for the HTTP server (REST API, SSE log stream, Web UI).                      |
-| `--host`         | `127.0.0.1`    | Bind address. Use `0.0.0.0` to listen on every interface.                             |
-| `--log-level`    | `info`         | Verbosity: `debug`, `info`, `warn`, `error`. Env: `RUNWISP_LOG_LEVEL`.                |
-| `--log-format`   | `auto`         | Log shape: `auto`, `text`, `json`. Env: `RUNWISP_LOG_FORMAT`.                         |
+| Flag             | Default                                            | What it does                                                                                               |
+| ---------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `--config`, `-c` | `runwisp.toml` (root: `/etc/runwisp/runwisp.toml`) | Path to the TOML config file. Env: `RUNWISP_CONFIG`.                                                       |
+| `--data`         | `.runwisp` (root: `/var/lib/runwisp`)              | Directory for all persistent state — SQLite DB, per-task logs, PID file, Unix socket. Env: `RUNWISP_DATA`. |
+| `--port`, `-p`   | `9477`                                             | TCP port for the HTTP server (REST API, SSE log stream, Web UI).                                           |
+| `--host`         | `127.0.0.1`                                        | Bind address. Use `0.0.0.0` to listen on every interface.                                                  |
+| `--log-level`    | `info`                                             | Verbosity: `debug`, `info`, `warn`, `error`. Env: `RUNWISP_LOG_LEVEL`.                                     |
+| `--log-format`   | `auto`                                             | Log shape: `auto`, `text`, `json`. Env: `RUNWISP_LOG_FORMAT`.                                              |
 
 `--data` is the one to pick once and keep: the database (`runwisp.db`),
 the socket (`runwisp.sock`), and every task's logs all live under it, so
 moving it later is a plain directory move, not a config change. The two
 logging flags get the full treatment in
 [Logging](/operations/logging/).
+
+**Running as root changes the defaults**, precisely so `sudo runwisp
+reload` (or `stop` / `restart` / `status`) finds the same daemon a root
+`runwisp daemon` started with no flags: euid 0 defaults `--config` to
+`/etc/runwisp/runwisp.toml` and `--data` to `/var/lib/runwisp` instead of
+the cwd-relative paths every other user gets. `RUNWISP_CONFIG` /
+`RUNWISP_DATA` override that (and everything else) — precedence is
+flag > env var > euid-derived default.
 
 ## Start the daemon and attach
 
@@ -154,6 +162,14 @@ report their `instances` and omit `max_concurrent` — a service's copy count is
 }
 ```
 
+A task carries `"source"` when its definition doesn't live in your own TOML:
+`"staged"` for the machine-owned `runwisp.d/imported.toml` that
+[`import --write`](#migrate-an-existing-setup) manages, `"cron"` for a real
+crontab read via [`include_cron`](/configuration/daemon/#include_cron).
+`"source_file"` names the exact file. Both are derived from where the definition
+was loaded, so they're absent for your own tasks and disappear on their own once
+you move one into your root config.
+
 `runwisp status --json` is the live snapshot: daemon health, a system summary,
 and every task with its last run — the exit code, timing, and `failed`/`missed`
 flags are precomputed so you don't have to decode RunWisp's status names
@@ -263,7 +279,9 @@ catch-up. `runwisp stop` takes the daemon down without starting a new one.
 When the daemon is managed by systemd or launchd (via
 [`runwisp service install`](/operations/autostart/)), both `restart` and
 `stop` delegate to the service manager so its view of the unit stays in
-sync.
+sync. They find whichever unit is installed on their own; pass `--local`
+only when a system unit and a per-user unit both exist and you mean the
+per-user one.
 
 ## Migrate an existing setup
 
@@ -276,40 +294,139 @@ Both read from a file or from stdin, print the generated TOML to stdout
 so you can review it, and write a `# TODO` comment for anything that
 doesn't map cleanly — nothing is silently dropped. Shared flags:
 
-| Flag             | What it does                                                  |
-| ---------------- | ------------------------------------------------------------- |
-| `--output`, `-o` | Write the TOML to this file instead of stdout.                |
-| `--write`        | Write to the `--config` path (default `runwisp.toml`).        |
-| `--force`        | Overwrite the target file without prompting.                  |
-| `--quiet`        | Suppress the summary on stderr.                               |
-| `--system`       | _(cron only)_ Force system-crontab parsing (the user column). |
+| Flag             | What it does                                                              |
+| ---------------- | ------------------------------------------------------------------------- |
+| `--output`, `-o` | Write the TOML to this standalone file instead of stdout.                 |
+| `--write`        | Install into the two-tier layout (see below) next to the `--config` path. |
+| `--force`        | Overwrite the target file without prompting.                              |
+| `--dry-run`      | Print the summary and name every file a real run would touch, and stop.   |
+| `--quiet`        | Drop the inventory, keep anything that needs a fix.                       |
+| `--system`       | _(cron only)_ Force system-crontab parsing (the user column).             |
 
-System crontabs (`/etc/crontab`, `/etc/cron.d/*`) carry a user column;
-`runwisp import cron` detects that from the path or header and maps it to
-a per-task `user`. The
-[Migrating from cron](/recipes/migrating-from-cron/) and
-[Migrating from supervisord](/recipes/migrating-from-supervisord/) recipes
-walk through the whole flow.
+The summary on stderr gives every job one line, with the command that will
+actually run and a mark for how it landed: `✓` mapped cleanly, `~` something
+changed, `!` needs a fix before this config loads, `-` skipped because you
+already have it. `--quiet` drops the clean rows, not the ones that need you.
+`--dry-run` and `--quiet` are rejected together — a dry run writes nothing, so
+the summary is all it has to show you.
+
+`--write` doesn't append to your `runwisp.toml`. It installs the import in a
+**two-tier layout**: generated tasks land in a machine-owned
+`runwisp.d/imported.toml`, and your root `runwisp.toml` is created — or has its
+[`[daemon].include`](/configuration/daemon/) wired — so the daemon loads them.
+Both files are written and rolled back as one. Staged tasks report
+`"source": "staged"` in `list --json`, `status --json`, and the API.
+
+An import **copies** definitions — it never touches the thing you imported
+_from_, so starting the daemon on a fresh import means every job has two
+schedulers firing it. Nothing errors, so every import summary ends with the `!`
+line that says so:
+
+```
+! cron still runs these jobs. Comment them out (`crontab -e`, or move the
+  file out of /etc/cron.d) before starting RunWisp, or each one runs twice.
+```
+
+Turn the old scheduler off for the jobs you imported before `runwisp daemon`.
+[Converting crontabs](/replacing-cron/converting-crontabs/#retiring-the-crontab)
+has the commands, along with the two-tier layout, the user column in system
+crontabs, and the staging-to-promoted workflow;
+[Migrating from supervisord](/recipes/migrating-from-supervisord/) covers the
+other source.
+
+### Take ownership of a task with `promote`
+
+```sh
+runwisp promote backup            # put one task's block in runwisp.toml
+runwisp promote backup reindex    # several at once
+runwisp promote --all --reload    # everything, then reconcile the daemon
+```
+
+`promote` works on any task RunWisp derived rather than you writing it: one
+staged in `runwisp.d/imported.toml` by an import, or one read live out of a
+crontab via [`include_cron`](/configuration/daemon/#include_cron). Either way
+its block ends up in your own `runwisp.toml` and it's yours — copied as text,
+comments and `# TODO` notes intact, in one transaction that changes no file if
+the result wouldn't load.
+
+| Flag        | What it does                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------- |
+| `--all`     | Promote everything promotable — staged _and_ crontab-sourced. Exits 0 when there's nothing. |
+| `--reload`  | Reload the running daemon afterwards, so the provenance marker clears.                      |
+| `--dry-run` | Print the blocks that would be added and write nothing.                                     |
+
+A staged block is **moved** out of the staging file; a cron-sourced one is
+**copied**, because RunWisp never writes to a crontab. Promoting doesn't change
+what the daemon runs — only which file defines it — so `runwisp reload` afterwards
+honestly reports _no task changes_.
+[Graduating a job](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config)
+walks through it.
+
+Promote refuses, and writes nothing, when you name a task it can't move: one
+that doesn't exist, one that's already native (it names the file it found it
+in), or one generated from a compose project, which has no block of its own.
 
 ## Autostart
 
 ```sh
-runwisp service install     # wire up systemd (Linux/WSL) or launchd (macOS)
-runwisp service uninstall   # remove the unit/plist (data dir is preserved)
-runwisp service status      # is autostart wired up, and has anything drifted?
+sudo runwisp service install   # wire up the system-wide systemd service
+runwisp service uninstall      # remove the unit/plist (data dir is preserved)
+runwisp service status         # is autostart wired up, and has anything drifted?
 ```
 
 These wire the daemon into the host init system so it survives a reboot —
-OS plumbing only, never touching `runwisp.toml`. `install` takes `--yes`
-(`-y`), `--print` (render the unit to stdout), `--dry-run`, `--force`
-(overwrite a hand-edited unit), `--system` (a system-wide unit on Linux),
-and `--binary <path>` (override the baked-in binary path). `uninstall`
-takes `--yes`, `--force`, and `--purge` (also delete the data dir — which
-makes you type the literal word `delete` to confirm). It's all covered in
-depth on the [Autostart](/operations/autostart/) page.
+OS plumbing only, never touching `runwisp.toml`.
+
+`install` defaults to the system-wide service (`/etc/systemd/system/runwisp.service`,
+Linux, root). `--local` installs a per-user unit instead — a systemd user
+unit on Linux, a LaunchAgent on macOS, where it's currently the only
+option. Without root and without `--local`, install refuses rather than
+guessing.
+
+Other `install` flags: `--yes` (`-y`), `--print` (render the unit to
+stdout), `--dry-run`, `--force` (overwrite a hand-edited unit), and
+`--binary <path>` (override the baked-in binary path).
+
+`install` never touches cron. If cron is still running jobs on the box when
+it finishes, it says so and points at `sudo runwisp takeover` — see
+[Take over from cron](/replacing-cron/take-over-from-cron/).
+
+`uninstall` takes `--yes`, `--force`, `--local`, and `--purge` (also delete
+the data dir — which makes you type the literal word `delete` to confirm).
+`status` takes `--local`. Neither needs to be told how the unit was
+installed: they look for it. It's all covered in depth on the
+[Autostart](/operations/autostart/) page.
 
 Don't confuse `runwisp service status` ("will the daemon come back after a
 reboot?") with `runwisp status` ("is it alive right now?").
+
+## Retire cron
+
+```sh
+sudo runwisp takeover   # install the service, mask cron, reload — in that order
+```
+
+The front door for a cron migration, and it works from nothing: no
+`runwisp.toml` needed. It finds your crontabs, writes a config that reads
+them live, installs the system service, masks cron, and reloads a daemon
+that was already running — one plan, one question, in that order.
+
+While cron is alive, RunWisp [holds](/replacing-cron/held-jobs/) the jobs it
+read from cron's own files rather than firing them alongside cron;
+`takeover` is what hands them over. The reload is the part a plain
+`service install` can't do, so held jobs go live immediately instead of
+waiting for you to reload by hand.
+
+`--dry-run` always prints a plan, including on a box where the take-over is
+blocked — there it also exits non-zero, so a provisioning script can ask
+"would this work?" without doing anything. Re-running a finished take-over
+is a no-op and exits 0.
+
+Takes `--dry-run`, `--yes` (`-y`), `--force` (overwrite a hand-edited unit,
+not skip the prompt), `--allow-skipped-cron-jobs`, and `--binary <path>`.
+Needs root and systemd; see
+[Take over from cron](/replacing-cron/take-over-from-cron/) for the
+refusals, the ordering, and how to undo it.
 
 ## Auth and introspection
 
@@ -396,5 +513,10 @@ open the Web UI in a browser; stop it later with `runwisp stop --data <dir>`
         title="Logging"
         href="/operations/logging/"
         description="What --log-level and --log-format do to the daemon's own output."
+    />
+    <LinkCard
+        title="Take over from cron"
+        href="/replacing-cron/take-over-from-cron/"
+        description="takeover, import cron, and promote — the whole cron migration in one place."
     />
 </CardGrid>
