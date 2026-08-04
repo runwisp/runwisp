@@ -531,6 +531,15 @@ container instead, set both `compose_file` and `run` together with
 For importing every service in a compose file as observable RunWisp
 services, see [`[compose.*]`](/configuration/compose/).
 
+One wrinkle on [parameters](#parameters): `arg`, `option`, and `flag`
+params don't work in run mode. `docker compose run <svc> …` reads the
+first thing after the service name as the _command_, so those tokens
+would replace the service's own command rather than get appended to it —
+which is the opposite of what params promise everywhere else. RunWisp
+rejects the combination at load instead of quietly doing the wrong
+thing. Use `env` params, which travel as `-e` flags and work fine, or
+switch to `compose_mode = "exec"` where your command owns the argv.
+
 ## Notifications
 
 | Key                 | Default  | What it does                                                                                                                                                                                                              |

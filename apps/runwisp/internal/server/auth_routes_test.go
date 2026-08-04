@@ -74,7 +74,7 @@ func TestParseTrustedProxies_AcceptsValidCIDR(t *testing.T) {
 
 // --- Local-request gating helpers ---
 
-func TestIsLocalRequest(t *testing.T) {
+func TestIsLocalCtx(t *testing.T) {
 	tests := []struct {
 		name     string
 		addr     string
@@ -87,51 +87,67 @@ func TestIsLocalRequest(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r := httptest.NewRequest("GET", "/", nil)
-			r.RemoteAddr = tt.addr
-			assert.Equal(t, tt.expected, isLocalRequest(r))
+			ctx := context.WithValue(context.Background(), peerAddrContextKey, tt.addr)
+			assert.Equal(t, tt.expected, isLocalCtx(ctx))
 		})
 	}
 }
 
-func TestIsLocalRequest_UsesPeerAddrContext(t *testing.T) {
-	// Simulates what happens when middleware.RealIP overwrites RemoteAddr
-	// with a spoofed X-Real-IP header. The savePeerAddr middleware stores
-	// the original TCP address in context, so isLocalRequest should use
-	// that instead of the spoofed RemoteAddr.
-	r := httptest.NewRequest("GET", "/", nil)
-	r.RemoteAddr = "127.0.0.1:1234" // After RealIP spoofing
+func TestIsLocalCtx_UsesPeerAddrContext(t *testing.T) {
+	// Simulates what happens when the XFF middleware overwrites RemoteAddr from
+	// a spoofed X-Real-IP header. savePeerAddr stored the original TCP address
+	// in context first, and isLocalCtx reads only that.
+	ctx := context.WithValue(context.Background(), peerAddrContextKey, "203.0.113.50:5678")
 
-	// Context has the real peer address (set by savePeerAddr before RealIP)
-	ctx := context.WithValue(r.Context(), peerAddrContextKey, "203.0.113.50:5678")
-	r = r.WithContext(ctx)
-
-	assert.False(t, isLocalRequest(r),
+	assert.False(t, isLocalCtx(ctx),
 		"should use the real peer address from context, not the spoofed RemoteAddr")
 }
 
-func TestIsLocalRequest_ContextLoopbackAllowed(t *testing.T) {
-	r := httptest.NewRequest("GET", "/", nil)
-	r.RemoteAddr = "203.0.113.50:5678" // After RealIP might change it
+func TestIsLocalCtx_UnixSocketTrustedFlag(t *testing.T) {
+	// A request delivered on the Unix socket carries the local-trusted flag
+	// even when its synthetic peer address is non-loopback ("@" for an abstract
+	// unix peer, or the socket path).
+	ctx := context.WithValue(context.Background(), peerAddrContextKey, "@")
+	ctx = context.WithValue(ctx, localTrustedKey{}, true)
 
-	ctx := context.WithValue(r.Context(), peerAddrContextKey, "127.0.0.1:1234")
-	r = r.WithContext(ctx)
-
-	assert.True(t, isLocalRequest(r),
-		"should allow when real peer address is loopback")
+	assert.True(t, isLocalCtx(ctx),
+		"local-trusted flag must override the non-loopback peer address")
 }
 
-func TestIsLocalRequest_UnixSocketTrustedFlag(t *testing.T) {
-	// A request delivered on the Unix socket carries the local-trusted flag
-	// even when its synthetic RemoteAddr is non-loopback ("@" for an abstract
-	// unix peer, or the socket path).
-	r := httptest.NewRequest("GET", "/", nil)
-	r.RemoteAddr = "@"
-	ctx := context.WithValue(r.Context(), localTrustedKey{}, true)
-	r = r.WithContext(ctx)
+func TestIsLocalCtx_ProxiedLoopbackRejected(t *testing.T) {
+	// A same-host reverse proxy relaying an internet client connects from
+	// loopback, so loopback alone must not count as local.
+	ctx := context.WithValue(context.Background(), peerAddrContextKey, "127.0.0.1:1234")
+	ctx = context.WithValue(ctx, proxiedContextKey, true)
 
-	assert.True(t, isLocalRequest(r),
-		"local-trusted flag must override the non-loopback peer address")
+	assert.False(t, isLocalCtx(ctx),
+		"a proxy-relayed request must not be treated as local even from loopback")
+}
+
+func TestIsProxiedRequest(t *testing.T) {
+	for _, header := range forwardedHeaders {
+		t.Run(header, func(t *testing.T) {
+			r := httptest.NewRequest("GET", "/", nil)
+			r.RemoteAddr = "127.0.0.1:1234"
+			r.Header.Set(header, "203.0.113.9")
+			assert.True(t, isProxiedRequest(r, nil))
+		})
+	}
+
+	t.Run("direct request", func(t *testing.T) {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.RemoteAddr = "127.0.0.1:1234"
+		assert.False(t, isProxiedRequest(r, nil),
+			"the local launcher probe sends no hop headers and must stay local")
+	})
+
+	t.Run("trusted proxy peer without headers", func(t *testing.T) {
+		opts, err := parseTrustedProxies("127.0.0.1")
+		require.NoError(t, err)
+		r := httptest.NewRequest("GET", "/", nil)
+		r.RemoteAddr = "127.0.0.1:1234"
+		assert.True(t, isProxiedRequest(r, opts))
+	})
 }
 
 // --- Launch-ticket endpoint integration ---

@@ -27,6 +27,15 @@ type contextKey string
 // trusted-proxy (XFF) middleware can overwrite r.RemoteAddr from headers.
 const peerAddrContextKey contextKey = "peerAddr"
 
+// proxiedContextKey stores whether the request reached the daemon through a
+// proxy, so that loopback-only gates can refuse a request whose loopback peer is
+// just a same-host reverse proxy relaying an internet client.
+const proxiedContextKey contextKey = "proxied"
+
+// forwardedHeaders are the hop headers whose presence means "someone relayed
+// this". Any one of them disqualifies a peer from counting as local.
+var forwardedHeaders = []string{"X-Forwarded-For", "X-Forwarded-Host", "X-Real-IP", "Forwarded", "CF-Connecting-IP"}
+
 // maxProtectedBodySize bounds request bodies on authenticated routes.
 // All currently-defined endpoints take parameters in the URL path only;
 // 1 MiB is a generous ceiling that keeps a misbehaving (or malicious) client
@@ -71,13 +80,15 @@ func authOrLocalTrusted(authSvc *auth.Service) func(http.Handler) http.Handler {
 	}
 }
 
-// savePeerAddr captures the original TCP peer address into context.
-// Must be registered before the trusted-proxy (XFF) middleware so that
-// security-critical loopback checks (isLocalRequest) use the real connection
-// address instead of the potentially-spoofed X-Real-IP / X-Forwarded-For value.
-func savePeerAddr(next http.Handler) http.Handler {
+// savePeerAddr captures the original TCP peer address into context, along with
+// whether the request was relayed by a proxy. Must be registered before the
+// trusted-proxy (XFF) middleware so that security-critical loopback checks
+// (isLocalCtx) use the real connection address instead of the
+// potentially-spoofed X-Real-IP / X-Forwarded-For value.
+func (srv *Server) savePeerAddr(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), peerAddrContextKey, r.RemoteAddr)
+		ctx = context.WithValue(ctx, proxiedContextKey, isProxiedRequest(r, srv.trustedProxies))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -113,7 +124,7 @@ func securityHeaders(next http.Handler) http.Handler {
 func (srv *Server) setupRoutes() error {
 	// savePeerAddr MUST be first: captures the raw TCP peer address before the
 	// trusted-proxy (XFF) middleware can overwrite r.RemoteAddr.
-	srv.router.Use(savePeerAddr)
+	srv.router.Use(srv.savePeerAddr)
 	if srv.trustedProxies != nil {
 		xffmw, err := xff.New(*srv.trustedProxies)
 		if err != nil {

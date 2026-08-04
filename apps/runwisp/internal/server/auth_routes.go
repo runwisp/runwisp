@@ -4,7 +4,6 @@
 package server
 
 import (
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,8 +15,9 @@ import (
 // JWT flow lives in internal/server/auth; the handlers below just connect
 // chi routes to that package, layer in the local-trusted gating that depends
 // on peer-credential context keys (owned by this package), and host the few
-// helpers that are inherently HTTP-layer (launch-redirect sanitization,
-// local-loopback detection).
+// helpers that are inherently HTTP-layer (launch-redirect sanitization).
+// Loopback/local-peer detection lives in peercred.go alongside the context keys
+// it reads.
 
 // registerAuthRoutes registers the public auth endpoints as raw chi routes.
 // They are deliberately *not* huma operations: they set cookies, honor
@@ -94,30 +94,6 @@ func (srv *Server) handleLaunchTicket(w http.ResponseWriter, r *http.Request) {
 	}
 	srv.auth.SetAuthCookie(w, r, token, auth.JWTTokenDuration)
 	http.Redirect(w, r, sanitizeLaunchRedirect(r.URL.Query().Get("redirect")), http.StatusSeeOther)
-}
-
-// isLocalRequest returns true if the request was either delivered on the
-// daemon's Unix socket (PEERCRED-verified at accept time) or originates
-// from a TCP loopback address.
-//
-// The TCP path uses the original peer address stored by savePeerAddr
-// middleware to prevent bypass via spoofed X-Real-IP / X-Forwarded-For
-// headers (the trusted-proxy XFF middleware may overwrite r.RemoteAddr from
-// those values, but only for a configured trusted proxy).
-func isLocalRequest(r *http.Request) bool {
-	if IsLocalTrusted(r) {
-		return true
-	}
-	addr := r.RemoteAddr
-	if peerAddr, ok := r.Context().Value(peerAddrContextKey).(string); ok {
-		addr = peerAddr
-	}
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		host = addr
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
 
 // sanitizeLaunchRedirect returns the requested redirect target if it is a

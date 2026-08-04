@@ -43,6 +43,18 @@ func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (task
 	}
 
 	task := buildDynamicCloudTask(dispatch, execDef)
+	// sanitizeCloudTaskName only prefixes "cloud-"; the rest of the name is
+	// peer-supplied, so an inline dispatch can land on a locally-defined task
+	// named cloud-*. Upserting over it would let the peer replace a disk-defined
+	// task's execution (and have the ephemeral reaper delete it afterwards),
+	// violating "run= comes from disk only". resolveServiceTarget guards the
+	// service path the same way.
+	if existing, ok := h.taskManager.GetTask(task.Name); ok && !existing.Ephemeral {
+		return "", false, &CloudError{
+			Kind:    CloudErrorKindConflict,
+			Message: fmt.Sprintf("task %q is defined locally; an inline cloud execution cannot overwrite it", task.Name),
+		}
+	}
 	h.taskManager.UpsertTask(task)
 	return task.Name, false, nil
 }

@@ -75,3 +75,26 @@ func TestInstance_NonLoopbackTCPReturns403(t *testing.T) {
 	assert.NotContains(t, w.Body.String(), "/tmp/rw-data",
 		"filesystem paths must never appear in the 403 body")
 }
+
+// Regression: the documented public-exposure setup runs nginx / Caddy / Traefik /
+// cloudflared on the same host forwarding to 127.0.0.1, so every internet request
+// reaches the daemon from loopback. The loopback gate alone would then serve the
+// datadir and config paths to anyone on the internet.
+func TestInstance_ProxiedLoopbackReturns403(t *testing.T) {
+	for _, header := range forwardedHeaders {
+		t.Run(header, func(t *testing.T) {
+			s := newServerForInstanceTest(t)
+
+			req := httptest.NewRequest("GET", "/api/instance", nil)
+			req.RemoteAddr = "127.0.0.1:54321" // the same-host proxy
+			req.Header.Set(header, "203.0.113.9")
+			w := httptest.NewRecorder()
+			s.router.ServeHTTP(w, req)
+
+			assert.Equal(t, http.StatusForbidden, w.Code,
+				"a proxy-relayed caller must not learn the daemon's datadir/config paths")
+			assert.NotContains(t, w.Body.String(), "/tmp/rw-data",
+				"filesystem paths must never appear in the 403 body")
+		})
+	}
+}
