@@ -48,6 +48,11 @@ var composeReservedKeys = map[string]struct{}{
 	"name_format":  {},
 }
 
+// composeDefaultsKey is the reserved [compose.<alias>.<key>] sub-table name that
+// applies its override surface to every imported service (per-service tables win).
+// A compose service named identically is rejected with a rename hint.
+const composeDefaultsKey = "defaults"
+
 var validComposeMode = []string{model.ComposeModeServices, model.ComposeModeStack}
 var validComposePull = []string{
 	model.ComposePullMissing,
@@ -151,6 +156,10 @@ type composeBlock struct {
 
 	// Overrides keyed by compose-service name (post-include/post-exclude).
 	Overrides map[string]*composeServiceOverrideWire
+
+	// Defaults is the [compose.<alias>.defaults] sub-table applied to every
+	// imported service before its per-service override (nil when absent).
+	Defaults *composeServiceOverrideWire
 }
 
 // composeServiceOverrideWire is the per-service override surface inside a
@@ -263,6 +272,7 @@ func resolveComposeBlockPaths(block *composeBlock, baseDir, resolvedFile string)
 func parseComposeBlock(alias string, raw map[string]any) (*composeBlock, error) {
 	scalars := make(map[string]any, len(composeReservedKeys))
 	overrides := make(map[string]*composeServiceOverrideWire)
+	var defaults *composeServiceOverrideWire
 
 	for key, value := range raw {
 		if _, reserved := composeReservedKeys[key]; reserved {
@@ -278,6 +288,10 @@ func parseComposeBlock(alias string, raw map[string]any) (*composeBlock, error) 
 		if err != nil {
 			return nil, err
 		}
+		if key == composeDefaultsKey {
+			defaults = override
+			continue
+		}
 		overrides[key] = override
 	}
 
@@ -290,6 +304,7 @@ func parseComposeBlock(alias string, raw map[string]any) (*composeBlock, error) 
 		composeBlockWire: *wire,
 		Alias:            alias,
 		Overrides:        overrides,
+		Defaults:         defaults,
 	}
 	applyComposeBlockDefaults(block, alias)
 	if err := validateComposeBlock(block); err != nil {
@@ -336,7 +351,7 @@ func validateComposeBlock(block *composeBlock) error {
 		return fmt.Errorf("name_format %q must contain {service}", block.NameFormat)
 	}
 	if block.Mode == model.ComposeModeStack {
-		if len(block.Overrides) > 0 {
+		if len(block.Overrides) > 0 || block.Defaults != nil {
 			return fmt.Errorf("per-service overrides are not allowed in mode=\"stack\"")
 		}
 		if len(block.Include) > 0 || len(block.Exclude) > 0 {
@@ -416,6 +431,9 @@ func expandComposeServices(block *composeBlock, project *composespec.Project, ex
 			return nil, nil, err
 		}
 		tasks = append(tasks, task)
+		if s, ok := composeServiceNotify(block.Defaults, taskName); ok {
+			notify = append(notify, s)
+		}
 		if s, ok := composeServiceNotify(block.Overrides[svcName], taskName); ok {
 			notify = append(notify, s)
 		}
@@ -446,6 +464,9 @@ func selectImportedComposeServices(block *composeBlock, available []string, avai
 		if _, reserved := composeReservedKeys[n]; reserved {
 			return nil, fmt.Errorf("compose service %q collides with a reserved key in [compose.%s]; rename the compose service", n, block.Alias)
 		}
+	}
+	if _, ok := availableSet[composeDefaultsKey]; ok {
+		return nil, fmt.Errorf("compose service %q collides with the reserved defaults table in [compose.%s]; rename the compose service", composeDefaultsKey, block.Alias)
 	}
 	if err := validateComposeNameSet(block.Include, availableSet, "include"); err != nil {
 		return nil, err
@@ -508,8 +529,9 @@ func expandComposeStack(block *composeBlock, _ *composespec.Project, existingNam
 // buildComposeServiceTask applies compose-import defaults and per-service
 // overrides to produce a single supervisable service task. Compose-import
 // defaults: kind=service, restart=on_failure, instances=1, group=alias,
-// graceful_stop=compose stop_grace_period (when set). Override values win
-// over the defaults.
+// graceful_stop=compose stop_grace_period (when set). Precedence, low to high:
+// compose-import default → the block's [compose.<alias>.defaults] table →
+// the per-service [compose.<alias>.<svc>] override.
 func buildComposeServiceTask(block *composeBlock, svc *composespec.Service, svcName, taskName string) (model.Task, error) {
 	task := model.Task{
 		Name:       taskName,
@@ -522,6 +544,9 @@ func buildComposeServiceTask(block *composeBlock, svc *composespec.Service, svcN
 	}
 	if svc != nil && svc.StopGracePeriod > 0 {
 		task.GracefulStop = svc.StopGracePeriod
+	}
+	if err := applyComposeOverride(&task, block.Defaults, svcName); err != nil {
+		return model.Task{}, err
 	}
 	if err := applyComposeOverride(&task, block.Overrides[svcName], svcName); err != nil {
 		return model.Task{}, err
