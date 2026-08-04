@@ -123,7 +123,6 @@
                         RunWisp
                     </span>
                 </div>
-                <p class="font-sans text-sm text-on-surface-muted">Sign in to this instance</p>
             </div>
 
             <form onsubmit={handleSubmit} class="mt-6 space-y-4">

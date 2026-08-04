@@ -9,7 +9,7 @@ test.describe("authentication", () => {
         const page = await context.newPage();
 
         await page.goto("/");
-        await expect(page.getByText("Sign in to this instance")).toBeVisible();
+        await expect(page.getByRole("dialog", { name: "RunWisp" })).toBeVisible();
         await expect(page.getByLabel("Password")).toBeVisible();
         await expect(page.getByRole("button", { name: "Login" })).toBeVisible();
 
@@ -21,7 +21,7 @@ test.describe("authentication", () => {
         const page = await context.newPage();
 
         await page.goto("/");
-        await page.getByText("Sign in to this instance").waitFor({ timeout: 15_000 });
+        await page.getByRole("dialog", { name: "RunWisp" }).waitFor({ timeout: 15_000 });
         await page.getByLabel("Password").fill(daemonState.password);
         await page.getByRole("button", { name: "Login" }).click();
 
@@ -35,7 +35,7 @@ test.describe("authentication", () => {
         const page = await context.newPage();
 
         await page.goto("/");
-        await page.getByText("Sign in to this instance").waitFor({ timeout: 15_000 });
+        await page.getByRole("dialog", { name: "RunWisp" }).waitFor({ timeout: 15_000 });
         await page.getByLabel("Password").fill("wrong-password-12345");
         await page.getByRole("button", { name: "Login" }).click();
 
@@ -46,7 +46,7 @@ test.describe("authentication", () => {
         // crucially the two are now distinguished (a throttled login is no
         // longer mislabeled as "Invalid password"), which is what we assert.
         await expect(page.getByText(/Invalid password|Too many attempts/)).toBeVisible();
-        await expect(page.getByText("Sign in to this instance")).toBeVisible();
+        await expect(page.getByRole("dialog", { name: "RunWisp" })).toBeVisible();
 
         await context.close();
     });
