@@ -13,6 +13,7 @@ import (
 	"log/slog"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
 )
@@ -103,6 +104,71 @@ func (r *Reconciler) Reconcile() (model.ReloadResult, error) {
 	slog.Info("Configuration reloaded",
 		"added", len(result.Added), "removed", len(result.Removed), "changed", len(result.Changed))
 	return result, nil
+}
+
+// CronHoldChange is what a cron-liveness refresh moved: the tasks whose hold was
+// released (RunWisp now owns their schedule) and the tasks newly held (a cron
+// daemon came back and owns them again). Both empty means the machine's answer
+// did not change anything.
+type CronHoldChange struct {
+	Released []string
+	Held     []string
+}
+
+func (c CronHoldChange) Any() bool { return len(c.Released) > 0 || len(c.Held) > 0 }
+
+// RefreshCronHolds applies a fresh cron-liveness answer to the live task set.
+//
+// It is not a reload. runwisp.toml is not re-read and no edit the operator has
+// made since boot is picked up — config reload stays explicit. The only thing
+// re-derived is the machine fact "does a live cron daemon own this crontab",
+// which RunWisp asked about once at load and, without this, would never ask
+// about again. A hold that only lifts on an explicit reload leaves an operator
+// who retires cron and forgets to reload with jobs *neither* scheduler runs,
+// which is the exact class of silent failure the hold exists to prevent.
+func (r *Reconciler) RefreshCronHolds(state cronprobe.State) CronHoldChange {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	updated, changed := config.WithCronHold(r.baseline, state)
+	if len(changed) == 0 {
+		return CronHoldChange{}
+	}
+	newTasks := tasksByName(updated)
+
+	var out CronHoldChange
+	for _, name := range changed {
+		newTask, ok := newTasks[name]
+		if !ok {
+			continue
+		}
+		oldTask, ok := r.registry.Get(name)
+		if !ok {
+			// Removed from the registry since the baseline was pinned. Nothing live
+			// to re-own, and inventing a registration here would resurrect it.
+			continue
+		}
+		// The same sequence applyChanged runs for a schedule change, which is what
+		// this is: anchorUnheld stamps the catch-up anchor at the moment RunWisp
+		// becomes responsible for the ticks, and rescheduleChanged adds or drops the
+		// cron entry according to the new Schedulable().
+		r.registry.Set(newTask)
+		r.manager.UpsertTask(newTask)
+		r.anchorUnheld(oldTask, newTask)
+		if r.scheduler != nil {
+			r.rescheduleChanged(newTask)
+		}
+		if newTask.Held() {
+			out.Held = append(out.Held, name)
+		} else {
+			out.Released = append(out.Released, name)
+		}
+	}
+
+	// Last, so Warnings and config.Held answer from the config whose holds are now
+	// the ones in force.
+	r.baseline = updated
+	return out
 }
 
 // Warnings reports the live config's non-fatal findings — chiefly the crontab

@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"sort"
 
+	"github.com/runwisp/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/internal/importer"
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -80,8 +81,12 @@ func loadWithIncludes(path string) (*Config, entrySources, error) {
 	cfg.CronFindings = cron.findings
 	cfg.cronBlocks = cron.blocks
 	// After markProvenance, which is what says which tasks came from a crontab,
-	// and before Warnings can be asked anything.
-	cfg.cronDaemon = probeCronDaemon(cron.files, crondPidFiles)
+	// and before Warnings can be asked anything. Skipped when nothing is reading
+	// crontabs, so a config with no include_cron never execs systemctl for an
+	// answer that could not change any decision.
+	if len(cron.files) > 0 {
+		cfg.cronDaemon = cronprobe.Probe()
+	}
 	markCronHold(cfg)
 	// After buildConfig, so the notifier set is known: a crontab's MAILTO stops being
 	// something to report once the config can actually deliver mail.
@@ -126,20 +131,57 @@ func markProvenance(cfg *Config, rootDir string, cronFiles map[string]bool) {
 // RunWisp's alone even while cron runs, and holding them would stop them for no
 // reason.
 //
-// Re-derived every load like markProvenance, which is what makes retiring cron
-// and reloading the whole cure: nothing persists a hold.
-func markCronHold(cfg *Config) {
-	if !cfg.cronDaemon.live {
-		return
-	}
+// Nothing persists a hold: it is re-derived from the machine like
+// markProvenance is re-derived from the origin files, so retiring cron is the
+// whole cure. Written as an idempotent assignment rather than a set-only pass
+// because WithCronHold runs it again against a fresh liveness answer on a live
+// config, where clearing a stale hold matters exactly as much as stamping a new
+// one. Returns the names whose held-ness actually changed.
+func markCronHold(cfg *Config) (changed []string) {
 	for i := range cfg.Tasks {
-		if cfg.Tasks[i].Source != model.SourceCron {
-			continue
+		task := &cfg.Tasks[i]
+		want := model.HeldByNothing
+		if cfg.cronDaemon.Live && task.Source == model.SourceCron &&
+			importer.CronOwnsPath(task.SourceFile) {
+			want = model.HeldByCron
 		}
-		if importer.CronOwnsPath(cfg.Tasks[i].SourceFile) {
-			cfg.Tasks[i].HeldBy = model.HeldByCron
+		if task.HeldBy != want {
+			task.HeldBy = want
+			changed = append(changed, task.Name)
 		}
 	}
+	return changed
+}
+
+// WithCronHold re-derives the cron holds against a fresh liveness answer and
+// returns a new config plus the names whose held-ness flipped. Nil changed means
+// nothing moved and the returned config can be ignored.
+//
+// It never reads runwisp.toml. Config reload stays explicit — the operator's
+// declared task set is untouched, and the only thing re-derived is a fact about
+// the machine that RunWisp asked about once at load and would otherwise never
+// ask about again.
+//
+// The copy is not an optimisation to skip. Reconciler hands &cfg.Tasks[i]
+// straight into the TaskRegistry, and those same *model.Task values are read
+// concurrently by the API, the TUI and the Web UI; flipping HeldBy in place
+// would be a data race with every one of them. Building a new Tasks slice is the
+// same shape a reload already produces, so the reconciler applies it the same
+// way.
+func WithCronHold(cfg *Config, state cronprobe.State) (updated *Config, changed []string) {
+	if cfg == nil {
+		return nil, nil
+	}
+	next := *cfg
+	next.Tasks = make([]model.Task, len(cfg.Tasks))
+	copy(next.Tasks, cfg.Tasks)
+	next.cronDaemon = state
+
+	changed = markCronHold(&next)
+	if len(changed) == 0 {
+		return cfg, nil
+	}
+	return &next, changed
 }
 
 // mergeIncludeFile reads and parses one included file, enforces the flat-only

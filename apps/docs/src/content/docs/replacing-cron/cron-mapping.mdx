@@ -2,40 +2,54 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: How cron maps to TOML
-description: Field-by-field reference for what a crontab becomes in runwisp.toml, and the handful of things that need a human.
+description: Field-by-field reference for what a crontab becomes in runwisp.toml — syntax, execution model, and the handful of things that need a human.
+head:
+    - tag: title
+      content: "Cron to TOML: field-by-field crontab mapping reference"
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 This is the reference page for both routes into RunWisp — what
 `runwisp import cron` writes out, and equally how a job read live through
-[`include_cron`](/configuration/daemon/#include_cron) behaves. If you want the
-narrative version, start with
-[Take over from cron](/replacing-cron/take-over-from-cron/) or
+[`include_cron`](/configuration/daemon/#include_cron) behaves. For the narrative
+version, start with [Take over from cron](/replacing-cron/take-over-from-cron/) or
 [Converting crontabs](/replacing-cron/converting-crontabs/) instead.
 
 ## The mapping table
 
-Most of a crontab translates one-to-one. Here's the whole picture:
+Most of a crontab translates one-to-one.
 
-| crontab                        | runwisp.toml                  | Notes                                              |
-| ------------------------------ | ----------------------------- | -------------------------------------------------- |
-| `30 2 * * * cmd`               | `cron = "30 2 * * *"` + `run` | The five fields are copied verbatim.               |
-| `@daily`, `@hourly`, `@weekly` | `cron = "@daily"` …           | RunWisp speaks the same descriptors.               |
-| `@reboot cmd`                  | `run_on_start = true` + `run` | Runs once each time the daemon starts.             |
-| `@midnight`, `@annually`       | `@daily`, `@yearly`           | Normalized to RunWisp's spelling.                  |
-| user column (system crontab)   | `user = "..."`                | Detected automatically, `@reboot` lines too.       |
-| `SHELL=/bin/bash`              | per-task `shell`              | Must be an absolute path.                          |
-| `PATH=…`, other `VAR=val`      | per-task `env`                | Copied onto each task from that crontab.           |
-| cron's minimal environment     | `env_base = "clean"`          | Set on every imported task — see below.            |
-| jobs run in `$HOME`            | `working_dir = "~"`           | The home of whoever the job runs as.               |
-| a missed tick is simply gone   | `catch_up = "skip"`           | Cron never re-fires one. Still recorded as missed. |
-| overlapping copies of a job    | `on_overlap = "queue"`        | Deliberately not cron's pile-up — see below.       |
-| `CRON_TZ=…` / `TZ=…`           | per-task `timezone`           | Scoped to that crontab; a bad zone gets a TODO.    |
-| `# a comment above a job`      | `description = "..."`         | The comment becomes the task's description.        |
-| `\%` in a command              | a literal `%` in `run`        | Cron's escape, not the shell's — unwrapped.        |
-| `cmd % input`                  | `run = "cmd"` + a `# TODO`    | Cron piped `input` on stdin; see below.            |
-| `MAILTO=…`                     | a `sendmail` notifier         | Handed to you as a paste-able block — see below.   |
+### Syntax
+
+What the importer reads out of the file, line by line:
+
+| crontab                        | runwisp.toml                  | Notes                                            |
+| ------------------------------ | ----------------------------- | ------------------------------------------------ |
+| `30 2 * * * cmd`               | `cron = "30 2 * * *"` + `run` | The five fields are copied verbatim.             |
+| `@daily`, `@hourly`, `@weekly` | `cron = "@daily"` …           | RunWisp speaks the same descriptors.             |
+| `@midnight`, `@annually`       | `@daily`, `@yearly`           | Normalized to RunWisp's spelling.                |
+| `@reboot cmd`                  | `run_on_start = true` + `run` | Runs once each time the daemon starts.           |
+| user column (system crontab)   | `user = "..."`                | Detected automatically, `@reboot` lines too.     |
+| `SHELL=/bin/bash`              | per-task `shell`              | Must be an absolute path.                        |
+| `PATH=…`, other `VAR=val`      | per-task `env`                | Copied onto each task from that crontab.         |
+| `CRON_TZ=…` / `TZ=…`           | per-task `timezone`           | Scoped to that crontab; a bad zone gets a TODO.  |
+| `# a comment above a job`      | `description = "..."`         | The comment becomes the task's description.      |
+| `\%` in a command              | a literal `%` in `run`        | Cron's escape, not the shell's — unwrapped.      |
+| `cmd % input`                  | `run = "cmd"` + a `# TODO`    | Cron piped `input` on stdin; see below.          |
+| `MAILTO=…`                     | a `sendmail` notifier         | Handed to you as a paste-able block — see below. |
+
+### Execution model
+
+These aren't in the file — they're how cron _behaves_, written out explicitly so a
+moved job keeps behaving that way:
+
+| cron's behaviour             | runwisp.toml           | Notes                                              |
+| ---------------------------- | ---------------------- | -------------------------------------------------- |
+| a nearly empty environment   | `env_base = "clean"`   | Set on every imported task — see below.            |
+| jobs run in `$HOME`          | `working_dir = "~"`    | The home of whoever the job runs as.               |
+| a missed tick is simply gone | `catch_up = "skip"`    | Cron never re-fires one. Still recorded as missed. |
+| overlapping copies of a job  | `on_overlap = "queue"` | Deliberately not cron's pile-up — see below.       |
 
 Crontab-wide settings become **per-task** values rather than daemon-wide ones.
 A crontab's `SHELL`, `CRON_TZ`/`TZ`, and top-of-file `VAR=val` lines are copied
@@ -48,41 +62,38 @@ tasks — and nothing an import writes touches your global `[defaults]` or
 
 Every imported task gets [`env_base = "clean"`](/configuration/tasks/#working-directory--shell).
 Cron hands a job a nearly empty environment — `PATH=/usr/bin:/bin`, `SHELL`,
-`HOME`, `LOGNAME` — so that's what your jobs were written against, and it's
-what they keep. RunWisp's own default is to inherit the daemon's environment,
-which is friendlier for a task you're writing today but wrong for one you're
-moving: it would run with whatever the daemon was launched with, and you'd
-find out weeks later. Your crontab's own `PATH=` line still lands in the
-task's `env` and layers on top, so nothing you set explicitly is lost.
+`HOME`, `LOGNAME` — so that's what your jobs were written against, and it's what
+they keep. RunWisp's own default is to inherit the daemon's environment, which
+would run your job with whatever the daemon was launched with. Your crontab's own
+`PATH=` line still lands in the task's `env` and layers on top, so nothing you set
+explicitly is lost.
 
 Cron also runs every job in the home directory of the user running it, while
-RunWisp defaults to whatever directory the daemon was started in — so a `run`
-script with a relative path in it would quietly write somewhere else. Every
-imported job gets `working_dir = "~"`, and
+RunWisp defaults to the directory the daemon was started in — so a `run` script
+with a relative path in it would quietly write somewhere else. Every imported job
+gets `working_dir = "~"`, and
 [`~` means the home of whoever the task runs as](/configuration/tasks/#working-directory--shell):
-the daemon's own account for a per-user crontab, and the user column's account
-for a system crontab. Both formats end up with cron's rule, and neither needs
-you to write a path.
+the daemon's own account for a per-user crontab, the user column's account for a
+system crontab. Neither needs you to write a path.
 
 ## Timing: catch-up and overlap
 
 These two are about **when** a job fires, which is the one thing a migration
-really mustn't change quietly.
+mustn't change quietly. Both are written out explicitly, so each is one line to
+change if you want RunWisp's behaviour instead of cron's.
 
 Cron has no concept of a missed tick — a tick that arrives while nothing is
-listening is just gone. RunWisp normally catches up, which is a feature you
-want for a task you wrote deliberately and a surprise for one you moved:
-starting the daemon at 15:00 would run last night's 02:00 backup, and the run
-would look exactly like a scheduled one. So imported jobs get
-[`catch_up = "skip"`](/concepts/scheduling/#missed-ticks-catchup). You lose nothing
-by it — the gap is still recorded as a missed run you can see, which is more
-than cron ever gave you. Drop the line if you'd rather have catch-up.
+listening is just gone. RunWisp normally catches up, so starting the daemon at
+15:00 would run last night's 02:00 backup, and the run would look exactly like a
+scheduled one. Imported jobs get
+[`catch_up = "skip"`](/concepts/scheduling/#missed-ticks-catchup) instead. The gap
+is still recorded as a missed run you can see, which is more than cron gave you.
+**Delete the line if you'd rather have catch-up.**
 
-`on_overlap = "queue"` is written out at its default value, on purpose. When a
-job outruns its own schedule, cron starts another copy; RunWisp queues the next
-one instead. That's the better behaviour — an unbounded pile-up is why cron jobs
-end up wrapped in `flock` — but if yours genuinely relied on running in
-parallel, this is the line to change, and
+`on_overlap = "queue"` is written out at its default value. When a job outruns its
+own schedule, cron starts another copy; RunWisp queues the next one instead — an
+unbounded pile-up is why cron jobs end up wrapped in `flock`. If yours genuinely
+relied on running in parallel, this is the line to change, and
 [`max_concurrent`](/concepts/concurrency/) is how.
 
 RunWisp's cron grammar is a superset of vixie-cron's: the standard five fields,

@@ -21,6 +21,7 @@ import (
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/clilog"
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runlog"
@@ -149,6 +150,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	daemonInfo := buildDaemonInfo(cfg, svc, configSnap.LoadedAt(), f.Port)
 
 	reconciler, reloadFn := newReconciler(mode, cfg, svc, f, configSnap)
+	defer startCronHoldWatcher(reconciler, cfg.Config)()
 
 	srv, err := server.New(server.Options{
 		DB:                svc.DB,
@@ -287,6 +289,25 @@ func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Fl
 		Now:        time.Now,
 	})
 	return r, r.Reconcile
+}
+
+// startCronHoldWatcher starts the loop that keeps the cron holds honest, so an
+// operator who retires cron gets their jobs back without running `runwisp
+// reload` — and, in the other direction, a cron that comes back reclaims them
+// before both schedulers fire the same job.
+//
+// Skipped unless this config actually reads a crontab: with no include_cron the
+// probe could not change a single decision, and starting it anyway would exec
+// systemctl every minute on every ordinary install. Also skipped in cloud mode,
+// which has no local scheduler to refresh (nil reconciler).
+//
+// Always returns a non-nil stop func so the caller can defer it unconditionally.
+func startCronHoldWatcher(r *runtime.Reconciler, cfg *config.Config) context.CancelFunc {
+	state, readsCron := config.CronHold(cfg)
+	if r == nil || !readsCron {
+		return func() {}
+	}
+	return runtime.StartCronHoldWatcher(cronprobe.Probe, r.RefreshCronHolds, state)
 }
 
 // configWarningsFn returns the hook /api/info calls for the live config's

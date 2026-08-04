@@ -29,13 +29,17 @@ import (
 
 // Server exposes the HTTP API and serves the UI.
 type Server struct {
-	router            *chi.Mux
-	api               huma.API
-	db                storage.RunRepository
-	notifyRepo        storage.NotificationRepository
-	notifyHub         NotificationHub
-	taskManager       runtime.TaskRunner
-	scheduler         runtime.NextRunGetter
+	router      *chi.Mux
+	api         huma.API
+	db          storage.RunRepository
+	notifyRepo  storage.NotificationRepository
+	notifyHub   NotificationHub
+	taskManager runtime.TaskRunner
+	scheduler   runtime.NextRunGetter
+	// tasks is the live task set, read per /api/info request so derived state that
+	// changes while the daemon runs — a cron hold releasing itself, a reload adding
+	// or removing tasks — is reported as it is now, not as it was at boot.
+	tasks             *runtime.TaskRegistry
 	host              string
 	port              int
 	dataDir           string
@@ -139,6 +143,7 @@ func New(opts Options) (*Server, error) {
 		notifyHub:         opts.NotificationHub,
 		taskManager:       opts.TaskManager,
 		scheduler:         opts.Scheduler,
+		tasks:             opts.Tasks,
 		host:              opts.Host,
 		port:              opts.Port,
 		dataDir:           opts.DataDir,

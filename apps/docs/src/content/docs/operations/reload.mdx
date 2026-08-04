@@ -114,10 +114,11 @@ task changes" and leave you thinking it worked. The same warnings appear in
 `runwisp status`, in `/api/info` (so the UI and TUI header can show them), and in
 `runwisp validate` before you deploy at all.
 
-A reload is also when [held](/replacing-cron/held-jobs/) state is
-re-derived: RunWisp asks the box afresh whether a cron daemon is still
-alive, so stopping cron and reloading is all it takes to take the jobs
-over.
+A reload also re-checks whether a system cron daemon is still alive, so
+the jobs it was [holding](/replacing-cron/held-jobs/) become RunWisp's on
+the spot. You don't have to reload for that, though — the daemon re-checks
+on its own about once a minute either way. Reloading after you retire cron
+just makes the handover immediate.
 
 ## Reload is not a restart
 

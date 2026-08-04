@@ -79,8 +79,11 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
                                     catch-up, no run_on_start/@reboot, no missed-run rows, no FirstSeenAt anchor.
                                     Reported as "held_by": "cron" on each task in list/status --json and
                                     /api/info. Manual triggers (exec, API, TUI r) STILL RUN a held task.
-                                    Unholding is explicit only — `runwisp reload`/SIGHUP re-probes and re-anchors
-                                    catch-up to now, so a hold window leaves no history and no missed-tick alerts.
+                                    The gate is self-healing: the daemon re-probes cron liveness every 60s (only
+                                    when include_cron is set) and releases or re-takes holds on its own, so
+                                    retiring cron needs NO reload. `runwisp reload`/SIGHUP re-probes too. Either
+                                    way catch-up is re-anchored to the moment of release, so a hold window leaves
+                                    no history and no missed-tick alerts.
                                     A crontab-format file OUTSIDE cron's own paths is NOT held (nothing to hand
                                     over) and keeps a fire-twice warning instead. `sudo runwisp takeover` is the
                                     one-command way out.

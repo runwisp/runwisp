@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/runwisp/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -842,16 +843,27 @@ include_cron = ["crontabs/*"]
 // without a real systemd on the machine running the suite.
 func stubCronServiceProbe(t *testing.T, active, enabled, ok bool) {
 	t.Helper()
-	prev := cronServiceProbe
-	cronServiceProbe = func() (bool, bool, bool) { return active, enabled, ok }
-	t.Cleanup(func() { cronServiceProbe = prev })
+	prev := cronprobe.ServiceProbe
+	cronprobe.ServiceProbe = func() (bool, bool, bool) { return active, enabled, ok }
+	t.Cleanup(func() { cronprobe.ServiceProbe = prev })
+}
+
+// stubCronPidFiles points the no-systemctl fallback at pid files a test wrote,
+// rather than the real /run/crond.pid a CI image might actually have.
+func stubCronPidFiles(t *testing.T, paths []string) {
+	t.Helper()
+	prev := cronprobe.PidFiles
+	cronprobe.PidFiles = paths
+	t.Cleanup(func() { cronprobe.PidFiles = prev })
 }
 
 // cronHoldConfig builds the Config shape the hold gate and its warning read: one
 // cron-sourced task per file, then the real probe and the real stamping pass. It
 // goes through markCronHold rather than setting HeldBy by hand so a test can't
 // assert a hold the loader wouldn't actually produce.
-func cronHoldConfig(files, pidCandidates []string) *Config {
+func cronHoldConfig(t *testing.T, files, pidCandidates []string) *Config {
+	t.Helper()
+	stubCronPidFiles(t, pidCandidates)
 	cfg := &Config{}
 	for i, f := range files {
 		cfg.Tasks = append(cfg.Tasks, model.Task{
@@ -863,7 +875,9 @@ func cronHoldConfig(files, pidCandidates []string) *Config {
 		})
 	}
 	cfg.cronFiles = files
-	cfg.cronDaemon = probeCronDaemon(files, pidCandidates)
+	if len(files) > 0 {
+		cfg.cronDaemon = cronprobe.Probe()
+	}
 	markCronHold(cfg)
 	return cfg
 }
@@ -882,7 +896,7 @@ func TestHeld(t *testing.T) {
 
 	t.Run("systemctl reports active holds the jobs", func(t *testing.T) {
 		stubCronServiceProbe(t, true, false, true)
-		held := Held(cronHoldConfig([]string{"/etc/cron.d/backup"}, []string{missingPid}))
+		held := Held(cronHoldConfig(t, []string{"/etc/cron.d/backup"}, []string{missingPid}))
 		assert.True(t, held.Any())
 		assert.Equal(t, []string{"job0"}, held.Tasks)
 		assert.Contains(t, held.CronState, "is running")
@@ -890,14 +904,14 @@ func TestHeld(t *testing.T) {
 
 	t.Run("systemctl reports enabled but not active still holds", func(t *testing.T) {
 		stubCronServiceProbe(t, false, true, true)
-		held := Held(cronHoldConfig([]string{"/etc/crontab"}, []string{missingPid}))
+		held := Held(cronHoldConfig(t, []string{"/etc/crontab"}, []string{missingPid}))
 		require.True(t, held.Any())
 		assert.Contains(t, held.CronState, "next boot")
 	})
 
 	t.Run("systemctl reports neither active nor enabled, nothing held", func(t *testing.T) {
 		stubCronServiceProbe(t, false, false, true)
-		cfg := cronHoldConfig([]string{"/etc/crontab"}, []string{livePid})
+		cfg := cronHoldConfig(t, []string{"/etc/crontab"}, []string{livePid})
 		assert.False(t, Held(cfg).Any(),
 			"the init system is the authority when it can answer at all")
 		assert.Empty(t, cfg.Tasks[0].HeldBy)
@@ -909,7 +923,7 @@ func TestHeld(t *testing.T) {
 	// /etc/cron.d, so it has to be held here too.
 	t.Run("systemctl unavailable, live pidfile holds a spool-only include", func(t *testing.T) {
 		stubCronServiceProbe(t, false, false, false)
-		cfg := cronHoldConfig([]string{"/var/spool/cron/crontabs/alice"}, []string{missingPid, livePid})
+		cfg := cronHoldConfig(t, []string{"/var/spool/cron/crontabs/alice"}, []string{missingPid, livePid})
 		held := Held(cfg)
 		require.True(t, held.Any())
 		assert.Contains(t, held.CronState, "live pidfile")
@@ -921,14 +935,14 @@ func TestHeld(t *testing.T) {
 	// cleaning up, or a stale file baked into an image, warned forever.
 	t.Run("systemctl unavailable, stale pidfile holds nothing", func(t *testing.T) {
 		stubCronServiceProbe(t, false, false, false)
-		cfg := cronHoldConfig([]string{"/etc/crontab"}, []string{deadPid})
+		cfg := cronHoldConfig(t, []string{"/etc/crontab"}, []string{deadPid})
 		assert.False(t, Held(cfg).Any())
 		assert.Empty(t, cfg.Tasks[0].HeldBy)
 	})
 
 	t.Run("no cron files, nothing held even if crond is live", func(t *testing.T) {
 		stubCronServiceProbe(t, true, true, true)
-		assert.False(t, Held(cronHoldConfig(nil, []string{livePid})).Any())
+		assert.False(t, Held(cronHoldConfig(t, nil, []string{livePid})).Any())
 	})
 
 	t.Run("a nil config holds nothing", func(t *testing.T) {
@@ -937,7 +951,7 @@ func TestHeld(t *testing.T) {
 
 	t.Run("every held task is named, in config order", func(t *testing.T) {
 		stubCronServiceProbe(t, true, false, true)
-		cfg := cronHoldConfig(
+		cfg := cronHoldConfig(t,
 			[]string{"/etc/cron.d/backup", "/etc/cron.d/vacuum"}, []string{missingPid})
 		assert.Equal(t, []string{"job0", "job1"}, Held(cfg).Tasks)
 	})
@@ -952,7 +966,7 @@ func TestUnownedCronFilesWarning(t *testing.T) {
 
 	t.Run("a file cron does not own is not held and warns", func(t *testing.T) {
 		stubCronServiceProbe(t, true, false, true)
-		cfg := cronHoldConfig([]string{"/opt/myapp/jobs.cron"}, []string{missingPid})
+		cfg := cronHoldConfig(t, []string{"/opt/myapp/jobs.cron"}, []string{missingPid})
 		got := unownedCronFilesWarning(cfg)
 		require.Len(t, got, 1)
 		assert.Contains(t, got[0], "/opt/myapp/jobs.cron")
@@ -963,7 +977,7 @@ func TestUnownedCronFilesWarning(t *testing.T) {
 
 	t.Run("a cron-owned file is held instead of warned about", func(t *testing.T) {
 		stubCronServiceProbe(t, true, false, true)
-		cfg := cronHoldConfig([]string{"/etc/cron.d/backup"}, []string{missingPid})
+		cfg := cronHoldConfig(t, []string{"/etc/cron.d/backup"}, []string{missingPid})
 		assert.Empty(t, unownedCronFilesWarning(cfg),
 			"the gate held it, so nothing is firing twice — warning about it would be false")
 		assert.True(t, Held(cfg).Any())
@@ -971,7 +985,7 @@ func TestUnownedCronFilesWarning(t *testing.T) {
 
 	t.Run("a mixed include splits into a hold and a warning", func(t *testing.T) {
 		stubCronServiceProbe(t, true, false, true)
-		cfg := cronHoldConfig(
+		cfg := cronHoldConfig(t,
 			[]string{"/etc/cron.d/backup", "/opt/myapp/jobs.cron"}, []string{missingPid})
 		got := unownedCronFilesWarning(cfg)
 		require.Len(t, got, 1)
@@ -983,7 +997,7 @@ func TestUnownedCronFilesWarning(t *testing.T) {
 
 	t.Run("a dead crond warns about nothing", func(t *testing.T) {
 		stubCronServiceProbe(t, false, false, true)
-		cfg := cronHoldConfig([]string{"/opt/myapp/jobs.cron"}, []string{missingPid})
+		cfg := cronHoldConfig(t, []string{"/opt/myapp/jobs.cron"}, []string{missingPid})
 		assert.Empty(t, unownedCronFilesWarning(cfg))
 	})
 }
@@ -1000,12 +1014,100 @@ func TestMarkCronHoldLeavesNonCronTasksAlone(t *testing.T) {
 			Source: model.SourceStaged, SourceFile: "/etc/runwisp/runwisp.d/imported.toml"},
 	}}
 	cfg.cronFiles = []string{"/etc/crontab"}
-	cfg.cronDaemon = probeCronDaemon(cfg.cronFiles, nil)
+	cfg.cronDaemon = cronprobe.Probe()
 	markCronHold(cfg)
 
-	require.True(t, cfg.cronDaemon.live, "the probe has to be reporting live for this to prove anything")
+	require.True(t, cfg.cronDaemon.Live, "the probe has to be reporting live for this to prove anything")
 	assert.Empty(t, cfg.Tasks[0].HeldBy)
 	assert.Empty(t, cfg.Tasks[1].HeldBy)
+}
+
+// TestMarkCronHoldClearsAStaleHold is the bug the runtime watcher exists to
+// exploit. markCronHold used to return early when cron was not live, so it could
+// only ever stamp a hold, never clear one. That was invisible while the only
+// caller was a fresh load — every task starts unheld — and it meant the answer
+// could not be refreshed on a live config at all: the hold outlived the cron
+// daemon, and the jobs stopped running entirely.
+func TestMarkCronHoldClearsAStaleHold(t *testing.T) {
+	cfg := &Config{Tasks: []model.Task{{
+		Name: "backup", Cron: "* * * * *", Run: "true",
+		Source: model.SourceCron, SourceFile: "/etc/cron.d/backup",
+		HeldBy: model.HeldByCron,
+	}}}
+	cfg.cronFiles = []string{"/etc/cron.d/backup"}
+
+	assert.Equal(t, []string{"backup"}, markCronHold(cfg), "clearing a hold is a change")
+	assert.Empty(t, cfg.Tasks[0].HeldBy)
+	assert.Empty(t, markCronHold(cfg), "and re-deriving the same answer is not")
+}
+
+// TestWithCronHold covers the entry point the runtime watcher calls once a minute.
+func TestWithCronHold(t *testing.T) {
+	cronOwned := model.Task{
+		Name: "backup", Cron: "* * * * *", Run: "true",
+		Source: model.SourceCron, SourceFile: "/etc/cron.d/backup",
+	}
+	live := cronprobe.State{Live: true, State: "is running"}
+
+	t.Run("a live daemon takes the hold", func(t *testing.T) {
+		cfg := &Config{Tasks: []model.Task{cronOwned}}
+		got, changed := WithCronHold(cfg, live)
+		assert.Equal(t, []string{"backup"}, changed)
+		assert.Equal(t, model.HeldByCron, got.Tasks[0].HeldBy)
+		assert.True(t, Held(got).Any(), "and the surfaces read the new config, not the old one")
+	})
+
+	t.Run("a retired daemon releases it", func(t *testing.T) {
+		held := cronOwned
+		held.HeldBy = model.HeldByCron
+		got, changed := WithCronHold(&Config{Tasks: []model.Task{held}}, cronprobe.State{})
+		assert.Equal(t, []string{"backup"}, changed)
+		assert.Empty(t, got.Tasks[0].HeldBy)
+	})
+
+	// The reconciler hands &cfg.Tasks[i] straight to the TaskRegistry, and the API,
+	// TUI and Web UI read those same values concurrently. Flipping HeldBy in place
+	// would be a data race with every one of them.
+	t.Run("the input config and its task values are untouched", func(t *testing.T) {
+		cfg := &Config{Tasks: []model.Task{cronOwned}}
+		before := &cfg.Tasks[0]
+		got, _ := WithCronHold(cfg, live)
+
+		require.NotSame(t, cfg, got)
+		assert.Empty(t, before.HeldBy, "the pointer the registry holds must not have moved")
+		assert.False(t, Held(cfg).Any())
+	})
+
+	t.Run("no change returns the config it was given", func(t *testing.T) {
+		cfg := &Config{Tasks: []model.Task{cronOwned}}
+		got, changed := WithCronHold(cfg, cronprobe.State{})
+		assert.Empty(t, changed)
+		assert.Same(t, cfg, got)
+	})
+
+	t.Run("a nil config is not a panic", func(t *testing.T) {
+		got, changed := WithCronHold(nil, live)
+		assert.Nil(t, got)
+		assert.Empty(t, changed)
+	})
+}
+
+// TestCronHold covers the guard the runtime watcher uses to stay off boxes it has
+// nothing to say about: without include_cron, probing the machine every minute
+// could not change a single scheduling decision.
+func TestCronHold(t *testing.T) {
+	assertReadsCron := func(t *testing.T, want bool, cfg *Config) {
+		t.Helper()
+		_, got := CronHold(cfg)
+		assert.Equal(t, want, got)
+	}
+	assertReadsCron(t, false, nil)
+	assertReadsCron(t, false, &Config{})
+	assertReadsCron(t, true, &Config{cronFiles: []string{"/etc/crontab"}})
+
+	live := cronprobe.State{Live: true, State: "is running"}
+	state, _ := CronHold(&Config{cronDaemon: live})
+	assert.Equal(t, live, state, "the watcher starts from the answer the config was resolved with")
 }
 
 // TestRunUserFindings_NonRootDaemonCannotBecomeCronsUser is the gap

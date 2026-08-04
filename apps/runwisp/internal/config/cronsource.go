@@ -7,14 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
-	"syscall"
 
+	"github.com/runwisp/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/internal/importer"
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -678,96 +676,17 @@ func cronSourceWarnings(cfg *Config) []string {
 	return append(out, unownedCronFilesWarning(cfg)...)
 }
 
-// crondPidFiles are where the common cron implementations write their pid. Passed
-// in rather than read directly so the check is testable without a real cron daemon.
-var crondPidFiles = []string{"/run/crond.pid", "/run/cron.pid", "/var/run/crond.pid", "/var/run/cron.pid"}
-
-// cronServiceProbe asks the init system whether a cron service is active or
-// enabled. A package var for the same reason cronUserExists is one: the real
-// answer comes from systemd, and a test needs to ask the question about an
-// init system it can describe. ok is false when the probe itself couldn't run
-// (no systemctl on this box — a non-systemd Linux, or macOS), telling the
-// caller to fall back to the pid-file check. Never assigned outside tests.
-var cronServiceProbe = systemctlCronServiceState
-
-// systemctlCronServiceState checks each of importer.CronUnits() with
-// `systemctl is-active`/`is-enabled`. Both matter: active covers a daemon
-// running right now, enabled covers "stopped for this boot but will start on
-// the next one", which carries the same double-fire risk with no process to
-// see today.
-func systemctlCronServiceState() (active, enabled, ok bool) {
-	systemctlPath, err := exec.LookPath("systemctl")
-	if err != nil {
-		return false, false, false
+// CronHold is what the runtime watcher needs to know before it starts: the
+// liveness answer this config's holds were derived from — so its first probe only
+// reports a change if the machine has actually moved since the config was
+// resolved — and whether this config reads any crontab at all. readsCron false
+// means no probe could change a single scheduling decision, so the watcher does
+// not start rather than exec systemctl every minute for an answer nobody can use.
+func CronHold(cfg *Config) (state cronprobe.State, readsCron bool) {
+	if cfg == nil {
+		return cronprobe.State{}, false
 	}
-	for _, unit := range importer.CronUnits() {
-		if exec.Command(systemctlPath, "is-active", unit).Run() == nil {
-			active = true
-		}
-		if exec.Command(systemctlPath, "is-enabled", unit).Run() == nil {
-			enabled = true
-		}
-	}
-	return active, enabled, true
-}
-
-// cronPidRunning is the fallback for a box with no systemctl: read each
-// candidate pid file and check that the pid it names is an actual live
-// process, not just that the file exists. The old version only checked file
-// existence, so a crond that crashed without cleaning up its pid file (or a
-// stale file left by an image build) warned forever about a daemon that
-// wasn't there.
-func cronPidRunning(pidCandidates []string) bool {
-	for _, path := range pidCandidates {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-		if err != nil {
-			continue
-		}
-		if processAlive(pid) {
-			return true
-		}
-	}
-	return false
-}
-
-// processAlive checks liveness with signal 0, which the kernel refuses to
-// actually deliver but still reports ESRCH for a pid that doesn't exist. Used
-// instead of a /proc/<pid> stat because /proc doesn't exist on macOS, and this
-// package runs on both.
-func processAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil || errors.Is(err, syscall.EPERM)
-}
-
-// cronDaemonState is the answer to "is a system cron daemon live, and in what
-// sense", snapshotted at config load. state is prose for a warning ("is
-// running"), empty when live is false.
-type cronDaemonState struct {
-	live  bool
-	state string
-}
-
-// probeCronDaemon asks the machine whether a system cron daemon is live. Called
-// once per load from mergeCronSources; the result lands on Config.cronDaemon.
-//
-// Skipped entirely when nothing is reading crontabs, so a config with no
-// include_cron never execs systemctl: the answer could not change any decision.
-// pidCandidates is passed in rather than read from crondPidFiles directly, for
-// the same reason cronServiceProbe is a var: the fallback branch has to be
-// testable without a real crond on the machine running the suite.
-func probeCronDaemon(cronFiles, pidCandidates []string) cronDaemonState {
-	if len(cronFiles) == 0 {
-		return cronDaemonState{}
-	}
-	live, state := crondLiveState(pidCandidates)
-	return cronDaemonState{live: live, state: state}
+	return cfg.cronDaemon, len(cfg.cronFiles) > 0
 }
 
 // HeldSummary is what a live system cron daemon still owns: the tasks RunWisp
@@ -792,7 +711,7 @@ func (h HeldSummary) Any() bool { return len(h.Tasks) > 0 }
 // the same markers the scheduler consults, so it can never disagree with what is
 // actually running.
 func Held(cfg *Config) HeldSummary {
-	if cfg == nil || !cfg.cronDaemon.live {
+	if cfg == nil || !cfg.cronDaemon.Live {
 		return HeldSummary{}
 	}
 	var names []string
@@ -804,7 +723,7 @@ func Held(cfg *Config) HeldSummary {
 	if len(names) == 0 {
 		return HeldSummary{}
 	}
-	return HeldSummary{Tasks: names, CronState: cfg.cronDaemon.state}
+	return HeldSummary{Tasks: names, CronState: cfg.cronDaemon.State}
 }
 
 // unownedCronFilesWarning covers the one live-crond case a hold cannot: a
@@ -817,7 +736,7 @@ func Held(cfg *Config) HeldSummary {
 // crond somehow does read it too, that genuinely is a double fire and RunWisp
 // cannot tell. That is a warning.
 func unownedCronFilesWarning(cfg *Config) []string {
-	if !cfg.cronDaemon.live {
+	if !cfg.cronDaemon.Live {
 		return nil
 	}
 	var unowned []string
@@ -833,28 +752,7 @@ func unownedCronFilesWarning(cfg *Config) []string {
 		"cron source: a system cron daemon %s, and RunWisp is also running the jobs in %s — "+
 			"if cron reads that file too, every one of them fires twice. RunWisp can't tell: "+
 			"it isn't a path cron looks in, so those jobs are not held.",
-		cfg.cronDaemon.state, strings.Join(unowned, ", "))}
-}
-
-// crondLiveState reports whether a system crond looks live and, if so, in what
-// sense — prefers asking the init system directly over guessing from a pid
-// file, since a stopped-but-enabled service carries the same risk with
-// nothing running yet to find in a pidfile.
-func crondLiveState(pidCandidates []string) (live bool, state string) {
-	if active, enabled, ok := cronServiceProbe(); ok {
-		switch {
-		case active:
-			return true, "is running"
-		case enabled:
-			return true, "is enabled and will start on the next boot"
-		default:
-			return false, ""
-		}
-	}
-	if cronPidRunning(pidCandidates) {
-		return true, "looks like it's running (a live pidfile was found)"
-	}
-	return false, ""
+		cfg.cronDaemon.State, strings.Join(unowned, ", "))}
 }
 
 // RunUserFindings reports the live cron-sourced tasks a non-root daemon

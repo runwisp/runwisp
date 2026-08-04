@@ -9,8 +9,8 @@ import starlightOpenAPI, { openAPISidebarGroups } from "starlight-openapi";
 export default defineConfig({
     site: "https://docs.runwisp.com",
     // The cron-migration guide grew into its own "Replacing cron" section, so
-    // the single old recipe URL — the one linked from release notes, the
-    // README, and the daemon's own output — has to keep resolving.
+    // the single old recipe URL — the one linked from the README and the
+    // daemon's own output — has to keep resolving.
     redirects: {
         "/recipes/migrating-from-cron": "/replacing-cron/take-over-from-cron/",
     },
@@ -92,10 +92,7 @@ export default defineConfig({
                             label: "Take over from cron",
                             slug: "replacing-cron/take-over-from-cron",
                         },
-                        {
-                            label: "Held jobs & ownership",
-                            slug: "replacing-cron/held-jobs",
-                        },
+                        { label: "Held jobs", slug: "replacing-cron/held-jobs" },
                         {
                             label: "Converting crontabs",
                             slug: "replacing-cron/converting-crontabs",

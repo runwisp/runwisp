@@ -252,9 +252,11 @@ While a system cron daemon is alive and still owns these files, RunWisp
 their schedule, and RunWisp does not fire them — cron already is. So you
 can point `include_cron` at `/etc/crontab` today and nothing runs twice.
 
-`sudo runwisp takeover` ends the hold in one step. See
-[Held jobs & ownership](/replacing-cron/held-jobs/) for exactly what a hold
-stops, where you'll see it, and the one case that gets a warning instead.
+`sudo runwisp takeover` ends the hold in one step, and stopping cron any other
+way ends it within a minute — RunWisp keeps checking. See
+[Held jobs](/replacing-cron/held-jobs/)
+for exactly what a hold stops, where you'll see it, and the one case that gets a
+warning instead.
 :::
 
 #### Which files, and who the jobs run as

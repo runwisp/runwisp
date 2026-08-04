@@ -488,6 +488,34 @@ type TaskBrief struct {
 	Parameters    []TaskParam       `json:"parameters,omitempty"`
 }
 
+// NewTaskBrief trims a task down to what /api/info exposes.
+//
+// One mapping, because two callers build this list at different times and a
+// field either of them forgot would be silently absent from the API: the boot
+// path builds it once for DaemonInfo, and the server rebuilds it per request so
+// derived state that changes while the daemon runs — HeldBy above all — is
+// reported as it is now rather than as it was at boot.
+func NewTaskBrief(task *Task) TaskBrief {
+	return TaskBrief{
+		Name:          task.Name,
+		Kind:          task.Kind,
+		Group:         task.Group,
+		Cron:          task.Cron,
+		APITrigger:    task.APITrigger,
+		CatchUp:       task.CatchUp,
+		Restart:       task.Restart,
+		MaxConcurrent: task.MaxConcurrent,
+		OnOverlap:     task.OnOverlap,
+		Instances:     task.Instances,
+		DependsOn:     task.DependsOn,
+		Compose:       task.Compose,
+		Source:        task.Source,
+		SourceFile:    task.SourceFile,
+		HeldBy:        task.HeldBy,
+		Parameters:    task.Parameters,
+	}
+}
+
 // TaskComposeRef identifies the compose file and service backing a task.
 // Used by the UI to render the "compose" provenance badge.
 type TaskComposeRef struct {

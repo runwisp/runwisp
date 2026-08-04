@@ -6,6 +6,7 @@ package config
 import (
 	"time"
 
+	"github.com/runwisp/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/internal/model"
 )
 
@@ -41,15 +42,17 @@ type Config struct {
 	cronFiles []string
 
 	// cronDaemon records whether a system cron daemon looked live when this config
-	// was loaded, and in what sense ("is running", "is enabled and will start on
-	// the next boot", …). Probed once per load rather than per question: it costs a
+	// was resolved, and in what sense ("is running", "is enabled and will start on
+	// the next boot", …). Probed once rather than per question: it costs a
 	// systemctl exec, and Warnings is answered on every /api/info request.
 	//
-	// Snapshotting it at load is also what makes the hold gate behave: the set of
-	// tasks the scheduler will fire is fixed by a load, so a cron daemon that
-	// stops (or comes back) mid-flight cannot change what fires until the operator
-	// reloads. Scheduling stays a pure function of the loaded config.
-	cronDaemon cronDaemonState
+	// Not fixed for the life of the config. The daemon re-probes on a timer and
+	// swaps in a re-derived config via WithCronHold, because the alternative — a
+	// hold that only lifts on an explicit reload — leaves an operator who retires
+	// cron and forgets to reload with jobs neither scheduler runs. Scheduling is
+	// still a pure function of the config the scheduler holds; what this field
+	// records is a fact about the machine, not a setting from runwisp.toml.
+	cronDaemon cronprobe.State
 
 	// cronBlocks maps a cron-sourced task name to the TOML that produced it, so
 	// `runwisp promote` can move the definition the daemon is actually running

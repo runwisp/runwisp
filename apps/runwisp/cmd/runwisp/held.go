@@ -36,20 +36,22 @@ func heldTaskNames(tasks []model.TaskBrief) []string {
 //
 // cronState is optional prose ("is running") for the daemon still holding them;
 // the surfaces that read a live config have it, the ones reading a task list over
-// the API do not, and the block reads correctly either way.
+// the API do not, and the block reads correctly either way. It is a full clause,
+// so it needs the "and" to join what follows — without it the sentence reads
+// "a system cron daemon is running still owns them".
 func printHeldBlock(w io.Writer, names []string, cronState string) {
 	if len(names) == 0 {
 		return
 	}
 	daemon := "cron"
 	if cronState != "" {
-		daemon = "a system cron daemon " + cronState
+		daemon = "a system cron daemon " + cronState + " and"
 	}
 	fmt.Fprintf(w, "\n⏸ %s held — %s still owns %s, so RunWisp is not running %s:\n",
 		heldTaskCount(len(names)), daemon, pronounFor(len(names)), pronounFor(len(names)))
 	fmt.Fprintf(w, "    %s\n", heldNameList(names))
-	fmt.Fprintf(w, "  Run 'sudo runwisp takeover' to hand %s over — or stop cron yourself and 'runwisp reload'.\n",
-		pronounFor(len(names)))
+	fmt.Fprintf(w, "  Run 'sudo runwisp takeover' to hand %s over — or just stop cron, and RunWisp picks %s up.\n",
+		pronounFor(len(names)), pronounFor(len(names)))
 }
 
 // heldNameList renders the names, collapsing the tail past heldNamesShown.
@@ -94,8 +96,8 @@ func printHeldBanner(w io.Writer, names []string, cronState string) {
 	b.WriteString("  RunWisp is standing down so nothing fires twice — cron keeps running these\n")
 	b.WriteString("  jobs, and RunWisp records no history or output for them.\n")
 	fmt.Fprintf(&b, "    %s\n", heldNameList(names))
-	b.WriteString("  Run 'sudo runwisp takeover' to hand them over, or stop cron yourself and\n")
-	b.WriteString("  run 'runwisp reload'.\n")
+	b.WriteString("  Run 'sudo runwisp takeover' to hand them over. Or just stop cron: RunWisp\n")
+	b.WriteString("  notices within a minute and takes them on, no reload needed.\n")
 	b.WriteString("================================================================================\n")
 	_, _ = fmt.Fprint(w, b.String())
 }

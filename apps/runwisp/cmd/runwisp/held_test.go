@@ -88,6 +88,23 @@ func TestHeldNameList_ShowsEverythingUnderTheCap(t *testing.T) {
 	assert.NotContains(t, heldNameList([]string{"a", "b", "c"}), "more")
 }
 
+// cronState is a full clause ("is running"), not a noun phrase, so splicing it in
+// as one produced "a system cron daemon is running still owns them" on every
+// `runwisp validate` against a box with a live cron. Assert the whole sentence:
+// the old test only checked that "is running" appeared somewhere in it.
+func TestPrintHeldBlock_JoinsCronStateGrammatically(t *testing.T) {
+	for _, cronState := range []string{
+		"is running",
+		"is enabled and will start on the next boot",
+		"looks like it's running (a live pidfile was found)",
+	} {
+		var out bytes.Buffer
+		printHeldBlock(&out, []string{"backup", "vacuum"}, cronState)
+		assert.Contains(t, out.String(),
+			"a system cron daemon "+cronState+" and still owns them, so RunWisp is not running them:")
+	}
+}
+
 // `status` reads a task list over the API and has no cron-daemon prose to work
 // with; the block still has to make sense without it.
 func TestPrintHeldBlock_ReadsWithoutCronState(t *testing.T) {

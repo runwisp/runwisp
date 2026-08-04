@@ -21,7 +21,7 @@ semantics, so a missed tick is recorded but never re-fired (`catch_up = "skip"`)
 While a system cron daemon still owns the file, though, the task isn't scheduled
 at all, and RunWisp isn't tracking its ticks either — so nothing is recorded
 during that window, not even as missed. See
-[Held jobs & ownership](/replacing-cron/held-jobs/).
+[Held jobs](/replacing-cron/held-jobs/).
 :::
 
 ## The cron field

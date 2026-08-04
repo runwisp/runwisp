@@ -10,6 +10,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -61,6 +62,57 @@ func TestHumaGetInfo(t *testing.T) {
 	out, err := srv.humaGetInfo(context.Background(), &struct{}{})
 	require.NoError(t, err)
 	assert.Equal(t, "test-fp", out.Body.Fingerprint)
+}
+
+// TestHumaGetInfo_TasksComeFromTheLiveRegistry is the reporting half of the cron
+// hold releasing itself. The scheduler picking a job back up is invisible if
+// /api/info keeps serving the task list built at boot: `runwisp status` and the
+// TUI header both read it, so they would go on saying "held by cron" for as long
+// as the daemon ran, long after RunWisp took the job over. A reload's added and
+// removed tasks were stale on those two surfaces for the same reason.
+func TestHumaGetInfo_TasksComeFromTheLiveRegistry(t *testing.T) {
+	held := &model.Task{
+		Name: "backup", Cron: "0 3 * * *", Run: "backup.sh",
+		Source: model.SourceCron, SourceFile: "/etc/cron.d/backup",
+		HeldBy: model.HeldByCron,
+	}
+	registry := runtime.NewTaskRegistry(map[string]*model.Task{"backup": held})
+	srv := &Server{
+		tasks: registry,
+		stats: newStatsProvider(&model.DaemonInfo{
+			Tasks: []model.TaskBrief{model.NewTaskBrief(held)},
+		}, time.Now()),
+	}
+
+	out, err := srv.humaGetInfo(context.Background(), &struct{}{})
+	require.NoError(t, err)
+	require.Len(t, out.Body.Tasks, 1)
+	require.Equal(t, model.HeldByCron, out.Body.Tasks[0].HeldBy)
+
+	// cron retires: the watcher swaps in a released copy of the task.
+	released := *held
+	released.HeldBy = model.HeldByNothing
+	registry.Set(&released)
+
+	out, err = srv.humaGetInfo(context.Background(), &struct{}{})
+	require.NoError(t, err)
+	require.Len(t, out.Body.Tasks, 1)
+	assert.Empty(t, out.Body.Tasks[0].HeldBy,
+		"the hold is gone from the scheduler, so it has to be gone from /api/info too")
+}
+
+// TestHumaGetInfo_NoRegistryKeepsTheBootList covers the modes that pass no
+// registry: falling back to the boot-time list is right, emptying it is not.
+func TestHumaGetInfo_NoRegistryKeepsTheBootList(t *testing.T) {
+	srv := &Server{
+		stats: newStatsProvider(&model.DaemonInfo{
+			Tasks: []model.TaskBrief{{Name: "backup"}},
+		}, time.Now()),
+	}
+	out, err := srv.humaGetInfo(context.Background(), &struct{}{})
+	require.NoError(t, err)
+	require.Len(t, out.Body.Tasks, 1)
+	assert.Equal(t, "backup", out.Body.Tasks[0].Name)
 }
 
 func TestHumaGetSystemStats(t *testing.T) {

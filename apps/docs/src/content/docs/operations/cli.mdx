@@ -303,48 +303,24 @@ doesn't map cleanly — nothing is silently dropped. Shared flags:
 | `--quiet`        | Drop the inventory, keep anything that needs a fix.                       |
 | `--system`       | _(cron only)_ Force system-crontab parsing (the user column).             |
 
-The summary on stderr gives every job in your crontab or supervisord config one
-line, with the command that will actually run and a mark for how it landed:
-`✓` mapped cleanly, `~` something changed, `!` needs a fix before this config
-loads, `-` skipped because you already have it. That's what `--quiet` trims down
-to: it drops the clean rows, not the ones that need you. Writing a config that
-won't load and saying nothing about it isn't a mode RunWisp has.
-
-`--dry-run` gives you the same summary plus a list of the files a real run would
-create or change — and changes none of them. It's the safe first move on a
-machine whose config you care about:
-
-```sh
-runwisp import cron /etc/crontab --write --dry-run
-```
-
-It proves the generated tasks are valid, and it says so when it can already see
-that a real run would refuse — a root `runwisp.toml` that doesn't load today, for
-instance. The one thing it can't prove is that the imported tasks merge cleanly
-with the ones you already have, since that means writing both files and loading
-the result. The output says as much rather than leaving you to assume; the real
-run does check it, and rolls both files back if it fails.
+The summary on stderr gives every job one line, with the command that will
+actually run and a mark for how it landed: `✓` mapped cleanly, `~` something
+changed, `!` needs a fix before this config loads, `-` skipped because you
+already have it. `--quiet` drops the clean rows, not the ones that need you.
+`--dry-run` and `--quiet` are rejected together — a dry run writes nothing, so
+the summary is all it has to show you.
 
 `--write` doesn't append to your `runwisp.toml`. It installs the import in a
-**two-tier layout**: the generated tasks land in a machine-owned
-`runwisp.d/imported.toml` (RunWisp's drop-in directory, named after cron's own
-`/etc/cron.d`), and your root `runwisp.toml` is created — or has its
+**two-tier layout**: generated tasks land in a machine-owned
+`runwisp.d/imported.toml`, and your root `runwisp.toml` is created — or has its
 [`[daemon].include`](/configuration/daemon/) wired — so the daemon loads them.
-Your hand-authored config stays yours; the importer only ever owns the staging
-file. Both files are written together and rolled back as one, so a name that
-clashes with a task you already have leaves nothing behind but an error.
-
-If your root config already sets a custom `include` list, `import --write`
-won't second-guess it — it tells you the glob to add and writes nothing.
-
-Tasks that live in the staging file report `"source": "staged"` in
-`list`/`status --json` (and the API): imported, not yet native.
+Both files are written and rolled back as one. Staged tasks report
+`"source": "staged"` in `list --json`, `status --json`, and the API.
 
 An import **copies** definitions — it never touches the thing you imported
-_from_. Your crontab is still installed, supervisord is still supervising, so
-starting the daemon on a fresh import means every job has two schedulers firing
-it. Nothing errors, which is what makes it worth saying out loud, so every
-import summary ends with the `!` line that says so:
+_from_, so starting the daemon on a fresh import means every job has two
+schedulers firing it. Nothing errors, so every import summary ends with the `!`
+line that says so:
 
 ```
 ! cron still runs these jobs. Comment them out (`crontab -e`, or move the
@@ -352,14 +328,11 @@ import summary ends with the `!` line that says so:
 ```
 
 Turn the old scheduler off for the jobs you imported before `runwisp daemon`.
-Both migration recipes have the commands.
-
-System crontabs (`/etc/crontab`, `/etc/cron.d/*`) carry a user column;
-`runwisp import cron` detects that from the path or header and maps it to
-a per-task `user`. The
-[Converting crontabs](/replacing-cron/converting-crontabs/) and
-[Migrating from supervisord](/recipes/migrating-from-supervisord/) recipes
-walk through the whole flow.
+[Converting crontabs](/replacing-cron/converting-crontabs/#retiring-the-crontab)
+has the commands, along with the two-tier layout, the user column in system
+crontabs, and the staging-to-promoted workflow;
+[Migrating from supervisord](/recipes/migrating-from-supervisord/) covers the
+other source.
 
 ### Take ownership of a task with `promote`
 
@@ -372,34 +345,22 @@ runwisp promote --all --reload    # everything, then reconcile the daemon
 `promote` works on any task RunWisp derived rather than you writing it: one
 staged in `runwisp.d/imported.toml` by an import, or one read live out of a
 crontab via [`include_cron`](/configuration/daemon/#include_cron). Either way
-its block ends up in your own `runwisp.toml` and it's yours — a re-import
-leaves it alone, the provenance marker is gone, and you edit it like anything
-else you wrote.
+its block ends up in your own `runwisp.toml` and it's yours — copied as text,
+comments and `# TODO` notes intact, in one transaction that changes no file if
+the result wouldn't load.
 
-The definition is copied as text, and that's the point: the block's comments,
-its formatting, and any unresolved `# TODO` notes travel with it
-byte-for-byte. Nothing is re-generated, so nothing is lost in translation.
-Everything is written as one transaction — if the result wouldn't load, no
-file changes.
+| Flag        | What it does                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------- |
+| `--all`     | Promote everything promotable — staged _and_ crontab-sourced. Exits 0 when there's nothing. |
+| `--reload`  | Reload the running daemon afterwards, so the provenance marker clears.                      |
+| `--dry-run` | Print the blocks that would be added and write nothing.                                     |
 
-The two provenances differ in one way. A staged block is **moved**: it leaves
-`runwisp.d/imported.toml`, and once that file is empty it's removed (the next
-`import --write` recreates it). A cron-sourced block is **copied**, because
-the crontab _is_ the definition and RunWisp never writes to it. On the next
-load your TOML and the crontab say the same thing, RunWisp keeps yours and
-skips the cron copy, so you can delete the cron line whenever you like — or
-leave it there forever.
-
-| Flag        | What it does                                                           |
-| ----------- | ---------------------------------------------------------------------- |
-| `--all`     | Promote everything promotable. Exits 0 when there's nothing.           |
-| `--reload`  | Reload the running daemon afterwards, so the provenance marker clears. |
-| `--dry-run` | Print the blocks that would be added and write nothing.                |
-
-Promoting doesn't change what the daemon runs — only which file defines it.
-So `runwisp reload` after a promote reports _no task changes_, and a promoted
-service keeps running without a restart. The reload is only there to refresh
-the provenance the UI and `--json` report.
+A staged block is **moved** out of the staging file; a cron-sourced one is
+**copied**, because RunWisp never writes to a crontab. Promoting doesn't change
+what the daemon runs — only which file defines it — so `runwisp reload` afterwards
+honestly reports _no task changes_.
+[Graduating a job](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config)
+walks through it.
 
 Promote refuses, and writes nothing, when you name a task it can't move: one
 that doesn't exist, one that's already native (it names the file it found it
@@ -457,13 +418,15 @@ read from cron's own files rather than firing them alongside cron;
 waiting for you to reload by hand.
 
 `--dry-run` always prints a plan, including on a box where the take-over is
-blocked, and re-running a finished take-over is a no-op — both make it safe
-in a provisioning script.
+blocked — there it also exits non-zero, so a provisioning script can ask
+"would this work?" without doing anything. Re-running a finished take-over
+is a no-op and exits 0.
 
-Takes `--dry-run`, `--force`, `--yes` (`-y`),
-`--allow-skipped-cron-jobs`, and `--binary <path>`. Needs root and
-systemd; see [Take over from cron](/replacing-cron/take-over-from-cron/)
-for the refusals, the ordering, and how to undo it.
+Takes `--dry-run`, `--yes` (`-y`), `--force` (overwrite a hand-edited unit,
+not skip the prompt), `--allow-skipped-cron-jobs`, and `--binary <path>`.
+Needs root and systemd; see
+[Take over from cron](/replacing-cron/take-over-from-cron/) for the
+refusals, the ordering, and how to undo it.
 
 ## Auth and introspection
 
