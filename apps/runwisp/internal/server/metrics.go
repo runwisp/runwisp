@@ -71,11 +71,7 @@ func (mc *MetricsCollector) loop(interval time.Duration) {
 
 func (mc *MetricsCollector) collect() {
 	s := model.MetricsSample{Timestamp: time.Now().Unix()}
-	if runtime.GOOS == "linux" {
-		populateLinuxSample(&s)
-	} else {
-		populateFallbackSample(&s)
-	}
+	populatePlatformSample(&s)
 	s.CPUUsage = float64(int(s.CPUUsage*10)) / 10
 	s.MemUsage = float64(int(s.MemUsage*10)) / 10
 
@@ -93,20 +89,16 @@ func (mc *MetricsCollector) collect() {
 	}
 }
 
-func populateLinuxSample(s *model.MetricsSample) {
-	memTotal, memAvailable := getMemInfo()
-	if memTotal > 0 {
-		s.MemTotal = memTotal
-		s.MemUsed = memTotal - memAvailable
-		s.MemUsage = float64(s.MemUsed) / float64(s.MemTotal) * 100
-	}
-
-	load1 := getLoadAvg()
-	usage := (load1 / float64(runtime.NumCPU())) * 100
-	if usage > 100 {
-		usage = 100
-	}
-	s.CPUUsage = usage
+// populatePlatformStats fills a one-shot SystemStats snapshot from the same
+// per-OS collector the ring buffer uses, so /api/system and the metrics history
+// never disagree. Platform files supply populatePlatformSample.
+func populatePlatformStats(stats *model.SystemStats) {
+	var s model.MetricsSample
+	populatePlatformSample(&s)
+	stats.MemTotal = s.MemTotal
+	stats.MemUsed = s.MemUsed
+	stats.MemUsage = s.MemUsage
+	stats.CPUUsage = s.CPUUsage
 }
 
 func populateFallbackSample(s *model.MetricsSample) {
