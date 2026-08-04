@@ -78,8 +78,11 @@ type Model struct {
 	layout headerLayout
 
 	// Quit action chosen by the user (keep daemon or shut down).
-	quitAction       uikit.QuitAction
-	shutdownFunc     func() error
+	quitAction   uikit.QuitAction
+	shutdownFunc func() error
+	// shutdownErr records a failed daemon shutdown so the caller can report it
+	// instead of the TUI closing as if the daemon had stopped.
+	shutdownErr      error
 	launchTicketFunc func() (string, error)
 
 	mouse mouseState
@@ -364,6 +367,12 @@ func (m *Model) autoOpenService(taskName string) tea.Cmd {
 // QuitAction returns the quit action chosen by the user.
 func (m Model) QuitAction() uikit.QuitAction {
 	return m.quitAction
+}
+
+// ShutdownErr returns the error from a shutdown-on-exit attempt, or nil when the
+// daemon stopped cleanly (or the user kept it running).
+func (m Model) ShutdownErr() error {
+	return m.shutdownErr
 }
 
 // showQuitConfirm displays the quit dialog with keep-daemon/shutdown options.

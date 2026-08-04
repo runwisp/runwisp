@@ -379,6 +379,7 @@ func (m Model) interceptShuttingDownDialog(msg tea.Msg) (tea.Model, tea.Cmd, boo
 		cmd := m.dialogs.UpdateSpinner(msg.Inner)
 		return m, cmd, true
 	case uikit.ShutdownDoneMsg:
+		m.shutdownErr = msg.Err
 		return m, tea.Quit, true
 	case tea.MouseMsg:
 		return m, nil, true

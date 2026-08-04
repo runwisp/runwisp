@@ -86,7 +86,7 @@ func ensurePortFreeOrHandle(f Flags) (spawn bool, err error) {
 	case conflictConnect:
 		return false, runTUIConnect(apiclient.NewUnix(info.SocketPath), f)
 	case conflictStopAndLaunch:
-		if stopErr := stopConflictingDaemon(f, info); stopErr != nil {
+		if stopErr := stopDaemonByInstance(f, info); stopErr != nil {
 			return false, stopErr
 		}
 		return true, nil // other daemon stopped; spawn our own
@@ -98,8 +98,21 @@ func ensurePortFreeOrHandle(f Flags) (spawn bool, err error) {
 // runTUIConnect launches the TUI against a local daemon via Unix socket.
 func runTUIConnect(client *apiclient.Client, f Flags) error {
 	return launchConnectedTUI(client, tuiConnectMode{
-		shutdownFunc: func() error { return shutdownDaemon(f) },
+		shutdownFunc: func() error { return shutdownConnectedDaemon(client, f) },
 	})
+}
+
+// shutdownConnectedDaemon stops the daemon the TUI is actually attached to. It
+// resolves that daemon's data dir and PID from GET /api/instance rather than
+// trusting the local --data flag: `runwisp tui --socket <path>` connects by
+// socket alone, so f.DataDir may name a different daemon (or none), and
+// signalling it would leave the connected daemon running.
+func shutdownConnectedDaemon(client *apiclient.Client, f Flags) error {
+	info, err := client.GetInstanceInfo()
+	if err != nil {
+		return fmt.Errorf("locate the connected daemon to stop it: %w", err)
+	}
+	return stopDaemonByInstance(f, info)
 }
 
 // tuiConnectMode carries the few things that differ between attaching the TUI

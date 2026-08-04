@@ -248,6 +248,28 @@ func TestInterceptShuttingDownDialog_ShutdownDone(t *testing.T) {
 	}
 }
 
+// TestInterceptShuttingDownDialog_ShutdownError verifies a failed shutdown is
+// recorded on the model rather than swallowed — otherwise the TUI would close
+// as if the daemon had stopped when it is still running.
+func TestInterceptShuttingDownDialog_ShutdownError(t *testing.T) {
+	m := newTestModel(nil)
+	m.dialogs.ShowConfirm(NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
+	_ = m.dialogs.StartShutdown()
+
+	wantErr := errors.New("could not signal daemon")
+	next, _, intercepted := m.interceptShuttingDownDialog(uikit.ShutdownDoneMsg{Err: wantErr})
+	if !intercepted {
+		t.Fatal("expected intercepted=true for ShutdownDoneMsg")
+	}
+	fm, ok := next.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", next)
+	}
+	if fm.ShutdownErr() != wantErr {
+		t.Fatalf("expected ShutdownErr %v, got %v", wantErr, fm.ShutdownErr())
+	}
+}
+
 func TestInterceptShuttingDownDialog_OtherKey(t *testing.T) {
 	m := newTestModel(nil)
 	m.dialogs.ShowConfirm(NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
