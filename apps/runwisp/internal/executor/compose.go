@@ -285,12 +285,11 @@ func appendComposeRunArgs(args []string, ce *model.ComposeExecution, task *model
 		args = append(args, "-e", k)
 	}
 	args = append(args, ce.Service)
-	// NOTE: these are NOT append-to-the-command semantics like the shell and
+	// NOTE: these are not the append-to-the-command semantics the shell and
 	// exec-mode backends have. `compose run SERVICE [COMMAND] [ARGS…]` treats the
-	// first positional after the service as COMMAND, so a token here replaces the
-	// service's compose-declared command. config.validateComposeRunParams
-	// therefore rejects arg/option/flag params on run-mode units, leaving this
-	// reachable only for the empty-token case; env params travel via -e above.
+	// first positional after the service as COMMAND, so these tokens replace the
+	// service's compose-declared command (and land as arguments to the image's
+	// ENTRYPOINT when it has one). Documented on the tasks config page.
 	var runParams map[string]string
 	if run != nil {
 		runParams = run.Params

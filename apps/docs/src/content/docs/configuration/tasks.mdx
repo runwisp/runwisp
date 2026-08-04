@@ -531,54 +531,28 @@ container instead, set both `compose_file` and `run` together with
 For importing every service in a compose file as observable RunWisp
 services, see [`[compose.*]`](/configuration/compose/).
 
-### Which parameters work here
+### Parameters on a compose task
 
-[Parameters](#parameters) come in four flavours. On a compose task that
-starts a fresh container — the `nightly-backup` example above, no `run` —
-only `env` ones are allowed:
-
-| In `params`              | On a fresh-container compose task             |
-| ------------------------ | --------------------------------------------- |
-| `{ env = "SINCE" }`      | ✅ Works — arrives as an environment variable |
-| `{ arg = "since" }`      | ❌ Rejected at config load                    |
-| `{ option = "--since" }` | ❌ Rejected at config load                    |
-| `{ flag = "--force" }`   | ❌ Rejected at config load                    |
-
-The three rejected ones all work by appending words to your command line,
-and that's the problem. RunWisp starts the container with
-`docker compose run --rm backup`, and docker reads anything after the
-service name as **the command to run _instead of_ the service's own**. So
-declaring `{ arg = "since" }` and triggering with `since = "2026-01-01"`
-wouldn't hand `2026-01-01` to the service's command as an extra word — it
-would throw that command away and try to run a program called
-`2026-01-01`. Docker gives us no way to say "keep the command, just add
-this", so rather than do something that surprising, RunWisp refuses the
-combination up front. `runwisp validate` names it before the daemon ever
-sees it.
-
-Two ways to get what you wanted:
+[Parameters](#parameters) work here, with one difference in the
+fresh-container mode above (`compose_file` and `compose_service`, no
+`run`): `arg`, `option`, and `flag` values go to the container the way
+`docker compose run <svc> …` passes them, so they replace the service's
+`command:` and arrive as arguments to the image's `ENTRYPOINT`.
 
 ```toml
-# Pass the value as an environment variable — the service's own command
-# reads it from $SINCE.
 [tasks.nightly-backup]
 cron            = "0 3 * * *"
 compose_file    = "./docker-compose.yml"
 compose_service = "backup"
-params          = [{ env = "SINCE", default = "yesterday" }]
-```
-
-```toml
-# Or write the command yourself with compose_mode = "exec", and every
-# parameter flavour behaves exactly as it does on a normal task.
-[tasks.nightly-backup]
-cron            = "0 3 * * *"
-compose_file    = "./docker-compose.yml"
-compose_service = "backup"
-compose_mode    = "exec"
-run             = "/usr/local/bin/backup.sh"
 params          = [{ arg = "since", default = "yesterday" }]
 ```
+
+Trigger that with `since = "2026-01-01"` and the container runs its
+entrypoint with `2026-01-01`.
+
+Use `env` params to pass values without touching the command line, or
+`compose_mode = "exec"` with your own `run` to append tokens to that
+command instead.
 
 ## Notifications
 

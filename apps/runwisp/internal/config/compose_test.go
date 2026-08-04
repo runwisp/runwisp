@@ -267,57 +267,36 @@ compose_mode    = "run"
 	assert.Contains(t, err.Error(), model.ComposeModeExec)
 }
 
-// Regression: `compose run SERVICE <tokens…>` puts the first positional in
-// docker's COMMAND slot, so an arg/option/flag param would replace the service's
-// compose-declared command rather than be appended to it — letting whoever
-// supplies param values (a trigger caller, a control-plane peer) choose what runs
-// in the container. Rejected at load, since the grammar can't express append.
-func TestComposeExpansion_RunModeArgvParamsRejected(t *testing.T) {
+// Every param kind loads on a compose task in either mode. In run mode the argv
+// kinds take docker's COMMAND slot rather than appending — a documented
+// difference, not a config error.
+func TestComposeExpansion_ParamsAcceptedInBothModes(t *testing.T) {
 	for _, param := range []string{
-		`{ arg = "target" }`,
-		`{ option = "--target" }`,
+		`{ env = "TARGET", default = "all" }`,
+		`{ arg = "target", default = "all" }`,
+		`{ option = "--target", default = "all" }`,
 		`{ flag = "--verbose" }`,
 	} {
-		_, err := Load(writeConfig(t, `[tasks.report]
+		runMode, err := Load(writeConfig(t, `[tasks.report]
 cron            = "0 3 * * *"
 compose_file    = "./docker-compose.yml"
 compose_service = "app"
 params          = [ `+param+` ]
 `))
-		require.Error(t, err, "expected %s to be rejected on a run-mode compose unit", param)
-		assert.Contains(t, err.Error(), "compose_mode")
-	}
-}
+		require.NoError(t, err, "run mode should accept %s", param)
+		require.Len(t, runMode.Tasks[0].Parameters, 1)
 
-// env params are unaffected: they travel as -e flags before the service name, so
-// they can't reach the COMMAND slot.
-func TestComposeExpansion_RunModeEnvParamAllowed(t *testing.T) {
-	cfg, err := Load(writeConfig(t, `[tasks.report]
-cron            = "0 3 * * *"
-compose_file    = "./docker-compose.yml"
-compose_service = "app"
-params          = [ { env = "TARGET", default = "all" } ]
-`))
-	require.NoError(t, err)
-	require.Len(t, cfg.Tasks, 1)
-	require.Len(t, cfg.Tasks[0].Parameters, 1)
-	assert.Equal(t, model.ParamEnv, cfg.Tasks[0].Parameters[0].Kind)
-}
-
-// exec mode is the documented place for argv params: the tokens land after the
-// operator's own command, so they really do append.
-func TestComposeExpansion_ExecModeArgvParamsAllowed(t *testing.T) {
-	cfg, err := Load(writeConfig(t, `[tasks.report]
+		execMode, err := Load(writeConfig(t, `[tasks.report]
 cron            = "0 3 * * *"
 run             = "./report.sh"
 compose_file    = "./docker-compose.yml"
 compose_service = "app"
 compose_mode    = "exec"
-params          = [ { arg = "target", default = "all" } ]
+params          = [ `+param+` ]
 `))
-	require.NoError(t, err)
-	require.Len(t, cfg.Tasks, 1)
-	require.Len(t, cfg.Tasks[0].Parameters, 1)
+		require.NoError(t, err, "exec mode should accept %s", param)
+		require.Len(t, execMode.Tasks[0].Parameters, 1)
+	}
 }
 
 func TestComposeExpansion_ExecModeWithoutRunRejected(t *testing.T) {

@@ -728,9 +728,6 @@ func validateTaskParams(task *model.Task) error {
 	if len(task.Parameters) == 0 {
 		return nil
 	}
-	if err := validateComposeRunParams(task); err != nil {
-		return err
-	}
 	autoScheduled := task.Cron != "" || task.RunOnStart
 	seen := make(map[string]struct{}, len(task.Parameters))
 	optionalPositionalSeen := false
@@ -748,32 +745,6 @@ func validateTaskParams(task *model.Task) error {
 		if p.Kind == model.ParamArg && !p.Required {
 			optionalPositionalSeen = true
 		}
-	}
-	return nil
-}
-
-// validateComposeRunParams rejects argv-shaped params on a run-mode compose
-// unit. `docker compose run [opts] SERVICE <tokens…>` puts the first token in
-// docker's COMMAND slot, so an arg/option/flag value would *replace* the
-// service's compose-declared command instead of being appended to it — the
-// opposite of the documented contract that a trigger caller "can't invent a new
-// flag or change a command", and a way for whoever supplies param values to pick
-// what runs inside the container. The grammar has no way to express "keep the
-// service command, append these", so the combination is rejected outright, the
-// same way `run` is. env params stay legal: they travel via -e.
-func validateComposeRunParams(task *model.Task) error {
-	ce, isCompose := task.ExecutionDef.(*model.ComposeExecution)
-	if !isCompose || ce.Mode != model.ComposeModeServices {
-		return nil
-	}
-	for i := range task.Parameters {
-		p := &task.Parameters[i]
-		if p.Kind == model.ParamEnv {
-			continue
-		}
-		return fmt.Errorf(
-			"invalid params[%d] (%s) for task %s: %s parameters cannot be used with compose_mode = %q, which runs the service's own command; use compose_mode = %q to pass argv into the container, or an env parameter",
-			i, p.Key, task.Name, p.Kind, composeModeRun, model.ComposeModeExec)
 	}
 	return nil
 }
