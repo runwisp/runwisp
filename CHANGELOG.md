@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **CPU and memory stats now report real host values on macOS.** The system-resource collector only understood Linux `/proc`, so on macOS the dashboard, TUI, `/api/system` and `/metrics` showed the daemon's own Go heap as "total memory" with CPU stuck at 0%. macOS now reads host RAM and load average directly (via `sysctl` and a mach VM-statistics call), matching the Linux figures.
+
 ## [0.14.0] - 2026-08-04
 
 ### Added
@@ -54,7 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`runwisp status` and the TUI header now show the live task set**, not the one from when the daemon started.
 - **`runwisp service install --dry-run` now runs its checks before reporting success.** See [Autostart](https://docs.runwisp.com/operations/autostart/#flag-reference).
 - **`runwisp service` commands now respect `--config`/`--data` and their environment-variable equivalents.** See [Autostart](https://docs.runwisp.com/operations/autostart/#resolving-paths).
-- **CPU and memory stats now report real host values on macOS.** The system-resource collector only understood Linux `/proc`, so on macOS the dashboard, TUI, `/api/system` and `/metrics` showed the daemon's own Go heap as "total memory" with CPU stuck at 0%. macOS now reads host RAM and load average directly (via `sysctl` and a mach VM-statistics call), matching the Linux figures.
 
 ### Security
 
