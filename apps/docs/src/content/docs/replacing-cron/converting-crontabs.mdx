@@ -317,8 +317,11 @@ run writes nothing, so the summary is all it has to show you.
 
 ## What it doesn't do
 
-- **It never modifies the source.** Your crontab is untouched, which is why
-  [retiring it](#retiring-the-crontab) is yours to do.
+- **`import cron` never modifies the source.** Reading and copying your crontab
+  leaves the file untouched, which is why [retiring it](#retiring-the-crontab)
+  is yours to do. Live-source `promote` is the one exception — it deletes the
+  exact cron line of the job it graduates, in the same transaction (see
+  [Graduating a job](#graduating-a-job-into-your-own-config)).
 - **It never edits your hand-written tasks.** `--write` only owns
   `runwisp.d/imported.toml`.
 - **It never writes daemon-wide settings.** A `MAILTO` becomes a notifier block in
