@@ -41,8 +41,11 @@ import (
 // the few milliseconds between the crontab's rename and the root's: two renames on
 // two files are not one operation. Promote deliberately orders the crontab write
 // first and the root write second, so that if a crash does land there, the job is
-// briefly unscheduled by anyone rather than fired by both a live cron daemon and
-// RunWisp — a missed run is visible and re-runnable; a silent duplicate isn't.
+// left defined in neither file — unscheduled by anyone until an operator repairs
+// it (restore the line, or re-import) — rather than fired by both a live cron
+// daemon and RunWisp. That gap is not necessarily brief: nothing retries it
+// automatically. But a missed run is visible and re-runnable; a silent duplicate
+// isn't.
 
 // UnknownEntryError reports a requested name that the config doesn't define at
 // all.

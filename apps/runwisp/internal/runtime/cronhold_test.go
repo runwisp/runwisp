@@ -139,6 +139,44 @@ func TestRefreshCronHoldsSkipsTasksRemovedSinceBaseline(t *testing.T) {
 	assert.NotContains(t, db.registered, "backup")
 }
 
+// TestReconcile_PromotedHeldCronTaskGetsScheduled is the live-cron promotion
+// regression the reload path has to honour. While a system cron daemon is up, a
+// cron-sourced task is held and RunWisp does not fire it. Promoting it removes the
+// crontab line and copies the block into root, so the next reload loads a native,
+// unheld task. That HeldBy flip (cron → nothing) has to route through the
+// reschedule path, not the provenance-only restamp — otherwise RunWisp would take
+// the task on paper and never actually schedule it, and with cron's line gone too
+// the job would run from nowhere at all. This drives a real reconcile apply over a
+// scheduler to prove the entry appears.
+func TestReconcile_PromotedHeldCronTaskGetsScheduled(t *testing.T) {
+	now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+	held := heldCronTask("backup", "0 3 * * *")
+	r, sched, db := holdRefreshFixture(t, now, held)
+	require.Nil(t, sched.GetNextRun("backup"), "held by a live cron daemon to begin with, or this proves nothing")
+
+	// The state a reload sees after a successful promote: same definition, now
+	// native and no longer held because its crontab line is gone.
+	promoted := *held
+	promoted.Source = model.SourceNative
+	promoted.SourceFile = ""
+	promoted.HeldBy = model.HeldByNothing
+
+	old := taskSet(held)
+	updated := taskSet(&promoted)
+	diff := config.DiffTasks(old, updated)
+	require.Empty(t, diff.Restamped, "a hold lifting is a real scheduling change, not a provenance restamp")
+	require.Len(t, diff.Changed, 1)
+	assert.True(t, diff.Changed[0].Has(config.ReasonSchedule),
+		"the cron→none HeldBy flip is what routes it through reschedule")
+
+	r.apply(diff, old, updated)
+
+	assert.NotNil(t, sched.GetNextRun("backup"),
+		"cron's line is gone, so RunWisp has to be firing this now — nothing else will")
+	assert.Equal(t, now, db.registered["backup"],
+		"and the catch-up anchor starts at the handover, not at some later restart")
+}
+
 // fakeCronProber scripts the machine's answers for the watcher, so both
 // directions of the flip are testable without a real cron daemon, a real
 // systemctl, or a real clock.

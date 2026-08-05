@@ -194,6 +194,11 @@ func TestPromoteCmd_CronPromoteRemovesTheCrontabLine(t *testing.T) {
 	assert.Contains(t, stdout, "Promoted 1 task")
 	assert.Contains(t, stdout, "Removed 1 crontab line(s)")
 	assert.Contains(t, stdout, cronPath+":1")
+	assert.Contains(t, stdout, "a reload starts RunWisp scheduling it",
+		"a live cron promotion is a real handover, not the staged path's no-op")
+	assert.NotContains(t, stdout, "did not change",
+		"the staged path's 'nothing changed' line must not appear for a cron handover")
+	assert.Contains(t, stdout, "runwisp reload")
 
 	assert.Contains(t, readConfigFile(t, cfgPath), "[tasks.dump]")
 	assert.Empty(t, readConfigFile(t, cronPath), "the sole crontab line is gone")

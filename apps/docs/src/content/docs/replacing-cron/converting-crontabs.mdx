@@ -221,13 +221,16 @@ import**; `--all` covers both, but what "move" means differs:
 
 - **From a live crontab:** the definition is copied into your `runwisp.toml`
   _and_ the exact source line is deleted from the crontab, in the same
-  transaction. That's not just tidying — a task's "held" status (RunWisp
-  standing down because a live cron daemon still runs it) only ever applies to
-  a cron-sourced task, so the moment it becomes native it would otherwise be
-  scheduled by RunWisp too, on top of whatever a still-live, unmasked cron does
-  with the line left behind. Promote refuses, writing nothing on either side,
-  if that line has changed or gone missing since the config was loaded — run it
-  again once the crontab has settled.
+  transaction. The deletion rewrites the real file the line was read from — your
+  user spool (`crontab -e`), or the `/etc/cron.d` drop-in it matched — in place,
+  whenever that file is the one `include_cron` selected and RunWisp can write to
+  it. That's not just tidying — a task's "held" status (RunWisp standing down
+  because a live cron daemon still runs it) only ever applies to a cron-sourced
+  task, so the moment it becomes native it would otherwise be scheduled by
+  RunWisp too, on top of whatever a still-live, unmasked cron does with the line
+  left behind. Promote refuses, writing nothing on either side, if that line has
+  changed or gone missing since the config was loaded — run it again once the
+  crontab has settled.
 - **From a staged import:** staging is a waiting room. `promote` moves the block
   out of `runwisp.d/imported.toml` into your `runwisp.toml`, comments and all —
   including any `# TODO` the import left. Nothing is re-generated, so nothing gets
@@ -235,9 +238,13 @@ import**; `--all` covers both, but what "move" means differs:
   is cleaned up and you're left with a single hand-maintained `runwisp.toml`.
 
 From then on the job is yours: it reports no `source`, and a later re-import won't
-touch it. Its behaviour doesn't change — only which file defines it. A `runwisp reload`
-afterwards honestly reports _no task changes_; the reload only refreshes the
-provenance label on a live daemon, so use `--reload` to do both at once.
+touch it. What a `runwisp reload` reports depends on which move it was. A **staged**
+promotion — or a live-crontab one where you'd already retired cron, so RunWisp was
+scheduling the job anyway — changes nothing about what runs: the reload reports _no
+task changes_ and only refreshes the provenance label. Promoting a job **while cron
+is still live** is a real handover — it was held, and now it isn't — so the reload
+reports it as a changed task and RunWisp starts scheduling it. Either way, `--reload`
+does the move and the reload in one step.
 
 ## Retiring the crontab
 

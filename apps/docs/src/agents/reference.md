@@ -331,13 +331,17 @@ runwisp promote [TASK...]    — put a derived task's block in the root runwisp.
                                Every file involved is written as one transaction gated on the merged load, else
                                nothing changes. No atomic primitive spans the crontab and runwisp.toml
                                themselves — a hard kill between their two renames is the one unclosed gap;
-                               the crontab write is ordered first so that gap leaves a job briefly unscheduled
-                               rather than double-fired.
+                               the crontab write is ordered first so that gap leaves the job defined in neither
+                               file — unscheduled by anyone until an operator repairs it, not necessarily briefly,
+                               nothing retries it — rather than double-fired.
                                Refuses (writing nothing) an unknown name, an already-native name, a compose-generated
                                task, or a config that doesn't load. --all with nothing staged exits 0.
-                               Changes no behaviour — only which file defines the task — so a following reload
-                               reports no task changes and a promoted service is not restarted; the reload only
-                               refreshes the "staged" flag. Emptied staging file is deleted.
+                               Staged promotion (or a cron task already taken over, so it was unheld and scheduled
+                               already) changes no behaviour — only which file defines the task — so a following
+                               reload reports no task changes, a promoted service is not restarted, and only the
+                               provenance flag refreshes. Promoting a cron task while cron is still live flips it
+                               from held to unheld (HeldBy cron→none): the diff reports it Changed(ReasonSchedule),
+                               so that reload has RunWisp take over its schedule. Emptied staging file is deleted.
 runwisp password             — print the daemon's ephemeral password (local socket; exit 5 under RUNWISP_NO_AUTH, refuses if RUNWISP_PASSWORD set)
 runwisp openapi              — print the OpenAPI 3.1 spec (JSON) to stdout
 runwisp schema               — print the runwisp.toml JSON Schema (draft 2020-12) to stdout; published at https://docs.runwisp.com/config.schema.json

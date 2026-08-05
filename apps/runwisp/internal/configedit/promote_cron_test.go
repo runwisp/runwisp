@@ -305,3 +305,31 @@ func TestPreviewCronRemovals_MatchesWhatPromoteWouldDo(t *testing.T) {
 	var mismatch *CronSourceMismatchError
 	require.ErrorAs(t, err, &mismatch)
 }
+
+// TestRemoveCronLines_PreservesCRLF: a crontab written with CRLF endings keeps
+// them on every line that stays. The rewrite deletes one line and must not
+// silently normalise the terminators an operator (or a Windows-authored spool)
+// chose for the rest.
+func TestRemoveCronLines_PreservesCRLF(t *testing.T) {
+	data := []byte("0 1 * * * one.sh\r\n0 2 * * * two.sh\r\n0 3 * * * three.sh\r\n")
+
+	got := removeCronLines(data, map[int]bool{2: true})
+
+	assert.Equal(t, "0 1 * * * one.sh\r\n0 3 * * * three.sh\r\n", string(got),
+		"the surviving lines keep their exact CRLF terminators")
+}
+
+// TestRemoveCronLines_FinalLineWithoutTrailingNewline: a crontab whose last line
+// has no terminator must not gain or lose one when a line is removed — whether
+// the promoted line is that final one or an earlier one.
+func TestRemoveCronLines_FinalLineWithoutTrailingNewline(t *testing.T) {
+	data := []byte("0 1 * * * one.sh\n0 2 * * * two.sh")
+
+	dropLast := removeCronLines(data, map[int]bool{2: true})
+	assert.Equal(t, "0 1 * * * one.sh\n", string(dropLast),
+		"removing the unterminated final line leaves the earlier line exactly as it was")
+
+	dropFirst := removeCronLines(data, map[int]bool{1: true})
+	assert.Equal(t, "0 2 * * * two.sh", string(dropFirst),
+		"removing an earlier line must not manufacture a trailing newline on the final one")
+}

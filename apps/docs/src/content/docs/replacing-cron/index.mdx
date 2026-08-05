@@ -127,13 +127,19 @@ repairs just the cron half.
 ## Later: own a job as TOML
 
 Once RunWisp owns your jobs, you can turn any of them into hand-written TOML you
-keep in git — whenever you feel like it, one at a time. By then cron is already
-retired, so nothing double-fires:
+keep in git — whenever you feel like it, one at a time:
 
 ```bash
 runwisp promote backup     # this one
 runwisp promote --all      # all of them
 ```
+
+By the time `takeover` has run, cron is already retired, so promoting is a pure
+ownership move — the reload reports no task changes. But `promote` no longer
+_relies_ on that: it deletes the exact crontab line as it copies the block out,
+in the same step, so it's just as safe before you retire cron as after. Promote
+a job while its cron daemon is still live and that line removal is what stops a
+double-fire — the job stops being held and RunWisp takes over its schedule.
 
 → [Graduating a job into your own config](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config)
 

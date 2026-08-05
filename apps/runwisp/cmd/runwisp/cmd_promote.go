@@ -45,12 +45,17 @@ The move is textual. The block's comments, its formatting, and any unresolved
 # TODO notes the import left behind travel with it byte-for-byte — nothing is
 re-generated. Every file involved is written as one transaction, so if the
 result wouldn't load, nothing changes. That transaction cannot be made atomic
-across the crontab and runwisp.toml themselves — a hard kill between the two
-writes is the one gap left, and it leaves the job briefly unscheduled rather
-than double-fired.
+across the crontab and runwisp.toml themselves: the crontab line is removed
+first, so a hard kill landing between the two writes leaves the job defined in
+neither file — unscheduled until you repair it by hand or re-import — rather
+than fired by both cron and RunWisp.
 
-Nothing about what the daemon runs changes: only which file defines it. Run
-` + "`runwisp reload`" + ` (or pass --reload) to clear the provenance marker on a live daemon.`,
+A staged promotion changes nothing about what the daemon runs — only which file
+defines it — so ` + "`runwisp reload`" + ` (or --reload) just clears the provenance
+marker. Promoting a job while its cron daemon is still live is a real change:
+with the crontab line gone the task is no longer held, so on reload RunWisp
+takes over scheduling it. Either way run ` + "`runwisp reload`" + ` (or pass --reload) so
+a running daemon picks it up.`,
 	Example: `  runwisp promote backup           # move one task
   runwisp promote backup reindex   # move several
   runwisp promote --all --reload   # move everything, then reconcile
@@ -249,6 +254,14 @@ func printPromoted(out io.Writer, res configedit.PromoteResult, layout configedi
 	}
 
 	fmt.Fprintln(out)
+	if len(res.CronRemovals) > 0 {
+		fmt.Fprintf(out, "The crontab line is gone, so nothing but RunWisp will fire this job now.\n")
+		fmt.Fprintf(out, "If a live cron daemon was still running it, RunWisp had been holding it — that\n")
+		fmt.Fprintf(out, "hold ends here, and a reload starts RunWisp scheduling it. If cron was already\n")
+		fmt.Fprintf(out, "retired, only the provenance changes. Either way, run `runwisp reload` so a\n")
+		fmt.Fprintf(out, "running daemon picks it up.\n")
+		return
+	}
 	fmt.Fprintf(out, "What the daemon runs did not change — only which file defines it.\n")
 	fmt.Fprintf(out, "Run `runwisp reload` to clear the provenance marker on a running daemon.\n")
 }
