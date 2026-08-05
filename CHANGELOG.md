@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **CPU and memory stats now report real host values on macOS.** The system-resource collector only understood Linux `/proc`, so on macOS the dashboard, TUI, `/api/system` and `/metrics` showed the daemon's own Go heap as "total memory" with CPU stuck at 0%. macOS now reads host RAM and load average directly (via `sysctl` and a mach VM-statistics call), matching the Linux figures.
+- **The TUI's shutdown command now targets the daemon it's connected to via `--socket`, and surfaces an error if the shutdown fails.**
 
 ## [0.14.0] - 2026-08-04
 

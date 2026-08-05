@@ -81,7 +81,7 @@ func StartTUI(info uikit.StartupInfo, client *apiclient.Client, debugWriter *Deb
 	}
 
 	if fm, ok := finalModel.(Model); ok {
-		return fm.QuitAction(), nil
+		return fm.QuitAction(), fm.ShutdownErr()
 	}
 	return uikit.QuitShutdownDaemon, nil
 }
