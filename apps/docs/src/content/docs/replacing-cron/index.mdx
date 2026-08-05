@@ -158,8 +158,12 @@ the unit; left alone they resolve to root's defaults. See the full set — inclu
 
 ## What it doesn't do
 
-- **Never rewrites your crontabs.** They stay as they are; RunWisp re-reads them
-  on [reload](/operations/reload/).
+- **Takeover never rewrites your crontabs.** Reading them live and retiring cron
+  leaves the files exactly as they are; RunWisp re-reads them on
+  [reload](/operations/reload/). Only an explicit
+  [`promote`](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config)
+  ever edits one, and then only to delete the single source line of the job
+  you're graduating.
 - **Never converts anything.** Your jobs keep living in the crontabs until you
   [`promote`](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config)
   one.

@@ -309,11 +309,11 @@ run writes nothing, so the summary is all it has to show you.
 
 `runwisp promote [TASK...]` takes:
 
-| Flag        | What it does                                                           |
-| ----------- | ---------------------------------------------------------------------- |
-| `--all`     | Promote every promotable task — staged _and_ crontab-sourced.          |
-| `--reload`  | Reload the running daemon afterwards, so the provenance marker clears. |
-| `--dry-run` | Print the blocks that would move and write nothing.                    |
+| Flag        | What it does                                                                                                                                                                     |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--all`     | Promote every promotable task — staged _and_ crontab-sourced.                                                                                                                    |
+| `--reload`  | Reload the running daemon afterwards so it picks the move up — clears the provenance marker, and for a job promoted while cron is still live also hands its schedule to RunWisp. |
+| `--dry-run` | Print the blocks that would move and write nothing.                                                                                                                              |
 
 ## What it doesn't do
 

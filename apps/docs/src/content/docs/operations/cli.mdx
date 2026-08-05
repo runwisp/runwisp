@@ -349,11 +349,11 @@ its block ends up in your own `runwisp.toml` and it's yours — copied as text,
 comments and `# TODO` notes intact, in one transaction that changes no file if
 the result wouldn't load.
 
-| Flag        | What it does                                                                                |
-| ----------- | ------------------------------------------------------------------------------------------- |
-| `--all`     | Promote everything promotable — staged _and_ crontab-sourced. Exits 0 when there's nothing. |
-| `--reload`  | Reload the running daemon afterwards, so it picks the move up.                              |
-| `--dry-run` | Print the blocks that would be added and write nothing.                                     |
+| Flag        | What it does                                                                                                                                                                     |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--all`     | Promote everything promotable — staged _and_ crontab-sourced. Exits 0 when there's nothing.                                                                                      |
+| `--reload`  | Reload the running daemon afterwards so it picks the move up: clears the provenance marker, and for a job promoted while cron is still live, also hands its schedule to RunWisp. |
+| `--dry-run` | Print the blocks that would be added and write nothing.                                                                                                                          |
 
 A staged block is **moved** out of the staging file. A cron-sourced one is a real
 move too: the block lands in `runwisp.toml` and the exact crontab line it came

@@ -43,9 +43,11 @@ import (
 // first and the root write second, so that if a crash does land there, the job is
 // left defined in neither file — unscheduled by anyone until an operator repairs
 // it (restore the line, or re-import) — rather than fired by both a live cron
-// daemon and RunWisp. That gap is not necessarily brief: nothing retries it
-// automatically. But a missed run is visible and re-runnable; a silent duplicate
-// isn't.
+// daemon and RunWisp. That gap is not necessarily brief: nothing retries it, and
+// while it lasts the job is defined in no file, so there may be no task row and
+// no missed-run record to surface it — only an operator noticing and repairing.
+// The ordering still prefers that outcome: a missed execution the operator can
+// re-run beats a duplicate that has already run twice and cannot be undone.
 
 // UnknownEntryError reports a requested name that the config doesn't define at
 // all.
