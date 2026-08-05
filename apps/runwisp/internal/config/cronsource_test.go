@@ -61,6 +61,29 @@ include_cron = ["crontabs/*"]
 	assert.Empty(t, cfg.CronFindings)
 }
 
+// TestIncludeCron_CronSourceLineIsCaptured is the snapshot `runwisp promote`
+// verifies against before it deletes a crontab line: the exact file, 1-based
+// line, and text a live task's definition came from.
+func TestIncludeCron_CronSourceLineIsCaptured(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["crontabs/*"]
+`,
+		"crontabs/backup": "# a lead comment\n0 3 * * * /usr/local/bin/backup.sh --full\n",
+	})
+
+	cfg := loadTree(t, dir)
+	file, line, text, ok := cfg.CronSourceLine("backup")
+	require.True(t, ok)
+	assert.Equal(t, filepath.Join(dir, "crontabs", "backup"), file)
+	assert.Equal(t, 2, line, "the job's own line, not its lead comment")
+	assert.Equal(t, "0 3 * * * /usr/local/bin/backup.sh --full", text)
+
+	_, _, _, ok = cfg.CronSourceLine("no-such-task")
+	assert.False(t, ok)
+}
+
 // TestIncludeCron_NativeWinsSameJob is the decision that makes `promote` work: a
 // job already in the operator's TOML, verbatim, must not also load from the
 // crontab it was promoted out of.

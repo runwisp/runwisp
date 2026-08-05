@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Coalesced notifications now keep the first occurrence's timestamp and run ID** instead of overwriting them with the latest occurrence's.
 - **A dropped control-plane heartbeat no longer tears down an otherwise healthy session.** Liveness is already governed by the watchdog; a single failed send now logs and continues instead of forcing a reconnect.
 - **A 401/403 from the control-plane sync endpoint is no longer treated as a hard authentication failure.** The WebSocket handshake is the actual auth boundary, so these now retry with backoff like any other transient error.
+- **`runwisp promote` on a live cron-sourced task now removes the crontab line it came from**, instead of leaving it in place. Previously a promoted task lost its "held" status the moment it became native, so if a system cron daemon was still running unmasked, both it and RunWisp would fire the job. Promote refuses, writing nothing, if that line has changed or gone missing since the config was loaded. See [CLI](https://docs.runwisp.com/operations/cli/#take-ownership-of-a-task-with-promote).
 
 ## [0.14.0] - 2026-08-04
 

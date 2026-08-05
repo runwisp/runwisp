@@ -216,13 +216,18 @@ runwisp promote backup      # this one
 runwisp promote --all       # all of them
 ```
 
-The definition is _copied_ into your `runwisp.toml` — the source is never written.
-It works the same on a job you [took over](/replacing-cron/)
-from cron and on a **staged import**; `--all` covers both.
+It works the same on a job read live via `include_cron` and on a **staged
+import**; `--all` covers both, but what "move" means differs:
 
-- **From a take-over:** on the next load RunWisp sees your TOML says the same thing
-  the crontab does and takes the TOML copy. Delete the cron line whenever you feel
-  like it, or leave it — cron was retired at take-over, so it just sits there inert.
+- **From a live crontab:** the definition is copied into your `runwisp.toml`
+  _and_ the exact source line is deleted from the crontab, in the same
+  transaction. That's not just tidying — a task's "held" status (RunWisp
+  standing down because a live cron daemon still runs it) only ever applies to
+  a cron-sourced task, so the moment it becomes native it would otherwise be
+  scheduled by RunWisp too, on top of whatever a still-live, unmasked cron does
+  with the line left behind. Promote refuses, writing nothing on either side,
+  if that line has changed or gone missing since the config was loaded — run it
+  again once the crontab has settled.
 - **From a staged import:** staging is a waiting room. `promote` moves the block
   out of `runwisp.d/imported.toml` into your `runwisp.toml`, comments and all —
   including any `# TODO` the import left. Nothing is re-generated, so nothing gets

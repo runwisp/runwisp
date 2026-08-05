@@ -66,6 +66,11 @@ type Config struct {
 	// rather than re-deriving one that might differ.
 	cronBlocks map[string]string
 
+	// cronLines maps a cron-sourced task name to where its definition physically
+	// lives in the crontab it came from, so `runwisp promote` can verify the exact
+	// line before deleting it — see cronLineOrigin and CronSourceLine.
+	cronLines map[string]cronLineOrigin
+
 	// CronFindings lists what an operator should know about those crontabs: the
 	// jobs RunWisp declined to schedule, and the ones running under a name the
 	// crontab doesn't mention. Exported, unlike the bookkeeping above, because a
@@ -87,6 +92,20 @@ func (c *Config) CronFiles() []string { return c.cronFiles }
 func (c *Config) CronBlockTOML(name string) (string, bool) {
 	block, ok := c.cronBlocks[name]
 	return block, ok
+}
+
+// CronSourceLine returns where a cron-sourced task's definition physically
+// lives — the crontab file, its 1-based line, and the exact text that line held
+// at load time — and false for any other name, including a cron-sourced one
+// whose line couldn't be captured. `runwisp promote` re-reads the file at that
+// line and refuses the whole move on any mismatch, rather than deleting a line
+// that has since changed underneath it.
+func (c *Config) CronSourceLine(name string) (file string, line int, text string, ok bool) {
+	o, ok := c.cronLines[name]
+	if !ok {
+		return "", 0, "", false
+	}
+	return o.File, o.Line, o.Text, true
 }
 
 // OriginFile returns the absolute path of the config file that defined the

@@ -245,10 +245,12 @@ So `crontab -e` followed by `runwisp reload` is the whole workflow.
 
 When you're ready to convert a job to native TOML,
 `runwisp promote <task>` writes its definition into `runwisp.toml` — verbatim, the
-definition that was already running. On the next load RunWisp notices
-your TOML says the same thing the crontab does and takes the TOML copy,
-so you can leave the crontab line where it is and delete it whenever you
-feel like it.
+definition that was already running — and deletes the exact crontab line it
+came from, in the same transaction. That's not optional tidying: a held job
+only stays held while it's cron-sourced, so the moment it's native, RunWisp
+schedules it itself — leaving the crontab line in place would mean it and a
+still-live cron both run it. Promote refuses, writing nothing, if that line
+has changed or gone missing since the config was loaded.
 
 :::note[Held jobs]
 While a system cron daemon is alive and still owns these files, RunWisp

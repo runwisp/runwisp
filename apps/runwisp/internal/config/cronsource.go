@@ -88,6 +88,22 @@ type cronMerge struct {
 	// config without re-deriving it. A crontab has no TOML bytes on disk, so these
 	// are the only bytes that are provably what the daemon is running.
 	blocks map[string]string
+	// lines maps each live task name to where its definition physically lives in
+	// the crontab it came from, so `runwisp promote` can verify that line hasn't
+	// moved before deleting it — never a stale line number alone. See
+	// cronLineOrigin.
+	lines map[string]cronLineOrigin
+}
+
+// cronLineOrigin is one live cron task's definition, located precisely enough
+// to remove: the file, its 1-based line, and the exact bytes that line held
+// when this config was loaded. `runwisp promote` re-reads the file at that
+// line before touching it and refuses on any mismatch — see
+// Config.CronSourceLine.
+type cronLineOrigin struct {
+	File string
+	Line int
+	Text string
 }
 
 // originSet indexes the matched files for markProvenance.
@@ -172,7 +188,7 @@ func mergeCronSources(root *tomlConfig, patterns []string, rootDir, rootPath str
 			return cronMerge{}, err
 		}
 		claimOwned(owned, res)
-		m.collectBlocks(res)
+		m.collectBlocks(res, path)
 		m.files = append(m.files, path)
 		m.findings = append(m.findings, findingsFrom(res, path)...)
 	}
@@ -183,8 +199,22 @@ func mergeCronSources(root *tomlConfig, patterns []string, rootDir, rootPath str
 	return m, nil
 }
 
-// collectBlocks records the rendered TOML behind each of one parse's live tasks.
-func (m *cronMerge) collectBlocks(res *importer.Result) {
+// collectBlocks records, for every live-eligible job in one parse, the TOML
+// that produced it and where its line physically lives in path — the bytes
+// `runwisp promote` copies into root, and the exact line it can later delete
+// once that copy has landed.
+//
+// The line snapshot is re-read from path here rather than threaded through
+// from the importer, because the importer only tracks the derived name or the
+// raw text of a job that failed to parse at all (Item.Source) — never the
+// original line of one that parsed fine. Re-reading is a second pass over a
+// file that is, in practice, a handful of kilobytes at most. A read that fails
+// here is not fatal to the load: it just means this job's name is absent from
+// m.lines, so a later promote of it refuses instead of guessing which line to
+// remove.
+func (m *cronMerge) collectBlocks(res *importer.Result, path string) {
+	data, _ := os.ReadFile(path)
+	fileLines := splitCronLines(data)
 	for _, it := range res.Items() {
 		if !it.LiveEligible() {
 			continue
@@ -193,7 +223,37 @@ func (m *cronMerge) collectBlocks(res *importer.Result) {
 			m.blocks = map[string]string{}
 		}
 		m.blocks[it.Name] = res.BlockTOML(it.Name)
+
+		if it.Line < 1 || it.Line > len(fileLines) {
+			continue
+		}
+		if m.lines == nil {
+			m.lines = map[string]cronLineOrigin{}
+		}
+		m.lines[it.Name] = cronLineOrigin{
+			File: path,
+			Line: it.Line,
+			Text: strings.TrimRight(fileLines[it.Line-1], "\r\n"),
+		}
 	}
+}
+
+// splitCronLines splits raw crontab bytes into 1-based lines with their
+// terminators stripped, matching bufio.Scanner's line count — importer/cron.go
+// numbers Item.Line the same way, so a trailing newline must not manufacture a
+// phantom extra line here. It exists here and again, deliberately unshared, as
+// configedit's splitCronLines: this package only ever reads a crontab, and
+// configedit — which later deletes a line from one — is the package that owns
+// writing to config files at all. See configedit's package doc.
+func splitCronLines(data []byte) []string {
+	if len(data) == 0 {
+		return nil
+	}
+	lines := strings.Split(string(data), "\n")
+	if lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
 }
 
 // parseCronSource reads and parses one crontab, refusing a file that isn't

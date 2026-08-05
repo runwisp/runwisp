@@ -28,20 +28,29 @@ var promoteFlags promoteOpts
 var promoteCmd = &cobra.Command{
 	Use:   "promote [TASK...]",
 	Short: "Move an imported task into your own runwisp.toml",
-	Long: `Graduate a staged task out of the machine-owned staging file and into
-your runwisp.toml, where you own it outright.
+	Long: `Graduate a staged or cron-sourced task into your own runwisp.toml, where
+you own it outright.
 
 ` + "`runwisp import --write`" + ` stages jobs in ` + config.StagingIncludeGlob + ` and marks
 them "staged" — imported, not yet native. Promoting one moves its block into your
 root config: after that a re-import leaves it alone, and it's yours to edit.
 
+A task read live out of a crontab via ` + "`include_cron`" + ` promotes the same way, and
+the move is real there too: the block lands in your root config, and the exact
+crontab line it came from is deleted in the same transaction — never left behind
+for a still-live cron daemon to fire a second time. Promote refuses, writing
+nothing, if that line has changed or gone missing since the config was loaded.
+
 The move is textual. The block's comments, its formatting, and any unresolved
 # TODO notes the import left behind travel with it byte-for-byte — nothing is
-re-generated. Both files are written as one transaction, so if the result
-wouldn't load, neither file is changed.
+re-generated. Every file involved is written as one transaction, so if the
+result wouldn't load, nothing changes. That transaction cannot be made atomic
+across the crontab and runwisp.toml themselves — a hard kill between the two
+writes is the one gap left, and it leaves the job briefly unscheduled rather
+than double-fired.
 
 Nothing about what the daemon runs changes: only which file defines it. Run
-` + "`runwisp reload`" + ` (or pass --reload) to clear the staged marker on a live daemon.`,
+` + "`runwisp reload`" + ` (or pass --reload) to clear the provenance marker on a live daemon.`,
 	Example: `  runwisp promote backup           # move one task
   runwisp promote backup reindex   # move several
   runwisp promote --all --reload   # move everything, then reconcile
@@ -165,24 +174,45 @@ func promoteSelectError(err error, cfgPath string) error {
 }
 
 // promoteError phrases a failed move. Every case here rolled the transaction
-// back, so both files are exactly as they were.
+// back, so every file touched is exactly as it was.
 func promoteError(err error, layout configedit.Layout) error {
 	var conflict *configedit.ConflictError
 	if errors.As(err, &conflict) {
 		return &userFacingError{
 			title: "the promoted config wouldn't load — nothing was written",
 			details: conflict.Err.Error() +
-				"\n\nBoth files were restored. This shouldn't happen for a plain move; " +
+				"\n\nEvery file was restored. This shouldn't happen for a plain move; " +
 				"please report it at https://github.com/runwisp/runwisp/issues.",
+		}
+	}
+	var mismatch *configedit.CronSourceMismatchError
+	if errors.As(err, &mismatch) {
+		return &userFacingError{
+			title:   "can't safely promote — a crontab line changed underneath it",
+			details: mismatch.Error() + "\n\nNothing was written. Run `runwisp validate` to see the crontab as it is now, then re-run promote.",
 		}
 	}
 	return configEditError(err, layout)
 }
 
-// printPromotePlan is --dry-run: exactly what would move, and where to, without
-// touching a file.
+// printPromotePlan is --dry-run: exactly what would move, and where to and
+// from, without touching a file. A cron-sourced task has two sides to that
+// move — the block landing in root and the line leaving the crontab — and
+// both are shown, or the same refusal a real promote would give is surfaced
+// here instead.
 func printPromotePlan(out io.Writer, layout configedit.Layout, names []string, cfg *config.Config) error {
 	_, blocks, err := configedit.PreviewBlocks(layout, names, cfg)
+	if err != nil {
+		return promoteError(err, layout)
+	}
+
+	var cronNames []string
+	for _, name := range names {
+		if _, ok := cfg.CronBlockTOML(name); ok {
+			cronNames = append(cronNames, name)
+		}
+	}
+	removals, err := configedit.PreviewCronRemovals(cronNames, cfg)
 	if err != nil {
 		return promoteError(err, layout)
 	}
@@ -190,6 +220,12 @@ func printPromotePlan(out io.Writer, layout configedit.Layout, names []string, c
 	fmt.Fprintf(out, "Would add %s to %s:\n", pluralizeCounts(countBlocks(blocks)), layout.RootPath)
 	for _, b := range blocks {
 		fmt.Fprintf(out, "\n%s\n", strings.TrimRight(b.Text, "\n"))
+	}
+	if len(removals) > 0 {
+		fmt.Fprintf(out, "\nWould remove %d crontab line(s):\n", len(removals))
+		for _, r := range removals {
+			fmt.Fprintf(out, "  %s:%d: %s\n", r.File, r.Line, r.Text)
+		}
 	}
 	fmt.Fprintln(out, "\nNothing was written.")
 	return nil
@@ -204,6 +240,12 @@ func printPromoted(out io.Writer, res configedit.PromoteResult, layout configedi
 	}
 	if res.StagingRemoved {
 		fmt.Fprintf(out, "\n%s held nothing else, so it was removed.\n", config.StagingRelPath())
+	}
+	if len(res.CronRemovals) > 0 {
+		fmt.Fprintf(out, "\nRemoved %d crontab line(s):\n", len(res.CronRemovals))
+		for _, r := range res.CronRemovals {
+			fmt.Fprintf(out, "  %s:%d\n", r.File, r.Line)
+		}
 	}
 
 	fmt.Fprintln(out)

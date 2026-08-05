@@ -355,10 +355,13 @@ the result wouldn't load.
 | `--reload`  | Reload the running daemon afterwards, so the provenance marker clears.                      |
 | `--dry-run` | Print the blocks that would be added and write nothing.                                     |
 
-A staged block is **moved** out of the staging file; a cron-sourced one is
-**copied**, because RunWisp never writes to a crontab. Promoting doesn't change
-what the daemon runs — only which file defines it — so `runwisp reload` afterwards
-honestly reports _no task changes_.
+A staged block is **moved** out of the staging file. A cron-sourced one is a real
+move too: the block lands in `runwisp.toml` and the exact crontab line it came
+from is deleted, in the same transaction — never left behind for a still-live
+cron daemon to fire a second time. Promote refuses, writing nothing, if that
+line has changed or gone missing since the config was loaded. Promoting doesn't
+change what the daemon runs — only which file defines it — so `runwisp reload`
+afterwards honestly reports _no task changes_.
 [Graduating a job](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config)
 walks through it.
 
