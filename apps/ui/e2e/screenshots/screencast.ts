@@ -72,7 +72,9 @@ export class Screencast {
             sc.pending.push(writeFile(join(dir, file), Buffer.from(params.data, "base64")));
             // Ack immediately (persist happens async) to keep frames flowing at
             // the compositor's rate — a slow ack throttles the screencast.
-            void client.send("Page.screencastFrameAck", { sessionId: params.sessionId });
+            void client
+                .send("Page.screencastFrameAck", { sessionId: params.sessionId })
+                .catch(() => {});
         });
 
         await client.send("Page.startScreencast", { format: "png", everyNthFrame: 1 });
