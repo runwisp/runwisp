@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"io"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -101,12 +102,7 @@ func IsSystemCrontabPath(path string) bool {
 	if clean == SystemCrontabPath {
 		return true
 	}
-	for _, part := range strings.Split(clean, string(filepath.Separator)) {
-		if part == "cron.d" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(strings.Split(clean, string(filepath.Separator)), "cron.d")
 }
 
 // UserSpoolOwner returns the account a per-user crontab in a cron spool belongs
@@ -146,13 +142,7 @@ func UserSpoolOwner(path string) (string, bool) {
 // needs exactly that to avoid guessing "spool" for an arbitrary directory
 // that merely happens to be named `crontabs`.
 func IsSpoolCrontabDir(dir string) bool {
-	clean := filepath.Clean(dir)
-	for _, d := range UserSpoolDirs() {
-		if clean == d {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(UserSpoolDirs(), filepath.Clean(dir))
 }
 
 // IsPlausibleAccountName reports whether a spool basename can be an account
