@@ -181,16 +181,7 @@ func (sr *sessionRunner) handleInboundPayload(ctx context.Context, session *wsSe
 		slog.Info("cloud protocol error", "code", message.Code, "message", message.Message, "requestId", message.RequestID, "executionId", message.ExecutionID)
 		return nil
 	case protocol.ExecutionDispatchMessage:
-		executionID := strings.TrimSpace(message.Execution.ExecutionID)
-		ack := func() {
-			if ackErr := sendMessage(session, NewExecutionAckMessage(executionID)); ackErr != nil {
-				slog.Info("failed to send execution ack", "executionId", executionID, "error", ackErr.Error())
-			}
-		}
-		if dispatchErr := sr.handler.HandleExecutionDispatch(ctx, message, ack); dispatchErr != nil {
-			sr.sendProtocolError(session, classifyErrorKind(dispatchErr), dispatchErr.Error(), "", executionID)
-		}
-		return nil
+		return sr.handleExecutionDispatch(ctx, session, message)
 	case protocol.ExecutionStopMessage:
 		return sr.reportIfErr(session, sr.handler.HandleExecutionStop(ctx, message), strings.TrimSpace(message.ExecutionID))
 	case protocol.LogReplayRequestMessage:
@@ -236,6 +227,28 @@ func (sr *sessionRunner) handleInboundPayload(ctx context.Context, session *wsSe
 		slog.Warn("decoded message type has no dispatch case", "type", fmt.Sprintf("%T", decoded))
 		return nil
 	}
+}
+
+// handleExecutionDispatch guards the required `execution` pointer field before
+// dispatching: decodeStrict only checks JSON syntax, so a frame that omits
+// `execution` (or sends null) decodes to nil. An unrecovered panic in the
+// read-loop goroutine would take down the whole daemon, not just the cloud
+// session. Mirrors the nil guards on ServiceApply.Service / ServiceControl.Action.
+func (sr *sessionRunner) handleExecutionDispatch(ctx context.Context, session *wsSession, message protocol.ExecutionDispatchMessage) error {
+	if message.Execution == nil {
+		sr.sendProtocolError(session, CloudErrorKindValidation, "execution is required", "", "")
+		return nil
+	}
+	executionID := strings.TrimSpace(message.Execution.ExecutionID)
+	ack := func() {
+		if ackErr := sendMessage(session, NewExecutionAckMessage(executionID)); ackErr != nil {
+			slog.Info("failed to send execution ack", "executionId", executionID, "error", ackErr.Error())
+		}
+	}
+	if dispatchErr := sr.handler.HandleExecutionDispatch(ctx, message, ack); dispatchErr != nil {
+		sr.sendProtocolError(session, classifyErrorKind(dispatchErr), dispatchErr.Error(), "", executionID)
+	}
+	return nil
 }
 
 func (sr *sessionRunner) sendProtocolError(session *wsSession, kind CloudErrorKind, message, requestID, executionID string) {

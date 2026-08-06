@@ -974,6 +974,30 @@ func TestHandleInboundPayloadProtocolError(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// A dispatch frame that omits the required `execution` field decodes to a nil
+// pointer (decodeStrict validates JSON syntax, not `binding:"required"`). The
+// handler must reject it with a validation frame, never deref nil — an
+// unrecovered panic here runs in the read-loop goroutine and would crash the
+// entire daemon, not just the cloud session.
+func TestHandleInboundPayloadDispatchMissingExecution(t *testing.T) {
+	env := newTestEnv(t, func(conn *websocket.Conn) {
+		conn.Close(websocket.StatusNormalClosure, "")
+	})
+	defer env.close()
+
+	session := &wsSession{outbound: make(chan []byte, 16)}
+	payload := []byte(`{"type":"execution:dispatch"}`)
+	err := env.client.sessions.handleInboundPayload(context.Background(), session, payload)
+	assert.NoError(t, err, "missing execution must not tear down the session")
+
+	select {
+	case out := <-session.outbound:
+		assert.Contains(t, string(out), "execution is required")
+	default:
+		t.Fatal("expected a validation error frame for the missing execution field")
+	}
+}
+
 func TestHandleInboundPayloadAuthResultSuccess(t *testing.T) {
 	env := newTestEnv(t, func(conn *websocket.Conn) {
 		conn.Close(websocket.StatusNormalClosure, "")
