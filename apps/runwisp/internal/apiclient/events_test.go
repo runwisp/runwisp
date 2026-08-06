@@ -39,7 +39,7 @@ func TestParseLogStreamFrame(t *testing.T) {
 	})
 
 	t.Run("rotated event with valid data", func(t *testing.T) {
-		msg, ok := parseLogStreamFrame("rotated", `{"first_available":42}`)
+		msg, ok := parseLogStreamFrame("rotated", `{"firstAvailable":42}`)
 		require.True(t, ok)
 		assert.Equal(t, LogStreamMsgKindRotated, msg.Kind)
 		assert.Equal(t, int64(42), msg.Rotated.FirstAvailable)
@@ -64,7 +64,7 @@ func TestParseLogStreamFrame(t *testing.T) {
 	})
 
 	t.Run("done event with valid data", func(t *testing.T) {
-		msg, ok := parseLogStreamFrame("done", `{"final_line":100,"status":"ended"}`)
+		msg, ok := parseLogStreamFrame("done", `{"finalLine":100,"status":"ended"}`)
 		require.True(t, ok)
 		assert.Equal(t, LogStreamMsgKindDone, msg.Kind)
 		assert.Equal(t, int64(100), msg.Done.FinalLine)

@@ -88,7 +88,7 @@ func TestHandleLogSearchRequest_UnknownExecutionExhausted(t *testing.T) {
 	h := newDispatchInboundHandler(nil, repo, executor.Availability{})
 
 	chunk, err := h.HandleLogSearchRequest(context.Background(), protocol.LogSearchRequestMessage{
-		ID:          "req-1",
+		RequestID:   "req-1",
 		ExecutionID: "exec-unknown",
 		Query:       "anything",
 	})
@@ -99,6 +99,6 @@ func TestHandleLogSearchRequest_UnknownExecutionExhausted(t *testing.T) {
 
 func TestHandleLogSearchRequest_MissingExecID(t *testing.T) {
 	h := newDispatchInboundHandler(nil, &stubRunRepo{}, executor.Availability{})
-	_, err := h.HandleLogSearchRequest(context.Background(), protocol.LogSearchRequestMessage{ID: "r", Query: "q"})
+	_, err := h.HandleLogSearchRequest(context.Background(), protocol.LogSearchRequestMessage{RequestID: "r", Query: "q"})
 	require.Error(t, err)
 }

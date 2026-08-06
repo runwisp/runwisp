@@ -15,14 +15,14 @@ import { createRunsSource, type RunsFilters, type RunsSource } from "./runs-sour
 function makeRun(id: string, overrides: Partial<Run> = {}): Run {
     return {
         id,
-        task_name: "backup-db",
-        created_at: "2026-06-22T12:00:00.000Z",
+        taskName: "backup-db",
+        createdAt: "2026-06-22T12:00:00.000Z",
         status: "ended",
-        end_reason: "success",
-        triggered_by: "api",
-        exit_code: 0,
-        instance_index: 0,
-        retry_attempt: 0,
+        endReason: "success",
+        triggeredBy: "api",
+        exitCode: 0,
+        instanceIndex: 0,
+        retryAttempt: 0,
         ...overrides,
     };
 }
@@ -30,7 +30,7 @@ function makeRun(id: string, overrides: Partial<Run> = {}): Run {
 const baseFilters = (overrides: Partial<RunsFilters> = {}): RunsFilters => ({
     search: "",
     statuses: [],
-    sort_direction: "desc",
+    sortDirection: "desc",
     ...overrides,
 });
 
@@ -57,11 +57,11 @@ describe("createRunsSource", () => {
         expect(src.error).toBeNull();
     });
 
-    it("fetches a task's own runs through tasksApi when task_name is set", async () => {
+    it("fetches a task's own runs through tasksApi when taskName is set", async () => {
         const src = createRunsSource();
         vi.mocked(tasksApi.getRuns).mockResolvedValue({ runs: [], total: 0 });
 
-        src.setFilters(baseFilters({ task_name: "backup-db" }));
+        src.setFilters(baseFilters({ taskName: "backup-db" }));
 
         await vi.waitFor(() => {
             expect(src.loaded).toBe(true);
@@ -105,8 +105,8 @@ describe("createRunsSource SSE filter parity (matchesFilters)", () => {
         // Regression: the filter set holds display statuses ("failed"), but the
         // run's phase is "ended" — matching must consult displayStatus.
         const src = await loadedWith({ statuses: ["failed"] });
-        src.upsert(makeRun("a", { status: "ended", end_reason: "failed" }));
-        src.upsert(makeRun("b", { status: "ended", end_reason: "success" }));
+        src.upsert(makeRun("a", { status: "ended", endReason: "failed" }));
+        src.upsert(makeRun("b", { status: "ended", endReason: "success" }));
         expect(src.items.map((r) => r.id)).toEqual(["a"]);
     });
 
@@ -115,47 +115,47 @@ describe("createRunsSource SSE filter parity (matchesFilters)", () => {
         // end reason), so the "running" filter matches on phase alone.
         const src = await loadedWith({ statuses: ["running"] });
         src.upsert(makeRun("a", { status: "running" }));
-        src.upsert(makeRun("b", { status: "ended", end_reason: "success" }));
+        src.upsert(makeRun("b", { status: "ended", endReason: "success" }));
         expect(src.items.map((r) => r.id)).toEqual(["a"]);
     });
 
-    it("gates on the created_at time range, inclusive of the bounds", async () => {
+    it("gates on the createdAt time range, inclusive of the bounds", async () => {
         const src = await loadedWith({
-            created_after: "2026-06-22T11:00:00.000Z",
-            created_before: "2026-06-22T13:00:00.000Z",
+            createdAfter: "2026-06-22T11:00:00.000Z",
+            createdBefore: "2026-06-22T13:00:00.000Z",
         });
-        src.upsert(makeRun("in", { created_at: "2026-06-22T12:00:00.000Z" }));
-        src.upsert(makeRun("early", { created_at: "2026-06-22T10:00:00.000Z" }));
-        src.upsert(makeRun("late", { created_at: "2026-06-22T14:00:00.000Z" }));
+        src.upsert(makeRun("in", { createdAt: "2026-06-22T12:00:00.000Z" }));
+        src.upsert(makeRun("early", { createdAt: "2026-06-22T10:00:00.000Z" }));
+        src.upsert(makeRun("late", { createdAt: "2026-06-22T14:00:00.000Z" }));
         expect(src.items.map((r) => r.id)).toEqual(["in"]);
     });
 
-    it("gates on triggered_by", async () => {
-        const src = await loadedWith({ triggered_by: "cron" });
-        src.upsert(makeRun("cron", { triggered_by: "cron" }));
-        src.upsert(makeRun("api", { triggered_by: "api" }));
+    it("gates on triggeredBy", async () => {
+        const src = await loadedWith({ triggeredBy: "cron" });
+        src.upsert(makeRun("cron", { triggeredBy: "cron" }));
+        src.upsert(makeRun("api", { triggeredBy: "api" }));
         expect(src.items.map((r) => r.id)).toEqual(["cron"]);
     });
 
     it("gates on an exact exit code", async () => {
-        const src = await loadedWith({ exit_code: "137" });
-        src.upsert(makeRun("oom", { status: "ended", end_reason: "failed", exit_code: 137 }));
-        src.upsert(makeRun("ok", { status: "ended", end_reason: "success", exit_code: 0 }));
+        const src = await loadedWith({ exitCode: "137" });
+        src.upsert(makeRun("oom", { status: "ended", endReason: "failed", exitCode: 137 }));
+        src.upsert(makeRun("ok", { status: "ended", endReason: "success", exitCode: 0 }));
         expect(src.items.map((r) => r.id)).toEqual(["oom"]);
     });
 
     it("gates on an exit-code range expression", async () => {
-        const src = await loadedWith({ exit_code: ">100 <150" });
-        src.upsert(makeRun("oom", { status: "ended", end_reason: "failed", exit_code: 137 }));
-        src.upsert(makeRun("high", { status: "ended", end_reason: "failed", exit_code: 200 }));
-        src.upsert(makeRun("ok", { status: "ended", end_reason: "success", exit_code: 0 }));
+        const src = await loadedWith({ exitCode: ">100 <150" });
+        src.upsert(makeRun("oom", { status: "ended", endReason: "failed", exitCode: 137 }));
+        src.upsert(makeRun("high", { status: "ended", endReason: "failed", exitCode: 200 }));
+        src.upsert(makeRun("ok", { status: "ended", endReason: "success", exitCode: 0 }));
         expect(src.items.map((r) => r.id)).toEqual(["oom"]);
     });
 
     it("gates on retries-only", async () => {
-        const src = await loadedWith({ retries_only: true });
-        src.upsert(makeRun("retried", { retry_attempt: 2 }));
-        src.upsert(makeRun("first", { retry_attempt: 0 }));
+        const src = await loadedWith({ retriesOnly: true });
+        src.upsert(makeRun("retried", { retryAttempt: 2 }));
+        src.upsert(makeRun("first", { retryAttempt: 0 }));
         expect(src.items.map((r) => r.id)).toEqual(["retried"]);
     });
 

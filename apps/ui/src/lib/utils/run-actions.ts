@@ -9,8 +9,8 @@ import { runsApi } from "$lib/api";
 const UNDO_MS = 5000;
 
 interface TriggeredRun {
-    task_name: string;
-    run_id: string;
+    taskName: string;
+    runId: string;
 }
 
 /**
@@ -57,14 +57,14 @@ async function handleBulkRerun(selector: RunSelector, _affected: Run[]) {
  * delete them. Closure-free, so it lives at module scope.
  */
 async function undoRerun(triggered: TriggeredRun[]) {
-    const ids = triggered.map((t) => t.run_id);
+    const ids = triggered.map((t) => t.runId);
     try {
-        await runsApi.bulkCancel({ match_all: false, ids });
+        await runsApi.bulkCancel({ matchAll: false, ids });
     } catch {
         // best-effort: runs may already have finished
     }
     try {
-        await runsApi.bulkDelete({ match_all: false, ids });
+        await runsApi.bulkDelete({ matchAll: false, ids });
         toast.info("Re-run undone");
     } catch (err) {
         toast.error(extractErrorMessage(err, "Failed to undo re-run"));
@@ -98,7 +98,7 @@ export function createRunActions(opts: RunActionsOptions) {
 
         try {
             const count = await runsApi.bulkDelete(selector);
-            const restoreSelector: RunSelector = { match_all: false, ids: [...removedIds] };
+            const restoreSelector: RunSelector = { matchAll: false, ids: [...removedIds] };
             toast.success(count === 1 ? "Run deleted" : `${String(count)} runs deleted`, {
                 duration: UNDO_MS,
                 action: {
@@ -126,7 +126,7 @@ export function createRunActions(opts: RunActionsOptions) {
     function deleteSingle(runId: string) {
         const target = opts.getItems().find((r) => r.id === runId);
         if (!target) return;
-        void handleBulkDelete({ match_all: false, ids: [runId] }, [target]);
+        void handleBulkDelete({ matchAll: false, ids: [runId] }, [target]);
     }
 
     return { handleBulkDelete, handleBulkCancel, handleBulkRerun, deleteSingle };

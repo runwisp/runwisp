@@ -8,7 +8,7 @@ export type RunsListSortDirection = "asc" | "desc" | "";
 /**
  * The single filter shape shared by the runs list, the filter popover, the
  * SSE-merge source, and the bulk selector. Every field beyond `search` and
- * `sort_direction` is an optional dimension applied server-side; the zero
+ * `sortDirection` is an optional dimension applied server-side; the zero
  * value (`emptyRunFilters`) matches every run.
  *
  * `statuses` is a multi-select set joined to a comma-separated string only at
@@ -19,26 +19,26 @@ export type RunsListSortDirection = "asc" | "desc" | "";
 export interface RunsListFilters {
     search: string;
     statuses: string[];
-    sort_direction: RunsListSortDirection;
+    sortDirection: RunsListSortDirection;
     // Optional dimensions explicitly admit `undefined` so a dimension can be
     // cleared by reassignment (`{ ...f, x: undefined }`) under the project's
     // exactOptionalPropertyTypes — a fresh object reference is what re-triggers
     // the parent's fetch effect through several levels of `bind:`.
-    task_name?: string | undefined;
-    created_after?: string | undefined;
-    created_before?: string | undefined;
-    triggered_by?: string | undefined;
+    taskName?: string | undefined;
+    createdAfter?: string | undefined;
+    createdBefore?: string | undefined;
+    triggeredBy?: string | undefined;
     // A human exit-code expression — a bare code (`137`), a comparison (`>100`,
     // `<=150`), or a space-separated combination (`>100 <150`). Normalized to an
     // inclusive [min, max] range (`exitCodeRange`) at the wire boundary; the
-    // server only ever sees `exit_code_min` / `exit_code_max`.
-    exit_code?: string | undefined;
-    retries_only?: boolean | undefined;
+    // server only ever sees `exitCodeMin` / `exitCodeMax`.
+    exitCode?: string | undefined;
+    retriesOnly?: boolean | undefined;
 }
 
 /** A fresh default filter — no dimensions active, newest-first. */
 export function emptyRunFilters(): RunsListFilters {
-    return { search: "", statuses: [], sort_direction: "desc" };
+    return { search: "", statuses: [], sortDirection: "desc" };
 }
 
 /**
@@ -131,14 +131,14 @@ function exactBucket(statuses: string[]): StatusBucket | undefined {
  * page the task name is the page scope (injected at fetch time), never a
  * popover-set filter, so it stays absent from those filters and is not counted.
  */
-export type FilterDimension = "status" | "time" | "task" | "triggered_by" | "exit_code" | "retries";
+export type FilterDimension = "status" | "time" | "task" | "triggeredBy" | "exitCode" | "retries";
 
 const DIMENSION_ORDER: FilterDimension[] = [
     "status",
     "time",
     "task",
-    "triggered_by",
-    "exit_code",
+    "triggeredBy",
+    "exitCode",
     "retries",
 ];
 
@@ -148,15 +148,15 @@ export function dimensionActive(f: RunsListFilters, dim: FilterDimension): boole
         case "status":
             return f.statuses.length > 0;
         case "time":
-            return Boolean(f.created_after) || Boolean(f.created_before);
+            return Boolean(f.createdAfter) || Boolean(f.createdBefore);
         case "task":
-            return Boolean(f.task_name);
-        case "triggered_by":
-            return Boolean(f.triggered_by);
-        case "exit_code":
-            return exitCodeRangeActive(f.exit_code);
+            return Boolean(f.taskName);
+        case "triggeredBy":
+            return Boolean(f.triggeredBy);
+        case "exitCode":
+            return exitCodeRangeActive(f.exitCode);
         case "retries":
-            return Boolean(f.retries_only);
+            return Boolean(f.retriesOnly);
     }
 }
 
@@ -176,15 +176,15 @@ export function clearDimension(f: RunsListFilters, dim: FilterDimension): RunsLi
         case "status":
             return { ...f, statuses: [] };
         case "time":
-            return { ...f, created_after: undefined, created_before: undefined };
+            return { ...f, createdAfter: undefined, createdBefore: undefined };
         case "task":
-            return { ...f, task_name: undefined };
-        case "triggered_by":
-            return { ...f, triggered_by: undefined };
-        case "exit_code":
-            return { ...f, exit_code: undefined };
+            return { ...f, taskName: undefined };
+        case "triggeredBy":
+            return { ...f, triggeredBy: undefined };
+        case "exitCode":
+            return { ...f, exitCode: undefined };
         case "retries":
-            return { ...f, retries_only: undefined };
+            return { ...f, retriesOnly: undefined };
     }
 }
 
@@ -196,12 +196,12 @@ export function clearPopoverFilters(f: RunsListFilters): RunsListFilters {
     return {
         ...f,
         statuses: [],
-        created_after: undefined,
-        created_before: undefined,
-        task_name: undefined,
-        triggered_by: undefined,
-        exit_code: undefined,
-        retries_only: undefined,
+        createdAfter: undefined,
+        createdBefore: undefined,
+        taskName: undefined,
+        triggeredBy: undefined,
+        exitCode: undefined,
+        retriesOnly: undefined,
     };
 }
 

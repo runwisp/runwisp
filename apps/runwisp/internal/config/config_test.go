@@ -73,7 +73,7 @@ run = "echo hello"
 		assert.Equal(t, 30*time.Minute, task.Timeout)
 		assert.Equal(t, int64(200*1024*1024), task.LogMaxSize)
 		assert.Equal(t, "drop_old", task.LogOnFull)
-		assert.Equal(t, 25, task.KeepRuns)
+		assert.Equal(t, 25, *task.KeepRuns)
 		assert.Equal(t, 14*24*time.Hour, task.KeepFor)
 		assert.Equal(t, int64(5*1024*1024*1024), cfg.Storage.MaxSize)
 		assert.Equal(t, int64(500*1024*1024), cfg.Storage.MinFreeSpace)
@@ -480,7 +480,7 @@ func TestApplyDefaults(t *testing.T) {
 			Timeout:    45 * time.Minute,
 			LogMaxSize: 200 * 1024 * 1024,
 			LogOnFull:  "drop_old",
-			KeepRuns:   25,
+			KeepRuns:   intPtr(25),
 			KeepFor:    14 * 24 * time.Hour,
 		},
 		Tasks: []model.Task{
@@ -493,7 +493,7 @@ func TestApplyDefaults(t *testing.T) {
 				OnOverlap:     model.PolicySkip,
 				LogMaxSize:    50 * 1024 * 1024,
 				LogOnFull:     "kill_task",
-				KeepRuns:      5,
+				KeepRuns:      intPtr(5),
 			},
 		},
 	}
@@ -507,7 +507,7 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, 45*time.Minute, defaulted.Timeout)
 	assert.Equal(t, int64(200*1024*1024), defaulted.LogMaxSize)
 	assert.Equal(t, "drop_old", defaulted.LogOnFull)
-	assert.Equal(t, 25, defaulted.KeepRuns)
+	assert.Equal(t, 25, *defaulted.KeepRuns)
 	assert.Equal(t, 14*24*time.Hour, defaulted.KeepFor)
 	assert.Equal(t, DefaultGracefulStop, defaulted.GracefulStop)
 	assert.Equal(t, DefaultMaxCatchUpRuns, defaulted.MaxCatchUpRuns)
@@ -519,7 +519,7 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, 10*time.Minute, overridden.Timeout)
 	assert.Equal(t, int64(50*1024*1024), overridden.LogMaxSize)
 	assert.Equal(t, "kill_task", overridden.LogOnFull)
-	assert.Equal(t, 5, overridden.KeepRuns)
+	assert.Equal(t, 5, *overridden.KeepRuns)
 	assert.Equal(t, 14*24*time.Hour, overridden.KeepFor)
 
 	// Daemon shutdown_timeout fills in from the built-in default when
@@ -537,8 +537,8 @@ run = "echo hi"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		require.NotNil(t, cfg.Tasks[0].NotifyOnMissed)
-		assert.True(t, *cfg.Tasks[0].NotifyOnMissed)
+		require.NotNil(t, cfg.Tasks[0].TreatMissedAsFailure)
+		assert.True(t, *cfg.Tasks[0].TreatMissedAsFailure)
 		assert.True(t, cfg.Tasks[0].NotifiesOnMissed())
 	})
 
@@ -546,43 +546,43 @@ run = "echo hi"
 		path := writeTOML(t, `
 [tasks.t]
 run = "echo hi"
-notify_on_missed = false
+treat_missed_as_failure = false
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		require.NotNil(t, cfg.Tasks[0].NotifyOnMissed)
-		assert.False(t, *cfg.Tasks[0].NotifyOnMissed)
+		require.NotNil(t, cfg.Tasks[0].TreatMissedAsFailure)
+		assert.False(t, *cfg.Tasks[0].TreatMissedAsFailure)
 		assert.False(t, cfg.Tasks[0].NotifiesOnMissed())
 	})
 
-	t.Run("omitted inherits notify_on_missed = false from defaults", func(t *testing.T) {
+	t.Run("omitted inherits treat_missed_as_failure = false from defaults", func(t *testing.T) {
 		path := writeTOML(t, `
 [defaults]
-notify_on_missed = false
+treat_missed_as_failure = false
 
 [tasks.inheritor]
 run = "echo hi"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		require.NotNil(t, cfg.Tasks[0].NotifyOnMissed)
-		assert.False(t, *cfg.Tasks[0].NotifyOnMissed,
+		require.NotNil(t, cfg.Tasks[0].TreatMissedAsFailure)
+		assert.False(t, *cfg.Tasks[0].TreatMissedAsFailure,
 			"a task that omits the key inherits the muted default")
 	})
 
 	t.Run("explicit true overrides a muted default", func(t *testing.T) {
 		path := writeTOML(t, `
 [defaults]
-notify_on_missed = false
+treat_missed_as_failure = false
 
 [tasks.loud]
 run = "echo hi"
-notify_on_missed = true
+treat_missed_as_failure = true
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		require.NotNil(t, cfg.Tasks[0].NotifyOnMissed)
-		assert.True(t, *cfg.Tasks[0].NotifyOnMissed,
+		require.NotNil(t, cfg.Tasks[0].TreatMissedAsFailure)
+		assert.True(t, *cfg.Tasks[0].TreatMissedAsFailure,
 			"a per-task true wins over a muted [defaults]")
 	})
 }
@@ -728,7 +728,7 @@ run = "echo hi"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		assert.Equal(t, 25, cfg.Tasks[0].KeepRuns)
+		assert.Equal(t, 25, *cfg.Tasks[0].KeepRuns)
 	})
 
 	t.Run("omitted keep_runs inherits from defaults", func(t *testing.T) {
@@ -741,7 +741,22 @@ run = "echo hi"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		assert.Equal(t, 50, cfg.Tasks[0].KeepRuns)
+		assert.Equal(t, 50, *cfg.Tasks[0].KeepRuns)
+	})
+
+	t.Run("explicit zero keeps none and does not inherit", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+keep_runs = 50
+
+[tasks.ephemeral]
+keep_runs = 0
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.Tasks[0].KeepRuns)
+		assert.Equal(t, 0, *cfg.Tasks[0].KeepRuns)
 	})
 
 	t.Run("negative integer is rejected", func(t *testing.T) {
@@ -1065,7 +1080,7 @@ func TestValidate_MoreCases(t *testing.T) {
 		{
 			name: "negative defaults.keep_runs",
 			cfg: &Config{
-				Defaults: Defaults{KeepRuns: -1},
+				Defaults: Defaults{KeepRuns: intPtr(-1)},
 				Tasks:    []model.Task{testTask("t1")},
 			},
 			wantErr: "defaults.keep_runs",
@@ -1144,7 +1159,7 @@ func TestValidate_MoreCases(t *testing.T) {
 					Run:           "echo hi",
 					MaxConcurrent: 1,
 					OnOverlap:     model.PolicyQueue,
-					KeepRuns:      -1,
+					KeepRuns:      intPtr(-1),
 				}},
 			},
 			wantErr: "keep_runs",
@@ -1637,3 +1652,7 @@ max_concurrent = "not-a-number"
 		assert.Contains(t, err.Error(), "failed to parse config file")
 	})
 }
+
+// intPtr returns a pointer to n — for building *int config fields (e.g. keep_runs)
+// in struct literals.
+func intPtr(n int) *int { return &n }

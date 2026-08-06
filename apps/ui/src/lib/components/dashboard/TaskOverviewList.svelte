@@ -250,17 +250,17 @@ run  = "echo hello"</pre>
                                     <ComposeBadge
                                         file={task.task.compose.file}
                                         service={task.task.compose.service}
-                                        projectName={task.task.compose.project_name}
+                                        projectName={task.task.compose.projectName}
                                     />
                                 {/if}
-                                {#if task.task.held_by}
-                                    <TaskHeldBadge heldBy={task.task.held_by} />
+                                {#if task.task.heldBy}
+                                    <TaskHeldBadge heldBy={task.task.heldBy} />
                                 {/if}
                                 {#if task.task.source}
                                     <TaskSourceBadge
                                         name={task.task.name}
                                         source={task.task.source}
-                                        sourceFile={task.task.source_file}
+                                        sourceFile={task.task.sourceFile}
                                     />
                                 {/if}
                                 {#if task.task.kind === "service"}
@@ -362,12 +362,12 @@ run  = "echo hello"</pre>
                         />
                     </div>
 
-                    {#if isFailureEndReason(task.lastRun?.end_reason)}
+                    {#if isFailureEndReason(task.lastRun?.endReason)}
                         <div
                             class="mt-2 rounded-[3px] border border-danger-soft-border bg-danger-soft/80 px-3 py-2 text-xs text-danger-soft-text"
                         >
                             Last run exited with code <span class="font-mono tabular-nums"
-                                >{task.lastRun?.exit_code}</span
+                                >{task.lastRun?.exitCode}</span
                             >
                         </div>
                     {/if}

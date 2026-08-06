@@ -124,7 +124,7 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 
 	taskName, configBacked, resolveErr := h.resolveDispatchTask(message.Execution)
 	if resolveErr != nil {
-		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusErr, ptr(-1), nil, nowPtr()))
+		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, ptr(-1), nil, nowPtr()))
 		if h.uploader != nil {
 			h.uploader.forget(ctx, executionID)
 		}
@@ -178,9 +178,9 @@ func (h *InboundHandler) handleTriggerError(ctx context.Context, executionID str
 		if finishedAt == nil {
 			finishedAt = nowPtr()
 		}
-		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusErr, ptr(run.ExitCode), run.StartAt, finishedAt))
+		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, ptr(run.ExitCode), run.StartAt, finishedAt))
 	} else {
-		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusErr, ptr(-1), nil, nowPtr()))
+		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, ptr(-1), nil, nowPtr()))
 	}
 	if h.uploader != nil {
 		h.uploader.forget(ctx, executionID)
@@ -219,7 +219,7 @@ func (h *InboundHandler) HandleExecutionStop(ctx context.Context, message protoc
 func (h *InboundHandler) HandleLogReplayRequest(ctx context.Context, message protocol.LogReplayRequestMessage) (protocol.LogReplayChunkMessage, error) {
 	executionID := strings.TrimSpace(message.ExecutionID)
 	if executionID == "" {
-		return NewLogReplayChunkMessage(message.ID, message.ExecutionID, nil, true),
+		return NewLogReplayChunkMessage(message.RequestID, message.ExecutionID, nil, true),
 			&CloudError{Kind: CloudErrorKindValidation, Message: "executionId is required"}
 	}
 
@@ -232,19 +232,19 @@ func (h *InboundHandler) HandleLogReplayRequest(ctx context.Context, message pro
 			// as "terminal, fully read" on a run that hadn't even started.
 			// Genuinely finished runs never get here — the cloud's
 			// already-terminal guard answers those from the archive.
-			return NewLogReplayChunkMessage(message.ID, executionID, nil, false), nil
+			return NewLogReplayChunkMessage(message.RequestID, executionID, nil, false), nil
 		}
-		return NewLogReplayChunkMessage(message.ID, executionID, nil, true),
+		return NewLogReplayChunkMessage(message.RequestID, executionID, nil, true),
 			&CloudError{Kind: CloudErrorKindTransient, Message: "failed to query execution logs", Err: err}
 	}
 
 	lines, final, readErr := readExecutionLogReplay(run, h.logDir, message.FromLine, message.Limit)
 	if readErr != nil {
-		return NewLogReplayChunkMessage(message.ID, executionID, nil, true),
+		return NewLogReplayChunkMessage(message.RequestID, executionID, nil, true),
 			&CloudError{Kind: CloudErrorKindTransient, Message: "failed to read execution logs", Err: readErr}
 	}
 
-	return NewLogReplayChunkMessage(message.ID, executionID, lines, final), nil
+	return NewLogReplayChunkMessage(message.RequestID, executionID, lines, final), nil
 }
 
 // HandleLogSearchRequest greps one execution's on-disk log and returns the
@@ -254,16 +254,16 @@ func (h *InboundHandler) HandleLogReplayRequest(ctx context.Context, message pro
 func (h *InboundHandler) HandleLogSearchRequest(ctx context.Context, message protocol.LogSearchRequestMessage) (protocol.LogSearchChunkMessage, error) {
 	executionID := strings.TrimSpace(message.ExecutionID)
 	if executionID == "" {
-		return NewLogSearchChunkMessage(message.ID, message.ExecutionID, nil, 0, true),
+		return NewLogSearchChunkMessage(message.RequestID, message.ExecutionID, nil, 0, true),
 			&CloudError{Kind: CloudErrorKindValidation, Message: "executionId is required"}
 	}
 
 	run, err := h.runRepo.GetRunByExternalExecutionID(ctx, executionID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			return NewLogSearchChunkMessage(message.ID, executionID, nil, 0, true), nil
+			return NewLogSearchChunkMessage(message.RequestID, executionID, nil, 0, true), nil
 		}
-		return NewLogSearchChunkMessage(message.ID, executionID, nil, 0, true),
+		return NewLogSearchChunkMessage(message.RequestID, executionID, nil, 0, true),
 			&CloudError{Kind: CloudErrorKindTransient, Message: "failed to query execution logs", Err: err}
 	}
 
@@ -280,11 +280,11 @@ func (h *InboundHandler) HandleLogSearchRequest(ctx context.Context, message pro
 		if ce, ok := searchErr.(*CloudError); ok {
 			kind = ce.Kind
 		}
-		return NewLogSearchChunkMessage(message.ID, executionID, nil, 0, true),
+		return NewLogSearchChunkMessage(message.RequestID, executionID, nil, 0, true),
 			&CloudError{Kind: kind, Message: searchErr.Error()}
 	}
 
-	return NewLogSearchChunkMessage(message.ID, executionID, hits, nextLine, exhausted), nil
+	return NewLogSearchChunkMessage(message.RequestID, executionID, hits, nextLine, exhausted), nil
 }
 
 // HandleLogListen marks an execution for live log:line push events. Idempotent

@@ -45,7 +45,7 @@ type Querier interface {
 	ListNotificationsBefore(ctx context.Context, arg ListNotificationsBeforeParams) ([]Notification, error)
 	ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload, error)
 	MarkAllNotificationsRead(ctx context.Context, readAt *time.Time) error
-	MarkCrashedRuns(ctx context.Context, endAt *time.Time) (int64, error)
+	MarkCrashedRuns(ctx context.Context, endedAt *time.Time) (int64, error)
 	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) (int64, error)
 	MarkNotificationUnread(ctx context.Context, id string) (int64, error)
 	PruneNotificationsByAge(ctx context.Context, lastOccurredAt time.Time) (int64, error)

@@ -117,16 +117,16 @@ export const tasksApi = {
             limit?: number;
             offset?: number;
             status?: string;
-            task_name?: string;
-            triggered_by?: "cron" | "api" | "cloud" | "service" | "startup";
-            created_after?: string;
-            created_before?: string;
-            exit_code_min?: string;
-            exit_code_max?: string;
-            retries_only?: boolean;
-            sort_field?:
-                "task_name" | "status" | "start_at" | "exit_code" | "duration" | "created_at" | "";
-            sort_direction?: "asc" | "desc" | "";
+            taskName?: string;
+            triggeredBy?: "cron" | "api" | "cloud" | "service" | "startup";
+            createdAfter?: string;
+            createdBefore?: string;
+            exitCodeMin?: string;
+            exitCodeMax?: string;
+            retriesOnly?: boolean;
+            sortField?:
+                "taskName" | "status" | "startAt" | "exitCode" | "duration" | "createdAt" | "";
+            sortDirection?: "asc" | "desc" | "";
             search?: string;
         },
     ) => {
@@ -160,9 +160,9 @@ export const tasksApi = {
         if (error) throw new Error("Failed to stop service");
     },
 
-    getRun: async (taskName: string, runId: string) => {
-        const { data, error } = await apiClient.GET("/api/tasks/{taskName}/runs/{runId}", {
-            params: { path: { taskName, runId } },
+    getRun: async (_taskName: string, runId: string) => {
+        const { data, error } = await apiClient.GET("/api/runs/{runId}", {
+            params: { path: { runId } },
         });
         if (error) throw new Error("Failed to fetch run");
         return data;
@@ -214,7 +214,7 @@ export const tasksApi = {
             q: string;
             regex: boolean;
             case: boolean;
-            run_id?: string;
+            runId?: string;
             limit?: number;
             cursor?: string;
         },
@@ -223,7 +223,7 @@ export const tasksApi = {
         params.set("q", options.q);
         if (options.regex) params.set("regex", "true");
         if (options.case) params.set("case", "true");
-        if (options.run_id) params.set("run_id", options.run_id);
+        if (options.runId) params.set("runId", options.runId);
         if (options.limit !== undefined) params.set("limit", String(options.limit));
         if (options.cursor) params.set("cursor", options.cursor);
 
@@ -289,16 +289,15 @@ export const runsApi = {
         limit?: number;
         offset?: number;
         status?: string;
-        task_name?: string;
-        triggered_by?: "cron" | "api" | "cloud" | "service" | "startup";
-        created_after?: string;
-        created_before?: string;
-        exit_code_min?: string;
-        exit_code_max?: string;
-        retries_only?: boolean;
-        sort_field?:
-            "task_name" | "status" | "start_at" | "exit_code" | "duration" | "created_at" | "";
-        sort_direction?: "asc" | "desc" | "";
+        taskName?: string;
+        triggeredBy?: "cron" | "api" | "cloud" | "service" | "startup";
+        createdAfter?: string;
+        createdBefore?: string;
+        exitCodeMin?: string;
+        exitCodeMax?: string;
+        retriesOnly?: boolean;
+        sortField?: "taskName" | "status" | "startAt" | "exitCode" | "duration" | "createdAt" | "";
+        sortDirection?: "asc" | "desc" | "";
         search?: string;
     }) => {
         const { data, error } = await apiClient.GET("/api/runs", {
@@ -336,7 +335,7 @@ export const runsApi = {
     },
 
     bulkCancel: async (selector: RunSelector): Promise<number> => {
-        const { data, error } = await apiClient.POST("/api/runs/bulk/cancel", {
+        const { data, error } = await apiClient.POST("/api/runs/bulk/stop", {
             body: selector,
         });
         if (error) throw new Error("Failed to cancel runs");
@@ -345,7 +344,7 @@ export const runsApi = {
 
     bulkRerun: async (
         selector: RunSelector,
-    ): Promise<{ triggered: { task_name: string; run_id: string }[] }> => {
+    ): Promise<{ triggered: { taskName: string; runId: string }[] }> => {
         const { data, error } = await apiClient.POST("/api/runs/bulk/rerun", {
             body: selector,
         });
@@ -382,8 +381,8 @@ export const metricsSampleSchema = z.object({
     ts: z.number(),
     cpu: z.number(),
     mem: z.number(),
-    mem_used: z.number(),
-    mem_total: z.number(),
+    memUsed: z.number(),
+    memTotal: z.number(),
 });
 const metricsSamplesSchema = z.array(metricsSampleSchema);
 

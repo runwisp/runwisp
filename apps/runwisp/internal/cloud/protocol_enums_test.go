@@ -16,8 +16,8 @@ func TestExecutionStatusJSON(t *testing.T) {
 		want string
 	}{
 		{protocol.ExecutionStatusRunning, `"running"`},
-		{protocol.ExecutionStatusOk, `"ok"`},
-		{protocol.ExecutionStatusErr, `"err"`},
+		{protocol.ExecutionStatusSucceeded, `"succeeded"`},
+		{protocol.ExecutionStatusFailed, `"failed"`},
 		{protocol.ExecutionStatusStopped, `"stopped"`},
 		{protocol.ExecutionStatusTimeout, `"timeout"`},
 	}

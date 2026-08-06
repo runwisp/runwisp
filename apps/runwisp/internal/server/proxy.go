@@ -12,7 +12,7 @@ import (
 	"github.com/sebest/xff"
 )
 
-// parseTrustedProxies parses RUNWISP_TRUST_PROXY as a comma-separated list of CIDR ranges.
+// parseTrustedProxies parses RUNWISP_TRUSTED_PROXIES as a comma-separated list of CIDR ranges.
 // It converts it to xff.Options for the proxy middleware. CIDRs that effectively
 // trust the entire internet (0.0.0.0/0 or ::/0) are rejected to prevent silent
 // spoofing of X-Forwarded-For: any IP-based check (rate limiting, loopback
@@ -42,7 +42,7 @@ func parseTrustedProxies(env string) (*xff.Options, error) {
 }
 
 // normalizeTrustProxyCIDR validates and normalises one raw entry from
-// RUNWISP_TRUST_PROXY. Returns ("", nil) for blank entries, an error for
+// RUNWISP_TRUSTED_PROXIES. Returns ("", nil) for blank entries, an error for
 // invalid or catch-all CIDRs, or the normalised CIDR string otherwise.
 func normalizeTrustProxyCIDR(raw string) (string, error) {
 	cidr := strings.TrimSpace(raw)
@@ -59,11 +59,11 @@ func normalizeTrustProxyCIDR(raw string) (string, error) {
 	}
 	_, ipNet, err := net.ParseCIDR(cidr)
 	if err != nil {
-		return "", fmt.Errorf("RUNWISP_TRUST_PROXY: invalid CIDR %q: %w", cidr, err)
+		return "", fmt.Errorf("RUNWISP_TRUSTED_PROXIES: invalid CIDR %q: %w", cidr, err)
 	}
 	ones, bits := ipNet.Mask.Size()
 	if ones == 0 && bits != 0 {
-		return "", fmt.Errorf("RUNWISP_TRUST_PROXY rejects %q: trusting the entire address space defeats spoofing protection", cidr)
+		return "", fmt.Errorf("RUNWISP_TRUSTED_PROXIES rejects %q: trusting the entire address space defeats spoofing protection", cidr)
 	}
 	return cidr, nil
 }

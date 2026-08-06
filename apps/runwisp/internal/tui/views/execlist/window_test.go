@@ -512,11 +512,11 @@ func TestFetchAroundCmd_AppliesFilterAndFixedSort(t *testing.T) {
 	if got := gotQuery.Get("status"); got != statusFilterWire["running"] {
 		t.Fatalf("status = %q, want %q", got, statusFilterWire["running"])
 	}
-	if got := gotQuery.Get("sort_field"); got != "created_at" {
-		t.Fatalf("sort_field = %q, want created_at", got)
+	if got := gotQuery.Get("sortField"); got != "createdAt" {
+		t.Fatalf("sortField = %q, want createdAt", got)
 	}
-	if got := gotQuery.Get("sort_direction"); got != "desc" {
-		t.Fatalf("sort_direction = %q, want desc", got)
+	if got := gotQuery.Get("sortDirection"); got != "desc" {
+		t.Fatalf("sortDirection = %q, want desc", got)
 	}
 }
 

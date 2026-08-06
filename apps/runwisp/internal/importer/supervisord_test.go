@@ -86,7 +86,7 @@ stopsignal=INT
 `
 	out := parseSup(t, in).TOML()
 	mustContain(t, out, `healthy_after = "10s"`)
-	mustContain(t, out, "start_retries = 5")
+	mustContain(t, out, "restart_attempts = 5")
 	mustContain(t, out, `graceful_stop = "30s"`)
 	mustContain(t, out, `stop_signal = "SIGINT"`)
 }

@@ -72,7 +72,7 @@ test.beforeAll(async () => {
             // Poll this run to its terminal phase.
             let ended: Run | undefined;
             for (let p = 0; p < 60; p++) {
-                const get = await ctx.get(`/api/tasks/${FAIL_TASK}/runs/${started.id}`);
+                const get = await ctx.get(`/api/runs/${started.id}`);
                 if (get.ok()) {
                     const run = (await get.json()) as Run;
                     if (run.status === "ended") {
@@ -82,7 +82,7 @@ test.beforeAll(async () => {
                 }
                 await new Promise((r) => setTimeout(r, 150));
             }
-            if (ended && isFailureEndReason(ended.end_reason)) return; // a real failure landed
+            if (ended && isFailureEndReason(ended.endReason)) return; // a real failure landed
         }
     } finally {
         await ctx.dispose();

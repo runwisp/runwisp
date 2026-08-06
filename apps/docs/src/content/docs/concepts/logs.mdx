@@ -91,9 +91,10 @@ keep_for  = "7d"
 ```
 
 `keep_runs` is the count: the N newest runs survive, anything older
-gets pruned. It has to be a positive integer, and there's a hard
-ceiling of one million per task. Zero means "inherit from
-`[defaults]`" — set a negative value and the daemon refuses to start.
+gets pruned. It's a non-negative integer with a hard ceiling of one
+million per task. Omit it to inherit from `[defaults]`; set it to `0`
+to keep no completed runs at all — set a negative value and the daemon
+refuses to start.
 
 `keep_for` is the age: anything whose `created_at` is older than that
 duration gets pruned. You can use days and weeks here too —

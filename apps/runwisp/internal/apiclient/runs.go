@@ -43,13 +43,13 @@ func encodeRunsParams(params RunsParams) url.Values {
 		q.Set("status", params.Status)
 	}
 	if params.TaskName != "" {
-		q.Set("task_name", params.TaskName)
+		q.Set("taskName", params.TaskName)
 	}
 	if params.SortField != "" {
-		q.Set("sort_field", params.SortField)
+		q.Set("sortField", params.SortField)
 	}
 	if params.SortDirection != "" {
-		q.Set("sort_direction", params.SortDirection)
+		q.Set("sortDirection", params.SortDirection)
 	}
 	if params.Search != "" {
 		q.Set("search", params.Search)
@@ -114,9 +114,11 @@ func (c *Client) StopRun(taskName, runID string) error {
 	return c.doJSON("POST", fmt.Sprintf("/api/tasks/%s/runs/%s/stop", taskName, runID), nil, nil)
 }
 
+// GetRun fetches a run by its (globally unique) ULID. taskName is vestigial —
+// the endpoint is task-scope-free — but kept to avoid churning callers.
 func (c *Client) GetRun(taskName, runID string) (*model.Run, error) {
 	var run model.Run
-	if err := c.doJSON("GET", fmt.Sprintf("/api/tasks/%s/runs/%s", taskName, runID), nil, &run); err != nil {
+	if err := c.doJSON("GET", fmt.Sprintf("/api/runs/%s", runID), nil, &run); err != nil {
 		return nil, err
 	}
 	return &run, nil

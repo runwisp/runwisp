@@ -59,7 +59,7 @@ type        = "slack"
 webhook_url = "%s"
 
 [[notification_route]]
-match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
 notify = ["ops", "inapp"]
 `, webhook.URL))
 
@@ -151,7 +151,7 @@ url     = "%s"
 headers = { Authorization = "Bearer e2e-test-token" }
 
 [[notification_route]]
-match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
 notify = ["hook"]
 `, hook.URL))
 
@@ -224,7 +224,7 @@ type        = "slack"
 webhook_url = "%s"
 
 [[notification_route]]
-match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
 notify = ["ops"]
 `, webhook.URL))
 
@@ -269,7 +269,7 @@ type        = "slack"
 webhook_url = "%s"
 
 [[notification_route]]
-match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
 notify = ["broken", "inapp"]
 `, webhook.URL))
 
@@ -358,12 +358,12 @@ id   = "email-ops"
 type = "smtp"
 host = "%s"
 port = %s
-tls  = "none"
+tls  = "off"
 from = "RunWisp <runwisp@example.test>"
 to   = ["alerts@example.test"]
 
 [[notification_route]]
-match  = { kind = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
 notify = ["email-ops"]
 `, host, portStr))
 
@@ -393,7 +393,7 @@ notify = ["email-ops"]
 
 // testSMTPServer is a tiny stdlib-only fake that accepts EHLO → MAIL → RCPT →
 // DATA → QUIT and captures the message body. It speaks just enough of the
-// SMTP protocol to satisfy go-mail with TLS disabled (`tls = "none"`).
+// SMTP protocol to satisfy go-mail with TLS disabled (`tls = "off"`).
 type testSMTPServer struct {
 	ln     net.Listener
 	bodies chan string

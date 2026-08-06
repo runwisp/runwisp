@@ -9,8 +9,8 @@ import vectorsRaw from "./__rhythm_vectors.json";
 const vectorSchema = z.object({
     name: z.string(),
     count: z.number(),
-    created_at: z.string(),
-    last_occurred_at: z.string(),
+    createdAt: z.string(),
+    lastOccurredAt: z.string(),
     occurrences_unix_ms: z.array(z.number()),
     now_unix_ms: z.number(),
     window_ms: z.number(),
@@ -28,8 +28,8 @@ describe("notification rhythm parity (Go ↔ TS)", () => {
             const occ = v.occurrences_unix_ms.map((ms) => new Date(ms));
             const phraseOut = phrase({
                 count: v.count,
-                createdAt: v.created_at,
-                lastOccurredAt: v.last_occurred_at,
+                createdAt: v.createdAt,
+                lastOccurredAt: v.lastOccurredAt,
                 occurrences: occ,
                 now,
             });

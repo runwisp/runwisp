@@ -43,26 +43,26 @@ export function runVerdict(status: RunStatus): RunVerdict {
 }
 
 export function runDuration(
-    run: Pick<Run, "start_at" | "end_at">,
+    run: Pick<Run, "startAt" | "endAt">,
     now: number = Date.now(),
 ): string | undefined {
-    if (!run.start_at) return undefined;
-    const start = new Date(run.start_at).getTime();
-    const end = run.end_at ? new Date(run.end_at).getTime() : now;
+    if (!run.startAt) return undefined;
+    const start = new Date(run.startAt).getTime();
+    const end = run.endAt ? new Date(run.endAt).getTime() : now;
     return formatDuration(end - start);
 }
 
 /**
- * Gap between when a run was scheduled (`created_at`, the cron tick) and when
- * it actually started (`start_at`), formatted — or undefined when the two are
+ * Gap between when a run was scheduled (`createdAt`, the cron tick) and when
+ * it actually started (`startAt`), formatted — or undefined when the two are
  * within a second of each other. This is the visible face of `jitter`: a
  * jittered run is created at its tick but starts later inside the window, and
  * this is by how much. It also surfaces queue-wait, since a queued run is
  * created when it joins the line and started when the line clears.
  */
-export function runStartDelay(run: Pick<Run, "created_at" | "start_at">): string | undefined {
-    if (!run.start_at) return undefined;
-    const delay = new Date(run.start_at).getTime() - new Date(run.created_at).getTime();
+export function runStartDelay(run: Pick<Run, "createdAt" | "startAt">): string | undefined {
+    if (!run.startAt) return undefined;
+    const delay = new Date(run.startAt).getTime() - new Date(run.createdAt).getTime();
     if (delay < 1000) return undefined;
     return formatDuration(delay);
 }
@@ -82,8 +82,8 @@ export function instanceSuffix(instanceIndex: number, instanceCount: number): st
     return "";
 }
 
-/** Human label for why a run fired (the `triggered_by` source). */
-export function formatTriggeredByLabel(triggeredBy: Run["triggered_by"]): string {
+/** Human label for why a run fired (the `triggeredBy` source). */
+export function formatTriggeredByLabel(triggeredBy: Run["triggeredBy"]): string {
     if (triggeredBy === "api") return "API";
     if (triggeredBy === "cron") return "Cron";
     if (triggeredBy === "service") return "Service";
@@ -96,11 +96,9 @@ export function formatTriggeredByLabel(triggeredBy: Run["triggered_by"]): string
  * A run is a retry if it carries a positive attempt number or points back at
  * the run it re-attempts.
  */
-export function runRetryLabel(
-    run: Pick<Run, "retry_attempt" | "retry_of_run_id">,
-): string | undefined {
-    if (run.retry_attempt > 0 || run.retry_of_run_id) {
-        return `retry #${String(run.retry_attempt)}`;
+export function runRetryLabel(run: Pick<Run, "retryAttempt" | "retryOfRunId">): string | undefined {
+    if (run.retryAttempt > 0 || run.retryOfRunId) {
+        return `retry #${String(run.retryAttempt)}`;
     }
     return undefined;
 }

@@ -44,9 +44,9 @@ test.describe("run lifecycle", () => {
         await page.getByRole("button", { name: "Stop", exact: true }).click();
         await page.getByRole("button", { name: "Stop Now" }).click();
 
-        // The daemon records an operator-initiated stop as end_reason "stopped".
+        // The daemon records an operator-initiated stop as endReason "stopped".
         const ended = await waitForRunEnded(page, "slow-task", running.id, daemonState.token);
-        expect(ended.end_reason).toBe("stopped");
+        expect(ended.endReason).toBe("stopped");
 
         // The UI leaves the live state and the panel agrees with the record.
         await expect(runVerdict(page, "stopped")).toBeVisible({ timeout: 10_000 });
@@ -111,8 +111,8 @@ test.describe("run lifecycle", () => {
 
         // The record is a clean success and the panel matches it exactly.
         const ended = await waitForRunEnded(page, "timed-task", running.id, daemonState.token);
-        expect(ended.end_reason).toBe("success");
-        expect(ended.exit_code).toBe(0);
+        expect(ended.endReason).toBe("success");
+        expect(ended.exitCode).toBe(0);
         await expectRunDetailMatchesApi(page, ended);
     });
 });

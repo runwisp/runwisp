@@ -54,7 +54,7 @@ type taskServiceWireCore struct {
 	LogMaxSize string `toml:"log_max_size,omitempty"`
 	LogOnFull  string `toml:"log_on_full,omitempty"`
 
-	KeepRuns int    `toml:"keep_runs,omitempty"`
+	KeepRuns *int   `toml:"keep_runs,omitempty"`
 	KeepFor  string `toml:"keep_for,omitempty"`
 
 	// Run is exempt from ${...} substitution (expand:"-"): the shell expands
@@ -76,9 +76,9 @@ type taskServiceWireCore struct {
 
 	NotifyOnFailure []string `toml:"notify_on_failure,omitempty"`
 	NotifyOnSuccess []string `toml:"notify_on_success,omitempty"`
-	// NotifyOnMissed is a *bool so "unset" (nil → inherit [defaults], then
-	// default true) is distinct from an explicit `notify_on_missed = false`.
-	NotifyOnMissed *bool `toml:"notify_on_missed,omitempty"`
+	// TreatMissedAsFailure is a *bool so "unset" (nil → inherit [defaults], then
+	// default true) is distinct from an explicit `treat_missed_as_failure = false`.
+	TreatMissedAsFailure *bool `toml:"treat_missed_as_failure,omitempty"`
 
 	ExitCodes []int `toml:"exit_codes,omitempty"`
 
@@ -106,7 +106,6 @@ type paramWire struct {
 	Type        string   `toml:"type,omitempty"`
 	Choices     []string `toml:"choices,omitempty"`
 	AllowCustom bool     `toml:"allow_custom,omitempty"`
-	Desc        string   `toml:"desc,omitempty"`
 	Description string   `toml:"description,omitempty"`
 }
 
@@ -140,10 +139,6 @@ func toTaskParams(params []paramWire, taskName string) ([]model.TaskParam, error
 			canon := strconv.FormatBool(b)
 			def = &canon
 		}
-		desc := w.Description
-		if desc == "" {
-			desc = w.Desc
-		}
 		out = append(out, model.TaskParam{
 			Kind:        kind,
 			Key:         key,
@@ -152,7 +147,7 @@ func toTaskParams(params []paramWire, taskName string) ([]model.TaskParam, error
 			Required:    w.Required,
 			Choices:     w.Choices,
 			AllowCustom: w.AllowCustom,
-			Description: desc,
+			Description: w.Description,
 		})
 	}
 	return out, nil
@@ -258,31 +253,31 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 		return model.Task{}, fmt.Errorf("invalid env_base for %s %q: %w", label, name, err)
 	}
 	task := model.Task{
-		Name:           name,
-		Kind:           kind,
-		Group:          w.Group,
-		Description:    w.Description,
-		APITrigger:     apiTrigger,
-		OnOverlap:      w.OnOverlap,
-		Timeout:        timeout,
-		GracefulStop:   gracefulStop,
-		StopSignal:     w.StopSignal,
-		LogMaxSize:     logMaxSize,
-		LogOnFull:      w.LogOnFull,
-		KeepRuns:       keepRuns,
-		KeepFor:        keepFor,
-		WorkingDir:     w.WorkingDir,
-		Shell:          w.Shell,
-		Umask:          umask,
-		EnvBase:        envBase,
-		RunUser:        w.User,
-		ExitCodes:      w.ExitCodes,
-		Run:            w.Run,
-		Env:            w.Env,
-		EnvFile:        w.EnvFile,
-		Secrets:        w.Secrets,
-		SecretsFile:    w.SecretsFile,
-		NotifyOnMissed: w.NotifyOnMissed,
+		Name:                 name,
+		Kind:                 kind,
+		Group:                w.Group,
+		Description:          w.Description,
+		APITrigger:           apiTrigger,
+		OnOverlap:            w.OnOverlap,
+		Timeout:              timeout,
+		GracefulStop:         gracefulStop,
+		StopSignal:           w.StopSignal,
+		LogMaxSize:           logMaxSize,
+		LogOnFull:            w.LogOnFull,
+		KeepRuns:             keepRuns,
+		KeepFor:              keepFor,
+		WorkingDir:           w.WorkingDir,
+		Shell:                w.Shell,
+		Umask:                umask,
+		EnvBase:              envBase,
+		RunUser:              w.User,
+		ExitCodes:            w.ExitCodes,
+		Run:                  w.Run,
+		Env:                  w.Env,
+		EnvFile:              w.EnvFile,
+		Secrets:              w.Secrets,
+		SecretsFile:          w.SecretsFile,
+		TreatMissedAsFailure: w.TreatMissedAsFailure,
 	}
 	params, err := toTaskParams(w.Params, name)
 	if err != nil {
@@ -476,7 +471,7 @@ type serviceWire struct {
 	RestartBackoff string `toml:"restart_backoff,omitempty"`
 	HealthyAfter   string `toml:"healthy_after,omitempty"`
 
-	StartRetries int `toml:"start_retries,omitempty"`
+	RestartAttempts int `toml:"restart_attempts,omitempty"`
 
 	Priority int `toml:"priority,omitempty"`
 	// Autostart is a pointer so an omitted key (nil → default true) is
@@ -511,7 +506,7 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 	task.RestartDelay = restartDelay
 	task.RestartBackoff = w.RestartBackoff
 	task.HealthyAfter = healthyAfter
-	task.StartRetries = w.StartRetries
+	task.RestartAttempts = w.RestartAttempts
 	task.Priority = w.Priority
 	task.Autostart = autostart
 	task.DependsOn = w.DependsOn
@@ -520,22 +515,22 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 
 // defaultsWire mirrors [defaults] before parsing.
 type defaultsWire struct {
-	Timeout      string `toml:"timeout,omitempty"`
-	Jitter       string `toml:"jitter,omitempty"`
-	Shell        string `toml:"shell,omitempty"`
-	StopSignal   string `toml:"stop_signal,omitempty"`
-	LogMaxSize   string `toml:"log_max_size,omitempty"`
-	LogOnFull    string `toml:"log_on_full,omitempty"`
-	KeepRuns     int    `toml:"keep_runs,omitempty"`
-	KeepFor      string `toml:"keep_for,omitempty"`
-	HealthyAfter string `toml:"healthy_after,omitempty"`
-	StartRetries int    `toml:"start_retries,omitempty"`
+	Timeout         string `toml:"timeout,omitempty"`
+	Jitter          string `toml:"jitter,omitempty"`
+	Shell           string `toml:"shell,omitempty"`
+	StopSignal      string `toml:"stop_signal,omitempty"`
+	LogMaxSize      string `toml:"log_max_size,omitempty"`
+	LogOnFull       string `toml:"log_on_full,omitempty"`
+	KeepRuns        *int   `toml:"keep_runs,omitempty"`
+	KeepFor         string `toml:"keep_for,omitempty"`
+	HealthyAfter    string `toml:"healthy_after,omitempty"`
+	RestartAttempts int    `toml:"restart_attempts,omitempty"`
 
 	ExitCodes []int `toml:"exit_codes,omitempty"`
 
-	// NotifyOnMissed sets the global default for missed-run alerts; a task may
+	// TreatMissedAsFailure sets the global default for missed-run alerts; a task may
 	// still override it. *bool so an unset key leaves the built-in true.
-	NotifyOnMissed *bool `toml:"notify_on_missed,omitempty"`
+	TreatMissedAsFailure *bool `toml:"treat_missed_as_failure,omitempty"`
 
 	Env         map[string]string `toml:"env,omitempty"`
 	EnvFile     string            `toml:"env_file,omitempty"`
@@ -569,22 +564,22 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 		return Defaults{}, fmt.Errorf("invalid defaults.healthy_after: %w", err)
 	}
 	return Defaults{
-		Timeout:        timeout,
-		Jitter:         jitter,
-		Shell:          w.Shell,
-		StopSignal:     w.StopSignal,
-		ExitCodes:      w.ExitCodes,
-		LogMaxSize:     logMaxSize,
-		LogOnFull:      w.LogOnFull,
-		KeepRuns:       keepRuns,
-		KeepFor:        keepFor,
-		HealthyAfter:   healthyAfter,
-		StartRetries:   w.StartRetries,
-		NotifyOnMissed: w.NotifyOnMissed,
-		Env:            w.Env,
-		EnvFile:        w.EnvFile,
-		Secrets:        w.Secrets,
-		SecretsFile:    w.SecretsFile,
+		Timeout:              timeout,
+		Jitter:               jitter,
+		Shell:                w.Shell,
+		StopSignal:           w.StopSignal,
+		ExitCodes:            w.ExitCodes,
+		LogMaxSize:           logMaxSize,
+		LogOnFull:            w.LogOnFull,
+		KeepRuns:             keepRuns,
+		KeepFor:              keepFor,
+		HealthyAfter:         healthyAfter,
+		RestartAttempts:      w.RestartAttempts,
+		TreatMissedAsFailure: w.TreatMissedAsFailure,
+		Env:                  w.Env,
+		EnvFile:              w.EnvFile,
+		Secrets:              w.Secrets,
+		SecretsFile:          w.SecretsFile,
 	}, nil
 }
 
@@ -725,7 +720,7 @@ type routeWire struct {
 }
 
 type routeMatchWire struct {
-	Kind     []string `toml:"kind,omitempty"`
+	Kinds    []string `toml:"kinds,omitempty"`
 	Severity string   `toml:"severity,omitempty"`
 	Task     string   `toml:"task,omitempty"`
 }

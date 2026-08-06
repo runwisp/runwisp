@@ -1,5 +1,6 @@
 # Binaries
 /runwisp
+/e2e-fake-daemon
 *.exe
 *.exe~
 *.dll

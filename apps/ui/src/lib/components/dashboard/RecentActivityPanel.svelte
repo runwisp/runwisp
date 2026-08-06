@@ -28,7 +28,7 @@
     }>();
 
     function viewRun(run: Run): void {
-        onRunClick?.(run.task_name, run.id);
+        onRunClick?.(run.taskName, run.id);
     }
 </script>
 
@@ -58,10 +58,7 @@
                 {@const status = runDisplayStatus(run)}
                 {@const statusConfig = getRunStatusConfig(status)}
                 {@const StatusIcon = statusConfig.icon}
-                {@const suffix = instanceSuffix(
-                    run.instance_index,
-                    getInstanceCount(run.task_name),
-                )}
+                {@const suffix = instanceSuffix(run.instanceIndex, getInstanceCount(run.taskName))}
 
                 <button
                     class="group flex w-full items-start gap-3 rounded-[3px] p-2.5 text-left hover:bg-surface-sunken"
@@ -84,7 +81,7 @@
                                 <span
                                     class="truncate font-mono text-sm font-medium text-on-surface"
                                 >
-                                    {run.task_name}{#if suffix}<span class="text-on-surface-muted"
+                                    {run.taskName}{#if suffix}<span class="text-on-surface-muted"
                                             >{suffix}</span
                                         >{/if}
                                 </span>
@@ -103,9 +100,9 @@
                         <p class="mt-0.5 font-mono text-xs text-on-surface-muted tabular-nums">
                             {formatRunStartedLabel(run, now)} &middot;
                             {formatRunDurationLabel(run)}
-                            &middot; {formatTriggeredByLabel(run.triggered_by)}
-                            {#if isFailureEndReason(run.end_reason)}
-                                <span class="text-danger-soft-text">· Exit {run.exit_code}</span>
+                            &middot; {formatTriggeredByLabel(run.triggeredBy)}
+                            {#if isFailureEndReason(run.endReason)}
+                                <span class="text-danger-soft-text">· Exit {run.exitCode}</span>
                             {/if}
                         </p>
                     </div>

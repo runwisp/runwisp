@@ -198,14 +198,14 @@ func (sr *sessionRunner) handleInboundPayload(ctx context.Context, session *wsSe
 		if responseErr != nil {
 			// One frame per request: report the error and stop — don't also
 			// send the (empty) response chunk.
-			sr.sendProtocolError(session, classifyErrorKind(responseErr), responseErr.Error(), message.ID, strings.TrimSpace(message.ExecutionID))
+			sr.sendProtocolError(session, classifyErrorKind(responseErr), responseErr.Error(), message.RequestID, strings.TrimSpace(message.ExecutionID))
 			return nil
 		}
 		return sendMessage(session, response)
 	case protocol.LogSearchRequestMessage:
 		response, responseErr := sr.handler.HandleLogSearchRequest(ctx, message)
 		if responseErr != nil {
-			sr.sendProtocolError(session, classifyErrorKind(responseErr), responseErr.Error(), message.ID, strings.TrimSpace(message.ExecutionID))
+			sr.sendProtocolError(session, classifyErrorKind(responseErr), responseErr.Error(), message.RequestID, strings.TrimSpace(message.ExecutionID))
 			return nil
 		}
 		return sendMessage(session, response)

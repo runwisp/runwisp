@@ -481,15 +481,15 @@ open the Web UI in a browser; stop it later with `runwisp stop --data <dir>`
 
 ## Environment variables
 
-| Variable              | What it does                                                                                                                                                                              |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RUNWISP_PASSWORD`    | Sets the daemon password in memory. Unset, a fresh ephemeral one is minted every boot. See [Auth](/operations/auth/#the-password).                                                        |
-| `RUNWISP_NO_AUTH`     | `1` or `true` disables authentication entirely — local dev / trusted networks only. Mutually exclusive with `RUNWISP_PASSWORD`. See [Auth](/operations/auth/#running-without-a-password). |
-| `RUNWISP_TRUST_PROXY` | Comma-separated CIDR list of reverse proxies whose `X-Forwarded-*` headers the daemon may honor.                                                                                          |
-| `RUNWISP_CLOUD_TOKEN` | Token for `runwisp cloud`. Ignored in standalone mode.                                                                                                                                    |
-| `RUNWISP_CLOUD_URL`   | Control-plane URL for `runwisp cloud` (overrides the built-in default).                                                                                                                   |
-| `RUNWISP_LOG_LEVEL`   | Fallback for `--log-level` (`debug`/`info`/`warn`/`error`). The flag wins when both are set.                                                                                              |
-| `RUNWISP_LOG_FORMAT`  | Fallback for `--log-format` (`auto`/`text`/`json`). The flag wins when both are set.                                                                                                      |
+| Variable                  | What it does                                                                                                                                                                              |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RUNWISP_PASSWORD`        | Sets the daemon password in memory. Unset, a fresh ephemeral one is minted every boot. See [Auth](/operations/auth/#the-password).                                                        |
+| `RUNWISP_NO_AUTH`         | `1` or `true` disables authentication entirely — local dev / trusted networks only. Mutually exclusive with `RUNWISP_PASSWORD`. See [Auth](/operations/auth/#running-without-a-password). |
+| `RUNWISP_TRUSTED_PROXIES` | Comma-separated CIDR list of reverse proxies whose `X-Forwarded-*` headers the daemon may honor.                                                                                          |
+| `RUNWISP_CLOUD_TOKEN`     | Token for `runwisp cloud`. Ignored in standalone mode.                                                                                                                                    |
+| `RUNWISP_CLOUD_URL`       | Control-plane URL for `runwisp cloud` (overrides the built-in default).                                                                                                                   |
+| `RUNWISP_LOG_LEVEL`       | Fallback for `--log-level` (`debug`/`info`/`warn`/`error`). The flag wins when both are set.                                                                                              |
+| `RUNWISP_LOG_FORMAT`      | Fallback for `--log-format` (`auto`/`text`/`json`). The flag wins when both are set.                                                                                                      |
 
 ---
 

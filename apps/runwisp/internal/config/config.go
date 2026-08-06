@@ -459,11 +459,11 @@ func validateDefaults(d *Defaults) error {
 	if d.HealthyAfter < 0 {
 		return fmt.Errorf("invalid defaults.healthy_after: must be a positive duration")
 	}
-	if d.StartRetries < 0 {
-		return fmt.Errorf("invalid defaults.start_retries: must be non-negative")
+	if d.RestartAttempts < 0 {
+		return fmt.Errorf("invalid defaults.restart_attempts: must be non-negative")
 	}
-	if d.StartRetries > StartRetriesCap {
-		return fmt.Errorf("invalid defaults.start_retries: %d exceeds the cap of %d", d.StartRetries, StartRetriesCap)
+	if d.RestartAttempts > StartRetriesCap {
+		return fmt.Errorf("invalid defaults.restart_attempts: %d exceeds the cap of %d", d.RestartAttempts, StartRetriesCap)
 	}
 	if d.Jitter < 0 {
 		return fmt.Errorf("invalid defaults.jitter: must be zero or a positive duration")
@@ -1123,11 +1123,11 @@ func validateServiceTask(task *model.Task) error {
 	if task.HealthyAfter < 0 {
 		return fmt.Errorf("invalid healthy_after for service %s: must be a positive duration", task.Name)
 	}
-	if task.StartRetries < 0 {
-		return fmt.Errorf("invalid start_retries for service %s: must be non-negative", task.Name)
+	if task.RestartAttempts < 0 {
+		return fmt.Errorf("invalid restart_attempts for service %s: must be non-negative", task.Name)
 	}
-	if task.StartRetries > StartRetriesCap {
-		return fmt.Errorf("invalid start_retries for service %s: %d exceeds the cap of %d", task.Name, task.StartRetries, StartRetriesCap)
+	if task.RestartAttempts > StartRetriesCap {
+		return fmt.Errorf("invalid restart_attempts for service %s: %d exceeds the cap of %d", task.Name, task.RestartAttempts, StartRetriesCap)
 	}
 	return nil
 }
@@ -1148,14 +1148,17 @@ func ResolveTimezone(scope, name string) (*time.Location, error) {
 }
 
 // validateKeepRuns rejects negative values and values above the keep_runs cap.
-// Zero is the post-parse sentinel for "omitted, inherit defaults"; any
-// positive integer up to KeepRunsCap is accepted.
-func validateKeepRuns(scope string, n int) error {
-	if n < 0 {
-		return fmt.Errorf("invalid %s: must be a positive integer", scope)
+// A nil pointer means the key was omitted (inherit); an explicit 0 means "keep
+// no completed runs"; any positive integer up to KeepRunsCap is accepted.
+func validateKeepRuns(scope string, n *int) error {
+	if n == nil {
+		return nil
 	}
-	if n > KeepRunsCap {
-		return fmt.Errorf("invalid %s: %d exceeds the cap of %d", scope, n, KeepRunsCap)
+	if *n < 0 {
+		return fmt.Errorf("invalid %s: must be a non-negative integer", scope)
+	}
+	if *n > KeepRunsCap {
+		return fmt.Errorf("invalid %s: %d exceeds the cap of %d", scope, *n, KeepRunsCap)
 	}
 	return nil
 }
@@ -1222,7 +1225,7 @@ const (
 	// ExitCodesCap bounds the success-exit-code list. POSIX exit codes are
 	// 0-255, so a list longer than this is almost certainly a mistake.
 	ExitCodesCap = 256
-	// StartRetriesCap bounds start_retries. A service that fast-fails this many
+	// StartRetriesCap bounds restart_attempts. A service that fast-fails this many
 	// times in a row is broken; allowing more just delays the FATAL signal.
 	StartRetriesCap = 100
 	// JitterCap bounds the jitter window at a full day. The runtime clamps each
@@ -1263,7 +1266,7 @@ const (
 	// DefaultStartRetries is the number of consecutive fast failures a service
 	// instance may accrue before the supervisor marks it FATAL and stops
 	// restarting it. Applied when neither the service nor [defaults] sets
-	// start_retries.
+	// restart_attempts.
 	DefaultStartRetries = 3
 	// DefaultShell is the interpreter used for `run` scripts when neither the
 	// task nor [defaults] selects one. The invocation is
@@ -1347,7 +1350,7 @@ func applyInheritedDefaults(task *model.Task, d Defaults) {
 	if task.LogOnFull == "" && d.LogOnFull != "" {
 		task.LogOnFull = d.LogOnFull
 	}
-	if task.KeepRuns == 0 && d.KeepRuns != 0 {
+	if task.KeepRuns == nil && d.KeepRuns != nil {
 		task.KeepRuns = d.KeepRuns
 	}
 	if task.KeepFor == 0 && d.KeepFor != 0 {
@@ -1390,19 +1393,19 @@ func applyInheritedExitCodes(task *model.Task, d Defaults) {
 	}
 }
 
-// applyInheritedNotifyOnMissed resolves an unset per-task notify_on_missed by
+// applyInheritedNotifyOnMissed resolves an unset per-task treat_missed_as_failure by
 // inheriting [defaults], then falling back to the built-in true. The result is
 // a concrete pointer so downstream readers never see nil regardless of how the
 // task was built.
 func applyInheritedNotifyOnMissed(task *model.Task, d Defaults) {
-	if task.NotifyOnMissed != nil {
+	if task.TreatMissedAsFailure != nil {
 		return
 	}
 	resolved := true
-	if d.NotifyOnMissed != nil {
-		resolved = *d.NotifyOnMissed
+	if d.TreatMissedAsFailure != nil {
+		resolved = *d.TreatMissedAsFailure
 	}
-	task.NotifyOnMissed = &resolved
+	task.TreatMissedAsFailure = &resolved
 }
 
 // mergeEnv returns a map containing every key in base then in overlay, with
@@ -1460,12 +1463,12 @@ func applyServiceDefaults(task *model.Task, d Defaults) {
 	if task.HealthyAfter == 0 {
 		task.HealthyAfter = d.HealthyAfter
 	}
-	// start_retries: explicit on the service wins; else [defaults]; else the
+	// restart_attempts: explicit on the service wins; else [defaults]; else the
 	// built-in default.
-	if task.StartRetries == 0 {
-		task.StartRetries = d.StartRetries
+	if task.RestartAttempts == 0 {
+		task.RestartAttempts = d.RestartAttempts
 	}
-	if task.StartRetries == 0 {
-		task.StartRetries = DefaultStartRetries
+	if task.RestartAttempts == 0 {
+		task.RestartAttempts = DefaultStartRetries
 	}
 }

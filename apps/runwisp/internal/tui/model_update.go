@@ -943,7 +943,7 @@ func (m *Model) maybeLoadOlderLogs() tea.Cmd {
 func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 	var runEvt struct {
 		Run      *model.Run     `json:"run"`
-		TaskName string         `json:"task_name"`
+		TaskName string         `json:"taskName"`
 		Status   model.RunPhase `json:"status"`
 	}
 	if err := json.Unmarshal(evt.Data, &runEvt); err != nil {

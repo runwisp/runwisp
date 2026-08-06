@@ -31,15 +31,15 @@ type NotificationDTO struct {
 	Fingerprint    string     `json:"fingerprint" doc:"Coalescing key (FNV1a hex)"`
 	Kind           string     `json:"kind" doc:"Event kind (run.failed, notify.delivery_failed, ...)"`
 	Severity       string     `json:"severity" doc:"info | warn | error"`
-	TaskName       string     `json:"task_name" doc:"Task that produced this notification (empty for daemon-level events)"`
-	RunID          string     `json:"run_id" doc:"Run that produced this notification (empty when not run-derived)"`
+	TaskName       string     `json:"taskName" doc:"Task that produced this notification (empty for daemon-level events)"`
+	RunID          string     `json:"runId" doc:"Run that produced this notification (empty when not run-derived)"`
 	Title          string     `json:"title" doc:"Human-readable title"`
 	Body           string     `json:"body" doc:"Pre-rendered body text"`
 	Count          int        `json:"count" doc:"Number of coalesced occurrences within the window"`
 	Occurrences    []string   `json:"occurrences" doc:"Most-recent timestamps (newest first), ISO8601"`
-	CreatedAt      time.Time  `json:"created_at" doc:"First time this notification was raised"`
-	LastOccurredAt time.Time  `json:"last_occurred_at" doc:"Most recent occurrence"`
-	ReadAt         *time.Time `json:"read_at,omitempty" doc:"When the operator marked this row read; null/absent when unread"`
+	CreatedAt      time.Time  `json:"createdAt" doc:"First time this notification was raised"`
+	LastOccurredAt time.Time  `json:"lastOccurredAt" doc:"Most recent occurrence"`
+	ReadAt         *time.Time `json:"readAt,omitempty" doc:"When the operator marked this row read; null/absent when unread"`
 }
 
 func notificationToDTO(n storage.Notification) NotificationDTO {
@@ -77,7 +77,7 @@ type NotificationsListOutput struct {
 
 type NotificationsListBody struct {
 	Items      []NotificationDTO `json:"items" doc:"Notifications in id-DESC order"`
-	NextCursor string            `json:"next_cursor,omitempty" doc:"Cursor to pass as 'before' on the next page; empty when exhausted"`
+	NextCursor string            `json:"nextCursor,omitempty" doc:"Cursor to pass as 'before' on the next page; empty when exhausted"`
 }
 
 type NotificationUnreadOutput struct {
@@ -89,7 +89,7 @@ type NotificationUnreadBody struct {
 }
 
 type NotificationByIDInput struct {
-	ID string `path:"id" doc:"Notification ULID"`
+	ID string `path:"notificationId" doc:"Notification ULID"`
 }
 
 // ---------- SSE wrapper types ----------
@@ -101,19 +101,19 @@ type NotificationByIDInput struct {
 
 type NotificationCreatedEvent struct {
 	Notification NotificationDTO `json:"notification"`
-	UnreadCount  int64           `json:"unread_count"`
+	UnreadCount  int64           `json:"unreadCount"`
 }
 
 type NotificationUpdatedEvent struct {
 	Notification NotificationDTO `json:"notification"`
-	UnreadCount  int64           `json:"unread_count"`
+	UnreadCount  int64           `json:"unreadCount"`
 }
 
 // NotificationUnreadCountEvent is the body-less count-only event emitted when
 // a mutation changes the unread count without a single notification to ship
 // (e.g. mark-all-read).
 type NotificationUnreadCountEvent struct {
-	UnreadCount int64 `json:"unread_count"`
+	UnreadCount int64 `json:"unreadCount"`
 }
 
 // ---------- Registration ----------
@@ -143,7 +143,7 @@ func (srv *Server) registerNotificationsRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID:   "markNotificationRead",
 		Method:        http.MethodPost,
-		Path:          "/api/notifications/{id}/read",
+		Path:          "/api/notifications/{notificationId}/read",
 		Summary:       "Mark a single notification read",
 		Tags:          []string{"Notifications"},
 		DefaultStatus: http.StatusNoContent,
@@ -152,7 +152,7 @@ func (srv *Server) registerNotificationsRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID:   "markNotificationUnread",
 		Method:        http.MethodPost,
-		Path:          "/api/notifications/{id}/unread",
+		Path:          "/api/notifications/{notificationId}/unread",
 		Summary:       "Mark a single notification unread",
 		Tags:          []string{"Notifications"},
 		DefaultStatus: http.StatusNoContent,

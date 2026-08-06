@@ -66,7 +66,7 @@ func (s *remoteDaemonStub) handler(t *testing.T) http.HandlerFunc {
 			fmt.Fprintln(w, `data: {"final_line":0,"status":"ended"}`)
 			fmt.Fprintln(w, "")
 
-		case strings.HasPrefix(r.URL.Path, "/api/tasks/") && strings.Contains(r.URL.Path, "/runs/"):
+		case strings.HasPrefix(r.URL.Path, "/api/runs/"):
 			reason := s.endReason
 			_ = json.NewEncoder(w).Encode(model.Run{
 				ID:        "run-123",

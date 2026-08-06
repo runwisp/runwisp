@@ -169,7 +169,7 @@ func (db *SQLiteDatabase) GetRunSummary(ctx context.Context) (*model.RunSummary,
 		Success:     row.Success,
 		Failed:      row.Failed,
 		Missed:      row.Missed,
-		LastFailure: row.EndAt,
+		LastFailure: row.EndedAt,
 	}, nil
 }
 
@@ -386,12 +386,12 @@ func (db *SQLiteDatabase) DeleteOldRuns(ctx context.Context, task *model.Task) (
 		collectRunsByID(uniqueRuns, rows)
 	}
 
-	if len(uniqueRuns) < RetentionBatchSize && task.KeepRuns > 0 {
+	if len(uniqueRuns) < RetentionBatchSize && task.KeepRuns != nil {
 		remaining := RetentionBatchSize - len(uniqueRuns)
 		rows, err := db.q.SelectOldRunsByCount(ctx, sqlcdb.SelectOldRunsByCountParams{
 			TaskName: task.Name,
 			Limit:    int64(remaining),
-			Offset:   int64(task.KeepRuns),
+			Offset:   int64(*task.KeepRuns),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("query retention runs for %s: %w", task.Name, err)
@@ -493,7 +493,7 @@ func (db *SQLiteDatabase) UpsertPendingLogUpload(ctx context.Context, rec model.
 		ExternalExecutionID: rec.ExternalExecutionID,
 		UploadUrl:           rec.UploadURL,
 		LogPath:             rec.LogPath,
-		InsertedAt:          rec.InsertedAt,
+		InsertedAtUnix:      rec.InsertedAt,
 	})
 }
 

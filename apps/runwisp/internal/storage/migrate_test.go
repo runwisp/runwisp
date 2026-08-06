@@ -87,14 +87,64 @@ func TestRunMigrations_RejectsNewerSchema(t *testing.T) {
 func TestRunMigrations_AdoptsPreexistingDB(t *testing.T) {
 	db := openRaw(t)
 
-	// Materialize the baseline objects, then reset user_version to 0 to mimic a
-	// DB that predates the migration system.
-	require.NoError(t, runMigrations(db))
-	_, err := db.Exec("PRAGMA user_version = 0")
+	// A DB that predates the migration system has the baseline (v1) schema in
+	// place but user_version still 0. Materialize ONLY that baseline — not the
+	// full chain — so the forward migrations still see their pre-rename columns,
+	// exactly as they would against a real old database.
+	migs, err := loadMigrations()
+	require.NoError(t, err)
+	require.NoError(t, applyMigration(db, migs[0]))
+	_, err = db.Exec("PRAGMA user_version = 0")
 	require.NoError(t, err)
 
 	require.NoError(t, runMigrations(db))
 	require.Equal(t, headVersion(t), readUserVersion(t, db))
+}
+
+// TestMigration0002_RenamesTimestampColumns applies only the baseline, writes
+// rows under the pre-rename column names, then applies 0002 and asserts the
+// columns were renamed and every value survived — a RENAME COLUMN must carry the
+// data, not drop it.
+func TestMigration0002_RenamesTimestampColumns(t *testing.T) {
+	db := openRaw(t)
+
+	migs, err := loadMigrations()
+	require.NoError(t, err)
+	byVersion := make(map[int]migration, len(migs))
+	for _, m := range migs {
+		byVersion[m.version] = m
+	}
+	v1, ok := byVersion[1]
+	require.True(t, ok, "baseline migration must exist")
+	v2, ok := byVersion[2]
+	require.True(t, ok, "0002 migration must exist")
+
+	// Baseline only: the old start_at/end_at/inserted_at columns are in force.
+	require.NoError(t, applyMigration(db, v1))
+	_, err = db.Exec(`INSERT INTO runs (id, task_name, status, start_at, end_at, triggered_by, created_at)
+		VALUES ('r1', 'backup', 'ended', '2026-01-02T03:04:05Z', '2026-01-02T03:05:00Z', 'schedule', '2026-01-02T03:04:00Z')`)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO pending_log_uploads (external_execution_id, upload_url, log_path, inserted_at)
+		VALUES ('e1', 'https://example.test/u', '/logs/e1', 1735787040)`)
+	require.NoError(t, err)
+
+	// Apply the rename.
+	require.NoError(t, applyMigration(db, v2))
+
+	// New names resolve and carry the original values.
+	var startedAt, endedAt string
+	require.NoError(t, db.QueryRow(`SELECT started_at, ended_at FROM runs WHERE id = 'r1'`).Scan(&startedAt, &endedAt))
+	require.Equal(t, "2026-01-02T03:04:05Z", startedAt)
+	require.Equal(t, "2026-01-02T03:05:00Z", endedAt)
+
+	var insertedAtUnix int64
+	require.NoError(t, db.QueryRow(`SELECT inserted_at_unix FROM pending_log_uploads WHERE external_execution_id = 'e1'`).Scan(&insertedAtUnix))
+	require.Equal(t, int64(1735787040), insertedAtUnix)
+
+	// The old column names must be gone.
+	require.Error(t,
+		db.QueryRow(`SELECT start_at FROM runs WHERE id = 'r1'`).Scan(new(string)),
+		"start_at must not survive the rename")
 }
 
 func TestLoadMigrations_OrderedAndWellFormed(t *testing.T) {

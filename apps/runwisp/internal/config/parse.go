@@ -112,13 +112,16 @@ func parseLogMaxSize(raw string) (int64, error) {
 	return n, nil
 }
 
-// parseKeepRuns interprets a TOML keep_runs value. Zero is the omitted-value
-// sentinel that ApplyDefaults rewrites to the [defaults] inheritance; any
-// positive integer up to KeepRunsCap is accepted. Negative integers are
-// rejected. Above-cap values are rejected by validateKeepRuns.
-func parseKeepRuns(raw int) (int, error) {
-	if raw < 0 {
-		return 0, fmt.Errorf("must be a positive integer; got %d", raw)
+// parseKeepRuns interprets a TOML keep_runs value. An omitted key (nil) inherits
+// the [defaults] value via ApplyDefaults; an explicit 0 means "keep no completed
+// runs"; any positive integer up to KeepRunsCap is a row-count cap. Negative
+// integers are rejected. Above-cap values are rejected by validateKeepRuns.
+func parseKeepRuns(raw *int) (*int, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	if *raw < 0 {
+		return nil, fmt.Errorf("must be a non-negative integer; got %d", *raw)
 	}
 	return raw, nil
 }

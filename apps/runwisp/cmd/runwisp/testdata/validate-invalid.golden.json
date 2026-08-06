@@ -1,7 +1,7 @@
 {
-  "schema_version": 1,
+  "schemaVersion": 1,
   "valid": false,
-  "config_path": "runwisp.toml",
+  "configPath": "runwisp.toml",
   "tasks": 0,
   "services": 0,
   "warnings": [],

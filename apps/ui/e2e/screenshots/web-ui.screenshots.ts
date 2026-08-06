@@ -78,7 +78,7 @@ async function ensureNotifications(page: Page, token: string): Promise<void> {
 
 async function findFailedRun(page: Page, token: string): Promise<Run> {
     const res = await page.request.get(
-        "/api/runs?status=failed&limit=1&sort_field=start_at&sort_direction=desc",
+        "/api/runs?status=failed&limit=1&sortField=startAt&sortDirection=desc",
         { headers: { Authorization: `Bearer ${token}` } },
     );
     expect(res.ok(), "list failed runs").toBeTruthy();
@@ -129,8 +129,8 @@ test("overview, runs, task detail", async ({ authenticatedPage: page, daemonStat
         await shoot(page, `web-ui-task-detail-${theme}`);
 
         // Task detail — a failed run (selected via the run-id path segment)
-        await page.goto(`/tasks/${failed.task_name}/${failed.id}`);
-        await expect(page.getByRole("heading", { name: failed.task_name, level: 1 })).toBeVisible();
+        await page.goto(`/tasks/${failed.taskName}/${failed.id}`);
+        await expect(page.getByRole("heading", { name: failed.taskName, level: 1 })).toBeVisible();
         await expect(runVerdict(page, "failed")).toBeVisible();
         await settle(page);
         await shoot(page, `web-ui-task-failed-${theme}`);

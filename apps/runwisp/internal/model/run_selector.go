@@ -17,18 +17,18 @@ type RunFilter struct {
 	// a run matches if its phase OR its end reason is in the set. A single
 	// value (the common case) is just a one-element set.
 	Status        string     `json:"status,omitempty"            doc:"Comma-separated run statuses (phase or end reason); a run matches any listed value"`
-	TaskName      string     `json:"task_name,omitempty"         doc:"Filter by task name"`
+	TaskName      string     `json:"taskName,omitempty"         doc:"Filter by task name"`
 	Search        string     `json:"search,omitempty"            doc:"Search query against task_name / id"`
-	CreatedAfter  *time.Time `json:"created_after,omitempty"     doc:"Only runs created at or after this time"`
-	CreatedBefore *time.Time `json:"created_before,omitempty"    doc:"Only runs created at or before this time"`
-	TriggeredBy   string     `json:"triggered_by,omitempty"   doc:"Filter by what triggered the run (cron/api/cloud/service/startup)"`
+	CreatedAfter  *time.Time `json:"createdAfter,omitempty"     doc:"Only runs created at or after this time"`
+	CreatedBefore *time.Time `json:"createdBefore,omitempty"    doc:"Only runs created at or before this time"`
+	TriggeredBy   string     `json:"triggeredBy,omitempty"   doc:"Filter by what triggered the run (cron/api/cloud/service/startup)"`
 	// ExitCodeMin / ExitCodeMax bound the exit code to an inclusive integer
 	// range; either end may be set alone (open on the other side). The UI's
 	// friendly expression (e.g. ">100 <150") is normalized to these bounds
 	// before the wire, so the daemon only ever sees a plain range.
-	ExitCodeMin *int `json:"exit_code_min,omitempty" doc:"Only runs whose exit code is >= this (inclusive)"`
-	ExitCodeMax *int `json:"exit_code_max,omitempty" doc:"Only runs whose exit code is <= this (inclusive)"`
-	RetriesOnly bool `json:"retries_only,omitempty"  doc:"Only runs that are a retry (retry_attempt > 0)"`
+	ExitCodeMin *int `json:"exitCodeMin,omitempty" doc:"Only runs whose exit code is >= this (inclusive)"`
+	ExitCodeMax *int `json:"exitCodeMax,omitempty" doc:"Only runs whose exit code is <= this (inclusive)"`
+	RetriesOnly bool `json:"retriesOnly,omitempty"  doc:"Only runs that are a retry (retry_attempt > 0)"`
 }
 
 // RunSelector is the contract between UI and server for every bulk operation.
@@ -39,10 +39,10 @@ type RunFilter struct {
 //
 // One mode is required; mixing them is a validation error.
 type RunSelector struct {
-	MatchAll  bool      `json:"match_all,omitempty"  doc:"When true, selects every run matching Filter except those listed in ExceptIDs"`
+	MatchAll  bool      `json:"matchAll,omitempty"  doc:"When true, selects every run matching Filter except those listed in ExceptIDs"`
 	Filter    RunFilter `json:"filter,omitempty"     doc:"Filter to apply when MatchAll is true"`
 	IDs       []string  `json:"ids,omitempty"        doc:"Explicit run IDs to select when MatchAll is false"`
-	ExceptIDs []string  `json:"except_ids,omitempty" doc:"IDs to exclude when MatchAll is true"`
+	ExceptIDs []string  `json:"exceptIds,omitempty" doc:"IDs to exclude when MatchAll is true"`
 }
 
 // Validate enforces the "exactly one mode" rule.

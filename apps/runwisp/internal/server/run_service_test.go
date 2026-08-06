@@ -759,7 +759,7 @@ func TestHumaBulkCancelRuns_SignalsTroughService(t *testing.T) {
 	runner.On("TerminateRun", "r1").Return(nil)
 
 	srv := &Server{runService: svc}
-	out, err := srv.humaBulkCancelRuns(context.Background(), &BulkRunSelectorInput{Body: sel})
+	out, err := srv.humaBulkStopRuns(context.Background(), &BulkRunSelectorInput{Body: sel})
 	require.NoError(t, err)
 	assert.Equal(t, 1, out.Body.Affected)
 }
@@ -770,7 +770,7 @@ func TestHumaBulkCancelRuns_InvalidSelectorReturnsError(t *testing.T) {
 	svc := makeRunService(nil, repo, runner)
 	srv := &Server{runService: svc}
 
-	_, err := srv.humaBulkCancelRuns(context.Background(),
+	_, err := srv.humaBulkStopRuns(context.Background(),
 		&BulkRunSelectorInput{Body: model.RunSelector{MatchAll: true, IDs: []string{"x"}}})
 	assert.Error(t, err)
 }

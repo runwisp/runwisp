@@ -252,18 +252,18 @@ type Defaults struct {
 	ExitCodes    []int
 	LogMaxSize   int64
 	LogOnFull    string
-	KeepRuns     int
+	KeepRuns     *int
 	KeepFor      time.Duration
 	HealthyAfter time.Duration
-	// StartRetries is the default number of consecutive fast failures a service
+	// RestartAttempts is the default number of consecutive fast failures a service
 	// instance may accrue before going FATAL. Zero means "unset" — services
 	// fall back to DefaultStartRetries.
-	StartRetries int
+	RestartAttempts int
 
-	// NotifyOnMissed is the [defaults] override for per-task missed-run alerts.
+	// TreatMissedAsFailure is the [defaults] override for per-task missed-run alerts.
 	// nil means the operator didn't set it, so the built-in default (true)
 	// applies. ApplyDefaults resolves each task's pointer from this.
-	NotifyOnMissed *bool
+	TreatMissedAsFailure *bool
 
 	// Env is the inline env block from [defaults.env]; env_file values merge
 	// in beneath it at load time. Visible in API/UI.

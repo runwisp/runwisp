@@ -94,7 +94,7 @@ type ConfigStaleEvent struct {
 // itself. Empty for events fired before the executor has resolved the path.
 type RunEvent struct {
 	Run     *model.Run `json:"run"`
-	LogPath string     `json:"log_path,omitempty"`
+	LogPath string     `json:"logPath,omitempty"`
 	Error   string     `json:"error,omitempty"`
 }
 
@@ -103,21 +103,21 @@ type RunEvent struct {
 // identity to splice the row out — they already have the full Run from prior
 // events.
 type RunDeletedEvent struct {
-	RunID    string `json:"run_id"`
-	TaskName string `json:"task_name"`
+	RunID    string `json:"runId"`
+	TaskName string `json:"taskName"`
 }
 
-// ServiceFatalEvent fires when a service instance exhausts its start_retries
+// ServiceFatalEvent fires when a service instance exhausts its restart_attempts
 // budget and the supervisor gives up restarting it. It carries enough context
 // to alert loudly (notify maps it to a SevError in-app bell + global
 // notifiers) without the subscriber needing to load the run row. Attempts is
 // the consecutive fast-failure count that tripped FATAL; LastExitCode is the
 // exit code of the final failed run.
 type ServiceFatalEvent struct {
-	TaskName      string `json:"task_name"`
-	InstanceIndex int    `json:"instance_index"`
+	TaskName      string `json:"taskName"`
+	InstanceIndex int    `json:"instanceIndex"`
 	Attempts      int    `json:"attempts"`
-	LastExitCode  int    `json:"last_exit_code"`
+	LastExitCode  int    `json:"lastExitCode"`
 }
 
 // LogDiskPressureEvent fires once per run when min_free_space crosses the
@@ -125,11 +125,11 @@ type ServiceFatalEvent struct {
 // also cancelled the run because its log_on_full was "kill_task". For other
 // overflow policies the run keeps executing but its log writer is stopped.
 type LogDiskPressureEvent struct {
-	TaskName     string `json:"task_name"`
-	RunID        string `json:"run_id"`
-	FreeBytes    int64  `json:"free_bytes"`
-	MinFreeBytes int64  `json:"min_free_bytes"`
-	KilledTask   bool   `json:"killed_task"`
+	TaskName     string `json:"taskName"`
+	RunID        string `json:"runId"`
+	FreeBytes    int64  `json:"freeBytes"`
+	MinFreeBytes int64  `json:"minFreeBytes"`
+	KilledTask   bool   `json:"killedTask"`
 }
 
 // LogLineEvent carries one log line's worth of state. Each event represents
@@ -149,15 +149,15 @@ type LogDiskPressureEvent struct {
 // for that line in the `.fhist` sidecar, so a viewer knows the line is clickable
 // to rewind. Plain output carries 0.
 type LogLineEvent struct {
-	TaskName            string `json:"task_name"`
-	RunID               string `json:"run_id"`
-	ExternalExecutionID string `json:"external_execution_id,omitempty"`
-	LineNum             int64  `json:"line_num"`
+	TaskName            string `json:"taskName"`
+	RunID               string `json:"runId"`
+	ExternalExecutionID string `json:"externalExecutionId,omitempty"`
+	LineNum             int64  `json:"lineNum"`
 	Timestamp           int64  `json:"timestamp"`
 	Stream              string `json:"stream"`
 	Text                string `json:"text"`
 	Continued           bool   `json:"continued,omitempty"`
-	FrameCount          int    `json:"frame_count,omitempty"`
+	FrameCount          int    `json:"frameCount,omitempty"`
 }
 
 // LogRegionEvent carries a snapshot of a still-animating output region (a `\r`
@@ -175,9 +175,9 @@ type LogLineEvent struct {
 // These events bypass line-number dedupe entirely (they carry no LineNum) and
 // are droppable under SSE backpressure without counting as a gap.
 type LogRegionEvent struct {
-	TaskName            string   `json:"task_name"`
-	RunID               string   `json:"run_id"`
-	ExternalExecutionID string   `json:"external_execution_id,omitempty"`
+	TaskName            string   `json:"taskName"`
+	RunID               string   `json:"runId"`
+	ExternalExecutionID string   `json:"externalExecutionId,omitempty"`
 	Timestamp           int64    `json:"timestamp"`
 	Stream              string   `json:"stream"`
 	Epoch               int      `json:"epoch"`

@@ -21,22 +21,22 @@ const notificationSchema = z.object({
     fingerprint: z.string(),
     kind: z.string(),
     severity: z.enum(["info", "warn", "error"]),
-    task_name: z.string().default(""),
-    run_id: z.string().default(""),
+    taskName: z.string().default(""),
+    runId: z.string().default(""),
     title: z.string().default(""),
     body: z.string().default(""),
     count: z.number().int().nonnegative(),
     occurrences: z.array(z.string()).default([]),
-    created_at: z.string(),
-    last_occurred_at: z.string(),
-    read_at: z.string().nullable().optional(),
+    createdAt: z.string(),
+    lastOccurredAt: z.string(),
+    readAt: z.string().nullable().optional(),
 });
 
 export type Notification = z.infer<typeof notificationSchema>;
 
 const listResponseSchema = z.object({
     items: z.array(notificationSchema),
-    next_cursor: z.string().optional(),
+    nextCursor: z.string().optional(),
 });
 
 const unreadResponseSchema = z.object({
@@ -57,7 +57,7 @@ const PAGE_SIZE = 50;
 const SOURCE_ID = "notifications";
 
 function isUnread(n: Notification): boolean {
-    return !n.read_at;
+    return !n.readAt;
 }
 
 class NotificationStore {
@@ -119,8 +119,8 @@ class NotificationStore {
         try {
             const page = await this.#fetchPage();
             this.#items = [...page.items];
-            this.#cursor = page.next_cursor ?? null;
-            this.#hasMore = Boolean(page.next_cursor);
+            this.#cursor = page.nextCursor ?? null;
+            this.#hasMore = Boolean(page.nextCursor);
             this.#unread = await this.#fetchUnread();
             this.#loaded = true;
             this.#connect();
@@ -139,8 +139,8 @@ class NotificationStore {
                 this.#items.push(n);
             }
             // The server returns DESC by id; appending preserves the contract.
-            this.#cursor = page.next_cursor ?? null;
-            this.#hasMore = Boolean(page.next_cursor);
+            this.#cursor = page.nextCursor ?? null;
+            this.#hasMore = Boolean(page.nextCursor);
         } catch (e) {
             this.#logger.error("Failed to load more notifications", e);
         }
@@ -157,7 +157,7 @@ class NotificationStore {
                 headers: authHeaders(),
             });
             if (!res.ok) throw new Error(`Mark-read returned ${res.status.toString()}`);
-            this.#items = this.#items.map((n) => (isUnread(n) ? { ...n, read_at: now } : n));
+            this.#items = this.#items.map((n) => (isUnread(n) ? { ...n, readAt: now } : n));
             this.#unread = 0;
         } catch (e) {
             this.#logger.error("Failed to mark notifications read", e);
@@ -183,7 +183,7 @@ class NotificationStore {
 
         const optimistic: Notification = {
             ...previous,
-            read_at: read ? new Date().toISOString() : null,
+            readAt: read ? new Date().toISOString() : null,
         };
         const next = this.#items.slice();
         next[idx] = optimistic;

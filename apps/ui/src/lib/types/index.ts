@@ -23,7 +23,7 @@ export const authChallengeResponseSchema = z.object({ nonce: z.string() });
 export type AuthChallengeResponse = z.infer<typeof authChallengeResponseSchema>;
 
 export const authStatusResponseSchema = z.object({
-    auth_required: z.boolean(),
+    authRequired: z.boolean(),
     authenticated: z.boolean(),
 });
 export type AuthStatusResponse = z.infer<typeof authStatusResponseSchema>;
@@ -37,17 +37,17 @@ const endReasonSchema = z.enum(END_REASONS);
 const runSchema = z
     .object({
         id: z.string(),
-        external_execution_id: z.string().optional(),
-        task_name: z.string(),
+        externalExecutionId: z.string().optional(),
+        taskName: z.string(),
         status: runPhaseSchema,
-        end_reason: endReasonSchema.optional(),
-        exit_code: z.number(),
-        start_at: z.string().optional(),
-        end_at: z.string().optional(),
-        triggered_by: z.enum(TRIGGERS),
-        created_at: z.string(),
-        retry_attempt: z.number(),
-        retry_of_run_id: z.string().optional(),
+        endReason: endReasonSchema.optional(),
+        exitCode: z.number(),
+        startAt: z.string().optional(),
+        endAt: z.string().optional(),
+        triggeredBy: z.enum(TRIGGERS),
+        createdAt: z.string(),
+        retryAttempt: z.number(),
+        retryOfRunId: z.string().optional(),
         params: z.record(z.string(), z.string()).optional(),
     })
     .pipe(z.custom<Run>());
@@ -65,8 +65,8 @@ const runDeletedEventSchema = z.object({
     type: z.literal("run.deleted"),
     timestamp: z.string(),
     data: z.object({
-        run_id: z.string(),
-        task_name: z.string(),
+        runId: z.string(),
+        taskName: z.string(),
     }),
 });
 

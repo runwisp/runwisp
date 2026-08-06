@@ -48,7 +48,7 @@ func missedRunEvent(taskName string) events.Event {
 	}
 }
 
-// TestOnBusEvent_MutedMissedTaskDropped verifies notify_on_missed = false drops
+// TestOnBusEvent_MutedMissedTaskDropped verifies treat_missed_as_failure = false drops
 // the run.missed alert at ingress without counting it as a backpressure drop.
 func TestOnBusEvent_MutedMissedTaskDropped(t *testing.T) {
 	svc := New(Config{MutedMissedTasks: map[string]struct{}{"quiet-task": {}}})

@@ -99,11 +99,11 @@ stop_signal:         enum =SIGTERM — stop-ladder signal: SIGTERM|SIGINT|SIGQUI
 exit_codes:          []int =[0]   — exit codes treated as success (0..255)
 log_max_size:        size =100mb  — per-run log cap (effective task default)
 log_on_full:         enum =drop_old — drop_new | drop_old | kill_task
-keep_runs:           int          — row-count retention; 1..1000000
+keep_runs:           int          — row-count retention; 0..1000000 (0 = keep none)
 keep_for:            dur          — age retention; positive
 healthy_after:       dur  =60s    — service uptime that counts as healthy: resets the restart counter and clears the failed-start streak (SERVICES only)
-start_retries:       int  =3      — consecutive fast failures before an instance goes FATAL (SERVICES only)
-notify_on_missed:    bool =true   — alert on missed scheduled runs; false silences daemon-wide (per-task still wins)
+restart_attempts:       int  =3      — consecutive fast failures before an instance goes FATAL (SERVICES only)
+treat_missed_as_failure:    bool =true   — alert on missed scheduled runs; false silences daemon-wide (per-task still wins)
 env:                 map<str,str> — inline env merged into every task; key ^[A-Za-z_][A-Za-z0-9_]*$, <=256 entries, value <=32KiB, no NUL
 env_file:            path         — dotenv file merged into every task; relative to runwisp.toml dir
 secrets:             map<str,str> — inline secrets merged into every task; never shown in API/UI
@@ -145,7 +145,7 @@ env_base:          enum =inherit    — inherit (daemon's env, minus RUNWISP_*) 
 user:              string           — run as user or user:group (name/numeric id); needs daemon as root
 log_max_size:      size =100mb      — per-run log cap
 log_on_full:       enum =drop_old   — drop_new | drop_old | kill_task
-keep_runs:         int              — row retention (inherits [defaults]); 1..1000000
+keep_runs:         int              — row retention (inherits [defaults]); 0..1000000 (0 = keep none)
 keep_for:          dur              — age retention (inherits [defaults])
 run:               string (req)     — shell command; with compose_file it is the command run in the service (see compose_mode)
 compose_file:      path             — run a compose service instead of run=
@@ -163,19 +163,19 @@ secrets:           map<str,str>     — inline secrets (merged over defaults.sec
 secrets_file:      path             — dotenv file merged beneath secrets; only the path is visible
 notify_on_failure: []string         — sugar → route on run.failed/timeout/crashed/missed; notifier ids, "id:override", or "inapp"
 notify_on_success: []string         — sugar → route on run.succeeded
-notify_on_missed:  bool =true       — alert on missed scheduled runs (inherits [defaults]); false silences
+treat_missed_as_failure:  bool =true       — alert on missed scheduled runs (inherits [defaults]); false silences
 ```
 
 ### [services.&lt;name&gt;] (long-running)
 
-`restart=always` is forced. Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `max_catch_up_runs`, `restart`, `max_concurrent`, `queue_max`, `retry_*`. Shares the core task keys: `group` (default `Services`), `description`, `api_trigger`, `on_overlap` (default `skip`), `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `env_base`, `user`, `exit_codes`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify_on_failure`/`notify_on_success`/`notify_on_missed`. Service-only:
+`restart=always` is forced. Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `max_catch_up_runs`, `restart`, `max_concurrent`, `queue_max`, `retry_*`. Shares the core task keys: `group` (default `Services`), `description`, `api_trigger`, `on_overlap` (default `skip`), `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `env_base`, `user`, `exit_codes`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify_on_failure`/`notify_on_success`/`treat_missed_as_failure`. Service-only:
 
 ```
 instances:           int  =1           — parallel instances; 1..64
 restart_delay:       dur  =1s          — delay before a restart
 restart_backoff:     enum =exponential — constant | linear | exponential
 healthy_after:       dur  =60s         — uptime that counts as healthy: resets the restart counter and clears the failed-start streak
-start_retries:       int  =3           — consecutive fast failures (exit below healthy_after) before an instance goes FATAL and stops restarting
+restart_attempts:       int  =3           — consecutive fast failures (exit below healthy_after) before an instance goes FATAL and stops restarting
 priority:            int  =0           — boot start order across services; lower starts first, ties break on name
 autostart:           bool =true        — start at boot; false boots it stopped until started from UI/API
 depends_on:          []string          — services that must be healthy before this one starts at boot (order only)
@@ -200,7 +200,7 @@ pull:         enum =missing        — missing | always | never
 name_format:  string ={alias}.{service} — generated task name; must contain {service} in services mode
 ```
 
-Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `api_trigger`, `timeout`, `graceful_stop`, `stop_signal`, `on_overlap`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `start_retries`, `priority`, `autostart`, `exit_codes`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `env`, `env_file`, `secrets`, `secrets_file`, `notify_on_failure`, `notify_on_success`. Not allowed: `run`/`compose_file`/`compose_service` (the parent block owns the backend), and the host-process keys `shell`/`umask`/`env_base`/`user`. `mode="stack"` forbids overrides and include/exclude. Per-service `notify_on_failure`/`notify_on_success` desugar into notify routes keyed by the generated task name, exactly like `[services.*]`. The reserved sub-table `[compose.<alias>.defaults]` accepts the same keys and applies them to every imported service before the per-service override wins (precedence: compose-import default → `defaults` → `<svc>`); its `notify_on_*` add routes to all services. A compose service literally named `defaults` is rejected (rename hint); `mode="stack"` forbids `defaults` too.
+Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `api_trigger`, `timeout`, `graceful_stop`, `stop_signal`, `on_overlap`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `restart_attempts`, `priority`, `autostart`, `exit_codes`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `env`, `env_file`, `secrets`, `secrets_file`, `notify_on_failure`, `notify_on_success`. Not allowed: `run`/`compose_file`/`compose_service` (the parent block owns the backend), and the host-process keys `shell`/`umask`/`env_base`/`user`. `mode="stack"` forbids overrides and include/exclude. Per-service `notify_on_failure`/`notify_on_success` desugar into notify routes keyed by the generated task name, exactly like `[services.*]`. The reserved sub-table `[compose.<alias>.defaults]` accepts the same keys and applies them to every imported service before the per-service override wins (precedence: compose-import default → `defaults` → `<svc>`); its `notify_on_*` add routes to all services. A compose service literally named `defaults` is rejected (rename hint); `mode="stack"` forbids `defaults` too.
 
 ### [notify] (global notification settings)
 
@@ -238,7 +238,7 @@ Secret-bearing values (`webhook_url`, `bot_token`, `password`, …) arrive final
 ### [[notification_route]] (route events to channels; repeatable)
 
 ```
-match.kind:     []string — run.started | run.succeeded | run.failed | run.timeout | run.stopped | run.crashed | run.missed | service.fatal | notify.delivery_failed
+match.kinds:     []string — run.started | run.succeeded | run.failed | run.timeout | run.stopped | run.crashed | run.missed | service.fatal | notify.delivery_failed
 match.severity: string   — info | warn | error (optional)
 match.task:     string   — glob over task name (optional)
 notify:         []string (req, non-empty) — notifier ids (or "inapp"); "id:#override" inline target (slack #/@, telegram chat_id, smtp/sendmail email)
@@ -258,7 +258,7 @@ opt out         `set +e` as the script's first line; no TOML key exists for this
 
 Persistent flags: `-c/--config` (=`runwisp.toml`, or `/etc/runwisp/runwisp.toml` at euid 0), `--data` (=`.runwisp`, or `/var/lib/runwisp` at euid 0), `-p/--port` (=`9477`), `--host` (=`127.0.0.1`), `--log-level` (debug|info|warn|error), `--log-format` (auto|text|json). Each has an env fallback the flag wins over: `RUNWISP_CONFIG`, `RUNWISP_DATA`, `RUNWISP_PORT`, `RUNWISP_HOST`, `RUNWISP_LOG_LEVEL`, `RUNWISP_LOG_FORMAT`.
 Precedence for `-c`/`--data`: explicit flag > `RUNWISP_CONFIG`/`RUNWISP_DATA` env var > euid-derived default.
-Env: `RUNWISP_PASSWORD` (else ephemeral per-boot), `RUNWISP_NO_AUTH` (1/true disables auth; mutually exclusive with RUNWISP_PASSWORD), `RUNWISP_TLS` (auto|off; overrides `[daemon] tls`, default `off`, applied on every load incl. reload), `RUNWISP_TRUST_PROXY` (CIDRs), `RUNWISP_CLOUD_TOKEN`, `RUNWISP_CLOUD_URL`.
+Env: `RUNWISP_PASSWORD` (else ephemeral per-boot), `RUNWISP_NO_AUTH` (1/true disables auth; mutually exclusive with RUNWISP_PASSWORD), `RUNWISP_TLS` (auto|off; overrides `[daemon] tls`, default `off`, applied on every load incl. reload), `RUNWISP_TRUSTED_PROXIES` (CIDRs), `RUNWISP_CLOUD_TOKEN`, `RUNWISP_CLOUD_URL`.
 
 Official Docker image: `runwisp/runwisp` (alpine default + `-debian` variant, amd64/arm64). Plain tags carry no Docker CLI; add `-docker` to the tag (e.g. `latest-docker`, `latest-debian-docker`) for a build with a Docker CLI + Compose plugin baked in, needed if `[compose.*]` or a task's `run =` shells out to `docker`/`docker compose` from inside the RunWisp container itself. Binds `0.0.0.0`, plain HTTP (daemon's `[daemon] tls` default of `off`; set `-e RUNWISP_TLS=auto` to opt into self-signed HTTPS), requires `RUNWISP_PASSWORD` or `RUNWISP_NO_AUTH=1` set or the entrypoint refuses to start; mount config at `/etc/runwisp/runwisp.toml` and data at `/var/lib/runwisp`. See https://docs.runwisp.com/getting-started/docker/.
 

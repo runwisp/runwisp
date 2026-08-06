@@ -98,7 +98,7 @@ func TestStreamManager_FetchOlderLogs_RunsAndReturnsLoadedMsg(t *testing.T) {
 	// translate it into a LogOlderLoadedMsg.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"lines":[{"n":5,"text":"hi","stream":"stdout"}],"total_lines":42}`))
+		_, _ = w.Write([]byte(`{"lines":[{"n":5,"text":"hi","stream":"stdout"}],"totalLines":42}`))
 	}))
 	defer srv.Close()
 

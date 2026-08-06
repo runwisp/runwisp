@@ -501,9 +501,12 @@ func taskLocation(task *model.Task, cfg *config.Config) *time.Location {
 // the task's keep_runs so the live runs the daemon adds on boot don't push the
 // seeded history past retention and trim it away.
 func effectiveCap(task *model.Task, cfg *config.Config) int {
-	keep := task.KeepRuns
-	if keep <= 0 {
-		keep = cfg.Defaults.KeepRuns
+	keep := 0
+	if task.KeepRuns != nil {
+		keep = *task.KeepRuns
+	}
+	if keep <= 0 && cfg.Defaults.KeepRuns != nil {
+		keep = *cfg.Defaults.KeepRuns
 	}
 	if keep <= 0 {
 		keep = 60

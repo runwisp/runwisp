@@ -32,9 +32,9 @@ type KeyValue struct {
 type ShellExecution struct {
 	Script     string  `json:"script"`
 	Shell      string  `json:"shell,omitempty"`
-	WorkingDir string  `json:"working_dir,omitempty"`
+	WorkingDir string  `json:"workingDir,omitempty"`
 	Umask      string  `json:"umask,omitempty"`
-	EnvBase    EnvBase `json:"env_base,omitempty"`
+	EnvBase    EnvBase `json:"envBase,omitempty"`
 }
 
 func (e *ShellExecution) ExecType() string { return "shell" }
@@ -176,13 +176,13 @@ const (
 // parses the compose file at runtime — enumeration happens at config load.
 type ComposeExecution struct {
 	File        string   `json:"file"`
-	ProjectName string   `json:"project_name"`
+	ProjectName string   `json:"projectName"`
 	Service     string   `json:"service,omitempty"` // empty when Mode == stack
 	Mode        string   `json:"mode"`              // "services" | "stack" | "exec"
 	Profiles    []string `json:"profiles,omitempty"`
-	EnvFile     []string `json:"env_file,omitempty"`
-	WorkingDir  string   `json:"working_dir,omitempty"`
-	WithDeps    bool     `json:"with_deps,omitempty"`
+	EnvFile     []string `json:"envFile,omitempty"`
+	WorkingDir  string   `json:"workingDir,omitempty"`
+	WithDeps    bool     `json:"withDeps,omitempty"`
 	Pull        string   `json:"pull,omitempty"` // "missing" | "always" | "never"
 	// Command is the script handed to the container's shell. Required when
 	// Mode == exec (there is nothing to exec otherwise) and unused by the

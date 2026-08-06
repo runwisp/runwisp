@@ -31,7 +31,7 @@ bot_token = "tok"
 chat_id = "-1001"
 
 [[notification_route]]
-match = { kind = ["run.failed"], task = "backup-*" }
+match = { kinds = ["run.failed"], task = "backup-*" }
 notify = ["ops", "oncall", "inapp"]
 
 [notify]
@@ -151,7 +151,7 @@ webhook_url = "https://example/x"
 func TestValidate_RejectsRouteWithUnknownNotifier(t *testing.T) {
 	src := `
 [[notification_route]]
-match = { kind = ["run.failed"] }
+match = { kinds = ["run.failed"] }
 notify = ["does-not-exist"]
 `
 	cfg, err := decode([]byte(src), "")
@@ -164,14 +164,14 @@ notify = ["does-not-exist"]
 func TestValidate_RejectsBadKind(t *testing.T) {
 	src := `
 [[notification_route]]
-match = { kind = ["run.bogus"] }
+match = { kinds = ["run.bogus"] }
 notify = ["inapp"]
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "match.kind")
+	assert.Contains(t, err.Error(), "match.kinds")
 }
 
 func TestParseNotifyToken(t *testing.T) {
@@ -315,7 +315,7 @@ type            = "slack"
 webhook_url     = "https://example/hook"
 
 [[notification_route]]
-match  = { kind = ["run.failed"], task = "backup-*" }
+match  = { kinds = ["run.failed"], task = "backup-*" }
 notify = ["slack:#ops"]
 `
 	cfg, err := decode([]byte(src), "")
@@ -650,7 +650,7 @@ notify_on_failure = ["ops"]
 func TestValidate_RouteWithEmptySeverity(t *testing.T) {
 	src := schedulerTZHeader + `
 [[notification_route]]
-match = { kind = ["run.failed"] }
+match = { kinds = ["run.failed"] }
 notify = ["inapp"]
 `
 	cfg, err := decode([]byte(src), "")
@@ -661,7 +661,7 @@ notify = ["inapp"]
 func TestValidate_RouteWithBadSeverity(t *testing.T) {
 	src := `
 [[notification_route]]
-match = { kind = ["run.failed"], severity = "unknown-sev" }
+match = { kinds = ["run.failed"], severity = "unknown-sev" }
 notify = ["inapp"]
 `
 	cfg, err := decode([]byte(src), "")
@@ -674,7 +674,7 @@ notify = ["inapp"]
 func TestValidate_RouteWithInvalidGlob(t *testing.T) {
 	src := `
 [[notification_route]]
-match = { kind = ["run.failed"], task = "[invalid" }
+match = { kinds = ["run.failed"], task = "[invalid" }
 notify = ["inapp"]
 `
 	cfg, err := decode([]byte(src), "")
@@ -788,7 +788,7 @@ from = "runwisp@example.com"
 	assert.Contains(t, err.Error(), "to is required")
 }
 
-func TestValidate_SMTP_TLSNoneRejectedWithCreds(t *testing.T) {
+func TestValidate_SMTP_TLSOffRejectedWithCreds(t *testing.T) {
 	src := schedulerTZHeader + `
 [[notifier]]
 id       = "email-ops"
@@ -798,7 +798,7 @@ from     = "runwisp@example.com"
 to       = ["ops@example.com"]
 username = "u"
 password = "p"
-tls      = "none"
+tls      = "off"
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -1049,7 +1049,7 @@ notify_on_failure = ["discord-ops:override"]
 func TestValidate_RouteEmptyNotifyList(t *testing.T) {
 	src := `
 [[notification_route]]
-match = { kind = ["run.failed"] }
+match = { kinds = ["run.failed"] }
 notify = []
 `
 	cfg, err := decode([]byte(src), "")

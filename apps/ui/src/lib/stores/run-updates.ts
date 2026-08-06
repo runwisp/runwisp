@@ -86,7 +86,7 @@ class RunUpdateManager {
             }
             const identity =
                 result.data.type === "run.deleted"
-                    ? result.data.data.run_id
+                    ? result.data.data.runId
                     : result.data.data.run.id;
             this.logger.debug("SSE event validated OK", eventType, identity);
             for (const handler of this.handlers) handler(result.data);

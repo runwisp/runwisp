@@ -49,7 +49,7 @@ export async function triggerRunViaAPI(page: Page, taskName: string, token: stri
  * single shared daemon carries runs across specs, so "wait for a SUCCESS/FAILED
  * badge" on its own can latch onto a prior run's badge while the run we just
  * triggered is still in flight — the API's newest run would then still be
- * mid-run (`end_reason` unset). Reading the created run's id here removes that
+ * mid-run (`endReason` unset). Reading the created run's id here removes that
  * race: we poll for *this* run's terminal state, not "the latest".
  */
 export async function triggerRunViaUI(page: Page, taskName: string): Promise<Run> {
@@ -68,14 +68,15 @@ export async function triggerRunViaUI(page: Page, taskName: string): Promise<Run
     return (await response.json()) as Run;
 }
 
-/** Fetch a single run via `GET /api/tasks/{name}/runs/{id}`. */
+/** Fetch a single run via `GET /api/runs/{id}`. Run ULIDs are globally unique,
+ * so `taskName` is kept only to avoid churning the callers that pass it. */
 export async function getRun(
     page: Page,
-    taskName: string,
+    _taskName: string,
     runId: string,
     token: string,
 ): Promise<Run> {
-    const response = await page.request.get(`/api/tasks/${taskName}/runs/${runId}`, {
+    const response = await page.request.get(`/api/runs/${runId}`, {
         headers: authHeaders(token),
     });
     expect(response.status(), `get run ${runId}`).toBe(200);
@@ -121,11 +122,11 @@ export async function waitForRunEnded(
 /** Returns true once the run is gone (deleted) — `GET` answers 404. */
 export async function runIsDeleted(
     page: Page,
-    taskName: string,
+    _taskName: string,
     runId: string,
     token: string,
 ): Promise<boolean> {
-    const response = await page.request.get(`/api/tasks/${taskName}/runs/${runId}`, {
+    const response = await page.request.get(`/api/runs/${runId}`, {
         headers: authHeaders(token),
     });
     return response.status() === 404;
@@ -192,9 +193,9 @@ export async function waitForCoalescedCount(
                 });
                 if (!response.ok()) return 0;
                 const body = (await response.json()) as {
-                    items: { task_name: string; count: number }[];
+                    items: { taskName: string; count: number }[];
                 };
-                const row = body.items.find((item) => item.task_name === taskName);
+                const row = body.items.find((item) => item.taskName === taskName);
                 return row ? row.count : 0;
             },
             { timeout, message: `${taskName} should coalesce to >= ${minCount} occurrences` },
@@ -208,7 +209,7 @@ export async function waitForCoalescedCount(
  * missing timing — the "nothing silently fails" guarantee, verified end-to-end.
  */
 export async function expectRunDetailMatchesApi(page: Page, apiRun: Run): Promise<void> {
-    const status = displayStatus(apiRun.status, apiRun.end_reason);
+    const status = displayStatus(apiRun.status, apiRun.endReason);
     await expect(runVerdict(page), `verdict should report ${status}`).toHaveAttribute(
         "data-status",
         status,
@@ -219,21 +220,21 @@ export async function expectRunDetailMatchesApi(page: Page, apiRun: Run): Promis
     // always exit 0 (the phrase already says so), and stopped/timed-out/crashed
     // runs end on a synthetic sentinel that would render a misleading "-1" — so
     // both must show no code at all rather than a wrong or redundant one.
-    if (apiRun.end_reason === "failed") {
+    if (apiRun.endReason === "failed") {
         await expect(
             page.getByTestId("run-exit"),
-            `exit code should be ${apiRun.exit_code}`,
-        ).toContainText(String(apiRun.exit_code));
+            `exit code should be ${apiRun.exitCode}`,
+        ).toContainText(String(apiRun.exitCode));
     } else {
         await expect(page.getByTestId("run-exit"), "no code unless it is news").toHaveCount(0);
     }
 
-    if (apiRun.start_at) {
+    if (apiRun.startAt) {
         const startedValue = page.getByTestId("run-started");
         await expect(startedValue, "started timestamp populated").not.toHaveText("—");
         await expect(startedValue).toContainText(":"); // wall-clock time (HH:MM:SS)
     }
-    if (apiRun.start_at && apiRun.end_at) {
+    if (apiRun.startAt && apiRun.endAt) {
         await expect(page.getByTestId("run-duration"), "duration populated").toBeVisible();
     }
 }

@@ -55,7 +55,7 @@ run = "/usr/bin/gunicorn app:app"
 working_dir = "/srv/app"
 user = "www-data"
 healthy_after = "10s"
-start_retries = 5
+restart_attempts = 5
 stop_signal = "SIGINT"
 
 [services.web.env]
@@ -180,7 +180,7 @@ RunWisp **service**. Most keys carry straight over:
 | `umask`                         | `umask`                  |                                                      |
 | `numprocs`                      | `instances`              | Each gets a `RUNWISP_INSTANCE_INDEX` (0-based).      |
 | `startsecs`                     | `healthy_after`          | Uptime that marks an instance healthy.               |
-| `startretries`                  | `start_retries`          | Fast failures tolerated before FATAL.                |
+| `startretries`                  | `restart_attempts`       | Fast failures tolerated before FATAL.                |
 | `stopsignal`                    | `stop_signal`            | `INT` → `SIGINT`.                                    |
 | `stopwaitsecs`                  | `graceful_stop`          | Grace window before SIGKILL.                         |
 | `exitcodes`                     | `exit_codes`             | Which codes count as success.                        |
@@ -253,7 +253,7 @@ processes are defined.
     <LinkCard
         title="[services.*] reference"
         href="/configuration/services/"
-        description="instances, healthy_after, start_retries, priority, depends_on."
+        description="instances, healthy_after, restart_attempts, priority, depends_on."
     />
     <LinkCard
         title="Logs & retention"

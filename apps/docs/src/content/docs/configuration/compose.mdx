@@ -65,8 +65,8 @@ wins:
 include = ["worker-a", "worker-b", "worker-c"]
 
 [compose.stack.defaults]
-restart       = "always"   # applies to all three workers
-start_retries = 5
+restart          = "always"   # applies to all three workers
+restart_attempts = 5
 
 [compose.stack.worker-a]
 restart = "on_failure"     # worker-a opts out; the other two stay "always"
@@ -114,7 +114,7 @@ Override sub-tables accept any subset of the
 `notify_on_failure`, `notify_on_success`, `graceful_stop`, `stop_signal`,
 `exit_codes`, `keep_runs`, `keep_for`, `instances`, `timeout`,
 `description`, `log_max_size`, `log_on_full`, `api_trigger`, `on_overlap`,
-`restart_delay`, `restart_backoff`, `healthy_after`, `start_retries`,
+`restart_delay`, `restart_backoff`, `healthy_after`, `restart_attempts`,
 `priority`, `autostart`.
 
 The host-process knobs — `shell`, `umask`, `env_base`, and `user` — are

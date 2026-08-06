@@ -175,7 +175,7 @@
         if (run.status === "running") return "live";
         if (run.status === "pending") return "queued";
         if (displayed === "failed" || displayed === "crashed") {
-            return "exit " + String(run.exit_code);
+            return "exit " + String(run.exitCode);
         }
         return runDuration(run) ?? "—";
     }
@@ -277,30 +277,30 @@
     // (page-injected or popover-set) always applies.
     function buildSelectorFilter(): NonNullable<RunSelector["filter"]> {
         const filter: NonNullable<RunSelector["filter"]> = {};
-        if (taskNameFilter) filter.task_name = taskNameFilter;
-        else if (filters.task_name) filter.task_name = filters.task_name;
+        if (taskNameFilter) filter.taskName = taskNameFilter;
+        else if (filters.taskName) filter.taskName = filters.taskName;
         if (!showFilters) return filter;
         if (filters.statuses.length > 0) filter.status = filters.statuses.join(",");
         const query = filters.search.trim();
         if (query) filter.search = query;
-        if (filters.created_after) filter.created_after = filters.created_after;
-        if (filters.created_before) filter.created_before = filters.created_before;
-        if (filters.triggered_by) filter.triggered_by = filters.triggered_by;
-        const exit = exitCodeRange(filters.exit_code);
-        if (exit.min !== undefined) filter.exit_code_min = exit.min;
-        if (exit.max !== undefined) filter.exit_code_max = exit.max;
-        if (filters.retries_only) filter.retries_only = true;
+        if (filters.createdAfter) filter.createdAfter = filters.createdAfter;
+        if (filters.createdBefore) filter.createdBefore = filters.createdBefore;
+        if (filters.triggeredBy) filter.triggeredBy = filters.triggeredBy;
+        const exit = exitCodeRange(filters.exitCode);
+        if (exit.min !== undefined) filter.exitCodeMin = exit.min;
+        if (exit.max !== undefined) filter.exitCodeMax = exit.max;
+        if (filters.retriesOnly) filter.retriesOnly = true;
         return filter;
     }
 
     function buildSelector(): RunSelector {
         if (!selectAllMode) {
-            return { match_all: false, ids: [...explicitIds] };
+            return { matchAll: false, ids: [...explicitIds] };
         }
         return {
-            match_all: true,
+            matchAll: true,
             filter: buildSelectorFilter(),
-            except_ids: [...exceptIds],
+            exceptIds: [...exceptIds],
         };
     }
 
@@ -319,19 +319,19 @@
             case "time":
                 return timeChipLabel();
             case "task":
-                return filters.task_name ?? "";
-            case "triggered_by":
-                return "Trigger: " + triggerDescription(filters.triggered_by ?? "");
-            case "exit_code":
-                return exitCodeChipLabel(filters.exit_code);
+                return filters.taskName ?? "";
+            case "triggeredBy":
+                return "Trigger: " + triggerDescription(filters.triggeredBy ?? "");
+            case "exitCode":
+                return exitCodeChipLabel(filters.exitCode);
             case "retries":
                 return "Retries only";
         }
     }
 
     function timeChipLabel(): string {
-        const after = filters.created_after;
-        const before = filters.created_before;
+        const after = filters.createdAfter;
+        const before = filters.createdBefore;
         if (isWholeDay(after, before) && after) return `On ${formatCalendarDate(after)}`;
         if (after && before) return `${formatDateTime(after)} – ${formatDateTime(before)}`;
         if (after) return `Since ${formatDateTime(after)}`;
@@ -350,9 +350,9 @@
         const sel = buildSelector();
         // Narrow the selector to the affected predicate when in explicit mode
         // so we don't ask the server to operate on rows the UI excluded.
-        const narrowed: RunSelector = sel.match_all
+        const narrowed: RunSelector = sel.matchAll
             ? sel
-            : { match_all: false, ids: affected.map((r) => r.id) };
+            : { matchAll: false, ids: affected.map((r) => r.id) };
         handler(narrowed, affected);
         clearSelection();
     }
@@ -368,7 +368,7 @@
         // reliably re-triggers its fetch effect.
         filters = {
             ...filters,
-            sort_direction: filters.sort_direction === "asc" ? "desc" : "asc",
+            sortDirection: filters.sortDirection === "asc" ? "desc" : "asc",
         };
     }
 
@@ -480,7 +480,7 @@
                     {#snippet icon()}
                         <ArrowUpDown
                             size={14}
-                            class="text-on-surface-muted {filters.sort_direction === 'asc'
+                            class="text-on-surface-muted {filters.sortDirection === 'asc'
                                 ? 'rotate-180'
                                 : ''}"
                         />
@@ -626,7 +626,7 @@
             checked={isRowSelected(run.id)}
             onchange={() => toggleRow(run.id)}
             onclick={(e) => e.stopPropagation()}
-            aria-label={`Select run from ${formatDateTime(run.start_at ?? run.created_at)}`}
+            aria-label={`Select run from ${formatDateTime(run.startAt ?? run.createdAt)}`}
             class="size-3.5 cursor-pointer rounded border-outline accent-primary opacity-0 {selectionActive
                 ? 'opacity-100'
                 : 'group-hover/row:opacity-100'}"
@@ -639,9 +639,9 @@
     {@const config = getRunStatusConfig(dstatus)}
     {@const running = run.status === "running"}
     {@const spine = config.dot.replace(" animate-pulse", "")}
-    {@const startedAt = run.start_at ?? run.created_at}
+    {@const startedAt = run.startAt ?? run.createdAt}
     {@const retry = runRetryLabel(run)}
-    {@const suffix = instanceSuffix(run.instance_index, getInstanceCount(run.task_name))}
+    {@const suffix = instanceSuffix(run.instanceIndex, getInstanceCount(run.taskName))}
     <button
         class="btn-scale group relative w-full rounded-[3px] border text-left select-none {showTaskName
             ? 'p-3'
@@ -660,7 +660,7 @@
                 <span class="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span class="flex items-center gap-1.5">
                         <span class="truncate font-mono text-[13px] font-semibold text-on-surface">
-                            {run.task_name}{#if suffix}<span class="text-on-surface-muted"
+                            {run.taskName}{#if suffix}<span class="text-on-surface-muted"
                                     >{suffix}</span
                                 >{/if}
                         </span>
@@ -675,7 +675,7 @@
                         title={formatFullDateTime(startedAt)}
                     >
                         <span class="truncate">{formatDateTime(startedAt)}</span>
-                        <span class="shrink-0">· {formatTriggeredByLabel(run.triggered_by)}</span>
+                        <span class="shrink-0">· {formatTriggeredByLabel(run.triggeredBy)}</span>
                         {#if retry}
                             <span class="shrink-0 rounded bg-surface-sunken px-1 font-mono"
                                 >{retry}</span

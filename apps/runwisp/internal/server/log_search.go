@@ -39,7 +39,7 @@ const (
 // LogSearchInput is the input to GET /api/tasks/{taskName}/log/search.
 type LogSearchInput struct {
 	TaskName      string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
-	RunID         string `query:"run_id" doc:"Restrict the search to one run (ULID). Empty searches every non-deleted run of the task."`
+	RunID         string `query:"runId" doc:"Restrict the search to one run (ULID). Empty searches every non-deleted run of the task."`
 	Q             string `query:"q" minLength:"1" maxLength:"1024" doc:"Substring (or regex when regex=true) to search for"`
 	Regex         bool   `query:"regex" doc:"Treat q as an RE2 regular expression"`
 	CaseSensitive bool   `query:"case" doc:"Match case-sensitively (default is case-insensitive)"`
@@ -51,7 +51,7 @@ type LogSearchInput struct {
 // huma-generated OpenAPI schema does not need the internal package in its
 // closure.
 type LogSearchHit struct {
-	RunID  string `json:"run_id" doc:"ULID of the run containing this line"`
+	RunID  string `json:"runId" doc:"ULID of the run containing this line"`
 	N      int64  `json:"n" doc:"Absolute line number within the run"`
 	Stream string `json:"stream" doc:"Stream identifier (stdout/stderr/system)"`
 	Text   string `json:"text" doc:"Matched line content without trailing newline"`
@@ -61,9 +61,9 @@ type LogSearchHit struct {
 // LogSearchBody is the JSON response.
 type LogSearchBody struct {
 	Hits        []LogSearchHit `json:"hits" doc:"Hits ordered newest-run-first, then ascending line within a run"`
-	NextCursor  string         `json:"next_cursor,omitempty" doc:"Opaque token to fetch the next page; empty when the scan is exhausted"`
+	NextCursor  string         `json:"nextCursor,omitempty" doc:"Opaque token to fetch the next page; empty when the scan is exhausted"`
 	Exhausted   bool           `json:"exhausted" doc:"True when no further runs / lines need scanning"`
-	ScannedRuns int            `json:"scanned_runs" doc:"Number of runs visited by this request"`
+	ScannedRuns int            `json:"scannedRuns" doc:"Number of runs visited by this request"`
 }
 
 type LogSearchOutput struct {

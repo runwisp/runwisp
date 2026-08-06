@@ -26,9 +26,9 @@ function createAuthStore() {
             // Trust the server's authenticated field (cookie session) OR a local token.
             const isAuthenticated = data.authenticated || hasToken;
             state = {
-                required: data.auth_required,
+                required: data.authRequired,
                 loaded: true,
-                authenticated: !data.auth_required || isAuthenticated,
+                authenticated: !data.authRequired || isAuthenticated,
             };
         } catch (error) {
             logger.error("Failed to load auth status", error);

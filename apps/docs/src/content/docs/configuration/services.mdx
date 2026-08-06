@@ -62,12 +62,12 @@ just that one.
 
 ## Restart behaviour
 
-| Key               | Default         | What it does                                                                                                                                                                                                                                                  |
-| ----------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `restart_delay`   | `1s`            | Base delay between restarts. Go duration string.                                                                                                                                                                                                              |
-| `restart_backoff` | `"exponential"` | Curve applied to `restart_delay`: `constant`, `linear`, or `exponential` (shared with task `retry_backoff`).                                                                                                                                                  |
-| `healthy_after`   | inherited       | Uptime an instance must reach to count as healthy — resets its restart counter **and** clears the failed-start streak. Exits faster than this count as failed starts. See [`[defaults]`](/configuration/defaults/) for the inherited value (default `"60s"`). |
-| `start_retries`   | `3`             | Consecutive failed starts an instance tolerates before it's marked **FATAL** and stops restarting.                                                                                                                                                            |
+| Key                | Default         | What it does                                                                                                                                                                                                                                                  |
+| ------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `restart_delay`    | `1s`            | Base delay between restarts. Go duration string.                                                                                                                                                                                                              |
+| `restart_backoff`  | `"exponential"` | Curve applied to `restart_delay`: `constant`, `linear`, or `exponential` (shared with task `retry_backoff`).                                                                                                                                                  |
+| `healthy_after`    | inherited       | Uptime an instance must reach to count as healthy — resets its restart counter **and** clears the failed-start streak. Exits faster than this count as failed starts. See [`[defaults]`](/configuration/defaults/) for the inherited value (default `"60s"`). |
+| `restart_attempts` | `3`             | Consecutive failed starts an instance tolerates before it's marked **FATAL** and stops restarting.                                                                                                                                                            |
 
 The backoff has a ceiling, so even after a long stretch of flapping the
 delay between restarts won't climb forever. And once an instance has
@@ -94,7 +94,7 @@ Every time an instance exits, RunWisp checks how long it stayed up. Reach
 counter resets to zero. Exit _faster_ than `healthy_after` with a failure
 ([what counts as failure](/configuration/tasks/#retries--timeout) — a clean exit
 on a success code never does), and that's a failed start. Rack up more
-than `start_retries` failed starts in a row and the instance goes
+than `restart_attempts` failed starts in a row and the instance goes
 **FATAL**: it stops restarting, a `start_failed` run is recorded, and a
 `service.fatal` notification lights the in-app bell and any configured
 [notifiers](/notifications/model/). The loud terminal failure you
@@ -109,7 +109,7 @@ started" are one number to reason about — the way supervisord's
 FATAL lives in memory only — like every other in-memory supervisor flag,
 it's the runtime's idea of desired state, never persisted. Restarting the
 daemon, or hitting **Restart** on the service in the UI/API, gives it a
-fresh `start_retries` budget and tries again; a restart is your "try
+fresh `restart_attempts` budget and tries again; a restart is your "try
 again" signal. The `start_failed` runs stay in history either way, so the
 failures remain visible after the daemon comes back.
 
@@ -117,7 +117,7 @@ failures remain visible after the daemon comes back.
 [services.flaky]
 run           = "exit 1"   # can never come up
 healthy_after = "5s"       # must stay up 5s to count as healthy
-start_retries = 2          # give up after 2 failed starts in a row
+restart_attempts = 2          # give up after 2 failed starts in a row
 ```
 
 This service tries to start, fails fast, retries twice more, then goes

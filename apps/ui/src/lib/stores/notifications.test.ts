@@ -12,15 +12,15 @@ function makeNotification(overrides: Partial<Notification> = {}): Notification {
         fingerprint: "fp",
         kind: "run.failed",
         severity: "error",
-        task_name: "backup-db",
-        run_id: "run-1",
+        taskName: "backup-db",
+        runId: "run-1",
         title: "backup-db failed",
         body: "exit 1",
         count: 1,
         occurrences: ["2026-05-05T12:00:00.000Z"],
-        created_at: "2026-05-05T12:00:00.000Z",
-        last_occurred_at: "2026-05-05T12:00:00.000Z",
-        read_at: null,
+        createdAt: "2026-05-05T12:00:00.000Z",
+        lastOccurredAt: "2026-05-05T12:00:00.000Z",
+        readAt: null,
     };
     return { ...base, ...overrides };
 }
@@ -100,7 +100,7 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
         }
         if (url.includes("/api/notifications")) {
             return Promise.resolve(
-                new Response(JSON.stringify({ items, next_cursor: undefined }), {
+                new Response(JSON.stringify({ items, nextCursor: undefined }), {
                     status: 200,
                     headers: { "content-type": "application/json" },
                 }),
@@ -148,7 +148,7 @@ describe("NotificationStore", () => {
         es.fire("notification.created", {
             notification: makeNotification({
                 id: "01H000000000000000000RD000",
-                read_at: "2026-05-05T12:00:00.000Z",
+                readAt: "2026-05-05T12:00:00.000Z",
             }),
         });
         expect(store.unread).toBe(0);
@@ -173,25 +173,25 @@ describe("NotificationStore", () => {
         await store.init();
         expect(store.unread).toBe(1);
         es.fire("notification.updated", {
-            notification: makeNotification({ id, read_at: "2026-05-05T12:05:00.000Z" }),
+            notification: makeNotification({ id, readAt: "2026-05-05T12:05:00.000Z" }),
         });
         expect(store.unread).toBe(0);
-        expect(store.items[0]?.read_at).toBe("2026-05-05T12:05:00.000Z");
+        expect(store.items[0]?.readAt).toBe("2026-05-05T12:05:00.000Z");
     });
 
-    it("re-bumps unread when a coalesce SSE update clears read_at", async () => {
+    it("re-bumps unread when a coalesce SSE update clears readAt", async () => {
         const id = "01H000000000000000000UPD02";
         const { store, es } = setupHarness({
-            items: [makeNotification({ id, read_at: "2026-05-05T12:00:00.000Z" })],
+            items: [makeNotification({ id, readAt: "2026-05-05T12:00:00.000Z" })],
             unread: 0,
         });
         await store.init();
         expect(store.unread).toBe(0);
         es.fire("notification.updated", {
-            notification: makeNotification({ id, count: 2, read_at: null }),
+            notification: makeNotification({ id, count: 2, readAt: null }),
         });
         expect(store.unread).toBe(1);
-        expect(store.items[0]?.read_at).toBeNull();
+        expect(store.items[0]?.readAt).toBeNull();
     });
 
     it("clears unread on markAllRead() and stamps loaded items", async () => {
@@ -204,14 +204,14 @@ describe("NotificationStore", () => {
         expect(store.unread).toBe(5);
         await store.markAllRead();
         expect(store.unread).toBe(0);
-        expect(store.items[0]?.read_at).not.toBeNull();
+        expect(store.items[0]?.readAt).not.toBeNull();
         const markCall = requests.find(
             (r) => r.url.endsWith("/api/notifications/read") && r.method === "POST",
         );
         expect(markCall).toBeDefined();
     });
 
-    it("markRead() sets read_at locally and POSTs the per-row endpoint", async () => {
+    it("markRead() sets readAt locally and POSTs the per-row endpoint", async () => {
         const id = "01H000000000000000000ROW01";
         const { store, requests } = setupHarness({
             items: [makeNotification({ id })],
@@ -219,21 +219,21 @@ describe("NotificationStore", () => {
         });
         await store.init();
         await store.markRead(id);
-        expect(store.items[0]?.read_at).not.toBeNull();
+        expect(store.items[0]?.readAt).not.toBeNull();
         expect(store.unread).toBe(0);
         const call = requests.find((r) => r.url.endsWith(`/api/notifications/${id}/read`));
         expect(call?.method).toBe("POST");
     });
 
-    it("markUnread() clears read_at locally and POSTs the per-row endpoint", async () => {
+    it("markUnread() clears readAt locally and POSTs the per-row endpoint", async () => {
         const id = "01H000000000000000000ROW02";
         const { store, requests } = setupHarness({
-            items: [makeNotification({ id, read_at: "2026-05-05T12:00:00.000Z" })],
+            items: [makeNotification({ id, readAt: "2026-05-05T12:00:00.000Z" })],
             unread: 0,
         });
         await store.init();
         await store.markUnread(id);
-        expect(store.items[0]?.read_at).toBeNull();
+        expect(store.items[0]?.readAt).toBeNull();
         expect(store.unread).toBe(1);
         const call = requests.find((r) => r.url.endsWith(`/api/notifications/${id}/unread`));
         expect(call?.method).toBe("POST");

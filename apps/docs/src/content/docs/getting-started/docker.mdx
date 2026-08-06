@@ -349,7 +349,7 @@ RunWisp serves plain HTTP by default on every bind address, so the image
 doesn't need to set `RUNWISP_TLS` at all — a reverse proxy is usually
 already terminating TLS in front of a container anyway. You either:
 
-- put a proxy in front and set `RUNWISP_TRUST_PROXY` to its CIDR, so the
+- put a proxy in front and set `RUNWISP_TRUSTED_PROXIES` to its CIDR, so the
   daemon honors `X-Forwarded-Proto` and still marks session cookies
   `Secure`; or
 - set `-e RUNWISP_TLS=auto` and let RunWisp terminate TLS itself with a

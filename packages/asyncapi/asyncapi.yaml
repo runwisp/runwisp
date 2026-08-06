@@ -205,8 +205,8 @@ components:
       type: string
       enum:
         - running
-        - ok
-        - err
+        - succeeded
+        - failed
         - stopped
         - timeout
 
@@ -278,8 +278,6 @@ components:
     ExecutionPayload:
       type: object
       properties:
-        id:
-          type: string
         taskId:
           type: string
         taskName:
@@ -315,7 +313,6 @@ components:
             Format `{orgId}/{yyyy-mm}/{executionId}.log.gz`. Empty when
             `logUploadUrl` is empty.
       required:
-        - id
         - taskId
         - taskName
         - executionId
@@ -612,7 +609,7 @@ components:
         sentAt:
           type: string
           format: date-time
-        id:
+        requestId:
           type: string
         executionId:
           type: string
@@ -625,7 +622,7 @@ components:
           minimum: 0
       required:
         - type
-        - id
+        - requestId
         - executionId
         - fromLine
         - limit
@@ -648,7 +645,7 @@ components:
         sentAt:
           type: string
           format: date-time
-        id:
+        requestId:
           type: string
         executionId:
           type: string
@@ -674,7 +671,7 @@ components:
             paginated scan continues mid-run without re-emitting prior hits.
       required:
         - type
-        - id
+        - requestId
         - executionId
         - query
 
@@ -972,7 +969,7 @@ components:
         sentAt:
           type: string
           format: date-time
-        id:
+        requestId:
           type: string
         executionId:
           type: string
@@ -984,7 +981,7 @@ components:
           type: boolean
       required:
         - type
-        - id
+        - requestId
         - executionId
         - lines
         - final
@@ -1005,7 +1002,7 @@ components:
         sentAt:
           type: string
           format: date-time
-        id:
+        requestId:
           type: string
         executionId:
           type: string
@@ -1023,7 +1020,7 @@ components:
           type: boolean
       required:
         - type
-        - id
+        - requestId
         - executionId
         - hits
         - exhausted

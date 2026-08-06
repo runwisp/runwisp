@@ -49,22 +49,22 @@ run = "sleep 1"
 `)
 	cfg, err := Load(cfgPath)
 	require.NoError(t, err)
-	assert.Equal(t, DefaultStartRetries, findTask(t, cfg, "worker").StartRetries)
+	assert.Equal(t, DefaultStartRetries, findTask(t, cfg, "worker").RestartAttempts)
 }
 
 func TestStartRetries_ExplicitWins(t *testing.T) {
 	cfgPath, _ := writePlainConfig(t, `[services.worker]
 run = "sleep 1"
-start_retries = 5
+restart_attempts = 5
 `)
 	cfg, err := Load(cfgPath)
 	require.NoError(t, err)
-	assert.Equal(t, 5, findTask(t, cfg, "worker").StartRetries)
+	assert.Equal(t, 5, findTask(t, cfg, "worker").RestartAttempts)
 }
 
 func TestStartRetries_InheritsFromDefaults(t *testing.T) {
 	cfgPath, _ := writePlainConfig(t, `[defaults]
-start_retries = 7
+restart_attempts = 7
 healthy_after = "15s"
 
 [services.worker]
@@ -73,14 +73,14 @@ run = "sleep 1"
 	cfg, err := Load(cfgPath)
 	require.NoError(t, err)
 	svc := findTask(t, cfg, "worker")
-	assert.Equal(t, 7, svc.StartRetries, "[defaults] start_retries is inherited")
+	assert.Equal(t, 7, svc.RestartAttempts, "[defaults] restart_attempts is inherited")
 	assert.Equal(t, 15*time.Second, svc.HealthyAfter, "[defaults] healthy_after is inherited")
 }
 
 func TestStartRetries_RejectedAboveCap(t *testing.T) {
 	cfgPath, _ := writePlainConfig(t, `[services.worker]
 run = "sleep 1"
-start_retries = 101
+restart_attempts = 101
 `)
 	_, err := Load(cfgPath)
 	require.Error(t, err)
@@ -90,15 +90,15 @@ start_retries = 101
 func TestStartRetries_RejectedNegative(t *testing.T) {
 	cfgPath, _ := writePlainConfig(t, `[services.worker]
 run = "sleep 1"
-start_retries = -1
+restart_attempts = -1
 `)
 	_, err := Load(cfgPath)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "start_retries")
+	assert.Contains(t, err.Error(), "restart_attempts")
 }
 
 func TestStartFatalKeys_RejectedOnTask(t *testing.T) {
-	for _, key := range []string{`healthy_after = "5s"`, `start_retries = 2`} {
+	for _, key := range []string{`healthy_after = "5s"`, `restart_attempts = 2`} {
 		cfgPath, _ := writePlainConfig(t, `[tasks.job]
 run = "echo hi"
 `+key+"\n")

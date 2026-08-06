@@ -73,19 +73,19 @@ func TestDaemonInfo_JSONShapeIsLocked(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &decoded))
 
 	want := []string{
-		"auth_disabled",
+		"authDisabled",
 		"capabilities",
-		"cloud_enabled",
-		"config_loaded_at",
-		"config_stale",
-		"external_url",
+		"cloudEnabled",
+		"configLoadedAt",
+		"configStale",
+		"externalUrl",
 		"fingerprint",
 		"port",
-		"resolved_timezone",
-		"scheduling_active",
-		"service_managed",
+		"resolvedTimezone",
+		"schedulingActive",
+		"serviceManaged",
 		"tasks",
-		"timezone_source",
+		"timezoneSource",
 		"version",
 	}
 	got := make([]string, 0, len(decoded))
@@ -240,8 +240,8 @@ func TestTaskJSON_HidesSecrets(t *testing.T) {
 	require.NoError(t, err)
 	body := string(data)
 	assert.Contains(t, body, `"env":{"VISIBLE":"ok"}`)
-	assert.Contains(t, body, `"env_file":"/etc/runwisp/env.env"`)
-	assert.Contains(t, body, `"secrets_file":"/etc/runwisp/secrets.env"`)
+	assert.Contains(t, body, `"envFile":"/etc/runwisp/env.env"`)
+	assert.Contains(t, body, `"secretsFile":"/etc/runwisp/secrets.env"`)
 	assert.NotContains(t, body, "AWS_SECRET_KEY")
 	assert.NotContains(t, body, "do-not-leak")
 }

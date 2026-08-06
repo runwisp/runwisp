@@ -237,7 +237,7 @@ in the bell naming the original task and kind.
 
 `notify.delivery_failed` events bypass the notification route engine
 entirely — they are delivered directly to the in-app channel. A
-`[[notification_route]]` rule with `match.kind = ["notify.delivery_failed"]`
+`[[notification_route]]` rule with `match.kinds = ["notify.delivery_failed"]`
 will never fire, no matter what `notify` channel you point it at. If you
 need a backup path, add a second notifier ID to the original
 `notify_on_failure` list instead — that way both channels get the same

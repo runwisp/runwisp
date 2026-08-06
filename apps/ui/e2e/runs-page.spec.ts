@@ -104,7 +104,7 @@ test.describe("runs page", () => {
         daemonState,
     }) => {
         // Seed last so this run is newest → the first (top) row under the
-        // default start_at-desc sort.
+        // default startAt-desc sort.
         const target = await seedEndedRun(page, "echo-task", daemonState.token);
 
         await page.goto("/runs");

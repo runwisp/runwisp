@@ -269,7 +269,7 @@ func TestHandleLogReplayRequest_NotFound(t *testing.T) {
 	h := newDispatchInboundHandler(nil, repo, executor.Availability{})
 
 	chunk, err := h.HandleLogReplayRequest(context.Background(), protocol.LogReplayRequestMessage{
-		ID:          "req-1",
+		RequestID:   "req-1",
 		ExecutionID: "exec-1",
 	})
 	require.NoError(t, err)
@@ -281,7 +281,7 @@ func TestHandleLogReplayRequest_TransientError(t *testing.T) {
 	h := newDispatchInboundHandler(nil, repo, executor.Availability{})
 
 	_, err := h.HandleLogReplayRequest(context.Background(), protocol.LogReplayRequestMessage{
-		ID:          "req-1",
+		RequestID:   "req-1",
 		ExecutionID: "exec-1",
 	})
 	require.Error(t, err)

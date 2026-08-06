@@ -47,7 +47,7 @@ describe("emptyRunFilters", () => {
     it("is a fully-open filter — no dimension active, newest-first", () => {
         const f = emptyRunFilters();
         expect(f.statuses).toEqual([]);
-        expect(f.sort_direction).toBe("desc");
+        expect(f.sortDirection).toBe("desc");
         expect(activeFilterCount(f)).toBe(0);
     });
 });
@@ -75,56 +75,54 @@ describe("isNeedsAttention", () => {
 describe("dimensionActive / activeDimensions", () => {
     it("detects each dimension independently", () => {
         expect(dimensionActive(base({ statuses: ["failed"] }), "status")).toBe(true);
-        expect(dimensionActive(base({ created_after: "2026-01-01T00:00:00Z" }), "time")).toBe(true);
-        expect(dimensionActive(base({ created_before: "2026-01-01T00:00:00Z" }), "time")).toBe(
-            true,
-        );
-        expect(dimensionActive(base({ task_name: "backup" }), "task")).toBe(true);
-        expect(dimensionActive(base({ triggered_by: "cron" }), "triggered_by")).toBe(true);
-        expect(dimensionActive(base({ exit_code: "137" }), "exit_code")).toBe(true);
-        expect(dimensionActive(base({ exit_code: ">100" }), "exit_code")).toBe(true);
-        expect(dimensionActive(base({ retries_only: true }), "retries")).toBe(true);
+        expect(dimensionActive(base({ createdAfter: "2026-01-01T00:00:00Z" }), "time")).toBe(true);
+        expect(dimensionActive(base({ createdBefore: "2026-01-01T00:00:00Z" }), "time")).toBe(true);
+        expect(dimensionActive(base({ taskName: "backup" }), "task")).toBe(true);
+        expect(dimensionActive(base({ triggeredBy: "cron" }), "triggeredBy")).toBe(true);
+        expect(dimensionActive(base({ exitCode: "137" }), "exitCode")).toBe(true);
+        expect(dimensionActive(base({ exitCode: ">100" }), "exitCode")).toBe(true);
+        expect(dimensionActive(base({ retriesOnly: true }), "retries")).toBe(true);
     });
 
     it("treats an exact exit code of 0 as active (distinct from absent)", () => {
-        expect(dimensionActive(base({ exit_code: "0" }), "exit_code")).toBe(true);
+        expect(dimensionActive(base({ exitCode: "0" }), "exitCode")).toBe(true);
     });
 
     it("treats an empty or unparseable exit-code expression as inactive", () => {
-        expect(dimensionActive(base({ exit_code: "" }), "exit_code")).toBe(false);
-        expect(dimensionActive(base({ exit_code: "nonsense" }), "exit_code")).toBe(false);
+        expect(dimensionActive(base({ exitCode: "" }), "exitCode")).toBe(false);
+        expect(dimensionActive(base({ exitCode: "nonsense" }), "exitCode")).toBe(false);
     });
 
     it("lists active dimensions in display (most→least useful) order", () => {
         const f = base({
-            retries_only: true,
+            retriesOnly: true,
             statuses: ["failed"],
-            triggered_by: "cron",
-            created_after: "2026-01-01T00:00:00Z",
+            triggeredBy: "cron",
+            createdAfter: "2026-01-01T00:00:00Z",
         });
-        expect(activeDimensions(f)).toEqual(["status", "time", "triggered_by", "retries"]);
+        expect(activeDimensions(f)).toEqual(["status", "time", "triggeredBy", "retries"]);
     });
 });
 
 describe("clearDimension", () => {
     it("resets one dimension and leaves the rest untouched", () => {
-        const f = base({ statuses: ["failed"], triggered_by: "cron", retries_only: true });
-        const cleared = clearDimension(f, "triggered_by");
-        expect(cleared.triggered_by).toBeUndefined();
+        const f = base({ statuses: ["failed"], triggeredBy: "cron", retriesOnly: true });
+        const cleared = clearDimension(f, "triggeredBy");
+        expect(cleared.triggeredBy).toBeUndefined();
         expect(cleared.statuses).toEqual(["failed"]);
-        expect(cleared.retries_only).toBe(true);
+        expect(cleared.retriesOnly).toBe(true);
     });
 
     it("clears the exit-code expression", () => {
-        const f = base({ exit_code: ">100 <150" });
-        expect(clearDimension(f, "exit_code").exit_code).toBeUndefined();
+        const f = base({ exitCode: ">100 <150" });
+        expect(clearDimension(f, "exitCode").exitCode).toBeUndefined();
     });
 
     it("clears both time bounds together", () => {
-        const f = base({ created_after: "2026-01-01T00:00:00Z", created_before: "2026-02-01" });
+        const f = base({ createdAfter: "2026-01-01T00:00:00Z", createdBefore: "2026-02-01" });
         const cleared = clearDimension(f, "time");
-        expect(cleared.created_after).toBeUndefined();
-        expect(cleared.created_before).toBeUndefined();
+        expect(cleared.createdAfter).toBeUndefined();
+        expect(cleared.createdBefore).toBeUndefined();
     });
 });
 
@@ -132,18 +130,18 @@ describe("clearPopoverFilters", () => {
     it("clears every popover dimension but keeps search and sort", () => {
         const f = base({
             search: "nightly",
-            sort_direction: "asc",
+            sortDirection: "asc",
             statuses: ["failed"],
-            task_name: "backup",
-            triggered_by: "cron",
-            exit_code: "1",
-            retries_only: true,
-            created_after: "2026-01-01T00:00:00Z",
+            taskName: "backup",
+            triggeredBy: "cron",
+            exitCode: "1",
+            retriesOnly: true,
+            createdAfter: "2026-01-01T00:00:00Z",
         });
         const cleared = clearPopoverFilters(f);
         expect(activeFilterCount(cleared)).toBe(0);
         expect(cleared.search).toBe("nightly");
-        expect(cleared.sort_direction).toBe("asc");
+        expect(cleared.sortDirection).toBe("asc");
     });
 });
 

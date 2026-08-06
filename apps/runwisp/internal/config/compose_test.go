@@ -111,7 +111,7 @@ func TestComposeExpansion_PerServiceOverrideServiceKnobs(t *testing.T) {
 [compose.myapp.web]
 stop_signal   = "SIGINT"
 exit_codes    = [0, 42]
-start_retries = 1
+restart_attempts = 1
 priority      = 5
 autostart     = false
 `))
@@ -120,7 +120,7 @@ autostart     = false
 	web := findTask(t, cfg, "myapp.web")
 	assert.Equal(t, "SIGINT", web.StopSignal)
 	assert.Equal(t, []int{0, 42}, web.ExitCodes)
-	assert.Equal(t, 1, web.StartRetries)
+	assert.Equal(t, 1, web.RestartAttempts)
 	assert.Equal(t, 5, web.Priority)
 	assert.False(t, web.Autostart)
 
@@ -186,14 +186,14 @@ func TestComposeExpansion_BlockDefaultsNonPolicyKnobs(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `[compose.myapp]
 
 [compose.myapp.defaults]
-start_retries = 3
-exit_codes    = [0, 2]
+restart_attempts = 3
+exit_codes       = [0, 2]
 `))
 	require.NoError(t, err)
 
 	for _, name := range []string{"myapp.web", "myapp.worker", "myapp.db"} {
 		task := findTask(t, cfg, name)
-		assert.Equal(t, 3, task.StartRetries, "%s inherits start_retries", name)
+		assert.Equal(t, 3, task.RestartAttempts, "%s inherits restart_attempts", name)
 		assert.Equal(t, []int{0, 2}, task.ExitCodes, "%s inherits exit_codes", name)
 	}
 }

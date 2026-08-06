@@ -117,7 +117,7 @@ included) and skips the self-signed flow entirely.
 **Leave it off** (the default) when something else already terminates
 TLS — most commonly a reverse proxy (nginx, Caddy, Traefik) doing TLS out
 front and forwarding plain HTTP to RunWisp on a private network. In that
-case set `RUNWISP_TRUST_PROXY` to the proxy's CIDR so the daemon honours
+case set `RUNWISP_TRUSTED_PROXIES` to the proxy's CIDR so the daemon honours
 `X-Forwarded-Proto` and still marks session cookies `Secure`. A
 non-loopback bind on `tls = "off"` prints a loud startup banner — plain
 HTTP on a real network exposes your auth tokens, and that should never be
@@ -424,19 +424,19 @@ story.
 
 ## Environment variables
 
-| Variable              | What it does                                                                                                                                                                                                   |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RUNWISP_PASSWORD`    | Sets the daemon password in memory. When unset, a fresh ephemeral password is minted every boot (and every session rotates with it).                                                                           |
-| `RUNWISP_NO_AUTH`     | `1` or `true` disables authentication entirely — local dev / trusted networks only. Mutually exclusive with `RUNWISP_PASSWORD`. See [Auth](/operations/auth/#running-without-a-password).                      |
-| `RUNWISP_TRUST_PROXY` | Comma-separated CIDR list of reverse proxies whose `X-Forwarded-*` headers the daemon may honor.                                                                                                               |
-| `RUNWISP_CLOUD_TOKEN` | Used by `runwisp cloud` to connect to a control plane. Ignored in standalone mode.                                                                                                                             |
-| `RUNWISP_SOCKET`      | Control socket path. Same effect as `--socket`; the flag wins when both are set.                                                                                                                               |
-| `RUNWISP_CONFIG`      | Config file path. Same effect as `--config`; the flag wins when both are set.                                                                                                                                  |
-| `RUNWISP_DATA`        | Data directory. Same effect as `--data`; the flag wins when both are set.                                                                                                                                      |
-| `RUNWISP_HOST`        | HTTP bind address. Same effect as `--host`; the flag wins when both are set.                                                                                                                                   |
-| `RUNWISP_PORT`        | HTTP port. Same effect as `--port`; the flag wins when both are set. An unparseable or out-of-range value is a startup error.                                                                                  |
-| `RUNWISP_TLS`         | Overrides [`[daemon] tls`](#tls-tls_cert-tls_key) — `auto` or `off`. Applied on every config load, including reload, so it never disagrees with itself and never trips the [reload gate](/operations/reload/). |
-| `RUNWISP_DEBUG_ADDR`  | Opt-in. A **loopback** address (e.g. `127.0.0.1:6060`) on which to serve Go `pprof` memory/CPU profiles. Off by default; a non-loopback address is refused so profiles never reach the network.                |
+| Variable                  | What it does                                                                                                                                                                                                   |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RUNWISP_PASSWORD`        | Sets the daemon password in memory. When unset, a fresh ephemeral password is minted every boot (and every session rotates with it).                                                                           |
+| `RUNWISP_NO_AUTH`         | `1` or `true` disables authentication entirely — local dev / trusted networks only. Mutually exclusive with `RUNWISP_PASSWORD`. See [Auth](/operations/auth/#running-without-a-password).                      |
+| `RUNWISP_TRUSTED_PROXIES` | Comma-separated CIDR list of reverse proxies whose `X-Forwarded-*` headers the daemon may honor.                                                                                                               |
+| `RUNWISP_CLOUD_TOKEN`     | Used by `runwisp cloud` to connect to a control plane. Ignored in standalone mode.                                                                                                                             |
+| `RUNWISP_SOCKET`          | Control socket path. Same effect as `--socket`; the flag wins when both are set.                                                                                                                               |
+| `RUNWISP_CONFIG`          | Config file path. Same effect as `--config`; the flag wins when both are set.                                                                                                                                  |
+| `RUNWISP_DATA`            | Data directory. Same effect as `--data`; the flag wins when both are set.                                                                                                                                      |
+| `RUNWISP_HOST`            | HTTP bind address. Same effect as `--host`; the flag wins when both are set.                                                                                                                                   |
+| `RUNWISP_PORT`            | HTTP port. Same effect as `--port`; the flag wins when both are set. An unparseable or out-of-range value is a startup error.                                                                                  |
+| `RUNWISP_TLS`             | Overrides [`[daemon] tls`](#tls-tls_cert-tls_key) — `auto` or `off`. Applied on every config load, including reload, so it never disagrees with itself and never trips the [reload gate](/operations/reload/). |
+| `RUNWISP_DEBUG_ADDR`      | Opt-in. A **loopback** address (e.g. `127.0.0.1:6060`) on which to serve Go `pprof` memory/CPU profiles. Off by default; a non-loopback address is refused so profiles never reach the network.                |
 
 ## Control socket
 

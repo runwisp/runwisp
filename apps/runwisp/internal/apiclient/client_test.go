@@ -38,18 +38,18 @@ func TestEncodeRunsParams(t *testing.T) {
 				Offset:        20,
 				Status:        "running",
 				TaskName:      "my-task",
-				SortField:     "created_at",
+				SortField:     "createdAt",
 				SortDirection: "desc",
 				Search:        "hello",
 			},
 			want: map[string]string{
-				"limit":          "10",
-				"offset":         "20",
-				"status":         "running",
-				"task_name":      "my-task",
-				"sort_field":     "created_at",
-				"sort_direction": "desc",
-				"search":         "hello",
+				"limit":         "10",
+				"offset":        "20",
+				"status":        "running",
+				"taskName":      "my-task",
+				"sortField":     "createdAt",
+				"sortDirection": "desc",
+				"search":        "hello",
 			},
 		},
 		{
@@ -269,7 +269,7 @@ func TestStopRun(t *testing.T) {
 
 func TestGetRun(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/tasks/my-task/runs/run-1", r.URL.Path)
+		assert.Equal(t, "/api/runs/run-1", r.URL.Path)
 		json.NewEncoder(w).Encode(model.Run{ID: "run-1", TaskName: "my-task"})
 	}))
 	defer srv.Close()

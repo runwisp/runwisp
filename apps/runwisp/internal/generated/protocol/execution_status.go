@@ -13,8 +13,8 @@ type ExecutionStatus uint
 
 const (
 	ExecutionStatusRunning ExecutionStatus = iota
-	ExecutionStatusOk
-	ExecutionStatusErr
+	ExecutionStatusSucceeded
+	ExecutionStatusFailed
 	ExecutionStatusStopped
 	ExecutionStatusTimeout
 )
@@ -27,13 +27,13 @@ func (op ExecutionStatus) Value() any {
 	return ExecutionStatusValues[op]
 }
 
-var ExecutionStatusValues = []any{"running", "ok", "err", "stopped", "timeout"}
+var ExecutionStatusValues = []any{"running", "succeeded", "failed", "stopped", "timeout"}
 var ValuesToExecutionStatus = map[any]ExecutionStatus{
-	ExecutionStatusValues[ExecutionStatusRunning]: ExecutionStatusRunning,
-	ExecutionStatusValues[ExecutionStatusOk]:      ExecutionStatusOk,
-	ExecutionStatusValues[ExecutionStatusErr]:     ExecutionStatusErr,
-	ExecutionStatusValues[ExecutionStatusStopped]: ExecutionStatusStopped,
-	ExecutionStatusValues[ExecutionStatusTimeout]: ExecutionStatusTimeout,
+	ExecutionStatusValues[ExecutionStatusRunning]:   ExecutionStatusRunning,
+	ExecutionStatusValues[ExecutionStatusSucceeded]: ExecutionStatusSucceeded,
+	ExecutionStatusValues[ExecutionStatusFailed]:    ExecutionStatusFailed,
+	ExecutionStatusValues[ExecutionStatusStopped]:   ExecutionStatusStopped,
+	ExecutionStatusValues[ExecutionStatusTimeout]:   ExecutionStatusTimeout,
 }
 
 func (op *ExecutionStatus) UnmarshalJSON(raw []byte) error {

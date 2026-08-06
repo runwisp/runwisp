@@ -112,18 +112,18 @@ func (t *ExecutionTracker) FlushPending(send func(any) error) {
 // onto the closest fit (stopped for interruptions, err for everything that did
 // not complete successfully).
 var terminalReasonMap = map[model.EndReason]protocol.ExecutionStatus{
-	model.ReasonSuccess:       protocol.ExecutionStatusOk,
+	model.ReasonSuccess:       protocol.ExecutionStatusSucceeded,
 	model.ReasonStopped:       protocol.ExecutionStatusStopped,
 	model.ReasonTimeout:       protocol.ExecutionStatusTimeout,
-	model.ReasonFailed:        protocol.ExecutionStatusErr,
-	model.ReasonCrashed:       protocol.ExecutionStatusErr,
-	model.ReasonLogOverflow:   protocol.ExecutionStatusErr,
-	model.ReasonStartFailed:   protocol.ExecutionStatusErr,
+	model.ReasonFailed:        protocol.ExecutionStatusFailed,
+	model.ReasonCrashed:       protocol.ExecutionStatusFailed,
+	model.ReasonLogOverflow:   protocol.ExecutionStatusFailed,
+	model.ReasonStartFailed:   protocol.ExecutionStatusFailed,
 	model.ReasonDaemonStopped: protocol.ExecutionStatusStopped,
-	model.ReasonSkipped:       protocol.ExecutionStatusErr,
-	model.ReasonQueueFull:     protocol.ExecutionStatusErr,
-	model.ReasonDSTSkipped:    protocol.ExecutionStatusErr,
-	model.ReasonMissed:        protocol.ExecutionStatusErr,
+	model.ReasonSkipped:       protocol.ExecutionStatusFailed,
+	model.ReasonQueueFull:     protocol.ExecutionStatusFailed,
+	model.ReasonDSTSkipped:    protocol.ExecutionStatusFailed,
+	model.ReasonMissed:        protocol.ExecutionStatusFailed,
 }
 
 func mapRunToExecutionUpdate(run *model.Run) *protocol.ExecutionUpdateMessage {
@@ -144,7 +144,7 @@ func mapRunToExecutionUpdate(run *model.Run) *protocol.ExecutionUpdateMessage {
 		// Fail safe: a terminal reason not yet in the map (e.g. one added later)
 		// must still report terminally rather than silently dropping the update
 		// and stranding the execution as "running" on the cloud.
-		status = protocol.ExecutionStatusErr
+		status = protocol.ExecutionStatusFailed
 	}
 	return ptr(NewExecutionUpdateMessage(executionID, status, ptr(run.ExitCode), run.StartAt, run.EndAt))
 }

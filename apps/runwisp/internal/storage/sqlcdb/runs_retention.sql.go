@@ -12,7 +12,7 @@ import (
 
 const selectOldRunsByAge = `-- name: SelectOldRunsByAge :many
 
-SELECT id, external_execution_id, task_name, status, end_reason, exit_code, start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at FROM runs
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at FROM runs
 WHERE task_name = ? AND created_at < ? AND status = 'ended' AND deleted_at IS NULL
 LIMIT ?
 `
@@ -43,8 +43,8 @@ func (q *Queries) SelectOldRunsByAge(ctx context.Context, arg SelectOldRunsByAge
 			&i.Status,
 			&i.EndReason,
 			&i.ExitCode,
-			&i.StartAt,
-			&i.EndAt,
+			&i.StartedAt,
+			&i.EndedAt,
 			&i.TriggeredBy,
 			&i.CreatedAt,
 			&i.RetryAttempt,
@@ -67,7 +67,7 @@ func (q *Queries) SelectOldRunsByAge(ctx context.Context, arg SelectOldRunsByAge
 }
 
 const selectOldRunsByCount = `-- name: SelectOldRunsByCount :many
-SELECT id, external_execution_id, task_name, status, end_reason, exit_code, start_at, end_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at FROM runs
+SELECT id, external_execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at FROM runs
 WHERE task_name = ? AND status = 'ended' AND deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT ? OFFSET ?
@@ -97,8 +97,8 @@ func (q *Queries) SelectOldRunsByCount(ctx context.Context, arg SelectOldRunsByC
 			&i.Status,
 			&i.EndReason,
 			&i.ExitCode,
-			&i.StartAt,
-			&i.EndAt,
+			&i.StartedAt,
+			&i.EndedAt,
 			&i.TriggeredBy,
 			&i.CreatedAt,
 			&i.RetryAttempt,

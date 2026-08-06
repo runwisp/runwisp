@@ -75,33 +75,33 @@ type Task struct {
 	// like the queue policy. Task-only (services start every instance at boot)
 	// and a no-op without a cron.
 	Jitter         time.Duration   `toml:"-" json:"jitter,omitempty" doc:"Cap how far a cron task's start may slip so tasks sharing a fire time take turns through a daemon-wide one-at-a-time gate instead of stampeding; a run starts as soon as the gate frees and slips up to this window only under contention, in nanoseconds"`
-	APITrigger     bool            `toml:"api_trigger,omitempty"        json:"api_trigger"`
-	CatchUp        MissedRunPolicy `toml:"catch_up,omitempty"           json:"catch_up,omitempty" enum:"latest,all,skip" doc:"What to do when cron ticks are missed during downtime"`
-	MaxCatchUpRuns int             `toml:"max_catch_up_runs,omitempty"  json:"max_catch_up_runs,omitempty" doc:"Cap on catch-up runs triggered when catch_up = all"`
+	APITrigger     bool            `toml:"api_trigger,omitempty"        json:"apiTrigger"`
+	CatchUp        MissedRunPolicy `toml:"catch_up,omitempty"           json:"catchUp,omitempty" enum:"latest,all,skip" doc:"What to do when cron ticks are missed during downtime"`
+	MaxCatchUpRuns int             `toml:"max_catch_up_runs,omitempty"  json:"maxCatchUpRuns,omitempty" doc:"Cap on catch-up runs triggered when catch_up = all"`
 	// RunOnStart fires the task once at daemon boot, independent of cron and
 	// catch-up. The @reboot equivalent. Task-only — services already start every
 	// instance at boot.
-	RunOnStart bool `toml:"-" json:"run_on_start,omitempty" doc:"For tasks: fire once at daemon startup, in addition to any cron schedule"`
+	RunOnStart bool `toml:"-" json:"runOnStart,omitempty" doc:"For tasks: fire once at daemon startup, in addition to any cron schedule"`
 
 	Timeout       time.Duration     `toml:"-"                       json:"timeout,omitempty" doc:"Per-run timeout in nanoseconds"`
-	GracefulStop  time.Duration     `toml:"-"                       json:"graceful_stop,omitempty" doc:"Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds"`
-	StopSignal    string            `toml:"-"                       json:"stop_signal,omitempty" enum:"SIGTERM,SIGINT,SIGQUIT,SIGHUP,SIGKILL,SIGUSR1,SIGUSR2" doc:"Signal sent to stop a run before SIGKILL; defaults to SIGTERM"`
+	GracefulStop  time.Duration     `toml:"-"                       json:"gracefulStop,omitempty" doc:"Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds"`
+	StopSignal    string            `toml:"-"                       json:"stopSignal,omitempty" enum:"SIGTERM,SIGINT,SIGQUIT,SIGHUP,SIGKILL,SIGUSR1,SIGUSR2" doc:"Signal sent to stop a run before SIGKILL; defaults to SIGTERM"`
 	Restart       RestartPolicy     `toml:"restart,omitempty"       json:"restart,omitempty" enum:"never,always,on_failure" doc:"Whether and when a task is restarted after completion"`
-	MaxConcurrent int               `toml:"max_concurrent,omitempty" json:"max_concurrent,omitempty" doc:"Maximum overlapping runs allowed for this task"`
-	QueueMax      int               `toml:"queue_max,omitempty"     json:"queue_max,omitempty" doc:"Maximum runs that can wait when on_overlap = queue"`
-	OnOverlap     ConcurrencyPolicy `toml:"on_overlap,omitempty"    json:"on_overlap,omitempty" enum:"queue,skip,terminate" doc:"How overlapping runs are handled"`
+	MaxConcurrent int               `toml:"max_concurrent,omitempty" json:"maxConcurrent,omitempty" doc:"Maximum overlapping runs allowed for this task"`
+	QueueMax      int               `toml:"queue_max,omitempty"     json:"queueMax,omitempty" doc:"Maximum runs that can wait when on_overlap = queue"`
+	OnOverlap     ConcurrencyPolicy `toml:"on_overlap,omitempty"    json:"onOverlap,omitempty" enum:"queue,skip,terminate" doc:"How overlapping runs are handled"`
 
 	Instances      int           `toml:"instances,omitempty"      json:"instances,omitempty" doc:"For services: number of always-running instances"`
-	RestartDelay   time.Duration `toml:"-"                        json:"restart_delay,omitempty" doc:"Base delay before each restart, in nanoseconds"`
-	RestartBackoff string        `toml:"restart_backoff,omitempty" json:"restart_backoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive restarts"`
+	RestartDelay   time.Duration `toml:"-"                        json:"restartDelay,omitempty" doc:"Base delay before each restart, in nanoseconds"`
+	RestartBackoff string        `toml:"restart_backoff,omitempty" json:"restartBackoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive restarts"`
 	// HealthyAfter is the uptime an instance must reach to count as healthy.
 	// Reaching it both resets the restart-backoff counter and clears the
-	// failed-start streak; fast failures below it accrue toward StartRetries.
+	// failed-start streak; fast failures below it accrue toward RestartAttempts.
 	// Service-only.
-	HealthyAfter time.Duration `toml:"-" json:"healthy_after,omitempty" doc:"For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward start_retries, in nanoseconds"`
-	// StartRetries is the number of consecutive fast failures the supervisor
+	HealthyAfter time.Duration `toml:"-" json:"healthyAfter,omitempty" doc:"For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds"`
+	// RestartAttempts is the number of consecutive fast failures the supervisor
 	// tolerates before marking an instance FATAL and giving up. Service-only.
-	StartRetries int `toml:"-" json:"start_retries,omitempty" doc:"For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting"`
+	RestartAttempts int `toml:"-" json:"restartAttempts,omitempty" doc:"For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting"`
 	// Priority orders service start at boot only (lower starts first; ties break
 	// on name). It is not a dependency or readiness gate. Service-only.
 	Priority int `toml:"-" json:"priority,omitempty" doc:"For services: boot start order, lowest first (name breaks ties). Start order only — not a dependency."`
@@ -113,29 +113,29 @@ type Task struct {
 	// starts at boot. Boot ordering only — not a workflow DAG: no cascade
 	// restarts, no run-to-completion edges. Service-only. A dependent that
 	// never sees its dep go healthy starts anyway after a bounded window.
-	DependsOn []string `toml:"-" json:"depends_on,omitempty" doc:"For services: service names that must be healthy before this one starts at boot — boot ordering only, not a workflow DAG"`
+	DependsOn []string `toml:"-" json:"dependsOn,omitempty" doc:"For services: service names that must be healthy before this one starts at boot — boot ordering only, not a workflow DAG"`
 
-	RetryAttempts int           `toml:"retry_attempts,omitempty" json:"retry_attempts,omitempty"`
-	RetryDelay    time.Duration `toml:"-"                        json:"retry_delay,omitempty" doc:"Base delay before each retry, in nanoseconds"`
-	RetryBackoff  string        `toml:"retry_backoff,omitempty"  json:"retry_backoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive retries"`
+	RetryAttempts int           `toml:"retry_attempts,omitempty" json:"retryAttempts,omitempty"`
+	RetryDelay    time.Duration `toml:"-"                        json:"retryDelay,omitempty" doc:"Base delay before each retry, in nanoseconds"`
+	RetryBackoff  string        `toml:"retry_backoff,omitempty"  json:"retryBackoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive retries"`
 
 	// ExitCodes lists the process exit codes treated as success. Defaults to
 	// [0]. Any code not in the list ends the run as failed (which then drives
 	// restart=on_failure, retry, and notifications).
-	ExitCodes []int `toml:"-" json:"exit_codes,omitempty" doc:"Process exit codes treated as success; defaults to [0]"`
+	ExitCodes []int `toml:"-" json:"exitCodes,omitempty" doc:"Process exit codes treated as success; defaults to [0]"`
 
-	LogMaxSize int64  `toml:"-"                     json:"log_max_size,omitempty" doc:"Per-run log size cap in bytes"`
-	LogOnFull  string `toml:"log_on_full,omitempty" json:"log_on_full,omitempty" enum:"drop_new,drop_old,kill_task" doc:"What to do when log output exceeds log_max_size"`
+	LogMaxSize int64  `toml:"-"                     json:"logMaxSize,omitempty" doc:"Per-run log size cap in bytes"`
+	LogOnFull  string `toml:"log_on_full,omitempty" json:"logOnFull,omitempty" enum:"drop_new,drop_old,kill_task" doc:"What to do when log output exceeds log_max_size"`
 
-	KeepRuns int           `toml:"keep_runs,omitempty" json:"keep_runs,omitempty" doc:"Row-count retention cap; 0 means no cap was configured"`
-	KeepFor  time.Duration `toml:"-"                   json:"keep_for,omitempty" doc:"Retention window in nanoseconds; 0 means no cap was configured"`
+	KeepRuns *int          `toml:"keep_runs,omitempty" json:"keepRuns,omitempty" doc:"Row-count retention cap; 0 keeps no completed runs, omitted inherits the [defaults] value (or no cap)"`
+	KeepFor  time.Duration `toml:"-"                   json:"keepFor,omitempty" doc:"Retention window in nanoseconds; 0 means no cap was configured"`
 
 	Env     map[string]string `toml:"env,omitempty"      json:"env,omitempty"      doc:"Environment variables overlaid on the task's process env. Values are visible to authenticated operators in the API/UI; env_file values merge in beneath the inline entries."`
-	EnvFile string            `toml:"env_file,omitempty" json:"env_file,omitempty" doc:"Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env."`
+	EnvFile string            `toml:"env_file,omitempty" json:"envFile,omitempty" doc:"Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env."`
 	// Secrets holds [tasks.*.secrets] plus secrets_file-derived pairs. Hidden
 	// from JSON/TOML so values never leak to API/UI/cloud serialization.
 	Secrets     map[string]string `toml:"-" json:"-"`
-	SecretsFile string            `toml:"secrets_file,omitempty" json:"secrets_file,omitempty" doc:"Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values never leave the daemon."`
+	SecretsFile string            `toml:"secrets_file,omitempty" json:"secretsFile,omitempty" doc:"Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values never leave the daemon."`
 
 	// Parameters declares per-execution inputs an operator may supply at manual
 	// trigger time (env vars, positional args, options, flags). Scheduled
@@ -156,7 +156,7 @@ type Task struct {
 	// SourceFile is the absolute path of the file the definition came from, for
 	// the sources where naming it is the useful part: which crontab a cron-sourced
 	// task lives in, or which staging file to promote out of. Empty for native.
-	SourceFile string `toml:"-" json:"source_file,omitempty" doc:"Absolute path of the crontab or staging file this task's definition was read from; empty for hand-authored TOML"`
+	SourceFile string `toml:"-" json:"sourceFile,omitempty" doc:"Absolute path of the crontab or staging file this task's definition was read from; empty for hand-authored TOML"`
 	// HeldBy records that something other than RunWisp owns this task's schedule,
 	// so the scheduler must not register it. Derived at config load from the
 	// machine's state — currently only "a live cron daemon reads this crontab
@@ -167,7 +167,7 @@ type Task struct {
 	// changes what fires, so a flip has to reach the reconciler as a schedule
 	// change and get the cron entry registered (or dropped). Masking it would turn
 	// "held, and visibly so" into "silently never runs".
-	HeldBy HoldReason `toml:"-" json:"held_by,omitempty" enum:"cron" doc:"Why this task is loaded but not on the scheduler: 'cron' means a live system cron daemon still reads the crontab it came from and is running it, so RunWisp stands down. Manual triggers still work. Empty means RunWisp owns the schedule."`
+	HeldBy HoldReason `toml:"-" json:"heldBy,omitempty" enum:"cron" doc:"Why this task is loaded but not on the scheduler: 'cron' means a live system cron daemon still reads the crontab it came from and is running it, so RunWisp stands down. Manual triggers still work. Empty means RunWisp owns the schedule."`
 
 	// WorkingDir is resolved to an absolute path at config load (relative to
 	// the runwisp.toml directory). Empty inherits the daemon's working dir.
@@ -175,7 +175,7 @@ type Task struct {
 	// One case stays literal: a `~` on a task that also sets RunUser means that
 	// user's home, which the executor resolves per run from the credential it
 	// looked up. See config.homeIsTheRunUsers and executor.resolveWorkingDir.
-	WorkingDir string `toml:"-" json:"working_dir,omitempty" doc:"Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal \"~\" means the run-as user's home, resolved at run time"`
+	WorkingDir string `toml:"-" json:"workingDir,omitempty" doc:"Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal \"~\" means the run-as user's home, resolved at run time"`
 	// Shell is the interpreter for `run` scripts, defaulting to /bin/sh. Must
 	// be an absolute path. The invocation is `<shell> -e -c <script>` when the
 	// interpreter is a recognised POSIX shell (ShellSupportsErrexit), so a
@@ -188,7 +188,7 @@ type Task struct {
 	// EnvBase selects what the run's environment starts from — the daemon's own
 	// ("inherit", the default) or crond's minimal set ("clean"). Host shell runs
 	// only; the container backends already build env from task.Env/Secrets alone.
-	EnvBase EnvBase `toml:"-" json:"env_base,omitempty" doc:"What the run's environment starts from: 'inherit' (the daemon's, the default) or 'clean' (PATH, SHELL, HOME, USER/LOGNAME only, as crond gives a job)"`
+	EnvBase EnvBase `toml:"-" json:"envBase,omitempty" doc:"What the run's environment starts from: 'inherit' (the daemon's, the default) or 'clean' (PATH, SHELL, HOME, USER/LOGNAME only, as crond gives a job)"`
 	// RunUser drops the run's process to another OS user (and optionally group)
 	// in `user` or `user:group` form; names or numeric ids are accepted on either
 	// side. Empty runs as the daemon's own uid/gid. Switching users needs the
@@ -196,12 +196,12 @@ type Task struct {
 	// account may not exist when the config is validated. Rejected on
 	// compose-backed tasks (the container runtime owns the container's user).
 	RunUser string `toml:"-" json:"user,omitempty" doc:"Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root."`
-	// NotifyOnMissed gates whether a missed-run alert (run.missed) reaches the
+	// TreatMissedAsFailure gates whether a missed-run alert (run.missed) reaches the
 	// failure subscribers for this task. A nil pointer means "not configured"
 	// during loading; ApplyDefaults resolves it to a concrete value (default
 	// true, or the [defaults] value). Config-internal like notify_on_failure —
 	// never serialized to API/UI/cloud. Read it via NotifiesOnMissed.
-	NotifyOnMissed *bool `toml:"-" json:"-"`
+	TreatMissedAsFailure *bool `toml:"-" json:"-"`
 
 	// Ephemeral marks a task the daemon registered at runtime for a single
 	// cloud-dispatched inline execution (never from TOML, never in the task
@@ -229,7 +229,7 @@ func (t *Task) Schedulable() bool { return t.Cron != "" && !t.Held() }
 // Defaults to true when unset so a Task literal built outside the config loader
 // (tests, ad-hoc dispatch) alerts by default.
 func (t *Task) NotifiesOnMissed() bool {
-	return t.NotifyOnMissed == nil || *t.NotifyOnMissed
+	return t.TreatMissedAsFailure == nil || *t.TreatMissedAsFailure
 }
 
 // ResolvedExecutionDef returns the runtime execution definition for the task.
@@ -438,16 +438,16 @@ type DaemonInfo struct {
 	Version          string      `json:"version"`
 	Fingerprint      string      `json:"fingerprint"`
 	Port             int         `json:"port"`
-	ExternalURL      string      `json:"external_url"`
-	CloudEnabled     bool        `json:"cloud_enabled"`
-	SchedulingActive bool        `json:"scheduling_active"`
-	ServiceManaged   bool        `json:"service_managed"`
-	AuthDisabled     bool        `json:"auth_disabled"`
-	ConfigLoadedAt   time.Time   `json:"config_loaded_at"`
-	ConfigStale      bool        `json:"config_stale"`
-	ConfigWarnings   []string    `json:"config_warnings,omitempty" doc:"Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads."`
-	ResolvedTimezone string      `json:"resolved_timezone"`
-	TimezoneSource   string      `json:"timezone_source" enum:"config,system"`
+	ExternalURL      string      `json:"externalUrl"`
+	CloudEnabled     bool        `json:"cloudEnabled"`
+	SchedulingActive bool        `json:"schedulingActive"`
+	ServiceManaged   bool        `json:"serviceManaged"`
+	AuthDisabled     bool        `json:"authDisabled"`
+	ConfigLoadedAt   time.Time   `json:"configLoadedAt"`
+	ConfigStale      bool        `json:"configStale"`
+	ConfigWarnings   []string    `json:"configWarnings,omitempty" doc:"Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads."`
+	ResolvedTimezone string      `json:"resolvedTimezone"`
+	TimezoneSource   string      `json:"timezoneSource" enum:"config,system"`
 	Tasks            []TaskBrief `json:"tasks"`
 	Capabilities     []CapInfo   `json:"capabilities"`
 }
@@ -463,9 +463,9 @@ type InstanceInfo struct {
 	Version     string `json:"version"`
 	Fingerprint string `json:"fingerprint"`
 	Pid         int    `json:"pid"`
-	DataDir     string `json:"data_dir"`
-	ConfigPath  string `json:"config_path"`
-	SocketPath  string `json:"socket_path"`
+	DataDir     string `json:"dataDir"`
+	ConfigPath  string `json:"configPath"`
+	SocketPath  string `json:"socketPath"`
 }
 
 // TaskBrief is a trimmed task descriptor exposed via the API.
@@ -474,17 +474,17 @@ type TaskBrief struct {
 	Kind          TaskKind          `json:"kind,omitempty" enum:"task,service"`
 	Group         string            `json:"group,omitempty"`
 	Cron          string            `json:"cron,omitempty"`
-	APITrigger    bool              `json:"api_trigger"`
-	CatchUp       MissedRunPolicy   `json:"catch_up,omitempty"`
+	APITrigger    bool              `json:"apiTrigger"`
+	CatchUp       MissedRunPolicy   `json:"catchUp,omitempty"`
 	Restart       RestartPolicy     `json:"restart,omitempty"`
-	MaxConcurrent int               `json:"max_concurrent,omitempty"`
-	OnOverlap     ConcurrencyPolicy `json:"on_overlap,omitempty"`
+	MaxConcurrent int               `json:"maxConcurrent,omitempty"`
+	OnOverlap     ConcurrencyPolicy `json:"onOverlap,omitempty"`
 	Instances     int               `json:"instances,omitempty"`
-	DependsOn     []string          `json:"depends_on,omitempty"`
+	DependsOn     []string          `json:"dependsOn,omitempty"`
 	Compose       *TaskComposeRef   `json:"compose,omitempty"`
 	Source        TaskSource        `json:"source,omitempty" enum:"staged,cron"`
-	SourceFile    string            `json:"source_file,omitempty"`
-	HeldBy        HoldReason        `json:"held_by,omitempty" enum:"cron" doc:"Set when something other than RunWisp owns this task's schedule, so it is listed but not fired on its cron. 'cron' means a live system cron daemon still reads its crontab. Manual triggers still work."`
+	SourceFile    string            `json:"sourceFile,omitempty"`
+	HeldBy        HoldReason        `json:"heldBy,omitempty" enum:"cron" doc:"Set when something other than RunWisp owns this task's schedule, so it is listed but not fired on its cron. 'cron' means a live system cron daemon still reads its crontab. Manual triggers still work."`
 	Parameters    []TaskParam       `json:"parameters,omitempty"`
 }
 
@@ -521,7 +521,7 @@ func NewTaskBrief(task *Task) TaskBrief {
 type TaskComposeRef struct {
 	File        string `json:"file"`
 	Service     string `json:"service,omitempty"`
-	ProjectName string `json:"project_name"`
+	ProjectName string `json:"projectName"`
 }
 
 // CapInfo describes a daemon capability.

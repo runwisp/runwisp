@@ -338,7 +338,7 @@ func (sm *StreamManager) FetchTaskSummary(taskName string) tea.Cmd {
 	return func() tea.Msg {
 		runs, total, err := client.ListRunsByTask(taskName, apiclient.RunsParams{
 			Limit:         taskSummaryWindow,
-			SortField:     "created_at",
+			SortField:     "createdAt",
 			SortDirection: "desc",
 		})
 		if err != nil {

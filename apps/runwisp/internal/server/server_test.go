@@ -225,26 +225,6 @@ func TestGetRun(t *testing.T) {
 	run := &model.Run{ID: id, TaskName: "task1"}
 	repo.On("GetRun", mock.Anything, id).Return(run, nil)
 
-	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id, nil)
-	w := httptest.NewRecorder()
-
-	addAuth(req, s)
-	s.router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	var resp model.Run
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
-	require.NoError(t, err)
-	assert.Equal(t, id, resp.ID)
-}
-
-func TestGetRunByID(t *testing.T) {
-	s, repo, _, _ := setupServer(t)
-
-	id := ulid.Make().String()
-	run := &model.Run{ID: id, TaskName: "task1"}
-	repo.On("GetRun", mock.Anything, id).Return(run, nil)
-
 	// The task-agnostic permalink — no task name in the path.
 	req := httptest.NewRequest("GET", "/api/runs/"+id, nil)
 	w := httptest.NewRecorder()
@@ -370,7 +350,7 @@ func TestStopRun(t *testing.T) {
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusNoContent, w.Code)
 }
 
 func TestGetAllRuns_RepoError(t *testing.T) {
@@ -493,7 +473,7 @@ func TestGetRunNotFound(t *testing.T) {
 	id := ulid.Make().String()
 	repo.On("GetRun", mock.Anything, id).Return(nil, storage.ErrNotFound)
 
-	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id, nil)
+	req := httptest.NewRequest("GET", "/api/runs/"+id, nil)
 	w := httptest.NewRecorder()
 
 	addAuth(req, s)
@@ -505,7 +485,7 @@ func TestGetRunNotFound(t *testing.T) {
 func TestInvalidRunID(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 
-	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/invalid-id", nil)
+	req := httptest.NewRequest("GET", "/api/runs/invalid-id", nil)
 	w := httptest.NewRecorder()
 
 	addAuth(req, s)
@@ -548,7 +528,7 @@ func TestAuthStatus_ReportsAuthRequired(t *testing.T) {
 	s.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), `"auth_required":true`)
+	assert.Contains(t, w.Body.String(), `"authRequired":true`)
 }
 
 func TestCHAPLogin_Success(t *testing.T) {
@@ -816,12 +796,7 @@ func TestRestartServiceHTTP_Success(t *testing.T) {
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	var body struct {
-		Message string `json:"message"`
-	}
-	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
-	assert.Equal(t, "Service instances restarting", body.Message)
+	assert.Equal(t, http.StatusNoContent, w.Code)
 }
 
 func TestRestartServiceHTTP_TaskNotFound(t *testing.T) {
@@ -857,12 +832,7 @@ func TestStopServiceHTTP_Success(t *testing.T) {
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	var body struct {
-		Message string `json:"message"`
-	}
-	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
-	assert.Equal(t, "Service stopped", body.Message)
+	assert.Equal(t, http.StatusNoContent, w.Code)
 }
 
 func TestStopServiceHTTP_TaskNotFound(t *testing.T) {

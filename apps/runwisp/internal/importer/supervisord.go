@@ -433,7 +433,7 @@ func (sd *supervisordState) applyServiceKey(b *block, key, value string, ref ite
 		}
 	case "startretries":
 		if n, err := strconv.Atoi(value); err == nil {
-			b.set("start_retries", strconv.Itoa(n))
+			b.set("restart_attempts", strconv.Itoa(n))
 		} else {
 			sd.noteUnreadable(ref, key, value)
 		}

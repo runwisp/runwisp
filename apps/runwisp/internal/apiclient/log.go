@@ -88,7 +88,7 @@ func (c *Client) SearchLogs(taskName string, opts SearchLogsOptions) (server.Log
 		q.Set("case", "true")
 	}
 	if opts.RunID != "" {
-		q.Set("run_id", opts.RunID)
+		q.Set("runId", opts.RunID)
 	}
 	if opts.Limit > 0 {
 		q.Set("limit", fmt.Sprintf("%d", opts.Limit))

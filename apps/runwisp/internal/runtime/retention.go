@@ -80,9 +80,10 @@ func (cleaner *RetentionCleaner) cleanOldRuns(ctx context.Context) {
 
 	totalDeleted := 0
 	cleaner.tasks.Range(func(_ string, task *model.Task) bool {
-		// KeepRuns: 0 = inherited "no cap"; -1 = explicit unlimited; >0 = cap.
-		// KeepFor:  0 = inherited "no cap"; >0 = cap. Either positive enables retention.
-		if task.KeepFor <= 0 && task.KeepRuns <= 0 {
+		// KeepRuns: nil = no cap; 0 = keep no completed runs; >0 = cap.
+		// KeepFor:  0 = no cap; >0 = cap. Either a set KeepRuns or a positive
+		// KeepFor enables retention.
+		if task.KeepFor <= 0 && task.KeepRuns == nil {
 			return true
 		}
 

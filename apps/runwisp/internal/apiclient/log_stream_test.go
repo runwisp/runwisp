@@ -35,7 +35,7 @@ func TestStreamLogLines_ParsesEvents(t *testing.T) {
 
 		// Event 2: rotated
 		fmt.Fprintln(w, "event: rotated")
-		fmt.Fprintln(w, `data: {"first_available":42}`)
+		fmt.Fprintln(w, `data: {"firstAvailable":42}`)
 		fmt.Fprintln(w)
 
 		// Event 3: dropped
@@ -46,7 +46,7 @@ func TestStreamLogLines_ParsesEvents(t *testing.T) {
 		// Event 4: id-prefix line is ignored, then done
 		fmt.Fprintln(w, "id: 42")
 		fmt.Fprintln(w, "event: done")
-		fmt.Fprintln(w, `data: {"final_line":99}`)
+		fmt.Fprintln(w, `data: {"finalLine":99}`)
 		fmt.Fprintln(w)
 	}))
 	defer srv.Close()
@@ -96,7 +96,7 @@ func TestStreamLogLines_NoReplayLimitOmitsQueryParam(t *testing.T) {
 		gotQuery = r.URL.RawQuery
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprintln(w, "event: done")
-		fmt.Fprintln(w, `data: {"final_line":0}`)
+		fmt.Fprintln(w, `data: {"finalLine":0}`)
 		fmt.Fprintln(w)
 	}))
 	defer srv.Close()

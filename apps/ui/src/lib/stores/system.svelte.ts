@@ -58,19 +58,19 @@ function createSystemStore() {
             version = sys.version;
             uptime = sys.uptime;
             host = sys.host;
-            cpus = sys.cpu_cores;
-            memTotal = sys.mem_total;
-            cpuUsage = sys.cpu_usage;
-            memUsage = sys.mem_usage;
+            cpus = sys.cpuCores;
+            memTotal = sys.memTotal;
+            cpuUsage = sys.cpuUsage;
+            memUsage = sys.memUsage;
             os = sys.os;
             arch = sys.arch;
-            workDir = sys.work_dir;
+            workDir = sys.workDir;
             fingerprint = info.fingerprint;
-            timezone = info.resolved_timezone;
-            timezoneSource = info.timezone_source;
-            configStale = info.config_stale;
-            cloudEnabled = info.cloud_enabled;
-            schedulingActive = info.scheduling_active;
+            timezone = info.resolvedTimezone;
+            timezoneSource = info.timezoneSource;
+            configStale = info.configStale;
+            cloudEnabled = info.cloudEnabled;
+            schedulingActive = info.schedulingActive;
         } catch (err) {
             if (err instanceof AuthRequiredError) return;
             // silent — system stats are secondary
@@ -86,7 +86,7 @@ function createSystemStore() {
                     const parsed = systemEventSchema.parse(JSON.parse(data));
                     cpuUsage = parsed.sample.cpu;
                     memUsage = parsed.sample.mem;
-                    memTotal = parsed.sample.mem_total;
+                    memTotal = parsed.sample.memTotal;
                     uptime = parsed.uptime;
                 } catch (e) {
                     logger.warn("Invalid system SSE payload", e);

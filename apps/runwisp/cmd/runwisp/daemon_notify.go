@@ -140,7 +140,7 @@ func initNotify(
 	return notifyBundle{Service: svc, Hub: hub}, nil
 }
 
-// mutedMissedTasks collects the names of tasks with notify_on_missed = false.
+// mutedMissedTasks collects the names of tasks with treat_missed_as_failure = false.
 // The notify Service drops run.missed events for these at ingress, leaving the
 // browsable missed run row untouched. Returns nil when none are muted so the
 // common case allocates nothing.
