@@ -267,19 +267,20 @@ the distinction properly.
 
 Two things it needs before `docker run` works from inside a task:
 
-1. **The Docker socket**, mounted in:
-   `-v /var/run/docker.sock:/var/run/docker.sock`.
-2. **A Docker CLI.** The official `runwisp/runwisp` image doesn't ship
-   one, and neither the socket mount nor anything in your TOML changes
-   that — so either bake it in on top of the image
-   (`RUN apk add --no-cache docker-cli docker-cli-compose`) or run the
-   daemon on the host instead. This applies to
-   [`[compose.*]`](/configuration/compose/) too: without the CLI those
-   units fail every run with `docker compose unavailable`. See
-   [Docker](/getting-started/docker/#your-tasks-run-inside-this-container)
-   for why the image is this bare and how to extend it.
+1. **A Docker CLI in the image.** The plain `runwisp/runwisp` tags don't
+   ship one — pull a `-docker` tag instead
+   (`runwisp/runwisp:latest-docker`) and it's already there, Compose
+   plugin included. Without it, `docker run` and
+   [`[compose.*]`](/configuration/compose/) units alike fail every run
+   with `docker compose unavailable`.
+2. **The Docker socket**, mounted in:
+   `-v /var/run/docker.sock:/var/run/docker.sock`. Without it, both fail
+   instead with a connection error against `/var/run/docker.sock`.
 
-Once the CLI is in, `docker run` isn't your only option — a task can also
+See [Docker](/getting-started/docker/#your-tasks-run-inside-this-container)
+for what else is (and isn't) in the image.
+
+`docker run` isn't your only option — a task can also
 `docker exec` into a container you already have running, which skips
 installing the app's toolchain twice. That's
 [running the task in another container](/getting-started/docker/#run-the-task-in-another-container).

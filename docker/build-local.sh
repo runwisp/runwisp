@@ -17,6 +17,8 @@
 #
 # Options:
 #   --base alpine|debian     base image to build (default: alpine)
+#   --variant plain|docker   plain, or plain + a Docker CLI/Compose plugin for
+#                            tasks that reach into other containers (default: plain)
 #   --platform <list>        comma-separated platforms (default: linux/amd64)
 #   --dist <dir>             reuse an existing dist/ dir (dist/linux-x64/runwisp,
 #                            dist/linux-arm64/runwisp) instead of building from source
@@ -35,6 +37,7 @@ script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd -- "${script_dir}/.." && pwd)
 
 base="alpine"
+variant="plain"
 platform="linux/amd64"
 dist_dir=""
 version=""
@@ -46,6 +49,10 @@ while [[ $# -gt 0 ]]; do
 	case "$1" in
 	--base)
 		base="$2"
+		shift 2
+		;;
+	--variant)
+		variant="$2"
 		shift 2
 		;;
 	--platform)
@@ -83,6 +90,14 @@ case "${base}" in
 alpine | debian) ;;
 *)
 	printf 'Unknown --base %s (must be alpine or debian)\n' "${base}" >&2
+	exit 2
+	;;
+esac
+
+case "${variant}" in
+plain | docker) ;;
+*)
+	printf 'Unknown --variant %s (must be plain or docker)\n' "${variant}" >&2
 	exit 2
 	;;
 esac
@@ -152,6 +167,7 @@ fi
 
 build_args=(
 	--build-arg "BASE=${base}"
+	--build-arg "VARIANT=${variant}"
 	--build-arg "VERSION=${version}"
 	--platform "${platform}"
 	-f "${script_dir}/Dockerfile"
@@ -168,5 +184,5 @@ if [[ "${push}" -eq 1 ]]; then
 	build_args+=(--push)
 fi
 
-printf 'Building %s image for %s (version %s)...\n' "${base}" "${platform}" "${version}"
+printf 'Building %s/%s image for %s (version %s)...\n' "${base}" "${variant}" "${platform}" "${version}"
 docker buildx build "${build_args[@]}" "${script_dir}"

@@ -400,7 +400,7 @@ jobs:
 
   docker-publish:
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
-    name: Publish Docker image (${{ matrix.base }})
+    name: Publish Docker image (${{ matrix.base }}${{ matrix.variant == 'docker' && '-docker' || '' }})
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -408,6 +408,7 @@ jobs:
       fail-fast: false
       matrix:
         base: [alpine, debian]
+        variant: [plain, docker]
     steps:
       # On a real release, check out the tag itself so docker/ matches exactly
       # what that release shipped. A manual workflow_dispatch re-run instead
@@ -454,6 +455,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.VERSION }}
           PRERELEASE: ${{ steps.version.outputs.PRERELEASE }}
           BASE: ${{ matrix.base }}
+          VARIANT: ${{ matrix.variant }}
         run: |
           image="runwisp/runwisp"
           minor_version="${VERSION%.*}"
@@ -462,12 +464,19 @@ jobs:
           if [[ "${BASE}" == "debian" ]]; then
             suffix="-debian"
           fi
+          if [[ "${VARIANT}" == "docker" ]]; then
+            suffix="${suffix}-docker"
+          fi
 
           # Alpine is the default base, so it claims both the bare tag and the
           # explicit -alpine one.
           suffixes=("${suffix}")
           if [[ "${BASE}" == "alpine" ]]; then
-            suffixes+=("-alpine")
+            alpine_suffix="-alpine"
+            if [[ "${VARIANT}" == "docker" ]]; then
+              alpine_suffix="${alpine_suffix}-docker"
+            fi
+            suffixes+=("${alpine_suffix}")
           fi
 
           names=("${VERSION}")
@@ -504,6 +513,7 @@ jobs:
           push: true
           build-args: |
             BASE=${{ matrix.base }}
+            VARIANT=${{ matrix.variant }}
             VERSION=${{ steps.version.outputs.VERSION }}
           tags: ${{ steps.tags.outputs.TAGS }}
 
@@ -514,6 +524,7 @@ jobs:
       - name: Verify the published image
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
+          VARIANT: ${{ matrix.variant }}
           TAGS: ${{ steps.tags.outputs.TAGS }}
         run: |
           tag=$(printf '%s\n' "${TAGS}" | head -1)
@@ -540,3 +551,10 @@ jobs:
             cat /tmp/gate.log >&2
             exit 1
           }
+
+          if [[ "${VARIANT}" == "docker" ]]; then
+            docker run --rm --platform linux/amd64 --entrypoint sh "${tag}" -c 'command -v docker && command -v docker-compose' || {
+              echo "docker variant is missing the docker CLI or compose plugin" >&2
+              exit 1
+            }
+          fi

@@ -33,10 +33,11 @@ a container while the host's cron is still running them, you get two
 schedulers and nothing will tell you. Retire cron on the host first.
 :::
 
-The default Alpine base is deliberately tiny: busybox, `ca-certificates`,
-and the RunWisp binary. That means **no bash, no curl, no git, no python,
-no database clients.** Take the [nightly backup recipe](/recipes/backup/),
-drop it into a container unchanged, and you get:
+The default Alpine base is deliberately small: alongside the RunWisp
+binary it carries `bash`, `tzdata`, and `ca-certificates`, but **no curl,
+no git, no python, no database clients, no Docker CLI.** Take the
+[nightly backup recipe](/recipes/backup/), drop it into a container
+unchanged, and you get:
 
 ```
 pg_dump: not found
@@ -46,7 +47,7 @@ pg_dump: not found
 what you wanted at 02:30.
 
 :::tip[Check before you deploy]
-`docker run --rm --entrypoint sh runwisp/runwisp:latest -c 'command -v pg_dump curl bash'`
+`docker run --rm --entrypoint sh runwisp/runwisp:latest -c 'command -v pg_dump curl'`
 tells you in a second which of your tools are missing. `runwisp validate`
 won't catch a missing binary, but it catches everything else.
 :::
@@ -64,7 +65,7 @@ Extend the image and install what your tasks shell out to:
 FROM runwisp/runwisp:latest
 
 # Whatever your tasks actually shell out to.
-RUN apk add --no-cache postgresql17-client curl bash
+RUN apk add --no-cache postgresql17-client curl
 ```
 
 On the `-debian` variant it's `apt-get install` instead. Either way the
@@ -85,13 +86,20 @@ Reach into the container that already has it.
 
 Two prerequisites, and together they're the whole cost of this approach:
 
-1. **A Docker CLI in the RunWisp image.** One line, written once, and you
-   never revisit it as your tasks change:
+1. **A Docker CLI in the RunWisp image.** Pull the `-docker` tag
+   (`runwisp/runwisp:latest-docker`, or `latest-alpine-docker` /
+   `latest-debian-docker` to pin the base) instead of the plain one — it's
+   the same image plus a Docker CLI and Compose plugin, nothing to build
+   yourself:
 
-    ```dockerfile
-    FROM runwisp/runwisp:latest
-    RUN apk add --no-cache docker-cli docker-cli-compose
+    ```yaml
+    image: runwisp/runwisp:latest-docker
     ```
+
+    Rolling your own on top of the plain tag works too
+    (`RUN apk add --no-cache docker-cli docker-cli-compose`, or
+    `apt-get install` on `-debian`) if you're already extending the image
+    for other tools and would rather have one Dockerfile than two tags.
 
 2. **The host's Docker socket, mounted in:**
 
@@ -185,9 +193,9 @@ work is silly.
 To get a fresh container running _your_ command rather than the service's
 own, ask for it explicitly with `compose_mode = "run"`.
 
-This route needs the Docker CLI from step 1 too —
+This route needs both prerequisites from step 1 and step 2 too —
 [`[compose.*]`](/configuration/compose/) shells out to `docker compose`,
-so without it every such run fails with
+so without a Docker CLI in the image every such run fails with
 `docker compose unavailable: install Docker (with the compose plugin) …`.
 
 ### Which one?
@@ -211,14 +219,18 @@ run record, and pruning without shooting yourself in the foot.
 
 ## Image variants and tags
 
-| Base             | Tags                                                            | Notes                      |
-| ---------------- | --------------------------------------------------------------- | -------------------------- |
-| Alpine (default) | `latest`, `X.Y.Z`, `X.Y`, `X`, and the same four with `-alpine` | Smaller; busybox and `apk` |
-| Debian slim      | `latest-debian`, `X.Y.Z-debian`, `X.Y-debian`, `X-debian`       | glibc and `apt-get`        |
+| Base             | Tags                                                                 | Notes                                        |
+| ---------------- | --------------------------------------------------------------------- | --------------------------------------------- |
+| Alpine (default) | `latest`, `X.Y.Z`, `X.Y`, `X`, and the same four with `-alpine`        | Smaller; busybox and `apk`                    |
+| Debian slim      | `latest-debian`, `X.Y.Z-debian`, `X.Y-debian`, `X-debian`              | glibc and `apt-get`                           |
+| Alpine + Docker  | `latest-docker`, and `-alpine-docker` / `X.Y.Z` / `X.Y` / `X` variants | Adds a Docker CLI + Compose plugin, ~100MB more |
+| Debian + Docker  | `latest-debian-docker`, `X.Y.Z-debian-docker`, `X.Y-debian-docker`, `X-debian-docker` | Same, on the Debian base |
 
-Pick Debian if your tasks need glibc or a package only Debian carries;
-otherwise Alpine. A prerelease only ever gets its exact pinned tag, so
-`latest` never lands on an rc.
+Pick Debian if your tasks need glibc or a package only Debian carries,
+otherwise Alpine; add `-docker` if a task needs to reach into another
+container (see [above](#run-the-task-in-another-container)) — most setups
+don't, so it's opt-in rather than baked into the default tags. A prerelease
+only ever gets its exact pinned tag, so `latest` never lands on an rc.
 
 `X.Y.Z` is the only immutable tag — `X.Y`, `X`, and `latest` move as new
 releases land. While RunWisp is pre-1.0, `0` floats across every `0.x`
@@ -348,8 +360,13 @@ already terminating TLS in front of a container anyway. You either:
 
 The IANA timezone database is embedded in the binary, so
 `[scheduler] timezone = "Europe/Copenhagen"` resolves on either base with
-no extra package. To follow the **host's** local time instead, set
-`-e TZ=Europe/Helsinki` or bind-mount `/etc/localtime:/etc/localtime:ro`.
+no extra package — RunWisp's own scheduling never depends on the image.
+The image also installs the `tzdata` package for your **tasks**: anything
+shelling out to `date`, PHP, Python, or similar that reads
+`/usr/share/zoneinfo` directly gets real zone data instead of silently
+treating unknown zones as UTC. To follow the **host's** local time
+instead, set `-e TZ=Europe/Helsinki` or bind-mount
+`/etc/localtime:/etc/localtime:ro`.
 
 ## Running as non-root
 
