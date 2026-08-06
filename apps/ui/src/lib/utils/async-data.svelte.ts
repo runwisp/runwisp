@@ -71,8 +71,6 @@ export class AsyncData<T> {
         }
     };
 
-    reload = (): Promise<void> => this.fetch();
-
     abort = (): void => {
         this.#controller?.abort();
     };

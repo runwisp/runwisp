@@ -5,8 +5,8 @@ import { EventSourcePolyfill } from "event-source-polyfill";
 import { AUTH_TOKEN_KEY, AUTH_EVENTS } from "$lib/config/constants";
 
 /**
- * Minimal SSE consumer surface — exactly what the EventManager and legacy
- * connectSSE helper use. Both the native `EventSource` and `EventSourcePolyfill`
+ * Minimal SSE consumer surface — exactly what the EventManager and connectSSE
+ * helper use. Both the native `EventSource` and `EventSourcePolyfill`
  * structurally satisfy this, and test fakes only need to provide these few
  * members. Callbacks omit a `this` type so values typed against EventSource
  * (which binds `this: EventSource`) remain assignable.
@@ -47,8 +47,6 @@ export const browserAuthEventBus = {
         globalThis.dispatchEvent(new CustomEvent(AUTH_EVENTS.REQUIRED));
     },
 };
-
-export const browserEventSourceFactory: EventSourceFactory = (url) => new EventSourcePolyfill(url);
 
 /**
  * Auth-aware SSE factory. When a JWT exists in localStorage, sends it as an

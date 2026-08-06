@@ -55,8 +55,6 @@
     import Pagination from "./Pagination.svelte";
     import Fuse from "fuse.js";
 
-    import dlv from "dlv";
-
     let {
         columns,
         data,
@@ -331,7 +329,7 @@
                                         <!-- Raw field value: a token, so mono. Snippet-rendered
                                              cells choose their own voice. -->
                                         <span class="font-mono"
-                                            >{dlv(row, column.key as string) ?? "-"}</span
+                                            >{row[column.key as keyof T] ?? "-"}</span
                                         >
                                     {/if}
                                 </td>

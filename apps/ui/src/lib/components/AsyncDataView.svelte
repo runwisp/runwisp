@@ -24,7 +24,7 @@
 {:else if connectionStore.status !== "connected" && typeof data.data === "undefined"}
     <ConnectionLostPanel />
 {:else if typeof data.error !== "undefined" && typeof data.data === "undefined"}
-    <ErrorState message={data.error} onRetry={data.reload} retrying={data.loading} />
+    <ErrorState message={data.error} onRetry={data.fetch} retrying={data.loading} />
 {:else}
     {@render children()}
 {/if}

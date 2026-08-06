@@ -85,7 +85,7 @@ func TestCloudTaskRunner_GetTask_DelegatesAndPropagates(t *testing.T) {
 		getTaskOut: &model.Task{Name: "backup"},
 		getTaskOK:  true,
 	}
-	a := &cloudTaskRunner{inner: inner}
+	a := &cloudTaskRunner{cloudRuntime: inner}
 
 	got, ok := a.GetTask("backup")
 	assert.True(t, ok)
@@ -96,7 +96,7 @@ func TestCloudTaskRunner_GetTask_DelegatesAndPropagates(t *testing.T) {
 
 func TestCloudTaskRunner_UpsertTask_DelegatesTask(t *testing.T) {
 	inner := &stubTaskRunner{}
-	a := &cloudTaskRunner{inner: inner}
+	a := &cloudTaskRunner{cloudRuntime: inner}
 
 	task := &model.Task{Name: "alpha"}
 	a.UpsertTask(task)
@@ -106,7 +106,7 @@ func TestCloudTaskRunner_UpsertTask_DelegatesTask(t *testing.T) {
 func TestCloudTaskRunner_TriggerCloudRun_TagsTriggeredByCloud(t *testing.T) {
 	want := &model.Run{ID: "r1", TaskName: "alpha", CreatedAt: time.Now()}
 	inner := &stubTaskRunner{triggerRun: want}
-	a := &cloudTaskRunner{inner: inner}
+	a := &cloudTaskRunner{cloudRuntime: inner}
 
 	got, err := a.TriggerCloudRun("alpha", "exec-123", map[string]string{"REGION": "eu"})
 	require.NoError(t, err)
@@ -123,7 +123,7 @@ func TestCloudTaskRunner_TriggerCloudRun_TagsTriggeredByCloud(t *testing.T) {
 func TestCloudTaskRunner_TriggerCloudRun_PropagatesError(t *testing.T) {
 	boom := errors.New("trigger failed")
 	inner := &stubTaskRunner{triggerErr: boom}
-	a := &cloudTaskRunner{inner: inner}
+	a := &cloudTaskRunner{cloudRuntime: inner}
 
 	_, err := a.TriggerCloudRun("x", "e", nil)
 	assert.ErrorIs(t, err, boom)
@@ -131,7 +131,7 @@ func TestCloudTaskRunner_TriggerCloudRun_PropagatesError(t *testing.T) {
 
 func TestCloudTaskRunner_TerminateRunByExternalExecutionID_Delegates(t *testing.T) {
 	inner := &stubTaskRunner{}
-	a := &cloudTaskRunner{inner: inner}
+	a := &cloudTaskRunner{cloudRuntime: inner}
 
 	require.NoError(t, a.TerminateRunByExternalExecutionID("ext-42"))
 	assert.Equal(t, "ext-42", inner.terminatedExternal)
@@ -140,7 +140,7 @@ func TestCloudTaskRunner_TerminateRunByExternalExecutionID_Delegates(t *testing.
 func TestCloudTaskRunner_TerminateRunByExternalExecutionID_PropagatesError(t *testing.T) {
 	boom := errors.New("nope")
 	inner := &stubTaskRunner{terminatedErr: boom}
-	a := &cloudTaskRunner{inner: inner}
+	a := &cloudTaskRunner{cloudRuntime: inner}
 
 	err := a.TerminateRunByExternalExecutionID("ext")
 	assert.ErrorIs(t, err, boom)

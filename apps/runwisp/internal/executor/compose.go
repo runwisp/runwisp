@@ -6,9 +6,10 @@ package executor
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -353,24 +354,13 @@ func composeMergedEnv(task *model.Task, run *model.Run, instanceIndex int) map[s
 	return merged
 }
 
-// sortedKeys returns the map's keys in ascending order — the single source of
-// the deterministic ordering shared by composeEnvFlags and composeEnv.
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 // composeEnvFlags returns the deterministically ordered variable NAMES to
 // forward into the container as value-less `-e KEY` flags. Docker's `-e KEY`
 // form reads each value from the calling process's environment — which Start
 // populates via composeEnv — so secret values never appear on argv (and thus
 // never in `ps` output).
 func composeEnvFlags(task *model.Task, run *model.Run, instanceIndex int) []string {
-	return sortedKeys(composeMergedEnv(task, run, instanceIndex))
+	return slices.Sorted(maps.Keys(composeMergedEnv(task, run, instanceIndex)))
 }
 
 // composeEnv returns the forwarded variables as deterministically ordered
@@ -379,7 +369,7 @@ func composeEnvFlags(task *model.Task, run *model.Run, instanceIndex int) []stri
 // how the actual values reach the container without ever touching argv.
 func composeEnv(task *model.Task, run *model.Run, instanceIndex int) []string {
 	merged := composeMergedEnv(task, run, instanceIndex)
-	keys := sortedKeys(merged)
+	keys := slices.Sorted(maps.Keys(merged))
 	out := make([]string, len(keys))
 	for i, k := range keys {
 		out[i] = k + "=" + merged[k]

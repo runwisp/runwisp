@@ -1,7 +1,32 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import { formatDistance } from "date-fns";
+// Signed magnitude thresholds for Intl.RelativeTimeFormat, largest-first
+// division. Mirrors the buckets date-fns' formatDistance used to pick.
+const RELATIVE_DIVISIONS: [amount: number, unit: Intl.RelativeTimeFormatUnit][] = [
+    [60, "seconds"],
+    [60, "minutes"],
+    [24, "hours"],
+    [7, "days"],
+    [4.34524, "weeks"],
+    [12, "months"],
+    [Number.POSITIVE_INFINITY, "years"],
+];
+
+// formatDistance renders a signed date delta as "N units ago" / "in N units"
+// using the platform Intl formatter. Negative delta (date before base) reads as
+// past, positive as future.
+function formatDistance(date: Date, base: Date): string {
+    const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "always" });
+    let delta = (date.getTime() - base.getTime()) / 1000;
+    for (const [amount, unit] of RELATIVE_DIVISIONS) {
+        if (Math.abs(delta) < amount) {
+            return rtf.format(Math.round(delta), unit);
+        }
+        delta /= amount;
+    }
+    return rtf.format(Math.round(delta), "years");
+}
 
 export function formatBytes(bytes: number): string {
     const units: [string, ...string[]] = ["B", "KB", "MB", "GB", "TB", "PB"];
@@ -17,7 +42,7 @@ export function formatBytes(bytes: number): string {
 }
 
 export function formatRelativeTime(dateStr: string | Date, now: Date = new Date()): string {
-    return formatDistance(new Date(dateStr), now, { addSuffix: true });
+    return formatDistance(new Date(dateStr), now);
 }
 
 export function formatRelativeTimeWithAbsolute(
@@ -25,7 +50,7 @@ export function formatRelativeTimeWithAbsolute(
     now: Date = new Date(),
 ): string {
     const date = new Date(dateStr);
-    const relative = formatDistance(date, now, { addSuffix: true }).replace("about ", "");
+    const relative = formatDistance(date, now);
     const diffMs = Math.abs(now.getTime() - date.getTime());
     const diffDays = diffMs / (1000 * 60 * 60 * 24);
 

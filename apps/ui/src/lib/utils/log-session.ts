@@ -14,21 +14,11 @@ interface LogSessionOptions {
     getTaskName: (run: Run) => string;
 }
 
-export interface LogSession {
-    fetchLogs: (runId: string, from: number, to: number) => Promise<LogEvent>;
-    streamLogs: (
-        runId: string,
-        onEvent: (event: LogEvent) => void,
-        initialState?: LogStreamInitialState,
-    ) => () => void;
-    fetchLineHistory: (runId: string, lineNum: number) => Promise<string[][]>;
-}
-
 /**
  * Creates a reusable log session that provides fetchLogs/streamLogs callbacks
  * bound to a dynamic run lookup. Caches per-task streamers internally.
  */
-export function createLogSession(options: LogSessionOptions): LogSession {
+export function createLogSession(options: LogSessionOptions) {
     const streamerCache = new Map<string, ReturnType<typeof createLogStreamer>>();
 
     function getStreamer(taskName: string) {

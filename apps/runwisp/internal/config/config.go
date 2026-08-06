@@ -6,6 +6,7 @@ package config
 import (
 	"bytes"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -507,8 +508,8 @@ func validateTLS(d *Daemon) error {
 // Validate collects every configuration problem it can rather than returning at
 // the first, so `runwisp validate` reports them all in one pass (one entry per
 // offending task, plus each top-level check). Independent checks each contribute
-// at most one error; the result collapses to nil / a single error / a
-// *MultiError via joinConfigErrors.
+// at most one error; the result collapses to nil / a single error / a joined
+// error via errors.Join.
 func Validate(cfg *Config) error {
 	var errs []error
 	if err := validateDefaults(&cfg.Defaults); err != nil {
@@ -536,7 +537,7 @@ func Validate(cfg *Config) error {
 	if err := validateNotify(&cfg.Notify); err != nil {
 		errs = append(errs, err)
 	}
-	return joinConfigErrors(errs)
+	return errors.Join(errs...)
 }
 
 // validateServiceDependencies checks every service's depends_on graph: each ref
