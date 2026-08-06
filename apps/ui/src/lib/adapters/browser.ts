@@ -43,17 +43,8 @@ export const browserAuthEventBus = {
             globalThis.removeEventListener(AUTH_EVENTS.REQUIRED, handler);
         };
     },
-    onAuthSuccess(handler: EventListener) {
-        globalThis.addEventListener(AUTH_EVENTS.SUCCESS, handler);
-        return () => {
-            globalThis.removeEventListener(AUTH_EVENTS.SUCCESS, handler);
-        };
-    },
     emitAuthRequired() {
         globalThis.dispatchEvent(new CustomEvent(AUTH_EVENTS.REQUIRED));
-    },
-    emitAuthSuccess() {
-        globalThis.dispatchEvent(new CustomEvent(AUTH_EVENTS.SUCCESS));
     },
 };
 

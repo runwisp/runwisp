@@ -7,7 +7,6 @@ export const AUTH_TOKEN_KEY = "runwisp_token";
 
 export const AUTH_EVENTS = {
     REQUIRED: "auth-required",
-    SUCCESS: "auth-success",
 } as const;
 
 export const SSE_CONFIG = {

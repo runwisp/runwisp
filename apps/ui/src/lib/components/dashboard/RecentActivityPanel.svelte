@@ -70,7 +70,12 @@
                     <div
                         class="flex h-8 w-8 shrink-0 items-center justify-center rounded-[3px] {statusConfig.bg}"
                     >
-                        <StatusIcon size={14} class={statusConfig.color} />
+                        <StatusIcon
+                            size={14}
+                            class="{statusConfig.color} {status === 'running'
+                                ? 'animate-spin'
+                                : ''}"
+                        />
                     </div>
 
                     <div class="min-w-0 flex-1">

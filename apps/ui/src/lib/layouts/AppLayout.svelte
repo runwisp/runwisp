@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import { Activity, RotateCcwClock, Globe, Menu, X } from "@lucide/svelte";
+    import { Activity, RotateCcwClock, Menu, X } from "@lucide/svelte";
     import Logo from "@runwisp/ui/components/Logo.svelte";
     import { type Snippet, type Component, tick } from "svelte";
     import { resolve } from "$app/paths";
@@ -10,12 +10,10 @@
     import AuthDisabledBadge from "$lib/components/AuthDisabledBadge.svelte";
     import CloudModeBadge from "$lib/components/CloudModeBadge.svelte";
     import ConnectionStatusIndicator from "$lib/components/ConnectionStatusIndicator.svelte";
-    import ConnectionPip from "$lib/components/ConnectionPip.svelte";
     import HeaderSearch from "$lib/components/HeaderSearch.svelte";
     import NotificationBell from "$lib/components/NotificationBell.svelte";
     import StaleConfigBanner from "$lib/components/StaleConfigBanner.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
-    import { systemStore } from "$lib/stores/system.svelte";
 
     let {
         activePage,
@@ -267,24 +265,8 @@
             </div>
 
             <div class="flex shrink-0 items-center gap-2 sm:gap-3">
-                {#if systemStore.timezone}
-                    <span
-                        class="hidden items-center gap-1.5 rounded-[3px] border border-outline bg-surface-sunken px-2.5 py-1 font-mono text-xs whitespace-nowrap text-on-surface-muted lg:flex"
-                        title={systemStore.timezoneSource === "system"
-                            ? "Detected from the host system; pin [scheduler] timezone in runwisp.toml to make it explicit."
-                            : "Set in runwisp.toml under [scheduler] timezone."}
-                    >
-                        <Globe size={12} class="text-on-surface-faint" />
-                        {systemStore.timezone}
-                        {#if systemStore.timezoneSource}
-                            <span class="text-on-surface-faint">({systemStore.timezoneSource})</span
-                            >
-                        {/if}
-                    </span>
-                {/if}
                 <CloudModeBadge />
                 <AuthDisabledBadge />
-                <ConnectionPip />
                 <ThemeToggle />
                 <NotificationBell />
             </div>

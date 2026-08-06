@@ -24,8 +24,10 @@
 
     $effect(() => {
         if (!browser) return;
-        void authStore.load();
-
+        // Auth status is loaded once by the root layout; this modal only reacts
+        // to authStore.current (see the effect below). Loading here too would
+        // double the /api/auth/status hit and re-trigger the layout's auth
+        // effect, re-seeding /api/system + /api/info a second time.
         const disposeAuthRequired = browserAuthEventBus.onAuthRequired(() => {
             if (!authRequired) {
                 return;
@@ -75,8 +77,9 @@
             isOpen = false;
             password = "";
             logger.info("Authentication successful");
-
-            browserAuthEventBus.emitAuthSuccess();
+            // markAuthenticated() above flips authStore.current, which the root
+            // layout's auth effect reacts to (connect streams, seed system, load
+            // tasks/notifications). No separate success event needed.
         } catch (err) {
             if (err instanceof RateLimitedError) {
                 error = "Too many attempts. Please wait a few minutes and try again.";

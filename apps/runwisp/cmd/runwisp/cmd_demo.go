@@ -171,7 +171,11 @@ func reportDemoNoTUI(stdout, stderr io.Writer, client credentialsFetcher, f Flag
 // setupDemoDir writes the embedded config, creates the data/log dirs, and either
 // resolves cloud credentials (--cloud) or seeds the fake run history.
 func setupDemoDir(cmd *cobra.Command, f Flags) error {
-	if err := demo.WriteConfig(f.CfgFile); err != nil {
+	// --seed-only backs the screenshot/video tooling, which wants the demo
+	// config's fictional external_url to show a believable operator domain.
+	// The interactive demo wants "Open Web UI" to reach the real throwaway
+	// daemon instead, so it drops external_url.
+	if err := demo.WriteConfig(f.CfgFile, demoFlags.SeedOnly); err != nil {
 		return err
 	}
 	if err := datadir.EnsureDir(f.DataDir); err != nil {

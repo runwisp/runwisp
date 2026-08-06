@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
+    import { Globe } from "@lucide/svelte";
     import { formatDuration } from "@runwisp/ui";
     import { connectionStore, systemStore, type ConnectionStatus } from "$lib/stores";
     import { appEventStream } from "$lib/stores/app-stream.svelte";
@@ -88,7 +89,21 @@
     </div>
     <div class="flex min-w-0 flex-col">
         <span class="font-mono text-xs font-medium {theme.labelColor}">{theme.label}</span>
-        <span class="truncate font-mono text-2xs {theme.subtitleColor}">{subtitle}</span>
+        <span class="flex items-center gap-1 font-mono text-2xs {theme.subtitleColor}">
+            <span class="truncate">{subtitle}</span>
+            {#if status === "connected" && systemStore.timezone}
+                <span class="shrink-0 text-on-surface-faint">·</span>
+                <span
+                    title={systemStore.timezoneSource === "system"
+                        ? "Detected from the host system; pin [scheduler] timezone in runwisp.toml to make it explicit."
+                        : "Set in runwisp.toml under [scheduler] timezone."}
+                    class="flex min-w-0 shrink items-center gap-0.5 truncate"
+                >
+                    <Globe size={10} class="shrink-0 text-on-surface-faint" />
+                    <span class="truncate">{systemStore.timezone}</span>
+                </span>
+            {/if}
+        </span>
     </div>
 {/snippet}
 
