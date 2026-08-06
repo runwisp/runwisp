@@ -250,6 +250,16 @@ jobs:
         run: |
           ./docker/build-local.sh --base alpine --dist apps/runwisp/dist --load -t runwisp:ci-alpine
           ./docker/build-local.sh --base debian --dist apps/runwisp/dist --load -t runwisp:ci-debian
+          ./docker/build-local.sh --base alpine --variant docker --dist apps/runwisp/dist --load -t runwisp:ci-alpine-docker
+
+      # Only the docker-CLI presence differs in the `docker` variant — the
+      # entrypoint and everything else below is identical, so this is the one
+      # thing worth asserting separately rather than repeating the full test
+      # loop a third time.
+      - name: Docker CLI present in the docker variant
+        run: |
+          docker run --rm --entrypoint sh runwisp:ci-alpine-docker \
+            -c 'command -v docker && command -v docker-compose'
 
       # The entrypoint's own shell differs by base — busybox ash on alpine, dash
       # on debian — so run the unit tests inside each image too, against the

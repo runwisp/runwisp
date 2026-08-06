@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The official Docker image now includes `bash` and `tzdata` on both the `alpine` and `debian` variants.**
+- **New `-docker` image tags (`latest-docker`, `latest-alpine-docker`, `latest-debian-docker`, and the versioned equivalents) add a Docker CLI with the Compose plugin.** For tasks that shell out to `docker`/`docker compose` from inside the RunWisp container itself — e.g. to manage sibling containers over a mounted Docker socket. See [Docker](https://docs.runwisp.com/getting-started/docker/#run-the-task-in-another-container).
+
 ### Changed
 
 - **The run detail header now leads with the outcome** — a verdict line (`succeeded in 933ms`) over one fact line with the time, date, trigger, queue wait, retries and parameters. Queue wait, retries and parameters appear only when they apply, and a failing run colours the verdict and tints the header.

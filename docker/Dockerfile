@@ -5,8 +5,10 @@
 # apps/runwisp/scripts/build-all.sh) on top of a minimal base. The binary
 # requires a real shell (`run =` tasks execute via /bin/sh -c) so scratch and
 # distroless are not viable bases; alpine/debian-slim are the smallest bases
-# that provide one. tzdata is embedded in the binary (see cmd/runwisp/main.go)
-# so neither base installs a tzdata package.
+# that provide one. bash gives `run =` tasks a real shell to script against;
+# tzdata gives them real IANA zoneinfo data (the daemon's own scheduler embeds
+# tzdata separately, see cmd/runwisp/main.go). The Docker-CLI variant (see
+# ARG VARIANT below) builds from this same file rather than a second one.
 #
 # Build context is arranged by docker/build-local.sh (local builds) or the
 # release workflow (CI): docker/context/<amd64|arm64>/runwisp must exist
@@ -14,16 +16,17 @@
 
 # ARGs referenced in a FROM must be declared before the first FROM.
 ARG BASE=alpine
+ARG VARIANT=plain
 
 FROM alpine:3.22 AS base-alpine
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates bash tzdata
 
 FROM debian:trixie-slim AS base-debian
-RUN apt-get update \
-	&& apt-get install -y --no-install-recommends ca-certificates \
+RUN DEBIAN_FRONTEND=noninteractive apt-get update \
+	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates bash tzdata \
 	&& rm -rf /var/lib/apt/lists/*
 
-FROM base-${BASE}
+FROM base-${BASE} AS runtime
 
 ARG TARGETARCH
 ARG VERSION=0.0.0-dev
@@ -61,3 +64,23 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["runwisp", "daemon"]
+
+FROM runtime AS variant-plain
+
+# Adds a Docker CLI (with the Compose plugin) for tasks that reach into other
+# containers over a mounted /var/run/docker.sock — see
+# [compose.*] and docs/getting-started/docker#run-the-task-in-another-container.
+# Opt-in (docker build --build-arg VARIANT=docker, published as the `-docker`
+# tag) because docker-cli-compose alone is ~65MB and most tasks never touch
+# Docker.
+FROM runtime AS variant-docker
+ARG BASE
+RUN if [ "${BASE}" = "alpine" ]; then \
+		apk add --no-cache docker-cli docker-cli-compose; \
+	else \
+		DEBIAN_FRONTEND=noninteractive apt-get update \
+		&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker-cli docker-compose \
+		&& rm -rf /var/lib/apt/lists/*; \
+	fi
+
+FROM variant-${VARIANT}
