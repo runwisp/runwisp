@@ -219,12 +219,12 @@ run record, and pruning without shooting yourself in the foot.
 
 ## Image variants and tags
 
-| Base             | Tags                                                                 | Notes                                        |
-| ---------------- | --------------------------------------------------------------------- | --------------------------------------------- |
-| Alpine (default) | `latest`, `X.Y.Z`, `X.Y`, `X`, and the same four with `-alpine`        | Smaller; busybox and `apk`                    |
-| Debian slim      | `latest-debian`, `X.Y.Z-debian`, `X.Y-debian`, `X-debian`              | glibc and `apt-get`                           |
-| Alpine + Docker  | `latest-docker`, and `-alpine-docker` / `X.Y.Z` / `X.Y` / `X` variants | Adds a Docker CLI + Compose plugin, ~100MB more |
-| Debian + Docker  | `latest-debian-docker`, `X.Y.Z-debian-docker`, `X.Y-debian-docker`, `X-debian-docker` | Same, on the Debian base |
+| Base             | Tags                                                                                  | Notes                                           |
+| ---------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Alpine (default) | `latest`, `X.Y.Z`, `X.Y`, `X`, and the same four with `-alpine`                       | Smaller; busybox and `apk`                      |
+| Debian slim      | `latest-debian`, `X.Y.Z-debian`, `X.Y-debian`, `X-debian`                             | glibc and `apt-get`                             |
+| Alpine + Docker  | `latest-docker`, and `-alpine-docker` / `X.Y.Z` / `X.Y` / `X` variants                | Adds a Docker CLI + Compose plugin, ~100MB more |
+| Debian + Docker  | `latest-debian-docker`, `X.Y.Z-debian-docker`, `X.Y-debian-docker`, `X-debian-docker` | Same, on the Debian base                        |
 
 Pick Debian if your tasks need glibc or a package only Debian carries,
 otherwise Alpine; add `-docker` if a task needs to reach into another
