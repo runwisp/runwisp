@@ -5,7 +5,25 @@
 // CLI, kept dependency-free so any package can import it.
 package textutil
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
+
+// Pluralize returns singular when n == 1, otherwise plural. Use Count instead
+// when the sentence also needs to print n itself.
+func Pluralize(n int, singular, plural string) string {
+	if n == 1 {
+		return singular
+	}
+	return plural
+}
+
+// Count renders n alongside the correctly pluralized noun, e.g.
+// Count(1, "task", "tasks") == "1 task".
+func Count(n int, singular, plural string) string {
+	return fmt.Sprintf("%d %s", n, Pluralize(n, singular, plural))
+}
 
 // Closest returns the candidate closest to target by levenshtein distance,
 // or "" when nothing is within the typo threshold of max(2, len/3).
@@ -15,7 +33,7 @@ func Closest(target string, candidates []string) string {
 	threshold := max(2, len(lowered)/3)
 	best, bestDist := "", threshold+1
 	for _, candidate := range candidates {
-		d := Levenshtein(lowered, strings.ToLower(candidate))
+		d := levenshtein(lowered, strings.ToLower(candidate))
 		if d < bestDist {
 			best, bestDist = candidate, d
 		}
@@ -23,10 +41,10 @@ func Closest(target string, candidates []string) string {
 	return best
 }
 
-// Levenshtein computes edit distance with the classic two-row algorithm.
+// levenshtein computes edit distance with the classic two-row algorithm.
 // Inputs are config keys and task names (short ASCII), so byte-wise
 // comparison is fine.
-func Levenshtein(a, b string) int {
+func levenshtein(a, b string) int {
 	if a == b {
 		return 0
 	}

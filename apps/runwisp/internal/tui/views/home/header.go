@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/runwisp/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/textutil"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -104,7 +105,7 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 		warn := lipgloss.NewStyle().
 			Background(uikit.ColorBgLight).
 			Foreground(uikit.ColorWarning).
-			Render(fmt.Sprintf("\u26a0 %s \u2014 see `runwisp validate`", pluralWarnings(n)))
+			Render(fmt.Sprintf("\u26a0 %s \u2014 see `runwisp validate`", textutil.Count(n, "config warning", "config warnings")))
 		parts = append(parts, warn)
 	}
 	if len(parts) > 0 {
@@ -340,12 +341,4 @@ func HeldTaskCount(tasks []model.TaskBrief) int {
 		}
 	}
 	return n
-}
-
-// pluralWarnings labels a config-warning count without the bare "1 warnings".
-func pluralWarnings(n int) string {
-	if n == 1 {
-		return "1 config warning"
-	}
-	return fmt.Sprintf("%d config warnings", n)
 }

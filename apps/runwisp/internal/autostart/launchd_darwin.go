@@ -314,8 +314,5 @@ func (l *launchdInstaller) Status(ctx context.Context, opts InstallOptions) (Sta
 
 // envPathDarwin returns the PATH the LaunchAgent will inherit.
 func envPathDarwin() string {
-	if p := os.Getenv("PATH"); p != "" {
-		return p
-	}
-	return "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
+	return envPathOrDefault("/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin")
 }

@@ -329,18 +329,19 @@ func messageFromError(err error) messageJSON {
 }
 
 // messagesFromError expands a config error into one messageJSON per underlying
-// problem: a config.MultiError (several unknown keys, or several invalid tasks)
+// problem: a joined error (several unknown keys, or several invalid tasks)
 // yields one entry each with its own key/line/column; any other error yields a
 // single entry. This is why `validate --json` reports every location, not just
 // the first.
 func messagesFromError(err error) []messageJSON {
-	var multi *config.MultiError
-	if errors.As(err, &multi) && len(multi.Errors) > 0 {
-		out := make([]messageJSON, 0, len(multi.Errors))
-		for _, e := range multi.Errors {
-			out = append(out, messageFromError(e))
+	if multi, ok := err.(interface{ Unwrap() []error }); ok {
+		if errs := multi.Unwrap(); len(errs) > 0 {
+			out := make([]messageJSON, 0, len(errs))
+			for _, e := range errs {
+				out = append(out, messageFromError(e))
+			}
+			return out
 		}
-		return out
 	}
 	return []messageJSON{messageFromError(err)}
 }

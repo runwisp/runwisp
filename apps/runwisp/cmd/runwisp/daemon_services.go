@@ -169,7 +169,7 @@ func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storag
 		return boot, locErr
 	}
 	boot.schedLoc = schedLoc
-	scheduler := runtime.NewScheduler(taskManager, tasksMap, schedLoc)
+	scheduler := runtime.NewScheduler(taskManager, tasksMap, schedLoc, nil)
 	boot.scheduler = scheduler
 	schedResult, err := scheduler.Start()
 	if err != nil {

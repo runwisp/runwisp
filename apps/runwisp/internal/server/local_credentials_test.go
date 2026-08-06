@@ -48,7 +48,7 @@ func newServerForCredentialsTest(t *testing.T, password string, ephemeral bool) 
 	eb := events.NewEventBus()
 	jm := runtime.NewTaskManager(exec, eb, time.Now)
 	tasks := map[string]*model.Task{}
-	scheduler := runtime.NewScheduler(jm, tasks, time.UTC)
+	scheduler := runtime.NewScheduler(jm, tasks, time.UTC, nil)
 	tmpDir := t.TempDir()
 
 	s, err := New(Options{

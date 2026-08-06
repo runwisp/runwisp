@@ -87,30 +87,19 @@ func newWallSecond(t time.Time) wallSecond {
 	}
 }
 
-// SchedulerOption tweaks a Scheduler at construction time. Used today only
-// to inject a fake clock from tests; kept exported so test packages outside
-// `runtime` (e.g. runtime_test) can use it too.
-type SchedulerOption func(*Scheduler)
-
-// WithNow overrides the scheduler's clock. Production code uses time.Now;
-// tests inject a fake clock so DST-fall-back firing sequences are
-// deterministic.
-func WithNow(now func() time.Time) SchedulerOption {
-	return func(s *Scheduler) {
-		if now != nil {
-			s.now = now
-		}
-	}
-}
-
 // NewScheduler creates a scheduler. location controls how task cron expressions
-// are interpreted; nil means UTC, which is the project default. Per-task
-// timezones are layered on via a CRON_TZ= prefix when scheduling.
-func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location *time.Location, opts ...SchedulerOption) *Scheduler {
+// are interpreted; nil means UTC, which is the project default. clock overrides
+// the scheduler's wall-clock reads; pass nil for time.Now — production always
+// does, and tests inject a fake clock so DST-fall-back firing sequences are
+// deterministic.
+func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location *time.Location, clock func() time.Time) *Scheduler {
 	if location == nil {
 		location = time.UTC
 	}
-	s := &Scheduler{
+	if clock == nil {
+		clock = time.Now
+	}
+	return &Scheduler{
 		cron:        cron.New(cron.WithLocation(location), cron.WithParser(cronspec.NewScheduleParser())),
 		location:    location,
 		taskManager: taskManager,
@@ -118,12 +107,8 @@ func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location
 		entryIDs:    make(map[string]cron.EntryID),
 		lastFired:   make(map[string]wallSecond),
 		jitterPlans: make(map[string]jitterPlan),
-		now:         time.Now,
+		now:         clock,
 	}
-	for _, opt := range opts {
-		opt(s)
-	}
-	return s
 }
 
 func (scheduler *Scheduler) Start() (ScheduleResult, error) {

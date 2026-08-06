@@ -88,30 +88,3 @@ func And(preds ...Predicate) Predicate {
 		return true
 	}
 }
-
-// Or composes predicates disjunctively (any may hold).
-func Or(preds ...Predicate) Predicate {
-	if len(preds) == 0 {
-		return MatchAll()
-	}
-	return func(ev *Event) bool {
-		for _, p := range preds {
-			if p(ev) {
-				return true
-			}
-		}
-		return false
-	}
-}
-
-// Not inverts a predicate.
-func Not(p Predicate) Predicate {
-	return func(ev *Event) bool { return !p(ev) }
-}
-
-// ValidGlob reports whether s parses as a path.Match pattern. Used by config
-// validation.
-func ValidGlob(s string) bool {
-	_, err := path.Match(s, "")
-	return err == nil
-}

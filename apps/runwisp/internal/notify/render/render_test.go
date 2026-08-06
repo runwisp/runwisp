@@ -11,12 +11,13 @@ import (
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/internal/notify/kinds"
 )
 
 func TestStatusEmojiAndVerbCoverAllKinds(t *testing.T) {
-	for _, k := range notify.AllKinds {
-		assert.NotEmpty(t, statusEmoji(k), "kind %s missing emoji", k)
-		assert.NotEmpty(t, statusVerb(k), "kind %s missing verb", k)
+	for _, k := range kinds.AllKindStrings {
+		assert.NotEmpty(t, statusEmoji(notify.Kind(k)), "kind %s missing emoji", k)
+		assert.NotEmpty(t, statusVerb(notify.Kind(k)), "kind %s missing verb", k)
 	}
 }
 

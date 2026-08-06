@@ -84,10 +84,9 @@ type Database interface {
 	PendingLogUploadRepository
 }
 
-// SQLiteDatabase wraps persistence concerns for runs and configuration. The
-// raw *sql.DB is retained for the single hand-written read path (QueryRuns)
-// whose ORDER BY tail is composed at runtime; every other query routes
-// through the generated sqlcdb.Queries.
+// SQLiteDatabase wraps persistence concerns for runs and configuration.
+// Reads and writes route through the generated sqlcdb.Queries; the raw
+// *sql.DB is retained only for lifecycle (Close) and maintenance pragmas.
 type SQLiteDatabase struct {
 	db *sql.DB
 	q  *sqlcdb.Queries

@@ -110,7 +110,6 @@ func TestCompute_OperatorsOwnIncludeCronIsNeverRewritten(t *testing.T) {
 	assert.True(t, hasBlocker(p, BlockerIncludeCronMissesCrontabs), "%v", blockerKinds(p))
 
 	b, _ := p.FirstBlocker()
-	assert.Empty(t, b.Override, "this blocker must not be waivable — masking cron would stop those jobs")
 	assert.Contains(t, b.Details, "include_cron = [", "it has to print the array to paste")
 	assert.Contains(t, b.Details, "crontabs")
 }
@@ -212,8 +211,6 @@ func TestCompute_SkippedCronSourcesBlockUnlessAllowed(t *testing.T) {
 	p, err := c.Compute(context.Background())
 	require.NoError(t, err)
 	require.True(t, hasBlocker(p, BlockerCronSourcesFailed), "%v", blockerKinds(p))
-	b, _ := p.FirstBlocker()
-	assert.Equal(t, "--allow-skipped-cron-jobs", b.Override)
 
 	fx.allowSkipped = true
 	c, _, _ = fx.build(t)
@@ -241,8 +238,6 @@ func TestCompute_SkippedJobBlocksWithNoConfigOnDisk(t *testing.T) {
 	p, err := c.Compute(context.Background())
 	require.NoError(t, err)
 	require.True(t, hasBlocker(p, BlockerCronSourcesFailed), "%v", blockerKinds(p))
-	b, _ := p.FirstBlocker()
-	assert.Equal(t, "--allow-skipped-cron-jobs", b.Override)
 
 	fx.allowSkipped = true
 	c, _, _ = fx.build(t)

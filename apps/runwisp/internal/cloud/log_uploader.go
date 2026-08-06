@@ -35,12 +35,11 @@ type LogUploaderResult struct {
 // `pending_log_uploads` SQLite table written at dispatch time and removed
 // only on successful upload.
 type LogUploader struct {
-	repo         PendingLogUploadRepository
-	runRepo      ExternalRunGetter
-	logDir       string
-	httpClient   *http.Client
-	now          func() time.Time
-	deleteOnDone bool
+	repo       PendingLogUploadRepository
+	runRepo    ExternalRunGetter
+	logDir     string
+	httpClient *http.Client
+	now        func() time.Time
 
 	mu      sync.Mutex
 	pending map[string]uploadEntry
@@ -60,13 +59,12 @@ func NewLogUploader(repo PendingLogUploadRepository, runRepo ExternalRunGetter, 
 		now = time.Now
 	}
 	return &LogUploader{
-		repo:         repo,
-		runRepo:      runRepo,
-		logDir:       logDir,
-		httpClient:   logarchive.SafeClient(),
-		now:          func() time.Time { return now().UTC() },
-		deleteOnDone: true,
-		pending:      make(map[string]uploadEntry),
+		repo:       repo,
+		runRepo:    runRepo,
+		logDir:     logDir,
+		httpClient: logarchive.SafeClient(),
+		now:        func() time.Time { return now().UTC() },
+		pending:    make(map[string]uploadEntry),
 	}
 }
 
@@ -129,13 +127,11 @@ func (u *LogUploader) Archive(ctx context.Context, executionID, logFilePath stri
 	}
 
 	u.forget(ctx, executionID)
-	if u.deleteOnDone {
-		if removeErr := os.Remove(logFilePath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			slog.Warn("failed to remove archived log file", "executionId", executionID, "path", logFilePath, "err", removeErr)
-		}
-		// Drop the meta sidecar too — it is meaningless once the log is gone.
-		_ = os.Remove(logutil.MetaPath(logFilePath))
+	if removeErr := os.Remove(logFilePath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		slog.Warn("failed to remove archived log file", "executionId", executionID, "path", logFilePath, "err", removeErr)
 	}
+	// Drop the meta sidecar too — it is meaningless once the log is gone.
+	_ = os.Remove(logutil.MetaPath(logFilePath))
 	return &LogUploaderResult{LogPath: entry.logPath, LogSize: size}, nil
 }
 
@@ -191,12 +187,6 @@ func (u *LogUploader) recoverOrphanRecord(ctx context.Context, rec model.Pending
 	}
 }
 
-// Forget drops in-memory state for an execution without touching storage.
-// Used when the dispatch is invalid or a run terminates with no upload URL.
-func (u *LogUploader) Forget(ctx context.Context, executionID string) {
-	u.forget(ctx, executionID)
-}
-
 func (u *LogUploader) lookup(executionID string) (uploadEntry, bool) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -204,6 +194,8 @@ func (u *LogUploader) lookup(executionID string) (uploadEntry, bool) {
 	return e, ok
 }
 
+// forget drops in-memory state for an execution without touching storage.
+// Used when the dispatch is invalid or a run terminates with no upload URL.
 func (u *LogUploader) forget(ctx context.Context, executionID string) {
 	u.mu.Lock()
 	delete(u.pending, executionID)

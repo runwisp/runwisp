@@ -68,8 +68,8 @@ type TrustedProxyChecker func(*http.Request) bool
 type Service struct {
 	jwtAuth        *jwtauth.JWTAuth
 	password       string
-	nonces         *nonceStore
-	launchTickets  *launchTicketStore
+	nonces         *ttlStore
+	launchTickets  *ttlStore
 	trustedProxies TrustedProxyChecker
 }
 
@@ -239,65 +239,60 @@ func TokenFromCookie(r *http.Request) string {
 	return c.Value
 }
 
-// nonceStore holds single-use challenge nonces with TTL expiry.
-type nonceStore struct {
+// ttlStore holds single-use tokens with TTL expiry, minted by gen. Both the
+// challenge nonce and the browser launch ticket are "generate a random token,
+// redeem it once before it expires" — they differ only in size, TTL, and how
+// the token is generated.
+type ttlStore struct {
 	entries *expirable.LRU[string, time.Time]
+	ttl     time.Duration
+	gen     func() (string, error)
 }
 
-func newNonceStore() *nonceStore {
-	return &nonceStore{
-		entries: expirable.NewLRU[string, time.Time](1000, nil, nonceTTL),
+func newTTLStore(size int, ttl time.Duration, gen func() (string, error)) *ttlStore {
+	return &ttlStore{
+		entries: expirable.NewLRU[string, time.Time](size, nil, ttl),
+		ttl:     ttl,
+		gen:     gen,
 	}
 }
 
-func (s *nonceStore) create() (string, error) {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	nonce := hex.EncodeToString(buf)
-	s.entries.Add(nonce, time.Now().Add(nonceTTL))
-	return nonce, nil
-}
-
-func (s *nonceStore) consume(nonce string) bool {
-	exp, ok := s.entries.Get(nonce)
-	if !ok || time.Now().After(exp) {
-		return false
-	}
-	s.entries.Remove(nonce)
-	return true
-}
-
-// launchTicketStore holds single-use launch tickets with TTL expiry. A
-// launch ticket allows one-click browser authentication from the TUI
-// without exposing the password in the URL.
-type launchTicketStore struct {
-	entries *expirable.LRU[string, time.Time]
-}
-
-func newLaunchTicketStore() *launchTicketStore {
-	return &launchTicketStore{
-		entries: expirable.NewLRU[string, time.Time](100, nil, launchTicketTTL),
-	}
-}
-
-func (s *launchTicketStore) create() (string, error) {
-	// 43 base62 chars ≈ 256 bits of entropy (matches the prior 32-byte hex
-	// ticket) while shrinking the URL-visible token from 64 to 43 characters.
-	ticket, err := datadir.RandBase62(43)
+func (s *ttlStore) create() (string, error) {
+	token, err := s.gen()
 	if err != nil {
 		return "", err
 	}
-	s.entries.Add(ticket, time.Now().Add(launchTicketTTL))
-	return ticket, nil
+	s.entries.Add(token, time.Now().Add(s.ttl))
+	return token, nil
 }
 
-func (s *launchTicketStore) consume(ticket string) bool {
-	exp, ok := s.entries.Get(ticket)
+func (s *ttlStore) consume(token string) bool {
+	exp, ok := s.entries.Get(token)
 	if !ok || time.Now().After(exp) {
 		return false
 	}
-	s.entries.Remove(ticket)
+	s.entries.Remove(token)
 	return true
+}
+
+// newNonceStore holds single-use challenge nonces.
+func newNonceStore() *ttlStore {
+	return newTTLStore(1000, nonceTTL, func() (string, error) {
+		buf := make([]byte, 32)
+		if _, err := rand.Read(buf); err != nil {
+			return "", err
+		}
+		return hex.EncodeToString(buf), nil
+	})
+}
+
+// newLaunchTicketStore holds single-use launch tickets. A launch ticket
+// allows one-click browser authentication from the TUI without exposing the
+// password in the URL. 43 base62 chars ≈ 256 bits of entropy (matches the
+// prior 32-byte hex ticket) while shrinking the URL-visible token from 64 to
+// 43 characters.
+func newLaunchTicketStore() *ttlStore {
+	return newTTLStore(100, launchTicketTTL, func() (string, error) {
+		return datadir.RandBase62(43)
+	})
 }

@@ -103,11 +103,6 @@ func (pc *PersistenceCoordinator) Shutdown() {
 	pc.wg.Wait()
 }
 
-// Done returns a channel that is closed when the coordinator shuts down.
-func (pc *PersistenceCoordinator) Done() <-chan struct{} {
-	return pc.ctx.Done()
-}
-
 func (pc *PersistenceCoordinator) enqueue(task persistTask) {
 	select {
 	case <-pc.ctx.Done():

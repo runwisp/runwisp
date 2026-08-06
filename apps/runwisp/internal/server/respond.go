@@ -71,10 +71,6 @@ func respondBadRequest(resp http.ResponseWriter, publicMsg string) {
 	respondError(resp, http.StatusBadRequest, publicMsg, nil)
 }
 
-func respondForbidden(resp http.ResponseWriter, publicMsg string) {
-	respondError(resp, http.StatusForbidden, publicMsg, nil)
-}
-
 func respondUnauthorized(resp http.ResponseWriter, publicMsg string) {
 	respondError(resp, http.StatusUnauthorized, publicMsg, nil)
 }

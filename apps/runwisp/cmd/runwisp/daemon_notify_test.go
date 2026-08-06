@@ -31,7 +31,7 @@ func TestServerHub(t *testing.T) {
 		assert.Nil(t, b.serverHub(), "serverHub() leaked a typed-nil interface")
 	})
 	t.Run("real hub passes through", func(t *testing.T) {
-		b := notifyBundle{Hub: inapp.NewHub(32, 50)}
+		b := notifyBundle{Hub: inapp.NewHub(32)}
 		got := b.serverHub()
 		require.NotNil(t, got)
 		assert.Same(t, b.Hub, got)

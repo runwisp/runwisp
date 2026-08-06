@@ -39,11 +39,8 @@ type Config struct {
 	EveryN int
 }
 
-// Default values for Config.
-const (
-	DefaultWindow = time.Hour
-	DefaultEveryN = 10
-)
+// DefaultWindow is the default Config.Window value.
+const DefaultWindow = time.Hour
 
 // timerStopper is the slice of *time.Timer that coalesce relies on: the ability
 // to cancel a scheduled window-close flush. Tests inject a fake to fire

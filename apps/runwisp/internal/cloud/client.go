@@ -363,14 +363,14 @@ func (client *Client) startSession(ctx context.Context, connection *websocket.Co
 	}
 	session.lastReceived.Store(time.Now().UnixMilli())
 
-	change := client.conn.attachSession(session)
+	isFirstConnect := client.conn.attachSession(session)
 
 	// Clear stale log listeners from a previous session. This is a safety net
 	// in case the previous session's teardown was interrupted by a panic.
 	if client.handler != nil {
 		client.handler.ClearLogListeners()
 	}
-	if change.IsFirstConnect && client.onConnected != nil {
+	if isFirstConnect && client.onConnected != nil {
 		client.onConnected()
 	}
 	client.conn.flushPendingUpdates()
@@ -400,7 +400,7 @@ func closeConnection(conn *websocket.Conn, reason string) {
 }
 
 func sendMessage(session *wsSession, message any) error {
-	payload, err := EncodeOutboundMessage(message)
+	payload, err := json.Marshal(message)
 	if err != nil {
 		return &CloudError{Kind: CloudErrorKindValidation, Message: "failed to encode outbound message", Err: err}
 	}

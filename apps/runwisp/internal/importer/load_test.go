@@ -188,6 +188,18 @@ func cronFixtures(t *testing.T) map[string]importer.CronOptions {
 	return out
 }
 
+// skippedLive lists the rows LiveTOML left out, for failure messages that say
+// which jobs aren't running and why.
+func skippedLive(res *importer.Result) []importer.Item {
+	var out []importer.Item
+	for _, it := range res.Items() {
+		if !it.LiveEligible() {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
 // TestLiveTOMLAlwaysLoads is the guard the daemon's boot depends on. `include_cron`
 // renders LiveTOML and hands it to the config loader, so a crontab that produces
 // TOML the loader rejects doesn't degrade one task — it takes down the whole
@@ -210,7 +222,7 @@ func TestLiveTOMLAlwaysLoads(t *testing.T) {
 			live := res.LiveTOML()
 			if _, err := loadTOML(t, live); err != nil {
 				t.Fatalf("LiveTOML does not load: %v\n--- live toml ---\n%s\n--- skipped ---\n%+v",
-					err, live, res.SkippedLive())
+					err, live, skippedLive(res))
 			}
 		})
 	}
@@ -278,7 +290,7 @@ func TestLiveTOMLOfAWhollyUnusableCrontabIsStillValid(t *testing.T) {
 	if len(cfg.Tasks) != 0 {
 		t.Errorf("expected no tasks, got %d", len(cfg.Tasks))
 	}
-	if len(res.SkippedLive()) != 2 {
-		t.Errorf("expected both jobs reported as skipped, got %+v", res.SkippedLive())
+	if len(skippedLive(res)) != 2 {
+		t.Errorf("expected both jobs reported as skipped, got %+v", skippedLive(res))
 	}
 }

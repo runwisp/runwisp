@@ -23,10 +23,6 @@ type connectionManager struct {
 	ready        bool
 }
 
-type SessionChange struct {
-	IsFirstConnect bool
-}
-
 func newConnectionManager(tracker *ExecutionTracker) *connectionManager {
 	return &connectionManager{
 		tracker: tracker,
@@ -71,19 +67,17 @@ func (cm *connectionManager) refreshExecutionState() {
 	cm.applyExecutionStateLocked()
 }
 
-// attachSession sets the active session and transitions to ready state.
-func (cm *connectionManager) attachSession(s *wsSession) SessionChange {
+// attachSession sets the active session and transitions to ready state,
+// reporting whether this is the first time the session has gone ready.
+func (cm *connectionManager) attachSession(s *wsSession) (isFirstConnect bool) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	change := SessionChange{
-		IsFirstConnect: !cm.ready,
-	}
-
+	isFirstConnect = !cm.ready
 	cm.session = s
 	cm.ready = true
 	cm.applyExecutionStateLocked()
-	return change
+	return isFirstConnect
 }
 
 func (cm *connectionManager) detachSession() {

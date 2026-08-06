@@ -4,6 +4,7 @@
 package cloud
 
 import (
+	"encoding/json"
 	"errors"
 	"sort"
 	"testing"
@@ -126,8 +127,8 @@ func TestDecodeInboundMessage_KnownTypeRoundtrips(t *testing.T) {
 	assert.Equal(t, "pong", pong.Type)
 }
 
-func TestEncodeOutboundMessage_RoundTrip(t *testing.T) {
-	out, err := EncodeOutboundMessage(NewPingMessage(nil))
+func TestPingMessage_OmitsEmptySystemStats(t *testing.T) {
+	out, err := json.Marshal(NewPingMessage(nil))
 	require.NoError(t, err)
 	assert.Contains(t, string(out), `"type":"ping"`)
 	// A plain ping must not carry an empty systemStats object — the field is
@@ -152,7 +153,7 @@ func TestNewPingMessage_CarriesSystemStats(t *testing.T) {
 	assert.Equal(t, 8, ping.SystemStats.CpuCores)
 
 	// Identity-only / path-leaking fields are intentionally not on the wire.
-	out, err := EncodeOutboundMessage(ping)
+	out, err := json.Marshal(ping)
 	require.NoError(t, err)
 	assert.NotContains(t, string(out), "/secret/path")
 }

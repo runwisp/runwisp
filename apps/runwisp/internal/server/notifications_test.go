@@ -434,7 +434,7 @@ func TestNotificationsStream_NoHub_SendsPing(t *testing.T) {
 // --- sseNotificationsLiveLoop ---
 
 func TestSseNotificationsLiveLoop_DeliversPublishedUpdate(t *testing.T) {
-	hub := inapp.NewHub(8, 0)
+	hub := inapp.NewHub(8)
 	s, _, _, _ := setupServer(t)
 	s.notifyHub = hub
 
@@ -472,7 +472,7 @@ func TestSseNotificationsLiveLoop_DeliversPublishedUpdate(t *testing.T) {
 }
 
 func TestSseNotificationsLiveLoop_ExitsOnContextCancel(t *testing.T) {
-	hub := inapp.NewHub(4, 0)
+	hub := inapp.NewHub(4)
 	s, _, _, _ := setupServer(t)
 	s.notifyHub = hub
 

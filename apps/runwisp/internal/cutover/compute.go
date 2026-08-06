@@ -14,6 +14,7 @@ import (
 	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/configedit"
+	"github.com/runwisp/runwisp/internal/textutil"
 )
 
 // Compute answers "what would a cutover do to this box, and what stops it",
@@ -261,7 +262,7 @@ func includeCronMismatchBlocker(path string, ev Evidence) Blocker {
 	return Blocker{
 		Kind: BlockerIncludeCronMissesCrontabs,
 		Title: fmt.Sprintf("%s sets its own include_cron, and %s on this box %s not in it",
-			path, pluralCrontabs(len(ev.Uncovered)), isAre(len(ev.Uncovered))),
+			path, textutil.Count(len(ev.Uncovered), "crontab", "crontabs"), textutil.Pluralize(len(ev.Uncovered), "is", "are")),
 		Details: "Not read by this config:\n" +
 			indent(strings.Join(ev.Uncovered, "\n"), "  ") +
 			"\nMasking cron would stop those jobs with nothing left scheduling them. RunWisp will " +
@@ -305,7 +306,6 @@ func (c *Cutover) cronSourceBlockers(ev Evidence) []Blocker {
 			Details: strings.Join(reasons, "\n") +
 				"\n\nFix these first, or pass --allow-skipped-cron-jobs to take over cron anyway " +
 				"(those jobs stay stopped).",
-			Override: "--allow-skipped-cron-jobs",
 		})
 	}
 
@@ -376,21 +376,6 @@ func (c *Cutover) installStep(ctx context.Context, p Plan) ([]Step, error) {
 		})
 	}
 	return steps, nil
-}
-
-// pluralCrontabs and isAre keep the mismatch blocker's title grammatical.
-func pluralCrontabs(n int) string {
-	if n == 1 {
-		return "1 crontab"
-	}
-	return fmt.Sprintf("%d crontabs", n)
-}
-
-func isAre(n int) string {
-	if n == 1 {
-		return "is"
-	}
-	return "are"
 }
 
 // indent prefixes every non-empty line of s with pad, and guarantees a trailing

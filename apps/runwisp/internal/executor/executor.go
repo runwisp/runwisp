@@ -89,10 +89,9 @@ type Options struct {
 	EventBus             events.EventBus
 	CloudDispatchEnabled bool
 	HasLocalTasks        bool
-	Docker               Backend          // container backend; nil when Docker is unavailable
-	Compose              Backend          // compose backend; nil when docker compose is unavailable
-	MinFreeDisk          int64            // minimum free disk space in bytes; 0 = disabled
-	OnRunUpdate          func(*model.Run) // called when run state changes (e.g. LogPath set)
+	Docker               Backend // container backend; nil when Docker is unavailable
+	Compose              Backend // compose backend; nil when docker compose is unavailable
+	MinFreeDisk          int64   // minimum free disk space in bytes; 0 = disabled
 	// Clock is the wall-clock source for captured-output timestamps (system
 	// lines and the per-line timestamp index). nil defaults to time.Now;
 	// the demo seeder injects a backdated clock so historical runs carry
@@ -162,7 +161,6 @@ func New(opts Options) Executor {
 
 	return &RoutingExecutor{
 		logDir:       opts.LogDir,
-		onUpdate:     opts.OnRunUpdate,
 		eventBus:     opts.EventBus,
 		backends:     backends,
 		availability: avail,
@@ -171,14 +169,9 @@ func New(opts Options) Executor {
 	}
 }
 
-// now returns the executor's wall-clock instant, defaulting to time.Now when no
-// clock was injected. The constructor always sets one; this guards the
-// direct struct construction used by white-box tests so a missing clock can
-// never nil-panic in the output-timestamping path.
+// now returns the executor's wall-clock instant. The constructor always sets
+// clock (defaulting to time.Now), so callers can rely on it being non-nil.
 func (r *RoutingExecutor) now() time.Time {
-	if r.clock == nil {
-		return time.Now()
-	}
 	return r.clock()
 }
 

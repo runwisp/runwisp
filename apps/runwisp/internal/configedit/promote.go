@@ -70,20 +70,6 @@ func PromotableNames(cfg *config.Config) []string {
 	return names
 }
 
-// StagedNames returns just the entries whose definitions live in the staging file,
-// in config order. Distinct from PromotableNames because these are the only ones
-// whose bytes are *moved* out of a file — the rest are copied.
-func StagedNames(cfg *config.Config, layout Layout) []string {
-	var names []string
-	for i := range cfg.Tasks {
-		name := cfg.Tasks[i].Name
-		if cfg.OriginFile(name) == layout.StagingPath {
-			names = append(names, name)
-		}
-	}
-	return names
-}
-
 // Select resolves a promote request against the loaded config: all=true takes
 // every staged entry, otherwise each requested name is checked and returned in
 // the order the operator gave. Nothing is read from or written to disk here —

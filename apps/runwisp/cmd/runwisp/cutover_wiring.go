@@ -58,7 +58,7 @@ func newCutover(f Flags, deps autostart.Deps, installer autostart.Installer, opt
 // so `takeover --dry-run` on a non-root macOS box still prints what it found and
 // what would stop it, instead of dying before it can say anything.
 func resolveCutover(cmd *cobra.Command, f Flags, req takeoverRequest) (*cutover.Cutover, error) {
-	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, req.Yes)
+	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), os.Stdin, req.Yes)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +83,6 @@ func resolveCutover(cmd *cobra.Command, f Flags, req takeoverRequest) (*cutover.
 	}
 
 	return newCutover(f, deps, installer, opts, cutover.Options{
-		DryRun:               req.DryRun,
 		AllowSkippedCronJobs: req.AllowSkippedCronJobs,
 	}), nil
 }

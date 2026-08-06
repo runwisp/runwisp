@@ -126,7 +126,7 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 	if resolveErr != nil {
 		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusErr, ptr(-1), nil, nowPtr()))
 		if h.uploader != nil {
-			h.uploader.Forget(ctx, executionID)
+			h.uploader.forget(ctx, executionID)
 		}
 		return resolveErr
 	}
@@ -183,7 +183,7 @@ func (h *InboundHandler) handleTriggerError(ctx context.Context, executionID str
 		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusErr, ptr(-1), nil, nowPtr()))
 	}
 	if h.uploader != nil {
-		h.uploader.Forget(ctx, executionID)
+		h.uploader.forget(ctx, executionID)
 	}
 	return &CloudError{Kind: CloudErrorKindConflict, Message: triggerErr.Error()}
 }
@@ -308,9 +308,7 @@ func (h *InboundHandler) HandleLogStop(message protocol.LogStopMessage) {
 	if executionID == "" {
 		return
 	}
-	h.mu.Lock()
-	delete(h.logListeners, executionID)
-	h.mu.Unlock()
+	h.RemoveLogListener(executionID)
 }
 
 // IsLogListener reports whether the given execution has an active subscription.
@@ -322,15 +320,11 @@ func (h *InboundHandler) IsLogListener(executionID string) bool {
 }
 
 // RemoveLogListener removes a log listener (terminal-status cleanup or
-// log:stop). Returns true if the listener existed.
-func (h *InboundHandler) RemoveLogListener(executionID string) bool {
+// log:stop). A no-op when the listener doesn't exist.
+func (h *InboundHandler) RemoveLogListener(executionID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if _, ok := h.logListeners[executionID]; !ok {
-		return false
-	}
 	delete(h.logListeners, executionID)
-	return true
 }
 
 // ClearLogListeners removes all active log listeners (e.g. on reconnect).

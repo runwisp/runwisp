@@ -53,12 +53,7 @@ func EnsureCronInclude(rootTOML []byte, patterns []string) (out []byte, err erro
 		return nil, ErrCronIncludeAlreadySet
 	}
 
-	text := ensureTrailingNewline(string(rootTOML))
-	key := config.CronIncludeArray(patterns)
-	if end, ok := daemonHeaderEnd(text); ok {
-		return []byte(text[:end] + key + text[end:]), nil
-	}
-	return []byte(text + "\n[daemon]\n" + key), nil
+	return insertDaemonKey(rootTOML, config.CronIncludeArray(patterns)), nil
 }
 
 // WireCronInclude applies EnsureCronInclude to the config at path and writes it

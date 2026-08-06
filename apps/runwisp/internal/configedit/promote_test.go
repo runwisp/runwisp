@@ -130,7 +130,6 @@ func TestPromote_RemovesTheEmptiedStagingFile(t *testing.T) {
 	// The root still loads with everything, and nothing is staged any more.
 	cfg := loadLayout(t, layout)
 	assert.ElementsMatch(t, []string{"mine", "backup", "reindex"}, taskNames(cfg))
-	assert.Empty(t, StagedNames(cfg, layout))
 }
 
 // TestPromote_KeepsTheStagingFileWhenSomethingElseRemains guards the other side
@@ -205,27 +204,6 @@ func TestPromote_NoNamesWritesNothing(t *testing.T) {
 
 	assert.Empty(t, res.Promoted)
 	assert.Equal(t, before, readFile(t, layout.RootPath))
-}
-
-func TestStagedNames_OnlyTheStagingFile(t *testing.T) {
-	root := `[daemon]
-include = ["runwisp.d/*.toml", "conf.d/*.toml"]
-
-[tasks.native]
-run = "echo native"
-`
-	dir := writeFileTree(t, map[string]string{
-		"runwisp.toml":                "",
-		"conf.d/hand.toml":            "[tasks.hand]\nrun = \"echo hand\"\n",
-		"runwisp.d/imported.toml":     "[tasks.staged_one]\nrun = \"a\"\n\n[services.staged_two]\nrun = \"b\"\n",
-		"runwisp.d/also_imported.tml": "ignored: not a .toml\n",
-	})
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "runwisp.toml"), []byte(root), 0o644))
-	layout := NewLayout(filepath.Join(dir, "runwisp.toml"))
-
-	got := StagedNames(loadLayout(t, layout), layout)
-
-	assert.ElementsMatch(t, []string{"staged_one", "staged_two"}, got)
 }
 
 func TestSelect(t *testing.T) {

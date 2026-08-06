@@ -11,10 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"log/slog"
-
 	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/datadir"
 )
 
 // The CLI caches the JWT minted by a remote daemon so repeated `runwisp exec
@@ -54,14 +51,7 @@ func loadCachedToken(baseURL string) string {
 	if err != nil {
 		return ""
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	var cache map[string]cachedToken
-	if err := json.Unmarshal(data, &cache); err != nil {
-		return ""
-	}
+	cache := loadJSONCacheMap[cachedToken](path)
 	entry, ok := cache[apiclient.NormalizeBaseURL(baseURL)]
 	if !ok || entry.Token == "" {
 		return ""
@@ -78,27 +68,9 @@ func loadCachedToken(baseURL string) string {
 func storeCachedToken(baseURL, token string) {
 	path, err := tokenCachePath()
 	if err != nil {
-		slog.Debug("Skipping token cache: no user cache dir", "err", err)
 		return
 	}
-	cache := map[string]cachedToken{}
-	if data, readErr := os.ReadFile(path); readErr == nil {
-		_ = json.Unmarshal(data, &cache) // a corrupt file is simply overwritten
-	}
-	cache[apiclient.NormalizeBaseURL(baseURL)] = cachedToken{Token: token, ExpiresAt: jwtExpiry(token)}
-
-	data, err := json.Marshal(cache)
-	if err != nil {
-		slog.Debug("Skipping token cache: marshal failed", "err", err)
-		return
-	}
-	if err := datadir.EnsureDir(filepath.Dir(path)); err != nil {
-		slog.Debug("Skipping token cache: cannot create cache dir", "err", err)
-		return
-	}
-	if err := datadir.WriteSecretFile(path, data); err != nil {
-		slog.Debug("Skipping token cache: write failed", "err", err)
-	}
+	storeJSONCacheEntry(path, "token", apiclient.NormalizeBaseURL(baseURL), cachedToken{Token: token, ExpiresAt: jwtExpiry(token)})
 }
 
 // jwtExpiry pulls the `exp` claim (unix seconds) out of a JWT without

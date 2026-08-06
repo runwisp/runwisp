@@ -12,7 +12,6 @@ import {
     formatTaskNextRunLabel,
     formatTaskTriggerLabel,
     formatTriggeredByLabel,
-    getTaskStatusDot,
     taskTriggerIsHumanizedCron,
 } from "./overview-format";
 
@@ -160,12 +159,6 @@ describe("taskTriggerIsHumanizedCron", () => {
             taskTriggerIsHumanizedCron(makeOverview({ task: makeTask({ kind: "service" }) })),
         ).toBe(false);
         expect(taskTriggerIsHumanizedCron(makeOverview({ task: makeTask({}) }))).toBe(false);
-    });
-});
-
-describe("getTaskStatusDot", () => {
-    it("returns 'bg-mist-300' when status is undefined", () => {
-        expect(getTaskStatusDot(undefined)).toBe("bg-mist-300");
     });
 });
 

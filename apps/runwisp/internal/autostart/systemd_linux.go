@@ -632,10 +632,7 @@ func (s *systemdInstaller) checkLinger(ctx context.Context) (bool, error) {
 
 // envPath returns the PATH the unit will inherit.
 func envPath() string {
-	if p := os.Getenv("PATH"); p != "" {
-		return p
-	}
-	return defaultPATH
+	return envPathOrDefault(defaultPATH)
 }
 
 // parseSystemdTimestamp parses the ActiveEnterTimestamp emitted by

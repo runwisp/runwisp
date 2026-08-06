@@ -3,7 +3,7 @@
 
 import { SSE_CONFIG } from "$lib/config/constants";
 import type { EventSourceFactory, SSEStream } from "$lib/adapters/browser";
-import { browserEventSourceFactory } from "$lib/adapters/browser";
+import { browserAuthEventSourceFactory } from "$lib/adapters/browser";
 import {
     type SSEErrorInfo,
     extractErrorInfo,
@@ -63,7 +63,7 @@ export function connectSSE(options: ReconnectingSSEOptions): SSEConnection {
         deps = {},
     } = options;
 
-    const createEventSource = deps.createEventSource ?? browserEventSourceFactory;
+    const createEventSource = deps.createEventSource ?? browserAuthEventSourceFactory;
     const resolveApiUrl = deps.getApiUrl ?? getApiUrl;
     const logger = createLogger("SSE");
 

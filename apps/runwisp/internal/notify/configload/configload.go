@@ -35,11 +35,7 @@ func Resolve(cfg config.NotifyConfig, renderCtx render.TemplateContext) (Resolve
 
 	rules := make([]notify.Rule, 0, len(cfg.Routes))
 	for _, r := range cfg.Routes {
-		rule, err := compileRoute(r)
-		if err != nil {
-			return ResolvedNotify{}, err
-		}
-		rules = append(rules, rule)
+		rules = append(rules, compileRoute(r))
 	}
 
 	return ResolvedNotify{
@@ -110,7 +106,7 @@ func fillSMTPSpec(spec *channel.NotifierSpec, n config.NotifierSpec) {
 	spec.BCC = append([]string(nil), n.BCC...)
 }
 
-func compileRoute(r config.NotificationRoute) (notify.Rule, error) {
+func compileRoute(r config.NotificationRoute) notify.Rule {
 	preds := make([]notify.Predicate, 0, 3)
 	if len(r.Kinds) > 0 {
 		kinds := make([]notify.Kind, len(r.Kinds))
@@ -128,5 +124,5 @@ func compileRoute(r config.NotificationRoute) (notify.Rule, error) {
 	return notify.Rule{
 		Match:     notify.And(preds...),
 		ActionIDs: append([]string(nil), r.NotifierID...),
-	}, nil
+	}
 }

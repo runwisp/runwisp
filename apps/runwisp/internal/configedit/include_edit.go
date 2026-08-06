@@ -54,11 +54,7 @@ func EnsureStagingInclude(rootTOML []byte, rootDir string) (out []byte, changed 
 		return nil, false, ErrIncludeNeedsManualWiring
 	}
 
-	text := ensureTrailingNewline(string(rootTOML))
-	if end, ok := daemonHeaderEnd(text); ok {
-		return []byte(text[:end] + stagingIncludeLine() + text[end:]), true, nil
-	}
-	return []byte(text + "\n[daemon]\n" + stagingIncludeLine()), true, nil
+	return insertDaemonKey(rootTOML, stagingIncludeLine()), true, nil
 }
 
 // stagingIncludeLine is the include declaration wired into the root config.
@@ -110,4 +106,15 @@ func ensureTrailingNewline(text string) string {
 		return text
 	}
 	return text + "\n"
+}
+
+// insertDaemonKey inserts keyLine into rootTOML's [daemon] table — right after
+// the header when one exists, or into a freshly appended table otherwise. It
+// never reformats or reorders the operator's existing bytes.
+func insertDaemonKey(rootTOML []byte, keyLine string) []byte {
+	text := ensureTrailingNewline(string(rootTOML))
+	if end, ok := daemonHeaderEnd(text); ok {
+		return []byte(text[:end] + keyLine + text[end:])
+	}
+	return []byte(text + "\n[daemon]\n" + keyLine)
 }

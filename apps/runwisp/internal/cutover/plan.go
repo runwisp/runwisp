@@ -70,12 +70,9 @@ type Blocker struct {
 	Kind BlockerKind
 	// Title is one line, lower case, no trailing period.
 	Title string
-	// Details is the remedy, and may be several lines.
+	// Details is the remedy, and may be several lines. When a flag waives
+	// this blocker, Details spells it out in prose.
 	Details string
-	// Override names the flag that waives this blocker, or "" when there isn't
-	// one. A blocker with no override is a genuine dead end, and the Details
-	// have to carry the operator all the way out.
-	Override string
 }
 
 // Evidence is everything one machine scan plus at most one config load

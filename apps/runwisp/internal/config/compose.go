@@ -6,6 +6,7 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -282,7 +283,7 @@ func parseComposeBlock(alias string, raw map[string]any) (*composeBlock, error) 
 		subTable, ok := value.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("unknown key %q (not a per-service override table; reserved keys: %s)",
-				key, strings.Join(sortedKeys(composeReservedKeys), ", "))
+				key, strings.Join(slices.Sorted(maps.Keys(composeReservedKeys)), ", "))
 		}
 		override, err := decodeServiceOverride(key, subTable)
 		if err != nil {
@@ -773,13 +774,4 @@ func resolveComposeFile(declared, baseDir string) (string, error) {
 	}
 	return "", fmt.Errorf("no compose file found in %s (searched: %s)",
 		baseDir, strings.Join(ComposeAutoDiscoveryFilenames, ", "))
-}
-
-func sortedKeys(m map[string]struct{}) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }

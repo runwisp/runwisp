@@ -124,12 +124,8 @@ describe("formatRelativeTimeWithAbsolute", () => {
 describe("formatRelativeTime", () => {
     it("advances as the supplied now advances", () => {
         const date = new Date("2024-01-01T12:00:00Z");
-        expect(formatRelativeTime(date, new Date("2024-01-01T14:00:00Z"))).toBe(
-            "about 2 hours ago",
-        );
-        expect(formatRelativeTime(date, new Date("2024-01-01T15:00:00Z"))).toBe(
-            "about 3 hours ago",
-        );
+        expect(formatRelativeTime(date, new Date("2024-01-01T14:00:00Z"))).toBe("2 hours ago");
+        expect(formatRelativeTime(date, new Date("2024-01-01T15:00:00Z"))).toBe("3 hours ago");
     });
 });
 

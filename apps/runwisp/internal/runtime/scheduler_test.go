@@ -25,7 +25,7 @@ func TestScheduler(t *testing.T) {
 	}
 	tasks := map[string]*model.Task{"task1": task}
 
-	sched := NewScheduler(runner, tasks, time.UTC)
+	sched := NewScheduler(runner, tasks, time.UTC, nil)
 	_, err := sched.Start()
 	require.NoError(t, err)
 	defer sched.Stop()
@@ -56,7 +56,7 @@ func TestSchedulerHonorsTaskTimezone(t *testing.T) {
 		Run:      "echo hi",
 	}
 	jm.UpsertTask(task)
-	sched := NewScheduler(jm, map[string]*model.Task{"ny-task": task}, time.UTC)
+	sched := NewScheduler(jm, map[string]*model.Task{"ny-task": task}, time.UTC, nil)
 	_, err := sched.Start()
 	assert.NoError(t, err)
 	defer sched.Stop()
@@ -87,7 +87,7 @@ func TestSchedulerDSTWallClockDedup(t *testing.T) {
 	jm.UpsertTask(task)
 	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
 
-	sched := NewScheduler(jm, map[string]*model.Task{"eu-2am": task}, time.UTC)
+	sched := NewScheduler(jm, map[string]*model.Task{"eu-2am": task}, time.UTC, nil)
 
 	loc, err := time.LoadLocation("Europe/Bratislava")
 	require.NoError(t, err)
@@ -126,7 +126,7 @@ func TestSchedulerDSTDifferentMinuteFires(t *testing.T) {
 	jm.UpsertTask(task)
 	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
 
-	sched := NewScheduler(jm, map[string]*model.Task{"eu-mins": task}, time.UTC)
+	sched := NewScheduler(jm, map[string]*model.Task{"eu-mins": task}, time.UTC, nil)
 
 	loc, err := time.LoadLocation("Europe/Bratislava")
 	require.NoError(t, err)
@@ -183,7 +183,7 @@ func TestSchedulerFireOnce_GoldenTriggerSkipSequence(t *testing.T) {
 		runner,
 		map[string]*model.Task{"tick": task},
 		time.UTC,
-		WithNow(clock),
+		clock,
 	)
 
 	loc, err := time.LoadLocation("Europe/Bratislava")
@@ -228,7 +228,7 @@ func TestSchedulerSubMinuteFiresNotSuppressed(t *testing.T) {
 		return t
 	}
 
-	sched := NewScheduler(runner, map[string]*model.Task{"sub-minute": task}, time.UTC, WithNow(clock))
+	sched := NewScheduler(runner, map[string]*model.Task{"sub-minute": task}, time.UTC, clock)
 
 	for range stamps {
 		sched.fireOnce("sub-minute", time.UTC)
@@ -265,11 +265,11 @@ func TestSchedulerEverySecondDSTFallbackSuppressed(t *testing.T) {
 	require.Equal(t, 2, stamps[1].In(loc).Hour(), "anchoring sanity: second fire must read 02:xx (post fall-back)")
 
 	idx := 0
-	sched := NewScheduler(runner, map[string]*model.Task{"per-minute": task}, time.UTC, WithNow(func() time.Time {
+	sched := NewScheduler(runner, map[string]*model.Task{"per-minute": task}, time.UTC, func() time.Time {
 		t := stamps[idx]
 		idx++
 		return t
-	}))
+	})
 
 	for range stamps {
 		sched.fireOnce("per-minute", loc)
@@ -306,7 +306,7 @@ func TestSchedulerWiresDSTGapRecovery(t *testing.T) {
 		Jitter:   10 * time.Minute,
 		Run:      "echo",
 	}
-	sched := NewScheduler(runner, map[string]*model.Task{"nightly": task}, time.UTC, WithNow(func() time.Time { return now }))
+	sched := NewScheduler(runner, map[string]*model.Task{"nightly": task}, time.UTC, func() time.Time { return now })
 	_, err = sched.Start()
 	require.NoError(t, err)
 	defer sched.Stop()
@@ -340,7 +340,7 @@ func TestSchedulerJitterRoutesThroughGate(t *testing.T) {
 	now := time.Date(2026, 6, 10, 1, 0, 0, 0, time.UTC)
 	tasks := jitterTasks(30 * time.Minute)
 
-	sched := NewScheduler(runner, tasks, time.UTC, WithNow(func() time.Time { return now }))
+	sched := NewScheduler(runner, tasks, time.UTC, func() time.Time { return now })
 	_, err := sched.Start()
 	require.NoError(t, err)
 	defer sched.Stop()
@@ -378,7 +378,7 @@ func TestSchedulerJitterClampsSlotToLiveGap(t *testing.T) {
 	// A 2h window is far wider than the 30m gap to the next tick.
 	tasks := jitterTasks(2 * time.Hour)
 
-	sched := NewScheduler(runner, tasks, time.UTC, WithNow(func() time.Time { return now }))
+	sched := NewScheduler(runner, tasks, time.UTC, func() time.Time { return now })
 	_, err := sched.Start()
 	require.NoError(t, err)
 	defer sched.Stop()
@@ -401,7 +401,7 @@ func TestSchedulerJitterSkipsDSTDuplicate(t *testing.T) {
 	now := time.Date(2026, 6, 10, 1, 0, 0, 0, time.UTC)
 	tasks := jitterTasks(30 * time.Minute)
 
-	sched := NewScheduler(runner, tasks, time.UTC, WithNow(func() time.Time { return now }))
+	sched := NewScheduler(runner, tasks, time.UTC, func() time.Time { return now })
 	_, err := sched.Start()
 	require.NoError(t, err)
 	defer sched.Stop()
@@ -426,7 +426,7 @@ func TestSchedulerJitterGetNextRunShowsTick(t *testing.T) {
 	now := time.Date(2026, 6, 10, 1, 0, 0, 0, time.UTC)
 	tasks := jitterTasks(30 * time.Minute)
 
-	sched := NewScheduler(runner, tasks, time.UTC, WithNow(func() time.Time { return now }))
+	sched := NewScheduler(runner, tasks, time.UTC, func() time.Time { return now })
 	_, err := sched.Start()
 	require.NoError(t, err)
 	defer sched.Stop()
@@ -454,7 +454,7 @@ func TestSchedulerRejectsBadTaskTimezone(t *testing.T) {
 
 	task := &model.Task{Name: "bad", Cron: "0 2 * * *", Timezone: "Atlantis/Lost", Run: "echo"}
 	jm.UpsertTask(task)
-	sched := NewScheduler(jm, map[string]*model.Task{"bad": task}, time.UTC)
+	sched := NewScheduler(jm, map[string]*model.Task{"bad": task}, time.UTC, nil)
 	res, err := sched.Start()
 	assert.NoError(t, err)
 	defer sched.Stop()
@@ -464,7 +464,7 @@ func TestSchedulerRejectsBadTaskTimezone(t *testing.T) {
 
 func TestSchedulerAddTaskAfterStart(t *testing.T) {
 	runner := &fakeTaskRunner{}
-	sched := NewScheduler(runner, map[string]*model.Task{}, time.UTC)
+	sched := NewScheduler(runner, map[string]*model.Task{}, time.UTC, nil)
 	_, err := sched.Start()
 	require.NoError(t, err)
 	defer sched.Stop()
@@ -483,7 +483,7 @@ func TestSchedulerAddTaskAfterStart(t *testing.T) {
 
 func TestSchedulerAddTaskIgnoresNonCron(t *testing.T) {
 	runner := &fakeTaskRunner{}
-	sched := NewScheduler(runner, map[string]*model.Task{}, time.UTC)
+	sched := NewScheduler(runner, map[string]*model.Task{}, time.UTC, nil)
 	_, err := sched.Start()
 	require.NoError(t, err)
 	defer sched.Stop()
@@ -497,7 +497,7 @@ func TestSchedulerAddTaskIgnoresNonCron(t *testing.T) {
 func TestSchedulerRemoveTaskClearsState(t *testing.T) {
 	runner := &fakeTaskRunner{}
 	task := &model.Task{Name: "tick", Cron: "@every 1h", Run: "echo hi"}
-	sched := NewScheduler(runner, map[string]*model.Task{"tick": task}, time.UTC)
+	sched := NewScheduler(runner, map[string]*model.Task{"tick": task}, time.UTC, nil)
 	_, err := sched.Start()
 	require.NoError(t, err)
 	defer sched.Stop()
@@ -524,7 +524,7 @@ func TestSchedulerRemoveTaskClearsState(t *testing.T) {
 func TestSchedulerReschedule(t *testing.T) {
 	runner := &fakeTaskRunner{}
 	task := &model.Task{Name: "tick", Cron: "0 2 * * *", Run: "echo hi"}
-	sched := NewScheduler(runner, map[string]*model.Task{"tick": task}, time.UTC)
+	sched := NewScheduler(runner, map[string]*model.Task{"tick": task}, time.UTC, nil)
 	_, err := sched.Start()
 	require.NoError(t, err)
 	defer sched.Stop()

@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/textutil"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/internal/tui/views/logpane"
@@ -732,7 +733,7 @@ func (m Model) handleBulkAction(msg uikit.BulkActionMsg) (tea.Model, tea.Cmd) {
 		return m, m.dialogs.Flash(msg.Action+" failed: "+msg.Err.Error(), 6*time.Second)
 	}
 	cmds := []tea.Cmd{m.fetchExecWindow()}
-	summary := fmt.Sprintf("%s %d run%s", msg.Action, msg.Affected, plural(msg.Affected))
+	summary := fmt.Sprintf("%s %d run%s", msg.Action, msg.Affected, textutil.Pluralize(msg.Affected, "", "s"))
 	cmds = append(cmds, m.dialogs.Flash(summary, 4*time.Second))
 	return m, tea.Batch(cmds...)
 }
@@ -746,7 +747,7 @@ func (m Model) handleBulkDeleteResult(msg uikit.BulkDeleteResultMsg) (tea.Model,
 		return m, m.dialogs.Flash("Delete failed: "+msg.Err.Error(), 6*time.Second)
 	}
 	cmds := []tea.Cmd{m.fetchExecWindow()}
-	label := fmt.Sprintf("Deleted %d run%s", msg.Affected, plural(msg.Affected))
+	label := fmt.Sprintf("Deleted %d run%s", msg.Affected, textutil.Pluralize(msg.Affected, "", "s"))
 	if !msg.Restore.MatchAll && msg.Affected > 0 {
 		undo := m.streams.RestoreRuns(msg.Restore)
 		cmds = append(cmds, m.dialogs.FlashUndo(label+" — press u to undo", undo, 6*time.Second))
@@ -754,13 +755,6 @@ func (m Model) handleBulkDeleteResult(msg uikit.BulkDeleteResultMsg) (tea.Model,
 		cmds = append(cmds, m.dialogs.Flash(label, 4*time.Second))
 	}
 	return m, tea.Batch(cmds...)
-}
-
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
 }
 
 func (m Model) handleRestartService(msg uikit.RestartServiceMsg) (tea.Model, tea.Cmd) {

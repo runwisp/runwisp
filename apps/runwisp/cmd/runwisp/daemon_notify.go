@@ -86,7 +86,7 @@ func initNotify(
 	var hub *inapp.Hub
 	var inappCh *inapp.Channel
 	if inappWanted {
-		hub = inapp.NewHub(32, 50)
+		hub = inapp.NewHub(32)
 
 		coalescerCfg := inapp.CoalescerConfig{
 			Window:      notifyCfg.CoalesceWindow,

@@ -19,7 +19,6 @@ type Deps struct {
 	Cmd      Runner
 	Prompter Prompter
 	Stdout   io.Writer
-	Stderr   io.Writer
 
 	// Home is the operator's home directory. Drives unit path,
 	// linger username, the "binary under ~/.cache" warning, etc.
@@ -39,9 +38,6 @@ type Deps struct {
 	// non-conflicting units. Required.
 	Fingerprint string
 
-	// AutoOK reflects the --yes flag.
-	AutoOK bool
-
 	// StdinIsTTY reflects whether stdin is attached to a terminal.
 	StdinIsTTY bool
 
@@ -55,8 +51,8 @@ type Deps struct {
 
 // DefaultDeps returns a Deps with production seams, sniffing the
 // usual environment signals for home / user / XDG / WSL / TTY.
-func DefaultDeps(stdout, stderr io.Writer, stdin *os.File, autoOK bool) (Deps, error) {
-	home, err := UserHomeDir()
+func DefaultDeps(stdout io.Writer, stdin *os.File, autoOK bool) (Deps, error) {
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return Deps{}, err
 	}
@@ -69,14 +65,12 @@ func DefaultDeps(stdout, stderr io.Writer, stdin *os.File, autoOK bool) (Deps, e
 		FS:          NewOSFileSystem(),
 		Cmd:         NewRunner(),
 		Stdout:      stdout,
-		Stderr:      stderr,
 		Home:        home,
 		User:        u.Username,
 		XDGDataHome: os.Getenv("XDG_DATA_HOME"),
 		XDGConfHome: os.Getenv("XDG_CONFIG_HOME"),
 		WSL:         DetectWSLFromEnv(),
 		Fingerprint: fingerprint.Generate(),
-		AutoOK:      autoOK,
 		StdinIsTTY:  isTTY,
 		Euid:        os.Geteuid(),
 	}

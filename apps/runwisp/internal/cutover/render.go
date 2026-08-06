@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/internal/textutil"
 )
 
 // Render writes the plan block an operator reads before approving anything: what
@@ -54,7 +55,7 @@ func renderFindings(w io.Writer, p Plan) {
 	switch {
 	case ev.Scan.Jobs > 0:
 		fmt.Fprintf(w, "Found %s on this box:\n  %s\n",
-			pluralJobs(ev.Scan.Jobs), strings.Join(ev.Sources, ", "))
+			textutil.Count(ev.Scan.Jobs, "cron job", "cron jobs"), strings.Join(ev.Sources, ", "))
 		if skipped := ev.Scan.Jobs - ev.Scan.Live; skipped > 0 {
 			fmt.Fprintf(w, "  (%d of them need a fix first and would not run)\n", skipped)
 		}
@@ -164,12 +165,4 @@ func JoinSources(sources []string) string {
 		return fmt.Sprintf("%s and %s",
 			strings.Join(sources[:len(sources)-1], ", "), sources[len(sources)-1])
 	}
-}
-
-// pluralJobs renders a job count with the right noun.
-func pluralJobs(n int) string {
-	if n == 1 {
-		return "1 cron job"
-	}
-	return fmt.Sprintf("%d cron jobs", n)
 }

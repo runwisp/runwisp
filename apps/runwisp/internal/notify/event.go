@@ -42,20 +42,6 @@ const (
 	KindNotifyDeliveryFailed Kind = "notify.delivery_failed"
 )
 
-// AllKinds is the canonical enumeration; useful for validation in configload.
-var AllKinds = []Kind{
-	KindRunStarted,
-	KindRunSucceeded,
-	KindRunFailed,
-	KindRunTimeout,
-	KindRunStopped,
-	KindRunCrashed,
-	KindRunMissed,
-	KindServiceFatal,
-	KindLogDiskPressure,
-	KindNotifyDeliveryFailed,
-}
-
 // Title returns the user-facing title fragment for this Kind.
 func (k Kind) Title(ev *Event) string {
 	switch k {
@@ -116,9 +102,6 @@ func FingerprintKey(ev *Event) string {
 	}
 	return string(ev.Kind) + "|" + ev.TaskName + "|" + extra
 }
-
-// AllSeverities mirrors AllKinds for severity validation.
-var AllSeverities = []Severity{SevInfo, SevWarn, SevError}
 
 // Event is the public boundary type the notification subsystem operates on.
 // It is constructed by bridge.go from events.RunEvent or by the dispatcher

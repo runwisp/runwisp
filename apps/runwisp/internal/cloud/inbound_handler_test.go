@@ -298,7 +298,7 @@ func TestInboundHandler_FreshHandlerGetters(t *testing.T) {
 	assert.Equal(t, "/tmp/logs", h.LogDir())
 	assert.Nil(t, h.Uploader(), "uploader must be nil when not configured")
 	assert.False(t, h.IsLogListener("exec-1"), "no listener registered → must be false")
-	assert.False(t, h.RemoveLogListener("exec-1"), "removing absent listener must return false")
+	assert.NotPanics(t, func() { h.RemoveLogListener("exec-1") }, "removing an absent listener must be a no-op")
 }
 
 func TestInboundHandler_HandleLogListen_And_IsLogListener(t *testing.T) {
@@ -325,7 +325,7 @@ func TestInboundHandler_HandleLogListen_Idempotent(t *testing.T) {
 func TestInboundHandler_RemoveLogListener_Present(t *testing.T) {
 	h := newTestInboundHandler()
 	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: "exec-1"})
-	assert.True(t, h.RemoveLogListener("exec-1"))
+	h.RemoveLogListener("exec-1")
 	assert.False(t, h.IsLogListener("exec-1"))
 }
 

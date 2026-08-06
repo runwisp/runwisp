@@ -30,39 +30,6 @@ type LocatedError struct {
 
 func (e *LocatedError) Error() string { return e.Msg }
 
-// MultiError carries more than one config error so `runwisp validate` can report
-// every problem in one pass instead of the first alone. Its Unwrap satisfies
-// errors.As/Is against the wrapped errors, so a caller can still lift individual
-// LocatedError locations. Load/Validate return a plain error for the zero/one
-// case and a *MultiError only when there are genuinely several.
-type MultiError struct {
-	Errors []error
-}
-
-func (m *MultiError) Error() string {
-	msgs := make([]string, len(m.Errors))
-	for i, e := range m.Errors {
-		msgs[i] = e.Error()
-	}
-	return strings.Join(msgs, "\n")
-}
-
-// Unwrap exposes the wrapped errors to errors.As/Is (Go 1.20+ multi-unwrap).
-func (m *MultiError) Unwrap() []error { return m.Errors }
-
-// joinConfigErrors collapses a slice of errors into the smallest form: nil for
-// none, the sole error for one, a *MultiError otherwise.
-func joinConfigErrors(errs []error) error {
-	switch len(errs) {
-	case 0:
-		return nil
-	case 1:
-		return errs[0]
-	default:
-		return &MultiError{Errors: errs}
-	}
-}
-
 // keyPath renders a go-toml key as a dotted path, e.g. tasks.backup.cron.
 func keyPath(key toml.Key) string {
 	return strings.Join([]string(key), ".")
@@ -91,7 +58,7 @@ func formatDecodeError(err error) error {
 					Column: col,
 				})
 			}
-			return joinConfigErrors(located)
+			return errors.Join(located...)
 		}
 		return &LocatedError{Msg: fmt.Sprintf("failed to parse config file:%s", formatStrictMissing(strict))}
 	}

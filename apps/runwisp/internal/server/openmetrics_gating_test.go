@@ -35,7 +35,7 @@ func setupServerForMetrics(t *testing.T, metricsEnabled bool, metricsListen stri
 	eb := events.NewEventBus()
 	jm := runtime.NewTaskManager(exec, eb, time.Now)
 	tasks := map[string]*model.Task{}
-	scheduler := runtime.NewScheduler(jm, tasks, time.UTC)
+	scheduler := runtime.NewScheduler(jm, tasks, time.UTC, nil)
 	tmpDir := testutil.ShortTempDir(t)
 
 	s, err := New(Options{

@@ -50,11 +50,6 @@ func TestMapEvent_SkipNeverNotifies(t *testing.T) {
 	}
 }
 
-func TestService_DroppedIngressCount_Zero(t *testing.T) {
-	svc := New(Config{Bus: events.NewEventBus()})
-	assert.Equal(t, uint64(0), svc.DroppedIngressCount())
-}
-
 // TestMapEvent_LogDiskPressure verifies the new event surface introduced
 // when min_free_space stops honouring per-task log_on_full silently.
 func TestMapEvent_LogDiskPressure(t *testing.T) {

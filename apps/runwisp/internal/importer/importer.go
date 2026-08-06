@@ -40,22 +40,6 @@ type Result struct {
 	notes []Note
 }
 
-// tableNames lists the top-level tables the emitted TOML defines — the
-// [tasks.x] / [services.x] headers, without their .env children. It exists for
-// the test that checks the emitted file against the report; nothing in the
-// package's behavior depends on it.
-func (r *Result) tableNames() []string {
-	var out []string
-	for _, b := range r.blocks {
-		path := strings.Split(b.header, ".")
-		if len(path) != 2 {
-			continue // a .env child, or a table that names no job
-		}
-		out = append(out, path[1])
-	}
-	return out
-}
-
 // field is one `key = value` line. value is already TOML-formatted.
 type field struct {
 	key     string
@@ -96,19 +80,6 @@ func (r *Result) TOML() string { return r.TOMLFor(func(Item) bool { return true 
 // handed a config to *run*, so a job whose imported form isn't what the source
 // would have run must not be in it. See Item.LiveEligible.
 func (r *Result) LiveTOML() string { return r.TOMLFor(Item.LiveEligible) }
-
-// SkippedLive lists the rows LiveTOML left out, so the caller can say which jobs
-// aren't running and why. Dropping a job without a way to name it is the failure
-// mode this exists to prevent.
-func (r *Result) SkippedLive() []Item {
-	var out []Item
-	for _, it := range r.items {
-		if !it.LiveEligible() {
-			out = append(out, it)
-		}
-	}
-	return out
-}
 
 // TOMLFor renders the annotated configuration for the rows keep accepts. Blocks
 // are emitted in the order the parser produced them; fields keep their insertion

@@ -72,7 +72,12 @@ func TestSkippedLiveNamesEveryDroppedJob(t *testing.T) {
 		"not-a-cron-line\n"
 	res := parseCron(t, in, CronOptions{})
 
-	skipped := res.SkippedLive()
+	var skipped []Item
+	for _, it := range res.Items() {
+		if !it.LiveEligible() {
+			skipped = append(skipped, it)
+		}
+	}
 	if len(skipped) != 2 {
 		t.Fatalf("expected 2 skipped jobs, got %+v", skipped)
 	}
