@@ -408,8 +408,7 @@
                             <span class="text-outline-hover" aria-hidden="true">·</span>
                             <span>{formatCalendarDate(startedAt)}</span>
                             <span class="text-outline-hover" aria-hidden="true">·</span>
-                            <span>via {formatTriggeredByLabel(run.triggeredBy).toLowerCase()}</span
-                            >
+                            <span>via {formatTriggeredByLabel(run.triggeredBy).toLowerCase()}</span>
                             {#if startDelay}
                                 <span class="text-outline-hover" aria-hidden="true">·</span>
                                 <span
