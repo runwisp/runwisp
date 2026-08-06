@@ -462,6 +462,38 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		runner.AssertNumberOfCalls(t, "RecordMissedRun", 1)
 	})
 
+	t.Run("truncated backlog anchors the missed row at now, not the capped tick", func(t *testing.T) {
+		// When counting truncates, the recorded anchor must be now — not the
+		// maxCount-th tick — so a rapid restart doesn't re-count and re-alert the
+		// same gap. policy=skip is the exposed case: it triggers no catch-up run
+		// whose CreatedAt=now would otherwise advance the anchor.
+		db := new(testutil.MockRunRepository)
+		runner := new(mockTaskRunner)
+
+		now := time.Date(2026, 4, 7, 12, 0, 0, 0, time.UTC)
+		lastRun := &model.Run{
+			ID:        "last-run",
+			TaskName:  "my-task",
+			CreatedAt: time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC), // 7200 per-second ticks
+		}
+
+		task := catchupTask(model.MissedRunSkip)
+		task.Cron = "* * * * * *"
+		tasks := map[string]*model.Task{"my-task": task}
+
+		db.On("EnsureTaskRegistered", mock.Anything, "my-task", now).Return(nil)
+		db.On("GetLastRunByTask", mock.Anything, "my-task").Return(lastRun, nil)
+		runner.On("RecordMissedRun", "my-task", mock.MatchedBy(func(anchor time.Time) bool {
+			return anchor.Equal(now)
+		}), mock.Anything).Return(nil)
+
+		result := RunMissedTickCatchUp(context.Background(), db, tasks, runner, now, time.UTC)
+
+		assert.Equal(t, 0, result.Triggered, "skip policy re-runs nothing")
+		runner.AssertNumberOfCalls(t, "RecordMissedRun", 1)
+		runner.AssertExpectations(t)
+	})
+
 	t.Run("policy=all under max_catch_up_runs backfills everything", func(t *testing.T) {
 		db := new(testutil.MockRunRepository)
 		runner := new(mockTaskRunner)

@@ -31,7 +31,7 @@ UPDATE notifications SET read_at = NULL WHERE id = ?;
 UPDATE notifications SET read_at = ? WHERE read_at IS NULL;
 
 -- name: SelectExistingForFingerprint :one
-SELECT id, count, occurrences_json FROM notifications
+SELECT id, count, occurrences_json, created_at, run_id FROM notifications
 WHERE fingerprint = ? AND last_occurred_at >= ?
 ORDER BY last_occurred_at DESC LIMIT 1;
 

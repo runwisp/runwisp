@@ -200,6 +200,14 @@ func (r *Reconciler) apply(diff config.Diff, oldTasks, newTasks map[string]*mode
 	for _, name := range diff.Restamped {
 		r.applyRestamped(newTasks[name])
 	}
+
+	// Rebuild jitter plans against the new task set so added and rescheduled
+	// tasks get their start-spread without waiting for a restart. Restamps are
+	// provenance-only and never touch scheduling, so a pure-restamp reload skips
+	// the reshuffle.
+	if r.scheduler != nil && (len(diff.Added) > 0 || len(diff.Removed) > 0 || len(diff.Changed) > 0) {
+		r.scheduler.RecomputeJitter(newTasks)
+	}
 }
 
 // applyRemoved unschedules, stops, and forgets a task. Cron tasks keep their

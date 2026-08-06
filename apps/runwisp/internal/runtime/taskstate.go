@@ -32,6 +32,11 @@ type ActiveRun struct {
 	// original, cron, API, retry, and queued runs. Read only under the manager
 	// lock; not persisted.
 	RestartAttempt int
+	// cancelled latches once this run has been asked to stop (currently only the
+	// terminate overlap policy). It stops a later trigger from re-cancelling an
+	// already-dying run — which would leave the live run count growing past
+	// max_concurrent while the same victim drains. Guarded by m.mu.
+	cancelled bool
 }
 
 // taskState holds all per-task runtime state under the manager mutex.
@@ -77,7 +82,13 @@ const (
 // evaluateConcurrency decides whether a run can start and mutates queue state
 // accordingly. Must be called with m.mu held.
 func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, concurrencyLimit int) (concurrencyAction, error) {
-	if len(ts.active) < concurrencyLimit {
+	// A free slot starts immediately — except under queue policy with runs
+	// already waiting: a fresh trigger must join the back of the queue rather
+	// than race ahead of runs the drain loop hasn't picked up yet. Without this,
+	// in the window after a slot frees but before queueProcessLoop re-acquires
+	// the lock, a new trigger would start out of FIFO order.
+	queuePending := ts.task.OnOverlap == model.PolicyQueue && len(ts.queue) > 0
+	if len(ts.active) < concurrencyLimit && !queuePending {
 		return actionStart, nil
 	}
 
@@ -94,10 +105,22 @@ func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, 
 		slog.Debug("Task queued", "name", ts.task.Name, "active", len(ts.active), "limit", concurrencyLimit, "queue", len(ts.queue))
 		return actionQueued, nil
 	case model.PolicyTerminate:
-		if len(ts.active) > 0 {
-			oldest := ts.active[0]
-			slog.Info("Terminating oldest run", "run", oldest.Run.ID, "task", ts.task.Name)
-			oldest.Cancel()
+		// Cancel the oldest not-yet-cancelled runs until enough are draining that
+		// active returns to the limit once they exit. Skipping already-cancelled
+		// runs is what bounds the live set: re-cancelling the same dying run while
+		// spamming triggers used to let active grow without limit.
+		needed := len(ts.active) - concurrencyLimit + 1
+		for _, ar := range ts.active {
+			if needed <= 0 {
+				break
+			}
+			if ar.cancelled {
+				continue
+			}
+			ar.cancelled = true
+			slog.Info("Terminating run to make room", "run", ar.Run.ID, "task", ts.task.Name)
+			ar.Cancel()
+			needed--
 		}
 		return actionStart, nil
 	default:

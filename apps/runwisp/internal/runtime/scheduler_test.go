@@ -109,7 +109,10 @@ func TestSchedulerDSTWallClockDedup(t *testing.T) {
 	sched.fireOnce("eu-2am", loc)
 
 	wm := wallSecond{year: 2026, month: time.October, day: 25, hour: 2, minute: 0, second: 0}
-	assert.Equal(t, wm, sched.lastFired["eu-2am"], "lastFired must hold the 02:00 wall-clock instant on the fall-back day")
+	fired := sched.firedTicks["eu-2am"]
+	require.NotNil(t, fired)
+	_, ok := fired.ticks[wm]
+	assert.True(t, ok, "firedTicks must hold the 02:00 wall-clock instant on the fall-back day")
 }
 
 func TestSchedulerDSTDifferentMinuteFires(t *testing.T) {
@@ -142,7 +145,10 @@ func TestSchedulerDSTDifferentMinuteFires(t *testing.T) {
 	sched.fireOnce("eu-mins", loc)
 
 	wm := wallSecond{year: 2026, month: time.October, day: 25, hour: 2, minute: 1, second: 0}
-	assert.Equal(t, wm, sched.lastFired["eu-mins"], "lastFired must advance when wall-clock instant differs")
+	fired := sched.firedTicks["eu-mins"]
+	require.NotNil(t, fired)
+	_, ok := fired.ticks[wm]
+	assert.True(t, ok, "firedTicks must record the later wall-clock minute when it differs")
 }
 
 // TestSchedulerFireOnce_GoldenTriggerSkipSequence pins down the firing
@@ -201,6 +207,57 @@ func TestSchedulerFireOnce_GoldenTriggerSkipSequence(t *testing.T) {
 		[]recordedSkip{{taskName: "tick", reason: model.ReasonDSTSkipped}},
 		runner.skips,
 		"the second 02:00 on the fall-back day must be recorded as dst_skipped")
+}
+
+// TestSchedulerDSTFallbackMultipleTicksPerHourSuppressed proves the dedup
+// catches EVERY repeat when the rewound hour holds more than one tick. With a
+// single-slot "last firing" the interleaved duplicates (02:00, 02:30, 02:00,
+// 02:30) slipped past — each duplicate was compared only against the other
+// wall-minute — so the task ran 4× instead of 2× on the fall-back day.
+func TestSchedulerDSTFallbackMultipleTicksPerHourSuppressed(t *testing.T) {
+	runner := &fakeTaskRunner{}
+	task := &model.Task{
+		Name:     "twice-hourly",
+		Cron:     "0,30 2 * * *",
+		Timezone: "Europe/Bratislava",
+		Run:      "echo",
+	}
+
+	loc, err := time.LoadLocation("Europe/Bratislava")
+	require.NoError(t, err)
+
+	// 2026-10-25 fall-back: 03:00 CEST rewinds to 02:00 CET, so both 02:00 and
+	// 02:30 occur twice. UTC instants in chronological order:
+	//   UTC 00:00 → 02:00 CEST (trigger)
+	//   UTC 00:30 → 02:30 CEST (trigger)
+	//   UTC 01:00 → 02:00 CET  (duplicate, suppressed)
+	//   UTC 01:30 → 02:30 CET  (duplicate, suppressed)
+	stamps := []time.Time{
+		time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 10, 25, 0, 30, 0, 0, time.UTC),
+		time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC),
+		time.Date(2026, 10, 25, 1, 30, 0, 0, time.UTC),
+	}
+	idx := 0
+	sched := NewScheduler(runner, map[string]*model.Task{"twice-hourly": task}, time.UTC, func() time.Time {
+		t := stamps[idx]
+		idx++
+		return t
+	})
+
+	for range stamps {
+		sched.fireOnce("twice-hourly", loc)
+	}
+
+	assert.Equal(t, []string{"twice-hourly", "twice-hourly"}, runner.triggers,
+		"each distinct wall-minute must trigger exactly once — not once per repeat")
+	assert.Equal(t,
+		[]recordedSkip{
+			{taskName: "twice-hourly", reason: model.ReasonDSTSkipped},
+			{taskName: "twice-hourly", reason: model.ReasonDSTSkipped},
+		},
+		runner.skips,
+		"both rewound ticks (02:00 and 02:30) must be recorded as dst_skipped")
 }
 
 // TestSchedulerSubMinuteFiresNotSuppressed guards that minute-granular dedup
@@ -320,6 +377,36 @@ func TestSchedulerWiresDSTGapRecovery(t *testing.T) {
 	assert.True(t, want.Equal(next),
 		"scheduler's schedule must fire the gap tick at the 03:00 gap end, not drop it: want %s, got %s",
 		want, next.In(loc))
+}
+
+// TestSchedulerRecomputeJitterOnReload proves a reload gives a jittered task
+// its start-spread without a restart: a task added or rescheduled after Start
+// used to fire at the raw tick because only Start built jitter plans.
+func TestSchedulerRecomputeJitterOnReload(t *testing.T) {
+	runner := &fakeTaskRunner{}
+	now := time.Date(2024, 6, 10, 1, 0, 0, 0, time.UTC)
+
+	// Start with a single non-jittered task, so no plan exists yet.
+	plain := &model.Task{Name: "plain", Cron: "0 2 * * *", Run: "echo"}
+	sched := NewScheduler(runner, map[string]*model.Task{"plain": plain}, time.UTC, func() time.Time { return now })
+	_, err := sched.Start()
+	require.NoError(t, err)
+	defer sched.Stop()
+	require.Empty(t, sched.jitterPlans, "no jittered task yet")
+
+	// Reload adds a jittered task.
+	jittered := &model.Task{Name: "nightly", Cron: "0 2 * * *", Jitter: 10 * time.Minute, Run: "echo"}
+	require.NoError(t, sched.AddTask(jittered))
+	sched.RecomputeJitter(map[string]*model.Task{"plain": plain, "nightly": jittered})
+
+	_, ok := sched.jitterPlans["nightly"]
+	assert.True(t, ok, "reload must build the added jittered task's plan without a restart")
+
+	// Reload removes it again: the plan must go with it.
+	sched.RemoveTask("nightly")
+	sched.RecomputeJitter(map[string]*model.Task{"plain": plain})
+	_, ok = sched.jitterPlans["nightly"]
+	assert.False(t, ok, "removing the task must drop its jitter plan")
 }
 
 // jitterTasks returns two identical cron tasks sharing a jitter window. The
@@ -502,18 +589,18 @@ func TestSchedulerRemoveTaskClearsState(t *testing.T) {
 	require.NoError(t, err)
 	defer sched.Stop()
 
-	// Fire once so lastFired is populated, then remove.
+	// Fire once so the DST dedup state is populated, then remove.
 	sched.fireOnce("tick", time.UTC)
 	_, hadEntry := sched.entryIDs["tick"]
 	require.True(t, hadEntry)
-	_, hadFired := sched.lastFired["tick"]
+	_, hadFired := sched.firedTicks["tick"]
 	require.True(t, hadFired)
 
 	sched.RemoveTask("tick")
 
 	_, hasEntry := sched.entryIDs["tick"]
 	assert.False(t, hasEntry, "RemoveTask must drop the cron entry")
-	_, hasFired := sched.lastFired["tick"]
+	_, hasFired := sched.firedTicks["tick"]
 	assert.False(t, hasFired, "RemoveTask must drop the DST dedup state")
 
 	// Removing again, or a never-scheduled name, is a no-op.

@@ -143,7 +143,7 @@ func (c *Client) BulkRestoreRuns(sel model.RunSelector) (int, error) {
 // BulkCancelRuns signals a stop to every running execution matched by sel and
 // returns how many were signalled.
 func (c *Client) BulkCancelRuns(sel model.RunSelector) (int, error) {
-	return c.bulkAffected("/api/runs/bulk/cancel", sel)
+	return c.bulkAffected("/api/runs/bulk/stop", sel)
 }
 
 // bulkAffected posts a selector to a bulk endpoint that reports an affected count.

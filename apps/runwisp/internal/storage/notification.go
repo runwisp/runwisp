@@ -156,6 +156,11 @@ func (db *SQLiteDatabase) UpsertByFingerprint(ctx context.Context, n *Notificati
 	n.ID = existing.ID
 	n.Count = newCount
 	n.Occurrences = merged
+	// Carry the persisted first-seen metadata so callers (e.g. the in-app
+	// coalescer's SSE payload) match what a later read of the row returns,
+	// rather than the current event's timestamp/run.
+	n.CreatedAt = existing.CreatedAt
+	n.RunID = existing.RunID
 	n.ReadAt = nil
 	return false, nil
 }

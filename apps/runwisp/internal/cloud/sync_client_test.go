@@ -57,8 +57,10 @@ func TestClassifySyncHTTPError(t *testing.T) {
 		code int
 		want CloudErrorKind
 	}{
-		{http.StatusUnauthorized, CloudErrorKindAuth},
-		{http.StatusForbidden, CloudErrorKindAuth},
+		// 401/403 on the sync HTTP call are NOT hard-auth stops — the WS
+		// handshake is the sole auth boundary, so these retry like any 4xx.
+		{http.StatusUnauthorized, CloudErrorKindValidation},
+		{http.StatusForbidden, CloudErrorKindValidation},
 		{http.StatusBadRequest, CloudErrorKindValidation},
 		{http.StatusUnprocessableEntity, CloudErrorKindValidation},
 		{http.StatusNotFound, CloudErrorKindValidation},
@@ -296,7 +298,7 @@ func TestSyncTasksHTTPErrorBubblesUpAsCloudError(t *testing.T) {
 	require.Error(t, err)
 	var ce *CloudError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, CloudErrorKindAuth, ce.Kind)
+	assert.Equal(t, CloudErrorKindValidation, ce.Kind)
 	assert.Contains(t, ce.Message, "401")
 }
 

@@ -410,7 +410,7 @@ POST   /api/tasks/{task}/stop                    stop service (for daemon lifeti
 POST   /api/tasks/{task}/restart                 restart all service instances
 POST   /api/tasks/{task}/runs/{runId}/stop       stop a running task
 DELETE /api/tasks/{task}/runs/{runId}            delete a run
-POST   /api/runs/bulk/cancel                     cancel runs by selector
+POST   /api/runs/bulk/stop                       stop runs by selector
 POST   /api/runs/bulk/delete                     soft-delete runs by selector
 POST   /api/runs/bulk/restore                    restore soft-deleted runs
 POST   /api/runs/bulk/rerun                      re-run tasks behind selector

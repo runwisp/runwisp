@@ -24,7 +24,7 @@ func TestStreamLogLines_ParsesEvents(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/tasks/t/runs/r/log/stream", r.URL.Path)
 		assert.Equal(t, "0", r.URL.Query().Get("from"))
-		assert.Equal(t, "100", r.URL.Query().Get("replay_limit"))
+		assert.Equal(t, "100", r.URL.Query().Get("replayLimit"))
 
 		w.Header().Set("Content-Type", "text/event-stream")
 
@@ -88,7 +88,7 @@ func TestStreamLogLines_ParsesEvents(t *testing.T) {
 }
 
 // TestStreamLogLines_NoReplayLimitOmitsQueryParam asserts the URL excludes
-// the replay_limit param when callers leave it at the default — the server
+// the replayLimit param when callers leave it at the default — the server
 // then chooses.
 func TestStreamLogLines_NoReplayLimitOmitsQueryParam(t *testing.T) {
 	gotQuery := ""
@@ -114,6 +114,6 @@ func TestStreamLogLines_NoReplayLimitOmitsQueryParam(t *testing.T) {
 		t.Fatal("expected at least one event before timeout")
 	}
 
-	assert.NotContains(t, gotQuery, "replay_limit", "default ReplayLimit must not appear in query")
+	assert.NotContains(t, gotQuery, "replayLimit", "default ReplayLimit must not appear in query")
 	assert.True(t, strings.Contains(gotQuery, "from=-100"))
 }
