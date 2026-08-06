@@ -101,6 +101,43 @@ class ElectionHub {
     }
 }
 
+// Stubs document + window so the tab-lifecycle listeners (visibilitychange /
+// freeze / pagehide) can be driven under the `node` test environment. All
+// SharedAppStream instances in a test share this one registry — exactly like
+// real tabs sharing a document — so `fire` reaches every tab's handler.
+function stubLifecycle() {
+    const listeners = new Map<string, Set<() => void>>();
+    let visibilityState = "visible";
+    const add = (type: string, handler: () => void): void => {
+        let s = listeners.get(type);
+        if (!s) {
+            s = new Set();
+            listeners.set(type, s);
+        }
+        s.add(handler);
+    };
+    const remove = (type: string, handler: () => void): void => {
+        listeners.get(type)?.delete(handler);
+    };
+    const doc = {
+        addEventListener: add,
+        removeEventListener: remove,
+        get visibilityState() {
+            return visibilityState;
+        },
+    };
+    vi.stubGlobal("document", doc);
+    vi.stubGlobal("window", { addEventListener: add, removeEventListener: remove });
+    return {
+        setVisibility(v: "visible" | "hidden") {
+            visibilityState = v;
+        },
+        fire(type: string) {
+            for (const h of listeners.get(type) ?? []) h();
+        },
+    };
+}
+
 // ─── harness ─────────────────────────────────────────────────────────────────
 
 function makeWorld() {
@@ -447,6 +484,92 @@ describe("SharedAppStream", () => {
         }
     });
 
+    it("a hidden leader hands the connection to a visible tab after the grace delay", () => {
+        vi.useFakeTimers();
+        const lc = stubLifecycle();
+        try {
+            const { makeTab } = makeWorld();
+            const leaderTab = makeTab();
+            const followerTab = makeTab();
+
+            leaderTab.stream.subscribe("run.created", () => {});
+            const followerReceived: string[] = [];
+            followerTab.stream.subscribe("run.created", (d) => followerReceived.push(d));
+
+            const leaderES = leaderTab.leaderES();
+            expect(leaderES).not.toBeNull();
+            expect(followerTab.leaderES()).toBeNull();
+
+            // Leader tab goes hidden, but the grace period hasn't elapsed yet.
+            lc.setVisibility("hidden");
+            lc.fire("visibilitychange");
+            vi.advanceTimersByTime(1000);
+            expect(followerTab.leaderES()).toBeNull(); // still leading
+
+            // Grace elapses → leader drops its stream and the follower is promoted.
+            vi.advanceTimersByTime(2000);
+            expect(leaderES?.readyState).toBe(2); // old leader connection closed
+            expect(followerTab.leaderES()).not.toBeNull();
+
+            followerTab.leaderES()?.open();
+            followerTab.leaderES()?.fire("run.created", { run: { id: "r9" } });
+            expect(followerReceived).toHaveLength(1);
+            expect(followerReceived[0]).toContain("r9");
+        } finally {
+            vi.useRealTimers();
+            vi.unstubAllGlobals();
+        }
+    });
+
+    it("a quick hide→show keeps leadership (no churn on a glance away)", () => {
+        vi.useFakeTimers();
+        const lc = stubLifecycle();
+        try {
+            const { makeTab } = makeWorld();
+            const leaderTab = makeTab();
+            const followerTab = makeTab();
+
+            leaderTab.stream.subscribe("system", () => {});
+            followerTab.stream.subscribe("system", () => {});
+
+            const originalLeaderES = leaderTab.leaderES();
+            expect(originalLeaderES).not.toBeNull();
+            expect(followerTab.leaderES()).toBeNull();
+
+            lc.setVisibility("hidden");
+            lc.fire("visibilitychange");
+            vi.advanceTimersByTime(1000); // within the grace window
+            lc.setVisibility("visible");
+            lc.fire("visibilitychange"); // cancels the pending relinquish
+            vi.advanceTimersByTime(5000);
+
+            // Leadership never moved: same connection, follower still idle.
+            expect(followerTab.leaderES()).toBeNull();
+            expect(leaderTab.leaderES()).toBe(originalLeaderES);
+        } finally {
+            vi.useRealTimers();
+            vi.unstubAllGlobals();
+        }
+    });
+
+    it("pagehide relinquishes leadership immediately (last chance before unload/freeze)", () => {
+        const lc = stubLifecycle();
+        try {
+            const { makeTab } = makeWorld();
+            const leaderTab = makeTab();
+            const followerTab = makeTab();
+
+            leaderTab.stream.subscribe("run.created", () => {});
+            followerTab.stream.subscribe("run.created", () => {});
+            expect(followerTab.leaderES()).toBeNull();
+
+            lc.fire("pagehide"); // no grace timer — immediate handoff
+            expect(followerTab.leaderES()).not.toBeNull();
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
     it("uses Web Locks for election when available", () => {
         const requested: string[] = [];
         const fakeLocks = {
@@ -493,4 +616,5 @@ beforeEach(() => {
 });
 afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
 });

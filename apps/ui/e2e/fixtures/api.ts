@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { expect, type Page } from "@playwright/test";
-import { displayStatus, type Run } from "@runwisp/common";
+import { expect, type Locator, type Page } from "@playwright/test";
+import { displayStatus, type Run, type RunStatus } from "@runwisp/common";
 
 /**
  * Helpers that talk to the daemon's REST API directly (Playwright's
@@ -16,6 +16,19 @@ import { displayStatus, type Run } from "@runwisp/common";
 
 function authHeaders(token: string): Record<string, string> {
     return { Authorization: `Bearer ${token}` };
+}
+
+/**
+ * The run-detail verdict line, optionally narrowed to one outcome. The panel
+ * states its outcome as a phrase ("succeeded in 933ms"), so specs match on the
+ * status the element carries rather than on the rendered wording — the phrasing
+ * is presentation and free to change, the status is the contract.
+ */
+export function runVerdict(page: Page, status?: RunStatus): Locator {
+    const selector = status
+        ? `[data-testid="run-verdict"][data-status="${status}"]`
+        : `[data-testid="run-verdict"]`;
+    return page.locator(selector);
 }
 
 /** Trigger a run via `POST /api/tasks/{name}/run`; returns the created run. */
@@ -196,38 +209,31 @@ export async function waitForCoalescedCount(
  */
 export async function expectRunDetailMatchesApi(page: Page, apiRun: Run): Promise<void> {
     const status = displayStatus(apiRun.status, apiRun.end_reason);
-    await expect(
-        page.getByText(status.toUpperCase(), { exact: true }),
-        `badge should show ${status.toUpperCase()}`,
-    ).toBeVisible();
+    await expect(runVerdict(page), `verdict should report ${status}`).toHaveAttribute(
+        "data-status",
+        status,
+    );
 
-    // Only a naturally-finished run (success/failed) carries a real process
-    // exit code; stopped/timed-out/crashed runs end on a synthetic sentinel, so
-    // the panel shows "—" plus a reason instead of a misleading "Code -1".
-    if (apiRun.end_reason === "success" || apiRun.end_reason === "failed") {
-        // The Exit metadata cell shows the bare process exit code (with a
-        // "fail" badge on non-zero); the value span follows the "Exit" label.
-        const exitValue = page
-            .getByText("Exit", { exact: true })
-            .locator("xpath=following-sibling::span[1]");
-        await expect(exitValue, `exit code should be ${apiRun.exit_code}`).toContainText(
-            String(apiRun.exit_code),
-        );
+    // The verdict shows a code only when it is news. A failure's code is the
+    // first thing to triage on and must match the record exactly; a success is
+    // always exit 0 (the phrase already says so), and stopped/timed-out/crashed
+    // runs end on a synthetic sentinel that would render a misleading "-1" — so
+    // both must show no code at all rather than a wrong or redundant one.
+    if (apiRun.end_reason === "failed") {
+        await expect(
+            page.getByTestId("run-exit"),
+            `exit code should be ${apiRun.exit_code}`,
+        ).toContainText(String(apiRun.exit_code));
+    } else {
+        await expect(page.getByTestId("run-exit"), "no code unless it is news").toHaveCount(0);
     }
 
-    // The metadata value span sits immediately after its label span.
-    const startedValue = page
-        .getByText("Started", { exact: true })
-        .locator("xpath=following-sibling::span[1]");
-    const durationValue = page
-        .getByText("Ran for", { exact: true })
-        .locator("xpath=following-sibling::span[1]");
-
     if (apiRun.start_at) {
+        const startedValue = page.getByTestId("run-started");
         await expect(startedValue, "started timestamp populated").not.toHaveText("—");
         await expect(startedValue).toContainText(":"); // wall-clock time (HH:MM:SS)
     }
     if (apiRun.start_at && apiRun.end_at) {
-        await expect(durationValue, "duration populated").not.toHaveText("—");
+        await expect(page.getByTestId("run-duration"), "duration populated").toBeVisible();
     }
 }

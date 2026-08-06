@@ -45,7 +45,7 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
         border: "border-success-soft",
         dot: "bg-success-surface",
         badge: "bg-success-soft text-success-soft-text",
-        description: "The run finished with exit code 0.",
+        description: "The run finished with exit code 0 - everything OK.",
     },
     failed: {
         icon: CircleX,
@@ -64,7 +64,7 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
         dot: "bg-danger-surface",
         badge: "bg-danger-soft text-danger-soft-text",
         description:
-            "The process was killed, or the daemon found it still 'running' after a hard crash and marked it crashed (exit -2). It was not resumed.",
+            "The process was killed, or the daemon found it still 'running' after a hard crash and marked it crashed. It was not resumed.",
     },
     stopped: {
         icon: CircleStop,
@@ -73,7 +73,7 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
         border: "border-warning-soft",
         dot: "bg-warning-surface",
         badge: "bg-warning-soft text-warning-soft-text",
-        description: "An operator stopped this run before it finished.",
+        description: "A human or an external script manually stopped this run before it finished.",
     },
     timeout: {
         icon: TimerOff,
@@ -82,7 +82,8 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
         border: "border-warning-soft",
         dot: "bg-warning-surface",
         badge: "bg-warning-soft text-warning-soft-text",
-        description: "The run exceeded its configured timeout and was terminated.",
+        description:
+            "The run exceeded its configured timeout and was terminated. Timeout duration can be changed.",
     },
     skipped: {
         icon: SkipForward,
@@ -101,7 +102,7 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
         border: "border-danger-soft",
         dot: "bg-danger-surface",
         badge: "bg-danger-soft text-danger-soft-text",
-        description: "The run hit log_max_size and was handled per log_on_full.",
+        description: "The run hit log_max_size and was handled because of log_on_full.",
     },
     queue_full: {
         icon: SkipForward,
@@ -150,7 +151,7 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
         dot: "bg-danger-surface",
         badge: "bg-danger-soft text-danger-soft-text",
         description:
-            "The service kept failing to stay up for healthy_after; after start_retries the supervisor gave up (FATAL) and stopped restarting it.",
+            "The service kept failing to stay up for healthy_after; after start_retries the supervisor gave up and stopped restarting it.",
     },
     pending: {
         icon: Clock,

@@ -41,6 +41,9 @@
 <div class="group relative inline-block {className}">
     {@render children()}
 
+    <!-- Hover intent: 100ms before it appears, so sweeping the pointer across a
+         dense row doesn't flash a trail of bubbles. Still no fade — `duration-0`
+         keeps the appearance instant once the delay is served, per DESIGN.md. -->
     <div
         class="
 			absolute z-50 {positionClasses[position]}
@@ -48,8 +51,8 @@
 			border border-outline bg-surface-overlay px-2.5 py-1.5 font-sans
 			text-xs
 			{wide ? 'w-max max-w-xs whitespace-normal' : 'whitespace-nowrap'}
-			text-on-surface opacity-0 group-hover:visible
-			group-hover:opacity-100
+			text-on-surface opacity-0 transition-[opacity,visibility]
+			delay-100 duration-0 group-hover:visible group-hover:opacity-100
 		"
         role="tooltip"
     >

@@ -31,19 +31,14 @@
     import { portal } from "../../actions/portal.js";
     import type { Run } from "./types.js";
     import type { LogEvent, LogSlice } from "../../log-console/types.js";
-    import {
-        formatDateTime,
-        formatFullDateTime,
-        formatClockTime,
-        formatCalendarDate,
-        formatTimeHM,
-    } from "../../utils/format.js";
+    import { formatClockTime, formatCalendarDate } from "../../utils/format.js";
     import { formatShortId } from "../../utils/id.js";
     import { TickingNow } from "../../utils/ticking-now.svelte.js";
     import { getRunStatusConfig, runDisplayStatus } from "./status-config.js";
     import {
         runDuration,
         runStartDelay,
+        runVerdict,
         formatTriggeredByLabel,
         runRetryLabel,
         instanceSuffix,
@@ -204,41 +199,12 @@
         }
     }
 
-    // One-word context line under the Exit value. Only success/failed carry a
-    // real process exit code; the others end on a synthetic sentinel, so the
-    // cell reads the reason ("stopped before exit") rather than "Code -1".
-    function exitSubLabel(displayed: string): string {
-        if (displayed === "running" || displayed === "pending") return "in progress";
-        if (displayed === "success") return "clean";
-        if (displayed === "failed") return "non-zero";
-        if (displayed === "stopped" || displayed === "daemon_stopped") return "stopped before exit";
-        if (displayed === "timeout") return "timed out";
-        if (displayed === "crashed") return "killed";
-        return "no exit code";
-    }
-
-    // One-word context line under each Trigger value, mirroring the source.
-    function triggerSub(triggeredBy: Run["triggered_by"]): string {
-        if (triggeredBy === "cron") return "schedule";
-        if (triggeredBy === "api") return "manual";
-        if (triggeredBy === "service") return "supervised";
-        if (triggeredBy === "startup") return "on boot";
-        return "remote";
-    }
-
-    // The status's accent color as a runtime CSS variable, used to wash the
-    // header in a faint tint of the outcome (the "black-box readout" look).
-    // Neutral statuses resolve to the surface itself, so the tint vanishes.
-    function accentVar(displayed: string): string {
-        if (displayed === "running" || displayed === "pending") return "var(--color-info)";
-        if (displayed === "success") return "var(--color-success-surface)";
-        if (
-            displayed === "stopped" ||
-            displayed === "timeout" ||
-            displayed === "daemon_stopped" ||
-            displayed === "queue_full"
-        )
-            return "var(--color-warning-surface)";
+    // The accent for a status that means "something to triage", or undefined
+    // when there is nothing wrong. Tint is reserved for alarms (DESIGN.md) so a
+    // failure is the one lit thing on the page — a deliberate stop or a skip is
+    // not a failure, and success least of all. Doubles as the switch for the
+    // verdict phrase's colour, so wash and wording light up together.
+    function alarmAccent(displayed: string): string | undefined {
         if (
             displayed === "failed" ||
             displayed === "crashed" ||
@@ -247,7 +213,9 @@
             displayed === "start_failed"
         )
             return "var(--color-danger-surface)";
-        return "var(--color-surface-raised)";
+        if (displayed === "timeout" || displayed === "daemon_stopped" || displayed === "queue_full")
+            return "var(--color-warning-surface)";
+        return undefined;
     }
 
     function handleConsoleKeydown(event: KeyboardEvent) {
@@ -326,9 +294,10 @@
     {@const suffix = instanceSuffix(run.instance_index, getInstanceCount(run.task_name))}
     {@const spine = config.dot.replace(" animate-pulse", "")}
     {@const isRunning = run.status === "running"}
-    {@const showCode = status === "success" || status === "failed"}
-    {@const exitClean = status === "success"}
-    {@const exitFail = status === "failed"}
+    <!-- A code is worth the ink only when it is news: `exit 0` restates
+         "succeeded", while a non-zero code is the first thing to triage on. -->
+    {@const showCode = status === "failed"}
+    {@const verdict = runVerdict(status)}
     {@const endLabel =
         status === "stopped"
             ? "run stopped by operator"
@@ -341,7 +310,7 @@
         status === "stopped" || status === "daemon_stopped" || status === "timeout"
             ? "warn"
             : "muted"}
-    {@const accent = accentVar(status)}
+    {@const alarm = alarmAccent(status)}
     <!-- The panel: a status spine runs the full left edge across both the header
          readout and the console below, hugging the rail divider (artifact
          ".detail .spine"). -->
@@ -352,95 +321,119 @@
             class="absolute inset-y-0 left-0 z-[3] w-1 {spine} {isRunning ? 'spine-flow' : ''}"
             aria-hidden="true"
         ></div>
-        <!-- Detailed header: a black-box readout washed in a faint tint of the
-             run's outcome. -->
+        <!-- Detailed header: a readout whose ink scales with how much went wrong.
+             Every run states its outcome in one phrase over one quiet fact line;
+             only a run worth triaging colours the phrase and tints the surface.
+             Nothing here is a fixed slot — every fact renders only when it is
+             true, so the header's height is itself a signal. -->
         <div
             class="head-region @container relative shrink-0 border-b border-outline-faint"
-            style="--rw-oc: {accent}"
+            style="--rw-oc: {alarm ?? 'var(--color-surface-raised)'}"
         >
-            <div class="pt-[18px] pr-[22px] pb-[14px] pl-[26px]">
+            <div class="pt-[18px] pr-[22px] pb-[16px] pl-[26px]">
                 <div class="flex items-start gap-4">
-                    <!-- Verdict tile -->
-                    <div
-                        class="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-[4px] {config.bg} {config.color} ring-1 ring-current/25 ring-inset"
-                    >
-                        <DetailIcon size={20} class={isRunning ? "animate-spin" : ""} />
-                    </div>
-
                     <div class="min-w-0 flex-1">
-                        <div class="flex flex-wrap items-center gap-2.5">
-                            <h2 class="text-lg font-[650] tracking-tight text-on-surface">
-                                {#if showTaskName}
-                                    {run.task_name}{#if suffix}<span class="text-on-surface-muted"
-                                            >{suffix}</span
-                                        >{/if}
-                                {:else}
-                                    <span title={formatFullDateTime(startedAt)}
-                                        >Run · {formatDateTime(startedAt)}</span
-                                    >{#if suffix}
-                                        <span class="text-on-surface-muted"
-                                            >· instance {suffix}</span
+                        <!-- Identity, but only where the page around the panel isn't
+                         already saying it: the cross-task runs list needs the task
+                         name, a task's own page already has it in the breadcrumb. -->
+                        {#if showTaskName || suffix}
+                            <div
+                                class="mb-1.5 font-mono text-[11.5px] font-medium tracking-[0.06em] text-on-surface-muted"
+                            >
+                                {showTaskName ? `${run.task_name}${suffix}` : `instance ${suffix}`}
+                            </div>
+                        {/if}
+
+                        <!-- Verdict: the outcome as one sentence, and the only large
+                         type in the panel. It is prose, so the phrase is sans and
+                         only the tokens inside it — the duration, a failing exit —
+                         are mono (DESIGN.md's mono-vs-sans rule). The glyph is bare
+                         — no plate, no ring — so it reads as part of the sentence,
+                         and it alone carries the outcome colour on a healthy run:
+                         green words are ink spent on nothing being wrong. -->
+                        <Tooltip content={config.description} position="right" wide>
+                            <h2
+                                class="flex flex-wrap items-center gap-x-2.5 text-[22px] @max-2xl:text-[18px] @max-xs:text-[16px]"
+                                data-testid="run-verdict"
+                                data-status={status}
+                            >
+                                <DetailIcon
+                                    size={18}
+                                    strokeWidth={2.25}
+                                    class="shrink-0 {config.color} {isRunning
+                                        ? 'animate-spin'
+                                        : ''}"
+                                />
+                                <span
+                                    class="font-sans font-semibold tracking-[-0.01em] {alarm
+                                        ? config.color
+                                        : 'text-on-surface'}">{verdict.verb}</span
+                                >
+                                {#if verdict.timed && duration}
+                                    <span
+                                        class="font-mono text-[0.86em] font-medium text-on-surface tabular-nums"
+                                        data-testid="run-duration">{duration}</span
+                                    >
+                                {/if}
+                                {#if showCode}
+                                    <!-- Grouped with its own separator so a wrap can
+                                     never leave the dot dangling at a line end. -->
+                                    <span
+                                        class="inline-flex items-center gap-x-2.5 font-mono text-[0.86em] font-medium tabular-nums"
+                                    >
+                                        <span class="text-on-surface-faint" aria-hidden="true"
+                                            >·</span
                                         >
-                                    {/if}
+                                        <span class="text-danger-surface" data-testid="run-exit"
+                                            >exit {run.exit_code}</span
+                                        >
+                                    </span>
                                 {/if}
                             </h2>
-                            <!-- Status word: the pill is colored by the run's own
-                             outcome, so stopped reads amber, not red. -->
-                            <Tooltip content={config.description} position="bottom" wide>
-                                <span
-                                    class="rounded-[3px] border px-2.5 py-0.5 font-mono text-2xs font-bold tracking-wider uppercase {config.color} {config.bg} {config.border}"
-                                >
-                                    {status.toUpperCase()}
-                                </span>
-                            </Tooltip>
-                        </div>
+                        </Tooltip>
 
+                        <!-- Facts: when it happened and what shaped it. Queue wait,
+                         retries and parameters are absent on an ordinary run and
+                         appear inline the moment they exist. -->
                         <div
-                            class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-on-surface-muted"
+                            class="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11.5px] text-on-surface-faint tabular-nums"
                         >
-                            {#if showTaskName}
-                                <!-- When the title carries the task name, the run's
-                                 date/time lives here in the sub-line (otherwise it's
-                                 already the title, so don't repeat it). -->
-                                <span class="font-mono" title={formatFullDateTime(startedAt)}>
-                                    Run · {formatCalendarDate(startedAt)}
-                                    {formatTimeHM(startedAt)}
-                                </span>
-                            {/if}
-                            <!-- Run-id chip: click to copy the full ULID -->
-                            <button
-                                type="button"
-                                onclick={() => copyRunId(run.id)}
-                                title="Copy run ID"
-                                class="inline-flex items-center gap-1.5 rounded-[3px] border border-outline-faint bg-surface-sunken px-1.5 py-0.5 font-mono text-2xs text-on-surface-faint hover:border-outline-hover hover:text-primary"
+                            <!-- No hover-for-the-full-timestamp here: the date sits
+                             right beside the clock time, so a tooltip could only
+                             repeat it. The line wraps at narrow widths instead of
+                             dropping the date and hiding it behind a hover. -->
+                            <span data-testid="run-started" class="text-on-surface-muted"
+                                >{run.start_at ? formatClockTime(run.start_at) : "—"}</span
                             >
-                                {#if copiedId}
-                                    <Check size={11} class="text-success-surface" />Copied
-                                {:else}
-                                    <Hash size={11} />{run.id}
-                                {/if}
-                            </button>
+                            <span class="text-outline-hover" aria-hidden="true">·</span>
+                            <span>{formatCalendarDate(startedAt)}</span>
+                            <span class="text-outline-hover" aria-hidden="true">·</span>
+                            <span>via {formatTriggeredByLabel(run.triggered_by).toLowerCase()}</span
+                            >
+                            {#if startDelay}
+                                <span class="text-outline-hover" aria-hidden="true">·</span>
+                                <span
+                                    class="text-warning-soft-text"
+                                    title="Waited between its scheduled tick and actually starting"
+                                    >{startDelay} queued</span
+                                >
+                            {/if}
                             {#if retry}
-                                <span class="hidden h-1 w-1 rounded-full bg-outline-faint sm:block"
-                                ></span>
-                                <span class="inline-flex items-center gap-1.5 font-mono">
-                                    <RotateCw size={14} />
-                                    Retry #{run.retry_attempt}{#if run.retry_of_run_id}
-                                        <span class="text-on-surface-faint"
-                                            >of run {formatShortId(run.retry_of_run_id)}</span
-                                        >{/if}
+                                <span class="text-outline-hover" aria-hidden="true">·</span>
+                                <span class="inline-flex items-center gap-1">
+                                    <RotateCw size={11} />
+                                    retry #{run.retry_attempt}{#if run.retry_of_run_id}&nbsp;of
+                                        {formatShortId(run.retry_of_run_id)}{/if}
                                 </span>
                             {/if}
                             {#if paramEntries.length > 0}
-                                <span class="hidden h-1 w-1 rounded-full bg-outline-faint sm:block"
-                                ></span>
+                                <span class="text-outline-hover" aria-hidden="true">·</span>
                                 <Popover placement="bottom-start">
                                     {#snippet trigger()}
                                         <span
-                                            class="inline-flex cursor-pointer items-center gap-1.5 rounded-[3px] border border-outline-faint bg-surface-sunken px-2.5 py-0.5 font-mono text-xs font-medium text-on-surface-muted hover:border-outline-hover hover:text-primary"
-                                            title="View run parameters"
+                                            class="inline-flex cursor-pointer items-center gap-1 border-b border-dotted border-outline-hover text-on-surface-muted hover:text-primary"
                                         >
-                                            <SlidersHorizontal size={12} />
+                                            <SlidersHorizontal size={11} />
                                             {paramEntries.length}
                                             {paramEntries.length === 1 ? "parameter" : "parameters"}
                                         </span>
@@ -467,6 +460,21 @@
                                     </div>
                                 </Popover>
                             {/if}
+                            <!-- Run-id chip: click to copy the full ULID. Last, because
+                             it is the fact you reach for least and the only one you
+                             interact with. -->
+                            <button
+                                type="button"
+                                onclick={() => copyRunId(run.id)}
+                                title="Copy run ID"
+                                class="inline-flex items-center gap-1 rounded-[3px] border border-outline-faint bg-surface-sunken px-1.5 text-on-surface-faint hover:border-outline-hover hover:text-primary"
+                            >
+                                {#if copiedId}
+                                    <Check size={11} class="text-success-surface" />Copied
+                                {:else}
+                                    <Hash size={11} />{run.id}
+                                {/if}
+                            </button>
                         </div>
                     </div>
 
@@ -647,107 +655,6 @@
                         {/if}
                     </div>
                 </div>
-
-                <!-- Instrument cluster: the run's vital readout — value over a one-word
-                 context line, hairline-divided. -->
-                <div
-                    class="mt-4 flex flex-wrap overflow-hidden rounded-[4px] border border-outline-faint bg-surface-raised"
-                >
-                    <div
-                        class="flex min-w-30 flex-1 flex-col gap-0.5 border-l border-outline-faint px-4 py-2.5 first:border-l-0"
-                    >
-                        <span
-                            class="font-mono text-2xs font-bold tracking-[0.12em] text-on-surface-faint uppercase"
-                            >Queued</span
-                        >
-                        <span
-                            class="font-mono text-base font-medium tracking-tight whitespace-nowrap text-on-surface tabular-nums"
-                            title={formatFullDateTime(run.created_at)}
-                        >
-                            {formatClockTime(run.created_at)}
-                        </span>
-                        <span class="font-mono text-2xs text-on-surface-muted"
-                            >+{startDelay ?? "0s"} queued</span
-                        >
-                    </div>
-
-                    <div
-                        class="flex min-w-30 flex-1 flex-col gap-0.5 border-l border-outline-faint px-4 py-2.5 first:border-l-0"
-                    >
-                        <span
-                            class="font-mono text-2xs font-bold tracking-[0.12em] text-on-surface-faint uppercase"
-                            >Started</span
-                        >
-                        <span
-                            class="font-mono text-base font-medium tracking-tight whitespace-nowrap text-on-surface tabular-nums"
-                        >
-                            {run.start_at ? formatClockTime(run.start_at) : "—"}
-                        </span>
-                        <span class="font-mono text-2xs text-on-surface-muted">
-                            {run.start_at ? formatCalendarDate(run.start_at) : "not started"}
-                        </span>
-                    </div>
-
-                    <div
-                        class="flex min-w-30 flex-1 flex-col gap-0.5 border-l border-outline-faint px-4 py-2.5 first:border-l-0"
-                    >
-                        <span
-                            class="font-mono text-2xs font-bold tracking-[0.12em] text-on-surface-faint uppercase"
-                            >Ran for</span
-                        >
-                        <span
-                            class="font-mono text-base font-medium tracking-tight whitespace-nowrap text-on-surface tabular-nums"
-                        >
-                            {duration ?? "—"}
-                        </span>
-                        <span class="font-mono text-2xs text-on-surface-muted">
-                            {isRunning ? "and counting" : run.end_at ? "wall clock" : "—"}
-                        </span>
-                    </div>
-
-                    <div
-                        class="flex min-w-30 flex-1 flex-col gap-0.5 border-l border-outline-faint px-4 py-2.5 first:border-l-0"
-                    >
-                        <span
-                            class="font-mono text-2xs font-bold tracking-[0.12em] text-on-surface-faint uppercase"
-                            >Exit</span
-                        >
-                        <span
-                            class="flex items-baseline gap-1.5 font-mono text-base font-medium tracking-tight tabular-nums {exitClean
-                                ? 'text-success-surface'
-                                : exitFail
-                                  ? 'text-danger-surface'
-                                  : 'text-on-surface'}"
-                        >
-                            <span>{showCode ? run.exit_code : "—"}</span>
-                            {#if exitFail}
-                                <span
-                                    class="rounded-[3px] bg-danger-soft px-1 py-px font-mono text-[9px] font-bold tracking-wide text-danger-surface uppercase"
-                                    >fail</span
-                                >
-                            {/if}
-                        </span>
-                        <span class="font-mono text-2xs text-on-surface-muted"
-                            >{exitSubLabel(status)}</span
-                        >
-                    </div>
-
-                    <div
-                        class="flex min-w-30 flex-1 flex-col gap-0.5 border-l border-outline-faint px-4 py-2.5 first:border-l-0"
-                    >
-                        <span
-                            class="font-mono text-2xs font-bold tracking-[0.12em] text-on-surface-faint uppercase"
-                            >Trigger</span
-                        >
-                        <span
-                            class="font-mono text-base font-medium tracking-tight whitespace-nowrap text-on-surface tabular-nums"
-                            >{formatTriggeredByLabel(run.triggered_by)}</span
-                        >
-                        <span class="font-mono text-2xs text-on-surface-muted"
-                            >{triggerSub(run.triggered_by)}</span
-                        >
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -869,11 +776,12 @@
 {/if}
 
 <style>
-    /* The header is washed in a faint tint of the run's outcome colour
-       (--rw-oc, set inline). Neutral statuses pass the surface itself, so the
-       mix collapses to a plain surface with no visible tint. */
+    /* Only a run worth triaging is washed in its outcome colour (--rw-oc, set
+       inline). Everything else — success included — passes the surface itself so
+       the mix collapses to a plain surface, which is what lets a genuine failure
+       be the one lit thing on the page. */
     .head-region {
-        background: color-mix(in srgb, var(--rw-oc) 4.5%, var(--color-surface-raised));
+        background: color-mix(in srgb, var(--rw-oc) 7%, var(--color-surface-raised));
     }
 
     /* Gentle fade for the maximize backdrop; disabled under reduced motion. */

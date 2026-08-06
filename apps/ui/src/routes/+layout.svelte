@@ -8,7 +8,6 @@
     import { preloadCode } from "$app/navigation";
     import { runUpdatesStore, authStore, taskStore, notificationStore } from "$lib/stores";
     import { systemStore } from "$lib/stores/system.svelte";
-    import { browserAuthEventBus } from "$lib/adapters/browser";
     import AuthModal from "$lib/components/AuthModal.svelte";
     import AppLayout from "$lib/layouts/AppLayout.svelte";
     import { ToastContainer } from "@runwisp/ui";
@@ -30,15 +29,7 @@
 
         void authStore.load();
 
-        const disposeAuthSuccess = browserAuthEventBus.onAuthSuccess(() => {
-            runUpdatesStore.connect();
-            void taskStore.loadIfNeeded();
-            void notificationStore.init();
-            void systemStore.init();
-        });
-
         return () => {
-            disposeAuthSuccess();
             runUpdatesStore.disconnect();
             notificationStore.disconnect();
             systemStore.disconnect();

@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { test, expect } from "./fixtures/test-base";
-import { expectRunDetailMatchesApi, getLatestRun, waitForRunEnded } from "./fixtures/api";
+import {
+    expectRunDetailMatchesApi,
+    getLatestRun,
+    runVerdict,
+    waitForRunEnded,
+} from "./fixtures/api";
 
 // Two complementary live-run paths (see fixtures/runwisp.e2e.toml):
 //   - slow-task blocks until stopped, so the run stays in the "running" phase
@@ -26,7 +31,7 @@ test.describe("run lifecycle", () => {
         // streamed output, and the console's "Streaming" indicator — all gated on
         // the run actually being in the running phase. (Streaming lights up once
         // output arrives, so assert the first line before the indicator.)
-        await expect(page.getByText("RUNNING", { exact: true })).toBeVisible({ timeout: 30_000 });
+        await expect(runVerdict(page, "running")).toBeVisible({ timeout: 30_000 });
         await expect(page.getByText("slow-start")).toBeVisible({ timeout: 10_000 });
         await expect(page.getByText("Streaming", { exact: true })).toBeVisible();
 
@@ -44,7 +49,7 @@ test.describe("run lifecycle", () => {
         expect(ended.end_reason).toBe("stopped");
 
         // The UI leaves the live state and the panel agrees with the record.
-        await expect(page.getByText("STOPPED", { exact: true })).toBeVisible({ timeout: 10_000 });
+        await expect(runVerdict(page, "stopped")).toBeVisible({ timeout: 10_000 });
         await expect(page.getByText("Streaming", { exact: true })).toBeHidden();
         await expectRunDetailMatchesApi(page, ended);
     });
@@ -72,7 +77,7 @@ test.describe("run lifecycle", () => {
             page.getByRole("main").getByRole("button").filter({ hasText: status });
 
         // --- Detail panel: the run is live and streaming ---
-        await expect(page.getByText("RUNNING", { exact: true })).toBeVisible({ timeout: 15_000 });
+        await expect(runVerdict(page, "running")).toBeVisible({ timeout: 15_000 });
         await expect(page.getByText("timed-phase-1")).toBeVisible({ timeout: 10_000 });
         await expect(page.getByText("Streaming", { exact: true })).toBeVisible();
 
@@ -95,7 +100,7 @@ test.describe("run lifecycle", () => {
         await expect(page.getByText("timed-phase-3")).toBeVisible({ timeout: 10_000 });
 
         // --- Natural finish, observed live (no reload/goto since the trigger) ---
-        await expect(page.getByText("SUCCESS", { exact: true })).toBeVisible({ timeout: 15_000 });
+        await expect(runVerdict(page, "success")).toBeVisible({ timeout: 15_000 });
         await expect(page.getByText("Streaming", { exact: true })).toBeHidden();
         await expect(page.getByText("timed-done")).toBeVisible();
 

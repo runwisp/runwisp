@@ -1,8 +1,46 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Run } from "@runwisp/common";
+import type { Run, RunStatus } from "@runwisp/common";
 import { formatDuration } from "../../utils/format.js";
+
+export interface RunVerdict {
+    /** Verb phrase for the outcome, ending in its preposition when `timed`. */
+    verb: string;
+    /**
+     * Whether the phrase expects a duration after it. False for statuses that
+     * never produced one (nothing ran, or nothing has yet), so the caller
+     * renders the verb alone rather than "skipped after —".
+     */
+    timed: boolean;
+}
+
+/**
+ * The run's outcome as a verb phrase, so a detail view can state it as one
+ * sentence ("succeeded in 933ms") instead of a status badge competing with a
+ * separate duration readout for the same glance.
+ */
+const RUN_VERDICTS: Record<RunStatus, RunVerdict> = {
+    success: { verb: "succeeded in", timed: true },
+    failed: { verb: "failed after", timed: true },
+    crashed: { verb: "crashed after", timed: true },
+    timeout: { verb: "timed out after", timed: true },
+    stopped: { verb: "stopped after", timed: true },
+    daemon_stopped: { verb: "cut short after", timed: true },
+    log_overflow: { verb: "killed after", timed: true },
+    start_failed: { verb: "gave up after", timed: true },
+    ended: { verb: "ended after", timed: true },
+    running: { verb: "running for", timed: true },
+    pending: { verb: "queued", timed: false },
+    missed: { verb: "never ran", timed: false },
+    skipped: { verb: "skipped", timed: false },
+    dst_skipped: { verb: "skipped", timed: false },
+    queue_full: { verb: "skipped", timed: false },
+};
+
+export function runVerdict(status: RunStatus): RunVerdict {
+    return RUN_VERDICTS[status];
+}
 
 export function runDuration(
     run: Pick<Run, "start_at" | "end_at">,

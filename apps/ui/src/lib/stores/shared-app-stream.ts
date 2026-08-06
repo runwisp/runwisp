@@ -28,6 +28,11 @@ import {
 
 const logger = createLogger("SharedAppStream");
 
+// How long a leader tab may stay hidden before it hands the real connection
+// back to the cohort. A short grace so flicking between tabs doesn't churn the
+// stream, but well under the point a browser freezes a backgrounded tab.
+const HIDDEN_RELINQUISH_DELAY_MS = 2000;
+
 /** Cross-tab message envelope sent over the BroadcastChannel. */
 type SharedMessage =
     | { t: "event"; type: string; data: string }
@@ -84,6 +89,12 @@ export class SharedAppStream implements AppEventStream {
     #started = false;
     #bus: SharedBus | null = null;
     #releaseCampaign: (() => void) | null = null;
+
+    // Tab-lifecycle wiring: a leader relinquishes when its tab is hidden/frozen
+    // so a visible tab takes over the sole connection. Listeners are torn down
+    // via the AbortController on #stop().
+    #lifecycleAbort: AbortController | null = null;
+    #hiddenTimer: ReturnType<typeof setTimeout> | null = null;
 
     // Leader-only state.
     #isLeader = false;
@@ -178,9 +189,80 @@ export class SharedAppStream implements AppEventStream {
         // Greet the cohort: an existing leader replays its lifecycle to us.
         this.#post({ t: "hello" });
 
+        this.#startCampaign();
+        this.#bindLifecycle();
+    }
+
+    #startCampaign(): void {
         this.#releaseCampaign = this.#createElector(this.#lockName).campaign(() => {
             this.#becomeLeader();
         });
+    }
+
+    // Hand leadership back to the cohort when this tab is hidden or about to be
+    // frozen/unloaded. The browser only freezes hidden tabs, so releasing the
+    // lock the moment we go hidden (after a short grace) keeps the sole
+    // connection on a tab that is still alive — a backgrounded tab can no longer
+    // hold it hostage and starve every visible tab. Browser-only; no-op under
+    // SSR or where the lifecycle events are unavailable.
+    #bindLifecycle(): void {
+        if (typeof document === "undefined" || typeof window === "undefined") return;
+        const ac = new AbortController();
+        this.#lifecycleAbort = ac;
+        const opts = { signal: ac.signal };
+        document.addEventListener(
+            "visibilitychange",
+            () => {
+                if (document.visibilityState === "hidden") this.#scheduleRelinquish();
+                else this.#cancelRelinquish();
+            },
+            opts,
+        );
+        // freeze/pagehide are the last chance to relinquish while JS still runs.
+        const handoff = (): void => {
+            this.#relinquishLeadership();
+        };
+        document.addEventListener("freeze", handoff, opts);
+        window.addEventListener("pagehide", handoff, opts);
+    }
+
+    #scheduleRelinquish(): void {
+        if (this.#hiddenTimer || !this.#isLeader) return;
+        this.#hiddenTimer = setTimeout(() => {
+            this.#hiddenTimer = null;
+            this.#relinquishLeadership();
+        }, HIDDEN_RELINQUISH_DELAY_MS);
+    }
+
+    #cancelRelinquish(): void {
+        if (this.#hiddenTimer) {
+            clearTimeout(this.#hiddenTimer);
+            this.#hiddenTimer = null;
+        }
+    }
+
+    // Drop the real connection, release the leader lock, and re-enter the
+    // election from the back of the queue. A still-visible tab is ahead in the
+    // queue and is promoted; a lone tab simply re-wins and reopens. Closing the
+    // EventManager is quiet (no error broadcast), so followers keep their last
+    // lifecycle until the new leader's stream opens — no spurious disconnect.
+    #relinquishLeadership(): void {
+        this.#cancelRelinquish();
+        if (!this.#started || !this.#isLeader) return;
+        logger.info("relinquishing leadership (tab hidden/frozen)");
+        this.#isLeader = false;
+        this.#leaderTypes.clear();
+        this.#lastLifecycle = null;
+        this.#lastErrorInfo = null;
+        if (this.#leader) {
+            this.#leader.close();
+            this.#leader = null;
+        }
+        if (this.#releaseCampaign) {
+            this.#releaseCampaign();
+            this.#releaseCampaign = null;
+        }
+        this.#startCampaign();
     }
 
     #becomeLeader(): void {
@@ -342,6 +424,11 @@ export class SharedAppStream implements AppEventStream {
         if (!this.#started) return;
         this.#started = false;
 
+        this.#cancelRelinquish();
+        if (this.#lifecycleAbort) {
+            this.#lifecycleAbort.abort();
+            this.#lifecycleAbort = null;
+        }
         if (this.#releaseCampaign) {
             this.#releaseCampaign();
             this.#releaseCampaign = null;
