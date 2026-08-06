@@ -4,7 +4,9 @@
 package configedit
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -141,14 +143,9 @@ type blockSpan struct {
 }
 
 // sortSpans orders spans by their start offset so the splice walks the document
-// forward exactly once. Insertion sort: a promote request holds a handful of
-// names, not thousands.
+// forward exactly once.
 func sortSpans(spans []blockSpan) {
-	for i := 1; i < len(spans); i++ {
-		for j := i; j > 0 && spans[j].start < spans[j-1].start; j-- {
-			spans[j], spans[j-1] = spans[j-1], spans[j]
-		}
-	}
+	slices.SortFunc(spans, func(a, b blockSpan) int { return cmp.Compare(a.start, b.start) })
 }
 
 // findBlock locates the named entry's full byte range: its lead comments, its

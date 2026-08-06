@@ -871,10 +871,17 @@ func deriveCronName(command string) string {
 	if ext := filepath.Ext(base); ext != "" && len(ext) <= 5 {
 		base = strings.TrimSuffix(base, ext)
 	}
+	return finalizeTaskName(base, "job")
+}
+
+// finalizeTaskName sanitizes base to RunWisp's name rules, trims stray
+// separators, falls back to fallback when nothing usable remains, and caps
+// the result at model.TaskNameMaxLength.
+func finalizeTaskName(base, fallback string) string {
 	base = model.SanitizeTaskName(base)
 	base = strings.Trim(base, "_-")
 	if base == "" {
-		base = "job"
+		base = fallback
 	}
 	if len(base) > model.TaskNameMaxLength {
 		base = base[:model.TaskNameMaxLength]

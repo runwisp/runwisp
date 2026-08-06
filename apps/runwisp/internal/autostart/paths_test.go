@@ -373,25 +373,6 @@ func TestResolveConfigPath_ExplicitDefaultIgnored(t *testing.T) {
 	assert.Equal(t, "/home/alice/.config/runwisp/runwisp.toml", p)
 }
 
-func TestUserHomeDir_PrefersHOMEEnv(t *testing.T) {
-	t.Setenv("HOME", "/custom/home")
-	got, err := UserHomeDir()
-	require.NoError(t, err)
-	assert.Equal(t, "/custom/home", got)
-}
-
-func TestUserHomeDir_FallsBackWhenHOMEEmpty(t *testing.T) {
-	// On Linux/macOS the os.UserHomeDir() fallback also reads $HOME;
-	// to actually hit os.UserHomeDir() we have to unset HOME entirely.
-	t.Setenv("HOME", "")
-	got, err := UserHomeDir()
-	// We don't assert success — on a stripped env os.UserHomeDir
-	// may legitimately fail. We only need both branches executed.
-	if err == nil {
-		assert.NotEmpty(t, got)
-	}
-}
-
 func TestDetectWSLFromEnv_NoSignals(t *testing.T) {
 	t.Setenv("WSL_DISTRO_NAME", "")
 	// We can't unset /proc/sys/kernel/osrelease, but DetectWSL is the

@@ -177,7 +177,7 @@ func TestGracefulShutdown_WithScheduler(t *testing.T) {
 	tasks := runtime.NewTaskRegistry(tasksMap)
 
 	loc, _ := config.ResolveTimezone("scheduler.timezone", "UTC")
-	scheduler := runtime.NewScheduler(tm, tasksMap, loc)
+	scheduler := runtime.NewScheduler(tm, tasksMap, loc, nil)
 	_, _ = scheduler.Start()
 
 	svc := &daemonServices{

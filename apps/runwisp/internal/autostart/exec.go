@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"slices"
 	"sync"
 )
 
@@ -72,7 +73,7 @@ func (f *FakeRunner) Run(_ context.Context, name string, args ...string) ([]byte
 	defer f.mu.Unlock()
 	f.log = append(f.log, FakeCallLog{Name: name, Args: append([]string(nil), args...)})
 	for i, c := range f.calls {
-		if c.name == name && argsEqual(c.args, args) {
+		if c.name == name && slices.Equal(c.args, args) {
 			f.calls = append(f.calls[:i], f.calls[i+1:]...)
 			return c.stdout, c.stderr, c.err
 		}
@@ -94,16 +95,4 @@ func (f *FakeRunner) Remaining() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.calls)
-}
-
-func argsEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

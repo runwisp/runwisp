@@ -2,16 +2,12 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import { Globe } from "@lucide/svelte";
     import { formatDuration } from "@runwisp/ui";
     import { connectionStore, systemStore, type ConnectionStatus } from "$lib/stores";
-    import { appEventStream } from "$lib/stores/app-stream.svelte";
-    import { stalledCopy } from "$lib/utils/connection-copy";
+    import { connectionTheme, type ConnectionThemeBase } from "$lib/utils/connection-theme.svelte";
 
-    interface Theme {
-        label: string;
+    interface Theme extends ConnectionThemeBase {
         container: string;
-        title: string;
         labelColor: string;
         subtitleColor: string;
         dot: string;
@@ -57,20 +53,12 @@
         },
     };
 
-    let status = $derived(connectionStore.status);
-    // Stalled copy depends on whether this tab shares one connection across tabs:
-    // only the degraded per-tab mode can honestly blame "too many tabs".
-    let copy = $derived(stalledCopy(appEventStream.sharing));
-    let theme = $derived(
-        status === "stalled"
-            ? { ...THEMES.stalled, label: copy.label, title: copy.title }
-            : THEMES[status],
-    );
+    const conn = connectionTheme(THEMES);
 
     let subtitle = $derived.by(() => {
-        if (status === "connected") return `v${systemStore.version}`;
-        if (status === "connecting") return "Reconnecting…";
-        if (status === "stalled") return copy.hint;
+        if (conn.status === "connected") return `v${systemStore.version}`;
+        if (conn.status === "connecting") return "Reconnecting…";
+        if (conn.status === "stalled") return conn.copy.hint;
         const since = connectionStore.disconnectedSince;
         if (typeof since === "number")
             return "Down for " + formatDuration(connectionStore.now - since);
@@ -80,44 +68,36 @@
 
 {#snippet body()}
     <div class="relative flex h-2 w-2 shrink-0">
-        {#if theme.ping}
+        {#if conn.theme.ping}
             <span
-                class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 {theme.ping}"
+                class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 {conn
+                    .theme.ping}"
             ></span>
         {/if}
-        <span class="relative inline-flex h-2 w-2 rounded-full {theme.dot}"></span>
+        <span class="relative inline-flex h-2 w-2 rounded-full {conn.theme.dot}"></span>
     </div>
     <div class="flex min-w-0 flex-col">
-        <span class="font-mono text-xs font-medium {theme.labelColor}">{theme.label}</span>
-        <span class="flex items-center gap-1 font-mono text-2xs {theme.subtitleColor}">
-            <span class="truncate">{subtitle}</span>
-            {#if status === "connected" && systemStore.timezone}
-                <span class="shrink-0 text-on-surface-faint">·</span>
-                <span
-                    title={systemStore.timezoneSource === "system"
-                        ? "Detected from the host system; pin [scheduler] timezone in runwisp.toml to make it explicit."
-                        : "Set in runwisp.toml under [scheduler] timezone."}
-                    class="flex min-w-0 shrink items-center gap-0.5 truncate"
-                >
-                    <Globe size={10} class="shrink-0 text-on-surface-faint" />
-                    <span class="truncate">{systemStore.timezone}</span>
-                </span>
-            {/if}
-        </span>
+        <span class="font-mono text-xs font-medium {conn.theme.labelColor}">{conn.theme.label}</span
+        >
+        <span class="truncate font-mono text-2xs {conn.theme.subtitleColor}">{subtitle}</span>
     </div>
 {/snippet}
 
-{#if status === "connected" || status === "stalled"}
-    <div class="flex items-center gap-3 border-t p-4 {theme.container}" title={theme.title}>
+{#if conn.status === "connected" || conn.status === "stalled"}
+    <div
+        class="flex items-center gap-3 border-t p-4 {conn.theme.container}"
+        title={conn.theme.title}
+    >
         {@render body()}
     </div>
 {:else}
     <button
         type="button"
         onclick={connectionStore.retryNow}
-        disabled={status === "connecting"}
-        title={theme.title}
-        class="flex w-full items-center gap-3 border-t p-4 text-left disabled:cursor-progress {theme.container}"
+        disabled={conn.status === "connecting"}
+        title={conn.theme.title}
+        class="flex w-full items-center gap-3 border-t p-4 text-left disabled:cursor-progress {conn
+            .theme.container}"
     >
         {@render body()}
     </button>

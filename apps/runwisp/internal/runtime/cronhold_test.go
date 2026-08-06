@@ -30,7 +30,7 @@ var cronLive = cronprobe.State{Live: true, State: "is running"}
 func holdRefreshFixture(t *testing.T, now time.Time, tasks ...*model.Task) (*Reconciler, *Scheduler, *holdCatchupDB) {
 	t.Helper()
 	live := taskSet(tasks...)
-	sched := NewScheduler(&fakeTaskRunner{}, live, time.UTC)
+	sched := NewScheduler(&fakeTaskRunner{}, live, time.UTC, nil)
 	_, err := sched.Start()
 	require.NoError(t, err)
 	t.Cleanup(sched.Stop)

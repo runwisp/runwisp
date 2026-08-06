@@ -91,7 +91,7 @@ func runServiceInstall(cmd *cobra.Command, f Flags) error {
 // decision now lives in internal/cutover, and all this does about cron is point
 // at `runwisp takeover` when one would help.
 func installService(cmd *cobra.Command, f Flags, req installRequest) (installed bool, err error) {
-	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, req.Yes)
+	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), os.Stdin, req.Yes)
 	if err != nil {
 		return false, err
 	}
@@ -518,7 +518,7 @@ func handStartedDaemonError(info *model.InstanceInfo, host string, port int) err
 }
 
 // printDryRun emits a plan summary for --dry-run.
-func printDryRun(w interface{ Write([]byte) (int, error) }, plan autostart.Plan) {
+func printDryRun(w io.Writer, plan autostart.Plan) {
 	fmt.Fprintf(w, "Plan: %s\n", plan.Kind)
 	fmt.Fprintf(w, "Reason: %s\n", plan.Reason)
 	fmt.Fprintln(w)

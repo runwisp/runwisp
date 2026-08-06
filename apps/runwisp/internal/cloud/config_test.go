@@ -91,26 +91,6 @@ func TestLoadConfigURLOverrideTakesPrecedenceOverEnv(t *testing.T) {
 	assert.Equal(t, "override.example.com", cfg.BaseURL.Host)
 }
 
-func TestLoadConfigFromEnv_TokenSet(t *testing.T) {
-	t.Setenv("RUNWISP_CLOUD_TOKEN", "env-token")
-	t.Setenv("RUNWISP_CLOUD_URL", "")
-	t.Setenv("RUNWISP_CLOUD_ALLOW_INSECURE", "")
-
-	cfg, err := LoadConfigFromEnv("1.0.0", "fp")
-	require.NoError(t, err)
-	assert.True(t, cfg.Enabled)
-	assert.Equal(t, "env-token", cfg.CloudToken)
-}
-
-func TestLoadConfigFromEnv_NoToken(t *testing.T) {
-	t.Setenv("RUNWISP_CLOUD_TOKEN", "")
-	t.Setenv("RUNWISP_CLOUD_URL", "")
-
-	cfg, err := LoadConfigFromEnv("1.0.0", "fp")
-	require.NoError(t, err)
-	assert.False(t, cfg.Enabled)
-}
-
 func TestLoadConfigInvalidScheme(t *testing.T) {
 	_, err := LoadConfig("1.0.0", "tok", "ftp://example.com", "fp")
 	require.Error(t, err)

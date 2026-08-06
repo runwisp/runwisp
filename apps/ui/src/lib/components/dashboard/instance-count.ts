@@ -8,7 +8,7 @@ import type { Task } from "@runwisp/common";
  * (the default when `instances` is unset); everything else reports 1, so only
  * a multi-instance service ever renders a `#N` instance suffix.
  */
-export function taskInstanceCount(task: Pick<Task, "kind" | "instances">): number {
+function taskInstanceCount(task: Pick<Task, "kind" | "instances">): number {
     if (task.kind === "service") {
         return Math.max(1, task.instances ?? 1);
     }

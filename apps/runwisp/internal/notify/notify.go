@@ -294,9 +294,3 @@ func (s *Service) runRetention(ctx context.Context) {
 		}
 	}
 }
-
-// DroppedIngressCount reports the cumulative count of events dropped at the
-// bus → service boundary. Diagnostic-only.
-func (s *Service) DroppedIngressCount() uint64 {
-	return s.droppedIngress.Load()
-}

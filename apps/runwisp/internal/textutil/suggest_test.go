@@ -21,8 +21,8 @@ func TestClosest(t *testing.T) {
 }
 
 func TestLevenshtein(t *testing.T) {
-	assert.Equal(t, 0, Levenshtein("abc", "abc"))
-	assert.Equal(t, 1, Levenshtein("abc", "abd"))
-	assert.Equal(t, 3, Levenshtein("", "abc"))
-	assert.Equal(t, 2, Levenshtein("timeuot", "timeout"))
+	assert.Equal(t, 0, levenshtein("abc", "abc"))
+	assert.Equal(t, 1, levenshtein("abc", "abd"))
+	assert.Equal(t, 3, levenshtein("", "abc"))
+	assert.Equal(t, 2, levenshtein("timeuot", "timeout"))
 }

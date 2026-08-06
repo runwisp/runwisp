@@ -42,12 +42,11 @@ type Renderer interface {
 //
 // All fields are optional. Zero values produce safe defaults: empty
 // ExternalURL suppresses run-link rendering, empty Fingerprint omits the
-// footer token, nil Now falls back to time.Now, nil OutputTail returns the
-// empty string (the template branch that wraps it then collapses).
+// footer token, nil OutputTail returns the empty string (the template branch
+// that wraps it then collapses).
 type TemplateContext struct {
 	ExternalURL string
 	Fingerprint string
-	Now         func() time.Time
 	OutputTail  func(logPath string, maxLines, maxBytes int) string
 }
 
@@ -97,9 +96,6 @@ func (r *TemplateRenderer) Render(ev *notify.Event) (RenderedMessage, error) {
 }
 
 func funcMap(ctx TemplateContext) template.FuncMap {
-	if ctx.Now == nil {
-		ctx.Now = time.Now
-	}
 	return template.FuncMap{
 		"upper":         strings.ToUpper,
 		"lower":         strings.ToLower,

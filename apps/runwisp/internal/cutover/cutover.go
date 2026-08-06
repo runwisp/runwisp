@@ -104,10 +104,6 @@ type Deps struct {
 // --yes and --force are absent on purpose: the first lives in the Prompter, the
 // second on Opts.
 type Options struct {
-	// DryRun renders the plan and stops. Because every operator-facing "no" is a
-	// Blocker in the value rather than an error out of Compute, a dry run is
-	// total — it can always print something, which is the bug that started this.
-	DryRun bool
 	// AllowSkippedCronJobs proceeds even though some cron sources won't load.
 	// Those jobs stay stopped.
 	AllowSkippedCronJobs bool

@@ -191,14 +191,14 @@ func TestRunUpdateCallback(t *testing.T) {
 
 	eb := events.NewEventBus()
 	called := false
-	exec := New(Options{
+	exec := newTestExecutor(t, Options{
 		LogDir:               tmpDir,
 		EventBus:             eb,
 		CloudDispatchEnabled: true,
 		HasLocalTasks:        true,
-		OnRunUpdate: func(r *model.Run) {
-			called = true
-		},
+	})
+	exec.SetRunUpdateCallback(func(r *model.Run) {
+		called = true
 	})
 	getLogPath := captureLogPath(eb)
 

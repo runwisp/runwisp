@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/notify/kinds"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -44,8 +45,8 @@ func TestFingerprintKey_WithDeliveryFailed(t *testing.T) {
 
 func TestKind_TitleCoversAllKinds(t *testing.T) {
 	ev := &Event{TaskName: "test-task"}
-	for _, k := range AllKinds {
-		title := k.Title(ev)
+	for _, k := range kinds.AllKindStrings {
+		title := Kind(k).Title(ev)
 		assert.NotEmpty(t, title, "Kind.Title() must return a non-empty string for %s", k)
 	}
 }

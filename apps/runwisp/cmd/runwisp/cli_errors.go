@@ -165,19 +165,6 @@ func unknownTaskError(taskName string, available []string) error {
 	}
 }
 
-// passwordMismatchError is returned when a different RunWisp daemon is
-// already running on the configured port with a different password.
-func passwordMismatchError(port int) error {
-	return &userFacingError{
-		title: fmt.Sprintf("another RunWisp daemon is already running on port %d with a different password", port),
-		details: "This usually happens when an instance was started from a different directory.\n" +
-			"To resolve this, you can:\n" +
-			"  - Stop the other daemon first\n" +
-			"  - Use a different port:  runwisp --port <PORT>\n" +
-			"  - Set RUNWISP_PASSWORD to the other daemon's password to connect to it",
-	}
-}
-
 // runwispPortConflictError is shown (non-interactively) when the port is held
 // by *another RunWisp daemon* started from a different data directory. Unlike
 // portConflictError, we know exactly what is there — so we name its datadir and
@@ -209,23 +196,6 @@ func instanceSummaryLines(info *model.InstanceInfo) []string {
 	return []string{
 		"  - data dir:  " + info.DataDir,
 		"  - config:    " + info.ConfigPath,
-	}
-}
-
-// tuiPasswordMismatchError is the variant shown by the `tui` subcommand.
-// explicit indicates the user supplied the password themselves.
-func tuiPasswordMismatchError(port int, explicit bool) error {
-	if explicit {
-		return &userFacingError{
-			title: fmt.Sprintf("the password does not match the daemon on port %d", port),
-		}
-	}
-	return &userFacingError{
-		title: fmt.Sprintf("password mismatch with the daemon on port %d", port),
-		details: "The daemon was likely started from a different directory with its own password.\n" +
-			"To fix this, either:\n" +
-			"  - Use --password or RUNWISP_PASSWORD with the correct password\n" +
-			"  - Stop the other daemon and restart from this directory",
 	}
 }
 

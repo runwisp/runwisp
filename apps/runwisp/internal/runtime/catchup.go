@@ -14,6 +14,7 @@ import (
 	"github.com/runwisp/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/textutil"
 )
 
 // CatchUpResult summarises missed-tick catch-up actions taken at startup.
@@ -237,16 +238,12 @@ func countMissedTicks(schedule cron.Schedule, lastRunTime, now time.Time, maxCou
 // sub-minute backlog), the count is reported as "at least N+" rather than
 // understated. When capped, it notes how many of the backlog were re-fired.
 func missedRunReason(missedCount int, since time.Time, capped bool, triggered int, truncated bool) string {
-	plural := "s"
-	if missedCount == 1 {
-		plural = ""
-	}
 	atLeast, plus := "", ""
 	if truncated {
 		atLeast, plus = "at least ", "+"
 	}
 	reason := fmt.Sprintf("%s%d%s scheduled run%s missed since %s (daemon was down)",
-		atLeast, missedCount, plus, plural, since.Format("2006-01-02 15:04"))
+		atLeast, missedCount, plus, textutil.Pluralize(missedCount, "", "s"), since.Format("2006-01-02 15:04"))
 	if capped {
 		reason += fmt.Sprintf("; re-ran the most recent %d, older ticks dropped per max_catch_up_runs", triggered)
 	}

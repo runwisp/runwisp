@@ -79,15 +79,6 @@ type syncTaskSchedule struct {
 	Enabled  bool   `json:"enabled"`
 }
 
-// taskSyncResponse is the bare response shape returned by the new cloud
-// /api/v1/runner/tasks/sync endpoint — no tRPC `result.data` wrapper.
-// Errors come back as non-2xx HTTP plus a JSON body the handler logs from
-// the status line; we don't try to decode them.
-type taskSyncResponse struct {
-	Success bool            `json:"success"`
-	Summary TaskSyncSummary `json:"summary"`
-}
-
 func NewTaskSyncClient(syncURL string, timeout time.Duration) *TaskSyncClient {
 	return &TaskSyncClient{
 		httpClient: &http.Client{Timeout: timeout},
@@ -149,18 +140,15 @@ func (client *TaskSyncClient) SyncTasks(ctx context.Context, token string, tasks
 		}
 	}
 
-	var data taskSyncResponse
-	if err := json.Unmarshal(responseBody, &data); err != nil {
+	// The /api/v1/runner/tasks/sync endpoint returns this shape bare — no tRPC
+	// `result.data` wrapper — so it decodes directly into TaskSyncResult.
+	result := &TaskSyncResult{}
+	if err := json.Unmarshal(responseBody, result); err != nil {
 		return nil, &CloudError{
 			Kind:    CloudErrorKindValidation,
 			Message: "failed to decode task sync response",
 			Err:     err,
 		}
-	}
-
-	result := &TaskSyncResult{
-		Success: data.Success,
-		Summary: data.Summary,
 	}
 
 	if !result.Success {

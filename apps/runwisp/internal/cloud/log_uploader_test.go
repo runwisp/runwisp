@@ -172,7 +172,7 @@ func TestForgetRemovesRowAndCachedEntry(t *testing.T) {
 		t.Fatalf("RegisterDispatch: %v", err)
 	}
 
-	u.Forget(context.Background(), "exec-1")
+	u.forget(context.Background(), "exec-1")
 
 	if got := repo.count(); got != 0 {
 		t.Errorf("repo rows = %d, want 0", got)
@@ -591,7 +591,7 @@ func TestRecoverOrphansNilEmitIsSafe(t *testing.T) {
 func TestForgetTolerantOfRepoDeleteError(t *testing.T) {
 	u := NewLogUploader(&failingDeleteRepo{}, &fakeRunRepo{}, t.TempDir(), fixedClock())
 	// Must not panic; the error is logged and swallowed.
-	u.Forget(context.Background(), "exec-1")
+	u.forget(context.Background(), "exec-1")
 }
 
 func TestRegisterDispatchPropagatesUpsertError(t *testing.T) {

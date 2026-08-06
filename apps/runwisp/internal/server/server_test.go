@@ -56,7 +56,7 @@ func setupServerWithOpts(t *testing.T, mutate func(*Options)) (*Server, *testuti
 	tasks := map[string]*model.Task{"task1": task}
 
 	// Create scheduler (nil is fine for most tests)
-	scheduler := runtime.NewScheduler(jm, tasks, time.UTC)
+	scheduler := runtime.NewScheduler(jm, tasks, time.UTC, nil)
 
 	// Create temp directory for logs
 	tmpDir, err := os.MkdirTemp("", "runwisp-test-logs-*")

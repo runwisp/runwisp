@@ -49,7 +49,7 @@ func serviceManagerName(st autostart.Status) string {
 // block a plain stop. local mirrors the --local flag; without it the scope
 // is detected from what is actually installed.
 func serviceState(cmd *cobra.Command, f Flags, local bool) (autostart.Installer, autostart.InstallOptions, autostart.Status, bool) {
-	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, true)
+	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), os.Stdin, true)
 	if err != nil {
 		return nil, autostart.InstallOptions{}, autostart.Status{}, false
 	}

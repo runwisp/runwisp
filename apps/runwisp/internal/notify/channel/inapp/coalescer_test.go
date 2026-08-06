@@ -35,7 +35,7 @@ func makeEvent(task string) *notify.Event {
 
 func TestCoalescer_FoldsRepeatsWithinWindow(t *testing.T) {
 	db := newDB(t)
-	hub := NewHub(8, 50)
+	hub := NewHub(8)
 	clk := testutil.NewFakeClock(time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC))
 	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
 
@@ -54,7 +54,7 @@ func TestCoalescer_FoldsRepeatsWithinWindow(t *testing.T) {
 
 func TestCoalescer_InsertsNewRowAfterWindow(t *testing.T) {
 	db := newDB(t)
-	hub := NewHub(8, 50)
+	hub := NewHub(8)
 	clk := testutil.NewFakeClock(time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC))
 	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
 
@@ -69,7 +69,7 @@ func TestCoalescer_InsertsNewRowAfterWindow(t *testing.T) {
 
 func TestCoalescer_SeparatesByFingerprint(t *testing.T) {
 	db := newDB(t)
-	hub := NewHub(8, 50)
+	hub := NewHub(8)
 	clk := testutil.NewFakeClock(time.Now().UTC())
 	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
 
@@ -84,7 +84,7 @@ func TestCoalescer_SeparatesByFingerprint(t *testing.T) {
 
 func TestCoalescer_OccurrenceRingTrimmed(t *testing.T) {
 	db := newDB(t)
-	hub := NewHub(8, 50)
+	hub := NewHub(8)
 	clk := testutil.NewFakeClock(time.Now().UTC())
 	const ringSize = 4
 	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: ringSize}, nil)
@@ -102,7 +102,7 @@ func TestCoalescer_OccurrenceRingTrimmed(t *testing.T) {
 
 func TestCoalescer_PublishesCreatedThenUpdated(t *testing.T) {
 	db := newDB(t)
-	hub := NewHub(16, 50)
+	hub := NewHub(16)
 	sub, unsub := hub.Subscribe()
 	defer unsub()
 
@@ -137,7 +137,7 @@ loop:
 
 func TestCoalescer_DistinctFingerprintsAllPersist(t *testing.T) {
 	db := newDB(t)
-	hub := NewHub(8, 50)
+	hub := NewHub(8)
 	clk := testutil.NewFakeClock(time.Now().UTC())
 	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
 
@@ -150,25 +150,9 @@ func TestCoalescer_DistinctFingerprintsAllPersist(t *testing.T) {
 	assert.Len(t, rows, 5, "each distinct fingerprint persists as its own row")
 }
 
-func TestHub_SubscriberCount_ZeroInitially(t *testing.T) {
-	h := NewHub(8, 50)
-	if h.SubscriberCount() != 0 {
-		t.Fatalf("expected 0 subscribers initially, got %d", h.SubscriberCount())
-	}
-}
-
-func TestHub_SubscriberCount_AfterSubscribe(t *testing.T) {
-	h := NewHub(8, 50)
-	_, cancel := h.Subscribe()
-	defer cancel()
-	if h.SubscriberCount() != 1 {
-		t.Fatalf("expected 1 subscriber, got %d", h.SubscriberCount())
-	}
-}
-
 func TestIngestSynthetic_NoPanic(t *testing.T) {
 	db := newDB(t)
-	hub := NewHub(8, 50)
+	hub := NewHub(8)
 	clk := testutil.NewFakeClock(time.Now().UTC())
 	coalescer := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
 	ch := New("inapp", &fakeRenderer{}, coalescer)
@@ -184,7 +168,7 @@ func (f *fakeRenderer) Render(ev *notify.Event) (render.RenderedMessage, error) 
 
 func TestCoalescer_Receive_NilEvent(t *testing.T) {
 	db := newDB(t)
-	hub := NewHub(8, 50)
+	hub := NewHub(8)
 	clk := testutil.NewFakeClock(time.Now().UTC())
 	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, OccurrenceN: 5}, nil)
 	c.Receive(context.Background(), "t", "b", nil) // must not panic

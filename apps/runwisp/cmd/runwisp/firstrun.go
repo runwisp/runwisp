@@ -151,7 +151,7 @@ var offerFirstRunCutover = probeFirstRunCutover
 // scaffold: a directory with both crontabs and a docker-compose.yml gets both, off
 // the one question already on screen.
 func probeFirstRunCutover(f Flags, out io.Writer, writeConfig func(path string, patterns []string) error) *firstRunCutover {
-	deps, err := autostart.DefaultDeps(out, out, os.Stdin, false)
+	deps, err := autostart.DefaultDeps(out, os.Stdin, false)
 	if err != nil {
 		return nil
 	}

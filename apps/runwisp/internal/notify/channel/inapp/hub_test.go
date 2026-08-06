@@ -18,7 +18,7 @@ import (
 // sends under the read lock, mutually exclusive with the close, so this runs to
 // completion without panicking.
 func TestHubConcurrentPublishUnsubscribe(t *testing.T) {
-	hub := NewHub(1, 0)
+	hub := NewHub(1)
 
 	stop := make(chan struct{})
 	var pubWg sync.WaitGroup
@@ -58,7 +58,7 @@ func TestHubConcurrentPublishUnsubscribe(t *testing.T) {
 	close(stop)
 	pubWg.Wait()
 
-	if got := hub.SubscriberCount(); got != 0 {
+	if got := len(hub.subs); got != 0 {
 		t.Fatalf("expected all subscribers removed, got %d", got)
 	}
 }

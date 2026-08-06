@@ -77,7 +77,7 @@ func TestSchedulerDoesNotRegisterHeldTasks(t *testing.T) {
 	ours := &model.Task{Name: "ours", Cron: "@every 1s", Run: "echo hi"}
 	tasks := map[string]*model.Task{"held": held, "ours": ours}
 
-	sched := NewScheduler(runner, tasks, time.UTC)
+	sched := NewScheduler(runner, tasks, time.UTC, nil)
 	result, err := sched.Start()
 	require.NoError(t, err)
 	defer sched.Stop()
@@ -99,7 +99,7 @@ func TestSchedulerCountsHeldRunOnStartTask(t *testing.T) {
 	held := heldCronTask("boot-job", "")
 	held.RunOnStart = true
 
-	sched := NewScheduler(runner, map[string]*model.Task{"boot-job": held}, time.UTC)
+	sched := NewScheduler(runner, map[string]*model.Task{"boot-job": held}, time.UTC, nil)
 	result, err := sched.Start()
 	require.NoError(t, err)
 	defer sched.Stop()
@@ -111,7 +111,7 @@ func TestSchedulerCountsHeldRunOnStartTask(t *testing.T) {
 // TestAddTaskRefusesHeldTask covers the reload path into the running scheduler.
 func TestAddTaskRefusesHeldTask(t *testing.T) {
 	runner := &fakeTaskRunner{}
-	sched := NewScheduler(runner, map[string]*model.Task{}, time.UTC)
+	sched := NewScheduler(runner, map[string]*model.Task{}, time.UTC, nil)
 	_, err := sched.Start()
 	require.NoError(t, err)
 	defer sched.Stop()
@@ -136,7 +136,7 @@ func TestHeldTaskGetsNoJitterPlan(t *testing.T) {
 
 	now := time.Date(2026, 7, 30, 1, 0, 0, 0, time.UTC)
 	sched := NewScheduler(runner, map[string]*model.Task{"held": held, "ours": ours}, time.UTC,
-		WithNow(func() time.Time { return now }))
+		func() time.Time { return now })
 	_, err := sched.Start()
 	require.NoError(t, err)
 	defer sched.Stop()
@@ -186,7 +186,7 @@ func TestHeldTaskIsStillManuallyTriggerable(t *testing.T) {
 // actually matters: whether a cron entry exists afterwards.
 func applyHoldDiff(t *testing.T, now time.Time, old, updated map[string]*model.Task) (*Scheduler, *holdCatchupDB) {
 	t.Helper()
-	sched := NewScheduler(&fakeTaskRunner{}, old, time.UTC)
+	sched := NewScheduler(&fakeTaskRunner{}, old, time.UTC, nil)
 	_, err := sched.Start()
 	require.NoError(t, err)
 	t.Cleanup(sched.Stop)

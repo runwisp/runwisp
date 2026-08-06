@@ -46,7 +46,7 @@ func init() {
 }
 
 func runServiceUninstall(cmd *cobra.Command, f Flags) error {
-	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, serviceUninstallOpts.Yes)
+	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), os.Stdin, serviceUninstallOpts.Yes)
 	if err != nil {
 		return err
 	}

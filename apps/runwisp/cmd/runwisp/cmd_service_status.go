@@ -52,7 +52,7 @@ func init() {
 }
 
 func runServiceStatus(cmd *cobra.Command, f Flags) error {
-	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, true)
+	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), os.Stdin, true)
 	if err != nil {
 		return err
 	}

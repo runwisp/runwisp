@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
@@ -57,7 +58,7 @@ func TestStreamManager_OneEventPerLine(t *testing.T) {
 
 	eb := events.NewEventBus()
 	drain := captureLogEvents(t, eb)
-	sm := &RoutingExecutor{eventBus: eb}
+	sm := &RoutingExecutor{eventBus: eb, clock: time.Now}
 
 	task := &model.Task{Name: "t"}
 	run := &model.Run{ID: "r1"}
@@ -93,7 +94,7 @@ func TestStreamManager_StderrTaggedNoPrefixInText(t *testing.T) {
 
 	eb := events.NewEventBus()
 	drain := captureLogEvents(t, eb)
-	sm := &RoutingExecutor{eventBus: eb}
+	sm := &RoutingExecutor{eventBus: eb, clock: time.Now}
 
 	task := &model.Task{Name: "t"}
 	run := &model.Run{ID: "r1"}
@@ -126,7 +127,7 @@ func TestStreamManager_OversizedLineSplit(t *testing.T) {
 
 	eb := events.NewEventBus()
 	drain := captureLogEvents(t, eb)
-	sm := &RoutingExecutor{eventBus: eb}
+	sm := &RoutingExecutor{eventBus: eb, clock: time.Now}
 
 	task := &model.Task{Name: "t"}
 	run := &model.Run{ID: "r1"}

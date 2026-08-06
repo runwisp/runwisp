@@ -105,30 +105,6 @@ func TestRenderError_WithHint(t *testing.T) {
 	assert.Contains(t, out, "Run 'runwisp --help' for usage.")
 }
 
-func TestPasswordMismatchError_PortInTitle(t *testing.T) {
-	err := passwordMismatchError(9477)
-	var ufe *userFacingError
-	require.True(t, errors.As(err, &ufe))
-	assert.Contains(t, ufe.title, "9477")
-	assert.Contains(t, ufe.details, "RUNWISP_PASSWORD")
-}
-
-func TestTUIPasswordMismatchError_Explicit(t *testing.T) {
-	err := tuiPasswordMismatchError(9477, true)
-	var ufe *userFacingError
-	require.True(t, errors.As(err, &ufe))
-	assert.Contains(t, ufe.title, "does not match")
-	assert.Empty(t, ufe.details)
-}
-
-func TestTUIPasswordMismatchError_Implicit(t *testing.T) {
-	err := tuiPasswordMismatchError(9477, false)
-	var ufe *userFacingError
-	require.True(t, errors.As(err, &ufe))
-	assert.Contains(t, ufe.title, "password mismatch")
-	assert.Contains(t, ufe.details, "--password")
-}
-
 func TestAuthRateLimitedError_HasHints(t *testing.T) {
 	err := authRateLimitedError(9477)
 	var ufe *userFacingError

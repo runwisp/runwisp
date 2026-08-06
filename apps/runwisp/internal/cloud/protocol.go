@@ -294,10 +294,6 @@ func DecodeInboundMessage(payload []byte) (any, error) {
 	return decoder(payload)
 }
 
-func EncodeOutboundMessage(message any) ([]byte, error) {
-	return json.Marshal(message)
-}
-
 func decodeStrict(payload []byte, target any) error {
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 

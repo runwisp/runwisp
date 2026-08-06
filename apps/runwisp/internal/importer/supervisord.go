@@ -479,15 +479,7 @@ func splitSectionName(s string) (kind, name string) {
 }
 
 func sanitizeProgramName(name string) string {
-	n := model.SanitizeTaskName(strings.TrimSpace(name))
-	n = strings.Trim(n, "_-")
-	if n == "" {
-		n = "program"
-	}
-	if len(n) > model.TaskNameMaxLength {
-		n = n[:model.TaskNameMaxLength]
-	}
-	return n
+	return finalizeTaskName(strings.TrimSpace(name), "program")
 }
 
 func parseBool(value string) (bool, bool) {

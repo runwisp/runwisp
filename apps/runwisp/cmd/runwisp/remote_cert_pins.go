@@ -4,13 +4,8 @@
 package main
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
-
-	"log/slog"
-
-	"github.com/runwisp/runwisp/internal/datadir"
 )
 
 // A remote daemon serving auto-HTTPS presents a self-signed certificate with no
@@ -43,15 +38,7 @@ func (certPinStore) Load(key string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", false
-	}
-	var pins map[string]string
-	if err := json.Unmarshal(data, &pins); err != nil {
-		return "", false
-	}
-	fp, ok := pins[key]
+	fp, ok := loadJSONCacheMap[string](path)[key]
 	return fp, ok && fp != ""
 }
 
@@ -62,25 +49,7 @@ func (certPinStore) Load(key string) (string, bool) {
 func (certPinStore) Store(key, fingerprint string) {
 	path, err := pinStorePath()
 	if err != nil {
-		slog.Debug("Skipping cert pin: no user cache dir", "err", err)
 		return
 	}
-	pins := map[string]string{}
-	if data, readErr := os.ReadFile(path); readErr == nil {
-		_ = json.Unmarshal(data, &pins) // a corrupt file is simply overwritten
-	}
-	pins[key] = fingerprint
-
-	data, err := json.Marshal(pins)
-	if err != nil {
-		slog.Debug("Skipping cert pin: marshal failed", "err", err)
-		return
-	}
-	if err := datadir.EnsureDir(filepath.Dir(path)); err != nil {
-		slog.Debug("Skipping cert pin: cannot create cache dir", "err", err)
-		return
-	}
-	if err := datadir.WriteSecretFile(path, data); err != nil {
-		slog.Debug("Skipping cert pin: write failed", "err", err)
-	}
+	storeJSONCacheEntry(path, "cert pin", key, fingerprint)
 }

@@ -221,8 +221,3 @@ func TestJoinSources(t *testing.T) {
 	assert.Equal(t, "/etc/crontab, /etc/cron.d and bob's crontab",
 		JoinSources([]string{"/etc/crontab", "/etc/cron.d", "bob's crontab"}))
 }
-
-func TestPluralJobs(t *testing.T) {
-	assert.Equal(t, "1 cron job", pluralJobs(1))
-	assert.Equal(t, "12 cron jobs", pluralJobs(12))
-}

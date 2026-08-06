@@ -186,12 +186,11 @@ func TestNewOSFileSystem_WriteReadStatRemove(t *testing.T) {
 }
 
 func TestDefaultDeps_RealEnvironment(t *testing.T) {
-	d, err := DefaultDeps(io.Discard, io.Discard, nil, true)
+	d, err := DefaultDeps(io.Discard, nil, true)
 	require.NoError(t, err)
 	assert.NotEmpty(t, d.Home, "home directory present")
 	assert.NotEmpty(t, d.User, "user present")
 	assert.NotEmpty(t, d.Fingerprint, "fingerprint generated")
-	assert.True(t, d.AutoOK)
 	assert.NotNil(t, d.FS)
 	assert.NotNil(t, d.Cmd)
 	assert.NotNil(t, d.Prompter)
@@ -213,12 +212,4 @@ func TestFakeRunner_LogAndExhaustion(t *testing.T) {
 	log := r.Log()
 	assert.Len(t, log, 2)
 	assert.Equal(t, "systemctl", log[0].Name)
-}
-
-func TestArgsEqual(t *testing.T) {
-	assert.True(t, argsEqual(nil, nil))
-	assert.True(t, argsEqual([]string{}, []string{}))
-	assert.True(t, argsEqual([]string{"a", "b"}, []string{"a", "b"}))
-	assert.False(t, argsEqual([]string{"a"}, []string{"a", "b"}))
-	assert.False(t, argsEqual([]string{"a", "b"}, []string{"a", "c"}))
 }

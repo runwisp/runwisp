@@ -28,11 +28,6 @@ type Config struct {
 	TaskSyncTimeout time.Duration
 }
 
-// LoadConfigFromEnv loads cloud configuration from environment variables only.
-func LoadConfigFromEnv(agentVersion, fingerprint string) (Config, error) {
-	return LoadConfig(agentVersion, "", "", fingerprint)
-}
-
 // LoadConfig loads cloud configuration. CLI overrides (tokenOverride, urlOverride)
 // take precedence over environment variables. fingerprint must be pre-resolved
 // by the caller (from persistent storage or environment).

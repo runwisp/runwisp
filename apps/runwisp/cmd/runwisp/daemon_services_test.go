@@ -256,6 +256,6 @@ func TestBuildDaemonInfo_SchedulingActiveReflectsScheduler(t *testing.T) {
 	assert.False(t, buildDaemonInfo(dc, svc, time.Time{}, f.Port).SchedulingActive)
 
 	// Standalone mode: scheduler present.
-	svc.Scheduler = runtime.NewScheduler(tm, tasksMap, time.UTC)
+	svc.Scheduler = runtime.NewScheduler(tm, tasksMap, time.UTC, nil)
 	assert.True(t, buildDaemonInfo(dc, svc, time.Time{}, f.Port).SchedulingActive)
 }

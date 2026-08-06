@@ -4,7 +4,6 @@
 import {
     formatRelativeTime,
     formatRelativeTimeWithAbsolute,
-    getRunStatusConfig,
     humanizeCron,
     runDuration,
 } from "@runwisp/ui";
@@ -72,14 +71,6 @@ export function taskTriggerIsHumanizedCron(task: TaskOverview): boolean {
         return false;
     }
     return humanizeCron(task.task.cron).isHumanized;
-}
-
-export function getTaskStatusDot(status: TaskOverview["lastStatus"]): string {
-    if (!status) {
-        return "bg-mist-300";
-    }
-
-    return getRunStatusConfig(status).dot.split(" ")[0] ?? "bg-mist-300";
 }
 
 export function formatRunStartedLabel(run: Run, now: Date = new Date()): string {

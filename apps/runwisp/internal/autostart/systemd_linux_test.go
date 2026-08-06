@@ -34,12 +34,10 @@ func newFakeInstaller(t *testing.T, wsl bool) (*systemdInstaller, *FakeFS, *Fake
 		Cmd:         cmd,
 		Prompter:    prompter,
 		Stdout:      &bytes.Buffer{},
-		Stderr:      &bytes.Buffer{},
 		Home:        "/home/alice",
 		User:        "alice",
 		WSL:         wsl,
 		Fingerprint: "bright-falcon",
-		AutoOK:      true,
 		StdinIsTTY:  false,
 		Euid:        1000, // alice: non-root, so a systemWide call needs "sudo".
 	}

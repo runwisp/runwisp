@@ -52,10 +52,8 @@ type Hub struct {
 }
 
 // NewHub constructs a Hub. bufSize is the per-subscriber channel capacity;
-// 32 is a sensible default for the SSE handler. recent is retained for call-site
-// compatibility but no longer used.
-func NewHub(bufSize, recent int) *Hub {
-	_ = recent
+// 32 is a sensible default for the SSE handler.
+func NewHub(bufSize int) *Hub {
 	if bufSize <= 0 {
 		bufSize = 32
 	}
@@ -96,11 +94,4 @@ func (h *Hub) Publish(u Update) {
 		default:
 		}
 	}
-}
-
-// SubscriberCount reports the current subscriber count. Diagnostic-only.
-func (h *Hub) SubscriberCount() int {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return len(h.subs)
 }

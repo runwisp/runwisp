@@ -151,10 +151,24 @@ func TestSupervisordIncludeGolden(t *testing.T) {
 // file, which would have the operator looking for a task the daemon won't have.
 // itemRef.emit is the only path to either, so this is really a check that no
 // future code path routes around it.
+// tableNames lists the top-level tables the emitted TOML defines — the
+// [tasks.x] / [services.x] headers, without their .env children.
+func tableNames(r *Result) []string {
+	var out []string
+	for _, b := range r.blocks {
+		path := strings.Split(b.header, ".")
+		if len(path) != 2 {
+			continue // a .env child, or a table that names no job
+		}
+		out = append(out, path[1])
+	}
+	return out
+}
+
 func assertReportAccountsForTOML(t *testing.T, res *Result) {
 	t.Helper()
 	inTOML := map[string]bool{}
-	for _, name := range res.tableNames() {
+	for _, name := range tableNames(res) {
 		if inTOML[name] {
 			t.Errorf("the TOML defines %q twice", name)
 		}

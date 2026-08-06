@@ -4,11 +4,11 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/runwisp/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/internal/textutil"
 )
 
 // This file lays out the import report. Every function here is pure — it takes
@@ -180,11 +180,11 @@ func importFooterLine(res *importer.Result, validationErr error) string {
 	}
 	// "item", not "task": a blocked row may be a crontab line that never became a
 	// task at all, and it pairs with the epilogue's "Fix the items above".
-	subject := fmt.Sprintf("%d %s", blocked, plural(blocked, "item", "items"))
+	subject := textutil.Count(blocked, "item", "items")
 	if validationErr != nil {
-		return subject + " " + plural(blocked, "needs", "need") + " a fix before this config loads."
+		return subject + " " + textutil.Pluralize(blocked, "needs", "need") + " a fix before this config loads."
 	}
-	return subject + " " + plural(blocked, "carries", "carry") + " a # TODO — fix it before you rely on it."
+	return subject + " " + textutil.Pluralize(blocked, "carries", "carry") + " a # TODO — fix it before you rely on it."
 }
 
 // onlyBlocking keeps the rows that need a human. It is how --quiet silences the

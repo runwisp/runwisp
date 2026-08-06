@@ -65,11 +65,20 @@ func transientBinaryReason(p string) string {
 	if strings.Contains(p, "/go-build") && strings.Contains(p, "/exe/") {
 		return "this looks like a `go run` cache path"
 	}
+	return transientPathReason(p, "/var/tmp is not a durable install location")
+}
+
+// transientPathReason returns a short reason string when p lives in a
+// location that will not survive a reboot. Empty means "no hard reject".
+// varTmpReason lets callers phrase the /var/tmp case for their own risk (a
+// binary needs it durable across reboots; a data dir just needs it to survive
+// tmpwatch).
+func transientPathReason(p, varTmpReason string) string {
 	switch {
 	case strings.HasPrefix(p, "/tmp/"), p == "/tmp":
 		return "/tmp is wiped on reboot"
 	case strings.HasPrefix(p, "/var/tmp/"), p == "/var/tmp":
-		return "/var/tmp is not a durable install location"
+		return varTmpReason
 	case strings.HasPrefix(p, "/dev/shm/"), p == "/dev/shm":
 		return "/dev/shm is a tmpfs that is wiped on reboot"
 	}
@@ -228,15 +237,7 @@ func ResolveDataDir(opts ResolveDataDirOptions) (ResolveDataDirResult, error) {
 
 // transientDataDirReason mirrors transientBinaryReason for data dirs.
 func transientDataDirReason(p string) string {
-	switch {
-	case strings.HasPrefix(p, "/tmp/"), p == "/tmp":
-		return "/tmp is wiped on reboot"
-	case strings.HasPrefix(p, "/var/tmp/"), p == "/var/tmp":
-		return "/var/tmp may be cleaned by tmpwatch"
-	case strings.HasPrefix(p, "/dev/shm/"), p == "/dev/shm":
-		return "/dev/shm is a tmpfs that is wiped on reboot"
-	}
-	return ""
+	return transientPathReason(p, "/var/tmp may be cleaned by tmpwatch")
 }
 
 // ResolveConfigOptions configures ResolveConfigPath.
@@ -329,11 +330,12 @@ func DetectWSLFromEnv() bool {
 	})
 }
 
-// UserHomeDir returns the home directory, preferring $HOME for
-// determinism in unit/service contexts.
-func UserHomeDir() (string, error) {
-	if h := os.Getenv("HOME"); h != "" {
-		return h, nil
+// envPathOrDefault returns $PATH, or fallback when it's unset — a
+// non-interactive service manager may not propagate a login PATH to the unit
+// it launches.
+func envPathOrDefault(fallback string) string {
+	if p := os.Getenv("PATH"); p != "" {
+		return p
 	}
-	return os.UserHomeDir()
+	return fallback
 }

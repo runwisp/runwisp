@@ -13,6 +13,7 @@ import (
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/configedit"
 	"github.com/runwisp/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/internal/textutil"
 )
 
 // This file owns how an import *reads*: the counts, the per-job rows, the
@@ -314,20 +315,13 @@ func planTail(w io.Writer, st importStyles, rep importReport) {
 func pluralizeCounts(tasks, services int) string {
 	var parts []string
 	if tasks > 0 {
-		parts = append(parts, fmt.Sprintf("%d %s", tasks, plural(tasks, "task", "tasks")))
+		parts = append(parts, textutil.Count(tasks, "task", "tasks"))
 	}
 	if services > 0 {
-		parts = append(parts, fmt.Sprintf("%d %s", services, plural(services, "service", "services")))
+		parts = append(parts, textutil.Count(services, "service", "services"))
 	}
 	if len(parts) == 0 {
 		return "nothing"
 	}
 	return strings.Join(parts, ", ")
-}
-
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
 }
