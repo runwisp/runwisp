@@ -4,6 +4,7 @@
 import { test, expect } from "./fixtures/test-base";
 import {
     expectRunDetailMatchesApi,
+    runVerdict,
     triggerRunViaAPI,
     triggerRunViaUI,
     waitForRunEnded,
@@ -32,7 +33,7 @@ test.describe("task execution", () => {
         // The panel settles on SUCCESS (exact match avoids the lowercase
         // "success" in the run list, which uses CSS capitalize) and must show
         // the API's status, exit code, and real timing — not a hardcoded badge.
-        await expect(page.getByText("SUCCESS", { exact: true })).toBeVisible({ timeout: 30_000 });
+        await expect(runVerdict(page, "success")).toBeVisible({ timeout: 30_000 });
         await expectRunDetailMatchesApi(page, apiRun);
 
         // All captured stdout is present, in order — not just the first line.
@@ -58,7 +59,7 @@ test.describe("task execution", () => {
         expect(apiRun.end_reason).toBe("failed");
         expect(apiRun.exit_code).toBe(1);
 
-        await expect(page.getByText("FAILED", { exact: true })).toBeVisible({ timeout: 30_000 });
+        await expect(runVerdict(page, "failed")).toBeVisible({ timeout: 30_000 });
         await expectRunDetailMatchesApi(page, apiRun);
 
         // Both stdout and stderr are captured and surfaced in the console.
@@ -76,7 +77,7 @@ test.describe("task execution", () => {
         const triggered = await triggerRunViaUI(page, "echo-task");
         await waitForRunEnded(page, "echo-task", triggered.id, daemonState.token);
 
-        await expect(page.getByText("SUCCESS", { exact: true })).toBeVisible({ timeout: 30_000 });
+        await expect(runVerdict(page, "success")).toBeVisible({ timeout: 30_000 });
 
         // The run detail panel surfaces how the run was triggered: a manually
         // triggered run reads as an "API" trigger.
@@ -94,7 +95,7 @@ test.describe("task execution", () => {
         // feed has a completed run to surface.
         const triggered = await triggerRunViaUI(page, "echo-task");
         await waitForRunEnded(page, "echo-task", triggered.id, daemonState.token);
-        await expect(page.getByText("SUCCESS", { exact: true })).toBeVisible({ timeout: 30_000 });
+        await expect(runVerdict(page, "success")).toBeVisible({ timeout: 30_000 });
 
         // Navigate to dashboard
         await page.goto("/");

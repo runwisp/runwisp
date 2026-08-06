@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { test, expect } from "./fixtures/test-base";
+import { runVerdict } from "./fixtures/api";
 
 test.describe("frame history", () => {
     test("settled progress bar exposes rewindable frames inline", async ({
@@ -13,7 +14,7 @@ test.describe("frame history", () => {
         await page.getByRole("button", { name: "Run Task" }).click();
         await page.getByRole("button", { name: "Run Now" }).click();
 
-        await expect(page.getByText("SUCCESS", { exact: true })).toBeVisible({ timeout: 30_000 });
+        await expect(runVerdict(page, "success")).toBeVisible({ timeout: 30_000 });
 
         // Reload so the run is loaded fresh from disk (backfill only, no live
         // events) — the path where frame history used to be lost on a finished run.

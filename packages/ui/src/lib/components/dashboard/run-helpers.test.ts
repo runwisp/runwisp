@@ -2,13 +2,38 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { RUN_STATUSES } from "@runwisp/common";
 import {
     runDuration,
     runStartDelay,
+    runVerdict,
     formatTriggeredByLabel,
     runRetryLabel,
     instanceSuffix,
 } from "./run-helpers.js";
+
+describe("runVerdict", () => {
+    it("covers every run status", () => {
+        for (const status of RUN_STATUSES) {
+            expect(runVerdict(status).verb, status).toBeTruthy();
+        }
+    });
+
+    it("phrases a timed outcome so a duration reads after it", () => {
+        expect(runVerdict("success")).toEqual({ verb: "succeeded in", timed: true });
+        expect(runVerdict("failed")).toEqual({ verb: "failed after", timed: true });
+    });
+
+    it("marks statuses that never produced a duration as untimed", () => {
+        // These end without ever running, so the caller renders the verb alone
+        // rather than "skipped after —".
+        expect(runVerdict("missed").timed).toBe(false);
+        expect(runVerdict("skipped").timed).toBe(false);
+        expect(runVerdict("dst_skipped").timed).toBe(false);
+        expect(runVerdict("queue_full").timed).toBe(false);
+        expect(runVerdict("pending").timed).toBe(false);
+    });
+});
 
 describe("runDuration", () => {
     it("returns undefined when start_at is not set", () => {

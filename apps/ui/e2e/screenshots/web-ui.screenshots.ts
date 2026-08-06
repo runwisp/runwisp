@@ -17,7 +17,12 @@ import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test, expect } from "../fixtures/test-base";
-import { triggerRunViaAPI, waitForRunEnded, waitForUnreadNotification } from "../fixtures/api";
+import {
+    runVerdict,
+    triggerRunViaAPI,
+    waitForRunEnded,
+    waitForUnreadNotification,
+} from "../fixtures/api";
 import type { Run } from "@runwisp/common";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -119,14 +124,14 @@ test("overview, runs, task detail", async ({ authenticatedPage: page, daemonStat
         // Task detail — a finished, successful run
         await page.goto(`/tasks/${SUCCESS_TASK}`);
         await expect(page.getByRole("heading", { name: SUCCESS_TASK, level: 1 })).toBeVisible();
-        await expect(page.getByText("SUCCESS", { exact: true }).first()).toBeVisible();
+        await expect(runVerdict(page, "success")).toBeVisible();
         await settle(page);
         await shoot(page, `web-ui-task-detail-${theme}`);
 
         // Task detail — a failed run (selected via the run-id path segment)
         await page.goto(`/tasks/${failed.task_name}/${failed.id}`);
         await expect(page.getByRole("heading", { name: failed.task_name, level: 1 })).toBeVisible();
-        await expect(page.getByText("FAILED", { exact: true }).first()).toBeVisible();
+        await expect(runVerdict(page, "failed")).toBeVisible();
         await settle(page);
         await shoot(page, `web-ui-task-failed-${theme}`);
     }

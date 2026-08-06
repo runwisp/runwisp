@@ -26,6 +26,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test, expect } from "../fixtures/test-base";
+import { runVerdict } from "../fixtures/api";
 import { DemoCursor } from "./cursor-overlay";
 import { Screencast } from "./screencast";
 import { isFailureEndReason, type Run } from "@runwisp/common";
@@ -144,12 +145,12 @@ test("web ui showcase tour", async ({ authenticatedPage: page }) => {
         .first();
     await expect(failedRow).toBeVisible();
     await cursor.click(failedRow);
-    await expect(page.getByText("FAILED", { exact: true }).first()).toBeVisible({
+    await expect(runVerdict(page, "failed")).toBeVisible({
         timeout: 15_000,
     });
     await cursor.settle();
     // Glide across the outcome readout toward the error output, then hold.
-    const exitCell = page.getByText("Exit", { exact: true }).first();
+    const exitCell = page.getByTestId("run-exit").first();
     await cursor.moveOver(exitCell).catch(() => {});
     await beat(page, 600);
     await cursor.moveTo(360, 560).catch(() => {});
@@ -189,7 +190,7 @@ test("web ui showcase tour", async ({ authenticatedPage: page }) => {
     // Open one of the matches — the detail panel jumps to that failing run, so
     // you land on exactly the output you searched for. Leave the query in place.
     await cursor.click(runRows.first());
-    await expect(page.getByText("FAILED", { exact: true }).first()).toBeVisible({
+    await expect(runVerdict(page, "failed")).toBeVisible({
         timeout: 10_000,
     });
     await cursor.settle();
