@@ -181,6 +181,15 @@ func (sr *sessionRunner) handleInboundPayload(ctx context.Context, session *wsSe
 		slog.Info("cloud protocol error", "code", message.Code, "message", message.Message, "requestId", message.RequestID, "executionId", message.ExecutionID)
 		return nil
 	case protocol.ExecutionDispatchMessage:
+		// `execution` is a required pointer field, but decodeStrict only checks
+		// JSON syntax — a frame that omits it (or sends null) decodes to nil.
+		// Guard before the deref: an unrecovered panic in the read-loop goroutine
+		// would take down the whole daemon, not just the cloud session. Mirrors
+		// the nil guards on ServiceApply.Service / ServiceControl.Action.
+		if message.Execution == nil {
+			sr.sendProtocolError(session, CloudErrorKindValidation, "execution is required", "", "")
+			return nil
+		}
 		executionID := strings.TrimSpace(message.Execution.ExecutionID)
 		ack := func() {
 			if ackErr := sendMessage(session, NewExecutionAckMessage(executionID)); ackErr != nil {
