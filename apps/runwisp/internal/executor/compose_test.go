@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -237,9 +236,6 @@ func TestComposeContainerName(t *testing.T) {
 // observe the args actually passed by Start() and verify the exit code
 // surfaces. The shim writes its argv to a file the test then reads back.
 func TestComposeBackend_Start_RecordsArgs(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("PATH-shim depends on POSIX shell")
-	}
 	dir := t.TempDir()
 	argsFile := filepath.Join(dir, "args.txt")
 	installDockerShim(t, dir, argsFile, 0)
@@ -282,9 +278,6 @@ func TestComposeBackend_Start_RecordsArgs(t *testing.T) {
 // dumps its own environment and the test asserts the secret value is present
 // there.
 func TestComposeBackend_Start_InjectsEnvIntoChildProcess(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("PATH-shim depends on POSIX shell")
-	}
 	dir := t.TempDir()
 	envFile := filepath.Join(dir, "env.txt")
 	body := "#!/bin/sh\n" +
@@ -319,9 +312,6 @@ func TestComposeBackend_Start_InjectsEnvIntoChildProcess(t *testing.T) {
 // for this slot — the kill -9 / restart orphan that otherwise collides with
 // the deterministic --name.
 func TestComposeBackend_Start_ReclaimsStaleInstance(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("PATH-shim depends on POSIX shell")
-	}
 	dir := t.TempDir()
 	logFile := filepath.Join(dir, "calls.log")
 	installRecordingDockerShim(t, dir, logFile, "stale123\n")
@@ -346,9 +336,6 @@ func TestComposeBackend_Start_ReclaimsStaleInstance(t *testing.T) {
 // force-removes the instance container, covering the SIGKILL / graceful-stop
 // overrun where `--rm` never fires.
 func TestComposeBackend_Start_CleanupRemovesInstance(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("PATH-shim depends on POSIX shell")
-	}
 	dir := t.TempDir()
 	logFile := filepath.Join(dir, "calls.log")
 	installRecordingDockerShim(t, dir, logFile, "live456\n")
@@ -375,9 +362,6 @@ func TestComposeBackend_Start_CleanupRemovesInstance(t *testing.T) {
 // TestComposeBackend_Start_StackModeNoReclaimOrCleanup confirms stack mode
 // neither reclaims nor sets a Cleanup — compose owns those container lifecycles.
 func TestComposeBackend_Start_StackModeNoReclaimOrCleanup(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("PATH-shim depends on POSIX shell")
-	}
 	dir := t.TempDir()
 	logFile := filepath.Join(dir, "calls.log")
 	installRecordingDockerShim(t, dir, logFile, "")
@@ -447,9 +431,6 @@ func TestComposeBackend_Available_FalseWhenAbsent(t *testing.T) {
 // and its child die within the graceful window — proving setpgid + the
 // SIGTERM ladder in compose.go reach grandchildren the CLI may spawn.
 func TestComposeBackend_ProcessGroupSIGTERMReapsChildren(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("PATH-shim depends on POSIX shell")
-	}
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "child.pid")
 	body := "#!/bin/sh\n" +
@@ -491,9 +472,6 @@ func TestComposeBackend_ProcessGroupSIGTERMReapsChildren(t *testing.T) {
 // sends SIGKILL to the group with no SIGTERM grace window (compose.go:85-87).
 // The shim traps SIGTERM so only SIGKILL can end it.
 func TestComposeBackend_ImmediateKillWhenGracefulStopZero(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("PATH-shim depends on POSIX shell")
-	}
 	dir := t.TempDir()
 	installDockerShimScript(t, dir, "#!/bin/sh\ntrap '' TERM\nsleep 30\n")
 
@@ -522,9 +500,6 @@ func TestComposeBackend_ImmediateKillWhenGracefulStopZero(t *testing.T) {
 // TestComposeBackend_WorkingDirPropagates confirms ce.WorkingDir becomes the
 // child's cwd (compose.go:65-67) by having the shim record its own $PWD.
 func TestComposeBackend_WorkingDirPropagates(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("PATH-shim depends on POSIX shell")
-	}
 	shimDir := t.TempDir()
 	workDir := t.TempDir()
 	pwdFile := filepath.Join(shimDir, "pwd.txt")
@@ -557,9 +532,6 @@ func TestComposeBackend_WorkingDirPropagates(t *testing.T) {
 // TestComposeBackend_Start_ContextCancelledBeforeStart confirms a context that
 // is already cancelled prevents the spawn rather than leaking a process.
 func TestComposeBackend_Start_ContextCancelledBeforeStart(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("PATH-shim depends on POSIX shell")
-	}
 	dir := t.TempDir()
 	installDockerShim(t, dir, filepath.Join(dir, "args.txt"), 0)
 
@@ -579,9 +551,6 @@ func TestComposeBackend_Start_ContextCancelledBeforeStart(t *testing.T) {
 // the first failure and never retried. The shim fails `compose version` once,
 // then succeeds — so the second ensureProbed must report available.
 func TestLazyComposeBackend_ReprobesAfterTransientFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("PATH-shim depends on POSIX shell")
-	}
 	dir := t.TempDir()
 	counter := filepath.Join(dir, "probe.count")
 	body := "#!/bin/sh\n" +

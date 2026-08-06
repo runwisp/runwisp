@@ -37,10 +37,3 @@ func (c *Clock) Advance(d time.Duration) {
 	defer c.mu.Unlock()
 	c.now = c.now.Add(d)
 }
-
-// Set pins the clock to an absolute instant.
-func (c *Clock) Set(t time.Time) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.now = t
-}

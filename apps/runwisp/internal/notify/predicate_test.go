@@ -9,13 +9,6 @@ import (
 	"github.com/runwisp/runwisp/internal/notify"
 )
 
-// testEvent is a non-nil event suitable for passing to predicates.
-var testEvent = &notify.Event{
-	Kind:     notify.KindRunFailed,
-	TaskName: "my-task",
-	Severity: notify.SevError,
-}
-
 func TestMatchSeverity_EventUnknownSeverity_ReturnsFalse(t *testing.T) {
 	pred := notify.MatchSeverity(notify.SevError)
 	ev := &notify.Event{

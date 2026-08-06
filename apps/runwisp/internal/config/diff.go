@@ -5,6 +5,7 @@ package config
 
 import (
 	"reflect"
+	"slices"
 	"sort"
 
 	"github.com/runwisp/runwisp/internal/model"
@@ -37,12 +38,7 @@ type TaskChange struct {
 
 // Has reports whether the change carries the given reason.
 func (c TaskChange) Has(r ChangeReason) bool {
-	for _, got := range c.Reasons {
-		if got == r {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.Reasons, r)
 }
 
 // Diff is the set difference between two resolved task sets.
