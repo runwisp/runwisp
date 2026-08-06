@@ -1091,7 +1091,12 @@ func (m *defaultTaskManager) publishServiceFatal(taskName string, instanceIndex,
 	})
 }
 
-// GetActiveRuns returns a copy of active runs for the given task.
+// GetActiveRuns returns a snapshot of active runs for the given task. Each
+// ActiveRun and its Run are copied so callers observe stable values — the live
+// *ActiveRun.Run is concurrently mutated by the execute goroutine, so handing
+// out the live pointer would race any caller reading Run's fields. The Cancel
+// and ForceKill funcs are carried over unchanged, so a caller can still signal
+// the underlying run.
 func (m *defaultTaskManager) GetActiveRuns(taskName string) []*ActiveRun {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -1101,7 +1106,13 @@ func (m *defaultTaskManager) GetActiveRuns(taskName string) []*ActiveRun {
 		return nil
 	}
 	runs := make([]*ActiveRun, len(ts.active))
-	copy(runs, ts.active)
+	for i, ar := range ts.active {
+		snapshot := *ar
+		if ar.Run != nil {
+			snapshot.Run = ar.Run.Copy()
+		}
+		runs[i] = &snapshot
+	}
 	return runs
 }
 

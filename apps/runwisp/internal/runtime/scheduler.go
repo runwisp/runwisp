@@ -37,15 +37,19 @@ type Scheduler struct {
 	taskManager TaskRunner
 	tasks       map[string]*model.Task
 	entryIDs    map[string]cron.EntryID
-	// lastFired stores the wall-clock second (in the task's effective TZ) of
-	// the last firing for each task. A second firing whose tuple matches is
-	// the DST duplicate to suppress.
-	lastFired map[string]wallSecond
+	// firedTicks tracks, per task, every wall-clock second already fired within
+	// the current wall-clock hour (in the task's effective TZ). A firing whose
+	// tuple is already present is the DST fall-back duplicate to suppress. The
+	// set is scoped to one wall hour — reset the moment the hour advances — so a
+	// schedule with several ticks in the rewound hour ("0,30 1 * * *") dedups
+	// every repeat, not just one, while staying bounded to an hour of ticks.
+	firedTicks map[string]*firedHour
 	// jitterPlans holds, for each jittered task, its resolved slot offset, its
 	// window length (the gate's free-check horizon), and the parsed schedule
-	// used to clamp both to the live gap before the next tick. Computed once in
-	// Start (reload is restart-only) so a task lands at the same place every
-	// day. Tasks without a jitter window are absent and fire immediately.
+	// used to clamp both to the live gap before the next tick. Computed in Start
+	// and rebuilt by RecomputeJitter when a reload changes the task set, so a
+	// task lands at the same place every day between reloads. Tasks without a
+	// jitter window are absent and fire immediately.
 	jitterPlans map[string]jitterPlan
 	now         func() time.Time
 	mutex       sync.Mutex
@@ -87,6 +91,25 @@ func newWallSecond(t time.Time) wallSecond {
 	}
 }
 
+// wallHour is the (date, hour) prefix of a wallSecond — the scope over which
+// DST fall-back can rewind and repeat wall-clock ticks.
+type wallHour struct {
+	year  int
+	month time.Month
+	day   int
+	hour  int
+}
+
+func (w wallSecond) inHour() wallHour {
+	return wallHour{year: w.year, month: w.month, day: w.day, hour: w.hour}
+}
+
+// firedHour is the set of wall-clock seconds already fired within one wall hour.
+type firedHour struct {
+	hour  wallHour
+	ticks map[wallSecond]struct{}
+}
+
 // NewScheduler creates a scheduler. location controls how task cron expressions
 // are interpreted; nil means UTC, which is the project default. clock overrides
 // the scheduler's wall-clock reads; pass nil for time.Now — production always
@@ -105,7 +128,7 @@ func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location
 		taskManager: taskManager,
 		tasks:       tasks,
 		entryIDs:    make(map[string]cron.EntryID),
-		lastFired:   make(map[string]wallSecond),
+		firedTicks:  make(map[string]*firedHour),
 		jitterPlans: make(map[string]jitterPlan),
 		now:         clock,
 	}
@@ -144,11 +167,11 @@ func (scheduler *Scheduler) Start() (ScheduleResult, error) {
 
 // computeJitterPlans levels every jittered task against the others on a 24-hour
 // time-of-day dial and stores each task's resulting slot offset and window
-// length. Called once under scheduler.mutex before the cron loop starts; the
-// plans are then fixed for the daemon's lifetime (reload is restart-only).
-// Determinism holds: the dial positions come from scheduler.now() and the task
-// set, both injected, so the same TOML + clock yield the same slots — never
-// rand, never an inline wall-clock read.
+// length. Called under scheduler.mutex — from Start before the cron loop begins,
+// and from RecomputeJitter after a reload changes the task set. Determinism
+// holds: the dial positions come from scheduler.now() and the task set, both
+// injected, so the same TOML + clock yield the same slots — never rand, never an
+// inline wall-clock read.
 //
 // Every jittered task — including the one placed at offset 0 — gets a plan and
 // joins the work-conserving gate, so the earliest-slot task holds its peers
@@ -204,6 +227,22 @@ func (scheduler *Scheduler) computeJitterPlans() {
 		"tasks", len(scheduler.jitterPlans))
 }
 
+// RecomputeJitter rebuilds every jittered task's start-spread plan against the
+// given task set. The reconciler calls this after a reload changes the task set
+// so added and rescheduled tasks get their spread without a restart, rather than
+// firing at the raw tick until the daemon bounces. Because the leveling dial
+// coordinates all jittered tasks together, this re-places the whole set; offsets
+// stay within each task's window, so an unchanged task may shift within its
+// window but never onto another tick. Determinism holds: the placement is a pure
+// function of the injected clock and the task set.
+func (scheduler *Scheduler) RecomputeJitter(tasks map[string]*model.Task) {
+	scheduler.mutex.Lock()
+	defer scheduler.mutex.Unlock()
+	scheduler.tasks = tasks
+	scheduler.jitterPlans = make(map[string]jitterPlan)
+	scheduler.computeJitterPlans()
+}
+
 func (scheduler *Scheduler) Stop() {
 	scheduler.mutex.Lock()
 	if !scheduler.started {
@@ -243,7 +282,7 @@ func (scheduler *Scheduler) RemoveTask(name string) {
 		scheduler.cron.Remove(entryID)
 		delete(scheduler.entryIDs, name)
 	}
-	delete(scheduler.lastFired, name)
+	delete(scheduler.firedTicks, name)
 	delete(scheduler.jitterPlans, name)
 }
 
@@ -298,11 +337,16 @@ func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location) {
 	nowLocal := now.In(loc)
 	wm := newWallSecond(nowLocal)
 
+	hour := wm.inHour()
 	scheduler.mutex.Lock()
-	last, hadLast := scheduler.lastFired[taskName]
-	duplicate := hadLast && last == wm
+	fired, ok := scheduler.firedTicks[taskName]
+	if !ok || fired.hour != hour {
+		fired = &firedHour{hour: hour, ticks: make(map[wallSecond]struct{})}
+		scheduler.firedTicks[taskName] = fired
+	}
+	_, duplicate := fired.ticks[wm]
 	if !duplicate {
-		scheduler.lastFired[taskName] = wm
+		fired.ticks[wm] = struct{}{}
 	}
 	plan, hasJitter := scheduler.jitterPlans[taskName]
 	scheduler.mutex.Unlock()

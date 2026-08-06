@@ -146,8 +146,17 @@ func catchupOneTask(ctx context.Context, db storage.RunRepository, parser cron.S
 	// even when MaxCatchUpRuns drops older ticks from the re-run. firstTick is
 	// the first tick after the anchor; lastTick anchors the next restart.
 	firstTick := schedule.Next(anchor)
+	// lastTick anchors the next restart's catch-up counting. When counting was
+	// truncated, lastTick is only the maxCount-th tick, not the true latest tick
+	// before now — walking the rest would defeat the count bound. Anchoring at
+	// now instead prevents the next restart from re-counting (and re-alerting)
+	// this same gap, which is already reported as "at least N+".
+	anchorTick := lastTick
+	if truncated {
+		anchorTick = now
+	}
 	reason := missedRunReason(missedCount, firstTick, capped, triggerCount, truncated)
-	if err := runner.RecordMissedRun(task.Name, lastTick, reason); err != nil {
+	if err := runner.RecordMissedRun(task.Name, anchorTick, reason); err != nil {
 		slog.Error("Failed to record missed run", "task", task.Name, "err", err)
 		errors++
 	}

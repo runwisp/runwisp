@@ -77,7 +77,7 @@ type StreamLogOpts struct {
 func (c *Client) StreamLogLines(ctx context.Context, taskName, runID string, opts StreamLogOpts) (<-chan LogStreamMsg, error) {
 	path := fmt.Sprintf("/api/tasks/%s/runs/%s/log/stream?from=%d", taskName, runID, opts.FromLine)
 	if opts.ReplayLimit > 0 {
-		path += fmt.Sprintf("&replay_limit=%d", opts.ReplayLimit)
+		path += fmt.Sprintf("&replayLimit=%d", opts.ReplayLimit)
 	}
 	resp, err := c.doSSE(ctx, path)
 	if err != nil {

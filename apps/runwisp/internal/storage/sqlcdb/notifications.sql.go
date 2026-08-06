@@ -240,7 +240,7 @@ func (q *Queries) PruneNotificationsByCount(ctx context.Context, offset int64) (
 }
 
 const selectExistingForFingerprint = `-- name: SelectExistingForFingerprint :one
-SELECT id, count, occurrences_json FROM notifications
+SELECT id, count, occurrences_json, created_at, run_id FROM notifications
 WHERE fingerprint = ? AND last_occurred_at >= ?
 ORDER BY last_occurred_at DESC LIMIT 1
 `
@@ -251,15 +251,23 @@ type SelectExistingForFingerprintParams struct {
 }
 
 type SelectExistingForFingerprintRow struct {
-	ID              string `json:"id"`
-	Count           int    `json:"count"`
-	OccurrencesJson string `json:"occurrences_json"`
+	ID              string    `json:"id"`
+	Count           int       `json:"count"`
+	OccurrencesJson string    `json:"occurrences_json"`
+	CreatedAt       time.Time `json:"created_at"`
+	RunID           string    `json:"run_id"`
 }
 
 func (q *Queries) SelectExistingForFingerprint(ctx context.Context, arg SelectExistingForFingerprintParams) (SelectExistingForFingerprintRow, error) {
 	row := q.db.QueryRowContext(ctx, selectExistingForFingerprint, arg.Fingerprint, arg.LastOccurredAt)
 	var i SelectExistingForFingerprintRow
-	err := row.Scan(&i.ID, &i.Count, &i.OccurrencesJson)
+	err := row.Scan(
+		&i.ID,
+		&i.Count,
+		&i.OccurrencesJson,
+		&i.CreatedAt,
+		&i.RunID,
+	)
 	return i, err
 }
 

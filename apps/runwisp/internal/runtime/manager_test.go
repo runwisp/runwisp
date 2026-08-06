@@ -219,6 +219,69 @@ func TestPolicyTerminate(t *testing.T) {
 	assert.Equal(t, 2, exec.Calls())
 }
 
+// TestEvaluateConcurrency_QueuePreservesFIFOWhenSlotFree pins the FIFO fix: in
+// the window after a slot frees but before the drain loop picks up the queue, a
+// fresh trigger must join the back of the queue rather than start ahead of runs
+// already waiting.
+func TestEvaluateConcurrency_QueuePreservesFIFOWhenSlotFree(t *testing.T) {
+	m := &defaultTaskManager{}
+	ts := &taskState{
+		task:  testTask("t", model.PolicyQueue, 2),
+		cond:  sync.NewCond(&sync.Mutex{}),
+		queue: []*model.Run{{ID: "queued-1"}}, // one run already waiting
+	}
+
+	// A slot is free (0 active < limit 2), but the queue is non-empty.
+	action, err := m.evaluateConcurrency(ts, &model.Run{ID: "new"}, 2)
+	require.NoError(t, err)
+	assert.Equal(t, actionQueued, action, "a free slot must not let a new trigger jump the queue")
+	require.Len(t, ts.queue, 2)
+	assert.Equal(t, "queued-1", ts.queue[0].ID, "the existing queued run stays at the head")
+	assert.Equal(t, "new", ts.queue[1].ID, "the new trigger goes to the back")
+}
+
+// TestEvaluateConcurrency_TerminateSkipsAlreadyCancelled pins the terminate fix:
+// re-cancelling an already-dying run let the live run set grow past the limit
+// under rapid triggers. Each new trigger must cancel a distinct not-yet-cancelled
+// victim instead.
+func TestEvaluateConcurrency_TerminateSkipsAlreadyCancelled(t *testing.T) {
+	m := &defaultTaskManager{}
+	var r1cancels, r2cancels int
+	r1 := &ActiveRun{Run: &model.Run{ID: "r1"}, Cancel: func() { r1cancels++ }, cancelled: true}
+	r2 := &ActiveRun{Run: &model.Run{ID: "r2"}, Cancel: func() { r2cancels++ }}
+	ts := &taskState{
+		task:   testTask("t", model.PolicyTerminate, 1),
+		active: []*ActiveRun{r1, r2},
+	}
+
+	action, err := m.evaluateConcurrency(ts, &model.Run{ID: "r3"}, 1)
+	require.NoError(t, err)
+	assert.Equal(t, actionStart, action)
+	assert.Equal(t, 0, r1cancels, "an already-cancelled run must not be re-cancelled")
+	assert.Equal(t, 1, r2cancels, "the live run is terminated to make room for the new one")
+	assert.True(t, r2.cancelled, "the terminated run must be latched so a later trigger skips it")
+}
+
+// TestGetActiveRunsReturnsRunSnapshot pins that GetActiveRuns hands out a copy of
+// each Run, not the live pointer the execute goroutine concurrently mutates.
+func TestGetActiveRunsReturnsRunSnapshot(t *testing.T) {
+	jm, exec, _ := newGatedManager(t)
+	jm.UpsertTask(testTask("task1", model.PolicySkip, 1))
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+	exec.WaitStarted(t)
+	t.Cleanup(jm.Shutdown)
+
+	jm.mu.RLock()
+	live := jm.tasks["task1"].active[0]
+	jm.mu.RUnlock()
+
+	snap := jm.GetActiveRuns("task1")
+	require.Len(t, snap, 1)
+	assert.NotSame(t, live.Run, snap[0].Run, "GetActiveRuns must return a Run copy, not the live pointer")
+	assert.Equal(t, live.Run.ID, snap[0].Run.ID, "the copy must carry the same data")
+}
+
 func TestTerminateRun(t *testing.T) {
 	jm, exec, eb := newGatedManager(t)
 

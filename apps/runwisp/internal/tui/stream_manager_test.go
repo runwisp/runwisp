@@ -579,7 +579,7 @@ func newBulkServer(t *testing.T) *httptest.Server {
 	}
 	mux.HandleFunc("/api/runs/bulk/delete", bulkAffected)
 	mux.HandleFunc("/api/runs/bulk/restore", bulkAffected)
-	mux.HandleFunc("/api/runs/bulk/cancel", bulkAffected)
+	mux.HandleFunc("/api/runs/bulk/stop", bulkAffected)
 	mux.HandleFunc("/api/runs/bulk/rerun", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"triggered":[{"task_name":"t","run_id":"r"}]}`))

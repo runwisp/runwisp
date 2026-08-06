@@ -211,7 +211,7 @@ func waitDrain(ctx context.Context, svc *daemonServices, taskTimeout time.Durati
 func inflightRunCount(svc *daemonServices) int {
 	total := 0
 	for name := range svc.Tasks.Snapshot() {
-		total += len(svc.TaskManager.GetActiveRuns(name))
+		total += svc.TaskManager.GetActiveRunCount(name)
 	}
 	return total
 }
@@ -239,7 +239,7 @@ func waitServiceDrained(ctx context.Context, svc *daemonServices, name string) {
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		if len(svc.TaskManager.GetActiveRuns(name)) == 0 {
+		if svc.TaskManager.GetActiveRunCount(name) == 0 {
 			return
 		}
 		select {

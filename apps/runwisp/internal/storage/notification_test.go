@@ -81,6 +81,30 @@ func TestUpsertByFingerprint_CoalescesWithinWindow(t *testing.T) {
 	assert.Equal(t, second.LastOccurredAt.Unix(), got.Occurrences[0].Unix())
 }
 
+// On a coalesced update the passed-in notification pointer must be rewritten to
+// carry the FIRST occurrence's created_at and run_id — not the current event's —
+// so callers (e.g. the in-app coalescer's SSE payload) match what a later read
+// of the persisted row returns.
+func TestUpsertByFingerprint_CoalesceKeepsFirstSeenMetadata(t *testing.T) {
+	ctx := t.Context()
+	db := setupNotificationDB(t)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	first := newNotification(now, "fp-meta")
+	first.RunID = "run-first"
+	_, err := db.UpsertByFingerprint(ctx, first, time.Hour, 10)
+	require.NoError(t, err)
+
+	second := newNotification(now.Add(30*time.Minute), "fp-meta")
+	second.RunID = "run-second"
+	created, err := db.UpsertByFingerprint(ctx, second, time.Hour, 10)
+	require.NoError(t, err)
+	require.False(t, created)
+
+	assert.Equal(t, first.CreatedAt.Unix(), second.CreatedAt.Unix(), "created_at must stay first-seen")
+	assert.Equal(t, "run-first", second.RunID, "run_id must stay first-seen")
+}
+
 func TestUpsertByFingerprint_InsertsAfterWindowExpires(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationDB(t)

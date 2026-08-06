@@ -17,6 +17,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"log/slog"
@@ -244,6 +245,11 @@ func TokenFromCookie(r *http.Request) string {
 // redeem it once before it expires" — they differ only in size, TTL, and how
 // the token is generated.
 type ttlStore struct {
+	// mu makes consume's get-then-remove atomic: the LRU locks each call
+	// individually, so without this two requests presenting the same token could
+	// both observe it before either removed it, redeeming a single-use token
+	// twice. This is the login boundary, so single-use must actually be single.
+	mu      sync.Mutex
 	entries *expirable.LRU[string, time.Time]
 	ttl     time.Duration
 	gen     func() (string, error)
@@ -262,11 +268,15 @@ func (s *ttlStore) create() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	s.mu.Lock()
 	s.entries.Add(token, time.Now().Add(s.ttl))
+	s.mu.Unlock()
 	return token, nil
 }
 
 func (s *ttlStore) consume(token string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	exp, ok := s.entries.Get(token)
 	if !ok || time.Now().After(exp) {
 		return false

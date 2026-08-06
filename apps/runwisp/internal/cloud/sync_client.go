@@ -305,9 +305,12 @@ func durationToMillis(d time.Duration) int {
 }
 
 func classifySyncHTTPError(statusCode int) CloudErrorKind {
-	if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
-		return CloudErrorKindAuth
-	}
+	// A 401/403 here is NOT treated as a hard-auth stop: task sync runs only
+	// after the WebSocket handshake already authenticated the same token, so a
+	// 401/403 on this separate HTTP request is far more likely a transient
+	// intermediary (proxy/WAF/gateway) than a real credential verdict. The
+	// handshake is the sole authoritative auth boundary; sync errors retry with
+	// backoff like any other transient failure.
 	if statusCode >= 400 && statusCode < 500 {
 		return CloudErrorKindValidation
 	}

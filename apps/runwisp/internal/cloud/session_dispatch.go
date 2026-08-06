@@ -131,8 +131,13 @@ func (sr *sessionRunner) heartbeatLoop(ctx context.Context, session *wsSession) 
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
+			// A dropped heartbeat is not fatal: the watchdog governs liveness via
+			// lastReceived, and a full outbound buffer means we're already sending
+			// plenty (so the peer is hearing from us). Tearing down a healthy
+			// session over transient backpressure just drops the queued messages
+			// and forces a needless reconnect.
 			if err := sendMessage(session, NewPingMessage(sr.currentSystemStats())); err != nil {
-				return fmt.Errorf("heartbeat: %w", err)
+				slog.Debug("skipped heartbeat", "error", err.Error())
 			}
 		}
 	}
