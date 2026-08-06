@@ -79,8 +79,11 @@ dependencies, so as soon as it lands on your `PATH`, you're done.
 
         ```bash
         tar -xzf runwisp-linux-x64.tar.gz
-        sudo mv runwisp /usr/local/bin/runwisp
+        sudo install -m 0755 runwisp /usr/local/bin/runwisp
         ```
+
+        `install -m 0755` sets the executable bit as it copies, so
+        RunWisp runs whatever mode the tarball happened to carry.
 
         [releases]: https://github.com/runwisp/runwisp/releases
     </TabItem>

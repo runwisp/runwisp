@@ -115,7 +115,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          sparse-checkout: CHANGELOG.md
+          sparse-checkout: |
+            CHANGELOG.md
+            apps/runwisp/scripts/package-all.sh
+          sparse-checkout-cone-mode: false
 
       - name: Extract release notes from CHANGELOG
         id: notes
@@ -138,12 +141,13 @@ jobs:
           name: binaries
           path: dist
 
-      - name: Package archives
-        run: |
-          for dir in dist/*/; do
-            target=$(basename "${dir}")
-            tar czf "runwisp-${target}.tar.gz" -C "${dir}" runwisp
-          done
+      # Force the packaged binary to mode 0755 and verify every archive ships an
+      # executable member. actions/upload-artifact does not preserve the Unix
+      # executable bit, so the downloaded binary is mode 0644 — packaging it
+      # as-is (as v0.14.0 did) yields a tarball whose extracted `runwisp` fails
+      # with "permission denied".
+      - name: Package and verify archives
+        run: apps/runwisp/scripts/package-all.sh dist .
 
       - name: Generate checksums
         run: sha256sum runwisp-*.tar.gz > checksums-sha256.txt
