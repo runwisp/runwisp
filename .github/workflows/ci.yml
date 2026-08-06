@@ -210,6 +210,7 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck -s sh docker/docker-entrypoint.sh docker/tests/entrypoint_test.sh
           shellcheck docker/build-local.sh docker/tests/smoke.sh
+          shellcheck apps/runwisp/scripts/package-all.sh apps/runwisp/scripts/tests/package-all_test.sh
 
       - name: Entrypoint unit tests (dash and bash)
         run: |
@@ -218,6 +219,10 @@ jobs:
             ENTRYPOINT_SH="${shell}" sh docker/tests/entrypoint_test.sh
             echo "::endgroup::"
           done
+
+      # Guards the release packaging: a tarball must ship an executable runwisp.
+      - name: Release packaging unit tests
+        run: apps/runwisp/scripts/tests/package-all_test.sh
 
       - uses: actions/setup-go@v6
         with:

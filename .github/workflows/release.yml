@@ -115,7 +115,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          sparse-checkout: CHANGELOG.md
+          sparse-checkout: |
+            CHANGELOG.md
+            apps/runwisp/scripts/package-all.sh
+          sparse-checkout-cone-mode: false
 
       - name: Extract release notes from CHANGELOG
         id: notes
@@ -138,12 +141,8 @@ jobs:
           name: binaries
           path: dist
 
-      - name: Package archives
-        run: |
-          for dir in dist/*/; do
-            target=$(basename "${dir}")
-            tar czf "runwisp-${target}.tar.gz" -C "${dir}" runwisp
-          done
+      - name: Package and verify archives
+        run: apps/runwisp/scripts/package-all.sh dist .
 
       - name: Generate checksums
         run: sha256sum runwisp-*.tar.gz > checksums-sha256.txt
