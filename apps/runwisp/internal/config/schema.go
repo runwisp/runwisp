@@ -68,7 +68,7 @@ type Config struct {
 
 	// cronLines maps a cron-sourced task name to where its definition physically
 	// lives in the crontab it came from, so `runwisp promote` can verify the exact
-	// line before deleting it — see cronLineOrigin and CronSourceLine.
+	// line before commenting it out — see cronLineOrigin and CronSourceLine.
 	cronLines map[string]cronLineOrigin
 
 	// CronFindings lists what an operator should know about those crontabs: the
@@ -98,7 +98,7 @@ func (c *Config) CronBlockTOML(name string) (string, bool) {
 // lives — the crontab file, its 1-based line, and the exact text that line held
 // at load time — and false for any other name, including a cron-sourced one
 // whose line couldn't be captured. `runwisp promote` re-reads the file at that
-// line and refuses the whole move on any mismatch, rather than deleting a line
+// line and refuses the whole move on any mismatch, rather than touching a line
 // that has since changed underneath it.
 func (c *Config) CronSourceLine(name string) (file string, line int, text string, ok bool) {
 	o, ok := c.cronLines[name]

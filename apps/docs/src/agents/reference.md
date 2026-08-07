@@ -320,20 +320,20 @@ runwisp import supervisord [FILE...] — convert supervisord config to runwisp.t
 runwisp promote [TASK...]    — put a derived task's block in the root runwisp.toml; --all --reload --dry-run
                              — acts on Task.Source.Promotable(): staged (MOVED out of
                                runwisp.d/imported.toml, file deleted when emptied) and cron (block COPIED from
-                               config.CronBlockTOML, exact source line DELETED from the crontab via
-                               config.CronSourceLine + configedit.PreviewCronRemovals). A cron-sourced task is
-                               only ever held (HeldBy) while Task.Source == cron, so leaving the line behind
+                               config.CronBlockTOML, exact source line COMMENTED OUT in the crontab via
+                               config.CronSourceLine + configedit.PlanCronCommentOuts). A cron-sourced task is
+                               only ever held (HeldBy) while Task.Source == cron, so leaving the line live
                                after promote would mean RunWisp and a still-live, unmasked cron both run it —
-                               the line removal is what makes the move safe, not an optional tidy-up. Refuses
-                               (writing nothing on either file) if the recorded file:line no longer matches the
-                               crontab on disk byte-for-byte — moved, changed, or gone missing since load.
+                               commenting it out (cron ignores '#') is what makes the move safe, not tidy-up.
+                               The line is commented, not deleted: it stays visible with a note pointing at the
+                               runwisp.toml it moved to. Refuses (writing nothing on either file) if the recorded
+                               file:line no longer matches the crontab byte-for-byte — moved, changed, or gone since load.
                              — surgical text move: the block's comments/formatting/# TODOs travel byte-for-byte.
                                Every file involved is written as one transaction gated on the merged load, else
-                               nothing changes. No atomic primitive spans the crontab and runwisp.toml
-                               themselves — a hard kill between their two renames is the one unclosed gap;
-                               the crontab write is ordered first so that gap leaves the job defined in neither
-                               file — unscheduled by anyone until an operator repairs it, not necessarily briefly,
-                               nothing retries it — rather than double-fired.
+                               nothing changes. No atomic primitive spans the crontab and runwisp.toml themselves —
+                               a hard kill between their two renames is the one unclosed gap; the crontab write is
+                               ordered first so that gap leaves the job commented-out (cron won't fire it) but not
+                               yet in root — recoverable by hand — rather than double-fired.
                                Refuses (writing nothing) an unknown name, an already-native name, a compose-generated
                                task, or a config that doesn't load. --all with nothing staged exits 0.
                                Staged promotion (or a cron task already taken over, so it was unheld and scheduled

@@ -90,13 +90,13 @@ type cronMerge struct {
 	blocks map[string]string
 	// lines maps each live task name to where its definition physically lives in
 	// the crontab it came from, so `runwisp promote` can verify that line hasn't
-	// moved before deleting it — never a stale line number alone. See
+	// moved before commenting it out — never a stale line number alone. See
 	// cronLineOrigin.
 	lines map[string]cronLineOrigin
 }
 
 // cronLineOrigin is one live cron task's definition, located precisely enough
-// to remove: the file, its 1-based line, and the exact bytes that line held
+// to edit: the file, its 1-based line, and the exact bytes that line held
 // when this config was loaded. `runwisp promote` re-reads the file at that
 // line before touching it and refuses on any mismatch — see
 // Config.CronSourceLine.
@@ -201,7 +201,7 @@ func mergeCronSources(root *tomlConfig, patterns []string, rootDir, rootPath str
 
 // collectBlocks records, for every live-eligible job in one parse, the TOML
 // that produced it and where its line physically lives in path — the bytes
-// `runwisp promote` copies into root, and the exact line it can later delete
+// `runwisp promote` copies into root, and the exact line it later comments out
 // once that copy has landed.
 //
 // The line snapshot is re-read from path here rather than threaded through
@@ -211,7 +211,7 @@ func mergeCronSources(root *tomlConfig, patterns []string, rootDir, rootPath str
 // file that is, in practice, a handful of kilobytes at most. A read that fails
 // here is not fatal to the load: it just means this job's name is absent from
 // m.lines, so a later promote of it refuses instead of guessing which line to
-// remove.
+// touch.
 func (m *cronMerge) collectBlocks(res *importer.Result, path string) {
 	data, _ := os.ReadFile(path)
 	fileLines := splitCronLines(data)
@@ -239,12 +239,9 @@ func (m *cronMerge) collectBlocks(res *importer.Result, path string) {
 }
 
 // splitCronLines splits raw crontab bytes into 1-based lines with their
-// terminators stripped, matching bufio.Scanner's line count — importer/cron.go
+// terminators stripped, matching bufio.Scanner's line count — the importer
 // numbers Item.Line the same way, so a trailing newline must not manufacture a
-// phantom extra line here. It exists here and again, deliberately unshared, as
-// configedit's splitCronLines: this package only ever reads a crontab, and
-// configedit — which later deletes a line from one — is the package that owns
-// writing to config files at all. See configedit's package doc.
+// phantom extra line here.
 func splitCronLines(data []byte) []string {
 	if len(data) == 0 {
 		return nil

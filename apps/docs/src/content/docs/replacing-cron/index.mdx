@@ -135,11 +135,10 @@ runwisp promote --all      # all of them
 ```
 
 By the time `takeover` has run, cron is already retired, so promoting is a pure
-ownership move — the reload reports no task changes. But `promote` no longer
-_relies_ on that: it deletes the exact crontab line as it copies the block out,
-in the same step, so it's just as safe before you retire cron as after. Promote
-a job while its cron daemon is still live and that line removal is what stops a
-double-fire — the job stops being held and RunWisp takes over its schedule.
+ownership move. But `promote` doesn't _rely_ on that: as it copies the block out
+it also comments out the source crontab line, so it's just as safe before you
+retire cron as after — promote a job while its cron daemon is still live and that
+is what stops a double-fire.
 
 → [Graduating a job into your own config](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config)
 
@@ -162,7 +161,7 @@ the unit; left alone they resolve to root's defaults. See the full set — inclu
   leaves the files exactly as they are; RunWisp re-reads them on
   [reload](/operations/reload/). Only an explicit
   [`promote`](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config)
-  ever edits one, and then only to delete the single source line of the job
+  ever edits one, and then only to comment out the single source line of the job
   you're graduating.
 - **Never converts anything.** Your jobs keep living in the crontabs until you
   [`promote`](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config)

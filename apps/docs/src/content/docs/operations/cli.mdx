@@ -349,27 +349,19 @@ its block ends up in your own `runwisp.toml` and it's yours — copied as text,
 comments and `# TODO` notes intact, in one transaction that changes no file if
 the result wouldn't load.
 
-| Flag        | What it does                                                                                                                                                                     |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--all`     | Promote everything promotable — staged _and_ crontab-sourced. Exits 0 when there's nothing.                                                                                      |
-| `--reload`  | Reload the running daemon afterwards so it picks the move up: clears the provenance marker, and for a job promoted while cron is still live, also hands its schedule to RunWisp. |
-| `--dry-run` | Print the blocks that would be added and write nothing.                                                                                                                          |
+| Flag        | What it does                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------- |
+| `--all`     | Promote everything promotable — staged _and_ crontab-sourced. Exits 0 when there's nothing. |
+| `--reload`  | Reload the running daemon afterwards so it picks the move up.                               |
+| `--dry-run` | Print the blocks that would be added and write nothing.                                     |
 
-A staged block is **moved** out of the staging file. A cron-sourced one is a real
-move too: the block lands in `runwisp.toml` and the exact crontab line it came
-from is deleted, in the same transaction — never left behind for a still-live
-cron daemon to fire a second time. Promote refuses, writing nothing, if that
-line has changed or gone missing since the config was loaded.
-
-What a following `runwisp reload` reports depends on where the task came from.
-Promoting a **staged** task — or a cron task you'd already taken over, so RunWisp
-was scheduling it anyway — changes nothing about what runs: the reload reports
-_no task changes_ and only clears the provenance marker. Promoting a job **while
-its cron daemon is still live** is different. RunWisp had been standing down for
-that job; with the crontab line gone it's no longer held, so the reload reports
-it as a changed task and RunWisp takes over its schedule.
-[Graduating a job](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config)
-walks through it.
+A staged block is **moved** out of the staging file. A cron-sourced one is
+copied into `runwisp.toml` and its source crontab line is commented out in the
+same transaction, so a still-live cron won't double-fire it — see
+[Graduating a job](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config).
+That link also covers what a following `runwisp reload` reports, which differs
+between a staged promotion (no change to what runs) and promoting a job while
+its cron daemon is still live (a real handover RunWisp takes over).
 
 Promote refuses, and writes nothing, when you name a task it can't move: one
 that doesn't exist, one that's already native (it names the file it found it

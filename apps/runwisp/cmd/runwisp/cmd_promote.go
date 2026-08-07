@@ -35,27 +35,24 @@ you own it outright.
 them "staged" — imported, not yet native. Promoting one moves its block into your
 root config: after that a re-import leaves it alone, and it's yours to edit.
 
-A task read live out of a crontab via ` + "`include_cron`" + ` promotes the same way, and
-the move is real there too: the block lands in your root config, and the exact
-crontab line it came from is deleted in the same transaction — never left behind
-for a still-live cron daemon to fire a second time. Promote refuses, writing
-nothing, if that line has changed or gone missing since the config was loaded.
+A task read live out of a crontab via ` + "`include_cron`" + ` promotes the same way:
+the block lands in your root config, and the exact crontab line it came from is
+commented out in the same transaction — so a still-live cron daemon stops firing
+it, while the line stays visible with a note pointing at your runwisp.toml.
+Promote refuses, writing nothing, if that line has changed or gone missing since
+the config was loaded.
 
 The move is textual. The block's comments, its formatting, and any unresolved
 # TODO notes the import left behind travel with it byte-for-byte — nothing is
 re-generated. Every file involved is written as one transaction, so if the
-result wouldn't load, nothing changes. That transaction cannot be made atomic
-across the crontab and runwisp.toml themselves: the crontab line is removed
-first, so a hard kill landing between the two writes leaves the job defined in
-neither file — unscheduled until you repair it by hand or re-import — rather
-than fired by both cron and RunWisp.
+result wouldn't load, nothing changes.
 
 A staged promotion changes nothing about what the daemon runs — only which file
 defines it — so ` + "`runwisp reload`" + ` (or --reload) just clears the provenance
 marker. Promoting a job while its cron daemon is still live is a real change:
-with the crontab line gone the task is no longer held, so on reload RunWisp
-takes over scheduling it. Either way run ` + "`runwisp reload`" + ` (or pass --reload) so
-a running daemon picks it up.`,
+with the crontab line commented out the task is no longer held, so on reload
+RunWisp takes over scheduling it. Either way run ` + "`runwisp reload`" + ` (or pass
+--reload) so a running daemon picks it up.`,
 	Example: `  runwisp promote backup           # move one task
   runwisp promote backup reindex   # move several
   runwisp promote --all --reload   # move everything, then reconcile
@@ -202,9 +199,9 @@ func promoteError(err error, layout configedit.Layout) error {
 
 // printPromotePlan is --dry-run: exactly what would move, and where to and
 // from, without touching a file. A cron-sourced task has two sides to that
-// move — the block landing in root and the line leaving the crontab — and
-// both are shown, or the same refusal a real promote would give is surfaced
-// here instead.
+// move — the block landing in root and the line being commented out in the
+// crontab — and both are shown, or the same refusal a real promote would give
+// is surfaced here instead.
 func printPromotePlan(out io.Writer, layout configedit.Layout, names []string, cfg *config.Config) error {
 	_, blocks, err := configedit.PreviewBlocks(layout, names, cfg)
 	if err != nil {
@@ -217,7 +214,7 @@ func printPromotePlan(out io.Writer, layout configedit.Layout, names []string, c
 			cronNames = append(cronNames, name)
 		}
 	}
-	removals, err := configedit.PreviewCronRemovals(cronNames, cfg)
+	commentOuts, _, err := configedit.PlanCronCommentOuts(cronNames, cfg, layout.RootPath)
 	if err != nil {
 		return promoteError(err, layout)
 	}
@@ -226,10 +223,10 @@ func printPromotePlan(out io.Writer, layout configedit.Layout, names []string, c
 	for _, b := range blocks {
 		fmt.Fprintf(out, "\n%s\n", strings.TrimRight(b.Text, "\n"))
 	}
-	if len(removals) > 0 {
-		fmt.Fprintf(out, "\nWould remove %d crontab line(s):\n", len(removals))
-		for _, r := range removals {
-			fmt.Fprintf(out, "  %s:%d: %s\n", r.File, r.Line, r.Text)
+	if len(commentOuts) > 0 {
+		fmt.Fprintf(out, "\nWould comment out %d crontab line(s):\n", len(commentOuts))
+		for _, c := range commentOuts {
+			fmt.Fprintf(out, "  %s:%d: %s\n", c.File, c.Line, c.Text)
 		}
 	}
 	fmt.Fprintln(out, "\nNothing was written.")
@@ -246,16 +243,16 @@ func printPromoted(out io.Writer, res configedit.PromoteResult, layout configedi
 	if res.StagingRemoved {
 		fmt.Fprintf(out, "\n%s held nothing else, so it was removed.\n", config.StagingRelPath())
 	}
-	if len(res.CronRemovals) > 0 {
-		fmt.Fprintf(out, "\nRemoved %d crontab line(s):\n", len(res.CronRemovals))
-		for _, r := range res.CronRemovals {
-			fmt.Fprintf(out, "  %s:%d\n", r.File, r.Line)
+	if len(res.CronCommentOuts) > 0 {
+		fmt.Fprintf(out, "\nCommented out %d crontab line(s):\n", len(res.CronCommentOuts))
+		for _, c := range res.CronCommentOuts {
+			fmt.Fprintf(out, "  %s:%d\n", c.File, c.Line)
 		}
 	}
 
 	fmt.Fprintln(out)
-	if len(res.CronRemovals) > 0 {
-		fmt.Fprintf(out, "The crontab line is gone, so nothing but RunWisp will fire this job now.\n")
+	if len(res.CronCommentOuts) > 0 {
+		fmt.Fprintf(out, "The crontab line is commented out, so nothing but RunWisp will fire this job now.\n")
 		fmt.Fprintf(out, "If a live cron daemon was still running it, RunWisp had been holding it — that\n")
 		fmt.Fprintf(out, "hold ends here, and a reload starts RunWisp scheduling it. If cron was already\n")
 		fmt.Fprintf(out, "retired, only the provenance changes. Either way, run `runwisp reload` so a\n")

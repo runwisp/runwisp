@@ -102,10 +102,10 @@ report, which is why `runwisp promote --reload` exists as a shorthand.
 
 The one exception is promoting a job **while its cron daemon is still live**.
 RunWisp had been holding that job — standing down so cron alone ran it — and
-promote removes the crontab line, so on the next load the job is native and no
-longer held. That _is_ a change: the reload reports it as a changed task and
-RunWisp takes over scheduling it. It's the whole point of promoting before you
-retire cron, and it's why the crontab line has to go in the same step.
+promote comments the crontab line out, so on the next load the job is native and
+no longer held. That _is_ a change: the reload reports it as a changed task and
+RunWisp takes over scheduling it. See
+[Graduating a job](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config).
 
 ## What a reload tells you
 

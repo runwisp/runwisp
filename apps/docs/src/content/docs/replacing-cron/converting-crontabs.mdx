@@ -219,17 +219,16 @@ runwisp promote --all       # all of them
 It works the same on a job read live via `include_cron` and on a **staged
 import**; `--all` covers both, but what "move" means differs:
 
-- **From a live crontab:** the definition is copied into your `runwisp.toml`
-  _and_ the exact source line is deleted from the crontab, in the same
-  transaction. The deletion rewrites the real file the line was read from — your
-  user spool (`crontab -e`), or the `/etc/cron.d` drop-in it matched — in place,
-  whenever that file is the one `include_cron` selected and RunWisp can write to
-  it. That's not just tidying — a task's "held" status (RunWisp standing down
-  because a live cron daemon still runs it) only ever applies to a cron-sourced
-  task, so the moment it becomes native it would otherwise be scheduled by
-  RunWisp too, on top of whatever a still-live, unmasked cron does with the line
-  left behind. Promote refuses, writing nothing on either side, if that line has
-  changed or gone missing since the config was loaded — run it again once the
+- **From a live crontab:** the definition is copied into your `runwisp.toml`,
+  _and_ the exact source line is commented out in the crontab it came from — the
+  same file `include_cron` read, whether that's your user spool (`crontab -e`) or
+  an `/etc/cron.d` drop-in. That's not just tidying. A job is only ever "held"
+  (RunWisp standing down while a live cron daemon runs it) while it's
+  cron-sourced, so the instant it becomes native RunWisp would schedule it — and
+  a live cron would keep firing the line too. Commenting the line out stops cron
+  from firing it while leaving it visible, with a note pointing at where the job
+  moved. Promote refuses, writing nothing on either side, if that line has
+  changed or gone missing since the config was loaded — try again once the
   crontab has settled.
 - **From a staged import:** staging is a waiting room. `promote` moves the block
   out of `runwisp.d/imported.toml` into your `runwisp.toml`, comments and all —
@@ -319,8 +318,8 @@ run writes nothing, so the summary is all it has to show you.
 
 - **`import cron` never modifies the source.** Reading and copying your crontab
   leaves the file untouched, which is why [retiring it](#retiring-the-crontab)
-  is yours to do. Live-source `promote` is the one exception — it deletes the
-  exact cron line of the job it graduates, in the same transaction (see
+  is yours to do. `promote` is the one exception — it comments out the exact cron
+  line of the job it graduates (see
   [Graduating a job](#graduating-a-job-into-your-own-config)).
 - **It never edits your hand-written tasks.** `--write` only owns
   `runwisp.d/imported.toml`.

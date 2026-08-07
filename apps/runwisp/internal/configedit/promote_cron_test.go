@@ -6,6 +6,7 @@ package configedit
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/config"
@@ -38,12 +39,19 @@ func cronPath(layout Layout) string {
 	return filepath.Join(filepath.Dir(layout.RootPath), "crontabs", "mycron")
 }
 
+// promoteNote is the annotation promote inserts above a commented-out line,
+// pointing at the runwisp.toml the job moved to. It mirrors commentOutCronLines.
+func promoteNote(layout Layout) string {
+	return "# runwisp: this job was promoted to " + layout.RootPath
+}
+
 // TestPromote_CronSourcedTaskIsARealMove is the core regression: promoting a
-// live cron-sourced task is not just a copy into root — the exact source line
-// comes out of the crontab in the same transaction, so nothing is left for a
-// still-live system cron daemon to fire a second time. Every other byte in the
-// crontab — a preceding comment, an unrelated job, its own comment, the file's
-// mode — survives untouched.
+// live cron-sourced task is not just a copy into root — the exact source line is
+// commented out in the crontab in the same transaction, so a still-live system
+// cron daemon (which ignores '#' lines) has nothing left to fire a second time.
+// Every other byte in the crontab — a preceding comment, an unrelated job, the
+// file's mode — survives untouched, and the commented line stays readable with a
+// note saying where it went.
 func TestPromote_CronSourcedTaskIsARealMove(t *testing.T) {
 	crontab := "# an unrelated job, not being promoted\n" +
 		"*/10 * * * * /usr/local/bin/other.sh\n" +
@@ -61,11 +69,11 @@ func TestPromote_CronSourcedTaskIsARealMove(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, res.Promoted, 1)
 	assert.False(t, res.StagingRemoved, "there is no staging file in play")
-	require.Len(t, res.CronRemovals, 1)
-	assert.Equal(t, "dump", res.CronRemovals[0].Name)
-	assert.Equal(t, path, res.CronRemovals[0].File)
-	assert.Equal(t, 4, res.CronRemovals[0].Line)
-	assert.Equal(t, "0 3 * * * /usr/local/bin/dump.sh --full", res.CronRemovals[0].Text)
+	require.Len(t, res.CronCommentOuts, 1)
+	assert.Equal(t, "dump", res.CronCommentOuts[0].Name)
+	assert.Equal(t, path, res.CronCommentOuts[0].File)
+	assert.Equal(t, 4, res.CronCommentOuts[0].Line)
+	assert.Equal(t, "0 3 * * * /usr/local/bin/dump.sh --full", res.CronCommentOuts[0].Text)
 
 	root := readFile(t, layout.RootPath)
 	assert.Contains(t, root, "[tasks.dump]")
@@ -76,8 +84,10 @@ func TestPromote_CronSourcedTaskIsARealMove(t *testing.T) {
 	assert.Equal(t,
 		"# an unrelated job, not being promoted\n"+
 			"*/10 * * * * /usr/local/bin/other.sh\n"+
-			"# nightly dump\n",
-		after, "only the promoted job's own line is gone; its lead comment and the unrelated job stay")
+			"# nightly dump\n"+
+			promoteNote(layout)+"\n"+
+			"#0 3 * * * /usr/local/bin/dump.sh --full\n",
+		after, "only the promoted job's own line is commented out; its lead comment and the unrelated job stay")
 
 	info, err := os.Stat(path)
 	require.NoError(t, err)
@@ -85,10 +95,10 @@ func TestPromote_CronSourcedTaskIsARealMove(t *testing.T) {
 }
 
 // TestPromote_CronSourcedTaskIsNativeAfterReloadWithNoDuplicate is the whole
-// point: after the line is gone, a reload sees the task exactly once, sourced
-// from root, with nothing left for a live cron daemon to double-fire. Before
-// this fix, the crontab line survived promote and this reload would have
-// depended on cron being fully retired to avoid double execution.
+// point: after the line is commented out, a reload sees the task exactly once,
+// sourced from root, with nothing left for a live cron daemon to double-fire.
+// Before this fix, the crontab line stayed live through promote and this reload
+// would have depended on cron being fully retired to avoid double execution.
 func TestPromote_CronSourcedTaskIsNativeAfterReloadWithNoDuplicate(t *testing.T) {
 	layout := cronLayout(t, cronRoot, "0 3 * * * /usr/local/bin/dump.sh --full\n")
 	cfg := loadLayout(t, layout)
@@ -100,18 +110,20 @@ func TestPromote_CronSourcedTaskIsNativeAfterReloadWithNoDuplicate(t *testing.T)
 
 	reloaded := loadLayout(t, layout)
 	assert.ElementsMatch(t, []string{"mine", "dump"}, taskNames(reloaded),
-		"dump must appear exactly once now that its crontab line is gone")
+		"dump must appear exactly once now that its crontab line is commented out")
 
 	after := findTask(t, reloaded, "dump")
 	assert.Equal(t, model.SourceNative, after.Source)
 	assert.Empty(t, after.SourceFile)
 	assert.Equal(t, model.HeldByNothing, after.HeldBy,
-		"a native task is never held, which is exactly why the crontab line has to be gone, not just copied around")
+		"a native task is never held, which is exactly why the crontab line has to stop firing, not just be copied around")
 	assert.Equal(t, beforeRun, after.Run, "the promoted definition runs the same command")
 	assert.Equal(t, beforeCron, after.Cron)
 
-	assert.NotContains(t, readFile(t, cronPath(layout)), "dump.sh",
-		"the crontab must no longer mention the promoted job at all")
+	crontab := readFile(t, cronPath(layout))
+	assert.True(t, strings.HasPrefix(strings.SplitN(crontab, "\n", 2)[1], "#"),
+		"the job's line is commented out so a live cron daemon ignores it")
+	assert.Contains(t, crontab, layout.RootPath, "the commented line carries a note pointing at where the job moved")
 }
 
 // TestPromote_CronSourcedTaskRestampsRatherThanChanges is the guard on
@@ -144,7 +156,7 @@ func tasksByName(cfg *config.Config) map[string]*model.Task {
 
 // TestPromote_CronAndStagedTogether: one invocation, two provenances. The staged
 // block is moved out of the staging file, the cron block copied in and its
-// crontab line removed, and both end up in the root.
+// crontab line commented out, and both end up in the root.
 func TestPromote_CronAndStagedTogether(t *testing.T) {
 	dir := writeFileTree(t, map[string]string{
 		"runwisp.toml": `[daemon]
@@ -163,26 +175,27 @@ include_cron = ["crontabs/*"]
 	require.NoError(t, err)
 	require.Len(t, res.Promoted, 2)
 	assert.True(t, res.StagingRemoved, "the staging file held nothing else")
-	require.Len(t, res.CronRemovals, 1)
+	require.Len(t, res.CronCommentOuts, 1)
 
 	root := readFile(t, layout.RootPath)
 	assert.Contains(t, root, "[tasks.staged_one]")
 	assert.Contains(t, root, "[tasks.dump]")
 	_, err = os.Stat(layout.StagingPath)
 	assert.True(t, os.IsNotExist(err), "the emptied staging file is gone")
-	assert.Empty(t, readFile(t, filepath.Join(dir, "crontabs", "mycron")),
-		"the sole crontab line, now promoted, is gone")
+	crontab := readFile(t, filepath.Join(dir, "crontabs", "mycron"))
+	assert.Equal(t, promoteNote(layout)+"\n#0 3 * * * /usr/local/bin/dump.sh\n", crontab,
+		"the sole crontab line, now promoted, is commented out with a note")
 
 	for _, name := range []string{"staged_one", "dump"} {
 		assert.Equal(t, model.SourceNative, findTask(t, loadLayout(t, layout), name).Source, name)
 	}
 }
 
-// TestPromote_CronRemovalGroupsMultipleLinesFromOneFile: --all across two
-// cron-sourced tasks from the same crontab must delete both lines in one
+// TestPromote_CronCommentOutGroupsMultipleLinesFromOneFile: --all across two
+// cron-sourced tasks from the same crontab must comment out both lines in one
 // rewrite, leaving everything else — including a job neither name refers to —
 // exactly as it was.
-func TestPromote_CronRemovalGroupsMultipleLinesFromOneFile(t *testing.T) {
+func TestPromote_CronCommentOutGroupsMultipleLinesFromOneFile(t *testing.T) {
 	crontab := "0 1 * * * /usr/local/bin/one.sh\n" +
 		"# kept: nobody promoted this one\n" +
 		"0 2 * * * /usr/local/bin/two.sh\n" +
@@ -193,14 +206,20 @@ func TestPromote_CronRemovalGroupsMultipleLinesFromOneFile(t *testing.T) {
 
 	res, err := Promote(PromoteRequest{Layout: layout, Config: cfg, Names: []string{"one", "three"}})
 	require.NoError(t, err)
-	assert.Len(t, res.CronRemovals, 2)
+	assert.Len(t, res.CronCommentOuts, 2)
 
 	after := readFile(t, cronPath(layout))
-	assert.Equal(t, "# kept: nobody promoted this one\n0 2 * * * /usr/local/bin/two.sh\n", after)
+	note := promoteNote(layout)
+	assert.Equal(t,
+		note+"\n#0 1 * * * /usr/local/bin/one.sh\n"+
+			"# kept: nobody promoted this one\n"+
+			"0 2 * * * /usr/local/bin/two.sh\n"+
+			note+"\n#0 3 * * * /usr/local/bin/three.sh\n",
+		after)
 }
 
 // TestPromote_CronSourceLineChangedSinceLoadRefuses is the safety rule: a
-// crontab edited between load and promote must never have a line deleted on a
+// crontab edited between load and promote must never have a line touched on a
 // stale line number's say-so alone. Nothing is written on either side.
 func TestPromote_CronSourceLineChangedSinceLoadRefuses(t *testing.T) {
 	layout := cronLayout(t, cronRoot, "0 3 * * * /usr/local/bin/dump.sh --full\n")
@@ -282,54 +301,66 @@ func TestPromote_CronSourceLineTruncatedRefuses(t *testing.T) {
 		"the file has exactly one line now, and the trailing newline must not be counted as a phantom second one")
 }
 
-// TestPreviewCronRemovals_MatchesWhatPromoteWouldDo is the --dry-run
-// guarantee: it must report the same file/line/text a real promote would
-// remove, without writing anything, and it must refuse the same way on a
-// stale line.
-func TestPreviewCronRemovals_MatchesWhatPromoteWouldDo(t *testing.T) {
+// TestPlanCronCommentOuts_MatchesWhatPromoteWouldDo is the --dry-run guarantee:
+// it must report the same file/line/text a real promote would comment out,
+// without writing anything, and it must refuse the same way on a stale line.
+func TestPlanCronCommentOuts_MatchesWhatPromoteWouldDo(t *testing.T) {
 	layout := cronLayout(t, cronRoot, "0 3 * * * /usr/local/bin/dump.sh --full\n")
 	cfg := loadLayout(t, layout)
 
-	removals, err := PreviewCronRemovals([]string{"dump"}, cfg)
+	commentOuts, _, err := PlanCronCommentOuts([]string{"dump"}, cfg, layout.RootPath)
 	require.NoError(t, err)
-	require.Len(t, removals, 1)
-	assert.Equal(t, cronPath(layout), removals[0].File)
-	assert.Equal(t, 1, removals[0].Line)
-	assert.Equal(t, "0 3 * * * /usr/local/bin/dump.sh --full", removals[0].Text)
+	require.Len(t, commentOuts, 1)
+	assert.Equal(t, cronPath(layout), commentOuts[0].File)
+	assert.Equal(t, 1, commentOuts[0].Line)
+	assert.Equal(t, "0 3 * * * /usr/local/bin/dump.sh --full", commentOuts[0].Text)
 
 	assert.Equal(t, "0 3 * * * /usr/local/bin/dump.sh --full\n", readFile(t, cronPath(layout)),
 		"a preview must never write anything")
 
 	require.NoError(t, os.WriteFile(cronPath(layout), []byte("0 9 * * * /usr/local/bin/dump.sh --full\n"), 0o644))
-	_, err = PreviewCronRemovals([]string{"dump"}, cfg)
+	_, _, err = PlanCronCommentOuts([]string{"dump"}, cfg, layout.RootPath)
 	var mismatch *CronSourceMismatchError
 	require.ErrorAs(t, err, &mismatch)
 }
 
-// TestRemoveCronLines_PreservesCRLF: a crontab written with CRLF endings keeps
-// them on every line that stays. The rewrite deletes one line and must not
-// silently normalise the terminators an operator (or a Windows-authored spool)
-// chose for the rest.
-func TestRemoveCronLines_PreservesCRLF(t *testing.T) {
+// TestCommentOutCronLines_PreservesCRLF: a crontab written with CRLF endings
+// keeps them on every line, including the commented one and its inserted note.
+// The rewrite must not silently normalise the terminators an operator (or a
+// Windows-authored spool) chose.
+func TestCommentOutCronLines_PreservesCRLF(t *testing.T) {
 	data := []byte("0 1 * * * one.sh\r\n0 2 * * * two.sh\r\n0 3 * * * three.sh\r\n")
 
-	got := removeCronLines(data, map[int]bool{2: true})
+	got := commentOutCronLines(splitCronLinesKeepEnds(data), map[int]bool{2: true}, "/etc/runwisp.toml")
 
-	assert.Equal(t, "0 1 * * * one.sh\r\n0 3 * * * three.sh\r\n", string(got),
-		"the surviving lines keep their exact CRLF terminators")
+	assert.Equal(t,
+		"0 1 * * * one.sh\r\n"+
+			"# runwisp: this job was promoted to /etc/runwisp.toml\r\n"+
+			"#0 2 * * * two.sh\r\n"+
+			"0 3 * * * three.sh\r\n",
+		string(got),
+		"the surviving lines keep their CRLF terminators, and the note matches them")
 }
 
-// TestRemoveCronLines_FinalLineWithoutTrailingNewline: a crontab whose last line
-// has no terminator must not gain or lose one when a line is removed — whether
-// the promoted line is that final one or an earlier one.
-func TestRemoveCronLines_FinalLineWithoutTrailingNewline(t *testing.T) {
+// TestCommentOutCronLines_FinalLineWithoutTrailingNewline: a crontab whose last
+// line has no terminator must not gain or lose one when a line is commented out,
+// whether the promoted line is that final one or an earlier one.
+func TestCommentOutCronLines_FinalLineWithoutTrailingNewline(t *testing.T) {
 	data := []byte("0 1 * * * one.sh\n0 2 * * * two.sh")
 
-	dropLast := removeCronLines(data, map[int]bool{2: true})
-	assert.Equal(t, "0 1 * * * one.sh\n", string(dropLast),
-		"removing the unterminated final line leaves the earlier line exactly as it was")
+	commentLast := commentOutCronLines(splitCronLinesKeepEnds(data), map[int]bool{2: true}, "/etc/runwisp.toml")
+	assert.Equal(t,
+		"0 1 * * * one.sh\n"+
+			"# runwisp: this job was promoted to /etc/runwisp.toml\n"+
+			"#0 2 * * * two.sh",
+		string(commentLast),
+		"commenting the unterminated final line keeps it unterminated and leaves the earlier line as it was")
 
-	dropFirst := removeCronLines(data, map[int]bool{1: true})
-	assert.Equal(t, "0 2 * * * two.sh", string(dropFirst),
-		"removing an earlier line must not manufacture a trailing newline on the final one")
+	commentFirst := commentOutCronLines(splitCronLinesKeepEnds(data), map[int]bool{1: true}, "/etc/runwisp.toml")
+	assert.Equal(t,
+		"# runwisp: this job was promoted to /etc/runwisp.toml\n"+
+			"#0 1 * * * one.sh\n"+
+			"0 2 * * * two.sh",
+		string(commentFirst),
+		"commenting an earlier line must not manufacture a trailing newline on the final one")
 }

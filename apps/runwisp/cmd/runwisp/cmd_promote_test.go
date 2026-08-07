@@ -163,7 +163,8 @@ run = "echo mine"
 
 // TestPromoteCmd_CronDryRunShowsBothSidesAndWritesNothing is the --dry-run
 // contract for a live cron-sourced task: it must show the block landing in
-// root *and* the crontab line that would go, and touch neither file.
+// root *and* the crontab line that would be commented out, and touch neither
+// file.
 func TestPromoteCmd_CronDryRunShowsBothSidesAndWritesNothing(t *testing.T) {
 	cfgPath, cronPath := cronPromoteFixture(t)
 	rootBefore := readConfigFile(t, cfgPath)
@@ -173,26 +174,26 @@ func TestPromoteCmd_CronDryRunShowsBothSidesAndWritesNothing(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, stdout, "[tasks.dump]", "the plan shows the block that would land in root")
-	assert.Contains(t, stdout, "Would remove 1 crontab line(s)")
+	assert.Contains(t, stdout, "Would comment out 1 crontab line(s)")
 	assert.Contains(t, stdout, cronPath+":1: 0 3 * * * /usr/local/bin/dump.sh --full",
-		"the plan names the exact file, line, and text that would go")
+		"the plan names the exact file, line, and text that would be commented out")
 	assert.Contains(t, stdout, "Nothing was written.")
 
 	assert.Equal(t, rootBefore, readConfigFile(t, cfgPath))
 	assert.Equal(t, cronBefore, readConfigFile(t, cronPath))
 }
 
-// TestPromoteCmd_CronPromoteRemovesTheCrontabLine is the end-to-end version of
-// the core regression: `promote` on a live cron task moves it into root and
-// deletes the source line, and says so.
-func TestPromoteCmd_CronPromoteRemovesTheCrontabLine(t *testing.T) {
+// TestPromoteCmd_CronPromoteCommentsOutTheCrontabLine is the end-to-end version
+// of the core regression: `promote` on a live cron task moves it into root and
+// comments out the source line, and says so.
+func TestPromoteCmd_CronPromoteCommentsOutTheCrontabLine(t *testing.T) {
 	cfgPath, cronPath := cronPromoteFixture(t)
 
 	stdout, err := promote(t, cfgPath, []string{"dump"}, promoteOpts{})
 	require.NoError(t, err)
 
 	assert.Contains(t, stdout, "Promoted 1 task")
-	assert.Contains(t, stdout, "Removed 1 crontab line(s)")
+	assert.Contains(t, stdout, "Commented out 1 crontab line(s)")
 	assert.Contains(t, stdout, cronPath+":1")
 	assert.Contains(t, stdout, "a reload starts RunWisp scheduling it",
 		"a live cron promotion is a real handover, not the staged path's no-op")
@@ -201,7 +202,10 @@ func TestPromoteCmd_CronPromoteRemovesTheCrontabLine(t *testing.T) {
 	assert.Contains(t, stdout, "runwisp reload")
 
 	assert.Contains(t, readConfigFile(t, cfgPath), "[tasks.dump]")
-	assert.Empty(t, readConfigFile(t, cronPath), "the sole crontab line is gone")
+	crontab := readConfigFile(t, cronPath)
+	assert.Contains(t, crontab, "#0 3 * * * /usr/local/bin/dump.sh --full",
+		"the sole crontab line is commented out, not deleted")
+	assert.Contains(t, crontab, "this job was promoted to", "with a note pointing at where it moved")
 }
 
 // TestPromoteCmd_CronSourceMismatchPhrasesCleanly pins how the CLI translates

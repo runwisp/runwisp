@@ -20,34 +20,25 @@ import (
 // bytes that arrive in the root (see block.go). Nothing about what the daemon
 // runs changes, which is why `promote` is safe to run against a live daemon.
 //
-// A cron-sourced task is the one asymmetry, and it used to be a more dangerous one
-// than it looked. Its definition has no TOML bytes on disk to move — the crontab
-// is the definition — so promoting one *copies* the block the live loader
-// rendered (config.CronBlockTOML) into the root. That copy alone is not enough:
-// once the task's provenance flips to native, RunWisp can never hold it for cron
-// again (markCronHold only holds a Source == SourceCron task), so if the crontab
-// line is still there and a system cron daemon is still alive and unmasked, both
-// schedulers fire it from then on. So the crontab line comes out too, in the same
-// transaction: config.CronSourceLine records exactly where a cron-sourced task's
-// line lives, cronremoval.go re-verifies that line against the file on disk right
-// before writing, and refuses the whole promotion — no config or crontab change at
-// all — if it has moved, changed, or gone missing since the config was loaded.
+// A cron-sourced task is the one asymmetry. Its definition has no TOML bytes on
+// disk to move — the crontab is the definition — so promoting one *copies* the
+// block the live loader rendered (config.CronBlockTOML) into the root. The copy
+// alone isn't safe: once provenance flips to native RunWisp can no longer hold
+// the task for cron (markCronHold only holds a Source == SourceCron task), so a
+// crontab line left in place would be fired by both a still-live cron daemon and
+// RunWisp. So the source line is commented out in the same transaction —
+// croncomment.go verifies it byte-for-byte against the file first and refuses the
+// whole promotion, changing nothing, if it moved or changed since load. Cron
+// ignores a '#' line, so the job stops firing from cron; the line stays visible
+// (with a note pointing at the runwisp.toml it moved to) rather than vanishing.
 //
-// There is no cross-file atomic primitive here, and this package does not claim
-// one. Within one Apply, a gate failure or a write failure on either file rolls
-// every file the transaction touched back to its exact pre-image (see Txn) — so a
-// bad config, a permission error, or a changed crontab line all leave both files
-// untouched. What cannot be caught is a hard kill (power loss, SIGKILL) landing in
-// the few milliseconds between the crontab's rename and the root's: two renames on
-// two files are not one operation. Promote deliberately orders the crontab write
-// first and the root write second, so that if a crash does land there, the job is
-// left defined in neither file — unscheduled by anyone until an operator repairs
-// it (restore the line, or re-import) — rather than fired by both a live cron
-// daemon and RunWisp. That gap is not necessarily brief: nothing retries it, and
-// while it lasts the job is defined in no file, so there may be no task row and
-// no missed-run record to surface it — only an operator noticing and repairing.
-// The ordering still prefers that outcome: a missed execution the operator can
-// re-run beats a duplicate that has already run twice and cannot be undone.
+// The crontab write is queued before the root write for a reason. There is no
+// cross-file atomic primitive: within one Apply a gate or write failure rolls
+// every touched file back to its pre-image (see Txn), but a hard kill between the
+// two renames can't be caught. Commenting the crontab first means such a crash
+// leaves the job commented-out (cron won't fire it) but not yet in root — a
+// recoverable state the operator can see and finish by hand — rather than firing
+// from both.
 
 // UnknownEntryError reports a requested name that the config doesn't define at
 // all.
@@ -155,9 +146,9 @@ type PromoteResult struct {
 	// StagingRemoved is true when the staging file held nothing else and was
 	// deleted rather than left behind empty.
 	StagingRemoved bool
-	// CronRemovals are the crontab lines deleted alongside a cron-sourced
-	// promotion, one per promoted cron task.
-	CronRemovals []CronRemoval
+	// CronCommentOuts are the crontab lines commented out alongside a
+	// cron-sourced promotion, one per promoted cron task.
+	CronCommentOuts []CronCommentOut
 }
 
 // PreviewBlocks resolves what a promotion would append and what would be left in
@@ -230,14 +221,12 @@ func Promote(req PromoteRequest) (PromoteResult, error) {
 	_, cronNames := splitByProvenance(req.Names, req.Layout, req.Config)
 	var cronEdits map[string][]byte
 	if len(cronNames) > 0 {
-		removals, err := PreviewCronRemovals(cronNames, req.Config)
+		commentOuts, edits, err := PlanCronCommentOuts(cronNames, req.Config, req.Layout.RootPath)
 		if err != nil {
 			return res, err
 		}
-		res.CronRemovals = removals
-		if cronEdits, err = cronRemovalEdits(removals); err != nil {
-			return res, err
-		}
+		res.CronCommentOuts = commentOuts
+		cronEdits = edits
 	}
 
 	remaining, blocks, err := PreviewBlocks(req.Layout, req.Names, req.Config)
