@@ -998,6 +998,29 @@ func TestHandleInboundPayloadDispatchMissingExecution(t *testing.T) {
 	}
 }
 
+// The nil guards above cover the frame shapes we know about. This covers the
+// next one: whatever panics below the dispatch funnel must come back as an
+// error, because handleInboundPayload runs on the read-loop goroutine and an
+// unrecovered panic there takes down the daemon — every supervised service with
+// it — over one frame from an optional integration. A nil handler stands in for
+// an arbitrary panicking handler.
+func TestHandleInboundPayloadRecoversFromPanic(t *testing.T) {
+	sr := &sessionRunner{}
+	session := &wsSession{outbound: make(chan []byte, 16)}
+	payload := []byte(`{"type":"service:apply","service":{"taskId":"web","taskName":"web"}}`)
+
+	err := sr.handleInboundPayload(context.Background(), session, payload)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "panic handling inbound message")
+
+	select {
+	case out := <-session.outbound:
+		assert.Contains(t, string(out), "message could not be processed")
+	default:
+		t.Fatal("expected a validation error frame after the recovered panic")
+	}
+}
+
 func TestHandleInboundPayloadAuthResultSuccess(t *testing.T) {
 	env := newTestEnv(t, func(conn *websocket.Conn) {
 		conn.Close(websocket.StatusNormalClosure, "")

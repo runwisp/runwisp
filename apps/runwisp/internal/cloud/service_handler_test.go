@@ -409,6 +409,12 @@ func TestHandleServiceApply_MergeUnavailableBackendRejected(t *testing.T) {
 // gate as a script override. Before the fix the gate was only consulted when the
 // payload carried a script — and the cloud sends script: null for synced TOML
 // services — so taskConfig.env sailed straight through.
+//
+// The fixture carries Run, not ExecutionDef, because that is what config.Load
+// produces for a plain `[services.web] run = "..."` — the loader only fills
+// ExecutionDef for compose-backed units. An ExecutionDef fixture hid a nil
+// dereference in the gate: the one shape it exists to protect was the one shape
+// that crashed the daemon instead of returning a verdict.
 func TestHandleServiceApply_MergeEnvGatedOnAvailability(t *testing.T) {
 	existing := &model.Task{
 		Name:          "web",
@@ -417,7 +423,7 @@ func TestHandleServiceApply_MergeEnvGatedOnAvailability(t *testing.T) {
 		Instances:     1,
 		MaxConcurrent: 1,
 		Env:           map[string]string{"NODE_ENV": "production"},
-		ExecutionDef:  &model.ShellExecution{Script: "node server.js"},
+		Run:           "node server.js",
 	}
 	h := newDispatchHandler(executor.Availability{}, map[string]*model.Task{"web": existing})
 	runner := h.taskManager.(*fakeTaskRunner)
@@ -450,7 +456,7 @@ func TestHandleServiceApply_MergeEnvAppliedWhenAvailable(t *testing.T) {
 		Restart:       model.RestartAlways,
 		Instances:     1,
 		MaxConcurrent: 1,
-		ExecutionDef:  &model.ShellExecution{Script: "node server.js"},
+		Run:           "node server.js",
 	}
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"web": existing})
 	runner := h.taskManager.(*fakeTaskRunner)
@@ -494,6 +500,35 @@ func TestHandleServiceApply_MergeWithoutEnvNotGated(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, runner.upserted, 1)
 	assert.Equal(t, 2, runner.upserted[0].Instances)
+}
+
+// A service with neither Run nor ExecutionDef has nothing to check the env
+// override against, so the gate refuses it rather than waving it through on the
+// absence of a type to gate.
+func TestHandleServiceApply_MergeEnvRefusedWithoutExecutionDefinition(t *testing.T) {
+	existing := &model.Task{
+		Name:          "web",
+		Kind:          model.KindService,
+		Restart:       model.RestartAlways,
+		Instances:     1,
+		MaxConcurrent: 1,
+	}
+	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"web": existing})
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{
+			TaskID:     "web",
+			TaskName:   "web",
+			Script:     json.RawMessage("null"),
+			TaskConfig: &protocol.ServiceTaskConfig{Env: map[string]string{"NODE_OPTIONS": "--inspect"}},
+		},
+	})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindConflict, ce.Kind)
+	assert.Empty(t, runner.upserted)
 }
 
 // Regression (Bug 1): a service:apply addressed by the bare name of a

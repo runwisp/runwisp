@@ -296,11 +296,26 @@ func (h *InboundHandler) mergeServiceApply(task *model.Task, svc *protocol.Servi
 // Only env is gated. The instances/restart/log knobs are what the cloud
 // legitimately re-asserts on every reconnect, so gating those would break sync
 // on a dispatch-off daemon.
+//
+// The type comes from ResolvedExecutionDef, not the ExecutionDef field: the
+// config loader only populates that field for compose-backed units, so an
+// ordinary `[services.web] run = "..."` carries its command in Run with a nil
+// ExecutionDef. Reading the field directly meant the one shape this gate exists
+// to protect was also the one shape that dereferenced nil — a peer-triggerable
+// crash instead of a verdict. A service with no resolvable definition at all
+// can't be checked, so it is refused rather than waved through.
 func (h *InboundHandler) checkEnvOverrideAllowed(task *model.Task, cfg *protocol.ServiceTaskConfig) error {
 	if cfg == nil || len(cfg.Env) == 0 {
 		return nil
 	}
-	if status := h.availability.ForType(task.ExecutionDef.ExecType()); !status.Available {
+	execDef := task.ResolvedExecutionDef()
+	if execDef == nil {
+		return &CloudError{
+			Kind:    CloudErrorKindConflict,
+			Message: fmt.Sprintf("env override for service %q not available: it has no resolvable execution definition", task.Name),
+		}
+	}
+	if status := h.availability.ForType(execDef.ExecType()); !status.Available {
 		return &CloudError{
 			Kind:    CloudErrorKindConflict,
 			Message: fmt.Sprintf("env override for service %q not available: %s", task.Name, status.Reason),
