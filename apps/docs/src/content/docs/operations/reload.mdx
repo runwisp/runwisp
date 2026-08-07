@@ -86,18 +86,26 @@ any of these is rejected and asks you to run `runwisp restart`:
 The HTTP bind host and port aren't config at all — they're CLI flags — so they
 can only change on a fresh start.
 
-### Moving a task between files isn't a change
+### Moving a task between files usually isn't a change
 
 [`runwisp promote`](/operations/cli/#take-ownership-of-a-task-with-promote)
-moves an imported task's definition from `runwisp.d/imported.toml` into your
-`runwisp.toml`. A reload after that reports **no task changes**, which is the
-honest answer: the schedule, the command, the environment — none of it moved.
-Only the file did.
+moves a task's definition into your `runwisp.toml` — out of the staging file an
+import wrote (`runwisp.d/imported.toml`), or out of a live crontab. Promote a
+**staged** task, or a cron task you'd already taken over from cron, and a reload
+after it reports **no task changes**, which is the honest answer: the schedule,
+the command, the environment — none of it moved. Only the file did.
 
 That's deliberate rather than a rounding error. A promoted service keeps running
-instead of being recycled, and a promoted cron task keeps its place in the
-schedule. The only thing the reload updates is the provenance the UI, TUI and
-`--json` report, which is why `runwisp promote --reload` exists as a shorthand.
+instead of being recycled, and such a cron task keeps its place in the schedule.
+The only thing the reload updates is the provenance the UI, TUI and `--json`
+report, which is why `runwisp promote --reload` exists as a shorthand.
+
+The one exception is promoting a job **while its cron daemon is still live**.
+RunWisp had been holding that job — standing down so cron alone ran it — and
+promote comments the crontab line out, so on the next load the job is native and
+no longer held. That _is_ a change: the reload reports it as a changed task and
+RunWisp takes over scheduling it. See
+[Graduating a job](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config).
 
 ## What a reload tells you
 

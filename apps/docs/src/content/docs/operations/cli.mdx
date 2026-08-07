@@ -352,15 +352,16 @@ the result wouldn't load.
 | Flag        | What it does                                                                                |
 | ----------- | ------------------------------------------------------------------------------------------- |
 | `--all`     | Promote everything promotable — staged _and_ crontab-sourced. Exits 0 when there's nothing. |
-| `--reload`  | Reload the running daemon afterwards, so the provenance marker clears.                      |
+| `--reload`  | Reload the running daemon afterwards so it picks the move up.                               |
 | `--dry-run` | Print the blocks that would be added and write nothing.                                     |
 
-A staged block is **moved** out of the staging file; a cron-sourced one is
-**copied**, because RunWisp never writes to a crontab. Promoting doesn't change
-what the daemon runs — only which file defines it — so `runwisp reload` afterwards
-honestly reports _no task changes_.
-[Graduating a job](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config)
-walks through it.
+A staged block is **moved** out of the staging file. A cron-sourced one is
+copied into `runwisp.toml` and its source crontab line is commented out in the
+same transaction, so a still-live cron won't double-fire it — see
+[Graduating a job](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config).
+That link also covers what a following `runwisp reload` reports, which differs
+between a staged promotion (no change to what runs) and promoting a job while
+its cron daemon is still live (a real handover RunWisp takes over).
 
 Promote refuses, and writes nothing, when you name a task it can't move: one
 that doesn't exist, one that's already native (it names the file it found it

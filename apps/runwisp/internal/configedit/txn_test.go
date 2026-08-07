@@ -184,3 +184,54 @@ func TestTxn_LeavesNoTempFiles(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, entries, "rollback must remove the file it created and leave no temp files")
 }
+
+// TestTxn_WritePreservingOwnerKeepsMode is the crontab case: promote rewrites a
+// file it doesn't own the format of, and the rewrite must not touch its mode
+// even though — unlike a plain Write — the caller supplies no perm at all.
+func TestTxn_WritePreservingOwnerKeepsMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "crontab")
+	require.NoError(t, os.WriteFile(path, []byte("original\n"), 0o640))
+
+	txn := New()
+	txn.WritePreservingOwner(path, []byte("rewritten\n"))
+	require.NoError(t, txn.Apply(nil))
+
+	assert.Equal(t, "rewritten\n", readFile(t, path))
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o640), info.Mode().Perm())
+}
+
+// TestTxn_WritePreservingOwnerRefusesAMissingFile: unlike Write, there is no
+// sensible "create it" behaviour here — a crontab this queues a rewrite for
+// was always read off disk first, so its absence means it moved out from
+// under the promote and the rewrite must refuse rather than invent a new file
+// with no owner to preserve.
+func TestTxn_WritePreservingOwnerRefusesAMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gone")
+
+	txn := New()
+	txn.WritePreservingOwner(path, []byte("x\n"))
+	err := txn.Apply(nil)
+	require.Error(t, err)
+
+	_, statErr := os.Stat(path)
+	assert.True(t, os.IsNotExist(statErr), "must not create the file it couldn't confirm an owner for")
+}
+
+// TestTxn_WritePreservingOwnerRollsBackOnFailure covers a WritePreservingOwner
+// queued alongside a write that later fails: the crontab rewrite must unwind
+// exactly like an ordinary Write does.
+func TestTxn_WritePreservingOwnerRollsBackOnFailure(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{"crontab": "original\n"})
+	crontab := filepath.Join(dir, "crontab")
+
+	txn := New()
+	txn.WritePreservingOwner(crontab, []byte("rewritten\n"))
+
+	sentinel := errors.New("gate says no")
+	require.ErrorIs(t, txn.Apply(func() error { return sentinel }), sentinel)
+	assert.Equal(t, "original\n", readFile(t, crontab))
+}

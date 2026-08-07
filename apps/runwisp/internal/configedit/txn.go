@@ -27,6 +27,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 // DefaultPerm is the mode new config files are created with. Config is not
@@ -48,6 +49,10 @@ type queuedWrite struct {
 	perm fs.FileMode
 	// remove inverts the operation: delete the file instead of writing data.
 	remove bool
+	// preserveOwner routes the write through writeFileAtomicPreservingOwner
+	// instead of writeFileAtomic: the file must already exist, and its uid/gid
+	// are carried onto the replacement, not just its mode. See WritePreservingOwner.
+	preserveOwner bool
 }
 
 // New returns an empty transaction.
@@ -73,6 +78,17 @@ func (t *Txn) Write(path string, data []byte, perm fs.FileMode) {
 // look like it still had something to say.
 func (t *Txn) Remove(path string) {
 	t.queued = append(t.queued, queuedWrite{path: path, remove: true})
+}
+
+// WritePreservingOwner queues a full rewrite of a file that must land under the
+// uid/gid it already has, not just its mode — the crontab case, where the
+// daemon may run as root but a per-user spool file has to stay owned by the
+// account whose jobs it holds. Unlike Write, the file must already exist: a
+// rewrite that can't confirm the prior owner refuses (see
+// writeFileAtomicPreservingOwner) rather than silently landing owned by
+// whoever the daemon runs as.
+func (t *Txn) WritePreservingOwner(path string, data []byte) {
+	t.queued = append(t.queued, queuedWrite{path: path, data: data, preserveOwner: true})
 }
 
 // Empty reports whether the transaction has nothing to write, so a caller can
@@ -120,6 +136,9 @@ func (w queuedWrite) perform() error {
 			return err
 		}
 		return nil
+	}
+	if w.preserveOwner {
+		return writeFileAtomicPreservingOwner(w.path, w.data)
 	}
 	return writeFileAtomic(w.path, w.data, w.perm)
 }
@@ -184,6 +203,38 @@ func writeFileAtomic(path string, data []byte, perm fs.FileMode) error {
 	if info, err := os.Stat(path); err == nil {
 		perm = info.Mode().Perm()
 	}
+	return atomicReplace(path, data, perm, nil)
+}
+
+// writeFileAtomicPreservingOwner is writeFileAtomic's crontab variant. Plain
+// writeFileAtomic's temp+rename leaves the replacement owned by whoever the
+// daemon runs as — fine for a runwisp.toml the daemon itself owns, wrong for a
+// per-user spool crontab a root daemon is editing on another account's behalf.
+// The file must already exist (a crontab this rewrites was always read off
+// disk first); if its owner can't be determined, this refuses rather than
+// landing the file mis-owned.
+func writeFileAtomicPreservingOwner(path string, data []byte) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("cannot determine %s's owner on this platform; refusing to rewrite it", path)
+	}
+	owner := &ownerID{uid: int(stat.Uid), gid: int(stat.Gid)}
+	return atomicReplace(path, data, info.Mode().Perm(), owner)
+}
+
+// ownerID is the uid/gid a rewritten file must be chowned back to.
+type ownerID struct{ uid, gid int }
+
+// atomicReplace is the shared temp-file-then-rename mechanics behind both
+// write paths above. owner, when non-nil, chowns the temp file before the
+// rename; a failed chown is treated the same as a failed write — cleaned up
+// and reported, never silently skipped.
+func atomicReplace(path string, data []byte, perm fs.FileMode, owner *ownerID) error {
+	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
@@ -203,6 +254,11 @@ func writeFileAtomic(path string, data []byte, perm fs.FileMode) error {
 	}
 	if err := os.Chmod(tmpName, perm); err != nil {
 		return cleanup(err)
+	}
+	if owner != nil {
+		if err := os.Chown(tmpName, owner.uid, owner.gid); err != nil {
+			return cleanup(fmt.Errorf("preserve owner of %s: %w", path, err))
+		}
 	}
 	if err := os.Rename(tmpName, path); err != nil {
 		return cleanup(err)

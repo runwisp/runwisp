@@ -21,14 +21,24 @@ import (
 // runs changes, which is why `promote` is safe to run against a live daemon.
 //
 // A cron-sourced task is the one asymmetry. Its definition has no TOML bytes on
-// disk to move — the crontab is the definition, and RunWisp never writes to it —
-// so promoting one *copies* the block the live loader rendered
-// (config.CronBlockTOML) into the root and leaves the crontab alone. That still
-// preserves behaviour exactly, because it is the same text the daemon decoded to
-// build the running task. On the next load the operator's TOML and the crontab say
-// the same thing, the cron copy is skipped as already-defined, and the provenance
-// flips to native on its own — so the cron line can be deleted whenever they get
-// round to it, or never.
+// disk to move — the crontab is the definition — so promoting one *copies* the
+// block the live loader rendered (config.CronBlockTOML) into the root. The copy
+// alone isn't safe: once provenance flips to native RunWisp can no longer hold
+// the task for cron (markCronHold only holds a Source == SourceCron task), so a
+// crontab line left in place would be fired by both a still-live cron daemon and
+// RunWisp. So the source line is commented out in the same transaction —
+// croncomment.go verifies it byte-for-byte against the file first and refuses the
+// whole promotion, changing nothing, if it moved or changed since load. Cron
+// ignores a '#' line, so the job stops firing from cron; the line stays visible
+// (with a note pointing at the runwisp.toml it moved to) rather than vanishing.
+//
+// The crontab write is queued before the root write for a reason. There is no
+// cross-file atomic primitive: within one Apply a gate or write failure rolls
+// every touched file back to its pre-image (see Txn), but a hard kill between the
+// two renames can't be caught. Commenting the crontab first means such a crash
+// leaves the job commented-out (cron won't fire it) but not yet in root — a
+// recoverable state the operator can see and finish by hand — rather than firing
+// from both.
 
 // UnknownEntryError reports a requested name that the config doesn't define at
 // all.
@@ -136,6 +146,9 @@ type PromoteResult struct {
 	// StagingRemoved is true when the staging file held nothing else and was
 	// deleted rather than left behind empty.
 	StagingRemoved bool
+	// CronCommentOuts are the crontab lines commented out alongside a
+	// cron-sourced promotion, one per promoted cron task.
+	CronCommentOuts []CronCommentOut
 }
 
 // PreviewBlocks resolves what a promotion would append and what would be left in
@@ -205,6 +218,17 @@ func Promote(req PromoteRequest) (PromoteResult, error) {
 		return res, nil
 	}
 
+	_, cronNames := splitByProvenance(req.Names, req.Layout, req.Config)
+	var cronEdits map[string][]byte
+	if len(cronNames) > 0 {
+		commentOuts, edits, err := PlanCronCommentOuts(cronNames, req.Config, req.Layout.RootPath)
+		if err != nil {
+			return res, err
+		}
+		res.CronCommentOuts = commentOuts
+		cronEdits = edits
+	}
+
 	remaining, blocks, err := PreviewBlocks(req.Layout, req.Names, req.Config)
 	if err != nil {
 		return res, err
@@ -216,6 +240,12 @@ func Promote(req PromoteRequest) (PromoteResult, error) {
 	res.Promoted = blocks
 
 	txn := New()
+	// Crontab edits are queued — and so written — before the root config: see the
+	// package doc for why that order is the deliberate answer to the one failure
+	// mode that can't be gated away, a hard kill between the two renames.
+	for file, data := range cronEdits {
+		txn.WritePreservingOwner(file, data)
+	}
 	txn.Write(req.Layout.RootPath, AppendBlocks(root, blocks), DefaultPerm)
 	// remaining is nil for a cron-only promotion: there is no staging file in play,
 	// so neither rewriting nor deleting it is correct.

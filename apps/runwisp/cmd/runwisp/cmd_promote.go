@@ -28,20 +28,31 @@ var promoteFlags promoteOpts
 var promoteCmd = &cobra.Command{
 	Use:   "promote [TASK...]",
 	Short: "Move an imported task into your own runwisp.toml",
-	Long: `Graduate a staged task out of the machine-owned staging file and into
-your runwisp.toml, where you own it outright.
+	Long: `Graduate a staged or cron-sourced task into your own runwisp.toml, where
+you own it outright.
 
 ` + "`runwisp import --write`" + ` stages jobs in ` + config.StagingIncludeGlob + ` and marks
 them "staged" — imported, not yet native. Promoting one moves its block into your
 root config: after that a re-import leaves it alone, and it's yours to edit.
 
+A task read live out of a crontab via ` + "`include_cron`" + ` promotes the same way:
+the block lands in your root config, and the exact crontab line it came from is
+commented out in the same transaction — so a still-live cron daemon stops firing
+it, while the line stays visible with a note pointing at your runwisp.toml.
+Promote refuses, writing nothing, if that line has changed or gone missing since
+the config was loaded.
+
 The move is textual. The block's comments, its formatting, and any unresolved
 # TODO notes the import left behind travel with it byte-for-byte — nothing is
-re-generated. Both files are written as one transaction, so if the result
-wouldn't load, neither file is changed.
+re-generated. Every file involved is written as one transaction, so if the
+result wouldn't load, nothing changes.
 
-Nothing about what the daemon runs changes: only which file defines it. Run
-` + "`runwisp reload`" + ` (or pass --reload) to clear the staged marker on a live daemon.`,
+A staged promotion changes nothing about what the daemon runs — only which file
+defines it — so ` + "`runwisp reload`" + ` (or --reload) just clears the provenance
+marker. Promoting a job while its cron daemon is still live is a real change:
+with the crontab line commented out the task is no longer held, so on reload
+RunWisp takes over scheduling it. Either way run ` + "`runwisp reload`" + ` (or pass
+--reload) so a running daemon picks it up.`,
 	Example: `  runwisp promote backup           # move one task
   runwisp promote backup reindex   # move several
   runwisp promote --all --reload   # move everything, then reconcile
@@ -165,24 +176,45 @@ func promoteSelectError(err error, cfgPath string) error {
 }
 
 // promoteError phrases a failed move. Every case here rolled the transaction
-// back, so both files are exactly as they were.
+// back, so every file touched is exactly as it was.
 func promoteError(err error, layout configedit.Layout) error {
 	var conflict *configedit.ConflictError
 	if errors.As(err, &conflict) {
 		return &userFacingError{
 			title: "the promoted config wouldn't load — nothing was written",
 			details: conflict.Err.Error() +
-				"\n\nBoth files were restored. This shouldn't happen for a plain move; " +
+				"\n\nEvery file was restored. This shouldn't happen for a plain move; " +
 				"please report it at https://github.com/runwisp/runwisp/issues.",
+		}
+	}
+	var mismatch *configedit.CronSourceMismatchError
+	if errors.As(err, &mismatch) {
+		return &userFacingError{
+			title:   "can't safely promote — a crontab line changed underneath it",
+			details: mismatch.Error() + "\n\nNothing was written. Run `runwisp validate` to see the crontab as it is now, then re-run promote.",
 		}
 	}
 	return configEditError(err, layout)
 }
 
-// printPromotePlan is --dry-run: exactly what would move, and where to, without
-// touching a file.
+// printPromotePlan is --dry-run: exactly what would move, and where to and
+// from, without touching a file. A cron-sourced task has two sides to that
+// move — the block landing in root and the line being commented out in the
+// crontab — and both are shown, or the same refusal a real promote would give
+// is surfaced here instead.
 func printPromotePlan(out io.Writer, layout configedit.Layout, names []string, cfg *config.Config) error {
 	_, blocks, err := configedit.PreviewBlocks(layout, names, cfg)
+	if err != nil {
+		return promoteError(err, layout)
+	}
+
+	var cronNames []string
+	for _, name := range names {
+		if _, ok := cfg.CronBlockTOML(name); ok {
+			cronNames = append(cronNames, name)
+		}
+	}
+	commentOuts, _, err := configedit.PlanCronCommentOuts(cronNames, cfg, layout.RootPath)
 	if err != nil {
 		return promoteError(err, layout)
 	}
@@ -190,6 +222,12 @@ func printPromotePlan(out io.Writer, layout configedit.Layout, names []string, c
 	fmt.Fprintf(out, "Would add %s to %s:\n", pluralizeCounts(countBlocks(blocks)), layout.RootPath)
 	for _, b := range blocks {
 		fmt.Fprintf(out, "\n%s\n", strings.TrimRight(b.Text, "\n"))
+	}
+	if len(commentOuts) > 0 {
+		fmt.Fprintf(out, "\nWould comment out %d crontab line(s):\n", len(commentOuts))
+		for _, c := range commentOuts {
+			fmt.Fprintf(out, "  %s:%d: %s\n", c.File, c.Line, c.Text)
+		}
 	}
 	fmt.Fprintln(out, "\nNothing was written.")
 	return nil
@@ -205,8 +243,22 @@ func printPromoted(out io.Writer, res configedit.PromoteResult, layout configedi
 	if res.StagingRemoved {
 		fmt.Fprintf(out, "\n%s held nothing else, so it was removed.\n", config.StagingRelPath())
 	}
+	if len(res.CronCommentOuts) > 0 {
+		fmt.Fprintf(out, "\nCommented out %d crontab line(s):\n", len(res.CronCommentOuts))
+		for _, c := range res.CronCommentOuts {
+			fmt.Fprintf(out, "  %s:%d\n", c.File, c.Line)
+		}
+	}
 
 	fmt.Fprintln(out)
+	if len(res.CronCommentOuts) > 0 {
+		fmt.Fprintf(out, "The crontab line is commented out, so nothing but RunWisp will fire this job now.\n")
+		fmt.Fprintf(out, "If a live cron daemon was still running it, RunWisp had been holding it — that\n")
+		fmt.Fprintf(out, "hold ends here, and a reload starts RunWisp scheduling it. If cron was already\n")
+		fmt.Fprintf(out, "retired, only the provenance changes. Either way, run `runwisp reload` so a\n")
+		fmt.Fprintf(out, "running daemon picks it up.\n")
+		return
+	}
 	fmt.Fprintf(out, "What the daemon runs did not change — only which file defines it.\n")
 	fmt.Fprintf(out, "Run `runwisp reload` to clear the provenance marker on a running daemon.\n")
 }

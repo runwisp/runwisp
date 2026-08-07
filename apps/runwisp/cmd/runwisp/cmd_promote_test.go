@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/configedit"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -138,6 +139,89 @@ func TestPromoteCmd_DryRunWritesNothing(t *testing.T) {
 
 	assert.Equal(t, rootBefore, readConfigFile(t, cfgPath))
 	assert.Equal(t, stagingBefore, readConfigFile(t, stagingPath))
+}
+
+// cronPromoteFixture stages a root config that reads one crontab live via
+// include_cron, and returns the root config path and the crontab's path.
+func cronPromoteFixture(t *testing.T) (cfgPath, cronPath string) {
+	t.Helper()
+	dir := t.TempDir()
+	cfgPath = filepath.Join(dir, "runwisp.toml")
+	cronPath = filepath.Join(dir, "crontabs", "mycron")
+
+	require.NoError(t, os.WriteFile(cfgPath, []byte(`[daemon]
+include_cron = ["crontabs/*"]
+
+# my own task
+[tasks.mine]
+run = "echo mine"
+`), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Dir(cronPath), 0o755))
+	require.NoError(t, os.WriteFile(cronPath, []byte("0 3 * * * /usr/local/bin/dump.sh --full\n"), 0o644))
+	return cfgPath, cronPath
+}
+
+// TestPromoteCmd_CronDryRunShowsBothSidesAndWritesNothing is the --dry-run
+// contract for a live cron-sourced task: it must show the block landing in
+// root *and* the crontab line that would be commented out, and touch neither
+// file.
+func TestPromoteCmd_CronDryRunShowsBothSidesAndWritesNothing(t *testing.T) {
+	cfgPath, cronPath := cronPromoteFixture(t)
+	rootBefore := readConfigFile(t, cfgPath)
+	cronBefore := readConfigFile(t, cronPath)
+
+	stdout, err := promote(t, cfgPath, []string{"dump"}, promoteOpts{dryRun: true})
+	require.NoError(t, err)
+
+	assert.Contains(t, stdout, "[tasks.dump]", "the plan shows the block that would land in root")
+	assert.Contains(t, stdout, "Would comment out 1 crontab line(s)")
+	assert.Contains(t, stdout, cronPath+":1: 0 3 * * * /usr/local/bin/dump.sh --full",
+		"the plan names the exact file, line, and text that would be commented out")
+	assert.Contains(t, stdout, "Nothing was written.")
+
+	assert.Equal(t, rootBefore, readConfigFile(t, cfgPath))
+	assert.Equal(t, cronBefore, readConfigFile(t, cronPath))
+}
+
+// TestPromoteCmd_CronPromoteCommentsOutTheCrontabLine is the end-to-end version
+// of the core regression: `promote` on a live cron task moves it into root and
+// comments out the source line, and says so.
+func TestPromoteCmd_CronPromoteCommentsOutTheCrontabLine(t *testing.T) {
+	cfgPath, cronPath := cronPromoteFixture(t)
+
+	stdout, err := promote(t, cfgPath, []string{"dump"}, promoteOpts{})
+	require.NoError(t, err)
+
+	assert.Contains(t, stdout, "Promoted 1 task")
+	assert.Contains(t, stdout, "Commented out 1 crontab line(s)")
+	assert.Contains(t, stdout, cronPath+":1")
+	assert.Contains(t, stdout, "a reload starts RunWisp scheduling it",
+		"a live cron promotion is a real handover, not the staged path's no-op")
+	assert.NotContains(t, stdout, "did not change",
+		"the staged path's 'nothing changed' line must not appear for a cron handover")
+	assert.Contains(t, stdout, "runwisp reload")
+
+	assert.Contains(t, readConfigFile(t, cfgPath), "[tasks.dump]")
+	crontab := readConfigFile(t, cronPath)
+	assert.Contains(t, crontab, "#0 3 * * * /usr/local/bin/dump.sh --full",
+		"the sole crontab line is commented out, not deleted")
+	assert.Contains(t, crontab, "this job was promoted to", "with a note pointing at where it moved")
+}
+
+// TestPromoteCmd_CronSourceMismatchPhrasesCleanly pins how the CLI translates
+// a *configedit.CronSourceMismatchError — the refusal a race between
+// `crontab -e` and `runwisp promote` produces — into operator-facing advice
+// that says plainly that nothing was written.
+func TestPromoteCmd_CronSourceMismatchPhrasesCleanly(t *testing.T) {
+	err := promoteError(&configedit.CronSourceMismatchError{
+		Name: "dump", File: "/etc/cron.d/dump", Line: 3, Reason: "that line changed since it was read",
+	}, configedit.Layout{RootPath: "runwisp.toml"})
+
+	uf, ok := isUserFacing(err)
+	require.True(t, ok, "a refusal must read as advice, not a stack trace")
+	assert.Contains(t, uf.Error(), "changed underneath it")
+	assert.Contains(t, uf.Error(), "/etc/cron.d/dump:3")
+	assert.Contains(t, uf.Error(), "Nothing was written")
 }
 
 func TestPromoteCmd_Refusals(t *testing.T) {

@@ -82,6 +82,7 @@ func loadWithIncludes(path string) (*Config, entrySources, error) {
 	cfg.cronMatched = cron.matched
 	cfg.CronFindings = cron.findings
 	cfg.cronBlocks = cron.blocks
+	cfg.cronLines = cron.lines
 	// After markProvenance, which is what says which tasks came from a crontab,
 	// and before Warnings can be asked anything. Skipped when nothing is reading
 	// crontabs, so a config with no include_cron never execs systemctl for an
