@@ -217,7 +217,7 @@ func buildOneSyncTask(t *model.Task) (syncTask, bool) {
 		limit := t.MaxConcurrent
 		task.ConcurrencyLimit = &limit
 	}
-	if behavior := mapConcurrencyBehavior(t.OnOverlap); behavior != "" {
+	if behavior := concurrencyBehaviorMap[t.OnOverlap]; behavior != "" {
 		task.ConcurrencyBehavior = behavior
 	}
 	if timeoutMs := durationToMillis(t.Timeout); timeoutMs > 0 {
@@ -291,10 +291,6 @@ var concurrencyBehaviorMap = map[model.ConcurrencyPolicy]string{
 	model.PolicyQueue:     "queue",
 	model.PolicySkip:      "skip",
 	model.PolicyTerminate: "terminate",
-}
-
-func mapConcurrencyBehavior(policy model.ConcurrencyPolicy) string {
-	return concurrencyBehaviorMap[policy]
 }
 
 func durationToMillis(d time.Duration) int {

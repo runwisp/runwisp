@@ -6,7 +6,6 @@ package server
 import (
 	"context"
 	"net"
-	"net/http"
 	"sync"
 )
 
@@ -67,31 +66,11 @@ func (l *streamLimiter) acquire(ip string) (release func(), ok bool) {
 	}, true
 }
 
-// middleware wraps a handler so it acquires a stream slot before serving and
-// releases it when the handler returns.
-func (l *streamLimiter) middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := streamClientIP(r)
-		release, ok := l.acquire(ip)
-		if !ok {
-			http.Error(w, "Too many concurrent streams", http.StatusServiceUnavailable)
-			return
-		}
-		defer release()
-		next.ServeHTTP(w, r)
-	})
-}
-
-// streamClientIP returns the real TCP peer's IP, ignoring proxy headers.
+// streamClientIPFromCtx returns the real TCP peer's IP, ignoring proxy headers.
 // We deliberately use peerAddr (captured before the trusted-proxy XFF
 // middleware) so that an attacker cannot bypass the cap by rotating
-// X-Forwarded-For values.
-func streamClientIP(r *http.Request) string {
-	return streamClientIPFromCtx(r.Context())
-}
-
-// streamClientIPFromCtx is the context-only variant used from huma SSE handlers
-// that do not receive the *http.Request directly.
+// X-Forwarded-For values. It reads from context because huma SSE handlers do
+// not receive the *http.Request directly.
 func streamClientIPFromCtx(ctx context.Context) string {
 	if peer, ok := ctx.Value(peerAddrContextKey).(string); ok {
 		host, _, err := net.SplitHostPort(peer)

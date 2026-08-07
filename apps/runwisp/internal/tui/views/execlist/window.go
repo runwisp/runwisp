@@ -101,12 +101,6 @@ func (w *ExecWindow) SetFilter(taskName string) {
 	w.clearLocked()
 }
 
-func (w *ExecWindow) FilterTask() string {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.filterTask
-}
-
 // CurrentFilter returns the read-side filter describing the rows the list is
 // currently showing. Bulk "select all matching" reuses it so a MatchAll
 // selector targets exactly the population on screen (same task + status filter).
@@ -171,14 +165,6 @@ func (w *ExecWindow) Item(i int) *uikit.ExecListItem {
 		return nil
 	}
 	return &w.items[local]
-}
-
-// WindowRange returns the start offset and length of the currently loaded
-// window.
-func (w *ExecWindow) WindowRange() (start, length int) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.windowStart, len(w.items)
 }
 
 // NeedsFetch returns true if the viewport (scroll..scroll+vpH) is close to
@@ -265,13 +251,6 @@ func (w *ExecWindow) ApplyFetch(items []uikit.ExecListItem, offset, total int) {
 	w.totalCount = total
 	w.loading = false
 	w.rebuildIDSet()
-}
-
-// SetLoading marks the window as no longer loading (e.g. on error).
-func (w *ExecWindow) SetLoading(loading bool) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.loading = loading
 }
 
 // UpsertRun handles a real-time SSE event. New runs are prepended.

@@ -115,8 +115,6 @@ type CronHoldChange struct {
 	Held     []string
 }
 
-func (c CronHoldChange) Any() bool { return len(c.Released) > 0 || len(c.Held) > 0 }
-
 // RefreshCronHolds applies a fresh cron-liveness answer to the live task set.
 //
 // It is not a reload. runwisp.toml is not re-read and no edit the operator has

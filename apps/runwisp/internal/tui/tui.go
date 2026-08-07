@@ -22,8 +22,6 @@ import (
 // --- Palette ---
 
 var (
-	purple   = lipgloss.Color("#526ee3")
-	green    = lipgloss.Color("#009371")
 	yellow   = lipgloss.Color("#FBBF24")
 	cyan     = lipgloss.Color("#06B6D4")
 	dimGray  = lipgloss.Color("#6B7280")
@@ -31,11 +29,11 @@ var (
 )
 
 var (
-	brandMark = lipgloss.NewStyle().Foreground(green).Bold(true)
-	brandText = lipgloss.NewStyle().Foreground(purple).Bold(true)
+	brandMark = lipgloss.NewStyle().Foreground(uikit.ColorSecondary).Bold(true)
+	brandText = lipgloss.NewStyle().Foreground(uikit.ColorPrimary).Bold(true)
 	dimStyle  = lipgloss.NewStyle().Foreground(dimGray)
 	dotStyle  = lipgloss.NewStyle().Foreground(darkGray)
-	greenMark = lipgloss.NewStyle().Foreground(green)
+	greenMark = lipgloss.NewStyle().Foreground(uikit.ColorSecondary)
 	yellowSt  = lipgloss.NewStyle().Foreground(yellow)
 	cyanBold  = lipgloss.NewStyle().Foreground(cyan).Bold(true)
 	boldStyle = lipgloss.NewStyle().Bold(true)

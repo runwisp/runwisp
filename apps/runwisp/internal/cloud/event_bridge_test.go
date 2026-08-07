@@ -25,7 +25,6 @@ func newTestBridge(h *InboundHandler) *EventBridge {
 		h,
 		NewExecutionTracker(),
 		func(any) error { return nil },
-		func() {},
 	)
 }
 
@@ -53,7 +52,6 @@ func TestEventBridge_StartShutdown_SubscribesAndUnsubscribesEveryKind(t *testing
 		newTestInboundHandler(),
 		NewExecutionTracker(),
 		func(any) error { return nil },
-		func() {},
 	)
 
 	b.Start(context.Background())
@@ -75,14 +73,12 @@ func TestEventBridge_StartShutdown_SubscribesAndUnsubscribesEveryKind(t *testing
 // --- handleRunEvent ---
 
 func TestEventBridge_HandleRunEvent_RunningRun(t *testing.T) {
-	stateChanges := 0
 	h := newTestInboundHandler()
 	b := NewEventBridge(
 		events.NewEventBus(),
 		h,
 		NewExecutionTracker(),
 		func(any) error { return nil },
-		func() { stateChanges++ },
 	)
 
 	extID := "exec-running"
@@ -95,19 +91,16 @@ func TestEventBridge_HandleRunEvent_RunningRun(t *testing.T) {
 		StartAt:             &now,
 	}
 	b.handleRunEvent(context.Background(), events.Event{Data: events.RunEvent{Run: run}})
-	assert.Equal(t, 1, stateChanges)
 	assert.True(t, b.tracker.HasActive())
 }
 
 func TestEventBridge_HandleRunEvent_TerminalRun(t *testing.T) {
-	stateChanges := 0
 	h := newTestInboundHandler()
 	b := NewEventBridge(
 		events.NewEventBus(),
 		h,
 		NewExecutionTracker(),
 		func(any) error { return nil },
-		func() { stateChanges++ },
 	)
 
 	extID := "exec-done"
@@ -120,7 +113,7 @@ func TestEventBridge_HandleRunEvent_TerminalRun(t *testing.T) {
 		ExternalExecutionID: &extID,
 	}
 	b.handleRunEvent(context.Background(), events.Event{Data: events.RunEvent{Run: run}})
-	assert.Equal(t, 1, stateChanges)
+	assert.False(t, b.tracker.HasActive())
 }
 
 // --- Start delivers events through the real bus ---
@@ -128,7 +121,6 @@ func TestEventBridge_HandleRunEvent_TerminalRun(t *testing.T) {
 func TestEventBridge_Start_DispatchesPublishedEvents(t *testing.T) {
 	bus := events.NewEventBus()
 	h := newTestInboundHandler()
-	stateChanges := 0
 	logLineSent := false
 	b := NewEventBridge(
 		bus,
@@ -140,7 +132,6 @@ func TestEventBridge_Start_DispatchesPublishedEvents(t *testing.T) {
 			}
 			return nil
 		},
-		func() { stateChanges++ },
 	)
 	b.Start(context.Background())
 	defer b.Shutdown()
@@ -179,8 +170,6 @@ func TestEventBridge_Start_DispatchesPublishedEvents(t *testing.T) {
 		Text:                "hi",
 	})
 
-	// 3 run events → 3 state-change callbacks (sync). Log line sends sync.
-	assert.Equal(t, 3, stateChanges)
 	assert.True(t, logLineSent)
 }
 
@@ -207,7 +196,6 @@ func TestEventBridge_HandleRunEvent_EmitsServiceStatusByBareName(t *testing.T) {
 		h,
 		NewExecutionTracker(),
 		func(msg any) error { sent = append(sent, msg); return nil },
-		func() {},
 	)
 
 	run := &model.Run{TaskName: "heartbeat"} // no ExternalExecutionID
@@ -238,7 +226,6 @@ func TestEventBridge_EmitAllServiceStatus_PushesEveryService(t *testing.T) {
 		h,
 		NewExecutionTracker(),
 		func(msg any) error { sent = append(sent, msg); return nil },
-		func() {},
 	)
 
 	b.EmitAllServiceStatus()
@@ -273,7 +260,6 @@ func TestEventBridge_FinalizeRun_NilUploaderQueuesUpdateUnchanged(t *testing.T) 
 		h,
 		tracker,
 		func(any) error { sent++; return nil },
-		func() {},
 	)
 
 	extID := "exec-fin"
@@ -311,7 +297,6 @@ func TestEventBridge_HandleLogLineEvent_IgnoresNonListenerExec(t *testing.T) {
 		newTestInboundHandler(),
 		NewExecutionTracker(),
 		func(any) error { sent++; return nil },
-		func() {},
 	)
 	// No HandleLogListen — exec is not registered.
 	b.handleLogLineEvent(events.Event{Data: events.LogLineEvent{ExternalExecutionID: "x", LineNum: 1}})
@@ -377,7 +362,7 @@ func TestEventBridge_FinalizeRun_TerminalBeforeArchiveThenAttach(t *testing.T) {
 		return nil
 	}
 
-	b := NewEventBridge(events.NewEventBus(), h, NewExecutionTracker(), sendReady, func() {})
+	b := NewEventBridge(events.NewEventBus(), h, NewExecutionTracker(), sendReady)
 
 	update := mapRunToExecutionUpdate(run)
 	if update == nil {
@@ -437,7 +422,7 @@ func TestEventBridge_FinalizeRun_ArchiveFailureSendsSingleUpdate(t *testing.T) {
 			sent = append(sent, update)
 		}
 		return nil
-	}, func() {})
+	})
 
 	update := mapRunToExecutionUpdate(run)
 	if update == nil {
@@ -470,7 +455,7 @@ func TestEventBridge_FinalizeRun_NoUploaderSendsSingleUpdate(t *testing.T) {
 			sent = append(sent, update)
 		}
 		return nil
-	}, func() {})
+	})
 
 	update := mapRunToExecutionUpdate(run)
 	if update == nil {
@@ -494,7 +479,6 @@ func TestEventBridge_HandleLogLineEvent_IsListener(t *testing.T) {
 		h,
 		NewExecutionTracker(),
 		func(any) error { sent++; return nil },
-		func() {},
 	)
 
 	execID := "exec-listen"

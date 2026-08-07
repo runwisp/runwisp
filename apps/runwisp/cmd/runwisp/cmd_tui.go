@@ -4,6 +4,7 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -44,7 +45,7 @@ func init() {
 }
 
 func runTUIClient(f Flags) error {
-	if remoteURL := firstNonEmpty(tuiFlags.URL, os.Getenv("RUNWISP_URL")); remoteURL != "" {
+	if remoteURL := cmp.Or(tuiFlags.URL, os.Getenv("RUNWISP_URL")); remoteURL != "" {
 		return runTUIViaRemote(remoteURL, f)
 	}
 

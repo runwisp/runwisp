@@ -62,7 +62,7 @@ func makeItems(runs ...model.Run) []uikit.ExecListItem {
 
 func TestWindowRange_Empty(t *testing.T) {
 	w := NewExecWindow(nil)
-	start, length := w.WindowRange()
+	start, length := w.windowStart, len(w.items)
 	if start != 0 {
 		t.Fatalf("expected start=0 for empty window, got %d", start)
 	}
@@ -80,7 +80,7 @@ func TestWindowRange_AfterFetch(t *testing.T) {
 	)
 	w.ApplyFetch(items, 10, 50)
 
-	start, length := w.WindowRange()
+	start, length := w.windowStart, len(w.items)
 	if start != 10 {
 		t.Fatalf("expected start=10, got %d", start)
 	}
@@ -97,7 +97,7 @@ func TestWindowRange_ZeroOffset(t *testing.T) {
 	)
 	w.ApplyFetch(items, 0, 2)
 
-	start, length := w.WindowRange()
+	start, length := w.windowStart, len(w.items)
 	if start != 0 {
 		t.Fatalf("expected start=0, got %d", start)
 	}
@@ -109,7 +109,7 @@ func TestWindowRange_ZeroOffset(t *testing.T) {
 func TestSetLoading_True(t *testing.T) {
 	w := NewExecWindow(nil)
 	// loading starts as false; SetLoading(true) should enable it.
-	w.SetLoading(true)
+	w.loading = true
 	// NeedsFetch checks the loading flag — if loading=true it returns false even
 	// when items are empty, which is the observable effect of the flag.
 	if w.NeedsFetch(0, 10) {
@@ -124,12 +124,12 @@ func TestSetLoading_False(t *testing.T) {
 	w.ApplyFetch(items, 0, 1)
 
 	// Flip back to loading=true so we can then set it false.
-	w.SetLoading(true)
+	w.loading = true
 	if w.NeedsFetch(0, 10) {
 		t.Fatal("pre-condition: expected NeedsFetch=false while loading=true")
 	}
 
-	w.SetLoading(false)
+	w.loading = false
 	// With client=nil NeedsFetch is always false regardless of loading — but the
 	// function must not panic and the state must be consistent.
 	// Just verify it doesn't crash.
@@ -191,7 +191,7 @@ func TestLatestRunning_EmptyWindow(t *testing.T) {
 
 func TestFilterTask_Initial(t *testing.T) {
 	w := NewExecWindow(nil)
-	if f := w.FilterTask(); f != "" {
+	if f := w.filterTask; f != "" {
 		t.Fatalf("expected empty initial filter, got %q", f)
 	}
 }
@@ -199,7 +199,7 @@ func TestFilterTask_Initial(t *testing.T) {
 func TestFilterTask_AfterSetFilter(t *testing.T) {
 	w := NewExecWindow(nil)
 	w.SetFilter("my-task")
-	if f := w.FilterTask(); f != "my-task" {
+	if f := w.filterTask; f != "my-task" {
 		t.Fatalf("expected filter=my-task, got %q", f)
 	}
 }
@@ -214,7 +214,7 @@ func TestSetFilter_ClearsItems(t *testing.T) {
 	if tc := w.TotalCount(); tc != 0 {
 		t.Fatalf("expected totalCount=0 after filter change, got %d", tc)
 	}
-	start, length := w.WindowRange()
+	start, length := w.windowStart, len(w.items)
 	if start != 0 || length != 0 {
 		t.Fatalf("expected empty window after filter change, got start=%d length=%d", start, length)
 	}
@@ -231,7 +231,7 @@ func TestSetFilter_SameFilter_IsNoop(t *testing.T) {
 	// Setting the same filter must not clear items.
 	w.SetFilter("task-x")
 
-	_, length := w.WindowRange()
+	_, length := w.windowStart, len(w.items)
 	if length != 1 {
 		t.Fatalf("expected window to stay intact for same filter, got length=%d", length)
 	}
@@ -572,7 +572,7 @@ func TestFetchAroundCmd_ClientErrorResetsLoading(t *testing.T) {
 
 func TestFetchAroundCmd_NilWhenLoading(t *testing.T) {
 	w := NewExecWindow(nil)
-	w.SetLoading(true)
+	w.loading = true
 	fn := w.FetchAroundCmd(0, 10)
 	if fn != nil {
 		t.Fatal("expected nil FetchAroundCmd while loading=true")

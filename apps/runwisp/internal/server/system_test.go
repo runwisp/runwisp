@@ -134,13 +134,6 @@ func TestHumaGetMetricsHistory_ReturnsCollectorHistory(t *testing.T) {
 	assert.NotEmpty(t, out.Body)
 }
 
-func TestPopulateFallbackStats_PopulatesMemFields(t *testing.T) {
-	var stats model.SystemStats
-	populateFallbackStats(&stats)
-	// MemTotal should reflect the process memory ceiling from runtime.MemStats.
-	assert.Greater(t, stats.MemTotal, uint64(0))
-}
-
 // TestSseDaemonLogHandler_RejectsWhenLimiterFull verifies the early-return
 // path when the streamLimiter has no remaining slots: the handler must not
 // call the sender at all.

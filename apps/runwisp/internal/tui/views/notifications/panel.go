@@ -123,9 +123,6 @@ func (p *Panel) insertOrdered(idx int, id string) {
 // IsExpanded reports whether the panel is in expanded mode.
 func (p *Panel) IsExpanded() bool { return p.expanded }
 
-// Total returns the count of distinct tracked notifications.
-func (p *Panel) Total() int { return len(p.items) }
-
 // Unread returns the snapshot+delta-tracked unread count.
 func (p *Panel) Unread() int { return p.unread }
 

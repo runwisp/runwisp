@@ -258,15 +258,6 @@ func (dm *DialogManager) UpdateLogHistory(msg tea.Msg) bool {
 	return false
 }
 
-// UpdateConfirm dispatches input to the active confirm dialog.
-func (dm *DialogManager) UpdateConfirm(msg tea.Msg) (tea.Cmd, bool) {
-	cmd, closed := dm.confirmDialog.Update(msg)
-	if closed {
-		dm.confirmDialog = nil
-	}
-	return cmd, closed
-}
-
 // UpdateConfirmKeep dispatches input to the active confirm dialog but does NOT
 // dismiss it when closed. The caller is responsible for calling DismissConfirm
 // after inspecting the returned command.

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,8 +34,8 @@ func TestLogWriter_BasicWrite(t *testing.T) {
 	data, err := os.ReadFile(opts.LogPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "hello")
-	assert.False(t, w.Truncated())
-	assert.Greater(t, w.TotalProduced(), int64(0))
+	assert.False(t, w.truncated)
+	assert.Greater(t, w.totalProduced, int64(0))
 }
 
 func TestLogWriter_DropNewOverflow(t *testing.T) {
@@ -52,7 +51,7 @@ func TestLogWriter_DropNewOverflow(t *testing.T) {
 	w.Write([]byte("this should be silently dropped\n"))
 	require.NoError(t, w.Close())
 
-	assert.True(t, w.Truncated())
+	assert.True(t, w.truncated)
 
 	data, err := os.ReadFile(opts.LogPath)
 	require.NoError(t, err)
@@ -74,7 +73,7 @@ func TestLogWriter_KillTaskOverflow(t *testing.T) {
 	require.NoError(t, w.Close())
 
 	assert.True(t, cancelled)
-	assert.True(t, w.Truncated())
+	assert.True(t, w.truncated)
 	assert.True(t, w.KilledByPolicy(),
 		"kill_task overflow must flag KilledByPolicy so the runtime records the run as failed, not stopped")
 }
@@ -102,7 +101,6 @@ func TestLogWriter_DiskPressure_DropNew_FiresCallback(t *testing.T) {
 	opts.LogDir = dir
 	opts.Overflow = "drop_new"
 	opts.MinFreeDisk = math.MaxInt64 // any free space < this trips the threshold
-	opts.DiskCheckInterval = 1       // probe on every write past the first
 	cancelled := false
 	opts.CancelFunc = func() { cancelled = true }
 	hits := 0
@@ -117,6 +115,7 @@ func TestLogWriter_DiskPressure_DropNew_FiresCallback(t *testing.T) {
 
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
+	w.diskCheckInterval = 1 // probe on every write past the first
 
 	// First write does not trip (currentOffset==0, gap not > interval).
 	_, err = w.Write([]byte("first line\n"))
@@ -130,7 +129,7 @@ func TestLogWriter_DiskPressure_DropNew_FiresCallback(t *testing.T) {
 	require.NoError(t, w.Close())
 
 	assert.False(t, cancelled, "drop_new policy must not kill the task on disk pressure")
-	assert.True(t, w.Truncated(), "writer must mark the run truncated")
+	assert.True(t, w.truncated, "writer must mark the run truncated")
 	assert.Equal(t, 1, hits, "OnDiskPressure must fire exactly once per writer")
 	assert.False(t, seenKilled, "killedTask=false for drop_new")
 	assert.Equal(t, int64(math.MaxInt64), seenMin)
@@ -150,7 +149,6 @@ func TestLogWriter_DiskPressure_KillTask_CancelsContext(t *testing.T) {
 	opts.LogDir = dir
 	opts.Overflow = "kill_task"
 	opts.MinFreeDisk = math.MaxInt64
-	opts.DiskCheckInterval = 1
 	cancelled := false
 	opts.CancelFunc = func() { cancelled = true }
 	var seenKilled bool
@@ -160,6 +158,7 @@ func TestLogWriter_DiskPressure_KillTask_CancelsContext(t *testing.T) {
 
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
+	w.diskCheckInterval = 1
 
 	_, err = w.Write([]byte("first\n"))
 	require.NoError(t, err)
@@ -169,7 +168,7 @@ func TestLogWriter_DiskPressure_KillTask_CancelsContext(t *testing.T) {
 
 	assert.True(t, cancelled, "kill_task must cancel the task context on disk pressure")
 	assert.True(t, seenKilled, "OnDiskPressure must report killedTask=true")
-	assert.True(t, w.Truncated())
+	assert.True(t, w.truncated)
 }
 
 func TestLogWriter_DropOldRotation(t *testing.T) {
@@ -189,7 +188,7 @@ func TestLogWriter_DropOldRotation(t *testing.T) {
 	w.Write([]byte(third))
 	require.NoError(t, w.Close())
 
-	assert.True(t, w.Truncated())
+	assert.True(t, w.truncated)
 
 	data, err := os.ReadFile(opts.LogPath)
 	require.NoError(t, err)
@@ -218,7 +217,7 @@ func TestLogWriter_UnlimitedSize(t *testing.T) {
 	}
 	require.NoError(t, w.Close())
 
-	assert.False(t, w.Truncated())
+	assert.False(t, w.truncated)
 	info, err := os.Stat(opts.LogPath)
 	require.NoError(t, err)
 	assert.Greater(t, info.Size(), int64(90000))
@@ -238,7 +237,7 @@ func TestLogWriter_MultipleRotationsMeta(t *testing.T) {
 	}
 	require.NoError(t, w.Close())
 
-	assert.True(t, w.Truncated())
+	assert.True(t, w.truncated)
 
 	meta := logutil.ReadLogMeta(opts.LogPath)
 	assert.True(t, meta.Finalized)
@@ -337,35 +336,9 @@ func TestLogWriter_FramesSurviveRotation(t *testing.T) {
 
 // --- Timestamp Index Tests ---
 
-func TestLogWriter_TimestampIndex_BasicEntries(t *testing.T) {
-	opts := newTestOpts(t.TempDir())
-	w, err := NewLogWriter(opts)
-	require.NoError(t, err)
-
-	// Write 2050 lines to start the index and accumulate at least three
-	// line-based tidx entries (line 0 backfill, line 1024, line 2048).
-	for i := 0; i < 2050; i++ {
-		w.Write([]byte("line\n"))
-	}
-	require.NoError(t, w.Close())
-
-	entries := logutil.ReadSidecar(opts.LogPath).Timestamps
-
-	// At minimum: entry at line 0, line 1024, line 2048, plus final on Close.
-	assert.GreaterOrEqual(t, len(entries), 3)
-	assert.Equal(t, uint32(0), entries[0].Line)
-	assert.Greater(t, entries[0].Timestamp, int64(0))
-
-	// Entries should have monotonically non-decreasing line numbers/timestamps.
-	for i := 1; i < len(entries); i++ {
-		assert.GreaterOrEqual(t, entries[i].Line, entries[i-1].Line)
-		assert.GreaterOrEqual(t, entries[i].Timestamp, entries[i-1].Timestamp)
-	}
-}
-
 // TestLogWriter_ShortRunRecordsNoIndex pins the lazy policy: a run that produces
-// fewer than LogIndexInterval lines records no line/timestamp index in the
-// container (it holds only the final metadata record).
+// fewer than LogIndexInterval lines records no line index in the container (it
+// holds only the final metadata record).
 func TestLogWriter_ShortRunRecordsNoIndex(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	w, err := NewLogWriter(opts)
@@ -378,13 +351,12 @@ func TestLogWriter_ShortRunRecordsNoIndex(t *testing.T) {
 
 	sc := logutil.ReadSidecar(opts.LogPath)
 	assert.Empty(t, sc.Index, "short run must record no line index")
-	assert.Empty(t, sc.Timestamps, "short run must record no timestamp index")
 	assert.True(t, sc.Meta.Finalized, "container still holds the final metadata record")
 }
 
 // TestLogWriter_IndexAppearsAtThreshold pins the inverse: once the segment
-// crosses LogIndexInterval lines the index and timestamp records appear with
-// their chunk-0 backfill entries.
+// crosses LogIndexInterval lines the index records appear with their chunk-0
+// backfill entry.
 func TestLogWriter_IndexAppearsAtThreshold(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	w, err := NewLogWriter(opts)
@@ -397,94 +369,7 @@ func TestLogWriter_IndexAppearsAtThreshold(t *testing.T) {
 
 	sc := logutil.ReadSidecar(opts.LogPath)
 	require.NotEmpty(t, sc.Index, "index must exist once the segment crosses the threshold")
-	require.GreaterOrEqual(t, len(sc.Timestamps), 2, "expect chunk-0 backfill plus chunk-1 entry")
-	assert.Equal(t, uint32(0), sc.Timestamps[0].Line, "chunk-0 backfill must be at Line 0")
-	assert.Equal(t, uint32(1024), sc.Timestamps[1].Line, "second entry must be at Line 1024")
-}
-
-func TestLogWriter_TimestampIndex_TimeBasedEntriesAfterThreshold(t *testing.T) {
-	opts := newTestOpts(t.TempDir())
-	w, err := NewLogWriter(opts)
-	require.NoError(t, err)
-
-	var fakeTime atomic.Int64
-	fakeTime.Store(1700000000000)
-	w.nowMs = func() int64 {
-		// Advance 1500ms per write so that, post-threshold, every write
-		// crosses the 1-second time-based trigger.
-		return fakeTime.Add(1500)
-	}
-
-	for i := 0; i < 1100; i++ {
-		w.Write([]byte("line\n"))
-	}
-	require.NoError(t, w.Close())
-
-	entries := logutil.ReadSidecar(opts.LogPath).Timestamps
-	// Backfill at line 0 + line 1024 + every post-threshold line + final on
-	// close. We don't pin an exact count — just verify the time trigger fired
-	// at least a few times after the threshold started the index.
-	assert.GreaterOrEqual(t, len(entries), 5)
-}
-
-func TestLogWriter_TimestampIndex_FinalEntryOnClose(t *testing.T) {
-	opts := newTestOpts(t.TempDir())
-	w, err := NewLogWriter(opts)
-	require.NoError(t, err)
-
-	// Write past the lazy threshold so the close-time entry actually lands.
-	const total = 1100
-	for i := 0; i < total; i++ {
-		w.Write([]byte("line\n"))
-	}
-	require.NoError(t, w.Close())
-
-	entries := logutil.ReadSidecar(opts.LogPath).Timestamps
-	require.Greater(t, len(entries), 0)
-
-	// The last entry on Close records the total line count for the segment.
-	last := entries[len(entries)-1]
-	assert.Equal(t, uint32(total), last.Line)
-}
-
-func TestLogWriter_TimestampIndex_LookupUseCases(t *testing.T) {
-	opts := newTestOpts(t.TempDir())
-	w, err := NewLogWriter(opts)
-	require.NoError(t, err)
-
-	var fakeTime atomic.Int64
-	baseTime := int64(1700000000000)
-	fakeTime.Store(baseTime)
-	w.nowMs = func() int64 {
-		return fakeTime.Add(2000)
-	}
-
-	// Run past the threshold so the timestamp index materialises with multiple
-	// entries that LookupLineRangeByTime can search through.
-	const total = 1500
-	for i := 0; i < total; i++ {
-		w.Write([]byte("log line\n"))
-	}
-	require.NoError(t, w.Close())
-
-	entries := logutil.ReadSidecar(opts.LogPath).Timestamps
-	require.GreaterOrEqual(t, len(entries), 3, "expect chunk-0 backfill plus post-threshold entries")
-
-	// Use case 1: "what time is line 1100?" — the timestamp must fall inside
-	// the run's window.
-	ts := logutil.LookupTimestampByLine(entries, 1100)
-	firstTs := entries[0].Timestamp
-	lastTs := entries[len(entries)-1].Timestamp
-	assert.GreaterOrEqual(t, ts, firstTs)
-	assert.LessOrEqual(t, ts, lastTs)
-
-	// Use case 2: "show me a window inside the run". Anchor the window in the
-	// actual entry timestamps so we know it overlaps real lines.
-	fromMs := entries[1].Timestamp
-	toMs := entries[len(entries)-1].Timestamp
-	startLine, endLine := logutil.LookupLineRangeByTime(entries, fromMs, toMs)
-	assert.GreaterOrEqual(t, endLine, startLine)
-	assert.Less(t, startLine, uint32(total))
+	assert.Equal(t, int64(0), sc.Index[0], "chunk-0 backfill must be at offset 0")
 }
 
 // TestLogWriter_WriteLineEvent_MonotonicAcrossRotations is the invariant for

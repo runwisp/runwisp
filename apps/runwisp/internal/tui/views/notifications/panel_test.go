@@ -37,8 +37,8 @@ func TestNotificationsPanel_UpsertNew(t *testing.T) {
 	if !changed {
 		t.Fatal("expected first upsert to mark the panel changed")
 	}
-	if p.Total() != 1 {
-		t.Fatalf("Total: want 1, got %d", p.Total())
+	if len(p.items) != 1 {
+		t.Fatalf("Total: want 1, got %d", len(p.items))
 	}
 	// The badge is server-driven (SetUnread); Upsert alone never touches it.
 	if p.Unread() != 0 {
@@ -191,8 +191,8 @@ func TestNotificationsPanel_UpsertCoalesceRepaints(t *testing.T) {
 	if !p.Upsert(updated) {
 		t.Fatal("upserting an updated count should mark the panel changed")
 	}
-	if p.Total() != 1 {
-		t.Fatalf("coalesced upsert must not duplicate the row; Total = %d", p.Total())
+	if len(p.items) != 1 {
+		t.Fatalf("coalesced upsert must not duplicate the row; Total = %d", len(p.items))
 	}
 }
 
@@ -365,8 +365,8 @@ func TestNotificationsPanel_LoadHistoricalDoesNotTouchUnread(t *testing.T) {
 	if !p.LoadHistorical(items) {
 		t.Fatal("LoadHistorical with new items should mark the panel changed")
 	}
-	if p.Total() != 2 {
-		t.Fatalf("Total after LoadHistorical: want 2, got %d", p.Total())
+	if len(p.items) != 2 {
+		t.Fatalf("Total after LoadHistorical: want 2, got %d", len(p.items))
 	}
 	// Badge is server-authoritative via SetUnread; LoadHistorical only
 	// hydrates the items map.

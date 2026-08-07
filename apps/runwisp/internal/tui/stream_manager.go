@@ -250,14 +250,7 @@ func (sm *StreamManager) Reload() tea.Cmd {
 	}
 }
 
-// DeleteRuns soft-deletes every run matched by sel. Reversible with RestoreRuns.
-func (sm *StreamManager) DeleteRuns(sel model.RunSelector) tea.Cmd {
-	return sm.bulkAction("Deleted", func(c *apiclient.Client) (int, error) {
-		return c.BulkDeleteRuns(sel)
-	})
-}
-
-// RestoreRuns un-deletes every run matched by sel (the inverse of DeleteRuns).
+// RestoreRuns un-deletes every run matched by sel (the inverse of a delete).
 func (sm *StreamManager) RestoreRuns(sel model.RunSelector) tea.Cmd {
 	return sm.bulkAction("Restored", func(c *apiclient.Client) (int, error) {
 		return c.BulkRestoreRuns(sel)

@@ -4,9 +4,6 @@
 package server
 
 import (
-	"context"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -46,42 +43,4 @@ func TestStreamLimiter_GlobalCap(t *testing.T) {
 
 	r1()
 	r2()
-}
-
-func TestStreamLimiter_Middleware503(t *testing.T) {
-	l := newStreamLimiter(1, 1)
-
-	entered := make(chan struct{})
-	called := 0
-	h := l.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called++
-		close(entered)
-		// hold the slot until we let the next request through
-		<-r.Context().Done()
-	}))
-
-	holdReq := httptest.NewRequest("GET", "/", nil)
-	holdCtx, cancel := context.WithCancel(holdReq.Context())
-	holdReq = holdReq.WithContext(context.WithValue(holdCtx, peerAddrContextKey, "127.0.0.1:1"))
-	holdW := httptest.NewRecorder()
-
-	done := make(chan struct{})
-	go func() {
-		h.ServeHTTP(holdW, holdReq)
-		close(done)
-	}()
-
-	// Wait for the goroutine to enter the handler.
-	<-entered
-
-	overReq := httptest.NewRequest("GET", "/", nil)
-	overReq = overReq.WithContext(context.WithValue(overReq.Context(), peerAddrContextKey, "127.0.0.2:1"))
-	overW := httptest.NewRecorder()
-	h.ServeHTTP(overW, overReq)
-
-	assert.Equal(t, http.StatusServiceUnavailable, overW.Code)
-	assert.Equal(t, 1, called, "second request should have been refused before reaching the handler")
-
-	cancel()
-	<-done
 }

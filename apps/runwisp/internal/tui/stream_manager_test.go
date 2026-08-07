@@ -624,7 +624,6 @@ func TestStreamManager_BulkActions_HappyPath(t *testing.T) {
 		verb     string
 		affected int
 	}{
-		{"delete", sm.DeleteRuns(sel), "Deleted", 3},
 		{"restore", sm.RestoreRuns(sel), "Restored", 3},
 		{"cancel", sm.CancelRuns(sel), "Cancelled", 3},
 		// Rerun reports the number of runs it spawned, not the affected count.

@@ -295,9 +295,6 @@ func (s *Sidebar) HandleClick(y int) {
 // Filtering reports whether the type-to-filter sub-mode is active.
 func (s *Sidebar) Filtering() bool { return s.filtering }
 
-// FilterQuery returns the text typed into the filter so far.
-func (s *Sidebar) FilterQuery() string { return s.filter }
-
 // StartFilter enters the type-to-filter sub-mode with an empty query.
 func (s *Sidebar) StartFilter() {
 	s.filtering = true
@@ -574,21 +571,11 @@ func writeSidebarLine(b *strings.Builder, content string, width int) {
 	b.WriteString("\n")
 }
 
+// truncateToWidth clips to maxWidth display columns with an ellipsis, but leaves
+// the value untouched when maxWidth <= 0 (no budget declared → don't clip).
 func truncateToWidth(value string, maxWidth int) string {
-	if maxWidth <= 0 || lipgloss.Width(value) <= maxWidth {
+	if maxWidth <= 0 {
 		return value
 	}
-	if maxWidth == 1 {
-		return "…"
-	}
-
-	runes := []rune(value)
-	for len(runes) > 0 {
-		runes = runes[:len(runes)-1]
-		if lipgloss.Width(string(runes))+1 <= maxWidth {
-			return string(runes) + "…"
-		}
-	}
-
-	return "…"
+	return uikit.TruncateToWidth(value, maxWidth)
 }

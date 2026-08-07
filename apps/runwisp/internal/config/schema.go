@@ -240,14 +240,14 @@ type NotificationRoute struct {
 // set, supply an operator-provided certificate and key that take precedence
 // over auto self-signing on any bind.
 type Daemon struct {
-	AllowCloudDispatch bool          `toml:"-"`
-	ShutdownTimeout    time.Duration `toml:"-"`
-	ExternalURL        string        `toml:"-"`
-	MetricsEnabled     bool          `toml:"-"`
-	MetricsListen      string        `toml:"-"`
-	TLS                string        `toml:"-"`
-	TLSCert            string        `toml:"-"`
-	TLSKey             string        `toml:"-"`
+	AllowCloudDispatch bool
+	ShutdownTimeout    time.Duration
+	ExternalURL        string
+	MetricsEnabled     bool
+	MetricsListen      string
+	TLS                string
+	TLSCert            string
+	TLSKey             string
 }
 
 // Defaults provides fallback values applied to every task.

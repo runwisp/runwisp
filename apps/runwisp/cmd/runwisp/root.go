@@ -4,6 +4,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -94,7 +95,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&flags.DataDir, "data", "", "directory for all persistent data (default: ./.runwisp, or /var/lib/runwisp as root; env: RUNWISP_DATA)")
 	rootCmd.PersistentFlags().StringVar(&flags.Socket, "socket", os.Getenv("RUNWISP_SOCKET"), "control socket path; daemon binds it, CLI connects to it (default: <data>/runwisp.sock; env: RUNWISP_SOCKET)")
 	rootCmd.PersistentFlags().IntVarP(&flags.Port, "port", "p", 9477, "HTTP server port (env: RUNWISP_PORT)")
-	rootCmd.PersistentFlags().StringVar(&flags.Host, "host", firstNonEmpty(os.Getenv("RUNWISP_HOST"), "127.0.0.1"), "HTTP server bind address (use 0.0.0.0 to listen on all interfaces) (env: RUNWISP_HOST)")
+	rootCmd.PersistentFlags().StringVar(&flags.Host, "host", cmp.Or(os.Getenv("RUNWISP_HOST"), "127.0.0.1"), "HTTP server bind address (use 0.0.0.0 to listen on all interfaces) (env: RUNWISP_HOST)")
 	rootCmd.PersistentFlags().StringVar(&flags.logLevelRaw, "log-level", "", "log verbosity: debug, info, warn, error (env: RUNWISP_LOG_LEVEL)")
 	rootCmd.PersistentFlags().StringVar(&flags.logFormatRaw, "log-format", "", "log format: auto, text, json (env: RUNWISP_LOG_FORMAT)")
 
@@ -126,11 +127,11 @@ func init() {
 // output destination. Unknown values are rejected with a user-facing error
 // rather than silently falling back.
 func resolveLogConfig() error {
-	level, err := clilog.ParseLevel(firstNonEmpty(flags.logLevelRaw, os.Getenv("RUNWISP_LOG_LEVEL")))
+	level, err := clilog.ParseLevel(cmp.Or(flags.logLevelRaw, os.Getenv("RUNWISP_LOG_LEVEL")))
 	if err != nil {
 		return &userFacingError{title: err.Error()}
 	}
-	format, err := clilog.ParseFormat(firstNonEmpty(flags.logFormatRaw, os.Getenv("RUNWISP_LOG_FORMAT")))
+	format, err := clilog.ParseFormat(cmp.Or(flags.logFormatRaw, os.Getenv("RUNWISP_LOG_FORMAT")))
 	if err != nil {
 		return &userFacingError{title: err.Error()}
 	}
@@ -207,11 +208,4 @@ func defaultDataDir(euid int, env string) string {
 		return "/var/lib/runwisp"
 	}
 	return ".runwisp"
-}
-
-func firstNonEmpty(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }

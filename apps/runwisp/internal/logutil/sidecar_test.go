@@ -28,7 +28,6 @@ func TestReadSidecar_Missing(t *testing.T) {
 	sc := ReadSidecar(filepath.Join(t.TempDir(), "absent.log"))
 	assert.Equal(t, LogMeta{}, sc.Meta)
 	assert.Empty(t, sc.Index)
-	assert.Empty(t, sc.Timestamps)
 	assert.Empty(t, sc.Frames)
 }
 
@@ -39,15 +38,12 @@ func TestReadSidecar_AllRecordTypes(t *testing.T) {
 	writeContainer(t, logPath,
 		IndexRecord(0),
 		IndexRecord(4096),
-		TidxRecord(TimestampEntry{Line: 0, Timestamp: 1000}),
-		TidxRecord(TimestampEntry{Line: 1024, Timestamp: 2000}),
 		frameRec,
 		MetaRecord(LogMeta{RotatedLines: 5, RotatedBytes: 50, FinalLines: 10, Finalized: true}),
 	)
 
 	sc := ReadSidecar(logPath)
 	assert.Equal(t, []int64{0, 4096}, sc.Index)
-	assert.Equal(t, []TimestampEntry{{Line: 0, Timestamp: 1000}, {Line: 1024, Timestamp: 2000}}, sc.Timestamps)
 	assert.Equal(t, [][]string{{"a"}, {"b"}}, sc.Frames[7])
 	assert.Equal(t, LogMeta{RotatedLines: 5, RotatedBytes: 50, FinalLines: 10, Finalized: true}, sc.Meta)
 }
@@ -68,14 +64,13 @@ func TestReadSidecar_StopsAtTornTrailingRecord(t *testing.T) {
 	// Append a header claiming a payload longer than what follows.
 	f, err := os.OpenFile(MetaPath(logPath), os.O_APPEND|os.O_WRONLY, 0644)
 	require.NoError(t, err)
-	_, err = f.Write([]byte{recTidx, 0x10, 0x00, 0x00, 0x00, 'a', 'b'})
+	_, err = f.Write([]byte{recIndex, 0x10, 0x00, 0x00, 0x00, 'a', 'b'})
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
 
 	sc := ReadSidecar(logPath)
 	assert.Equal(t, int64(3), sc.Meta.RotatedLines)
-	assert.Equal(t, []int64{0}, sc.Index)
-	assert.Empty(t, sc.Timestamps, "torn trailing record must be ignored")
+	assert.Equal(t, []int64{0}, sc.Index, "torn trailing record must be ignored")
 }
 
 func TestReadSidecar_OversizedRecordStops(t *testing.T) {

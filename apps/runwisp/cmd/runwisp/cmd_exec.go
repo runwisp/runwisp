@@ -4,6 +4,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -122,11 +123,11 @@ func init() {
 }
 
 func runExec(taskName string, f Flags) (int, error) {
-	if remoteURL := firstNonEmpty(execFlags.URL, os.Getenv("RUNWISP_URL")); remoteURL != "" {
+	if remoteURL := cmp.Or(execFlags.URL, os.Getenv("RUNWISP_URL")); remoteURL != "" {
 		if execFlags.Daemon || execFlags.Standalone {
 			return 0, errors.New("--url cannot be combined with --daemon or --standalone")
 		}
-		password := firstNonEmpty(execFlags.Password, os.Getenv("RUNWISP_PASSWORD"))
+		password := cmp.Or(execFlags.Password, os.Getenv("RUNWISP_PASSWORD"))
 		return runExecViaRemote(taskName, remoteURL, password, execFlags.Detach)
 	}
 

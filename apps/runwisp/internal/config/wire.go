@@ -156,38 +156,28 @@ func toTaskParams(params []paramWire, taskName string) ([]model.TaskParam, error
 // identity returns the param's kind and canonical key, requiring exactly one of
 // env/arg/option/flag to be set.
 func (w *paramWire) identity() (model.ParamKind, string, error) {
-	set := make([]struct {
+	type identity struct {
 		kind model.ParamKind
 		key  string
-	}, 0, 1)
-	if w.Env != "" {
-		set = append(set, struct {
-			kind model.ParamKind
-			key  string
-		}{model.ParamEnv, w.Env})
 	}
-	if w.Arg != "" {
-		set = append(set, struct {
-			kind model.ParamKind
-			key  string
-		}{model.ParamArg, w.Arg})
+	candidates := []identity{
+		{model.ParamEnv, w.Env},
+		{model.ParamArg, w.Arg},
+		{model.ParamOption, w.Option},
+		{model.ParamFlag, w.Flag},
 	}
-	if w.Option != "" {
-		set = append(set, struct {
-			kind model.ParamKind
-			key  string
-		}{model.ParamOption, w.Option})
+	var set identity
+	n := 0
+	for _, c := range candidates {
+		if c.key != "" {
+			set = c
+			n++
+		}
 	}
-	if w.Flag != "" {
-		set = append(set, struct {
-			kind model.ParamKind
-			key  string
-		}{model.ParamFlag, w.Flag})
-	}
-	if len(set) != 1 {
+	if n != 1 {
 		return "", "", fmt.Errorf("each param must set exactly one of env/arg/option/flag")
 	}
-	return set[0].kind, set[0].key, nil
+	return set.kind, set.key, nil
 }
 
 // canonicalizeParamDefault renders a TOML default scalar as the canonical

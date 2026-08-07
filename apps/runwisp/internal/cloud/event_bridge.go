@@ -22,7 +22,6 @@ type EventBridge struct {
 	handler       *InboundHandler
 	tracker       *ExecutionTracker
 	sendReady     func(any) error
-	onStateChange func()
 	unsubscribers []func()
 }
 
@@ -31,14 +30,12 @@ func NewEventBridge(
 	handler *InboundHandler,
 	tracker *ExecutionTracker,
 	sendReady func(any) error,
-	onStateChange func(),
 ) *EventBridge {
 	return &EventBridge{
-		eventBus:      eventBus,
-		handler:       handler,
-		tracker:       tracker,
-		sendReady:     sendReady,
-		onStateChange: onStateChange,
+		eventBus:  eventBus,
+		handler:   handler,
+		tracker:   tracker,
+		sendReady: sendReady,
 	}
 }
 
@@ -115,7 +112,6 @@ func (b *EventBridge) handleRunEvent(ctx context.Context, event events.Event) {
 	if terminal {
 		b.tracker.Remove(executionID)
 	}
-	b.onStateChange()
 
 	if !terminal {
 		b.tracker.QueueUpdate(*update, b.sendReady)

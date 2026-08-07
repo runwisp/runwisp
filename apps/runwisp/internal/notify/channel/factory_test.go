@@ -184,18 +184,8 @@ func TestBuild_SmtpTemplatePathMissing(t *testing.T) {
 	assert.Contains(t, err.Error(), "read template")
 }
 
-// TestHttpTransport_BackoffOnlyReturnsHTTPProviderWithBackoff exercises the
-// branch where spec.Transport is nil but spec.Backoff is set — the helper
-// builds a default HTTPProvider and stamps the backoff onto it.
-func TestHttpTransport_BackoffOnlyReturnsHTTPProviderWithBackoff(t *testing.T) {
-	bo := notify.BackoffConfig{InitialInterval: 1, MaxInterval: 2, MaxElapsedTime: 3, Multiplier: 2}
-	p := httpTransport(NotifierSpec{Backoff: bo})
-	require.NotNil(t, p)
-	assert.Equal(t, bo, p.Backoff)
-}
-
-// TestHttpTransport_NoTransportNoBackoffReturnsNil covers the early-return
-// when both override fields are zero.
-func TestHttpTransport_NoTransportNoBackoffReturnsNil(t *testing.T) {
+// TestHttpTransport_NoTransportReturnsNil covers the nil-Transport case: the
+// helper returns nil so the channel constructs its own defaults.
+func TestHttpTransport_NoTransportReturnsNil(t *testing.T) {
 	assert.Nil(t, httpTransport(NotifierSpec{}))
 }

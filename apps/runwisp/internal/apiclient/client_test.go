@@ -383,12 +383,12 @@ func TestStreamRunEvents(t *testing.T) {
 
 func TestBaseURL(t *testing.T) {
 	c := New("http://localhost:9477/", "")
-	assert.Equal(t, "http://localhost:9477", c.BaseURL())
+	assert.Equal(t, "http://localhost:9477", c.baseURL)
 }
 
 func TestNewUnix_LocalShortCircuitsAuth(t *testing.T) {
 	c := NewUnix("/tmp/runwisp-test.sock")
-	assert.True(t, c.IsLocal(), "NewUnix client must be flagged as local")
+	assert.True(t, c.local, "NewUnix client must be flagged as local")
 	assert.True(t, c.IsAuthenticated(), "local client must report authenticated before any call")
 	// Authenticate is a no-op on the local path; it must not error even
 	// without a daemon at the socket path.

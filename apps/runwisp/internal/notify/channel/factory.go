@@ -56,13 +56,8 @@ type NotifierSpec struct {
 	TemplatePath string // optional override
 	// Transport overrides the channel's HTTP transport. Nil means use defaults.
 	// Daemon-level glue uses this to apply a global backoff override on HTTP
-	// providers (Slack, Telegram). SMTP, which does not speak HTTP, reads its
-	// retry settings from Backoff instead.
+	// providers (Slack, Telegram).
 	Transport *notify.HTTPProvider
-	// Backoff overrides the retry policy for non-HTTP providers (SMTP) and is
-	// the source of truth used to populate Transport when none is supplied for
-	// the HTTP providers. Zero means use DefaultBackoff.
-	Backoff notify.BackoffConfig
 	// RenderContext binds per-daemon values (external URL, fingerprint, tail
 	// reader) into the template's func map. Zero values produce safe defaults:
 	// missing external URL collapses link blocks, missing fingerprint shortens
@@ -161,7 +156,6 @@ func buildSMTP(spec NotifierSpec) (notify.Channel, error) {
 		Recipients:    spec.Recipients,
 		CC:            spec.CC,
 		BCC:           spec.BCC,
-		Backoff:       spec.Backoff,
 		Renderer:      r,
 	})
 }
@@ -179,7 +173,6 @@ func buildSendmail(spec NotifierSpec) (notify.Channel, error) {
 		Recipients: spec.Recipients,
 		CC:         spec.CC,
 		BCC:        spec.BCC,
-		Backoff:    spec.Backoff,
 		Renderer:   r,
 	})
 }
@@ -199,18 +192,9 @@ func buildWebhook(spec NotifierSpec) (notify.Channel, error) {
 }
 
 // httpTransport resolves the HTTP transport used by Slack/Telegram channels.
-// Precedence: a caller-supplied spec.Transport wins (the daemon constructs it
-// when it needs full control over the HTTPDoer). Otherwise, if spec.Backoff
-// is set, build a default HTTPProvider with that backoff applied; nil means
-// "let the channel construct its own defaults".
+// A caller-supplied spec.Transport wins (the daemon constructs it when it
+// needs full control over the HTTPDoer); nil means "let the channel construct
+// its own defaults".
 func httpTransport(spec NotifierSpec) *notify.HTTPProvider {
-	if spec.Transport != nil {
-		return spec.Transport
-	}
-	if spec.Backoff.IsZero() {
-		return nil
-	}
-	p := notify.NewHTTPProvider()
-	p.Backoff = spec.Backoff
-	return p
+	return spec.Transport
 }

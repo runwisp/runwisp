@@ -666,11 +666,11 @@ func TestExecView_Action_Running(t *testing.T) {
 func TestExecView_ServiceStopped_RoundTrip(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 	ev.SetServiceStopped(true)
-	if !ev.ServiceStopped() {
+	if !ev.serviceStopped {
 		t.Fatal("expected ServiceStopped()=true after SetServiceStopped(true)")
 	}
 	ev.SetServiceStopped(false)
-	if ev.ServiceStopped() {
+	if ev.serviceStopped {
 		t.Fatal("expected ServiceStopped()=false after SetServiceStopped(false)")
 	}
 }

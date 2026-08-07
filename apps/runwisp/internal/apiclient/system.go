@@ -83,7 +83,7 @@ func (c *Client) AuthStatus() (server.AuthStatusBody, error) {
 }
 
 func (c *Client) HealthCheck() error {
-	resp, err := c.doRaw("GET", "/health")
+	resp, err := c.doRaw("/health")
 	if err != nil {
 		return err
 	}

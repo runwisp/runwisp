@@ -311,12 +311,6 @@ func (p *Pane) JumpToLine(absLine int64) {
 	p.Follow = false
 }
 
-// ClearHighlight removes any current highlight. Called on the next user
-// scroll so the highlight pulse doesn't linger.
-func (p *Pane) ClearHighlight() {
-	p.HighlightLine = 0
-}
-
 // shiftCursor adjusts the anchor cursor's buffer index after lines are added or
 // removed at the front, dropping it to -1 if it falls out of the buffer.
 func (p *Pane) shiftCursor(delta int) {
@@ -399,11 +393,6 @@ func (p *Pane) CursorAnchor() (absLine int64, frameCount int, ok bool) {
 		return 0, 0, false
 	}
 	return int64(p.FirstLoadedLine + p.Cursor), line.FrameCount, true
-}
-
-// ClearCursor drops the anchor cursor.
-func (p *Pane) ClearCursor() {
-	p.Cursor = -1
 }
 
 func (p *Pane) ScrollDown(n int) {
@@ -567,12 +556,6 @@ func (p *Pane) PrependLines(lines []Line, firstLine int) {
 // buffer and there are older lines on the server that haven't been fetched.
 func (p *Pane) NeedsOlder() bool {
 	return p.Scroll == 0 && p.FirstLoadedLine > 0
-}
-
-// SetFirstLoadedLine records the absolute line number of lines[0]. Used after
-// a tail / page fetch seeds the buffer at a non-zero anchor.
-func (p *Pane) SetFirstLoadedLine(firstLine int) {
-	p.FirstLoadedLine = firstLine
 }
 
 // FirstLoadedLineNum returns the absolute line number of lines[0].
