@@ -4,6 +4,8 @@
 package tui
 
 import (
+	"strconv"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -41,22 +43,7 @@ func NewLogHistoryDialog(line int64, frames [][]string, committed string) LogHis
 }
 
 func frameLabel(n, total int) string {
-	return "Frame " + itoa(n) + " of " + itoa(total)
-}
-
-// itoa is a tiny helper so the dialog avoids pulling in strconv just for labels.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b [20]byte
-	i := len(b)
-	for n > 0 {
-		i--
-		b[i] = byte('0' + n%10)
-		n /= 10
-	}
-	return string(b[i:])
+	return "Frame " + strconv.Itoa(n) + " of " + strconv.Itoa(total)
 }
 
 // logHistoryVisibleRows is how many content rows the modal shows before it
@@ -114,7 +101,7 @@ func (d *LogHistoryDialog) View(screenWidth, screenHeight int) string {
 
 	lines := []string{
 		modalEmptyLine(innerWidth),
-		modalSurfaceLine("Frame history — line "+itoa(int(d.line)+1), innerWidth, uikit.ColorTextBright, true),
+		modalSurfaceLine("Frame history — line "+strconv.Itoa(int(d.line)+1), innerWidth, uikit.ColorTextBright, true),
 		modalEmptyLine(innerWidth),
 	}
 

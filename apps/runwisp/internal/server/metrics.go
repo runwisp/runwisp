@@ -69,11 +69,17 @@ func (mc *MetricsCollector) loop(interval time.Duration) {
 	}
 }
 
+// round1 truncates x to one decimal place, the resolution both the metrics
+// ring and /api/system report CPU/memory percentages at.
+func round1(x float64) float64 {
+	return float64(int(x*10)) / 10
+}
+
 func (mc *MetricsCollector) collect() {
 	s := model.MetricsSample{Timestamp: time.Now().Unix()}
 	populatePlatformSample(&s)
-	s.CPUUsage = float64(int(s.CPUUsage*10)) / 10
-	s.MemUsage = float64(int(s.MemUsage*10)) / 10
+	s.CPUUsage = round1(s.CPUUsage)
+	s.MemUsage = round1(s.MemUsage)
 
 	mc.mu.Lock()
 	mc.samples = append(mc.samples, s)

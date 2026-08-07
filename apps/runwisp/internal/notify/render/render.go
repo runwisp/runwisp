@@ -8,6 +8,7 @@ package render
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"html"
 	"net/url"
@@ -127,32 +128,10 @@ func funcMap(ctx TemplateContext) template.FuncMap {
 }
 
 // jsonEscape returns a JSON-quoted string body (without surrounding quotes)
-// safe for embedding inside a JSON template. Uses Go's strconv.Quote rules
-// adapted for JSON: backslash, double-quote, and control bytes only.
+// safe for embedding inside a JSON template.
 func jsonEscape(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	for _, r := range s {
-		switch r {
-		case '\\':
-			b.WriteString(`\\`)
-		case '"':
-			b.WriteString(`\"`)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\r':
-			b.WriteString(`\r`)
-		case '\t':
-			b.WriteString(`\t`)
-		default:
-			if r < 0x20 {
-				fmt.Fprintf(&b, `\u%04x`, r)
-				continue
-			}
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
+	b, _ := json.Marshal(s)
+	return string(b[1 : len(b)-1])
 }
 
 // tgEscape escapes the four characters Telegram HTML mode requires: <, >, &,

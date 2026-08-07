@@ -73,9 +73,6 @@ func New(client *apiclient.Client, taskName string) Model {
 // TaskName returns the task the overlay is scoped to.
 func (m *Model) TaskName() string { return m.taskName }
 
-// Hits returns the current result set (read-only — useful for tests).
-func (m *Model) Hits() []server.LogSearchHit { return m.hits }
-
 // Cursor returns the currently selected hit index, or -1 if there are no
 // hits.
 func (m *Model) Cursor() int {
@@ -177,19 +174,6 @@ func (m Model) handleEnter() (Model, tea.Cmd) {
 
 // Regex reports whether the overlay is in regex mode.
 func (m *Model) Regex() bool { return m.regex }
-
-// CaseSensitive reports whether the overlay is matching with case
-// sensitivity.
-func (m *Model) CaseSensitive() bool { return m.caseSensitive }
-
-// Query returns the current query string.
-func (m *Model) Query() string { return m.input.Value() }
-
-// Loading reports whether a request is in flight.
-func (m *Model) Loading() bool { return m.loading }
-
-// ErrorMessage returns any error message from the last failed request.
-func (m *Model) ErrorMessage() string { return m.errMsg }
 
 // startSearch fires off a search and returns the model with loading=true
 // plus the async command. Extracted so the Update switch stays short.

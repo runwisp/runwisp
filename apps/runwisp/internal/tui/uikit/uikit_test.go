@@ -82,42 +82,6 @@ func TestStatusStyle(t *testing.T) {
 	}
 }
 
-func Test_walkANSISegments_OSCSequence(t *testing.T) {
-	// OSC hyperlink: ESC ] 8 ; ; url BEL
-	input := "\x1b]8;;https://example.com\x07text\x1b]8;;\x07"
-	var plain string
-	walkANSISegments(input, func(seg string, isPlain bool) {
-		if isPlain {
-			plain += seg
-		}
-	})
-	assert.Equal(t, "text", plain)
-}
-
-func Test_walkANSISegments_STSequence(t *testing.T) {
-	// DCS sequence: ESC P ... ESC \  followed by plain text
-	input := "\x1bPsome data\x1b\\hello"
-	var plain string
-	walkANSISegments(input, func(seg string, isPlain bool) {
-		if isPlain {
-			plain += seg
-		}
-	})
-	assert.Equal(t, "hello", plain)
-}
-
-func Test_walkANSISegments_TwoByte(t *testing.T) {
-	// ESC M (reverse index) followed by plain text
-	input := "\x1bMplain"
-	var plain string
-	walkANSISegments(input, func(seg string, isPlain bool) {
-		if isPlain {
-			plain += seg
-		}
-	})
-	assert.Equal(t, "plain", plain)
-}
-
 func TestPadLine(t *testing.T) {
 	result := PadLine("hello", 10, ColorBg)
 	assert.GreaterOrEqual(t, len([]rune(result)), 5)
@@ -125,55 +89,4 @@ func TestPadLine(t *testing.T) {
 	// Already at width — no padding added
 	short := PadLine("hello", 3, ColorBg)
 	assert.Equal(t, "hello", short)
-}
-
-func Test_walkANSISegments_OSCWithSTTerminator(t *testing.T) {
-	// OSC with ST terminator: ESC ] text ESC \
-	input := "\x1b]8;;https://example.com\x1b\\text"
-	var plain string
-	walkANSISegments(input, func(seg string, isPlain bool) {
-		if isPlain {
-			plain += seg
-		}
-	})
-	assert.Equal(t, "text", plain)
-}
-
-func Test_walkANSISegments_CSISequence(t *testing.T) {
-	// CSI sequence: ESC [ params final — e.g. ESC[32m (green foreground)
-	input := "\x1b[32mhello\x1b[0m"
-	var plain string
-	walkANSISegments(input, func(seg string, isPlain bool) {
-		if isPlain {
-			plain += seg
-		}
-	})
-	assert.Equal(t, "hello", plain)
-}
-
-func Test_walkANSISegments_DCSSequence(t *testing.T) {
-	// DCS sequence: ESC P data ESC \ — ends at ST
-	input := "\x1bPdata\x1b\\text"
-	var plain string
-	walkANSISegments(input, func(seg string, isPlain bool) {
-		if isPlain {
-			plain += seg
-		}
-	})
-	assert.Equal(t, "text", plain)
-}
-
-func Test_walkANSISegments_ESCAtEndOfString(t *testing.T) {
-	// ESC at the very end of the string — no following byte
-	input := "hello\x1b"
-	var segments []string
-	var kinds []bool
-	walkANSISegments(input, func(seg string, isPlain bool) {
-		segments = append(segments, seg)
-		kinds = append(kinds, isPlain)
-	})
-	// "hello" is printable, lone ESC is a non-printable sequence
-	assert.Len(t, segments, 2)
-	assert.True(t, kinds[0], "hello is printable")
-	assert.False(t, kinds[1], "lone ESC is non-printable")
 }

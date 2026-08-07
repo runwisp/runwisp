@@ -29,7 +29,7 @@ func TestMapConcurrencyBehavior(t *testing.T) {
 		{model.ConcurrencyPolicy(""), ""},
 	}
 	for _, tc := range tests {
-		got := mapConcurrencyBehavior(tc.policy)
+		got := concurrencyBehaviorMap[tc.policy]
 		assert.Equal(t, tc.want, got, "policy=%q", tc.policy)
 	}
 }

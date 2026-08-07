@@ -12,20 +12,17 @@ import (
 )
 
 const (
-	defaultCloudURL        = "https://app.runwisp.com"
-	defaultRequestTimeout  = 30 * time.Second
-	defaultTaskSyncTimeout = 30 * time.Second
-	maxProtocolLogLines    = 5000
+	defaultCloudURL     = "https://app.runwisp.com"
+	requestTimeout      = 30 * time.Second
+	maxProtocolLogLines = 5000
 )
 
 type Config struct {
-	Enabled         bool
-	BaseURL         *url.URL
-	CloudToken      string
-	AgentVersion    string
-	Fingerprint     string
-	RequestTimeout  time.Duration
-	TaskSyncTimeout time.Duration
+	Enabled      bool
+	BaseURL      *url.URL
+	CloudToken   string
+	AgentVersion string
+	Fingerprint  string
 }
 
 // LoadConfig loads cloud configuration. CLI overrides (tokenOverride, urlOverride)
@@ -70,13 +67,11 @@ func LoadConfig(agentVersion, tokenOverride, urlOverride, fingerprint string) (C
 	}
 
 	return Config{
-		Enabled:         true,
-		BaseURL:         baseURL,
-		CloudToken:      cloudToken,
-		AgentVersion:    agentVersion,
-		Fingerprint:     fingerprint,
-		RequestTimeout:  defaultRequestTimeout,
-		TaskSyncTimeout: defaultTaskSyncTimeout,
+		Enabled:      true,
+		BaseURL:      baseURL,
+		CloudToken:   cloudToken,
+		AgentVersion: agentVersion,
+		Fingerprint:  fingerprint,
 	}, nil
 }
 

@@ -124,22 +124,3 @@ func TestBroadcastSample(t *testing.T) {
 	assert.Equal(t, 2, staleCount, "flipping back publishes again")
 	assert.False(t, lastStale)
 }
-
-// TestPopulateFallbackStats asserts populateFallbackStatsFromMemStats overwrites
-// all four of the destination's stats fields — including CPUUsage / MemUsage —
-// from a fresh sample (so any pre-populated CPU values get wiped).
-func TestPopulateFallbackStats(t *testing.T) {
-	stats := model.SystemStats{
-		CPUUsage: 99.0, // must be overwritten back to 0
-		MemUsage: 88.0, // ditto
-	}
-	m := runtime.MemStats{Sys: 2048, Alloc: 1024}
-	populateFallbackStatsFromMemStats(&stats, &m)
-
-	assert.Equal(t, uint64(2048), stats.MemTotal)
-	assert.Equal(t, uint64(1024), stats.MemUsed)
-	assert.InDelta(t, 0.0, stats.CPUUsage, 0.001,
-		"fallback wipes CPUUsage because runtime.MemStats can't report it")
-	assert.InDelta(t, 0.0, stats.MemUsage, 0.001,
-		"fallback wipes MemUsage for the same reason")
-}

@@ -6,7 +6,6 @@ package executor
 import (
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"sync"
 	"syscall"
@@ -26,7 +25,7 @@ const (
 
 // LogWriter writes log output to a plain-text `.log` file, accompanied by a
 // single hidden sidecar container (see logutil.MetaPath) that holds the line
-// index, timestamp index, rotation metadata and progress-bar frame history.
+// index, rotation metadata and progress-bar frame history.
 //
 // The container is created lazily: nothing is written to it until the run
 // produces something worth recording — the segment crosses LogIndexInterval
@@ -43,8 +42,8 @@ type LogWriter struct {
 	metaFile *os.File // nil until the first sidecar record is appended
 
 	// indexStarted reports whether the current segment has begun recording the
-	// line/timestamp index (i.e. crossed LogIndexInterval lines and backfilled
-	// the chunk-0 entries). Reset to false on rotation.
+	// line index (i.e. crossed LogIndexInterval lines and backfilled the chunk-0
+	// entry). Reset to false on rotation.
 	indexStarted bool
 
 	// Size limiting
@@ -72,11 +71,7 @@ type LogWriter struct {
 	rotatedLines int64
 	rotatedBytes int64
 
-	// Timestamp index
-	firstWriteMs int64            // unix ms of the first line in the segment, for lazy tidx backfill
-	lastTidxTime int64            // unix ms of last tidx entry
-	now          func() time.Time // injected wall-clock; never call time.Now() inline
-	nowMs        func() int64     // unix-ms view of now, derived in the constructor
+	now func() time.Time // injected wall-clock; never call time.Now() inline
 }
 
 // LogWriterOpts configures a LogWriter.
@@ -92,10 +87,8 @@ type LogWriterOpts struct {
 	// Overflow == kill_task. Invoked synchronously under the writer's mutex,
 	// so the callback must not block.
 	OnDiskPressure func(free, min int64, killedTask bool)
-	// DiskCheckInterval overrides the default 10MB probe interval. 0 = default.
-	DiskCheckInterval int64
-	// Now is the wall-clock source for system lines and the timestamp index.
-	// Required (must not be nil); production wiring passes time.Now.
+	// Now is the wall-clock source for system lines. Required (must not be nil);
+	// production wiring passes time.Now.
 	Now func() time.Time
 }
 
@@ -108,11 +101,6 @@ func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
 	overflow := opts.Overflow
 	if overflow == "" {
 		overflow = model.LogOverflowDropOld
-	}
-
-	interval := opts.DiskCheckInterval
-	if interval <= 0 {
-		interval = defaultDiskCheckInterval
 	}
 
 	now := opts.Now
@@ -136,9 +124,8 @@ func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
 		minFreeDisk:       opts.MinFreeDisk,
 		logDir:            opts.LogDir,
 		onDiskPressure:    opts.OnDiskPressure,
-		diskCheckInterval: interval,
+		diskCheckInterval: defaultDiskCheckInterval,
 		now:               now,
-		nowMs:             func() int64 { return now().UnixMilli() },
 	}, nil
 }
 
@@ -329,28 +316,23 @@ func (w *LogWriter) appendRecord(rec []byte) {
 	}
 }
 
-// updateSidecarsAfterWrite records index and timestamp entries following a
-// successful line write. Must be called with mu held, before lineCount is
-// incremented.
+// updateSidecarsAfterWrite records line-index entries following a successful
+// line write. Must be called with mu held, before lineCount is incremented.
 func (w *LogWriter) updateSidecarsAfterWrite() {
-	if w.firstWriteMs == 0 {
-		w.firstWriteMs = w.nowMs()
-	}
 	// Index policy: record a chunk offset only once the segment has produced a
 	// full chunk. Below that, the container holds no index records. The first
-	// crossing backfills the chunk-0 index and timestamp entries.
+	// crossing backfills the chunk-0 index entry.
 	if w.lineCount > 0 && w.lineCount%logutil.LogIndexInterval == 0 {
 		w.ensureIndexBackfill()
 		if w.indexStarted {
 			w.appendRecord(logutil.IndexRecord(w.currentOffset))
 		}
 	}
-	w.writeTidxEntry()
 }
 
-// ensureIndexBackfill writes the chunk-0 index and timestamp records the first
-// time the segment crosses LogIndexInterval lines, so readers can still locate
-// line 0. Subsequent calls are no-ops. Caller must hold mu.
+// ensureIndexBackfill writes the chunk-0 index record the first time the segment
+// crosses LogIndexInterval lines, so readers can still locate line 0.
+// Subsequent calls are no-ops. Caller must hold mu.
 func (w *LogWriter) ensureIndexBackfill() {
 	if w.indexStarted {
 		return
@@ -358,15 +340,6 @@ func (w *LogWriter) ensureIndexBackfill() {
 	// Chunk-0 index: line 0 sits at offset 0 in the segment.
 	w.appendRecord(logutil.IndexRecord(0))
 	w.indexStarted = true
-	// Chunk-0 timestamp. firstWriteMs is set on the first successful write to
-	// the segment, so the recovered line-0 timestamp matches the run's actual
-	// start within a few milliseconds even when the index opens much later.
-	ts := w.firstWriteMs
-	if ts == 0 {
-		ts = w.nowMs()
-	}
-	w.appendRecord(logutil.TidxRecord(logutil.TimestampEntry{Line: 0, Timestamp: ts}))
-	w.lastTidxTime = ts
 }
 
 func (w *LogWriter) writeSystemLine(msg string) {
@@ -380,32 +353,11 @@ func (w *LogWriter) writeSystemLine(msg string) {
 	w.lineCount++
 }
 
-// writeTidxEntry appends a timestamp index record if the dual trigger fires:
-// every LogIndexInterval lines OR every 1 second since last entry. No-op until
-// the index has been started for this segment. Caller must hold mu. Called
-// before lineCount is incremented.
-func (w *LogWriter) writeTidxEntry() {
-	if !w.indexStarted || w.lineCount > math.MaxUint32 {
-		return
-	}
-	now := w.nowMs()
-	if now < w.lastTidxTime {
-		now = w.lastTidxTime // enforce monotonicity against clock adjustments
-	}
-	if w.lineCount%logutil.LogIndexInterval == 0 || now-w.lastTidxTime >= 1000 {
-		w.appendRecord(logutil.TidxRecord(logutil.TimestampEntry{
-			Line:      uint32(w.lineCount),
-			Timestamp: now,
-		}))
-		w.lastTidxTime = now
-	}
-}
-
 // rotateTail rotates the current log file to keep only the most recent output.
 // The rotated-away segment is renamed to its hidden .prev slot. The sidecar
 // container is rewritten to preserve run-scoped frame history while resetting
-// the segment-scoped line/timestamp index; the new segment re-records its index
-// lazily if and when it crosses the threshold. Caller must hold mu.
+// the segment-scoped line index; the new segment re-records its index lazily if
+// and when it crosses the threshold. Caller must hold mu.
 func (w *LogWriter) rotateTail() error {
 	// Accumulate counts from the file we are about to rotate away.
 	w.rotatedLines += w.lineCount
@@ -441,8 +393,6 @@ func (w *LogWriter) rotateTail() error {
 	w.file = f
 	w.currentOffset = 0
 	w.lineCount = 0
-	w.firstWriteMs = 0
-	w.lastTidxTime = 0
 	w.truncated = true
 
 	// Rewrite the container: keep frame history, reset the index, persist the
@@ -460,8 +410,8 @@ func (w *LogWriter) rotateTail() error {
 
 // rewriteContainerForRotation truncates the sidecar container and rewrites it
 // with the run-scoped frame history (which spans the whole run) plus a fresh
-// rotation-metadata record. Segment-scoped index/timestamp records are dropped;
-// the new segment re-records them lazily. This keeps the container from growing
+// rotation-metadata record. Segment-scoped index records are dropped; the new
+// segment re-records them lazily. This keeps the container from growing
 // without bound across repeated rotations. Caller must hold mu.
 func (w *LogWriter) rewriteContainerForRotation() error {
 	frames := logutil.ReadSidecar(w.mainPath).Frames
@@ -496,11 +446,6 @@ func (w *LogWriter) Close() error {
 	defer w.mu.Unlock()
 
 	w.writeTotalProducedLine()
-
-	// Final timestamp sentinel so readers can bound the final segment.
-	if w.indexStarted {
-		w.writeFinalTidxEntry()
-	}
 
 	// Persist finalized metadata so readers never need to scan the file. This
 	// also creates the container for short runs that produced no index/frames.
@@ -546,37 +491,6 @@ func (w *LogWriter) writeTotalProducedLine() {
 			"Total process output: %s.",
 			config.FormatByteSize(w.totalProduced)))
 	}
-}
-
-// writeFinalTidxEntry appends a sentinel timestamp record at the current
-// lineCount so readers can bound the final segment. Caller must hold mu and
-// must only be called when the index has been started this segment.
-func (w *LogWriter) writeFinalTidxEntry() {
-	if w.lineCount == 0 || w.lineCount > math.MaxUint32 {
-		return
-	}
-	now := w.nowMs()
-	if now < w.lastTidxTime {
-		now = w.lastTidxTime
-	}
-	w.appendRecord(logutil.TidxRecord(logutil.TimestampEntry{
-		Line:      uint32(w.lineCount),
-		Timestamp: now,
-	}))
-}
-
-// Truncated reports whether any output was discarded.
-func (w *LogWriter) Truncated() bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.truncated
-}
-
-// TotalProduced returns the total bytes the process output before truncation.
-func (w *LogWriter) TotalProduced() int64 {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.totalProduced
 }
 
 // KilledByPolicy reports whether the writer cancelled the run because the

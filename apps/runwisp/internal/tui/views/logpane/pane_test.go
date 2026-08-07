@@ -68,7 +68,7 @@ func TestLogPane_RegionOverlay_StdoutBeforeStderr(t *testing.T) {
 
 func TestLogPane_PrependLines_Basic(t *testing.T) {
 	p := newTestPane(100_000)
-	p.SetFirstLoadedLine(50)
+	p.FirstLoadedLine = 50
 	p.SetTotalLines(100)
 
 	for i := 0; i < 10; i++ {
@@ -95,7 +95,7 @@ func TestLogPane_PrependLines_Basic(t *testing.T) {
 
 func TestLogPane_PrependLines_Empty(t *testing.T) {
 	p := newTestPane(100_000)
-	p.SetFirstLoadedLine(10)
+	p.FirstLoadedLine = 10
 	p.AppendLine(10, "stdout", "first")
 	p.Scroll = 0
 
@@ -108,13 +108,13 @@ func TestLogPane_NeedsOlder(t *testing.T) {
 	p := newTestPane(100_000)
 
 	// No older lines available — firstLoadedLine is 0
-	p.SetFirstLoadedLine(0)
+	p.FirstLoadedLine = 0
 	p.AppendLine(0, "stdout", "first")
 	p.Scroll = 0
 	assert.False(t, p.NeedsOlder())
 
 	// Older lines available, but not scrolled to top
-	p.SetFirstLoadedLine(50)
+	p.FirstLoadedLine = 50
 	p.Scroll = 5
 	assert.False(t, p.NeedsOlder())
 
@@ -125,7 +125,7 @@ func TestLogPane_NeedsOlder(t *testing.T) {
 
 func TestLogPane_EvictAndFollow_BumpsFirstLoadedLine(t *testing.T) {
 	p := newTestPane(10) // very small max
-	p.SetFirstLoadedLine(100)
+	p.FirstLoadedLine = 100
 
 	for i := 0; i < 15; i++ {
 		p.AppendLine(int64(100+i), "stdout", fmt.Sprintf("line %d", 100+i))
@@ -139,7 +139,7 @@ func TestLogPane_EvictAndFollow_BumpsFirstLoadedLine(t *testing.T) {
 
 func TestLogPane_AbsoluteLineNumber(t *testing.T) {
 	p := newTestPane(100_000)
-	p.SetFirstLoadedLine(500)
+	p.FirstLoadedLine = 500
 	p.AppendLine(500, "stdout", "a")
 	p.AppendLine(501, "stdout", "b")
 	p.AppendLine(502, "stdout", "c")
@@ -151,7 +151,7 @@ func TestLogPane_AbsoluteLineNumber(t *testing.T) {
 
 func TestLogPane_PrependLines_ScrollPositionInvariance(t *testing.T) {
 	p := newTestPane(100_000)
-	p.SetFirstLoadedLine(100)
+	p.FirstLoadedLine = 100
 	p.SetTotalLines(500)
 
 	for i := 0; i < 20; i++ {
@@ -179,7 +179,7 @@ func TestLogPane_PrependLines_ScrollPositionInvariance(t *testing.T) {
 
 func TestLogPane_EvictBelow(t *testing.T) {
 	p := newTestPane(100_000)
-	p.SetFirstLoadedLine(0)
+	p.FirstLoadedLine = 0
 	for i := 0; i < 10; i++ {
 		p.AppendLine(int64(i), "stdout", fmt.Sprintf("line %d", i))
 	}
@@ -242,7 +242,7 @@ func TestLogPane_ScrollDown_TriggersFollow(t *testing.T) {
 
 func TestLogPane_FirstLoadedLineNum(t *testing.T) {
 	p := newTestPane(100_000)
-	p.SetFirstLoadedLine(42)
+	p.FirstLoadedLine = 42
 	assert.Equal(t, 42, p.FirstLoadedLineNum())
 }
 
@@ -724,7 +724,7 @@ func TestLogPane_HandleKeyScroll_HScrollDisabled_HKeys_NotConsumed(t *testing.T)
 
 func TestLogPane_AppendLine_FirstLoadedLineNotOverriddenWhenSet(t *testing.T) {
 	p := newTestPane(100_000)
-	p.SetFirstLoadedLine(10)
+	p.FirstLoadedLine = 10
 	// FirstLoadedLine is already set; subsequent AppendLine calls must not reset it to 0.
 	p.AppendLine(10, "stdout", "first")
 	p.AppendLine(11, "stdout", "second")
@@ -745,7 +745,7 @@ func TestLogPane_EffectiveEndPadding_CappedAtHalfVisible(t *testing.T) {
 
 func TestLogPane_JumpToLine_InBuffer_CentresAndHighlights(t *testing.T) {
 	p := newTestPane(100_000)
-	p.SetFirstLoadedLine(100)
+	p.FirstLoadedLine = 100
 	for i := 0; i < 50; i++ {
 		p.AppendLine(int64(100+i), "stdout", "x")
 	}
@@ -767,7 +767,7 @@ func TestLogPane_JumpToLine_InBuffer_CentresAndHighlights(t *testing.T) {
 
 func TestLogPane_JumpToLine_OutOfBuffer_OnlyRecordsHighlight(t *testing.T) {
 	p := newTestPane(100_000)
-	p.SetFirstLoadedLine(100)
+	p.FirstLoadedLine = 100
 	for i := 0; i < 5; i++ {
 		p.AppendLine(int64(100+i), "stdout", "y")
 	}
@@ -785,7 +785,7 @@ func TestLogPane_JumpToLine_OutOfBuffer_OnlyRecordsHighlight(t *testing.T) {
 
 func TestLogPane_JumpToLine_ClampsTargetAtZero(t *testing.T) {
 	p := newTestPane(100_000)
-	p.SetFirstLoadedLine(100)
+	p.FirstLoadedLine = 100
 	for i := 0; i < 50; i++ {
 		p.AppendLine(int64(100+i), "stdout", "z")
 	}
@@ -802,7 +802,7 @@ func TestLogPane_JumpToLine_ClampsTargetAtZero(t *testing.T) {
 
 func TestLogPane_JumpToLine_ClampsTargetAtMaxScroll(t *testing.T) {
 	p := newTestPane(100_000)
-	p.SetFirstLoadedLine(0)
+	p.FirstLoadedLine = 0
 	for i := 0; i < 100; i++ {
 		p.AppendLine(int64(i), "stdout", "w")
 	}
@@ -820,7 +820,7 @@ func TestLogPane_JumpToLine_ClampsTargetAtMaxScroll(t *testing.T) {
 func TestLogPane_ClearHighlight(t *testing.T) {
 	p := newTestPane(100_000)
 	p.HighlightLine = 42
-	p.ClearHighlight()
+	p.HighlightLine = 0
 	if p.HighlightLine != 0 {
 		t.Fatalf("HighlightLine: got %d want 0", p.HighlightLine)
 	}

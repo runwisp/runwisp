@@ -79,11 +79,13 @@ func TestDialogManager_UpdateConfirm_Closes(t *testing.T) {
 	dialog := NewConfirmDialog("Test", "Confirm?", func() tea.Msg { return nil })
 	dm.ShowConfirm(dialog)
 
-	// Pressing Esc should close the dialog.
-	_, closed := dm.UpdateConfirm(tea.KeyMsg{Type: tea.KeyEscape})
+	// Pressing Esc should close the dialog. Production dismisses via
+	// UpdateConfirmKeep + DismissConfirm.
+	_, closed := dm.UpdateConfirmKeep(tea.KeyMsg{Type: tea.KeyEscape})
 	if !closed {
 		t.Fatal("expected confirm dialog to close on Esc")
 	}
+	dm.DismissConfirm()
 	if dm.HasConfirm() {
 		t.Fatal("expected confirm dialog to be nil after Esc")
 	}

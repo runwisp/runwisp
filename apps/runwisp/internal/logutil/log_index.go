@@ -9,7 +9,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 )
 
@@ -83,23 +82,6 @@ func stripSystemPrefix(line string) (string, bool) {
 		return r, true
 	}
 	return "", false
-}
-
-// CountTailLines opens logPath, reads its index, and returns the total number
-// of lines across rotated and current segments. Returns 0 when the file does
-// not exist. Closes its file handle before returning.
-func CountTailLines(logPath string) int64 {
-	f, err := os.Open(logPath)
-	if err != nil {
-		return 0
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return 0
-	}
-	sc := ReadSidecar(logPath)
-	return int64(CalculateTotalLines(f, sc.Index, info.Size(), sc.Meta))
 }
 
 // LogLineRecord is one line read back from disk by ReadLineRange. LineNum is
@@ -343,38 +325,4 @@ func CalculateLineOffset(rs io.ReadSeeker, indices []int64, line int, meta LogMe
 	skip := localLine - (chunkIdx * LogIndexInterval)
 	offset, _, _ := ScanOffset(rs, baseOffset, skip)
 	return offset
-}
-
-// ParseLogOffset parses a string offset; negative values count from end.
-func ParseLogOffset(offsetStr string, fileSize int64) int64 {
-	if offsetStr == "" {
-		return 0
-	}
-	offset, err := strconv.ParseInt(offsetStr, 10, 64)
-	if err != nil {
-		return 0
-	}
-	if offset < 0 {
-		if offset < -fileSize {
-			return 0
-		}
-		offset = fileSize + offset
-		if offset < 0 {
-			offset = 0
-		}
-	}
-	if offset > fileSize {
-		offset = fileSize
-	}
-	return offset
-}
-
-// ReadWithLineBoundaries reads up to maxBytes from the reader.
-func ReadWithLineBoundaries(r io.Reader, maxBytes int64) ([]byte, error) {
-	limitedReader := io.LimitReader(r, maxBytes)
-	data, err := io.ReadAll(limitedReader)
-	if err != nil && err != io.EOF {
-		return nil, err
-	}
-	return data, nil
 }

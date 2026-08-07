@@ -55,8 +55,8 @@ func (p *statsProvider) GetSystemStats() model.SystemStats {
 
 	populatePlatformStats(&stats)
 
-	stats.CPUUsage = float64(int(stats.CPUUsage*10)) / 10
-	stats.MemUsage = float64(int(stats.MemUsage*10)) / 10
+	stats.CPUUsage = round1(stats.CPUUsage)
+	stats.MemUsage = round1(stats.MemUsage)
 
 	return stats
 }
@@ -180,21 +180,4 @@ func formatUptime(duration time.Duration) string {
 		return fmt.Sprintf("%dh %dm", hours, minutes)
 	}
 	return fmt.Sprintf("%dm", minutes)
-}
-
-func populateFallbackStats(stats *model.SystemStats) {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	populateFallbackStatsFromMemStats(stats, &m)
-}
-
-// populateFallbackStatsFromMemStats is the deterministic core of
-// populateFallbackStats; see populateFallbackSampleFromMemStats.
-func populateFallbackStatsFromMemStats(stats *model.SystemStats, m *runtime.MemStats) {
-	var s model.MetricsSample
-	populateFallbackSampleFromMemStats(&s, m)
-	stats.MemTotal = s.MemTotal
-	stats.MemUsed = s.MemUsed
-	stats.MemUsage = s.MemUsage
-	stats.CPUUsage = s.CPUUsage
 }

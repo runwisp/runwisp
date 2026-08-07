@@ -24,28 +24,18 @@ const (
 	errInternal = "internal error"
 )
 
-// Handler returns an http.Handler that serves the embedded Svelte dashboard.
-// The embedded FS is opened once at construction; if the embed is malformed
-// the error is surfaced to the caller instead of panicking inside an HTTP
-// request hot path.
-func Handler() (http.Handler, error) {
+// Mount registers a handler serving the embedded Svelte dashboard on the given
+// chi router under "/*". The embedded FS is opened once at mount time; daemon
+// startup fails fast if the embedded asset tree is malformed instead of
+// panicking inside an HTTP request hot path.
+func Mount(router chi.Router) error {
 	stripped, err := fs.Sub(uiFiles, "dist")
 	if err != nil {
-		return nil, fmt.Errorf("ui: open embedded dist: %w", err)
+		return fmt.Errorf("ui: open embedded dist: %w", err)
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	router.Get("/*", func(w http.ResponseWriter, req *http.Request) {
 		serve(stripped, w, req)
-	}), nil
-}
-
-// Mount registers Handler on the given chi router under "/*". Daemon startup
-// fails fast if the embedded asset tree is malformed.
-func Mount(router chi.Router) error {
-	h, err := Handler()
-	if err != nil {
-		return err
-	}
-	router.Get("/*", h.ServeHTTP)
+	})
 	return nil
 }
 

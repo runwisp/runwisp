@@ -231,12 +231,10 @@ func (d *deduper) reserve(name string) {
 	}
 }
 
-// unique returns base if unused, otherwise base-2, base-3, … The first
-// collision for a base claims "-2" so the suffixes read naturally.
-func (d *deduper) unique(base string) string { return d.uniqueIn(base, "") }
-
-// uniqueIn is unique with a stable tie-breaker: when base is taken and seed is
-// non-empty, the collision resolves to base-seed rather than base-2.
+// uniqueIn returns base if unused, otherwise base-2, base-3, … (the first
+// collision for a base claims "-2" so the suffixes read naturally). With a
+// non-empty seed it gains a stable tie-breaker: a taken base resolves to
+// base-seed rather than base-2.
 //
 // This exists because a positional suffix is only stable while the input order
 // is. `[daemon] include_cron` reads a set of files that grows and shrinks — drop

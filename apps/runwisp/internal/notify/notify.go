@@ -27,7 +27,6 @@ type Service struct {
 	ingressMu     sync.RWMutex
 	ingressCh     chan *Event
 	ingressClosed bool
-	ingressSize   int
 
 	router   *Router
 	disp     *dispatcher
@@ -82,8 +81,6 @@ type Config struct {
 // New constructs a Service from already-built channels and pre-compiled rules.
 // It does not touch any I/O — all start-time work happens in Start.
 func New(cfg Config) *Service {
-	ingressSize := DefaultActionQueueSize
-	actionQueueSize := DefaultActionQueueSize
 	clock := cfg.Clock
 	if clock == nil {
 		clock = RealClock()
@@ -102,12 +99,11 @@ func New(cfg Config) *Service {
 		channelByID[c.ID()] = c
 	}
 	router := NewRouter(cfg.Rules, channelByID)
-	disp := newDispatcher(router, channelByID, actionQueueSize, clock, cfg.FailureSink, logger)
+	disp := newDispatcher(router, channelByID, DefaultActionQueueSize, clock, cfg.FailureSink, logger)
 
 	return &Service{
 		bus:            cfg.Bus,
-		ingressCh:      make(chan *Event, ingressSize),
-		ingressSize:    ingressSize,
+		ingressCh:      make(chan *Event, DefaultActionQueueSize),
 		router:         router,
 		disp:           disp,
 		channels:       cfg.Channels,
@@ -155,7 +151,7 @@ func (s *Service) Start(ctx context.Context) error {
 	s.logger.Info("notify started",
 		"channels", len(s.channels),
 		"rules", len(s.router.rules),
-		"ingress_size", s.ingressSize)
+		"ingress_size", DefaultActionQueueSize)
 	return nil
 }
 

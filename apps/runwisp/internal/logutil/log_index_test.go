@@ -118,44 +118,6 @@ func TestCalculateLineOffset_BeforeRotation(t *testing.T) {
 	assert.Equal(t, int64(0), offset)
 }
 
-func TestParseLogOffset(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		fileSize int64
-		want     int64
-	}{
-		{"empty", "", 100, 0},
-		{"positive", "50", 100, 50},
-		{"beyond end", "200", 100, 100},
-		{"negative from end", "-10", 100, 90},
-		{"negative beyond start", "-200", 100, 0},
-		{"invalid", "abc", 100, 0},
-		{"zero", "0", 100, 0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ParseLogOffset(tt.input, tt.fileSize)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
-func TestReadWithLineBoundaries(t *testing.T) {
-	f := tempFileWithContent(t, "hello world, this is a test\n")
-	data, err := ReadWithLineBoundaries(f, 5)
-	require.NoError(t, err)
-	assert.Equal(t, "hello", string(data))
-}
-
-func TestReadWithLineBoundaries_FullContent(t *testing.T) {
-	content := "line1\nline2\n"
-	f := tempFileWithContent(t, content)
-	data, err := ReadWithLineBoundaries(f, 1024)
-	require.NoError(t, err)
-	assert.Equal(t, content, string(data))
-}
-
 func TestSidecarIndex_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "test.log")

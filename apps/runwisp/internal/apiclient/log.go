@@ -22,7 +22,7 @@ func (c *Client) GetLogPage(taskName, runID string, from, limit int64) (server.L
 		q.Set("limit", fmt.Sprintf("%d", limit))
 	}
 	path := fmt.Sprintf("/api/tasks/%s/runs/%s/log?%s", taskName, runID, q.Encode())
-	resp, err := c.doRaw("GET", path)
+	resp, err := c.doRaw(path)
 	if err != nil {
 		return server.LogPageBody{}, err
 	}
@@ -40,7 +40,7 @@ func (c *Client) GetLogPage(taskName, runID string, from, limit int64) (server.L
 // streaming primitive.
 func (c *Client) GetLogRaw(taskName, runID string) (io.ReadCloser, error) {
 	path := fmt.Sprintf("/api/tasks/%s/runs/%s/log/raw", taskName, runID)
-	resp, err := c.doRaw("GET", path)
+	resp, err := c.doRaw(path)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func (c *Client) GetLogRaw(taskName, runID string) (io.ReadCloser, error) {
 // empty slice when the line has no recorded history.
 func (c *Client) GetLogLineHistory(taskName, runID string, n int64) ([][]string, error) {
 	path := fmt.Sprintf("/api/tasks/%s/runs/%s/log/line/%d/history", taskName, runID, n)
-	resp, err := c.doRaw("GET", path)
+	resp, err := c.doRaw(path)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func (c *Client) SearchLogs(taskName string, opts SearchLogsOptions) (server.Log
 		q.Set("cursor", opts.Cursor)
 	}
 	path := fmt.Sprintf("/api/tasks/%s/log/search?%s", taskName, q.Encode())
-	resp, err := c.doRaw("GET", path)
+	resp, err := c.doRaw(path)
 	if err != nil {
 		return server.LogSearchBody{}, err
 	}

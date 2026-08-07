@@ -331,9 +331,6 @@ func (v *ExecView) CanDelete() bool {
 // operator-stopped. The view uses this to flip the Stop/Restart button.
 func (v *ExecView) SetServiceStopped(stopped bool) { v.serviceStopped = stopped }
 
-// ServiceStopped reports the cached operator-stopped state for the parent service.
-func (v *ExecView) ServiceStopped() bool { return v.serviceStopped }
-
 func (v *ExecView) hasActionButton() bool {
 	return v.Action() != ActionNone
 }

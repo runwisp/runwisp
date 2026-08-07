@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -88,16 +89,9 @@ func (e *userFacingError) Error() string {
 // isUserFacing reports whether err (or any error in its chain) is a
 // userFacingError. Used by the CLI entry point to choose pretty rendering.
 func isUserFacing(err error) (*userFacingError, bool) {
-	for err != nil {
-		if u, ok := err.(*userFacingError); ok {
-			return u, true
-		}
-		type unwrapper interface{ Unwrap() error }
-		if u, ok := err.(unwrapper); ok {
-			err = u.Unwrap()
-			continue
-		}
-		return nil, false
+	var ufe *userFacingError
+	if errors.As(err, &ufe) {
+		return ufe, true
 	}
 	return nil, false
 }

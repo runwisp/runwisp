@@ -11,12 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFirstNonEmpty(t *testing.T) {
-	assert.Equal(t, "a", firstNonEmpty("a", "b"))
-	assert.Equal(t, "b", firstNonEmpty("", "b"))
-	assert.Equal(t, "", firstNonEmpty("", ""))
-}
-
 // newPortTestCmd builds a minimal cobra.Command with a "port" flag mirroring
 // rootCmd's registration, so resolvePortConfig can be exercised without
 // depending on package-level init() state or a full CLI invocation.

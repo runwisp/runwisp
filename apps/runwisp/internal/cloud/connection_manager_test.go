@@ -18,25 +18,15 @@ func TestConnectionManager_SendIfReady_NotConnected(t *testing.T) {
 	assert.Contains(t, err.Error(), "not connected")
 }
 
-// TestConnectionManager_StateTransitions drives the lifecycle through its
-// public mutators (attachSession to go ready; tracker.TrackRunning to mark an
-// active execution) and observes the resulting state. The state field is
-// package-private with no getter — this test is the only seam available, so
-// it intentionally inspects cm.state directly.
-func TestConnectionManager_StateTransitions(t *testing.T) {
-	t.Run("attachSession-with-no-active-executions-becomes-ready", func(t *testing.T) {
+// TestConnectionManager_ReadyLifecycle drives the connection through its public
+// mutators and observes the ready flag, which is what gates outbound sends.
+func TestConnectionManager_ReadyLifecycle(t *testing.T) {
+	t.Run("attachSession-reports-first-connect-and-goes-ready", func(t *testing.T) {
 		cm := newConnectionManager(NewExecutionTracker())
-		cm.attachSession(&wsSession{}) // exercises real ready-transition path
-		assert.Equal(t, StateReady, cm.state)
-	})
-
-	t.Run("active-execution-flips-state-to-executing", func(t *testing.T) {
-		tracker := NewExecutionTracker()
-		cm := newConnectionManager(tracker)
-		cm.attachSession(&wsSession{})
-		tracker.TrackRunning("exec-1", nil)
-		cm.refreshExecutionState()
-		assert.Equal(t, StateExecuting, cm.state)
+		isFirstConnect := cm.attachSession(&wsSession{outbound: make(chan []byte, 1)})
+		assert.True(t, isFirstConnect)
+		assert.True(t, cm.ready)
+		require.NoError(t, cm.sendIfReady("x"))
 	})
 
 	t.Run("detachSession-clears-ready", func(t *testing.T) {

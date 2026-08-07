@@ -1084,7 +1084,7 @@ func validateTaskEnums(task *model.Task) error {
 	}{
 		{"on_overlap for task " + task.Name, string(task.OnOverlap), validOnOverlap, false},
 		{"restart for task " + task.Name, string(task.Restart), validRestart, true},
-		{"retry_backoff for task " + task.Name, task.RetryBackoff, validRetryBackoff, true},
+		{"retry_backoff for task " + task.Name, task.RetryBackoff, validBackoff, true},
 		{"log_on_full for task " + task.Name, task.LogOnFull, validLogOnFull, true},
 		{"catch_up for task " + task.Name, string(task.CatchUp), validCatchUp, true},
 	}
@@ -1117,7 +1117,7 @@ func validateServiceTask(task *model.Task) error {
 		return fmt.Errorf("invalid instances for service %s: must be <= %d", task.Name, MaxServiceInstances)
 	}
 	if err := requireOneOf(fmt.Sprintf("restart_backoff for service %s", task.Name),
-		task.RestartBackoff, validRestartBackoff, true); err != nil {
+		task.RestartBackoff, validBackoff, true); err != nil {
 		return err
 	}
 	if task.HealthyAfter < 0 {
@@ -1205,8 +1205,7 @@ var (
 		string(model.RestartAlways),
 		string(model.RestartOnFailure),
 	}
-	validRetryBackoff     = []string{model.BackoffConstant, model.BackoffLinear, model.BackoffExponential}
-	validRestartBackoff   = []string{model.BackoffConstant, model.BackoffLinear, model.BackoffExponential}
+	validBackoff          = []string{model.BackoffConstant, model.BackoffLinear, model.BackoffExponential}
 	validLogOnFull        = []string{model.LogOverflowDropNew, model.LogOverflowDropOld, model.LogOverflowKillTask}
 	validCatchUp          = []string{string(model.MissedRunLatest), string(model.MissedRunAll), string(model.MissedRunSkip)}
 	defaultTaskLogMaxSize = int64(100 * 1024 * 1024)

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"sync/atomic"
 	"time"
 
@@ -20,25 +19,16 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-func envDuration(key string, fallback time.Duration) time.Duration {
-	if v := os.Getenv(key); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			return d
-		}
-	}
-	return fallback
-}
-
-var (
-	authReadTimeout         = envDuration("RUNWISP_CLOUD_AUTH_TIMEOUT", 20*time.Second)
-	heartbeatInterval       = envDuration("RUNWISP_CLOUD_HEARTBEAT_INTERVAL", 5*time.Second)
-	heartbeatSilenceTimeout = envDuration("RUNWISP_CLOUD_HEARTBEAT_SILENCE_TIMEOUT", 15*time.Second)
-	watchdogInterval        = envDuration("RUNWISP_CLOUD_WATCHDOG_INTERVAL", 2*time.Second)
-	writeTimeout            = envDuration("RUNWISP_CLOUD_WRITE_TIMEOUT", 5*time.Second)
+const (
+	authReadTimeout         = 20 * time.Second
+	heartbeatInterval       = 5 * time.Second
+	heartbeatSilenceTimeout = 15 * time.Second
+	watchdogInterval        = 2 * time.Second
+	writeTimeout            = 5 * time.Second
 	// serviceStatusResendInterval re-pushes every service's supervisor snapshot on
 	// this cadence so the control plane's view survives its snapshot TTL (90s) for
 	// a stable service that produces no lifecycle events. Kept well under that TTL.
-	serviceStatusResendInterval = envDuration("RUNWISP_CLOUD_SERVICE_STATUS_RESEND_INTERVAL", 30*time.Second)
+	serviceStatusResendInterval = 30 * time.Second
 	outboundMessageBufferSize   = 256
 	maxPendingExecutionUpdates  = 2048
 )
@@ -125,7 +115,7 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		config:       cfg,
 		runRepo:      deps.RunRepo,
 		logDir:       deps.LogDir,
-		syncClient:   NewTaskSyncClient(cfg.TaskSyncURL(), cfg.TaskSyncTimeout),
+		syncClient:   NewTaskSyncClient(cfg.TaskSyncURL(), requestTimeout),
 		taskManager:  deps.TaskManager,
 		localTasks:   localTasks,
 		availability: deps.Availability,
@@ -158,7 +148,6 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		client.handler,
 		client.tracker,
 		connMgr.sendIfReady,
-		connMgr.refreshExecutionState,
 	)
 	slog.Info("cloud integration enabled", "baseURL", cfg.BaseURL.String(), "fingerprint", cfg.Fingerprint)
 
@@ -222,7 +211,6 @@ func (client *Client) Run(ctx context.Context) error {
 			return nil
 		}
 
-		client.conn.setState(StateReconnecting)
 		delay := backoff.NextBackOff()
 		slog.Info("reconnecting", "delay", delay.String())
 
@@ -235,22 +223,17 @@ func (client *Client) Run(ctx context.Context) error {
 }
 
 func (client *Client) runConnectionAttempt(ctx context.Context) (bool, error) {
-	client.conn.setState(StateConnecting)
-
 	connection, err := client.dialWebSocket(ctx)
 	if err != nil {
-		client.conn.setState(StateConnectingFailed)
 		return false, err
 	}
 
 	if err := client.authenticate(ctx, connection); err != nil {
-		client.conn.setState(StateConnectingFailed)
 		closeConnection(connection, "auth failed")
 		return false, err
 	}
 
 	if err := client.syncTasks(ctx, connection); err != nil {
-		client.conn.setState(StateConnectingFailed)
 		closeConnection(connection, "task sync failed")
 		return false, err
 	}
@@ -283,7 +266,7 @@ func (client *Client) dialWebSocket(ctx context.Context) (*websocket.Conn, error
 		headers.Set("X-Runner-Protocol-Features", string(featJSON))
 	}
 
-	dialCtx, cancelDial := context.WithTimeout(ctx, client.config.RequestTimeout)
+	dialCtx, cancelDial := context.WithTimeout(ctx, requestTimeout)
 	defer cancelDial()
 
 	connection, _, err := websocket.Dial(dialCtx, client.config.WebSocketURL(), &websocket.DialOptions{
@@ -305,14 +288,11 @@ func (client *Client) authenticate(ctx context.Context, connection *websocket.Co
 		return &CloudError{Kind: CloudErrorKindAuth, Message: authResult.Error}
 	}
 
-	client.conn.setConnectionID(authResult.ConnectionID)
-	client.conn.setState(StateAuthenticated)
 	return nil
 }
 
 func (client *Client) syncTasks(ctx context.Context, connection *websocket.Conn) error {
-	client.conn.setState(StateSyncing)
-	syncCtx, cancelSync := context.WithTimeout(ctx, client.config.TaskSyncTimeout)
+	syncCtx, cancelSync := context.WithTimeout(ctx, requestTimeout)
 	syncResult, syncErr := client.syncClient.SyncTasks(syncCtx, client.config.CloudToken, client.snapshotForSync())
 	cancelSync()
 	if syncErr != nil {
@@ -387,7 +367,6 @@ func (client *Client) startSession(ctx context.Context, connection *websocket.Co
 		client.handler.ClearLogListeners()
 	}
 	if sessionErr != nil {
-		client.conn.setState(StateConnectingFailed)
 		return &CloudError{Kind: CloudErrorKindTransient, Message: "connection lost", Err: sessionErr}
 	}
 	return nil

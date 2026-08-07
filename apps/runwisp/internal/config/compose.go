@@ -578,17 +578,9 @@ func applyComposeOverride(task *model.Task, w *composeServiceOverrideWire, svcNa
 	if w == nil {
 		return nil
 	}
-	applyComposeOverrideScalars(task, w)
-	return applyComposeOverrideParsed(task, w, svcName)
-}
-
-// applyComposeOverrideScalars copies the override's already-typed fields
-// (strings, ints, pointers, maps) onto the task. Empty/zero values leave the
-// compose-import default intact; the APITrigger/Autostart pointers distinguish
-// "unset" from an explicit boolean.
-func applyComposeOverrideScalars(task *model.Task, w *composeServiceOverrideWire) {
 	applyComposeOverrideSupervision(task, w)
 	applyComposeOverrideEnv(task, w)
+	return applyComposeOverrideParsed(task, w, svcName)
 }
 
 // applyComposeOverrideSupervision copies the override's identity and

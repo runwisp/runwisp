@@ -24,6 +24,8 @@ import (
 
 var cronLive = cronprobe.State{Live: true, State: "is running"}
 
+func anyHold(c CronHoldChange) bool { return len(c.Released) > 0 || len(c.Held) > 0 }
+
 // holdRefreshFixture wires a reconciler over a baseline whose tasks came from a
 // crontab, with a real scheduler so a flip is observed where it matters: whether
 // a cron entry exists afterwards.
@@ -97,7 +99,7 @@ func TestRefreshCronHoldsLeavesFilesCronDoesNotRead(t *testing.T) {
 		Source: model.SourceCron, SourceFile: "/opt/myapp/jobs.cron"}
 	r, sched, _ := holdRefreshFixture(t, now, mine)
 
-	assert.False(t, r.RefreshCronHolds(cronLive).Any())
+	assert.False(t, anyHold(r.RefreshCronHolds(cronLive)))
 	assert.NotNil(t, sched.GetNextRun("mine"))
 }
 
@@ -109,7 +111,7 @@ func TestRefreshCronHoldsLeavesNonCronTasksAlone(t *testing.T) {
 	native := &model.Task{Name: "native", Cron: "0 3 * * *", Run: "mine.sh"}
 	r, sched, _ := holdRefreshFixture(t, now, native)
 
-	assert.False(t, r.RefreshCronHolds(cronLive).Any())
+	assert.False(t, anyHold(r.RefreshCronHolds(cronLive)))
 	assert.NotNil(t, sched.GetNextRun("native"))
 }
 
@@ -120,8 +122,8 @@ func TestRefreshCronHoldsIsIdempotent(t *testing.T) {
 	now := time.Date(2026, 8, 3, 14, 2, 0, 0, time.UTC)
 	r, sched, _ := holdRefreshFixture(t, now, heldCronTask("backup", "0 3 * * *"))
 
-	require.True(t, r.RefreshCronHolds(cronprobe.State{}).Any())
-	assert.False(t, r.RefreshCronHolds(cronprobe.State{}).Any(),
+	require.True(t, anyHold(r.RefreshCronHolds(cronprobe.State{})))
+	assert.False(t, anyHold(r.RefreshCronHolds(cronprobe.State{})),
 		"the same answer twice is not a second change")
 	assert.NotNil(t, sched.GetNextRun("backup"))
 }
@@ -134,7 +136,7 @@ func TestRefreshCronHoldsSkipsTasksRemovedSinceBaseline(t *testing.T) {
 	r, sched, db := holdRefreshFixture(t, now, heldCronTask("backup", "0 3 * * *"))
 	r.registry.Delete("backup")
 
-	assert.False(t, r.RefreshCronHolds(cronprobe.State{}).Any())
+	assert.False(t, anyHold(r.RefreshCronHolds(cronprobe.State{})))
 	assert.Nil(t, sched.GetNextRun("backup"))
 	assert.NotContains(t, db.registered, "backup")
 }

@@ -48,23 +48,6 @@ func TestRemoveEmptyParents(t *testing.T) {
 	assert.NoError(t, err, "root dir should still exist")
 }
 
-func TestCountTailLines_NonexistentFile(t *testing.T) {
-	got := CountTailLines("/nonexistent/path/run.log")
-	assert.Equal(t, int64(0), got)
-}
-
-func TestCountTailLines_WithLines(t *testing.T) {
-	dir := t.TempDir()
-	logPath := filepath.Join(dir, "run.log")
-
-	// Write 5 lines directly — no rotation, no index needed for a small file.
-	content := "line1\nline2\nline3\nline4\nline5\n"
-	require.NoError(t, os.WriteFile(logPath, []byte(content), 0644))
-
-	got := CountTailLines(logPath)
-	assert.Equal(t, int64(5), got)
-}
-
 // TestReadLogMeta_RoundTripsViaContainer writes a metadata record into the
 // container and reads it back through ReadLogMeta.
 func TestReadLogMeta_RoundTripsViaContainer(t *testing.T) {

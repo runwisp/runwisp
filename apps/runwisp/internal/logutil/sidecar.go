@@ -12,10 +12,9 @@ import (
 )
 
 // The sidecar container is a single hidden file per run holding everything that
-// is not the log body itself: rotation metadata, the line index, the timestamp
-// index and progress-bar frame history. It replaces the old `.idx`, `.tidx`,
-// `.meta` and `.fhist` files so a plain `ls` of a log directory shows only the
-// `.log` files.
+// is not the log body itself: rotation metadata, the line index and
+// progress-bar frame history. It replaces the old `.idx`, `.meta` and `.fhist`
+// files so a plain `ls` of a log directory shows only the `.log` files.
 //
 // The container is an append-only stream of typed records:
 //
@@ -30,7 +29,6 @@ import (
 const (
 	recMeta  byte = 'm' // payload: JSON LogMeta
 	recIndex byte = 'i' // payload: 8-byte LE byte offset (one per LogIndexInterval lines)
-	recTidx  byte = 't' // payload: TimestampIndexEntrySize-byte timestamp entry
 	recFrame byte = 'f' // payload: JSON frameHistoryEntry
 )
 
@@ -49,10 +47,9 @@ const maxSidecarRecord = 32 * 1024 * 1024
 // is empty/zero when the corresponding records are absent (e.g. a short run that
 // never crossed the index threshold, or a run with no in-place output).
 type Sidecar struct {
-	Meta       LogMeta
-	Index      []int64              // byte offsets, one per LogIndexInterval lines (current segment)
-	Timestamps []TimestampEntry     // current-segment timestamp index
-	Frames     map[int64][][]string // anchor line number -> recorded whole-region frames
+	Meta   LogMeta
+	Index  []int64              // byte offsets, one per LogIndexInterval lines (current segment)
+	Frames map[int64][][]string // anchor line number -> recorded whole-region frames
 }
 
 // EncodeSidecarRecord frames one typed record ready to append to the container.
@@ -79,13 +76,6 @@ func IndexRecord(offset int64) []byte {
 	var payload [8]byte
 	binary.LittleEndian.PutUint64(payload[:], uint64(offset))
 	return EncodeSidecarRecord(recIndex, payload[:])
-}
-
-// TidxRecord encodes a timestamp-index record.
-func TidxRecord(e TimestampEntry) []byte {
-	var payload [TimestampIndexEntrySize]byte
-	WriteTimestampEntry(payload[:], e)
-	return EncodeSidecarRecord(recTidx, payload[:])
 }
 
 // FrameRecord encodes one settled commit group's frame history, keyed to its
@@ -141,13 +131,6 @@ func (sc *Sidecar) apply(typ byte, payload []byte) {
 	case recIndex:
 		if len(payload) == 8 {
 			sc.Index = append(sc.Index, int64(binary.LittleEndian.Uint64(payload)))
-		}
-	case recTidx:
-		if len(payload) == TimestampIndexEntrySize {
-			sc.Timestamps = append(sc.Timestamps, TimestampEntry{
-				Line:      binary.LittleEndian.Uint32(payload[0:4]),
-				Timestamp: int64(binary.LittleEndian.Uint64(payload[4:12])),
-			})
 		}
 	case recFrame:
 		var e frameHistoryEntry

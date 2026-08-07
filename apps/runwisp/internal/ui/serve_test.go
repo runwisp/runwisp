@@ -143,10 +143,6 @@ func get(t *testing.T, h http.Handler, urlPath string) *httptest.ResponseRecorde
 }
 
 func TestHandlerAndMount(t *testing.T) {
-	h, err := Handler()
-	require.NoError(t, err)
-	require.NotNil(t, h)
-
 	router := chi.NewRouter()
 	require.NoError(t, Mount(router))
 

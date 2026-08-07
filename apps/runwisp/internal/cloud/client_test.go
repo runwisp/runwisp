@@ -69,13 +69,11 @@ func newTestEnv(t *testing.T, wsHandler wsHandlerFunc) *testEnv {
 	mockRepo := &testutil.MockRunRepository{}
 
 	cfg := Config{
-		Enabled:         true,
-		BaseURL:         baseURL,
-		CloudToken:      "test-token",
-		AgentVersion:    "0.0.0-test",
-		Fingerprint:     "test-fp",
-		RequestTimeout:  5 * time.Second,
-		TaskSyncTimeout: 5 * time.Second,
+		Enabled:      true,
+		BaseURL:      baseURL,
+		CloudToken:   "test-token",
+		AgentVersion: "0.0.0-test",
+		Fingerprint:  "test-fp",
 	}
 
 	client, err := NewClient(cfg, Dependencies{
@@ -257,11 +255,11 @@ func TestConnectionAuthSuccessReachesReady(t *testing.T) {
 
 	go func() { _ = env.client.Run(ctx) }()
 
-	// Wait until the client reaches Ready or Executing state
+	// Wait until the client's session is attached and ready.
 	require.Eventually(t, func() bool {
 		env.client.conn.mu.Lock()
 		defer env.client.conn.mu.Unlock()
-		return env.client.conn.state == StateReady || env.client.conn.state == StateExecuting
+		return env.client.conn.ready
 	}, 3*time.Second, 50*time.Millisecond)
 
 	cancel()
@@ -400,45 +398,6 @@ func TestRunConnectionAttempt_ShortSessionDoesNotResetBackoff(t *testing.T) {
 		"test premise: the session must end well before the stability threshold")
 	assert.False(t, resetBackoff,
 		"a session shorter than minStableSessionDuration must not signal a backoff reset")
-}
-
-// ---------- State machine tests ----------
-
-func TestStateTransitions(t *testing.T) {
-	tests := []struct {
-		name     string
-		from     LifecycleState
-		to       LifecycleState
-		expected LifecycleState
-	}{
-		{"boot to connecting", StateBoot, StateConnecting, StateConnecting},
-		{"connecting to authenticated", StateConnecting, StateAuthenticated, StateAuthenticated},
-		{"authenticated to syncing", StateAuthenticated, StateSyncing, StateSyncing},
-		{"syncing to ready", StateSyncing, StateReady, StateReady},
-		{"ready to executing", StateReady, StateExecuting, StateExecuting},
-		{"same state is no-op", StateReady, StateReady, StateReady},
-		{"ready to reconnecting", StateReady, StateReconnecting, StateReconnecting},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			env := newTestEnv(t, func(conn *websocket.Conn) {
-				conn.Close(websocket.StatusNormalClosure, "")
-			})
-			defer env.close()
-
-			env.client.conn.mu.Lock()
-			env.client.conn.state = tt.from
-			env.client.conn.mu.Unlock()
-
-			env.client.conn.setState(tt.to)
-
-			env.client.conn.mu.Lock()
-			actual := env.client.conn.state
-			env.client.conn.mu.Unlock()
-			assert.Equal(t, tt.expected, actual)
-		})
-	}
 }
 
 // ---------- Backoff tests ----------
@@ -757,10 +716,8 @@ func TestNewClient_CopiesLocalTasksAndSkipsNil(t *testing.T) {
 
 	original := &model.Task{Name: "alpha"}
 	client, err := NewClient(Config{
-		Enabled:         true,
-		BaseURL:         baseURL,
-		RequestTimeout:  time.Second,
-		TaskSyncTimeout: time.Second,
+		Enabled: true,
+		BaseURL: baseURL,
 	}, Dependencies{
 		TaskManager: &testTaskRunnerAdapter{inner: jm},
 		RunRepo:     &testutil.MockRunRepository{},

@@ -589,15 +589,5 @@ func padCell(s string, w int) string {
 // for the status badge, whose padding must take the row background, not the
 // badge color).
 func truncCell(s string, w int) string {
-	if w <= 0 {
-		return ""
-	}
-	if lipgloss.Width(s) <= w {
-		return s
-	}
-	runes := []rune(s)
-	if len(runes) > w-1 {
-		return string(runes[:w-1]) + "…"
-	}
-	return s
+	return uikit.TruncateToWidth(s, w)
 }

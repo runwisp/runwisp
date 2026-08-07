@@ -380,10 +380,10 @@ func TestSidebar_FilterNarrowsToMatchingTasks(t *testing.T) {
 	require.False(t, s.Filtering(), "fresh sidebar is not filtering")
 	s.StartFilter()
 	assert.True(t, s.Filtering(), "StartFilter enters the sub-mode")
-	assert.Equal(t, "", s.FilterQuery())
+	assert.Equal(t, "", s.filter)
 
 	s.FilterAppend("alp")
-	assert.Equal(t, "alp", s.FilterQuery())
+	assert.Equal(t, "alp", s.filter)
 
 	// Only the two tasks containing "alp" survive; the cursor lands on a match.
 	var names []string
@@ -397,7 +397,7 @@ func TestSidebar_FilterNarrowsToMatchingTasks(t *testing.T) {
 
 	// Backspace widens the query back to "al" — still both tasks.
 	s.FilterBackspace()
-	assert.Equal(t, "al", s.FilterQuery())
+	assert.Equal(t, "al", s.filter)
 }
 
 func TestSidebar_ViewRendersFilterLine(t *testing.T) {
@@ -415,7 +415,7 @@ func TestSidebar_FilterBackspaceEmptyIsNoOp(t *testing.T) {
 	s.SetSize(20, 20)
 	s.StartFilter()
 	s.FilterBackspace() // empty query → nothing to remove
-	assert.Equal(t, "", s.FilterQuery())
+	assert.Equal(t, "", s.filter)
 }
 
 func TestSidebar_StopFilterRestoresFullList(t *testing.T) {
@@ -427,7 +427,7 @@ func TestSidebar_StopFilterRestoresFullList(t *testing.T) {
 
 	s.StopFilter()
 	assert.False(t, s.Filtering())
-	assert.Equal(t, "", s.FilterQuery())
+	assert.Equal(t, "", s.filter)
 	assert.Equal(t, len(s.allItems), len(s.items), "StopFilter restores every item")
 }
 

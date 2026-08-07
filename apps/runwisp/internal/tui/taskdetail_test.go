@@ -163,7 +163,7 @@ func TestTaskDetailDialog_View_HealthWithFailuresAndOther(t *testing.T) {
 		LastFailure: &now,
 	})
 
-	// A narrow width forces clipToWidth to truncate the wide breakdown row.
+	// A narrow width forces uikit.TruncateToWidth to truncate the wide breakdown row.
 	out := d.View(40, 40)
 	for _, want := range []string{"failed", "Success rate", "Last failure"} {
 		if !strings.Contains(out, want) {

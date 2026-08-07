@@ -280,27 +280,10 @@ func taskDetailRow(label, value string, valueColor lipgloss.Color, labelCol, inn
 		Foreground(uikit.ColorTextMuted).
 		Width(labelCol).
 		Render(label)
-	value = clipToWidth(value, innerWidth-labelCol)
+	value = uikit.TruncateToWidth(value, innerWidth-labelCol)
 	valueCell := lipgloss.NewStyle().
 		Background(uikit.ColorBgLight).
 		Foreground(valueColor).
 		Render(value)
 	return uikit.PadLine(labelCell+valueCell, innerWidth, uikit.ColorBgLight)
-}
-
-// clipToWidth truncates s to at most w display columns, appending an ellipsis
-// when it had to cut. Pre-styled segments (which carry ANSI) are measured by
-// their visible width, so a styled value that already fits is returned as-is.
-func clipToWidth(s string, w int) string {
-	if w <= 0 {
-		return ""
-	}
-	if lipgloss.Width(s) <= w {
-		return s
-	}
-	r := []rune(s)
-	for len(r) > 0 && lipgloss.Width(string(r))+1 > w {
-		r = r[:len(r)-1]
-	}
-	return string(r) + "…"
 }

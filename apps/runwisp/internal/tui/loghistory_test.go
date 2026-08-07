@@ -223,12 +223,6 @@ func TestAnchorNav_IgnoredWhenPaneNotFocused(t *testing.T) {
 	assert.False(t, handled, "anchor nav must yield when the pane isn't focused")
 }
 
-func TestLogHistory_Itoa(t *testing.T) {
-	assert.Equal(t, "0", itoa(0))
-	assert.Equal(t, "7", itoa(7))
-	assert.Equal(t, "128", itoa(128))
-}
-
 func TestLogHistoryDialog_ViewClipsWideRows(t *testing.T) {
 	wide := strings.Repeat("X", 500)
 	d := NewLogHistoryDialog(0, [][]string{{wide}}, "done")

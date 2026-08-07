@@ -220,7 +220,7 @@ func TestUniqueInFallsBackWithinOneSource(t *testing.T) {
 // the documented behaviour and the goldens say.
 func TestUniqueWithoutASeedKeepsPositionalSuffixes(t *testing.T) {
 	d := newDeduper()
-	got := []string{d.unique("job"), d.unique("job"), d.unique("job")}
+	got := []string{d.uniqueIn("job", ""), d.uniqueIn("job", ""), d.uniqueIn("job", "")}
 	want := []string{"job", "job-2", "job-3"}
 	for i := range want {
 		if got[i] != want[i] {

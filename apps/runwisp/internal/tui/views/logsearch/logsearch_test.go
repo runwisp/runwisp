@@ -23,8 +23,8 @@ func TestNew_InitializesFields(t *testing.T) {
 	if m.TaskName() != "task1" {
 		t.Fatalf("TaskName: got %q want %q", m.TaskName(), "task1")
 	}
-	if m.Hits() != nil {
-		t.Fatalf("Hits should be nil initially, got %#v", m.Hits())
+	if m.hits != nil {
+		t.Fatalf("Hits should be nil initially, got %#v", m.hits)
 	}
 	if m.Cursor() != -1 {
 		t.Fatalf("Cursor should be -1 when no hits, got %d", m.Cursor())
@@ -35,17 +35,17 @@ func TestNew_InitializesFields(t *testing.T) {
 	if m.Regex() {
 		t.Fatal("Regex should default to false")
 	}
-	if m.CaseSensitive() {
+	if m.caseSensitive {
 		t.Fatal("CaseSensitive should default to false")
 	}
-	if m.Query() != "" {
-		t.Fatalf("Query should default to empty, got %q", m.Query())
+	if m.input.Value() != "" {
+		t.Fatalf("Query should default to empty, got %q", m.input.Value())
 	}
-	if m.Loading() {
+	if m.loading {
 		t.Fatal("Loading should default to false")
 	}
-	if m.ErrorMessage() != "" {
-		t.Fatalf("ErrorMessage should default to empty, got %q", m.ErrorMessage())
+	if m.errMsg != "" {
+		t.Fatalf("ErrorMessage should default to empty, got %q", m.errMsg)
 	}
 }
 
@@ -64,7 +64,7 @@ func TestUpdate_TabTogglesRegex(t *testing.T) {
 func TestUpdate_AltCTogglesCaseSensitive(t *testing.T) {
 	m := newTestModel(t)
 	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c"), Alt: true})
-	if !m2.CaseSensitive() {
+	if !m2.caseSensitive {
 		t.Fatal("expected case-sensitive on after alt+c")
 	}
 }
@@ -159,7 +159,7 @@ func TestUpdate_EnterWithQueryStartsSearch(t *testing.T) {
 		t.Fatal("input should be focused after New()")
 	}
 	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if !m2.Loading() {
+	if !m2.loading {
 		t.Fatal("expected Loading=true after starting search")
 	}
 	if cmd == nil {
@@ -186,14 +186,14 @@ func TestUpdate_ResultsMsg_Success(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("expected no cmd on results")
 	}
-	if m2.Loading() {
+	if m2.loading {
 		t.Fatal("expected Loading=false after results")
 	}
-	if m2.ErrorMessage() != "" {
-		t.Fatalf("expected error cleared, got %q", m2.ErrorMessage())
+	if m2.errMsg != "" {
+		t.Fatalf("expected error cleared, got %q", m2.errMsg)
 	}
-	if len(m2.Hits()) != 1 || m2.Cursor() != 0 {
-		t.Fatalf("hits/cursor wrong: hits=%d cursor=%d", len(m2.Hits()), m2.Cursor())
+	if len(m2.hits) != 1 || m2.Cursor() != 0 {
+		t.Fatalf("hits/cursor wrong: hits=%d cursor=%d", len(m2.hits), m2.Cursor())
 	}
 }
 
@@ -203,13 +203,13 @@ func TestUpdate_ResultsMsg_Error(t *testing.T) {
 	m.hits = []server.LogSearchHit{{RunID: "r1", N: 1}}
 	m.cursor = 0
 	m2, _ := m.Update(resultsMsg{err: errBoom{}})
-	if m2.Loading() {
+	if m2.loading {
 		t.Fatal("expected Loading=false after error")
 	}
-	if m2.ErrorMessage() != "boom" {
-		t.Fatalf("ErrorMessage: got %q", m2.ErrorMessage())
+	if m2.errMsg != "boom" {
+		t.Fatalf("ErrorMessage: got %q", m2.errMsg)
 	}
-	if m2.Hits() != nil {
+	if m2.hits != nil {
 		t.Fatal("hits should be cleared on error")
 	}
 }
@@ -218,8 +218,8 @@ func TestUpdate_PassesThroughToTextInput(t *testing.T) {
 	m := newTestModel(t)
 	// Typing a rune should reach the textinput component.
 	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
-	if m2.Query() != "a" {
-		t.Fatalf("Query after typing 'a': got %q", m2.Query())
+	if m2.input.Value() != "a" {
+		t.Fatalf("Query after typing 'a': got %q", m2.input.Value())
 	}
 }
 

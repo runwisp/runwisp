@@ -164,17 +164,6 @@ func (c *Client) Token() string {
 	return c.token
 }
 
-// IsLocal reports whether this client talks over a Unix socket. Callers can
-// use this to skip work (login prompts, password validation) that doesn't
-// apply on the local path.
-func (c *Client) IsLocal() bool {
-	return c.local
-}
-
-func (c *Client) BaseURL() string {
-	return c.baseURL
-}
-
 // doJSON performs a JSON request. reqBody is marshalled if non-nil.
 // respBody is unmarshalled from the response if non-nil.
 func (c *Client) doJSON(method, path string, reqBody, respBody any) error {
@@ -202,9 +191,9 @@ func (c *Client) doJSON(method, path string, reqBody, respBody any) error {
 	return nil
 }
 
-// doRaw performs a request and returns the raw response. Caller must close the body.
-func (c *Client) doRaw(method, path string) (*http.Response, error) {
-	return c.doRequest(method, path, nil, false)
+// doRaw performs a GET request and returns the raw response. Caller must close the body.
+func (c *Client) doRaw(path string) (*http.Response, error) {
+	return c.doRequest(http.MethodGet, path, nil, false)
 }
 
 // doRequest is the shared transport helper for all HTTP calls.
