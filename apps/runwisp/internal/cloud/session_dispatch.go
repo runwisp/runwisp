@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -160,7 +161,24 @@ func (sr *sessionRunner) watchdogLoop(ctx context.Context, session *wsSession) e
 	}
 }
 
-func (sr *sessionRunner) handleInboundPayload(ctx context.Context, session *wsSession, payload []byte) error {
+// handleInboundPayload decodes one inbound frame and dispatches it. It is the
+// single funnel every peer-supplied message passes through, which is why the
+// panic guard lives here rather than at each handler: the read loop runs on its
+// own goroutine, so an unrecovered panic anywhere below takes down the entire
+// daemon — every supervised service with it — over one malformed frame from an
+// optional integration. The nil guards on the required pointer fields
+// (Execution, Service, Action) are still the real fix for the shapes we know
+// about; this makes the next one a logged error instead of an outage.
+func (sr *sessionRunner) handleInboundPayload(ctx context.Context, session *wsSession, payload []byte) (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			slog.Error("recovered from panic handling inbound cloud message",
+				"err", rec, "stack", string(debug.Stack()))
+			sr.sendProtocolError(session, CloudErrorKindValidation, "message could not be processed", "", "")
+			err = fmt.Errorf("panic handling inbound message: %v", rec)
+		}
+	}()
+
 	decoded, err := DecodeInboundMessage(payload)
 	if err != nil {
 		if errors.Is(err, ErrUnsupportedMessageType) {

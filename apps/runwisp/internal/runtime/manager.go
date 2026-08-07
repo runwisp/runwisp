@@ -862,18 +862,19 @@ func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run, restartA
 // three phases are split out so each reads as one concern and can be tested
 // without driving a full run.
 func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run *model.Run, active *ActiveRun) {
+	// Under the manager lock: GetActiveRuns takes an RLock and copies these same
+	// run fields, so writing them unlocked races with a concurrent snapshot.
+	m.mu.Lock()
 	run.Status = model.PhaseRunning
 	run.StartAt = &active.StartedAt
 	if task.Kind.IsService() {
 		// Stamp the live-readiness clock the moment the instance is running so
-		// dependents gating on this service measure uptime from here. Under the
-		// manager lock since the supervisor is not internally synchronised.
-		m.mu.Lock()
+		// dependents gating on this service measure uptime from here.
 		if ts := m.tasks[task.Name]; ts != nil && ts.supervisor != nil {
 			ts.supervisor.MarkLive(run.InstanceIndex)
 		}
-		m.mu.Unlock()
 	}
+	m.mu.Unlock()
 	m.persistence.PersistExisting(run)
 	m.publishRun(events.EventRunStarted, run)
 
