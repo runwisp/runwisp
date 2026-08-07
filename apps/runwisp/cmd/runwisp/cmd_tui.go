@@ -173,7 +173,6 @@ func promptPassword(prompt string) (string, error) {
 	return strings.TrimSpace(string(pw)), nil
 }
 
-// buildStartupInfoFromDaemon converts DaemonInfo into the TUI's StartupInfo.
 func buildStartupInfoFromDaemon(info *model.DaemonInfo) uikit.StartupInfo {
 	si := uikit.StartupInfo{}
 	if info == nil {

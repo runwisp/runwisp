@@ -53,7 +53,6 @@
         if (path === "/") return "overview";
         if (path.startsWith("/runs")) return "runs";
         if (path.startsWith("/tasks/")) {
-            //Extract task name after /tasks/
             const parts = path.split("/");
             return parts[2] ? toTaskPageId(parts[2]) : "";
         }

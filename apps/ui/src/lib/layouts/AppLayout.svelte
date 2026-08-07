@@ -98,7 +98,6 @@
         ></button>
     {/if}
 
-    <!-- Sidebar -->
     <aside
         id="app-sidebar"
         aria-label="Primary"
@@ -128,7 +127,6 @@
             </button>
         </div>
 
-        <!-- Navigation -->
         <div class="flex-1 overflow-y-auto px-3 py-6">
             <nav class="mb-6 space-y-0.5">
                 <a
@@ -221,17 +219,13 @@
             {/if}
         </div>
 
-        <!-- Status Footer -->
         <ConnectionStatusIndicator />
     </aside>
 
-    <!-- Main Content -->
     <main class="flex flex-1 flex-col overflow-hidden">
-        <!-- Topbar -->
         <header
             class="flex h-[52px] items-center justify-between border-b border-outline bg-surface-raised px-6"
         >
-            <!-- Breadcrumb / Title -->
             <div class="flex min-w-0 items-center gap-3">
                 <button
                     type="button"
@@ -274,7 +268,6 @@
 
         <StaleConfigBanner />
 
-        <!-- Scrollable Area -->
         <div class="flex-1 overflow-y-auto scroll-smooth p-6">
             {@render children()}
         </div>

@@ -290,7 +290,6 @@ func TestSlack_RunFailed_WithURLAndTail(t *testing.T) {
 	assert.Contains(t, concatTexts, "View full run")
 	assert.Contains(t, concatTexts, "from runwisp · bright-falcon")
 
-	// Check the action block carries the expected URL.
 	foundButton := false
 	for _, b := range blocks {
 		obj, _ := b.(map[string]any)

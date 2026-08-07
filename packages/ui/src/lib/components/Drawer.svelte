@@ -110,7 +110,6 @@
             aria-labelledby={title ? "drawer-title" : undefined}
             transition:fly={{ ...flyParams[side], duration: 250 }}
         >
-            <!-- Header -->
             {#if header}
                 <div class="border-b border-outline px-6 py-4">
                     {@render header()}
@@ -141,14 +140,12 @@
                 </div>
             {/if}
 
-            <!-- Body -->
             {#if children}
                 <div class="flex-1 overflow-y-auto px-6 py-4">
                     {@render children()}
                 </div>
             {/if}
 
-            <!-- Footer -->
             {#if footer}
                 <div class="border-t border-outline bg-surface-sunken px-6 py-4">
                     {@render footer()}

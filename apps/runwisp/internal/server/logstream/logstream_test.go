@@ -97,7 +97,7 @@ func TestEmitLine_SkipsDuplicate(t *testing.T) {
 
 	require.NoError(t, s.emitLine(LineEvent{N: 5, Text: "dup"}))
 	assert.Empty(t, m.lines)
-	assert.Equal(t, int64(5), s.lastSent) // unchanged
+	assert.Equal(t, int64(5), s.lastSent)
 }
 
 func TestEmitLine_AdvancesLastSent(t *testing.T) {

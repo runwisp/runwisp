@@ -80,7 +80,6 @@
 </script>
 
 <div class={className}>
-    <!-- Tab list -->
     <div
         class="
 			{variant === 'underline' ? 'border-b border-outline' : ''}
@@ -133,7 +132,6 @@
         </nav>
     </div>
 
-    <!-- Tab panels -->
     {#if children && renderedActiveTab}
         <div
             id="tabpanel-{renderedActiveTab}"

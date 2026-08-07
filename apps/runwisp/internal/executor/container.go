@@ -35,7 +35,6 @@ var allowedVolumePrefixes = []string{
 func validateVolumeMount(hostPath string) error {
 	clean := filepath.Clean(hostPath)
 
-	// Resolve symlinks to get the real path on the host.
 	resolved, err := filepath.EvalSymlinks(clean)
 	if err != nil {
 		// If the path doesn't exist yet, use the cleaned path.

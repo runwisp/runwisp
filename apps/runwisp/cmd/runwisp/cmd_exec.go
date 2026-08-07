@@ -335,9 +335,6 @@ const (
 	followStallBackoff = 100 * time.Millisecond
 )
 
-// followRun follows a triggered run's SSE log stream, printing lines to
-// stdout/stderr and returning the run's exit code once it reaches a terminal
-// state. It is shared by the local-daemon and remote exec paths.
 // followRun streams the run's logs to lineOut until it reaches a terminal state,
 // returning the exit code and — when it fetched one — the terminal run so a
 // caller can render --json without re-fetching. final may be nil only alongside

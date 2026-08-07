@@ -254,12 +254,10 @@ func TestLogPane_HandleKeyScroll_HScroll(t *testing.T) {
 	p.Scroll = 0
 	p.Follow = false
 
-	// scroll right
 	consumed := p.HandleKeyScroll("right")
 	assert.True(t, consumed)
 	assert.Equal(t, HScrollStep, p.HScroll)
 
-	// scroll left
 	consumed = p.HandleKeyScroll("left")
 	assert.True(t, consumed)
 	assert.Equal(t, 0, p.HScroll)

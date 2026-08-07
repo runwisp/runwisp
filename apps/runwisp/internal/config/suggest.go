@@ -15,8 +15,8 @@ import (
 // can't catch these because the key is valid *somewhere else* in the schema.
 // Keyed on the failing key's immediate table + leaf name.
 var misplacedKeyHints = map[string]string{
-	"defaults.on_overlap":  "on_overlap is a per-task setting — move it under [tasks.<name>]",
-	"scheduler.on_overlap": "on_overlap is a per-task setting — move it under [tasks.<name>]",
+	"defaults.on_overlap":  "on_overlap is a per-task setting — move it under [tasks.<name>] or [services.<name>]",
+	"scheduler.on_overlap": "on_overlap is a per-task setting — move it under [tasks.<name>] or [services.<name>]",
 	"defaults.timezone":    "set the daemon-wide timezone in [scheduler] timezone, or a per-task timezone under [tasks.<name>]",
 	"daemon.timezone":      "the daemon-wide timezone lives in [scheduler] timezone, not [daemon]",
 	"daemon.host":          "host is set with the --host flag (or RUNWISP_HOST), not in [daemon]",

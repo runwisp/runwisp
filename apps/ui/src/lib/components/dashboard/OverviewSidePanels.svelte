@@ -48,7 +48,6 @@
 </script>
 
 <div class={["grid gap-4", showUpcoming ? "lg:grid-cols-3" : "lg:grid-cols-2"]}>
-    <!-- Needs attention -->
     <Card>
         <div class="flex items-center justify-between gap-3">
             <h3 class="text-sm font-semibold text-on-surface">Needs attention</h3>
@@ -109,7 +108,6 @@
         {/if}
     </Card>
 
-    <!-- Running now -->
     <Card>
         <div class="flex items-center justify-between gap-3">
             <h3 class="text-sm font-semibold text-on-surface">Running now</h3>
@@ -169,7 +167,6 @@
         {/if}
     </Card>
 
-    <!-- Up next -->
     {#if showUpcoming}
         <Card>
             <div class="flex items-center justify-between gap-3">

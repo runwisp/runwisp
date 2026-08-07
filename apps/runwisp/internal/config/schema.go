@@ -131,9 +131,8 @@ type Scheduler struct {
 	Source   string
 }
 
-// Timezone source tags. Phase 3 surfaces these in the TUI startup banner and
-// the Web UI header so operators can confirm at a glance which clock the
-// daemon picked.
+// Timezone source tags, surfaced in the TUI startup banner and the Web UI
+// header so operators can confirm at a glance which clock the daemon picked.
 const (
 	TimezoneSourceConfig = "config"
 	TimezoneSourceSystem = "system"

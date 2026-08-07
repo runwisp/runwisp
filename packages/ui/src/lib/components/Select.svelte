@@ -53,7 +53,7 @@
         id = `select-${generateUlid()}`,
         name,
         onchange,
-        onsearch, // New prop
+        onsearch,
     }: Props & { onsearch?: (query: string) => void } = $props();
 
     let isOpen = $state(false);
@@ -156,7 +156,7 @@
         value = option.value;
         onchange?.(value);
         isOpen = false;
-        cleanupFloating?.(); // Cleanup immediately on select
+        cleanupFloating?.();
     }
 
     function handleKeydown(e: KeyboardEvent) {
@@ -294,12 +294,10 @@
         </div>
     </button>
 
-    <!-- Hidden input for form submission if needed -->
     {#if name}
         <input type="hidden" {name} {value} />
     {/if}
 
-    <!-- Dropdown Menu -->
     {#if isOpen}
         <div use:portal bind:this={menuEl} class="z-[9999] min-w-[200px]">
             <div
@@ -384,7 +382,6 @@
     {/if}
 </div>
 
-<!-- Helper Component for items -->
 {#snippet OptionItem({
     option,
     active,

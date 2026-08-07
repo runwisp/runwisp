@@ -267,7 +267,6 @@ func TestSearchLogs_CursorResume(t *testing.T) {
 	require.Len(t, body.Hits, 2)
 	require.NotEmpty(t, body.NextCursor, "expected a cursor with more lines available")
 
-	// Resume with the cursor.
 	req2 := httptest.NewRequest(http.MethodGet,
 		"/api/tasks/task1/log/search?q=foo&limit=2&cursor="+url.QueryEscape(body.NextCursor), nil)
 	w2 := httptest.NewRecorder()

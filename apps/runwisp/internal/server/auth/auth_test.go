@@ -35,7 +35,6 @@ func TestNonceStore_CreateAndConsume(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, nonce, 64) // 32 bytes hex-encoded
 
-	// First consume succeeds
 	assert.True(t, store.consume(nonce))
 	// Second consume fails (single-use)
 	assert.False(t, store.consume(nonce))

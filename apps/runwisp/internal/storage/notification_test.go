@@ -65,9 +65,6 @@ func TestUpsertByFingerprint_CoalescesWithinWindow(t *testing.T) {
 
 	second := newNotification(now.Add(5*time.Minute), "fp-2")
 	second.Occurrences = []time.Time{second.LastOccurredAt} // simulated ring cap of 10
-	// Set ring cap by passing a slice with len=10 limit semantics: caller sets cap.
-	// Here we mimic Coalescer: cap by occurrence_ring at runtime via len(slice)+truncate.
-	// We rely on the repo's truncate-by-len behavior.
 	created, err = db.UpsertByFingerprint(ctx, second, time.Hour, 10)
 	require.NoError(t, err)
 	assert.False(t, created, "second call within window must update")

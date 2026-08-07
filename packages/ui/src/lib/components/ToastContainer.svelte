@@ -2,10 +2,6 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    /**
-     * Toast notification component
-     * Displays toast notifications for user feedback
-     */
     import { fly, fade } from "svelte/transition";
     import { CircleCheck, CircleX, Info, TriangleAlert, X } from "@lucide/svelte";
     import { toast, type Toast } from "../utils/toast.svelte.js";
@@ -50,7 +46,6 @@
     }
 </script>
 
-<!-- Toast Container -->
 <div
     class="pointer-events-none fixed bottom-4 left-1/2 z-[100] flex -translate-x-1/2 flex-col gap-2"
     role="region"

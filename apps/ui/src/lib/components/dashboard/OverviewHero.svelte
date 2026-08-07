@@ -232,7 +232,6 @@
             </p>
         {/if}
 
-        <!-- Header bar -->
         <Card
             padding="none"
             bodyClass="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5"
@@ -315,7 +314,6 @@
         </div>
     </div>
 
-    <!-- System resources sidebar -->
     <Card padding="lg">
         <div class="flex items-center justify-between gap-3">
             <h2 class="text-sm font-semibold text-on-surface">System resources</h2>

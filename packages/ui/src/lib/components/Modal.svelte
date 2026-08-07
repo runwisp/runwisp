@@ -89,7 +89,6 @@
             aria-modal="true"
             aria-labelledby={title ? "modal-title" : undefined}
         >
-            <!-- Header -->
             {#if header}
                 <div class="border-b border-outline px-6 py-4">
                     {@render header()}
@@ -123,14 +122,12 @@
                 </div>
             {/if}
 
-            <!-- Body -->
             {#if children}
                 <div class="flex-1 overflow-y-auto px-6 py-4">
                     {@render children()}
                 </div>
             {/if}
 
-            <!-- Footer -->
             {#if footer}
                 <div class="rounded-b-[4px] border-t border-outline bg-surface-sunken px-6 py-4">
                     {@render footer()}

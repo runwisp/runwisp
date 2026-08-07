@@ -42,7 +42,6 @@
             // but we want to catch it to show "Invalid cron expression".
             const text = cronstrue.toString(value, { throwExceptionOnParseError: true });
 
-            // Calculate next run
             let next: Date | undefined;
             try {
                 const interval = CronExpressionParser.parse(value);
@@ -57,7 +56,6 @@
         }
     });
 
-    // Determine state for styling
     let isError = $derived(!disabled && value && value.trim() !== "" && !explanation.isValid);
 </script>
 
@@ -74,7 +72,6 @@
     </div>
     <div class="flex gap-4">
         <div class="flex-1">
-            <!-- Pass connection-status-like classes effectively by using the component props or class -->
             <Input
                 placeholder="* * * * *"
                 bind:value
@@ -83,7 +80,6 @@
             />
         </div>
     </div>
-    <!-- Live Feedback -->
     <div
         class="flex items-start gap-3 rounded-[4px] border p-3 {isError
             ? 'border-danger-soft-border bg-danger-soft'

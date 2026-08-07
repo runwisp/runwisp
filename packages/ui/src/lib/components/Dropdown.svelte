@@ -56,11 +56,7 @@
 
             void computePosition(triggerEl, menuEl, {
                 placement,
-                middleware: [
-                    offset(4), // MENU_OFFSET
-                    flip(),
-                    shift({ padding: 8 }), // VIEWPORT_PADDING
-                ],
+                middleware: [offset(4), flip(), shift({ padding: 8 })],
             }).then(({ x, y, placement }) => {
                 if (menuEl) {
                     Object.assign(menuEl.style, {
@@ -69,7 +65,7 @@
                         position: "absolute",
                     });
 
-                    // Simple origin logic based on verify placement
+                    // Flip transform origin vertically when the menu flips above the trigger
                     const isTop = placement.startsWith("top");
                     transformOrigin = `${isTop ? "bottom" : "top"} ${align}`;
                 }

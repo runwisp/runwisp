@@ -359,7 +359,6 @@ func (w *LogWriter) writeSystemLine(msg string) {
 // the segment-scoped line index; the new segment re-records its index lazily if
 // and when it crosses the threshold. Caller must hold mu.
 func (w *LogWriter) rotateTail() error {
-	// Accumulate counts from the file we are about to rotate away.
 	w.rotatedLines += w.lineCount
 	w.rotatedBytes += w.currentOffset
 
@@ -470,7 +469,6 @@ func (w *LogWriter) Close() error {
 		}
 	}
 
-	// Clean up the rotated-away segment.
 	os.Remove(logutil.PrevPath(w.mainPath))
 
 	return errors.Join(errs...)

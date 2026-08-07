@@ -118,8 +118,6 @@ func TestBuild_WebhookWithHeaders(t *testing.T) {
 	require.NotNil(t, ch)
 }
 
-// TestBuild_SmtpHappyPathReturnsChannel exercises the case "smtp" branch end
-// to end, including renderer construction.
 func TestBuild_SmtpHappyPathReturnsChannel(t *testing.T) {
 	ch, err := Build(NotifierSpec{
 		ID:         "mail",
@@ -134,16 +132,12 @@ func TestBuild_SmtpHappyPathReturnsChannel(t *testing.T) {
 	assert.Equal(t, "mail", ch.ID())
 }
 
-// TestBuild_SmtpEmptyHostReturnsError exercises the smtp.New validation
-// failure path inside Build.
 func TestBuild_SmtpEmptyHostReturnsError(t *testing.T) {
 	_, err := Build(NotifierSpec{ID: "mail", Type: "smtp"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "host is required")
 }
 
-// TestBuild_SlackTemplatePathMissing exercises the LoadTemplate error branch
-// on the slack path.
 func TestBuild_SlackTemplatePathMissing(t *testing.T) {
 	_, err := Build(NotifierSpec{
 		ID:           "ops",
@@ -155,8 +149,6 @@ func TestBuild_SlackTemplatePathMissing(t *testing.T) {
 	assert.Contains(t, err.Error(), "read template")
 }
 
-// TestBuild_TelegramTemplatePathMissing exercises the LoadTemplate error
-// branch on the telegram path.
 func TestBuild_TelegramTemplatePathMissing(t *testing.T) {
 	_, err := Build(NotifierSpec{
 		ID:           "alerts",
@@ -169,8 +161,6 @@ func TestBuild_TelegramTemplatePathMissing(t *testing.T) {
 	assert.Contains(t, err.Error(), "read template")
 }
 
-// TestBuild_SmtpTemplatePathMissing exercises the LoadTemplate error branch
-// on the smtp path.
 func TestBuild_SmtpTemplatePathMissing(t *testing.T) {
 	_, err := Build(NotifierSpec{
 		ID:           "mail",
@@ -184,8 +174,6 @@ func TestBuild_SmtpTemplatePathMissing(t *testing.T) {
 	assert.Contains(t, err.Error(), "read template")
 }
 
-// TestHttpTransport_NoTransportReturnsNil covers the nil-Transport case: the
-// helper returns nil so the channel constructs its own defaults.
 func TestHttpTransport_NoTransportReturnsNil(t *testing.T) {
 	assert.Nil(t, httpTransport(NotifierSpec{}))
 }

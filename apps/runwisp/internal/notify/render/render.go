@@ -79,7 +79,6 @@ func NewTemplateRendererWithContext(name, src, contentType string, titleFn func(
 	return &TemplateRenderer{tmpl: t, contentType: contentType, titleFn: titleFn}, nil
 }
 
-// Render executes the template with ev as data.
 func (r *TemplateRenderer) Render(ev *notify.Event) (RenderedMessage, error) {
 	var buf bytes.Buffer
 	if err := r.tmpl.Execute(&buf, ev); err != nil {

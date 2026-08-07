@@ -259,7 +259,6 @@ func (w *ExecWindow) UpsertRun(run model.Run) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	// Update existing item in window.
 	if _, exists := w.idSet[run.ID]; exists {
 		for i := range w.items {
 			if w.items[i].Run.ID == run.ID {
@@ -270,7 +269,6 @@ func (w *ExecWindow) UpsertRun(run model.Run) {
 		}
 	}
 
-	// Skip runs that don't match the active filter.
 	if w.filterTask != "" && run.TaskName != w.filterTask {
 		return
 	}
@@ -287,7 +285,6 @@ func (w *ExecWindow) UpsertRun(run model.Run) {
 		item := newExecListItem(run)
 		w.items = append([]uikit.ExecListItem{item}, w.items...)
 		w.idSet[run.ID] = struct{}{}
-		// Trim window if it grew beyond capacity.
 		if len(w.items) > windowSize+50 {
 			w.items = w.items[:windowSize]
 			w.rebuildIDSet()

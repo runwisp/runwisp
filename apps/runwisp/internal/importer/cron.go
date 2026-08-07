@@ -974,7 +974,6 @@ func splitFields(s string, n int) (tokens []string, rest string, ok bool) {
 	tokens = make([]string, 0, n)
 	i := 0
 	for len(tokens) < n {
-		// skip leading whitespace
 		for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
 			i++
 		}

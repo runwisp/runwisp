@@ -103,7 +103,6 @@ func (f *FakeChannel) Received() []*notify.Event {
 	return out
 }
 
-// Closed reports whether Close has been called.
 func (f *FakeChannel) Closed() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -152,7 +151,6 @@ func (t *ManualTimer) Stop() bool {
 	return true
 }
 
-// Stopped reports whether Stop was called.
 func (t *ManualTimer) Stopped() bool { return t.stopped }
 
 func NewManualTimers() *ManualTimers { return &ManualTimers{} }

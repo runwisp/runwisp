@@ -22,7 +22,6 @@ import (
 	"github.com/runwisp/runwisp/internal/datadir"
 )
 
-// pollHealth polls a client's health endpoint until it responds or timeout.
 func pollHealth(client *apiclient.Client, timeout time.Duration) error {
 	var lastErr error
 	deadline := time.Now().Add(timeout)
@@ -344,7 +343,6 @@ func bindFailureHint(logTail, host string, port int) error {
 	return portConflictError(host, port, errors.New("bind: address already in use"))
 }
 
-// tailFile reads the last maxBytes bytes from a file.
 func tailFile(path string, maxBytes int64) string {
 	f, err := os.Open(path)
 	if err != nil {

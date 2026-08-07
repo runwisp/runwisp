@@ -562,7 +562,6 @@ func (e *ExecList) ScrollBy(delta int) {
 	if e.Scroll > maxScroll {
 		e.Scroll = maxScroll
 	}
-	// Keep cursor within visible area.
 	if e.cursor < e.Scroll {
 		e.cursor = e.Scroll
 	} else if e.cursor >= e.Scroll+vpH {

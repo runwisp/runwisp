@@ -141,16 +141,6 @@ func TestSupervisordIncludeGolden(t *testing.T) {
 	checkReportGolden(t, "testdata/supervisord/include/expected.golden.report.txt", res)
 }
 
-// assertReportAccountsForTOML is this package's central invariant, checked
-// against every fixture: the set of tables in the emitted TOML and the set of
-// rows that claim to have emitted something are the same set.
-//
-// One direction catches the bug the report was split out to fix — a table in the
-// file that no row accounts for, i.e. config appearing from nowhere. The other
-// catches its mirror image, a row claiming a name that never made it into the
-// file, which would have the operator looking for a task the daemon won't have.
-// itemRef.emit is the only path to either, so this is really a check that no
-// future code path routes around it.
 // tableNames lists the top-level tables the emitted TOML defines — the
 // [tasks.x] / [services.x] headers, without their .env children.
 func tableNames(r *Result) []string {
@@ -165,6 +155,16 @@ func tableNames(r *Result) []string {
 	return out
 }
 
+// assertReportAccountsForTOML is this package's central invariant, checked
+// against every fixture: the set of tables in the emitted TOML and the set of
+// rows that claim to have emitted something are the same set.
+//
+// One direction catches the bug the report was split out to fix — a table in the
+// file that no row accounts for, i.e. config appearing from nowhere. The other
+// catches its mirror image, a row claiming a name that never made it into the
+// file, which would have the operator looking for a task the daemon won't have.
+// itemRef.emit is the only path to either, so this is really a check that no
+// future code path routes around it.
 func assertReportAccountsForTOML(t *testing.T, res *Result) {
 	t.Helper()
 	inTOML := map[string]bool{}

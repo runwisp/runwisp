@@ -335,9 +335,9 @@ func cronOptionsFor(path string, owned importer.Owned) importer.CronOptions {
 }
 
 // cronUserExists answers "is this an account on this box" for the user column of a
-// system crontab line. A package var for the same reason crondPidFiles is one: the
-// real answer comes from the machine, and a test needs to ask the question about a
-// machine it can describe. Never assigned outside tests.
+// system crontab line. A package var for the same reason cronprobe.PidFiles is one:
+// the real answer comes from the machine, and a test needs to ask the question about
+// a machine it can describe. Never assigned outside tests.
 var cronUserExists = importer.SystemUserExists
 
 // cronNameSuffix derives the stable collision suffix from a source path: the

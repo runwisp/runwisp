@@ -181,7 +181,6 @@ function handleDoneEvent(
     return true;
 }
 
-/** Create an SSE log streamer for a specific task. */
 export function createLogStreamer(taskName: string) {
     return (
         runId: string,

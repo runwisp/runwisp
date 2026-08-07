@@ -387,8 +387,6 @@ func TestSMTP_New_ValidatesConfig(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestSMTP_New_LogsWarningWhenTLSSkipVerify covers the tlsSkipVerify warning
-// branch in New (line 131-134).
 func TestSMTP_New_LogsWarningWhenTLSSkipVerify(t *testing.T) {
 	r := newTestRenderer(t)
 	c, err := New(Config{
@@ -405,7 +403,6 @@ type rendererFunc func(*notify.Event) (render.RenderedMessage, error)
 
 func (f rendererFunc) Render(ev *notify.Event) (render.RenderedMessage, error) { return f(ev) }
 
-// TestSMTP_Execute_RenderErrorPropagates covers the render-error branch.
 func TestSMTP_Execute_RenderErrorPropagates(t *testing.T) {
 	fake := &fakeSender{}
 	ch := mkChannel(t, fake, func(c *Config) {
@@ -418,8 +415,6 @@ func TestSMTP_Execute_RenderErrorPropagates(t *testing.T) {
 	assert.Contains(t, err.Error(), "render")
 }
 
-// TestSMTP_Execute_EmptyTitleFallsBackToDefaultSubject covers the
-// "subject = \"RunWisp notification\"" fallback branch.
 func TestSMTP_Execute_EmptyTitleFallsBackToDefaultSubject(t *testing.T) {
 	fake := &fakeSender{}
 	ch := mkChannel(t, fake, func(c *Config) {
@@ -431,8 +426,6 @@ func TestSMTP_Execute_EmptyTitleFallsBackToDefaultSubject(t *testing.T) {
 	assert.Contains(t, fake.captured.String(), "Subject: RunWisp notification")
 }
 
-// TestSMTP_BuildMsg_RejectsBadFromAddress triggers the gomail rejection branch
-// at m.From().
 func TestSMTP_BuildMsg_RejectsBadFromAddress(t *testing.T) {
 	ch := mkChannel(t, &fakeSender{}, func(c *Config) {
 		c.From = "this is not an address"
@@ -442,8 +435,6 @@ func TestSMTP_BuildMsg_RejectsBadFromAddress(t *testing.T) {
 	assert.Contains(t, err.Error(), "from")
 }
 
-// TestSMTP_BuildMsg_RejectsBadToAddress triggers the gomail rejection branch
-// at m.To().
 func TestSMTP_BuildMsg_RejectsBadToAddress(t *testing.T) {
 	ch := mkChannel(t, &fakeSender{}, func(c *Config) {
 		c.Recipients = []string{"not-an-email"}
@@ -453,8 +444,6 @@ func TestSMTP_BuildMsg_RejectsBadToAddress(t *testing.T) {
 	assert.Contains(t, err.Error(), "to")
 }
 
-// TestSMTP_BuildMsg_RejectsBadCcAddress triggers the gomail rejection branch
-// at m.Cc().
 func TestSMTP_BuildMsg_RejectsBadCcAddress(t *testing.T) {
 	ch := mkChannel(t, &fakeSender{}, func(c *Config) {
 		c.CC = []string{"not-an-email"}
@@ -464,8 +453,6 @@ func TestSMTP_BuildMsg_RejectsBadCcAddress(t *testing.T) {
 	assert.Contains(t, err.Error(), "cc")
 }
 
-// TestSMTP_BuildMsg_RejectsBadBccAddress triggers the gomail rejection branch
-// at m.Bcc().
 func TestSMTP_BuildMsg_RejectsBadBccAddress(t *testing.T) {
 	ch := mkChannel(t, &fakeSender{}, func(c *Config) {
 		c.BCC = []string{"not-an-email"}
@@ -475,8 +462,6 @@ func TestSMTP_BuildMsg_RejectsBadBccAddress(t *testing.T) {
 	assert.Contains(t, err.Error(), "bcc")
 }
 
-// TestSMTP_BuildMsg_RejectsBadReplyToAddress triggers the gomail rejection
-// branch at m.ReplyTo().
 func TestSMTP_BuildMsg_RejectsBadReplyToAddress(t *testing.T) {
 	ch := mkChannel(t, &fakeSender{}, func(c *Config) {
 		c.ReplyTo = "not-an-email"
