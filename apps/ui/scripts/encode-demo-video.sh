@@ -16,6 +16,11 @@
 # to the host's ffmpeg through `flatpak-spawn --host` (this dev box is Silverblue,
 # where ffmpeg lives on the host, not in the toolbox).
 #
+# The stock Homebrew `ffmpeg` formula on macOS ships without libwebp at all
+# (no `libwebp_anim` encoder). When that's the case, the WebP step falls back
+# to resampling frames to PNGs via ffmpeg and assembling them with `img2webp`
+# (`brew install webp`); the MP4 step is unaffected since libx264 is core ffmpeg.
+#
 # Quality knobs (env overrides):
 #   DEMO_VIDEO_FPS        output frame rate               (default 24)
 #   DEMO_VIDEO_WEBP_WIDTH WebP width in px                (default 1120)
@@ -64,10 +69,26 @@ mp4="$out_dir/runwisp-demo.mp4"
 
 # --- animated WebP (README hero) ---------------------------------------------
 echo "[encode] -> $webp (width ${webp_width}, q ${webp_q})"
-ffmpeg -y -f concat -safe 0 -i "$frames_list" \
-    -vf "fps=${fps},scale=${webp_width}:-2:flags=lanczos" \
-    -c:v libwebp_anim -loop 0 -q:v "$webp_q" -compression_level 6 -an \
-    "$webp"
+if ffmpeg -hide_banner -encoders 2>/dev/null | grep -q libwebp_anim; then
+    ffmpeg -y -f concat -safe 0 -i "$frames_list" \
+        -vf "fps=${fps},scale=${webp_width}:-2:flags=lanczos" \
+        -c:v libwebp_anim -loop 0 -q:v "$webp_q" -compression_level 6 -an \
+        "$webp"
+elif command -v img2webp >/dev/null 2>&1; then
+    echo "[encode] ffmpeg has no libwebp_anim encoder — falling back to img2webp"
+    resampled_dir="$rec_dir/frames-resampled"
+    rm -rf "$resampled_dir" && mkdir -p "$resampled_dir"
+    ffmpeg -y -f concat -safe 0 -i "$frames_list" \
+        -vf "fps=${fps},scale=${webp_width}:-2:flags=lanczos" \
+        "$resampled_dir/f_%05d.png"
+    frame_duration_ms=$(awk -v fps="$fps" 'BEGIN { printf "%d", 1000 / fps }')
+    img2webp -loop 0 -lossy -q "$webp_q" -m 6 -d "$frame_duration_ms" \
+        "$resampled_dir"/f_*.png -o "$webp"
+    rm -rf "$resampled_dir"
+else
+    echo "[encode] ERROR: ffmpeg has no libwebp_anim encoder and img2webp is not on PATH (brew install webp)." >&2
+    exit 1
+fi
 
 # --- MP4 (docs site + social) ------------------------------------------------
 echo "[encode] -> $mp4 (width ${mp4_width}, crf ${mp4_crf})"
