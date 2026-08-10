@@ -171,6 +171,47 @@ func TestLogWriter_DiskPressure_KillTask_CancelsContext(t *testing.T) {
 	assert.True(t, w.truncated)
 }
 
+// TestLogWriter_DiskPressure_SurvivesRotation guards the regression where the
+// disk-pressure throttle (currentOffset - lastDiskCheck) went permanently
+// negative after the first drop_old rotation reset currentOffset without
+// resetting lastDiskCheck — silently disabling disk-full protection for the
+// rest of the run. Disk space is reported plentiful until the first rotation,
+// then critically low; the writer must still detect the low reading afterwards.
+func TestLogWriter_DiskPressure_SurvivesRotation(t *testing.T) {
+	dir := t.TempDir()
+	opts := newTestOpts(dir)
+	opts.LogDir = dir
+	opts.MaxSize = 1000
+	opts.Overflow = "drop_old"
+	opts.MinFreeDisk = 1000
+	hits := 0
+	opts.OnDiskPressure = func(free, min int64, killedTask bool) { hits++ }
+
+	w, err := NewLogWriter(opts)
+	require.NoError(t, err)
+	// A coarse interval (relative to maxSize) is what exposes the bug: the last
+	// pre-rotation probe leaves lastDiskCheck near maxSize, so after rotation
+	// resets currentOffset the throttle stays un-crossed for the whole next
+	// segment unless lastDiskCheck is also reset.
+	w.diskCheckInterval = 250
+	w.freeDisk = func(string) int64 {
+		if w.rotatedLines > 0 {
+			return 1 // critically low once we've rotated at least once
+		}
+		return math.MaxInt64 // plenty of room before the first rotation
+	}
+
+	line := strings.Repeat("x", 100) + "\n" // 101 bytes
+	for i := 0; i < 20; i++ {
+		_, err := w.Write([]byte(line))
+		require.NoError(t, err)
+	}
+	require.NoError(t, w.Close())
+
+	assert.Equal(t, 1, hits,
+		"disk pressure must still be detected after a rotation reset currentOffset")
+}
+
 func TestLogWriter_DropOldRotation(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	opts.MaxSize = 200

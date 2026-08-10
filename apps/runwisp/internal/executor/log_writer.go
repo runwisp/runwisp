@@ -58,6 +58,7 @@ type LogWriter struct {
 	diskCheckInterval int64  // bytes between probes; defaults to defaultDiskCheckInterval
 	diskPressureHit   bool   // set once after the first threshold crossing
 	onDiskPressure    func(free, min int64, killedTask bool)
+	freeDisk          func(dir string) int64 // injected for tests; defaults to freeDiskSpace
 
 	// State
 	currentOffset  int64
@@ -70,6 +71,10 @@ type LogWriter struct {
 	// Rotation bookkeeping: cumulative counts from rotated-away files
 	rotatedLines int64
 	rotatedBytes int64
+	// prevSegmentStart is the global line number the segment currently sitting in
+	// the .prev slot started at (rotatedLines just before the most recent
+	// rotation). Persisted so readers number .prev correctly after 2+ rotations.
+	prevSegmentStart int64
 
 	now func() time.Time // injected wall-clock; never call time.Now() inline
 }
@@ -125,6 +130,7 @@ func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
 		logDir:            opts.LogDir,
 		onDiskPressure:    opts.OnDiskPressure,
 		diskCheckInterval: defaultDiskCheckInterval,
+		freeDisk:          freeDiskSpace,
 		now:               now,
 	}, nil
 }
@@ -226,7 +232,7 @@ func (w *LogWriter) checkDiskPressure() bool {
 		return false
 	}
 	w.lastDiskCheck = w.currentOffset
-	free := freeDiskSpace(w.logDir)
+	free := w.freeDisk(w.logDir)
 	if free < 0 || free >= w.minFreeDisk {
 		return false
 	}
@@ -359,6 +365,9 @@ func (w *LogWriter) writeSystemLine(msg string) {
 // the segment-scoped line index; the new segment re-records its index lazily if
 // and when it crosses the threshold. Caller must hold mu.
 func (w *LogWriter) rotateTail() error {
+	// The segment about to move into .prev started at the current cumulative
+	// count; capture it before folding this segment's lines into the total.
+	w.prevSegmentStart = w.rotatedLines
 	w.rotatedLines += w.lineCount
 	w.rotatedBytes += w.currentOffset
 
@@ -392,6 +401,10 @@ func (w *LogWriter) rotateTail() error {
 	w.file = f
 	w.currentOffset = 0
 	w.lineCount = 0
+	// currentOffset just reset to 0; lastDiskCheck tracks it, so reset too or the
+	// (currentOffset - lastDiskCheck) throttle stays negative forever and disk-
+	// pressure checks never fire again for the rest of the run.
+	w.lastDiskCheck = 0
 	w.truncated = true
 
 	// Rewrite the container: keep frame history, reset the index, persist the
@@ -436,6 +449,7 @@ func (w *LogWriter) rewriteContainerForRotation() error {
 	w.metaFile.Write(logutil.MetaRecord(logutil.LogMeta{
 		RotatedLines: w.rotatedLines,
 		RotatedBytes: w.rotatedBytes,
+		PrevStart:    w.prevSegmentStart,
 	}))
 	return nil
 }

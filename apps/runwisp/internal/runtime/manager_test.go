@@ -1069,12 +1069,23 @@ func TestLoadPendingRunsFailedWhenSlotFull(t *testing.T) {
 }
 
 // TestLoadPendingRunsSkippedTaskNotFound: pending runs whose task is no
-// longer in the config are dropped as skipped.
+// longer in the config are dropped as skipped — but must still be persisted with
+// a terminal state, never left as a permanent 'pending' row (Prime Directive #1).
 func TestLoadPendingRunsSkippedTaskNotFound(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
 	jm := NewTaskManager(exec, eb, time.Now)
 	defer jm.Shutdown()
+
+	var mu sync.Mutex
+	ended := map[string]model.EndReason{}
+	jm.BindPersistenceHook(func(_ context.Context, run *model.Run, _ bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		if run.Status == model.PhaseEnded && run.EndReason != nil {
+			ended[run.ID] = *run.EndReason
+		}
+	})
 
 	pending := []model.Run{
 		{ID: "01", TaskName: "ghost", Status: model.PhasePending},
@@ -1086,6 +1097,49 @@ func TestLoadPendingRunsSkippedTaskNotFound(t *testing.T) {
 	assert.Equal(t, 0, result.Resumed)
 	assert.Equal(t, 0, result.Queued)
 	assert.Equal(t, 0, result.Failed)
+
+	jm.(*defaultTaskManager).persistence.Flush()
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, model.ReasonSkipped, ended["01"])
+	assert.Equal(t, model.ReasonSkipped, ended["02"])
+}
+
+// TestRemoveTask_FinalizesQueuedRuns: removing a task on reload must finalize any
+// still-queued (persisted 'pending') run instead of dropping the slice and
+// leaving a permanent non-terminal row that retention never sweeps.
+func TestRemoveTask_FinalizesQueuedRuns(t *testing.T) {
+	jm, exec, _ := newGatedManager(t)
+
+	var mu sync.Mutex
+	ended := map[string]model.EndReason{}
+	jm.BindPersistenceHook(func(_ context.Context, run *model.Run, _ bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		if run.Status == model.PhaseEnded && run.EndReason != nil {
+			ended[run.ID] = *run.EndReason
+		}
+	})
+
+	// Queue-policy task at concurrency 1: first run occupies the slot, second
+	// waits in the queue.
+	task := testTask("q", model.PolicyQueue, 1)
+	jm.UpsertTask(task)
+
+	_, err := jm.TriggerRun("q", model.TriggeredByAPI)
+	require.NoError(t, err)
+	exec.WaitStarted(t)
+
+	queued, err := jm.TriggerRun("q", model.TriggeredByAPI)
+	require.NoError(t, err)
+
+	jm.RemoveTask("q")
+
+	jm.persistence.Flush()
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, model.ReasonSkipped, ended[queued.ID],
+		"queued run must be finalized when its task is removed")
 }
 
 func TestResolveRunOutcomeKilledByPolicy(t *testing.T) {

@@ -5,6 +5,7 @@ package render
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/runwisp/runwisp/internal/logutil"
 )
@@ -70,5 +71,11 @@ func truncateTail(joined string, maxBytes int) string {
 	if budget <= 0 {
 		return ellipsis
 	}
-	return ellipsis + joined[len(joined)-budget:]
+	cut := joined[len(joined)-budget:]
+	// The byte cut may land mid-rune; drop leading continuation bytes so we never
+	// emit invalid UTF-8 (which renders as � in Slack/Telegram/email bodies).
+	for len(cut) > 0 && !utf8.RuneStart(cut[0]) {
+		cut = cut[1:]
+	}
+	return ellipsis + cut
 }
