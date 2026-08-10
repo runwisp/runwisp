@@ -174,8 +174,6 @@ func TestSlack_RedactsURLInError(t *testing.T) {
 	assert.True(t, strings.HasPrefix(err.Error(), "slack:ops:"), "error must start with redacted channel id")
 }
 
-// TestSlack_IDAndClose pins the Channel interface contract on the slack
-// adapter: ID() returns the configured id; Close is a no-op that never errs.
 func TestSlack_IDAndClose(t *testing.T) {
 	ch, err := New(Config{ID: "ops", WebhookURL: "http://example.com", Renderer: testutil.NewTestRenderer(t, "slack", "application/json"), Transport: testutil.NewFastTransport()})
 	require.NoError(t, err)

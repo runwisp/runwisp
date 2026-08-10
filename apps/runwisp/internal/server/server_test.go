@@ -58,7 +58,6 @@ func setupServerWithOpts(t *testing.T, mutate func(*Options)) (*Server, *testuti
 	// Create scheduler (nil is fine for most tests)
 	scheduler := runtime.NewScheduler(jm, tasks, time.UTC, nil)
 
-	// Create temp directory for logs
 	tmpDir, err := os.MkdirTemp("", "runwisp-test-logs-*")
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(tmpDir) })
@@ -725,7 +724,6 @@ func TestGetLogPage_FromZero_FirstLine(t *testing.T) {
 
 	repo.On("GetRun", mock.Anything, id).Return(run, nil)
 
-	// from=0 → the first lines.
 	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id+"/log?from=0&limit=5", nil)
 	w := httptest.NewRecorder()
 	addAuth(req, s)
@@ -871,7 +869,6 @@ func TestRemoveStaleSocket_RegularFileRefuses(t *testing.T) {
 	err := removeStaleSocket(p)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not a socket")
-	// File must still exist.
 	if _, statErr := os.Stat(p); statErr != nil {
 		t.Fatalf("removeStaleSocket should not delete non-sockets: %v", statErr)
 	}

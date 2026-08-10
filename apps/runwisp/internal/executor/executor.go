@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	StreamReadBufferSize = 16 * 1024 // 16KB buffer for reading from stdout/stderr
+	StreamReadBufferSize = 16 * 1024
 	MaxLineBufferSize    = 64 * 1024 // 64KB max cells per row before an oversized-line split
 )
 

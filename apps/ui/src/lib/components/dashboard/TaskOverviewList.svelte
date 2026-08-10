@@ -128,7 +128,6 @@
 </script>
 
 <div class="space-y-4">
-    <!-- Toolbar -->
     <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div class="flex items-center gap-3">
             <h2 class="text-sm font-semibold text-on-surface">Tasks</h2>
@@ -185,7 +184,6 @@
         </div>
     </div>
 
-    <!-- Task list -->
     {#if taskOverviews.length === 0}
         <EmptyState
             title="No tasks configured yet"

@@ -266,14 +266,13 @@ func TestDeleteOldRunsByCount(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	// Create 3 runs
 	for i := 0; i < 3; i++ {
 		require.NoError(t, db.CreateRun(ctx, &model.Run{
 			ID:          ulid.Make().String(),
 			TaskName:    "task1",
 			Status:      model.PhaseEnded,
 			EndReason:   model.EndReasonPtr(model.ReasonSuccess),
-			CreatedAt:   time.Now().Add(time.Duration(i) * time.Second), // Different times
+			CreatedAt:   time.Now().Add(time.Duration(i) * time.Second),
 			TriggeredBy: model.TriggeredByAPI,
 		}))
 	}
@@ -297,11 +296,9 @@ func TestMarkCrashedRuns(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
-	// Running run
 	run1 := model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhaseRunning, TriggeredBy: model.TriggeredByAPI}
 	require.NoError(t, db.CreateRun(ctx, &run1))
 
-	// Pending run
 	run2 := model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI}
 	require.NoError(t, db.CreateRun(ctx, &run2))
 
@@ -334,13 +331,11 @@ func TestSearchAndSort(t *testing.T) {
 	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "alpha", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), TriggeredBy: model.TriggeredByAPI}))
 	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "beta", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonFailed), TriggeredBy: model.TriggeredByAPI}))
 
-	// Search
 	runs, err := db.QueryRuns(ctx, RunQuery{Filter: model.RunFilter{Search: "alp"}, Limit: 10})
 	require.NoError(t, err)
 	assert.Len(t, runs, 1)
 	assert.Equal(t, "alpha", runs[0].TaskName)
 
-	// Sort
 	runs, err = db.QueryRuns(ctx, RunQuery{Limit: 10, SortField: SortColumnTaskName, SortDirection: SortAsc})
 	require.NoError(t, err)
 	assert.Len(t, runs, 2)

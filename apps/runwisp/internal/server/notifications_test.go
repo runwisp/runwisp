@@ -319,7 +319,6 @@ func TestHumaMarkNotificationUnread_NotFound(t *testing.T) {
 func TestPublishNotificationUpdate_NilHub_NoPanic(t *testing.T) {
 	repo := new(mockNotificationRepository)
 	s := notificationServer(t, repo, nil)
-	// Should not panic when hub is nil.
 	s.publishNotificationUpdate(context.Background(), &storage.Notification{ID: "x"})
 }
 
@@ -327,7 +326,6 @@ func TestPublishNotificationUpdate_NilNotification_NoPanic(t *testing.T) {
 	hub := new(mockNotificationHub)
 	repo := new(mockNotificationRepository)
 	s := notificationServer(t, repo, hub)
-	// Should not panic when notification is nil.
 	s.publishNotificationUpdate(context.Background(), nil)
 	hub.AssertNotCalled(t, "Publish")
 }
@@ -353,7 +351,6 @@ func TestPublishNotificationUpdate_CountQueryFails_ShipsNegativeCount(t *testing
 func TestPublishUnreadCountChanged_NilHub_NoPanic(t *testing.T) {
 	repo := new(mockNotificationRepository)
 	s := notificationServer(t, repo, nil)
-	// Should not panic.
 	s.publishUnreadCountChanged(42)
 }
 
@@ -375,7 +372,7 @@ func TestPublishUnreadCountChanged_PublishesCount(t *testing.T) {
 
 func TestSseNotificationsPingLoop_ExitsOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // already cancelled
+	cancel()
 
 	done := make(chan struct{})
 	go func() {
@@ -477,7 +474,7 @@ func TestSseNotificationsLiveLoop_ExitsOnContextCancel(t *testing.T) {
 	s.notifyHub = hub
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // pre-cancel
+	cancel()
 
 	done := make(chan struct{})
 	go func() {

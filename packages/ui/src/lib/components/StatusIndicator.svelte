@@ -26,7 +26,6 @@
         class: className = "",
     }: Props = $props();
 
-    // Status configuration lookup
     const STATUS_CONFIG: Record<Status, { label: string; classes: string; iconColor: string }> = {
         running: {
             label: "Running",
@@ -65,7 +64,6 @@
         },
     };
 
-    // Size configuration lookup
     const SIZE_CONFIG: Record<Size, { classes: string; iconSize: number }> = {
         sm: { classes: "px-2 py-0.5 text-2xs gap-1.5", iconSize: 10 },
         md: { classes: "px-2.5 py-0.5 text-xs gap-1.5", iconSize: 12 },
@@ -81,7 +79,6 @@
     role="status"
     in:fade={{ duration: 150 }}
 >
-    <!-- Icon Container -->
     <span class="flex shrink-0 items-center justify-center {config.iconColor}">
         {#if status === "running" || pulse}
             <svg

@@ -172,10 +172,8 @@ func TestBuildDaemonInfo_PopulatesTaskList(t *testing.T) {
 	require.NotNil(t, info)
 	assert.Equal(t, "fp-test", info.Fingerprint)
 	require.Len(t, info.Tasks, 2)
-	// Tasks must be sorted by name.
 	assert.Equal(t, "alpha", info.Tasks[0].Name)
 	assert.Equal(t, "zulu", info.Tasks[1].Name)
-	// Capabilities are populated from executor availability.
 	assert.Len(t, info.Capabilities, 5)
 }
 
@@ -214,7 +212,7 @@ func TestOrderServicesForStop_DependentsFirst(t *testing.T) {
 		"b": {Name: "b", Kind: model.KindService, DependsOn: []string{"d"}},
 		"c": {Name: "c", Kind: model.KindService, DependsOn: []string{"d"}},
 		"d": {Name: "d", Kind: model.KindService},
-		"x": {Name: "x", Kind: model.KindTask}, // non-service is dropped
+		"x": {Name: "x", Kind: model.KindTask},
 	}
 
 	got := orderServicesForStop(tasksMap)

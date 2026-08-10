@@ -28,17 +28,14 @@ func TestStreamLogLines_ParsesEvents(t *testing.T) {
 
 		w.Header().Set("Content-Type", "text/event-stream")
 
-		// Event 1: line
 		fmt.Fprintln(w, "event: line")
 		fmt.Fprintln(w, `data: {"n":1,"stream":"stdout","text":"hello"}`)
 		fmt.Fprintln(w)
 
-		// Event 2: rotated
 		fmt.Fprintln(w, "event: rotated")
 		fmt.Fprintln(w, `data: {"firstAvailable":42}`)
 		fmt.Fprintln(w)
 
-		// Event 3: dropped
 		fmt.Fprintln(w, "event: dropped")
 		fmt.Fprintln(w, `data: {"after":10,"count":5}`)
 		fmt.Fprintln(w)

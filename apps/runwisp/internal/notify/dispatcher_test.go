@@ -136,7 +136,6 @@ func TestDispatcher_ContextCancelDoesNotSurfaceFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	d.startWorkers(ctx)
 	d.dispatch(&Event{Kind: KindRunFailed})
-	// Wait for the action to enter Execute.
 	require.Eventually(t, func() bool { return a.hits.Load() == 1 }, time.Second, 10*time.Millisecond)
 	cancel()
 	<-released
@@ -311,7 +310,6 @@ func TestDispatcher_CycleGuard_DeliveryFailedDoesNotReRoute(t *testing.T) {
 	d.closeQueues()
 	d.waitWorkers()
 
-	// Sink received exactly the synthetic, with the right shape.
 	syn := sink.Captured()[0]
 	assert.Equal(t, KindNotifyDeliveryFailed, syn.Kind)
 	assert.Equal(t, "slack:ops", syn.Extra["channel"])

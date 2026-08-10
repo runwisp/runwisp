@@ -79,7 +79,6 @@ func parseByteSizeWithUnit(s, suffix string, mult int64) (int64, bool, error) {
 	return int64(product), true, nil
 }
 
-// FormatByteSize formats a byte count as a human-readable string.
 func FormatByteSize(bytes int64) string {
 	if bytes < 0 {
 		return fmt.Sprintf("%d B", bytes)

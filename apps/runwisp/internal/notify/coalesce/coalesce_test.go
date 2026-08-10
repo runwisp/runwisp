@@ -25,7 +25,6 @@ func TestCoalesce_ID_DelegatesToInner(t *testing.T) {
 	}
 }
 
-// helper: build a run-failed event for taskName.
 func failEvent(taskName string) *notify.Event {
 	return &notify.Event{
 		Kind:     notify.KindRunFailed,
@@ -34,8 +33,6 @@ func failEvent(taskName string) *notify.Event {
 	}
 }
 
-// TestCoalesce_FirstEventForwarded verifies the first event in a window is
-// passed straight through.
 func TestCoalesce_FirstEventForwarded(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	clock := testutil.NewFakeClock(time.Unix(0, 0))
@@ -290,7 +287,6 @@ func TestTimerFlush_EmptyState(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	c := New(inner, Config{Window: time.Hour, EveryN: 1}, nil, nil, nil)
 	defer c.Close(context.Background())
-	// calling timerFlush with a key that has no state is a no-op
 	c.timerFlush("nonexistent-key")
 	assert.Empty(t, inner.Received())
 }

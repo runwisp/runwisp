@@ -98,7 +98,6 @@ describe("connectionStore.reportSourceUp / reportSourceDown", () => {
         connectionStore.reportSourceUp("b");
         connectionStore.reportSourceDown("a");
         expect(connectionStore.status).toBe("connected");
-        // Cleanup
         connectionStore.reportSourceDown("b");
         connectionStore.markConnected();
     });

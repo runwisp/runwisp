@@ -136,7 +136,6 @@ func (cleaner *RetentionCleaner) enforceMaxTotalSize(ctx context.Context) int {
 	slog.Warn("Log storage exceeds storage.max_size, purging oldest runs",
 		"current", config.FormatByteSize(totalSize), "limit", config.FormatByteSize(cleaner.maxTotalSize))
 
-	// Fetch oldest completed runs in batches and delete until under limit
 	deleted := 0
 	offset := 0
 	for totalSize > cleaner.maxTotalSize {

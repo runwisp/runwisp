@@ -27,7 +27,6 @@ func TestLoadTemplate_FallsBackToEmbeddedDefault(t *testing.T) {
 }
 
 func TestLoadTemplate_TrimSpacesUserPath(t *testing.T) {
-	// Whitespace-only userPath should be treated as empty and fall back.
 	body, err := render.LoadTemplate("inapp", "   ")
 	require.NoError(t, err)
 	assert.NotEmpty(t, body)

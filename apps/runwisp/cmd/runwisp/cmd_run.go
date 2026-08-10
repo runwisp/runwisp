@@ -609,12 +609,6 @@ func logSecurityWarnings(cfg *daemonConfig, f Flags, tlsCfg tlsSetup) {
 	}
 }
 
-// printNonLoopbackBanner writes an unmissable stderr banner when the daemon
-// is binding to an address reachable beyond localhost. Plain HTTP over a real
-// network exposes the auth cookie and JWT in cleartext; we want operators to
-// see this clearly without forcing them to add extra flags or terminate the
-// process — they may know what they're doing (private LAN, behind a TLS proxy,
-// etc.) and just need a visible reminder, not a roadblock.
 // printNoAuthBanner writes an unmissable stderr banner when the daemon runs
 // with RUNWISP_NO_AUTH. Like printNonLoopbackBanner it warns without blocking:
 // the operator opted in explicitly and may be on a trusted setup (local dev,
@@ -636,6 +630,12 @@ func printNoAuthBanner(host string, nonLoopback bool) {
 	_, _ = fmt.Fprint(os.Stderr, b.String())
 }
 
+// printNonLoopbackBanner writes an unmissable stderr banner when the daemon
+// is binding to an address reachable beyond localhost. Plain HTTP over a real
+// network exposes the auth cookie and JWT in cleartext; we want operators to
+// see this clearly without forcing them to add extra flags or terminate the
+// process — they may know what they're doing (private LAN, behind a TLS proxy,
+// etc.) and just need a visible reminder, not a roadblock.
 func printNonLoopbackBanner(host string) {
 	banner := fmt.Sprintf(
 		"\n"+

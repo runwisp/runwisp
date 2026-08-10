@@ -311,7 +311,7 @@ func TestWatchdogLoopRespectsContext(t *testing.T) {
 	session.lastReceived.Store(time.Now().UnixMilli())
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // cancel immediately
+	cancel()
 
 	env := newTestEnv(t, func(conn *websocket.Conn) {
 		conn.Close(websocket.StatusNormalClosure, "")
@@ -414,7 +414,6 @@ func TestReconnectBackoffIncreases(t *testing.T) {
 
 func TestReconnectBackoffReset(t *testing.T) {
 	b := newReconnectBackoff()
-	// Advance several times
 	for i := 0; i < 10; i++ {
 		b.NextBackOff()
 	}
@@ -435,7 +434,6 @@ func TestSendMessageQueueFull(t *testing.T) {
 	session := &wsSession{
 		outbound: make(chan []byte, 1),
 	}
-	// Fill the buffer
 	session.outbound <- []byte("filler")
 
 	err := sendMessage(session, NewPingMessage(nil))

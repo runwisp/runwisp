@@ -27,14 +27,12 @@ func TestParseRetryAfterHeader_SecondsSyntax(t *testing.T) {
 func TestParseRetryAfterHeader_ZeroSeconds(t *testing.T) {
 	h := http.Header{}
 	h.Set("Retry-After", "0")
-	// 0 is not > 0 → returns 0
 	assert.Equal(t, time.Duration(0), ParseRetryAfterHeader(h))
 }
 
 func TestParseRetryAfterHeader_NegativeSeconds(t *testing.T) {
 	h := http.Header{}
 	h.Set("Retry-After", "-5")
-	// negative → not > 0 → try date parse → fails → returns 0
 	assert.Equal(t, time.Duration(0), ParseRetryAfterHeader(h))
 }
 
@@ -79,7 +77,6 @@ func TestClampRetryAfter(t *testing.T) {
 	// A hostile Retry-After is clamped to MaxInterval so it can't stall the
 	// channel worker for the full remote-chosen duration.
 	assert.Equal(t, time.Minute, clampRetryAfter(24*time.Hour, cfg))
-	// Within-budget delays pass through untouched.
 	assert.Equal(t, 30*time.Second, clampRetryAfter(30*time.Second, cfg))
 	assert.Equal(t, time.Duration(0), clampRetryAfter(0, cfg))
 
@@ -87,6 +84,5 @@ func TestClampRetryAfter(t *testing.T) {
 	only := BackoffConfig{MaxElapsedTime: 2 * time.Minute}
 	assert.Equal(t, 2*time.Minute, clampRetryAfter(time.Hour, only))
 
-	// With no bounds at all, the delay is returned as-is.
 	assert.Equal(t, time.Hour, clampRetryAfter(time.Hour, BackoffConfig{}))
 }

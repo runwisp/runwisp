@@ -126,7 +126,6 @@ type logStreamFrameAccumulator struct {
 func (a *logStreamFrameAccumulator) consume(line string) {
 	switch {
 	case strings.HasPrefix(line, "id: "):
-		// ignore
 	case strings.HasPrefix(line, ssePrefixEvent):
 		a.event = strings.TrimPrefix(line, ssePrefixEvent)
 	case strings.HasPrefix(line, ssePrefixData):

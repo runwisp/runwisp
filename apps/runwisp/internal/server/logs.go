@@ -38,6 +38,7 @@ const (
 
 	// LogStreamReplayDefault is the default replay window for /log/stream.
 	LogStreamReplayDefault = 5000
+	LogStreamReplayMax     = 50000
 )
 
 // LogPageInput drives GET /api/tasks/{taskName}/runs/{runId}/log.
