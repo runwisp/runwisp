@@ -284,7 +284,9 @@ environment base, as the same OS user (`user` needs the daemon running as root).
 `docker-compose.yml` instead of a raw shell command. Set
 `compose_file = "./docker-compose.yml"` and (optionally)
 `compose_service = "<name>"` — when omitted, the service name defaults
-to the table key. `run` and `compose_file` are mutually exclusive.
+to the table key. `compose_file` alone starts the service with its own
+command; add a `run` command and it's exec'd inside the running container
+instead. Override that default with [`compose_mode`](/configuration/compose/#running-a-command-in-a-service-compose_mode).
 
 For importing the whole compose file at once, see [`[compose.*]`](/configuration/compose/).
 
