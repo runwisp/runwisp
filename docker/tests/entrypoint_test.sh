@@ -53,11 +53,14 @@ failed=0
 expect() {
 	name=$1 want_exit=$2 want_text=$3
 	shift 3
-	[ "$1" = "--" ] && shift
+	sep=${1:-}
+	[ "$sep" = "--" ] && shift
 
 	env_args=""
-	while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do
-		env_args="$env_args $1"
+	while [ "$#" -gt 0 ]; do
+		arg=$1
+		[ "$arg" = "--" ] && break
+		env_args="$env_args $arg"
 		shift
 	done
 	[ "${1:-}" = "--" ] && shift

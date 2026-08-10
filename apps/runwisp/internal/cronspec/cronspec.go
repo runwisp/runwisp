@@ -220,6 +220,13 @@ func dowTerm(term string) string {
 	// into day 0 *after* expanding the range, so `1-7` is the whole week — clamping
 	// it to `1-0` would be an inverted range robfig rejects, and `0-7` clamped to
 	// `0-0` would silently shrink every day to Sunday.
+	return expandDowRangeTo7(term, lo, step, hasStep)
+}
+
+// expandDowRangeTo7 expands a day-of-week range that ends at 7 (Sunday) into an
+// explicit comma list, folding day 7 to day 0. It returns term unchanged if lo
+// or the step can't be parsed.
+func expandDowRangeTo7(term, lo, step string, hasStep bool) string {
 	from, err := strconv.Atoi(lo)
 	if err != nil {
 		return term

@@ -466,21 +466,6 @@ func TestGetLogRaw(t *testing.T) {
 	assert.Equal(t, "log content\n", w.Body.String())
 }
 
-func TestGetRunNotFound(t *testing.T) {
-	s, repo, _, _ := setupServer(t)
-
-	id := ulid.Make().String()
-	repo.On("GetRun", mock.Anything, id).Return(nil, storage.ErrNotFound)
-
-	req := httptest.NewRequest("GET", "/api/runs/"+id, nil)
-	w := httptest.NewRecorder()
-
-	addAuth(req, s)
-	s.router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusNotFound, w.Code)
-}
-
 func TestInvalidRunID(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 

@@ -445,31 +445,7 @@ type cronJobLine struct {
 // @reboot line and handed a command argument to `user =` on a long one.
 func splitCronJobLine(line string, system bool) (cronJobLine, bool) {
 	if strings.HasPrefix(line, "@") {
-		tok, rest, ok := splitFields(line, 1)
-		if !ok {
-			return cronJobLine{}, false
-		}
-		j := cronJobLine{command: rest}
-		switch strings.ToLower(tok[0]) {
-		case "@reboot":
-			j.runOnStart = true
-		case "@annually":
-			j.schedule = "@yearly"
-		case "@midnight":
-			j.schedule = "@daily"
-		default:
-			j.schedule = tok[0]
-		}
-		if system {
-			userTok, command, ok := splitFields(rest, 1)
-			if !ok || command == "" {
-				return cronJobLine{}, false // a user column with no command isn't a job
-			}
-			j.user, j.command = userTok[0], command
-		} else if rest == "" {
-			return cronJobLine{}, false // a descriptor with no command isn't a job
-		}
-		return j, true
+		return splitCronDescriptorLine(line, system)
 	}
 
 	nFields := 5
@@ -483,6 +459,36 @@ func splitCronJobLine(line string, system bool) (cronJobLine, bool) {
 	j := cronJobLine{schedule: strings.Join(tok[:5], " "), command: rest}
 	if system {
 		j.user = tok[5]
+	}
+	return j, true
+}
+
+// splitCronDescriptorLine handles the `@keyword command` shorthand form of a
+// crontab job line. See splitCronJobLine for the system-mode user-column rules.
+func splitCronDescriptorLine(line string, system bool) (cronJobLine, bool) {
+	tok, rest, ok := splitFields(line, 1)
+	if !ok {
+		return cronJobLine{}, false
+	}
+	j := cronJobLine{command: rest}
+	switch strings.ToLower(tok[0]) {
+	case "@reboot":
+		j.runOnStart = true
+	case "@annually":
+		j.schedule = "@yearly"
+	case "@midnight":
+		j.schedule = "@daily"
+	default:
+		j.schedule = tok[0]
+	}
+	if system {
+		userTok, command, ok := splitFields(rest, 1)
+		if !ok || command == "" {
+			return cronJobLine{}, false // a user column with no command isn't a job
+		}
+		j.user, j.command = userTok[0], command
+	} else if rest == "" {
+		return cronJobLine{}, false // a descriptor with no command isn't a job
 	}
 	return j, true
 }

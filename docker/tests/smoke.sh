@@ -38,13 +38,15 @@ passed=0
 failed=0
 
 pass() {
+	local name="$1"
 	passed=$((passed + 1))
-	printf '  ok   %s\n' "$1"
+	printf '  ok   %s\n' "${name}"
 }
 fail() {
+	local name="$1" detail="${2:-}"
 	failed=$((failed + 1))
-	printf '  FAIL %s\n' "$1"
-	[[ $# -gt 1 ]] && printf '       %s\n' "$2"
+	printf '  FAIL %s\n' "${name}"
+	[[ $# -gt 1 ]] && printf '       %s\n' "${detail}"
 }
 
 # run_image <expected exit> <expected substring> <name> -- <docker run args...>

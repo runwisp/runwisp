@@ -994,8 +994,15 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 	if ts.cond != nil {
 		ts.cond.Signal()
 	}
-	// A reload removed this task while runs were draining; once the last one
-	// retires the taskState has no further owner, so delete it here.
+	m.reapRetiredTaskState(task, ts)
+	return nextRestartAttempt, serviceFatal, fatalAttempts
+}
+
+// reapRetiredTaskState drops a taskState from the registry once its last run has
+// retired, for the two cases where nothing else will: a reload-removed task
+// whose runs were still draining, and an ephemeral cloud-inline task that never
+// entered the TOML registry. Caller must hold m.mu.
+func (m *defaultTaskManager) reapRetiredTaskState(task *model.Task, ts *taskState) {
 	if ts.removed && len(ts.active) == 0 {
 		delete(m.tasks, task.Name)
 	} else if ts.task != nil && ts.task.Ephemeral && len(ts.active) == 0 && len(ts.queue) == 0 {
@@ -1010,7 +1017,6 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 		}
 		delete(m.tasks, task.Name)
 	}
-	return nextRestartAttempt, serviceFatal, fatalAttempts
 }
 
 // scheduleFollowup spawns the retry or restart goroutine dictated by the task's
