@@ -11,6 +11,27 @@ import (
 	"testing"
 )
 
+// TestEnsureDir_TightensPreExistingPerms guards the regression where EnsureDir
+// relied solely on os.MkdirAll, which never chmods an already-existing directory
+// — so a data dir created out-of-band at 0755 (e.g. a Docker bind-mount) kept
+// looser perms and exposed the SQLite DB to other local users.
+func TestEnsureDir_TightensPreExistingPerms(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "data")
+	if err := os.Mkdir(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0700 {
+		t.Fatalf("expected 0700 on pre-existing dir, got %o", perm)
+	}
+}
+
 func TestGeneratePassword_Base62Alphabet(t *testing.T) {
 	const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 

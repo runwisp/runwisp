@@ -20,7 +20,14 @@ import (
 // EnsureDir creates dir (and parents) with mode 0700 so that secrets stored
 // inside are not exposed to other local users via directory traversal.
 func EnsureDir(dir string) error {
-	return os.MkdirAll(dir, 0700)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	// MkdirAll leaves a pre-existing directory's mode untouched, so a data dir
+	// created out-of-band (e.g. a Docker bind-mount at 0755) would silently keep
+	// looser perms and expose the SQLite DB and other non-secret-file artifacts.
+	// Enforce 0700 unconditionally to hold the guarantee this function promises.
+	return os.Chmod(dir, 0700)
 }
 
 // WriteSecretFile writes data to path with mode 0600, refusing to follow

@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`npm install -g runwisp`, `bun add -g runwisp`, and `npx runwisp` now install and run the `runwisp` command.** The npm package now ships a small launcher that execs the bundled platform binary directly (no resident wrapper process), so every documented install path works — not just `bunx`.
+- **A task removed by `runwisp reload` now finalizes any run still waiting in its queue**, recording it with a terminal status so the run history and API never show it as perpetually pending.
+- **`min_free_space` keeps enforcing free-disk headroom across log rotations**, so the safeguard stays active for the full duration of a long-running task whose output rotates. See [`min_free_space`](https://docs.runwisp.com/configuration/storage/#what-min_free_space-actually-does).
+- **Log line numbers stay continuous after a run's output rotates more than once**, keeping log-search results and paging anchors pointing at the right lines.
+- **The data directory is always created with `0700` permissions**, including when it already exists (for example a pre-created Docker volume), so its contents stay private to the daemon's user.
+- **Notification log excerpts are always valid UTF-8** — trimming a captured-output tail to fit a message no longer cuts through a multi-byte character.
 - **Release tarballs now package `runwisp` as an executable (mode 0755).**
 - **CPU and memory stats now report real host values on macOS.** The system-resource collector only understood Linux `/proc`, so on macOS the dashboard, TUI, `/api/system` and `/metrics` showed the daemon's own Go heap as "total memory" with CPU stuck at 0%. macOS now reads host RAM and load average directly (via `sysctl` and a mach VM-statistics call), matching the Linux figures.
 - **The TUI's shutdown command now targets the daemon it's connected to via `--socket`, and surfaces an error if the shutdown fails.**

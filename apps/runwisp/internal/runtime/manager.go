@@ -227,7 +227,12 @@ func (m *defaultTaskManager) RemoveTask(taskName string) {
 	ts.removed = true
 
 	// Drop anything still queued and wake the drain goroutine so it returns.
+	// Queued runs were already persisted as 'pending'; finalize them here so a
+	// reload that removes the task never leaves a permanent non-terminal row.
 	if ts.cond != nil {
+		for _, r := range ts.queue {
+			m.endOrphanedPending(r)
+		}
 		ts.queue = nil
 		ts.cond.Broadcast()
 	}
@@ -300,12 +305,22 @@ func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult
 		r := run
 		ts, exists := m.tasks[r.TaskName]
 		if !exists {
+			m.endOrphanedPending(&r)
 			result.Skipped++
 			continue
 		}
 		m.resumePendingRun(ts, &r, &result)
 	}
 	return result
+}
+
+// endOrphanedPending finalizes a still-pending run whose task no longer exists
+// (removed by a reload, or absent from the config at boot) so it never lingers
+// as a permanent non-terminal 'pending' row — retention only sweeps ended runs.
+// Caller holds m.mu.
+func (m *defaultTaskManager) endOrphanedPending(r *model.Run) {
+	r.End(model.ReasonSkipped, -1, m.clock())
+	m.persistence.PersistExisting(r)
 }
 
 // resumePendingRun applies the per-run policy from LoadPendingRuns: services

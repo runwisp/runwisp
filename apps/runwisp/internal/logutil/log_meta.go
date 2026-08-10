@@ -11,8 +11,13 @@ import "path/filepath"
 type LogMeta struct {
 	RotatedLines int64 `json:"rl"`
 	RotatedBytes int64 `json:"rb"`
-	FinalLines   int64 `json:"fl,omitempty"`
-	Finalized    bool  `json:"fin,omitempty"`
+	// PrevStart is the global line number the `.prev` segment starts at. It is 0
+	// after the first rotation but nonzero after later ones (the `.prev` slot only
+	// ever holds the most-recently-rotated segment, which by then started partway
+	// through the run). Readers must number `.prev` from here, not from 0.
+	PrevStart  int64 `json:"ps,omitempty"`
+	FinalLines int64 `json:"fl,omitempty"`
+	Finalized  bool  `json:"fin,omitempty"`
 }
 
 // MetaPath returns the consolidated sidecar container path for a log file. The

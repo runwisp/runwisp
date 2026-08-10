@@ -4,6 +4,7 @@
 package logutil
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,6 +14,26 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestScanLines_PrevStartAfterMultipleRotations guards the regression where the
+// `.prev` segment was always numbered from 0. After 2+ rotations the .prev slot
+// holds a segment that started partway through the run, so it must be numbered
+// from meta.PrevStart. Layout: segment 1 (3 lines, already discarded) → segment
+// 2 in .prev starting at line 3 → current segment starting at line 5.
+func TestScanLines_PrevStartAfterMultipleRotations(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "task.log")
+	require.NoError(t, os.WriteFile(PrevPath(logPath), []byte("p3\np4\n"), 0644))
+	require.NoError(t, os.WriteFile(logPath, []byte("c5\nc6\n"), 0644))
+	writeContainer(t, logPath, MetaRecord(LogMeta{RotatedLines: 5, PrevStart: 3}))
+
+	var got []int64
+	err := ScanLines(context.Background(), logPath, func(r LogLineRecord) bool {
+		got = append(got, r.LineNum)
+		return true
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []int64{3, 4, 5, 6}, got)
+}
 
 func tempFileWithContent(t *testing.T, content string) *os.File {
 	t.Helper()

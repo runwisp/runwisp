@@ -176,7 +176,7 @@ func ReadLineRange(logPath string, from, limit int64) (lines []LogLineRecord, fi
 func ScanLines(ctx context.Context, logPath string, visit func(LogLineRecord) bool) error {
 	meta := ReadLogMeta(logPath)
 
-	done, err := scanSegment(ctx, PrevPath(logPath), 0, visit)
+	done, err := scanSegment(ctx, PrevPath(logPath), meta.PrevStart, visit)
 	if err != nil || done {
 		return err
 	}
