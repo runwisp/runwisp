@@ -35,9 +35,7 @@
     --rw-font-sans: "TASA Orbiter", system-ui, -apple-system, sans-serif;
     --rw-font-mono:
         "Geist Mono Variable", "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-}
 
-:root {
     /* Primary — Wisp Teal (brand = #0E7C86, the artifact's deep teal). Deeper
      * and less cyan than Aurora (running/info) so the two stay distinct. */
     --rw-color-wisp-50: oklch(0.97 0.02 205);

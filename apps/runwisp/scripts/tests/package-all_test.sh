@@ -20,11 +20,12 @@ failed=0
 
 # Mode of the `runwisp` member inside a tarball, e.g. "-rwxr-xr-x".
 member_mode() {
-  tar tzvf "$1" | awk '$NF == "runwisp" { print $1 }'
+  local tarball="$1"
+  tar tzvf "${tarball}" | awk '$NF == "runwisp" { print $1 }'
 }
 
-pass() { passed=$((passed + 1)); printf 'ok   - %s\n' "$1"; }
-fail() { failed=$((failed + 1)); printf 'FAIL - %s\n' "$1" >&2; }
+pass() { local name="$1"; passed=$((passed + 1)); printf 'ok   - %s\n' "${name}"; }
+fail() { local name="$1"; failed=$((failed + 1)); printf 'FAIL - %s\n' "${name}" >&2; }
 
 # --- packs a 0644 binary as an executable member (the actual v0.14.0 bug) ---
 work=$(mktemp -d)

@@ -125,22 +125,7 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 
 	fieldsStartY := lineCount
 
-	for i, f := range fields {
-		selected := i == homeCursor
-		hovered := i == homeHover && !selected
-		switch f {
-		case FieldOpenWebUI:
-			renderActionRow(&b, "Open Web UI", uikit.ColorSecondary, w, selected, hovered)
-		case FieldWebUI:
-			renderFieldRow(&b, "Web UI", info.WebURL(), uikit.ColorText, w, selected, hovered)
-		case FieldPassword:
-			masked := strings.Repeat("•", PasswordMaskWidth)
-			if selected {
-				masked += "  (press Enter to copy)"
-			}
-			renderFieldRow(&b, "Password", masked, uikit.ColorWarning, w, selected, hovered)
-		}
-	}
+	writeFieldRows(&b, fields, info, w, homeCursor, homeHover)
 
 	// Auth disabled: render a static, non-focusable Password row so the
 	// operator sees the security state at a glance instead of a masked value.
@@ -154,6 +139,27 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 	}
 
 	return b.String(), fieldsStartY
+}
+
+// writeFieldRows renders each focusable field row, applying the cursor/hover
+// highlight for the currently selected and hovered indices.
+func writeFieldRows(b *strings.Builder, fields []Field, info uikit.StartupInfo, w, homeCursor, homeHover int) {
+	for i, f := range fields {
+		selected := i == homeCursor
+		hovered := i == homeHover && !selected
+		switch f {
+		case FieldOpenWebUI:
+			renderActionRow(b, "Open Web UI", uikit.ColorSecondary, w, selected, hovered)
+		case FieldWebUI:
+			renderFieldRow(b, "Web UI", info.WebURL(), uikit.ColorText, w, selected, hovered)
+		case FieldPassword:
+			masked := strings.Repeat("•", PasswordMaskWidth)
+			if selected {
+				masked += "  (press Enter to copy)"
+			}
+			renderFieldRow(b, "Password", masked, uikit.ColorWarning, w, selected, hovered)
+		}
+	}
 }
 
 // renderFieldRow renders a single focusable field row with optional selection highlight.
