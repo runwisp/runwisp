@@ -10,9 +10,6 @@
   "publishConfig": {
     "access": "public"
   },
-  "bin": {
-    "runwisp": "runwisp"
-  },
   "os": [
     "darwin"
   ],
