@@ -70,7 +70,7 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
 - `packages/{ui, eslint-config, typescript-config}`: Shared Svelte component library and tooling configs.
 - **License boundary**: `packages/*` stays Apache-2.0 because it's also consumed by the separate, unpublished `runwisp/cloud` repo, which cannot take a GPL dependency. `apps/*` (the daemon and UI you actually ship) is GPL-3.0-or-later. This is one-way: `apps/*` may depend on `packages/*`, but nothing in `packages/*` may import from `apps/*`.
 - `apps/runwisp`: Go standalone cron daemon binary. Single binary with embedded SQLite, REST API, SSE log streaming, and optional outbound control-plane integration (`internal/cloud/`).
-  - `cmd/runwisp/`: CLI entry point. Root command boots the TUI; subcommands: `daemon`, `validate`, `status`, `list`, `exec`, `tui`, `cloud`, `openapi`. Also: first-run setup, password handling, port checks, daemon spawn/lifecycle.
+  - `cmd/runwisp/`: CLI entry point. Root command boots the TUI; subcommands group into: **lifecycle** (`daemon`, `reload`, `restart`, `stop`), **inspection** (`status`, `list`, `exec`, `validate`, `schema`, `openapi`, `tui`), **crond/supervisord migration** (`import`, `takeover`, `promote`, `cron`), **host integration** (`service install|uninstall|status`), plus `cloud`, `password`, `demo`, `agent-guide`. Also: first-run setup, password handling, port checks, daemon spawn/lifecycle.
   - `cmd/e2e-fake-daemon/`: Test-only binary that impersonates a daemon for cloud E2E tests. Not shipped.
   - `internal/model/`: Core domain types (`Task`, `Run`, enums, concurrency/restart/missed-run policies).
   - `internal/server/`: HTTP server (huma), REST routes, CHAP auth, SSE log streaming.
@@ -78,7 +78,9 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
   - `internal/executor/`: Low-level process execution engine (spawn, stdio capture, signal, exit reaping).
   - `internal/notify/`: Notification subsystem. Subscribes to the event bus, evaluates routing rules against per-event predicates, dispatches to channels (in-app, Slack, Telegram) via per-action workers, retries with backoff, coalesces in-app bursts, and emits a `notify_delivery_failed` synthetic event on permanent failure (in-app only — cycle guard). See `channel/`, `coalesce/`, `kinds/`, `render/`, `configload/`.
   - `internal/cloud/`: Optional outbound control-plane client (see section below).
+  - `internal/chap/`: Challenge-response auth computation shared by daemon and client — the one place the CHAP secret is turned into a proof.
   - `internal/config/`
+  - `internal/configedit/`: The only writer of RunWisp config files, used by `import`/`takeover`/first-run. Operator-driven on disk — never the REST API or UI (TOML stays the source of truth).
   - `internal/storage/`
   - `internal/events/`: In-memory pub/sub event bus for run lifecycle and log-line events.
   - `internal/apiclient/`: HTTP client used by CLI commands and TUI to talk to a running daemon.
@@ -86,6 +88,11 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
   - `internal/datadir/`: Data directory helpers — PID file, password resolution, JWT secret generation.
   - `internal/fingerprint/`: Deterministic human-readable instance fingerprint (machine-id + cwd).
   - `internal/logutil/`: Log file indexing and metadata helpers.
+  - `internal/logsearch/`: On-demand substring/regex search across a task's log files.
+  - `internal/runlog/`, `internal/clilog/`: One concise slog line per run lifecycle transition; the slog handler/config shared by CLI and daemon.
+  - **crond/supervisord/compose take-over** — `internal/importer/` converts existing crontab, supervisord, and docker-compose config into RunWisp tasks (`import`/`takeover`/`promote`); `internal/cronspec/` is the single definition of RunWisp's cron grammar; `internal/cronprobe/` detects whether a system cron is present; `internal/composespec/` is the sole consumer of `compose-go`; `internal/cutover/` decides what it takes for RunWisp to replace the host's cron.
+  - `internal/autostart/`, `internal/tlscert/`: Wires the daemon into the host init system (`service` command); generates and persists the self-signed TLS cert.
+  - `internal/demo/`, `internal/textutil/`: Embedded "Acme Notes" demo config; small string helpers shared across the daemon and CLI.
   - `internal/ui/`: Serves the embedded Svelte dashboard static assets (`dist/` is populated by the build script — do not commit).
   - `internal/version/`: Single `Version` string, overridden at build time via ldflags from `CHANGELOG.md`.
   - `internal/testutil/`
