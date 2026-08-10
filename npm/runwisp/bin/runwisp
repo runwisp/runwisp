@@ -1,0 +1,42 @@
+#!/bin/sh
+# Locate the platform-specific binary that ships as an optional dependency
+# (@runwisp/<os>-<arch>) and exec into it. `exec` replaces this shell with the
+# Go binary, so there is no wrapper process or extra memory left behind — and
+# signals reach the daemon directly. No postinstall step is involved, which
+# also keeps it working under package managers that block lifecycle scripts.
+
+# Resolve this script's real path, following symlinks (npm/bun link the global
+# `runwisp` command to here). Portable: no `readlink -f`, which BSD/macOS lacks.
+target=$0
+while [ -L "$target" ]; do
+  link=$(readlink "$target")
+  case $link in
+    /*) target=$link ;;
+    *) target=$(dirname "$target")/$link ;;
+  esac
+done
+dir=$(CDPATH= cd -- "$(dirname -- "$target")" && pwd)
+
+os=$(uname -s)
+arch=$(uname -m)
+case $os in
+  Linux) os=linux ;;
+  Darwin) os=darwin ;;
+esac
+case $arch in
+  x86_64 | amd64) arch=x64 ;;
+  arm64 | aarch64) arch=arm64 ;;
+esac
+pkg="@runwisp/$os-$arch"
+
+# Covers both install layouts: npm nests deps under the package, bun hoists them
+# alongside it.
+for bin in "$dir/../node_modules/$pkg/runwisp" "$dir/../../$pkg/runwisp"; do
+  if [ -x "$bin" ]; then
+    exec "$bin" "$@"
+  fi
+done
+
+echo "runwisp: no binary found for $os-$arch." >&2
+echo "The optional dependency $pkg was not installed — is this platform supported?" >&2
+exit 1

@@ -21,6 +21,9 @@
     "task-runner",
     "supervisord"
   ],
+  "bin": {
+    "runwisp": "bin/runwisp"
+  },
   "optionalDependencies": {
     "@runwisp/linux-x64": "0.0.0",
     "@runwisp/linux-arm64": "0.0.0",
