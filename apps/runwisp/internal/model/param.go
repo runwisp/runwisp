@@ -58,9 +58,6 @@ type TaskParam struct {
 	Description string   `json:"description,omitempty" doc:"Help text shown under the field"`
 }
 
-// HasValue reports whether the parameter renders a value (everything but flag).
-func (p TaskParam) HasValue() bool { return p.Kind != ParamFlag }
-
 // ResolveParamValues validates operator-supplied values against the task's
 // parameter declarations, applies defaults, coerces/canonicalises, and returns
 // the persisted identity→value map. It is a pure transform — no clock, no I/O.

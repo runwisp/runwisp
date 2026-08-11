@@ -135,15 +135,6 @@ func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
 	}, nil
 }
 
-// Write satisfies io.Writer. Each call must contain exactly one
-// '\n'-terminated line; the writer assigns one absolute line number per call.
-// Returns len(p) for silently-dropped lines (drop_new / kill_task / disk-low)
-// to keep upstream pipes from backing up.
-func (w *LogWriter) Write(p []byte) (n int, err error) {
-	_, written, err := w.writeOneLine(p)
-	return written, err
-}
-
 // WriteLineEvent appends a single line for the given stream and returns the
 // absolute line number assigned by the writer (rotated_lines + line_count).
 // Returns -1 when the line is silently dropped (writer stopped, drop_new,

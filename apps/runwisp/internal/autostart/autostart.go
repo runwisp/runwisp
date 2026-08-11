@@ -315,10 +315,6 @@ var ErrUnsupported = errors.New("autostart: no installer for this OS — see htt
 // marker. The caller should suggest `--force` or manual cleanup.
 var ErrConflict = errors.New("autostart: unit file is not managed by runwisp — use --force to overwrite")
 
-// ErrAlreadyRunning means a daemon is already running against the
-// same data dir; installing the unit now would race the live process.
-var ErrAlreadyRunning = errors.New("autostart: a daemon is already running against this data dir")
-
 // ErrConfigMissing means runwisp.toml does not exist. `service install`
 // never creates one — the operator runs `runwisp` interactively first.
 var ErrConfigMissing = errors.New("autostart: runwisp.toml is missing — run `runwisp` interactively to create one first")

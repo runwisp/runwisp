@@ -32,7 +32,7 @@
         ...restProps
     }: Props = $props();
 
-    const generatedId = `duration-input-${Math.random().toString(36).slice(2, 10)}`;
+    const generatedId = $props.id();
     const inputId = $derived(id ?? generatedId);
 
     let textValue = $state("");

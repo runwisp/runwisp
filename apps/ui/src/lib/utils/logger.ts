@@ -3,7 +3,4 @@
 
 import { createLoggerFactory } from "@runwisp/common";
 
-export const createLogger = createLoggerFactory({
-    enabled: true,
-    prefix: "[runwisp]",
-});
+export const createLogger = createLoggerFactory();
