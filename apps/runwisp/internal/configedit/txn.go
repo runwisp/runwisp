@@ -91,10 +91,6 @@ func (t *Txn) WritePreservingOwner(path string, data []byte) {
 	t.queued = append(t.queued, queuedWrite{path: path, data: data, preserveOwner: true})
 }
 
-// Empty reports whether the transaction has nothing to write, so a caller can
-// skip Apply (and its gate) entirely.
-func (t *Txn) Empty() bool { return len(t.queued) == 0 }
-
 // Apply writes every queued file through temp+rename (or removes it, for a
 // queued Remove), then calls gate. When gate returns an error — or any operation
 // fails — every file the transaction touched is restored to exactly its previous

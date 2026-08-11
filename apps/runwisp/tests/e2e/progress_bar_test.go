@@ -164,7 +164,7 @@ func waitForRunEnded(t *testing.T, client *apiclient.Client, taskName, runID str
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		run, err := client.GetRun(taskName, runID)
+		run, err := client.GetRun(runID)
 		if err == nil && run.Status == model.PhaseEnded {
 			return
 		}

@@ -41,10 +41,10 @@ type runService struct {
 	tasks       *runtime.TaskRegistry
 	scheduler   runtime.NextRunGetter
 	logDir      string
-	eventBus    events.EventBus
+	eventBus    *events.Bus
 }
 
-func newRunService(db storage.RunRepository, jm runtime.TaskRunner, tasks *runtime.TaskRegistry, sched runtime.NextRunGetter, logDir string, bus events.EventBus) *runService {
+func newRunService(db storage.RunRepository, jm runtime.TaskRunner, tasks *runtime.TaskRegistry, sched runtime.NextRunGetter, logDir string, bus *events.Bus) *runService {
 	return &runService{db: db, taskManager: jm, tasks: tasks, scheduler: sched, logDir: logDir, eventBus: bus}
 }
 

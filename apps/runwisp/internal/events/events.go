@@ -187,25 +187,26 @@ type LogRegionEvent struct {
 // EventHandler processes events.
 type EventHandler func(event Event)
 
-// Compile-time check: *defaultEventBus satisfies EventBus.
-var _ EventBus = (*defaultEventBus)(nil)
-
-// defaultEventBus is a lightweight in-memory pub/sub hub.
-type defaultEventBus struct {
+// Bus is a lightweight in-memory pub/sub hub.
+//
+// Publish invokes each handler synchronously on the caller's goroutine; handlers
+// that need async fan-out (e.g. SSE streaming) must own their own buffered
+// channel. This keeps the bus allocation-free per publish.
+type Bus struct {
 	subscribers map[EventType]map[int]EventHandler
 	nextID      int
 	mu          sync.RWMutex
 }
 
 // NewEventBus constructs a pub/sub bus.
-func NewEventBus() EventBus {
-	return &defaultEventBus{
+func NewEventBus() *Bus {
+	return &Bus{
 		subscribers: make(map[EventType]map[int]EventHandler),
 	}
 }
 
 // Subscribe registers a handler for a specific event type.
-func (eBus *defaultEventBus) Subscribe(eventType EventType, handler EventHandler) func() {
+func (eBus *Bus) Subscribe(eventType EventType, handler EventHandler) func() {
 	eBus.mu.Lock()
 	defer eBus.mu.Unlock()
 
@@ -223,7 +224,7 @@ func (eBus *defaultEventBus) Subscribe(eventType EventType, handler EventHandler
 }
 
 // SubscribeAll registers a handler for all event types listed in AllEventTypes.
-func (eBus *defaultEventBus) SubscribeAll(handler EventHandler) func() {
+func (eBus *Bus) SubscribeAll(handler EventHandler) func() {
 	var unsubscribers []func()
 	for _, eventType := range AllEventTypes {
 		unsubscribers = append(unsubscribers, eBus.Subscribe(eventType, handler))
@@ -242,7 +243,7 @@ func (eBus *defaultEventBus) SubscribeAll(handler EventHandler) func() {
 //
 // Callers that need async fan-out should push into their own buffered channel
 // from the handler (the SSE streamer does this).
-func (eBus *defaultEventBus) Publish(eventType EventType, data EventData) {
+func (eBus *Bus) Publish(eventType EventType, data EventData) {
 	event := Event{
 		Type:      eventType,
 		Timestamp: time.Now(),
@@ -255,7 +256,7 @@ func (eBus *defaultEventBus) Publish(eventType EventType, data EventData) {
 	}
 }
 
-func (eBus *defaultEventBus) invoke(handler EventHandler, event Event) {
+func (eBus *Bus) invoke(handler EventHandler, event Event) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("EventBus: recovered from panic in handler", "panic", r)
@@ -264,7 +265,7 @@ func (eBus *defaultEventBus) invoke(handler EventHandler, event Event) {
 	handler(event)
 }
 
-func (eBus *defaultEventBus) copyHandlers(eventType EventType) []EventHandler {
+func (eBus *Bus) copyHandlers(eventType EventType) []EventHandler {
 	eBus.mu.RLock()
 	defer eBus.mu.RUnlock()
 
@@ -275,7 +276,7 @@ func (eBus *defaultEventBus) copyHandlers(eventType EventType) []EventHandler {
 	return handlers
 }
 
-func (eBus *defaultEventBus) remove(eventType EventType, id int) {
+func (eBus *Bus) remove(eventType EventType, id int) {
 	eBus.mu.Lock()
 	defer eBus.mu.Unlock()
 

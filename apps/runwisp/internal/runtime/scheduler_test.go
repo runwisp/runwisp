@@ -608,7 +608,7 @@ func TestSchedulerRemoveTaskClearsState(t *testing.T) {
 	sched.RemoveTask("never")
 }
 
-func TestSchedulerReschedule(t *testing.T) {
+func TestSchedulerRemoveThenAddTaskReschedules(t *testing.T) {
 	runner := &fakeTaskRunner{}
 	task := &model.Task{Name: "tick", Cron: "0 2 * * *", Run: "echo hi"}
 	sched := NewScheduler(runner, map[string]*model.Task{"tick": task}, time.UTC, nil)
@@ -618,11 +618,13 @@ func TestSchedulerReschedule(t *testing.T) {
 
 	first := sched.entryIDs["tick"]
 
-	// Change the spec and reschedule; the entry must be rebuilt (new ID).
+	// Change the spec and reschedule via RemoveTask+AddTask (what the
+	// reconciler does on a reload); the entry must be rebuilt (new ID).
 	task.Cron = "0 3 * * *"
-	require.NoError(t, sched.Reschedule(task))
+	sched.RemoveTask(task.Name)
+	require.NoError(t, sched.AddTask(task))
 
 	second, ok := sched.entryIDs["tick"]
 	require.True(t, ok)
-	assert.NotEqual(t, first, second, "Reschedule must build a fresh cron entry")
+	assert.NotEqual(t, first, second, "reschedule must build a fresh cron entry")
 }

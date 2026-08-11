@@ -6,8 +6,6 @@ package main
 import (
 	"encoding/base64"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -36,11 +34,7 @@ type cachedToken struct {
 // its own, and the file is keyed by daemon URL so one CLI can hold sessions
 // for several daemons.
 func tokenCachePath() (string, error) {
-	base, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(base, "runwisp", "tokens.json"), nil
+	return runwispCacheFile("tokens.json")
 }
 
 // loadCachedToken returns a non-expired cached JWT for baseURL, or "" when

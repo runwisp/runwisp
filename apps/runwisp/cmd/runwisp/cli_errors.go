@@ -164,10 +164,6 @@ func unknownTaskError(taskName string, available []string) error {
 // portConflictError, we know exactly what is there — so we name its datadir and
 // config and point at the commands to connect to or stop it.
 func runwispPortConflictError(host string, port int, info *model.InstanceInfo) error {
-	displayHost := host
-	if displayHost == "" {
-		displayHost = "127.0.0.1"
-	}
 	var b strings.Builder
 	b.WriteString("It was started from a different data directory, so it has its own socket and config:\n")
 	for _, line := range instanceSummaryLines(info) {
@@ -178,7 +174,7 @@ func runwispPortConflictError(host string, port int, info *model.InstanceInfo) e
 	fmt.Fprintf(&b, "  - Stop it:              runwisp stop --data %s\n", info.DataDir)
 	b.WriteString("  - Or run on a different port:  runwisp --port <PORT>")
 	return &userFacingError{
-		title:   fmt.Sprintf("another RunWisp daemon (v%s, pid %d) is already running on %s:%d", info.Version, info.Pid, displayHost, port),
+		title:   fmt.Sprintf("another RunWisp daemon (v%s, pid %d) is already running on %s:%d", info.Version, info.Pid, displayHost(host), port),
 		details: b.String(),
 	}
 }

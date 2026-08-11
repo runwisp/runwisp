@@ -125,7 +125,7 @@ func TestEventBus(t *testing.T) {
 	})
 
 	t.Run("remove cleanup", func(t *testing.T) {
-		eb := NewEventBus().(*defaultEventBus)
+		eb := NewEventBus()
 		unsub := eb.Subscribe(EventRunCreated, func(e Event) {})
 
 		eb.mu.RLock()

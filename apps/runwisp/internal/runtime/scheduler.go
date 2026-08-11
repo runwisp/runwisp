@@ -286,29 +286,34 @@ func (scheduler *Scheduler) RemoveTask(name string) {
 	delete(scheduler.jitterPlans, name)
 }
 
-// Reschedule replaces a task's cron entry with one built from its current
-// definition, used by the reconciler when a reload changes a task's cron
-// expression or timezone.
-func (scheduler *Scheduler) Reschedule(task *model.Task) error {
-	scheduler.RemoveTask(task.Name)
-	return scheduler.AddTask(task)
-}
-
 // effectiveSpec builds the cron spec actually fed to the parser — task.Cron
 // prefixed with CRON_TZ= when the task pins its own timezone — and the location
 // used as the reference for wall-clock dedup (the task TZ, else the scheduler
 // default). Shared by addTask and the jitter-plan computation so both interpret
 // a task's schedule identically.
 func (scheduler *Scheduler) effectiveSpec(task *model.Task) (string, *time.Location) {
+	return resolveTaskSchedule(task, scheduler.location)
+}
+
+// resolveTaskSchedule builds the cron spec actually fed to the parser —
+// task.Cron prefixed with CRON_TZ= when the task pins its own timezone — and
+// the location used as the reference for wall-clock evaluation: the task's
+// own timezone when set, else defaultLoc, else time.Local. Shared by the live
+// scheduler (effectiveSpec) and startup catch-up (catchupSchedule) so both
+// interpret a task's schedule identically.
+func resolveTaskSchedule(task *model.Task, defaultLoc *time.Location) (string, *time.Location) {
 	spec := task.Cron
-	loc := scheduler.location
+	loc := defaultLoc
+	if loc == nil {
+		loc = time.Local
+	}
 	if task.Timezone != "" {
 		// CRON_TZ= prefix is honored by robfig/cron's standard parser and
-		// overrides the scheduler's default location for this entry.
+		// overrides the default location for this entry.
 		spec = "CRON_TZ=" + task.Timezone + " " + task.Cron
-		// Best-effort resolve: if it doesn't parse the AddFunc caller will
-		// fail and we surface a warning. On success, use the task TZ as the
-		// reference for wall-clock dedup.
+		// Best-effort resolve: if it doesn't parse, the caller's parser.Parse
+		// will fail and surface an error/warning. On success, use the task TZ
+		// as the reference for wall-clock evaluation.
 		if l, err := time.LoadLocation(task.Timezone); err == nil {
 			loc = l
 		}

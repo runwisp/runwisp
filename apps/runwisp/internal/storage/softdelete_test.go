@@ -56,10 +56,6 @@ func TestSoftDeleteHidesRunFromReads(t *testing.T) {
 	assert.Equal(t, r2.ID, runs[0].ID)
 
 	// Counts ignore soft-deleted rows.
-	count, err := db.CountRuns(ctx, "task1")
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), count)
-
 	countF, err := db.CountRunsFiltered(ctx, model.RunFilter{TaskName: "task1"})
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), countF)

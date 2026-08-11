@@ -10,11 +10,11 @@ import (
 	"math/rand"
 	"runtime"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/robfig/cron/v3"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/cronspec"
@@ -177,7 +177,7 @@ func (s *seeder) plan(rng *rand.Rand) []*runSpec {
 // planScheduled walks the task's cron backwards over the lookback window and
 // emits one run per fire (capped), aligning history to the real schedule.
 func (s *seeder) planScheduled(task *model.Task) []*runSpec {
-	sched, err := cronParser().Parse(task.Cron)
+	sched, err := cronspec.NewParser().Parse(task.Cron)
 	if err != nil {
 		return nil
 	}
@@ -362,32 +362,13 @@ func (s *seeder) runAll(ctx context.Context, specs []*runSpec) error {
 	if workers < 8 {
 		workers = 8
 	}
-	jobs := make(chan *runSpec)
-	errs := make(chan error, len(specs))
-	var wg sync.WaitGroup
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for spec := range jobs {
-				if err := s.execOne(ctx, spec); err != nil {
-					errs <- err
-				}
-			}
-		}()
-	}
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(workers)
 	for _, spec := range specs {
-		jobs <- spec
+		spec := spec
+		g.Go(func() error { return s.execOne(gctx, spec) })
 	}
-	close(jobs)
-	wg.Wait()
-	close(errs)
-	for err := range errs {
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return g.Wait()
 }
 
 // execOne runs one spec's real command through the executor with a backdated
@@ -461,10 +442,6 @@ func serviceUptime(spec *runSpec) time.Duration {
 }
 
 // --- helpers -----------------------------------------------------------------
-
-func cronParser() cron.ScheduleParser {
-	return cronspec.NewParser()
-}
 
 // pastFires returns the schedule's fire times within [now-window, now), oldest
 // first. Mirrors the forward-stepping the catch-up logic uses.

@@ -41,13 +41,9 @@ type daemonConfig struct {
 }
 
 func loadDaemonConfig(ctx context.Context, configRepo storage.ConfigRepository, mode daemonMode, f Flags) (*daemonConfig, error) {
-	fp, err := resolveConfigValue(
-		ctx,
-		configRepo,
-		storage.ConfigKeyFingerprint,
-		"RUNWISP_FINGERPRINT",
-		func() (string, error) { return fingerprint.Generate(), nil },
-	)
+	// Fingerprint resolution priority: an env override (not persisted), then the
+	// DB (canonical store), then a freshly generated one persisted for next boot.
+	fp, err := resolveFingerprint(ctx, configRepo)
 	if err != nil {
 		return nil, err
 	}
@@ -173,34 +169,23 @@ func deriveJWTSecret(password, fp string) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(key), nil
 }
 
-// resolveConfigValue resolves a config value with the following priority:
-//  1. Environment variable override (not persisted to DB)
-//  2. Database (canonical store)
-//  3. Generated via generate() and persisted to DB
-func resolveConfigValue(
-	ctx context.Context,
-	configRepo storage.ConfigRepository,
-	dbKey, envKey string,
-	generate func() (string, error),
-) (string, error) {
-	if v := strings.TrimSpace(os.Getenv(envKey)); v != "" {
-		return v, nil
+// resolveFingerprint resolves the daemon's per-install fingerprint: an env
+// override wins (not persisted), else the DB's stored value, else a freshly
+// generated one persisted for next boot.
+func resolveFingerprint(ctx context.Context, configRepo storage.ConfigRepository) (string, error) {
+	if fp := strings.TrimSpace(os.Getenv("RUNWISP_FINGERPRINT")); fp != "" {
+		return fp, nil
 	}
-
-	if v, found, err := configRepo.GetConfigValue(ctx, dbKey); err != nil {
+	if fp, found, err := configRepo.GetConfigValue(ctx, storage.ConfigKeyFingerprint); err != nil {
 		return "", err
 	} else if found {
-		return v, nil
+		return fp, nil
 	}
-
-	v, err := generate()
-	if err != nil {
+	fp := fingerprint.Generate()
+	if err := configRepo.SetConfigValue(ctx, storage.ConfigKeyFingerprint, fp); err != nil {
 		return "", err
 	}
-	if err := configRepo.SetConfigValue(ctx, dbKey, v); err != nil {
-		return "", err
-	}
-	return v, nil
+	return fp, nil
 }
 
 func loadConfigFile(path string, cloudEnabled bool) (*config.Config, bool, error) {

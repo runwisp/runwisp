@@ -21,7 +21,7 @@ import (
 // captureLogPath returns a function that, after Execute completes, yields the
 // log path published on the run.updated event envelope. The executor no
 // longer stamps LogPath on the Run row; tests read it off the event payload.
-func captureLogPath(eb events.EventBus) func() string {
+func captureLogPath(eb *events.Bus) func() string {
 	var (
 		mu      sync.Mutex
 		logPath string

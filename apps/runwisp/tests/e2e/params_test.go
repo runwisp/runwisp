@@ -88,7 +88,7 @@ params = [
 	)
 
 	// The resolved parameter set is persisted on the run and visible via the API.
-	run, err := client.GetRun(taskName, triggered.ID)
+	run, err := client.GetRun(triggered.ID)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
 		"PROJECT_ID": "acme",
@@ -148,7 +148,7 @@ params = [
 	omit, err := client.TriggerRun(taskName, map[string]*string{"--note": nil})
 	require.NoError(t, err)
 	require.Equal(t, "arg=[]\n", readCapture(t), "omitted option leaves no argv tokens (printf sees no args)")
-	omitRun, err := client.GetRun(taskName, omit.ID)
+	omitRun, err := client.GetRun(omit.ID)
 	require.NoError(t, err)
 	assert.NotContains(t, omitRun.Params, "--note", "omitted param is absent from run history")
 
@@ -160,7 +160,7 @@ params = [
 	require.NoError(t, err)
 	require.Equal(t, "arg=[--note]\narg=[]\n", readCapture(t),
 		"empty string is passed as a real, empty option value")
-	emptyDetail, err := client.GetRun(taskName, emptyRun.ID)
+	emptyDetail, err := client.GetRun(emptyRun.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "", emptyDetail.Params["--note"], "empty string is recorded on the run")
 }

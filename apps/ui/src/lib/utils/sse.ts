@@ -1,17 +1,12 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { SSE_CONFIG } from "$lib/config/constants";
-import type { EventSourceFactory, SSEStream } from "$lib/adapters/browser";
+import type { EventSourceFactory } from "$lib/adapters/browser";
 import { browserAuthEventSourceFactory } from "$lib/adapters/browser";
-import {
-    type SSEErrorInfo,
-    extractErrorInfo,
-    formatErrorInfo,
-    getMessageEventData,
-} from "$lib/utils/event-source";
+import { type SSEErrorInfo, getMessageEventData } from "$lib/utils/event-source";
 import { getApiUrl } from "$lib/utils/env";
 import { createLogger } from "$lib/utils/logger";
+import { createReconnectingConnection } from "$lib/utils/sse-reconnect";
 
 export interface SSEConnectionDeps {
     createEventSource?: EventSourceFactory;
@@ -67,84 +62,42 @@ export function connectSSE(options: ReconnectingSSEOptions): SSEConnection {
     const resolveApiUrl = deps.getApiUrl ?? getApiUrl;
     const logger = createLogger("SSE");
 
-    let eventSource: SSEStream | null = null;
-    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-    let reconnectDelay: number = SSE_CONFIG.RECONNECT_DELAY;
-    let disposed = false;
-
-    function connect() {
-        if (disposed) return;
-
-        const resolvedPath = typeof path === "function" ? path() : path;
-        const url = buildSSEUrl(resolvedPath, resolveApiUrl());
-        let es: SSEStream;
-        try {
-            es = createEventSource(url);
-        } catch (err) {
-            logger.warn("SSE failed to create EventSource for " + resolvedPath, err);
-            onError?.({ message: String(err), url });
-            scheduleReconnect();
-            return;
-        }
-        eventSource = es;
-
-        es.onopen = () => {
-            reconnectDelay = SSE_CONFIG.RECONNECT_DELAY;
-            onOpen?.();
-        };
-
-        es.onerror = (e: Event) => {
-            const info = extractErrorInfo(e, es, url);
-            logger.warn(`SSE error on ${resolvedPath}: ${formatErrorInfo(info)}`);
-            onError?.(info);
-            cleanup();
-            scheduleReconnect();
-        };
-
-        if (eventTypes.length > 0) {
-            for (const eventType of eventTypes) {
-                es.addEventListener(eventType, (event: MessageEvent) => {
+    const connection = createReconnectingConnection({
+        resolve: () => {
+            const resolvedPath = typeof path === "function" ? path() : path;
+            return { url: buildSSEUrl(resolvedPath, resolveApiUrl()), label: resolvedPath };
+        },
+        createEventSource,
+        logger,
+        onCreated: (es) => {
+            if (eventTypes.length > 0) {
+                for (const eventType of eventTypes) {
+                    es.addEventListener(eventType, (event: MessageEvent) => {
+                        const data = getMessageEventData(event);
+                        if (data !== undefined) {
+                            onEvent(eventType, data);
+                        }
+                    });
+                }
+            } else {
+                es.onmessage = (event: MessageEvent) => {
                     const data = getMessageEventData(event);
                     if (data !== undefined) {
-                        onEvent(eventType, data);
+                        onEvent("message", data);
                     }
-                });
+                };
             }
-        } else {
-            es.onmessage = (event: MessageEvent) => {
-                const data = getMessageEventData(event);
-                if (data !== undefined) {
-                    onEvent("message", data);
-                }
-            };
-        }
-    }
+        },
+        onOpen: () => onOpen?.(),
+        onError: (info) => onError?.(info),
+        shouldReconnect: () => reconnect,
+    });
 
-    function scheduleReconnect() {
-        if (reconnect && !disposed) {
-            const delay = reconnectDelay;
-            reconnectDelay = Math.min(reconnectDelay * 2, SSE_CONFIG.MAX_RECONNECT_DELAY);
-            reconnectTimeout = setTimeout(connect, delay);
-        }
-    }
+    connection.connect();
 
-    function cleanup() {
-        if (eventSource) {
-            eventSource.close();
-            eventSource = null;
-        }
-    }
-
-    function disconnect() {
-        disposed = true;
-        if (reconnectTimeout) {
-            clearTimeout(reconnectTimeout);
-            reconnectTimeout = null;
-        }
-        cleanup();
-    }
-
-    connect();
-
-    return { disconnect };
+    return {
+        disconnect: () => {
+            connection.dispose();
+        },
+    };
 }

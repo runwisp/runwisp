@@ -7,14 +7,13 @@ import {
     type EventSourceFactory,
     type SSEStream,
 } from "$lib/adapters/browser";
-import {
-    type SSEErrorInfo,
-    extractErrorInfo,
-    formatErrorInfo,
-    getMessageEventData,
-} from "$lib/utils/event-source";
+import { type SSEErrorInfo, getMessageEventData } from "$lib/utils/event-source";
 import { getApiUrl as defaultGetApiUrl } from "$lib/utils/env";
 import { createLogger } from "$lib/utils/logger";
+import {
+    createReconnectingConnection,
+    type ReconnectingConnection,
+} from "$lib/utils/sse-reconnect";
 
 export type EventManagerErrorInfo = SSEErrorInfo;
 
@@ -62,9 +61,8 @@ export interface EventManagerOptions {
  */
 export class EventManager implements AppEventStream {
     readonly #path: string;
-    readonly #createEventSource: EventSourceFactory;
-    readonly #getApiUrl: () => string;
     readonly #logger = createLogger("EventManager");
+    readonly #connection: ReconnectingConnection;
 
     // Plain (non-reactive) collections: this is internal connection plumbing,
     // never a reactive UI source. Using Svelte reactive collections here made
@@ -77,16 +75,40 @@ export class EventManager implements AppEventStream {
     readonly #errorHandlers = new Set<ErrorHandler>();
     readonly #stallHandlers = new Set<StallHandler>();
 
-    #eventSource: SSEStream | null = null;
-    #reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     #openTimer: ReturnType<typeof setTimeout> | null = null;
-    #reconnectDelay: number = SSE_CONFIG.RECONNECT_DELAY;
     #closed = false;
 
     constructor(options: EventManagerOptions) {
         this.#path = options.path;
-        this.#createEventSource = options.createEventSource ?? browserAuthEventSourceFactory;
-        this.#getApiUrl = options.getApiUrl ?? defaultGetApiUrl;
+        const getApiUrl = options.getApiUrl ?? defaultGetApiUrl;
+        const createEventSource = options.createEventSource ?? browserAuthEventSourceFactory;
+
+        this.#connection = createReconnectingConnection({
+            resolve: () => ({ url: `${getApiUrl()}${this.#path}`, label: this.#path }),
+            createEventSource,
+            logger: this.#logger,
+            onCreated: (es) => {
+                this.#startOpenTimer();
+                for (const eventType of this.#handlers.keys()) {
+                    this.#bindEventType(es, eventType);
+                }
+            },
+            onOpen: () => {
+                this.#clearOpenTimer();
+                for (const handler of this.#openHandlers) {
+                    try {
+                        handler();
+                    } catch (err) {
+                        this.#logger.warn("onOpen handler threw", err);
+                    }
+                }
+            },
+            onError: (info) => {
+                this.#clearOpenTimer();
+                this.#notifyError(info);
+            },
+            shouldReconnect: () => this.#totalSubscribers() > 0,
+        });
     }
 
     /** Subscribe to a named SSE event type. Returns an unsubscribe function. */
@@ -97,8 +119,9 @@ export class EventManager implements AppEventStream {
             this.#handlers.set(eventType, set);
             // Bind the listener if the connection is already open; otherwise it
             // will be bound when connect() runs.
-            if (this.#eventSource) {
-                this.#bindEventType(this.#eventSource, eventType);
+            const stream = this.#connection.getStream();
+            if (stream) {
+                this.#bindEventType(stream, eventType);
             }
         }
         set.add(handler);
@@ -119,7 +142,8 @@ export class EventManager implements AppEventStream {
             this.#handlers.delete(eventType);
         }
         if (this.#totalSubscribers() === 0) {
-            this.#disconnect();
+            this.#clearOpenTimer();
+            this.#connection.stop();
         }
     }
 
@@ -154,7 +178,8 @@ export class EventManager implements AppEventStream {
         this.#openHandlers.clear();
         this.#errorHandlers.clear();
         this.#stallHandlers.clear();
-        this.#disconnect();
+        this.#clearOpenTimer();
+        this.#connection.dispose();
     }
 
     #totalSubscribers(): number {
@@ -166,49 +191,8 @@ export class EventManager implements AppEventStream {
     }
 
     #ensureConnected(): void {
-        if (this.#eventSource || this.#closed) return;
-        this.#connect();
-    }
-
-    #connect(): void {
-        if (this.#closed) return;
-        const url = `${this.#getApiUrl()}${this.#path}`;
-
-        let es: SSEStream;
-        try {
-            es = this.#createEventSource(url);
-        } catch (err) {
-            this.#logger.warn(`failed to create EventSource for ${this.#path}`, err);
-            this.#notifyError({ message: String(err), url });
-            this.#scheduleReconnect();
-            return;
-        }
-
-        this.#eventSource = es;
-        this.#startOpenTimer();
-        es.onopen = () => {
-            this.#clearOpenTimer();
-            this.#reconnectDelay = SSE_CONFIG.RECONNECT_DELAY;
-            for (const handler of this.#openHandlers) {
-                try {
-                    handler();
-                } catch (err) {
-                    this.#logger.warn("onOpen handler threw", err);
-                }
-            }
-        };
-        es.onerror = (event: Event) => {
-            this.#clearOpenTimer();
-            const info = extractErrorInfo(event, es, url);
-            this.#logger.warn(`SSE error on ${this.#path}: ${formatErrorInfo(info)}`);
-            this.#notifyError(info);
-            this.#cleanup();
-            this.#scheduleReconnect();
-        };
-
-        for (const eventType of this.#handlers.keys()) {
-            this.#bindEventType(es, eventType);
-        }
+        if (this.#connection.getStream() || this.#closed) return;
+        this.#connection.connect();
     }
 
     // A connect attempt that fires neither `open` nor `error` within the window
@@ -246,33 +230,6 @@ export class EventManager implements AppEventStream {
                 }
             }
         });
-    }
-
-    #scheduleReconnect(): void {
-        if (this.#closed) return;
-        if (this.#totalSubscribers() === 0) return;
-        const delay = this.#reconnectDelay;
-        this.#reconnectDelay = Math.min(this.#reconnectDelay * 2, SSE_CONFIG.MAX_RECONNECT_DELAY);
-        this.#reconnectTimer = setTimeout(() => {
-            this.#reconnectTimer = null;
-            this.#connect();
-        }, delay);
-    }
-
-    #disconnect(): void {
-        if (this.#reconnectTimer) {
-            clearTimeout(this.#reconnectTimer);
-            this.#reconnectTimer = null;
-        }
-        this.#cleanup();
-    }
-
-    #cleanup(): void {
-        this.#clearOpenTimer();
-        if (this.#eventSource) {
-            this.#eventSource.close();
-            this.#eventSource = null;
-        }
     }
 
     #notifyError(info: EventManagerErrorInfo): void {

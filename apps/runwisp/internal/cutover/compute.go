@@ -264,10 +264,10 @@ func includeCronMismatchBlocker(path string, ev Evidence) Blocker {
 		Title: fmt.Sprintf("%s sets its own include_cron, and %s on this box %s not in it",
 			path, textutil.Count(len(ev.Uncovered), "crontab", "crontabs"), textutil.Pluralize(len(ev.Uncovered), "is", "are")),
 		Details: "Not read by this config:\n" +
-			indent(strings.Join(ev.Uncovered, "\n"), "  ") +
+			Indent(strings.Join(ev.Uncovered, "\n"), "  ") +
 			"\nMasking cron would stop those jobs with nothing left scheduling them. RunWisp will " +
 			"not edit an include_cron you wrote — add them to it and re-run:\n\n" +
-			indent(config.CronIncludeArray(ev.Patterns), "  "),
+			Indent(config.CronIncludeArray(ev.Patterns), "  "),
 	}
 }
 
@@ -378,9 +378,9 @@ func (c *Cutover) installStep(ctx context.Context, p Plan) ([]Step, error) {
 	return steps, nil
 }
 
-// indent prefixes every non-empty line of s with pad, and guarantees a trailing
+// Indent prefixes every non-empty line of s with pad, and guarantees a trailing
 // newline so callers can concatenate blocks.
-func indent(s, pad string) string {
+func Indent(s, pad string) string {
 	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
 	for i, ln := range lines {
 		if ln != "" {

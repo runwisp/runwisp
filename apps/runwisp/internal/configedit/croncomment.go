@@ -4,6 +4,7 @@
 package configedit
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -186,16 +187,16 @@ func lineTerminator(s string) string {
 // retaining its own terminator, so commenting a subset and rejoining the rest
 // reproduces every untouched byte exactly.
 func splitCronLinesKeepEnds(data []byte) []string {
-	var lines []string
-	start := 0
-	for i, b := range data {
-		if b == '\n' {
-			lines = append(lines, string(data[start:i+1]))
-			start = i + 1
-		}
+	if len(data) == 0 {
+		return nil
 	}
-	if start < len(data) {
-		lines = append(lines, string(data[start:]))
+	parts := bytes.SplitAfter(data, []byte("\n"))
+	if len(parts[len(parts)-1]) == 0 {
+		parts = parts[:len(parts)-1]
+	}
+	lines := make([]string, len(parts))
+	for i, p := range parts {
+		lines[i] = string(p)
 	}
 	return lines
 }

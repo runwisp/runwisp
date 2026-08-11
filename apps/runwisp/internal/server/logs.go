@@ -85,17 +85,41 @@ type LogRawOutput struct {
 	Body        []byte
 }
 
-// resolveLogPath validates the run ID and computes the log path. Returns an
-// error suitable for huma to map to an HTTP status code.
-func (srv *Server) resolveLogPathFor(ctx context.Context, taskName, runIDStr string) (string, *model.Run, error) {
+// errInvalidRunID / errRunTaskMismatch are getRunForTask's sentinel outcomes
+// for a malformed ULID and a run that exists but belongs to another task,
+// distinguished from a plain lookup failure (whose underlying error passes
+// through unwrapped) so each caller can map to its own response shape.
+var (
+	errInvalidRunID    = errors.New("invalid run id")
+	errRunTaskMismatch = errors.New("run belongs to a different task")
+)
+
+// getRunForTask parses runIDStr, loads the run, and verifies it belongs to
+// taskName — the lookup+ownership check shared by every endpoint scoped to a
+// single run. Callers translate the returned sentinel/wrapped errors into
+// their own response (a 400/404 pair for REST, a silent drop for SSE).
+func (srv *Server) getRunForTask(ctx context.Context, taskName, runIDStr string) (*model.Run, error) {
 	if _, err := ulid.Parse(runIDStr); err != nil {
-		return "", nil, huma.Error400BadRequest("Invalid run ID")
+		return nil, errInvalidRunID
 	}
 	run, err := srv.db.GetRun(ctx, runIDStr)
 	if err != nil {
-		return "", nil, huma.Error404NotFound("Run not found")
+		return nil, err
 	}
 	if run.TaskName != taskName {
+		return nil, errRunTaskMismatch
+	}
+	return run, nil
+}
+
+// resolveLogPathFor validates the run ID and computes the log path. Returns
+// an error suitable for huma to map to an HTTP status code.
+func (srv *Server) resolveLogPathFor(ctx context.Context, taskName, runIDStr string) (string, *model.Run, error) {
+	run, err := srv.getRunForTask(ctx, taskName, runIDStr)
+	if err != nil {
+		if errors.Is(err, errInvalidRunID) {
+			return "", nil, huma.Error400BadRequest("Invalid run ID")
+		}
 		return "", nil, huma.Error404NotFound("Run not found")
 	}
 	return logutil.ResolveRunLogPath(srv.logDir, run.TaskName, run.ID, run.CreatedAt), run, nil
@@ -244,15 +268,11 @@ func (srv *Server) registerLogSSE(api huma.API) {
 		}
 		defer release()
 
-		if _, err := ulid.Parse(input.RunID); err != nil {
-			return
-		}
-		run, err := srv.db.GetRun(ctx, input.RunID)
+		run, err := srv.getRunForTask(ctx, input.TaskName, input.RunID)
 		if err != nil {
-			slog.Error("Failed to get run", "run", input.RunID, "err", err)
-			return
-		}
-		if run.TaskName != input.TaskName {
+			if !errors.Is(err, errInvalidRunID) && !errors.Is(err, errRunTaskMismatch) {
+				slog.Error("Failed to get run", "run", input.RunID, "err", err)
+			}
 			return
 		}
 

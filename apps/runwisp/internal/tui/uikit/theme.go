@@ -101,16 +101,6 @@ var (
 )
 
 var (
-	MainHeaderStyle = lipgloss.NewStyle().
-			Background(ColorBg).
-			Foreground(ColorTextBright).
-			Bold(true).
-			PaddingLeft(2)
-
-	MainSubheaderStyle = lipgloss.NewStyle().
-				Background(ColorBg).
-				Foreground(ColorTextMuted)
-
 	TableHeaderStyle = lipgloss.NewStyle().
 				Background(ColorBgLight).
 				Foreground(ColorTextMuted).

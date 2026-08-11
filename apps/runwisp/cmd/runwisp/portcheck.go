@@ -22,15 +22,20 @@ func probePortAvailable(host string, port int) error {
 	return ln.Close()
 }
 
+// displayHost fills in the loopback address RunWisp binds by default, so an
+// empty --host still names something an operator can act on.
+func displayHost(host string) string {
+	if host == "" {
+		return "127.0.0.1"
+	}
+	return host
+}
+
 // portConflictError builds the user-facing message shown when something
 // other than a RunWisp daemon is holding the configured port.
 func portConflictError(host string, port int, cause error) error {
-	displayHost := host
-	if displayHost == "" {
-		displayHost = "127.0.0.1"
-	}
 	return &userFacingError{
-		title: fmt.Sprintf("port %d on %s is already in use by another process (%v)", port, displayHost, cause),
+		title: fmt.Sprintf("port %d on %s is already in use by another process (%v)", port, displayHost(host), cause),
 		details: "RunWisp could not start because something else is already listening on this port.\n" +
 			"The process there did not respond to the RunWisp health check, so it does not appear to be a RunWisp daemon.\n\n" +
 			"To resolve this you can:\n" +

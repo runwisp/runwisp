@@ -137,16 +137,16 @@ func New(deps Deps, opts Options) *Cutover {
 		deps.WireCron = configedit.WireCronInclude
 	}
 	if deps.Username == "" {
-		deps.Username = currentUsername()
+		deps.Username = CurrentUsername()
 	}
 	return &Cutover{deps: deps, opts: opts}
 }
 
-// currentUsername looks up the account running this process, for
+// CurrentUsername looks up the account running this process, for
 // config.DefaultCronPatterns' unprivileged branch. "" (rather than an error)
 // means no per-user spool pattern can be offered — there is no name to match a
 // spool file against, and guessing would scaffold a config that reads nothing.
-func currentUsername() string {
+func CurrentUsername() string {
 	u, err := user.Current()
 	if err != nil {
 		return ""

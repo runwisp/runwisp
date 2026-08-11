@@ -53,26 +53,11 @@ func (cleaner *RetentionCleaner) Start() {
 	// the time Start returns; the goroutine then only services the ticker.
 	// Tests can assert on the initial pass without sleeping for the goroutine.
 	cleaner.cleanOldRuns(ctx)
-	go cleaner.run(ctx)
+	startTicker(ctx, cleaner.interval, "Stopping retention cleaner", cleaner.cleanOldRuns)
 }
 
 func (cleaner *RetentionCleaner) Stop() {
 	cleaner.cancel()
-}
-
-func (cleaner *RetentionCleaner) run(ctx context.Context) {
-	ticker := time.NewTicker(cleaner.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			cleaner.cleanOldRuns(ctx)
-		case <-ctx.Done():
-			slog.Debug("Stopping retention cleaner")
-			return
-		}
-	}
 }
 
 func (cleaner *RetentionCleaner) cleanOldRuns(ctx context.Context) {

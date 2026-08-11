@@ -111,7 +111,7 @@ func makeRunService(tasks map[string]*model.Task, repo *testutil.MockRunReposito
 
 // makeRunServiceWithBus is the wait-aware variant: TriggerRunAndWait observes
 // terminal events on the bus, so it needs a real one rather than nil.
-func makeRunServiceWithBus(tasks map[string]*model.Task, repo *testutil.MockRunRepository, runner *mockTaskRunner, bus events.EventBus) *runService {
+func makeRunServiceWithBus(tasks map[string]*model.Task, repo *testutil.MockRunRepository, runner *mockTaskRunner, bus *events.Bus) *runService {
 	return newRunService(repo, runner, runtime.NewTaskRegistry(tasks), nil, "", bus)
 }
 

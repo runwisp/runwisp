@@ -10,7 +10,6 @@ import (
 )
 
 type Querier interface {
-	CountRuns(ctx context.Context, taskName string) (int64, error)
 	CountRunsFiltered(ctx context.Context, arg CountRunsFilteredParams) (int64, error)
 	CountUnreadNotifications(ctx context.Context) (int64, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.

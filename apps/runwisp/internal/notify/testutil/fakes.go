@@ -56,7 +56,6 @@ func NewTestRenderer(t *testing.T, kind, contentType string) render.Renderer {
 // error to simulate transient or permanent failures.
 type FakeChannel struct {
 	IDValue string
-	MatchFn func(*notify.Event) bool
 	Err     error
 
 	mu       sync.Mutex
@@ -69,12 +68,6 @@ func NewFakeChannel(id string) *FakeChannel {
 }
 
 func (f *FakeChannel) ID() string { return f.IDValue }
-func (f *FakeChannel) Match(ev *notify.Event) bool {
-	if f.MatchFn != nil {
-		return f.MatchFn(ev)
-	}
-	return true
-}
 
 func (f *FakeChannel) Execute(ctx context.Context, ev *notify.Event) error {
 	f.mu.Lock()
@@ -189,31 +182,4 @@ func (m *ManualTimers) Pending() int {
 		}
 	}
 	return n
-}
-
-// FakeHub captures Hub.Publish calls for verification.
-type FakeHub struct {
-	mu       sync.Mutex
-	captured []HubEvent
-}
-
-type HubEvent struct {
-	Type string
-	Data any
-}
-
-func NewFakeHub() *FakeHub { return &FakeHub{} }
-
-func (h *FakeHub) Publish(eventType string, data any) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.captured = append(h.captured, HubEvent{Type: eventType, Data: data})
-}
-
-func (h *FakeHub) Captured() []HubEvent {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	out := make([]HubEvent, len(h.captured))
-	copy(out, h.captured)
-	return out
 }

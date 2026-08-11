@@ -20,9 +20,6 @@ SELECT * FROM runs WHERE id = ? AND deleted_at IS NULL LIMIT 1;
 -- name: GetRunByExternalExecutionID :one
 SELECT * FROM runs WHERE external_execution_id = ? AND deleted_at IS NULL LIMIT 1;
 
--- name: CountRuns :one
-SELECT COUNT(*) FROM runs WHERE task_name = ? AND deleted_at IS NULL;
-
 -- name: CountRunsFiltered :one
 SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(status_set) IS NULL

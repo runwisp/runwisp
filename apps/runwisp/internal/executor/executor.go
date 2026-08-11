@@ -77,7 +77,7 @@ type RoutingExecutor struct {
 	logDir           string
 	onUpdate         func(*model.Run)
 	onProcessStarted func(runID string, forceKill func())
-	eventBus         events.EventBus
+	eventBus         *events.Bus
 	backends         map[string]Backend
 	availability     Availability
 	minFreeDisk      int64
@@ -86,7 +86,7 @@ type RoutingExecutor struct {
 
 type Options struct {
 	LogDir               string
-	EventBus             events.EventBus
+	EventBus             *events.Bus
 	CloudDispatchEnabled bool
 	HasLocalTasks        bool
 	Docker               Backend // container backend; nil when Docker is unavailable

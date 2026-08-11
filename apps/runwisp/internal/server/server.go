@@ -45,7 +45,7 @@ type Server struct {
 	dataDir           string
 	configPath        string
 	logDir            string
-	eventBus          events.EventBus
+	eventBus          *events.Bus
 	auth              *auth.Service
 	passwordEphemeral bool
 	noAuth            bool
@@ -100,7 +100,7 @@ type Options struct {
 	ConfigPath        string // Resolved runwisp.toml path; disclosed via GET /api/instance (local only)
 	SocketPath        string // Unix socket path for local CLI/TUI; empty disables socket listener
 	LogDir            string
-	EventBus          events.EventBus
+	EventBus          *events.Bus
 	Password          string                             // Authentication password (required even with NoAuth — keeps the cookie/launch-ticket machinery alive)
 	PasswordEphemeral bool                               // True when the daemon minted Password in memory at boot (no RUNWISP_PASSWORD)
 	JWTSecret         string                             // JWT signing secret (derived in-memory)

@@ -99,7 +99,7 @@ type StreamConfig struct {
 	Send        Sender
 	LogPath     string
 	RunID       string
-	Bus         events.EventBus
+	Bus         *events.Bus
 	DB          RunGetter // nil skips the post-subscribe run-state recheck
 	AnchorFrom  int64
 	ReplayLimit int64
@@ -277,7 +277,7 @@ func (dt *streamDropTracker) commitSent(count int64) {
 	}
 }
 
-func (s *streamer) streamLoop(ctx context.Context, runID string, bus events.EventBus, db RunGetter, anchorFrom, replayLimit int64, runEnded bool) {
+func (s *streamer) streamLoop(ctx context.Context, runID string, bus *events.Bus, db RunGetter, anchorFrom, replayLimit int64, runEnded bool) {
 	pendingCh := make(chan events.LogLineEvent, PendingBufferLimit)
 	regionCh := make(chan events.LogRegionEvent, RegionBufferLimit)
 	terminalCh := make(chan struct{}, 1)

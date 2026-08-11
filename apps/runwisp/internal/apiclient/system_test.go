@@ -102,13 +102,18 @@ func TestStreamDaemonLogs_DeliversLines(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/daemon/log-stream", r.URL.Path)
 		w.Header().Set("Content-Type", "text/event-stream")
-		// One valid line, one not-prefixed (filtered), one malformed (skipped),
-		// then another valid line. After handler returns Go closes the body
-		// which terminates the streaming loop in the client goroutine.
+		// One valid frame, one malformed data payload (skipped), then another
+		// valid frame. After the handler returns, Go closes the body, which
+		// terminates the streaming loop in the client goroutine.
+		fmt.Fprintln(w, "event: line")
 		fmt.Fprintln(w, `data: {"line":"hello"}`)
-		fmt.Fprintln(w, "ignored noise")
+		fmt.Fprintln(w, "")
+		fmt.Fprintln(w, "event: line")
 		fmt.Fprintln(w, "data: not-json")
+		fmt.Fprintln(w, "")
+		fmt.Fprintln(w, "event: line")
 		fmt.Fprintln(w, `data: {"line":"world"}`)
+		fmt.Fprintln(w, "")
 	}))
 	defer srv.Close()
 

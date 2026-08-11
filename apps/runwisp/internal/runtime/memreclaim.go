@@ -65,26 +65,12 @@ func resolveReclaimInterval() time.Duration {
 func (r *MemoryReclaimer) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	r.cancel = cancel
-	go r.run(ctx)
+	startTicker(ctx, r.interval, "Stopping memory reclaimer", r.reclaimOnce)
 }
 
 func (r *MemoryReclaimer) Stop() {
 	if r.cancel != nil {
 		r.cancel()
-	}
-}
-
-func (r *MemoryReclaimer) run(ctx context.Context) {
-	ticker := time.NewTicker(r.interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			r.reclaimOnce(ctx)
-		case <-ctx.Done():
-			slog.Debug("Stopping memory reclaimer")
-			return
-		}
 	}
 }
 

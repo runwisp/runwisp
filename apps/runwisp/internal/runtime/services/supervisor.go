@@ -21,35 +21,31 @@ import (
 // applies a default during load; this only protects direct test usage.
 const defaultHealthyAfter = 60 * time.Second
 
+// slotState is one instance slot's state: whether it's currently occupied,
+// its consecutive-restart attempt counter, when it last reached the running
+// phase, its consecutive fast-failure streak, and whether it has tripped into
+// the FATAL state. Keyed by slot index on Supervisor.slots so all five facets
+// of a slot move together instead of four parallel maps updated in lockstep.
+type slotState struct {
+	live       bool
+	attempts   int
+	liveSince  time.Time
+	startFails int
+	fatal      bool
+}
+
 // Supervisor tracks the live instance slots for one service task and the
 // consecutive-restart attempt counter per slot.
 type Supervisor struct {
 	taskName     string
 	instances    int
-	live         map[int]struct{}
-	attempts     map[int]int
+	slots        map[int]*slotState
 	healthyAfter time.Duration
 	stopped      bool
 
-	// liveSince records when each slot reached the running phase. A slot is
-	// only entered here by MarkLive (at PhaseRunning, not at reservation) and
-	// dropped in RecordExit, so its keys are exactly the currently-running
-	// slots. IsHealthy uses it to answer the live "is it up yet?" question that
-	// readiness gating needs — distinct from the retrospective healthy_after
-	// check RecordExit performs after an exit.
-	liveSince map[int]time.Time
 	// clock supplies "now" for liveSince math so IsHealthy needs no argument
 	// and tests can pin time. Defaults to time.Now when nil.
 	clock func() time.Time
-
-	// startFails counts consecutive fast failures per slot — exits that
-	// happened before the instance reached healthy_after of uptime. A healthy
-	// run (or a clean, non-failure exit) resets it; exceeding restart_attempts
-	// trips the slot into the FATAL state.
-	startFails map[int]int
-	// fatal flags slots that exhausted their start-retry budget. A FATAL slot
-	// is not refilled until an operator restart (or daemon restart) clears it.
-	fatal map[int]bool
 }
 
 // NewSupervisor creates a Supervisor for a service with the given desired
@@ -70,15 +66,31 @@ func NewSupervisor(taskName string, instances int, healthyAfter time.Duration, s
 	return &Supervisor{
 		taskName:     taskName,
 		instances:    clampInstances(instances),
-		live:         make(map[int]struct{}),
-		attempts:     make(map[int]int),
+		slots:        make(map[int]*slotState),
 		healthyAfter: healthyAfter,
 		stopped:      startStopped,
-		liveSince:    make(map[int]time.Time),
 		clock:        clock,
-		startFails:   make(map[int]int),
-		fatal:        make(map[int]bool),
 	}
+}
+
+// slot returns a read-only snapshot of a slot's state, or the zero value if
+// the slot has never been touched. Never allocates a map entry.
+func (s *Supervisor) slot(idx int) slotState {
+	if st, ok := s.slots[idx]; ok {
+		return *st
+	}
+	return slotState{}
+}
+
+// mutateSlot returns the slot's state for in-place mutation, allocating an
+// entry on first touch.
+func (s *Supervisor) mutateSlot(idx int) *slotState {
+	st, ok := s.slots[idx]
+	if !ok {
+		st = &slotState{}
+		s.slots[idx] = st
+	}
+	return st
 }
 
 // SetInstances updates the desired instance count. Slots that fall outside the
@@ -110,15 +122,15 @@ func (s *Supervisor) Reserve(requested *int) (int, error) {
 		if idx < 0 || idx >= s.instances {
 			return 0, fmt.Errorf("instance index %d out of range [0,%d) for service %s", idx, s.instances, s.taskName)
 		}
-		if _, taken := s.live[idx]; taken {
+		if s.slot(idx).live {
 			return 0, fmt.Errorf("instance %d already live for service %s", idx, s.taskName)
 		}
-		s.live[idx] = struct{}{}
+		s.mutateSlot(idx).live = true
 		return idx, nil
 	}
 	for i := 0; i < s.instances; i++ {
-		if _, taken := s.live[i]; !taken {
-			s.live[i] = struct{}{}
+		if !s.slot(i).live {
+			s.mutateSlot(i).live = true
 			return i, nil
 		}
 	}
@@ -139,23 +151,24 @@ func (s *Supervisor) Reserve(requested *int) (int, error) {
 // caller must not restart it. A healthy run (reached healthy_after) or any
 // non-failure exit clears the fast-failure streak and any prior FATAL flag.
 func (s *Supervisor) RecordExit(idx int, runDuration time.Duration, startRetries int, wasFailure bool) (nextAttempt int, fatal bool) {
-	delete(s.live, idx)
-	delete(s.liveSince, idx)
+	st := s.mutateSlot(idx)
+	st.live = false
+	st.liveSince = time.Time{}
 
 	if runDuration >= s.healthyAfter {
-		s.attempts[idx] = 0
+		st.attempts = 0
 	}
-	nextAttempt = s.attempts[idx]
-	s.attempts[idx] = nextAttempt + 1
+	nextAttempt = st.attempts
+	st.attempts = nextAttempt + 1
 
 	if !wasFailure || runDuration >= s.healthyAfter {
-		s.startFails[idx] = 0
-		delete(s.fatal, idx)
+		st.startFails = 0
+		st.fatal = false
 		return nextAttempt, false
 	}
-	s.startFails[idx]++
-	if s.startFails[idx] > startRetries {
-		s.fatal[idx] = true
+	st.startFails++
+	if st.startFails > startRetries {
+		st.fatal = true
 		return nextAttempt, true
 	}
 	return nextAttempt, false
@@ -163,8 +176,7 @@ func (s *Supervisor) RecordExit(idx int, runDuration time.Duration, startRetries
 
 // IsLive reports whether a given instance index is currently occupied.
 func (s *Supervisor) IsLive(idx int) bool {
-	_, ok := s.live[idx]
-	return ok
+	return s.slot(idx).live
 }
 
 // MarkLive stamps the moment a slot reached the running phase. The runtime
@@ -172,7 +184,7 @@ func (s *Supervisor) IsLive(idx int) bool {
 // reference point for the live readiness gate, distinct from the reservation
 // recorded by Reserve.
 func (s *Supervisor) MarkLive(idx int) {
-	s.liveSince[idx] = s.clock()
+	s.mutateSlot(idx).liveSince = s.clock()
 }
 
 // IsHealthy reports whether the service currently has at least one instance
@@ -185,11 +197,11 @@ func (s *Supervisor) IsHealthy() bool {
 		return false
 	}
 	now := s.clock()
-	for idx, since := range s.liveSince {
-		if s.fatal[idx] {
+	for _, st := range s.slots {
+		if st.liveSince.IsZero() || st.fatal {
 			continue
 		}
-		if now.Sub(since) >= s.healthyAfter {
+		if now.Sub(st.liveSince) >= s.healthyAfter {
 			return true
 		}
 	}
@@ -197,14 +209,22 @@ func (s *Supervisor) IsHealthy() bool {
 }
 
 // LiveCount returns the number of currently occupied instance slots.
-func (s *Supervisor) LiveCount() int { return len(s.live) }
+func (s *Supervisor) LiveCount() int {
+	n := 0
+	for _, st := range s.slots {
+		if st.live {
+			n++
+		}
+	}
+	return n
+}
 
 // MissingSlots returns the indexes in [0, instances) that are not currently
 // live. Used by StartServiceInstances to bring a service up to desired count.
 func (s *Supervisor) MissingSlots() []int {
 	missing := make([]int, 0, s.instances)
 	for i := 0; i < s.instances; i++ {
-		if _, taken := s.live[i]; !taken {
+		if !s.slot(i).live {
 			missing = append(missing, i)
 		}
 	}
@@ -214,7 +234,7 @@ func (s *Supervisor) MissingSlots() []int {
 // Attempts returns the current consecutive-restart counter for a slot. This
 // is the post-RecordExit value (the number of exits observed for the slot
 // since the last healthy run); exposed for tests and observability.
-func (s *Supervisor) Attempts(idx int) int { return s.attempts[idx] }
+func (s *Supervisor) Attempts(idx int) int { return s.slot(idx).attempts }
 
 // MarkStopped flags the service as operator-stopped. The supervisor will
 // refuse to spawn new instances until MarkRunning clears the flag. The flag
@@ -236,21 +256,30 @@ func (s *Supervisor) IsStopped() bool { return s.stopped }
 // StartFails returns the current consecutive fast-failure count for a slot —
 // the number of below-healthy_after exits since its last healthy run. Exposed
 // for the FATAL event payload and tests.
-func (s *Supervisor) StartFails(idx int) int { return s.startFails[idx] }
+func (s *Supervisor) StartFails(idx int) int { return s.slot(idx).startFails }
 
 // IsFatal reports whether a specific instance slot has exhausted its
 // start-retry budget and been given up on.
-func (s *Supervisor) IsFatal(idx int) bool { return s.fatal[idx] }
+func (s *Supervisor) IsFatal(idx int) bool { return s.slot(idx).fatal }
 
 // IsAnyFatal reports whether any instance slot is in the FATAL state.
-func (s *Supervisor) IsAnyFatal() bool { return len(s.fatal) > 0 }
+func (s *Supervisor) IsAnyFatal() bool {
+	for _, st := range s.slots {
+		if st.fatal {
+			return true
+		}
+	}
+	return false
+}
 
 // ClearFatal drops every FATAL flag and the fast-failure streak that produced
 // it, so the affected slots can be refilled with a fresh start-retry budget.
 func (s *Supervisor) ClearFatal() {
-	for idx := range s.fatal {
-		delete(s.fatal, idx)
-		s.startFails[idx] = 0
+	for _, st := range s.slots {
+		if st.fatal {
+			st.fatal = false
+			st.startFails = 0
+		}
 	}
 }
 

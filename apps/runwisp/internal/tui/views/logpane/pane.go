@@ -32,15 +32,13 @@ type Line struct {
 // (a `\r` progress bar or multi-line ANSI redraw). It is transient — rendered
 // in place at the tail, never part of the committed Lines buffer.
 type regionFrame struct {
-	epoch int
-	rows  []string
+	rows []string
 }
 
 type Config struct {
 	MaxLines    int
 	LineNumbers bool
 	HScroll     bool
-	EndPadding  int // empty lines shown after the last log line; 0 → default (2), capped at VisibleLines/2
 }
 
 // Pane is a scrollable log buffer with optional line-number gutter, follow
@@ -120,11 +118,10 @@ func (p *Pane) VisibleLines() int {
 	return available
 }
 
+// effectiveEndPadding is the number of empty lines shown after the last log
+// line, capped at VisibleLines/2 so it never eats the whole viewport.
 func (p *Pane) effectiveEndPadding() int {
-	pad := p.Cfg.EndPadding
-	if pad <= 0 {
-		pad = 7
-	}
+	pad := 7
 	if maxPad := p.VisibleLines() / 2; pad > maxPad {
 		pad = maxPad
 	}
@@ -140,9 +137,9 @@ func (p *Pane) maxScroll() int {
 }
 
 // SetRegion replaces the live overlay frame for one stream. Empty rows clears
-// the overlay for that stream. Frames are full-state snapshots; the epoch lets
-// callers reason about region resets even though we always take the latest.
-func (p *Pane) SetRegion(stream string, epoch int, rows []string) {
+// the overlay for that stream. Frames are full-state snapshots — we always
+// take the latest.
+func (p *Pane) SetRegion(stream string, rows []string) {
 	if len(rows) == 0 {
 		if p.regions != nil {
 			delete(p.regions, stream)
@@ -151,7 +148,7 @@ func (p *Pane) SetRegion(stream string, epoch int, rows []string) {
 		if p.regions == nil {
 			p.regions = make(map[string]regionFrame)
 		}
-		p.regions[stream] = regionFrame{epoch: epoch, rows: append([]string(nil), rows...)}
+		p.regions[stream] = regionFrame{rows: append([]string(nil), rows...)}
 	}
 	if p.Follow {
 		p.Scroll = p.maxScroll()

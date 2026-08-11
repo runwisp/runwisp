@@ -98,12 +98,13 @@ are diverted to stderr so stdout stays machine-readable.`,
 // produced its own document, so stdout stays a single valid JSON document even
 // on failure) before propagating the error.
 func runExecCLI(w io.Writer, taskName string, f Flags) (int, error) {
-	exitCode, err := func() (int, error) {
-		if execFlags.Daemon && execFlags.Standalone {
-			return 0, errors.New("--daemon and --standalone are mutually exclusive")
-		}
-		return runExec(taskName, f)
-	}()
+	var exitCode int
+	var err error
+	if execFlags.Daemon && execFlags.Standalone {
+		err = errors.New("--daemon and --standalone are mutually exclusive")
+	} else {
+		exitCode, err = runExec(taskName, f)
+	}
 	if err != nil {
 		if execFlags.JSON {
 			_ = writeJSON(w, newExecErrorJSONDoc(taskName, err))
@@ -215,7 +216,7 @@ func runExecViaDaemon(taskName string, f Flags) (int, error) {
 func finishExecJSON(w io.Writer, client *apiclient.Client, taskName, runID string, final *model.Run) error {
 	if final == nil {
 		var err error
-		final, err = client.GetRun(taskName, runID)
+		final, err = client.GetRun(runID)
 		if err != nil {
 			return fmt.Errorf("fetch final run state: %w", err)
 		}
@@ -387,21 +388,21 @@ func followRun(client *apiclient.Client, taskName, runID string, lineOut io.Writ
 		}
 		select {
 		case <-ctx.Done():
-			return exitCodeFromRunState(client, taskName, runID)
+			return exitCodeFromRunState(client, runID)
 		case <-time.After(followStallBackoff):
 		}
 	}
 
 	// Stream never delivered a Done event (interrupted, or the run never became
 	// streamable); fall back to the persisted terminal state for the exit code.
-	return exitCodeFromRunState(client, taskName, runID)
+	return exitCodeFromRunState(client, runID)
 }
 
 // exitCodeFromRunState fetches the run's persisted state and derives its exit
 // code, used as followRun's fallback when the log stream ends without a Done.
 // It returns the fetched run alongside the code so callers can reuse it.
-func exitCodeFromRunState(client *apiclient.Client, taskName, runID string) (int, *model.Run, error) {
-	final, err := client.GetRun(taskName, runID)
+func exitCodeFromRunState(client *apiclient.Client, runID string) (int, *model.Run, error) {
+	final, err := client.GetRun(runID)
 	if err != nil {
 		return 0, nil, fmt.Errorf("fetch final run state: %w", err)
 	}
@@ -432,7 +433,7 @@ func fetchTerminalRun(client *apiclient.Client, taskName, runID string) (*model.
 		if attempt > 0 {
 			time.Sleep(terminalFetchBackoff)
 		}
-		run, err = client.GetRun(taskName, runID)
+		run, err = client.GetRun(runID)
 		if err == nil && run.Status == model.PhaseEnded {
 			return run, nil
 		}

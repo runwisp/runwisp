@@ -4,10 +4,8 @@
 package apiclient
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
-	"strings"
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
@@ -100,24 +98,17 @@ func (c *Client) StreamDaemonLogs(ctx context.Context) (<-chan string, error) {
 		return nil, err
 	}
 
+	events := make(chan SSEEvent, 64)
+	go simpleSSELoop(ctx, resp.Body, events)
+
 	ch := make(chan string, 64)
 	go func() {
 		defer close(ch)
-		defer resp.Body.Close()
-
-		scanner := bufio.NewScanner(resp.Body)
-		scanner.Buffer(make([]byte, 0, 64*1024), 64*1024)
-
-		for scanner.Scan() {
-			line := scanner.Text()
-			if !strings.HasPrefix(line, "data: ") {
-				continue
-			}
-			data := strings.TrimPrefix(line, "data: ")
+		for evt := range events {
 			var payload struct {
 				Line string `json:"line"`
 			}
-			if err := json.Unmarshal([]byte(data), &payload); err != nil {
+			if err := json.Unmarshal(evt.Data, &payload); err != nil {
 				continue
 			}
 			select {

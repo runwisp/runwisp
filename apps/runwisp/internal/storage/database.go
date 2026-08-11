@@ -44,7 +44,6 @@ type RunRepository interface {
 	UpdateRun(ctx context.Context, run *model.Run) error
 	GetRun(ctx context.Context, id string) (*model.Run, error)
 	GetRunByExternalExecutionID(ctx context.Context, externalExecutionID string) (*model.Run, error)
-	CountRuns(ctx context.Context, taskName string) (int64, error)
 	CountRunsFiltered(ctx context.Context, filter model.RunFilter) (int64, error)
 	QueryRuns(ctx context.Context, q RunQuery) ([]model.Run, error)
 	DeleteRun(ctx context.Context, id string) error
@@ -173,10 +172,6 @@ func (db *SQLiteDatabase) GetRunSummary(ctx context.Context) (*model.RunSummary,
 	}, nil
 }
 
-func (db *SQLiteDatabase) CountRuns(ctx context.Context, taskName string) (int64, error) {
-	return db.q.CountRuns(ctx, taskName)
-}
-
 func (db *SQLiteDatabase) CountRunsFiltered(ctx context.Context, filter model.RunFilter) (int64, error) {
 	args := buildRunFilterArgs(filter)
 	return db.q.CountRunsFiltered(ctx, sqlcdb.CountRunsFilteredParams{
@@ -234,6 +229,17 @@ type RunRef struct {
 	CreatedAt time.Time
 }
 
+// runRefsFrom projects a slice of sqlc row structs into RunRefs via ref,
+// which extracts the ID/TaskName/CreatedAt fields the row's generated type
+// happens to have.
+func runRefsFrom[T any](rows []T, ref func(T) RunRef) []RunRef {
+	out := make([]RunRef, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, ref(r))
+	}
+	return out
+}
+
 // SoftDeleteRuns marks every run matched by sel (and currently terminal +
 // not already soft-deleted) with the supplied deletion timestamp. Returns
 // the affected rows as lightweight refs so callers can publish run.deleted
@@ -259,11 +265,9 @@ func (db *SQLiteDatabase) SoftDeleteRuns(ctx context.Context, sel model.RunSelec
 		if err != nil {
 			return nil, err
 		}
-		out := make([]RunRef, 0, len(rows))
-		for _, r := range rows {
-			out = append(out, RunRef{ID: r.ID, TaskName: r.TaskName, CreatedAt: r.CreatedAt})
-		}
-		return out, nil
+		return runRefsFrom(rows, func(r sqlcdb.SoftDeleteRunsByFilterRow) RunRef {
+			return RunRef{ID: r.ID, TaskName: r.TaskName, CreatedAt: r.CreatedAt}
+		}), nil
 	}
 	rows, err := db.q.SoftDeleteRunsByIDs(ctx, sqlcdb.SoftDeleteRunsByIDsParams{
 		DeletedAt:   &deletedAt,
@@ -273,11 +277,9 @@ func (db *SQLiteDatabase) SoftDeleteRuns(ctx context.Context, sel model.RunSelec
 	if err != nil {
 		return nil, err
 	}
-	out := make([]RunRef, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, RunRef{ID: r.ID, TaskName: r.TaskName, CreatedAt: r.CreatedAt})
-	}
-	return out, nil
+	return runRefsFrom(rows, func(r sqlcdb.SoftDeleteRunsByIDsRow) RunRef {
+		return RunRef{ID: r.ID, TaskName: r.TaskName, CreatedAt: r.CreatedAt}
+	}), nil
 }
 
 // RestoreRuns clears deleted_at for every soft-deleted run matched by sel
@@ -334,11 +336,9 @@ func (db *SQLiteDatabase) ResolveSelectorIDs(ctx context.Context, sel model.RunS
 		if err != nil {
 			return nil, err
 		}
-		out := make([]RunRef, 0, len(rows))
-		for _, r := range rows {
-			out = append(out, RunRef{ID: r.ID, TaskName: r.TaskName, CreatedAt: r.CreatedAt})
-		}
-		return out, nil
+		return runRefsFrom(rows, func(r sqlcdb.ResolveSelectorIDsByFilterRow) RunRef {
+			return RunRef{ID: r.ID, TaskName: r.TaskName, CreatedAt: r.CreatedAt}
+		}), nil
 	}
 	rows, err := db.q.ResolveSelectorIDsByIDs(ctx, sqlcdb.ResolveSelectorIDsByIDsParams{
 		Ids:              sel.IDs,
@@ -347,11 +347,9 @@ func (db *SQLiteDatabase) ResolveSelectorIDs(ctx context.Context, sel model.RunS
 	if err != nil {
 		return nil, err
 	}
-	out := make([]RunRef, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, RunRef{ID: r.ID, TaskName: r.TaskName, CreatedAt: r.CreatedAt})
-	}
-	return out, nil
+	return runRefsFrom(rows, func(r sqlcdb.ResolveSelectorIDsByIDsRow) RunRef {
+		return RunRef{ID: r.ID, TaskName: r.TaskName, CreatedAt: r.CreatedAt}
+	}), nil
 }
 
 // PurgeExpiredSoftDeletes hard-deletes every soft-deleted row whose
@@ -363,11 +361,9 @@ func (db *SQLiteDatabase) PurgeExpiredSoftDeletes(ctx context.Context, ttl time.
 	if err != nil {
 		return nil, err
 	}
-	out := make([]RunRef, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, RunRef{ID: r.ID, TaskName: r.TaskName, CreatedAt: r.CreatedAt})
-	}
-	return out, nil
+	return runRefsFrom(rows, func(r sqlcdb.PurgeExpiredSoftDeletesRow) RunRef {
+		return RunRef{ID: r.ID, TaskName: r.TaskName, CreatedAt: r.CreatedAt}
+	}), nil
 }
 
 func (db *SQLiteDatabase) DeleteOldRuns(ctx context.Context, task *model.Task) ([]model.Run, error) {

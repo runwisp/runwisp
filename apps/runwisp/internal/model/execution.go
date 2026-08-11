@@ -43,21 +43,9 @@ func (e *ShellExecution) ExecType() string { return "shell" }
 
 // DockerfileBlock is a user-editable Dockerfile instruction group.
 type DockerfileBlock struct {
-	ID              string                 `json:"id"`
-	Label           string                 `json:"label"`
-	Reason          string                 `json:"reason"`
-	Dockerfile      string                 `json:"dockerfile"`
-	Enabled         bool                   `json:"enabled"`
-	AutoDetected    bool                   `json:"autoDetected"`
-	Modified        bool                   `json:"modified"`
-	Pinned          bool                   `json:"pinned"`
-	ManagedPackages *DockerManagedPackages `json:"managedPackages,omitempty"`
-}
-
-// DockerManagedPackages holds package names for managed install blocks.
-type DockerManagedPackages struct {
-	Apk string `json:"apk,omitempty"`
-	Apt string `json:"apt,omitempty"`
+	Label      string `json:"label"`
+	Dockerfile string `json:"dockerfile"`
+	Enabled    bool   `json:"enabled"`
 }
 
 // VolumeMount maps a host path into the container.

@@ -4,13 +4,11 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/user"
 	"path/filepath"
 	"strings"
 
@@ -19,6 +17,7 @@ import (
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/configedit"
 	"github.com/runwisp/runwisp/internal/cutover"
+	"github.com/runwisp/runwisp/internal/model"
 )
 
 // scaffoldIfMissing checks for a runwisp.toml at f.CfgFile. If it is absent and
@@ -78,33 +77,35 @@ func promptAndScaffold(f Flags, in io.Reader, out io.Writer) (installed bool, er
 		offer = offerFirstRunCutover(f, out, cronScaffoldWriter(composeFile, composeAlias, hasCompose))
 	}
 
+	var question string
 	switch {
 	case hasCron:
 		fmt.Fprintf(out, "Found %d cron job(s) on this box (%s).\n",
 			scan.Jobs, strings.Join(cutover.DescribeSources(scan.Files), ", "))
 		switch {
 		case offer != nil:
-			fmt.Fprintf(out, "%s [Y/n] ", cutover.DescribeOffer(offer.plan))
+			question = cutover.DescribeOffer(offer.plan)
 		case hasCompose:
 			fmt.Fprint(out, heldNote)
-			fmt.Fprint(out, "Create a starter that imports the compose services and reads these live? [Y/n] ")
+			question = "Create a starter that imports the compose services and reads these live?"
 		default:
 			fmt.Fprint(out, heldNote)
-			fmt.Fprint(out, "Read them as RunWisp tasks? [Y/n] ")
+			question = "Read them as RunWisp tasks?"
 		}
 	case hasCompose:
-		fmt.Fprint(out, "Create a starter that imports its services? [Y/n] ")
+		question = "Create a starter that imports its services?"
 	default:
-		fmt.Fprint(out, "Create a starter with one example task? [Y/n] ")
+		question = "Create a starter with one example task?"
 	}
 
-	answer, err := bufio.NewReader(in).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return false, fmt.Errorf("read prompt response: %w", err)
+	// isTTY is unconditionally true: scaffoldIfMissing already gated the call on
+	// a real terminal, and the tests here drive `in` directly with a
+	// strings.Reader that is never one.
+	ok, err := autostart.NewStdioPrompter(in, out, true, false).Confirm(question, true)
+	if err != nil {
+		return false, err
 	}
-	switch strings.ToLower(strings.TrimSpace(answer)) {
-	case "", "y", "yes":
-	default:
+	if !ok {
 		return false, fmt.Errorf("no runwisp.toml at %s — create one and try again (docs: https://docs.runwisp.com/configuration/overview/)", loc)
 	}
 
@@ -259,29 +260,18 @@ func detectAdjacentCompose(path string) (filename, alias string, ok bool) {
 }
 
 // composeAliasFromDir derives a [compose.<alias>] key from a directory
-// path. The directory's base name is sanitized to the TaskNamePattern
-// charset; a "." or empty result falls back to "myapp" so the scaffold
-// is always loadable.
+// path. The directory's base name is sanitized with model.SanitizeTaskName;
+// an empty result falls back to "myapp" so the scaffold is always loadable.
 func composeAliasFromDir(dir string) string {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
 		abs = dir
 	}
-	base := filepath.Base(abs)
-	var b strings.Builder
-	for _, r := range base {
-		switch {
-		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
-			b.WriteRune(r)
-		default:
-			b.WriteRune('-')
-		}
-	}
-	out := strings.Trim(b.String(), "-_")
-	if out == "" || out == "." {
+	alias := strings.Trim(model.SanitizeTaskName(filepath.Base(abs)), "-_")
+	if alias == "" {
 		return "myapp"
 	}
-	return out
+	return alias
 }
 
 // scanForCron scans for real crontabs this account can read — the cron
@@ -299,19 +289,7 @@ func composeAliasFromDir(dir string) string {
 // under /etc/cron.d, or one running as root, would otherwise make the first-run
 // prompt tests flaky and machine-dependent. Tests override this var directly.
 var scanForCron = func(cfgPath string) (scan config.CronScan, ok bool) {
-	patterns := config.DefaultCronPatterns(os.Geteuid(), currentUsername())
+	patterns := config.DefaultCronPatterns(os.Geteuid(), cutover.CurrentUsername())
 	scan = config.ScanCronSources(patterns, cfgPath)
 	return scan, scan.Jobs > 0 && len(scan.Blocked) == 0
-}
-
-// currentUsername looks up the account running this process, for
-// DefaultCronPatterns' unprivileged branch. "" (rather than an error) tells
-// the caller to skip cron detection entirely — there is no safe pattern to
-// offer without a name to match a spool file against.
-func currentUsername() string {
-	u, err := user.Current()
-	if err != nil {
-		return ""
-	}
-	return u.Username
 }

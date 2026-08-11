@@ -26,7 +26,7 @@ func newTestPane(maxLines int) Pane {
 func TestLogPane_RegionOverlay_RendersBelowCommitted(t *testing.T) {
 	p := newTestPane(100_000)
 	p.AppendLine(0, "stdout", "committed line")
-	p.SetRegion("stdout", 1, []string{"progress 42%"})
+	p.SetRegion("stdout", []string{"progress 42%"})
 
 	var b strings.Builder
 	p.RenderLines(&b, false, false)
@@ -35,7 +35,7 @@ func TestLogPane_RegionOverlay_RendersBelowCommitted(t *testing.T) {
 	assert.Contains(t, out, "progress 42%")
 
 	// A newer frame replaces the previous one wholesale.
-	p.SetRegion("stdout", 1, []string{"progress 99%"})
+	p.SetRegion("stdout", []string{"progress 99%"})
 	b.Reset()
 	p.RenderLines(&b, false, false)
 	out = b.String()
@@ -46,21 +46,21 @@ func TestLogPane_RegionOverlay_RendersBelowCommitted(t *testing.T) {
 func TestLogPane_RegionOverlay_EmptyRowsClears(t *testing.T) {
 	p := newTestPane(100_000)
 	p.AppendLine(0, "stdout", "committed line")
-	p.SetRegion("stdout", 1, []string{"live row"})
+	p.SetRegion("stdout", []string{"live row"})
 	assert.Equal(t, 2, p.renderableLen())
 
-	p.SetRegion("stdout", 1, nil)
+	p.SetRegion("stdout", nil)
 	assert.Equal(t, 1, p.renderableLen())
 
-	p.SetRegion("stdout", 1, []string{"again"})
+	p.SetRegion("stdout", []string{"again"})
 	p.ClearRegions()
 	assert.Equal(t, 1, p.renderableLen())
 }
 
 func TestLogPane_RegionOverlay_StdoutBeforeStderr(t *testing.T) {
 	p := newTestPane(100_000)
-	p.SetRegion("stderr", 1, []string{"err frame"})
-	p.SetRegion("stdout", 1, []string{"out frame"})
+	p.SetRegion("stderr", []string{"err frame"})
+	p.SetRegion("stdout", []string{"out frame"})
 
 	lines := p.overlayLines()
 	assert.Equal(t, []Line{{Stream: "stdout", Text: "out frame"}, {Stream: "stderr", Text: "err frame"}}, lines)
@@ -732,7 +732,7 @@ func TestLogPane_AppendLine_FirstLoadedLineNotOverriddenWhenSet(t *testing.T) {
 // ---- effectiveEndPadding capped at half VisibleLines ----
 
 func TestLogPane_EffectiveEndPadding_CappedAtHalfVisible(t *testing.T) {
-	p := NewPane(Config{EndPadding: 100})
+	p := NewPane(Config{})
 	p.SetSize(80, 10)    // VisibleLines = 10; cap = 5
 	p.SetHeaderHeight(0) // ensure no header shrinkage
 	ep := p.effectiveEndPadding()

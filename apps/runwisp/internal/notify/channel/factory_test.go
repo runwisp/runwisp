@@ -173,7 +173,3 @@ func TestBuild_SmtpTemplatePathMissing(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "read template")
 }
-
-func TestHttpTransport_NoTransportReturnsNil(t *testing.T) {
-	assert.Nil(t, httpTransport(NotifierSpec{}))
-}

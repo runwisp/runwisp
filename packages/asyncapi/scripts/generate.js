@@ -73,12 +73,6 @@ const goFileHeader = `// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 
 `;
 
-function fixGoNamingConvention(match, indent, fieldName) {
-  if (fieldName[0] < "A" || fieldName[0] > "Z") return match;
-  const fixed = fieldName.replace(/Id$/, "ID").replace(/Url$/, "URL");
-  return `${indent}${fixed}`;
-}
-
 function injectGoImports(content) {
   const needsTime =
     content.includes("*time.Time") && !content.includes('"time"');
@@ -103,8 +97,8 @@ function injectGoImports(content) {
 const int64Fields = new Set(["Limit", "LogSize", "FromLine", "N", "Ts"]);
 const timeFields = new Set(["StartedAt", "FinishedAt"]);
 
-// isAdditionalPropertiesBoilerplate identifies the generator-injected field that
-// must be dropped. Using string checks avoids regex quantifier overhead.
+// isAdditionalPropertiesBoilerplate identifies the generator-injected field
+// that must be dropped.
 function isAdditionalPropertiesBoilerplate(trimmed) {
   return (
     trimmed.startsWith("AdditionalProperties") &&
@@ -132,11 +126,9 @@ function transformGoLine(line) {
   if (isAdditionalPropertiesBoilerplate(trimmed)) return "";
 
   // First word on the line is the struct field name.
-  let nameEnd = 0;
-  while (nameEnd < trimmed.length && trimmed[nameEnd] !== " " && trimmed[nameEnd] !== "\t")
-    nameEnd++;
-  const fieldName = trimmed.slice(0, nameEnd);
-  const rest = trimmed.slice(nameEnd);
+  const nameEnd = trimmed.search(/\s/);
+  const fieldName = nameEnd === -1 ? trimmed : trimmed.slice(0, nameEnd);
+  const rest = nameEnd === -1 ? "" : trimmed.slice(nameEnd);
 
   const renamed = applyGoNamingConvention(fieldName, rest, indent);
   if (renamed !== null) return renamed;

@@ -368,27 +368,27 @@ func TestPublishUnreadCountChanged_PublishesCount(t *testing.T) {
 	hub.AssertExpectations(t)
 }
 
-// --- sseNotificationsPingLoop ---
+// --- sseNotificationsLoop (ping-only: nil notifyCh) ---
 
-func TestSseNotificationsPingLoop_ExitsOnContextCancel(t *testing.T) {
+func TestSseNotificationsLoop_PingOnly_ExitsOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		sseNotificationsPingLoop(ctx, func(sse.Message) error { return nil })
+		sseNotificationsLoop(ctx, nil, func(sse.Message) error { return nil })
 	}()
 
 	select {
 	case <-done:
 		// good — returned because context was cancelled
 	case <-time.After(2 * time.Second):
-		t.Fatal("sseNotificationsPingLoop did not exit after context cancellation")
+		t.Fatal("sseNotificationsLoop did not exit after context cancellation")
 	}
 }
 
-func TestSseNotificationsPingLoop_ExitsOnContextTimeout(t *testing.T) {
+func TestSseNotificationsLoop_PingOnly_ExitsOnContextTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
@@ -396,13 +396,13 @@ func TestSseNotificationsPingLoop_ExitsOnContextTimeout(t *testing.T) {
 	go func() {
 		defer close(done)
 		// 30s ticker won't fire in 50ms; context timeout terminates the loop.
-		sseNotificationsPingLoop(ctx, func(sse.Message) error { return nil })
+		sseNotificationsLoop(ctx, nil, func(sse.Message) error { return nil })
 	}()
 
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("sseNotificationsPingLoop did not exit")
+		t.Fatal("sseNotificationsLoop did not exit")
 	}
 }
 
@@ -428,12 +428,12 @@ func TestNotificationsStream_NoHub_SendsPing(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "event: ping")
 }
 
-// --- sseNotificationsLiveLoop ---
+// --- sseNotificationsLoop (live: subscribed notifyCh) ---
 
-func TestSseNotificationsLiveLoop_DeliversPublishedUpdate(t *testing.T) {
+func TestSseNotificationsLoop_DeliversPublishedUpdate(t *testing.T) {
 	hub := inapp.NewHub(8)
-	s, _, _, _ := setupServer(t)
-	s.notifyHub = hub
+	sub, unsubscribe := hub.Subscribe()
+	t.Cleanup(unsubscribe)
 
 	received := make(chan sse.Message, 4)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -442,14 +442,12 @@ func TestSseNotificationsLiveLoop_DeliversPublishedUpdate(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		s.sseNotificationsLiveLoop(ctx, func(m sse.Message) error {
+		sseNotificationsLoop(ctx, sub.Channel(), func(m sse.Message) error {
 			received <- m
 			return nil
 		})
 	}()
 
-	// Subscribe registration races with the goroutine startup; a short sleep
-	// is enough for the goroutine to call Subscribe().
 	require.Eventually(t, func() bool {
 		hub.Publish(inapp.Update{Type: inapp.UpdateTypeUnreadCountChanged, UnreadCount: 3})
 		select {
@@ -464,14 +462,14 @@ func TestSseNotificationsLiveLoop_DeliversPublishedUpdate(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("sseNotificationsLiveLoop did not exit after context cancellation")
+		t.Fatal("sseNotificationsLoop did not exit after context cancellation")
 	}
 }
 
-func TestSseNotificationsLiveLoop_ExitsOnContextCancel(t *testing.T) {
+func TestSseNotificationsLoop_ExitsOnContextCancel(t *testing.T) {
 	hub := inapp.NewHub(4)
-	s, _, _, _ := setupServer(t)
-	s.notifyHub = hub
+	sub, unsubscribe := hub.Subscribe()
+	t.Cleanup(unsubscribe)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -479,12 +477,12 @@ func TestSseNotificationsLiveLoop_ExitsOnContextCancel(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		s.sseNotificationsLiveLoop(ctx, func(sse.Message) error { return nil })
+		sseNotificationsLoop(ctx, sub.Channel(), func(sse.Message) error { return nil })
 	}()
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("sseNotificationsLiveLoop did not exit after context cancellation")
+		t.Fatal("sseNotificationsLoop did not exit after context cancellation")
 	}
 }
 

@@ -18,7 +18,7 @@ import (
 // repeated across the manager/services suites into one call. The concrete
 // *defaultTaskManager is returned so tests can reach internal state when no
 // public accessor exists.
-func newTestManager(t *testing.T) (*defaultTaskManager, *testutil.MockExecutor, events.EventBus) {
+func newTestManager(t *testing.T) (*defaultTaskManager, *testutil.MockExecutor, *events.Bus) {
 	t.Helper()
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
@@ -30,7 +30,7 @@ func newTestManager(t *testing.T) (*defaultTaskManager, *testutil.MockExecutor, 
 // newGatedManager is like newTestManager but wires a GateExecutor, for tests
 // that must hold a run "in flight" to exercise concurrency policy without
 // timing guesses.
-func newGatedManager(t *testing.T) (*defaultTaskManager, *testutil.GateExecutor, events.EventBus) {
+func newGatedManager(t *testing.T) (*defaultTaskManager, *testutil.GateExecutor, *events.Bus) {
 	t.Helper()
 	exec := testutil.NewGateExecutor()
 	eb := events.NewEventBus()
@@ -49,7 +49,7 @@ type runWaiter struct {
 	bump chan struct{}
 }
 
-func watchRuns(eb events.EventBus, types ...events.EventType) *runWaiter {
+func watchRuns(eb *events.Bus, types ...events.EventType) *runWaiter {
 	w := &runWaiter{bump: make(chan struct{}, 1)}
 	handler := func(e events.Event) {
 		re, ok := e.Data.(events.RunEvent)
@@ -72,7 +72,7 @@ func watchRuns(eb events.EventBus, types ...events.EventType) *runWaiter {
 
 // watchCompletions records terminal run events (completed + failed), the usual
 // "the run finished" signal.
-func watchCompletions(eb events.EventBus) *runWaiter {
+func watchCompletions(eb *events.Bus) *runWaiter {
 	return watchRuns(eb, events.EventRunCompleted, events.EventRunFailed)
 }
 

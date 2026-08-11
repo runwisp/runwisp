@@ -20,7 +20,7 @@ import (
 
 // captureLogEvents subscribes to EventLogLine and returns a synchronized
 // accumulator the caller can read after the stream has finished.
-func captureLogEvents(t *testing.T, eb events.EventBus) (drain func() []events.LogLineEvent) {
+func captureLogEvents(t *testing.T, eb *events.Bus) (drain func() []events.LogLineEvent) {
 	t.Helper()
 	var (
 		mu   sync.Mutex

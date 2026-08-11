@@ -188,75 +188,45 @@ function matchesSearch(task: TaskOverview, query: string): boolean {
     );
 }
 
+type TaskOverviewComparator = (left: TaskOverview, right: TaskOverview) => number;
+
+/** Combines comparators, applying each in order until one returns non-zero. */
+function compareBy(...comparators: TaskOverviewComparator[]): TaskOverviewComparator {
+    return (left, right) => {
+        for (const comparator of comparators) {
+            const result = comparator(left, right);
+            if (result !== 0) {
+                return result;
+            }
+        }
+        return 0;
+    };
+}
+
+const byName: TaskOverviewComparator = (left, right) =>
+    left.task.name.localeCompare(right.task.name);
+
+const byNextRunAscending: TaskOverviewComparator = (left, right) =>
+    compareOptionalAscending(left.nextRunMs, right.nextRunMs);
+
+const byLastActivityDescending: TaskOverviewComparator = (left, right) =>
+    compareOptionalDescending(lastTaskActivityAt(left), lastTaskActivityAt(right));
+
+const byStateOrder: TaskOverviewComparator = (left, right) =>
+    TASK_STATE_ORDER[left.state] - TASK_STATE_ORDER[right.state];
+
+const SORT_COMPARATORS: Record<OverviewTaskSortKey, TaskOverviewComparator> = {
+    name: byName,
+    next_run: compareBy(byNextRunAscending, byLastActivityDescending, byName),
+    last_activity: compareBy(byLastActivityDescending, byNextRunAscending, byName),
+    attention: compareBy(byStateOrder, byLastActivityDescending, byNextRunAscending, byName),
+};
+
 function sortTaskOverviews(
     taskOverviews: TaskOverview[],
     sortBy: OverviewTaskSortKey,
 ): TaskOverview[] {
-    const sorted = [...taskOverviews];
-
-    if (sortBy === "name") {
-        return sorted.sort((left, right) => left.task.name.localeCompare(right.task.name));
-    }
-
-    if (sortBy === "next_run") {
-        return sorted.sort((left, right) => {
-            const nextRunComparison = compareOptionalAscending(left.nextRunMs, right.nextRunMs);
-            if (nextRunComparison !== 0) {
-                return nextRunComparison;
-            }
-
-            const recentRunComparison = compareOptionalDescending(
-                lastTaskActivityAt(left),
-                lastTaskActivityAt(right),
-            );
-            if (recentRunComparison !== 0) {
-                return recentRunComparison;
-            }
-
-            return left.task.name.localeCompare(right.task.name);
-        });
-    }
-
-    if (sortBy === "last_activity") {
-        return sorted.sort((left, right) => {
-            const recentRunComparison = compareOptionalDescending(
-                lastTaskActivityAt(left),
-                lastTaskActivityAt(right),
-            );
-            if (recentRunComparison !== 0) {
-                return recentRunComparison;
-            }
-
-            const nextRunComparison = compareOptionalAscending(left.nextRunMs, right.nextRunMs);
-            if (nextRunComparison !== 0) {
-                return nextRunComparison;
-            }
-
-            return left.task.name.localeCompare(right.task.name);
-        });
-    }
-
-    return sorted.sort((left, right) => {
-        const stateComparison = TASK_STATE_ORDER[left.state] - TASK_STATE_ORDER[right.state];
-        if (stateComparison !== 0) {
-            return stateComparison;
-        }
-
-        const recentRunComparison = compareOptionalDescending(
-            lastTaskActivityAt(left),
-            lastTaskActivityAt(right),
-        );
-        if (recentRunComparison !== 0) {
-            return recentRunComparison;
-        }
-
-        const nextRunComparison = compareOptionalAscending(left.nextRunMs, right.nextRunMs);
-        if (nextRunComparison !== 0) {
-            return nextRunComparison;
-        }
-
-        return left.task.name.localeCompare(right.task.name);
-    });
+    return [...taskOverviews].sort(SORT_COMPARATORS[sortBy]);
 }
 
 function compareOptionalAscending(left: number | undefined, right: number | undefined): number {
