@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -26,16 +26,16 @@ func TestCopyDialog_UpdateClosesOnKeys(t *testing.T) {
 	for _, k := range closeKeys {
 		t.Run(k, func(t *testing.T) {
 			d := NewCopyDialog("t", "v")
-			var msg tea.KeyMsg
+			var msg tea.KeyPressMsg
 			switch k {
 			case "esc":
-				msg = tea.KeyMsg{Type: tea.KeyEsc}
+				msg = tea.KeyPressMsg{Code: tea.KeyEsc}
 			case "enter":
-				msg = tea.KeyMsg{Type: tea.KeyEnter}
+				msg = tea.KeyPressMsg{Code: tea.KeyEnter}
 			case "backspace":
-				msg = tea.KeyMsg{Type: tea.KeyBackspace}
+				msg = tea.KeyPressMsg{Code: tea.KeyBackspace}
 			case "q":
-				msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}
+				msg = tea.KeyPressMsg{Code: 'q', Text: "q"}
 			}
 			assert.True(t, d.Update(msg), "expected close on %q", k)
 		})
@@ -44,24 +44,24 @@ func TestCopyDialog_UpdateClosesOnKeys(t *testing.T) {
 
 func TestCopyDialog_UpdateIgnoresOtherKeys(t *testing.T) {
 	d := NewCopyDialog("t", "v")
-	assert.False(t, d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")}))
+	assert.False(t, d.Update(tea.KeyPressMsg{Code: 'a', Text: "a"}))
 }
 
 func TestCopyDialog_UpdateRightClickCloses(t *testing.T) {
 	d := NewCopyDialog("t", "v")
-	closed := d.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight})
+	closed := d.Update(tea.MouseClickMsg{Button: tea.MouseRight})
 	assert.True(t, closed)
 }
 
 func TestCopyDialog_UpdateLeftClickDoesNotClose(t *testing.T) {
 	d := NewCopyDialog("t", "v")
-	closed := d.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	closed := d.Update(tea.MouseClickMsg{Button: tea.MouseLeft})
 	assert.False(t, closed)
 }
 
 func TestCopyDialog_UpdateMouseRelease_DoesNotClose(t *testing.T) {
 	d := NewCopyDialog("t", "v")
-	closed := d.Update(tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonRight})
+	closed := d.Update(tea.MouseReleaseMsg{Button: tea.MouseRight})
 	assert.False(t, closed)
 }
 

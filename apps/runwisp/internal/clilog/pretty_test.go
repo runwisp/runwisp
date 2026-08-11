@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,9 +30,8 @@ func TestPrettyHandler_PlainHasNoEscapes(t *testing.T) {
 }
 
 func TestPrettyHandler_ColorEmitsEscapes(t *testing.T) {
-	// lipgloss resolves the global color profile at render time; a non-TTY test
-	// env defaults to ASCII (no escapes), so force a colored profile here.
-	forceColorProfile(t)
+	// lipgloss v2 styles always render full ANSI regardless of destination, so
+	// no profile setup is needed here — that's applyHandler's job in production.
 	var buf bytes.Buffer
 	log := newTestLogger(newPrettyHandler(&buf, slog.LevelInfo, false, true))
 
@@ -149,12 +146,3 @@ func TestNewPlainWriter_PassesPlainThrough(t *testing.T) {
 
 // refTime is a fixed, non-zero time for deterministic timestamp assertions.
 func refTime() time.Time { return time.Date(2026, 6, 27, 12, 30, 45, 0, time.UTC) }
-
-// forceColorProfile pins lipgloss to a colored profile for the duration of a
-// test and restores the previous one on cleanup.
-func forceColorProfile(t *testing.T) {
-	t.Helper()
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.TrueColor)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
-}

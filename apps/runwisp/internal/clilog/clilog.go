@@ -16,10 +16,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-isatty"
-	"github.com/muesli/termenv"
 )
 
 // Format selects the slog handler shape.
@@ -63,18 +62,12 @@ var (
 	noColor   = os.Getenv("NO_COLOR") != ""
 )
 
-// Configure installs the slog default logger from opts. In DaemonMode it also
-// gates lipgloss color output (ASCII when stderr is not a TTY, NO_COLOR is set,
-// or format is JSON) so the styled banner degrades to plain text instead of
-// emitting escape-code garbage into Docker logs / journald. Safe to call
+// Configure installs the slog default logger from opts. Safe to call
 // repeatedly; the last call wins.
 func Configure(opts Options) {
 	mu.Lock()
 	defer mu.Unlock()
 	base = opts
-	if opts.DaemonMode {
-		applyColorProfile(opts.Format)
-	}
 	applyHandler(opts)
 }
 
@@ -125,15 +118,6 @@ func ParseFormat(s string) (Format, error) {
 	return "", fmt.Errorf("unknown log format %q (valid: auto, text, json)", s)
 }
 
-func applyColorProfile(f Format) {
-	// Only force ASCII when color is unwanted. When color IS wanted we leave
-	// the renderer's auto-detected profile in place rather than pinning one —
-	// pinning would downgrade truecolor terminals to 16 colors.
-	if noColor || f == FormatJSON || !stderrTTY {
-		lipgloss.SetColorProfile(termenv.Ascii)
-	}
-}
-
 func applyHandler(opts Options) {
 	out := opts.Output
 	if out == nil {
@@ -146,7 +130,10 @@ func applyHandler(opts Options) {
 	} else {
 		// Both text formats use the human-readable pretty handler; color is the
 		// only difference (see useColor). JSON stays machine-shaped for pipelines.
-		h = newPrettyHandler(out, opts.Level, includeTime(opts), useColor(opts))
+		// out is wrapped in a colorprofile.Writer because lipgloss v2 styles
+		// always render full ANSI — downsampling for the real terminal (or
+		// stripping entirely for NO_COLOR / a non-TTY destination) happens here.
+		h = newPrettyHandler(colorprofile.NewWriter(out, os.Environ()), opts.Level, includeTime(opts), useColor(opts))
 	}
 	slog.SetDefault(slog.New(h))
 }

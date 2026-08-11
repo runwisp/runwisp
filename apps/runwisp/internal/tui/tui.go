@@ -12,8 +12,9 @@ import (
 	"strings"
 	"syscall"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -53,10 +54,7 @@ func StartTUI(info uikit.StartupInfo, client *apiclient.Client, debugWriter *Deb
 		LaunchTicketFunc: launchTicketFunc,
 	})
 
-	p := tea.NewProgram(m,
-		tea.WithAltScreen(),
-		tea.WithMouseAllMotion(),
-	)
+	p := tea.NewProgram(m)
 
 	if debugWriter != nil {
 		debugWriter.SetProgram(p)
@@ -96,8 +94,12 @@ func PrintStartup(info uikit.StartupInfo) {
 
 // printStartupTo renders the polished startup display to the given writer.
 // Exposed as a writer-injecting seam so tests can capture the banner without
-// reaching into os.Stderr.
+// reaching into os.Stderr. w is wrapped in a colorprofile.Writer rather than
+// styled unconditionally: lipgloss v2 styles always render full ANSI, so
+// NO_COLOR and non-terminal destinations (a captured stderr, a log file) are
+// downgraded at the write, matching the pattern in cmd/runwisp's renderError.
 func printStartupTo(w io.Writer, info uikit.StartupInfo) {
+	w = colorprofile.NewWriter(w, os.Environ())
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "  %s %s %s\n",
 		brandMark.Render("⟡"),

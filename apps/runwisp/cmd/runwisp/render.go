@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"golang.org/x/term"
 )
@@ -201,12 +200,4 @@ func padTo(s string, width int) string {
 		return s + strings.Repeat(" ", gap)
 	}
 	return s
-}
-
-// rendererFor returns a lipgloss renderer whose color profile is detected from
-// w. lipgloss's package-level renderer derives its profile from os.Stdout, so
-// styling anything bound for stderr with it writes escape sequences into
-// `runwisp import cron 2> report.txt`.
-func rendererFor(w io.Writer) *lipgloss.Renderer {
-	return lipgloss.NewRenderer(w)
 }

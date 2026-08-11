@@ -4,11 +4,12 @@
 package tui
 
 import (
+	"image/color"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -177,17 +178,22 @@ func comboSeedIndex(opts []string, def *string) int {
 func newTextInput(def *string) textinput.Model {
 	ti := textinput.New()
 	ti.CharLimit = 1024
-	ti.Width = 40
+	ti.SetWidth(40)
 	// Dress the input in the modal's surface colors. Left at defaults, the
 	// focused cursor reverses against the terminal default and renders as a
 	// jarring white block on an otherwise empty field; the prompt, text and
 	// padding default to no background and stand out against ColorBgLight.
 	surface := lipgloss.NewStyle().Background(uikit.ColorBgLight)
-	ti.PromptStyle = surface.Foreground(uikit.ColorTextMuted)
-	ti.TextStyle = surface.Foreground(uikit.ColorText)
-	ti.PlaceholderStyle = surface.Foreground(uikit.ColorTextMuted)
-	ti.Cursor.Style = surface.Foreground(uikit.ColorPrimary)
-	ti.Cursor.TextStyle = surface.Foreground(uikit.ColorText)
+	state := textinput.StyleState{
+		Prompt:      surface.Foreground(uikit.ColorTextMuted),
+		Text:        surface.Foreground(uikit.ColorText),
+		Placeholder: surface.Foreground(uikit.ColorTextMuted),
+	}
+	styles := textinput.DefaultStyles(true)
+	styles.Focused = state
+	styles.Blurred = state
+	styles.Cursor.Color = uikit.ColorPrimary
+	ti.SetStyles(styles)
 	if def != nil {
 		ti.SetValue(*def)
 	}
@@ -281,7 +287,7 @@ func (f *paramField) includeMarker() string {
 // Update dispatches input to the form. Returns a command (the submit command
 // when the operator confirms a valid form) and whether the dialog should close.
 func (d *ParamFormDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
-	keyMsg, ok := msg.(tea.KeyMsg)
+	keyMsg, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil, false
 	}
@@ -300,7 +306,7 @@ func (d *ParamFormDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
 	return d.handleFieldKey(keyMsg)
 }
 
-func (d *ParamFormDialog) handleFieldKey(keyMsg tea.KeyMsg) (tea.Cmd, bool) {
+func (d *ParamFormDialog) handleFieldKey(keyMsg tea.KeyPressMsg) (tea.Cmd, bool) {
 	if len(d.fields) == 0 {
 		return nil, false
 	}
@@ -326,7 +332,7 @@ func (d *ParamFormDialog) handleFieldKey(keyMsg tea.KeyMsg) (tea.Cmd, bool) {
 // strict and combo selectors cycle on ←/→, and a plain text field edits. A combo
 // selector only cycles here — its custom input lives on a separate stop, so ←/→
 // are never overloaded.
-func (f *paramField) handleMainKey(keyMsg tea.KeyMsg) tea.Cmd {
+func (f *paramField) handleMainKey(keyMsg tea.KeyPressMsg) tea.Cmd {
 	key := keyMsg.String()
 	switch {
 	case f.param.Kind == model.ParamFlag:
@@ -354,7 +360,7 @@ func (f *paramField) handleMainKey(keyMsg tea.KeyMsg) tea.Cmd {
 // arrow hint is honest for flags too.
 func (f *paramField) toggleFlag(key string) {
 	switch key {
-	case " ", "x", "left", "right", "h", "l":
+	case "space", "x", "left", "right", "h", "l":
 		f.flagOn = !f.flagOn
 	}
 }
@@ -576,7 +582,7 @@ func (d *ParamFormDialog) renderField(i, innerWidth int) []string {
 
 // modalLeftLine renders a left-aligned full-width line on the modal surface,
 // the form counterpart to the centered modalSurfaceLine.
-func modalLeftLine(text string, innerWidth int, fg lipgloss.Color) string {
+func modalLeftLine(text string, innerWidth int, fg color.Color) string {
 	return lipgloss.NewStyle().
 		Background(uikit.ColorBgLight).
 		Foreground(fg).
@@ -599,7 +605,7 @@ func modalLeftLineRich(innerWidth int, segments ...string) string {
 
 // styledSeg renders one coloured segment on the modal surface for composing into
 // modalLeftLineRich.
-func styledSeg(text string, fg lipgloss.Color) string {
+func styledSeg(text string, fg color.Color) string {
 	return lipgloss.NewStyle().
 		Background(uikit.ColorBgLight).
 		Foreground(fg).

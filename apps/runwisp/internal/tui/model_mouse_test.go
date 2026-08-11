@@ -6,7 +6,7 @@ package tui
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
@@ -57,7 +57,7 @@ func TestMouseHandlers_Guards(t *testing.T) {
 
 func TestHandleMouse_MotionUpdatesHoverCoords(t *testing.T) {
 	m := newTestModel(nil)
-	msg := tea.MouseMsg{Action: tea.MouseActionMotion, X: 50, Y: 5}
+	msg := tea.MouseMotionMsg{X: 50, Y: 5}
 	newM, _ := m.handleMouse(msg)
 	nm := newM.(Model)
 	if nm.mouse.hoverX != 50 || nm.mouse.hoverY != 5 {
@@ -195,7 +195,7 @@ func TestHandleExecListClick_NoSelectedRunReturnsFocusOnly(t *testing.T) {
 // scrollWheelUp.
 func TestHandleMouse_WheelUpPress(t *testing.T) {
 	m := newTestModel(nil)
-	msg := tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp, X: 100, Y: 5}
+	msg := tea.MouseClickMsg{Button: tea.MouseWheelUp, X: 100, Y: 5}
 	newM, _ := m.handleMouse(msg)
 	if _, ok := newM.(Model); !ok {
 		t.Fatalf("expected Model, got %T", newM)
@@ -205,7 +205,7 @@ func TestHandleMouse_WheelUpPress(t *testing.T) {
 // TestHandleMouse_WheelDownPress covers the wheel-down press path.
 func TestHandleMouse_WheelDownPress(t *testing.T) {
 	m := newTestModel(nil)
-	msg := tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown, X: 100, Y: 5}
+	msg := tea.MouseClickMsg{Button: tea.MouseWheelDown, X: 100, Y: 5}
 	newM, _ := m.handleMouse(msg)
 	if _, ok := newM.(Model); !ok {
 		t.Fatalf("expected Model, got %T", newM)
@@ -218,7 +218,7 @@ func TestHandleMouse_LeftClickSidebarFocusesSidebar(t *testing.T) {
 	tasks := []model.TaskBrief{{Name: "backup"}}
 	m := newTestModel(tasks)
 	m.focusMainPanel()
-	msg := tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 1, Y: 1}
+	msg := tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: 1}
 	newM, _ := m.handleMouse(msg)
 	got, ok := newM.(Model)
 	if !ok {
@@ -232,7 +232,7 @@ func TestHandleMouse_LeftClickSidebarFocusesSidebar(t *testing.T) {
 // TestHandleMouse_LeftClickMainPanelRoutes covers the click-in-main-panel path.
 func TestHandleMouse_LeftClickMainPanelRoutes(t *testing.T) {
 	m := newTestModel(nil)
-	msg := tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: uikit.SidebarWidth + 5, Y: 10}
+	msg := tea.MouseClickMsg{Button: tea.MouseLeft, X: uikit.SidebarWidth + 5, Y: 10}
 	newM, _ := m.handleMouse(msg)
 	if _, ok := newM.(Model); !ok {
 		t.Fatalf("expected Model, got %T", newM)
@@ -243,7 +243,7 @@ func TestHandleMouse_LeftClickMainPanelRoutes(t *testing.T) {
 // branch — a right click does nothing.
 func TestHandleMouse_NonLeftNonWheelIsNoOp(t *testing.T) {
 	m := newTestModel(nil)
-	msg := tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight, X: 100, Y: 5}
+	msg := tea.MouseClickMsg{Button: tea.MouseRight, X: 100, Y: 5}
 	_, cmd := m.handleMouse(msg)
 	if cmd != nil {
 		t.Fatalf("expected nil cmd for right-click, got %v", cmd)
@@ -254,7 +254,7 @@ func TestHandleMouse_NonLeftNonWheelIsNoOp(t *testing.T) {
 // ignored (release).
 func TestHandleMouse_ReleaseIsNoOp(t *testing.T) {
 	m := newTestModel(nil)
-	msg := tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: 100, Y: 5}
+	msg := tea.MouseReleaseMsg{Button: tea.MouseLeft, X: 100, Y: 5}
 	_, cmd := m.handleMouse(msg)
 	if cmd != nil {
 		t.Fatalf("expected nil cmd for release, got %v", cmd)

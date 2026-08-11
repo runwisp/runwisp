@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,11 +25,11 @@ func TestRunParamsDialog_NewEmpty(t *testing.T) {
 }
 
 func TestRunParamsDialog_UpdateClosesOnKeys(t *testing.T) {
-	closeKeys := map[string]tea.KeyMsg{
-		"esc":       {Type: tea.KeyEsc},
-		"enter":     {Type: tea.KeyEnter},
-		"backspace": {Type: tea.KeyBackspace},
-		"q":         {Type: tea.KeyRunes, Runes: []rune("q")},
+	closeKeys := map[string]tea.KeyPressMsg{
+		"esc":       {Code: tea.KeyEsc},
+		"enter":     {Code: tea.KeyEnter},
+		"backspace": {Code: tea.KeyBackspace},
+		"q":         {Code: 'q', Text: "q"},
 	}
 	for name, msg := range closeKeys {
 		t.Run(name, func(t *testing.T) {
@@ -41,17 +41,17 @@ func TestRunParamsDialog_UpdateClosesOnKeys(t *testing.T) {
 
 func TestRunParamsDialog_UpdateIgnoresOtherKeys(t *testing.T) {
 	d := NewRunParamsDialog("t", map[string]string{"k": "v"})
-	assert.False(t, d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")}))
+	assert.False(t, d.Update(tea.KeyPressMsg{Code: 'a', Text: "a"}))
 }
 
 func TestRunParamsDialog_UpdateRightClickCloses(t *testing.T) {
 	d := NewRunParamsDialog("t", map[string]string{"k": "v"})
-	assert.True(t, d.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight}))
+	assert.True(t, d.Update(tea.MouseClickMsg{Button: tea.MouseRight}))
 }
 
 func TestRunParamsDialog_UpdateLeftClickDoesNotClose(t *testing.T) {
 	d := NewRunParamsDialog("t", map[string]string{"k": "v"})
-	assert.False(t, d.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}))
+	assert.False(t, d.Update(tea.MouseClickMsg{Button: tea.MouseLeft}))
 }
 
 func TestRunParamsDialog_ViewContainsTitleAndPairs(t *testing.T) {

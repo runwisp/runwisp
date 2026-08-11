@@ -5,10 +5,11 @@ package uikit
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/internal/model"
 )
 
@@ -23,7 +24,7 @@ const MaxContentWidth = 110
 // PadLine right-pads content with a styled-background space run so the row
 // fills `width` cells without losing the background colour when terminals
 // trim trailing whitespace.
-func PadLine(content string, width int, bg lipgloss.Color) string {
+func PadLine(content string, width int, bg color.Color) string {
 	contentWidth := lipgloss.Width(content)
 	if contentWidth >= width {
 		return content

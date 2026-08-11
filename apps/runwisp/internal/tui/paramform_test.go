@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -270,7 +270,7 @@ func TestParamForm_CtrlTForcesEmptyString(t *testing.T) {
 	params := []model.TaskParam{{Kind: model.ParamEnv, Key: "TOKEN"}}
 	d := NewParamFormDialog("sync", params, submit)
 
-	_, closed := d.Update(keyMsgSpecial(tea.KeyCtrlT))
+	_, closed := d.Update(tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl})
 	require.False(t, closed, "ctrl+t toggles include, it does not submit")
 
 	_, closed = d.Update(keyMsgSpecial(tea.KeyEnter))
@@ -294,7 +294,7 @@ func TestParamForm_CtrlTOmitsFilledValue(t *testing.T) {
 		_, _ = d.Update(keyMsg(string(r)))
 	}
 
-	_, _ = d.Update(keyMsgSpecial(tea.KeyCtrlT))
+	_, _ = d.Update(tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl})
 	_, closed := d.Update(keyMsgSpecial(tea.KeyEnter))
 	require.True(t, closed)
 	require.Contains(t, got, "TOKEN")
@@ -312,7 +312,7 @@ func TestParamForm_CtrlTIgnoredForFlag(t *testing.T) {
 	params := []model.TaskParam{{Kind: model.ParamFlag, Key: "--force"}}
 	d := NewParamFormDialog("t", params, submit)
 
-	_, _ = d.Update(keyMsgSpecial(tea.KeyCtrlT))
+	_, _ = d.Update(tea.KeyPressMsg{Code: 't', Mod: tea.ModCtrl})
 	assert.Nil(t, d.fields[0].includeOverride, "ctrl+t must not set an override on a flag")
 
 	_, closed := d.Update(keyMsgSpecial(tea.KeyEnter))
@@ -328,7 +328,7 @@ func TestParamForm_FlagTogglesWithArrows(t *testing.T) {
 	submit := func(map[string]*string) tea.Cmd { return nil }
 	for _, tc := range []struct {
 		name string
-		key  tea.KeyMsg
+		key  tea.KeyPressMsg
 	}{
 		{"left", keyMsgSpecial(tea.KeyLeft)},
 		{"right", keyMsgSpecial(tea.KeyRight)},

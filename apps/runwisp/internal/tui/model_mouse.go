@@ -4,7 +4,7 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/internal/tui/views/home"
@@ -12,25 +12,25 @@ import (
 
 // handleMouse processes mouse clicks and motion on sidebar, Run Now button, and exec list.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	x, y := msg.X, msg.Y
+	x, y := msg.Mouse().X, msg.Mouse().Y
 	m.mouse.hoverX = x
 	m.mouse.hoverY = y
 	m.updateHoverState(x, y)
 
-	if msg.Action == tea.MouseActionMotion {
-		return m, nil
-	}
-
-	if msg.Action == tea.MouseActionPress {
+	switch msg := msg.(type) {
+	case tea.MouseWheelMsg:
 		switch msg.Button {
-		case tea.MouseButtonWheelUp:
+		case tea.MouseWheelUp:
 			return m, m.scrollWheelUp(x)
-		case tea.MouseButtonWheelDown:
+		case tea.MouseWheelDown:
 			return m, m.scrollWheelDown(x)
 		}
-	}
-
-	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+		return m, nil
+	case tea.MouseClickMsg:
+		if msg.Button != tea.MouseLeft {
+			return m, nil
+		}
+	default:
 		return m, nil
 	}
 

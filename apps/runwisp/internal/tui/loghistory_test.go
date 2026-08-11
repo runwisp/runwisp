@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
@@ -66,14 +66,14 @@ func TestLogHistoryDialog_UpdateClosesOnKeys(t *testing.T) {
 	for _, k := range []string{"esc", "enter", "q"} {
 		t.Run(k, func(t *testing.T) {
 			d := NewLogHistoryDialog(0, [][]string{{"x"}}, "y")
-			var msg tea.KeyMsg
+			var msg tea.KeyPressMsg
 			switch k {
 			case "esc":
-				msg = tea.KeyMsg{Type: tea.KeyEsc}
+				msg = tea.KeyPressMsg{Code: tea.KeyEsc}
 			case "enter":
-				msg = tea.KeyMsg{Type: tea.KeyEnter}
+				msg = tea.KeyPressMsg{Code: tea.KeyEnter}
 			case "q":
-				msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}
+				msg = tea.KeyPressMsg{Code: 'q', Text: "q"}
 			}
 			assert.True(t, d.Update(msg))
 		})
@@ -89,23 +89,23 @@ func TestLogHistoryDialog_ScrollClampsAndDoesNotClose(t *testing.T) {
 	d := NewLogHistoryDialog(0, frames, "final")
 
 	// Up at the top is a no-op (stays at 0) and never closes.
-	assert.False(t, d.Update(tea.KeyMsg{Type: tea.KeyUp}))
+	assert.False(t, d.Update(tea.KeyPressMsg{Code: tea.KeyUp}))
 	assert.Equal(t, 0, d.scroll)
 
 	// Down advances; End jumps to the bottom; Down at the bottom clamps.
-	assert.False(t, d.Update(tea.KeyMsg{Type: tea.KeyDown}))
+	assert.False(t, d.Update(tea.KeyPressMsg{Code: tea.KeyDown}))
 	assert.Equal(t, 1, d.scroll)
 
-	d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	d.Update(tea.KeyPressMsg{Code: 'G', Text: "G"})
 	bottom := d.scroll
 	assert.Equal(t, d.maxScroll(), bottom)
-	d.Update(tea.KeyMsg{Type: tea.KeyDown})
+	d.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	assert.Equal(t, bottom, d.scroll, "down at bottom should clamp")
 }
 
 func TestLogHistoryDialog_RightClickCloses(t *testing.T) {
 	d := NewLogHistoryDialog(0, [][]string{{"x"}}, "y")
-	assert.True(t, d.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonRight}))
+	assert.True(t, d.Update(tea.MouseClickMsg{Button: tea.MouseRight}))
 }
 
 func TestLogHistoryDialog_ScrollHintReflectsScrollability(t *testing.T) {
@@ -196,7 +196,7 @@ func TestAnchorNav_MovesCursorAndEnterFetchesHistory(t *testing.T) {
 	m.execView.HeaderFocus = execlist.HeaderFocusNone
 
 	// `]` jumps to the next anchor.
-	newM, _, handled := handleKeyNextAnchor(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
+	newM, _, handled := handleKeyNextAnchor(m, tea.KeyPressMsg{Code: ']', Text: "]"})
 	assert.True(t, handled, "expected `]` to be handled when an anchor exists")
 	m = newM
 	absLine, _, ok := m.execView.Pane.CursorAnchor()
@@ -219,7 +219,7 @@ func TestAnchorNav_IgnoredWhenPaneNotFocused(t *testing.T) {
 	m.execView = &ev
 	m.panelFocus = uikit.PanelSidebar
 
-	_, _, handled := handleKeyNextAnchor(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
+	_, _, handled := handleKeyNextAnchor(m, tea.KeyPressMsg{Code: ']', Text: "]"})
 	assert.False(t, handled, "anchor nav must yield when the pane isn't focused")
 }
 

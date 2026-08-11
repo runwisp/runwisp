@@ -6,8 +6,8 @@ package tui
 import (
 	"strconv"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -52,9 +52,9 @@ const logHistoryVisibleRows = 16
 
 // Update reports true when the dialog should close.
 func (d *LogHistoryDialog) Update(msg tea.Msg) bool {
-	keyMsg, ok := msg.(tea.KeyMsg)
+	keyMsg, ok := msg.(tea.KeyPressMsg)
 	if !ok {
-		if mouse, ok := msg.(tea.MouseMsg); ok && mouse.Action == tea.MouseActionPress {
+		if _, ok := msg.(tea.MouseClickMsg); ok {
 			return true
 		}
 		return false

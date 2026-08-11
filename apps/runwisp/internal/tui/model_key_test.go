@@ -6,7 +6,7 @@ package tui
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -14,12 +14,12 @@ import (
 	"github.com/runwisp/runwisp/internal/tui/views/logsearch"
 )
 
-func keyMsg(s string) tea.KeyMsg {
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+func keyMsg(s string) tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: []rune(s)[0], Text: s}
 }
 
-func keyMsgSpecial(t tea.KeyType) tea.KeyMsg {
-	return tea.KeyMsg{Type: t}
+func keyMsgSpecial(code rune) tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: code}
 }
 
 // ─── handleKeyN ─────────────────────────────────────────────────────────────
@@ -677,7 +677,7 @@ func TestHandleKeyBackspace_WithFullscreenExecView(t *testing.T) {
 	ev.ToggleFullscreen()
 	m.execView = &ev
 
-	newM, _, handled := handleKeyBackspace(m, tea.KeyMsg{Type: tea.KeyBackspace})
+	newM, _, handled := handleKeyBackspace(m, tea.KeyPressMsg{Code: tea.KeyBackspace})
 	if !handled {
 		t.Fatal("expected handled=true for backspace on fullscreen exec view")
 	}
@@ -718,7 +718,7 @@ func TestHandleKeyR_NotificationsExpanded(t *testing.T) {
 	m := newTestModel(nil)
 	m.notifications.Upsert(server.NotificationDTO{ID: "n1", Severity: "error", Count: 1, Title: "t"})
 	m.notifications.Toggle()
-	_, _, handled := handleKeyR(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	_, _, handled := handleKeyR(m, tea.KeyPressMsg{Code: 'r', Text: "r"})
 	if !handled {
 		t.Fatal("expected handled=true when notifications expanded")
 	}
@@ -727,7 +727,7 @@ func TestHandleKeyR_NotificationsExpanded(t *testing.T) {
 func TestHandleKeyR_CapitalRReloadsConfig(t *testing.T) {
 	m := newTestModel(nil)
 	m.client = newDummyClient()
-	_, _, handled := handleKeyR(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")})
+	_, _, handled := handleKeyR(m, tea.KeyPressMsg{Code: 'R', Text: "R"})
 	if !handled {
 		t.Fatal("expected capital R to be handled (triggers config reload)")
 	}
@@ -758,7 +758,7 @@ func TestHandleKeyUp_NotificationsScrollable(t *testing.T) {
 		})
 	}
 	m.notifications.Toggle()
-	_, _, handled := handleKeyUp(m, tea.KeyMsg{Type: tea.KeyUp})
+	_, _, handled := handleKeyUp(m, tea.KeyPressMsg{Code: tea.KeyUp})
 	if !handled {
 		t.Fatal("expected handled=true when notifications expanded and can scroll")
 	}
@@ -775,7 +775,7 @@ func TestHandleKeyDown_NotificationsScrollable(t *testing.T) {
 		})
 	}
 	m.notifications.Toggle()
-	_, _, handled := handleKeyDown(m, tea.KeyMsg{Type: tea.KeyDown})
+	_, _, handled := handleKeyDown(m, tea.KeyPressMsg{Code: tea.KeyDown})
 	if !handled {
 		t.Fatal("expected handled=true when notifications expanded")
 	}
@@ -814,7 +814,7 @@ func TestHandleKeyHelp_CtrlCEscalatesToQuitConfirm(t *testing.T) {
 	m := newTestModel(nil)
 	m.dialogs.ShowHelp()
 
-	updated, _ := m.Update(keyMsgSpecial(tea.KeyCtrlC))
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatal("expected Model")
@@ -1433,7 +1433,7 @@ func TestHandleLogSearchKey_ForwardsKey(t *testing.T) {
 	// Tab toggles regex inside the overlay; we don't observe the boolean
 	// directly (unexported), but the overlay should still be attached and
 	// no cmd should be returned for tab.
-	newM, _ := m.handleLogSearchKey(tea.KeyMsg{Type: tea.KeyTab})
+	newM, _ := m.handleLogSearchKey(tea.KeyPressMsg{Code: tea.KeyTab})
 	got := newM.(Model)
 	if got.logSearch == nil {
 		t.Fatal("overlay should still be attached after Tab")

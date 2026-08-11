@@ -7,7 +7,7 @@
 // subpackage in a way that creates a cycle with this one.
 package uikit
 
-import "github.com/charmbracelet/lipgloss"
+import "charm.land/lipgloss/v2"
 
 // Brand palette — official RunWisp colors.
 var (

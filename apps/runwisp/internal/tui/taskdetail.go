@@ -5,12 +5,13 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -53,15 +54,13 @@ func (d *TaskDetailDialog) ApplySummary(msg uikit.TaskSummaryMsg) {
 // Update reports true when the dialog should close.
 func (d *TaskDetailDialog) Update(msg tea.Msg) bool {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "i", "esc", "enter", "q":
 			return true
 		}
-	case tea.MouseMsg:
-		if msg.Action == tea.MouseActionPress {
-			return true
-		}
+	case tea.MouseClickMsg:
+		return true
 	}
 	return false
 }
@@ -70,7 +69,7 @@ func (d *TaskDetailDialog) View(screenWidth, screenHeight int) string {
 	const labelCol = 14
 	dialogWidth, innerWidth := modalDimensions(screenWidth, 58, 44)
 
-	row := func(label, value string, color lipgloss.Color) string {
+	row := func(label, value string, color color.Color) string {
 		return taskDetailRow(label, value, color, labelCol, innerWidth)
 	}
 
@@ -98,7 +97,7 @@ func (d *TaskDetailDialog) View(screenWidth, screenHeight int) string {
 // definitionRows renders the static task definition: kind, schedule, concurrency
 // and any dependencies/parameters. Each field is shown only when it carries
 // information, so a plain cron task stays compact.
-func (d *TaskDetailDialog) definitionRows(row func(label, value string, color lipgloss.Color) string, innerWidth int) []string {
+func (d *TaskDetailDialog) definitionRows(row func(label, value string, color color.Color) string, innerWidth int) []string {
 	task := d.task
 	if task == nil {
 		return []string{row("", "definition unavailable", uikit.ColorTextMuted)}
@@ -166,7 +165,7 @@ func (d *TaskDetailDialog) kindRows(add func(label, value string)) {
 }
 
 // healthRows renders the recent-run breakdown delivered by FetchTaskSummary.
-func (d *TaskDetailDialog) healthRows(row func(label, value string, color lipgloss.Color) string) []string {
+func (d *TaskDetailDialog) healthRows(row func(label, value string, color color.Color) string) []string {
 	if !d.health.loaded {
 		return []string{row("", "loading…", uikit.ColorTextMuted)}
 	}
@@ -210,7 +209,7 @@ func overlapLabel(p model.ConcurrencyPolicy) string {
 
 // failureColor dims the failure count when there are no failures so a healthy
 // task doesn't paint a red zero.
-func failureColor(failed int) lipgloss.Color {
+func failureColor(failed int) color.Color {
 	if failed == 0 {
 		return uikit.ColorTextMuted
 	}
@@ -254,7 +253,7 @@ func paramNames(params []model.TaskParam) []string {
 
 // seg renders a colored inline segment on the modal surface background so
 // composed health strings keep the dialog's fill behind each piece.
-func seg(text string, color lipgloss.Color) string {
+func seg(text string, color color.Color) string {
 	return lipgloss.NewStyle().
 		Background(uikit.ColorBgLight).
 		Foreground(color).
@@ -274,7 +273,7 @@ func taskDetailSectionLine(title string, innerWidth int) string {
 // taskDetailRow renders a "label  value" line with a fixed label column. The
 // value is clipped to whatever width remains so a long path or dependency list
 // can't wrap and break the modal box.
-func taskDetailRow(label, value string, valueColor lipgloss.Color, labelCol, innerWidth int) string {
+func taskDetailRow(label, value string, valueColor color.Color, labelCol, innerWidth int) string {
 	labelCell := lipgloss.NewStyle().
 		Background(uikit.ColorBgLight).
 		Foreground(uikit.ColorTextMuted).

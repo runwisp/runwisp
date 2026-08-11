@@ -4,22 +4,27 @@
 package main
 
 import (
-	"bytes"
-	"io"
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 	"github.com/runwisp/runwisp/internal/importer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// plainStyles is the palette a non-terminal destination gets: every Render is a
-// no-op, so the layout can be asserted with exact equality.
-func plainStyles() importStyles { return newImportStyles(&bytes.Buffer{}) }
+// plainStyles is a palette with the styling stripped, matching what a
+// non-terminal destination gets once printImportSummary wraps it in a
+// colorprofile writer — layout tests want the shape without escape codes.
+func plainStyles() importStyles {
+	return importStyles{
+		ok:      lipgloss.NewStyle(),
+		changed: lipgloss.NewStyle(),
+		attn:    lipgloss.NewStyle(),
+		dim:     lipgloss.NewStyle(),
+	}
+}
 
 // TestImportItemLinesMarksAndShape pins the four marks and the row shape at
 // width 0, where nothing wraps. Exact equality is right here precisely because
@@ -195,21 +200,11 @@ func scheduleColumn(line, schedule string) int {
 	return ansi.StringWidth(line[:strings.Index(line, schedule)])
 }
 
-// colorStyles forces a real color profile, which no other test in this package
-// does — a layout bug that only shows up in color needs one to be caught.
-// SetColorProfile rather than the NewRenderer option: lipgloss resolves an
-// unforced profile through EnvColorProfile, which reports Ascii for anything that
-// isn't a terminal, so io.Discard would render plain either way.
-func colorStyles() importStyles {
-	r := lipgloss.NewRenderer(io.Discard)
-	r.SetColorProfile(termenv.TrueColor)
-	return importStyles{
-		ok:      r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "2", Dark: "10"}),
-		changed: r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "6", Dark: "14"}),
-		attn:    r.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "3", Dark: "11"}),
-		dim:     r.NewStyle().Faint(true),
-	}
-}
+// colorStyles is the real palette: styles always render full ANSI in lipgloss
+// v2 — downsampling happens at the output writer, not the style — so this is
+// just newImportStyles, kept as its own name for readability at call sites
+// that want "the actually-colored one" alongside plainStyles.
+func colorStyles() importStyles { return newImportStyles() }
 
 // TestImportFooterLineDistinguishesLoadFailureFromTODO covers the two phrasings.
 // Blocking does not imply won't-load: a program with no command emits `run = ""`

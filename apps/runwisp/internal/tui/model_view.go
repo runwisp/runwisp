@@ -7,16 +7,25 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/internal/tui/keys"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/internal/tui/views/home"
 )
 
-func (m Model) View() string {
+func (m Model) View() tea.View {
+	var v tea.View
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeAllMotion
+	if m.dialogs.MouseDisabled() {
+		v.MouseMode = tea.MouseModeNone
+	}
+
 	if !m.ready {
-		return "Initializing..."
+		v.SetContent("Initializing...")
+		return v
 	}
 
 	body := m.renderBody()
@@ -24,7 +33,8 @@ func (m Model) View() string {
 	if m.logSearch != nil {
 		output = m.logSearch.View(m.width, m.height)
 	}
-	return m.dialogs.RenderOverlays(output, m.width, m.height)
+	v.SetContent(m.dialogs.RenderOverlays(output, m.width, m.height))
+	return v
 }
 
 // renderHelpBar builds the bottom help bar from fully-styled segments that each

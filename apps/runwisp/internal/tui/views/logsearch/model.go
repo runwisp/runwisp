@@ -9,8 +9,8 @@
 package logsearch
 
 import (
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/server"
 )
@@ -61,7 +61,7 @@ func New(client *apiclient.Client, taskName string) Model {
 	ti := textinput.New()
 	ti.Placeholder = "Search…"
 	ti.CharLimit = 1024
-	ti.Width = 48
+	ti.SetWidth(48)
 	ti.Focus()
 	return Model{
 		taskName: taskName,
@@ -99,7 +99,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case resultsMsg:
 		return m.handleResults(msg), nil
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if next, cmd, handled := m.handleKey(msg); handled {
 			return next, cmd
 		}
@@ -127,8 +127,8 @@ func (m Model) handleResults(msg resultsMsg) Model {
 // handleKey processes the overlay's key bindings. The handled flag reports
 // whether the key was consumed; when false the caller forwards the message to
 // the text input.
-func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
-	switch msg.String() {
+func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
+	switch msg.Keystroke() {
 	case "enter":
 		next, cmd := m.handleEnter()
 		return next, cmd, true

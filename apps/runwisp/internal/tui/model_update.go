@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/textutil"
@@ -84,7 +84,7 @@ func (m Model) dispatchInputMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case tea.MouseMsg:
 		model, cmd := m.handleMouse(msg)
 		return model, cmd, true
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		model, cmd := m.handleKey(msg)
 		return model, cmd, true
 	}
@@ -340,7 +340,7 @@ func (m Model) interceptConfirmDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return m.interceptShuttingDownDialog(msg)
 	}
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == keyCtrlC {
 			m.streams.Shutdown()
 			m.quitAction = uikit.QuitKeepDaemon
@@ -369,7 +369,7 @@ func (m Model) interceptConfirmDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 
 func (m Model) interceptShuttingDownDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == keyCtrlC {
 			m.streams.Shutdown()
 			m.quitAction = uikit.QuitKeepDaemon
@@ -393,7 +393,7 @@ func (m Model) interceptShuttingDownDialog(msg tea.Msg) (tea.Model, tea.Cmd, boo
 // trigger command, esc cancels, and ctrl+c escalates to the quit confirm.
 func (m Model) interceptParamFormDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == keyCtrlC {
 			m.dialogs.DismissParamForm()
 			m.showQuitConfirm()
@@ -412,7 +412,7 @@ func (m Model) interceptParamFormDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) 
 // Mouse state is re-synced on close so terminal selection is re-enabled.
 func (m Model) interceptRunParamsDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == keyCtrlC {
 			m.dialogs.DismissRunParams()
 			cmd := m.dialogs.SyncMouseState()
@@ -435,7 +435,7 @@ func (m Model) interceptRunParamsDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) 
 // interceptCopyDialog handles input while the copy dialog is visible.
 func (m Model) interceptCopyDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == keyCtrlC {
 			m.dialogs.DismissCopy()
 			cmd := m.dialogs.SyncMouseState()
@@ -460,7 +460,7 @@ func (m Model) interceptCopyDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 // ctrl+c escalates to the quit confirm.
 func (m Model) interceptLogHistoryDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == keyCtrlC {
 			m.dialogs.DismissLogHistory()
 			m.showQuitConfirm()
@@ -480,7 +480,7 @@ func (m Model) interceptLogHistoryDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool)
 // reach the dispatchers and fill in the health line); ctrl+c escalates to quit.
 func (m Model) interceptTaskDetailDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == keyCtrlC {
 			m.dialogs.DismissTaskDetail()
 			m.showQuitConfirm()
@@ -499,7 +499,7 @@ func (m Model) interceptTaskDetailDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool)
 // Enter opens the parent run when the displayed run is a retry; ctrl+c escalates
 // to quit; any other close key dismisses it.
 func (m Model) interceptRunDetailDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	keyMsg, ok := msg.(tea.KeyMsg)
+	keyMsg, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		if mouse, isMouse := msg.(tea.MouseMsg); isMouse {
 			m.dialogs.UpdateRunDetail(mouse)
@@ -529,7 +529,7 @@ func (m Model) interceptRunDetailDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) 
 // ctrl+c escalates to the quit confirm.
 func (m Model) interceptHelpDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if msg.String() == keyCtrlC {
 			m.dialogs.DismissHelp()
 			m.showQuitConfirm()

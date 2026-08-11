@@ -5,10 +5,12 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -115,13 +117,19 @@ func TestPadToMeasuresInCells(t *testing.T) {
 	assert.Equal(t, "abcdef", padTo("abcdef", 4), "already past the width, left alone")
 }
 
-// TestRendererForANonTerminalRendersPlain is the redirect case:
+// TestColorProfileWriterStripsANSIForANonTerminal is the redirect case:
 // `runwisp import cron 2> report.txt` must not collect escape sequences.
-func TestRendererForANonTerminalRendersPlain(t *testing.T) {
-	st := newImportStyles(&bytes.Buffer{})
-	for _, got := range []string{
+// Styles always render full ANSI in lipgloss v2 — downsampling happens at the
+// output writer, which is why printImportSummary and renderError wrap their
+// destination in a colorprofile.Writer before printing anything styled.
+func TestColorProfileWriterStripsANSIForANonTerminal(t *testing.T) {
+	var buf bytes.Buffer
+	cw := colorprofile.NewWriter(&buf, os.Environ())
+	st := newImportStyles()
+	for _, styled := range []string{
 		st.ok.Render("✓"), st.changed.Render("~"), st.attn.Render("!"), st.dim.Render("-"),
 	} {
-		assert.Equal(t, ansi.Strip(got), got, "styled a non-terminal destination: %q", got)
+		fmt.Fprint(cw, styled)
 	}
+	assert.Equal(t, ansi.Strip(buf.String()), buf.String(), "styled output through a non-terminal writer must have no escape codes")
 }

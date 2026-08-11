@@ -4,8 +4,8 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -23,14 +23,14 @@ func NewCopyDialog(title, value string) CopyDialog {
 
 func (d *CopyDialog) Update(msg tea.Msg) bool {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "esc", "enter", "backspace", "q":
 			return true
 		}
-	case tea.MouseMsg:
+	case tea.MouseClickMsg:
 		// Right-click closes the dialog; left-click is reserved for text selection.
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonRight {
+		if msg.Button == tea.MouseRight {
 			return true
 		}
 	}

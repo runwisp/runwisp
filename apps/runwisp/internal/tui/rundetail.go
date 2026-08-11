@@ -5,11 +5,11 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"strconv"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -44,15 +44,13 @@ func (d *RunDetailDialog) ParentRef() (taskName, runID string, ok bool) {
 // interceptor (it may open the parent run), so it isn't a plain close key here.
 func (d *RunDetailDialog) Update(msg tea.Msg) bool {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "i", "esc", "q":
 			return true
 		}
-	case tea.MouseMsg:
-		if msg.Action == tea.MouseActionPress {
-			return true
-		}
+	case tea.MouseClickMsg:
+		return true
 	}
 	return false
 }
@@ -62,7 +60,7 @@ func (d *RunDetailDialog) View(screenWidth, screenHeight int) string {
 	dialogWidth, innerWidth := modalDimensions(screenWidth, 60, 44)
 	run := d.run
 
-	row := func(label, value string, color lipgloss.Color) string {
+	row := func(label, value string, color color.Color) string {
 		return taskDetailRow(label, value, color, labelCol, innerWidth)
 	}
 
@@ -94,7 +92,7 @@ func (d *RunDetailDialog) View(screenWidth, screenHeight int) string {
 
 // facts renders the run's metadata rows, omitting any that don't apply (no exit
 // code before the run ends, no retry lineage on a first attempt).
-func (d *RunDetailDialog) facts(row func(label, value string, color lipgloss.Color) string) []string {
+func (d *RunDetailDialog) facts(row func(label, value string, color color.Color) string) []string {
 	run := d.run
 	status := run.DisplayStatus()
 	out := []string{
@@ -131,7 +129,7 @@ func (d *RunDetailDialog) facts(row func(label, value string, color lipgloss.Col
 
 // runStatusColor maps a display status to the row's value color, mirroring the
 // run-list badge palette.
-func runStatusColor(status string) lipgloss.Color {
+func runStatusColor(status string) color.Color {
 	switch status {
 	case "running":
 		return uikit.ColorRunning
@@ -149,7 +147,7 @@ func runStatusColor(status string) lipgloss.Color {
 }
 
 // exitCodeColor greens a clean exit and reddens any non-zero code.
-func exitCodeColor(code int) lipgloss.Color {
+func exitCodeColor(code int) color.Color {
 	if code == 0 {
 		return uikit.ColorSuccess
 	}

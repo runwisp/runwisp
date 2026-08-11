@@ -5,12 +5,13 @@ package info
 
 import (
 	"fmt"
+	"image/color"
 	"runtime"
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
@@ -78,7 +79,7 @@ func (v *InfoView) UpdateRunSummary(summary *model.RunSummary) {
 }
 
 // Update handles keyboard input for scrolling.
-func (v *InfoView) Update(msg tea.KeyMsg) {
+func (v *InfoView) Update(msg tea.KeyPressMsg) {
 	switch msg.String() {
 	case "up", "k":
 		if v.scroll > 0 {
@@ -220,7 +221,7 @@ func (v *InfoView) renderHealthSection(w int) []string {
 	return lines
 }
 
-func (v *InfoView) renderSparklineRow(w int, label, pct, detail string, history []float64, color lipgloss.Color) []string {
+func (v *InfoView) renderSparklineRow(w int, label, pct, detail string, history []float64, color color.Color) []string {
 	var lines []string
 
 	bgStyle := lipgloss.NewStyle().Background(uikit.ColorBg)

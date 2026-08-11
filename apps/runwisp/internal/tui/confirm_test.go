@@ -6,7 +6,7 @@ package tui
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -215,7 +215,7 @@ func TestConfirmDialog_Update_MouseMotion(t *testing.T) {
 	d.btnNoX1 = 22
 	d.btnNoX2 = 30
 
-	cmd, closed := d.Update(tea.MouseMsg{Action: tea.MouseActionMotion, X: 15, Y: 5})
+	cmd, closed := d.Update(tea.MouseMotionMsg{X: 15, Y: 5})
 	assert.Nil(t, cmd)
 	assert.False(t, closed)
 	assert.Equal(t, 0, d.hovered) // yes button hovered
@@ -230,7 +230,7 @@ func TestConfirmDialog_Update_MousePress_Left(t *testing.T) {
 	d.btnNoX1 = 22
 	d.btnNoX2 = 30
 
-	cmd, closed := d.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 15, Y: 5})
+	cmd, closed := d.Update(tea.MouseClickMsg{Button: tea.MouseLeft, X: 15, Y: 5})
 	assert.True(t, closed)
 	assert.NotNil(t, cmd)
 }
@@ -281,7 +281,7 @@ func TestConfirmDialog_RenderShuttingDownLines(t *testing.T) {
 func TestConfirmDialog_Update_WhileShuttingDownReturnsNoop(t *testing.T) {
 	d := NewConfirmDialog("title", "message", onConfirmCmd)
 	d.StartShutdown() //nolint:errcheck
-	cmd, closed := d.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	cmd, closed := d.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	assert.Nil(t, cmd)
 	assert.False(t, closed)
 }

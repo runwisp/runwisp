@@ -4,7 +4,7 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/internal/tui/views/home"
@@ -16,7 +16,7 @@ import (
 // handled=true the caller returns early; when handled=false the caller
 // delegates to the focused sub-component. An extra cmd with handled=false
 // signals "prepend this cmd to the delegation result".
-type keyHandlerFn func(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool)
+type keyHandlerFn func(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool)
 
 // globalKeyHandlers maps key strings to their handler. Keys that share the
 // same handler (e.g. "left"/"h") share the same function pointer.
@@ -51,7 +51,7 @@ var globalKeyHandlers = map[string]keyHandlerFn{
 
 // handleKey processes keyboard input. Global shortcuts are dispatched through
 // globalKeyHandlers; unrecognised keys delegate to the focused sub-component.
-func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.logSearch != nil {
 		return m.handleLogSearchKey(msg)
 	}
@@ -90,7 +90,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // delegateKeyToFocusedView forwards msg to whichever sub-component currently
 // owns keyboard focus.
-func (m Model) delegateKeyToFocusedView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) delegateKeyToFocusedView(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	if m.execView != nil && m.panelFocus != uikit.PanelSidebar {
 		if cmd := m.execView.Update(msg); cmd != nil {
@@ -116,7 +116,7 @@ func (m Model) delegateKeyToFocusedView(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func delegateToExecList(m *Model, msg tea.KeyMsg) []tea.Cmd {
+func delegateToExecList(m *Model, msg tea.KeyPressMsg) []tea.Cmd {
 	var cmds []tea.Cmd
 	if cmd := m.execList.Update(msg); cmd != nil {
 		cmds = append(cmds, cmd)
@@ -129,7 +129,7 @@ func delegateToExecList(m *Model, msg tea.KeyMsg) []tea.Cmd {
 
 // ---------- per-key handlers ----------
 
-func handleKeyQuit(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyQuit(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	m.showQuitConfirm()
 	return m, nil, true
 }
@@ -137,12 +137,12 @@ func handleKeyQuit(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 // handleKeyHelp opens the keyboard-shortcut overlay. Confirm/copy dialogs and
 // the log-search overlay intercept keys before this handler runs, so no extra
 // guards are needed here.
-func handleKeyHelp(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyHelp(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	m.dialogs.ShowHelp()
 	return m, nil, true
 }
 
-func handleKeyN(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyN(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.execView == nil && m.sidebar.ActivePage() == uikit.PageHome {
 		m.notifications.Toggle()
 		m.updateLayout()
@@ -153,14 +153,14 @@ func handleKeyN(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 
 // handleKeyA marks every notification read while the notifications panel is
 // expanded. Elsewhere it falls through so `a` stays free for sub-components.
-func handleKeyA(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyA(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.notifications.IsExpanded() {
 		return m, m.markAllNotificationsRead(), true
 	}
 	return m, nil, false
 }
 
-func handleKeyEsc(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyEsc(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.notifications.IsExpanded() {
 		m.notifications.Toggle()
 		m.updateLayout()
@@ -180,7 +180,7 @@ func handleKeyEsc(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
-func handleKeyBackspace(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyBackspace(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.execView != nil {
 		if m.execView.Fullscreen() {
 			m.execView.ToggleFullscreen()
@@ -192,7 +192,7 @@ func handleKeyBackspace(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
-func handleKeyF(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyF(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.execView != nil {
 		m.execView.ToggleFullscreen()
 		if m.execView.Fullscreen() {
@@ -205,7 +205,7 @@ func handleKeyF(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
-func handleKeyLeft(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyLeft(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.execView == nil {
 		return handleKeyLeftNoExecView(m)
 	}
@@ -231,7 +231,7 @@ func isAtExecViewLeftEdge(ev *execlist.ExecView) bool {
 		(ev.HeaderFocus == execlist.HeaderFocusNone && ev.Pane.HScroll <= 0)
 }
 
-func handleKeyRight(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyRight(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.execView == nil {
 		if m.panelFocus == uikit.PanelMain && m.sidebar.ActivePage() == uikit.PageDebug {
 			return m, nil, false
@@ -247,7 +247,7 @@ func handleKeyRight(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
-func handleKeyEnter(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyEnter(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.notifications.IsExpanded() {
 		return handleKeyEnterNotifications(m)
 	}
@@ -312,11 +312,11 @@ func (m Model) paneAnchorNavActive() bool {
 // handleKeyPrevAnchor / handleKeyNextAnchor move the pane's anchor cursor to the
 // previous/next line that carries frame history. They yield to delegation when
 // the pane isn't focused or has no anchors, so `[`/`]` stay free elsewhere.
-func handleKeyPrevAnchor(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyPrevAnchor(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	return handleAnchorNav(m, -1)
 }
 
-func handleKeyNextAnchor(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyNextAnchor(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	return handleAnchorNav(m, 1)
 }
 
@@ -357,7 +357,7 @@ func handleKeyEnterMainPanel(m Model) (Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
-func handleKeyR(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyR(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.notifications.IsExpanded() {
 		return m, m.toggleSelectedNotificationRead(), true
 	}
@@ -383,7 +383,7 @@ func handleKeyRExecView(m Model) (Model, tea.Cmd, bool) {
 // handleKeyU fires the inverse of the most recent undoable action while its
 // toast is still showing. With no pending undo it falls through so `u` stays
 // free for sub-components.
-func handleKeyU(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyU(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if cmd := m.dialogs.TakeUndo(); cmd != nil {
 		return m, cmd, true
 	}
@@ -393,7 +393,7 @@ func handleKeyU(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 // handleKeyI opens an on-demand inspector for whatever is in focus: the open
 // run when an exec view is showing, otherwise the focused task (with an async
 // health fetch). With nothing inspectable it falls through.
-func handleKeyI(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyI(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.execView != nil && m.execView.Run != nil {
 		m.dialogs.ShowRunDetail(m.execView.Run, m.execView.TaskIsService, m.execView.InstanceCount)
 		return m, nil, true
@@ -417,7 +417,7 @@ func (m Model) inspectTaskName() string {
 	return m.focusedTaskName()
 }
 
-func handleKeyS(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyS(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.execView != nil {
 		switch m.execView.Action() {
 		case execlist.ActionStop:
@@ -430,7 +430,7 @@ func handleKeyS(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
-func handleKeyD(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyD(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.execView == nil || m.execView.Fullscreen() {
 		return m, nil, false
 	}
@@ -443,7 +443,7 @@ func handleKeyD(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 	return m, m.downloadExecLog(), true
 }
 
-func handleKeyUp(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyUp(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.notifications.IsExpanded() {
 		if m.notifications.MoveCursor(-1) {
 			return m, nil, true
@@ -474,7 +474,7 @@ func handleKeyUpHome(m Model) (Model, tea.Cmd, bool) {
 	return m, m.dialogs.SyncMouseState(), true
 }
 
-func handleKeyDown(m Model, msg tea.KeyMsg) (Model, tea.Cmd, bool) {
+func handleKeyDown(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.notifications.IsExpanded() {
 		if m.notifications.MoveCursor(1) {
 			return m, nil, true
@@ -551,8 +551,8 @@ func (m Model) runListFocused() bool {
 // run matching the active filter, and — once a selection exists — `d` deletes
 // (undoably), `c` cancels, `e` reruns, and esc clears it. Keys it doesn't own
 // return handled=false so normal handling continues.
-func (m Model) handleRunListSelectionKey(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
-	if msg.Type == tea.KeySpace {
+func (m Model) handleRunListSelectionKey(msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
+	if msg.Code == tea.KeySpace {
 		m.execList.ToggleSelectCursor()
 		return m, nil, true
 	}
@@ -616,7 +616,7 @@ func (m *Model) bulkRerunSelection() tea.Cmd {
 // type-to-filter sub-mode. Every printable character types into the query — so
 // `q` filters rather than quitting — while a small set of control keys navigate,
 // commit, or cancel. ctrl+c still quits.
-func (m Model) handleSidebarFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleSidebarFilterKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case keyCtrlC:
 		m.showQuitConfirm()
@@ -645,18 +645,15 @@ func (m Model) handleSidebarFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.sidebar.PageCursor(1)
 		return m, nil
 	}
-	switch msg.Type {
-	case tea.KeyRunes:
-		m.sidebar.FilterAppend(string(msg.Runes))
-	case tea.KeySpace:
-		m.sidebar.FilterAppend(" ")
+	if msg.Text != "" {
+		m.sidebar.FilterAppend(msg.Text)
 	}
 	return m, nil
 }
 
 // handleLogSearchKey routes one key event through the overlay. Esc closes;
 // Enter on a hit selects (opening the run and scheduling the highlight).
-func (m Model) handleLogSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleLogSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "esc" {
 		m.logSearch = nil
 		return m, nil

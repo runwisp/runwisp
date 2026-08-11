@@ -4,8 +4,8 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/internal/tui/keys"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -30,7 +30,7 @@ func NewHelpDialog() HelpDialog {
 // Update reports true when the dialog should close.
 func (d *HelpDialog) Update(msg tea.Msg) bool {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return d.handleKey(msg.String())
 	case tea.MouseMsg:
 		return d.handleMouse(msg)
@@ -61,15 +61,16 @@ func (d *HelpDialog) handleKey(key string) bool {
 
 // handleMouse scrolls on the wheel and closes on any other press.
 func (d *HelpDialog) handleMouse(msg tea.MouseMsg) bool {
-	switch msg.Button {
-	case tea.MouseButtonWheelUp:
-		d.scrollBy(-1)
-	case tea.MouseButtonWheelDown:
-		d.scrollBy(1)
-	default:
-		if msg.Action == tea.MouseActionPress {
-			return true
+	switch msg := msg.(type) {
+	case tea.MouseWheelMsg:
+		switch msg.Button {
+		case tea.MouseWheelUp:
+			d.scrollBy(-1)
+		case tea.MouseWheelDown:
+			d.scrollBy(1)
 		}
+	case tea.MouseClickMsg:
+		return true
 	}
 	return false
 }

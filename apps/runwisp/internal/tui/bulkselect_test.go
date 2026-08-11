@@ -7,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
@@ -42,7 +42,7 @@ func TestRunListFocused_FalseWhenExecViewOpen(t *testing.T) {
 
 func TestHandleRunListSelectionKey_SpaceToggles(t *testing.T) {
 	m := runListModel(t, "a", "b")
-	got, _, handled := m.handleRunListSelectionKey(tea.KeyMsg{Type: tea.KeySpace})
+	got, _, handled := m.handleRunListSelectionKey(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	if !handled {
 		t.Fatal("space should be handled while the run list is focused")
 	}
@@ -120,7 +120,7 @@ func TestHandleRunListSelectionKey_RerunAndCancelDispatch(t *testing.T) {
 
 func TestHandleKeyRoutesSelectionKeysWhenRunListFocused(t *testing.T) {
 	m := runListModel(t, "a", "b")
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeySpace})
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatal("handleKey must return a Model")
@@ -169,9 +169,10 @@ func TestHandleBulkDeleteResult_ErrorFlashesNoUndo(t *testing.T) {
 	}
 }
 
-func keyRunes(s string) tea.KeyMsg {
+func keyRunes(s string) tea.KeyPressMsg {
 	if s == "esc" {
-		return tea.KeyMsg{Type: tea.KeyEsc}
+		return tea.KeyPressMsg{Code: tea.KeyEsc}
 	}
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+	r := []rune(s)[0]
+	return tea.KeyPressMsg{Code: r, Text: s}
 }

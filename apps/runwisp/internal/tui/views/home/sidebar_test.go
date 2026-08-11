@@ -6,7 +6,7 @@ package home
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/stretchr/testify/assert"
@@ -116,22 +116,22 @@ func TestSidebar_Update_Navigation(t *testing.T) {
 	s.SetSize(20, 20)
 	s.cursor = 0
 
-	s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	s.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	assert.Equal(t, 1, s.cursor)
 
-	s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	s.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
 	assert.Equal(t, 0, s.cursor)
 
-	s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	s.Update(tea.KeyPressMsg{Code: 'G', Text: "G"})
 	assert.Greater(t, s.cursor, 0)
 
-	s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	s.Update(tea.KeyPressMsg{Code: 'g', Text: "g"})
 	assert.Equal(t, 0, s.cursor)
 
-	s.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	s.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 	lastCursor := s.cursor
 
-	s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
+	s.Update(tea.KeyPressMsg{Code: ' ', Text: " "})
 	assert.Equal(t, lastCursor, s.selected)
 }
 
@@ -144,19 +144,19 @@ func TestSidebar_Update_PageKeys(t *testing.T) {
 	s.SetSize(20, 8)
 	s.cursor = 0
 
-	s.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	s.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	assert.Greater(t, s.cursor, 0, "pgdown should advance the cursor")
 
-	s.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	s.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	assert.Equal(t, 0, s.cursor, "pgup should return to top")
 
-	s.Update(tea.KeyMsg{Type: tea.KeyDown})
+	s.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	assert.Equal(t, 1, s.cursor, "named Down arrow should advance cursor")
 
-	s.Update(tea.KeyMsg{Type: tea.KeyUp})
+	s.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	assert.Equal(t, 0, s.cursor, "named Up arrow should retreat cursor")
 
-	s.Update(tea.KeyMsg{Type: tea.KeyHome})
+	s.Update(tea.KeyPressMsg{Code: tea.KeyHome})
 	assert.Equal(t, 0, s.cursor, "named Home should reset cursor")
 }
 
@@ -166,7 +166,7 @@ func TestSidebar_Update_UnhandledKeyReturnsNil(t *testing.T) {
 	tasks := makeTasks("a")
 	s := NewSidebar("RunWisp", "0.1.0", "", tasks)
 	s.cursor = 0
-	got := s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	got := s.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	assert.Nil(t, got)
 	assert.Equal(t, 0, s.cursor)
 }
@@ -177,7 +177,7 @@ func TestSidebar_Update_PressEnterSelects(t *testing.T) {
 	tasks := makeTasks("alpha", "bravo")
 	s := NewSidebar("RunWisp", "0.1.0", "", tasks)
 	s.cursor = 1
-	s.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	s.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	assert.Equal(t, 1, s.selected)
 }
 
@@ -187,7 +187,7 @@ func TestSidebar_Update_NotFocused_IgnoresInput(t *testing.T) {
 	s.SetFocused(false)
 	s.cursor = 0
 
-	s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	s.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	assert.Equal(t, 0, s.cursor)
 }
 
