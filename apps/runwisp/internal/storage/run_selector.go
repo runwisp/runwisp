@@ -71,22 +71,16 @@ func nullableBool(b bool) interface{} {
 // Blank tokens are dropped; an all-blank/empty input returns nil so the gate
 // stays fully open. A single status is just a one-element set.
 func statusSet(csv string) interface{} {
-	var b strings.Builder
+	var tokens []string
 	for _, tok := range strings.Split(csv, ",") {
-		tok = strings.TrimSpace(tok)
-		if tok == "" {
-			continue
+		if tok = strings.TrimSpace(tok); tok != "" {
+			tokens = append(tokens, tok)
 		}
-		if b.Len() == 0 {
-			b.WriteByte('|')
-		}
-		b.WriteString(tok)
-		b.WriteByte('|')
 	}
-	if b.Len() == 0 {
+	if len(tokens) == 0 {
 		return nil
 	}
-	return b.String()
+	return "|" + strings.Join(tokens, "|") + "|"
 }
 
 // buildRunFilterArgs decomposes a RunFilter into the values consumed by the

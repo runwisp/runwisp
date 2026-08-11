@@ -12,13 +12,19 @@ import (
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
+// focusBg returns the header background for a focused or hovered field:
+// highlighted when either is true, the default header background otherwise.
+func focusBg(focused, hovered bool) lipgloss.Color {
+	if focused || hovered {
+		return uikit.ColorSidebarActive
+	}
+	return uikit.ColorBgLight
+}
+
 func (v *ExecView) renderMetaField(label, value string, focus HeaderFocusItem) string {
-	bg := uikit.ColorBgLight
 	focused := v.HeaderFocus == focus
 	hovered := v.HoveredHeader == focus && focus != HeaderFocusNone
-	if focused || hovered {
-		bg = uikit.ColorSidebarActive
-	}
+	bg := focusBg(focused, hovered)
 	labelStyle := lipgloss.NewStyle().Background(bg).Foreground(uikit.ColorTextMuted)
 	valueStyle := lipgloss.NewStyle().Background(bg).Foreground(uikit.ColorTextBright)
 	if focused {
@@ -36,31 +42,23 @@ func (v *ExecView) renderBackButton() string {
 }
 
 func (v *ExecView) renderActionButtons() string {
+	actionHovered := v.HoveredHeader == HeaderFocusAction || v.HeaderFocus == HeaderFocusAction
+	btn := func(base, hover lipgloss.Style, label string) string {
+		if actionHovered {
+			return hover.Render(label)
+		}
+		return base.Render(label)
+	}
+
 	switch v.Action() {
 	case ActionStop, ActionStopService:
-		style := uikit.BtnStopStyle
-		if v.HoveredHeader == HeaderFocusAction || v.HeaderFocus == HeaderFocusAction {
-			style = uikit.BtnStopHoverStyle
-		}
-		return style.Render("■ Stop (s)")
+		return btn(uikit.BtnStopStyle, uikit.BtnStopHoverStyle, "■ Stop (s)")
 	case ActionRetry:
-		style := uikit.BtnRetryStyle
-		if v.HoveredHeader == HeaderFocusAction || v.HeaderFocus == HeaderFocusAction {
-			style = uikit.BtnRetryHoverStyle
-		}
-		return style.Render("↻ Retry (r)")
+		return btn(uikit.BtnRetryStyle, uikit.BtnRetryHoverStyle, "↻ Retry (r)")
 	case ActionRestartService:
-		style := uikit.BtnRetryStyle
-		if v.HoveredHeader == HeaderFocusAction || v.HeaderFocus == HeaderFocusAction {
-			style = uikit.BtnRetryHoverStyle
-		}
-		return style.Render("↻ Restart (r)")
+		return btn(uikit.BtnRetryStyle, uikit.BtnRetryHoverStyle, "↻ Restart (r)")
 	case ActionDelete:
-		style := uikit.BtnStopStyle
-		if v.HoveredHeader == HeaderFocusAction || v.HeaderFocus == HeaderFocusAction {
-			style = uikit.BtnStopHoverStyle
-		}
-		return style.Render("Delete (D)")
+		return btn(uikit.BtnStopStyle, uikit.BtnStopHoverStyle, "Delete (D)")
 	default:
 		return ""
 	}
@@ -91,10 +89,7 @@ func (v *ExecView) View() string {
 
 	idFocused := v.HeaderFocus == HeaderFocusID
 	idHovered := v.HoveredHeader == HeaderFocusID
-	idBg := uikit.ColorBgLight
-	if idFocused || idHovered {
-		idBg = uikit.ColorSidebarActive
-	}
+	idBg := focusBg(idFocused, idHovered)
 	idStyle := lipgloss.NewStyle().Background(idBg).Foreground(uikit.ColorTextMuted)
 	if idFocused {
 		idStyle = idStyle.Bold(true)

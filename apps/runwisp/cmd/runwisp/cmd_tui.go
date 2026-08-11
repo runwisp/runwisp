@@ -192,9 +192,7 @@ func buildStartupInfoFromDaemon(info *model.DaemonInfo) uikit.StartupInfo {
 	si.Timezone = info.ResolvedTimezone
 	si.TimezoneSource = info.TimezoneSource
 
-	for _, t := range info.Tasks {
-		si.Tasks = append(si.Tasks, t)
-	}
+	si.Tasks = info.Tasks
 	si.Capabilities = info.Capabilities
 
 	return si

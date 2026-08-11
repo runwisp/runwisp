@@ -482,7 +482,7 @@ func (m *Model) openRunByID(taskName, runID string) tea.Cmd {
 	}
 	client := m.client
 	return func() tea.Msg {
-		run, err := client.GetRun(taskName, runID)
+		run, err := client.GetRun(runID)
 		if err != nil {
 			return uikit.DebugLogMsg{Message: fmt.Sprintf("Failed to load run %s: %s", runID, err.Error())}
 		}

@@ -184,28 +184,27 @@ func resolvePathDefaults(euid int) {
 	}
 }
 
-// defaultConfigPath resolves the --config default: an explicit RUNWISP_CONFIG
-// wins over everything (including euid), then root gets /etc/runwisp/runwisp.toml,
-// then everyone else keeps the pre-existing cwd-relative default. euid is a
-// parameter rather than an inline os.Geteuid() call so a test can describe a
-// machine other than the one running the test.
-func defaultConfigPath(euid int, env string) string {
+// resolveDefaultPath is the shared shape behind defaultConfigPath/defaultDataDir:
+// an explicit env override wins over everything (including euid), then root
+// gets rootDefault, then everyone else keeps userDefault. euid is a parameter
+// rather than an inline os.Geteuid() call so a test can describe a machine
+// other than the one running the test.
+func resolveDefaultPath(env, rootDefault, userDefault string, euid int) string {
 	if env != "" {
 		return env
 	}
 	if euid == 0 {
-		return "/etc/runwisp/runwisp.toml"
+		return rootDefault
 	}
-	return "runwisp.toml"
+	return userDefault
+}
+
+// defaultConfigPath resolves the --config default.
+func defaultConfigPath(euid int, env string) string {
+	return resolveDefaultPath(env, "/etc/runwisp/runwisp.toml", "runwisp.toml", euid)
 }
 
 // defaultDataDir is defaultConfigPath's counterpart for --data.
 func defaultDataDir(euid int, env string) string {
-	if env != "" {
-		return env
-	}
-	if euid == 0 {
-		return "/var/lib/runwisp"
-	}
-	return ".runwisp"
+	return resolveDefaultPath(env, "/var/lib/runwisp", ".runwisp", euid)
 }

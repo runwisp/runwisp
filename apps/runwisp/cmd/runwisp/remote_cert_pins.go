@@ -3,11 +3,6 @@
 
 package main
 
-import (
-	"os"
-	"path/filepath"
-)
-
 // A remote daemon serving auto-HTTPS presents a self-signed certificate with no
 // CA chain to validate, so the CLI trusts it the way ssh trusts host keys:
 // pin the cert SHA-256 on first connect and refuse to talk to that URL again if
@@ -23,11 +18,7 @@ type certPinStore struct{}
 
 // pinStorePath returns the per-user pin file, parallel to the token cache.
 func pinStorePath() (string, error) {
-	base, err := os.UserCacheDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(base, "runwisp", "pinned_certs.json"), nil
+	return runwispCacheFile("pinned_certs.json")
 }
 
 // Load returns the pinned fingerprint for key, or ok=false when the daemon has

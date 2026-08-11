@@ -72,7 +72,7 @@ type PendingLogUploadRepository interface {
 }
 
 // EventSubscriber is the subset of the in-process event hub the cloud bridge
-// consumes. Matches events.EventBus's Subscribe signature so the concrete
+// consumes. Matches *events.Bus's Subscribe signature so the concrete
 // implementation satisfies this interface without an adapter.
 type EventSubscriber interface {
 	Subscribe(eventType events.EventType, handler events.EventHandler) func()

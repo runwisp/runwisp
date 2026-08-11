@@ -281,29 +281,17 @@ func (srv *Server) sseNotificationsHandler(ctx context.Context, _ *struct{}, sen
 		return
 	}
 
-	if srv.notifyHub == nil {
-		// Notifications disabled — keep the stream alive with pings so the
-		// browser EventSource doesn't error-loop, but emit nothing else.
-		sseNotificationsPingLoop(ctx, send)
-		return
+	// notifyCh stays nil when notify is disabled — that select arm then simply
+	// never fires, so the loop degrades to ping-only and keeps the browser
+	// EventSource from error-looping.
+	var notifyCh <-chan inapp.Update
+	if srv.notifyHub != nil {
+		sub, unsubscribe := srv.notifyHub.Subscribe()
+		defer unsubscribe()
+		notifyCh = sub.Channel()
 	}
 
-	srv.sseNotificationsLiveLoop(ctx, send)
-}
-
-func sseNotificationsPingLoop(ctx context.Context, send sse.Sender) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := send(sse.Message{Data: PingEvent{}}); err != nil {
-				return
-			}
-		}
-	}
+	sseNotificationsLoop(ctx, notifyCh, send)
 }
 
 func notifyUpdateToPayload(u inapp.Update) any {
@@ -319,10 +307,7 @@ func notifyUpdateToPayload(u inapp.Update) any {
 	}
 }
 
-func (srv *Server) sseNotificationsLiveLoop(ctx context.Context, send sse.Sender) {
-	sub, unsubscribe := srv.notifyHub.Subscribe()
-	defer unsubscribe()
-
+func sseNotificationsLoop(ctx context.Context, notifyCh <-chan inapp.Update, send sse.Sender) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -330,9 +315,10 @@ func (srv *Server) sseNotificationsLiveLoop(ctx context.Context, send sse.Sender
 		select {
 		case <-ctx.Done():
 			return
-		case u, ok := <-sub.Channel():
+		case u, ok := <-notifyCh:
 			if !ok {
-				return
+				notifyCh = nil
+				continue
 			}
 			if err := send(sse.Message{Data: notifyUpdateToPayload(u)}); err != nil {
 				return

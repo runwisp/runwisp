@@ -19,7 +19,7 @@ import (
 // once at shutdown. A future SIGHUP-driven reload would simply call Stop and
 // then construct a fresh Service — no shared state survives the call.
 type Service struct {
-	bus events.EventBus
+	bus *events.Bus
 	// ingressCh carries mapped events from the bus publisher goroutine to
 	// runDispatch. ingressMu guards it against the send-on-closed race: Stop
 	// closes the channel while an in-flight onBusEvent (a publish that captured
@@ -64,7 +64,7 @@ const DefaultActionQueueSize = 256
 // Config bundles everything Service.New needs that isn't already on the
 // dispatcher / router.
 type Config struct {
-	Bus            events.EventBus
+	Bus            *events.Bus
 	Channels       []Channel             // includes inapp + each configured provider
 	Rules          []Rule                // routing predicates
 	FailureSink    SyntheticIngester     // typically the inapp.Channel

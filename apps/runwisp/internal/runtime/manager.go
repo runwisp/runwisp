@@ -77,7 +77,7 @@ type defaultTaskManager struct {
 	executor    executor.Executor
 	tasks       map[string]*taskState
 	persistence *PersistenceCoordinator
-	eventBus    events.EventBus
+	eventBus    *events.Bus
 	// clock is injected so tests can pin run timestamps deterministically and
 	// so the manager honours the project-wide invariant that wall-clock reads
 	// inside scheduling logic come through an injected source. Production
@@ -110,7 +110,7 @@ type defaultTaskManager struct {
 // NewTaskManager constructs the default run-manager. clock must not be nil;
 // production wires time.Now, tests inject a fake to keep run timestamps
 // deterministic.
-func NewTaskManager(exec executor.Executor, bus events.EventBus, clock func() time.Time) TaskManager {
+func NewTaskManager(exec executor.Executor, bus *events.Bus, clock func() time.Time) TaskManager {
 	if clock == nil {
 		clock = time.Now
 	}

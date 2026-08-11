@@ -48,26 +48,6 @@ const (
 // false.)
 var noTUI bool
 
-// demoTask is kept available for cloud-managed and other explicit branches
-// that need a built-in task when no configuration file is present. The
-// standalone daemon path errors out instead — missing config is a setup bug
-// the operator must see.
-var demoTask = model.Task{
-	Name:        "hello-world",
-	Description: "Demo task — runs every minute. Create a runwisp.toml to define your own tasks.",
-	Run: `echo "👋 Hello from RunWisp!"
-echo "Current time: $(date)"
-echo ""
-echo "This is a built-in demo task."
-echo "Create a runwisp.toml to define your own tasks — see https://docs.runwisp.com/configuration/overview/"
-`,
-	Cron:          "* * * * *",
-	Timezone:      "UTC",
-	APITrigger:    true,
-	MaxConcurrent: 1,
-	OnOverlap:     model.PolicySkip,
-}
-
 func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	headless, tuiAutoDisabled := resolveHeadless(headless)
 

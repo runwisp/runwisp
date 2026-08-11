@@ -26,7 +26,7 @@ import (
 // daemonServices holds all long-lived services created during daemon startup.
 type daemonServices struct {
 	DB                  storage.Database
-	EventBus            events.EventBus
+	EventBus            *events.Bus
 	Executor            executor.Executor
 	TaskManager         runtime.TaskManager
 	Tasks               *runtime.TaskRegistry
@@ -197,7 +197,7 @@ func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storag
 // startNotify initializes the notify subsystem and starts its service, routing
 // both the init failure and the start failure to warnings (non-fatal: the
 // daemon must boot even when notify is misconfigured or unavailable).
-func startNotify(ctx context.Context, cfg *daemonConfig, db storage.Database, eventBus events.EventBus, addWarning func(string, ...any)) notifyBundle {
+func startNotify(ctx context.Context, cfg *daemonConfig, db storage.Database, eventBus *events.Bus, addWarning func(string, ...any)) notifyBundle {
 	notifyB, err := initNotify(cfg, db, eventBus, slog.Default())
 	if err != nil {
 		addWarning("Failed to initialize notify subsystem: %v", err)
@@ -225,7 +225,7 @@ func runMissedTickCatchUp(ctx context.Context, db storage.Database, tasksMap map
 	return catchUpResult
 }
 
-func initExecutor(cfg *config.Config, eventBus events.EventBus, logDir, fingerprint string) executor.Executor {
+func initExecutor(cfg *config.Config, eventBus *events.Bus, logDir, fingerprint string) executor.Executor {
 	dockerBackend := executor.NewLazyContainerBackend()
 	composeBackend := executor.NewLazyComposeBackend(fingerprint)
 
@@ -242,7 +242,7 @@ func initExecutor(cfg *config.Config, eventBus events.EventBus, logDir, fingerpr
 	})
 }
 
-func initTaskManager(cfg *daemonConfig, db storage.RunRepository, exec executor.Executor, eventBus events.EventBus) (runtime.TaskManager, map[string]*model.Task) {
+func initTaskManager(cfg *daemonConfig, db storage.RunRepository, exec executor.Executor, eventBus *events.Bus) (runtime.TaskManager, map[string]*model.Task) {
 	taskManager := runtime.NewTaskManager(exec, eventBus, time.Now)
 	taskManager.BindPersistenceHook(func(ctx context.Context, run *model.Run, isNew bool) {
 		var dbErr error

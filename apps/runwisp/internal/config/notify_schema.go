@@ -23,9 +23,8 @@ var allowedNotifierTypes = []string{"slack", "discord", "telegram", "smtp", "sen
 var allowedSMTPTLSModes = []string{"starttls", "implicit", "off"}
 
 const (
-	inappNotifierID       = "inapp"
-	notifyTokenSeparator  = ":"
-	notifyTokenSeparatorB = ':'
+	inappNotifierID      = "inapp"
+	notifyTokenSeparator = ":"
 	// defaultHistoryKeep is the in-app notification cap applied when
 	// notify.history_keep is omitted from TOML.
 	defaultHistoryKeep = 1024
@@ -42,11 +41,11 @@ const (
 // to override.
 func parseNotifyToken(s string) (parentID, override string, hasOverride bool) {
 	s = strings.TrimSpace(s)
-	idx := strings.IndexByte(s, notifyTokenSeparatorB)
-	if idx < 0 {
+	before, after, found := strings.Cut(s, notifyTokenSeparator)
+	if !found {
 		return s, "", false
 	}
-	return strings.TrimSpace(s[:idx]), strings.TrimSpace(s[idx+1:]), true
+	return strings.TrimSpace(before), strings.TrimSpace(after), true
 }
 
 // toNotifyConfig translates the raw [[notifier]], [[notification_route]],
@@ -159,7 +158,7 @@ func buildNotifierSpecs(notifiers []notifierWire, out *NotifyConfig) error {
 		if spec.ID == inappNotifierID {
 			return fmt.Errorf("notifier id %q is reserved for the in-app channel", inappNotifierID)
 		}
-		if strings.ContainsRune(spec.ID, notifyTokenSeparatorB) {
+		if strings.Contains(spec.ID, notifyTokenSeparator) {
 			return fmt.Errorf("notifier id %q must not contain %q (reserved for inline target overrides like %q)", spec.ID, notifyTokenSeparator, "slack:#ops")
 		}
 		out.Notifiers = append(out.Notifiers, spec)

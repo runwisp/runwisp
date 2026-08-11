@@ -176,7 +176,7 @@ func (c *Client) doJSON(method, path string, reqBody, respBody any) error {
 		bodyReader = bytes.NewReader(data)
 	}
 
-	resp, err := c.doRequest(method, path, bodyReader, reqBody != nil)
+	resp, err := c.doRequest(method, path, bodyReader)
 	if err != nil {
 		return err
 	}
@@ -193,17 +193,17 @@ func (c *Client) doJSON(method, path string, reqBody, respBody any) error {
 
 // doRaw performs a GET request and returns the raw response. Caller must close the body.
 func (c *Client) doRaw(path string) (*http.Response, error) {
-	return c.doRequest(http.MethodGet, path, nil, false)
+	return c.doRequest(http.MethodGet, path, nil)
 }
 
 // doRequest is the shared transport helper for all HTTP calls.
-func (c *Client) doRequest(method, path string, body io.Reader, isJSON bool) (*http.Response, error) {
+func (c *Client) doRequest(method, path string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequest(method, c.baseURL+path, body)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 
-	if isJSON {
+	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if c.token != "" {

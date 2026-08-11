@@ -166,7 +166,7 @@ func (e *stepExecutor) noMoreStarts(t *testing.T) {
 // an injected clock, then swaps the gate's timer seam for a manualTimers so
 // breaches fire on demand. The concrete manager is returned so a test can call
 // ScheduleJitteredRun directly and reach gate state.
-func newJitterTestManager(t *testing.T, clock func() time.Time) (*defaultTaskManager, *stepExecutor, *manualTimers, events.EventBus) {
+func newJitterTestManager(t *testing.T, clock func() time.Time) (*defaultTaskManager, *stepExecutor, *manualTimers, *events.Bus) {
 	t.Helper()
 	exec := newStepExecutor()
 	eb := events.NewEventBus()

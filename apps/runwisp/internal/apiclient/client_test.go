@@ -40,7 +40,6 @@ func TestEncodeRunsParams(t *testing.T) {
 				TaskName:      "my-task",
 				SortField:     "createdAt",
 				SortDirection: "desc",
-				Search:        "hello",
 			},
 			want: map[string]string{
 				"limit":         "10",
@@ -49,7 +48,6 @@ func TestEncodeRunsParams(t *testing.T) {
 				"taskName":      "my-task",
 				"sortField":     "createdAt",
 				"sortDirection": "desc",
-				"search":        "hello",
 			},
 		},
 		{
@@ -275,7 +273,7 @@ func TestGetRun(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	run, err := c.GetRun("my-task", "run-1")
+	run, err := c.GetRun("run-1")
 	require.NoError(t, err)
 	assert.Equal(t, "run-1", run.ID)
 }

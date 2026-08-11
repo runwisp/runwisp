@@ -22,16 +22,26 @@ import (
 	"github.com/runwisp/runwisp/internal/datadir"
 )
 
-func pollHealth(client *apiclient.Client, timeout time.Duration) error {
-	var lastErr error
-	deadline := time.Now().Add(timeout)
+// pollUntil calls check every 200ms until it returns true or deadline passes,
+// reporting which happened.
+func pollUntil(deadline time.Time, check func() bool) bool {
 	for time.Now().Before(deadline) {
-		if err := client.HealthCheck(); err == nil {
-			return nil
-		} else {
-			lastErr = err
+		if check() {
+			return true
 		}
 		time.Sleep(200 * time.Millisecond)
+	}
+	return false
+}
+
+func pollHealth(client *apiclient.Client, timeout time.Duration) error {
+	var lastErr error
+	ok := pollUntil(time.Now().Add(timeout), func() bool {
+		lastErr = client.HealthCheck()
+		return lastErr == nil
+	})
+	if ok {
+		return nil
 	}
 	return lastErr
 }
@@ -136,19 +146,15 @@ func shutdownDaemonWait(timeout time.Duration, f Flags) error {
 // 2. Signal 0 failure — the process no longer exists in the kernel.
 func waitForProcessExit(pid int, timeout time.Duration, dataDir string) error {
 	pidPath := datadir.PidFilePath(dataDir)
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if !processAlive(pid, pidPath) {
-			if _, err := os.Stat(pidPath); err == nil {
-				if rmErr := os.Remove(pidPath); rmErr != nil && !os.IsNotExist(rmErr) {
-					slog.Warn("Failed to remove stale PID file", "path", pidPath, "err", rmErr)
-				}
-			}
-			return nil
-		}
-		time.Sleep(200 * time.Millisecond)
+	if !pollUntil(time.Now().Add(timeout), func() bool { return !processAlive(pid, pidPath) }) {
+		return fmt.Errorf("daemon (pid %d) did not shut down within %s", pid, timeout)
 	}
-	return fmt.Errorf("daemon (pid %d) did not shut down within %s", pid, timeout)
+	if _, err := os.Stat(pidPath); err == nil {
+		if rmErr := os.Remove(pidPath); rmErr != nil && !os.IsNotExist(rmErr) {
+			slog.Warn("Failed to remove stale PID file", "path", pidPath, "err", rmErr)
+		}
+	}
+	return nil
 }
 
 // processAlive returns true when the PID file exists, the process responds to

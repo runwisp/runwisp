@@ -13,17 +13,6 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-const countRuns = `-- name: CountRuns :one
-SELECT COUNT(*) FROM runs WHERE task_name = ? AND deleted_at IS NULL
-`
-
-func (q *Queries) CountRuns(ctx context.Context, taskName string) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countRuns, taskName)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const countRunsFiltered = `-- name: CountRunsFiltered :one
 SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL
   AND (?1 IS NULL

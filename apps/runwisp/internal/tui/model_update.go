@@ -597,7 +597,7 @@ func (m Model) handleLogRegion(msg uikit.LogRegionMsg) (tea.Model, tea.Cmd) {
 	if !m.viewingRun(msg.RunID) {
 		return m, m.streams.ContinueListeningLog(msg.RunID)
 	}
-	m.execView.Pane.SetRegion(msg.Stream, msg.Epoch, msg.Rows)
+	m.execView.Pane.SetRegion(msg.Stream, msg.Rows)
 	return m, m.streams.ContinueListeningLog(msg.RunID)
 }
 

@@ -62,6 +62,18 @@ var validComposePull = []string{
 	"", // unset == default (missing) — handled at the backend
 }
 
+// namedComposePullValues lists validComposePull's entries worth naming in an
+// error message, dropping the "" (unset-means-default) sentinel.
+var namedComposePullValues = func() []string {
+	named := make([]string, 0, len(validComposePull))
+	for _, v := range validComposePull {
+		if v != "" {
+			named = append(named, v)
+		}
+	}
+	return named
+}()
+
 // expandComposeBlocks consumes cfg.pendingComposeBlocks, enumerates each
 // referenced compose file via composespec.Load, and appends a model.Task
 // per imported service (services mode) or per project (stack mode). The
@@ -346,7 +358,7 @@ func validateComposeBlock(block *composeBlock) error {
 		return fmt.Errorf("invalid mode %q: must be one of %s", block.Mode, strings.Join(validComposeMode, ", "))
 	}
 	if !slices.Contains(validComposePull, block.Pull) {
-		return fmt.Errorf("invalid pull %q: must be one of %s", block.Pull, strings.Join(validComposePull[:3], ", "))
+		return fmt.Errorf("invalid pull %q: must be one of %s", block.Pull, strings.Join(namedComposePullValues, ", "))
 	}
 	if !strings.Contains(block.NameFormat, "{service}") && block.Mode == model.ComposeModeServices {
 		return fmt.Errorf("name_format %q must contain {service}", block.NameFormat)

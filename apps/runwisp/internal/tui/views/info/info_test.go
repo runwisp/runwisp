@@ -14,23 +14,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestFormatBytes(t *testing.T) {
+func TestRenderSparkline(t *testing.T) {
 	tests := []struct {
-		in  uint64
-		out string
+		name    string
+		history []float64
+		width   int
+		want    string
 	}{
-		{0, "0B"},
-		{512, "512B"},
-		{1023, "1023B"},
-		{1024, "1K"},
-		{1536, "2K"},
-		{1024 * 1024, "1M"},
-		{1536 * 1024, "2M"},
-		{1024 * 1024 * 1024, "1.0G"},
-		{2560 * 1024 * 1024, "2.5G"},
+		{"empty", nil, 5, "     "},
+		{"fewer-than-width-pads-left", []float64{0, 100}, 5, "   ▁█"},
+		{"clamps-out-of-range", []float64{-10, 200}, 2, "▁█"},
+		{"truncates-to-last-width", []float64{0, 50, 100}, 2, "▄█"},
 	}
 	for _, tt := range tests {
-		assert.Equal(t, tt.out, formatBytes(tt.in), "formatBytes(%d)", tt.in)
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, renderSparkline(tt.history, tt.width))
+		})
 	}
 }
 

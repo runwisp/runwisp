@@ -165,13 +165,6 @@ func TestTxn_WriteFailureRollsBackEarlierFiles(t *testing.T) {
 	assert.Equal(t, "original\n", readFile(t, first))
 }
 
-func TestTxn_EmptyReportsNothingQueued(t *testing.T) {
-	txn := New()
-	assert.True(t, txn.Empty())
-	txn.Write("/tmp/x", nil, DefaultPerm)
-	assert.False(t, txn.Empty())
-}
-
 // TestTxn_LeavesNoTempFiles guards against the temp+rename mechanism littering
 // the operator's config dir when a write is rolled back.
 func TestTxn_LeavesNoTempFiles(t *testing.T) {

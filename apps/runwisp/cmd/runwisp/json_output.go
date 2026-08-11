@@ -141,6 +141,21 @@ func newStatusTaskJSON(tr model.TaskResponse, last *model.Run) statusTaskJSON {
 	return st
 }
 
+// runOutcome derives the EndReason/Failed/DurationMS fields lastRunJSON and
+// execJSONDoc both compute from a run's terminal (or not-yet-terminal) state.
+func runOutcome(r *model.Run) (endReason *string, failed bool, durationMS *int64) {
+	if r.EndReason != nil {
+		reason := string(*r.EndReason)
+		endReason = &reason
+		failed = retry.IsFailureReason(*r.EndReason)
+	}
+	if r.StartAt != nil && r.EndAt != nil {
+		ms := r.EndAt.Sub(*r.StartAt).Milliseconds()
+		durationMS = &ms
+	}
+	return endReason, failed, durationMS
+}
+
 func newLastRunJSON(r *model.Run) lastRunJSON {
 	lr := lastRunJSON{
 		ID:          r.ID,
@@ -150,15 +165,9 @@ func newLastRunJSON(r *model.Run) lastRunJSON {
 		StartAt:     r.StartAt,
 		EndAt:       r.EndAt,
 	}
+	lr.EndReason, lr.Failed, lr.DurationMS = runOutcome(r)
 	if r.EndReason != nil {
-		reason := string(*r.EndReason)
-		lr.EndReason = &reason
-		lr.Failed = retry.IsFailureReason(*r.EndReason)
 		lr.Missed = *r.EndReason == model.ReasonMissed
-	}
-	if r.StartAt != nil && r.EndAt != nil {
-		ms := r.EndAt.Sub(*r.StartAt).Milliseconds()
-		lr.DurationMS = &ms
 	}
 	return lr
 }
@@ -217,15 +226,7 @@ func newExecJSONDoc(taskName string, r *model.Run) execJSONDoc {
 		StartAt:       r.StartAt,
 		EndAt:         r.EndAt,
 	}
-	if r.EndReason != nil {
-		reason := string(*r.EndReason)
-		doc.EndReason = &reason
-		doc.Failed = retry.IsFailureReason(*r.EndReason)
-	}
-	if r.StartAt != nil && r.EndAt != nil {
-		ms := r.EndAt.Sub(*r.StartAt).Milliseconds()
-		doc.DurationMS = &ms
-	}
+	doc.EndReason, doc.Failed, doc.DurationMS = runOutcome(r)
 	return doc
 }
 

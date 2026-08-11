@@ -106,7 +106,7 @@ func buildSlack(spec NotifierSpec) (notify.Channel, error) {
 		WebhookURL: spec.WebhookURL,
 		Channel:    spec.SlackChannel,
 		Renderer:   r,
-		Transport:  httpTransport(spec),
+		Transport:  spec.Transport,
 	})
 }
 
@@ -119,7 +119,7 @@ func buildDiscord(spec NotifierSpec) (notify.Channel, error) {
 		ID:         spec.ID,
 		WebhookURL: spec.WebhookURL,
 		Renderer:   r,
-		Transport:  httpTransport(spec),
+		Transport:  spec.Transport,
 	})
 }
 
@@ -134,7 +134,7 @@ func buildTelegram(spec NotifierSpec) (notify.Channel, error) {
 		ChatID:    spec.ChatID,
 		ParseMode: spec.ParseMode,
 		Renderer:  r,
-		Transport: httpTransport(spec),
+		Transport: spec.Transport,
 	})
 }
 
@@ -187,14 +187,6 @@ func buildWebhook(spec NotifierSpec) (notify.Channel, error) {
 		URL:       spec.URL,
 		Headers:   spec.Headers,
 		Renderer:  r,
-		Transport: httpTransport(spec),
+		Transport: spec.Transport,
 	})
-}
-
-// httpTransport resolves the HTTP transport used by Slack/Telegram channels.
-// A caller-supplied spec.Transport wins (the daemon constructs it when it
-// needs full control over the HTTPDoer); nil means "let the channel construct
-// its own defaults".
-func httpTransport(spec NotifierSpec) *notify.HTTPProvider {
-	return spec.Transport
 }

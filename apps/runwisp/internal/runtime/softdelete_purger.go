@@ -45,27 +45,15 @@ func (p *SoftDeletePurger) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel
 	p.purge(ctx, 0) // boot drain — undo window is a UI affordance, not durability.
-	go p.run(ctx)
+	startTicker(ctx, softDeletePurgeInterval, "Stopping soft-delete purger", func(ctx context.Context) {
+		p.purge(ctx, SoftDeleteTTL)
+	})
 }
 
 // Stop halts the periodic sweep. Safe to call before Start.
 func (p *SoftDeletePurger) Stop() {
 	if p.cancel != nil {
 		p.cancel()
-	}
-}
-
-func (p *SoftDeletePurger) run(ctx context.Context) {
-	ticker := time.NewTicker(softDeletePurgeInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			p.purge(ctx, SoftDeleteTTL)
-		case <-ctx.Done():
-			slog.Debug("Stopping soft-delete purger")
-			return
-		}
 	}
 }
 

@@ -4,10 +4,11 @@ Shared types, constants, and utility functions for the RunWisp platform.
 
 ## What's Inside
 
-- **Execution status** — Canonical status types for task executions (`pending`, `running`, `success`, `failed`, etc.)
-- **Daemon identity** — Types and helpers for daemon identification and fingerprinting.
-- **Roles** — Organization role definitions.
-- **Utilities** — ID generation (monotonic ULIDs), slug helpers, and other shared helpers.
+- **Types** — `Task`, `Run`, `EndReason`, `RunStatus`, and other domain types re-exported from the generated OpenAPI spec.
+- **Constants** — `RUN_PHASES`, `END_REASONS`, `FAILURE_END_REASONS`, `TRIGGERS`.
+- **Helpers** — `displayStatus`, `isService`, `isFailureEndReason`.
+- **Logging** — `Logger`, `createLoggerFactory`.
+- **IDs** — `generateUlid` (monotonic ULIDs).
 
 ## Usage
 
@@ -22,7 +23,7 @@ This package is consumed as a workspace dependency:
 ```
 
 ```ts
-import { CloudExecutionStatus } from "@runwisp/common";
+import { generateUlid, displayStatus, type Task } from "@runwisp/common";
 ```
 
 ## License

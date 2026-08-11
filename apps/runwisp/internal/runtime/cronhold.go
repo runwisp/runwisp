@@ -47,7 +47,7 @@ func StartCronHoldWatcher(
 ) context.CancelFunc {
 	w := &cronHoldWatcher{probe: probe, refresh: refresh, last: initial}
 	ctx, cancel := context.WithCancel(context.Background())
-	go w.run(ctx)
+	startTicker(ctx, cronHoldPollInterval, "Stopping cron hold watcher", func(context.Context) { w.tick() })
 	return cancel
 }
 
@@ -55,20 +55,6 @@ type cronHoldWatcher struct {
 	probe   func() cronprobe.State
 	refresh func(cronprobe.State) CronHoldChange
 	last    cronprobe.State
-}
-
-func (w *cronHoldWatcher) run(ctx context.Context) {
-	ticker := time.NewTicker(cronHoldPollInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			w.tick()
-		case <-ctx.Done():
-			slog.Debug("Stopping cron hold watcher")
-			return
-		}
-	}
 }
 
 // tick performs one probe and applies it if the answer moved. It is the unit-test

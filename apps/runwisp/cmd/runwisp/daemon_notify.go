@@ -49,7 +49,7 @@ func (b notifyBundle) serverHub() server.NotificationHub {
 func initNotify(
 	cfg *daemonConfig,
 	db storage.Database,
-	bus events.EventBus,
+	bus *events.Bus,
 	logger *slog.Logger,
 ) (notifyBundle, error) {
 	notifyCfg := cfg.Config.Notify

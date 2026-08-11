@@ -47,11 +47,6 @@ func (m *MockRunRepository) GetRunByExternalExecutionID(ctx context.Context, ext
 	return args.Get(0).(*model.Run), args.Error(1)
 }
 
-func (m *MockRunRepository) CountRuns(ctx context.Context, taskName string) (int64, error) {
-	args := m.Called(ctx, taskName)
-	return args.Get(0).(int64), args.Error(1)
-}
-
 func (m *MockRunRepository) CountRunsFiltered(ctx context.Context, filter model.RunFilter) (int64, error) {
 	args := m.Called(ctx, filter)
 	return args.Get(0).(int64), args.Error(1)

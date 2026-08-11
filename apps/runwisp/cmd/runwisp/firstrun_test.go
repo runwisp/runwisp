@@ -103,7 +103,7 @@ func TestComposeAliasFromDir(t *testing.T) {
 	}{
 		{"simple", "/var/myapp", "myapp"},
 		{"hyphenated", "/var/my-app", "my-app"},
-		{"sanitized punctuation", "/var/my app!", "my-app"},
+		{"sanitized punctuation", "/var/my app!", "my_app"},
 		{"root falls back to myapp", "/", "myapp"},
 	}
 	for _, tc := range tests {

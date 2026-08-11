@@ -64,24 +64,6 @@ func TestUpdateRun(t *testing.T) {
 	assert.Equal(t, model.PhaseRunning, fetched.Status)
 }
 
-func TestCountRuns(t *testing.T) {
-	ctx := t.Context()
-	db := setupTestDB(t)
-	defer db.Close()
-
-	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI}))
-	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI}))
-	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "task2", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI}))
-
-	count, err := db.CountRuns(ctx, "task1")
-	require.NoError(t, err)
-	assert.Equal(t, int64(2), count)
-
-	count, err = db.CountRuns(ctx, "task2")
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), count)
-}
-
 func TestCountRunsFiltered(t *testing.T) {
 	ctx := t.Context()
 	db := setupTestDB(t)
@@ -286,7 +268,7 @@ func TestDeleteOldRunsByCount(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, deleted, 1) // Should delete the oldest one (1 out of 3, keeping 2)
 
-	count, err := db.CountRuns(ctx, "task1")
+	count, err := db.CountRunsFiltered(ctx, model.RunFilter{TaskName: "task1"})
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count)
 }
@@ -884,9 +866,6 @@ func TestSQLiteDatabase_ErrorPathsAfterClose(t *testing.T) {
 	assert.Error(t, err)
 
 	_, err = db.GetRunSummary(ctx)
-	assert.Error(t, err)
-
-	_, err = db.CountRuns(ctx, "t")
 	assert.Error(t, err)
 
 	_, err = db.CountRunsFiltered(ctx, model.RunFilter{TaskName: "t"})

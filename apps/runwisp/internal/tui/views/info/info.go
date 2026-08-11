@@ -9,19 +9,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NimbleMarkets/ntcharts/sparkline"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 const (
 	sparklineWidth    = 24
-	sparklineHeight   = 2
 	maxHistorySamples = 30
 )
+
+// sparklineBlocks are the block-height levels used to render a sparkline from
+// a 0-100 value range, lowest to highest.
+var sparklineBlocks = []rune("▁▂▃▄▅▆▇█")
 
 // InfoView displays live system information, metrics, and configuration.
 type InfoView struct {
@@ -36,32 +39,11 @@ type InfoView struct {
 	cpuHistory []float64
 	memHistory []float64
 
-	cpuSparkline sparkline.Model
-	memSparkline sparkline.Model
-
 	contentHeight int
 }
 
 func NewInfoView(info uikit.StartupInfo) InfoView {
-	cpuStyle := lipgloss.NewStyle().Background(uikit.ColorChartBg).Foreground(uikit.ColorRunning)
-	memStyle := lipgloss.NewStyle().Background(uikit.ColorChartBg).Foreground(uikit.ColorSecondary)
-
-	cpuSL := sparkline.New(sparklineWidth, sparklineHeight,
-		sparkline.WithMaxValue(100),
-		sparkline.WithNoAutoMaxValue(),
-		sparkline.WithStyle(cpuStyle),
-	)
-	memSL := sparkline.New(sparklineWidth, sparklineHeight,
-		sparkline.WithMaxValue(100),
-		sparkline.WithNoAutoMaxValue(),
-		sparkline.WithStyle(memStyle),
-	)
-
-	return InfoView{
-		info:         info,
-		cpuSparkline: cpuSL,
-		memSparkline: memSL,
-	}
+	return InfoView{info: info}
 }
 
 // SetSize updates dimensions and resets scroll if needed.
@@ -78,30 +60,16 @@ func (v *InfoView) UpdateStats(stats *model.SystemStats) {
 	v.stats = stats
 	v.cpuHistory = appendCapped(v.cpuHistory, stats.CPUUsage, maxHistorySamples)
 	v.memHistory = appendCapped(v.memHistory, stats.MemUsage, maxHistorySamples)
-	v.cpuSparkline.Push(stats.CPUUsage)
-	v.cpuSparkline.DrawBraille()
-	v.memSparkline.Push(stats.MemUsage)
-	v.memSparkline.DrawBraille()
 }
 
 // LoadHistory pre-fills sparklines from historical samples (oldest first).
 func (v *InfoView) LoadHistory(samples []model.MetricsSample) {
 	v.cpuHistory = v.cpuHistory[:0]
 	v.memHistory = v.memHistory[:0]
-	v.cpuSparkline.Clear()
-	v.memSparkline.Clear()
-	cpuVals := make([]float64, 0, len(samples))
-	memVals := make([]float64, 0, len(samples))
 	for _, s := range samples {
 		v.cpuHistory = appendCapped(v.cpuHistory, s.CPUUsage, maxHistorySamples)
 		v.memHistory = appendCapped(v.memHistory, s.MemUsage, maxHistorySamples)
-		cpuVals = append(cpuVals, s.CPUUsage)
-		memVals = append(memVals, s.MemUsage)
 	}
-	v.cpuSparkline.PushAll(cpuVals)
-	v.memSparkline.PushAll(memVals)
-	v.cpuSparkline.DrawBraille()
-	v.memSparkline.DrawBraille()
 }
 
 // UpdateRunSummary stores the latest run summary.
@@ -234,15 +202,15 @@ func (v *InfoView) renderHealthSection(w int) []string {
 		cpuLines := v.renderSparklineRow(w,
 			"CPU", fmt.Sprintf("%.1f%%", v.stats.CPUUsage),
 			fmt.Sprintf("%d cores", v.stats.CPUCores),
-			v.cpuSparkline, uikit.ColorRunning)
+			v.cpuHistory, uikit.ColorRunning)
 		lines = append(lines, cpuLines...)
 
 		lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 
 		memLines := v.renderSparklineRow(w,
 			"MEM", fmt.Sprintf("%.1f%%", v.stats.MemUsage),
-			formatBytes(v.stats.MemUsed)+"/"+formatBytes(v.stats.MemTotal),
-			v.memSparkline, uikit.ColorSecondary)
+			config.FormatByteSize(int64(v.stats.MemUsed))+"/"+config.FormatByteSize(int64(v.stats.MemTotal)),
+			v.memHistory, uikit.ColorSecondary)
 		lines = append(lines, memLines...)
 	} else {
 		waiting := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextMuted).Render("  Loading metrics...")
@@ -252,22 +220,17 @@ func (v *InfoView) renderHealthSection(w int) []string {
 	return lines
 }
 
-func (v *InfoView) renderSparklineRow(w int, label, pct, detail string, sl sparkline.Model, color lipgloss.Color) []string {
+func (v *InfoView) renderSparklineRow(w int, label, pct, detail string, history []float64, color lipgloss.Color) []string {
 	var lines []string
 
 	bgStyle := lipgloss.NewStyle().Background(uikit.ColorBg)
-	chartBg := lipgloss.NewStyle().Background(uikit.ColorChartBg)
+	chartStyle := lipgloss.NewStyle().Background(uikit.ColorChartBg).Foreground(color)
 
 	labelStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(color).Bold(true).Render("  " + label + " ")
 	pctStr := uikit.InfoStatValueStyle.Render(pct)
 	detailStr := uikit.InfoStatLabelStyle.Render("  " + detail)
 
-	sparkView := sl.View()
-	// Re-style each sparkline cell row to force our chart background on empty cells.
-	sparkLines := strings.Split(sparkView, "\n")
-	for i, sline := range sparkLines {
-		sparkLines[i] = chartBg.Render(sline)
-	}
+	spark := chartStyle.Render(renderSparkline(history, sparklineWidth))
 
 	headerLeft := labelStr + pctStr + detailStr
 	headerWidth := lipgloss.Width(headerLeft)
@@ -278,25 +241,38 @@ func (v *InfoView) renderSparklineRow(w int, label, pct, detail string, sl spark
 			gap = 2
 		}
 		gapStr := bgStyle.Render(strings.Repeat(" ", gap))
-
-		for i, sline := range sparkLines {
-			if i == 0 {
-				line := headerLeft + gapStr + sline
-				lines = append(lines, uikit.PadLine(line, w, uikit.ColorBg))
-			} else {
-				indent := bgStyle.Render(strings.Repeat(" ", headerWidth+gap))
-				line := indent + sline
-				lines = append(lines, uikit.PadLine(line, w, uikit.ColorBg))
-			}
-		}
+		lines = append(lines, uikit.PadLine(headerLeft+gapStr+spark, w, uikit.ColorBg))
 	} else {
 		lines = append(lines, uikit.PadLine(headerLeft, w, uikit.ColorBg))
-		for _, sline := range sparkLines {
-			lines = append(lines, uikit.PadLine(bgStyle.Render("  ")+sline, w, uikit.ColorBg))
-		}
+		lines = append(lines, uikit.PadLine(bgStyle.Render("  ")+spark, w, uikit.ColorBg))
 	}
 
 	return lines
+}
+
+// renderSparkline renders the last width samples of history as a single-line
+// block-character sparkline (▁▂▃▄▅▆▇█), each value clamped to 0-100 and
+// mapped onto the block levels. Missing leading samples render as spaces.
+func renderSparkline(history []float64, width int) string {
+	start := 0
+	if n := len(history); n > width {
+		start = n - width
+	}
+	var b strings.Builder
+	for i := 0; i < width-(len(history)-start); i++ {
+		b.WriteByte(' ')
+	}
+	for _, val := range history[start:] {
+		switch {
+		case val < 0:
+			val = 0
+		case val > 100:
+			val = 100
+		}
+		idx := int(val / 100 * float64(len(sparklineBlocks)-1))
+		b.WriteRune(sparklineBlocks[idx])
+	}
+	return b.String()
 }
 
 func (v *InfoView) renderActivitySection(w int) []string {
@@ -479,22 +455,4 @@ func appendCapped(s []float64, val float64, max int) []float64 {
 		s = s[len(s)-max:]
 	}
 	return s
-}
-
-func formatBytes(b uint64) string {
-	const (
-		kb = 1024
-		mb = kb * 1024
-		gb = mb * 1024
-	)
-	switch {
-	case b >= gb:
-		return fmt.Sprintf("%.1fG", float64(b)/float64(gb))
-	case b >= mb:
-		return fmt.Sprintf("%.0fM", float64(b)/float64(mb))
-	case b >= kb:
-		return fmt.Sprintf("%.0fK", float64(b)/float64(kb))
-	default:
-		return fmt.Sprintf("%dB", b)
-	}
 }

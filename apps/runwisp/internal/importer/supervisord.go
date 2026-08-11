@@ -504,14 +504,8 @@ func secondsValue(value string) (string, bool) {
 
 // normalizeSignal turns supervisord's "TERM" into RunWisp's "SIGTERM" form.
 func normalizeSignal(value string) string {
-	v := strings.ToUpper(strings.TrimSpace(value))
-	if v == "" {
-		return v
-	}
-	if !strings.HasPrefix(v, "SIG") {
-		v = "SIG" + v
-	}
-	return v
+	canonical, _ := model.NormalizeSignalName(value)
+	return canonical
 }
 
 func parseExitCodes(value string) ([]int, bool) {

@@ -13,6 +13,17 @@ import (
 	"github.com/runwisp/runwisp/internal/datadir"
 )
 
+// runwispCacheFile returns the path to name under the per-user OS cache dir's
+// "runwisp" subdirectory — the shared home for the pin store and token cache,
+// neither of which lives in a --data dir (a remote client has none of its own).
+func runwispCacheFile(name string) (string, error) {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "runwisp", name), nil
+}
+
 // loadJSONCacheMap reads path as a JSON object into a map, tolerating a
 // missing or corrupt file by returning an empty map — callers treat "no
 // entry" and "unreadable cache" identically.

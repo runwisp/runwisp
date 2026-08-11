@@ -22,7 +22,7 @@ import (
 // func to call at shutdown. It listens only to start/complete/fail and log disk
 // pressure — never EventLogLine (per-output-line, far too noisy) and not the
 // created/updated/deleted churn events, which carry no operator-facing signal.
-func Subscribe(bus events.EventBus) func() {
+func Subscribe(bus *events.Bus) func() {
 	unsubs := []func(){
 		bus.Subscribe(events.EventRunStarted, logStarted),
 		bus.Subscribe(events.EventRunCompleted, logCompleted),

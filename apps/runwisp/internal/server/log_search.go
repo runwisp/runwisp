@@ -12,7 +12,6 @@ import (
 	"log/slog"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/logsearch"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
@@ -173,14 +172,11 @@ func indexOfRun(runs []logsearch.RunRef, id string) int {
 // offset, so the cursor can advance the window past the newest page.
 func (srv *Server) resolveSearchRuns(ctx context.Context, input *LogSearchInput, offset int) ([]logsearch.RunRef, error) {
 	if input.RunID != "" {
-		if _, err := ulid.Parse(input.RunID); err != nil {
-			return nil, huma.Error400BadRequest("Invalid run ID")
-		}
-		run, err := srv.db.GetRun(ctx, input.RunID)
+		run, err := srv.getRunForTask(ctx, input.TaskName, input.RunID)
 		if err != nil {
-			return nil, huma.Error404NotFound("Run not found")
-		}
-		if run.TaskName != input.TaskName {
+			if errors.Is(err, errInvalidRunID) {
+				return nil, huma.Error400BadRequest("Invalid run ID")
+			}
 			return nil, huma.Error404NotFound("Run not found")
 		}
 		return []logsearch.RunRef{{

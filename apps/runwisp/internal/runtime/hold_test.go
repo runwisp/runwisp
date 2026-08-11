@@ -120,8 +120,10 @@ func TestAddTaskRefusesHeldTask(t *testing.T) {
 	require.NoError(t, sched.AddTask(held), "a held task is skipped, not an error")
 	assert.Nil(t, sched.GetNextRun("held"))
 
-	// Reschedule goes through AddTask, so it must refuse the same task.
-	require.NoError(t, sched.Reschedule(held))
+	// Rescheduling (RemoveTask+AddTask, as the reconciler does) must refuse
+	// the same held task.
+	sched.RemoveTask(held.Name)
+	require.NoError(t, sched.AddTask(held))
 	assert.Nil(t, sched.GetNextRun("held"))
 }
 

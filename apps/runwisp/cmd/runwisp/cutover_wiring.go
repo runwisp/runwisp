@@ -109,25 +109,13 @@ func blockedCutoverError(p cutover.Plan) error {
 		}
 		fmt.Fprintf(&body, "· %s\n", b.Title)
 		if b.Details != "" {
-			body.WriteString(indentLines(b.Details, "  "))
+			body.WriteString(cutover.Indent(b.Details, "  "))
 		}
 	}
 	return &userFacingError{
 		title:   fmt.Sprintf("%d things stop RunWisp taking over cron", len(p.Blockers)),
 		details: body.String(),
 	}
-}
-
-// indentLines prefixes every non-empty line with pad, and guarantees a trailing
-// newline so blocks concatenate cleanly.
-func indentLines(s, pad string) string {
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	for i, ln := range lines {
-		if ln != "" {
-			lines[i] = pad + ln
-		}
-	}
-	return strings.Join(lines, "\n") + "\n"
 }
 
 // cutoverUserError is what internal/cutover's own operator-facing error exposes.

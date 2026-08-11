@@ -30,7 +30,7 @@ type testEnv struct {
 	wsServer    *httptest.Server
 	syncServer  *httptest.Server
 	client      *Client
-	eventBus    events.EventBus
+	eventBus    *events.Bus
 	taskManager runtime.TaskManager
 }
 

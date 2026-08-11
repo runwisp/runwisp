@@ -4,15 +4,14 @@
 package main
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/mattn/go-isatty"
+	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/configedit"
 	"github.com/runwisp/runwisp/internal/importer"
@@ -393,20 +392,18 @@ func configEditError(err error, layout configedit.Layout) error {
 // existing file on a terminal and refusing on a non-terminal unless --force.
 func confirmAndWrite(stderr io.Writer, stdin *os.File, target, toml string, opts importOpts) error {
 	if _, err := os.Stat(target); err == nil && !opts.force {
-		if !isatty.IsTerminal(stdin.Fd()) {
-			return &userFacingError{
-				title:   fmt.Sprintf("%s already exists", target),
-				details: "Re-run with --force to overwrite it, or -o to write somewhere else.",
+		prompter := autostart.NewStdioPrompter(stdin, stderr, isatty.IsTerminal(stdin.Fd()), false)
+		ok, err := prompter.Confirm(fmt.Sprintf("%s already exists. Overwrite?", target), false)
+		if err != nil {
+			if errors.Is(err, autostart.ErrNeedsYes) {
+				return &userFacingError{
+					title:   fmt.Sprintf("%s already exists", target),
+					details: "Re-run with --force to overwrite it, or -o to write somewhere else.",
+				}
 			}
+			return err
 		}
-		fmt.Fprintf(stderr, "%s already exists. Overwrite? [y/N] ", target)
-		answer, err := bufio.NewReader(stdin).ReadString('\n')
-		if err != nil && !errors.Is(err, io.EOF) {
-			return fmt.Errorf("read prompt response: %w", err)
-		}
-		switch strings.ToLower(strings.TrimSpace(answer)) {
-		case "y", "yes":
-		default:
+		if !ok {
 			return &userFacingError{title: "aborted — nothing was written"}
 		}
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {

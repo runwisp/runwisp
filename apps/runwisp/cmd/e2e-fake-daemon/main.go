@@ -7,7 +7,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -15,7 +14,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/coder/websocket"
@@ -208,17 +206,5 @@ func readMsg(ctx context.Context, conn *websocket.Conn) ([]byte, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("empty frame")
 	}
-	// Some frames may have base64 padding etc; we just return raw JSON bytes.
-	if !looksLikeJSON(raw) {
-		// Decode if base64 (defensive; current protocol is plain JSON).
-		if dec, err := base64.StdEncoding.DecodeString(string(raw)); err == nil {
-			return dec, nil
-		}
-	}
 	return raw, nil
-}
-
-func looksLikeJSON(b []byte) bool {
-	s := strings.TrimSpace(string(b))
-	return strings.HasPrefix(s, "{") || strings.HasPrefix(s, "[")
 }
