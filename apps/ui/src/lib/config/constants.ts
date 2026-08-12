@@ -3,8 +3,6 @@
 
 export const DEFAULT_API_URL = "";
 
-export const AUTH_TOKEN_KEY = "runwisp_token";
-
 export const AUTH_EVENTS = {
     REQUIRED: "auth-required",
 } as const;

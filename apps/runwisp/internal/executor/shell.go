@@ -79,15 +79,12 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.R
 		base = cleanEnvBase(shellPath)
 	}
 
-	// Only set cmd.Env when there's something to layer — leaving it nil
-	// preserves Go's default of inheriting the daemon's env verbatim. A clean
-	// base counts as something to layer even with no task env at all: that case
-	// is precisely the one where dropping the daemon's variables is the whole
-	// instruction. The run-as identity (HOME/USER/LOGNAME) seeds beneath the
-	// task's own env so task.Env can still override it.
-	if clean || len(task.Env) > 0 || len(task.Secrets) > 0 || len(identity) > 0 || len(paramEnv) > 0 {
-		cmd.Env = buildProcessEnv(append(base, identity...), task.Env, task.Secrets, paramEnv)
-	}
+	// Always build cmd.Env through buildProcessEnv, even with no overlays:
+	// leaving it nil would make Go inherit the daemon's env verbatim, including
+	// the RUNWISP_* secrets (password, cloud token) that buildProcessEnv strips.
+	// The run-as identity (HOME/USER/LOGNAME) seeds beneath the task's own env
+	// so task.Env can still override it.
+	cmd.Env = buildProcessEnv(append(base, identity...), task.Env, task.Secrets, paramEnv)
 
 	dir, err := resolveWorkingDir(shell.WorkingDir, runUserHome)
 	if err != nil {

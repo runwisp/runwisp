@@ -79,9 +79,16 @@ func TestRejectPrivateIP(t *testing.T) {
 		{"unspecified", "any", "0.0.0.0", "blocked"},
 		// ::ffff:127.0.0.1 normalizes to 127.0.0.1 via To4(); must be blocked.
 		{"IPv6-mapped loopback", "localhost", "::ffff:127.0.0.1", "blocked"},
-		// Cloud metadata endpoints outside the private/link-local ranges.
-		{"Alibaba metadata", "metadata", "100.100.100.200", "cloud metadata"},
-		{"Oracle Cloud metadata", "metadata", "192.0.0.192", "cloud metadata"},
+		// Cloud metadata endpoints — now covered by netguard's CGNAT / IETF
+		// special-use prefixes (100.64.0.0/10, 192.0.0.0/24).
+		{"Alibaba metadata", "metadata", "100.100.100.200", "blocked"},
+		{"Oracle Cloud metadata", "metadata", "192.0.0.192", "blocked"},
+		// Additional special-use ranges netguard now rejects.
+		{"CGNAT shared", "cgnat", "100.64.0.1", "blocked"},
+		{"TEST-NET-1 doc", "doc", "192.0.2.1", "blocked"},
+		{"benchmarking", "bench", "198.18.0.1", "blocked"},
+		{"multicast", "mcast", "224.0.0.1", "blocked"},
+		{"reserved future", "reserved", "240.0.0.1", "blocked"},
 		{"public IPv4", "dns.google", "8.8.8.8", ""},
 	}
 	for _, tt := range tests {

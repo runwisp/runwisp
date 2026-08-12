@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { EventSourcePolyfill } from "event-source-polyfill";
-import { AUTH_TOKEN_KEY, AUTH_EVENTS } from "$lib/config/constants";
+import { AUTH_EVENTS } from "$lib/config/constants";
 
 /**
  * Minimal SSE consumer surface — exactly what the EventManager and connectSSE
@@ -26,16 +26,6 @@ export interface SSEStream {
 
 export type EventSourceFactory = (url: string) => SSEStream;
 
-export const browserTokenStorage = {
-    getToken: () => localStorage.getItem(AUTH_TOKEN_KEY),
-    setToken: (token: string) => {
-        localStorage.setItem(AUTH_TOKEN_KEY, token);
-    },
-    removeToken: () => {
-        localStorage.removeItem(AUTH_TOKEN_KEY);
-    },
-};
-
 export const browserAuthEventBus = {
     onAuthRequired(handler: EventListener) {
         globalThis.addEventListener(AUTH_EVENTS.REQUIRED, handler);
@@ -49,18 +39,11 @@ export const browserAuthEventBus = {
 };
 
 /**
- * Auth-aware SSE factory. When a JWT exists in localStorage, sends it as an
- * `Authorization: Bearer` header via the fetch-based polyfill (the native
- * EventSource API cannot send custom headers). When no localStorage token is
- * present (cookie-based auth from launch ticket), falls back to
- * `withCredentials: true` so the browser sends the HttpOnly cookie.
+ * Auth-aware SSE factory. The browser session is authenticated solely by the
+ * HttpOnly session cookie, so it opens the stream with `withCredentials: true`
+ * to send that cookie. The JWT is never held in JS-readable storage — that is
+ * the whole point of the cookie being HttpOnly — so there is no Bearer path here.
  */
 export const browserAuthEventSourceFactory: EventSourceFactory = (url) => {
-    const token = browserTokenStorage.getToken();
-    if (token) {
-        return new EventSourcePolyfill(url, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
-    }
     return new EventSourcePolyfill(url, { withCredentials: true });
 };

@@ -2,19 +2,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { z } from "zod";
-import { browser } from "$app/environment";
-import { browserTokenStorage } from "$lib/adapters/browser";
 import { getApiUrl as defaultGetApiUrl } from "$lib/utils/env";
 import type { AppEventStream } from "./event-manager";
 import { appEventStream } from "./app-stream.svelte";
 import { createLogger } from "$lib/utils/logger";
 import { connectionStore } from "./connection.svelte";
-
-function authHeaders(): Record<string, string> {
-    if (!browser) return {};
-    const token = browserTokenStorage.getToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-}
 
 const notificationSchema = z.object({
     id: z.string(),
@@ -154,7 +146,6 @@ class NotificationStore {
             const res = await this.#fetch(`${this.#getApiUrl()}/api/notifications/read`, {
                 method: "POST",
                 credentials: "include",
-                headers: authHeaders(),
             });
             if (!res.ok) throw new Error(`Mark-read returned ${res.status.toString()}`);
             this.#items = this.#items.map((n) => (isUnread(n) ? { ...n, readAt: now } : n));
@@ -196,7 +187,6 @@ class NotificationStore {
             const res = await this.#fetch(url, {
                 method: "POST",
                 credentials: "include",
-                headers: authHeaders(),
             });
             if (!res.ok) throw new Error(`Mark-${verb} returned ${res.status.toString()}`);
         } catch (e) {
@@ -283,7 +273,6 @@ class NotificationStore {
         const url = `${this.#getApiUrl()}/api/notifications?${qs}`;
         const res = await this.#fetch(url, {
             credentials: "include",
-            headers: authHeaders(),
         });
         if (!res.ok) throw new Error(`List returned ${res.status.toString()}`);
         const raw: unknown = await res.json();
@@ -293,7 +282,6 @@ class NotificationStore {
     async #fetchUnread(): Promise<number> {
         const res = await this.#fetch(`${this.#getApiUrl()}/api/notifications/unread-count`, {
             credentials: "include",
-            headers: authHeaders(),
         });
         if (!res.ok) throw new Error(`Unread returned ${res.status.toString()}`);
         const raw: unknown = await res.json();

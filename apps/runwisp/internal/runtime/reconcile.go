@@ -86,6 +86,13 @@ func (r *Reconciler) Reconcile() (model.ReloadResult, error) {
 		return model.ReloadResult{}, fmt.Errorf("reload rejected: %w", err)
 	}
 
+	// Re-assert the privileged trust check on every reload: the file the root
+	// daemon is about to take task definitions from must still be unreachable
+	// through a user-writable path or repointable symlink. No-op when unprivileged.
+	if err := config.AssertPrivilegedConfigTrust(newCfg, r.configPath); err != nil {
+		return model.ReloadResult{}, fmt.Errorf("reload rejected: %w", err)
+	}
+
 	if err := checkNonReloadable(r.baseline, newCfg); err != nil {
 		return model.ReloadResult{}, err
 	}

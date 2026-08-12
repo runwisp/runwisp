@@ -10,6 +10,37 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestSanitizeControls(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain text untouched", "hello world", "hello world"},
+		{"utf8 preserved", "café — ☕", "café — ☕"},
+		{"tab kept", "a\tb", "a\tb"},
+		{"sgr color kept", "\x1b[31mred\x1b[0m", "\x1b[31mred\x1b[0m"},
+		{"sgr with params kept", "\x1b[1;38;5;208mx\x1b[m", "\x1b[1;38;5;208mx\x1b[m"},
+		// OSC-8 hyperlink: label survives, the escape wrapper is stripped.
+		{"osc8 hyperlink stripped (BEL)", "\x1b]8;;https://evil\x07click\x1b]8;;\x07", "click"},
+		{"osc8 hyperlink stripped (ST)", "\x1b]8;;https://evil\x1b\\click\x1b]8;;\x1b\\", "click"},
+		{"window title stripped", "\x1b]0;pwned\x07safe", "safe"},
+		{"osc52 clipboard stripped", "\x1b]52;c;ZXZpbA==\x07x", "x"},
+		{"screen erase stripped", "before\x1b[2Jafter", "beforeafter"},
+		{"cursor move stripped", "\x1b[10;5Hhi", "hi"},
+		{"dcs stripped", "\x1bPq#0;2\x1b\\text", "text"},
+		{"apc stripped", "\x1b_Gfoo\x1b\\bar", "bar"},
+		{"stray C0 dropped", "a\x00\x07\x08b", "ab"},
+		{"lone esc dropped", "x\x1b", "x"},
+		{"unterminated osc dropped to end", "keep\x1b]0;tail", "keep"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, SanitizeControls(tc.in))
+		})
+	}
+}
+
 func TestReassertResets(t *testing.T) {
 	base := BaseSGR(ColorText, ColorBg, false)
 	assert.NotEmpty(t, base)

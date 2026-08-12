@@ -4,13 +4,11 @@
 import { browser } from "$app/environment";
 import { authApi } from "$lib/api";
 import { createLogger } from "$lib/utils/logger";
-import { browserTokenStorage } from "$lib/adapters/browser";
 import type { AuthState } from "$lib/types";
 
 const logger = createLogger("AuthStore");
 
 function createAuthStore() {
-    const tokenStorage = browserTokenStorage;
     let state = $state<AuthState>({
         required: true,
         loaded: false,
@@ -22,13 +20,12 @@ function createAuthStore() {
         try {
             const data = await authApi.status();
             logger.info("Auth status loaded", data);
-            const hasToken = !!tokenStorage.getToken();
-            // Trust the server's authenticated field (cookie session) OR a local token.
-            const isAuthenticated = data.authenticated || hasToken;
+            // The server is the sole authority: it reports whether the HttpOnly
+            // session cookie is a valid session. There is no client-held token.
             state = {
                 required: data.authRequired,
                 loaded: true,
-                authenticated: !data.authRequired || isAuthenticated,
+                authenticated: !data.authRequired || data.authenticated,
             };
         } catch (error) {
             logger.error("Failed to load auth status", error);

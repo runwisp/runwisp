@@ -19,6 +19,13 @@ type ResolveBinaryOptions struct {
 	EvalSymlinks func(string) (string, error)
 	// HomeDir is the user's home directory (injected for tests).
 	HomeDir string
+	// Stat reports the resolved binary's file info (typically os.Stat). When
+	// non-nil, ResolveBinary requires the resolved path to be a regular,
+	// executable file — the unit bakes this path into a root-run ExecStart, so
+	// a dangling symlink or a non-executable target must fail the install rather
+	// than be written and boot-looped. Left nil only by pure unit tests that
+	// exercise path logic without a real filesystem.
+	Stat func(string) (os.FileInfo, error)
 }
 
 // ResolveBinary picks the binary path baked into the unit. It rejects
@@ -32,8 +39,14 @@ func ResolveBinary(opts ResolveBinaryOptions) (path, warning string, err error) 
 	}
 	resolved := exe
 	if opts.EvalSymlinks != nil {
+		// Fail closed: a symlink-resolution error means the executable path does
+		// not resolve to a real file. Tolerating it would bake an unresolvable
+		// (or dangling) path into a root-run ExecStart.
 		r, err := opts.EvalSymlinks(exe)
-		if err == nil && r != "" {
+		if err != nil {
+			return "", "", fmt.Errorf("resolve binary %q: %w", exe, err)
+		}
+		if r != "" {
 			resolved = r
 		}
 	}
@@ -50,6 +63,18 @@ func ResolveBinary(opts ResolveBinaryOptions) (path, warning string, err error) 
 			"refusing to install service pointing at %s — %s; copy the binary to a stable path (e.g. ~/.local/bin/runwisp) and retry",
 			resolved, reason,
 		)
+	}
+
+	if opts.Stat != nil {
+		info, err := opts.Stat(resolved)
+		if err != nil {
+			return "", "", fmt.Errorf("resolve binary %q: %w", resolved, err)
+		}
+		if mode := info.Mode(); !mode.IsRegular() {
+			return "", "", fmt.Errorf("resolve binary %q: not a regular file", resolved)
+		} else if mode.Perm()&0o111 == 0 {
+			return "", "", fmt.Errorf("resolve binary %q: not executable", resolved)
+		}
 	}
 
 	warning = awkwardBinaryWarning(resolved, opts.HomeDir)

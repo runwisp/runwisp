@@ -99,6 +99,28 @@ func TestShellBackend_CleanEnvBaseStillHidesDaemonSecrets(t *testing.T) {
 	}
 }
 
+// TestShellBackend_InheritEnvBaseStillHidesDaemonSecrets is the regression for
+// the leak where a plain task (default inherit base, no env/secrets/params, no
+// run-as) left cmd.Env nil and inherited the daemon's RUNWISP_* secrets
+// verbatim. A diagnostic task printing its environment would then persist the
+// admin password / cloud token into browsable logs.
+func TestShellBackend_InheritEnvBaseStillHidesDaemonSecrets(t *testing.T) {
+	t.Setenv("RUNWISP_PASSWORD", "hunter2")
+	t.Setenv("RUNWISP_CLOUD_TOKEN", "cloud-secret")
+	t.Setenv("ENVBASE_PROBE", "inherited")
+
+	for _, base := range []model.EnvBase{model.EnvBaseInherit, ""} {
+		names := envNames(t, &model.ShellExecution{EnvBase: base})
+		for _, n := range names {
+			require.False(t, strings.HasPrefix(n, "RUNWISP_"),
+				"daemon-internal %s reached a plain inherit-base run", n)
+		}
+		// A non-secret daemon variable must still pass through — the filter
+		// targets RUNWISP_* only, it does not clear the whole environment.
+		assert.Contains(t, names, "ENVBASE_PROBE")
+	}
+}
+
 // TestCleanEnvBaseSetsShellFromTheResolvedInterpreter: crond exports the SHELL
 // it will use, so a job that re-execs "$SHELL" gets the same one. The value has
 // to be the interpreter actually chosen, not the daemon's own SHELL.

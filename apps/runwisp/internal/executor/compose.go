@@ -106,12 +106,14 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 		cmd.Dir = ce.WorkingDir
 	}
 
-	// Compose CLI inherits the daemon's env so users' DOCKER_HOST etc. work.
-	// Task env/secrets/params are then appended so the value-less `-e KEY`
-	// flags (see buildComposeArgs) resolve their values from the CLI's own
-	// environment — keeping secret values off argv (and out of `ps` output).
+	// Compose CLI inherits the daemon's env (minus RUNWISP_* daemon secrets,
+	// which buildProcessEnv strips) so users' DOCKER_HOST etc. work without
+	// leaking the admin password / cloud token into every container's build
+	// environment. Task env/secrets/params are then appended so the value-less
+	// `-e KEY` flags (see buildComposeArgs) resolve their values from the CLI's
+	// own environment — keeping secret values off argv (and out of `ps` output).
 	// Stack mode forwards env via compose itself, not `-e`, so it's exempt.
-	cmd.Env = os.Environ()
+	cmd.Env = buildProcessEnv(os.Environ())
 	if ce.Mode != model.ComposeModeStack {
 		cmd.Env = append(cmd.Env, composeEnv(task, run, instanceIndex)...)
 	}

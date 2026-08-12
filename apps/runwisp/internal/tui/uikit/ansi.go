@@ -53,6 +53,91 @@ func VisibleWidth(s string) int {
 	return w
 }
 
+// SanitizeControls strips terminal control sequences from captured process
+// output so a malicious log line can't drive the operator's terminal. It keeps
+// SGR colour sequences (\x1b[ … m) and tabs so coloured output still renders,
+// and drops everything else: OSC strings (window-title changes, OSC-8
+// hyperlinks, OSC-52 clipboard writes), DCS/PM/APC/SOS strings, non-SGR CSI
+// (cursor moves, screen erase), and stray C0/DEL control bytes. This mirrors the
+// web UI, where ansi-to-html renders only SGR and HTML-escapes everything else.
+//
+// Applied once at ingestion (before a line is stored), so every downstream
+// render path — pane, live overlay, frame-history modal — is safe and pays no
+// per-frame cost.
+func SanitizeControls(s string) string {
+	if strings.IndexFunc(s, isStrayControl) < 0 {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i, n := 0, len(s); i < n; {
+		c := s[i]
+		switch {
+		case c == 0x1b:
+			i = copyOrDropEscape(&b, s, i)
+		case c == '\t':
+			b.WriteByte(c)
+			i++
+		case c < 0x20 || c == 0x7f:
+			i++ // stray C0 / DEL — drop
+		default:
+			b.WriteByte(c) // printable ASCII or a UTF-8 continuation byte
+			i++
+		}
+	}
+	return b.String()
+}
+
+// isStrayControl reports whether r is a control byte SanitizeControls would act
+// on: ESC, or any C0/DEL except tab. Used only as a fast-path skip test.
+func isStrayControl(r rune) bool {
+	return r == 0x1b || r == 0x7f || (r < 0x20 && r != '\t')
+}
+
+// copyOrDropEscape handles the escape sequence starting at s[i] (which is ESC):
+// it copies a bare SGR CSI sequence through to b and drops every other escape
+// form. Returns the index just past the consumed sequence.
+func copyOrDropEscape(b *strings.Builder, s string, i int) int {
+	n := len(s)
+	if i+1 >= n {
+		return n // lone trailing ESC — drop
+	}
+	switch s[i+1] {
+	case '[': // CSI — keep only SGR (final byte 'm')
+		j := i + 2
+		for j < n && s[j] >= 0x20 && s[j] <= 0x3f { // parameter/intermediate bytes
+			j++
+		}
+		if j >= n || s[j] < 0x40 || s[j] > 0x7e {
+			return n // malformed / unterminated — drop to end
+		}
+		if s[j] == 'm' {
+			b.WriteString(s[i : j+1])
+		}
+		return j + 1
+	case ']', 'P', 'X', '^', '_': // OSC / DCS / SOS / PM / APC string — drop whole
+		return skipStringSequence(s, i+2)
+	default: // two-byte Fe escape (or lone ESC + byte) — drop
+		return i + 2
+	}
+}
+
+// skipStringSequence returns the index just past a control-string terminator
+// (BEL or ST = ESC '\'), scanning from j. Runs to end if unterminated.
+func skipStringSequence(s string, j int) int {
+	n := len(s)
+	for j < n {
+		if s[j] == 0x07 { // BEL
+			return j + 1
+		}
+		if s[j] == 0x1b && j+1 < n && s[j+1] == '\\' { // ST
+			return j + 2
+		}
+		j++
+	}
+	return n
+}
+
 // bgSGRCache memoises the opening SGR sequence per background colour. The Bubble
 // Tea view loop is single-threaded, so no lock is needed.
 var bgSGRCache = map[color.Color]string{}

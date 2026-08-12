@@ -34,11 +34,11 @@ func NewLogHistoryDialog(line int64, frames [][]string, committed string) LogHis
 	for i, frame := range frames {
 		rows = append(rows, histRow{text: frameLabel(i+1, len(frames)), header: true})
 		for _, r := range frame {
-			rows = append(rows, histRow{text: r})
+			rows = append(rows, histRow{text: uikit.SanitizeControls(r)})
 		}
 	}
 	rows = append(rows, histRow{text: "committed", header: true})
-	rows = append(rows, histRow{text: committed})
+	rows = append(rows, histRow{text: uikit.SanitizeControls(committed)})
 	return LogHistoryDialog{line: line, rows: rows}
 }
 

@@ -77,13 +77,16 @@ func TestBuildProcessEnv(t *testing.T) {
 // always setting cmd.Env would *replace* the daemon's environment for env-less
 // tasks. Tasks without an env overlay must see the daemon's PATH/HOME/etc.
 func TestShellBackend_NoEnvKeepsInheritedEnv(t *testing.T) {
-	t.Setenv("RUNWISP_TEST_INHERIT", "yes")
+	// A non-RUNWISP_ name: RUNWISP_*-prefixed vars are deliberately filtered
+	// out of the inherited base (they're daemon secrets), so inheritance must
+	// be proven with a neutral variable.
+	t.Setenv("RW_TEST_INHERIT", "yes")
 
 	dir := t.TempDir()
 	out := filepath.Join(dir, "env.out")
 
 	task := &model.Task{Name: "inherit", GracefulStop: time.Second}
-	script := `echo "$RUNWISP_TEST_INHERIT" > ` + out
+	script := `echo "$RW_TEST_INHERIT" > ` + out
 
 	ctx := context.Background()
 	backend := &ShellBackend{}

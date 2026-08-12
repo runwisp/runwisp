@@ -7,7 +7,7 @@
     import { KeyRound, Lock } from "@lucide/svelte";
     import { authApi, RateLimitedError } from "$lib/api";
     import { authStore } from "$lib/stores";
-    import { browserTokenStorage, browserAuthEventBus } from "$lib/adapters/browser";
+    import { browserAuthEventBus } from "$lib/adapters/browser";
     import { createLogger } from "$lib/utils/logger";
 
     const logger = createLogger("AuthModal");
@@ -58,8 +58,8 @@
             return;
         }
 
-        // Only show the login modal if unauthenticated (no localStorage token
-        // AND no valid cookie session detected by the server).
+        // Only show the login modal if unauthenticated (no valid cookie session
+        // detected by the server).
         if (!status.authenticated) {
             isOpen = true;
         }
@@ -71,8 +71,9 @@
         loading = true;
 
         try {
-            const data = await authApi.login(password);
-            browserTokenStorage.setToken(data.token);
+            // The login response sets the HttpOnly session cookie server-side;
+            // the browser holds no copy of the JWT. We just flip local auth state.
+            await authApi.login(password);
             authStore.markAuthenticated();
             isOpen = false;
             password = "";
