@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **TUI home-screen scrolling stays smooth under rapid mouse/trackpad input.** Bursts of motion and wheel events are coalesced into at most one redraw per frame, so hover feedback is kept without the lag.
 - **Captured ANSI colours in a run's log no longer bleed the viewer background.** A reset in the middle of a line now returns to the log pane's own colours instead of the terminal default.
 - **The TUI run-parameters dialog is now mouse-operable** — click a field to focus it, click a flag or selector to change it, and scroll to move between fields.
+- **Clicking the already-selected task in the TUI sidebar while a run's log is open now returns to the task detail view.**
+- **The TUI "Stop Service" confirmation text now wraps cleanly within the dialog.**
 
 ## [0.15.0] - 2026-08-10
 
