@@ -27,6 +27,11 @@ const keyCtrlC = "ctrl+c"
 // a new message means picking the right group rather than extending one
 // monolithic switch.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Reset the per-message frame-reuse flag; only a coalesced mouse motion/wheel
+	// (see handleMouse) sets it back on, so every other message rebuilds the view
+	// and no update is ever suppressed beyond one coalesce tick.
+	m.coalesce = false
+
 	if newModel, cmd, intercepted := m.interceptActiveDialog(msg); intercepted {
 		return newModel, cmd
 	}
@@ -219,6 +224,13 @@ func (m Model) dispatchLifecycleMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case uikit.TickMsg:
 		model, cmd := m.handleTick()
 		return model, cmd, true
+	case coalesceFlushMsg:
+		// The coalesce window elapsed; the reset at the top of Update already
+		// cleared m.coalesce, so this frame rebuilds fresh. Record it as the last
+		// real frame so the next event paces from here.
+		m.flushPending = false
+		m.lastRenderAt = time.Now()
+		return m, nil, true
 	case uikit.QuitMsg:
 		model, cmd := m.handleQuit(msg)
 		return model, cmd, true

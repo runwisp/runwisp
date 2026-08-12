@@ -4,6 +4,7 @@
 package uikit
 
 import (
+	"image/color"
 	"regexp"
 	"strings"
 
@@ -17,6 +18,60 @@ import (
 // style. It only ever removes zero-width bytes, so the visible slice is
 // unchanged.
 var trailingEscapes = regexp.MustCompile(`(?:\x1b\[[0-9;:?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_])+$`)
+
+// VisibleWidth returns the display width of s in terminal cells, treating ANSI
+// escape sequences as zero-width. Results are identical to ansi.StringWidth, but
+// it fast-paths the hot case — ASCII text with SGR colour codes — instead of
+// running the grapheme-cluster walk unconditionally (that walk dominates the TUI
+// render loop). Any byte ≥ 0x80 (a possible wide/multibyte rune) or a non-CSI
+// escape (OSC, hyperlinks) defers to the accurate path.
+func VisibleWidth(s string) int {
+	w, i, n := 0, 0, len(s)
+	for i < n {
+		c := s[i]
+		switch {
+		case c >= 0x80:
+			return ansi.StringWidth(s)
+		case c == 0x1b:
+			if i+1 >= n || s[i+1] != '[' {
+				return ansi.StringWidth(s)
+			}
+			i += 2
+			for i < n && (s[i] < 0x40 || s[i] > 0x7e) {
+				i++
+			}
+			if i < n {
+				i++ // step past the CSI final byte
+			}
+		case c >= 0x20 && c != 0x7f:
+			w++
+			i++
+		default:
+			i++ // other C0 control byte — zero width
+		}
+	}
+	return w
+}
+
+// bgSGRCache memoises the opening SGR sequence per background colour. The Bubble
+// Tea view loop is single-threaded, so no lock is needed.
+var bgSGRCache = map[color.Color]string{}
+
+// FillBg returns n spaces painted with bg, byte-for-byte identical to
+// lipgloss.NewStyle().Background(bg).Render(spaces) but without re-deriving the
+// SGR sequence and re-walking the string for width on every call — the single
+// biggest cost in the scroll render path.
+func FillBg(n int, bg color.Color) string {
+	if n <= 0 {
+		return ""
+	}
+	sgr, ok := bgSGRCache[bg]
+	if !ok {
+		sgr = ansi.NewStyle().BackgroundColor(bg).String()
+		bgSGRCache[bg] = sgr
+	}
+	return sgr + strings.Repeat(" ", n) + "\x1b[m"
+}
 
 // TruncateToWidth truncates s to at most w visible columns, appending an
 // ellipsis ("…") when it had to cut. ANSI escape sequences and wide runes are

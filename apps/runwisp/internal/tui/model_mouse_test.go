@@ -5,6 +5,7 @@ package tui
 
 import (
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/model"
@@ -209,6 +210,30 @@ func TestHandleMouse_WheelDownPress(t *testing.T) {
 	newM, _ := m.handleMouse(msg)
 	if _, ok := newM.(Model); !ok {
 		t.Fatalf("expected Model, got %T", newM)
+	}
+}
+
+// TestCoalesced_FirstEventRendersImmediately verifies the time-throttle: the
+// first wheel event after an idle gap paints at once (coalesce=false), while a
+// second event landing inside the window reuses the cached frame (coalesce=true)
+// and arms exactly one trailing rebuild.
+func TestCoalesced_FirstEventRendersImmediately(t *testing.T) {
+	m := newTestModel(nil)
+	m.lastRenderAt = time.Now().Add(-time.Second) // simulate idle
+
+	first, _ := m.handleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown, X: 100, Y: 5})
+	fm := first.(Model)
+	if fm.coalesce {
+		t.Fatal("first event after idle must render immediately (coalesce=false)")
+	}
+
+	second, cmd := fm.handleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelDown, X: 100, Y: 5})
+	sm := second.(Model)
+	if !sm.coalesce {
+		t.Fatal("rapid follow-up event must reuse the cached frame (coalesce=true)")
+	}
+	if !sm.flushPending || cmd == nil {
+		t.Fatal("coalesced follow-up must arm a trailing rebuild tick")
 	}
 }
 

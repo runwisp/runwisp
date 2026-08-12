@@ -28,12 +28,23 @@ func (m Model) View() tea.View {
 		return v
 	}
 
+	// During a coalesced mouse-motion/wheel burst, reuse the last full frame
+	// instead of rebuilding the whole screen for every event (bug 2).
+	if m.coalesce && m.frame != nil && *m.frame != "" {
+		v.SetContent(*m.frame)
+		return v
+	}
+
 	body := m.renderBody()
 	output := body + "\n" + m.renderHelpBar()
 	if m.logSearch != nil {
 		output = m.logSearch.View(m.width, m.height)
 	}
-	v.SetContent(m.dialogs.RenderOverlays(output, m.width, m.height))
+	content := m.dialogs.RenderOverlays(output, m.width, m.height)
+	if m.frame != nil {
+		*m.frame = content
+	}
+	v.SetContent(content)
 	return v
 }
 

@@ -87,6 +87,19 @@ type Model struct {
 
 	mouse mouseState
 
+	// Frame coalescing: bursts of mouse motion/wheel events each trigger a full
+	// View() rebuild (Bubble Tea renders after every message). The first event
+	// after an idle gap renders immediately (instant scroll feedback); events
+	// arriving within coalesceInterval of the last frame reuse the cached one and
+	// schedule a single trailing rebuild, so a flood rebuilds at ~60fps instead
+	// of per-event. `frame` is a pointer so it survives the value-copied model;
+	// `coalesce` tells View() to return it; `flushPending` dedupes the rebuild
+	// tick; `lastRenderAt` is when the last real frame was built.
+	frame        *string
+	coalesce     bool
+	flushPending bool
+	lastRenderAt time.Time
+
 	// lastInfoFetch paces the periodic /api/info poll (see infoPollInterval).
 	lastInfoFetch time.Time
 
@@ -126,6 +139,7 @@ func NewModel(cfg TUIConfig) Model {
 		client:           cfg.Client,
 		homeCursor:       -1,
 		mouse:            mouseState{homeHover: -1},
+		frame:            new(string),
 		isRemote:         cfg.IsRemote,
 		shutdownFunc:     cfg.ShutdownFunc,
 		launchTicketFunc: cfg.LaunchTicketFunc,
