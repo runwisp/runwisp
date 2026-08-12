@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-08-12
+
 ### Fixed
 
 - **The live web UI no longer drifts out of sync after a service restart or a brief disconnect.** The event stream now numbers each event and replays what a reconnecting browser missed (across a dropped connection or a background-tab handoff), instead of silently losing updates until a manual refresh. See [Web UI](https://docs.runwisp.com/getting-started/web-ui-tour/).
@@ -518,7 +520,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.15.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.15.1...main
+[0.15.1]: https://github.com/runwisp/runwisp/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/runwisp/runwisp/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/runwisp/runwisp/compare/v0.13.2...v0.14.0
 [0.13.2]: https://github.com/runwisp/runwisp/compare/v0.13.1...v0.13.2
