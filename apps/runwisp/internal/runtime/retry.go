@@ -50,7 +50,7 @@ func (m *defaultTaskManager) scheduleRestart(task *model.Task, previousRun *mode
 		return
 	}
 
-	delay := retry.ComputeRestartDelay(task, attempt)
+	delay := retry.RestartDelay(task, attempt, previousRun.EndReason)
 	if delay > 0 && !m.waitForDelay(delay) {
 		return
 	}

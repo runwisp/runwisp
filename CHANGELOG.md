@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The live web UI no longer drifts out of sync after a service restart or a brief disconnect.** The event stream now numbers each event and replays what a reconnecting browser missed (across a dropped connection or a background-tab handoff), instead of silently losing updates until a manual refresh. See [Web UI](https://docs.runwisp.com/getting-started/web-ui-tour/).
 - **Restarting a running service now cancels and respawns its instances** regardless of restart policy, instead of only stopping the ones with an `on_failure` policy (which every compose-imported service uses). See [Services](https://docs.runwisp.com/configuration/services/).
+- **Restarting or stopping a service no longer waits the `restart_delay` backoff** before the instance comes back — that throttle now applies only to crash restarts, so the Restart button acts immediately. See [Services](https://docs.runwisp.com/configuration/services/).
 - **The TUI and web execution logs now open scrolled to the newest output** instead of loading from the top and visibly scrolling down to reach the end.
 - **TUI home-screen scrolling stays smooth under rapid mouse/trackpad input.** Bursts of motion and wheel events are coalesced into at most one redraw per frame, so hover feedback is kept without the lag.
 - **Captured ANSI colours in a run's log no longer bleed the viewer background.** A reset in the middle of a line now returns to the log pane's own colours instead of the terminal default.

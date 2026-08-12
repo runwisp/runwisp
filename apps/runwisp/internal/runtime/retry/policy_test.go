@@ -164,6 +164,31 @@ func TestComputeRetryDelay(t *testing.T) {
 	})
 }
 
+func TestRestartDelay(t *testing.T) {
+	stopped := model.ReasonStopped
+	crashed := model.ReasonCrashed
+
+	t.Run("operator stop refills immediately regardless of backoff", func(t *testing.T) {
+		task := &model.Task{
+			RestartDelay:   5 * time.Second,
+			RestartBackoff: model.BackoffExponential,
+		}
+		for attempt := 0; attempt < 5; attempt++ {
+			assert.Zerof(t, RestartDelay(task, attempt, &stopped),
+				"operator stop must not wait (attempt %d)", attempt)
+		}
+	})
+
+	t.Run("crash keeps the configured backoff", func(t *testing.T) {
+		task := &model.Task{
+			RestartDelay:   time.Second,
+			RestartBackoff: model.BackoffExponential,
+		}
+		assert.Equal(t, ComputeRestartDelay(task, 2), RestartDelay(task, 2, &crashed))
+		assert.Equal(t, ComputeRestartDelay(task, 2), RestartDelay(task, 2, nil))
+	})
+}
+
 func TestComputeRestartDelay(t *testing.T) {
 	t.Run("first attempt returns base delay", func(t *testing.T) {
 		task := &model.Task{

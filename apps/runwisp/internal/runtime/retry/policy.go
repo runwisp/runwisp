@@ -81,6 +81,17 @@ func ComputeRetryDelay(task *model.Task, attempt int) time.Duration {
 	return computeBackoff(task.RetryBackoff, base, attempt, retryDelayCap)
 }
 
+// RestartDelay is the delay before respawning a service instance that exited
+// for the given reason. Operator-initiated exits (the Restart button and
+// single-instance stop, both surfacing as ReasonStopped) refill immediately —
+// the restart backoff throttles crash loops, not deliberate operator actions.
+func RestartDelay(task *model.Task, attempt int, reason *model.EndReason) time.Duration {
+	if reason != nil && *reason == model.ReasonStopped {
+		return 0
+	}
+	return ComputeRestartDelay(task, attempt)
+}
+
 // ComputeRestartDelay calculates the delay before a service instance is
 // re-spawned after exiting. attempt is the number of consecutive prior
 // restarts without a healthy run (a run that lived past the supervisor's
