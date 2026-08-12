@@ -142,6 +142,9 @@ func histContentLine(r histRow, innerWidth int) string {
 			Render(r.text)
 	}
 	sliced, _ := uikit.SliceLineColumns(r.text, 0, innerWidth)
+	// Re-assert the modal's own colours after any embedded reset so captured
+	// ANSI can't bleed the surface background/foreground.
+	sliced = uikit.ReassertResets(sliced, uikit.BaseSGR(uikit.ColorText, uikit.ColorBgLight, false))
 	return lipgloss.NewStyle().
 		Background(uikit.ColorBgLight).
 		Foreground(uikit.ColorText).

@@ -84,6 +84,34 @@ func TruncateToWidth(s string, w int) string {
 	return ansi.Truncate(s, w, "…")
 }
 
+// BaseSGR returns the opening SGR sequence for a foreground/background pair
+// (optionally italic) — the pane's own colour state, used to re-assert it after
+// an embedded reset (see ReassertResets).
+func BaseSGR(fg, bg color.Color, italic bool) string {
+	s := ansi.NewStyle().BackgroundColor(bg).ForegroundColor(fg)
+	if italic {
+		s = s.Italic(true)
+	}
+	return s.String()
+}
+
+// ReassertResets rewrites embedded SGR resets so a mid-line reset re-inherits
+// base (the pane's own colours) instead of falling back to the terminal
+// default. Captured process output routinely contains a mid-line "\x1b[0m",
+// which otherwise clears the pane background/foreground for the rest of the row.
+//
+// ponytail: only bare \x1b[0m / \x1b[m are handled; combined resets like
+// \x1b[0;32m aren't split — extend the replacer if a job emits them.
+func ReassertResets(text, base string) string {
+	if base == "" || !strings.Contains(text, "\x1b[") {
+		return text
+	}
+	return strings.NewReplacer(
+		"\x1b[0m", "\x1b[0m"+base,
+		"\x1b[m", "\x1b[m"+base,
+	).Replace(text)
+}
+
 // SliceLineColumns returns a substring of s starting at column offset `start`
 // spanning at most `cols` visible columns. Tabs are expanded to 4 spaces.
 // The second return value reports whether content extends beyond the visible window.

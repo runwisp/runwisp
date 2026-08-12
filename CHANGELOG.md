@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Restarting a running service now cancels and respawns its instances** regardless of restart policy, instead of only stopping the ones with an `on_failure` policy (which every compose-imported service uses). See [Services](https://docs.runwisp.com/configuration/services/).
 - **The TUI and web execution logs now open scrolled to the newest output** instead of loading from the top and visibly scrolling down to reach the end.
 - **TUI home-screen scrolling stays smooth under rapid mouse/trackpad input.** Bursts of motion and wheel events are coalesced into at most one redraw per frame, so hover feedback is kept without the lag.
+- **Captured ANSI colours in a run's log no longer bleed the viewer background.** A reset in the middle of a line now returns to the log pane's own colours instead of the terminal default.
 
 ## [0.15.0] - 2026-08-10
 
