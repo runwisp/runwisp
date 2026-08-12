@@ -164,6 +164,12 @@ func (cleaner *RetentionCleaner) deleteRunBatch(ctx context.Context, runs []mode
 		if info, statErr := os.Stat(logutil.MetaPath(logPath)); statErr == nil {
 			*totalSize -= info.Size()
 		}
+		// RemoveLogFiles also deletes the rotated-away .prev segment, and the
+		// initial dirSize counted it — subtract it too or the tracked total
+		// stays high and the loop over-deletes runs.
+		if info, statErr := os.Stat(logutil.PrevPath(logPath)); statErr == nil {
+			*totalSize -= info.Size()
+		}
 		logutil.RemoveLogFiles(logPath)
 		logutil.RemoveEmptyParents(logPath, cleaner.logDir)
 		if err := cleaner.db.DeleteRun(ctx, run.ID); err != nil {

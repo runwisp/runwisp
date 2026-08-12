@@ -76,6 +76,45 @@ func TestEnforceMaxTotalSize_UnderLimit(t *testing.T) {
 	repo.AssertNotCalled(t, "QueryRuns")
 }
 
+// A run's rotated-away .prev segment is deleted alongside its .log and counted
+// by the initial dirSize, so its size must be subtracted from the running
+// total too. Otherwise the tracker stays high and prunes more runs than the
+// cap requires. Regression: two runs, each 100B log + 100B prev (400B total,
+// 250B cap) — deleting the oldest run frees 200B and drops under the cap, so
+// the second run must survive.
+func TestEnforceMaxTotalSize_SubtractsPrevSegment(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	logDir := t.TempDir()
+	now := time.Now()
+
+	makeRun := func(createdAt time.Time) model.Run {
+		id := ulid.Make().String()
+		logPath := logutil.ResolveRunLogPath(logDir, "task1", id, createdAt)
+		require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0755))
+		require.NoError(t, os.WriteFile(logPath, make([]byte, 100), 0644))
+		require.NoError(t, os.WriteFile(logutil.PrevPath(logPath), make([]byte, 100), 0644))
+		return model.Run{ID: id, TaskName: "task1", CreatedAt: createdAt, Status: model.PhaseEnded}
+	}
+
+	oldest := makeRun(now.Add(-time.Hour))
+	newest := makeRun(now)
+
+	enforceQuery := storage.RunQuery{
+		Limit:         100,
+		Offset:        0,
+		SortField:     storage.SortColumnCreatedAt,
+		SortDirection: storage.SortAsc,
+	}
+	repo.On("QueryRuns", mock.Anything, enforceQuery).Return([]model.Run{oldest, newest}, nil)
+	repo.On("DeleteRun", mock.Anything, oldest.ID).Return(nil)
+
+	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 250)
+	cleaner.enforceMaxTotalSize(context.Background())
+
+	repo.AssertCalled(t, "DeleteRun", mock.Anything, oldest.ID)
+	repo.AssertNotCalled(t, "DeleteRun", mock.Anything, newest.ID)
+}
+
 func TestEnforceMaxTotalSize_PrunesOldestTerminalRun(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	logDir := t.TempDir()
