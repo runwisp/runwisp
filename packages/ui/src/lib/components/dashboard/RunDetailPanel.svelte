@@ -30,7 +30,7 @@
     import Tooltip from "../Tooltip.svelte";
     import { portal } from "../../actions/portal.js";
     import type { Run } from "./types.js";
-    import type { LogEvent, LogSlice } from "../../log-console/types.js";
+    import { isLogEvent, type LogEvent, type LogSlice } from "../../log-console/types.js";
     import { formatClockTime, formatCalendarDate } from "../../utils/format.js";
     import { formatShortId } from "../../utils/id.js";
     import { TickingNow } from "../../utils/ticking-now.svelte.js";
@@ -146,22 +146,41 @@
         if (!stream) return;
 
         let cleanup: (() => void) | undefined;
+        let cancelled = false;
 
         untrack(() => {
-            // Single SSE call seeds the viewport via backfill (negative
-            // fromLine = tail-from-end) and continues with live events on
-            // the same connection. No tail+stream handoff, no duplicate
-            // replay, native Last-Event-ID resume on reconnect.
-            cleanup = stream(
-                id,
-                (event: LogEvent) => {
-                    if (logConsole) logConsole.onStream(event);
-                },
-                { fromLine: -TAIL_LINES },
-            );
+            void (async () => {
+                // Paint the tail in one batched page so the console opens
+                // already at the newest output, instead of replaying 1000
+                // backfill lines over SSE and visibly scrolling down to reach
+                // the end. The live stream then picks up after the seeded tail
+                // (its disk backfill from that anchor closes the fetch↔stream
+                // race, and the daemon dedupes anything already shown).
+                let fromLine = -TAIL_LINES;
+                try {
+                    const seed = await fetchLogs(id, -TAIL_LINES, -1);
+                    if (cancelled) return;
+                    if (isLogEvent(seed)) {
+                        if (logConsole) logConsole.onStream(seed);
+                        if (seed.finished) return; // ended run: nothing live to follow
+                        if (seed.sizeLines > 0) fromLine = seed.sizeLines;
+                    }
+                } catch {
+                    // Seed failed — fall back to the SSE tail backfill.
+                }
+                if (cancelled) return;
+                cleanup = stream(
+                    id,
+                    (event: LogEvent) => {
+                        if (logConsole) logConsole.onStream(event);
+                    },
+                    { fromLine },
+                );
+            })();
         });
 
         return () => {
+            cancelled = true;
             if (cleanup) cleanup();
         };
     });

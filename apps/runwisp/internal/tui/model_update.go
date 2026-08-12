@@ -114,6 +114,9 @@ func (m Model) dispatchLogMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case uikit.LogOlderLoadedMsg:
 		model, cmd := m.handleLogOlderLoaded(msg)
 		return model, cmd, true
+	case uikit.LogTailLoadedMsg:
+		model, cmd := m.handleLogTailLoaded(msg)
+		return model, cmd, true
 	case uikit.LogStreamConnectedMsg:
 		model, cmd := m.handleLogStreamConnected(msg)
 		return model, cmd, true
@@ -569,6 +572,39 @@ func (m Model) handleSSEEventMsg(msg uikit.SSEEventMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleSSEDisconnected() (tea.Model, tea.Cmd) {
 	m.debugView.AppendLine("Events stream disconnected. Reconnecting...")
 	return m, m.streams.SubscribeEvents()
+}
+
+// handleLogTailLoaded seeds the pane with the initial tail page in one Update
+// (Follow snaps it to the bottom, so the first frame already shows the end),
+// then opens the live stream for only the lines after the page. A finished run
+// needs no live stream — the page holds everything.
+func (m Model) handleLogTailLoaded(msg uikit.LogTailLoadedMsg) (tea.Model, tea.Cmd) {
+	if !m.viewingRun(msg.RunID) {
+		return m, nil
+	}
+	for _, l := range msg.Lines {
+		m.execView.Pane.AppendLogLine(l.N, l.Stream, l.Text, l.FrameCount)
+	}
+	if n := len(msg.Lines); m.pendingHighlight != 0 && n > 0 && msg.Lines[n-1].N >= m.pendingHighlight {
+		m.execView.Pane.JumpToLine(m.pendingHighlight)
+		m.pendingHighlight = 0
+	}
+	if msg.Finalized {
+		return m, nil
+	}
+	// Live stream anchor: the line after the last seeded one. The stream's own
+	// disk backfill from this anchor closes the fetch↔subscribe race, and its
+	// server-side dedupe drops anything already shown. An empty page falls back
+	// to the tail anchor (new run, or a failed page fetch).
+	from := int64(-execlist.LogTailLines)
+	if n := len(msg.Lines); n > 0 {
+		from = msg.Lines[n-1].N + 1
+	}
+	run := m.currentRun()
+	if run == nil {
+		return m, nil
+	}
+	return m, m.streams.StartLogStream(run, from)
 }
 
 func (m Model) handleLogStreamConnected(msg uikit.LogStreamConnectedMsg) (tea.Model, tea.Cmd) {

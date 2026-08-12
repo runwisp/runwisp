@@ -180,7 +180,10 @@ func (m *Model) openExecView(run *model.Run) tea.Cmd {
 
 	cmds := []tea.Cmd{m.markRunNotificationsRead(run.ID)}
 	if run.Status != model.PhasePending {
-		cmds = append(cmds, m.streams.StartLogStream(run, -int64(execlist.LogTailLines)))
+		// Seed the tail in one page so the viewer paints at the bottom
+		// immediately; the live stream (opened once the page lands) then carries
+		// only genuinely new lines.
+		cmds = append(cmds, m.streams.FetchLogTail(run, int64(execlist.LogTailLines)))
 	}
 	return tea.Batch(cmds...)
 }

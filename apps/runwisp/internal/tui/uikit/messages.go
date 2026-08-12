@@ -156,6 +156,16 @@ type LogOlderLoadedMsg struct {
 	Total     int64
 }
 
+// LogTailLoadedMsg delivers the initial tail page for a run's log, fetched in
+// one REST call so the viewer paints at the bottom immediately instead of
+// replaying the whole tail line-by-line over SSE.
+type LogTailLoadedMsg struct {
+	RunID     string
+	Lines     []server.LogLineEntry
+	Total     int64
+	Finalized bool
+}
+
 // LogStreamConnectedMsg signals that the log SSE stream is connected.
 type LogStreamConnectedMsg struct {
 	RunID string
