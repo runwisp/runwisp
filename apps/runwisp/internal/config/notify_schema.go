@@ -31,6 +31,11 @@ const (
 	// defaultHistoryKeepFor is the age limit applied when
 	// notify.history_keep_for is omitted from TOML.
 	defaultHistoryKeepFor = 90 * 24 * time.Hour
+	// defaultOccurrenceRing is the coalescing ring size applied when
+	// notify.occurrence_ring is omitted. It drives both the in-app occurrence
+	// ring and the outbound "check-in every N events" cadence, so it must be
+	// resolved here rather than left 0 (outbound treats 0 as "never check in").
+	defaultOccurrenceRing = 10
 )
 
 // parseNotifyToken splits a notify destination token into its parent notifier
@@ -60,6 +65,9 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 	}
 	if out.HistoryKeep == 0 {
 		out.HistoryKeep = defaultHistoryKeep
+	}
+	if out.OccurrenceRing == 0 {
+		out.OccurrenceRing = defaultOccurrenceRing
 	}
 
 	if err := t.applyNotifyDurations(&out); err != nil {

@@ -301,6 +301,15 @@ func (s *streamer) streamLoop(ctx context.Context, runID string, bus *events.Bus
 		slog.Warn("SSE: backfill read failed", "runID", runID, "err", err)
 	}
 	resolvedAnchor := resolveBackfillAnchor(anchorFrom, replayLimit, totalLines, firstAvailable)
+	// ReadLineRange read a forward window starting at anchorFrom, but when the
+	// gap exceeds replayLimit the anchor is advanced to the tail. Re-read from
+	// the resolved anchor so the freshest missed lines are replayed instead of
+	// the oldest slice (which emitBackfill would otherwise drop entirely).
+	if len(backfill) > 0 && resolvedAnchor > backfill[0].LineNum {
+		if reBackfill, reFirst, reTotal, reErr := logutil.ReadLineRange(s.logPath, resolvedAnchor, replayLimit); reErr == nil {
+			backfill, firstAvailable, totalLines = reBackfill, reFirst, reTotal
+		}
+	}
 	// Stamp frame-history availability onto backfilled anchor lines so a
 	// finished run loaded fresh (not just the live path) keeps its rewind
 	// affordance. Read once per connection, mirroring humaGetLogPage.

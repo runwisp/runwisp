@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`env_file` and `secrets_file` values are read literally**, so passwords and tokens containing `$`, `${...}`, or `#` are passed to the task exactly as written. See [Tasks](https://docs.runwisp.com/configuration/tasks/).
+- **A log stream resumed after a disconnect replays the most recent missed lines**, keeping a reconnecting browser continuous with the live tail even across a large gap. See [Web UI](https://docs.runwisp.com/getting-started/web-ui-tour/).
+- **Outbound notification channels (Slack, Telegram) send periodic check-ins during a sustained incident** on the default `occurrence_ring` cadence. See [Notification model](https://docs.runwisp.com/notifications/model/).
+- **`storage.max_size` enforcement accounts for rotated log segments** when trimming run history to the configured cap. See [Storage](https://docs.runwisp.com/configuration/storage/).
+
 ## [0.15.1] - 2026-08-12
 
 ### Fixed

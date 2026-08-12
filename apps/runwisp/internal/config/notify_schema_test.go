@@ -487,6 +487,15 @@ history_keep_for = "720h"
 	assert.NotZero(t, cfg.Notify.HistoryKeepFor)
 }
 
+func TestDecode_NotifyOccurrenceRingDefault(t *testing.T) {
+	// Omitted occurrence_ring must resolve to the documented default (10), not
+	// 0. The outbound coalescer treats 0 as "never check in", so a missing
+	// default silently disables the periodic check-in cadence.
+	cfg, err := decode([]byte(schedulerTZHeader+"\n[notify]\n"), "")
+	require.NoError(t, err)
+	assert.Equal(t, defaultOccurrenceRing, cfg.Notify.OccurrenceRing)
+}
+
 func TestDecode_NotifyDefaultTimeout_Invalid(t *testing.T) {
 	src := schedulerTZHeader + `
 [notify]

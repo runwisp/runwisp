@@ -4,7 +4,12 @@
 package logstream
 
 import (
+	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -271,6 +276,32 @@ func TestEmitBackfill_StampsFrameCount(t *testing.T) {
 	require.Len(t, m.lines, 2)
 	assert.Equal(t, 0, m.lines[0].FrameCount, "non-anchor line carries no frame count")
 	assert.Equal(t, 3, m.lines[1].FrameCount, "anchor line is stamped with its frame count")
+}
+
+// streamLoop backfill: a positive resume anchor whose gap to the live cursor
+// exceeds the replay budget must replay the freshest lines (the tail), not a
+// stale leading slice. Regression for the window mismatch between
+// ReadLineRange (forward from anchorFrom) and resolveBackfillAnchor (tail).
+func TestStreamLoop_LargePositiveGapReplaysTail(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "test.log")
+	var b strings.Builder
+	for i := 0; i < 8000; i++ {
+		b.WriteString("line")
+		b.WriteString(strconv.Itoa(i))
+		b.WriteString("\n")
+	}
+	require.NoError(t, os.WriteFile(logPath, []byte(b.String()), 0o600))
+
+	m := &mockSender{}
+	s := newStreamer(m, logPath)
+	bus := events.NewEventBus()
+	// Resume from line 0 with a 5000-line replay budget against 8000 lines.
+	s.streamLoop(context.Background(), "run1", bus, nil, 0, 5000, true)
+
+	require.Len(t, m.lines, 5000, "exactly the replay budget of lines is backfilled")
+	assert.Equal(t, int64(3000), m.lines[0].N, "backfill starts at the tail anchor")
+	assert.Equal(t, int64(7999), m.lines[len(m.lines)-1].N, "newest line is replayed")
 }
 
 // --- sendTerminalEvents ---

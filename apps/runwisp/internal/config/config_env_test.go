@@ -330,6 +330,29 @@ func TestValidateTaskEnvCombinedCap(t *testing.T) {
 	assert.Contains(t, err.Error(), "exceeds the cap")
 }
 
+func TestLoadEnvFileTakesValuesLiterally(t *testing.T) {
+	dir := writeFilesInDir(t, map[string]string{
+		"runwisp.toml": `
+[tasks.t]
+run = "/bin/true"
+secrets_file = "secrets.env"
+`,
+		// $XYZ, ${ABC} and a trailing # must all survive verbatim: godotenv
+		// would expand the first two to "" and strip the "#comment".
+		"secrets.env": "# a comment line\nexport DOLLAR=Tr0ub4dour$XYZ\nBRACE=pre${ABC}post\nHASH=pass#word\nSINGLE='literal$XYZ'\nDOUBLE=\"a b c\"\n",
+	})
+	cfg, err := Load(filepath.Join(dir, "runwisp.toml"))
+	require.NoError(t, err)
+	require.Len(t, cfg.Tasks, 1)
+	assert.Equal(t, map[string]string{
+		"DOLLAR": "Tr0ub4dour$XYZ",
+		"BRACE":  "pre${ABC}post",
+		"HASH":   "pass#word",
+		"SINGLE": "literal$XYZ",
+		"DOUBLE": "a b c",
+	}, cfg.Tasks[0].Secrets)
+}
+
 func itoa(n int) string {
 	if n == 0 {
 		return "0"
