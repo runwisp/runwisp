@@ -42,8 +42,24 @@ func AssertFileTrusted(path, what string) error {
 //
 // Non-privileged daemons are unaffected: a user-run daemon can only ever execute
 // what that user could already run.
+//
+// Also a no-op inside a container: the official image runs as root deliberately
+// (see docker/Dockerfile) and expects the operator's own `-v host.toml:/etc/
+// runwisp/runwisp.toml:ro` bind mount, which almost never carries root
+// ownership on the host side. The ownership check's threat model is a *lower-
+// privileged local user* planting a file root then trusts — inside a
+// single-tenant container that user doesn't exist; the bind mount itself is
+// the operator's trust decision, made once at `docker run`.
 func AssertPrivilegedConfigTrust(cfg *Config, rootPath string) error {
-	if os.Geteuid() != 0 {
+	return assertPrivilegedConfigTrust(cfg, rootPath, os.Geteuid())
+}
+
+// assertPrivilegedConfigTrust takes euid as a parameter, rather than reading
+// os.Geteuid() inline, so a test can exercise the root-privileged branch
+// without actually running as root — the same seam this codebase already uses
+// for euid-gated logic elsewhere (e.g. internal/autostart.Deps.Euid).
+func assertPrivilegedConfigTrust(cfg *Config, rootPath string, euid int) error {
+	if euid != 0 || runningInContainer() {
 		return nil
 	}
 	if err := AssertFileTrusted(rootPath, "the config file"); err != nil {
@@ -55,6 +71,19 @@ func AssertPrivilegedConfigTrust(cfg *Config, rootPath string) error {
 		}
 	}
 	return nil
+}
+
+// runningInContainer reports whether this process is PID 1 under a container
+// runtime. Overridden in tests. /.dockerenv is Docker's own marker, written by
+// the runtime itself regardless of base image; /run/.containerenv is Podman's
+// equivalent.
+var runningInContainer = func() bool {
+	for _, marker := range [...]string{"/.dockerenv", "/run/.containerenv"} {
+		if _, err := os.Stat(marker); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // assertCronFileTrusted refuses to take task definitions from a file that someone

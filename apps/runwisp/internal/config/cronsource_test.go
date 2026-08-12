@@ -699,6 +699,52 @@ func TestCronTrust_WorldWritableAncestorRefused(t *testing.T) {
 	assert.Contains(t, err.Error(), "world-writable")
 }
 
+// TestAssertPrivilegedConfigTrust_NonContainerRefusesSymlinkedConfig: outside a
+// container, a root daemon (faked here via euid) still runs the full trust
+// check — proven with a symlinked config, since a real ownership mismatch
+// can't be faked without actually running as root.
+func TestAssertPrivilegedConfigTrust_NonContainerRefusesSymlinkedConfig(t *testing.T) {
+	prev := runningInContainer
+	runningInContainer = func() bool { return false }
+	t.Cleanup(func() { runningInContainer = prev })
+
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real.toml")
+	require.NoError(t, os.WriteFile(real, []byte("[tasks.hello]\nrun = \"true\"\n"), 0o600))
+	link := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.Symlink(real, link))
+
+	loaded, err := Load(link)
+	require.NoError(t, err)
+
+	err = assertPrivilegedConfigTrust(loaded, link, 0)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "symlink")
+}
+
+// TestAssertPrivilegedConfigTrust_ContainerSkipsTrustCheck: the official Docker
+// image runs as root by design and expects the operator's own bind mount
+// (docker/Dockerfile, docs/getting-started/docker), whose host-side ownership
+// the daemon has no way to corroborate. Inside a container, the whole trust
+// check must be skipped even though the daemon is privileged (euid 0) — shown
+// here with a symlinked config, which would otherwise be refused outright.
+func TestAssertPrivilegedConfigTrust_ContainerSkipsTrustCheck(t *testing.T) {
+	prev := runningInContainer
+	runningInContainer = func() bool { return true }
+	t.Cleanup(func() { runningInContainer = prev })
+
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real.toml")
+	require.NoError(t, os.WriteFile(real, []byte("[tasks.hello]\nrun = \"true\"\n"), 0o600))
+	link := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.Symlink(real, link))
+
+	loaded, err := Load(link)
+	require.NoError(t, err)
+
+	require.NoError(t, assertPrivilegedConfigTrust(loaded, link, 0))
+}
+
 // TestCronTrust_UnresolvableRunAsRefused: the run-as account is what corroborates
 // the ownership of a spool file, so an account this machine can't resolve leaves
 // the one check standing between that file and daemon-privileged execution
