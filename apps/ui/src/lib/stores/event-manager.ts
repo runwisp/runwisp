@@ -17,7 +17,10 @@ import {
 
 export type EventManagerErrorInfo = SSEErrorInfo;
 
-export type EventHandler = (data: string) => void;
+// The optional `id` is the SSE event's Last-Event-ID (the server's monotonic
+// sequence). SharedAppStream tracks it to seed a freshly-opened EventSource's
+// resume cursor; most consumers ignore it.
+export type EventHandler = (data: string, id?: string) => void;
 export type OpenHandler = () => void;
 export type ErrorHandler = (info: EventManagerErrorInfo) => void;
 export type StallHandler = () => void;
@@ -51,6 +54,14 @@ export interface EventManagerOptions {
     createEventSource?: EventSourceFactory;
     /** Resolves the API base URL at connection time. */
     getApiUrl?: () => string;
+    /**
+     * Seeds the resume cursor for a freshly-opened connection, appended as
+     * `?lastEventId=`. A same-EventSource reconnect resends `Last-Event-ID`
+     * natively, but a brand-new EventSource (e.g. a promoted cross-tab leader)
+     * starts with an empty one — this lets it resume from the id the cohort last
+     * saw so the server replays the handoff gap. Returns null for a fresh start.
+     */
+    initialLastEventId?: () => string | null;
 }
 
 /**
@@ -82,9 +93,15 @@ export class EventManager implements AppEventStream {
         this.#path = options.path;
         const getApiUrl = options.getApiUrl ?? defaultGetApiUrl;
         const createEventSource = options.createEventSource ?? browserAuthEventSourceFactory;
+        const initialLastEventId = options.initialLastEventId;
 
         this.#connection = createReconnectingConnection({
-            resolve: () => ({ url: `${getApiUrl()}${this.#path}`, label: this.#path }),
+            resolve: () => {
+                const base = `${getApiUrl()}${this.#path}`;
+                const id = initialLastEventId?.();
+                const url = id ? `${base}?lastEventId=${encodeURIComponent(id)}` : base;
+                return { url, label: this.#path };
+            },
             createEventSource,
             logger: this.#logger,
             onCreated: (es) => {
@@ -220,11 +237,12 @@ export class EventManager implements AppEventStream {
         es.addEventListener(eventType, (event: MessageEvent) => {
             const data = getMessageEventData(event);
             if (data === undefined) return;
+            const id = event.lastEventId || undefined;
             const set = this.#handlers.get(eventType);
             if (!set) return;
             for (const handler of set) {
                 try {
-                    handler(data);
+                    handler(data, id);
                 } catch (err) {
                     this.#logger.error(`handler for ${eventType} threw`, err);
                 }

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The live web UI no longer drifts out of sync after a service restart or a brief disconnect.** The event stream now numbers each event and replays what a reconnecting browser missed (across a dropped connection or a background-tab handoff), instead of silently losing updates until a manual refresh. See [Web UI](https://docs.runwisp.com/getting-started/web-ui-tour/).
+
 ## [0.15.0] - 2026-08-10
 
 ### Added
