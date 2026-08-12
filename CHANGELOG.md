@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`storage.max_size` enforcement accounts for rotated log segments** when trimming run history to the configured cap. See [Storage](https://docs.runwisp.com/configuration/storage/).
 - **Starting the daemon no longer reprints the startup log a second time after a successful start.** The log was already streamed live during startup; only a failed or timed-out start now prints the tail for diagnosis.
 
+### Security
+
+- **Hardened `service install` unit generation, task-process environment isolation, config-file trust checks, privilege dropping, and outbound-request address filtering.** Internal safeguards with no configuration changes.
+
 ## [0.15.1] - 2026-08-12
 
 ### Fixed

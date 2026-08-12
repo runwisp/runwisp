@@ -19,19 +19,12 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/runwisp/runwisp/internal/netguard"
 )
 
 // MaxAttempts caps the retries on transient PUT failures.
 const MaxAttempts = 3
-
-// blockedMetadataIPs are cloud-metadata service addresses that are not caught
-// by the private/link-local checks and must never be reachable from a
-// peer-supplied upload URL.
-var blockedMetadataIPs = map[string]struct{}{
-	"169.254.169.254": {},
-	"100.100.100.200": {},
-	"192.0.0.192":     {},
-}
 
 // Archive gzips logFilePath and PUTs it to uploadURL. Returns the gzipped
 // byte count on success. Retries up to MaxAttempts on network errors and
@@ -167,17 +160,11 @@ func validateUploadURL(rawURL string) error {
 	return nil
 }
 
-// rejectInternalIP fails for loopback, private, link-local, unspecified, and
-// known cloud-metadata addresses.
+// rejectInternalIP fails unless ip is a publicly routable unicast address,
+// delegating the range checks to the shared netguard validator.
 func rejectInternalIP(ip net.IP) error {
-	if v4 := ip.To4(); v4 != nil {
-		ip = v4
-	}
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
-		return fmt.Errorf("logarchive: upload URL resolves to internal address %s", ip)
-	}
-	if _, blocked := blockedMetadataIPs[ip.String()]; blocked {
-		return fmt.Errorf("logarchive: upload URL resolves to cloud-metadata address %s", ip)
+	if err := netguard.RejectNonPublicIP(ip); err != nil {
+		return fmt.Errorf("logarchive: upload URL resolves to non-public address: %w", err)
 	}
 	return nil
 }

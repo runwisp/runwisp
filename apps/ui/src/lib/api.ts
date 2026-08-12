@@ -8,7 +8,7 @@ import { browser } from "$app/environment";
 import { getApiUrl } from "./utils/env";
 import { chapResponse } from "./chap";
 import { HTTP_STATUS } from "./config/constants";
-import { browserTokenStorage, browserAuthEventBus } from "$lib/adapters/browser";
+import { browserAuthEventBus } from "$lib/adapters/browser";
 import { authStore } from "./stores/auth.svelte";
 import {
     logPageSchema,
@@ -45,21 +45,13 @@ export class RateLimitedError extends Error {
     }
 }
 
+// The browser session is authenticated by the HttpOnly cookie, which the
+// browser attaches automatically to same-origin requests — there is no
+// JS-readable token to set as a Bearer header. This middleware only reacts to a
+// 401 by driving the login modal.
 const authMiddleware: Middleware = {
-    onRequest({ request }) {
-        if (browser) {
-            const token = browserTokenStorage.getToken();
-            if (token) {
-                request.headers.set("Authorization", `Bearer ${token}`);
-            }
-            // When no localStorage token exists, the browser still sends the
-            // HttpOnly cookie automatically for same-origin requests.
-        }
-        return request;
-    },
     onResponse({ response }) {
         if (response.status === HTTP_STATUS.UNAUTHORIZED && browser) {
-            browserTokenStorage.removeToken();
             authStore.markUnauthenticated();
             browserAuthEventBus.emitAuthRequired();
             throw new AuthRequiredError();
@@ -70,12 +62,6 @@ const authMiddleware: Middleware = {
 
 const apiClient = createClient<APIPaths>({ baseUrl: API_BASE_URL });
 apiClient.use(authMiddleware);
-
-function authHeader(): string | undefined {
-    if (!browser) return undefined;
-    const token = browserTokenStorage.getToken();
-    return token ? `Bearer ${token}` : undefined;
-}
 
 export const authApi = {
     login: async (password: string): Promise<{ token: string }> => {
@@ -199,11 +185,8 @@ export const tasksApi = {
             encodeURIComponent(runId) +
             "/log" +
             (qs ? "?" + qs : "");
-        const headers: HeadersInit = { Accept: "application/json" };
-        const auth = authHeader();
-        if (auth) headers["Authorization"] = auth;
 
-        const response = await fetch(url, { headers });
+        const response = await fetch(url, { headers: { Accept: "application/json" } });
         if (!response.ok) throw new Error("Log page fetch failed: " + String(response.status));
         return logPageSchema.parse(await response.json());
     },
@@ -233,11 +216,8 @@ export const tasksApi = {
             encodeURIComponent(taskName) +
             "/log/search?" +
             params.toString();
-        const headers: HeadersInit = { Accept: "application/json" };
-        const auth = authHeader();
-        if (auth) headers["Authorization"] = auth;
 
-        const response = await fetch(url, { headers });
+        const response = await fetch(url, { headers: { Accept: "application/json" } });
         if (!response.ok) throw new Error("Log search failed: " + String(response.status));
         return logSearchResponseSchema.parse(await response.json());
     },
@@ -256,11 +236,8 @@ export const tasksApi = {
             "/log/line/" +
             String(lineNum) +
             "/history";
-        const headers: HeadersInit = { Accept: "application/json" };
-        const auth = authHeader();
-        if (auth) headers["Authorization"] = auth;
 
-        const response = await fetch(url, { headers });
+        const response = await fetch(url, { headers: { Accept: "application/json" } });
         if (!response.ok)
             throw new Error("Log line history fetch failed: " + String(response.status));
         return logLineHistorySchema.parse(await response.json()).frames;
@@ -274,11 +251,8 @@ export const tasksApi = {
             "/runs/" +
             encodeURIComponent(runId) +
             "/log/raw";
-        const headers: HeadersInit = {};
-        const auth = authHeader();
-        if (auth) headers["Authorization"] = auth;
 
-        const response = await fetch(url, { headers });
+        const response = await fetch(url);
         if (!response.ok) throw new Error("Raw log fetch failed: " + String(response.status));
         return await response.text();
     },
@@ -367,11 +341,7 @@ export const systemApi = {
     },
 
     getMetricsHistory: async (): Promise<MetricsSample[]> => {
-        const headers: HeadersInit = {};
-        const auth = authHeader();
-        if (auth) headers["Authorization"] = auth;
-
-        const response = await fetch(`${API_BASE_URL}/api/system/history`, { headers });
+        const response = await fetch(`${API_BASE_URL}/api/system/history`);
         if (!response.ok) throw new Error("Failed to fetch metrics history");
         return metricsSamplesSchema.parse(await response.json());
     },

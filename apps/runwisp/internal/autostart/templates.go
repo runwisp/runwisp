@@ -6,7 +6,9 @@ package autostart
 import (
 	"bytes"
 	"embed"
+	"encoding/xml"
 	"fmt"
+	"strings"
 	"text/template"
 )
 
@@ -55,14 +57,77 @@ type LaunchdParams struct {
 	Label string
 }
 
-// RenderSystemdUnit returns the rendered runwisp.service body.
+// RenderSystemdUnit returns the rendered runwisp.service body. Every
+// operator-supplied field is validated free of control characters (a newline
+// in Binary/Config/Host/etc. would otherwise inject additional [Service]
+// directives — including a replacement ExecStart — and the unit is written and
+// started as root, so that is a root-RCE primitive) and each value is
+// systemd-quoted at its interpolation site.
 func RenderSystemdUnit(p SystemdParams) ([]byte, error) {
+	if err := rejectControlChars(map[string]string{
+		"Binary": p.Binary, "Config": p.Config, "DataDir": p.DataDir,
+		"Host": p.Host, "Home": p.Home, "Path": p.Path,
+		"ConfigHash": p.ConfigHash, "BinarySHA": p.BinarySHA,
+		"MaskedCronUnit": p.MaskedCronUnit,
+	}); err != nil {
+		return nil, err
+	}
 	return renderTemplate("templates/runwisp.service.tmpl", p)
 }
 
-// RenderLaunchdPlist returns the rendered com.runwisp.daemon.plist body.
+// RenderLaunchdPlist returns the rendered com.runwisp.daemon.plist body. As with
+// the systemd unit, control characters are rejected up front and every value is
+// XML-escaped at its interpolation site so a value cannot break out of its
+// <string> element and inject plist structure.
 func RenderLaunchdPlist(p LaunchdParams) ([]byte, error) {
+	if err := rejectControlChars(map[string]string{
+		"Binary": p.Binary, "Config": p.Config, "DataDir": p.DataDir,
+		"Host": p.Host, "Home": p.Home, "Path": p.Path, "LogPath": p.LogPath,
+		"ConfigHash": p.ConfigHash, "BinarySHA": p.BinarySHA, "Label": p.Label,
+	}); err != nil {
+		return nil, err
+	}
 	return renderTemplate("templates/com.runwisp.daemon.plist.tmpl", p)
+}
+
+// templateFuncs escape interpolated values for their target format.
+//   - sysq:   systemd double-quoted argument (ExecStart tokens)
+//   - sysesc: systemd escape without wrapping (inside Environment="KEY=…")
+//   - xml:    XML text/attribute escaping (launchd <string> bodies)
+var templateFuncs = template.FuncMap{
+	"sysesc": systemdEscape,
+	"sysq":   func(s string) string { return `"` + systemdEscape(s) + `"` },
+	"xml":    xmlEscape,
+}
+
+// systemdEscape escapes the two characters that are special inside a
+// systemd double-quoted string: backslash and double-quote. Control characters
+// are rejected before render, so they need no handling here.
+func systemdEscape(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s)
+}
+
+func xmlEscape(s string) string {
+	var buf bytes.Buffer
+	if err := xml.EscapeText(&buf, []byte(s)); err != nil {
+		return ""
+	}
+	return buf.String()
+}
+
+// rejectControlChars fails if any value contains an ASCII control character
+// (< 0x20, or DEL 0x7f). These are the characters that let a value escape its
+// line/element and inject new directives; a filesystem path or hostname never
+// legitimately contains one.
+func rejectControlChars(fields map[string]string) error {
+	for name, val := range fields {
+		for i := 0; i < len(val); i++ {
+			if c := val[i]; c < 0x20 || c == 0x7f {
+				return fmt.Errorf("service unit field %s contains a control character (0x%02x); refusing to write unit", name, c)
+			}
+		}
+	}
+	return nil
 }
 
 func renderTemplate(name string, data any) ([]byte, error) {
@@ -70,7 +135,7 @@ func renderTemplate(name string, data any) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read template %s: %w", name, err)
 	}
-	tpl, err := template.New(name).Parse(string(raw))
+	tpl, err := template.New(name).Funcs(templateFuncs).Parse(string(raw))
 	if err != nil {
 		return nil, fmt.Errorf("parse template %s: %w", name, err)
 	}

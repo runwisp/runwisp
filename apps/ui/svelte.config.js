@@ -16,6 +16,20 @@ const config = {
             precompress: false,
             strict: false,
         }),
+        // CSP for scripts/styles is delivered as a <meta> in each page's <head>
+        // (hash mode): SvelteKit computes the hash of its own inline bootstrap
+        // and lists it in script-src, so we can drop 'unsafe-inline' for scripts
+        // entirely. The daemon's HTTP header (internal/server/routes.go) sets the
+        // remaining directives (img/connect/font/frame-ancestors/...) and
+        // deliberately does NOT set script-src/style-src, leaving those to this
+        // meta so the two policies don't intersect into a broken result.
+        csp: {
+            mode: "hash",
+            directives: {
+                "script-src": ["self"],
+                "style-src": ["self", "unsafe-inline"],
+            },
+        },
         paths: {
             base: "",
         },

@@ -5,7 +5,6 @@ package executor
 
 import (
 	"fmt"
-	"log/slog"
 	"os/user"
 	"strconv"
 	"syscall"
@@ -63,7 +62,9 @@ func resolveRunAs(spec string) (*runAs, error) {
 	}
 
 	cred := &syscall.Credential{Uid: ru.uid, Gid: gid}
-	applySupplementaryGroups(cred, ru.entry, userPart)
+	if err := applySupplementaryGroups(cred, ru.entry, userPart); err != nil {
+		return nil, err
+	}
 
 	return &runAs{cred: cred, identity: identityEnv(ru.username, ru.home), home: ru.home}, nil
 }
@@ -143,30 +144,32 @@ func lookupRunAsGid(part string) (uint32, error) {
 // the resolved user's memberships. When the user is a bare numeric id (no
 // account entry) we leave Groups nil with NoSetGroups=false, so the child's
 // supplementary groups are cleared to just the primary gid rather than
-// inheriting the daemon's — the secure default when dropping privileges. When
-// the user is known but GroupIds() is unavailable (built without cgo), we set
-// NoSetGroups so the daemon's group set is left in place, and warn loudly
-// rather than silently clearing it.
-func applySupplementaryGroups(cred *syscall.Credential, entry *user.User, label string) {
+// inheriting the daemon's — the secure default when dropping privileges.
+//
+// A failure to enumerate the target user's groups aborts the run. Fail-open
+// here (leaving the daemon's group set in place via NoSetGroups) would let a
+// task nominally dropped to an unprivileged user keep the daemon's
+// supplementary groups — docker, disk, or another sensitive group — which is a
+// privilege-escalation path (docker-group membership is effectively root). A
+// privilege drop must never silently retain more groups than it dropped to.
+func applySupplementaryGroups(cred *syscall.Credential, entry *user.User, label string) error {
 	if entry == nil {
-		return
+		return nil
 	}
 	gidStrs, err := entry.GroupIds()
 	if err != nil {
-		slog.Warn("run-as: cannot read supplementary groups; leaving the daemon's group set in place (built without cgo?)",
-			"user", label, "err", err)
-		cred.NoSetGroups = true
-		return
+		return fmt.Errorf("run-as %q: cannot read supplementary groups: %w", label, err)
 	}
 	groups := make([]uint32, 0, len(gidStrs))
 	for _, s := range gidStrs {
 		n, err := strconv.ParseUint(s, 10, 32)
 		if err != nil {
-			continue
+			return fmt.Errorf("run-as %q: non-numeric supplementary gid %q: %w", label, s, err)
 		}
 		groups = append(groups, uint32(n))
 	}
 	cred.Groups = groups
+	return nil
 }
 
 // identityEnv returns the HOME/USER/LOGNAME entries for the target user. A

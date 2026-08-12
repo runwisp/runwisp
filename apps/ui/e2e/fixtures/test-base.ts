@@ -10,7 +10,8 @@ import type { DaemonState } from "./daemon-state.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_PATH = resolve(__dirname, "../.state.json");
 
-const AUTH_TOKEN_KEY = "runwisp_token";
+// Must match internal/server/auth.CookieName.
+const AUTH_COOKIE_NAME = "runwisp_jwt";
 
 let cachedState: DaemonState | undefined;
 
@@ -23,8 +24,9 @@ async function loadDaemonState(): Promise<DaemonState> {
 
 /**
  * Extended test fixture that provides an authenticated page.
- * Uses `addInitScript` to inject the JWT into localStorage BEFORE any page
- * scripts execute, avoiding race conditions with the auth middleware.
+ * The daemon authenticates the browser via an HttpOnly session cookie (the JWT
+ * is never exposed to page JS), so the fixture seeds that cookie into the
+ * browser context before navigation, mirroring a real logged-in session.
  */
 export const test = base.extend<{
     daemonState: DaemonState;
@@ -38,15 +40,17 @@ export const test = base.extend<{
     authenticatedPage: async ({ page }, use) => {
         const state = await loadDaemonState();
 
-        // Inject the token into localStorage before any page scripts run.
-        // This prevents the auth middleware from seeing a missing token and
-        // emitting 401 → token removal → auth modal.
-        await page.addInitScript(
-            ({ key, value }) => {
-                localStorage.setItem(key, value);
+        // Seed the session cookie so API/SSE requests carry it, exactly as a
+        // real login would. Path "/" so it rides every request the tests make.
+        await page.context().addCookies([
+            {
+                name: AUTH_COOKIE_NAME,
+                value: state.token,
+                url: `http://127.0.0.1:${String(state.port)}`,
+                httpOnly: true,
+                sameSite: "Strict",
             },
-            { key: AUTH_TOKEN_KEY, value: state.token },
-        );
+        ]);
 
         await use(page);
     },

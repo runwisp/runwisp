@@ -664,6 +664,41 @@ func TestCronTrust_GroupWritableFileRefusedEvenIfSticky(t *testing.T) {
 	assert.Contains(t, err.Error(), "writable by its group")
 }
 
+// TestCronTrust_SymlinkRefused: a symlinked source can be repointed at attacker
+// content after the ownership check, so the check must reject it outright rather
+// than follow it to a (currently) trusted target.
+func TestCronTrust_SymlinkRefused(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real")
+	require.NoError(t, os.WriteFile(real, []byte("0 3 * * * /bin/true\n"), 0o600))
+	link := filepath.Join(dir, "link")
+	require.NoError(t, os.Symlink(real, link))
+
+	err := assertCronFileTrusted(link, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "symlink")
+}
+
+// TestCronTrust_WorldWritableAncestorRefused: a writable directory anywhere on
+// the path lets an attacker swap a component and redirect the file, so every
+// ancestor is validated, not just the immediate parent.
+func TestCronTrust_WorldWritableAncestorRefused(t *testing.T) {
+	dir := t.TempDir()
+	// grandparent is world-writable (non-sticky) — the hole. Chmod after Mkdir
+	// so the umask doesn't quietly strip the write bits we are testing.
+	loose := filepath.Join(dir, "loose")
+	require.NoError(t, os.Mkdir(loose, 0o700))
+	sub := filepath.Join(loose, "sub")
+	require.NoError(t, os.Mkdir(sub, 0o700))
+	path := filepath.Join(sub, "cronfile")
+	require.NoError(t, os.WriteFile(path, []byte("0 3 * * * /bin/true\n"), 0o600))
+	require.NoError(t, os.Chmod(loose, 0o777))
+
+	err := assertCronFileTrusted(path, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "world-writable")
+}
+
 // TestCronTrust_UnresolvableRunAsRefused: the run-as account is what corroborates
 // the ownership of a spool file, so an account this machine can't resolve leaves
 // the one check standing between that file and daemon-privileged execution

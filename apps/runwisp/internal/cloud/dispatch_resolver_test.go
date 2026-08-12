@@ -158,13 +158,31 @@ func TestResolveDispatchTask_ConfigTaskFound(t *testing.T) {
 	avail := executor.Availability{
 		Config: executor.BackendStatus{Available: true},
 	}
-	tasks := map[string]*model.Task{"mytask": {Name: "mytask"}}
+	tasks := map[string]*model.Task{"mytask": {Name: "mytask", APITrigger: true}}
 	h := newDispatchHandler(avail, tasks)
 
 	name, configBacked, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "mytask")})
 	require.NoError(t, err)
 	assert.Equal(t, "mytask", name)
 	assert.True(t, configBacked)
+}
+
+// TestResolveDispatchTask_ConfigTaskAPITriggerDisabled: api_trigger=false means
+// the task is schedule-only everywhere, so the control plane cannot trigger it
+// either — mirroring the REST surface's ErrAPIDisabled.
+func TestResolveDispatchTask_ConfigTaskAPITriggerDisabled(t *testing.T) {
+	avail := executor.Availability{
+		Config: executor.BackendStatus{Available: true},
+	}
+	tasks := map[string]*model.Task{"mytask": {Name: "mytask", APITrigger: false}}
+	h := newDispatchHandler(avail, tasks)
+
+	_, _, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "mytask")})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindConflict, ce.Kind)
+	assert.Contains(t, ce.Message, "api_trigger")
 }
 
 func TestResolveDispatchTask_ConfigTaskNotFound(t *testing.T) {

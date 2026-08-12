@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 const (
@@ -148,7 +150,11 @@ func (p *Pane) SetRegion(stream string, rows []string) {
 		if p.regions == nil {
 			p.regions = make(map[string]regionFrame)
 		}
-		p.regions[stream] = regionFrame{rows: append([]string(nil), rows...)}
+		sanitized := make([]string, len(rows))
+		for i, r := range rows {
+			sanitized[i] = uikit.SanitizeControls(r)
+		}
+		p.regions[stream] = regionFrame{rows: sanitized}
 	}
 	if p.Follow {
 		p.Scroll = p.maxScroll()
@@ -248,7 +254,7 @@ func (p *Pane) AppendLogLine(n int64, stream, text string, frameCount int) {
 	if len(p.Lines) == 0 && p.FirstLoadedLine == 0 && n > 0 {
 		p.FirstLoadedLine = int(n)
 	}
-	p.Lines = append(p.Lines, Line{Stream: stream, Text: text, FrameCount: frameCount})
+	p.Lines = append(p.Lines, Line{Stream: stream, Text: uikit.SanitizeControls(text), FrameCount: frameCount})
 	if int(n)+1 > p.TotalLines {
 		p.TotalLines = int(n) + 1
 	}
@@ -540,7 +546,12 @@ func (p *Pane) PrependLines(lines []Line, firstLine int) {
 	if len(lines) == 0 {
 		return
 	}
-	p.Lines = append(append([]Line(nil), lines...), p.Lines...)
+	sanitized := make([]Line, len(lines))
+	for i, l := range lines {
+		l.Text = uikit.SanitizeControls(l.Text)
+		sanitized[i] = l
+	}
+	p.Lines = append(sanitized, p.Lines...)
 	p.FirstLoadedLine = firstLine
 	if p.FirstLoadedLine < 0 {
 		p.FirstLoadedLine = 0

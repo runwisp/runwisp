@@ -6,19 +6,19 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>{{.Label}}</string>
+    <string>{{.Label | xml}}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{{.Binary}}</string>
+        <string>{{.Binary | xml}}</string>
         <string>daemon</string>
         <string>--config</string>
-        <string>{{.Config}}</string>
+        <string>{{.Config | xml}}</string>
         <string>--data</string>
-        <string>{{.DataDir}}</string>
+        <string>{{.DataDir | xml}}</string>
         <string>--port</string>
         <string>{{.Port}}</string>
         <string>--host</string>
-        <string>{{.Host}}</string>
+        <string>{{.Host | xml}}</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -28,15 +28,15 @@
         <false/>
     </dict>
     <key>StandardOutPath</key>
-    <string>{{.LogPath}}</string>
+    <string>{{.LogPath | xml}}</string>
     <key>StandardErrorPath</key>
-    <string>{{.LogPath}}</string>
+    <string>{{.LogPath | xml}}</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>HOME</key>
-        <string>{{.Home}}</string>
+        <string>{{.Home | xml}}</string>
         <key>PATH</key>
-        <string>{{.Path}}</string>
+        <string>{{.Path | xml}}</string>
         <key>LANG</key>
         <string>C.UTF-8</string>
         <key>RUNWISP_SERVICE_MANAGED</key>

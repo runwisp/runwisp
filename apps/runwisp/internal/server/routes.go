@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -100,15 +102,21 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		// CSP: allow same-origin scripts/styles (Svelte needs unsafe-inline for styles),
-		// data URIs for images, and ws/wss for SSE and WebSocket streams.
+		// CSP: script-src and style-src are intentionally NOT set here. The Svelte
+		// dashboard ships a per-page <meta> CSP (hash mode — see svelte.config.js)
+		// that pins script-src to 'self' plus the hashes of SvelteKit's own inline
+		// bootstrap, so no 'unsafe-inline' for scripts is needed and an injected
+		// inline <script> in the page body cannot execute. Setting script-src in
+		// this header too would intersect with the meta and break the app (the
+		// header can't carry the per-build hashes). This header covers everything
+		// else and applies to non-HTML responses (JSON/SSE) that carry no meta.
 		w.Header().Set("Content-Security-Policy",
-			"default-src 'self'; "+
-				"script-src 'self' 'unsafe-inline'; "+
-				"style-src 'self' 'unsafe-inline'; "+
-				"img-src 'self' data:; "+
+			"img-src 'self' data:; "+
 				"connect-src 'self' ws: wss:; "+
 				"font-src 'self'; "+
+				"object-src 'none'; "+
+				"base-uri 'self'; "+
+				"form-action 'self'; "+
 				"frame-ancestors 'none'",
 		)
 		// HSTS only over TLS: sending it on a plain-HTTP response would pin a
@@ -119,6 +127,72 @@ func securityHeaders(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// csrfGuard blocks cross-origin state-changing requests that ride on the
+// ambient session cookie. SameSite=Strict already stops classic cross-*site*
+// requests, but not cross-*origin* ones from the same site — another port on
+// localhost, or a compromised sibling subdomain — so a same-site page could
+// otherwise POST /api/tasks/{name}/run using the victim's cookie.
+//
+// The guard fires only for the exact conditions that make CSRF possible: an
+// unsafe method, authenticated by a session cookie the browser attaches
+// automatically. It is deliberately inert for:
+//   - safe methods (GET/HEAD/OPTIONS),
+//   - local-trusted requests on the Unix socket (CLI/TUI),
+//   - Bearer-authenticated requests (a cross-site page cannot set an
+//     Authorization header on a simple request), and
+//   - requests with no session cookie at all (nothing ambient to abuse) —
+//     which keeps headless TCP API clients working under RUNWISP_NO_AUTH.
+func csrfGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			next.ServeHTTP(w, r)
+			return
+		}
+		if IsLocalTrusted(r) || r.Header.Get("Authorization") != "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Launch-ticket mint is CSRF-safe on its own: its only effect is
+		// returning a short-lived ticket in the response body, which the
+		// browser's same-origin policy stops a cross-origin attacker from
+		// reading. The remote-TUI/CLI hand-off mints it without a browser Origin.
+		if r.URL.Path == "/api/auth/launch-ticket" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if _, err := r.Cookie(auth.CookieName); err != nil {
+			// No session cookie — not a cookie-authenticated request.
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !sameOriginRequest(r) {
+			http.Error(w, "cross-origin request refused", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// sameOriginRequest reports whether the request's Origin (or, as a fallback,
+// Referer) names the same host:port the request was sent to. A state-changing
+// browser request always carries one of the two; their absence on a
+// cookie-authenticated unsafe method is itself suspicious and is refused.
+func sameOriginRequest(r *http.Request) bool {
+	src := r.Header.Get("Origin")
+	if src == "" {
+		src = r.Header.Get("Referer")
+	}
+	if src == "" {
+		return false
+	}
+	u, err := url.Parse(src)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return strings.EqualFold(u.Host, r.Host)
 }
 
 func (srv *Server) setupRoutes() error {
@@ -194,6 +268,7 @@ func (srv *Server) setupRoutes() error {
 	// body-size cap stays in place.
 	srv.router.Group(func(r chi.Router) {
 		r.Use(maxBodySize(maxProtectedBodySize))
+		r.Use(csrfGuard)
 		if !srv.noAuth {
 			r.Use(authOrLocalTrusted(srv.auth))
 		}

@@ -246,6 +246,7 @@ func resolveServiceOptions(cmd *cobra.Command, deps autostart.Deps, f Flags, sys
 // Any non-fatal warning (a path under /tmp, a symlink that may not survive an
 // upgrade) goes to stderr rather than blocking the install.
 func resolveUnitBinary(stderr io.Writer, deps autostart.Deps, override string) (string, error) {
+	opts := autostart.ResolveBinaryOptions{HomeDir: deps.Home}
 	exe := override
 	if exe == "" {
 		var err error
@@ -253,12 +254,18 @@ func resolveUnitBinary(stderr io.Writer, deps autostart.Deps, override string) (
 		if err != nil {
 			return "", fmt.Errorf("locate runwisp binary: %w", err)
 		}
+		// Auto-detected: the binary is the running process, so it exists on
+		// disk here. Resolve symlinks and require a regular executable so we
+		// never bake an unresolvable or non-executable path into a root
+		// ExecStart. An explicit --binary override skips these local-FS checks
+		// on purpose — it commonly names a path that only exists on the deploy
+		// target (Ansible/Nix). Injection is still blocked unconditionally by
+		// the template's control-char rejection and escaping.
+		opts.EvalSymlinks = filepath.EvalSymlinks
+		opts.Stat = os.Stat
 	}
-	binary, warning, err := autostart.ResolveBinary(autostart.ResolveBinaryOptions{
-		ExecutablePath: exe,
-		EvalSymlinks:   filepath.EvalSymlinks,
-		HomeDir:        deps.Home,
-	})
+	opts.ExecutablePath = exe
+	binary, warning, err := autostart.ResolveBinary(opts)
 	if err != nil {
 		return "", &userFacingError{
 			title:   "binary path is not durable",

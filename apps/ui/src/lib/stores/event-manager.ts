@@ -49,7 +49,7 @@ export interface EventManagerOptions {
     path: string;
     /**
      * Factory for the underlying EventSource. Defaults to the auth-aware factory
-     * (Bearer header when JWT is present in localStorage; cookie auth otherwise).
+     * (opens with withCredentials so the HttpOnly session cookie is sent).
      */
     createEventSource?: EventSourceFactory;
     /** Resolves the API base URL at connection time. */

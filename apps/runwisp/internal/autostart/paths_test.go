@@ -261,18 +261,19 @@ func TestResolveBinary_EmptyPathErrors(t *testing.T) {
 	assert.Contains(t, err.Error(), "empty executable path")
 }
 
-func TestResolveBinary_EvalSymlinksErrorIgnored(t *testing.T) {
-	// On error the function falls back to the unresolved exe path —
-	// confirm that flow doesn't surface the symlink error.
-	p, _, err := ResolveBinary(ResolveBinaryOptions{
+func TestResolveBinary_EvalSymlinksErrorFailsClosed(t *testing.T) {
+	// A symlink-resolution error means the path doesn't resolve to a real file.
+	// It must fail the install rather than bake an unresolvable path into a
+	// root-run ExecStart.
+	_, _, err := ResolveBinary(ResolveBinaryOptions{
 		ExecutablePath: "/usr/local/bin/runwisp",
 		EvalSymlinks: func(string) (string, error) {
 			return "", errors.New("nope")
 		},
 		HomeDir: "/home/alice",
 	})
-	require.NoError(t, err)
-	assert.Equal(t, "/usr/local/bin/runwisp", p)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nope")
 }
 
 func TestResolveBinary_RelativeBecomesAbsolute(t *testing.T) {

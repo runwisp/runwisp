@@ -191,6 +191,12 @@ func resolveFingerprint(ctx context.Context, configRepo storage.ConfigRepository
 func loadConfigFile(path string, cloudEnabled bool) (*config.Config, bool, error) {
 	cfg, err := config.Load(path)
 	if err == nil {
+		// A root daemon executes whatever the config says; re-assert the file
+		// (and its includes) are not reachable through a user-writable path or a
+		// repointable symlink before trusting it. No-op when unprivileged.
+		if terr := config.AssertPrivilegedConfigTrust(cfg, path); terr != nil {
+			return nil, false, terr
+		}
 		return cfg, false, nil
 	}
 
