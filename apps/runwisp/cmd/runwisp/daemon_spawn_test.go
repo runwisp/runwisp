@@ -279,6 +279,37 @@ func TestWaitForDaemon_SurfacesEmptyLogTailNote(t *testing.T) {
 	assert.Contains(t, err.Error(), "timed out")
 }
 
+func TestWaitForDaemon_SuccessDoesNotDumpLogTail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "daemon.log")
+	require.NoError(t, os.WriteFile(logPath, []byte("[INFO] ready, listening\n"), 0o600))
+
+	// Capture stderr: the drainer already streams lines live, so a successful
+	// startup must not repeat them in a "--- daemon log ---" tail block.
+	orig := os.Stderr
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stderr = w
+	var buf bytes.Buffer
+	done := make(chan struct{})
+	go func() { _, _ = buf.ReadFrom(r); close(done) }()
+
+	client := apiclient.New(srv.URL, "")
+	waitErr := waitForDaemon(client, logPath, time.Second, Flags{DataDir: dir})
+
+	w.Close()
+	os.Stderr = orig
+	<-done
+
+	require.NoError(t, waitErr)
+	assert.NotContains(t, buf.String(), "--- daemon log")
+}
+
 func TestWaitForDaemon_PromotesBindFailureHint(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
