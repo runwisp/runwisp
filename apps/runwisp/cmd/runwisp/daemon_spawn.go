@@ -257,17 +257,19 @@ func waitForDaemon(client *apiclient.Client, logPath string, timeout time.Durati
 	defer ticker.Stop()
 
 	startupErr, timedOut := waitForDaemonLoop(client, drainer, pidPath, deadline, ticker, f.DataDir)
+	if startupErr == nil {
+		return nil
+	}
 
-	// On any failure path, surface the daemon log so the user can see the
-	// underlying cause. Also promote a recognised bind error to a clearer
-	// message — this is the most common cause of a silent startup failure.
+	// The drainer has already streamed every log line live, so we don't reprint
+	// them. We still read the tail to promote a recognised bind error to a
+	// clearer message (the most common silent-startup cause), and to explain a
+	// timeout when the daemon logged nothing at all.
 	logTail := tailFile(logPath, 4096)
 	if hint := bindFailureHint(logTail, f.Host, f.Port); hint != nil {
 		return hint
 	}
-	if logTail != "" {
-		fmt.Fprintf(os.Stderr, "\n--- daemon log (%s) ---\n%s\n---\n\n", logPath, strings.TrimSpace(logTail))
-	} else if timedOut {
+	if timedOut && logTail == "" {
 		fmt.Fprintf(os.Stderr, "(daemon log at %s is empty)\n", logPath)
 	}
 	return startupErr
