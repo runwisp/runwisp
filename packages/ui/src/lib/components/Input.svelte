@@ -33,7 +33,7 @@
         ...restProps
     }: Props = $props();
 
-    const generatedId = `input-${Math.random().toString(36).slice(2, 10)}`;
+    const generatedId = $props.id();
     const inputId = $derived(id ?? generatedId);
 
     const sizeClasses: Record<InputSize, string> = {

@@ -40,6 +40,12 @@ class FakeEventSource implements SSEStream {
     fire(eventType: string, payload: unknown): void {
         this.#target.dispatchEvent(new MessageEvent(eventType, { data: JSON.stringify(payload) }));
     }
+
+    fireWithId(eventType: string, payload: unknown, lastEventId: string): void {
+        this.#target.dispatchEvent(
+            new MessageEvent(eventType, { data: JSON.stringify(payload), lastEventId }),
+        );
+    }
 }
 
 // In-memory BroadcastChannel: post reaches every OTHER connected bus, never the
@@ -274,6 +280,55 @@ describe("SharedAppStream", () => {
 
         expect(followerReceived).toHaveLength(1);
         expect(followerReceived[0]).toContain("r3");
+    });
+
+    it("a promoted leader resumes from the id the cohort last saw", () => {
+        const bus = new BusHub();
+        const election = new ElectionHub();
+        const connectUrls: string[] = [];
+
+        function makeSeedTab() {
+            let leaderES: FakeEventSource | null = null;
+            const stream = new SharedAppStream({
+                path: "/api/stream",
+                createBus: () => bus.create(),
+                createElector: () => election.create(),
+                createLeaderManager: (seed) => {
+                    const es = new FakeEventSource();
+                    leaderES = es;
+                    return new EventManager({
+                        path: "/api/stream",
+                        initialLastEventId: seed,
+                        createEventSource: (url) => {
+                            connectUrls.push(url);
+                            return es;
+                        },
+                        getApiUrl: () => "http://test",
+                    });
+                },
+            });
+            return { stream, leaderES: () => leaderES };
+        }
+
+        const a = makeSeedTab();
+        const b = makeSeedTab();
+
+        // A wins the election (subscribes first); B rides the bus as a follower.
+        const unsubA = a.stream.subscribe("run.created", () => {});
+        b.stream.subscribe("run.created", () => {});
+
+        // Leader A receives an event carrying id "5"; it dispatches locally and
+        // rebroadcasts the id, so BOTH tabs record it as the high-water cursor.
+        a.leaderES()?.open();
+        a.leaderES()?.fireWithId("run.created", { run: { id: "r1" } }, "5");
+
+        // A drops its last subscriber and goes away → B is promoted and opens a
+        // fresh EventSource, which must resume from id 5 (native Last-Event-ID is
+        // empty on a brand-new EventSource) so the server replays the handoff gap.
+        unsubA();
+
+        expect(b.leaderES()).not.toBeNull();
+        expect(connectUrls.at(-1)).toBe("http://test/api/stream?lastEventId=5");
     });
 
     it("syncs a late-joining follower to the current open state", () => {

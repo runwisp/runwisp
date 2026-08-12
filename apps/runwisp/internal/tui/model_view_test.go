@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 )
@@ -16,7 +16,7 @@ import (
 func TestView_NotReadyShowsInitializing(t *testing.T) {
 	m := newTestModel(nil)
 	// Default ready is false until handleWindowSize fires.
-	if got := m.View(); got != "Initializing..." {
+	if got := m.View().Content; got != "Initializing..." {
 		t.Fatalf("not-ready View() = %q", got)
 	}
 }
@@ -24,7 +24,7 @@ func TestView_NotReadyShowsInitializing(t *testing.T) {
 func TestView_ReadyRendersBodyAndHelpBar(t *testing.T) {
 	m := newTestModel(nil)
 	m, _ = m.applyWindowSize(120, 30)
-	got := m.View()
+	got := m.View().Content
 	if got == "" {
 		t.Fatal("expected non-empty View output")
 	}
@@ -133,7 +133,7 @@ func TestBuildSidebarHelpText_ServiceShowsRestart(t *testing.T) {
 	m := newTestModel([]model.TaskBrief{{Name: "svc", Kind: model.KindService}})
 	// Place the cursor on the service entry (item 1) without pressing Enter so
 	// CursorTaskName returns the service.
-	m.sidebar.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m.sidebar.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	got := m.buildSidebarHelpText()
 	if !strings.Contains(got, "restart") {
 		t.Fatalf("expected restart hint for service, got: %q", got)

@@ -4,17 +4,18 @@
 package execlist
 
 import (
+	"image/color"
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 // focusBg returns the header background for a focused or hovered field:
 // highlighted when either is true, the default header background otherwise.
-func focusBg(focused, hovered bool) lipgloss.Color {
+func focusBg(focused, hovered bool) color.Color {
 	if focused || hovered {
 		return uikit.ColorSidebarActive
 	}

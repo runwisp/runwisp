@@ -4,7 +4,7 @@
 package execlist
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -155,7 +155,7 @@ func (v *ExecView) Update(msg tea.Msg) tea.Cmd {
 	if !v.focused {
 		return nil
 	}
-	keyMsg, ok := msg.(tea.KeyMsg)
+	keyMsg, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil
 	}

@@ -27,7 +27,7 @@ func TestLogWriter_BasicWrite(t *testing.T) {
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
-	_, err = w.Write([]byte("hello\n"))
+	_, err = w.WriteLineEvent("hello", logutil.StreamStdout)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
@@ -45,10 +45,10 @@ func TestLogWriter_DropNewOverflow(t *testing.T) {
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
-	chunk := strings.Repeat("x", 50) + "\n"
-	w.Write([]byte(chunk))
-	w.Write([]byte(chunk)) // should trigger truncation
-	w.Write([]byte("this should be silently dropped\n"))
+	chunk := strings.Repeat("x", 50)
+	w.WriteLineEvent(chunk, logutil.StreamStdout)
+	w.WriteLineEvent(chunk, logutil.StreamStdout) // should trigger truncation
+	w.WriteLineEvent("this should be silently dropped", logutil.StreamStdout)
 	require.NoError(t, w.Close())
 
 	assert.True(t, w.truncated)
@@ -68,8 +68,8 @@ func TestLogWriter_KillTaskOverflow(t *testing.T) {
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
-	chunk := strings.Repeat("x", 110) + "\n"
-	w.Write([]byte(chunk))
+	chunk := strings.Repeat("x", 110)
+	w.WriteLineEvent(chunk, logutil.StreamStdout)
 	require.NoError(t, w.Close())
 
 	assert.True(t, cancelled)
@@ -85,7 +85,7 @@ func TestLogWriter_DropNewDoesNotMarkKilledByPolicy(t *testing.T) {
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
-	w.Write([]byte(strings.Repeat("x", 110) + "\n"))
+	w.WriteLineEvent(strings.Repeat("x", 110), logutil.StreamStdout)
 	require.NoError(t, w.Close())
 
 	assert.False(t, w.KilledByPolicy(),
@@ -118,13 +118,13 @@ func TestLogWriter_DiskPressure_DropNew_FiresCallback(t *testing.T) {
 	w.diskCheckInterval = 1 // probe on every write past the first
 
 	// First write does not trip (currentOffset==0, gap not > interval).
-	_, err = w.Write([]byte("first line\n"))
+	_, err = w.WriteLineEvent("first line", logutil.StreamStdout)
 	require.NoError(t, err)
 	// Second write must probe and trip.
-	_, err = w.Write([]byte("second line — should be dropped\n"))
+	_, err = w.WriteLineEvent("second line — should be dropped", logutil.StreamStdout)
 	require.NoError(t, err)
 	// Third write also drops, must NOT re-fire callback.
-	_, err = w.Write([]byte("third line\n"))
+	_, err = w.WriteLineEvent("third line", logutil.StreamStdout)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
@@ -160,9 +160,9 @@ func TestLogWriter_DiskPressure_KillTask_CancelsContext(t *testing.T) {
 	require.NoError(t, err)
 	w.diskCheckInterval = 1
 
-	_, err = w.Write([]byte("first\n"))
+	_, err = w.WriteLineEvent("first", logutil.StreamStdout)
 	require.NoError(t, err)
-	_, err = w.Write([]byte("trigger\n"))
+	_, err = w.WriteLineEvent("trigger", logutil.StreamStdout)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
@@ -201,9 +201,9 @@ func TestLogWriter_DiskPressure_SurvivesRotation(t *testing.T) {
 		return math.MaxInt64 // plenty of room before the first rotation
 	}
 
-	line := strings.Repeat("x", 100) + "\n" // 101 bytes
+	line := strings.Repeat("x", 100) // 101 bytes once formatted
 	for i := 0; i < 20; i++ {
-		_, err := w.Write([]byte(line))
+		_, err := w.WriteLineEvent(line, logutil.StreamStdout)
 		require.NoError(t, err)
 	}
 	require.NoError(t, w.Close())
@@ -219,14 +219,14 @@ func TestLogWriter_DropOldRotation(t *testing.T) {
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
-	first := strings.Repeat("a", 100) + "\n"
-	w.Write([]byte(first))
+	first := strings.Repeat("a", 100)
+	w.WriteLineEvent(first, logutil.StreamStdout)
 
-	second := strings.Repeat("b", 100) + "\n"
-	w.Write([]byte(second))
+	second := strings.Repeat("b", 100)
+	w.WriteLineEvent(second, logutil.StreamStdout)
 
-	third := "latest output\n"
-	w.Write([]byte(third))
+	third := "latest output"
+	w.WriteLineEvent(third, logutil.StreamStdout)
 	require.NoError(t, w.Close())
 
 	assert.True(t, w.truncated)
@@ -252,9 +252,9 @@ func TestLogWriter_UnlimitedSize(t *testing.T) {
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
-	bigChunk := strings.Repeat("x", 10000) + "\n"
+	bigChunk := strings.Repeat("x", 10000)
 	for i := 0; i < 10; i++ {
-		w.Write([]byte(bigChunk))
+		w.WriteLineEvent(bigChunk, logutil.StreamStdout)
 	}
 	require.NoError(t, w.Close())
 
@@ -272,9 +272,9 @@ func TestLogWriter_MultipleRotationsMeta(t *testing.T) {
 	require.NoError(t, err)
 
 	// Write enough to trigger multiple rotations
-	line := strings.Repeat("x", 140) + "\n" // 141 bytes per line
+	line := strings.Repeat("x", 140) // 141 bytes per line once formatted
 	for i := 0; i < 20; i++ {
-		w.Write([]byte(line))
+		w.WriteLineEvent(line, logutil.StreamStdout)
 	}
 	require.NoError(t, w.Close())
 
@@ -300,8 +300,8 @@ func TestLogWriter_NoRotationMeta(t *testing.T) {
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
-	w.Write([]byte("line1\n"))
-	w.Write([]byte("line2\n"))
+	w.WriteLineEvent("line1", logutil.StreamStdout)
+	w.WriteLineEvent("line2", logutil.StreamStdout)
 	require.NoError(t, w.Close())
 
 	meta := logutil.ReadLogMeta(opts.LogPath)
@@ -330,7 +330,7 @@ func TestLogWriter_OnlyLogVisibleInListing(t *testing.T) {
 
 	require.NoError(t, w.WriteFrameHistory(0, [][]string{{"0%"}, {"100%"}}))
 	for i := 0; i < 1100; i++ { // cross the index threshold
-		w.Write([]byte("line\n"))
+		w.WriteLineEvent("line", logutil.StreamStdout)
 	}
 	require.NoError(t, w.Close())
 
@@ -361,9 +361,9 @@ func TestLogWriter_FramesSurviveRotation(t *testing.T) {
 
 	require.NoError(t, w.WriteFrameHistory(0, [][]string{{"0%"}, {"50%"}}))
 
-	line := strings.Repeat("x", 100) + "\n"
+	line := strings.Repeat("x", 100)
 	for i := 0; i < 6; i++ { // force at least one rotation
-		w.Write([]byte(line))
+		w.WriteLineEvent(line, logutil.StreamStdout)
 	}
 	require.NoError(t, w.Close())
 
@@ -386,7 +386,7 @@ func TestLogWriter_ShortRunRecordsNoIndex(t *testing.T) {
 	require.NoError(t, err)
 
 	for i := 0; i < 100; i++ {
-		w.Write([]byte("line\n"))
+		w.WriteLineEvent("line", logutil.StreamStdout)
 	}
 	require.NoError(t, w.Close())
 
@@ -404,7 +404,7 @@ func TestLogWriter_IndexAppearsAtThreshold(t *testing.T) {
 	require.NoError(t, err)
 
 	for i := 0; i < 1100; i++ {
-		w.Write([]byte("line\n"))
+		w.WriteLineEvent("line", logutil.StreamStdout)
 	}
 	require.NoError(t, w.Close())
 
@@ -496,7 +496,7 @@ func TestLogWriter_InjectedClockStampsSystemLine(t *testing.T) {
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
-	w.Write([]byte(strings.Repeat("x", 110) + "\n"))
+	w.WriteLineEvent(strings.Repeat("x", 110), logutil.StreamStdout)
 	require.NoError(t, w.Close())
 
 	data, err := os.ReadFile(opts.LogPath)

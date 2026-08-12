@@ -167,6 +167,31 @@ func TestRestartServiceInstancesCancelsAll(t *testing.T) {
 	started.waitFor(t, 6)
 }
 
+// TestRestartServiceInstancesRespawnsOnFailurePolicy is the regression test for
+// the bug where restarting a running on_failure service (the policy every
+// compose-imported service uses) cancelled every instance but never brought
+// them back: an operator cancel exits with ReasonStopped, which on_failure does
+// not count as a restartable failure. The operator's Restart is an explicit
+// "cycle these instances", so the slots must refill regardless of policy.
+func TestRestartServiceInstancesRespawnsOnFailurePolicy(t *testing.T) {
+	djm, _, eb := newGatedManager(t)
+	jm := TaskManager(djm)
+
+	task := serviceTask("svc", 2)
+	task.Restart = model.RestartOnFailure
+	jm.UpsertTask(task)
+
+	started := watchRuns(eb, events.EventRunStarted)
+	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+	started.waitFor(t, 2)
+
+	require.NoError(t, jm.RestartServiceInstances("svc"))
+
+	// Two instances cancelled and refilled; four starts total proves the
+	// on_failure service came back rather than just stopping.
+	started.waitFor(t, 4)
+}
+
 // TestServiceInstanceRefillsAfterManualStop is the regression test for the bug
 // where `Stop` on a single service instance left the slot permanently empty.
 // A service must self-heal: cancelling one instance must refill that same

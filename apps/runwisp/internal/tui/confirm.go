@@ -4,11 +4,12 @@
 package tui
 
 import (
+	"image/color"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -73,14 +74,13 @@ func (d *ConfirmDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
 		return nil, false
 	}
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		return d.handleKeyMsg(msg.String())
-	case tea.MouseMsg:
-		if msg.Action == tea.MouseActionMotion {
-			d.updateHover(msg.X, msg.Y)
-			return nil, false
-		}
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+	case tea.MouseMotionMsg:
+		d.updateHover(msg.X, msg.Y)
+		return nil, false
+	case tea.MouseClickMsg:
+		if msg.Button == tea.MouseLeft {
 			return d.handleClick(msg.X, msg.Y)
 		}
 	}
@@ -311,7 +311,7 @@ func modalDimensions(screenWidth, desiredWidth, minWidth int) (int, int) {
 	return dialogWidth, innerWidth
 }
 
-func renderModalBox(screenWidth, screenHeight, dialogWidth int, accent lipgloss.Color, lines []string) modalBox {
+func renderModalBox(screenWidth, screenHeight, dialogWidth int, accent color.Color, lines []string) modalBox {
 	card := lipgloss.NewStyle().
 		Width(dialogWidth).
 		Background(uikit.ColorBgLight).
@@ -332,12 +332,12 @@ func renderModalBox(screenWidth, screenHeight, dialogWidth int, accent lipgloss.
 		view: lipgloss.Place(screenWidth, screenHeight,
 			lipgloss.Center, lipgloss.Center,
 			box,
-			lipgloss.WithWhitespaceBackground(uikit.ColorBg),
+			lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(uikit.ColorBg)),
 		),
 	}
 }
 
-func modalSurfaceLine(text string, innerWidth int, fg lipgloss.Color, bold bool) string {
+func modalSurfaceLine(text string, innerWidth int, fg color.Color, bold bool) string {
 	style := lipgloss.NewStyle().
 		Background(uikit.ColorBgLight).
 		Foreground(fg).

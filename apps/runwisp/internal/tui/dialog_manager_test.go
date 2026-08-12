@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -66,7 +66,7 @@ func TestDialogManager_RunParamsLifecycle(t *testing.T) {
 		t.Fatal("expected run-params dialog after ShowRunParams")
 	}
 
-	if !dm.UpdateRunParams(tea.KeyMsg{Type: tea.KeyEscape}) {
+	if !dm.UpdateRunParams(tea.KeyPressMsg{Code: tea.KeyEscape}) {
 		t.Fatal("expected run-params dialog to close on Esc")
 	}
 	if dm.HasRunParams() {
@@ -81,7 +81,7 @@ func TestDialogManager_UpdateConfirm_Closes(t *testing.T) {
 
 	// Pressing Esc should close the dialog. Production dismisses via
 	// UpdateConfirmKeep + DismissConfirm.
-	_, closed := dm.UpdateConfirmKeep(tea.KeyMsg{Type: tea.KeyEscape})
+	_, closed := dm.UpdateConfirmKeep(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if !closed {
 		t.Fatal("expected confirm dialog to close on Esc")
 	}
@@ -95,7 +95,7 @@ func TestDialogManager_UpdateCopy_Closes(t *testing.T) {
 	var dm DialogManager
 	dm.ShowCopy("Test", "value")
 
-	closed := dm.UpdateCopy(tea.KeyMsg{Type: tea.KeyEscape})
+	closed := dm.UpdateCopy(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if !closed {
 		t.Fatal("expected copy dialog to close on Esc")
 	}
@@ -331,7 +331,7 @@ func TestDialogManager_UpdateConfirmKeep(t *testing.T) {
 	dm.ShowConfirm(d)
 
 	// Press Esc — normally closes; UpdateConfirmKeep must NOT dismiss it.
-	_, closed := dm.UpdateConfirmKeep(tea.KeyMsg{Type: tea.KeyEscape})
+	_, closed := dm.UpdateConfirmKeep(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if !closed {
 		t.Fatal("expected closed=true from Esc")
 	}
@@ -349,7 +349,7 @@ func TestDialogManager_UpdateConfirmKeep_YesCmd(t *testing.T) {
 	dm.ShowConfirm(d)
 
 	// Drive the keyboard shortcut for "yes".
-	cmd, closed := dm.UpdateConfirmKeep(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	cmd, closed := dm.UpdateConfirmKeep(tea.KeyPressMsg{Code: 'y', Text: "y"})
 	if !closed {
 		t.Fatal("expected closed=true on y")
 	}
@@ -379,7 +379,7 @@ func TestDialogManager_ParamFormLifecycle(t *testing.T) {
 	}
 
 	// Esc closes the form; UpdateParamForm reports closed and clears it.
-	_, closed := dm.UpdateParamForm(tea.KeyMsg{Type: tea.KeyEscape})
+	_, closed := dm.UpdateParamForm(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if !closed {
 		t.Fatal("expected param form to close on Esc")
 	}
@@ -420,7 +420,7 @@ func TestDialogManager_TaskDetailLifecycle(t *testing.T) {
 	dm.ApplyTaskSummary(uikit.TaskSummaryMsg{TaskName: "alpha", Total: 5, Success: 4, Failed: 1})
 
 	// Esc closes the inspector.
-	if !dm.UpdateTaskDetail(tea.KeyMsg{Type: tea.KeyEscape}) {
+	if !dm.UpdateTaskDetail(tea.KeyPressMsg{Code: tea.KeyEscape}) {
 		t.Fatal("expected task detail to close on Esc")
 	}
 	if dm.HasTaskDetail() {
@@ -448,7 +448,7 @@ func TestDialogManager_RunDetailLifecycle(t *testing.T) {
 		t.Fatal("expected run detail after ShowRunDetail")
 	}
 
-	if !dm.UpdateRunDetail(tea.KeyMsg{Type: tea.KeyEscape}) {
+	if !dm.UpdateRunDetail(tea.KeyPressMsg{Code: tea.KeyEscape}) {
 		t.Fatal("expected run detail to close on Esc")
 	}
 	if dm.HasRunDetail() {
@@ -467,7 +467,7 @@ func TestDialogManager_LogHistoryLifecycle(t *testing.T) {
 		t.Fatal("expected log history after ShowLogHistory")
 	}
 
-	if !dm.UpdateLogHistory(tea.KeyMsg{Type: tea.KeyEscape}) {
+	if !dm.UpdateLogHistory(tea.KeyPressMsg{Code: tea.KeyEscape}) {
 		t.Fatal("expected log history to close on Esc")
 	}
 	if dm.HasLogHistory() {
@@ -506,12 +506,12 @@ func TestDialogManager_UpdateHelp_ClosesOnCloseKeys(t *testing.T) {
 		var dm DialogManager
 		dm.ShowHelp()
 
-		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
+		msg := tea.KeyPressMsg{Code: []rune(key)[0], Text: key}
 		if key == "esc" {
-			msg = tea.KeyMsg{Type: tea.KeyEscape}
+			msg = tea.KeyPressMsg{Code: tea.KeyEscape}
 		}
 		if key == "enter" {
-			msg = tea.KeyMsg{Type: tea.KeyEnter}
+			msg = tea.KeyPressMsg{Code: tea.KeyEnter}
 		}
 		if !dm.UpdateHelp(msg) {
 			t.Fatalf("expected %q to close the help dialog", key)
@@ -526,7 +526,7 @@ func TestDialogManager_UpdateHelp_IgnoresOtherKeys(t *testing.T) {
 	var dm DialogManager
 	dm.ShowHelp()
 
-	if dm.UpdateHelp(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")}) {
+	if dm.UpdateHelp(tea.KeyPressMsg{Code: 'x', Text: "x"}) {
 		t.Fatal("expected 'x' to keep the help dialog open")
 	}
 	if !dm.HasHelp() {
@@ -578,7 +578,7 @@ func TestHelpDialog_ScrollsWhenTallerThanScreen(t *testing.T) {
 	}
 
 	// Jump to the end and the last section comes into view.
-	if d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")}) {
+	if d.Update(tea.KeyPressMsg{Code: 'G', Text: "G"}) {
 		t.Fatal("end key should scroll, not close")
 	}
 	bottom := d.View(100, 24)
@@ -590,13 +590,13 @@ func TestHelpDialog_ScrollsWhenTallerThanScreen(t *testing.T) {
 func TestHelpDialog_ScrollKeysKeepOpen(t *testing.T) {
 	d := NewHelpDialog()
 	d.View(100, 24) // prime the viewport/total cache
-	for _, key := range []tea.KeyMsg{
-		{Type: tea.KeyDown},
-		{Type: tea.KeyUp},
-		{Type: tea.KeyPgDown},
-		{Type: tea.KeyPgUp},
-		{Type: tea.KeyHome},
-		{Type: tea.KeyEnd},
+	for _, key := range []tea.KeyPressMsg{
+		{Code: tea.KeyDown},
+		{Code: tea.KeyUp},
+		{Code: tea.KeyPgDown},
+		{Code: tea.KeyPgUp},
+		{Code: tea.KeyHome},
+		{Code: tea.KeyEnd},
 	} {
 		if d.Update(key) {
 			t.Fatalf("scroll key %v should not close the help dialog", key)

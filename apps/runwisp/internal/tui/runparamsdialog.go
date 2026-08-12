@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sort"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -38,14 +38,14 @@ func NewRunParamsDialog(taskName string, params map[string]string) RunParamsDial
 // Update reports whether the dialog should close.
 func (d *RunParamsDialog) Update(msg tea.Msg) bool {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "esc", "enter", "backspace", "q":
 			return true
 		}
-	case tea.MouseMsg:
+	case tea.MouseClickMsg:
 		// Right-click closes; left-click is reserved for terminal text selection.
-		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonRight {
+		if msg.Button == tea.MouseRight {
 			return true
 		}
 	}

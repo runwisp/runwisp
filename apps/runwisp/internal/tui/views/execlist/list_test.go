@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -350,7 +350,7 @@ func TestUpdate_Down_MovesCursor(t *testing.T) {
 	l.SetFocused(true)
 	l.cursor = 0
 
-	l.Update(tea.KeyMsg{Type: tea.KeyDown})
+	l.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 
 	if l.Cursor() != 1 {
 		t.Fatalf("expected cursor=1 after down, got %d", l.Cursor())
@@ -363,7 +363,7 @@ func TestUpdate_Up_MovesCursor(t *testing.T) {
 	l.SetFocused(true)
 	l.cursor = 2
 
-	l.Update(tea.KeyMsg{Type: tea.KeyUp})
+	l.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 
 	if l.Cursor() != 1 {
 		t.Fatalf("expected cursor=1 after up, got %d", l.Cursor())
@@ -376,7 +376,7 @@ func TestUpdate_Down_ClampedAtEnd(t *testing.T) {
 	l.SetFocused(true)
 	l.cursor = 2 // already at end
 
-	l.Update(tea.KeyMsg{Type: tea.KeyDown})
+	l.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 
 	if l.Cursor() != 2 {
 		t.Fatalf("expected cursor to stay at 2, got %d", l.Cursor())
@@ -389,7 +389,7 @@ func TestUpdate_Up_ClampedAtStart(t *testing.T) {
 	l.SetFocused(true)
 	l.cursor = 0
 
-	l.Update(tea.KeyMsg{Type: tea.KeyUp})
+	l.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 
 	if l.Cursor() != 0 {
 		t.Fatalf("expected cursor to stay at 0, got %d", l.Cursor())
@@ -402,7 +402,7 @@ func TestUpdate_Home_JumpsToStart(t *testing.T) {
 	l.SetFocused(true)
 	l.cursor = 7
 
-	l.Update(tea.KeyMsg{Type: tea.KeyHome})
+	l.Update(tea.KeyPressMsg{Code: tea.KeyHome})
 
 	if l.Cursor() != 0 {
 		t.Fatalf("expected cursor=0 after home, got %d", l.Cursor())
@@ -415,7 +415,7 @@ func TestUpdate_End_JumpsToLast(t *testing.T) {
 	l.SetFocused(true)
 	l.cursor = 0
 
-	l.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	l.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 
 	if l.Cursor() != 9 {
 		t.Fatalf("expected cursor=9 after end, got %d", l.Cursor())
@@ -428,7 +428,7 @@ func TestUpdate_NotFocused_NoChange(t *testing.T) {
 	l.SetFocused(false)
 	l.cursor = 2
 
-	l.Update(tea.KeyMsg{Type: tea.KeyDown})
+	l.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 
 	if l.Cursor() != 2 {
 		t.Fatalf("expected cursor unchanged at 2, got %d", l.Cursor())
@@ -442,7 +442,7 @@ func TestUpdate_EmptyList_NoChange(t *testing.T) {
 	l.SetFocused(true)
 
 	// Must not panic on empty list.
-	l.Update(tea.KeyMsg{Type: tea.KeyDown})
+	l.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	if l.Cursor() != 0 {
 		t.Fatalf("expected cursor=0 for empty list, got %d", l.Cursor())
 	}
@@ -514,7 +514,7 @@ func TestUpdate_PageDown_MovesCursor(t *testing.T) {
 	l.SetFocused(true)
 	l.cursor = 0
 
-	l.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	l.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 
 	vpH := l.ViewportHeight()
 	if l.Cursor() != vpH {
@@ -528,7 +528,7 @@ func TestUpdate_PageUp_MovesCursor(t *testing.T) {
 	l.SetFocused(true)
 	l.cursor = 40
 
-	l.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	l.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 
 	vpH := l.ViewportHeight()
 	expected := 40 - vpH
@@ -787,13 +787,13 @@ func TestUpdate_KVim_DownUp(t *testing.T) {
 	l.cursor = 3
 
 	// "k" = up
-	l.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	l.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
 	if l.Cursor() != 2 {
 		t.Fatalf("expected cursor=2 after k, got %d", l.Cursor())
 	}
 
 	// "j" = down
-	l.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	l.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	if l.Cursor() != 3 {
 		t.Fatalf("expected cursor=3 after j, got %d", l.Cursor())
 	}

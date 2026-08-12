@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	"log/slog"
-
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/danielgtaylor/huma/v2/sse"
@@ -345,13 +343,36 @@ func (srv *Server) humaBulkRerunRuns(ctx context.Context, input *BulkRunSelector
 	return &BulkRerunOutput{Body: BulkRerunBody{Triggered: triggered}}, nil
 }
 
+// AppStreamInput carries the resume cursor for the app-event SSE stream. A
+// browser reconnecting the same EventSource resends Last-Event-ID natively; a
+// freshly opened EventSource (e.g. after a cross-tab leader handoff) has an
+// empty Last-Event-ID, so the client passes the last id it saw as a query
+// param instead. The header wins when both are present.
+type AppStreamInput struct {
+	LastEventID    string `header:"Last-Event-ID" doc:"Native SSE resume cursor; takes precedence over the lastEventId query"`
+	LastEventQuery string `query:"lastEventId" doc:"Explicit resume id for a fresh EventSource whose native Last-Event-ID is empty (cross-tab leader handoff)"`
+}
+
+// resolveResumeID picks the SSE resume cursor: the native Last-Event-ID header
+// when present and valid, else the lastEventId query fallback, else 0 (start
+// from live with no replay).
+func resolveResumeID(header, query string) int {
+	if n, ok := parseResumeID(header); ok {
+		return int(n)
+	}
+	if n, ok := parseResumeID(query); ok {
+		return int(n)
+	}
+	return 0
+}
+
 func (srv *Server) registerAppStreamSSE(api huma.API) {
 	sse.Register(api, huma.Operation{
 		OperationID: "streamAppEvents",
 		Method:      http.MethodGet,
 		Path:        "/api/stream",
 		Summary:     "Stream live application events",
-		Description: "Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, and in-app notifications. A client subscribes only to the event names it cares about.",
+		Description: "Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.",
 		Tags:        []string{"Runs"},
 	}, map[string]any{
 		"run.created":                      RunCreatedEvent{},
@@ -370,12 +391,13 @@ func (srv *Server) registerAppStreamSSE(api huma.API) {
 }
 
 // appStreamHandler is the SSE callback for the unified app event stream. It
-// admits the client (subject to the stream limit), flushes headers, subscribes
-// to run/system/config events on the bus and — when notify is enabled — the
-// notification hub, then relays everything plus periodic pings over the one
+// admits the client (subject to the stream limit), flushes headers, replays any
+// events the client missed since its Last-Event-ID, then subscribes to the live
+// feed (via the shared appEventLog) and — when notify is enabled — the
+// notification hub, relaying everything plus periodic pings over the one
 // connection until the client disconnects. Folding these onto a single stream
 // is what keeps a browser tab to one EventSource instead of three.
-func (srv *Server) appStreamHandler(ctx context.Context, _ *struct{}, send sse.Sender) {
+func (srv *Server) appStreamHandler(ctx context.Context, input *AppStreamInput, send sse.Sender) {
 	release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
 	if !ok {
 		// huma owns the response writer here, so we communicate refusal via
@@ -387,55 +409,36 @@ func (srv *Server) appStreamHandler(ctx context.Context, _ *struct{}, send sse.S
 
 	// Flush response headers immediately so SSE clients (e.g. EventSource
 	// polyfill using fetch) receive the 200 + text/event-stream header
-	// without waiting for the first real event.
+	// without waiting for the first real event. No id: this ping is outside
+	// the event sequence and must not perturb the browser's lastEventId.
 	if err := send(sse.Message{Data: PingEvent{}}); err != nil {
 		return
 	}
 
-	eventChan := make(chan events.Event, 32)
-	forward := newAppStreamForwarder(eventChan)
-	// SubscribeAll covers run lifecycle (log events fall through, unforwarded);
-	// system + config.stale are deliberately outside AllEventTypes, so attach
-	// them directly.
-	unsubscribeAll := srv.eventBus.SubscribeAll(forward)
-	defer unsubscribeAll()
-	unsubSystem := srv.eventBus.Subscribe(events.EventSystemSample, forward)
-	defer unsubSystem()
-	unsubStale := srv.eventBus.Subscribe(events.EventConfigStale, forward)
-	defer unsubStale()
+	replay, sub, unsub := srv.appEvents.subscribe(resolveResumeID(input.LastEventID, input.LastEventQuery))
+	defer unsub()
+	for _, e := range replay {
+		if err := send(sse.Message{ID: e.id, Data: toSSEEventData(e.ev)}); err != nil {
+			return
+		}
+	}
 
 	var notifyCh <-chan inapp.Update
 	if srv.notifyHub != nil {
-		sub, unsubscribe := srv.notifyHub.Subscribe()
+		nsub, unsubscribe := srv.notifyHub.Subscribe()
 		defer unsubscribe()
-		notifyCh = sub.Channel()
+		notifyCh = nsub.Channel()
 	}
 
-	srv.pumpAppStream(ctx, eventChan, notifyCh, send)
+	srv.pumpAppStream(ctx, sub, notifyCh, send)
 }
 
-// newAppStreamForwarder returns an event-bus subscriber that forwards the
-// events the app stream carries onto eventChan, dropping (with a warning) when
-// the buffer is full so a slow client never blocks the bus.
-func newAppStreamForwarder(eventChan chan<- events.Event) func(events.Event) {
-	return func(event events.Event) {
-		switch event.Type {
-		case events.EventRunCreated, events.EventRunStarted, events.EventRunCompleted, events.EventRunFailed, events.EventRunUpdated, events.EventRunDeleted,
-			events.EventSystemSample, events.EventConfigStale:
-			select {
-			case eventChan <- event:
-			default:
-				slog.Warn("App stream channel full", "event", event.Type)
-			}
-		}
-	}
-}
-
-// pumpAppStream relays buffered bus events, in-app notifications, and periodic
-// keepalive pings to the SSE client, returning when the context is cancelled or
-// a send fails. notifyCh is nil when notify is disabled (a nil channel blocks
-// forever in select, so that arm simply never fires).
-func (srv *Server) pumpAppStream(ctx context.Context, eventChan <-chan events.Event, notifyCh <-chan inapp.Update, send sse.Sender) {
+// pumpAppStream relays live bus events (with their sequence id), in-app
+// notifications, and periodic keepalive pings to the SSE client, returning when
+// the context is cancelled, the subscriber overflows, or a send fails. notifyCh
+// is nil when notify is disabled (a nil channel blocks forever in select, so
+// that arm simply never fires).
+func (srv *Server) pumpAppStream(ctx context.Context, sub *appSub, notifyCh <-chan inapp.Update, send sse.Sender) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -443,8 +446,12 @@ func (srv *Server) pumpAppStream(ctx context.Context, eventChan <-chan events.Ev
 		select {
 		case <-ctx.Done():
 			return
-		case event := <-eventChan:
-			if err := send(sse.Message{Data: toSSEEventData(event)}); err != nil {
+		case <-sub.dead:
+			// Overflowed: the client fell behind. Drop the connection so it
+			// reconnects and replays from its last id rather than losing events.
+			return
+		case e := <-sub.ch:
+			if err := send(sse.Message{ID: e.id, Data: toSSEEventData(e.ev)}); err != nil {
 				return
 			}
 		case u, ok := <-notifyCh:
@@ -452,6 +459,8 @@ func (srv *Server) pumpAppStream(ctx context.Context, eventChan <-chan events.Ev
 				notifyCh = nil
 				continue
 			}
+			// Notifications ride a separate DB-backed hub; no id so they stay
+			// out of the event sequence the browser resumes from.
 			if err := send(sse.Message{Data: notifyUpdateToPayload(u)}); err != nil {
 				return
 			}

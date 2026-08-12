@@ -35,6 +35,15 @@ func IsFailureReason(reason model.EndReason) bool {
 // ShouldRestart reports whether a finished run should trigger a restart per
 // the task's restart policy.
 func ShouldRestart(task *model.Task, run *model.Run) bool {
+	// Services are supervisor-managed, so an operator cancel (the Restart button
+	// or a single-instance stop, both exiting with ReasonStopped) must refill the
+	// slot regardless of restart policy — otherwise restarting an on_failure
+	// service just stops it. Whether the service should actually stay down is
+	// decided downstream by the supervisor's operator-stop flag (Stop Service and
+	// task removal set it before cancelling), not here.
+	if task.Kind.IsService() && run.EndReason != nil && *run.EndReason == model.ReasonStopped {
+		return true
+	}
 	switch task.Restart {
 	case model.RestartAlways:
 		// Services are supervisor-managed: every instance exit refills the slot,
@@ -70,6 +79,17 @@ func ComputeRetryDelay(task *model.Task, attempt int) time.Duration {
 		base = 5 * time.Second
 	}
 	return computeBackoff(task.RetryBackoff, base, attempt, retryDelayCap)
+}
+
+// RestartDelay is the delay before respawning a service instance that exited
+// for the given reason. Operator-initiated exits (the Restart button and
+// single-instance stop, both surfacing as ReasonStopped) refill immediately —
+// the restart backoff throttles crash loops, not deliberate operator actions.
+func RestartDelay(task *model.Task, attempt int, reason *model.EndReason) time.Duration {
+	if reason != nil && *reason == model.ReasonStopped {
+		return 0
+	}
+	return ComputeRestartDelay(task, attempt)
 }
 
 // ComputeRestartDelay calculates the delay before a service instance is

@@ -6,8 +6,8 @@ package home
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -196,7 +196,7 @@ func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
 		return nil
 	}
 
-	keyMsg, ok := msg.(tea.KeyMsg)
+	keyMsg, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil
 	}
@@ -214,7 +214,7 @@ func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
 		s.CursorToEdge(-1)
 	case "end", "G":
 		s.CursorToEdge(1)
-	case "enter", " ":
+	case "enter", "space":
 		s.selectCursor()
 	default:
 		return nil

@@ -102,11 +102,7 @@ func isFromTrustedProxy(r *http.Request, trusted *xff.Options) bool {
 	if peer, ok := r.Context().Value(peerAddrContextKey).(string); ok {
 		addr = peer
 	}
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		host = addr
-	}
-	ip := net.ParseIP(host)
+	ip := net.ParseIP(hostFromAddr(addr))
 	if ip == nil {
 		return false
 	}

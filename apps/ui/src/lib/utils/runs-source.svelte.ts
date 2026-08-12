@@ -30,6 +30,12 @@ export interface RunsSource {
     readonly done: boolean;
     setFilters(next: RunsFilters): void;
     loadMore(): void;
+    /**
+     * Re-fetch the first page with the current filters, replacing the list. For
+     * resyncing after a genuine SSE reconnect whose gap outlived the server's
+     * replay buffer — it delivers true DB state, not a mask over live counts.
+     */
+    refresh(): void;
     upsert(run: Run): void;
     remove(runId: string): void;
 }
@@ -175,6 +181,11 @@ export function createRunsSource(): RunsSource {
         void fetchPage(items.length, false);
     }
 
+    function refresh(): void {
+        if (!currentFilters) return;
+        void fetchPage(0, true);
+    }
+
     function replaceExisting(idx: number, run: Run, f: RunsFilters): void {
         const existing = items[idx];
         // Never regress a run's status (e.g. the pending HTTP response from
@@ -251,6 +262,7 @@ export function createRunsSource(): RunsSource {
         },
         setFilters,
         loadMore,
+        refresh,
         upsert,
         remove,
     };

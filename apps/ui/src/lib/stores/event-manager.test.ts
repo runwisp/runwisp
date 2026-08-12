@@ -154,6 +154,10 @@ class FakeEventSource implements SSEStream {
     fireData(type: string, data: unknown): void {
         this.#target.dispatchEvent(new MessageEvent(type, { data }));
     }
+
+    fireWithId(type: string, data: string, lastEventId: string): void {
+        this.#target.dispatchEvent(new MessageEvent(type, { data, lastEventId }));
+    }
 }
 
 describe("EventManager subscription and dispatch", () => {
@@ -391,5 +395,57 @@ describe("EventManager errors and reconnect", () => {
         vi.advanceTimersByTime(SSE_CONFIG.OPEN_TIMEOUT);
 
         expect(second).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("EventManager resume cursor", () => {
+    beforeEach(() => {
+        vi.useRealTimers();
+    });
+
+    it("passes the SSE event id (Last-Event-ID) to handlers", () => {
+        const es = new FakeEventSource();
+        const mgr = new EventManager({
+            path: "/api/stream",
+            createEventSource: () => es,
+            getApiUrl: () => "http://test",
+        });
+        let seenId: string | undefined;
+        mgr.subscribe("run.created", (_d, id) => {
+            seenId = id;
+        });
+        es.open();
+        es.fireWithId("run.created", JSON.stringify({ id: "r1" }), "42");
+        expect(seenId).toBe("42");
+    });
+
+    it("seeds a fresh connection URL with ?lastEventId from initialLastEventId", () => {
+        let captured = "";
+        const mgr = new EventManager({
+            path: "/api/stream",
+            createEventSource: (url) => {
+                captured = url;
+                return new FakeEventSource();
+            },
+            getApiUrl: () => "http://test",
+            initialLastEventId: () => "7",
+        });
+        mgr.subscribe("system", () => {});
+        expect(captured).toBe("http://test/api/stream?lastEventId=7");
+    });
+
+    it("omits the query when there is no seed id (fresh client)", () => {
+        let captured = "";
+        const mgr = new EventManager({
+            path: "/api/stream",
+            createEventSource: (url) => {
+                captured = url;
+                return new FakeEventSource();
+            },
+            getApiUrl: () => "http://test",
+            initialLastEventId: () => null,
+        });
+        mgr.subscribe("system", () => {});
+        expect(captured).toBe("http://test/api/stream");
     });
 });

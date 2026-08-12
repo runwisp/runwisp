@@ -77,6 +77,11 @@ its backoff counter resets — so a
 service that flaps early but eventually settles down doesn't stay stuck
 with slow restarts.
 
+These delays throttle _automatic_ restarts after a process exits on its
+own. When you hit **Restart** (or stop a single instance) by hand, the
+instance comes back immediately — the backoff only exists to keep a
+crash loop from hammering, not to slow down a deliberate action.
+
 `restart = "always"` is baked in and **can't be overridden** — that's
 the deal with a service. If what you want is "run once and exit," that's
 a [task](/concepts/tasks-vs-services/).

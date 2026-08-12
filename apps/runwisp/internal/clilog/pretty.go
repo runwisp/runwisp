@@ -13,7 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // Palette mirrors internal/tui so the live log stream and the startup banner
@@ -34,9 +34,11 @@ var (
 //
 // It backs both text formats — colored on an interactive terminal (see
 // useColor), plain everywhere else — replacing Go's terse logfmt default. JSON
-// stays untouched for log pipelines. Color is applied via lipgloss, which
-// resolves the global color profile at render time, so the same gating that
-// drives the banner (NO_COLOR / non-TTY → ASCII) also plays it safe here.
+// stays untouched for log pipelines. Color is applied via lipgloss, whose
+// styles always render full ANSI; the color bool below is what actually gates
+// output (NO_COLOR / non-TTY / TUI mode → no styling), and applyHandler wraps
+// the destination in a colorprofile.Writer to downsample for the real
+// terminal when styling is on.
 type prettyHandler struct {
 	w  io.Writer
 	mu *sync.Mutex // shared across WithAttrs/WithGroup clones; serializes writes
@@ -152,8 +154,10 @@ func (h *prettyHandler) appendAttr(b *strings.Builder, prefix string, a slog.Att
 	b.WriteString(quoteIfNeeded(a.Value.String()))
 }
 
-// paint applies a lipgloss style only when color is on; otherwise returns the
-// raw string so the plain branch (and unit tests) stay escape-free.
+// paint renders st only when color is on; otherwise it returns the raw string
+// so the plain branch (and unit tests) stay escape-free. When color is on, the
+// destination writer (see applyHandler) is responsible for downsampling the
+// full ANSI lipgloss always renders to whatever the real terminal supports.
 func (h *prettyHandler) paint(st lipgloss.Style, s string) string {
 	if !h.color {
 		return s

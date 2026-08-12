@@ -4,11 +4,12 @@
 package tui
 
 import (
+	"image/color"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -86,6 +87,21 @@ type ParamFormDialog struct {
 	part     focusPart
 	submit   func(map[string]*string) tea.Cmd
 	errLine  string
+	// zones maps screen rows to fields for mouse hit-testing; rebuilt every
+	// View(). One entry per field, with absolute Y coordinates.
+	zones []paramZone
+}
+
+// paramZone is a field's clickable screen region, in absolute rows. top..bottom
+// spans the whole field (label + value [+ custom] [+ description]); valueY is the
+// value row (click there activates flags/selectors); customY is the combo
+// custom-input row, or -1.
+type paramZone struct {
+	field   int
+	top     int
+	bottom  int
+	valueY  int
+	customY int
 }
 
 // NewParamFormDialog builds a form for the task's parameters. submit is invoked
@@ -177,17 +193,22 @@ func comboSeedIndex(opts []string, def *string) int {
 func newTextInput(def *string) textinput.Model {
 	ti := textinput.New()
 	ti.CharLimit = 1024
-	ti.Width = 40
+	ti.SetWidth(40)
 	// Dress the input in the modal's surface colors. Left at defaults, the
 	// focused cursor reverses against the terminal default and renders as a
 	// jarring white block on an otherwise empty field; the prompt, text and
 	// padding default to no background and stand out against ColorBgLight.
 	surface := lipgloss.NewStyle().Background(uikit.ColorBgLight)
-	ti.PromptStyle = surface.Foreground(uikit.ColorTextMuted)
-	ti.TextStyle = surface.Foreground(uikit.ColorText)
-	ti.PlaceholderStyle = surface.Foreground(uikit.ColorTextMuted)
-	ti.Cursor.Style = surface.Foreground(uikit.ColorPrimary)
-	ti.Cursor.TextStyle = surface.Foreground(uikit.ColorText)
+	state := textinput.StyleState{
+		Prompt:      surface.Foreground(uikit.ColorTextMuted),
+		Text:        surface.Foreground(uikit.ColorText),
+		Placeholder: surface.Foreground(uikit.ColorTextMuted),
+	}
+	styles := textinput.DefaultStyles(true)
+	styles.Focused = state
+	styles.Blurred = state
+	styles.Cursor.Color = uikit.ColorPrimary
+	ti.SetStyles(styles)
 	if def != nil {
 		ti.SetValue(*def)
 	}
@@ -281,10 +302,27 @@ func (f *paramField) includeMarker() string {
 // Update dispatches input to the form. Returns a command (the submit command
 // when the operator confirms a valid form) and whether the dialog should close.
 func (d *ParamFormDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
-	keyMsg, ok := msg.(tea.KeyMsg)
-	if !ok {
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		return d.handleKeyMsg(msg)
+	case tea.MouseClickMsg:
+		if msg.Button == tea.MouseLeft {
+			d.handleClick(msg.X, msg.Y)
+		}
+		return nil, false
+	case tea.MouseWheelMsg:
+		switch msg.Button {
+		case tea.MouseWheelUp:
+			d.focusPrev()
+		case tea.MouseWheelDown:
+			d.focusNext()
+		}
 		return nil, false
 	}
+	return nil, false
+}
+
+func (d *ParamFormDialog) handleKeyMsg(keyMsg tea.KeyPressMsg) (tea.Cmd, bool) {
 	switch keyMsg.String() {
 	case "esc":
 		return nil, true
@@ -300,7 +338,47 @@ func (d *ParamFormDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
 	return d.handleFieldKey(keyMsg)
 }
 
-func (d *ParamFormDialog) handleFieldKey(keyMsg tea.KeyMsg) (tea.Cmd, bool) {
+// handleClick focuses the field under the click and, when the value row itself is
+// clicked, activates its control (toggle a flag, advance a selector). Clicking a
+// combo's custom-input row focuses that stop. A text field just gains focus.
+func (d *ParamFormDialog) handleClick(_, y int) {
+	for _, z := range d.zones {
+		if y < z.top || y > z.bottom {
+			continue
+		}
+		d.focus = z.field
+		if z.customY >= 0 && y == z.customY {
+			d.part = focusCustom
+		} else {
+			d.part = focusMain
+		}
+		d.syncFocus()
+		if y == z.valueY {
+			d.activateOnClick(z.field)
+		}
+		return
+	}
+}
+
+// activateOnClick advances the clicked control the way its primary key would:
+// flags toggle, strict/combo selectors step forward (wrapping). The combo
+// selector row (‹ … ›) stays clickable even on the custom slot — that's how you
+// click your way back off custom; the revealed custom input is a separate row
+// (customY), left to the keyboard. Plain text fields just gain focus.
+// ponytail: selectors only cycle forward on click; the wheel and ←/→ go back.
+func (d *ParamFormDialog) activateOnClick(i int) {
+	f := &d.fields[i]
+	switch {
+	case f.param.Kind == model.ParamFlag:
+		f.flagOn = !f.flagOn
+	case f.strict:
+		f.selIdx = (f.selIdx + 1) % len(f.opts)
+	case f.combo:
+		f.cycleSel(1)
+	}
+}
+
+func (d *ParamFormDialog) handleFieldKey(keyMsg tea.KeyPressMsg) (tea.Cmd, bool) {
 	if len(d.fields) == 0 {
 		return nil, false
 	}
@@ -326,7 +404,7 @@ func (d *ParamFormDialog) handleFieldKey(keyMsg tea.KeyMsg) (tea.Cmd, bool) {
 // strict and combo selectors cycle on ←/→, and a plain text field edits. A combo
 // selector only cycles here — its custom input lives on a separate stop, so ←/→
 // are never overloaded.
-func (f *paramField) handleMainKey(keyMsg tea.KeyMsg) tea.Cmd {
+func (f *paramField) handleMainKey(keyMsg tea.KeyPressMsg) tea.Cmd {
 	key := keyMsg.String()
 	switch {
 	case f.param.Kind == model.ParamFlag:
@@ -354,7 +432,7 @@ func (f *paramField) handleMainKey(keyMsg tea.KeyMsg) tea.Cmd {
 // arrow hint is honest for flags too.
 func (f *paramField) toggleFlag(key string) {
 	switch key {
-	case " ", "x", "left", "right", "h", "l":
+	case "space", "x", "left", "right", "h", "l":
 		f.flagOn = !f.flagOn
 	}
 }
@@ -464,8 +542,26 @@ func (d *ParamFormDialog) View(screenWidth, screenHeight int) string {
 		modalSurfaceLine("Run "+d.taskName, innerWidth, uikit.ColorTextBright, true),
 		modalEmptyLine(innerWidth),
 	}
+	d.zones = d.zones[:0]
+	// Track the running *visual* row, not the slice length: a long value or
+	// description wraps inside modalLeftLine into several terminal rows, so one
+	// slice element can span multiple rows. Mapping clicks by slice index shifts
+	// every field below the first wrap.
+	visual := visualRows(lines)
 	for i := range d.fields {
-		lines = append(lines, d.renderField(i, innerWidth)...)
+		fieldLines := d.renderField(i, innerWidth)
+		top := visual
+		valueY := top + lipgloss.Height(fieldLines[0]) // value sits below the label
+		customY := -1
+		if d.fields[i].onCustom() {
+			customY = valueY + lipgloss.Height(fieldLines[1]) // custom sits below the value
+		}
+		lines = append(lines, fieldLines...)
+		visual = visualRows(lines)
+		// Card-line rows for now; shifted to absolute screen rows once laid out.
+		d.zones = append(d.zones, paramZone{
+			field: i, top: top, bottom: visual - 1, valueY: valueY, customY: customY,
+		})
 	}
 	if d.errLine != "" {
 		lines = append(lines,
@@ -479,6 +575,16 @@ func (d *ParamFormDialog) View(screenWidth, screenHeight int) string {
 	)
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorPrimary, lines)
+	// Card visual row r sits at screen row box.top+1+r (row 0 is the accent bar).
+	off := box.top + 1
+	for k := range d.zones {
+		d.zones[k].top += off
+		d.zones[k].bottom += off
+		d.zones[k].valueY += off
+		if d.zones[k].customY >= 0 {
+			d.zones[k].customY += off
+		}
+	}
 	return box.view
 }
 
@@ -574,9 +680,20 @@ func (d *ParamFormDialog) renderField(i, innerWidth int) []string {
 	return out
 }
 
+// visualRows counts the terminal rows a slice of rendered card lines occupies,
+// summing each element's wrapped height so click zones map to on-screen rows
+// rather than slice indices.
+func visualRows(lines []string) int {
+	n := 0
+	for _, ln := range lines {
+		n += lipgloss.Height(ln)
+	}
+	return n
+}
+
 // modalLeftLine renders a left-aligned full-width line on the modal surface,
 // the form counterpart to the centered modalSurfaceLine.
-func modalLeftLine(text string, innerWidth int, fg lipgloss.Color) string {
+func modalLeftLine(text string, innerWidth int, fg color.Color) string {
 	return lipgloss.NewStyle().
 		Background(uikit.ColorBgLight).
 		Foreground(fg).
@@ -599,7 +716,7 @@ func modalLeftLineRich(innerWidth int, segments ...string) string {
 
 // styledSeg renders one coloured segment on the modal surface for composing into
 // modalLeftLineRich.
-func styledSeg(text string, fg lipgloss.Color) string {
+func styledSeg(text string, fg color.Color) string {
 	return lipgloss.NewStyle().
 		Background(uikit.ColorBgLight).
 		Foreground(fg).

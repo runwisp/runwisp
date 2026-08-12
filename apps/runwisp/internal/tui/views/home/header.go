@@ -5,10 +5,11 @@ package home
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/textutil"
@@ -164,7 +165,7 @@ func writeFieldRows(b *strings.Builder, fields []Field, info uikit.StartupInfo, 
 
 // rowStyle returns the background and left indicator shared by every
 // selectable home header row, derived from its selected/hovered state.
-func rowStyle(selected, hovered bool) (bg lipgloss.Color, indicator string) {
+func rowStyle(selected, hovered bool) (bg color.Color, indicator string) {
 	bg = uikit.ColorBg
 	if selected {
 		bg = uikit.ColorBgLight
@@ -180,7 +181,7 @@ func rowStyle(selected, hovered bool) (bg lipgloss.Color, indicator string) {
 }
 
 // renderFieldRow renders a single focusable field row with optional selection highlight.
-func renderFieldRow(b *strings.Builder, label, value string, valueColor lipgloss.Color, w int, selected, hovered bool) {
+func renderFieldRow(b *strings.Builder, label, value string, valueColor color.Color, w int, selected, hovered bool) {
 	bg, indicator := rowStyle(selected, hovered)
 
 	l := lipgloss.NewStyle().
@@ -203,7 +204,7 @@ func renderFieldRow(b *strings.Builder, label, value string, valueColor lipgloss
 }
 
 // renderActionRow renders a primary action row (button-like) with no value — just a label.
-func renderActionRow(b *strings.Builder, label string, labelColor lipgloss.Color, w int, selected, hovered bool) {
+func renderActionRow(b *strings.Builder, label string, labelColor color.Color, w int, selected, hovered bool) {
 	bg, indicator := rowStyle(selected, hovered)
 
 	l := lipgloss.NewStyle().

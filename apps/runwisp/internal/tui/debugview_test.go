@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -36,17 +36,17 @@ func TestDebugView_UpdateKeyMsgScrolls(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		v.AppendLine("filler")
 	}
-	v.Update(tea.KeyMsg{Type: tea.KeyUp})
-	v.Update(tea.KeyMsg{Type: tea.KeyDown})
-	v.Update(tea.KeyMsg{Type: tea.KeyPgUp})
-	v.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	v.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	v.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	v.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
+	v.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 }
 
 func TestDebugView_UpdateNonKeyMsgIsNoop(t *testing.T) {
 	v := NewDebugView()
 	v.SetSize(80, 24)
 	v.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	v.Update(tea.MouseMsg{})
+	v.Update(tea.MouseClickMsg{})
 }
 
 func TestDebugView_ScrollUpDownDoesNotPanic(t *testing.T) {

@@ -6,8 +6,8 @@ package tui
 import (
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/atotto/clipboard"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -343,20 +343,26 @@ func (dm *DialogManager) FlashActive() (string, bool) {
 	return "", false
 }
 
+// MouseDisabled reports whether terminal mouse tracking is currently
+// disabled. View() reads this to set tea.View.MouseMode, since v2 dropped
+// the imperative enable/disable mouse commands in favor of per-frame state.
+func (dm *DialogManager) MouseDisabled() bool {
+	return dm.mouseDisabled
+}
+
 // SyncMouseState disables terminal mouse tracking when the copy dialog is
-// visible (or any mouse-hold is active) and re-enables it otherwise.
+// visible (or any mouse-hold is active) and re-enables it otherwise. The
+// actual mode switch happens in View() via MouseDisabled; the non-nil
+// return here only signals that a transition occurred, for callers that
+// batch it alongside other commands.
 func (dm *DialogManager) SyncMouseState() tea.Cmd {
 	wantDisabled := dm.copyDialog != nil || dm.runParams != nil || dm.mouseHold
 
-	if wantDisabled && !dm.mouseDisabled {
-		dm.mouseDisabled = true
-		return func() tea.Msg { return tea.DisableMouse() }
+	if wantDisabled == dm.mouseDisabled {
+		return nil
 	}
-	if !wantDisabled && dm.mouseDisabled {
-		dm.mouseDisabled = false
-		return func() tea.Msg { return tea.EnableMouseAllMotion() }
-	}
-	return nil
+	dm.mouseDisabled = wantDisabled
+	return func() tea.Msg { return nil }
 }
 
 // RenderOverlays renders confirm/copy/help dialogs on top of the base output

@@ -5,10 +5,9 @@ package uikit
 
 import (
 	"fmt"
-	"strings"
+	"image/color"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/runwisp/runwisp/internal/model"
 )
 
@@ -23,12 +22,12 @@ const MaxContentWidth = 110
 // PadLine right-pads content with a styled-background space run so the row
 // fills `width` cells without losing the background colour when terminals
 // trim trailing whitespace.
-func PadLine(content string, width int, bg lipgloss.Color) string {
-	contentWidth := lipgloss.Width(content)
+func PadLine(content string, width int, bg color.Color) string {
+	contentWidth := VisibleWidth(content)
 	if contentWidth >= width {
 		return content
 	}
-	return content + lipgloss.NewStyle().Background(bg).Render(strings.Repeat(" ", width-contentWidth))
+	return content + FillBg(width-contentWidth, bg)
 }
 
 // FormatDuration renders a run's elapsed time. When EndAt is nil the duration

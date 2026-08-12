@@ -8,7 +8,7 @@
     import { instanceCountResolver } from "$lib/components/dashboard/instance-count";
     import { Skeleton } from "@runwisp/ui";
     import { runsApi } from "$lib/api";
-    import { runUpdatesStore, taskStore } from "$lib/stores";
+    import { runUpdatesStore, taskStore, connectionStore } from "$lib/stores";
     import { createRunsSource } from "$lib/utils/runs-source.svelte";
     import { createLogSession } from "$lib/utils/log-session";
     import { navigateToRun } from "$lib/utils/run-url";
@@ -47,6 +47,10 @@
             source.upsert(event.data.run);
         });
     });
+
+    // Resync after a genuine SSE reconnect (fires only on recovery), covering the
+    // rare gap that outlived the server's replay buffer with true DB state.
+    $effect(() => connectionStore.onReconnect(() => source.refresh()));
 
     // Whether the deep-linked run id resolved to no run. Surfaced to RunsPage so
     // a dead permalink shows a "not found" panel instead of silently swapping in

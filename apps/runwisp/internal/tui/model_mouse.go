@@ -4,33 +4,73 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	"time"
+
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/internal/tui/views/home"
 )
 
+// coalesceInterval bounds how often a burst of mouse motion/wheel events forces
+// a full view rebuild (~60fps). Bubble Tea rebuilds the view after every
+// message, so without this a trackpad flood rebuilds the whole screen dozens of
+// times per frame.
+const coalesceInterval = 16 * time.Millisecond
+
+// coalesceFlushMsg ends a coalesce window and forces the next frame to rebuild.
+type coalesceFlushMsg struct{}
+
+// coalesced throttles full view rebuilds to ~60fps without adding input latency.
+// The first event after an idle gap (≥ coalesceInterval since the last frame)
+// rebuilds immediately, so a deliberate scroll notch paints at once. Events
+// arriving inside that window reuse the cached frame and arm a single trailing
+// rebuild tick, so a momentum flood rebuilds ~60×/s instead of per-event. State
+// changes from every event are applied regardless; only the redundant rebuilds
+// are dropped.
+func (m Model) coalesced(cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	if now := time.Now(); now.Sub(m.lastRenderAt) >= coalesceInterval {
+		// Idle long enough — render this event now for instant feedback.
+		m.lastRenderAt = now
+		return m, cmd
+	}
+	m.coalesce = true
+	if m.flushPending {
+		return m, cmd
+	}
+	m.flushPending = true
+	tick := tea.Tick(coalesceInterval, func(time.Time) tea.Msg { return coalesceFlushMsg{} })
+	if cmd == nil {
+		return m, tick
+	}
+	return m, tea.Batch(cmd, tick)
+}
+
 // handleMouse processes mouse clicks and motion on sidebar, Run Now button, and exec list.
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	x, y := msg.X, msg.Y
+	x, y := msg.Mouse().X, msg.Mouse().Y
 	m.mouse.hoverX = x
 	m.mouse.hoverY = y
 	m.updateHoverState(x, y)
 
-	if msg.Action == tea.MouseActionMotion {
-		return m, nil
-	}
-
-	if msg.Action == tea.MouseActionPress {
+	switch msg := msg.(type) {
+	case tea.MouseWheelMsg:
+		var cmd tea.Cmd
 		switch msg.Button {
-		case tea.MouseButtonWheelUp:
-			return m, m.scrollWheelUp(x)
-		case tea.MouseButtonWheelDown:
-			return m, m.scrollWheelDown(x)
+		case tea.MouseWheelUp:
+			cmd = m.scrollWheelUp(x)
+		case tea.MouseWheelDown:
+			cmd = m.scrollWheelDown(x)
 		}
-	}
-
-	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+		return m.coalesced(cmd)
+	case tea.MouseMotionMsg:
+		// Hover-only — coalesce so a burst rebuilds at most once/window.
+		return m.coalesced(nil)
+	case tea.MouseClickMsg:
+		if msg.Button != tea.MouseLeft {
+			return m, nil
+		}
+	default:
 		return m, nil
 	}
 

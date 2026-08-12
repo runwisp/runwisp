@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -128,7 +128,7 @@ func TestDebugView_Update_KeyMsg(t *testing.T) {
 	dv.SetSize(80, 20)
 	dv.AppendLine("line1")
 	assert.NotPanics(t, func() {
-		dv.Update(tea.KeyMsg{Type: tea.KeyUp})
+		dv.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	})
 }
 

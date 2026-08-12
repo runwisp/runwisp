@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -168,7 +168,7 @@ func (e *ExecList) Update(msg tea.Msg) tea.Cmd {
 	if !e.focused {
 		return nil
 	}
-	keyMsg, ok := msg.(tea.KeyMsg)
+	keyMsg, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil
 	}
@@ -326,7 +326,7 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 	}
 	statusStr := truncCell(item.Run.DisplayStatus(), cw.status)
 	statusBadge := uikit.StatusStyle(statusStr).Render(statusStr)
-	statPad := cw.status - lipgloss.Width(statusBadge)
+	statPad := cw.status - uikit.VisibleWidth(statusBadge)
 	if statPad < 0 {
 		statPad = 0
 	}
@@ -349,6 +349,11 @@ func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, w, contentW int
 	if end > n {
 		end = n
 	}
+	// contentW is w when no scrollbar shows and w-1 when it does; the scrollbar
+	// glyph is exactly one cell. So a row padded to contentW plus the scrollbar
+	// is already exactly w cells — no second PadLine pass needed. Skipping it
+	// avoids re-walking a row whose leading scrollbar glyph would otherwise
+	// force VisibleWidth onto its slow grapheme path every frame.
 	visIdx := 0
 	for i := e.Scroll; i < end; i++ {
 		text := e.buildRowText(e.window.Item(i), i, cw)
@@ -360,7 +365,7 @@ func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, w, contentW int
 				row += sb.track
 			}
 		}
-		b.WriteString(uikit.PadLine(row, w, uikit.ColorBg))
+		b.WriteString(row)
 		b.WriteString("\n")
 		visIdx++
 	}
@@ -369,7 +374,7 @@ func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, w, contentW int
 		if sb.state.show {
 			row += sb.track
 		}
-		b.WriteString(uikit.PadLine(row, w, uikit.ColorBg))
+		b.WriteString(row)
 		b.WriteString("\n")
 		visIdx++
 	}
@@ -577,7 +582,7 @@ func (e *ExecList) NeedsFetch() bool {
 // padCell truncates or pads a string to exactly the given visible width.
 func padCell(s string, w int) string {
 	s = truncCell(s, w)
-	if vis := lipgloss.Width(s); vis < w {
+	if vis := uikit.VisibleWidth(s); vis < w {
 		return s + strings.Repeat(" ", w-vis)
 	}
 	return s

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 

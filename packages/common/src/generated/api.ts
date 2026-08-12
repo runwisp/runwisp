@@ -332,7 +332,7 @@ export interface paths {
         };
         /**
          * Stream live application events
-         * @description Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, and in-app notifications. A client subscribes only to the event names it cares about.
+         * @description Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.
          */
         get: operations["streamAppEvents"];
         put?: never;
@@ -2125,8 +2125,14 @@ export interface operations {
     };
     streamAppEvents: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                /** @description Explicit resume id for a fresh EventSource whose native Last-Event-ID is empty (cross-tab leader handoff) */
+                lastEventId?: string;
+            };
+            header?: {
+                /** @description Native SSE resume cursor; takes precedence over the lastEventId query */
+                "Last-Event-ID"?: string;
+            };
             path?: never;
             cookie?: never;
         };

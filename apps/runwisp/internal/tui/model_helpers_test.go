@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
@@ -103,9 +103,9 @@ func stubCanOpenBrowser(t *testing.T, can bool) {
 // then Enter.
 func selectSidebarItem(m *Model, index int) {
 	for i := 0; i < index; i++ {
-		m.sidebar.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+		m.sidebar.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	}
-	m.sidebar.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.sidebar.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 }
 
 // testNotif is a minimal unread notification for seeding the panel.

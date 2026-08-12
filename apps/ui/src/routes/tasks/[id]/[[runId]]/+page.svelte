@@ -8,7 +8,7 @@
     import { toast, ErrorState, Skeleton } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { tasksApi } from "$lib/api";
-    import { runUpdatesStore, systemStore } from "$lib/stores";
+    import { runUpdatesStore, systemStore, connectionStore } from "$lib/stores";
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import { createLogSession } from "$lib/utils/log-session";
     import { createRunsSource } from "$lib/utils/runs-source.svelte";
@@ -78,6 +78,11 @@
         if (taskName) void taskData.fetch();
         return () => taskData.abort();
     });
+
+    // Resync the list after a genuine SSE reconnect (fires only on recovery from
+    // a prior connection). Covers the rare gap that outlived the server's replay
+    // buffer — honest DB truth, not a mask over live counts.
+    $effect(() => connectionStore.onReconnect(() => source.refresh()));
 
     // Whether the deep-linked run id resolved to no run under this task. Surfaced
     // to TaskPage so a dead permalink shows a "not found" panel instead of quietly

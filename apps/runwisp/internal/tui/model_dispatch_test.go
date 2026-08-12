@@ -7,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -26,8 +26,8 @@ func TestDispatchInputMsg(t *testing.T) {
 		msg  tea.Msg
 	}{
 		{"WindowSize", tea.WindowSizeMsg{Width: 100, Height: 30}},
-		{"Mouse", tea.MouseMsg{Type: tea.MouseUnknown}},
-		{"Key", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")}},
+		{"Mouse", tea.MouseClickMsg{}},
+		{"Key", tea.KeyPressMsg{Code: 'x', Text: "x"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

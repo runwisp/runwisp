@@ -5,7 +5,6 @@ package server
 
 import (
 	"context"
-	"net"
 	"sync"
 )
 
@@ -73,11 +72,7 @@ func (l *streamLimiter) acquire(ip string) (release func(), ok bool) {
 // not receive the *http.Request directly.
 func streamClientIPFromCtx(ctx context.Context) string {
 	if peer, ok := ctx.Value(peerAddrContextKey).(string); ok {
-		host, _, err := net.SplitHostPort(peer)
-		if err != nil {
-			return peer
-		}
-		return host
+		return hostFromAddr(peer)
 	}
 	return ""
 }

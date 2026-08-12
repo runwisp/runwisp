@@ -35,7 +35,7 @@ const HIDDEN_RELINQUISH_DELAY_MS = 2000;
 
 /** Cross-tab message envelope sent over the BroadcastChannel. */
 type SharedMessage =
-    | { t: "event"; type: string; data: string }
+    | { t: "event"; type: string; data: string; id?: string }
     | { t: "open" }
     | { t: "error"; info: SSEErrorInfo }
     | { t: "stall" }
@@ -65,8 +65,13 @@ export interface SharedAppStreamOptions {
     path: string;
     channelName?: string;
     lockName?: string;
-    /** Builds the leader's real connection. Defaults to a browser EventManager. */
-    createLeaderManager?: () => EventManager;
+    /**
+     * Builds the leader's real connection. Receives the resume-cursor getter so
+     * a freshly promoted leader can seed its EventSource from the id the cohort
+     * last saw (the server then replays the handoff gap). Defaults to a browser
+     * EventManager wired to that seed.
+     */
+    createLeaderManager?: (seed: () => string | null) => EventManager;
     createBus?: (name: string) => SharedBus;
     createElector?: (name: string) => LeaderElector;
 }
@@ -75,7 +80,7 @@ export class SharedAppStream implements AppEventStream {
     readonly #path: string;
     readonly #channelName: string;
     readonly #lockName: string;
-    readonly #createLeaderManager: () => EventManager;
+    readonly #createLeaderManager: (seed: () => string | null) => EventManager;
     readonly #createBus: (name: string) => SharedBus;
     readonly #createElector: (name: string) => LeaderElector;
 
@@ -96,6 +101,11 @@ export class SharedAppStream implements AppEventStream {
     #lifecycleAbort: AbortController | null = null;
     #hiddenTimer: ReturnType<typeof setTimeout> | null = null;
 
+    // Highest SSE event id any tab in the cohort has seen (leader from the real
+    // stream, followers from rebroadcasts). Seeds a promoted leader's fresh
+    // EventSource so the server replays the handoff gap.
+    #lastEventId: string | null = null;
+
     // Leader-only state.
     #isLeader = false;
     #leader: EventManager | null = null;
@@ -109,7 +119,8 @@ export class SharedAppStream implements AppEventStream {
         this.#channelName = options.channelName ?? "runwisp-app-stream";
         this.#lockName = options.lockName ?? "runwisp-app-stream-leader";
         this.#createLeaderManager =
-            options.createLeaderManager ?? (() => new EventManager({ path: this.#path }));
+            options.createLeaderManager ??
+            ((seed) => new EventManager({ path: this.#path, initialLastEventId: seed }));
         this.#createBus = options.createBus ?? defaultCreateBus;
         this.#createElector = options.createElector ?? defaultCreateElector;
     }
@@ -270,7 +281,7 @@ export class SharedAppStream implements AppEventStream {
         this.#isLeader = true;
         logger.info("elected leader — opening the shared app-event stream");
 
-        const mgr = this.#createLeaderManager();
+        const mgr = this.#createLeaderManager(() => this.#lastEventId);
         this.#leader = mgr;
         mgr.onOpen(() => {
             this.#lastLifecycle = "open";
@@ -301,9 +312,10 @@ export class SharedAppStream implements AppEventStream {
         const mgr = this.#leader;
         if (!this.#isLeader || !mgr || this.#leaderTypes.has(eventType)) return;
         this.#leaderTypes.add(eventType);
-        mgr.subscribe(eventType, (data) => {
+        mgr.subscribe(eventType, (data, id) => {
+            if (id) this.#lastEventId = id;
             this.#dispatch(eventType, data);
-            this.#post({ t: "event", type: eventType, data });
+            this.#post({ t: "event", type: eventType, data, ...(id && { id }) });
         });
     }
 
@@ -332,6 +344,7 @@ export class SharedAppStream implements AppEventStream {
     #handleAsFollower(msg: SharedMessage): void {
         switch (msg.t) {
             case "event":
+                if (msg.id) this.#lastEventId = msg.id;
                 this.#dispatch(msg.type, msg.data);
                 return;
             case "open":
@@ -445,6 +458,10 @@ export class SharedAppStream implements AppEventStream {
         this.#leaderTypes.clear();
         this.#lastLifecycle = null;
         this.#lastErrorInfo = null;
+        // Full teardown: the next start is a fresh client that re-seeds via REST,
+        // so forget the resume cursor. (A leader relinquish deliberately keeps it,
+        // so the promoted tab resumes across the handoff.)
+        this.#lastEventId = null;
     }
 }
 
@@ -468,7 +485,7 @@ function parseSharedMessage(raw: unknown): SharedMessage | null {
         case "error":
             return { t: "error", info: parseErrorInfo(raw.info) };
         case "event":
-            return parseEventMessage(raw.type, raw.data);
+            return parseEventMessage(raw.type, raw.data, raw.id);
         case "interest":
             return { t: "interest", types: parseStringArray(raw.types) };
         default:
@@ -476,9 +493,9 @@ function parseSharedMessage(raw: unknown): SharedMessage | null {
     }
 }
 
-function parseEventMessage(type: unknown, data: unknown): SharedMessage | null {
-    if (typeof type === "string" && typeof data === "string") return { t: "event", type, data };
-    return null;
+function parseEventMessage(type: unknown, data: unknown, id: unknown): SharedMessage | null {
+    if (typeof type !== "string" || typeof data !== "string") return null;
+    return { t: "event", type, data, ...(typeof id === "string" && { id }) };
 }
 
 function parseStringArray(value: unknown): string[] {

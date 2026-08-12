@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -184,18 +184,18 @@ func TestTaskDetailDialog_View_HealthError(t *testing.T) {
 func TestTaskDetailDialog_Update_ClosesOnKeys(t *testing.T) {
 	for _, key := range []string{"i", "q"} {
 		d := NewTaskDetailDialog("alpha", nil)
-		if !d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}) {
+		if !d.Update(tea.KeyPressMsg{Code: []rune(key)[0], Text: key}) {
 			t.Fatalf("rune %q should close the dialog", key)
 		}
 	}
-	for _, kt := range []tea.KeyType{tea.KeyEsc, tea.KeyEnter} {
+	for _, kt := range []rune{tea.KeyEsc, tea.KeyEnter} {
 		d := NewTaskDetailDialog("alpha", nil)
-		if !d.Update(tea.KeyMsg{Type: kt}) {
+		if !d.Update(tea.KeyPressMsg{Code: kt}) {
 			t.Fatalf("key %v should close the dialog", kt)
 		}
 	}
 	d := NewTaskDetailDialog("alpha", nil)
-	if d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")}) {
+	if d.Update(tea.KeyPressMsg{Code: 'x', Text: "x"}) {
 		t.Fatal("unrelated key should not close the dialog")
 	}
 }
@@ -205,7 +205,7 @@ func TestHandleKeyI_OpensInspectorForCursorTask(t *testing.T) {
 	// Sidebar items: [Home(0), alpha(1), Info(2), Debug(3)] — put the cursor on alpha.
 	selectSidebarItem(&m, 1)
 
-	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	updated, cmd := m.handleKey(tea.KeyPressMsg{Code: 'i', Text: "i"})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatal("handleKey did not return a Model")
@@ -221,7 +221,7 @@ func TestHandleKeyI_OpensInspectorForCursorTask(t *testing.T) {
 func TestHandleKeyI_FallsThroughWithoutTask(t *testing.T) {
 	m := newTestModelWithClient(nil)
 	// Default cursor is on Home — no task in focus.
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: 'i', Text: "i"})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatal("handleKey did not return a Model")

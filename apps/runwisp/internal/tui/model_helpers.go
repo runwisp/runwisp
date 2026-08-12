@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
@@ -81,6 +81,11 @@ func (m *Model) focusHomeField(index int) tea.Cmd {
 
 func (m *Model) applySidebarSelectionChange(prevPage uikit.Page, prevTask string) tea.Cmd {
 	if m.sidebar.ActivePage() == prevPage && m.sidebar.ActiveTask() == prevTask {
+		// Selection didn't move, but if a run's exec log is open, re-selecting the
+		// task closes the log and returns to its detail view.
+		if m.execView != nil {
+			return m.closeExecView()
+		}
 		return nil
 	}
 	m.homeCursor = -1
@@ -218,7 +223,7 @@ func (m *Model) confirmStopService() tea.Cmd {
 	client := m.client
 	return m.showConfirmDialog(
 		"Stop Service",
-		fmt.Sprintf("Stop service\n'%s'?\nThe daemon will not restart it until you click Restart\nor the daemon itself restarts.", taskName),
+		fmt.Sprintf("Stop service\n'%s'?\nIt stays stopped until you start it\nagain or the daemon restarts.", taskName),
 		func() tea.Msg {
 			err := client.StopService(taskName)
 			return uikit.StopServiceMsg{TaskName: taskName, Err: err}

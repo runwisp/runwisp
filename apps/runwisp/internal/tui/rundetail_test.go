@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 )
@@ -96,18 +96,18 @@ func TestRunDetailDialog_ParentRef(t *testing.T) {
 func TestRunDetailDialog_Update_CloseKeys(t *testing.T) {
 	for _, key := range []string{"i", "q"} {
 		d := NewRunDetailDialog(endedRun(), false, 1)
-		if !d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}) {
+		if !d.Update(tea.KeyPressMsg{Code: []rune(key)[0], Text: key}) {
 			t.Fatalf("rune %q should close the dialog", key)
 		}
 	}
 	d := NewRunDetailDialog(endedRun(), false, 1)
-	if !d.Update(tea.KeyMsg{Type: tea.KeyEsc}) {
+	if !d.Update(tea.KeyPressMsg{Code: tea.KeyEsc}) {
 		t.Fatal("esc should close the dialog")
 	}
 	// Enter is reserved for the interceptor (open parent), so the dialog itself
 	// must not treat it as a close.
 	enterDialog := NewRunDetailDialog(endedRun(), false, 1)
-	if enterDialog.Update(tea.KeyMsg{Type: tea.KeyEnter}) {
+	if enterDialog.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) {
 		t.Fatal("enter must not close the dialog directly")
 	}
 }
@@ -117,7 +117,7 @@ func TestHandleKeyI_ExecViewOpensRunDetail(t *testing.T) {
 	ev := execlist.NewExecView(endedRun())
 	m.execView = &ev
 
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: 'i', Text: "i"})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatal("handleKey did not return a Model")
@@ -134,7 +134,7 @@ func TestInterceptRunDetail_EnterOpensParent(t *testing.T) {
 	m := newTestModelWithClient([]model.TaskBrief{{Name: "backup-db"}})
 	m.dialogs.ShowRunDetail(endedRun(), false, 1)
 
-	updated, cmd, intercepted := m.interceptRunDetailDialog(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd, intercepted := m.interceptRunDetailDialog(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !intercepted {
 		t.Fatal("run inspector should intercept enter")
 	}

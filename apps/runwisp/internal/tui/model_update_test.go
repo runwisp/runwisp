@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
@@ -101,7 +101,7 @@ func TestInterceptCopyDialog_CtrlCDismissesAndShowsQuit(t *testing.T) {
 		t.Fatal("expected copy dialog to be active")
 	}
 
-	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+	msg := tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
 	newModelIface, _, intercepted := m.interceptCopyDialog(msg)
 	if !intercepted {
 		t.Fatal("expected intercepted=true for ctrl+c")
@@ -116,7 +116,7 @@ func TestInterceptCopyDialog_AnyKeyWhileVisibleIsIntercepted(t *testing.T) {
 	m := newTestModel(nil)
 	m.dialogs.ShowCopy("title", "value")
 
-	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")}
+	msg := tea.KeyPressMsg{Code: 'x', Text: "x"}
 	_, _, intercepted := m.interceptCopyDialog(msg)
 	if !intercepted {
 		t.Fatal("expected intercepted=true for any key while copy dialog is visible")
@@ -185,7 +185,7 @@ func TestInterceptConfirmDialog_CtrlC(t *testing.T) {
 	m := newTestModel(nil)
 	m.dialogs.ShowConfirm(NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
 
-	_, _, intercepted := m.interceptConfirmDialog(tea.KeyMsg{Type: tea.KeyCtrlC})
+	_, _, intercepted := m.interceptConfirmDialog(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	if !intercepted {
 		t.Fatal("expected intercepted=true for ctrl+c")
 	}
@@ -195,7 +195,7 @@ func TestInterceptConfirmDialog_MouseMsg(t *testing.T) {
 	m := newTestModel(nil)
 	m.dialogs.ShowConfirm(NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
 
-	_, _, intercepted := m.interceptConfirmDialog(tea.MouseMsg{})
+	_, _, intercepted := m.interceptConfirmDialog(tea.MouseClickMsg{})
 	if !intercepted {
 		t.Fatal("expected intercepted=true for mouse msg with confirm dialog")
 	}
@@ -231,7 +231,7 @@ func TestInterceptShuttingDownDialog_CtrlC(t *testing.T) {
 	m.dialogs.ShowConfirm(NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
 	_ = m.dialogs.StartShutdown()
 
-	_, _, intercepted := m.interceptShuttingDownDialog(tea.KeyMsg{Type: tea.KeyCtrlC})
+	_, _, intercepted := m.interceptShuttingDownDialog(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	if !intercepted {
 		t.Fatal("expected intercepted=true for ctrl+c in shutdown dialog")
 	}
@@ -275,7 +275,7 @@ func TestInterceptShuttingDownDialog_OtherKey(t *testing.T) {
 	m.dialogs.ShowConfirm(NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
 	_ = m.dialogs.StartShutdown()
 
-	_, _, intercepted := m.interceptShuttingDownDialog(tea.KeyMsg{Type: tea.KeyEnter})
+	_, _, intercepted := m.interceptShuttingDownDialog(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !intercepted {
 		t.Fatal("expected intercepted=true for any key in shutdown dialog")
 	}

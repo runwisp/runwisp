@@ -52,12 +52,18 @@ func isLocalCtx(ctx context.Context) bool {
 		return false
 	}
 	addr, _ := ctx.Value(peerAddrContextKey).(string)
+	ip := net.ParseIP(hostFromAddr(addr))
+	return ip != nil && ip.IsLoopback()
+}
+
+// hostFromAddr extracts the host portion of a "host:port" address, or returns
+// addr unchanged if it isn't in that form.
+func hostFromAddr(addr string) string {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
-		host = addr
+		return addr
 	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return host
 }
 
 // peercredListener wraps a Unix-socket listener and rejects any accepted conn

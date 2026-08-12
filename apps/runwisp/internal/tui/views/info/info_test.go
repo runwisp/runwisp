@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/stretchr/testify/assert"
@@ -76,22 +76,22 @@ func TestInfoView_Update_Keys(t *testing.T) {
 	v.SetSize(80, 20)
 	v.scroll = 5
 
-	v.Update(tea.KeyMsg{Type: tea.KeyHome})
+	v.Update(tea.KeyPressMsg{Code: tea.KeyHome})
 	assert.Equal(t, 0, v.scroll)
 
-	v.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	v.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 	assert.GreaterOrEqual(t, v.scroll, 0)
 
 	v.scroll = 5
-	v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	v.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
 	assert.Equal(t, 4, v.scroll)
 
 	// "j" is capped at maxScroll; without content, scroll stays at maxScroll (which may be 0).
-	v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	v.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	assert.GreaterOrEqual(t, v.scroll, 0)
 
 	v.scroll = 5
-	v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	v.Update(tea.KeyPressMsg{Code: 'g', Text: "g"})
 	assert.Equal(t, 0, v.scroll)
 }
 
@@ -104,15 +104,15 @@ func TestInfoView_Update_PageKeys(t *testing.T) {
 	v.contentHeight = 100 // force maxScroll > 0
 
 	v.scroll = 50
-	v.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	v.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	assert.Greater(t, v.scroll, 50, "pgdown should advance scroll")
 
 	v.scroll = 5
-	v.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	v.Update(tea.KeyPressMsg{Code: tea.KeyPgUp})
 	assert.Equal(t, 0, v.scroll, "pgup with small scroll should clamp at 0")
 
 	v.scroll = 1000 // beyond maxScroll
-	v.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	v.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	assert.Equal(t, v.contentHeight-v.height, v.scroll, "pgdown should clamp at maxScroll")
 }
 
@@ -125,9 +125,9 @@ func TestInfoView_Update_UpDownArrowKeys(t *testing.T) {
 	v.contentHeight = 100
 	v.scroll = 10
 
-	v.Update(tea.KeyMsg{Type: tea.KeyUp})
+	v.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	assert.Equal(t, 9, v.scroll)
-	v.Update(tea.KeyMsg{Type: tea.KeyDown})
+	v.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	assert.Equal(t, 10, v.scroll)
 }
 

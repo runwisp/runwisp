@@ -51,7 +51,7 @@
     // the control it wraps, so clicking the label focuses the field and screen
     // readers associate the two. Scoped to this form instance so two forms on a
     // page never collide.
-    const idBase = `param-${Math.random().toString(36).slice(2, 10)}`;
+    const idBase = $props.id();
     function fieldId(key: string): string {
         return `${idBase}-${key}`;
     }

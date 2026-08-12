@@ -39,13 +39,17 @@ type Server struct {
 	// tasks is the live task set, read per /api/info request so derived state that
 	// changes while the daemon runs — a cron hold releasing itself, a reload adding
 	// or removing tasks — is reported as it is now, not as it was at boot.
-	tasks             *runtime.TaskRegistry
-	host              string
-	port              int
-	dataDir           string
-	configPath        string
-	logDir            string
-	eventBus          *events.Bus
+	tasks      *runtime.TaskRegistry
+	host       string
+	port       int
+	dataDir    string
+	configPath string
+	logDir     string
+	eventBus   *events.Bus
+	// appEvents is the single bus consumer behind the /api/stream SSE feed. It
+	// assigns each event a monotonic id and retains a replay ring so a
+	// reconnecting client resumes from Last-Event-ID without losing events.
+	appEvents         *appEventLog
 	auth              *auth.Service
 	passwordEphemeral bool
 	noAuth            bool
@@ -162,6 +166,20 @@ func New(opts Options) (*Server, error) {
 		metricsListen:     opts.MetricsListen,
 		reload:            opts.Reload,
 		ready:             make(chan struct{}),
+	}
+
+	s.appEvents = newAppEventLog()
+	if opts.EventBus != nil {
+		// Single consumer for the app-event SSE stream: subscribe to exactly the
+		// forwarded types (not SubscribeAll, so hot log.line/log.region events
+		// never touch this path). Permanent for the daemon's lifetime.
+		for _, t := range []events.EventType{
+			events.EventRunCreated, events.EventRunStarted, events.EventRunCompleted,
+			events.EventRunFailed, events.EventRunUpdated, events.EventRunDeleted,
+			events.EventSystemSample, events.EventConfigStale,
+		} {
+			opts.EventBus.Subscribe(t, s.appEvents.ingest)
+		}
 	}
 
 	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.LogDir, opts.EventBus)

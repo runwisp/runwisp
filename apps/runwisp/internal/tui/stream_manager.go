@@ -6,7 +6,7 @@ package tui
 import (
 	"context"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
@@ -104,6 +104,33 @@ func (sm *StreamManager) StartLogStream(run *model.Run, fromLine int64) tea.Cmd 
 			return uikit.LogDoneMsg{RunID: runID}
 		}
 		return uikit.LogStreamConnectedMsg{RunID: runID, Ch: ch}
+	}
+}
+
+// FetchLogTail loads the last `tail` lines of a run's log in one REST page so
+// the viewer can paint at the bottom immediately, without replaying the whole
+// tail window line-by-line over SSE. The caller then opens the live stream for
+// just the lines after this page.
+func (sm *StreamManager) FetchLogTail(run *model.Run, tail int64) tea.Cmd {
+	if sm.client == nil {
+		return nil
+	}
+	client := sm.client
+	taskName := run.TaskName
+	runID := run.ID
+	return func() tea.Msg {
+		page, err := client.GetLogPage(taskName, runID, -tail, tail)
+		if err != nil {
+			// Degrade gracefully: an empty tail makes the handler open the live
+			// stream at the tail anchor, i.e. the old line-by-line backfill.
+			return uikit.LogTailLoadedMsg{RunID: runID}
+		}
+		return uikit.LogTailLoadedMsg{
+			RunID:     runID,
+			Lines:     page.Lines,
+			Total:     page.TotalLines,
+			Finalized: page.Finalized,
+		}
 	}
 }
 

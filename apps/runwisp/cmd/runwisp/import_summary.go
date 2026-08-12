@@ -6,10 +6,12 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/configedit"
 	"github.com/runwisp/runwisp/internal/importer"
@@ -28,17 +30,18 @@ type importStyles struct {
 	ok, changed, attn, dim lipgloss.Style
 }
 
-// newImportStyles builds the palette for one specific destination. The color
-// profile is detected from w rather than from os.Stdout, because these summaries
-// go to stderr and `runwisp import cron 2> report.txt` must not collect escape
-// sequences.
-func newImportStyles(w io.Writer) importStyles {
-	r := rendererFor(w)
+// newImportStyles builds the shared palette. Colors assume a dark terminal
+// background — the common case, and the one lipgloss itself falls back to
+// when it can't detect the background — rather than probing the real
+// terminal, which would round-trip an OSC query into a batch CLI command
+// whose output routinely goes to a file or a pipe.
+func newImportStyles() importStyles {
+	ld := lipgloss.LightDark(true)
 	return importStyles{
-		ok:      r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "2", Dark: "10"}),
-		changed: r.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "6", Dark: "14"}),
-		attn:    r.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "3", Dark: "11"}),
-		dim:     r.NewStyle().Faint(true),
+		ok:      lipgloss.NewStyle().Foreground(ld(lipgloss.Color("2"), lipgloss.Color("10"))),
+		changed: lipgloss.NewStyle().Foreground(ld(lipgloss.Color("6"), lipgloss.Color("14"))),
+		attn:    lipgloss.NewStyle().Bold(true).Foreground(ld(lipgloss.Color("3"), lipgloss.Color("11"))),
+		dim:     lipgloss.NewStyle().Faint(true),
 	}
 }
 
@@ -123,8 +126,9 @@ func (rep importReport) blockingRows() int { return rep.res.Tally().Blocked }
 // that won't load and saying nothing is exactly the silent failure this command
 // exists to prevent, and --quiet is the flag most likely to be in a script.
 func printImportSummary(w io.Writer, rep importReport, opts importOpts, epilogue func(io.Writer, importStyles)) {
-	st := newImportStyles(w)
 	width := terminalWidth(w)
+	w = colorprofile.NewWriter(w, os.Environ())
+	st := newImportStyles()
 	items := rep.res.Items()
 
 	if opts.quiet {

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -62,6 +62,11 @@ func (p *Pane) RenderLines(b *strings.Builder, dimContent, loadingOlder bool) {
 		b: b, start: start, end: cEnd, w: w,
 		padStyle: padStyle, stdoutStyle: stdoutStyle,
 		stderrStyle: stderrStyle, systemStyle: systemStyle,
+		// Base SGR per stream, so an embedded reset in captured output
+		// re-inherits the pane colours instead of the terminal default.
+		stdoutBase: uikit.BaseSGR(logFg, uikit.ColorBg, false),
+		stderrBase: uikit.BaseSGR(uikit.ColorError, uikit.ColorBg, false),
+		systemBase: uikit.BaseSGR(uikit.ColorTextMuted, uikit.ColorBg, true),
 	}
 	if start < committed {
 		if p.Cfg.LineNumbers {
@@ -102,7 +107,7 @@ func (p *Pane) renderOverlayRows(o lineRenderOpts, rows []Line) {
 	for _, row := range rows {
 		sliced, clippedRight := p.sliceRowText(row.Text, logContentWidth)
 		textStyle := styleForStream(row.Stream, o.stdoutStyle, o.stderrStyle, o.systemStyle)
-		lineContent := composeLineContent(sliced, false, clippedRight, o.padStyle, o.padStyle, textStyle)
+		lineContent := composeLineContent(sliced, o.baseForStream(row.Stream), false, clippedRight, o.padStyle, o.padStyle, textStyle)
 		lineContent = padLineContent(lineContent, logContentWidth, o.padStyle)
 		o.b.WriteString(gutter + lineContent)
 		o.b.WriteString("\n")
@@ -119,6 +124,9 @@ type lineRenderOpts struct {
 	stdoutStyle lipgloss.Style
 	stderrStyle lipgloss.Style
 	systemStyle lipgloss.Style
+	stdoutBase  string
+	stderrBase  string
+	systemBase  string
 }
 
 func styleForStream(stream string, stdout, stderr, system lipgloss.Style) lipgloss.Style {
@@ -129,6 +137,19 @@ func styleForStream(stream string, stdout, stderr, system lipgloss.Style) lipglo
 		return system
 	default:
 		return stdout
+	}
+}
+
+// baseForStream returns the base SGR (see uikit.ReassertResets) matching the
+// stream's text style.
+func (o lineRenderOpts) baseForStream(stream string) string {
+	switch stream {
+	case "stderr":
+		return o.stderrBase
+	case "system":
+		return o.systemBase
+	default:
+		return o.stdoutBase
 	}
 }
 
@@ -201,12 +222,14 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 		sliced = trimTrailingRuneIfClipped(sliced, clippedRight)
 
 		textStyle := styleForStream(row.Stream, o.stdoutStyle, o.stderrStyle, o.systemStyle)
+		base := o.baseForStream(row.Stream)
 		padStyle := o.padStyle
 		if isHL {
 			textStyle = lipgloss.NewStyle().Background(uikit.ColorWarning).Foreground(uikit.ColorBg).Bold(true)
 			padStyle = lipgloss.NewStyle().Background(uikit.ColorWarning)
+			base = "" // search-highlight rows carry no user ANSI
 		}
-		lineContent := composeLineContent(sliced, hasLeftIndicator, clippedRight, leftIndicatorStyle, rightIndicatorStyle, textStyle)
+		lineContent := composeLineContent(sliced, base, hasLeftIndicator, clippedRight, leftIndicatorStyle, rightIndicatorStyle, textStyle)
 		lineContent = padLineContent(lineContent, logContentWidth, padStyle)
 
 		o.b.WriteString(lineNum + lineContent)
@@ -250,7 +273,7 @@ func (p *Pane) renderLinesPlain(o lineRenderOpts) {
 		sliced, clippedRight := p.sliceRowText(row.Text, textAreaWidth)
 
 		textStyle := styleForStream(row.Stream, o.stdoutStyle, o.stderrStyle, o.systemStyle)
-		lineContent := composeLineContent(sliced, hasLeftIndicator, clippedRight, leftIndicatorStyle, rightIndicatorStyle, textStyle)
+		lineContent := composeLineContent(sliced, o.baseForStream(row.Stream), hasLeftIndicator, clippedRight, leftIndicatorStyle, rightIndicatorStyle, textStyle)
 		lineContent = padLineContent(lineContent, logContentWidth, o.padStyle)
 
 		o.b.WriteString(o.padStyle.Render("  ") + lineContent)
@@ -270,8 +293,11 @@ func (p *Pane) sliceRowText(text string, textAreaWidth int) (sliced string, clip
 }
 
 // composeLineContent renders one row's pre-padding content: optional left
-// scroll indicator + styled text + optional right scroll indicator.
-func composeLineContent(sliced string, hasLeftIndicator, clippedRight bool, leftStyle, rightStyle, textStyle lipgloss.Style) string {
+// scroll indicator + styled text + optional right scroll indicator. base is the
+// text style's opening SGR, re-asserted after any embedded reset in sliced so
+// captured ANSI output can't bleed the pane background/foreground.
+func composeLineContent(sliced, base string, hasLeftIndicator, clippedRight bool, leftStyle, rightStyle, textStyle lipgloss.Style) string {
+	sliced = uikit.ReassertResets(sliced, base)
 	var lineContent string
 	if hasLeftIndicator {
 		lineContent = leftStyle.Render("◂") + textStyle.Render(sliced)

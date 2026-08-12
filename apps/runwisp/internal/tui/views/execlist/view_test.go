@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -124,7 +124,7 @@ func TestExecView_Update_ScrollUp(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 	appendLines(&ev, 50)
 
-	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 
 	if ev.Pane.Follow {
 		t.Fatal("expected follow=false after scrolling up")
@@ -137,7 +137,7 @@ func TestExecView_Update_ScrollToBottom(t *testing.T) {
 	ev.Pane.Scroll = 0
 	ev.Pane.Follow = false
 
-	ev.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 
 	if !ev.Pane.Follow {
 		t.Fatal("expected follow=true after G/end")
@@ -151,7 +151,7 @@ func TestExecView_Update_ScrollToTop(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 	appendLines(&ev, 50)
 
-	ev.Update(tea.KeyMsg{Type: tea.KeyHome})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyHome})
 
 	if ev.Pane.Scroll != 0 {
 		t.Fatalf("expected scroll=0, got %d", ev.Pane.Scroll)
@@ -171,30 +171,30 @@ func TestExecView_Update_HeaderFocusNavigation(t *testing.T) {
 	// Scroll up from log area should enter header focus.
 	ev.Pane.Scroll = 0
 	ev.HeaderFocus = HeaderFocusNone
-	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	if ev.HeaderFocus != HeaderFocusStarted {
 		t.Fatalf("expected HeaderFocusStarted, got %d", ev.HeaderFocus)
 	}
 
 	// Up again should go to ID row.
-	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	if ev.HeaderFocus != HeaderFocusID {
 		t.Fatalf("expected HeaderFocusID, got %d", ev.HeaderFocus)
 	}
 
 	// Left from ID goes to Back, Right returns to ID.
-	ev.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	if ev.HeaderFocus != HeaderFocusBack {
 		t.Fatalf("expected HeaderFocusBack, got %d", ev.HeaderFocus)
 	}
 
-	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	if ev.HeaderFocus != HeaderFocusID {
 		t.Fatalf("expected HeaderFocusID after right from back, got %d", ev.HeaderFocus)
 	}
 
 	// Down from ID drops onto the row-2 Action button (running run).
-	ev.Update(tea.KeyMsg{Type: tea.KeyDown})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	if ev.HeaderFocus != HeaderFocusAction {
 		t.Fatalf("expected HeaderFocusAction after down from ID, got %d", ev.HeaderFocus)
 	}
@@ -206,12 +206,12 @@ func TestExecView_Update_HorizontalScroll(t *testing.T) {
 	ev.Pane.Scroll = 0
 	ev.Pane.Follow = false
 
-	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	if ev.Pane.HScroll != logpane.HScrollStep {
 		t.Fatalf("expected hScroll=%d, got %d", logpane.HScrollStep, ev.Pane.HScroll)
 	}
 
-	ev.Update(tea.KeyMsg{Type: tea.KeyShiftLeft})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModShift})
 	if ev.Pane.HScroll != 0 {
 		t.Fatalf("expected hScroll=0 after shift+left, got %d", ev.Pane.HScroll)
 	}
@@ -224,7 +224,7 @@ func TestExecView_Update_PageDown(t *testing.T) {
 	ev.Pane.Follow = false
 
 	visible := ev.Pane.VisibleLines()
-	ev.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 	if ev.Pane.Scroll != visible {
 		t.Fatalf("expected scroll=%d after pgdown, got %d", visible, ev.Pane.Scroll)
 	}
@@ -408,7 +408,7 @@ func TestExecView_Fullscreen_UpDoesNotEnterHeader(t *testing.T) {
 	ev.ToggleFullscreen()
 	ev.Pane.Scroll = 0
 
-	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 
 	if ev.HeaderFocus != HeaderFocusNone {
 		t.Fatalf("fullscreen up must not enter header; got focus=%d", ev.HeaderFocus)
@@ -422,7 +422,7 @@ func TestExecView_Fullscreen_StillScrollsWithKeys(t *testing.T) {
 	ev.Pane.Scroll = 0
 	ev.Pane.Follow = false
 
-	ev.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
 
 	if ev.Pane.Scroll == 0 {
 		t.Fatal("expected pgdown to advance scroll in fullscreen")
@@ -435,7 +435,7 @@ func TestExecView_NotFocused_IgnoresInput(t *testing.T) {
 	appendLines(&ev, 50)
 	initialScroll := ev.Pane.Scroll
 
-	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	if ev.Pane.Scroll != initialScroll {
 		t.Fatal("expected no scroll change when not focused")
 	}
@@ -459,7 +459,7 @@ func TestExecView_HandleKeyLeft_AllTransitions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ev := newSizedExecView(80, 24)
 			ev.HeaderFocus = tc.initial
-			ev.Update(tea.KeyMsg{Type: tea.KeyLeft})
+			ev.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 			if ev.HeaderFocus != tc.want {
 				t.Fatalf("after left from %d: expected focus=%d, got %d", tc.initial, tc.want, ev.HeaderFocus)
 			}
@@ -491,7 +491,7 @@ func TestExecView_HandleKeyRight_AllTransitions(t *testing.T) {
 				ev.Run.EndReason = model.EndReasonPtr(model.ReasonSuccess)
 			}
 			ev.HeaderFocus = tc.initial
-			ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+			ev.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 			if ev.HeaderFocus != tc.want {
 				t.Fatalf("after right from %d: expected focus=%d, got %d", tc.initial, tc.want, ev.HeaderFocus)
 			}
@@ -505,7 +505,7 @@ func TestExecView_HandleKeyRight_IDNoAction(t *testing.T) {
 	ev.Run.Status = model.PhasePending
 	ev.Run.EndReason = nil
 	ev.HeaderFocus = HeaderFocusID
-	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	if ev.HeaderFocus != HeaderFocusID {
 		t.Fatalf("expected focus to stay at ID when no action button, got %d", ev.HeaderFocus)
 	}
@@ -527,7 +527,7 @@ func TestExecView_HandleKeyDown_AllTransitions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ev := newSizedExecView(80, 24)
 			ev.HeaderFocus = tc.initial
-			ev.Update(tea.KeyMsg{Type: tea.KeyDown})
+			ev.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 			if ev.HeaderFocus != tc.want {
 				t.Fatalf("after down from %d: expected focus=%d, got %d", tc.initial, tc.want, ev.HeaderFocus)
 			}
@@ -539,7 +539,7 @@ func TestExecView_HandleKeyUp_StartedAndDuration(t *testing.T) {
 	for _, initial := range []HeaderFocusItem{HeaderFocusStarted, HeaderFocusDuration} {
 		ev := newSizedExecView(80, 24)
 		ev.HeaderFocus = initial
-		ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+		ev.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 		if ev.HeaderFocus != HeaderFocusID {
 			t.Fatalf("up from %d: expected HeaderFocusID, got %d", initial, ev.HeaderFocus)
 		}
@@ -551,7 +551,7 @@ func TestExecView_HandleKeyUp_AtTopFocusedItems(t *testing.T) {
 	for _, initial := range []HeaderFocusItem{HeaderFocusBack, HeaderFocusID} {
 		ev := newSizedExecView(80, 24)
 		ev.HeaderFocus = initial
-		ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+		ev.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 		if ev.HeaderFocus != initial {
 			t.Fatalf("up from %d: expected no change, got %d", initial, ev.HeaderFocus)
 		}
@@ -563,7 +563,7 @@ func TestExecView_HandleKeyUp_AtTopFocusedItems(t *testing.T) {
 func TestExecView_HandleKeyUp_ActionReturnsToID(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 	ev.HeaderFocus = HeaderFocusAction
-	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	if ev.HeaderFocus != HeaderFocusID {
 		t.Fatalf("up from Action: expected HeaderFocusID, got %d", ev.HeaderFocus)
 	}
@@ -576,7 +576,7 @@ func TestExecView_ActionReachableFromBothRows(t *testing.T) {
 	t.Run("from row 1 via ID down", func(t *testing.T) {
 		ev := newSizedExecView(80, 24)
 		ev.HeaderFocus = HeaderFocusID
-		ev.Update(tea.KeyMsg{Type: tea.KeyDown})
+		ev.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		if ev.HeaderFocus != HeaderFocusAction {
 			t.Fatalf("down from ID: expected HeaderFocusAction, got %d", ev.HeaderFocus)
 		}
@@ -585,20 +585,20 @@ func TestExecView_ActionReachableFromBothRows(t *testing.T) {
 	t.Run("from row 2 via right walk (with params)", func(t *testing.T) {
 		ev := newSizedExecViewWithParams(80, 24, map[string]string{"k": "v"})
 		ev.HeaderFocus = HeaderFocusStarted
-		ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+		ev.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 		if ev.HeaderFocus != HeaderFocusDuration {
 			t.Fatalf("right from Started: expected Duration, got %d", ev.HeaderFocus)
 		}
-		ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+		ev.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 		if ev.HeaderFocus != HeaderFocusParams {
 			t.Fatalf("right from Duration: expected Params, got %d", ev.HeaderFocus)
 		}
-		ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+		ev.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 		if ev.HeaderFocus != HeaderFocusAction {
 			t.Fatalf("right from Params: expected Action, got %d", ev.HeaderFocus)
 		}
 		// Left from Action steps back onto the Params chip.
-		ev.Update(tea.KeyMsg{Type: tea.KeyLeft})
+		ev.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 		if ev.HeaderFocus != HeaderFocusParams {
 			t.Fatalf("left from Action: expected Params, got %d", ev.HeaderFocus)
 		}
@@ -609,7 +609,7 @@ func TestExecView_HandleKeyUp_ScrollAtZero_EntersHeader(t *testing.T) {
 	ev := newSizedExecView(80, 24)
 	ev.Pane.Scroll = 0
 	ev.HeaderFocus = HeaderFocusNone
-	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	if ev.HeaderFocus != HeaderFocusStarted {
 		t.Fatalf("expected HeaderFocusStarted when scrolling up from top, got %d", ev.HeaderFocus)
 	}
@@ -621,7 +621,7 @@ func TestExecView_HandleKeyUp_ScrollAboveZero_Scrolls(t *testing.T) {
 	ev.Pane.Scroll = 10
 	ev.Pane.Follow = false
 	ev.HeaderFocus = HeaderFocusNone
-	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	if ev.Pane.Scroll != 9 {
 		t.Fatalf("expected scroll=9 after up, got %d", ev.Pane.Scroll)
 	}
@@ -948,7 +948,7 @@ func TestExecView_HandleKeyDown_DefaultBranch(t *testing.T) {
 	ev.Pane.Follow = false
 	ev.HeaderFocus = HeaderFocusNone
 
-	ev.Update(tea.KeyMsg{Type: tea.KeyDown})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	// Scroll should have advanced since pane handled the key.
 	if ev.Pane.Scroll == 0 {
 		t.Fatal("expected scroll to advance when HeaderFocusNone and key=down")
@@ -1025,23 +1025,23 @@ func TestExecView_Nav_ParamsChip(t *testing.T) {
 
 	// right from Duration → Params (chip present)
 	ev.HeaderFocus = HeaderFocusDuration
-	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	if ev.HeaderFocus != HeaderFocusParams {
 		t.Fatalf("expected right from Duration → Params, got %d", ev.HeaderFocus)
 	}
 	// left from Params → Duration
-	ev.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	if ev.HeaderFocus != HeaderFocusDuration {
 		t.Fatalf("expected left from Params → Duration, got %d", ev.HeaderFocus)
 	}
 	// up from Params → ID; down from Params → None
 	ev.HeaderFocus = HeaderFocusParams
-	ev.Update(tea.KeyMsg{Type: tea.KeyUp})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	if ev.HeaderFocus != HeaderFocusID {
 		t.Fatalf("expected up from Params → ID, got %d", ev.HeaderFocus)
 	}
 	ev.HeaderFocus = HeaderFocusParams
-	ev.Update(tea.KeyMsg{Type: tea.KeyDown})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	if ev.HeaderFocus != HeaderFocusNone {
 		t.Fatalf("expected down from Params → None, got %d", ev.HeaderFocus)
 	}
@@ -1052,7 +1052,7 @@ func TestExecView_Nav_DurationRight_NoParams(t *testing.T) {
 	// button (the next row-2 item) when one exists.
 	ev := newSizedExecView(80, 24) // running run → Stop action present
 	ev.HeaderFocus = HeaderFocusDuration
-	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	if ev.HeaderFocus != HeaderFocusAction {
 		t.Fatalf("expected right from Duration → Action with no params, got %d", ev.HeaderFocus)
 	}
@@ -1065,7 +1065,7 @@ func TestExecView_Nav_DurationRight_NoParamsNoAction(t *testing.T) {
 	ev.Run.Status = model.PhasePending // no action button
 	ev.Run.EndReason = nil
 	ev.HeaderFocus = HeaderFocusDuration
-	ev.Update(tea.KeyMsg{Type: tea.KeyRight})
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	if ev.HeaderFocus != HeaderFocusDuration {
 		t.Fatalf("expected Duration to stay put with no params and no action, got %d", ev.HeaderFocus)
 	}
@@ -1079,7 +1079,7 @@ func TestExecView_Nav_IDDown_NoAction(t *testing.T) {
 		ev.Run.Status = model.PhasePending // no action button
 		ev.Run.EndReason = nil
 		ev.HeaderFocus = HeaderFocusID
-		ev.Update(tea.KeyMsg{Type: tea.KeyDown})
+		ev.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		if ev.HeaderFocus != HeaderFocusParams {
 			t.Fatalf("down from ID (no action, params): expected Params, got %d", ev.HeaderFocus)
 		}
@@ -1090,7 +1090,7 @@ func TestExecView_Nav_IDDown_NoAction(t *testing.T) {
 		ev.Run.Status = model.PhasePending // no action button
 		ev.Run.EndReason = nil
 		ev.HeaderFocus = HeaderFocusID
-		ev.Update(tea.KeyMsg{Type: tea.KeyDown})
+		ev.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		if ev.HeaderFocus != HeaderFocusDuration {
 			t.Fatalf("down from ID (no action, no params): expected Duration, got %d", ev.HeaderFocus)
 		}

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/server"
 )
@@ -51,11 +51,11 @@ func TestNew_InitializesFields(t *testing.T) {
 
 func TestUpdate_TabTogglesRegex(t *testing.T) {
 	m := newTestModel(t)
-	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m2, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	if !m2.Regex() {
 		t.Fatal("expected regex on after tab")
 	}
-	m3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m3, _ := m2.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	if m3.Regex() {
 		t.Fatal("expected regex off after second tab")
 	}
@@ -63,7 +63,7 @@ func TestUpdate_TabTogglesRegex(t *testing.T) {
 
 func TestUpdate_AltCTogglesCaseSensitive(t *testing.T) {
 	m := newTestModel(t)
-	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c"), Alt: true})
+	m2, _ := m.Update(tea.KeyPressMsg{Code: 'c', Text: "c", Mod: tea.ModAlt})
 	if !m2.caseSensitive {
 		t.Fatal("expected case-sensitive on after alt+c")
 	}
@@ -79,25 +79,25 @@ func TestUpdate_CursorMovement(t *testing.T) {
 	m.input.SetValue("")
 	// Use the "j"/"k" runes. Note: the Update switch on tea.KeyMsg.String()
 	// translates KeyRunes("j") to "j".
-	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m2, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	if m2.Cursor() != 1 {
 		t.Fatalf("Cursor after j: got %d want 1", m2.Cursor())
 	}
-	m3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m3, _ := m2.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	if m3.Cursor() != 2 {
 		t.Fatalf("Cursor after second j: got %d want 2", m3.Cursor())
 	}
 	// At end — should clamp.
-	m4, _ := m3.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m4, _ := m3.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
 	if m4.Cursor() != 2 {
 		t.Fatalf("Cursor clamp at end: got %d want 2", m4.Cursor())
 	}
-	m5, _ := m4.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	m5, _ := m4.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
 	if m5.Cursor() != 1 {
 		t.Fatalf("Cursor after k: got %d want 1", m5.Cursor())
 	}
-	m6, _ := m5.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
-	m7, _ := m6.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	m6, _ := m5.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	m7, _ := m6.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
 	if m7.Cursor() != 0 {
 		t.Fatalf("Cursor clamp at start: got %d want 0", m7.Cursor())
 	}
@@ -109,11 +109,11 @@ func TestUpdate_ArrowKeys_AlsoMoveCursor(t *testing.T) {
 		{RunID: "r1", N: 1, Text: "one"},
 		{RunID: "r2", N: 2, Text: "two"},
 	}
-	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m2, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	if m2.Cursor() != 1 {
 		t.Fatalf("Cursor after down: got %d want 1", m2.Cursor())
 	}
-	m3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m3, _ := m2.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	if m3.Cursor() != 0 {
 		t.Fatalf("Cursor after up: got %d want 0", m3.Cursor())
 	}
@@ -127,7 +127,7 @@ func TestUpdate_EnterOnHitEmitsSelectMsg(t *testing.T) {
 	m.input.SetValue("hello")
 	m.lastSearched = "hello"
 	m.searched = true
-	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("expected select cmd")
 	}
@@ -146,7 +146,7 @@ func TestUpdate_EnterOnHitEmitsSelectMsg(t *testing.T) {
 func TestUpdate_EnterNoHitsNoCmd(t *testing.T) {
 	m := newTestModel(t)
 	m.input.Blur()
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd != nil {
 		t.Fatal("expected no cmd when no hits and input blurred")
 	}
@@ -158,7 +158,7 @@ func TestUpdate_EnterWithQueryStartsSearch(t *testing.T) {
 	if !m.input.Focused() {
 		t.Fatal("input should be focused after New()")
 	}
-	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !m2.loading {
 		t.Fatal("expected Loading=true after starting search")
 	}
@@ -217,7 +217,7 @@ func TestUpdate_ResultsMsg_Error(t *testing.T) {
 func TestUpdate_PassesThroughToTextInput(t *testing.T) {
 	m := newTestModel(t)
 	// Typing a rune should reach the textinput component.
-	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m2, _ := m.Update(tea.KeyPressMsg{Code: 'a', Text: "a"})
 	if m2.input.Value() != "a" {
 		t.Fatalf("Query after typing 'a': got %q", m2.input.Value())
 	}
@@ -313,11 +313,11 @@ func TestUpdate_EnterSelectsAfterSearch(t *testing.T) {
 	m := newTestModel(t)
 	m.input.SetValue("needle")
 	// First Enter dispatches the search; input stays focused.
-	m2, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	// Results land.
 	m3, _ := m2.Update(resultsMsg{hits: []server.LogSearchHit{{RunID: "rX", N: 9, Text: "hit"}}})
 	// Second Enter must select, not search.
-	_, cmd := m3.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m3.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("expected a command from Enter")
 	}

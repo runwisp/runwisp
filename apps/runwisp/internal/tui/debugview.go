@@ -6,8 +6,8 @@ package tui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/logpane"
 )
@@ -38,7 +38,7 @@ func (v *DebugView) AppendLine(msg string) {
 }
 
 func (v *DebugView) Update(msg tea.Msg) {
-	keyMsg, ok := msg.(tea.KeyMsg)
+	keyMsg, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return
 	}

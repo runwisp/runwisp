@@ -83,6 +83,30 @@ describe("createRunsSource", () => {
         expect(src.error?.message).toBe("offline");
         expect(src.loading).toBe(false);
     });
+
+    it("refresh() re-fetches the first page with the current filters", async () => {
+        const src = createRunsSource();
+        vi.mocked(runsApi.getAll).mockResolvedValue({ runs: [makeRun("a")], total: 1 });
+        src.setFilters(baseFilters());
+        await vi.waitFor(() => {
+            expect(src.loaded).toBe(true);
+        });
+
+        // The reconnect resync: the DB now holds a corrected set; refresh replaces
+        // the list from offset 0 without changing filters.
+        vi.mocked(runsApi.getAll).mockResolvedValue({ runs: [makeRun("b")], total: 1 });
+        src.refresh();
+        await vi.waitFor(() => {
+            expect(src.items.map((r) => r.id)).toEqual(["b"]);
+        });
+        expect(runsApi.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 0 }));
+    });
+
+    it("refresh() is a no-op before any filters are set", () => {
+        const src = createRunsSource();
+        src.refresh();
+        expect(runsApi.getAll).not.toHaveBeenCalled();
+    });
 });
 
 // A live SSE row is merged through `upsert`, which re-evaluates the active

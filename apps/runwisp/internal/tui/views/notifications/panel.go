@@ -5,13 +5,14 @@ package notifications
 
 import (
 	"fmt"
+	"image/color"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/tui/keys"
@@ -63,7 +64,7 @@ type Panel struct {
 }
 
 func NewPanel() Panel {
-	vp := viewport.New(0, viewportLines)
+	vp := viewport.New(viewport.WithWidth(0), viewport.WithHeight(viewportLines))
 	// Bubbles' viewport pads visible lines to its Width with unstyled spaces;
 	// without a styled background the trailing pad and any blank rows below
 	// the content render with the terminal's default colour. Apply uikit.ColorBg so
@@ -339,7 +340,7 @@ func (p *Panel) SetWidth(w int) {
 	if inner < 1 {
 		inner = 1
 	}
-	p.viewport.Width = inner
+	p.viewport.SetWidth(inner)
 	p.rebuildContent()
 }
 
@@ -436,7 +437,7 @@ func (p *Panel) rebuildContent() {
 	if !p.expanded {
 		return
 	}
-	rest := p.viewport.Width - 1
+	rest := p.viewport.Width() - 1
 	if rest < 0 {
 		rest = 0
 	}
@@ -490,7 +491,7 @@ func (p *Panel) renderRow(n server.NotificationDTO, selected bool) string {
 	whenStyle := lipgloss.NewStyle().Background(bg).Foreground(uikit.ColorTextMuted)
 
 	line := indentStyle.Render(indicator) + sev + titleStyle.Render(" "+title) + whenStyle.Render("  "+when)
-	rest := p.viewport.Width - 1
+	rest := p.viewport.Width() - 1
 	if rest < 0 {
 		rest = 0
 	}
@@ -501,7 +502,7 @@ func (p *Panel) renderRow(n server.NotificationDTO, selected bool) string {
 // the remainder with the row's own background. This is the "focus stripe" the
 // expanded panel uses to broadcast that it owns keyboard input — visually
 // the same idea as RunsList' active-row stripe in the web UI.
-func stripeFocusLine(content string, restWidth int, restBg lipgloss.Color) string {
+func stripeFocusLine(content string, restWidth int, restBg color.Color) string {
 	stripe := lipgloss.NewStyle().Background(uikit.ColorPrimary).Render(" ")
 	if restWidth < 0 {
 		restWidth = 0
@@ -520,12 +521,12 @@ func (p *Panel) latest() *server.NotificationDTO {
 }
 
 func (p *Panel) ensureCursorVisible() {
-	top := p.viewport.YOffset
-	bottom := top + p.viewport.Height - 1
+	top := p.viewport.YOffset()
+	bottom := top + p.viewport.Height() - 1
 	if p.cursor < top {
 		p.viewport.SetYOffset(p.cursor)
 	} else if p.cursor > bottom {
-		p.viewport.SetYOffset(p.cursor - p.viewport.Height + 1)
+		p.viewport.SetYOffset(p.cursor - p.viewport.Height() + 1)
 	}
 }
 
