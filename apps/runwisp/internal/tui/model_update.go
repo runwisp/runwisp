@@ -417,7 +417,8 @@ func (m Model) interceptParamFormDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) 
 		cmd, _ := m.dialogs.UpdateParamForm(msg)
 		return m, cmd, true
 	case tea.MouseMsg:
-		return m, nil, true
+		cmd, _ := m.dialogs.UpdateParamForm(msg)
+		return m, cmd, true
 	}
 	return m, nil, false
 }

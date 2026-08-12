@@ -391,6 +391,44 @@ func TestParamForm_InlineCueOnlyWhenFocused(t *testing.T) {
 	}
 }
 
+// TestParamForm_ClickZonesSurviveWrappedValue guards the mouse hit-testing when
+// an earlier field's value wraps to a second terminal row (a free-text input plus
+// its "(omitted)" marker overflows the modal width). Zones must map to on-screen
+// rows, not slice indices, or the click lands on the wrong field.
+func TestParamForm_ClickZonesSurviveWrappedValue(t *testing.T) {
+	params := []model.TaskParam{
+		// Optional free-text: renders as input + "  (omitted)", which wraps.
+		{Kind: model.ParamEnv, Key: "ORG_ID", Description: "Tenant whose data to export."},
+		{Kind: model.ParamArg, Key: "format", Choices: []string{"json", "csv"}, Default: strptr("json")},
+	}
+	d := NewParamFormDialog("export-org-data", params, func(map[string]*string) tea.Cmd { return nil })
+	d.View(120, 40) // lays out the zones
+
+	// Click the strict selector's value row; it must cycle field 1, not field 0.
+	z := d.zones[1]
+	d.Update(tea.MouseClickMsg{X: z.valueY, Y: z.valueY, Button: tea.MouseLeft})
+	assert.Equal(t, 1, d.focus, "click must focus the clicked field")
+	assert.Equal(t, "csv", *d.fields[1].suppliedValue(), "click on the selector value row must advance it")
+}
+
+// TestParamForm_ClickCyclesComboOffCustomSlot guards that the combo selector row
+// stays clickable once it lands on the "✎ custom…" slot — clicking it must cycle
+// forward (off custom), matching the keyboard, not go dead.
+func TestParamForm_ClickCyclesComboOffCustomSlot(t *testing.T) {
+	params := []model.TaskParam{
+		{Kind: model.ParamOption, Key: "--shard", Choices: []string{"shard-a", "shard-b"}, AllowCustom: true},
+	}
+	d := NewParamFormDialog("export-org-data", params, func(map[string]*string) tea.Cmd { return nil })
+	// Park the selector on the custom slot so the free-text input is revealed.
+	d.fields[0].selIdx = len(d.fields[0].opts)
+	require.True(t, d.fields[0].onCustom())
+	d.View(120, 40) // lays out the zones (value + custom rows)
+
+	z := d.zones[0]
+	d.Update(tea.MouseClickMsg{X: z.valueY, Y: z.valueY, Button: tea.MouseLeft})
+	assert.False(t, d.fields[0].onCustom(), "clicking the selector row must cycle off the custom slot")
+}
+
 // TestParamForm_EscCancels verifies esc closes the form without submitting.
 func TestParamForm_EscCancels(t *testing.T) {
 	called := false

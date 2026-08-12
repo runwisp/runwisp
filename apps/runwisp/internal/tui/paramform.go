@@ -87,6 +87,21 @@ type ParamFormDialog struct {
 	part     focusPart
 	submit   func(map[string]*string) tea.Cmd
 	errLine  string
+	// zones maps screen rows to fields for mouse hit-testing; rebuilt every
+	// View(). One entry per field, with absolute Y coordinates.
+	zones []paramZone
+}
+
+// paramZone is a field's clickable screen region, in absolute rows. top..bottom
+// spans the whole field (label + value [+ custom] [+ description]); valueY is the
+// value row (click there activates flags/selectors); customY is the combo
+// custom-input row, or -1.
+type paramZone struct {
+	field   int
+	top     int
+	bottom  int
+	valueY  int
+	customY int
 }
 
 // NewParamFormDialog builds a form for the task's parameters. submit is invoked
@@ -287,10 +302,27 @@ func (f *paramField) includeMarker() string {
 // Update dispatches input to the form. Returns a command (the submit command
 // when the operator confirms a valid form) and whether the dialog should close.
 func (d *ParamFormDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
-	keyMsg, ok := msg.(tea.KeyPressMsg)
-	if !ok {
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		return d.handleKeyMsg(msg)
+	case tea.MouseClickMsg:
+		if msg.Button == tea.MouseLeft {
+			d.handleClick(msg.X, msg.Y)
+		}
+		return nil, false
+	case tea.MouseWheelMsg:
+		switch msg.Button {
+		case tea.MouseWheelUp:
+			d.focusPrev()
+		case tea.MouseWheelDown:
+			d.focusNext()
+		}
 		return nil, false
 	}
+	return nil, false
+}
+
+func (d *ParamFormDialog) handleKeyMsg(keyMsg tea.KeyPressMsg) (tea.Cmd, bool) {
 	switch keyMsg.String() {
 	case "esc":
 		return nil, true
@@ -304,6 +336,46 @@ func (d *ParamFormDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
 		return nil, false
 	}
 	return d.handleFieldKey(keyMsg)
+}
+
+// handleClick focuses the field under the click and, when the value row itself is
+// clicked, activates its control (toggle a flag, advance a selector). Clicking a
+// combo's custom-input row focuses that stop. A text field just gains focus.
+func (d *ParamFormDialog) handleClick(_, y int) {
+	for _, z := range d.zones {
+		if y < z.top || y > z.bottom {
+			continue
+		}
+		d.focus = z.field
+		if z.customY >= 0 && y == z.customY {
+			d.part = focusCustom
+		} else {
+			d.part = focusMain
+		}
+		d.syncFocus()
+		if y == z.valueY {
+			d.activateOnClick(z.field)
+		}
+		return
+	}
+}
+
+// activateOnClick advances the clicked control the way its primary key would:
+// flags toggle, strict/combo selectors step forward (wrapping). The combo
+// selector row (‹ … ›) stays clickable even on the custom slot — that's how you
+// click your way back off custom; the revealed custom input is a separate row
+// (customY), left to the keyboard. Plain text fields just gain focus.
+// ponytail: selectors only cycle forward on click; the wheel and ←/→ go back.
+func (d *ParamFormDialog) activateOnClick(i int) {
+	f := &d.fields[i]
+	switch {
+	case f.param.Kind == model.ParamFlag:
+		f.flagOn = !f.flagOn
+	case f.strict:
+		f.selIdx = (f.selIdx + 1) % len(f.opts)
+	case f.combo:
+		f.cycleSel(1)
+	}
 }
 
 func (d *ParamFormDialog) handleFieldKey(keyMsg tea.KeyPressMsg) (tea.Cmd, bool) {
@@ -470,8 +542,26 @@ func (d *ParamFormDialog) View(screenWidth, screenHeight int) string {
 		modalSurfaceLine("Run "+d.taskName, innerWidth, uikit.ColorTextBright, true),
 		modalEmptyLine(innerWidth),
 	}
+	d.zones = d.zones[:0]
+	// Track the running *visual* row, not the slice length: a long value or
+	// description wraps inside modalLeftLine into several terminal rows, so one
+	// slice element can span multiple rows. Mapping clicks by slice index shifts
+	// every field below the first wrap.
+	visual := visualRows(lines)
 	for i := range d.fields {
-		lines = append(lines, d.renderField(i, innerWidth)...)
+		fieldLines := d.renderField(i, innerWidth)
+		top := visual
+		valueY := top + lipgloss.Height(fieldLines[0]) // value sits below the label
+		customY := -1
+		if d.fields[i].onCustom() {
+			customY = valueY + lipgloss.Height(fieldLines[1]) // custom sits below the value
+		}
+		lines = append(lines, fieldLines...)
+		visual = visualRows(lines)
+		// Card-line rows for now; shifted to absolute screen rows once laid out.
+		d.zones = append(d.zones, paramZone{
+			field: i, top: top, bottom: visual - 1, valueY: valueY, customY: customY,
+		})
 	}
 	if d.errLine != "" {
 		lines = append(lines,
@@ -485,6 +575,16 @@ func (d *ParamFormDialog) View(screenWidth, screenHeight int) string {
 	)
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorPrimary, lines)
+	// Card visual row r sits at screen row box.top+1+r (row 0 is the accent bar).
+	off := box.top + 1
+	for k := range d.zones {
+		d.zones[k].top += off
+		d.zones[k].bottom += off
+		d.zones[k].valueY += off
+		if d.zones[k].customY >= 0 {
+			d.zones[k].customY += off
+		}
+	}
 	return box.view
 }
 
@@ -578,6 +678,17 @@ func (d *ParamFormDialog) renderField(i, innerWidth int) []string {
 		out = append(out, modalLeftLine("    "+f.param.Description, innerWidth, uikit.ColorTextMuted))
 	}
 	return out
+}
+
+// visualRows counts the terminal rows a slice of rendered card lines occupies,
+// summing each element's wrapped height so click zones map to on-screen rows
+// rather than slice indices.
+func visualRows(lines []string) int {
+	n := 0
+	for _, ln := range lines {
+		n += lipgloss.Height(ln)
+	}
+	return n
 }
 
 // modalLeftLine renders a left-aligned full-width line on the modal surface,
