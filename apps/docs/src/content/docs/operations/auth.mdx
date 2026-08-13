@@ -28,10 +28,10 @@ macOS, and slams the door on anyone whose UID doesn't match.
 
 That's why the CLI and TUI don't need a password or a JWT — being
 on the local socket as the right user _is_ the credential. Commands
-like `runwisp`, `runwisp tui`, `runwisp list`, and `runwisp exec`
+like `runwisp`, `runwisp tui`, `runwisp list`, and `runwisp run`
 all connect through the socket automatically.
 
-Point `runwisp tui` or `runwisp exec` at a `--url` (or set
+Point `runwisp tui` or `runwisp run` at a `--url` (or set
 `RUNWISP_URL`) and they switch to the network path below instead —
 the daemon then authenticates them like any other network client.
 
@@ -151,14 +151,14 @@ demo on your own laptop, a throwaway instance on an isolated network.
 For those cases you can switch auth off entirely:
 
 ```bash
-RUNWISP_NO_AUTH=1 runwisp daemon
+RUNWISP_AUTH=off runwisp daemon
 ```
 
-Set `RUNWISP_NO_AUTH=1` (or `true`) and every `/api/` route answers
+Set `RUNWISP_AUTH=off` (or `true`) and every `/api/` route answers
 without a password, the Web UI skips the login screen, and a
 persistent **Auth disabled** badge sits in the Web UI header so the
 instance can never be mistaken for a secured one. The TUI's Home page
-shows `Password disabled (RUNWISP_NO_AUTH)` for the same reason, and
+shows `Password disabled (RUNWISP_AUTH=off)` for the same reason, and
 the daemon prints an unmissable warning banner at startup.
 
 Be clear-eyed about what you're switching off: **anyone who can reach
@@ -171,7 +171,7 @@ proxy in front instead.
 
 A few sharp edges, sanded:
 
-- `RUNWISP_NO_AUTH` and `RUNWISP_PASSWORD` are mutually exclusive —
+- `RUNWISP_AUTH=off` and `RUNWISP_PASSWORD` are mutually exclusive —
   the daemon refuses to start with both set, because a password that
   is never checked is worse than no password.
 - Any value other than `1` / `true` is a startup error, not a guess.
@@ -189,7 +189,7 @@ picture), so for local dev it's just:
 
 ```bash
 docker run --rm \
-  -e RUNWISP_NO_AUTH=1 \
+  -e RUNWISP_AUTH=off \
   -p 127.0.0.1:9477:9477 \
   -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro \
   runwisp/runwisp:latest
@@ -202,7 +202,7 @@ services:
     runwisp:
         image: runwisp/runwisp:latest
         environment:
-            - RUNWISP_NO_AUTH=1
+            - RUNWISP_AUTH=off
         ports:
             - "127.0.0.1:9477:9477"
         volumes:

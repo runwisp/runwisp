@@ -108,7 +108,7 @@ You never set or clear a hold — RunWisp re-derives it from the box on every lo
 so it can't go stale. `takeover` reloads the daemon as its last step, which is
 what makes the handover instant. Held tasks show a `⏸` marker in `runwisp status`
 and the TUI, a badge in the Web UI, and `held_by: "cron"` in the API. You can
-still run one on demand (`runwisp exec <name>`) to watch it under RunWisp before
+still run one on demand (`runwisp run <name>`) to watch it under RunWisp before
 you commit.
 
 ## Undoing it

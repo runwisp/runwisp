@@ -478,13 +478,13 @@ func TestDecode_NotifyDefaultTimeout(t *testing.T) {
 	src := schedulerTZHeader + `
 [notify]
 default_timeout = "5m"
-history_keep_for = "720h"
+keep_for = "720h"
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 	assert.NotZero(t, cfg.Notify.DefaultTimeout)
-	assert.NotZero(t, cfg.Notify.HistoryKeepFor)
+	assert.NotZero(t, cfg.Notify.KeepFor)
 }
 
 func TestDecode_NotifyOccurrenceRingDefault(t *testing.T) {
@@ -506,14 +506,14 @@ default_timeout = "not-a-duration"
 	assert.Contains(t, err.Error(), "default_timeout")
 }
 
-func TestDecode_NotifyHistoryKeepFor_Invalid(t *testing.T) {
+func TestDecode_NotifyKeepFor_Invalid(t *testing.T) {
 	src := schedulerTZHeader + `
 [notify]
-history_keep_for = "bad-value"
+keep_for = "bad-value"
 `
 	_, err := decode([]byte(src), "")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "history_keep_for")
+	assert.Contains(t, err.Error(), "keep_for")
 }
 
 func TestValidate_RejectsTelegramMissingChatID(t *testing.T) {

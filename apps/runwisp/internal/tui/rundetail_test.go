@@ -65,8 +65,8 @@ func TestRunDetailDialog_View_SuccessServiceInstance(t *testing.T) {
 		ExitCode:      0,
 		TriggeredBy:   model.TriggeredByAPI,
 		InstanceIndex: 1,
-		StartAt:       &start,
-		EndAt:         &end,
+		StartedAt:     &start,
+		EndedAt:       &end,
 		CreatedAt:     start,
 		Params:        map[string]string{"PORT": "8080"},
 	}

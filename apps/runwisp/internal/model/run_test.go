@@ -38,8 +38,8 @@ func TestRun_Copy_PointerFieldsAreIndependent(t *testing.T) {
 		ID:                  "run-1",
 		ExternalExecutionID: &extID,
 		EndReason:           &reason,
-		StartAt:             &now,
-		EndAt:               &end,
+		StartedAt:           &now,
+		EndedAt:             &end,
 		RetryOfRunID:        &retryID,
 	}
 
@@ -52,11 +52,11 @@ func TestRun_Copy_PointerFieldsAreIndependent(t *testing.T) {
 	assert.NotSame(t, orig.EndReason, cpy.EndReason)
 	assert.Equal(t, reason, *cpy.EndReason)
 
-	assert.NotSame(t, orig.StartAt, cpy.StartAt)
-	assert.Equal(t, now, *cpy.StartAt)
+	assert.NotSame(t, orig.StartedAt, cpy.StartedAt)
+	assert.Equal(t, now, *cpy.StartedAt)
 
-	assert.NotSame(t, orig.EndAt, cpy.EndAt)
-	assert.Equal(t, end, *cpy.EndAt)
+	assert.NotSame(t, orig.EndedAt, cpy.EndedAt)
+	assert.Equal(t, end, *cpy.EndedAt)
 
 	assert.NotSame(t, orig.RetryOfRunID, cpy.RetryOfRunID)
 	assert.Equal(t, retryID, *cpy.RetryOfRunID)

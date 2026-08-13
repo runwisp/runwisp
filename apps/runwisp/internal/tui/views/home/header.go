@@ -131,7 +131,7 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 	// Auth disabled: render a static, non-focusable Password row so the
 	// operator sees the security state at a glance instead of a masked value.
 	if info.AuthDisabled {
-		renderFieldRow(&b, "Password", "disabled (RUNWISP_NO_AUTH)", uikit.ColorWarning, w, false, false)
+		renderFieldRow(&b, "Password", "disabled (RUNWISP_AUTH=off)", uikit.ColorWarning, w, false, false)
 	}
 
 	if len(fields) > 0 || info.AuthDisabled {

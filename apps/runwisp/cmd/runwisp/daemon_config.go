@@ -94,24 +94,27 @@ func loadDaemonConfig(ctx context.Context, configRepo storage.ConfigRepository, 
 	}, nil
 }
 
-// resolveAuthMode reads RUNWISP_NO_AUTH and decides whether the daemon runs
-// with authentication disabled. Only the unambiguous values "1" and "true"
-// (case-insensitive) enable it; anything else non-empty is a configuration
-// mistake the operator must see, not a value to be guessed at. Combining it
-// with RUNWISP_PASSWORD is contradictory — a password that is never checked
-// gives a false sense of security — so that is rejected too.
+// resolveAuthMode reads RUNWISP_AUTH and decides whether the daemon runs with
+// authentication disabled. Auth is on by default; only the unambiguous value
+// "off" (case-insensitive) turns it off, and "on" restates the default.
+// Anything else is a configuration mistake the operator must see, not a value
+// to be guessed at. Turning auth off while RUNWISP_PASSWORD is set is
+// contradictory — a password that is never checked gives a false sense of
+// security — so that is rejected too.
 func resolveAuthMode() (noAuth bool, err error) {
-	raw := strings.TrimSpace(os.Getenv("RUNWISP_NO_AUTH"))
+	raw := strings.TrimSpace(os.Getenv("RUNWISP_AUTH"))
 	if raw == "" {
 		return false, nil
 	}
 	switch strings.ToLower(raw) {
-	case "1", "true":
+	case "on":
+		return false, nil
+	case "off":
 	default:
-		return false, fmt.Errorf("RUNWISP_NO_AUTH must be \"1\" or \"true\" when set (got %q)", raw)
+		return false, fmt.Errorf("RUNWISP_AUTH must be \"on\" or \"off\" when set (got %q)", raw)
 	}
 	if os.Getenv("RUNWISP_PASSWORD") != "" {
-		return false, errors.New("RUNWISP_NO_AUTH and RUNWISP_PASSWORD are mutually exclusive — unset one of them")
+		return false, errors.New("RUNWISP_AUTH=off and RUNWISP_PASSWORD are mutually exclusive — unset one of them")
 	}
 	return true, nil
 }

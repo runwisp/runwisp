@@ -212,13 +212,13 @@ running, `status --json` exits non-zero with `"healthy": false` and an `error`.
 ## Run a task now
 
 ```sh
-runwisp exec <task>              # run a task, stream its output, exit with its code
-runwisp exec <task> --daemon     # require a running daemon (fail fast if none)
-runwisp exec <task> --standalone # require in-process (refuse if a daemon owns the dir)
-runwisp exec <task> --json       # print the run outcome as JSON (log lines to stderr)
+runwisp run <task>              # run a task, stream its output, exit with its code
+runwisp run <task> --daemon     # require a running daemon (fail fast if none)
+runwisp run <task> --standalone # require in-process (refuse if a daemon owns the dir)
+runwisp run <task> --json       # print the run outcome as JSON (log lines to stderr)
 ```
 
-`runwisp exec` runs one task and streams its stdout/stderr straight to
+`runwisp run` runs one task and streams its stdout/stderr straight to
 your terminal, exiting with the run's own exit code — so it slots cleanly
 into a script. By default it auto-detects: if a daemon owns this data
 dir, the run is dispatched through its REST API and followed live;
@@ -444,7 +444,7 @@ prints in plaintext, so pipe it to a clipboard tool (`runwisp password |
 wl-copy`) to keep it out of your scrollback. If the daemon uses a fixed
 [`RUNWISP_PASSWORD`](/operations/auth/#the-password) it refuses (that
 value is never disclosed); if it runs with
-[`RUNWISP_NO_AUTH`](/operations/auth/#running-without-a-password) there's
+[`RUNWISP_AUTH=off`](/operations/auth/#running-without-a-password) there's
 no password at all and the command exits with a distinct code.
 
 `runwisp openapi` dumps the OpenAPI 3.1 schema to stdout for feeding into
@@ -482,15 +482,15 @@ open the Web UI in a browser; stop it later with `runwisp stop --data <dir>`
 
 ## Environment variables
 
-| Variable                  | What it does                                                                                                                                                                              |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RUNWISP_PASSWORD`        | Sets the daemon password in memory. Unset, a fresh ephemeral one is minted every boot. See [Auth](/operations/auth/#the-password).                                                        |
-| `RUNWISP_NO_AUTH`         | `1` or `true` disables authentication entirely — local dev / trusted networks only. Mutually exclusive with `RUNWISP_PASSWORD`. See [Auth](/operations/auth/#running-without-a-password). |
-| `RUNWISP_TRUSTED_PROXIES` | Comma-separated CIDR list of reverse proxies whose `X-Forwarded-*` headers the daemon may honor.                                                                                          |
-| `RUNWISP_CLOUD_TOKEN`     | Token for `runwisp cloud`. Ignored in standalone mode.                                                                                                                                    |
-| `RUNWISP_CLOUD_URL`       | Control-plane URL for `runwisp cloud` (overrides the built-in default).                                                                                                                   |
-| `RUNWISP_LOG_LEVEL`       | Fallback for `--log-level` (`debug`/`info`/`warn`/`error`). The flag wins when both are set.                                                                                              |
-| `RUNWISP_LOG_FORMAT`      | Fallback for `--log-format` (`auto`/`text`/`json`). The flag wins when both are set.                                                                                                      |
+| Variable                  | What it does                                                                                                                                                                                                                 |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RUNWISP_PASSWORD`        | Sets the daemon password in memory. Unset, a fresh ephemeral one is minted every boot. See [Auth](/operations/auth/#the-password).                                                                                           |
+| `RUNWISP_AUTH`            | `off` disables authentication entirely — local dev / trusted networks only. Defaults to on; `on` restates the default. Mutually exclusive with `RUNWISP_PASSWORD`. See [Auth](/operations/auth/#running-without-a-password). |
+| `RUNWISP_TRUSTED_PROXIES` | Comma-separated CIDR list of reverse proxies whose `X-Forwarded-*` headers the daemon may honor.                                                                                                                             |
+| `RUNWISP_CLOUD_TOKEN`     | Token for `runwisp cloud`. Ignored in standalone mode.                                                                                                                                                                       |
+| `RUNWISP_CLOUD_URL`       | Control-plane URL for `runwisp cloud` (overrides the built-in default).                                                                                                                                                      |
+| `RUNWISP_LOG_LEVEL`       | Fallback for `--log-level` (`debug`/`info`/`warn`/`error`). The flag wins when both are set.                                                                                                                                 |
+| `RUNWISP_LOG_FORMAT`      | Fallback for `--log-format` (`auto`/`text`/`json`). The flag wins when both are set.                                                                                                                                         |
 
 ---
 

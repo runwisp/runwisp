@@ -100,7 +100,7 @@ Prefer to convert instead — or coming from supervisord? `runwisp import cron /
 runwisp
 ```
 
-That's it. `runwisp` starts the daemon and drops you straight into the **terminal UI**: task list, live logs, run history, one-click triggering. The web dashboard URL appears on the TUI's Home page, secured by an auto-generated password (press `Enter` to copy it). Want headless? `runwisp daemon`. Want your own password? Set `RUNWISP_PASSWORD`. No login wall for local dev (e.g. Docker)? Set [`RUNWISP_NO_AUTH=1`](https://docs.runwisp.com/operations/auth/#running-without-a-password). Want it to survive reboot? `runwisp service install`.
+That's it. `runwisp` starts the daemon and drops you straight into the **terminal UI**: task list, live logs, run history, one-click triggering. The web dashboard URL appears on the TUI's Home page, secured by an auto-generated password (press `Enter` to copy it). Want headless? `runwisp daemon`. Want your own password? Set `RUNWISP_PASSWORD`. No login wall for local dev (e.g. Docker)? Set [`RUNWISP_AUTH=off`](https://docs.runwisp.com/operations/auth/#running-without-a-password). Want it to survive reboot? `runwisp service install`.
 
 Full configuration reference, REST API docs, and operational guides live at **[docs.runwisp.com](https://docs.runwisp.com)**.
 

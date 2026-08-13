@@ -54,7 +54,7 @@ describe("paramSupportsInclude", () => {
     });
 
     it("offers it for a combo only while on the custom slot", () => {
-        const combo = opt({ choices: ["us", "eu"], allow_custom: true });
+        const combo = opt({ choices: ["us", "eu"], allowCustom: true });
         expect(paramSupportsInclude(combo, false)).toBe(false);
         expect(paramSupportsInclude(combo, true)).toBe(true);
     });

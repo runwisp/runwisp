@@ -15,7 +15,7 @@
         resolveParamSupplied,
     } from "./param-form";
 
-    // Sentinel for the "Custom…" entry of an allow_custom select. Choices
+    // Sentinel for the "Custom…" entry of an allowCustom select. Choices
     // are arbitrary strings, so we mark the custom slot with a NUL-prefixed
     // value no choice can ever collide with (the daemon rejects a NUL byte in
     // any choice). Written as a \u0000 escape, not a literal NUL, so it stays
@@ -85,7 +85,7 @@
     // Once the operator toggles the affordance, the choice sticks for that field.
     let includeOverride = $state<Record<string, boolean>>({});
 
-    // Per allow_custom param, whether the selector sits on the custom slot (so
+    // Per allowCustom param, whether the selector sits on the custom slot (so
     // the free-text input shows). Seeded true when a default isn't a listed
     // choice, so a custom default opens in custom mode pre-filled.
     let customMode = $state<Record<string, boolean>>(
@@ -191,7 +191,7 @@
                 checked={flagChecked(p.key)}
                 onchange={(e) => setFlag(p.key, e.currentTarget.checked)}
             />
-        {:else if p.choices && p.choices.length > 0 && !p.allow_custom}
+        {:else if p.choices && p.choices.length > 0 && !p.allowCustom}
             <FormField
                 id={fieldId(p.key)}
                 label={p.key}
@@ -210,7 +210,7 @@
                     }}
                 />
             </FormField>
-        {:else if p.choices && p.choices.length > 0 && p.allow_custom}
+        {:else if p.choices && p.choices.length > 0 && p.allowCustom}
             <FormField
                 id={fieldId(p.key)}
                 label={p.key}

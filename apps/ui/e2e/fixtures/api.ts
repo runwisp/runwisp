@@ -93,8 +93,8 @@ export async function getLatestRun(
         headers: authHeaders(token),
     });
     expect(response.status(), `list runs for ${taskName}`).toBe(200);
-    const body = (await response.json()) as { runs: Run[] };
-    return body.runs[0];
+    const body = (await response.json()) as { items: Run[] };
+    return body.items[0];
 }
 
 /** Poll the API until the run reaches the terminal `ended` phase. */
@@ -229,12 +229,12 @@ export async function expectRunDetailMatchesApi(page: Page, apiRun: Run): Promis
         await expect(page.getByTestId("run-exit"), "no code unless it is news").toHaveCount(0);
     }
 
-    if (apiRun.startAt) {
+    if (apiRun.startedAt) {
         const startedValue = page.getByTestId("run-started");
         await expect(startedValue, "started timestamp populated").not.toHaveText("—");
         await expect(startedValue).toContainText(":"); // wall-clock time (HH:MM:SS)
     }
-    if (apiRun.startAt && apiRun.endAt) {
+    if (apiRun.startedAt && apiRun.endedAt) {
         await expect(page.getByTestId("run-duration"), "duration populated").toBeVisible();
     }
 }

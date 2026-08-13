@@ -227,7 +227,7 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 }
 
 func (srv *Server) humaListTasks(ctx context.Context, input *struct{}) (*TasksOutput, error) {
-	return &TasksOutput{Body: srv.runService.ListTasks()}, nil
+	return &TasksOutput{Body: TasksResponseBody{Items: srv.runService.ListTasks()}}, nil
 }
 
 func (srv *Server) humaListRuns(ctx context.Context, input *RunsQueryInput) (*RunsOutput, error) {
@@ -236,7 +236,7 @@ func (srv *Server) humaListRuns(ctx context.Context, input *RunsQueryInput) (*Ru
 	if err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to get runs")
 	}
-	return &RunsOutput{Body: RunsResponseBody{Runs: result.Runs, Total: result.Total}}, nil
+	return &RunsOutput{Body: RunsResponseBody{Items: result.Items, Total: result.Total}}, nil
 }
 
 func (srv *Server) humaGetRunSummary(ctx context.Context, input *struct{}) (*RunSummaryOutput, error) {
@@ -253,7 +253,7 @@ func (srv *Server) humaListTaskRuns(ctx context.Context, input *TaskRunsQueryInp
 	if err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to get runs")
 	}
-	return &RunsOutput{Body: RunsResponseBody{Runs: result.Runs, Total: result.Total}}, nil
+	return &RunsOutput{Body: RunsResponseBody{Items: result.Items, Total: result.Total}}, nil
 }
 
 func (srv *Server) humaTriggerRun(ctx context.Context, input *TriggerRunInput) (*TriggerRunOutput, error) {

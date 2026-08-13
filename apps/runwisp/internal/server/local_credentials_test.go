@@ -98,7 +98,7 @@ func TestLocalCredentials_SocketEnvVarReturns404(t *testing.T) {
 		"the env-var password must never appear in the response body")
 }
 
-// TestLocalCredentials_NoAuthReturns409 guards the RUNWISP_NO_AUTH contract:
+// TestLocalCredentials_NoAuthReturns409 guards the RUNWISP_AUTH=off contract:
 // the internally-minted password gates nothing, so disclosing it would
 // present a non-credential as a credential. 409 is distinct from the env-var
 // 404 so `runwisp password` can print the right explanation for each.

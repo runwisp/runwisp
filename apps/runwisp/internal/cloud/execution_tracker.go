@@ -133,7 +133,7 @@ func mapRunToExecutionUpdate(run *model.Run) *protocol.ExecutionUpdateMessage {
 
 	executionID := *run.ExternalExecutionID
 	if run.Status == model.PhaseRunning {
-		return ptr(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusRunning, nil, run.StartAt, nil))
+		return ptr(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusRunning, nil, run.StartedAt, nil))
 	}
 
 	if run.EndReason == nil {
@@ -146,7 +146,7 @@ func mapRunToExecutionUpdate(run *model.Run) *protocol.ExecutionUpdateMessage {
 		// and stranding the execution as "running" on the cloud.
 		status = protocol.ExecutionStatusFailed
 	}
-	return ptr(NewExecutionUpdateMessage(executionID, status, ptr(run.ExitCode), run.StartAt, run.EndAt))
+	return ptr(NewExecutionUpdateMessage(executionID, status, ptr(run.ExitCode), run.StartedAt, run.EndedAt))
 }
 
 func ptr[T any](value T) *T {

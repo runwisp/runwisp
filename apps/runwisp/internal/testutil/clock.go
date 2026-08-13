@@ -11,7 +11,7 @@ import (
 // Clock is a controllable time source for code that takes the runtime's
 // `func() time.Time` clock contract (e.g. NewTaskManager, NewScheduler). It
 // lets tests stamp deterministic timestamps instead of passing time.Now, so
-// CreatedAt/StartAt/EndTime assertions are exact rather than fuzzy.
+// CreatedAt/StartedAt/EndTime assertions are exact rather than fuzzy.
 //
 // Pass the bound method value as the clock: NewTaskManager(exec, eb, clk.Now).
 type Clock struct {

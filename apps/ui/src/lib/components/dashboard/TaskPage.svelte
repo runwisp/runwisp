@@ -161,7 +161,7 @@
             });
             if (seq !== outputSearchSeq) return; // a newer query superseded this one
             const map = new SvelteMap<string, RunOutputMatch>();
-            for (const hit of res.hits) {
+            for (const hit of res.items) {
                 if (!map.has(hit.runId)) map.set(hit.runId, { line: hit.n, text: hit.text });
             }
             outputMatches = map;

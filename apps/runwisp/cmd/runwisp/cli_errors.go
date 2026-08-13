@@ -136,7 +136,7 @@ func renderError(w io.Writer, title, details, hint string) {
 	}
 }
 
-// unknownTaskError is returned when `runwisp exec` names a task that doesn't
+// unknownTaskError is returned when `runwisp run` names a task that doesn't
 // exist. It suggests the closest match for a likely typo and lists what is
 // actually defined, so the operator never has to open runwisp.toml to find
 // the right name.
@@ -192,7 +192,7 @@ func instanceSummaryLines(info *model.InstanceInfo) []string {
 	}
 }
 
-// remoteAuthRequiredError is returned when `runwisp exec --url` needs to run
+// remoteAuthRequiredError is returned when `runwisp run --url` needs to run
 // the CHAP handshake (no cached session) but no password was supplied.
 func remoteAuthRequiredError(baseURL string) error {
 	return &userFacingError{

@@ -45,7 +45,7 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
   - TOML is trusted input; the REST API / UI is not.
   - Never execute user-provided strings from HTTP/WS bodies as shell. `run =` comes from disk only.
   - Secrets (JWT secret, passwords) live under the data dir (`internal/datadir/`) with restrictive perms; never log them; never transmit them over any outbound integration.
-- CHAP (challenge-response) auth is the login boundary. JWT is the session. Don't bypass either for "convenience" endpoints. The only sanctioned bypass is the explicit operator opt-in `RUNWISP_NO_AUTH=1`, which disables the boundary wholesale, warns loudly at startup, and is mutually exclusive with `RUNWISP_PASSWORD`.
+- CHAP (challenge-response) auth is the login boundary. JWT is the session. Don't bypass either for "convenience" endpoints. The only sanctioned bypass is the explicit operator opt-in `RUNWISP_AUTH=off`, which disables the boundary wholesale, warns loudly at startup, and is mutually exclusive with `RUNWISP_PASSWORD`.
 
 ## 🧠 DECISION HEURISTICS (use when the spec is silent)
 

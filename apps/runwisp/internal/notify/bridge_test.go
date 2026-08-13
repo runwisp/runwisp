@@ -209,8 +209,8 @@ func TestRunReasonString_WithDuration(t *testing.T) {
 	run := &model.Run{
 		EndReason: &r,
 		ExitCode:  1,
-		StartAt:   &now,
-		EndAt:     &end,
+		StartedAt: &now,
+		EndedAt:   &end,
 	}
 	result := runReasonString(run, "")
 	assert.Contains(t, result, "failed")

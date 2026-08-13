@@ -36,20 +36,20 @@ describe("runVerdict", () => {
 });
 
 describe("runDuration", () => {
-    it("returns undefined when startAt is not set", () => {
+    it("returns undefined when startedAt is not set", () => {
         expect(runDuration({})).toBeUndefined();
     });
 
-    it("returns formatted duration when both startAt and endAt are set", () => {
+    it("returns formatted duration when both startedAt and endedAt are set", () => {
         const start = "2024-06-15T12:00:00.000Z";
         const end = "2024-06-15T12:00:05.000Z";
-        expect(runDuration({ startAt: start, endAt: end })).toBe("5s");
+        expect(runDuration({ startedAt: start, endedAt: end })).toBe("5s");
     });
 
     it("returns ms duration for sub-second runs", () => {
         const start = "2024-06-15T12:00:00.000Z";
         const end = "2024-06-15T12:00:00.500Z";
-        expect(runDuration({ startAt: start, endAt: end })).toBe("500ms");
+        expect(runDuration({ startedAt: start, endedAt: end })).toBe("500ms");
     });
 
     describe("with fake clock", () => {
@@ -61,27 +61,27 @@ describe("runDuration", () => {
             vi.useRealTimers();
         });
 
-        it("uses current time when endAt is not set (run still in progress)", () => {
-            expect(runDuration({ startAt: "2024-06-15T12:00:00.000Z" })).toBe("2s");
+        it("uses current time when endedAt is not set (run still in progress)", () => {
+            expect(runDuration({ startedAt: "2024-06-15T12:00:00.000Z" })).toBe("2s");
         });
     });
 
     it("counts against an injected now for an in-progress run", () => {
         const start = "2024-06-15T12:00:00.000Z";
         const now = new Date("2024-06-15T12:00:07.000Z").getTime();
-        expect(runDuration({ startAt: start }, now)).toBe("7s");
+        expect(runDuration({ startedAt: start }, now)).toBe("7s");
     });
 
     it("ignores the injected now once the run has ended", () => {
         const start = "2024-06-15T12:00:00.000Z";
         const end = "2024-06-15T12:00:05.000Z";
         const now = new Date("2024-06-15T12:01:00.000Z").getTime();
-        expect(runDuration({ startAt: start, endAt: end }, now)).toBe("5s");
+        expect(runDuration({ startedAt: start, endedAt: end }, now)).toBe("5s");
     });
 });
 
 describe("runStartDelay", () => {
-    it("returns undefined when startAt is not set", () => {
+    it("returns undefined when startedAt is not set", () => {
         expect(runStartDelay({ createdAt: "2024-06-15T12:00:00.000Z" })).toBeUndefined();
     });
 
@@ -89,7 +89,7 @@ describe("runStartDelay", () => {
         expect(
             runStartDelay({
                 createdAt: "2024-06-15T12:00:00.000Z",
-                startAt: "2024-06-15T12:00:00.300Z",
+                startedAt: "2024-06-15T12:00:00.300Z",
             }),
         ).toBeUndefined();
     });
@@ -98,7 +98,7 @@ describe("runStartDelay", () => {
         expect(
             runStartDelay({
                 createdAt: "2024-06-15T03:00:00.000Z",
-                startAt: "2024-06-15T03:07:12.000Z",
+                startedAt: "2024-06-15T03:07:12.000Z",
             }),
         ).toBe("7m 12s");
     });

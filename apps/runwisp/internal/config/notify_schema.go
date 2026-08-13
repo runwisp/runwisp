@@ -25,12 +25,12 @@ var allowedSMTPTLSModes = []string{"starttls", "implicit", "off"}
 const (
 	inappNotifierID      = "inapp"
 	notifyTokenSeparator = ":"
-	// defaultHistoryKeep is the in-app notification cap applied when
-	// notify.history_keep is omitted from TOML.
-	defaultHistoryKeep = 1024
-	// defaultHistoryKeepFor is the age limit applied when
-	// notify.history_keep_for is omitted from TOML.
-	defaultHistoryKeepFor = 90 * 24 * time.Hour
+	// defaultKeepNotifications is the in-app notification cap applied when
+	// notify.keep_notifications is omitted from TOML.
+	defaultKeepNotifications = 1024
+	// defaultKeepFor is the age limit applied when
+	// notify.keep_for is omitted from TOML.
+	defaultKeepFor = 90 * 24 * time.Hour
 	// defaultOccurrenceRing is the coalescing ring size applied when
 	// notify.occurrence_ring is omitted. It drives both the in-app occurrence
 	// ring and the outbound "check-in every N events" cadence, so it must be
@@ -58,13 +58,13 @@ func parseNotifyToken(s string) (parentID, override string, hasOverride bool) {
 // resolved-but-not-secret-substituted NotifyConfig.
 func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*taskWire, serviceNames []string, serviceWires map[string]*serviceWire) (NotifyConfig, error) {
 	out := NotifyConfig{
-		GlobalNotifiers:  resolveGlobalNotifiers(t.Notify.GlobalNotifiers),
-		HistoryKeep:      t.Notify.HistoryKeep,
-		OccurrenceRing:   t.Notify.OccurrenceRing,
-		CoalesceOutbound: t.Notify.CoalesceOutbound == nil || *t.Notify.CoalesceOutbound,
+		GlobalNotifiers:   resolveGlobalNotifiers(t.Notify.GlobalNotifiers),
+		KeepNotifications: t.Notify.KeepNotifications,
+		OccurrenceRing:    t.Notify.OccurrenceRing,
+		CoalesceOutbound:  t.Notify.CoalesceOutbound == nil || *t.Notify.CoalesceOutbound,
 	}
-	if out.HistoryKeep == 0 {
-		out.HistoryKeep = defaultHistoryKeep
+	if out.KeepNotifications == 0 {
+		out.KeepNotifications = defaultKeepNotifications
 	}
 	if out.OccurrenceRing == 0 {
 		out.OccurrenceRing = defaultOccurrenceRing
@@ -99,7 +99,7 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 }
 
 // applyNotifyDurations parses the [notify] duration knobs and stamps them onto
-// out, applying the documented default when history_keep_for is omitted.
+// out, applying the documented default when keep_for is omitted.
 func (t *tomlConfig) applyNotifyDurations(out *NotifyConfig) error {
 	if t.Notify.DefaultTimeout != "" {
 		d, err := parseDuration(t.Notify.DefaultTimeout)
@@ -108,15 +108,15 @@ func (t *tomlConfig) applyNotifyDurations(out *NotifyConfig) error {
 		}
 		out.DefaultTimeout = d
 	}
-	if t.Notify.HistoryKeepFor != "" {
-		d, err := parseKeepFor(t.Notify.HistoryKeepFor)
+	if t.Notify.KeepFor != "" {
+		d, err := parseKeepFor(t.Notify.KeepFor)
 		if err != nil {
-			return fmt.Errorf("invalid notify.history_keep_for: %w", err)
+			return fmt.Errorf("invalid notify.keep_for: %w", err)
 		}
-		out.HistoryKeepFor = d
+		out.KeepFor = d
 	}
-	if out.HistoryKeepFor == 0 {
-		out.HistoryKeepFor = defaultHistoryKeepFor
+	if out.KeepFor == 0 {
+		out.KeepFor = defaultKeepFor
 	}
 	if t.Notify.CoalesceWindow != "" {
 		d, err := parseDuration(t.Notify.CoalesceWindow)

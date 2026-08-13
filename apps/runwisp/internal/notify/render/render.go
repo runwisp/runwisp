@@ -254,14 +254,14 @@ func humanDuration(d time.Duration) string {
 	return fmt.Sprintf("%dh %dm", h, m)
 }
 
-// runDuration derives a humanized duration from run.EndAt - run.StartAt.
+// runDuration derives a humanized duration from run.EndedAt - run.StartedAt.
 // Returns the empty string when either endpoint is missing — the template
 // then omits the duration phrase entirely rather than printing "0s".
 func runDuration(r *model.Run) string {
-	if r == nil || r.StartAt == nil || r.EndAt == nil {
+	if r == nil || r.StartedAt == nil || r.EndedAt == nil {
 		return ""
 	}
-	return humanDuration(r.EndAt.Sub(*r.StartAt))
+	return humanDuration(r.EndedAt.Sub(*r.StartedAt))
 }
 
 // triggerPhrase maps a TriggeredBy to the operator-facing sentence prefix

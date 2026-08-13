@@ -19,7 +19,7 @@ func TestParseSortColumn(t *testing.T) {
 	}{
 		{"empty falls through to default", "", SortColumnDefault, false},
 		{"created_at allowed", "createdAt", SortColumnCreatedAt, false},
-		{"start_at allowed", "startAt", SortColumnStartAt, false},
+		{"start_at allowed", "startedAt", SortColumnStartedAt, false},
 		{"task_name allowed", "taskName", SortColumnTaskName, false},
 		{"status allowed", "status", SortColumnStatus, false},
 		{"exit_code allowed", "exitCode", SortColumnExitCode, false},
@@ -81,7 +81,7 @@ func TestQueryRunsSortKey(t *testing.T) {
 		{"created_at asc", SortColumnCreatedAt, SortAsc, "createdAt_asc"},
 		{"task_name desc", SortColumnTaskName, SortDesc, "taskName_desc"},
 		{"duration asc", SortColumnDuration, SortAsc, "duration_asc"},
-		{"start_at desc", SortColumnStartAt, SortDesc, "startAt_desc"},
+		{"start_at desc", SortColumnStartedAt, SortDesc, "startedAt_desc"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

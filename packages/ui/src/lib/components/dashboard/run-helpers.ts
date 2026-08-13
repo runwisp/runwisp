@@ -43,26 +43,26 @@ export function runVerdict(status: RunStatus): RunVerdict {
 }
 
 export function runDuration(
-    run: Pick<Run, "startAt" | "endAt">,
+    run: Pick<Run, "startedAt" | "endedAt">,
     now: number = Date.now(),
 ): string | undefined {
-    if (!run.startAt) return undefined;
-    const start = new Date(run.startAt).getTime();
-    const end = run.endAt ? new Date(run.endAt).getTime() : now;
+    if (!run.startedAt) return undefined;
+    const start = new Date(run.startedAt).getTime();
+    const end = run.endedAt ? new Date(run.endedAt).getTime() : now;
     return formatDuration(end - start);
 }
 
 /**
  * Gap between when a run was scheduled (`createdAt`, the cron tick) and when
- * it actually started (`startAt`), formatted — or undefined when the two are
+ * it actually started (`startedAt`), formatted — or undefined when the two are
  * within a second of each other. This is the visible face of `jitter`: a
  * jittered run is created at its tick but starts later inside the window, and
  * this is by how much. It also surfaces queue-wait, since a queued run is
  * created when it joins the line and started when the line clears.
  */
-export function runStartDelay(run: Pick<Run, "createdAt" | "startAt">): string | undefined {
-    if (!run.startAt) return undefined;
-    const delay = new Date(run.startAt).getTime() - new Date(run.createdAt).getTime();
+export function runStartDelay(run: Pick<Run, "createdAt" | "startedAt">): string | undefined {
+    if (!run.startedAt) return undefined;
+    const delay = new Date(run.startedAt).getTime() - new Date(run.createdAt).getTime();
     if (delay < 1000) return undefined;
     return formatDuration(delay);
 }

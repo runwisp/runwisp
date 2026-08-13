@@ -30,17 +30,17 @@ func PadLine(content string, width int, bg color.Color) string {
 	return content + FillBg(width-contentWidth, bg)
 }
 
-// FormatDuration renders a run's elapsed time. When EndAt is nil the duration
+// FormatDuration renders a run's elapsed time. When EndedAt is nil the duration
 // is measured against time.Now() so live cells tick forward.
 func FormatDuration(run model.Run) string {
-	if run.StartAt == nil {
+	if run.StartedAt == nil {
 		return "—"
 	}
 	endTime := time.Now()
-	if run.EndAt != nil {
-		endTime = *run.EndAt
+	if run.EndedAt != nil {
+		endTime = *run.EndedAt
 	}
-	d := endTime.Sub(*run.StartAt)
+	d := endTime.Sub(*run.StartedAt)
 	if d < time.Second {
 		return fmt.Sprintf("%dms", d.Milliseconds())
 	}

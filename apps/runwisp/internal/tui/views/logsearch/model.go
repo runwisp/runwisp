@@ -194,6 +194,6 @@ func (m Model) startSearch() (Model, tea.Cmd) {
 		if err != nil {
 			return resultsMsg{err: err}
 		}
-		return resultsMsg{hits: body.Hits}
+		return resultsMsg{hits: body.Items}
 	}
 }

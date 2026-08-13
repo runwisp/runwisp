@@ -292,7 +292,7 @@ jobs:
 
           for image in runwisp:ci-alpine runwisp:ci-debian; do
             echo "::group::${image}"
-            docker run -d --name runwisp-ci -e RUNWISP_NO_AUTH=1 -p 19477:9477 \
+            docker run -d --name runwisp-ci -e RUNWISP_AUTH=off -p 19477:9477 \
               -v /tmp/runwisp-ci/runwisp.toml:/etc/runwisp/runwisp.toml:ro "${image}"
 
             for _ in $(seq 1 20); do

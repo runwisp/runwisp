@@ -140,8 +140,8 @@ type Run struct {
 	Status              RunPhase    `json:"status" enum:"pending,running,ended" doc:"Run lifecycle phase"`
 	EndReason           *EndReason  `json:"endReason,omitempty"`
 	ExitCode            int         `json:"exitCode"`
-	StartAt             *time.Time  `json:"startAt,omitempty"`
-	EndAt               *time.Time  `json:"endAt,omitempty"`
+	StartedAt           *time.Time  `json:"startedAt,omitempty"`
+	EndedAt             *time.Time  `json:"endedAt,omitempty"`
 	TriggeredBy         TriggeredBy `json:"triggeredBy" enum:"cron,api,cloud,service,startup" doc:"How the run was triggered"`
 	CreatedAt           time.Time   `json:"createdAt"`
 	RetryAttempt        int         `json:"retryAttempt"`
@@ -167,13 +167,13 @@ func (r *Run) Copy() *Run {
 		er := *r.EndReason
 		cpy.EndReason = &er
 	}
-	if r.StartAt != nil {
-		sa := *r.StartAt
-		cpy.StartAt = &sa
+	if r.StartedAt != nil {
+		sa := *r.StartedAt
+		cpy.StartedAt = &sa
 	}
-	if r.EndAt != nil {
-		ea := *r.EndAt
-		cpy.EndAt = &ea
+	if r.EndedAt != nil {
+		ea := *r.EndedAt
+		cpy.EndedAt = &ea
 	}
 	if r.RetryOfRunID != nil {
 		rid := *r.RetryOfRunID
@@ -190,11 +190,11 @@ func (r *Run) Copy() *Run {
 }
 
 // End transitions a run to the ended phase with the given reason.
-func (r *Run) End(reason EndReason, exitCode int, endAt time.Time) {
+func (r *Run) End(reason EndReason, exitCode int, endedAt time.Time) {
 	r.Status = PhaseEnded
 	r.EndReason = &reason
 	r.ExitCode = exitCode
-	r.EndAt = &endAt
+	r.EndedAt = &endedAt
 }
 
 // IsRetryable reports whether a run ended with a reason that warrants

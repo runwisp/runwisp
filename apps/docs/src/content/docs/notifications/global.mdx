@@ -22,24 +22,24 @@ and [`[[notification_route]]`](/notifications/routes/).
 [notify]
 global_notifiers  = ["inapp"]   # default — bell on
 # default_timeout = "30s"       # unset — uses the built-in 5-min retry budget
-history_keep      = 1024        # default
-history_keep_for  = "90d"       # default
+keep_notifications      = 1024        # default
+keep_for  = "90d"       # default
 coalesce_window   = "1h"        # default
 occurrence_ring   = 10          # default
 coalesce_outbound = true        # default
 ```
 
-| Key                 | Default     | What it does                                                                                                                    |
-| ------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `global_notifiers`  | `["inapp"]` | Channels added to every per-task notify list (deduplicated), and catch-all for tasks without one. Set `[]` to silence the bell. |
-| `default_timeout`   | _(unset)_   | Caps the total retry budget for one outbound delivery. Unset = 5 minutes.                                                       |
-| `history_keep`      | `1024`      | Cap on bell rows kept in SQLite. Older rows are pruned in one pass.                                                             |
-| `history_keep_for`  | `90d`       | Maximum age of bell rows. Accepts `d` and `w` units.                                                                            |
-| `coalesce_window`   | `1h`        | Window during which repeats with the same kind for the same task update one row instead of writing a new one.                   |
-| `occurrence_ring`   | `10`        | Recent timestamps kept on each coalesced row.                                                                                   |
-| `coalesce_outbound` | `true`      | Coalesce outbound deliveries too, not just bell rows. Set `false` to send one message per event.                                |
+| Key                  | Default     | What it does                                                                                                                    |
+| -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `global_notifiers`   | `["inapp"]` | Channels added to every per-task notify list (deduplicated), and catch-all for tasks without one. Set `[]` to silence the bell. |
+| `default_timeout`    | _(unset)_   | Caps the total retry budget for one outbound delivery. Unset = 5 minutes.                                                       |
+| `keep_notifications` | `1024`      | Cap on bell rows kept in SQLite. Older rows are pruned in one pass.                                                             |
+| `keep_for`           | `90d`       | Maximum age of bell rows. Accepts `d` and `w` units.                                                                            |
+| `coalesce_window`    | `1h`        | Window during which repeats with the same kind for the same task update one row instead of writing a new one.                   |
+| `occurrence_ring`    | `10`        | Recent timestamps kept on each coalesced row.                                                                                   |
+| `coalesce_outbound`  | `true`      | Coalesce outbound deliveries too, not just bell rows. Set `false` to send one message per event.                                |
 
-Set both `history_keep` and `history_keep_for` and they both apply at
+Set both `keep_notifications` and `keep_for` and they both apply at
 once — whichever trims harder is the one that bites.
 
 ## The bell — `global_notifiers`
@@ -79,9 +79,9 @@ asked for one try and no retries.
 Bell rows live in SQLite, kept separate from run rows. Two knobs prune
 them:
 
-- `history_keep` — keep at most N rows; older ones are pruned in one
+- `keep_notifications` — keep at most N rows; older ones are pruned in one
   pass.
-- `history_keep_for` — delete rows older than this duration.
+- `keep_for` — delete rows older than this duration.
 
 Both run at once, and the stricter one wins. A background sweeper takes
 care of it — there's nothing for you to trigger.
@@ -115,8 +115,8 @@ surface quickly:
 [notify]
 global_notifiers  = ["inapp"]   # keep the bell
 default_timeout   = "30s"       # cap retry budget at 30s
-history_keep      = 2000
-history_keep_for  = "60d"
+keep_notifications      = 2000
+keep_for  = "60d"
 coalesce_window   = "30m"
 occurrence_ring   = 20
 ```

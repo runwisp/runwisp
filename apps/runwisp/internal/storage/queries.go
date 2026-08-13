@@ -27,7 +27,7 @@ type SortColumn string
 const (
 	SortColumnDefault   SortColumn = ""
 	SortColumnCreatedAt SortColumn = "createdAt"
-	SortColumnStartAt   SortColumn = "startAt"
+	SortColumnStartedAt SortColumn = "startedAt"
 	SortColumnTaskName  SortColumn = "taskName"
 	SortColumnStatus    SortColumn = "status"
 	SortColumnExitCode  SortColumn = "exitCode"
@@ -50,7 +50,7 @@ const (
 // a known column?".
 var allowedSortColumns = map[SortColumn]struct{}{
 	SortColumnCreatedAt: {},
-	SortColumnStartAt:   {},
+	SortColumnStartedAt: {},
 	SortColumnTaskName:  {},
 	SortColumnStatus:    {},
 	SortColumnExitCode:  {},

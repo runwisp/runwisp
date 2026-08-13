@@ -56,7 +56,7 @@ func TestRunPassword_AuthDisabled(t *testing.T) {
 		"no-auth must exit with its own code, never the env-var refusal code")
 	assert.Empty(t, stdout.String(),
 		"no-auth path must never write anything to stdout")
-	assert.Contains(t, stderr.String(), "RUNWISP_NO_AUTH")
+	assert.Contains(t, stderr.String(), "RUNWISP_AUTH=off")
 	assert.Contains(t, stderr.String(), "no password")
 }
 

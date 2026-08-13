@@ -139,8 +139,8 @@ func runReasonString(run *model.Run, errMsg string) string {
 	}
 	if run.EndReason != nil && *run.EndReason != model.ReasonSuccess {
 		duration := ""
-		if run.StartAt != nil && run.EndAt != nil {
-			duration = fmt.Sprintf(" after %s", run.EndAt.Sub(*run.StartAt).Round(time.Second))
+		if run.StartedAt != nil && run.EndedAt != nil {
+			duration = fmt.Sprintf(" after %s", run.EndedAt.Sub(*run.StartedAt).Round(time.Second))
 		}
 		if run.ExitCode != 0 {
 			return fmt.Sprintf("%s exit %d%s", *run.EndReason, run.ExitCode, duration)

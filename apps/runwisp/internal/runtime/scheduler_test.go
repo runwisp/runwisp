@@ -63,8 +63,7 @@ func TestSchedulerHonorsTaskTimezone(t *testing.T) {
 
 	next := sched.GetNextRun("ny-task")
 	require.NotNil(t, next)
-	parsed, err := time.ParseInLocation("2006-01-02 15:04:05", *next, time.UTC)
-	require.NoError(t, err)
+	parsed := *next
 
 	loc, err := time.LoadLocation("America/New_York")
 	require.NoError(t, err)
@@ -528,8 +527,7 @@ func TestSchedulerJitterGetNextRunShowsTick(t *testing.T) {
 	// The displayed instant is the bare cron tick (02:00), with no slot offset
 	// folded in. (The cron entry's next-fire is keyed off the real clock, so
 	// only the time-of-day is asserted, not the date.)
-	parsed, err := time.ParseInLocation("2006-01-02 15:04:05", *nextB, time.UTC)
-	require.NoError(t, err)
+	parsed := *nextB
 	assert.Equal(t, 2, parsed.Hour(), "next run is the 02:00 tick, not an offset start")
 	assert.Equal(t, 0, parsed.Minute())
 }

@@ -62,7 +62,7 @@ const logSearchHitSchema = z.object({
 });
 
 export const logSearchResponseSchema = z.object({
-    hits: z.array(logSearchHitSchema),
+    items: z.array(logSearchHitSchema),
     nextCursor: z.string().optional().default(""),
     exhausted: z.boolean(),
     scannedRuns: z.number().int().nonnegative(),

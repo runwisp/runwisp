@@ -383,7 +383,7 @@ func summarizeTaskRuns(taskName string, runs []model.Run, total int64) uikit.Tas
 		case run.EndReason != nil && retry.IsFailureReason(*run.EndReason):
 			msg.Failed++
 			if msg.LastFailure == nil {
-				msg.LastFailure = run.EndAt
+				msg.LastFailure = run.EndedAt
 			}
 		default:
 			msg.Other++

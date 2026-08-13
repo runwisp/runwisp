@@ -49,13 +49,13 @@
             tasksApi.getAll(),
             runsApi.getAll({
                 limit: RECENT_RUN_LIMIT,
-                sortField: "startAt",
+                sortField: "startedAt",
                 sortDirection: "desc",
             }),
             runsApi.getAll({
                 limit: RUNNING_RUN_LIMIT,
                 status: "running",
-                sortField: "startAt",
+                sortField: "startedAt",
                 sortDirection: "desc",
             }),
         ]);

@@ -99,7 +99,7 @@ func TestStatusJSONGolden(t *testing.T) {
 	start := time.Date(2026, 7, 15, 3, 0, 0, 0, time.UTC)
 	end := start.Add(42 * time.Second)
 	failed := model.ReasonFailed
-	nextRun := "2026-07-16T03:00:00Z"
+	nextRun := time.Date(2026, 7, 16, 3, 0, 0, 0, time.UTC)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -116,22 +116,22 @@ func TestStatusJSONGolden(t *testing.T) {
 		})
 	})
 	mux.HandleFunc("/api/tasks", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode([]model.TaskResponse{
+		_ = json.NewEncoder(w).Encode(server.TasksResponseBody{Items: []model.TaskResponse{
 			{Task: model.Task{Name: "backup", Cron: "0 3 * * *"}, NextRunAt: &nextRun},
 			{Task: model.Task{Name: "web", Kind: model.KindService, APITrigger: true}},
-		})
+		}})
 	})
 	mux.HandleFunc("/api/tasks/backup/runs", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(server.RunsResponseBody{Total: 1, Runs: []model.Run{{
+		_ = json.NewEncoder(w).Encode(server.RunsResponseBody{Total: 1, Items: []model.Run{{
 			ID: "01JZZBACKUP0000000000000000", TaskName: "backup", Status: model.PhaseEnded,
 			EndReason: &failed, ExitCode: 1, TriggeredBy: model.TriggeredByCron,
-			StartAt: &start, EndAt: &end,
+			StartedAt: &start, EndedAt: &end,
 		}}})
 	})
 	mux.HandleFunc("/api/tasks/web/runs", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(server.RunsResponseBody{Total: 1, Runs: []model.Run{{
+		_ = json.NewEncoder(w).Encode(server.RunsResponseBody{Total: 1, Items: []model.Run{{
 			ID: "01JZZWEB00000000000000000000", TaskName: "web", Status: model.PhaseRunning,
-			TriggeredBy: model.TriggeredByService, StartAt: &start,
+			TriggeredBy: model.TriggeredByService, StartedAt: &start,
 		}}})
 	})
 	f := serveStatusSocket(t, mux)

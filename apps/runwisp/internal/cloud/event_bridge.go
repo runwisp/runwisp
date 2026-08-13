@@ -107,7 +107,7 @@ func (b *EventBridge) handleRunEvent(ctx context.Context, event events.Event) {
 	terminal := run.Status.IsTerminal()
 
 	if run.Status == model.PhaseRunning {
-		b.tracker.TrackRunning(executionID, run.StartAt)
+		b.tracker.TrackRunning(executionID, run.StartedAt)
 	}
 	if terminal {
 		b.tracker.Remove(executionID)

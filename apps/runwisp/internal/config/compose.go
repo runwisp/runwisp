@@ -38,7 +38,7 @@ var composeReservedKeys = map[string]struct{}{
 	"file":         {},
 	"include":      {},
 	"exclude":      {},
-	"mode":         {},
+	"import":       {},
 	"group":        {},
 	"project_name": {},
 	"profiles":     {},
@@ -54,7 +54,16 @@ var composeReservedKeys = map[string]struct{}{
 // A compose service named identically is rejected with a rename hint.
 const composeDefaultsKey = "defaults"
 
-var validComposeMode = []string{model.ComposeModeServices, model.ComposeModeStack}
+// Compose block import strategy — the [compose.*] `import` key. This is a
+// config-layer axis distinct from a task's execution ComposeMode: "services"
+// emits one RunWisp service per compose service (each executed as ComposeModeRun),
+// "stack" emits a single task managing the whole project (ComposeModeStack).
+const (
+	composeImportServices = "services"
+	composeImportStack    = "stack"
+)
+
+var validComposeImport = []string{composeImportServices, composeImportStack}
 var validComposePull = []string{
 	model.ComposePullMissing,
 	model.ComposePullAlways,
@@ -151,7 +160,7 @@ type composeBlockWire struct {
 	File        string   `toml:"file,omitempty"`
 	Include     []string `toml:"include,omitempty"`
 	Exclude     []string `toml:"exclude,omitempty"`
-	Mode        string   `toml:"mode,omitempty"`
+	Import      string   `toml:"import,omitempty"`
 	Group       string   `toml:"group,omitempty"`
 	ProjectName string   `toml:"project_name,omitempty"`
 	Profiles    []string `toml:"profiles,omitempty"`
@@ -242,8 +251,8 @@ func expandComposeAlias(alias string, raw map[string]any, baseDir string, existi
 		return nil, nil, err
 	}
 
-	switch block.Mode {
-	case model.ComposeModeStack:
+	switch block.Import {
+	case composeImportStack:
 		tasks, err := expandComposeStack(block, project, existingNames)
 		return tasks, nil, err
 	default:
@@ -330,8 +339,8 @@ func parseComposeBlock(alias string, raw map[string]any) (*composeBlock, error) 
 // with their compose-import defaults (mode, pull, name_format, group, and
 // project_name all default off the alias).
 func applyComposeBlockDefaults(block *composeBlock, alias string) {
-	if block.Mode == "" {
-		block.Mode = model.ComposeModeServices
+	if block.Import == "" {
+		block.Import = composeImportServices
 	}
 	if block.Pull == "" {
 		block.Pull = model.ComposePullMissing
@@ -354,21 +363,21 @@ func validateComposeBlock(block *composeBlock) error {
 	if len(block.Include) > 0 && len(block.Exclude) > 0 {
 		return fmt.Errorf("`include` and `exclude` are mutually exclusive")
 	}
-	if !slices.Contains(validComposeMode, block.Mode) {
-		return fmt.Errorf("invalid mode %q: must be one of %s", block.Mode, strings.Join(validComposeMode, ", "))
+	if !slices.Contains(validComposeImport, block.Import) {
+		return fmt.Errorf("invalid import %q: must be one of %s", block.Import, strings.Join(validComposeImport, ", "))
 	}
 	if !slices.Contains(validComposePull, block.Pull) {
 		return fmt.Errorf("invalid pull %q: must be one of %s", block.Pull, strings.Join(namedComposePullValues, ", "))
 	}
-	if !strings.Contains(block.NameFormat, "{service}") && block.Mode == model.ComposeModeServices {
+	if !strings.Contains(block.NameFormat, "{service}") && block.Import == composeImportServices {
 		return fmt.Errorf("name_format %q must contain {service}", block.NameFormat)
 	}
-	if block.Mode == model.ComposeModeStack {
+	if block.Import == composeImportStack {
 		if len(block.Overrides) > 0 || block.Defaults != nil {
-			return fmt.Errorf("per-service overrides are not allowed in mode=\"stack\"")
+			return fmt.Errorf("per-service overrides are not allowed in import=\"stack\"")
 		}
 		if len(block.Include) > 0 || len(block.Exclude) > 0 {
-			return fmt.Errorf("include/exclude are not allowed in mode=\"stack\"")
+			return fmt.Errorf("include/exclude are not allowed in import=\"stack\"")
 		}
 	}
 	return nil
@@ -568,7 +577,7 @@ func buildComposeServiceTask(block *composeBlock, svc *composespec.Service, svcN
 		File:        block.File,
 		ProjectName: block.ProjectName,
 		Service:     svcName,
-		Mode:        model.ComposeModeServices,
+		Mode:        model.ComposeModeRun,
 		Profiles:    block.Profiles,
 		EnvFile:     block.EnvFile,
 		WorkingDir:  block.WorkingDir,

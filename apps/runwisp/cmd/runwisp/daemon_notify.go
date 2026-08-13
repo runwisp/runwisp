@@ -220,8 +220,8 @@ func buildOutboundChannels(specs []channel.NotifierSpec, outboundCoalesce bool, 
 }
 
 func buildRetentionFn(repo storage.NotificationRepository, cfg config.NotifyConfig, logger *slog.Logger) func(context.Context) {
-	keep := cfg.HistoryKeep
-	age := cfg.HistoryKeepFor
+	keep := cfg.KeepNotifications
+	age := cfg.KeepFor
 	if keep <= 0 && age <= 0 {
 		return nil
 	}

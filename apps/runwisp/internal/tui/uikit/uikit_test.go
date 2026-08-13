@@ -22,40 +22,40 @@ func TestPage_String(t *testing.T) {
 func TestFormatDuration(t *testing.T) {
 	now := time.Now()
 
-	// nil StartAt → dash
+	// nil StartedAt → dash
 	assert.Equal(t, "—", FormatDuration(model.Run{}))
 
 	// < 1s
 	start := now.Add(-500 * time.Millisecond)
-	r := model.Run{StartAt: &start}
+	r := model.Run{StartedAt: &start}
 	d := FormatDuration(r)
 	assert.Contains(t, d, "ms")
 
 	// < 1m
 	start2 := now.Add(-30 * time.Second)
-	r2 := model.Run{StartAt: &start2}
+	r2 := model.Run{StartedAt: &start2}
 	d2 := FormatDuration(r2)
 	assert.Contains(t, d2, "s")
 	assert.NotContains(t, d2, "m")
 
 	// >= 1m < 1h
 	start3 := now.Add(-5*time.Minute - 30*time.Second)
-	r3 := model.Run{StartAt: &start3}
+	r3 := model.Run{StartedAt: &start3}
 	d3 := FormatDuration(r3)
 	assert.Contains(t, d3, "m")
 	assert.Contains(t, d3, "s")
 
 	// >= 1h
 	start4 := now.Add(-90 * time.Minute)
-	r4 := model.Run{StartAt: &start4}
+	r4 := model.Run{StartedAt: &start4}
 	d4 := FormatDuration(r4)
 	assert.Contains(t, d4, "h")
 	assert.Contains(t, d4, "m")
 
-	// with EndAt set
+	// with EndedAt set
 	end := now.Add(-1 * time.Second)
 	start5 := now.Add(-5 * time.Second)
-	r5 := model.Run{StartAt: &start5, EndAt: &end}
+	r5 := model.Run{StartedAt: &start5, EndedAt: &end}
 	d5 := FormatDuration(r5)
 	assert.Contains(t, d5, "s")
 }

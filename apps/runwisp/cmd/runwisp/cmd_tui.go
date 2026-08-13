@@ -34,7 +34,7 @@ With --url (or RUNWISP_URL) set, the TUI connects to a daemon over HTTP — a
 remote host, a container, or any daemon you don't share a data dir with. It
 logs in via CHAP and caches the session token so you only enter the password
 once. The password is read from RUNWISP_PASSWORD or, failing that, prompted for
-without echo. A daemon started with RUNWISP_NO_AUTH needs no password.`,
+without echo. A daemon started with RUNWISP_AUTH=off needs no password.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runTUIClient(flags)
 	},
@@ -68,7 +68,7 @@ func runTUIClient(f Flags) error {
 const maxRemotePasswordPrompts = 3
 
 // runTUIViaRemote attaches the TUI to a daemon over HTTP. It probes health and
-// whether auth is required (so a RUNWISP_NO_AUTH daemon connects with none),
+// whether auth is required (so a RUNWISP_AUTH=off daemon connects with none),
 // authenticates via CHAP when needed (reusing a cached JWT), then hands the
 // authenticated client to the shared TUI launch path.
 func runTUIViaRemote(baseURL string, f Flags) error {

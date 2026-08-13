@@ -92,7 +92,7 @@ func (s *runService) ListRuns(ctx context.Context, taskName string, p Pagination
 		return nil, err
 	}
 
-	return &RunsResponseBody{Runs: runs, Total: total}, nil
+	return &RunsResponseBody{Items: runs, Total: total}, nil
 }
 
 func (s *runService) GetRun(ctx context.Context, runID string) (*model.Run, error) {

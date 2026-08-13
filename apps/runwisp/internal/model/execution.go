@@ -139,15 +139,20 @@ func (e *ConfigExecution) ExecType() string { return "config" }
 
 // --- Compose execution ---
 
-// ComposeMode discriminates per-service runs from whole-stack runs and from
-// exec-into-the-running-container runs.
+// ComposeMode is how a compose-backed task is executed. Each value names the
+// `docker compose` subcommand it turns into, so the TOML spelling and the
+// runtime behaviour match: `run` starts a fresh managed container
+// (`docker compose run`), `stack` brings the whole project up
+// (`docker compose up`), `exec` runs inside an already-running container.
 const (
-	ComposeModeServices = "services"
-	ComposeModeStack    = "stack"
+	// ComposeModeRun starts a fresh RunWisp-managed container for the service
+	// (`docker compose run --rm`). RunWisp names, labels, and reclaims it.
+	ComposeModeRun   = "run"
+	ComposeModeStack = "stack"
 	// ComposeModeExec runs Command inside the service's *already running*
 	// container (`docker compose exec`) instead of starting a new one. The
 	// container is not ours: RunWisp neither creates, names, labels, nor
-	// removes it, so the reclaim/cleanup paths that guard services mode are
+	// removes it, so the reclaim/cleanup paths that guard run mode are
 	// deliberately skipped.
 	ComposeModeExec = "exec"
 )
@@ -166,7 +171,7 @@ type ComposeExecution struct {
 	File        string   `json:"file"`
 	ProjectName string   `json:"projectName"`
 	Service     string   `json:"service,omitempty"` // empty when Mode == stack
-	Mode        string   `json:"mode"`              // "services" | "stack" | "exec"
+	Mode        string   `json:"mode"`              // "run" | "stack" | "exec"
 	Profiles    []string `json:"profiles,omitempty"`
 	EnvFile     []string `json:"envFile,omitempty"`
 	WorkingDir  string   `json:"workingDir,omitempty"`

@@ -27,7 +27,7 @@ func (srv *Server) registerAuthRoutes() {
 }
 
 func (srv *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
-	// With RUNWISP_NO_AUTH every caller is implicitly authenticated; the UI
+	// With RUNWISP_AUTH=off every caller is implicitly authenticated; the UI
 	// reads auth_required=false and skips the login modal.
 	authenticated := srv.noAuth || srv.auth.DecodeCookieToken(auth.TokenFromCookie(r))
 	respondJSON(w, http.StatusOK, AuthStatusBody{

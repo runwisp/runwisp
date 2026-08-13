@@ -75,8 +75,8 @@ func TestTelegram_RunFailed_WithURLAndTail(t *testing.T) {
 		ID:          "01KRK9SS7MKEWN4F49R30ZM74N",
 		TaskName:    "telegram-test-fail",
 		ExitCode:    1,
-		StartAt:     &start,
-		EndAt:       &end,
+		StartedAt:   &start,
+		EndedAt:     &end,
 		TriggeredBy: model.TriggeredByAPI,
 	}
 	ev := &notify.Event{
@@ -113,8 +113,8 @@ func TestTelegram_RunFailed_NoURL_NoTail(t *testing.T) {
 		ID:          "01KRK9SS7MKEWN4F49R30ZM74N",
 		TaskName:    "telegram-test-fail",
 		ExitCode:    1,
-		StartAt:     &start,
-		EndAt:       &end,
+		StartedAt:   &start,
+		EndedAt:     &end,
 		TriggeredBy: model.TriggeredByAPI,
 	}
 	ev := &notify.Event{
@@ -142,8 +142,8 @@ func TestTelegram_RunSucceeded(t *testing.T) {
 	run := &model.Run{
 		ID:          "01KRK9",
 		TaskName:    "nightly-backup",
-		StartAt:     &start,
-		EndAt:       &end,
+		StartedAt:   &start,
+		EndedAt:     &end,
 		TriggeredBy: model.TriggeredByCron,
 	}
 	ev := &notify.Event{
@@ -173,8 +173,8 @@ func TestTelegram_RunTimeout_HasTail(t *testing.T) {
 	run := &model.Run{
 		ID:          "01KT",
 		TaskName:    "long-task",
-		StartAt:     &start,
-		EndAt:       &end,
+		StartedAt:   &start,
+		EndedAt:     &end,
 		TriggeredBy: model.TriggeredByCron,
 	}
 	ev := &notify.Event{
@@ -258,8 +258,8 @@ func TestSlack_RunFailed_WithURLAndTail(t *testing.T) {
 		ID:          "01KRK9",
 		TaskName:    "tg-fail",
 		ExitCode:    1,
-		StartAt:     &start,
-		EndAt:       &end,
+		StartedAt:   &start,
+		EndedAt:     &end,
 		TriggeredBy: model.TriggeredByAPI,
 	}
 	ev := &notify.Event{
@@ -310,7 +310,7 @@ func TestSlack_RunFailed_WithURLAndTail(t *testing.T) {
 func TestSlack_RunFailed_NoURL(t *testing.T) {
 	start := eventTime(t)
 	end := start.Add(300 * time.Millisecond)
-	run := &model.Run{ID: "01KRK9", TaskName: "tg-fail", ExitCode: 1, StartAt: &start, EndAt: &end, TriggeredBy: model.TriggeredByAPI}
+	run := &model.Run{ID: "01KRK9", TaskName: "tg-fail", ExitCode: 1, StartedAt: &start, EndedAt: &end, TriggeredBy: model.TriggeredByAPI}
 	ev := &notify.Event{Kind: notify.KindRunFailed, Severity: notify.SevError, Timestamp: start, TaskName: "tg-fail", Run: run}
 	got := renderSlack(t, TemplateContext{Fingerprint: "fp"}, ev)
 	var parsed map[string]any
@@ -357,8 +357,8 @@ func TestDiscord_RunFailed_WithURLAndTail(t *testing.T) {
 		ID:          "01KRK9",
 		TaskName:    "dc-fail",
 		ExitCode:    1,
-		StartAt:     &start,
-		EndAt:       &end,
+		StartedAt:   &start,
+		EndedAt:     &end,
 		TriggeredBy: model.TriggeredByAPI,
 	}
 	ev := &notify.Event{
@@ -394,7 +394,7 @@ func TestDiscord_RunFailed_WithURLAndTail(t *testing.T) {
 func TestDiscord_RunFailed_NoURL_NoTail(t *testing.T) {
 	start := eventTime(t)
 	end := start.Add(300 * time.Millisecond)
-	run := &model.Run{ID: "01KRK9", TaskName: "dc-fail", ExitCode: 1, StartAt: &start, EndAt: &end, TriggeredBy: model.TriggeredByAPI}
+	run := &model.Run{ID: "01KRK9", TaskName: "dc-fail", ExitCode: 1, StartedAt: &start, EndedAt: &end, TriggeredBy: model.TriggeredByAPI}
 	ev := &notify.Event{Kind: notify.KindRunFailed, Severity: notify.SevError, Timestamp: start, TaskName: "dc-fail", Run: run}
 	got := renderDiscord(t, TemplateContext{Fingerprint: "fp"}, ev)
 	var parsed discordPayload
@@ -407,7 +407,7 @@ func TestDiscord_RunFailed_NoURL_NoTail(t *testing.T) {
 func TestDiscord_RunSucceeded_Green(t *testing.T) {
 	start := eventTime(t)
 	end := start.Add(12 * time.Second)
-	run := &model.Run{ID: "01KRK9", TaskName: "nightly-backup", StartAt: &start, EndAt: &end, TriggeredBy: model.TriggeredByCron}
+	run := &model.Run{ID: "01KRK9", TaskName: "nightly-backup", StartedAt: &start, EndedAt: &end, TriggeredBy: model.TriggeredByCron}
 	ev := &notify.Event{Kind: notify.KindRunSucceeded, Severity: notify.SevInfo, Timestamp: start, TaskName: "nightly-backup", Run: run}
 	got := renderDiscord(t, TemplateContext{Fingerprint: "fp"}, ev)
 	var parsed discordPayload

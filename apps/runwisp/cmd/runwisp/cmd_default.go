@@ -150,7 +150,7 @@ func launchConnectedTUI(client *apiclient.Client, mode tuiConnectMode) error {
 	if !mode.remote {
 		// Fetch the ephemeral password over the local socket so the TUI's
 		// "Password" home field can copy it to the clipboard. The env-var case
-		// (ErrLocalCredentialsUnavailable) and the RUNWISP_NO_AUTH case
+		// (ErrLocalCredentialsUnavailable) and the RUNWISP_AUTH=off case
 		// (ErrAuthDisabled) are expected, not errors — the TUI hides or replaces
 		// the field based on the daemon info it already fetched. A remote
 		// operator already entered the password and the endpoint is local-only,

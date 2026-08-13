@@ -172,7 +172,7 @@ func TestCLIExecViaDaemon(t *testing.T) {
 	var err error
 	for attempt := 1; attempt <= 3; attempt++ {
 		out, err = runCLI(t, projectDir, binaryPath,
-			"exec", "alpha-stream",
+			"run", "alpha-stream",
 			"--data", daemon.dataDir,
 			"--config", configPath,
 			"--daemon",
@@ -196,7 +196,7 @@ func TestCLIExecStandalone(t *testing.T) {
 	configPath := writeQuickConfig(t, configDir)
 
 	out, err := runCLI(t, projectDir, binaryPath,
-		"exec", "hello",
+		"run", "hello",
 		"--data", dataDir,
 		"--config", configPath,
 		"--standalone",

@@ -22,7 +22,7 @@ const (
 	passwordExitUnreachable   = 2 // socket missing, transport error
 	passwordExitInternalGate  = 3 // 403 from a socket request — should not happen
 	passwordExitUnexpectedErr = 4 // anything else
-	passwordExitNoAuth        = 5 // daemon runs with RUNWISP_NO_AUTH — no password exists
+	passwordExitNoAuth        = 5 // daemon runs with RUNWISP_AUTH=off — no password exists
 )
 
 var passwordCmd = &cobra.Command{
@@ -76,7 +76,7 @@ func runPassword(stdout, stderr io.Writer, client credentialsFetcher, socketPath
 	}
 	if errors.Is(err, apiclient.ErrAuthDisabled) {
 		renderError(stderr,
-			"this daemon runs with RUNWISP_NO_AUTH — authentication is disabled, so there is no password",
+			"this daemon runs with RUNWISP_AUTH=off — authentication is disabled, so there is no password",
 			"", "")
 		return passwordExitNoAuth
 	}

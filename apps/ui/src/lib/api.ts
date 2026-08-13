@@ -94,7 +94,7 @@ export const tasksApi = {
     getAll: async () => {
         const { data, error } = await apiClient.GET("/api/tasks");
         if (error) throw new Error("Failed to fetch tasks");
-        return data ?? [];
+        return data.items ?? [];
     },
 
     getRuns: async (
@@ -111,7 +111,7 @@ export const tasksApi = {
             exitCodeMax?: string;
             retriesOnly?: boolean;
             sortField?:
-                "taskName" | "status" | "startAt" | "exitCode" | "duration" | "createdAt" | "";
+                "taskName" | "status" | "startedAt" | "exitCode" | "duration" | "createdAt" | "";
             sortDirection?: "asc" | "desc" | "";
             search?: string;
         },
@@ -120,7 +120,7 @@ export const tasksApi = {
             params: { path: { taskName }, ...(params ? { query: params } : {}) },
         });
         if (error) throw new Error("Failed to fetch task runs");
-        return { runs: data.runs ?? [], total: data.total };
+        return { runs: data.items ?? [], total: data.total };
     },
 
     triggerRun: async (taskName: string, params?: Record<string, string | null>) => {
@@ -270,7 +270,8 @@ export const runsApi = {
         exitCodeMin?: string;
         exitCodeMax?: string;
         retriesOnly?: boolean;
-        sortField?: "taskName" | "status" | "startAt" | "exitCode" | "duration" | "createdAt" | "";
+        sortField?:
+            "taskName" | "status" | "startedAt" | "exitCode" | "duration" | "createdAt" | "";
         sortDirection?: "asc" | "desc" | "";
         search?: string;
     }) => {
@@ -278,7 +279,7 @@ export const runsApi = {
             ...(params ? { params: { query: params } } : {}),
         });
         if (error) throw new Error("Failed to fetch runs");
-        return { runs: data.runs ?? [], total: data.total };
+        return { runs: data.items ?? [], total: data.total };
     },
 
     // Fetch one run by its (globally unique) ULID — no task name needed. Lets
@@ -343,18 +344,18 @@ export const systemApi = {
     getMetricsHistory: async (): Promise<MetricsSample[]> => {
         const response = await fetch(`${API_BASE_URL}/api/system/history`);
         if (!response.ok) throw new Error("Failed to fetch metrics history");
-        return metricsSamplesSchema.parse(await response.json());
+        return metricsHistoryResponseSchema.parse(await response.json()).items;
     },
 };
 
 export const metricsSampleSchema = z.object({
-    ts: z.number(),
-    cpu: z.number(),
-    mem: z.number(),
+    timestamp: z.number(),
+    cpuUsage: z.number(),
+    memUsage: z.number(),
     memUsed: z.number(),
     memTotal: z.number(),
 });
-const metricsSamplesSchema = z.array(metricsSampleSchema);
+const metricsHistoryResponseSchema = z.object({ items: z.array(metricsSampleSchema) });
 
 export type MetricsSample = z.infer<typeof metricsSampleSchema>;
 

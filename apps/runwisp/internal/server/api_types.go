@@ -59,7 +59,7 @@ type RunsQueryInput struct {
 	ExitCodeMin   string    `query:"exitCodeMin" pattern:"^-?[0-9]+$" doc:"Only runs whose exit code is >= this (inclusive)"`
 	ExitCodeMax   string    `query:"exitCodeMax" pattern:"^-?[0-9]+$" doc:"Only runs whose exit code is <= this (inclusive)"`
 	RetriesOnly   bool      `query:"retriesOnly" doc:"Only runs that are a retry (retry_attempt > 0)"`
-	SortField     string    `query:"sortField" enum:"taskName,status,startAt,exitCode,duration,createdAt," doc:"Field to sort by"`
+	SortField     string    `query:"sortField" enum:"taskName,status,startedAt,exitCode,duration,createdAt," doc:"Field to sort by"`
 	SortDirection string    `query:"sortDirection" enum:"asc,desc," doc:"Sort direction"`
 	Search        string    `query:"search" doc:"Search query"`
 }
@@ -120,7 +120,11 @@ type TaskRunsQueryInput struct {
 // ---------- Response outputs ----------
 
 type TasksOutput struct {
-	Body []model.TaskResponse
+	Body TasksResponseBody
+}
+
+type TasksResponseBody struct {
+	Items []model.TaskResponse `json:"items" doc:"List of tasks"`
 }
 
 type RunsOutput struct {
@@ -128,7 +132,7 @@ type RunsOutput struct {
 }
 
 type RunsResponseBody struct {
-	Runs  []model.Run `json:"runs" doc:"List of runs"`
+	Items []model.Run `json:"items" doc:"List of runs"`
 	Total int64       `json:"total" doc:"Total matching runs"`
 }
 
@@ -177,7 +181,11 @@ type SystemStatsOutput struct {
 }
 
 type MetricsHistoryOutput struct {
-	Body []model.MetricsSample
+	Body MetricsHistoryBody
+}
+
+type MetricsHistoryBody struct {
+	Items []model.MetricsSample `json:"items" doc:"Resource snapshots, oldest first"`
 }
 
 type RunSummaryOutput struct {

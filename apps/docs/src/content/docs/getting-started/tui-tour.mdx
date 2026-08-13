@@ -221,7 +221,7 @@ leaks into your shell history and `ps`. Instead the TUI:
   macOS) and reuses it on the next connect, so you're not retyping the
   password or tripping the daemon's login rate limit.
 
-A daemon started with [`RUNWISP_NO_AUTH=1`](/operations/auth/#running-without-a-password)
+A daemon started with [`RUNWISP_AUTH=off`](/operations/auth/#running-without-a-password)
 needs no password at all — the TUI checks first and connects straight
 through. If the password is wrong or you've been rate-limited, the TUI
 prints the error and exits rather than landing you on a half-working

@@ -37,7 +37,7 @@ stdout/stderr to a log file, and writes a row for every run to SQLite.
 
 | Key           | Default   | What it does                                                                           |
 | ------------- | --------- | -------------------------------------------------------------------------------------- |
-| _table key_   | required  | The task name. Used in CLI (`runwisp exec <name>`), API, log paths.                    |
+| _table key_   | required  | The task name. Used in CLI (`runwisp run <name>`), API, log paths.                     |
 | `run`         | required  | Shell command. Multi-line OK with TOML triple-quotes (`"""…"""`).                      |
 | `description` | _(empty)_ | Human-readable description shown in the UI and TUI.                                    |
 | `group`       | `"Tasks"` | UI grouping label. Set to share a section header with related tasks.                   |
@@ -156,7 +156,7 @@ cron task inherits it — one line to pace your whole schedule.
 ### `api_trigger = false` — cron-only tasks
 
 With the default `api_trigger = true`, you can kick the task off on
-demand from the CLI (`runwisp exec <name>`), the REST API
+demand from the CLI (`runwisp run <name>`), the REST API
 (`POST /api/tasks/{name}/run`), the Web UI's **Run Task** button, or the
 TUI's `r` key.
 
@@ -177,7 +177,7 @@ Here's what flips when `api_trigger = false`:
 
 - `POST /api/tasks/{name}/run` comes back **403 Forbidden** with the
   message `API triggering disabled for this task`.
-- `runwisp exec <name>` shows the same error and exits non-zero.
+- `runwisp run <name>` shows the same error and exits non-zero.
 - Cron firings, retries, and `on_overlap` are **untouched** — the
   scheduler isn't "API triggering," so it runs the task as normal.
 

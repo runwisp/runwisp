@@ -84,8 +84,8 @@ function createSystemStore() {
             appEventStream.subscribe("system", (data) => {
                 try {
                     const parsed = systemEventSchema.parse(JSON.parse(data));
-                    cpuUsage = parsed.sample.cpu;
-                    memUsage = parsed.sample.mem;
+                    cpuUsage = parsed.sample.cpuUsage;
+                    memUsage = parsed.sample.memUsage;
                     memTotal = parsed.sample.memTotal;
                     uptime = parsed.uptime;
                 } catch (e) {

@@ -22,7 +22,7 @@ type LocalCredentials struct {
 // treating it as a generic auth failure.
 var ErrLocalCredentialsUnavailable = errors.New("no ephemeral password to disclose")
 
-// ErrAuthDisabled signals the daemon runs with RUNWISP_NO_AUTH — there is no
+// ErrAuthDisabled signals the daemon runs with RUNWISP_AUTH=off — there is no
 // password in play at all. Distinct from ErrLocalCredentialsUnavailable so
 // callers don't mislead the operator into hunting for an env-var value.
 var ErrAuthDisabled = errors.New("daemon runs with authentication disabled")
@@ -30,7 +30,7 @@ var ErrAuthDisabled = errors.New("daemon runs with authentication disabled")
 // GetLocalCredentials fetches the ephemeral password over the local socket.
 // Returns ErrLocalCredentialsUnavailable when the daemon refuses disclosure
 // (env-var case) and ErrAuthDisabled when the daemon runs with
-// RUNWISP_NO_AUTH. Any other non-2xx surfaces as the underlying HTTP error so
+// RUNWISP_AUTH=off. Any other non-2xx surfaces as the underlying HTTP error so
 // the caller can distinguish "not on a socket" (403) from real transport
 // failures.
 func (c *Client) GetLocalCredentials() (*LocalCredentials, error) {

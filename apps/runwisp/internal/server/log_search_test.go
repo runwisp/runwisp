@@ -57,10 +57,10 @@ func TestSearchLogs_TaskWide(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	var body LogSearchBody
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	require.Len(t, body.Hits, 2)
+	require.Len(t, body.Items, 2)
 	// Newest run first.
-	assert.Equal(t, run2.ID, body.Hits[0].RunID)
-	assert.Equal(t, run1.ID, body.Hits[1].RunID)
+	assert.Equal(t, run2.ID, body.Items[0].RunID)
+	assert.Equal(t, run1.ID, body.Items[1].RunID)
 	assert.True(t, body.Exhausted)
 	assert.Empty(t, body.NextCursor)
 	assert.Equal(t, 2, body.ScannedRuns)
@@ -89,7 +89,7 @@ func TestSearchLogs_CaseSensitiveMisses(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	var body LogSearchBody
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Empty(t, body.Hits, "lowercase q should not match Hello when case=true")
+	assert.Empty(t, body.Items, "lowercase q should not match Hello when case=true")
 }
 
 func TestSearchLogs_RegexValidation(t *testing.T) {
@@ -122,9 +122,9 @@ func TestSearchLogs_SingleRun(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	var body LogSearchBody
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	require.Len(t, body.Hits, 1)
-	assert.Equal(t, run.ID, body.Hits[0].RunID)
-	assert.Equal(t, "beta", body.Hits[0].Text)
+	require.Len(t, body.Items, 1)
+	assert.Equal(t, run.ID, body.Items[0].RunID)
+	assert.Equal(t, "beta", body.Items[0].Text)
 }
 
 func TestSearchLogs_SingleRun_WrongTask(t *testing.T) {
@@ -174,7 +174,7 @@ func TestSearchLogs_NoRuns(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	var body LogSearchBody
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Empty(t, body.Hits)
+	assert.Empty(t, body.Items)
 	assert.True(t, body.Exhausted)
 }
 
@@ -222,7 +222,7 @@ func TestSearchLogs_AdvancesPastFirstPage(t *testing.T) {
 
 	var body LogSearchBody
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Empty(t, body.Hits)
+	assert.Empty(t, body.Items)
 	assert.False(t, body.Exhausted, "a full page must not report exhausted")
 	require.NotEmpty(t, body.NextCursor, "expected a window-advance cursor")
 
@@ -236,8 +236,8 @@ func TestSearchLogs_AdvancesPastFirstPage(t *testing.T) {
 
 	var body2 LogSearchBody
 	require.NoError(t, json.Unmarshal(w2.Body.Bytes(), &body2))
-	require.Len(t, body2.Hits, 1)
-	assert.Equal(t, older.ID, body2.Hits[0].RunID)
+	require.Len(t, body2.Items, 1)
+	assert.Equal(t, older.ID, body2.Items[0].RunID)
 	assert.True(t, body2.Exhausted, "under-full second page is exhausted")
 }
 
@@ -264,7 +264,7 @@ func TestSearchLogs_CursorResume(t *testing.T) {
 
 	var body LogSearchBody
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	require.Len(t, body.Hits, 2)
+	require.Len(t, body.Items, 2)
 	require.NotEmpty(t, body.NextCursor, "expected a cursor with more lines available")
 
 	req2 := httptest.NewRequest(http.MethodGet,
@@ -276,5 +276,5 @@ func TestSearchLogs_CursorResume(t *testing.T) {
 
 	var body2 LogSearchBody
 	require.NoError(t, json.Unmarshal(w2.Body.Bytes(), &body2))
-	assert.Len(t, body2.Hits, 2)
+	assert.Len(t, body2.Items, 2)
 }

@@ -589,7 +589,7 @@ func TestShutdownUnblocksParkedDelay(t *testing.T) {
 
 // TestTriggerRunScheduledAtBackdatesCreatedAt pins the jitter mechanism: a run
 // dispatched for cron tick T but started at T+offset records CreatedAt = T (the
-// tick) and StartAt = the actual start, so StartAt − CreatedAt is the jitter
+// tick) and StartedAt = the actual start, so StartedAt − CreatedAt is the jitter
 // delay — visible, never hidden. Mirrors RecordMissedRun's backdating.
 func TestTriggerRunScheduledAtBackdatesCreatedAt(t *testing.T) {
 	exec := new(testutil.MockExecutor)
@@ -614,11 +614,11 @@ func TestTriggerRunScheduledAtBackdatesCreatedAt(t *testing.T) {
 
 	started.waitFor(t, 1)
 	got := started.snapshot()[0]
-	require.NotNil(t, got.StartAt)
+	require.NotNil(t, got.StartedAt)
 	assert.Equal(t, tick, got.CreatedAt)
-	assert.Equal(t, startedAt, *got.StartAt)
-	assert.Equal(t, 7*time.Minute, got.StartAt.Sub(got.CreatedAt),
-		"StartAt − CreatedAt must surface the jitter delay")
+	assert.Equal(t, startedAt, *got.StartedAt)
+	assert.Equal(t, 7*time.Minute, got.StartedAt.Sub(got.CreatedAt),
+		"StartedAt − CreatedAt must surface the jitter delay")
 }
 
 func TestRecordMissedRun(t *testing.T) {

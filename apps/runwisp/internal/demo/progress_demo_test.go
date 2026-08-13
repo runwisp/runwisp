@@ -85,7 +85,7 @@ func runDemoTask(t *testing.T, cfg *config.Config, name string) string {
 	run := &model.Run{
 		TaskName:  name,
 		Status:    model.PhaseRunning,
-		StartAt:   &now,
+		StartedAt: &now,
 		CreatedAt: now,
 	}
 	run.ID = newULID(now, rand.New(rand.NewSource(1)))

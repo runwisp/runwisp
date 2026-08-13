@@ -110,15 +110,15 @@ run_image 1 "explicit auth setting" "no auth: unknown subcommand fails closed" \
 
 echo "== the config check =="
 run_image 1 "no runwisp.toml found" "missing config" \
-	-- -e RUNWISP_NO_AUTH=1 "$image"
+	-- -e RUNWISP_AUTH=off "$image"
 run_image 1 "is a directory" "config path is a directory" \
-	-- -e RUNWISP_NO_AUTH=1 -v "$work:/etc/runwisp/runwisp.toml:ro" "$image"
+	-- -e RUNWISP_AUTH=off -v "$work:/etc/runwisp/runwisp.toml:ro" "$image"
 
 echo "== one-shot subcommands bypass the gate =="
 run_image 0 "" "validate needs no password" \
 	-- "${mount_cfg[@]}" "$image" runwisp validate
 run_image 0 "hello-from-container" "exec needs no password" \
-	-- "${mount_cfg[@]}" "$image" runwisp exec hello
+	-- "${mount_cfg[@]}" "$image" runwisp run hello
 run_image 0 "" "--version is root's, not the daemon's" \
 	-- "$image" --version
 
@@ -178,10 +178,10 @@ else
 	fail "docker exec runwisp status" "$(docker logs "$container" 2>&1 | tail -20)"
 fi
 
-if docker exec "$container" runwisp exec hello 2>&1 | grep -q hello-from-container; then
-	pass "docker exec runwisp exec runs a task"
+if docker exec "$container" runwisp run hello 2>&1 | grep -q hello-from-container; then
+	pass "docker exec runwisp run runs a task"
 else
-	fail "docker exec runwisp exec hello"
+	fail "docker exec runwisp run hello"
 fi
 
 logs=$(docker logs "$container" 2>&1)

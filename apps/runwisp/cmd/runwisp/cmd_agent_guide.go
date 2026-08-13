@@ -50,7 +50,7 @@ in ` + "`runwisp.toml`" + `.
 - **Config schema:** ` + "`runwisp schema`" + ` prints the JSON Schema (also at
   ` + config.SchemaURL + `). Files RunWisp scaffolds start with a ` + "`#:schema`" + ` line, so
   editors validate and autocomplete them.
-- **Run a task and read the outcome:** ` + "`runwisp exec <task> --json`" + ` prints
+- **Run a task and read the outcome:** ` + "`runwisp run <task> --json`" + ` prints
   ` + "`{run_id, status, exit_code, duration_ms, failed, ...}`" + ` to stdout (log lines
   go to stderr).
 - **Inspect:** ` + "`runwisp status --json`" + ` (daemon + per-task snapshot),

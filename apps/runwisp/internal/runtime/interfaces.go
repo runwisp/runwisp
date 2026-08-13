@@ -89,5 +89,5 @@ type TaskManager interface {
 
 // NextRunGetter is the subset of Scheduler consumed by the server package.
 type NextRunGetter interface {
-	GetNextRun(taskName string) *string
+	GetNextRun(taskName string) *time.Time
 }

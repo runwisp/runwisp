@@ -91,11 +91,11 @@ func TestGetTasks(t *testing.T) {
 	s.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	var tasks []model.TaskResponse
-	err := json.Unmarshal(w.Body.Bytes(), &tasks)
+	var resp TasksResponseBody
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
-	assert.Len(t, tasks, 1)
-	assert.Equal(t, "task1", tasks[0].Name)
+	assert.Len(t, resp.Items, 1)
+	assert.Equal(t, "task1", resp.Items[0].Name)
 }
 
 func TestTriggerRun(t *testing.T) {
@@ -158,7 +158,7 @@ func TestGetAllRuns(t *testing.T) {
 	var resp RunsResponseBody
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
-	assert.Len(t, resp.Runs, 1)
+	assert.Len(t, resp.Items, 1)
 	assert.Equal(t, int64(1), resp.Total)
 }
 
@@ -184,7 +184,7 @@ func TestGetTaskRuns(t *testing.T) {
 	var resp RunsResponseBody
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
-	assert.Len(t, resp.Runs, 1)
+	assert.Len(t, resp.Items, 1)
 	assert.Equal(t, int64(1), resp.Total)
 }
 

@@ -375,7 +375,7 @@ func TestLogStartupSummary_WarnsAboutEphemeralPassword(t *testing.T) {
 		"a headless boot with a generated password must say so")
 
 	assert.NotContains(t, capture(uikit.StartupInfo{PasswordEphemeral: true, AuthDisabled: true}), "no RUNWISP_PASSWORD set",
-		"RUNWISP_NO_AUTH already gets its own louder banner; no password to warn about")
+		"RUNWISP_AUTH=off already gets its own louder banner; no password to warn about")
 
 	assert.NotContains(t, capture(uikit.StartupInfo{}), "no RUNWISP_PASSWORD set",
 		"an operator-supplied password needs no warning")

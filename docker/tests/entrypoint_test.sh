@@ -69,7 +69,7 @@ expect() {
 	# the entrypoint reads, then apply the case's own assignments.
 	set +e
 	out=$(
-		unset RUNWISP_PASSWORD RUNWISP_NO_AUTH RUNWISP_CONFIG RUNWISP_DATA RUNWISP_SOCKET
+		unset RUNWISP_PASSWORD RUNWISP_AUTH RUNWISP_CONFIG RUNWISP_DATA RUNWISP_SOCKET
 		# shellcheck disable=SC2086 # deliberate word splitting of the env list
 		eval export $env_args 2>/dev/null || true
 		# shellcheck disable=SC2086 # ENTRYPOINT_SH may be "busybox sh"
@@ -100,7 +100,7 @@ expect() {
 	fi
 }
 
-auth="RUNWISP_NO_AUTH=1"
+auth="RUNWISP_AUTH=off"
 cfg="RUNWISP_CONFIG=$good_config"
 data="RUNWISP_DATA=$work/data"
 
@@ -159,8 +159,8 @@ expect "passthrough: validate needs no password" 0 "ARGV: runwisp validate" \
 	-- -- runwisp validate
 expect "passthrough: bare subcommand gets the runwisp prefix" 0 "ARGV: runwisp list" \
 	-- -- list
-expect "passthrough: a task named 'daemon' is not the daemon" 0 "ARGV: runwisp exec daemon" \
-	-- -- runwisp exec daemon
+expect "passthrough: a task named 'daemon' is not the daemon" 0 "ARGV: runwisp run daemon" \
+	-- -- runwisp run daemon
 expect "passthrough: --data value named 'daemon' is not the subcommand" 0 "ARGV: runwisp --data daemon list" \
 	-- -- runwisp --data daemon list
 expect "passthrough: --version is root's, not the daemon's" 0 "ARGV: runwisp --version" \

@@ -276,7 +276,7 @@ misconfigured container fails immediately and says why instead of coming
 up subtly wrong.
 
 **An explicit auth setting** — either `RUNWISP_PASSWORD` or
-`RUNWISP_NO_AUTH=1` (no login at all; trusted networks only). Set neither
+`RUNWISP_AUTH=off` (no login at all; trusted networks only). Set neither
 and the container exits 1 telling you to pick one. Not because it would
 otherwise run unauthenticated — it would generate a random password in
 memory, which in a container is arguably worse: nobody can log into the
@@ -384,7 +384,7 @@ talks to the daemon over the local socket and needs no password:
 ```bash
 docker exec runwisp runwisp status
 docker exec runwisp runwisp list
-docker exec runwisp runwisp exec hello
+docker exec runwisp runwisp run hello
 ```
 
 Edited `runwisp.toml` on the host? Pick it up without a restart:
@@ -399,7 +399,7 @@ docker exec runwisp runwisp reload
     <LinkCard
         title="Auth"
         href="/operations/auth/"
-        description="RUNWISP_PASSWORD, RUNWISP_NO_AUTH, and the tradeoffs between them."
+        description="RUNWISP_PASSWORD, RUNWISP_AUTH=off, and the tradeoffs between them."
     />
     <LinkCard
         title="[daemon] reference"

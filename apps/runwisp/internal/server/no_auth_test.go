@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// setupNoAuthServer builds the standard test server with RUNWISP_NO_AUTH
+// setupNoAuthServer builds the standard test server with RUNWISP_AUTH=off
 // semantics: auth middleware skipped, status reporting auth_required=false.
 func setupNoAuthServer(t *testing.T) *Server {
 	t.Helper()

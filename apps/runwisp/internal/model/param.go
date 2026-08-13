@@ -54,7 +54,7 @@ type TaskParam struct {
 	Default     *string  `json:"default,omitempty" doc:"Default value used by scheduled runs and pre-filled in manual forms"`
 	Required    bool     `json:"required,omitempty" doc:"Whether a manual trigger must supply a value"`
 	Choices     []string `json:"choices,omitempty" doc:"Allowed values; renders as a dropdown"`
-	AllowCustom bool     `json:"allow_custom,omitempty" doc:"When choices is set, allow values outside the list"`
+	AllowCustom bool     `json:"allowCustom,omitempty" doc:"When choices is set, allow values outside the list"`
 	Description string   `json:"description,omitempty" doc:"Help text shown under the field"`
 }
 

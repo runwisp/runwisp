@@ -330,7 +330,7 @@ func newFakeDaemonServer(t *testing.T) *httptest.Server {
 	})
 	mux.HandleFunc("/api/system/history", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[]`))
+		_, _ = w.Write([]byte(`{"items":[]}`))
 	})
 	mux.HandleFunc("/api/runs/summary", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
