@@ -25,7 +25,7 @@ const LogIndexInterval = 1024
 func ResolveRunLogPath(logDir, taskName, runID string, createdAt time.Time) string {
 	sanitized := model.SanitizeTaskName(taskName)
 	ts := createdAt.UTC().Format("20060102_150405")
-	suffix := runID[len(runID)-4:]
+	suffix := runID[max(0, len(runID)-4):]
 	return filepath.Join(logDir, sanitized, fmt.Sprintf("%s_%s.log", ts, suffix))
 }
 

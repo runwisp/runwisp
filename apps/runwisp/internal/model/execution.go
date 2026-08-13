@@ -6,8 +6,16 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"regexp"
 	"strings"
 )
+
+// shellUmaskPattern mirrors config.umaskPattern. The TOML path validates umask
+// at config load; this is the matching guard for the cloud-dispatch JSON
+// boundary, which deserializes peer-supplied bytes straight into ShellExecution
+// and whose Umask/Shell values reach a shell wrapper unquoted (executor.wrapScriptUmask).
+var shellUmaskPattern = regexp.MustCompile(`^[0-7]{3,4}$`)
 
 // ExecutionDef is a sealed-type discriminant; ExecType() identifies the concrete
 // subtype for JSON deserialization. The single-method interface is intentional —
@@ -211,7 +219,28 @@ func ParseExecutionDef(data json.RawMessage) (ExecutionDef, error) {
 	if err := json.Unmarshal(data, def); err != nil {
 		return nil, fmt.Errorf("invalid %s execution: %w", envelope.Type, err)
 	}
+	if err := validateExecutionDef(def); err != nil {
+		return nil, err
+	}
 	return def, nil
+}
+
+// validateExecutionDef enforces the shell-safety invariants the executor relies
+// on for fields that are interpolated into a shell wrapper unquoted (umask) or
+// used as the interpreter path (shell). Only ShellExecution carries these; other
+// types have no equivalent unquoted surface.
+func validateExecutionDef(def ExecutionDef) error {
+	sh, ok := def.(*ShellExecution)
+	if !ok {
+		return nil
+	}
+	if sh.Umask != "" && !shellUmaskPattern.MatchString(sh.Umask) {
+		return fmt.Errorf("invalid shell umask %q: must be 3 or 4 octal digits", sh.Umask)
+	}
+	if sh.Shell != "" && !filepath.IsAbs(sh.Shell) {
+		return fmt.Errorf("invalid shell %q: must be an absolute path", sh.Shell)
+	}
+	return nil
 }
 
 // MarshalExecutionDef serializes an ExecutionDef to JSON, including the type discriminator.

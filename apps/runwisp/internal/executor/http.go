@@ -176,9 +176,9 @@ func (b *HTTPBackend) execute(ctx context.Context, def *model.HTTPExecution, out
 		req.Header.Set(h.Key, h.Value)
 	}
 
-	fmt.Fprintf(out, "%s %s\n", def.Method, def.URL)
+	fmt.Fprintf(out, "%s %s\n", def.Method, redactURL(def.URL))
 	for _, h := range def.Headers {
-		fmt.Fprintf(out, "> %s: %s\n", h.Key, h.Value)
+		fmt.Fprintf(out, "> %s: %s\n", h.Key, redactHeaderValue(h.Key, h.Value))
 	}
 	if contentType != "" {
 		fmt.Fprintf(out, "> Content-Type: %s\n", contentType)
@@ -198,7 +198,7 @@ func (b *HTTPBackend) execute(ctx context.Context, def *model.HTTPExecution, out
 	fmt.Fprintf(out, "< %s (%s)\n", resp.Status, elapsed.Round(time.Millisecond))
 	for key, vals := range resp.Header {
 		for _, v := range vals {
-			fmt.Fprintf(out, "< %s: %s\n", key, v)
+			fmt.Fprintf(out, "< %s: %s\n", key, redactHeaderValue(key, v))
 		}
 	}
 	fmt.Fprintln(out)
@@ -232,6 +232,39 @@ func (b *HTTPBackend) buildBody(body *model.HTTPBody) (io.Reader, string, error)
 	default:
 		return nil, "", fmt.Errorf("unsupported body kind: %q", body.Kind)
 	}
+}
+
+// redactURL blanks any userinfo password before the request line is written to
+// the run log (net/url.Redacted keeps the username but replaces the password
+// with "xxxxx"). The URL was already validated by validateHTTPURL, so a parse
+// error here is unreachable; returning the raw string on error would leak, so
+// on the impossible error we blank the whole URL instead.
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "[redacted]"
+	}
+	return u.Redacted()
+}
+
+// redactHeaderValue hides the values of headers that commonly carry
+// credentials, so request/response header dumps in the run log don't persist
+// bearer tokens, cookies, or API keys to disk (viewable over API/SSE).
+func redactHeaderValue(key, value string) string {
+	if isSensitiveHeader(key) {
+		return "[redacted]"
+	}
+	return value
+}
+
+func isSensitiveHeader(key string) bool {
+	k := strings.ToLower(key)
+	switch k {
+	case "authorization", "proxy-authorization", "cookie", "set-cookie":
+		return true
+	}
+	return strings.Contains(k, "token") || strings.Contains(k, "secret") ||
+		strings.Contains(k, "api-key") || strings.Contains(k, "apikey")
 }
 
 func (b *HTTPBackend) httpClient() *http.Client {

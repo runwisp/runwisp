@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"log/slog"
 )
 
 const (
@@ -54,8 +56,12 @@ func LoadConfig(agentVersion, tokenOverride, urlOverride, fingerprint string) (C
 		return Config{}, fmt.Errorf("invalid RUNWISP_CLOUD_URL scheme %q (expected https or http)", baseURL.Scheme)
 	}
 
-	if baseURL.Scheme == "http" && !strings.EqualFold(os.Getenv("RUNWISP_CLOUD_ALLOW_INSECURE"), "true") {
-		return Config{}, fmt.Errorf("insecure http:// cloud URL rejected; set RUNWISP_CLOUD_ALLOW_INSECURE=true to allow")
+	if baseURL.Scheme == "http" {
+		if !strings.EqualFold(os.Getenv("RUNWISP_CLOUD_ALLOW_INSECURE"), "true") {
+			return Config{}, fmt.Errorf("insecure http:// cloud URL rejected; set RUNWISP_CLOUD_ALLOW_INSECURE=true to allow")
+		}
+		slog.Warn("RUNWISP_CLOUD_ALLOW_INSECURE=true: control-plane traffic (bearer token, dispatch frames) runs over plaintext with no TLS — a network attacker can read the token and inject task dispatches; never use this outside local testing",
+			"url", baseURL.Redacted())
 	}
 
 	if baseURL.Host == "" {

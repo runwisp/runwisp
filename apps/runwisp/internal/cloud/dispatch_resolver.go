@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -84,6 +85,10 @@ func buildDynamicCloudTask(dispatch *protocol.Execution, execDef model.Execution
 		ExecutionDef:  execDef,
 		MaxConcurrent: 1,
 		OnOverlap:     model.PolicyQueue,
+		// Cloud dynamic tasks bypass config defaulting, so set the same bound a
+		// TOML queue task gets — otherwise QueueMax stays 0 (unbounded) and a
+		// stream of dispatches to one slow name grows the queue without limit.
+		QueueMax: config.DefaultQueueMax,
 		// One-shot cloud dispatch: the run manager reaps this task (and its
 		// queue-drain goroutine) once the run retires, so a long-running daemon
 		// doesn't leak state per distinct dispatched name.

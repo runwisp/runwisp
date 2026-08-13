@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"log/slog"
 
@@ -33,6 +34,13 @@ const (
 	// through the cursor rather than spending an unbounded scan budget on
 	// one call.
 	LogSearchRunPageSize = 50
+
+	// LogSearchTimeout caps the wall time one search request may spend
+	// scanning. Without it a low-match query keeps the scan goroutine and its
+	// I/O busy long after the HTTP write timeout has already failed the client
+	// response. Generous enough that a normal paginated page (bounded by
+	// LogSearchRunPageSize / the hit budget) never trips it.
+	LogSearchTimeout = 60 * time.Second
 )
 
 // LogSearchInput is the input to GET /api/tasks/{taskName}/log/search.
@@ -70,6 +78,9 @@ type LogSearchOutput struct {
 }
 
 func (srv *Server) humaSearchLogs(ctx context.Context, input *LogSearchInput) (*LogSearchOutput, error) {
+	ctx, cancel := context.WithTimeout(ctx, LogSearchTimeout)
+	defer cancel()
+
 	matcherFactory, err := buildMatcherFactory(input.Q, input.Regex, input.CaseSensitive)
 	if err != nil {
 		return nil, err
