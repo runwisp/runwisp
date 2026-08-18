@@ -61,6 +61,10 @@ type syncTask struct {
 	Enabled             *bool              `json:"enabled,omitempty"`
 	Script              json.RawMessage    `json:"script,omitempty"`
 	Schedules           []syncTaskSchedule `json:"schedules,omitempty"`
+	// InputDefinition mirrors this task's declared model.TaskParam list, keyed
+	// by TaskParam.Key (the wire shape cloud's SyncTaskParamDTO expects has no
+	// separate identity field — the map key IS the identity).
+	InputDefinition map[string]syncTaskParam `json:"inputDefinition,omitempty"`
 
 	// Service-only fields. All omitempty so a cloud that predates service sync
 	// ignores them and treats the row as a plain task.
@@ -77,6 +81,18 @@ type syncTaskSchedule struct {
 	Cron     string `json:"cron"`
 	Timezone string `json:"timezone"`
 	Enabled  bool   `json:"enabled"`
+}
+
+// syncTaskParam mirrors model.TaskParam minus Key, which becomes the
+// InputDefinition map key on the wire instead of a field.
+type syncTaskParam struct {
+	Kind        string   `json:"kind,omitempty"`
+	Type        string   `json:"type,omitempty"`
+	Required    bool     `json:"required,omitempty"`
+	Default     *string  `json:"default,omitempty"`
+	Choices     []string `json:"choices,omitempty"`
+	AllowCustom bool     `json:"allowCustom,omitempty"`
+	Description string   `json:"description,omitempty"`
 }
 
 func NewTaskSyncClient(syncURL string, timeout time.Duration) *TaskSyncClient {
@@ -236,6 +252,7 @@ func buildOneSyncTask(t *model.Task) (syncTask, bool) {
 	if t.LogOnFull != "" {
 		task.LogOnFull = t.LogOnFull
 	}
+	task.InputDefinition = buildSyncInputDefinition(t.Parameters)
 	enabled := true
 	task.Enabled = &enabled
 
@@ -254,6 +271,29 @@ func buildOneSyncTask(t *model.Task) (syncTask, bool) {
 		}
 	}
 	return task, true
+}
+
+// buildSyncInputDefinition converts a task's declared params into the wire
+// map keyed by TaskParam.Key. Kept separate from buildOneSyncTask for the
+// same reason applyServiceSyncFields is: keeps the caller's cognitive
+// complexity down.
+func buildSyncInputDefinition(params []model.TaskParam) map[string]syncTaskParam {
+	if len(params) == 0 {
+		return nil
+	}
+	def := make(map[string]syncTaskParam, len(params))
+	for _, p := range params {
+		def[p.Key] = syncTaskParam{
+			Kind:        string(p.Kind),
+			Type:        p.Type,
+			Required:    p.Required,
+			Default:     p.Default,
+			Choices:     p.Choices,
+			AllowCustom: p.AllowCustom,
+			Description: p.Description,
+		}
+	}
+	return def
 }
 
 // applyServiceSyncFields populates the service-only fields of a sync row from a
