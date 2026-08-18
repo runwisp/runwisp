@@ -6,7 +6,7 @@
 
 **See what ran, when, why it failed, and what it printed.**
 
-The open-source, self-hosted cron job manager and process supervisor — with a built-in web dashboard, terminal UI, and REST API. One static Go binary, zero runtime dependencies.
+The open-source, self-hosted cron job manager and process supervisor, with a built-in web dashboard, terminal UI, and REST API. One static Go binary, zero runtime dependencies.
 
 [runwisp.com](https://runwisp.com) · [Documentation](https://docs.runwisp.com) · [Install](#install) · [Quick Start](#quick-start) · [Why RunWisp](#why-runwisp)
 
@@ -23,11 +23,11 @@ The open-source, self-hosted cron job manager and process supervisor — with a 
 
 **RunWisp** is a single-binary replacement for `crond` and `supervisord`. If you've ever SSH'd into a server at 3 AM to figure out _why_ a cron job silently failed, RunWisp is for you.
 
-Define your scheduled jobs — database backups, health checks, log rotation, ETL scripts — and long-running services like queue workers and background daemons in one `runwisp.toml` file. Every run is captured: exit code, duration, timestamps, and full stdout/stderr. You get a built-in web dashboard, terminal UI, REST API, real-time log streaming, and persistent run history out of the box — zero runtime dependencies, embedded SQLite, embedded UI. Runs anywhere a static Go binary runs: Linux, macOS, WSL, Docker, a Raspberry Pi, or a $5 VPS.
+You define your scheduled jobs (backups, health checks, log rotation, ETL scripts) and your long-running services (queue workers, background daemons) in one `runwisp.toml`. RunWisp captures every run: exit code, duration, timestamps, and full stdout/stderr. Browse it all in the web dashboard, terminal UI, or REST API, and stream logs live as they happen.
 
 <div align="center">
-<img alt="RunWisp web dashboard in action: opening a task, triggering a run and watching its log stream fill in real time, then inspecting exactly why a run failed — all in a self-hosted UI" src="apps/docs/src/assets/screenshots/runwisp-demo.webp" width="780">
-<p><em>The web dashboard, live: trigger a run, watch its output stream in real time, and see exactly when and why anything failed — all served by the daemon itself.</em></p>
+<img alt="RunWisp web dashboard in action: opening a task, triggering a run and watching its log stream fill in real time, then inspecting exactly why a run failed, all in a self-hosted UI" src="apps/docs/src/assets/screenshots/runwisp-demo.webp" width="780">
+<p><em>The web dashboard, live: trigger a run, watch its output stream in real time, and see exactly when and why anything failed, all served by the daemon itself.</em></p>
 </div>
 
 ---
@@ -47,7 +47,7 @@ bunx runwisp           # try it without installing; runs the prebuilt Go binary 
 bun add -g runwisp     # or: npm install -g runwisp
 ```
 
-Prefer manual? Grab a tarball from [GitHub Releases](https://github.com/runwisp/runwisp/releases); assets are named `runwisp-{linux,darwin}-{x64,arm64}.tar.gz` with a matching `checksums-sha256.txt`. **Supported platforms:** Linux, macOS, WSL (x86_64 and arm64).
+Prefer manual? Grab a tarball from [GitHub Releases](https://github.com/runwisp/runwisp/releases).
 
 Prefer a container? `runwisp/runwisp` on Docker Hub ships the same binary (Alpine by default, `-debian` variant, amd64 + arm64):
 
@@ -70,7 +70,7 @@ See [Docker](https://docs.runwisp.com/getting-started/docker/) for image variant
 ```toml
 [tasks.backup-db]
 cron       = "0 2 * * *"   # every night at 2 AM
-jitter     = "30m"         # if the 2 AM crowd piles up, take turns — slip up to 30 min, never stampede
+jitter     = "30m"         # if the 2 AM crowd piles up, take turns: slip up to 30 min, never stampede
 on_overlap = "skip"        # don't stack if the previous run is still going
 keep_runs  = 30
 run = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"
@@ -88,11 +88,11 @@ run          = "node /app/worker.js"
 
 `[tasks.*]` are scheduled or manually triggered jobs. `[services.*]` are always-on processes that RunWisp keeps alive with exponential restart backoff; each replica is its own visible run with its own exit code, duration, and captured logs.
 
-Already running things under `docker compose`? Add `[compose.myapp]` next to your `docker-compose.yml` and every service in it becomes an observable RunWisp service — logs, restart policies, notifications, trigger/stop — without rewriting your compose file. See [`[compose.*]`](https://docs.runwisp.com/configuration/compose/).
+**Already running something?** You don't have to rewrite it to get observability:
 
-Already on crond? RunWisp is a drop-in replacement. Point `[daemon] include_cron` at the crontabs cron already reads — `/etc/crontab`, `/etc/cron.d/*`, per-user spools — and every job becomes an observable RunWisp task without converting or rewriting a line; `crontab -e` plus `runwisp reload` still works. Nothing can fire twice while you try it: as long as a cron daemon still owns those files, RunWisp lists the jobs but deliberately doesn't schedule them. When you're ready, `sudo runwisp takeover` installs the system service, retires cron, and hands the jobs over in one command — and if you'd rather skip straight to that, it works on a box with no `runwisp.toml` at all: it finds the crontabs itself and writes the config that reads them. See [Take over from cron](https://docs.runwisp.com/replacing-cron/take-over-from-cron/).
-
-Prefer to convert instead — or coming from supervisord? `runwisp import cron /etc/crontab` (or `runwisp import supervisord`) turns an existing config into an annotated `runwisp.toml` to start from, with inline `# TODO`s for anything that needs a human. Add `--write` and the imported jobs are staged alongside your own config instead of replacing it; `runwisp promote <name>` graduates one into your `runwisp.toml` when you're ready to own it. Importing copies the jobs, it doesn't disable them where they came from — comment them out of your crontab before starting the daemon, or they'll run twice. See [Converting crontabs](https://docs.runwisp.com/replacing-cron/converting-crontabs/).
+- **crond**: run `sudo runwisp takeover` and it finds your existing crontabs, imports every job, and takes over from cron in one command. No config to write, no lines to rewrite. See [Take over from cron](https://docs.runwisp.com/coming-from/cron/).
+- **Docker Compose**: add `[compose.myapp]` next to your `docker-compose.yml` and every service in it gains logs, restart policies, notifications, and trigger/stop, without touching the compose file. See [`[compose.*]`](https://docs.runwisp.com/configuration/compose/).
+- **supervisord (or converting a crontab)**: `runwisp import supervisord` (or `import cron`) turns an existing config into an annotated `runwisp.toml` with inline `# TODO`s for anything that needs a human. See [Converting configs](https://docs.runwisp.com/coming-from/crontabs/).
 
 **2. Run it:**
 
@@ -106,19 +106,6 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 
 ---
 
-## Why RunWisp
-
-| If you currently use…         | The pain                                                            | RunWisp fixes it by…                                                                                                 |
-| ----------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| **crond / crontab**           | Silent failures, no history, no output capture, no overlap handling | Persisting every run (exit code, duration, stdout/stderr) to embedded SQLite: browsable, streamable, and searchable. |
-| **systemd timers**            | One `.timer` + one `.service` per job, OS-locked, painful in Docker | One TOML file. Cross-platform. Same binary on your MacBook, in CI, and in production.                                |
-| **supervisord**               | No scheduling, Python install, dated XML-RPC API, basic web UI      | Cron scheduling and process supervision in one binary. Modern REST API. Svelte dashboard. Built-in log rotation.     |
-| **supercronic / Ofelia**      | Docker-scoped; supercronic is stdout-only, and Ofelia's history/UI (fork's `--enable-web`) stays in-memory/flat-file and container-bound | Same Docker-friendly footprint, plus host-and-container cron *with* resident-service supervision, persistent queryable per-run history in SQLite, live streaming, and one-click re-trigger. |
-| **Airflow**                   | Heavy, multi-process, needs an external metadata DB and ongoing operation | Single binary. ~25 MB RAM idle. No external DB. No ops team. Running in five minutes.                          |
-| **Dagu / Cronicle**           | Also single-node and DB-free by default, but built around DAG/workflow runs, not resident-service supervision (and Cronicle needs a Node.js runtime) | Same lightweight single-binary footprint — **no Node/Python** — **plus** always-on service supervision (instances, restart backoff, crash recovery): a supervisord replacement, not just a workflow runner. |
-
----
-
 ## Features
 
 **Scheduling & execution**
@@ -128,14 +115,14 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 - Retries with configurable backoff (`constant` · `linear` · `exponential`)
 - Per-task timeouts with automatic kill on deadline
 - Catchup policies for missed runs (`latest` · `all` · `skip`)
-- Per-execution parameters: declare env vars, args, options, and flags a task accepts, then supply values at trigger time from the UI, TUI, or API — passed as inert argv, never spliced into the shell
+- Per-execution parameters: declare env vars, args, options, and flags a task accepts, then supply values at trigger time from the UI, TUI, or API, passed as inert argv, never spliced into the shell
 
 **Observability**
 
 - Real-time stdout/stderr streaming over SSE, viewable in the web UI and TUI
 - Every run recorded in SQLite with exit code, duration, and timestamps
 - Built-in per-task log rotation with overflow policies (`drop_new` · `drop_old` · `kill_task`)
-- Failure alerts to Slack, Discord, Telegram, email (SMTP), generic webhooks, or the in-app inbox — routed per task with `notify_on_failure` · `notify_on_success` · `treat_missed_as_failure`
+- Failure alerts to Slack, Discord, Telegram, email (SMTP), generic webhooks, or the in-app inbox, routed per task with `notify_on_failure` · `notify_on_success` · `treat_missed_as_failure`
 
 **Interfaces**
 
@@ -146,12 +133,12 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 **Operations**
 
 - Single Go binary, zero runtime dependencies. No Python, no Node.js, no external database.
-- Optional self-signed HTTPS with one setting — `tls = "auto"` and RunWisp self-signs a cert and serves TLS the moment you bind beyond `127.0.0.1`, no setup; bring your own cert (`tls_cert`/`tls_key`) or front it with a reverse proxy ([`[daemon]`](https://docs.runwisp.com/configuration/daemon/#tls-tls_cert-tls_key))
+- Optional self-signed HTTPS: set `tls = "auto"` and RunWisp generates a cert and serves TLS as soon as you bind beyond `127.0.0.1`. Or bring your own cert (`tls_cert`/`tls_key`), or put it behind a reverse proxy ([`[daemon]`](https://docs.runwisp.com/configuration/daemon/#tls-tls_cert-tls_key))
 - ~25 MB RAM idle, happy on a $5 VPS, a Raspberry Pi, or alongside your real workload
 - Crash-safe: `kill -9` and power loss are recoverable; in-flight runs are marked **interrupted** on restart, never silently lost
 - Local-first, offline-complete. No signup, no telemetry, no account required.
 - TOML configuration: one file, version-controllable, reviewable in pull requests
-- Live config reload via `runwisp reload` or `SIGHUP` — pick up `runwisp.toml` edits without a restart; validate-first, so a bad edit leaves the running task set untouched
+- Live config reload via `runwisp reload` or `SIGHUP`: pick up `runwisp.toml` edits without a restart; validate-first, so a bad edit leaves the running task set untouched
 
 <div align="center">
 <img alt="RunWisp terminal UI screenshot: task sidebar, live log output, and execution controls over SSH" src="apps/docs/src/assets/screenshots/tui-home.png" width="780">
@@ -177,6 +164,12 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 | Runtime dependencies | libc                 | systemd            | Python         | **None**                              |
 | Config               | crontab syntax       | INI unit files     | INI files      | **One TOML file**                     |
 
+And versus the Docker/lightweight crowd:
+
+- **supercronic / Ofelia**: same container-friendly footprint, but RunWisp adds resident-service supervision, persistent per-run history in SQLite, live streaming, and one-click re-trigger instead of stdout-only or in-memory logs.
+- **Dagu / Cronicle**: also single-binary and DB-free, but built around DAG/workflow runs; RunWisp adds always-on service supervision (a supervisord replacement, not just a workflow runner) with no Node or Python.
+- **Airflow**: no external metadata DB, no multi-process deployment, no ops team; one ~25 MB binary running in five minutes.
+
 ---
 
 ## Documentation
@@ -188,7 +181,7 @@ Full user and operator documentation lives at **[docs.runwisp.com](https://docs.
 - [Security Policy](SECURITY.md) - responsible disclosure
 - [Issue tracker](https://github.com/runwisp/runwisp/issues) - bug reports and feature requests
 
-> **Status: pre-1.0, moving fast.** The single-machine essentials are here — scheduling, supervision, live logs, and persistent run history. But RunWisp is young software, so treat it that way: pin a version, keep backups of anything you'd hate to lose, and skim [CHANGELOG.md](CHANGELOG.md) before upgrading, since pre-1.0 bumps can ship breaking changes and reset run history. A few things (like the cloud control plane) aren't here yet. Kick the tyres and tell us what breaks.
+> **Status: pre-1.0, moving fast.** The single-machine essentials are here: scheduling, supervision, live logs, and persistent run history. But RunWisp is young software, so treat it that way: pin a version, keep backups of anything you'd hate to lose, and skim [CHANGELOG.md](CHANGELOG.md) before upgrading, since pre-1.0 bumps can ship breaking changes and reset run history. A few things (like the cloud control plane) aren't here yet. Kick the tyres and tell us what breaks.
 
 ---
 
@@ -196,7 +189,7 @@ Full user and operator documentation lives at **[docs.runwisp.com](https://docs.
 
 The RunWisp daemon and web UI are GPL-3.0-or-later: use it however you want, and if you distribute a modified version, keep it open. No CLA, no dual-licensing, no strings beyond that. See [LICENSE](LICENSE).
 
-The shared libraries under `packages/` are Apache-2.0 instead — see [LICENSE-APACHE](LICENSE-APACHE) and each package's own `LICENSE`.
+The shared libraries under `packages/` are Apache-2.0 instead. See [LICENSE-APACHE](LICENSE-APACHE) and each package's own `LICENSE`.
 
 ---
 

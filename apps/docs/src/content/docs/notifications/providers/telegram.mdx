@@ -33,6 +33,11 @@ from an env var or a file instead of writing it inline —
 | `bot_token`     | yes      | The bot token — inline, `${VAR}`, or `${file:path}`.                     |
 | `chat_id`       | yes      | Chat ID. Stored as a string so negative IDs (groups) round-trip cleanly. |
 | `template_path` | no       | Override the embedded HTML message template.                             |
+| `parse_mode`    | no       | Telegram parse mode. Defaults to `HTML`, matching the embedded template. |
+
+Set `parse_mode = "MarkdownV2"` and you **must** also set `template_path` —
+the embedded default template is HTML, so the loader rejects the combination
+rather than sending Telegram markup it will refuse.
 
 ## 1. Create the bot
 

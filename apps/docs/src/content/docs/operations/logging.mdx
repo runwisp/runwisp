@@ -35,7 +35,7 @@ these lines are the high-level heartbeat, not a replacement for them.
 `--log-level` (or `RUNWISP_LOG_LEVEL`) takes `debug`, `info` (default), `warn`,
 or `error`:
 
-```sh
+```bash
 runwisp daemon --log-level debug
 RUNWISP_LOG_LEVEL=debug runwisp daemon
 ```
@@ -53,7 +53,7 @@ no silent fallback to `info`.
 | `text`           | The same readable lines, never colored (plain even on a terminal).                                            |
 | `json`           | One JSON object per line — for Docker/k8s log pipelines, Loki, etc.                                           |
 
-```sh
+```bash
 RUNWISP_LOG_FORMAT=json runwisp daemon
 ```
 

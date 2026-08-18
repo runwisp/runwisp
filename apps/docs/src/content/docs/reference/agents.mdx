@@ -8,6 +8,8 @@ head:
       content: "RunWisp for AI agents: config schema, validate --json, exec --json"
 ---
 
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
 If you let an AI coding agent edit this project, RunWisp is built to be easy for
 it to pick up. Everything an agent needs is either in the binary it already has
 or at a stable URL — no guessing at the config format, no scraping help text.
@@ -19,7 +21,7 @@ Here's the short version you can hand to any agent.
 Run this and paste the output into your project's `AGENTS.md`, `CLAUDE.md`, or
 README:
 
-```sh
+```bash
 runwisp agent-guide >> AGENTS.md
 ```
 
@@ -31,7 +33,7 @@ It drops in a compact block that tells the agent RunWisp is here, that
 `runwisp.toml` has a JSON Schema (draft 2020-12) describing every table, key,
 type, and default. Print it from the binary:
 
-```sh
+```bash
 runwisp schema
 ```
 
@@ -55,7 +57,7 @@ Edit the TOML, then validate. In `--json` mode the command exits non-zero on
 failure and every error carries a structured location, so an agent jumps
 straight to the offending line instead of parsing prose:
 
-```sh
+```bash
 runwisp validate --json
 ```
 
@@ -107,4 +109,29 @@ file, `runwisp validate --json`, `runwisp reload`.
   Start here if you're an agent.
 - **[OpenAPI spec](https://docs.runwisp.com/openapi.json)** — the REST API in
   full, or `runwisp openapi` offline.
-- **[CLI reference](/operations/cli/)** — every subcommand and flag, for humans.
+- **[CLI reference](/reference/cli/)** — every subcommand and flag, for humans.
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="CLI reference"
+        href="/reference/cli/"
+        description="Every subcommand and flag, including the --json output shapes."
+    />
+    <LinkCard
+        title="API reference"
+        href="/api/"
+        description="REST endpoints and SSE log streams, generated from the OpenAPI schema."
+    />
+    <LinkCard
+        title="Configuration overview"
+        href="/configuration/overview/"
+        description="Every key in runwisp.toml — the file an agent will be editing."
+    />
+    <LinkCard
+        title="Troubleshooting"
+        href="/operations/troubleshooting/"
+        description="Symptom-first fixes, useful when a generated config doesn't behave."
+    />
+</CardGrid>

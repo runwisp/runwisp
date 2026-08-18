@@ -30,7 +30,7 @@ func ComposeStarterConfig(composeFilename, alias string) string {
 // CronScan.Globs from the first-run detection that decided to offer this.
 func CronStarterConfig(patterns []string) string {
 	return SchemaDirective + `# runwisp.toml
-# Docs: https://docs.runwisp.com/replacing-cron/take-over-from-cron/
+# Docs: https://docs.runwisp.com/coming-from/cron/
 #
 # RunWisp found cron jobs on this box and scaffolded this file to read them
 # live. Nothing is converted or rewritten: crontab -e keeps working, and
@@ -48,7 +48,7 @@ func ComposeAndCronStarterConfig(composeFilename, alias string, patterns []strin
 	r := strings.NewReplacer("{{compose}}", composeFilename, "{{alias}}", alias)
 	body := SchemaDirective + `# runwisp.toml
 # Docs: https://docs.runwisp.com/configuration/compose/ and
-#       https://docs.runwisp.com/replacing-cron/take-over-from-cron/
+#       https://docs.runwisp.com/coming-from/cron/
 #
 # RunWisp detected {{compose}} alongside, and found cron jobs it can read
 # live. Neither is converted or rewritten.
@@ -92,7 +92,7 @@ func TwoTierRootConfig() string {
 }
 
 const twoTierRootConfig = SchemaDirective + `# runwisp.toml
-# Docs: https://docs.runwisp.com/replacing-cron/converting-crontabs/
+# Docs: https://docs.runwisp.com/coming-from/crontabs/
 #
 # Your imported jobs live in ` + ImportedStagingSubdir + `/` + ImportedStagingBase + ` (machine-managed by
 # ` + "`runwisp import`" + `). This root file is yours: add native [tasks.*] here,

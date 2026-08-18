@@ -45,7 +45,7 @@ machine.
 
 If any tasks came from a crontab a live cron daemon still owns, the
 header carries a chip reading ``⏸ N held by cron — `sudo runwisp takeover` ``.
-See [Held jobs](/replacing-cron/held-jobs/).
+See [Held jobs](/coming-from/cron/).
 
 This works for a remote daemon too (`runwisp tui --url …`): the TUI
 mints a short-lived, single-use launch ticket from your authenticated
@@ -91,7 +91,7 @@ The default view. Two modes:
   described above, plus a recent-activity feed across all tasks.
 - **Task detail** (a task or service selected from the sidebar) —
   schedule line, a **Run Now** / **Restart** button, and the run
-  history for that one task. A [held](/replacing-cron/held-jobs/) task
+  history for that one task. A [held](/coming-from/cron/) task
   shows `⏸ held — cron still owns this job` on its schedule line and no
   "Next:" time, because RunWisp isn't the one firing it — **Run Now**
   still works. **Run Now** asks you to confirm before it

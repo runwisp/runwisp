@@ -14,7 +14,7 @@ import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 with anything that needed a human's attention. There are two reasons you'd land
 here, and they're different:
 
-- **You already [took over](/replacing-cron/) and want a job
+- **You already [took over](/coming-from/cron/) and want a job
   as hand-written TOML in git.** Skip to
   [Graduating a job into your own config](#graduating-a-job-into-your-own-config)
   and `promote` it. Cron is gone, so nothing double-fires — the easy path.
@@ -94,7 +94,7 @@ Each task carries the crontab's `SHELL` and `PATH` itself rather than a shared
 `[defaults]` block, so it stands alone and your own global settings stay
 untouched. The `env_base`, `working_dir`, `catch_up` and `on_overlap` lines
 reproduce cron's execution model, not the daemon's — see
-[How cron maps to TOML](/replacing-cron/cron-mapping/). (`warmup` gets no
+[How cron maps to TOML](/coming-from/cron-mapping/). (`warmup` gets no
 `catch_up`: a `@reboot` job has no ticks to miss.)
 
 ### The summary
@@ -278,7 +278,7 @@ per job keeps the schedules honest.
 On Linux with systemd, point [`include_cron`](/configuration/daemon/#include_cron)
 at the crontabs instead of importing them, and none of this is yours to manage:
 `sudo runwisp takeover` retires cron in one step, and nothing double-fires in the
-meantime. See [Replacing cron](/replacing-cron/).
+meantime. See [Taking over from cron](/coming-from/cron/).
 :::
 
 ## System crontabs and the user column
@@ -287,7 +287,7 @@ meantime. See [Replacing cron](/replacing-cron/).
 the command. RunWisp maps that column to the task's [`user`](/configuration/tasks/)
 automatically — from the path or the `# ... user command` header. Force it either
 way with `--system` / `--system=false` when a piped crontab is ambiguous; the
-[mapping reference](/replacing-cron/cron-mapping/#what-needs-a-human) covers what
+[mapping reference](/coming-from/cron-mapping/#what-needs-a-human) covers what
 happens when a line is missing its user column.
 
 ## Flag reference
@@ -327,19 +327,19 @@ run writes nothing, so the summary is all it has to show you.
   the summary for you to paste, not a `[[notifier]]` the importer adds.
 - **It doesn't guess.** Anything that can't map cleanly gets a `# TODO` and a row
   in the summary — see
-  [What needs a human](/replacing-cron/cron-mapping/#what-needs-a-human).
+  [What needs a human](/coming-from/cron-mapping/#what-needs-a-human).
 
 ---
 
 <CardGrid>
     <LinkCard
         title="How cron maps to TOML"
-        href="/replacing-cron/cron-mapping/"
+        href="/coming-from/cron-mapping/"
         description="Field by field: what the importer produces, and what it can't map without you."
     />
     <LinkCard
-        title="Replacing cron"
-        href="/replacing-cron/"
+        title="From cron"
+        href="/coming-from/cron/"
         description="The Linux + systemd route: read the crontabs where they are, retire cron in one command."
     />
 </CardGrid>

@@ -25,7 +25,7 @@ home for the daemon — it's the runtime for every task you write. If your
 `run =` calls `pg_dump`, `pg_dump` has to be in the image.
 
 :::caution[`include_cron` in a container]
-The [hold](/replacing-cron/held-jobs/) that stops a cron-owned job firing
+The [hold](/coming-from/cron/) that stops a cron-owned job firing
 twice depends on spotting a live cron daemon, which needs `systemctl` or
 one of cron's pidfiles. A typical container has neither, so a hold is
 generally never derived in one. If you bind-mount the host's crontabs into

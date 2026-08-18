@@ -50,7 +50,7 @@ flag > env var > euid-derived default.
 
 ## Start the daemon and attach
 
-```sh
+```bash
 runwisp                 # attach a TUI to a running daemon, or scaffold + start one
 runwisp daemon          # start headless (no TUI) — for Docker, systemd, cron
 runwisp tui             # attach a TUI to a local daemon over its socket
@@ -81,7 +81,7 @@ how that password is read and cached.
 
 ## Look before you leap
 
-```sh
+```bash
 runwisp validate   # parse + validate runwisp.toml without starting anything
 runwisp list       # show configured tasks and their schedules
 runwisp status     # is the daemon alive right now?
@@ -257,7 +257,7 @@ silence:
 
 ## Apply config edits
 
-```sh
+```bash
 runwisp reload    # re-read runwisp.toml and reconcile the live task set
 runwisp restart   # stop and start fresh (restart-only settings, run_on_start, catch-up)
 runwisp stop      # shut the daemon down
@@ -285,7 +285,7 @@ per-user one.
 
 ## Migrate an existing setup
 
-```sh
+```bash
 runwisp import cron [FILE]               # convert a crontab to runwisp.toml
 runwisp import supervisord [FILE...]     # convert a supervisord config to runwisp.toml
 ```
@@ -328,15 +328,15 @@ line that says so:
 ```
 
 Turn the old scheduler off for the jobs you imported before `runwisp daemon`.
-[Converting crontabs](/replacing-cron/converting-crontabs/#retiring-the-crontab)
+[Converting crontabs](/coming-from/crontabs/#retiring-the-crontab)
 has the commands, along with the two-tier layout, the user column in system
 crontabs, and the staging-to-promoted workflow;
-[Migrating from supervisord](/recipes/migrating-from-supervisord/) covers the
+[Migrating from supervisord](/coming-from/supervisord/) covers the
 other source.
 
 ### Take ownership of a task with `promote`
 
-```sh
+```bash
 runwisp promote backup            # put one task's block in runwisp.toml
 runwisp promote backup reindex    # several at once
 runwisp promote --all --reload    # everything, then reconcile the daemon
@@ -358,7 +358,7 @@ the result wouldn't load.
 A staged block is **moved** out of the staging file. A cron-sourced one is
 copied into `runwisp.toml` and its source crontab line is commented out in the
 same transaction, so a still-live cron won't double-fire it — see
-[Graduating a job](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config).
+[Graduating a job](/coming-from/crontabs/#graduating-a-job-into-your-own-config).
 That link also covers what a following `runwisp reload` reports, which differs
 between a staged promotion (no change to what runs) and promoting a job while
 its cron daemon is still live (a real handover RunWisp takes over).
@@ -369,7 +369,7 @@ in), or one generated from a compose project, which has no block of its own.
 
 ## Autostart
 
-```sh
+```bash
 sudo runwisp service install   # wire up the system-wide systemd service
 runwisp service uninstall      # remove the unit/plist (data dir is preserved)
 runwisp service status         # is autostart wired up, and has anything drifted?
@@ -390,7 +390,7 @@ stdout), `--dry-run`, `--force` (overwrite a hand-edited unit), and
 
 `install` never touches cron. If cron is still running jobs on the box when
 it finishes, it says so and points at `sudo runwisp takeover` — see
-[Take over from cron](/replacing-cron/take-over-from-cron/).
+[Take over from cron](/coming-from/cron/).
 
 `uninstall` takes `--yes`, `--force`, `--local`, and `--purge` (also delete
 the data dir — which makes you type the literal word `delete` to confirm).
@@ -403,7 +403,7 @@ reboot?") with `runwisp status` ("is it alive right now?").
 
 ## Retire cron
 
-```sh
+```bash
 sudo runwisp takeover   # install the service, mask cron, reload — in that order
 ```
 
@@ -412,7 +412,7 @@ The front door for a cron migration, and it works from nothing: no
 them live, installs the system service, masks cron, and reloads a daemon
 that was already running — one plan, one question, in that order.
 
-While cron is alive, RunWisp [holds](/replacing-cron/held-jobs/) the jobs it
+While cron is alive, RunWisp [holds](/coming-from/cron/) the jobs it
 read from cron's own files rather than firing them alongside cron;
 `takeover` is what hands them over. The reload is the part a plain
 `service install` can't do, so held jobs go live immediately instead of
@@ -426,12 +426,12 @@ is a no-op and exits 0.
 Takes `--dry-run`, `--yes` (`-y`), `--force` (overwrite a hand-edited unit,
 not skip the prompt), `--allow-skipped-cron-jobs`, and `--binary <path>`.
 Needs root and systemd; see
-[Take over from cron](/replacing-cron/take-over-from-cron/) for the
+[Take over from cron](/coming-from/cron/) for the
 refusals, the ordering, and how to undo it.
 
 ## Auth and introspection
 
-```sh
+```bash
 runwisp password     # print the daemon's ephemeral password (local socket only)
 runwisp openapi      # print the OpenAPI 3.1 spec (JSON) to stdout
 runwisp schema       # print the runwisp.toml JSON Schema (JSON) to stdout
@@ -457,11 +457,11 @@ at `https://docs.runwisp.com/config.schema.json`, which is what the `#:schema`
 line on a scaffolded config points to. `runwisp agent-guide` prints a short
 Markdown block you can append to your project's `AGENTS.md` so an AI coding
 agent knows how to drive RunWisp. Both are covered on the
-[Driving with an AI agent](/operations/agents/) page.
+[Driving with an AI agent](/reference/agents/) page.
 
 ## Cloud and demo
 
-```sh
+```bash
 runwisp cloud   # connect to the optional control plane instead of scheduling locally
 runwisp demo    # boot a throwaway, fully-populated instance to explore
 ```
@@ -517,7 +517,7 @@ open the Web UI in a browser; stop it later with `runwisp stop --data <dir>`
     />
     <LinkCard
         title="Take over from cron"
-        href="/replacing-cron/take-over-from-cron/"
+        href="/coming-from/cron/"
         description="takeover, import cron, and promote — the whole cron migration in one place."
     />
 </CardGrid>

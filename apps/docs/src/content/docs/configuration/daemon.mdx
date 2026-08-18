@@ -32,17 +32,18 @@ include          = ["conf.d/*.toml"]
 # include_cron   = ["/etc/crontab", "/etc/cron.d/*"]
 ```
 
-| Key                | Default | What it does                                                                                                                                                                                                                                        |
-| ------------------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shutdown_timeout` | `"10s"` | Whole-daemon shutdown budget. After `SIGTERM`, the daemon SIGKILLs any in-flight runs that haven't exited within this window so the process can actually exit.                                                                                      |
-| `external_url`     | _unset_ | Public base URL of this daemon's Web UI. When set, notification messages (Slack, Telegram) include a deep-link back to the run; when unset, the link line is omitted.                                                                               |
-| `tls`              | `"off"` | `"off"` always serves plain HTTP; `"auto"` serves HTTPS whenever the bind address is non-loopback (self-signing a cert on first boot). Loopback binds stay HTTP either way. Ignored when `tls_cert`/`tls_key` are set.                              |
-| `tls_cert`         | _unset_ | Path to a PEM certificate to serve instead of the self-signed one. Set together with `tls_key`. When set, HTTPS is served on every bind address, loopback included.                                                                                 |
-| `tls_key`          | _unset_ | Path to the PEM private key matching `tls_cert`. Both keys are set together or not at all.                                                                                                                                                          |
-| `metrics_enabled`  | `false` | Master switch for the Prometheus-compatible `/metrics` endpoint. Off by default — task names and the daemon version label are visible to anyone who can reach the endpoint, so it stays closed until you turn it on.                                |
-| `metrics_listen`   | _unset_ | Optional `host:port` for a dedicated metrics listener (e.g. `"127.0.0.1:9478"`). When set, `/metrics` is **only** reachable on this address — never on the main UI/REST listener. Only consulted when `metrics_enabled = true`.                     |
-| `include`          | _unset_ | Glob patterns for extra TOML files to merge into this config at load. Lets you split tasks across `conf.d/*.toml` instead of one giant file. Only valid in the root config.                                                                         |
-| `include_cron`     | _unset_ | Glob patterns for real crontabs (system, `cron.d`, or per-user spool) to read as live task definitions at every load and reload. Point RunWisp at what cron already reads instead of converting everything up front. Only valid in the root config. |
+| Key                    | Default | What it does                                                                                                                                                                                                                                        |
+| ---------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shutdown_timeout`     | `"10s"` | Whole-daemon shutdown budget. After `SIGTERM`, the daemon SIGKILLs any in-flight runs that haven't exited within this window so the process can actually exit.                                                                                      |
+| `external_url`         | _unset_ | Public base URL of this daemon's Web UI. When set, notification messages (Slack, Telegram) include a deep-link back to the run; when unset, the link line is omitted.                                                                               |
+| `tls`                  | `"off"` | `"off"` always serves plain HTTP; `"auto"` serves HTTPS whenever the bind address is non-loopback (self-signing a cert on first boot). Loopback binds stay HTTP either way. Ignored when `tls_cert`/`tls_key` are set.                              |
+| `tls_cert`             | _unset_ | Path to a PEM certificate to serve instead of the self-signed one. Set together with `tls_key`. When set, HTTPS is served on every bind address, loopback included.                                                                                 |
+| `tls_key`              | _unset_ | Path to the PEM private key matching `tls_cert`. Both keys are set together or not at all.                                                                                                                                                          |
+| `metrics_enabled`      | `false` | Master switch for the Prometheus-compatible `/metrics` endpoint. Off by default — task names and the daemon version label are visible to anyone who can reach the endpoint, so it stays closed until you turn it on.                                |
+| `metrics_listen`       | _unset_ | Optional `host:port` for a dedicated metrics listener (e.g. `"127.0.0.1:9478"`). When set, `/metrics` is **only** reachable on this address — never on the main UI/REST listener. Only consulted when `metrics_enabled = true`.                     |
+| `allow_cloud_dispatch` | `false` | Opt in to ad-hoc runs requested by a connected control-plane peer. Off by default. Dispatched runs are one-shot and never modify your task set — see [the control-plane section](#allow_cloud_dispatch) below.                                      |
+| `include`              | _unset_ | Glob patterns for extra TOML files to merge into this config at load. Lets you split tasks across `conf.d/*.toml` instead of one giant file. Only valid in the root config.                                                                         |
+| `include_cron`         | _unset_ | Glob patterns for real crontabs (system, `cron.d`, or per-user spool) to read as live task definitions at every load and reload. Point RunWisp at what cron already reads instead of converting everything up front. Only valid in the root config. |
 
 ### `shutdown_timeout`
 
@@ -157,6 +158,26 @@ locally or through a proxy; don't expose it on a public interface.
 And if you set `metrics_listen` but never turned `metrics_enabled` on,
 the daemon rejects it at boot instead of quietly ignoring it.
 
+### `allow_cloud_dispatch`
+
+RunWisp can optionally connect **outbound** to a control-plane peer. Even when
+it does, that peer can only observe runs and trigger tasks that already exist in
+your `runwisp.toml` — unless you set this:
+
+```toml
+[daemon]
+allow_cloud_dispatch = true
+```
+
+That lets the peer request an **ad-hoc** run: a one-shot command that isn't in
+your config. It's off by default, and deliberately so — it's the one path by
+which something outside the machine can name a command to execute.
+
+Even switched on, an ad-hoc run never modifies your task definitions. TOML stays
+the only thing that defines your tasks, and the run is logged and persisted like
+any other. Leave this off unless you specifically want that capability, and note
+the daemon runs with the privileges of whoever started it.
+
 ### `include`
 
 Once you've got more than a handful of tasks, one `runwisp.toml` gets
@@ -247,7 +268,7 @@ When you're ready to convert a job to native TOML,
 `runwisp promote <task>` writes its definition into `runwisp.toml` — verbatim, the
 definition that was already running — and comments out the crontab line it came
 from so a still-live cron won't double-fire it. See
-[Graduating a job](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config).
+[Graduating a job](/coming-from/crontabs/#graduating-a-job-into-your-own-config).
 
 :::note[Held jobs]
 While a system cron daemon is alive and still owns these files, RunWisp
@@ -257,7 +278,7 @@ can point `include_cron` at `/etc/crontab` today and nothing runs twice.
 
 `sudo runwisp takeover` ends the hold in one step, and stopping cron any other
 way ends it within a minute — RunWisp keeps checking. See
-[Held jobs](/replacing-cron/held-jobs/)
+[Held jobs](/coming-from/cron/)
 for exactly what a hold stops, where you'll see it, and the one case that gets a
 warning instead.
 :::
@@ -399,14 +420,14 @@ arguments on `docker run` can still override, which is exactly what the
 container, prefer overriding the env var: `--entrypoint` skips the image's
 startup checks, and a `--data` flag is invisible to its healthcheck.)
 
-```sh
+```bash
 runwisp daemon --data /var/lib/runwisp --host 0.0.0.0 --port 9477
 ```
 
 `--log-level` and `--log-format` shape the daemon's own log output —
 [Operations: Logging](/operations/logging/) covers what each value does.
 For the complete list of `runwisp` subcommands and flags in one place, see
-the [CLI reference](/operations/cli/).
+the [CLI reference](/reference/cli/).
 
 It's worth picking `--data` once and sticking with it. The database
 file (`runwisp.db`), the local Unix socket (`runwisp.sock`), and every

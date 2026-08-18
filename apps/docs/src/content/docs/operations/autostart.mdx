@@ -7,7 +7,7 @@ description: Wire RunWisp into systemd (Linux, WSL) or launchd (macOS) with one 
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-```sh
+```bash
 sudo runwisp service install
 ```
 
@@ -31,7 +31,7 @@ Either way it never touches `runwisp.toml` — this is purely OS plumbing.
 
 ## The four commands
 
-```sh
+```bash
 sudo runwisp service install   # wire up systemd (or launchd, with --local)
 runwisp service status         # show autostart wiring and any drift
 runwisp service uninstall      # remove the unit (data dir is preserved)
@@ -58,7 +58,7 @@ your back, and stopping it by hand would leave the manager thinking
 it crashed. Without a managed unit, they fall back to a plain
 SIGTERM + wait against the PID file.
 
-```sh
+```bash
 runwisp restart   # the way to apply runwisp.toml edits
 runwisp stop      # stops the daemon; the unit stays enabled for next boot
 ```
@@ -82,7 +82,7 @@ The system install (the default, Linux and WSL, needs root):
 2. `systemctl daemon-reload`.
 3. Offers to stop and mask cron, if cron is running and RunWisp is
    reading its crontabs. See
-   [Take over from cron](/replacing-cron/take-over-from-cron/).
+   [Take over from cron](/coming-from/cron/).
 4. `systemctl enable --now runwisp.service`.
 
 There's no fingerprint in the name: there's exactly one system daemon per
@@ -203,7 +203,7 @@ The hashes embedded in the unit's `# runwisp-config-hash:` and
 the operator replaced the binary or changed a flag since installing.
 
 Installing over a service that's already running is allowed — that's what
-a [cron take-over](/replacing-cron/take-over-from-cron/) does — but systemd
+a [cron take-over](/coming-from/cron/) does — but systemd
 keeps a running unit on the settings it started with, so an install that
 changed the port, config, or data dir says as much and points at
 `runwisp restart`. A daemon you started by hand is the one thing install
@@ -228,7 +228,7 @@ RunWisp service status
 A `--local` install adds a `Linger:` row (a system unit starts under PID 1
 and has no session to linger).
 
-An install that [retired cron](/replacing-cron/take-over-from-cron/)
+An install that [retired cron](/coming-from/cron/)
 adds one more line reporting whether the masked cron unit is still
 masked. `active — jobs may be firing twice` there means something brought
 cron back after the take-over; re-run `sudo runwisp takeover` to retire it
@@ -253,7 +253,7 @@ Exit codes are part of the contract:
 unit — secrets stay off disk. The recommended pattern is a drop-in
 file alongside the managed unit:
 
-```sh
+```bash
 sudo mkdir -p /etc/systemd/system/runwisp.service.d
 sudo tee /etc/systemd/system/runwisp.service.d/password.conf > /dev/null <<'EOF'
 [Service]
@@ -268,7 +268,7 @@ For a `--local` install the same pattern applies under
 `~/.config/systemd/user/`, with `<fingerprint>` replaced by the slug
 `runwisp service status` reports for that instance (e.g. `bright-falcon`):
 
-```sh
+```bash
 unit=runwisp-<fingerprint>.service
 mkdir -p ~/.config/systemd/user/$unit.d
 cat > ~/.config/systemd/user/$unit.d/password.conf <<'EOF'
@@ -291,7 +291,7 @@ to stdout and exits 0. It does not touch the filesystem. Combine with
 `--binary`, `--config`, `--data`, `--port`, `--host` to bake declared
 values in:
 
-```sh
+```bash
 sudo runwisp service install --print \
   --binary /opt/runwisp/bin/runwisp \
   --config /etc/runwisp/runwisp.toml \
@@ -311,7 +311,7 @@ works even on a box with no `runwisp.toml` yet.
 
 `service uninstall` hands cron back, and `service status` grows a `Cron:` row
 while the mask is in place. See
-[Take over from cron](/replacing-cron/take-over-from-cron/) for the full
+[Take over from cron](/coming-from/cron/) for the full
 walkthrough: what happens in what order, the refusals, the first-run
 prompt, how to undo it, and why macOS can't do it at all.
 
@@ -409,7 +409,7 @@ system service.
     />
     <LinkCard
         title="Take over from cron"
-        href="/replacing-cron/take-over-from-cron/"
+        href="/coming-from/cron/"
         description="Install and retire cron in one command, with rollback if RunWisp won't start."
     />
 </CardGrid>

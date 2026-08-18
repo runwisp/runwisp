@@ -1,0 +1,98 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Start here — pick your source
+description: Already running crond, supervisord, or docker-compose? Pick where you're coming from and RunWisp reads your existing config instead of making you rewrite it.
+head:
+    - tag: title
+      content: "Migrate to RunWisp from cron, supervisord, or docker-compose"
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+You almost certainly already have something running your jobs. RunWisp is
+built to read that config rather than make you retype it — so pick where
+you're coming from and skip straight to the one command that matters.
+
+Whichever route you take, the shape is the same: your existing config keeps
+working, RunWisp takes over the running of it, and you get run history,
+captured output, and failure alerts on top.
+
+## Where are you coming from?
+
+<CardGrid>
+    <LinkCard
+        title="From cron"
+        description="One command reads your crontabs in place and retires cron. Nothing rewritten, nothing fires twice, crontab -e still works."
+        href="/coming-from/cron/"
+    />
+    <LinkCard
+        title="From supervisord"
+        description="Every [program] becomes a supervised RunWisp service — restart policy intact, logs now streamed and indexed."
+        href="/coming-from/supervisord/"
+    />
+    <LinkCard
+        title="From docker-compose"
+        description="Point RunWisp at an existing docker-compose.yml. Every service becomes observable without touching a line of YAML."
+        href="/coming-from/docker-compose/"
+    />
+    <LinkCard
+        title="From nothing yet"
+        description="No scheduler to migrate? Start with the quick start instead — install, scaffold a config, run your first task."
+        href="/getting-started/quick-start/"
+    />
+</CardGrid>
+
+## Which cron page do I want?
+
+Cron gets three pages because there are genuinely two different routes, and
+they lead to different places:
+
+- **[Take over](/coming-from/cron/)** — RunWisp runs your crontabs where they
+  sit. You don't own them as TOML, and `crontab -e` keeps working. This is the
+  one-command path, and on Linux with systemd it's the whole migration.
+- **[Converting crontabs](/coming-from/crontabs/)** — turn a crontab into a
+  `runwisp.toml` you own and edit. Use this when you want the jobs in version
+  control, or when you're on macOS or a box without systemd, where `takeover`
+  can't retire the system cron for you.
+- **[How cron maps to TOML](/coming-from/cron-mapping/)** — the field-by-field
+  reference behind both routes. Reach for it when you want to know exactly what
+  a given crontab line becomes.
+
+If you're not sure, start with take-over. You can
+[graduate any single job into your own TOML](/coming-from/crontabs/#graduating-a-job-into-your-own-config)
+later without redoing the migration.
+
+## Before you switch anything
+
+Two things worth knowing regardless of route:
+
+- **Nothing fires twice.** RunWisp won't run a job that the old scheduler is
+  still running. Each guide covers how that's enforced for its source.
+- **Config reload is explicit.** RunWisp never watches files. After you edit
+  `runwisp.toml`, run [`runwisp reload`](/operations/reload/) to pick it up.
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="Tasks vs Services"
+        href="/concepts/tasks-vs-services/"
+        description="Which one your migrated job should be — the one-line rule."
+    />
+    <LinkCard
+        title="Configuration overview"
+        href="/configuration/overview/"
+        description="Every key in runwisp.toml, once your config is your own."
+    />
+    <LinkCard
+        title="Troubleshooting"
+        href="/operations/troubleshooting/"
+        description="Migrated, but something isn't firing? Start here."
+    />
+    <LinkCard
+        title="CLI reference"
+        href="/reference/cli/"
+        description="takeover, import, promote — every flag on the migration commands."
+    />
+</CardGrid>

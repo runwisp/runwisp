@@ -50,18 +50,28 @@ tasks:
             - "/prettier.base.cjs"
 
     links:
-        # Validates every docs-to-docs link in src/content/docs resolves to a
-        # real file and, when an anchor is present, to a real heading there.
-        # /api/<operationId> links are checked against openapi.json so the
-        # starlight-openapi generated routes are also covered.
-        description: "Validate all intra-docs links resolve (file + anchor)."
+        # Validates every link this repo controls that points into the docs site:
+        # docs-to-docs links in src/content/docs (markdown *and* JSX `href=`)
+        # resolve to a real file and, when an anchor is present, to a real
+        # heading there; /api/<operationId> links are checked against
+        # openapi.json so the starlight-openapi generated routes are covered;
+        # and absolute docs.runwisp.com URLs embedded elsewhere in the repo
+        # (README, SECURITY, install.sh, the Go sources, the config schema) are
+        # checked too — hence the inputs reaching outside this project.
+        description: "Validate all docs links resolve (file + anchor), in-docs and repo-wide."
         command: "bun scripts/check-docs-links.ts"
         deps:
             - "runwisp:openapi"
         inputs:
             - "src/content/docs/**/*"
             - "scripts/check-docs-links.ts"
+            - "astro.config.mjs"
             - "/apps/runwisp/openapi.json"
+            - "/apps/runwisp/**/*.go"
+            - "/apps/runwisp/internal/config/config.schema.json"
+            - "/README.md"
+            - "/SECURITY.md"
+            - "/scripts/install.sh"
 
     format:
         command: "prettier --write ."

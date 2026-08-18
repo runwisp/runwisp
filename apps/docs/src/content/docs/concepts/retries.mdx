@@ -16,6 +16,11 @@ settings don't inherit from
 Retries are a **task** thing only. Services don't retry — they
 [restart](#services-dont-retry) instead.
 
+:::note[Looking for keys and defaults?]
+This page explains _what retrying and timing out actually do_. The key list and
+defaults are in [`[tasks.*]` → Retries & timeout](/configuration/tasks/#retries--timeout).
+:::
+
 ## `retry_attempts`
 
 ```toml
