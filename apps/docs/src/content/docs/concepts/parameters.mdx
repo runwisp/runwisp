@@ -1,0 +1,130 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Parameters
+description: Declare per-run inputs on a task with params, then fill them in when you trigger from the Web UI, TUI, or REST API — env vars, positional args, options, and flags, passed safely.
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+import Screenshot from "../../../components/Screenshot.astro";
+
+Some tasks are _almost_ the same every time you run them, except for one
+or two things you only know at the moment you press "run" — which tenant
+to export, what date to back-fill from, whether this is a `--dry-run`.
+You could hard-code one task per tenant, or you could declare the bits
+that change as **parameters** and fill them in when you trigger.
+
+Declare `params` on a task and the dashboard, TUI, and REST API all grow
+a little form for it. You pick the values, RunWisp feeds them to your
+command, and the run history records exactly what each execution was
+handed.
+
+<Screenshot
+    name="web-ui-params"
+    alt="Run Task modal for export-org-data: a form of text fields, dropdowns, a number input, and a toggle — one control per declared parameter, each with help text underneath."
+/>
+
+## Declared in TOML, supplied at trigger time
+
+The split matters, so it's worth saying plainly: `runwisp.toml` is the
+**only** place parameters are _defined_. The Web UI, TUI, and API only
+ever _supply values_ for inputs you've already declared — they can't
+invent a new flag, rename one, or change what the command is. That's the
+same rule that keeps the whole config surface honest: the daemon runs
+what's on disk, and the UI is a window onto it, [never a way to rewrite
+it](/configuration/overview/).
+
+```toml
+[tasks.export-org-data]
+run = "/usr/local/bin/export.sh"
+params = [
+  { env    = "ORG_ID", required = true },
+  { arg    = "format", choices = ["json", "csv"], default = "json" },
+  { option = "--region", choices = ["us", "eu"] },
+  { flag   = "--include-attachments" },
+]
+```
+
+Each entry names **exactly one** of four keywords, and that keyword
+decides how the value reaches your command:
+
+| Keyword  | How it reaches the command                                  |
+| -------- | ----------------------------------------------------------- |
+| `env`    | Exported as an environment variable                         |
+| `arg`    | Appended as a positional argument, in declaration order     |
+| `option` | Appended as `--name value`                                  |
+| `flag`   | A boolean — the token is appended when on, dropped when off |
+
+Beyond the keyword, each input takes optional modifiers — `default`,
+`required`, `choices`, `allow_custom`, `type` (`string` or `number`), and
+a `description` shown as help text under the field. The
+[`[tasks.*]` reference](/configuration/tasks/#parameters) is the exhaustive
+list, with the rules the loader enforces and the omit-vs-empty-string
+distinction spelled out.
+
+## Supplying values
+
+You've got three surfaces, and they're the same form in three skins:
+
+- **Web UI** — the task's detail page has a **Run Task** button. If the
+  task declares params, clicking it opens the form above; fill in what you
+  need and submit. See the [Web UI tour](/getting-started/web-ui-tour/#task-detail-tasksid).
+- **TUI** — select the task, press **Run Now**, and the same fields show
+  up in the terminal.
+- **REST API** — the trigger call takes a `params` object. That's the one
+  to reach for from a deploy script or CI; the
+  [remote-trigger recipe](/recipes/remote-trigger/) has the full example.
+
+Whatever values actually took effect — defaults filled in, blanks
+dropped, a flag flipped on — are recorded on the run and shown in its
+detail view. Run history always tells you what a given execution was
+handed, so a parameterised task never leaves you guessing which inputs
+produced which result.
+
+## Scheduled runs use the defaults
+
+A cron tick has nobody to ask. So **scheduled runs** — anything fired by
+`cron`, `run_on_start`, or [catch-up](/concepts/scheduling/#missed-ticks-catchup) —
+use each parameter's declared `default`, and so do
+[retries](/concepts/retries/) (a retry replays exactly what the original
+run was given). That's also why a `required` parameter with no `default`
+is only allowed on a manual-only task: put one on a `cron` task and the
+config is rejected, because the scheduler would have no value to supply.
+
+If a task is meant to run both on a schedule and by hand, give every
+parameter a sensible `default` — the schedule rides on those, and the
+manual form pre-fills them so you only change what you mean to.
+
+## Your input stays inert
+
+Every value is handed to your program as a real argv entry or an
+environment variable — **never** spliced into the shell string. An
+operator who types `; rm -rf /` into a field gets a harmless literal
+argument, not a second command. This is deliberate: the trigger surface
+is untrusted, and RunWisp treats parameter values as data, not code.
+(The command itself, `run =`, still comes from trusted TOML on disk.)
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="[tasks.*] ref"
+        href="/configuration/tasks/#parameters"
+        description="The exhaustive params schema — every modifier, every rule, omit vs. empty string."
+    />
+    <LinkCard
+        title="Trigger via API"
+        href="/recipes/remote-trigger/"
+        description="Supply parameters from a deploy script or CI with a plain REST call."
+    />
+    <LinkCard
+        title="Scheduling"
+        href="/concepts/scheduling/"
+        description="Why cron, run_on_start, and catch-up fall back to the declared defaults."
+    />
+    <LinkCard
+        title="The Web UI tour"
+        href="/getting-started/web-ui-tour/"
+        description="Where the Run Task form lives in the dashboard."
+    />
+</CardGrid>

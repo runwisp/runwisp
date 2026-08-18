@@ -137,6 +137,26 @@ test("overview, runs, task detail", async ({ authenticatedPage: page, daemonStat
     }
 });
 
+// The parameter form: the demo's export-org-data task declares all four param
+// kinds (env / arg / option / flag) plus every modifier, so the "Run Task" modal
+// renders one of each control — the shot the docs embed for the params concept.
+const PARAM_TASK = "export-org-data";
+test("parameter form", async ({ authenticatedPage: page }) => {
+    for (const theme of THEMES) {
+        await page.emulateMedia({ colorScheme: theme });
+        await page.goto(`/tasks/${PARAM_TASK}`);
+        await expect(page.getByRole("heading", { name: PARAM_TASK, level: 1 })).toBeVisible();
+
+        await page.getByRole("button", { name: "Run", exact: true }).click();
+        const dialog = page.getByRole("dialog", { name: "Run Task" });
+        await expect(dialog).toBeVisible();
+        // Wait for the form to populate before capturing.
+        await expect(dialog.getByText("ORG_ID")).toBeVisible();
+        await settle(page);
+        await shoot(page, `web-ui-params-${theme}`);
+    }
+});
+
 // The login modal: a fresh (unauthenticated) page, so no token is injected.
 test("login modal", async ({ page }) => {
     for (const theme of THEMES) {
