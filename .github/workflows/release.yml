@@ -341,6 +341,12 @@ jobs:
           ref: ${{ github.event.release.tag_name }}
           sparse-checkout: npm/runwisp
 
+      # Ship the repo README as the package's npm page. Relative image paths
+      # resolve against the repo root because package.json sets no repository
+      # `directory`, so npm rewrites them to raw.githubusercontent at root.
+      - name: Use repo README for the npm page
+        run: cp README.md npm/runwisp/README.md
+
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
