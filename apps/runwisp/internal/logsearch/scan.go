@@ -71,9 +71,10 @@ type Cursor struct {
 // the previous page already returned. more=true means the run still has
 // unscanned bytes — the caller can resume from hits[last].N+1.
 func ScanRun(ctx context.Context, run RunRef, m Matcher, maxHits int, startAfterN int64) (hits []Hit, more bool, err error) {
-	if maxHits <= 0 {
-		maxHits = DefaultMaxHits
-	}
+	// Clamp here (not only in ScanTask) so direct callers — the cloud
+	// log-search path reaches ScanRun without going through ScanTask — cannot
+	// ask for an unbounded in-memory result set.
+	maxHits = clampMaxHits(maxHits)
 	tsMs := run.CreatedAt.UnixMilli()
 	hits = make([]Hit, 0, min(maxHits, 16))
 	err = logutil.ScanLines(ctx, run.LogPath, func(rec logutil.LogLineRecord) bool {

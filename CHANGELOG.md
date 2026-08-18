@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - **Hardened `service install` unit generation, task-process environment isolation, config-file trust checks, privilege dropping, and outbound-request address filtering.** Internal safeguards with no configuration changes.
+- **HTTP-task run logs redact request/response credentials** — `Authorization`, `Cookie`, API-key headers, and URL passwords are shown as `[redacted]` instead of being persisted to disk.
+- **Control-plane dispatch is validated and bounded at the boundary** — peer-supplied shell `umask`/interpreter are re-validated, log-search size and the ephemeral dispatch queue are capped, and running the control-plane connection over plaintext (`RUNWISP_CLOUD_ALLOW_INSECURE`) now warns loudly at startup.
+- **Run delete/stop honor the task in the request path**, and log search runs under a request deadline. Internal safeguards with no configuration changes.
 
 ### Changed
 

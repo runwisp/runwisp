@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -298,6 +299,9 @@ func (srv *Server) humaGetRun(ctx context.Context, input *RunIDInput) (*RunOutpu
 }
 
 func (srv *Server) humaDeleteRun(ctx context.Context, input *TaskRunInput) (*struct{}, error) {
+	if err := srv.requireRunInTask(ctx, input.TaskName, input.RunID); err != nil {
+		return nil, err
+	}
 	if err := srv.runService.DeleteRun(ctx, input.RunID); err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to delete run")
 	}
@@ -305,10 +309,27 @@ func (srv *Server) humaDeleteRun(ctx context.Context, input *TaskRunInput) (*str
 }
 
 func (srv *Server) humaStopRun(ctx context.Context, input *TaskRunInput) (*struct{}, error) {
+	if err := srv.requireRunInTask(ctx, input.TaskName, input.RunID); err != nil {
+		return nil, err
+	}
 	if err := srv.runService.StopRun(ctx, input.RunID); err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to stop run")
 	}
 	return nil, nil
+}
+
+// requireRunInTask rejects a run that does not belong to the taskName in the
+// URL, so DELETE/POST /api/tasks/{taskName}/runs/{runId} cannot act on another
+// task's run just because the run ID is known. Mirrors the 400/404 contract the
+// per-run log endpoints use.
+func (srv *Server) requireRunInTask(ctx context.Context, taskName, runID string) error {
+	if _, err := srv.getRunForTask(ctx, taskName, runID); err != nil {
+		if errors.Is(err, errInvalidRunID) {
+			return huma.Error400BadRequest("Invalid run ID")
+		}
+		return huma.Error404NotFound("Run not found")
+	}
+	return nil
 }
 
 func (srv *Server) humaBulkDeleteRuns(ctx context.Context, input *BulkRunSelectorInput) (*BulkAffectedOutput, error) {

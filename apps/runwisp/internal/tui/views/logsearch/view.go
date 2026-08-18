@@ -76,7 +76,7 @@ func (m *Model) renderHits(b *strings.Builder, width int) {
 		if len(runShort) > 6 {
 			runShort = runShort[len(runShort)-6:]
 		}
-		line := fmt.Sprintf("%s  L%-6d  %s", runShort, h.N, h.Text)
+		line := fmt.Sprintf("%s  L%-6d  %s", runShort, h.N, uikit.SanitizeControls(h.Text))
 		if w := width - 6; len(line) > w {
 			line = line[:w-1] + "…"
 		}
