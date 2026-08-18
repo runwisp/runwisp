@@ -103,6 +103,7 @@ export default defineConfig({
                         { label: "How scheduling works", slug: "concepts/scheduling" },
                         { label: "Concurrency policies", slug: "concepts/concurrency" },
                         { label: "Retries & timeouts", slug: "concepts/retries" },
+                        { label: "Parameters", slug: "concepts/parameters" },
                         { label: "Logs & retention", slug: "concepts/logs" },
                     ],
                 },

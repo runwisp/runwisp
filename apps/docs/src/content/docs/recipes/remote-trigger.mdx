@@ -66,6 +66,11 @@ run.
 
         You can quote that ULID back when you go looking for the run
         in the Web UI or [`runwisp` history](/concepts/logs/).
+
+        **Parameters?** `runwisp exec` doesn't take per-run parameter
+        values — a CLI trigger runs the task with its declared
+        [`params`](/concepts/parameters/) defaults. To supply values,
+        use the REST API tab or the Web UI / TUI form.
     </TabItem>
     <TabItem label="REST API" icon="cloud-download">
         Can't install the binary on the box that triggers the task?
@@ -100,6 +105,33 @@ run.
         Reuse that `$TOKEN` across calls — it's good for 24 hours.
         Logging in on every trigger will eventually trip the daemon's
         auth [rate limit](/operations/auth/#rate-limiting).
+
+        #### Passing parameters
+
+        If the task declares [parameters](/concepts/parameters/), supply
+        their values with a `params` object in the request body — the
+        same values the Web UI form would collect:
+
+        ```bash
+        curl -sSf -X POST "$BASE/api/tasks/export-org-data/run?wait=true" \
+          -H "Authorization: Bearer $TOKEN" \
+          -H 'Content-Type: application/json' \
+          -d '{"params":{"ORG_ID":"acme","--region":"eu","--include-attachments":"true"}}' \
+          | jq .exit_code
+        ```
+
+        The keys are the parameter keys you declared — the `env`/`arg`
+        name, or the `--option`/`--flag` token. Each value is tri-state:
+
+        - **a string** (including `""`) supplies that value,
+        - **`null`** explicitly omits the parameter, overriding its
+          declared default,
+        - **an absent key** falls back to the declared default.
+
+        Values are still passed to your program as argv/env, never
+        spliced into the shell — the API is untrusted input, so a value
+        like `; rm -rf /` stays an inert string. Anything you leave out
+        uses the default from `runwisp.toml`.
 
         #### Long-running tasks: trigger, then poll
 
@@ -169,6 +201,11 @@ _when_.
         title="Deploy hooks"
         href="/recipes/deploy-hooks/"
         description="The sibling recipe — manual-only tasks triggered from CI."
+    />
+    <LinkCard
+        title="Parameters"
+        href="/concepts/parameters/"
+        description="Declare per-run inputs and pass them in the params body above."
     />
     <LinkCard
         title="[tasks.*] ref"

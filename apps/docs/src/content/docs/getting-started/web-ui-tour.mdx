@@ -145,11 +145,16 @@ task, **Stop** while a run is active, or for a service
 **Stop Service** (or **Restart Service** if the service is currently
 stopped).
 
-If the task declares [parameters](/configuration/tasks/#parameters),
-clicking **Run Task** opens a form — each declared input renders as a
-text field, dropdown, or toggle, with validation and descriptions right
-there. Fill in what you need and submit. Tasks with no `params` trigger
-instantly with no form.
+If the task declares [parameters](/concepts/parameters/), clicking
+**Run Task** opens a form — each declared input renders as a text field,
+dropdown, or toggle, with validation and descriptions right there. Fill
+in what you need and submit. Tasks with no `params` trigger instantly
+with no form.
+
+<Screenshot
+    name="web-ui-params"
+    alt="Run Task modal for a parameterised task: text fields, dropdowns, a number input, and a toggle, one control per declared parameter, each with help text underneath."
+/>
 
 Underneath the header you'll find the run history
 for this task and, taking up most of the pane, the log for whichever

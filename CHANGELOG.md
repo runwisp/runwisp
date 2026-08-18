@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Hardened `service install` unit generation, task-process environment isolation, config-file trust checks, privilege dropping, and outbound-request address filtering.** Internal safeguards with no configuration changes.
 
+### Documentation
+
+- **New [Parameters](https://docs.runwisp.com/concepts/parameters/) guide** surfaces per-run task inputs — declaring `params` and supplying them from the Web UI, TUI, or REST API — with a screenshot of the Run Task form.
+
 ## [0.15.1] - 2026-08-12
 
 ### Fixed
