@@ -17,12 +17,12 @@ it fails.
 That's one command:
 
 ```bash
-runwisp exec backup --url https://runwisp.example.com
+runwisp run backup --url https://runwisp.example.com
 ```
 
 It logs in, triggers the `backup` task, streams its stdout/stderr to
 your terminal live, and exits with the **task's** exit code — so
-`runwisp exec backup --url … && deploy.sh` does the right thing. Every
+`runwisp run backup --url … && deploy.sh` does the right thing. Every
 trigger still lands as a browsable run in the daemon's history, with
 timestamps, exit code, and captured output, exactly like a scheduled
 run.
@@ -39,7 +39,7 @@ run.
         export RUNWISP_URL=https://runwisp.example.com
         export RUNWISP_PASSWORD=…            # the daemon's password
 
-        runwisp exec backup                  # --url falls back to RUNWISP_URL
+        runwisp run backup                  # --url falls back to RUNWISP_URL
         ```
 
         RunWisp does the [CHAP handshake](/operations/auth/#network-clients-web-ui-remote-rest)
@@ -60,7 +60,7 @@ run.
         exits `0` immediately:
 
         ```bash
-        runwisp exec backup --detach
+        runwisp run backup --detach
         # 01ARZ3NDEKTSV4RRFFQ69G5FAV
         ```
 
@@ -182,7 +182,7 @@ the machine you're triggering from:
 2. **The task allows API triggering.** Tasks are triggerable over the
    API by default (`api_trigger = true`). If you've set
    `api_trigger = false` on a task to wall it off, the trigger comes
-   back `403` and so does `runwisp exec --url`. Drop the line to
+   back `403` and so does `runwisp run --url`. Drop the line to
    re-enable it.
 
 That's the whole setup. The TOML on the daemon stays the single

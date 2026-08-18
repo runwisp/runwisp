@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +26,7 @@ func TestGetMetricsHistory(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/system/history", r.URL.Path)
-		_ = json.NewEncoder(w).Encode(samples)
+		_ = json.NewEncoder(w).Encode(server.MetricsHistoryBody{Items: samples})
 	}))
 	defer srv.Close()
 

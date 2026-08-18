@@ -21,11 +21,11 @@ func (c *Client) GetSystemStats() (*model.SystemStats, error) {
 
 // GetMetricsHistory fetches historical system metrics from the ring buffer.
 func (c *Client) GetMetricsHistory() ([]model.MetricsSample, error) {
-	var samples []model.MetricsSample
-	if err := c.doJSON("GET", "/api/system/history", nil, &samples); err != nil {
+	var resp server.MetricsHistoryBody
+	if err := c.doJSON("GET", "/api/system/history", nil, &resp); err != nil {
 		return nil, err
 	}
-	return samples, nil
+	return resp.Items, nil
 }
 
 func (c *Client) GetRunSummary() (*model.RunSummary, error) {
@@ -71,7 +71,7 @@ func (c *Client) Reload() (*model.ReloadResult, error) {
 
 // AuthStatus reports whether the daemon requires authentication, via the public
 // GET /api/auth/status endpoint. A remote client probes it before prompting for
-// a password so a RUNWISP_NO_AUTH daemon connects without one.
+// a password so a RUNWISP_AUTH=off daemon connects without one.
 func (c *Client) AuthStatus() (server.AuthStatusBody, error) {
 	var body server.AuthStatusBody
 	if err := c.doJSON("GET", "/api/auth/status", nil, &body); err != nil {

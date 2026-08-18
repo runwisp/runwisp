@@ -23,11 +23,11 @@ type RunsParams struct {
 }
 
 func (c *Client) ListTasks() ([]model.TaskResponse, error) {
-	var tasks []model.TaskResponse
-	if err := c.doJSON("GET", "/api/tasks", nil, &tasks); err != nil {
+	var resp server.TasksResponseBody
+	if err := c.doJSON("GET", "/api/tasks", nil, &resp); err != nil {
 		return nil, err
 	}
-	return tasks, nil
+	return resp.Items, nil
 }
 
 func encodeRunsParams(params RunsParams) url.Values {
@@ -63,7 +63,7 @@ func (c *Client) ListRuns(params RunsParams) ([]model.Run, int64, error) {
 	if err := c.doJSON("GET", path, nil, &resp); err != nil {
 		return nil, 0, err
 	}
-	return resp.Runs, resp.Total, nil
+	return resp.Items, resp.Total, nil
 }
 
 func (c *Client) ListRunsByTask(taskName string, params RunsParams) ([]model.Run, int64, error) {
@@ -76,7 +76,7 @@ func (c *Client) ListRunsByTask(taskName string, params RunsParams) ([]model.Run
 	if err := c.doJSON("GET", path, nil, &resp); err != nil {
 		return nil, 0, err
 	}
-	return resp.Runs, resp.Total, nil
+	return resp.Items, resp.Total, nil
 }
 
 // TriggerRun starts a new run of a task, optionally supplying values for the

@@ -28,7 +28,7 @@ func TestComposeBackend_BuildArgs_ServicesMode(t *testing.T) {
 		File:        "./docker-compose.yml",
 		ProjectName: "myapp",
 		Service:     "web",
-		Mode:        model.ComposeModeServices,
+		Mode:        model.ComposeModeRun,
 		Profiles:    []string{"prod"},
 		EnvFile:     []string{"./.env"},
 		Pull:        model.ComposePullAlways,
@@ -166,7 +166,7 @@ func TestComposeBackend_BuildArgs_OmitsNoDepsWhenWithDeps(t *testing.T) {
 	ce := &model.ComposeExecution{
 		File:     "./docker-compose.yml",
 		Service:  "web",
-		Mode:     model.ComposeModeServices,
+		Mode:     model.ComposeModeRun,
 		WithDeps: true,
 	}
 	args := buildComposeArgs(ce, &model.Task{}, nil, "")
@@ -177,7 +177,7 @@ func TestComposeBackend_BuildArgs_OmitsPullWhenMissing(t *testing.T) {
 	ce := &model.ComposeExecution{
 		File:    "./docker-compose.yml",
 		Service: "web",
-		Mode:    model.ComposeModeServices,
+		Mode:    model.ComposeModeRun,
 		Pull:    model.ComposePullMissing,
 	}
 	args := buildComposeArgs(ce, &model.Task{}, nil, "")
@@ -245,7 +245,7 @@ func TestComposeBackend_Start_RecordsArgs(t *testing.T) {
 		File:        "/tmp/dc.yml",
 		ProjectName: "demo",
 		Service:     "web",
-		Mode:        model.ComposeModeServices,
+		Mode:        model.ComposeModeRun,
 	}
 	task := &model.Task{Env: map[string]string{"FOO": "bar"}}
 	run := &model.Run{InstanceIndex: 1}
@@ -290,7 +290,7 @@ func TestComposeBackend_Start_InjectsEnvIntoChildProcess(t *testing.T) {
 	installDockerShimScript(t, dir, body)
 
 	b := &ComposeBackend{dockerCmd: "docker"}
-	ce := &model.ComposeExecution{File: "/tmp/dc.yml", ProjectName: "demo", Service: "web", Mode: model.ComposeModeServices}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", ProjectName: "demo", Service: "web", Mode: model.ComposeModeRun}
 	task := &model.Task{Secrets: map[string]string{"API_TOKEN": "s3cr3t"}}
 
 	proc, err := b.Start(context.Background(), task, &model.Run{InstanceIndex: 0}, ce)
@@ -317,7 +317,7 @@ func TestComposeBackend_Start_ReclaimsStaleInstance(t *testing.T) {
 	installRecordingDockerShim(t, dir, logFile, "stale123\n")
 
 	b := &ComposeBackend{dockerCmd: "docker", fingerprint: "fp-test"}
-	ce := &model.ComposeExecution{File: "/tmp/dc.yml", ProjectName: "demo", Service: "web", Mode: model.ComposeModeServices}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", ProjectName: "demo", Service: "web", Mode: model.ComposeModeRun}
 	task := &model.Task{Name: "boxes.web"}
 
 	proc, err := b.Start(context.Background(), task, &model.Run{InstanceIndex: 0}, ce)
@@ -341,7 +341,7 @@ func TestComposeBackend_Start_CleanupRemovesInstance(t *testing.T) {
 	installRecordingDockerShim(t, dir, logFile, "live456\n")
 
 	b := &ComposeBackend{dockerCmd: "docker", fingerprint: "fp-test"}
-	ce := &model.ComposeExecution{File: "/tmp/dc.yml", ProjectName: "demo", Service: "web", Mode: model.ComposeModeServices}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", ProjectName: "demo", Service: "web", Mode: model.ComposeModeRun}
 	task := &model.Task{Name: "boxes.web"}
 
 	proc, err := b.Start(context.Background(), task, &model.Run{InstanceIndex: 2}, ce)
@@ -399,7 +399,7 @@ func TestComposeBackend_Start_PropagatesExitCode(t *testing.T) {
 	installDockerShim(t, dir, argsFile, 7)
 
 	b := &ComposeBackend{dockerCmd: "docker"}
-	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeServices}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeRun}
 	proc, err := b.Start(context.Background(), &model.Task{}, &model.Run{}, ce)
 	require.NoError(t, err)
 	go drain(proc.Stdout)
@@ -440,7 +440,7 @@ func TestComposeBackend_ProcessGroupSIGTERMReapsChildren(t *testing.T) {
 	installDockerShimScript(t, dir, body)
 
 	task := &model.Task{GracefulStop: 200 * time.Millisecond}
-	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeServices}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeRun}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	b := &ComposeBackend{dockerCmd: "docker"}
@@ -476,7 +476,7 @@ func TestComposeBackend_ImmediateKillWhenGracefulStopZero(t *testing.T) {
 	installDockerShimScript(t, dir, "#!/bin/sh\ntrap '' TERM\nsleep 30\n")
 
 	task := &model.Task{GracefulStop: 0}
-	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeServices}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeRun}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	b := &ComposeBackend{dockerCmd: "docker"}
@@ -508,7 +508,7 @@ func TestComposeBackend_WorkingDirPropagates(t *testing.T) {
 	ce := &model.ComposeExecution{
 		File:       "/tmp/dc.yml",
 		Service:    "web",
-		Mode:       model.ComposeModeServices,
+		Mode:       model.ComposeModeRun,
 		WorkingDir: workDir,
 	}
 	b := &ComposeBackend{dockerCmd: "docker"}
@@ -539,7 +539,7 @@ func TestComposeBackend_Start_ContextCancelledBeforeStart(t *testing.T) {
 	cancel()
 
 	b := &ComposeBackend{dockerCmd: "docker"}
-	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeServices}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeRun}
 	_, err := b.Start(ctx, &model.Task{}, &model.Run{}, ce)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "start docker compose")
@@ -585,7 +585,7 @@ func TestLazyComposeBackend_ReturnsErrorWhenUnavailable(t *testing.T) {
 	t.Setenv("PATH", "")
 	l := NewLazyComposeBackend("fp-test")
 	_, err := l.Start(context.Background(), &model.Task{}, &model.Run{},
-		&model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeServices})
+		&model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeRun})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "docker compose unavailable")
 }

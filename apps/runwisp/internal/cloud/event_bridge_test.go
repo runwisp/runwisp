@@ -88,7 +88,7 @@ func TestEventBridge_HandleRunEvent_RunningRun(t *testing.T) {
 		TaskName:            "t1",
 		Status:              model.PhaseRunning,
 		ExternalExecutionID: &extID,
-		StartAt:             &now,
+		StartedAt:           &now,
 	}
 	b.handleRunEvent(context.Background(), events.Event{Data: events.RunEvent{Run: run}})
 	assert.True(t, b.tracker.HasActive())
@@ -140,7 +140,7 @@ func TestEventBridge_Start_DispatchesPublishedEvents(t *testing.T) {
 	now := time.Now()
 	runStarted := &model.Run{
 		ID: "r1", TaskName: "t", Status: model.PhaseRunning,
-		ExternalExecutionID: &extID, StartAt: &now,
+		ExternalExecutionID: &extID, StartedAt: &now,
 	}
 	bus.Publish(events.EventRunStarted, events.RunEvent{Run: runStarted})
 

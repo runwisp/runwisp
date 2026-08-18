@@ -84,18 +84,18 @@ func TestTaskURL(t *testing.T) {
 func TestRunDuration(t *testing.T) {
 	start := time.Date(2026, 5, 14, 17, 11, 0, 0, time.UTC)
 	end := start.Add(12*time.Second + 400*time.Millisecond)
-	r := &model.Run{StartAt: &start, EndAt: &end}
+	r := &model.Run{StartedAt: &start, EndedAt: &end}
 	assert.Equal(t, "12s", runDuration(r))
 
 	assert.Equal(t, "", runDuration(nil))
-	assert.Equal(t, "", runDuration(&model.Run{StartAt: &start}))
-	assert.Equal(t, "", runDuration(&model.Run{EndAt: &end}))
+	assert.Equal(t, "", runDuration(&model.Run{StartedAt: &start}))
+	assert.Equal(t, "", runDuration(&model.Run{EndedAt: &end}))
 }
 
 func TestEventSentence(t *testing.T) {
 	start := time.Date(2026, 5, 14, 17, 11, 0, 0, time.UTC)
 	end := start.Add(300 * time.Millisecond)
-	withDur := &model.Run{StartAt: &start, EndAt: &end, ExitCode: 1}
+	withDur := &model.Run{StartedAt: &start, EndedAt: &end, ExitCode: 1}
 	noDur := &model.Run{ExitCode: 2}
 
 	cases := []struct {

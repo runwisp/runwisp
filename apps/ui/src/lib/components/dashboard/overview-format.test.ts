@@ -163,7 +163,7 @@ describe("taskTriggerIsHumanizedCron", () => {
 });
 
 describe("formatRunDurationLabel", () => {
-    it("returns 'Starting' when run has no endAt and no startAt", () => {
+    it("returns 'Starting' when run has no endedAt and no startedAt", () => {
         const run = makeRun({});
         expect(formatRunDurationLabel(run)).toBe("Starting");
     });

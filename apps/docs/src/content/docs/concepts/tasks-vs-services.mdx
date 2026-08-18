@@ -122,7 +122,7 @@ built up in memory — it's a service.
 ### A one-off you only ever trigger from the API or UI
 
 Still a task — just leave `cron` off. It shows up in the UI and takes
-manual triggers from `runwisp exec <name>`, the [Web UI](/getting-started/web-ui-tour/)'s **Run Task**
+manual triggers from `runwisp run <name>`, the [Web UI](/getting-started/web-ui-tour/)'s **Run Task**
 button, the [TUI](/getting-started/tui-tour/), or `POST /api/tasks/{name}/run`. Set
 `api_trigger = false` if you want it to be cron-only and not runnable
 over the API.

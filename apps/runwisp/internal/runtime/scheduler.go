@@ -393,7 +393,7 @@ func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location) {
 }
 
 // GetNextRun returns the next scheduled time for the task, if scheduled.
-func (scheduler *Scheduler) GetNextRun(taskName string) *string {
+func (scheduler *Scheduler) GetNextRun(taskName string) *time.Time {
 	scheduler.mutex.Lock()
 	defer scheduler.mutex.Unlock()
 
@@ -408,6 +408,6 @@ func (scheduler *Scheduler) GetNextRun(taskName string) *string {
 	// tick + slot would overstate the delay, so the API/TUI/UI display the tick
 	// (the earliest and most common actual start) for jittered and plain tasks
 	// alike.
-	formatted := entry.Next.Format("2006-01-02 15:04:05")
-	return &formatted
+	next := entry.Next
+	return &next
 }

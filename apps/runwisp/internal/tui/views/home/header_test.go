@@ -67,7 +67,7 @@ func TestRenderHomeHeader_OmitsPasswordWhenNotEphemeral(t *testing.T) {
 	assert.NotContains(t, header, "should-be-ignored")
 }
 
-// TestRenderHomeHeader_AuthDisabled locks the RUNWISP_NO_AUTH presentation:
+// TestRenderHomeHeader_AuthDisabled locks the RUNWISP_AUTH=off presentation:
 // the Password row reads "disabled" instead of a masked value, the minted
 // password never leaks into the render, and the row is not focusable (no
 // FieldPassword), so it can't be copied as if it were a credential.
@@ -81,7 +81,7 @@ func TestRenderHomeHeader_AuthDisabled(t *testing.T) {
 	}
 
 	header, _ := RenderHeader(info, false, 80, -1, -1)
-	assert.Contains(t, header, "disabled (RUNWISP_NO_AUTH)")
+	assert.Contains(t, header, "disabled (RUNWISP_AUTH=off)")
 	assert.NotContains(t, header, minted,
 		"the internally minted password must never appear when auth is disabled")
 	assert.NotContains(t, header, strings.Repeat("•", PasswordMaskWidth),

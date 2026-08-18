@@ -48,12 +48,12 @@ func dispatchQueryRuns(
 		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsCreatedAtDescRow) sqlcdb.QueryRunsCreatedAtAscRow {
 			return sqlcdb.QueryRunsCreatedAtAscRow(r)
 		}), err)
-	case "startAt_asc":
+	case "startedAt_asc":
 		rows, err := q.QueryRunsStartAtAsc(ctx, sqlcdb.QueryRunsStartAtAscParams(params))
 		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsStartAtAscRow) sqlcdb.QueryRunsCreatedAtAscRow {
 			return sqlcdb.QueryRunsCreatedAtAscRow(r)
 		}), err)
-	case "startAt_desc":
+	case "startedAt_desc":
 		rows, err := q.QueryRunsStartAtDesc(ctx, sqlcdb.QueryRunsStartAtDescParams(params))
 		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsStartAtDescRow) sqlcdb.QueryRunsCreatedAtAscRow {
 			return sqlcdb.QueryRunsCreatedAtAscRow(r)
@@ -133,8 +133,8 @@ func finishQueryRuns(rows []sqlcdb.QueryRunsCreatedAtAscRow, err error) ([]model
 			Status:              r.Status,
 			EndReason:           r.EndReason,
 			ExitCode:            r.ExitCode,
-			StartAt:             r.StartedAt,
-			EndAt:               r.EndedAt,
+			StartedAt:           r.StartedAt,
+			EndedAt:             r.EndedAt,
 			TriggeredBy:         r.TriggeredBy,
 			CreatedAt:           r.CreatedAt,
 			RetryAttempt:        r.RetryAttempt,

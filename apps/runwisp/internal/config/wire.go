@@ -364,7 +364,7 @@ func (w *taskServiceWireCore) resolveComposeMode(name, label string) (string, er
 		if hasRun {
 			return model.ComposeModeExec, nil
 		}
-		return model.ComposeModeServices, nil
+		return model.ComposeModeRun, nil
 	case model.ComposeModeExec:
 		if !hasRun {
 			return "", fmt.Errorf(
@@ -372,22 +372,14 @@ func (w *taskServiceWireCore) resolveComposeMode(name, label string) (string, er
 				label, name, model.ComposeModeExec)
 		}
 		return model.ComposeModeExec, nil
-	case composeModeRun:
-		return model.ComposeModeServices, nil
+	case model.ComposeModeRun:
+		return model.ComposeModeRun, nil
 	default:
 		return "", fmt.Errorf(
 			"%s %q has invalid compose_mode %q; valid values are %q and %q",
-			label, name, w.ComposeMode, model.ComposeModeExec, composeModeRun)
+			label, name, w.ComposeMode, model.ComposeModeExec, model.ComposeModeRun)
 	}
 }
-
-// composeModeRun is the TOML spelling of services mode on a [tasks.*] /
-// [services.*] table. The internal constant is model.ComposeModeServices, whose
-// name reads correctly on a [compose.*] block ("one RunWisp service per compose
-// service") but not on a single task, where what the operator is choosing is
-// "start a fresh container to run this" — hence "run", matching the
-// `docker compose run` it turns into.
-const composeModeRun = "run"
 
 // taskWire is the over-the-wire task shape used only during TOML decoding.
 // It exists so api_trigger can be distinguished between "absent" (nil, default true)
@@ -659,12 +651,12 @@ type schedulerWire struct {
 // ["inapp"]) from "key set to []" (operator explicitly opted out of the
 // in-app safety net).
 type notifyWire struct {
-	DefaultTimeout  string    `toml:"default_timeout,omitempty"`
-	GlobalNotifiers *[]string `toml:"global_notifiers,omitempty"`
-	HistoryKeep     int       `toml:"history_keep,omitempty"`
-	HistoryKeepFor  string    `toml:"history_keep_for,omitempty"`
-	CoalesceWindow  string    `toml:"coalesce_window,omitempty"`
-	OccurrenceRing  int       `toml:"occurrence_ring,omitempty"`
+	DefaultTimeout    string    `toml:"default_timeout,omitempty"`
+	GlobalNotifiers   *[]string `toml:"global_notifiers,omitempty"`
+	KeepNotifications int       `toml:"keep_notifications,omitempty"`
+	KeepFor           string    `toml:"keep_for,omitempty"`
+	CoalesceWindow    string    `toml:"coalesce_window,omitempty"`
+	OccurrenceRing    int       `toml:"occurrence_ring,omitempty"`
 	// CoalesceOutbound is *bool so we can distinguish "unset" (default-on)
 	// from explicit `coalesce_outbound = false` (the rare opt-out).
 	CoalesceOutbound *bool `toml:"coalesce_outbound,omitempty"`

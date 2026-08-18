@@ -160,7 +160,7 @@ func TestBuildRetentionFn_KeepOnlyInvokesPruneByCount(t *testing.T) {
 	repo := &fakeNotificationRepo{}
 	repo.On("PruneNotificationsByCount", 10).Return(int64(2), nil)
 
-	fn := buildRetentionFn(repo, config.NotifyConfig{HistoryKeep: 10}, slog.Default())
+	fn := buildRetentionFn(repo, config.NotifyConfig{KeepNotifications: 10}, slog.Default())
 	require.NotNil(t, fn)
 	fn(t.Context())
 	repo.AssertExpectations(t)
@@ -171,7 +171,7 @@ func TestBuildRetentionFn_BothLimitsCallBoth(t *testing.T) {
 	repo.On("PruneNotificationsByCount", 5).Return(int64(0), nil)
 	repo.On("PruneNotificationsByAge", time.Hour).Return(int64(0), nil)
 
-	fn := buildRetentionFn(repo, config.NotifyConfig{HistoryKeep: 5, HistoryKeepFor: time.Hour}, slog.Default())
+	fn := buildRetentionFn(repo, config.NotifyConfig{KeepNotifications: 5, KeepFor: time.Hour}, slog.Default())
 	require.NotNil(t, fn)
 	fn(t.Context())
 	repo.AssertExpectations(t)
@@ -182,7 +182,7 @@ func TestBuildRetentionFn_LogsButDoesNotPanicOnPruneError(t *testing.T) {
 	repo.On("PruneNotificationsByCount", 1).Return(int64(0), errors.New("db gone"))
 	repo.On("PruneNotificationsByAge", time.Minute).Return(int64(0), errors.New("db gone"))
 
-	fn := buildRetentionFn(repo, config.NotifyConfig{HistoryKeep: 1, HistoryKeepFor: time.Minute}, slog.Default())
+	fn := buildRetentionFn(repo, config.NotifyConfig{KeepNotifications: 1, KeepFor: time.Minute}, slog.Default())
 	require.NotNil(t, fn)
 	require.NotPanics(t, func() { fn(t.Context()) })
 }

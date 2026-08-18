@@ -58,7 +58,7 @@ Tasks are defined in runwisp.toml (the sole source of truth). Machine-readable
 surfaces for scripts and AI agents:
   runwisp schema           JSON Schema for runwisp.toml (also at ` + config.SchemaURL + `)
   runwisp validate --json  validate a config; errors carry key/line/column
-  runwisp exec <t> --json  run a task and print its outcome as JSON
+  runwisp run <t> --json  run a task and print its outcome as JSON
   runwisp status --json    daemon + task snapshot as JSON
   runwisp openapi          the REST API's OpenAPI 3.1 spec
 On a box that already runs cron: sudo runwisp takeover retires cron and adopts its jobs.

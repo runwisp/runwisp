@@ -114,7 +114,7 @@ func TestRunSummaryGroupsLogOverflowAsFailed(t *testing.T) {
 	// and dropping it from last_failure. Its end_at is the newest, so a correct
 	// query surfaces it as the last failure.
 	startFailedAt := time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
-	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "wontstart", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonStartFailed), EndAt: &startFailedAt, TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "wontstart", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonStartFailed), EndedAt: &startFailedAt, TriggeredBy: model.TriggeredByAPI}))
 	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "skipped", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSkipped), TriggeredBy: model.TriggeredByAPI}))
 
 	summary, err := db.GetRunSummary(ctx)
@@ -285,7 +285,7 @@ func TestMarkCrashedRuns(t *testing.T) {
 	require.NoError(t, db.CreateRun(ctx, &run2))
 
 	// Ended/success run (should not be touched)
-	run3 := model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), EndAt: &time.Time{}, TriggeredBy: model.TriggeredByAPI}
+	run3 := model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), EndedAt: &time.Time{}, TriggeredBy: model.TriggeredByAPI}
 	require.NoError(t, db.CreateRun(ctx, &run3))
 
 	affected, err := db.MarkCrashedRuns(ctx)
@@ -349,8 +349,8 @@ func TestQueryRunsAllSortVariants(t *testing.T) {
 			Status:      status,
 			EndReason:   model.EndReasonPtr(model.ReasonSuccess),
 			ExitCode:    exit,
-			StartAt:     &s,
-			EndAt:       &e,
+			StartedAt:   &s,
+			EndedAt:     &e,
 			TriggeredBy: model.TriggeredByAPI,
 			CreatedAt:   base.Add(time.Duration(startOffset) * time.Minute),
 		}
@@ -387,8 +387,8 @@ func TestQueryRunsAllSortVariants(t *testing.T) {
 		// used to collapse to created_at DESC and silently ignore the toggle).
 		{"default column + asc", SortColumnDefault, SortAsc, []string{"alpha", "bravo", "charlie"}},
 		{"default column + desc", SortColumnDefault, SortDesc, []string{"charlie", "bravo", "alpha"}},
-		{"start_at asc", SortColumnStartAt, SortAsc, []string{"alpha", "bravo", "charlie"}},
-		{"start_at desc", SortColumnStartAt, SortDesc, []string{"charlie", "bravo", "alpha"}},
+		{"start_at asc", SortColumnStartedAt, SortAsc, []string{"alpha", "bravo", "charlie"}},
+		{"start_at desc", SortColumnStartedAt, SortDesc, []string{"charlie", "bravo", "alpha"}},
 		{"task_name asc", SortColumnTaskName, SortAsc, []string{"alpha", "bravo", "charlie"}},
 		{"task_name desc", SortColumnTaskName, SortDesc, []string{"charlie", "bravo", "alpha"}},
 		{"status asc", SortColumnStatus, SortAsc, []string{"alpha", "charlie", "bravo"}},
@@ -429,8 +429,8 @@ func TestQueryRunsFiltersAndPagination(t *testing.T) {
 		return &model.Run{
 			ID: id, TaskName: name, Status: status,
 			EndReason:   reason,
-			StartAt:     &now,
-			EndAt:       &now,
+			StartedAt:   &now,
+			EndedAt:     &now,
 			TriggeredBy: model.TriggeredByAPI,
 			CreatedAt:   now,
 		}

@@ -174,11 +174,11 @@ func (h *InboundHandler) isDuplicateDispatch(ctx context.Context, executionID st
 
 func (h *InboundHandler) handleTriggerError(ctx context.Context, executionID string, run *model.Run, triggerErr error) error {
 	if run != nil {
-		finishedAt := run.EndAt
+		finishedAt := run.EndedAt
 		if finishedAt == nil {
 			finishedAt = nowPtr()
 		}
-		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, ptr(run.ExitCode), run.StartAt, finishedAt))
+		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, ptr(run.ExitCode), run.StartedAt, finishedAt))
 	} else {
 		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, ptr(-1), nil, nowPtr()))
 	}

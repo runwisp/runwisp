@@ -77,7 +77,7 @@ Once it's valid, run a task and read the outcome — the result is a single JSON
 document on stdout; live log lines go to stderr, so stdout stays clean:
 
 ```sh
-runwisp exec backup --json
+runwisp run backup --json
 ```
 
 ```json
@@ -92,7 +92,7 @@ daemon's health plus each task's last run, and the configured task set.
 RunWisp binds a Unix socket at `<data-dir>/runwisp.sock` (default
 `.runwisp/runwisp.sock`). Requests over that socket are trusted as local — no
 password, no login. That's exactly what the CLI does, and it's the path an agent
-on the same host should use too: `runwisp status`, `runwisp exec`, and
+on the same host should use too: `runwisp status`, `runwisp run`, and
 `runwisp reload` all connect over it automatically.
 
 Everything the API exposes is **read state** or **trigger/stop a run**. Nothing

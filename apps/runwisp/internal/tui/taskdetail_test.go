@@ -20,10 +20,10 @@ func TestSummarizeTaskRuns_ClassifiesAndPicksLatestFailure(t *testing.T) {
 	// Newest-first, as the fetch requests.
 	runs := []model.Run{
 		{Status: model.PhaseRunning}, // other
-		{Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonCrashed), EndAt: &newest}, // failure (latest)
-		{Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess)},                 // success
-		{Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonFailed), EndAt: &older},   // failure
-		{Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSkipped)},                 // other
+		{Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonCrashed), EndedAt: &newest}, // failure (latest)
+		{Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess)},                   // success
+		{Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonFailed), EndedAt: &older},   // failure
+		{Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSkipped)},                   // other
 	}
 
 	got := summarizeTaskRuns("alpha", runs, 99)

@@ -132,8 +132,8 @@ func TestSeed(t *testing.T) {
 			t.Fatal("no tick runs")
 		}
 		for _, r := range runs {
-			if r.StartAt == nil || r.StartAt.Minute() != 15 {
-				t.Fatalf("run %s start minute = %v, want 15", r.ID, r.StartAt)
+			if r.StartedAt == nil || r.StartedAt.Minute() != 15 {
+				t.Fatalf("run %s start minute = %v, want 15", r.ID, r.StartedAt)
 			}
 			if r.TriggeredBy != model.TriggeredByCron {
 				t.Errorf("run %s triggered_by = %q, want cron", r.ID, r.TriggeredBy)
@@ -246,8 +246,8 @@ func TestSeed(t *testing.T) {
 			if r.Status != model.PhaseEnded {
 				t.Fatalf("run %s status = %q, want ended", r.ID, r.Status)
 			}
-			if r.StartAt == nil || !r.StartAt.Before(now) {
-				t.Fatalf("run %s start %v not before now %v", r.ID, r.StartAt, now)
+			if r.StartedAt == nil || !r.StartedAt.Before(now) {
+				t.Fatalf("run %s start %v not before now %v", r.ID, r.StartedAt, now)
 			}
 		}
 	})

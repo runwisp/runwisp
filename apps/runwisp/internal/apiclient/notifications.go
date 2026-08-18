@@ -91,7 +91,7 @@ func DecodeNotificationEnvelope(data []byte) (server.NotificationCreatedEvent, e
 	return env, nil
 }
 
-// DecodeUnreadCountEnvelope unwraps a notifications.unread_count_changed
+// DecodeUnreadCountEnvelope unwraps a notification.unreadCountChanged
 // event's payload to a single int64.
 func DecodeUnreadCountEnvelope(data []byte) (int64, error) {
 	var env server.NotificationUnreadCountEvent

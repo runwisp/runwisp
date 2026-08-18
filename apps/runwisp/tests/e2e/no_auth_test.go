@@ -19,7 +19,7 @@ import (
 )
 
 // TestNoAuth_UnauthenticatedTCPAccess boots a real daemon with
-// RUNWISP_NO_AUTH=1 and exercises the passwordless contract end to end:
+// RUNWISP_AUTH=off and exercises the passwordless contract end to end:
 // protected endpoints answer unauthenticated TCP requests, the auth status
 // endpoint reports auth_required=false (what the web UI keys off), the
 // startup banner warns loudly, and `runwisp password` refuses with its
@@ -30,14 +30,14 @@ func TestNoAuth_UnauthenticatedTCPAccess(t *testing.T) {
 	configDir := t.TempDir()
 	configPath := writeE2EConfig(t, configDir)
 	daemon := startDaemonWithEnv(t, projectDir, binaryPath, configPath,
-		"RUNWISP_NO_AUTH=1",
+		"RUNWISP_AUTH=off",
 	)
 
 	// Protected endpoint over TCP with no JWT, no cookie, no Authenticate call.
 	client := apiclient.New(daemon.baseURL, "")
 	tasks, err := client.ListTasks()
 	require.NoError(t, err,
-		"unauthenticated TCP requests must reach protected routes when RUNWISP_NO_AUTH=1")
+		"unauthenticated TCP requests must reach protected routes when RUNWISP_AUTH=off")
 	require.NotEmpty(t, tasks)
 
 	// Auth status must report auth_required=false so the UI skips login.
@@ -61,11 +61,11 @@ func TestNoAuth_UnauthenticatedTCPAccess(t *testing.T) {
 	stdout, stderr, exitCode := runPasswordCmd(t, binaryPath, projectDir, daemon.dataDir, daemon.port, nil)
 	require.Equal(t, 5, exitCode, "no-auth must exit with its dedicated code; stderr:\n%s", stderr)
 	require.Empty(t, stdout, "no password value may be printed when auth is disabled")
-	require.Contains(t, stderr, "RUNWISP_NO_AUTH")
+	require.Contains(t, stderr, "RUNWISP_AUTH=off")
 }
 
 // TestNoAuth_ConflictWithPasswordRefusesToBoot asserts the daemon rejects the
-// contradictory RUNWISP_NO_AUTH + RUNWISP_PASSWORD combination at startup
+// contradictory RUNWISP_AUTH=off + RUNWISP_PASSWORD combination at startup
 // instead of silently picking one.
 func TestNoAuth_ConflictWithPasswordRefusesToBoot(t *testing.T) {
 	projectDir := runwispProjectDir(t)
@@ -85,7 +85,7 @@ func TestNoAuth_ConflictWithPasswordRefusesToBoot(t *testing.T) {
 	cmd.Dir = projectDir
 	cmd.Env = subprocEnv(
 		"TERM=xterm-256color",
-		"RUNWISP_NO_AUTH=1",
+		"RUNWISP_AUTH=off",
 		"RUNWISP_PASSWORD=contradictory",
 	)
 
@@ -101,7 +101,7 @@ func TestNoAuth_ConflictWithPasswordRefusesToBoot(t *testing.T) {
 		require.Error(t, err, "daemon must exit non-zero on the env conflict")
 	case <-time.After(10 * time.Second):
 		_ = cmd.Process.Kill()
-		t.Fatalf("daemon did not exit on RUNWISP_NO_AUTH + RUNWISP_PASSWORD conflict; output:\n%s",
+		t.Fatalf("daemon did not exit on RUNWISP_AUTH=off + RUNWISP_PASSWORD conflict; output:\n%s",
 			output.Tail(1<<20))
 	}
 	require.Contains(t, output.Tail(1<<20), "mutually exclusive",

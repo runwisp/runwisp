@@ -275,7 +275,7 @@
         "file": { "type": "string", "description": "Compose file path; auto-discovered when omitted." },
         "include": { "type": "array", "items": { "type": "string" }, "description": "Services to import; mutually exclusive with exclude." },
         "exclude": { "type": "array", "items": { "type": "string" }, "description": "Services to skip." },
-        "mode": { "type": "string", "enum": ["services", "stack"], "default": "services" },
+        "import": { "type": "string", "enum": ["services", "stack"], "default": "services", "description": "How to import the compose file: one RunWisp service per compose service, or one task managing the whole project." },
         "group": { "type": "string" },
         "project_name": { "type": "string" },
         "profiles": { "type": "array", "items": { "type": "string" } },
@@ -327,8 +327,8 @@
       "properties": {
         "global_notifiers": { "type": "array", "items": { "type": "string" }, "default": ["inapp"], "description": "Channels added to every notify list + catch-all on failures; [] opts out." },
         "default_timeout": { "$ref": "#/$defs/duration", "description": "Total retry budget per delivery." },
-        "history_keep": { "type": "integer", "default": 1024, "description": "In-app bell row cap." },
-        "history_keep_for": { "$ref": "#/$defs/duration", "description": "Max bell row age. Default 90d." },
+        "keep_notifications": { "type": "integer", "default": 1024, "description": "In-app bell row cap." },
+        "keep_for": { "$ref": "#/$defs/duration", "description": "Max bell row age. Default 90d." },
         "coalesce_window": { "$ref": "#/$defs/duration", "description": "Collapse repeat (kind+task) into one bell row. Default 1h." },
         "occurrence_ring": { "type": "integer", "default": 10, "description": "Recent timestamps kept per coalesced row." },
         "coalesce_outbound": { "type": "boolean", "default": true, "description": "Coalesce outbound bursts too." }

@@ -239,10 +239,10 @@ to where your hands already are.
         From a shell:
 
         ```bash
-        runwisp exec hello
+        runwisp run hello
         ```
 
-        `runwisp exec` pipes stdout and stderr straight to your
+        `runwisp run` pipes stdout and stderr straight to your
         terminal and exits with the run's own exit code, so it slots
         cleanly into a script or a one-off command. If a daemon's
         running, it goes through the REST API. If not, it just runs
@@ -277,7 +277,7 @@ A few knobs worth knowing while you're here:
   with Docker secrets and systemd's `LoadCredential`.
 - Running purely locally — a dev container, your laptop, an isolated
   network — and the login wall is just in the way? Set
-  [`RUNWISP_NO_AUTH=1`](/operations/auth/#running-without-a-password)
+  [`RUNWISP_AUTH=off`](/operations/auth/#running-without-a-password)
   to skip it entirely.
 - Use [`--host` and `--port`](/configuration/daemon/#cli-flags-config-data-directory--listen-address) to move the dashboard somewhere else.
   Defaults are `127.0.0.1` and `9477` — loopback only — which is

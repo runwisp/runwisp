@@ -334,7 +334,7 @@ func (s TaskSource) Promotable() bool { return s == SourceStaged || s == SourceC
 // operator does not ask for a hold, the machine's state produces one.
 //
 // A hold withholds *automatic firing only*. A held task still appears in the task
-// list with its schedule, and `runwisp exec` / the API trigger still run it — the
+// list with its schedule, and `runwisp run` / the API trigger still run it — the
 // point of a migration is to be able to check a job works under RunWisp before
 // handing the schedule over.
 type HoldReason string

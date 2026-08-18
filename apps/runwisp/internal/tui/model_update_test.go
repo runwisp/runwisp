@@ -443,18 +443,18 @@ func TestHandleNotificationEvent_UnreadCountChanged(t *testing.T) {
 	m := newTestModel(nil)
 	payload := []byte(`{"unreadCount":7}`)
 	out, _ := m.handleNotificationEvent(uikit.NotificationEventMsg{
-		Event: apiclient.NotificationStreamEvent{Type: "notifications.unread_count_changed", Data: payload},
+		Event: apiclient.NotificationStreamEvent{Type: "notification.unreadCountChanged", Data: payload},
 	})
 	got := out.(Model)
 	if u := got.notifications.Unread(); u != 7 {
-		t.Fatalf("expected unread=7 after unread_count_changed, got %d", u)
+		t.Fatalf("expected unread=7 after unreadCountChanged, got %d", u)
 	}
 }
 
 func TestHandleNotificationEvent_UnreadCountChangedInvalidJSON(t *testing.T) {
 	m := newTestModel(nil)
 	_, _ = m.handleNotificationEvent(uikit.NotificationEventMsg{
-		Event: apiclient.NotificationStreamEvent{Type: "notifications.unread_count_changed", Data: json.RawMessage("bad")},
+		Event: apiclient.NotificationStreamEvent{Type: "notification.unreadCountChanged", Data: json.RawMessage("bad")},
 	})
 }
 

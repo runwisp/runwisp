@@ -626,7 +626,7 @@
             checked={isRowSelected(run.id)}
             onchange={() => toggleRow(run.id)}
             onclick={(e) => e.stopPropagation()}
-            aria-label={`Select run from ${formatDateTime(run.startAt ?? run.createdAt)}`}
+            aria-label={`Select run from ${formatDateTime(run.startedAt ?? run.createdAt)}`}
             class="size-3.5 cursor-pointer rounded border-outline accent-primary opacity-0 {selectionActive
                 ? 'opacity-100'
                 : 'group-hover/row:opacity-100'}"
@@ -639,7 +639,7 @@
     {@const config = getRunStatusConfig(dstatus)}
     {@const running = run.status === "running"}
     {@const spine = config.dot.replace(" animate-pulse", "")}
-    {@const startedAt = run.startAt ?? run.createdAt}
+    {@const startedAt = run.startedAt ?? run.createdAt}
     {@const retry = runRetryLabel(run)}
     {@const suffix = instanceSuffix(run.instanceIndex, getInstanceCount(run.taskName))}
     <button

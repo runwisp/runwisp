@@ -629,7 +629,7 @@
             "description": "True when no further runs / lines need scanning",
             "type": "boolean"
           },
-          "hits": {
+          "items": {
             "description": "Hits ordered newest-run-first, then ascending line within a run",
             "items": {
               "$ref": "#/components/schemas/LogSearchHit"
@@ -650,7 +650,7 @@
           }
         },
         "required": [
-          "hits",
+          "items",
           "exhausted",
           "scannedRuns"
         ],
@@ -691,16 +691,39 @@
         ],
         "type": "object"
       },
+      "MetricsHistoryBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/MetricsHistoryBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "items": {
+            "description": "Resource snapshots, oldest first",
+            "items": {
+              "$ref": "#/components/schemas/MetricsSample"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "MetricsSample": {
         "additionalProperties": false,
         "properties": {
-          "cpu": {
+          "cpuUsage": {
             "description": "CPU usage percentage (0-100)",
-            "format": "double",
-            "type": "number"
-          },
-          "mem": {
-            "description": "Memory usage percentage (0-100)",
             "format": "double",
             "type": "number"
           },
@@ -710,22 +733,27 @@
             "minimum": 0,
             "type": "integer"
           },
+          "memUsage": {
+            "description": "Memory usage percentage (0-100)",
+            "format": "double",
+            "type": "number"
+          },
           "memUsed": {
             "description": "Used memory in bytes",
             "format": "int64",
             "minimum": 0,
             "type": "integer"
           },
-          "ts": {
+          "timestamp": {
             "description": "Unix timestamp (seconds)",
             "format": "int64",
             "type": "integer"
           }
         },
         "required": [
-          "ts",
-          "cpu",
-          "mem",
+          "timestamp",
+          "cpuUsage",
+          "memUsage",
           "memUsed",
           "memTotal"
         ],
@@ -1019,12 +1047,12 @@
             "format": "date-time",
             "type": "string"
           },
-          "endAt": {
-            "format": "date-time",
-            "type": "string"
-          },
           "endReason": {
             "$ref": "#/components/schemas/EndReason"
+          },
+          "endedAt": {
+            "format": "date-time",
+            "type": "string"
           },
           "exitCode": {
             "format": "int64",
@@ -1053,7 +1081,7 @@
           "retryOfRunId": {
             "type": "string"
           },
-          "startAt": {
+          "startedAt": {
             "format": "date-time",
             "type": "string"
           },
@@ -1331,7 +1359,7 @@
             "readOnly": true,
             "type": "string"
           },
-          "runs": {
+          "items": {
             "description": "List of runs",
             "items": {
               "$ref": "#/components/schemas/Run"
@@ -1348,7 +1376,7 @@
           }
         },
         "required": [
-          "runs",
+          "items",
           "total"
         ],
         "type": "object"
@@ -1561,7 +1589,7 @@
       "TaskParam": {
         "additionalProperties": false,
         "properties": {
-          "allow_custom": {
+          "allowCustom": {
             "description": "When choices is set, allow values outside the list",
             "type": "boolean"
           },
@@ -1757,6 +1785,7 @@
             "type": "string"
           },
           "nextRunAt": {
+            "format": "date-time",
             "type": "string"
           },
           "onOverlap": {
@@ -1897,6 +1926,34 @@
           "name",
           "apiTrigger",
           "autostart"
+        ],
+        "type": "object"
+      },
+      "TasksResponseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/TasksResponseBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "items": {
+            "description": "List of tasks",
+            "items": {
+              "$ref": "#/components/schemas/TaskResponse"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
         ],
         "type": "object"
       },
@@ -2237,6 +2294,32 @@
                       {
                         "properties": {
                           "data": {
+                            "$ref": "#/components/schemas/NotificationUnreadCountEvent"
+                          },
+                          "event": {
+                            "const": "notification.unreadCountChanged",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event notification.unreadCountChanged",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
                             "$ref": "#/components/schemas/NotificationUpdatedEvent"
                           },
                           "event": {
@@ -2258,32 +2341,6 @@
                           "event"
                         ],
                         "title": "Event notification.updated",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/NotificationUnreadCountEvent"
-                          },
-                          "event": {
-                            "const": "notifications.unread_count_changed",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event notifications.unread_count_changed",
                         "type": "object"
                       },
                       {
@@ -2606,7 +2663,7 @@
               "enum": [
                 "taskName",
                 "status",
-                "startAt",
+                "startedAt",
                 "exitCode",
                 "duration",
                 "createdAt",
@@ -2999,6 +3056,32 @@
                       {
                         "properties": {
                           "data": {
+                            "$ref": "#/components/schemas/NotificationUnreadCountEvent"
+                          },
+                          "event": {
+                            "const": "notification.unreadCountChanged",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event notification.unreadCountChanged",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
                             "$ref": "#/components/schemas/NotificationUpdatedEvent"
                           },
                           "event": {
@@ -3020,32 +3103,6 @@
                           "event"
                         ],
                         "title": "Event notification.updated",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/NotificationUnreadCountEvent"
-                          },
-                          "event": {
-                            "const": "notifications.unread_count_changed",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event notifications.unread_count_changed",
                         "type": "object"
                       },
                       {
@@ -3321,13 +3378,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/MetricsSample"
-                  },
-                  "type": [
-                    "array",
-                    "null"
-                  ]
+                  "$ref": "#/components/schemas/MetricsHistoryBody"
                 }
               }
             },
@@ -3358,13 +3409,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/TaskResponse"
-                  },
-                  "type": [
-                    "array",
-                    "null"
-                  ]
+                  "$ref": "#/components/schemas/TasksResponseBody"
                 }
               }
             },
@@ -3764,7 +3809,7 @@
               "enum": [
                 "taskName",
                 "status",
-                "startAt",
+                "startedAt",
                 "exitCode",
                 "duration",
                 "createdAt",

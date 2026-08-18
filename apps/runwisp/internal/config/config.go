@@ -258,7 +258,7 @@ func composeExecServiceWarnings(cfg *Config) []string {
 		}
 		warnings = append(warnings, fmt.Sprintf(
 			"service %q uses compose_mode = %q; Docker cannot cancel an exec, so stopping or restarting this service kills only the local client and leaves the process running inside %q — a restart then adds a second copy. Bound it inside the container (e.g. `timeout`), or run it as a fresh container with compose_mode = %q",
-			task.Name, model.ComposeModeExec, ce.Service, composeModeRun,
+			task.Name, model.ComposeModeExec, ce.Service, model.ComposeModeRun,
 		))
 	}
 	return warnings
@@ -944,7 +944,7 @@ func validateTaskCommand(task *model.Task) error {
 		default:
 			return fmt.Errorf(
 				"task %s sets `run` with compose_mode = %q, which runs the service's own command; use compose_mode = %q to run your command inside the container",
-				task.Name, composeModeRun, model.ComposeModeExec)
+				task.Name, model.ComposeModeRun, model.ComposeModeExec)
 		}
 	}
 	execDef := task.ResolvedExecutionDef()

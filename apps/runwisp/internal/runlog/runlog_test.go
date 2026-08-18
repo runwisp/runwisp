@@ -33,8 +33,8 @@ func sampleRun(reason model.EndReason, exit int) *model.Run {
 		TaskName:  "backup",
 		ExitCode:  exit,
 		EndReason: model.EndReasonPtr(reason),
-		StartAt:   &start,
-		EndAt:     &end,
+		StartedAt: &start,
+		EndedAt:   &end,
 	}
 }
 

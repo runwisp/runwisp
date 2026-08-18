@@ -45,7 +45,7 @@ func TestComposeExpansion_AutoDiscoveryImportsAllServices(t *testing.T) {
 	ce, ok := web.ExecutionDef.(*model.ComposeExecution)
 	require.True(t, ok)
 	assert.Equal(t, "web", ce.Service)
-	assert.Equal(t, model.ComposeModeServices, ce.Mode)
+	assert.Equal(t, model.ComposeModeRun, ce.Mode)
 	assert.Equal(t, "myapp", ce.ProjectName)
 	assert.Equal(t, model.ComposePullMissing, ce.Pull)
 }
@@ -132,7 +132,7 @@ autostart     = false
 
 func TestComposeExpansion_StackModeProducesSingleTask(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `[compose.myapp]
-mode = "stack"
+import = "stack"
 `))
 	require.NoError(t, err)
 	assert.Equal(t, []string{"myapp"}, taskNames(cfg))
@@ -145,7 +145,7 @@ mode = "stack"
 
 func TestComposeExpansion_StackRejectsPerServiceOverride(t *testing.T) {
 	_, err := Load(writeConfig(t, `[compose.myapp]
-mode = "stack"
+import = "stack"
 
 [compose.myapp.web]
 restart = "always"
@@ -236,7 +236,7 @@ func TestComposeExpansion_ServiceNamedDefaultsRejected(t *testing.T) {
 
 func TestComposeExpansion_StackRejectsBlockDefaults(t *testing.T) {
 	_, err := Load(writeConfig(t, `[compose.myapp]
-mode = "stack"
+import = "stack"
 
 [compose.myapp.defaults]
 restart = "always"
@@ -338,7 +338,7 @@ compose_service = "backup"
 
 	ce, ok := cfg.Tasks[0].ExecutionDef.(*model.ComposeExecution)
 	require.True(t, ok)
-	assert.Equal(t, model.ComposeModeServices, ce.Mode)
+	assert.Equal(t, model.ComposeModeRun, ce.Mode)
 	assert.Empty(t, ce.Command)
 }
 

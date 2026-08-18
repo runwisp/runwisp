@@ -199,8 +199,8 @@
 
     function toResourcePoint(sample: MetricsSample): ResourcePoint {
         return {
-            cpu: sample.cpu,
-            mem: sample.mem,
+            cpu: sample.cpuUsage,
+            mem: sample.memUsage,
         };
     }
 

@@ -119,7 +119,7 @@ func TestRunTUIViaRemote_AuthStatusError(t *testing.T) {
 func TestRunTUIViaRemote_NoAuthReachesTUILaunch(t *testing.T) {
 	isolatedTokenCache(t)
 	srv := fakeDaemon{authRequired: false}.start(t)
-	// A RUNWISP_NO_AUTH daemon needs no password: the bootstrap should sail past
+	// A RUNWISP_AUTH=off daemon needs no password: the bootstrap should sail past
 	// auth and into the shared launch path, which declines here because the test
 	// process has no interactive terminal.
 	err := runTUIViaRemote(srv.URL, Flags{})

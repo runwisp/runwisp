@@ -878,7 +878,7 @@ export interface components {
             /** @description True when no further runs / lines need scanning */
             exhausted: boolean;
             /** @description Hits ordered newest-run-first, then ascending line within a run */
-            hits: components["schemas"]["LogSearchHit"][] | null;
+            items: components["schemas"]["LogSearchHit"][] | null;
             /** @description Opaque token to fetch the next page; empty when the scan is exhausted */
             nextCursor?: string;
             /**
@@ -905,22 +905,32 @@ export interface components {
              */
             ts: number;
         };
+        MetricsHistoryBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/MetricsHistoryBody.json
+             */
+            readonly $schema?: string;
+            /** @description Resource snapshots, oldest first */
+            items: components["schemas"]["MetricsSample"][] | null;
+        };
         MetricsSample: {
             /**
              * Format: double
              * @description CPU usage percentage (0-100)
              */
-            cpu: number;
-            /**
-             * Format: double
-             * @description Memory usage percentage (0-100)
-             */
-            mem: number;
+            cpuUsage: number;
             /**
              * Format: int64
              * @description Total memory in bytes
              */
             memTotal: number;
+            /**
+             * Format: double
+             * @description Memory usage percentage (0-100)
+             */
+            memUsage: number;
             /**
              * Format: int64
              * @description Used memory in bytes
@@ -930,7 +940,7 @@ export interface components {
              * Format: int64
              * @description Unix timestamp (seconds)
              */
-            ts: number;
+            timestamp: number;
         };
         NotificationCreatedEvent: {
             notification: components["schemas"]["NotificationDTO"];
@@ -1043,9 +1053,9 @@ export interface components {
             readonly $schema?: string;
             /** Format: date-time */
             createdAt: string;
-            /** Format: date-time */
-            endAt?: string;
             endReason?: components["schemas"]["EndReason"];
+            /** Format: date-time */
+            endedAt?: string;
             /** Format: int64 */
             exitCode: number;
             externalExecutionId?: string;
@@ -1059,7 +1069,7 @@ export interface components {
             retryAttempt: number;
             retryOfRunId?: string;
             /** Format: date-time */
-            startAt?: string;
+            startedAt?: string;
             /**
              * @description Run lifecycle phase
              * @enum {string}
@@ -1185,7 +1195,7 @@ export interface components {
              */
             readonly $schema?: string;
             /** @description List of runs */
-            runs: components["schemas"]["Run"][] | null;
+            items: components["schemas"]["Run"][] | null;
             /**
              * Format: int64
              * @description Total matching runs
@@ -1278,7 +1288,7 @@ export interface components {
         };
         TaskParam: {
             /** @description When choices is set, allow values outside the list */
-            allow_custom?: boolean;
+            allowCustom?: boolean;
             /** @description Allowed values; renders as a dropdown */
             choices?: string[] | null;
             /** @description Default value used by scheduled runs and pre-filled in manual forms */
@@ -1387,6 +1397,7 @@ export interface components {
              */
             maxConcurrent?: number;
             name: string;
+            /** Format: date-time */
             nextRunAt?: string;
             /**
              * @description How overlapping runs are handled
@@ -1468,6 +1479,16 @@ export interface components {
             user?: string;
             /** @description Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal "~" means the run-as user's home, resolved at run time */
             workingDir?: string;
+        };
+        TasksResponseBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/TasksResponseBody.json
+             */
+            readonly $schema?: string;
+            /** @description List of tasks */
+            items: components["schemas"]["TaskResponse"][] | null;
         };
         TriggerRunInputBody: {
             /**
@@ -1710,23 +1731,23 @@ export interface operations {
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
+                        data: components["schemas"]["NotificationUnreadCountEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "notification.unreadCountChanged";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
                         data: components["schemas"]["NotificationUpdatedEvent"];
                         /**
                          * @description The event name.
                          * @constant
                          */
                         event: "notification.updated";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["NotificationUnreadCountEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "notifications.unread_count_changed";
                         /** @description The event ID. */
                         id?: number;
                         /** @description The retry time in milliseconds. */
@@ -1898,7 +1919,7 @@ export interface operations {
                 /** @description Only runs that are a retry (retry_attempt > 0) */
                 retriesOnly?: boolean;
                 /** @description Field to sort by */
-                sortField?: "taskName" | "status" | "startAt" | "exitCode" | "duration" | "createdAt" | "";
+                sortField?: "taskName" | "status" | "startedAt" | "exitCode" | "duration" | "createdAt" | "";
                 /** @description Sort direction */
                 sortDirection?: "asc" | "desc" | "";
                 /** @description Search query */
@@ -2167,23 +2188,23 @@ export interface operations {
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     } | {
+                        data: components["schemas"]["NotificationUnreadCountEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "notification.unreadCountChanged";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
                         data: components["schemas"]["NotificationUpdatedEvent"];
                         /**
                          * @description The event name.
                          * @constant
                          */
                         event: "notification.updated";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["NotificationUnreadCountEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "notifications.unread_count_changed";
                         /** @description The event ID. */
                         id?: number;
                         /** @description The retry time in milliseconds. */
@@ -2334,7 +2355,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MetricsSample"][] | null;
+                    "application/json": components["schemas"]["MetricsHistoryBody"];
                 };
             };
             /** @description Error */
@@ -2363,7 +2384,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TaskResponse"][] | null;
+                    "application/json": components["schemas"]["TasksResponseBody"];
                 };
             };
             /** @description Error */
@@ -2517,7 +2538,7 @@ export interface operations {
                 /** @description Only runs that are a retry (retry_attempt > 0) */
                 retriesOnly?: boolean;
                 /** @description Field to sort by */
-                sortField?: "taskName" | "status" | "startAt" | "exitCode" | "duration" | "createdAt" | "";
+                sortField?: "taskName" | "status" | "startedAt" | "exitCode" | "duration" | "createdAt" | "";
                 /** @description Sort direction */
                 sortDirection?: "asc" | "desc" | "";
                 /** @description Search query */

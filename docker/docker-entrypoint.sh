@@ -50,7 +50,7 @@ fi
 # no no-value case to special-case here.
 #
 # Why not just grep the arguments for "daemon": it would false-positive on
-# `--data daemon` and on `runwisp exec daemon` (a task named "daemon"), and
+# `--data daemon` and on `runwisp run daemon` (a task named "daemon"), and
 # then demand a password from a one-shot command that needs none.
 subcommand=""
 extra_positional=""
@@ -119,7 +119,7 @@ if [ -n "$help_only" ]; then
 else
 	case "$subcommand" in
 	validate | list | status | stop | reload | password | openapi | schema | \
-		agent-guide | import | exec | tui | service | help | completion)
+		agent-guide | import | run | tui | service | help | completion)
 		starts_daemon=""
 		;;
 	esac
@@ -132,7 +132,8 @@ fi
 config=${config_flag:-$RUNWISP_CONFIG}
 data=${data_flag:-$RUNWISP_DATA}
 
-if [ -z "${RUNWISP_PASSWORD:-}" ] && [ -z "${RUNWISP_NO_AUTH:-}" ]; then
+auth_lower=$(printf '%s' "${RUNWISP_AUTH:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+if [ -z "${RUNWISP_PASSWORD:-}" ] && [ "$auth_lower" != "off" ]; then
 	cat >&2 <<'EOF'
 error: refusing to start the daemon without an explicit auth setting.
 
@@ -142,7 +143,7 @@ sessions. In a container that is never what you wanted.
 
 Set one of:
   -e RUNWISP_PASSWORD=<your-password>   require this password to log in
-  -e RUNWISP_NO_AUTH=1                  disable auth entirely (trusted network only)
+  -e RUNWISP_AUTH=off                   disable auth entirely (trusted network only)
 EOF
 	exit 1
 fi

@@ -30,8 +30,8 @@
         "endReason": "failed",
         "exitCode": 1,
         "triggeredBy": "cron",
-        "startAt": "2026-07-15T03:00:00Z",
-        "endAt": "2026-07-15T03:00:42Z",
+        "startedAt": "2026-07-15T03:00:00Z",
+        "endedAt": "2026-07-15T03:00:42Z",
         "durationMs": 42000,
         "failed": true,
         "missed": false
@@ -46,7 +46,7 @@
         "status": "running",
         "exitCode": 0,
         "triggeredBy": "service",
-        "startAt": "2026-07-15T03:00:00Z",
+        "startedAt": "2026-07-15T03:00:00Z",
         "failed": false,
         "missed": false
       }

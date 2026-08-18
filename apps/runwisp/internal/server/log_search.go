@@ -59,7 +59,7 @@ type LogSearchHit struct {
 
 // LogSearchBody is the JSON response.
 type LogSearchBody struct {
-	Hits        []LogSearchHit `json:"hits" doc:"Hits ordered newest-run-first, then ascending line within a run"`
+	Items       []LogSearchHit `json:"items" doc:"Hits ordered newest-run-first, then ascending line within a run"`
 	NextCursor  string         `json:"nextCursor,omitempty" doc:"Opaque token to fetch the next page; empty when the scan is exhausted"`
 	Exhausted   bool           `json:"exhausted" doc:"True when no further runs / lines need scanning"`
 	ScannedRuns int            `json:"scannedRuns" doc:"Number of runs visited by this request"`
@@ -102,7 +102,7 @@ func (srv *Server) humaSearchLogs(ctx context.Context, input *LogSearchInput) (*
 		return nil, err
 	}
 	if len(runs) == 0 {
-		return &LogSearchOutput{Body: LogSearchBody{Hits: []LogSearchHit{}, Exhausted: true}}, nil
+		return &LogSearchOutput{Body: LogSearchBody{Items: []LogSearchHit{}, Exhausted: true}}, nil
 	}
 
 	hits, scanCursor, scanned, err := logsearch.ScanTask(ctx, runs, matcherFactory, logsearch.ScanOpts{MaxHits: limit}, startAfterRunID, startAfterN)
@@ -147,7 +147,7 @@ func (srv *Server) humaSearchLogs(ctx context.Context, input *LogSearchInput) (*
 	}
 
 	return &LogSearchOutput{Body: LogSearchBody{
-		Hits:        wire,
+		Items:       wire,
 		NextCursor:  encoded,
 		Exhausted:   next == nil,
 		ScannedRuns: scanned,

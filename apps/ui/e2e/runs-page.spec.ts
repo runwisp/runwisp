@@ -104,7 +104,7 @@ test.describe("runs page", () => {
         daemonState,
     }) => {
         // Seed last so this run is newest → the first (top) row under the
-        // default startAt-desc sort.
+        // default startedAt-desc sort.
         const target = await seedEndedRun(page, "echo-task", daemonState.token);
 
         await page.goto("/runs");
@@ -197,11 +197,11 @@ test.describe("runs page", () => {
         // getById fetch path (the only path that can flash a stale not-found).
         await page.route(/\/api\/runs(\?|$)/, async (route) => {
             const resp = await route.fetch();
-            const body = (await resp.json()) as { runs: { id: string }[]; total?: number };
-            if (Array.isArray(body.runs)) {
-                const before = body.runs.length;
-                body.runs = body.runs.filter((r) => r.id !== target.id);
-                if (typeof body.total === "number") body.total -= before - body.runs.length;
+            const body = (await resp.json()) as { items: { id: string }[]; total?: number };
+            if (Array.isArray(body.items)) {
+                const before = body.items.length;
+                body.items = body.items.filter((r) => r.id !== target.id);
+                if (typeof body.total === "number") body.total -= before - body.items.length;
             }
             await route.fulfill({ response: resp, json: body });
         });

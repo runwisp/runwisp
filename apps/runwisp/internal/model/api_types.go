@@ -3,10 +3,12 @@
 
 package model
 
+import "time"
+
 // TaskResponse extends a Task with the optional next scheduled run time.
 type TaskResponse struct {
 	Task
-	NextRunAt *string `json:"nextRunAt,omitempty"`
+	NextRunAt *time.Time `json:"nextRunAt,omitempty"`
 }
 
 // ReloadResult is the diff produced by an explicit config reload: which tasks
@@ -52,10 +54,13 @@ type SystemStats struct {
 }
 
 // MetricsSample is a single timestamped snapshot of system resource usage.
+// Field names mirror SystemStats (cpuUsage/memUsage) so the two resource shapes
+// agree. Timestamp is Unix seconds (the log-line `ts` field is milliseconds —
+// deliberately a different, distinctly-named field).
 type MetricsSample struct {
-	Timestamp int64   `json:"ts" doc:"Unix timestamp (seconds)"`
-	CPUUsage  float64 `json:"cpu" doc:"CPU usage percentage (0-100)"`
-	MemUsage  float64 `json:"mem" doc:"Memory usage percentage (0-100)"`
+	Timestamp int64   `json:"timestamp" doc:"Unix timestamp (seconds)"`
+	CPUUsage  float64 `json:"cpuUsage" doc:"CPU usage percentage (0-100)"`
+	MemUsage  float64 `json:"memUsage" doc:"Memory usage percentage (0-100)"`
 	MemUsed   uint64  `json:"memUsed" doc:"Used memory in bytes"`
 	MemTotal  uint64  `json:"memTotal" doc:"Total memory in bytes"`
 }

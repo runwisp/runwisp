@@ -108,7 +108,7 @@ type Options struct {
 	Password          string                             // Authentication password (required even with NoAuth — keeps the cookie/launch-ticket machinery alive)
 	PasswordEphemeral bool                               // True when the daemon minted Password in memory at boot (no RUNWISP_PASSWORD)
 	JWTSecret         string                             // JWT signing secret (derived in-memory)
-	NoAuth            bool                               // RUNWISP_NO_AUTH: serve all /api/* routes over TCP without JWT/CHAP
+	NoAuth            bool                               // RUNWISP_AUTH=off: serve all /api/* routes over TCP without JWT/CHAP
 	TrustedProxies    string                             // RUNWISP_TRUSTED_PROXIES value (comma-separated CIDRs/IPs); read by the caller, parsed here
 	DaemonInfo        *model.DaemonInfo                  // Static identity/config info for /api/info
 	ConfigStale       func() bool                        // Per-request staleness probe for /api/info (optional; nil reports never-stale)

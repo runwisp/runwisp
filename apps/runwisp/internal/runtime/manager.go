@@ -63,7 +63,7 @@ type TriggerRunOptions struct {
 	Params map[string]*string
 	// ScheduledAt backdates a jittered run's CreatedAt to the cron tick it
 	// belongs to, while the run still starts at m.clock() (tick + offset). The
-	// StartAt − CreatedAt delta then honestly shows the jitter, the way
+	// StartedAt − CreatedAt delta then honestly shows the jitter, the way
 	// RecordMissedRun backdates CreatedAt to the missed tick. Zero means "use
 	// the clock", which is every non-jittered path. Non-service only.
 	ScheduledAt time.Time
@@ -447,7 +447,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		m.persistence.PersistNew(run)
 		m.publishRun(events.EventRunCreated, run)
 		// Snapshot before startRun hands the live run to its execution goroutine.
-		// The caller must never read fields (Status, StartAt, ...) that the run
+		// The caller must never read fields (Status, StartedAt, ...) that the run
 		// goroutine concurrently writes, so it gets an independent copy.
 		snapshot := run.Copy()
 		m.startRun(ts.task, run, options.RestartAttempt)
@@ -881,7 +881,7 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	// run fields, so writing them unlocked races with a concurrent snapshot.
 	m.mu.Lock()
 	run.Status = model.PhaseRunning
-	run.StartAt = &active.StartedAt
+	run.StartedAt = &active.StartedAt
 	if task.Kind.IsService() {
 		// Stamp the live-readiness clock the moment the instance is running so
 		// dependents gating on this service measure uptime from here.
@@ -1068,7 +1068,7 @@ func (m *defaultTaskManager) publishRun(eventType events.EventType, run *model.R
 // Persistence is async (a buffered channel drained by one worker), so a bare
 // publish outruns its own DB write: a subscriber that reads storage on hearing
 // the event sees a stale non-terminal row. That is not hypothetical — the SSE
-// streamer sends `done` off this event and `runwisp exec` then fetches the run,
+// streamer sends `done` off this event and `runwisp run` then fetches the run,
 // so a lagging row made a failed run report status "running", end_reason nil,
 // and — because a nil end_reason reads as success — exit code 0. Flush is the
 // barrier. It costs one DB write on a goroutine whose process has already

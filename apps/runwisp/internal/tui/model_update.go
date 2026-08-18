@@ -281,7 +281,7 @@ func (m Model) handleNotificationEvent(msg uikit.NotificationEventMsg) (tea.Mode
 				m.updateLayout()
 			}
 		}
-	case "notifications.unread_count_changed":
+	case "notification.unreadCountChanged":
 		count, err := apiclient.DecodeUnreadCountEnvelope(msg.Event.Data)
 		if err != nil {
 			m.debugView.AppendLine("Failed to parse unread count: " + err.Error())

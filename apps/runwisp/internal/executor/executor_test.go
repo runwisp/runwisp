@@ -315,7 +315,7 @@ func (b *recordingBackend) Available(context.Context) bool { return true }
 func newComposeTask(name string) *model.Task {
 	return &model.Task{
 		Name:         name,
-		ExecutionDef: &model.ComposeExecution{File: "./docker-compose.yml", Service: "web", Mode: model.ComposeModeServices},
+		ExecutionDef: &model.ComposeExecution{File: "./docker-compose.yml", Service: "web", Mode: model.ComposeModeRun},
 	}
 }
 

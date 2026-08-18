@@ -189,7 +189,7 @@ Expands to one observable service-task per imported compose service (or one task
 file:         path =auto-discover  — compose.yaml/.yml/docker-compose.yaml/.yml
 include:      []string             — services to import; mutually exclusive with exclude
 exclude:      []string             — services to skip
-mode:         enum =services       — services (per-service tasks) | stack (one task)
+import:       enum =services       — services (per-service tasks) | stack (one task)
 group:        string =alias        — UI group
 project_name: string =alias        — compose project name
 profiles:     []string             — compose profiles
@@ -197,18 +197,18 @@ env_file:     []string             — compose env files
 working_dir:  string =dir of file  — CLI working dir
 with_deps:    bool =false          — start dependencies
 pull:         enum =missing        — missing | always | never
-name_format:  string ={alias}.{service} — generated task name; must contain {service} in services mode
+name_format:  string ={alias}.{service} — generated task name; must contain {service} when import="services"
 ```
 
-Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `api_trigger`, `timeout`, `graceful_stop`, `stop_signal`, `on_overlap`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `restart_attempts`, `priority`, `autostart`, `exit_codes`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `env`, `env_file`, `secrets`, `secrets_file`, `notify_on_failure`, `notify_on_success`. Not allowed: `run`/`compose_file`/`compose_service` (the parent block owns the backend), and the host-process keys `shell`/`umask`/`env_base`/`user`. `mode="stack"` forbids overrides and include/exclude. Per-service `notify_on_failure`/`notify_on_success` desugar into notify routes keyed by the generated task name, exactly like `[services.*]`. The reserved sub-table `[compose.<alias>.defaults]` accepts the same keys and applies them to every imported service before the per-service override wins (precedence: compose-import default → `defaults` → `<svc>`); its `notify_on_*` add routes to all services. A compose service literally named `defaults` is rejected (rename hint); `mode="stack"` forbids `defaults` too.
+Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `api_trigger`, `timeout`, `graceful_stop`, `stop_signal`, `on_overlap`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `restart_attempts`, `priority`, `autostart`, `exit_codes`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `env`, `env_file`, `secrets`, `secrets_file`, `notify_on_failure`, `notify_on_success`. Not allowed: `run`/`compose_file`/`compose_service` (the parent block owns the backend), and the host-process keys `shell`/`umask`/`env_base`/`user`. `import="stack"` forbids overrides and include/exclude. Per-service `notify_on_failure`/`notify_on_success` desugar into notify routes keyed by the generated task name, exactly like `[services.*]`. The reserved sub-table `[compose.<alias>.defaults]` accepts the same keys and applies them to every imported service before the per-service override wins (precedence: compose-import default → `defaults` → `<svc>`); its `notify_on_*` add routes to all services. A compose service literally named `defaults` is rejected (rename hint); `import="stack"` forbids `defaults` too.
 
 ### [notify] (global notification settings)
 
 ```
 global_notifiers:  []string =["inapp"] — channels added to every notify list + catch-all on failures; [] opts out
 default_timeout:   dur                  — total retry budget per delivery
-history_keep:      int  =1024           — in-app bell row cap
-history_keep_for:  dur  =90d            — max bell row age
+keep_notifications:      int  =1024           — in-app bell row cap
+keep_for:  dur  =90d            — max bell row age
 coalesce_window:   dur  =1h             — collapse repeat (kind+task) into one bell row
 occurrence_ring:   int  =10             — recent timestamps kept per coalesced row
 coalesce_outbound: bool =true           — coalesce outbound bursts too
@@ -258,9 +258,9 @@ opt out         `set +e` as the script's first line; no TOML key exists for this
 
 Persistent flags: `-c/--config` (=`runwisp.toml`, or `/etc/runwisp/runwisp.toml` at euid 0), `--data` (=`.runwisp`, or `/var/lib/runwisp` at euid 0), `-p/--port` (=`9477`), `--host` (=`127.0.0.1`), `--log-level` (debug|info|warn|error), `--log-format` (auto|text|json). Each has an env fallback the flag wins over: `RUNWISP_CONFIG`, `RUNWISP_DATA`, `RUNWISP_PORT`, `RUNWISP_HOST`, `RUNWISP_LOG_LEVEL`, `RUNWISP_LOG_FORMAT`.
 Precedence for `-c`/`--data`: explicit flag > `RUNWISP_CONFIG`/`RUNWISP_DATA` env var > euid-derived default.
-Env: `RUNWISP_PASSWORD` (else ephemeral per-boot), `RUNWISP_NO_AUTH` (1/true disables auth; mutually exclusive with RUNWISP_PASSWORD), `RUNWISP_TLS` (auto|off; overrides `[daemon] tls`, default `off`, applied on every load incl. reload), `RUNWISP_TRUSTED_PROXIES` (CIDRs), `RUNWISP_CLOUD_TOKEN`, `RUNWISP_CLOUD_URL`.
+Env: `RUNWISP_PASSWORD` (else ephemeral per-boot), `RUNWISP_AUTH` (`off` disables auth, default on; mutually exclusive with RUNWISP_PASSWORD), `RUNWISP_TLS` (auto|off; overrides `[daemon] tls`, default `off`, applied on every load incl. reload), `RUNWISP_TRUSTED_PROXIES` (CIDRs), `RUNWISP_CLOUD_TOKEN`, `RUNWISP_CLOUD_URL`.
 
-Official Docker image: `runwisp/runwisp` (alpine default + `-debian` variant, amd64/arm64). Plain tags carry no Docker CLI; add `-docker` to the tag (e.g. `latest-docker`, `latest-debian-docker`) for a build with a Docker CLI + Compose plugin baked in, needed if `[compose.*]` or a task's `run =` shells out to `docker`/`docker compose` from inside the RunWisp container itself. Binds `0.0.0.0`, plain HTTP (daemon's `[daemon] tls` default of `off`; set `-e RUNWISP_TLS=auto` to opt into self-signed HTTPS), requires `RUNWISP_PASSWORD` or `RUNWISP_NO_AUTH=1` set or the entrypoint refuses to start; mount config at `/etc/runwisp/runwisp.toml` and data at `/var/lib/runwisp`. See https://docs.runwisp.com/getting-started/docker/.
+Official Docker image: `runwisp/runwisp` (alpine default + `-debian` variant, amd64/arm64). Plain tags carry no Docker CLI; add `-docker` to the tag (e.g. `latest-docker`, `latest-debian-docker`) for a build with a Docker CLI + Compose plugin baked in, needed if `[compose.*]` or a task's `run =` shells out to `docker`/`docker compose` from inside the RunWisp container itself. Binds `0.0.0.0`, plain HTTP (daemon's `[daemon] tls` default of `off`; set `-e RUNWISP_TLS=auto` to opt into self-signed HTTPS), requires `RUNWISP_PASSWORD` or `RUNWISP_AUTH=off` set or the entrypoint refuses to start; mount config at `/etc/runwisp/runwisp.toml` and data at `/var/lib/runwisp`. See https://docs.runwisp.com/getting-started/docker/.
 
 ```
 runwisp                      — no subcommand: attach TUI to running daemon, else scaffold toml + spawn daemon + attach
@@ -278,7 +278,7 @@ runwisp tui                  — attach a TUI to a running daemon
 runwisp validate             — validate runwisp.toml without starting anything
 runwisp list                 — list configured tasks and schedules
 runwisp status               — is the daemon alive?
-runwisp exec <task>          — run a task and stream output;  --daemon (via running daemon) | --standalone (in-process), mutually exclusive
+runwisp run <task>          — run a task and stream output;  --daemon (via running daemon) | --standalone (in-process), mutually exclusive
 runwisp reload               — re-read runwisp.toml + reconcile live (== SIGHUP); validate-first, no run_on_start/catch-up
                              — prints the diff, then the newly-live config's warnings on `!` lines
                                (ReloadResult.warnings). Same set as boot / `validate` / status /
@@ -342,7 +342,7 @@ runwisp promote [TASK...]    — put a derived task's block in the root runwisp.
                                provenance flag refreshes. Promoting a cron task while cron is still live flips it
                                from held to unheld (HeldBy cron→none): the diff reports it Changed(ReasonSchedule),
                                so that reload has RunWisp take over its schedule. Emptied staging file is deleted.
-runwisp password             — print the daemon's ephemeral password (local socket; exit 5 under RUNWISP_NO_AUTH, refuses if RUNWISP_PASSWORD set)
+runwisp password             — print the daemon's ephemeral password (local socket; exit 5 under RUNWISP_AUTH=off, refuses if RUNWISP_PASSWORD set)
 runwisp openapi              — print the OpenAPI 3.1 spec (JSON) to stdout
 runwisp schema               — print the runwisp.toml JSON Schema (draft 2020-12) to stdout; published at https://docs.runwisp.com/config.schema.json
 runwisp agent-guide          — print a paste-ready AGENTS.md/CLAUDE.md snippet for driving RunWisp from an agent

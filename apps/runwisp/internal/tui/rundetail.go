@@ -112,13 +112,13 @@ func (d *RunDetailDialog) facts(row func(label, value string, color color.Color)
 	if run.RetryOfRunID != nil {
 		out = append(out, row("Retry of", *run.RetryOfRunID, uikit.ColorText))
 	}
-	started := run.StartAt
+	started := run.StartedAt
 	if started == nil {
 		started = &run.CreatedAt
 	}
 	out = append(out, row("Started", formatRunTime(started), uikit.ColorText))
-	if run.EndAt != nil {
-		out = append(out, row("Ended", formatRunTime(run.EndAt), uikit.ColorText))
+	if run.EndedAt != nil {
+		out = append(out, row("Ended", formatRunTime(run.EndedAt), uikit.ColorText))
 	}
 	out = append(out, row("Duration", uikit.FormatDuration(*run), uikit.ColorText))
 	if len(run.Params) > 0 {

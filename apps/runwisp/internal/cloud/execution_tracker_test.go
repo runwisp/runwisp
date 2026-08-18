@@ -105,7 +105,7 @@ func TestMapRunToExecutionUpdateRunning(t *testing.T) {
 	run := &model.Run{
 		Status:              model.PhaseRunning,
 		ExternalExecutionID: &execID,
-		StartAt:             &now,
+		StartedAt:           &now,
 	}
 
 	result := mapRunToExecutionUpdate(run)
@@ -125,8 +125,8 @@ func TestMapRunToExecutionUpdateEndedSuccess(t *testing.T) {
 		ExternalExecutionID: &execID,
 		EndReason:           &reason,
 		ExitCode:            0,
-		StartAt:             &now,
-		EndAt:               &now,
+		StartedAt:           &now,
+		EndedAt:             &now,
 	}
 
 	result := mapRunToExecutionUpdate(run)
@@ -145,8 +145,8 @@ func TestMapRunToExecutionUpdateEndedStartFailed(t *testing.T) {
 		ExternalExecutionID: &execID,
 		EndReason:           &reason,
 		ExitCode:            1,
-		StartAt:             &now,
-		EndAt:               &now,
+		StartedAt:           &now,
+		EndedAt:             &now,
 	}
 
 	// Without ReasonStartFailed in terminalReasonMap the control plane would
@@ -196,8 +196,8 @@ func TestMapRunToExecutionUpdateTerminalReasonsExhaustive(t *testing.T) {
 				Status:              model.PhaseEnded,
 				ExternalExecutionID: &execID,
 				EndReason:           &r,
-				StartAt:             &now,
-				EndAt:               &now,
+				StartedAt:           &now,
+				EndedAt:             &now,
 			}
 			result := mapRunToExecutionUpdate(run)
 			require.NotNil(t, result, "terminal reason %q must produce an update", reason)
@@ -217,8 +217,8 @@ func TestMapRunToExecutionUpdateUnknownReasonFailsSafe(t *testing.T) {
 		Status:              model.PhaseEnded,
 		ExternalExecutionID: &execID,
 		EndReason:           &reason,
-		StartAt:             &now,
-		EndAt:               &now,
+		StartedAt:           &now,
+		EndedAt:             &now,
 	}
 	result := mapRunToExecutionUpdate(run)
 	require.NotNil(t, result)

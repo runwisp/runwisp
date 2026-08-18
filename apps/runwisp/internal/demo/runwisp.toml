@@ -44,8 +44,8 @@ min_free_space = "500mb"
 [notify]
 global_notifiers = ["inapp"]
 coalesce_window  = "30s"
-history_keep     = 500
-history_keep_for = "30d"
+keep_notifications = 500
+keep_for           = "30d"
 
 # ── Notifiers ────────────────────────────────────────────────────────────────
 # Placeholder secrets (`.invalid` never resolves) keep the demo self-contained

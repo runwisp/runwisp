@@ -30,7 +30,7 @@ type Update struct {
 const (
 	UpdateTypeCreated            = "notification.created"
 	UpdateTypeUpdated            = "notification.updated"
-	UpdateTypeUnreadCountChanged = "notifications.unread_count_changed"
+	UpdateTypeUnreadCountChanged = "notification.unreadCountChanged"
 )
 
 // Subscriber is the receiving end of a Hub subscription.

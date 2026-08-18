@@ -87,7 +87,7 @@ type statusTaskJSON struct {
 	Source     string       `json:"source,omitempty"`
 	SourceFile string       `json:"sourceFile,omitempty"`
 	HeldBy     string       `json:"heldBy,omitempty"`
-	NextRunAt  *string      `json:"nextRunAt,omitempty"`
+	NextRunAt  *time.Time   `json:"nextRunAt,omitempty"`
 	LastRun    *lastRunJSON `json:"lastRun"`
 }
 
@@ -100,8 +100,8 @@ type lastRunJSON struct {
 	EndReason   *string    `json:"endReason,omitempty"`
 	ExitCode    int        `json:"exitCode"`
 	TriggeredBy string     `json:"triggeredBy"`
-	StartAt     *time.Time `json:"startAt,omitempty"`
-	EndAt       *time.Time `json:"endAt,omitempty"`
+	StartedAt   *time.Time `json:"startedAt,omitempty"`
+	EndedAt     *time.Time `json:"endedAt,omitempty"`
 	DurationMS  *int64     `json:"durationMs,omitempty"`
 	Failed      bool       `json:"failed"`
 	Missed      bool       `json:"missed"`
@@ -149,8 +149,8 @@ func runOutcome(r *model.Run) (endReason *string, failed bool, durationMS *int64
 		endReason = &reason
 		failed = retry.IsFailureReason(*r.EndReason)
 	}
-	if r.StartAt != nil && r.EndAt != nil {
-		ms := r.EndAt.Sub(*r.StartAt).Milliseconds()
+	if r.StartedAt != nil && r.EndedAt != nil {
+		ms := r.EndedAt.Sub(*r.StartedAt).Milliseconds()
 		durationMS = &ms
 	}
 	return endReason, failed, durationMS
@@ -162,8 +162,8 @@ func newLastRunJSON(r *model.Run) lastRunJSON {
 		Status:      string(r.Status),
 		ExitCode:    r.ExitCode,
 		TriggeredBy: string(r.TriggeredBy),
-		StartAt:     r.StartAt,
-		EndAt:       r.EndAt,
+		StartedAt:   r.StartedAt,
+		EndedAt:     r.EndedAt,
 	}
 	lr.EndReason, lr.Failed, lr.DurationMS = runOutcome(r)
 	if r.EndReason != nil {
@@ -174,7 +174,7 @@ func newLastRunJSON(r *model.Run) lastRunJSON {
 
 // --- exec ------------------------------------------------------------------
 
-// execJSONDoc is the machine-readable outcome of `runwisp exec --json`: the one
+// execJSONDoc is the machine-readable outcome of `runwisp run --json`: the one
 // document written to stdout once the run reaches a terminal state (or is
 // triggered, under --detach). Live log lines are diverted to stderr so stdout
 // stays a single JSON document. failed is precomputed (retry.IsFailureReason)
@@ -195,8 +195,8 @@ type execJSONDoc struct {
 	// an explicit 0.
 	ExitCode    *int       `json:"exitCode,omitempty"`
 	TriggeredBy string     `json:"triggeredBy,omitempty"`
-	StartAt     *time.Time `json:"startAt,omitempty"`
-	EndAt       *time.Time `json:"endAt,omitempty"`
+	StartedAt   *time.Time `json:"startedAt,omitempty"`
+	EndedAt     *time.Time `json:"endedAt,omitempty"`
 	DurationMS  *int64     `json:"durationMs,omitempty"`
 	Failed      bool       `json:"failed"`
 }
@@ -223,8 +223,8 @@ func newExecJSONDoc(taskName string, r *model.Run) execJSONDoc {
 		Status:        string(r.Status),
 		ExitCode:      &exitCode,
 		TriggeredBy:   string(r.TriggeredBy),
-		StartAt:       r.StartAt,
-		EndAt:         r.EndAt,
+		StartedAt:     r.StartedAt,
+		EndedAt:       r.EndedAt,
 	}
 	doc.EndReason, doc.Failed, doc.DurationMS = runOutcome(r)
 	return doc

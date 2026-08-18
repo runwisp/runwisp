@@ -96,7 +96,7 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 	// daemon's fingerprint, so a user's unrelated same-named container is never
 	// touched. Stack mode lets compose own container lifecycle, and exec mode
 	// targets a container we never created, so both are exempt.
-	if ce.Mode == model.ComposeModeServices {
+	if ce.Mode == model.ComposeModeRun {
 		b.removeManagedInstance(ctx, task.Name, instanceIndex)
 	}
 
@@ -133,7 +133,7 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 	// Exec mode is exempt for a much sharper reason than stack mode: the target
 	// container belongs to the user, so tearing it down because a cron task
 	// inside it overran would take their application with it.
-	if ce.Mode == model.ComposeModeServices {
+	if ce.Mode == model.ComposeModeRun {
 		taskName := task.Name
 		proc.Cleanup = func() {
 			b.removeManagedInstance(context.Background(), taskName, instanceIndex)

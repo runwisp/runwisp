@@ -10,7 +10,7 @@ import type { TaskParam } from "@runwisp/common";
 // tri-state supplied value the daemon expects.
 
 export function isComboParam(p: TaskParam): boolean {
-    return Boolean(p.choices && p.choices.length > 0 && p.allow_custom);
+    return Boolean(p.choices && p.choices.length > 0 && p.allowCustom);
 }
 
 // paramIncluded reports whether a parameter is passed at all. Flags always emit
@@ -33,7 +33,7 @@ export function paramSupportsInclude(p: TaskParam, inCustomMode: boolean): boole
     if (p.kind === "flag" || p.required === true) return false;
     if (p.type === "number") return false;
     if (p.choices && p.choices.length > 0) {
-        return Boolean(p.allow_custom) && inCustomMode;
+        return Boolean(p.allowCustom) && inCustomMode;
     }
     return true;
 }
@@ -56,12 +56,7 @@ export function paramFieldError(p: TaskParam, value: string, included: boolean):
     if (value === "") {
         return p.required === true ? "Required" : "";
     }
-    if (
-        p.choices &&
-        p.choices.length > 0 &&
-        p.allow_custom !== true &&
-        !p.choices.includes(value)
-    ) {
+    if (p.choices && p.choices.length > 0 && p.allowCustom !== true && !p.choices.includes(value)) {
         return `Must be one of: ${p.choices.join(", ")}`;
     }
     if (p.type === "number" && !isNumberValue(value)) {

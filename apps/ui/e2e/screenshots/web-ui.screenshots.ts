@@ -78,11 +78,11 @@ async function ensureNotifications(page: Page, token: string): Promise<void> {
 
 async function findFailedRun(page: Page, token: string): Promise<Run> {
     const res = await page.request.get(
-        "/api/runs?status=failed&limit=1&sortField=startAt&sortDirection=desc",
+        "/api/runs?status=failed&limit=1&sortField=startedAt&sortDirection=desc",
         { headers: { Authorization: `Bearer ${token}` } },
     );
     expect(res.ok(), "list failed runs").toBeTruthy();
-    const run = ((await res.json()) as { runs: Run[] }).runs[0];
+    const run = ((await res.json()) as { items: Run[] }).items[0];
     expect(run, "demo seed should contain a failed run").toBeTruthy();
     return run;
 }

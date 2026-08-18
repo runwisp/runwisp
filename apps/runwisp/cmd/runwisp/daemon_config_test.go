@@ -165,23 +165,25 @@ func TestResolveAuthMode_Values(t *testing.T) {
 		wantErr bool
 	}{
 		{"", false, false},
-		{"1", true, false},
-		{"true", true, false},
-		{"TRUE", true, false},
-		{" true ", true, false},
+		{"off", true, false},
+		{"OFF", true, false},
+		{" off ", true, false},
+		{"on", false, false},
+		{"ON", false, false},
+		{"1", false, true},
+		{"true", false, true},
 		{"0", false, true},
 		{"yes", false, true},
-		{"on", false, true},
 	}
 	for _, tt := range tests {
 		t.Run("value="+tt.value, func(t *testing.T) {
-			t.Setenv("RUNWISP_NO_AUTH", tt.value)
+			t.Setenv("RUNWISP_AUTH", tt.value)
 			t.Setenv("RUNWISP_PASSWORD", "")
 
 			noAuth, err := resolveAuthMode()
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("expected error for RUNWISP_NO_AUTH=%q", tt.value)
+					t.Fatalf("expected error for RUNWISP_AUTH=%q", tt.value)
 				}
 				return
 			}
@@ -189,7 +191,7 @@ func TestResolveAuthMode_Values(t *testing.T) {
 				t.Fatal(err)
 			}
 			if noAuth != tt.noAuth {
-				t.Fatalf("RUNWISP_NO_AUTH=%q: expected noAuth=%v, got %v", tt.value, tt.noAuth, noAuth)
+				t.Fatalf("RUNWISP_AUTH=%q: expected noAuth=%v, got %v", tt.value, tt.noAuth, noAuth)
 			}
 		})
 	}
@@ -199,11 +201,11 @@ func TestResolveAuthMode_Values(t *testing.T) {
 // a configured password and disabled auth — a password that is never checked
 // gives a false sense of security.
 func TestResolveAuthMode_ConflictWithPassword(t *testing.T) {
-	t.Setenv("RUNWISP_NO_AUTH", "1")
+	t.Setenv("RUNWISP_AUTH", "off")
 	t.Setenv("RUNWISP_PASSWORD", "some-password")
 
 	if _, err := resolveAuthMode(); err == nil {
-		t.Fatal("expected error when RUNWISP_NO_AUTH and RUNWISP_PASSWORD are both set")
+		t.Fatal("expected error when RUNWISP_AUTH=off and RUNWISP_PASSWORD are both set")
 	}
 }
 

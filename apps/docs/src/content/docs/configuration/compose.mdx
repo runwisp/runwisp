@@ -42,7 +42,7 @@ itself uses — and imports every service in the first file it finds.
 file         = "./docker-compose.yml"   # default: auto-discovered next to runwisp.toml
 include      = ["api", "worker"]         # subset; omit to import all
 exclude      = ["db"]                    # mutually exclusive with include
-mode         = "services"                # "services" (default) | "stack"
+import       = "services"                # "services" (default) | "stack"
 group        = "myapp"                   # UI group; defaults to the alias
 project_name = "myapp"                   # docker compose -p; defaults to the alias
 profiles     = ["production"]            # docker compose --profile
@@ -83,7 +83,7 @@ behavior for the whole block.
 `notify_on_failure` / `notify_on_success` lists add routes to _every_ service, on
 top of any a service declares for itself. Because `defaults` is a reserved
 sub-table name, a compose service literally named `defaults` is rejected with a
-rename hint. Block defaults aren't available in `mode = "stack"` (there's only one
+rename hint. Block defaults aren't available in `import = "stack"` (there's only one
 task there — set its knobs on the block).
 
 ## Per-service overrides
@@ -125,7 +125,7 @@ daemon's environment either way.) (`working_dir` comes from
 the `[compose.<alias>]` block, not the per-service sub-table.)
 
 One sharp edge: a compose service that happens to share a name with one
-of the scalar keys above (`file`, `include`, `exclude`, `mode`, `group`,
+of the scalar keys above (`file`, `include`, `exclude`, `import`, `group`,
 `project_name`, `profiles`, `env_file`, `working_dir`, `with_deps`,
 `pull`, `name_format`) can't get a sub-table — the loader rejects the
 config with an error asking you to rename the compose service.
@@ -177,9 +177,9 @@ docker compose --profile workers config --services
 
 That prints exactly the service set RunWisp will choose from.
 
-## Modes
+## Import strategies
 
-### `mode = "services"` (default)
+### `import = "services"` (default)
 
 Each compose service becomes its own RunWisp **service**, named per
 `name_format` (default `<alias>.<svc>`). Here's the exact command each
@@ -201,7 +201,7 @@ instance slot" supervisor invariant uniform with every other backend.
 like its compose-declared self; `--rm` cleans the container on exit so
 every restart starts fresh.
 
-### `mode = "stack"`
+### `import = "stack"`
 
 One RunWisp service per `[compose.<alias>]`, named `<alias>`:
 
@@ -211,8 +211,8 @@ docker compose -f <file> -p <project> up --abort-on-container-exit --no-log-pref
 
 The whole stack runs together; logs from all containers stream into a
 single RunWisp run; the run exits when any container exits. Per-service
-sub-tables, `include`, `exclude`, and `instances` are all rejected in
-stack mode — use per-service mode if you want per-service knobs.
+sub-tables, `include`, `exclude`, and `instances` are all rejected under
+`import = "stack"` — use `import = "services"` if you want per-service knobs.
 
 ## Identity
 

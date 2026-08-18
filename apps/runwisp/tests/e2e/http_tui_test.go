@@ -57,7 +57,7 @@ func TestHTTPTUI_AuthenticatesAndStreamsLiveLogs(t *testing.T) {
 }
 
 // TestHTTPTUI_NoAuthConnectsWithoutPassword mirrors the no-auth contract for
-// the HTTP TUI: against a RUNWISP_NO_AUTH daemon the client probes
+// the HTTP TUI: against a RUNWISP_AUTH=off daemon the client probes
 // /api/auth/status, sees auth isn't required, and connects with no password and
 // no prompt.
 func TestHTTPTUI_NoAuthConnectsWithoutPassword(t *testing.T) {
@@ -67,7 +67,7 @@ func TestHTTPTUI_NoAuthConnectsWithoutPassword(t *testing.T) {
 	configPath := writeE2EConfig(t, configDir)
 
 	daemon := startDaemonWithEnv(t, projectDir, binaryPath, configPath,
-		"RUNWISP_NO_AUTH=1",
+		"RUNWISP_AUTH=off",
 	)
 	daemon.waitForReady(t, apiclient.New(daemon.baseURL, ""), 10*time.Second)
 

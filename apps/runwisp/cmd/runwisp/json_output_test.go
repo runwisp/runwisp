@@ -78,7 +78,7 @@ func TestNewExecJSONDoc_MapsFailedAndDuration(t *testing.T) {
 	doc := newExecJSONDoc("backup", &model.Run{
 		ID: "01JZZBACKUP0000000000000000", Status: model.PhaseEnded,
 		EndReason: &failed, ExitCode: 2, TriggeredBy: model.TriggeredByAPI,
-		StartAt: &start, EndAt: &end,
+		StartedAt: &start, EndedAt: &end,
 	})
 
 	assert.Equal(t, jsonSchemaVersion, doc.SchemaVersion)

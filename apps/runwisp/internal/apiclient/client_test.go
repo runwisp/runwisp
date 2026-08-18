@@ -187,7 +187,7 @@ func TestListTasks(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/tasks", r.URL.Path)
-		json.NewEncoder(w).Encode(tasks)
+		json.NewEncoder(w).Encode(server.TasksResponseBody{Items: tasks})
 	}))
 	defer srv.Close()
 
@@ -201,7 +201,7 @@ func TestListTasks(t *testing.T) {
 
 func TestListRuns(t *testing.T) {
 	resp := server.RunsResponseBody{
-		Runs:  []model.Run{{ID: "run-1"}, {ID: "run-2"}},
+		Items: []model.Run{{ID: "run-1"}, {ID: "run-2"}},
 		Total: 42,
 	}
 
@@ -221,7 +221,7 @@ func TestListRuns(t *testing.T) {
 
 func TestListRunsByTask(t *testing.T) {
 	resp := server.RunsResponseBody{
-		Runs:  []model.Run{{ID: "run-1"}},
+		Items: []model.Run{{ID: "run-1"}},
 		Total: 1,
 	}
 

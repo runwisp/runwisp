@@ -116,7 +116,7 @@ run                 = "/usr/local/bin/worker"
 ## What `[defaults]` doesn't do
 
 - It doesn't apply to `[storage]` — that's a global cap, not a per-task default.
-- It doesn't apply to `[notify]` settings (`coalesce_window`, `history_keep`, etc.).
+- It doesn't apply to `[notify]` settings (`coalesce_window`, `keep_notifications`, etc.).
 - It doesn't apply to `[daemon] shutdown_timeout` — that's a daemon-wide setting, not a per-task value to inherit.
 - Notification _routing_ (`notify_on_failure`, `notify_on_success`) has
   no defaulting layer — you set those channel lists per task. The

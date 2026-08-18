@@ -51,8 +51,8 @@ func TestLogSearchEndpointFindsLine(t *testing.T) {
 	// Substring search across all runs of the task.
 	body, err := client.SearchLogs(taskName, apiclient.SearchLogsOptions{Query: marker})
 	require.NoError(t, err)
-	require.NotEmpty(t, body.Hits, "expected at least one hit for the marker")
-	hit := body.Hits[0]
+	require.NotEmpty(t, body.Items, "expected at least one hit for the marker")
+	hit := body.Items[0]
 	require.Equal(t, triggered.ID, hit.RunID)
 	require.Contains(t, hit.Text, marker)
 	require.True(t, body.Exhausted)
@@ -64,13 +64,13 @@ func TestLogSearchEndpointFindsLine(t *testing.T) {
 		RunID: triggered.ID,
 	})
 	require.NoError(t, err)
-	require.Len(t, scoped.Hits, 1)
-	require.Equal(t, triggered.ID, scoped.Hits[0].RunID)
+	require.Len(t, scoped.Items, 1)
+	require.Equal(t, triggered.ID, scoped.Items[0].RunID)
 
 	// A query that cannot match returns an empty page, not a 5xx.
 	empty, err := client.SearchLogs(taskName, apiclient.SearchLogsOptions{Query: "absolutely-no-match"})
 	require.NoError(t, err)
-	require.Empty(t, empty.Hits)
+	require.Empty(t, empty.Items)
 	require.True(t, empty.Exhausted)
 }
 

@@ -12,7 +12,7 @@ import (
 	"github.com/runwisp/runwisp/internal/apiclient"
 )
 
-// The CLI caches the JWT minted by a remote daemon so repeated `runwisp exec
+// The CLI caches the JWT minted by a remote daemon so repeated `runwisp run
 // --url` invocations reuse one session instead of re-running CHAP each time.
 // Re-handshaking would burn two hits (challenge + login) against the daemon's
 // per-IP auth rate limit on every call; reusing the 24h JWT keeps a script

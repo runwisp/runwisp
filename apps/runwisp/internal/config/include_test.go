@@ -200,7 +200,7 @@ func TestInclude_SingletonInIncludedFileIsError(t *testing.T) {
 		"defaults":  "[defaults]\nshell = \"/bin/bash\"\n",
 		"scheduler": "[scheduler]\ntimezone = \"UTC\"\n",
 		"storage":   "[storage]\nmax_size = \"1gb\"\n",
-		"notify":    "[notify]\nhistory_keep = 5\n",
+		"notify":    "[notify]\nkeep_notifications = 5\n",
 		"daemon":    "[daemon]\nexternal_url = \"https://example.com\"\n",
 	}
 	for name, body := range cases {

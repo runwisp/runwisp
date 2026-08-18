@@ -563,7 +563,7 @@ func logSecurityWarnings(cfg *daemonConfig, f Flags, tlsCfg tlsSetup) {
 	// instead — the same SHA-256 the startup banner shows for verification.
 	switch {
 	case cfg.NoAuth:
-		slog.Warn("Authentication is DISABLED (RUNWISP_NO_AUTH) — the API and Web UI accept unauthenticated requests")
+		slog.Warn("Authentication is DISABLED (RUNWISP_AUTH=off) — the API and Web UI accept unauthenticated requests")
 		printNoAuthBanner(f.Host, nonLoopback)
 	case nonLoopback && !serving:
 		printNonLoopbackBanner(f.Host)
@@ -590,7 +590,7 @@ func logSecurityWarnings(cfg *daemonConfig, f Flags, tlsCfg tlsSetup) {
 }
 
 // printNoAuthBanner writes an unmissable stderr banner when the daemon runs
-// with RUNWISP_NO_AUTH. Like printNonLoopbackBanner it warns without blocking:
+// with RUNWISP_AUTH=off. Like printNonLoopbackBanner it warns without blocking:
 // the operator opted in explicitly and may be on a trusted setup (local dev,
 // container on a private network) — they get a clear statement of what is
 // exposed, not a roadblock. When the bind address is also non-loopback, this
@@ -598,7 +598,7 @@ func logSecurityWarnings(cfg *daemonConfig, f Flags, tlsCfg tlsSetup) {
 func printNoAuthBanner(host string, nonLoopback bool) {
 	var b strings.Builder
 	b.WriteString("\n================================================================================\n")
-	b.WriteString("  SECURITY: Authentication is DISABLED (RUNWISP_NO_AUTH).\n")
+	b.WriteString("  SECURITY: Authentication is DISABLED (RUNWISP_AUTH=off).\n")
 	if nonLoopback {
 		fmt.Fprintf(&b, "  The HTTP server is binding to %q (not loopback), so this applies to\n  anyone on the network.\n", host)
 	}

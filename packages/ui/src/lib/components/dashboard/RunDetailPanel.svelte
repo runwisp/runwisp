@@ -307,7 +307,7 @@
         run.status === "running" ? durationTicker.now.getTime() : undefined,
     )}
     {@const startDelay = runStartDelay(run)}
-    {@const startedAt = run.startAt ?? run.createdAt}
+    {@const startedAt = run.startedAt ?? run.createdAt}
     {@const retry = runRetryLabel(run)}
     {@const paramEntries = run.params ? Object.entries(run.params) : []}
     {@const suffix = instanceSuffix(run.instanceIndex, getInstanceCount(run.taskName))}
@@ -422,7 +422,7 @@
                              repeat it. The line wraps at narrow widths instead of
                              dropping the date and hiding it behind a hover. -->
                             <span data-testid="run-started" class="text-on-surface-muted"
-                                >{run.startAt ? formatClockTime(run.startAt) : "—"}</span
+                                >{run.startedAt ? formatClockTime(run.startedAt) : "—"}</span
                             >
                             <span class="text-outline-hover" aria-hidden="true">·</span>
                             <span>{formatCalendarDate(startedAt)}</span>

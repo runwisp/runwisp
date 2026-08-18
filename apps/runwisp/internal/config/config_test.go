@@ -1351,7 +1351,7 @@ func TestComposeExecServiceWarnings(t *testing.T) {
 	t.Run("stays quiet for a compose service RunWisp owns the container of", func(t *testing.T) {
 		cfg := &Config{Tasks: []model.Task{testTask("myapp.web")}}
 		cfg.Tasks[0].Kind = model.KindService
-		cfg.Tasks[0].ExecutionDef = execDef(model.ComposeModeServices)
+		cfg.Tasks[0].ExecutionDef = execDef(model.ComposeModeRun)
 
 		assert.Empty(t, composeExecServiceWarnings(cfg))
 	})

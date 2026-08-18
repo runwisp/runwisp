@@ -636,7 +636,7 @@ func hasDeliveryFailure(items []server.NotificationDTO) bool {
 // TestNotificationsUnreadCountShipsOnEveryEvent verifies the regression fix
 // for SSE-driven badge drift: every notification SSE event carries the
 // post-mutation unread count, and mark-all-read emits a count-only
-// notifications.unread_count_changed event so listeners can refresh the
+// notification.unreadCountChanged event so listeners can refresh the
 // badge without delta-tracking.
 func TestNotificationsUnreadCountShipsOnEveryEvent(t *testing.T) {
 	configPath := writeNotifyConfig(t, `
@@ -675,7 +675,7 @@ run = "exit 1"
 	require.NoError(t, client.MarkAllNotificationsRead())
 	count := waitForUnreadCountEvent(t, events, 5*time.Second)
 	require.EqualValues(t, 0, count,
-		"mark-all-read must emit notifications.unread_count_changed with 0")
+		"mark-all-read must emit notification.unreadCountChanged with 0")
 }
 
 func waitForNotificationEnvelope(
@@ -716,16 +716,16 @@ func waitForUnreadCountEvent(
 		select {
 		case ev, ok := <-events:
 			if !ok {
-				t.Fatal("stream closed before notifications.unread_count_changed arrived")
+				t.Fatal("stream closed before notification.unreadCountChanged arrived")
 			}
-			if ev.Type != "notifications.unread_count_changed" {
+			if ev.Type != "notification.unreadCountChanged" {
 				continue
 			}
 			count, err := apiclient.DecodeUnreadCountEnvelope(ev.Data)
 			require.NoError(t, err)
 			return count
 		case <-deadline:
-			t.Fatal("never received notifications.unread_count_changed")
+			t.Fatal("never received notification.unreadCountChanged")
 			return 0
 		}
 	}

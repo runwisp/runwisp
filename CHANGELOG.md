@@ -19,9 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Hardened `service install` unit generation, task-process environment isolation, config-file trust checks, privilege dropping, and outbound-request address filtering.** Internal safeguards with no configuration changes.
 
-### Documentation
+### Changed
 
-- **New [Parameters](https://docs.runwisp.com/concepts/parameters/) guide** surfaces per-run task inputs — declaring `params` and supplying them from the Web UI, TUI, or REST API — with a screenshot of the Run Task form.
+- **The CLI command that runs a task once is now `runwisp run <task>`** (was `runwisp exec`), matching the `run =` config key and freeing `exec` from colliding with `compose_mode = "exec"`. See [CLI](https://docs.runwisp.com/operations/cli/).
+- **Disable authentication with `RUNWISP_AUTH=off`** (was `RUNWISP_NO_AUTH=1`), matching the `tls = "off"` convention. `RUNWISP_AUTH` and `RUNWISP_PASSWORD` remain mutually exclusive. See [Auth](https://docs.runwisp.com/operations/auth/#running-without-a-password).
+- **`[notify]` retention keys are now `keep_notifications` and `keep_for`** (were `history_keep` and `history_keep_for`), matching the `keep_runs` / `keep_for` vocabulary tasks already use. See [Notifications](https://docs.runwisp.com/notifications/model/).
+- **A compose block's import strategy is now `import = "services" | "stack"`** (was `mode`), so it reads distinctly from a task's `compose_mode`. See [Compose](https://docs.runwisp.com/configuration/compose/).
+- **Run timestamps on the API are now `startedAt` / `endedAt`** (were `startAt` / `endAt`), including the `?sortField=startedAt` value — matching the database columns and the neighbouring `createdAt`.
+- **The task parameter field is `allowCustom` on the REST API** (was `allow_custom`), matching the API's camelCase convention. The TOML key stays `allow_custom`.
+- **`nextRunAt` on the tasks API is an RFC3339 timestamp** (was a pre-formatted string), like every other timestamp field.
+- **Metrics samples use `timestamp` / `cpuUsage` / `memUsage`** (were `ts` / `cpu` / `mem`), matching the system-stats fields.
+- **The unread-count stream event is `notification.unreadCountChanged`** (was `notifications.unread_count_changed`), matching the other `notification.*` events.
+- **List endpoints share one `{ items, … }` envelope** — `GET /api/tasks`, `/api/runs`, `/api/system/history`, and log search (was `runs` / `hits` / bare arrays).
 
 ## [0.15.1] - 2026-08-12
 

@@ -149,15 +149,15 @@ const (
 // channels that fire on every failure plus get appended to per-task
 // notify_* sugar.
 type NotifyConfig struct {
-	Notifiers        []NotifierSpec
-	Routes           []NotificationRoute
-	GlobalNotifiers  []string
-	DefaultTimeout   time.Duration
-	HistoryKeep      int
-	HistoryKeepFor   time.Duration
-	CoalesceWindow   time.Duration
-	OccurrenceRing   int
-	CoalesceOutbound bool
+	Notifiers         []NotifierSpec
+	Routes            []NotificationRoute
+	GlobalNotifiers   []string
+	DefaultTimeout    time.Duration
+	KeepNotifications int
+	KeepFor           time.Duration
+	CoalesceWindow    time.Duration
+	OccurrenceRing    int
+	CoalesceOutbound  bool
 }
 
 // NotifierSpec is one [[notifier]] block, post-decode. Secret-bearing fields

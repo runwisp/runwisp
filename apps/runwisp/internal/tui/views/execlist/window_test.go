@@ -453,7 +453,7 @@ func TestUpsertRun_NonZeroWindowStart_NotPrepended(t *testing.T) {
 
 func TestFetchAroundCmd_RunsRequest_ReturnsItemsAndTotal(t *testing.T) {
 	resp := server.RunsResponseBody{
-		Runs:  []model.Run{{ID: "r-1", TaskName: "t"}, {ID: "r-2", TaskName: "t"}},
+		Items: []model.Run{{ID: "r-1", TaskName: "t"}, {ID: "r-2", TaskName: "t"}},
 		Total: 100,
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

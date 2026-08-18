@@ -54,7 +54,7 @@ export function buildTaskOverviews(
     const recentRunsByTask = buildLatestRunByTask(recentRuns, (run) => toTimestamp(run.createdAt));
     const runningRunsByTask = buildLatestRunByTask(
         runningRuns,
-        (run) => toTimestamp(run.startAt) ?? toTimestamp(run.createdAt),
+        (run) => toTimestamp(run.startedAt) ?? toTimestamp(run.createdAt),
     );
 
     return tasks.map((task) => {
@@ -135,15 +135,15 @@ export function filterTaskOverviews(
 export function sortRunsByStartDesc(runs: Run[]): Run[] {
     return [...runs].sort((left, right) => {
         const leftTime =
-            toTimestamp(left.startAt) ?? toTimestamp(left.createdAt) ?? LOWEST_PRIORITY_TIME;
+            toTimestamp(left.startedAt) ?? toTimestamp(left.createdAt) ?? LOWEST_PRIORITY_TIME;
         const rightTime =
-            toTimestamp(right.startAt) ?? toTimestamp(right.createdAt) ?? LOWEST_PRIORITY_TIME;
+            toTimestamp(right.startedAt) ?? toTimestamp(right.createdAt) ?? LOWEST_PRIORITY_TIME;
         return rightTime - leftTime;
     });
 }
 
 function lastTaskActivityAt(task: TaskOverview): number | undefined {
-    return toTimestamp(task.lastRun?.startAt) ?? toTimestamp(task.lastRun?.createdAt);
+    return toTimestamp(task.lastRun?.startedAt) ?? toTimestamp(task.lastRun?.createdAt);
 }
 
 function buildLatestRunByTask(

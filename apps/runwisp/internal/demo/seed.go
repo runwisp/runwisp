@@ -120,7 +120,7 @@ func (s *seeder) run(ctx context.Context) (int, error) {
 	// entropy reader is not safe for concurrent use, and a run's ULID embeds
 	// its start so natural ULID ordering matches chronological order.
 	for _, spec := range specs {
-		spec.run.ID = newULID(*spec.run.StartAt, rng)
+		spec.run.ID = newULID(*spec.run.StartedAt, rng)
 	}
 
 	if err := s.runAll(ctx, specs); err != nil {
@@ -312,7 +312,7 @@ func (s *seeder) planRetries(primaries []*runSpec, rng *rand.Rand) []*runSpec {
 		if !retryEligible(p) {
 			continue
 		}
-		start := p.run.EndAt.Add(retryGap(p.task))
+		start := p.run.EndedAt.Add(retryGap(p.task))
 		if start.After(s.now) {
 			continue // keep every seeded row backdated
 		}
@@ -336,14 +336,14 @@ func retryEligible(p *runSpec) bool {
 		p.run.IsRetryable()
 }
 
-// newSpec builds a running run anchored at start. EndAt/EndReason are filled in
+// newSpec builds a running run anchored at start. EndedAt/EndReason are filled in
 // by execOne once the real command has run.
 func newSpec(task *model.Task, start time.Time) *runSpec {
 	return &runSpec{
 		run: &model.Run{
 			TaskName:    task.Name,
 			Status:      model.PhaseRunning,
-			StartAt:     &start,
+			StartedAt:   &start,
 			CreatedAt:   start,
 			TriggeredBy: triggeredBy(task),
 		},
@@ -374,7 +374,7 @@ func (s *seeder) runAll(ctx context.Context, specs []*runSpec) error {
 // execOne runs one spec's real command through the executor with a backdated
 // clock, derives the terminal reason from the result, and inserts the row.
 func (s *seeder) execOne(ctx context.Context, spec *runSpec) error {
-	start := *spec.run.StartAt
+	start := *spec.run.StartedAt
 
 	// Backdated, monotonic clock: captured log lines carry the historical run
 	// date while still advancing in real time as the process emits them.
@@ -433,7 +433,7 @@ func (s *seeder) runContext(ctx context.Context, task *model.Task) (context.Cont
 // math/rand source is not safe to share); a crashed instance died early.
 func serviceUptime(spec *runSpec) time.Duration {
 	const base = 90 * time.Minute
-	jitter := time.Duration(spec.run.StartAt.UnixNano() % int64(base))
+	jitter := time.Duration(spec.run.StartedAt.UnixNano() % int64(base))
 	d := base/2 + jitter // 45–135 min
 	if spec.forceReason != nil && *spec.forceReason == model.ReasonCrashed {
 		d /= 4
@@ -529,7 +529,7 @@ func retryGap(task *model.Task) time.Duration {
 func oldestPerTask(specs []*runSpec) map[string]time.Time {
 	out := make(map[string]time.Time)
 	for _, s := range specs {
-		ts := *s.run.StartAt
+		ts := *s.run.StartedAt
 		if cur, ok := out[s.run.TaskName]; !ok || ts.Before(cur) {
 			out[s.run.TaskName] = ts
 		}

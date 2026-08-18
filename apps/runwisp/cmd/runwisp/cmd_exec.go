@@ -52,7 +52,7 @@ func execLineOut() io.Writer {
 // can pin the choice with --daemon or --standalone, or target a remote daemon
 // over the network with --url.
 var execCmd = &cobra.Command{
-	Use:   "exec <task-name>",
+	Use:   "run <task-name>",
 	Short: "Run a task and stream its output",
 	Long: `Runs the named task and streams its log lines to stdout/stderr. Exits with
 the task's exit code.
@@ -64,7 +64,7 @@ CI. The password comes from --password or RUNWISP_PASSWORD, and the resulting
 session token is cached so repeated calls don't re-authenticate.
 
 Without --url, the run is local. If a daemon is running against the same data
-dir, ` + "`runwisp exec`" + ` dispatches the run through its REST API and follows the
+dir, ` + "`runwisp run`" + ` dispatches the run through its REST API and follows the
 live log stream. With no daemon running, the task is executed in this CLI
 process from runwisp.toml.
 
@@ -75,10 +75,10 @@ data dir). Without either flag, the local mode is auto-detected.
 With --json, the run's outcome is printed to stdout as a single JSON document
 (run id, status, exit code, duration, failed) once it finishes; live log lines
 are diverted to stderr so stdout stays machine-readable.`,
-	Example: `  runwisp exec backup
-  runwisp exec backup --json          # print the run outcome as JSON
-  runwisp exec deploy --standalone    # run in-process, no daemon needed
-  runwisp exec build --url https://ci.example.com --password "$RUNWISP_PASSWORD"`,
+	Example: `  runwisp run backup
+  runwisp run backup --json          # print the run outcome as JSON
+  runwisp run deploy --standalone    # run in-process, no daemon needed
+  runwisp run build --url https://ci.example.com --password "$RUNWISP_PASSWORD"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		exitCode, err := runExecCLI(os.Stdout, args[0], flags)
@@ -423,7 +423,7 @@ const (
 // become visible yet — never the truth. Trusting it would report status
 // "running" with a nil end_reason, and exitCodeFromRun reads a nil end_reason
 // as success: a run that failed with exit 7 would exit 0 and a script chained
-// on `runwisp exec` would sail past the failure. The daemon flushes persistence
+// on `runwisp run` would sail past the failure. The daemon flushes persistence
 // before publishing a terminal event, so this normally succeeds on the first
 // read; it stays as a belt against any path that publishes without the barrier.
 func fetchTerminalRun(client *apiclient.Client, taskName, runID string) (*model.Run, error) {

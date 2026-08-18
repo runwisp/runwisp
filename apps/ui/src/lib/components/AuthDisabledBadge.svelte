@@ -7,13 +7,13 @@
     import { authStore } from "$lib/stores/auth.svelte";
 
     // Persistent (no dismiss) on purpose: a daemon running with
-    // RUNWISP_NO_AUTH must never be mistaken for a secured instance.
+    // RUNWISP_AUTH=off must never be mistaken for a secured instance.
     let visible = $derived(authStore.current.loaded && !authStore.current.required);
 </script>
 
 {#if visible}
     <span
-        title="RUNWISP_NO_AUTH is set — the API and Web UI are reachable without a password. Local/dev use only."
+        title="RUNWISP_AUTH=off is set — the API and Web UI are reachable without a password. Local/dev use only."
     >
         <Badge variant="warning" class="shrink-0">
             <ShieldOff size={12} class="shrink-0" />

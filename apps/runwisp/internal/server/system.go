@@ -165,7 +165,7 @@ func (srv *Server) SystemStats() model.SystemStats {
 }
 
 func (srv *Server) humaGetMetricsHistory(ctx context.Context, input *struct{}) (*MetricsHistoryOutput, error) {
-	return &MetricsHistoryOutput{Body: srv.metrics.History()}, nil
+	return &MetricsHistoryOutput{Body: MetricsHistoryBody{Items: srv.metrics.History()}}, nil
 }
 
 func formatUptime(duration time.Duration) string {
