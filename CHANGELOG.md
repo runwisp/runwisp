@@ -7,14 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- **A symptom-first [Troubleshooting](https://docs.runwisp.com/operations/troubleshooting/) page**, plus docs for `[daemon] allow_cloud_dispatch` and the Telegram notifier's `parse_mode`.
-
-### Changed
-
-- **Docs are reorganised so every migration route lives in one place.** Cron, supervisord, and docker-compose guides moved from two separate sections into [Coming from…](https://docs.runwisp.com/coming-from/); the CLI and AI-agent references moved to [Reference](https://docs.runwisp.com/reference/cli/). Old URLs redirect.
-
 ### Fixed
 
 - **`env_file` and `secrets_file` values are read literally**, so passwords and tokens containing `$`, `${...}`, or `#` are passed to the task exactly as written. See [Tasks](https://docs.runwisp.com/configuration/tasks/).
@@ -22,7 +14,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Outbound notification channels (Slack, Telegram) send periodic check-ins during a sustained incident** on the default `occurrence_ring` cadence. See [Notification model](https://docs.runwisp.com/notifications/model/).
 - **`storage.max_size` enforcement accounts for rotated log segments** when trimming run history to the configured cap. See [Storage](https://docs.runwisp.com/configuration/storage/).
 - **Starting the daemon no longer reprints the startup log a second time after a successful start.** The log was already streamed live during startup; only a failed or timed-out start now prints the tail for diagnosis.
-- **The docs link checker no longer passes vacuously.** It was skipping every internal link and reporting success; it now validates in-page anchors, JSX `href` links, and the docs URLs embedded in the binary, README, and install script.
 
 ### Security
 
