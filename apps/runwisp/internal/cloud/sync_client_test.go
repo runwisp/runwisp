@@ -192,6 +192,37 @@ func TestBuildOneSyncTask(t *testing.T) {
 		assert.Nil(t, st.RetryDelay)
 	})
 
+	t.Run("declared params are keyed by their Key on the wire", func(t *testing.T) {
+		def := "info"
+		task := &model.Task{
+			Name: "with-params",
+			Run:  "echo hi",
+			Parameters: []model.TaskParam{
+				{Kind: model.ParamOption, Key: "--level", Type: model.ParamTypeString, Default: &def, Choices: []string{"info", "debug"}},
+				{Kind: model.ParamFlag, Key: "--force", Required: true},
+			},
+		}
+		st, ok := buildOneSyncTask(task)
+		require.True(t, ok)
+		require.Len(t, st.InputDefinition, 2)
+		level := st.InputDefinition["--level"]
+		assert.Equal(t, string(model.ParamOption), level.Kind)
+		assert.Equal(t, model.ParamTypeString, level.Type)
+		require.NotNil(t, level.Default)
+		assert.Equal(t, "info", *level.Default)
+		assert.Equal(t, []string{"info", "debug"}, level.Choices)
+		force := st.InputDefinition["--force"]
+		assert.Equal(t, string(model.ParamFlag), force.Kind)
+		assert.True(t, force.Required)
+	})
+
+	t.Run("no params omits InputDefinition", func(t *testing.T) {
+		task := &model.Task{Name: "no-params", Run: "echo hi"}
+		st, ok := buildOneSyncTask(task)
+		require.True(t, ok)
+		assert.Nil(t, st.InputDefinition)
+	})
+
 	t.Run("cron with surrounding whitespace is trimmed", func(t *testing.T) {
 		task := &model.Task{
 			Name: "ws-task",

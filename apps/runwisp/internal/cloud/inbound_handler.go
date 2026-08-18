@@ -122,7 +122,7 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 		}
 	}
 
-	taskName, configBacked, resolveErr := h.resolveDispatchTask(message.Execution)
+	taskName, _, resolveErr := h.resolveDispatchTask(message.Execution)
 	if resolveErr != nil {
 		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, ptr(-1), nil, nowPtr()))
 		if h.uploader != nil {
@@ -131,15 +131,10 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 		return resolveErr
 	}
 
-	// Only TOML-defined tasks declare params, so only they resolve InputValues.
-	// An inline ad-hoc execution has no parameter declarations — forwarding its
-	// InputValues would fail resolution as "unknown parameter", so ignore them.
-	var inputValues map[string]string
-	if configBacked {
-		inputValues = message.Execution.InputValues
-	}
-
-	run, triggerErr := h.taskManager.TriggerCloudRun(taskName, executionID, inputValues)
+	// TOML-defined tasks resolve InputValues against their declared params;
+	// buildDynamicCloudTask declares an env-kind param per key for inline
+	// ad-hoc executions, so both paths resolve the same way here.
+	run, triggerErr := h.taskManager.TriggerCloudRun(taskName, executionID, message.Execution.InputValues)
 	if triggerErr != nil {
 		return h.handleTriggerError(ctx, executionID, run, triggerErr)
 	}

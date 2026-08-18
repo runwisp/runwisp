@@ -96,6 +96,33 @@ func TestHandleExecutionDispatch_Success(t *testing.T) {
 	assert.Equal(t, 1, acked, "valid dispatch must be acked exactly once")
 }
 
+// TestHandleExecutionDispatch_AdHocInputValuesForwarded guards against a
+// regression where inline (non-TOML) dispatches had their inputValues
+// silently dropped because they declared no params for ResolveParamValues to
+// resolve against. buildDynamicCloudTask must synthesize an env-kind param
+// per supplied key so the values still reach TriggerCloudRun.
+func TestHandleExecutionDispatch_AdHocInputValuesForwarded(t *testing.T) {
+	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
+	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
+	h := newDispatchInboundHandler(runner, nil, avail)
+
+	script := shellScript(t, "echo hello")
+	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
+		Execution: &protocol.Execution{
+			ExecutionID: "exec-adhoc",
+			TaskID:      "my-task",
+			Script:      script,
+			InputValues: map[string]string{"GREETING": "hi"},
+		},
+	}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"GREETING": "hi"}, runner.trigParams)
+
+	require.Len(t, runner.upserted, 1)
+	require.Len(t, runner.upserted[0].Parameters, 1)
+	assert.Equal(t, model.TaskParam{Kind: model.ParamEnv, Key: "GREETING"}, runner.upserted[0].Parameters[0])
+}
+
 func TestHandleExecutionDispatch_TriggerError_NilRun(t *testing.T) {
 	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
 	runner := &fakeTaskRunner{

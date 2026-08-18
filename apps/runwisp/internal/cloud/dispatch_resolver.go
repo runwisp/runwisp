@@ -14,9 +14,9 @@ import (
 )
 
 // resolveDispatchTask resolves a dispatch to a runnable task name. configBacked
-// reports whether the task is one of this daemon's TOML-defined tasks (which may
-// declare params): only those resolve InputValues. Inline ad-hoc executions
-// declare no params, so their InputValues are ignored, not rejected.
+// reports whether the task is one of this daemon's TOML-defined tasks (whose
+// params come from runwisp.toml) as opposed to an inline ad-hoc execution
+// (whose params buildDynamicCloudTask synthesizes from inputValues' keys).
 func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (taskName string, configBacked bool, err error) {
 	execDef, err := model.ParseExecutionDef(dispatch.Script)
 	if err != nil {
@@ -100,6 +100,14 @@ func buildDynamicCloudTask(dispatch *protocol.Execution, execDef model.Execution
 	}
 
 	applyCloudTaskConfig(task, dispatch.TaskConfig)
+
+	// An inline dispatch declares no TOML params, so every inputValues key
+	// would otherwise fail ResolveParamValues as "unknown parameter". Declare
+	// each as an env-kind param on the fly so the supplied values land in the
+	// run's process environment under their own key.
+	for key := range dispatch.InputValues {
+		task.Parameters = append(task.Parameters, model.TaskParam{Kind: model.ParamEnv, Key: key})
+	}
 
 	return task
 }
