@@ -1,0 +1,216 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Troubleshooting
+description: Symptom-first fixes for the things that actually go wrong — daemon won't start, a task never fires, config edits not picked up, locked out of the Web UI, logs missing, runs piling up, a service stuck in FATAL.
+head:
+    - tag: title
+      content: "RunWisp troubleshooting: why isn't my task running?"
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+Find your symptom, not your subsystem. Each entry says what to run first and
+links to the page that explains the underlying behaviour.
+
+Three commands answer most questions before you go digging:
+
+```bash
+runwisp validate          # is the config even valid?
+runwisp status            # is the daemon alive, and is it running this config?
+runwisp list              # what tasks does it think it has, and when do they fire?
+```
+
+## The daemon won't start
+
+**Run `runwisp validate` first.** It parses and validates `runwisp.toml`
+without touching anything, and reports errors with the offending key, line, and
+column. Add `--json` if you're scripting it.
+
+If the config is fine, the usual culprit is the listen address already being
+taken — the default is `127.0.0.1:9477`. Something else on that port (often a
+RunWisp you forgot to stop) will stop a new daemon from binding. Check with
+`runwisp status`, and either `runwisp stop` the old one or move the new one with
+[`--port`](/configuration/daemon/#cli-flags-config-data-directory--listen-address).
+
+On a headless box, start with `runwisp daemon`, not bare `runwisp`. Bare
+`runwisp` boots the TUI and will offer to scaffold a config interactively;
+`runwisp daemon` skips the prompt and exits non-zero when there's no
+`runwisp.toml`, which is what you want inside an init script.
+
+## A task never fires
+
+Work down this list — it's ordered by how often each one is the answer.
+
+1. **It has no `cron`.** A task without a `cron` key is manual-only by design.
+   It runs when you trigger it, never on a schedule. `runwisp list` shows the
+   schedule it actually parsed.
+2. **The daemon hasn't picked up your edit.** RunWisp never watches files. See
+   [the next section](#i-edited-runwisptoml-and-nothing-changed).
+3. **`api_trigger = false`.** That makes the task
+   [cron-only](/configuration/tasks/#api_trigger--false--cron-only-tasks) — the
+   CLI, API, and UI will all refuse to trigger it by hand. Intentional, but easy
+   to forget you set it.
+4. **The timezone isn't what you think.** Cron is evaluated in the task's
+   `timezone`, falling back to `[scheduler] timezone`, falling back to the
+   host's zone. A task written for local time on a UTC server fires at the
+   wrong hour. [How scheduling works](/concepts/scheduling/#timezone) covers
+   this, including what happens across DST.
+5. **A previous run is still going and `on_overlap` said skip.** See
+   [runs are piling up](#runs-pile-up-or-a-trigger-does-nothing).
+
+## I edited runwisp.toml and nothing changed
+
+This is by design: **config reload is explicit, never automatic.** There are no
+file watchers. The TUI header, `runwisp status`, and the Web UI all show a
+notice when the file on disk no longer matches what the daemon is running.
+
+```bash
+runwisp reload            # everyday edits: tasks, services, [defaults]
+runwisp restart           # restart-only settings (see below)
+```
+
+`reload` is validate-first and all-or-nothing — a typo is rejected and the
+running task set is left exactly as it was. In-flight runs finish under the
+definition they started with.
+
+Some settings **can't** be reloaded and need a full `runwisp restart`:
+`[daemon]`, `[scheduler] timezone`, `[storage]`, `[notify]`, and the bind
+host/port. Try to reload a change to one of those and the whole reload is
+rejected, so nothing changes at all. That's not a bug — [Reload](/operations/reload/)
+explains where the line is and why.
+
+Restart is also what you want when you deliberately want a fresh boot: only a
+restart re-fires `run_on_start` and re-runs missed-run catch-up.
+
+## I'm locked out of the Web UI
+
+The password is generated on first run and shown on the TUI Home page. To get
+it again without the TUI:
+
+```bash
+runwisp password          # print the daemon's ephemeral password
+```
+
+Set [`RUNWISP_PASSWORD`](/operations/auth/#the-password) to pin your own
+instead. It's read in memory only and never written to disk, so it works with
+Docker secrets and systemd's `LoadCredential`.
+
+Working purely locally and the login wall is just in the way? Set
+[`RUNWISP_NO_AUTH=1`](/operations/auth/#running-without-a-password) to disable
+the boundary entirely. It warns loudly at startup and is mutually exclusive
+with `RUNWISP_PASSWORD` — don't reach for it on anything reachable from a
+network you don't control.
+
+If logins are being refused rather than rejected, you may be hitting the
+[rate limiter](/operations/auth/#rate-limiting) after repeated bad attempts.
+
+## Logs are missing or truncated
+
+Two different mechanisms throw output away, and they fail in different ways:
+
+- **Retention** deletes whole old runs. `keep_runs` caps how many runs a task
+  keeps; `keep_for` caps how long. If history is disappearing over time, this
+  is why — see [Logs & retention](/concepts/logs/#retention-keep_runs-and-keep_for).
+- **Rotation** caps a _single_ run's output at `log_max_size`. What happens when
+  a run exceeds it is `log_on_full`: `drop_old` (the default — the log is rotated
+  to `.prev` and a fresh file started, so you keep the tail), `drop_new` (stop
+  writing but let the process run on, keeping the _start_), or `kill_task` (end
+  the run with reason `log_overflow`). Output that goes missing from the middle
+  of a long run is rotation, not a bug.
+
+Whole runs vanishing that you didn't expect can also be
+[`[storage]`](/configuration/storage/) reclaiming space: `max_size` and
+`min_free_space` prune globally, across tasks.
+
+## Runs pile up, or a trigger does nothing
+
+`on_overlap` decides what happens when a run is still going as the next one
+comes due:
+
+- `queue` (the default for tasks) — the new run waits its turn. A slow task on
+  a fast schedule builds a backlog this way, which looks like "runs are stuck".
+- `skip` — the new run is dropped. Trigger a task by hand while one is running
+  and it can look like nothing happened at all.
+- `terminate` — the running one is killed so the new one can start.
+
+[Concurrency policies](/concepts/concurrency/) covers all three, plus
+`max_concurrent` for letting a bounded number overlap on purpose.
+
+Also worth checking: a run that seems stuck forever may just have no `timeout`
+set. With one, the run is killed and recorded as a timeout instead of hanging
+indefinitely — see [Retries & timeouts](/concepts/retries/#timeout).
+
+## A service keeps restarting, or is stuck in FATAL
+
+Services restart according to `restart` (`never`, `on_failure`, or `always`).
+A service that dies immediately and repeatedly gets marked **FATAL** and
+RunWisp stops trying — that's the daemon refusing to spin forever on something
+that cannot start. The run history holds the exit code and captured output from
+each failed attempt, which is where the actual reason lives.
+
+If a service starts fine but is being declared failed too eagerly, look at
+[`healthy_after`](/concepts/retries/#healthy-threshold-healthy_after) — it's how
+long a process has to stay up before RunWisp counts the start as successful.
+
+[When a service can't start: FATAL](/configuration/services/#when-a-service-cant-start-fatal)
+has the full state machine.
+
+## Notifications aren't arriving
+
+Check them in this order:
+
+1. **Is anything routed?** With zero config you get in-app notifications only.
+   An outbound channel needs a `[[notifier]]` _and_ something routing events to
+   it — either [`global_notifiers`](/notifications/global/#the-bell--global_notifiers),
+   a [notification rule](/notifications/routes/), or
+   [per-task notifications](/notifications/per-task/).
+2. **Did delivery fail?** Permanent failures raise a `notify_delivery_failed`
+   event delivered in-app, so the bell is where the evidence is. It's in-app
+   only on purpose — a broken channel can't report its own brokenness.
+3. **Is the secret resolving?** Tokens usually come from the environment or a
+   file via [`${...}` substitution](/configuration/substitution/), which is
+   expanded at config load. `runwisp validate` catches an unresolvable
+   reference.
+
+## Nothing above matches
+
+Turn up the daemon's own logging and watch a run go through:
+
+```bash
+runwisp daemon --log-level debug
+```
+
+RunWisp writes one concise line per run lifecycle transition, so a task that
+never fires and a task that fires and immediately dies look completely
+different here. [Logging](/operations/logging/) covers the format, levels, and
+what each line means.
+
+If you think you've found a bug, `runwisp status --json` and the daemon log
+around the failure are the two most useful things to attach to
+[an issue](https://github.com/runwisp/runwisp/issues).
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="Reload"
+        href="/operations/reload/"
+        description="What reloads live, what needs a restart, and why the line is where it is."
+    />
+    <LinkCard
+        title="Logging"
+        href="/operations/logging/"
+        description="The daemon's own log — levels, format, and the run-lifecycle lines."
+    />
+    <LinkCard
+        title="CLI reference"
+        href="/reference/cli/"
+        description="Every command and flag, including the --json output shapes."
+    />
+    <LinkCard
+        title="Configuration overview"
+        href="/configuration/overview/"
+        description="Every key in runwisp.toml, and what a reload will and won't apply."
+    />
+</CardGrid>

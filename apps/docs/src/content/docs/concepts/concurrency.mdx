@@ -12,6 +12,13 @@ has to do _something_ about that, and `on_overlap` is how you tell it
 what. Three policies cover just about every real case: `queue`, `skip`,
 and `terminate`.
 
+:::note[Looking for keys and defaults?]
+This page explains _which policy to pick and why_. The keys themselves —
+`on_overlap`, `max_concurrent`, and their defaults — are in
+[`[tasks.*]` → Concurrency](/configuration/tasks/#concurrency) and
+[`[services.*]` → Concurrency](/configuration/services/#concurrency).
+:::
+
 ## The shape of the question
 
 It really comes down to two knobs:

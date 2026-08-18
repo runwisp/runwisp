@@ -11,8 +11,7 @@
 # binary itself, which is the only thing that can apply runwisp's trust
 # gates. Run `runwisp` once you have it; see
 # https://docs.runwisp.com/operations/autostart/ for autostart and
-# https://docs.runwisp.com/replacing-cron/take-over-from-cron/ for taking
-# over from cron.
+# https://docs.runwisp.com/coming-from/cron/ for taking over from cron.
 #
 # Usage:
 #   curl -fsSL https://get.runwisp.com | sh

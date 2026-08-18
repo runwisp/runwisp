@@ -18,7 +18,10 @@ const SUMMARY =
     "Web UI, a TUI, and a REST API. Local-first, offline-complete, zero runtime deps. " +
     "Every task is defined in a single runwisp.toml; the API and UI are read-only + trigger.";
 
-// Ordered sections of human docs. Slugs are content-collection ids.
+// Ordered sections of human docs. Mirrors the site sidebar in astro.config.mjs.
+// Every page in the collection must appear in exactly one section — the build
+// throws otherwise (see the coverage check in GET), so this index cannot drift
+// as pages are added or moved.
 const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> = [
     { label: "Overview", slugs: ["index"] },
     {
@@ -31,12 +34,24 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
         ],
     },
     {
-        label: "Concepts",
+        label: "Coming from cron, supervisord, or docker-compose",
+        slugs: [
+            "coming-from",
+            "coming-from/cron",
+            "coming-from/crontabs",
+            "coming-from/cron-mapping",
+            "coming-from/supervisord",
+            "coming-from/docker-compose",
+        ],
+    },
+    {
+        label: "How it works",
         slugs: [
             "concepts/tasks-vs-services",
             "concepts/scheduling",
             "concepts/concurrency",
             "concepts/retries",
+            "concepts/parameters",
             "concepts/logs",
         ],
     },
@@ -61,36 +76,53 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
             "notifications/routes",
             "notifications/global",
             "notifications/providers/slack",
+            "notifications/providers/discord",
             "notifications/providers/telegram",
             "notifications/providers/smtp",
             "notifications/providers/sendmail",
+            "notifications/providers/webhook",
         ],
     },
     {
-        label: "Operations",
-        slugs: [
-            "operations/agents",
-            "operations/auth",
-            "operations/autostart",
-            "operations/logging",
-            "operations/metrics",
-        ],
-    },
-    {
-        label: "Recipes",
+        label: "Guides",
         slugs: [
             "recipes/backup",
             "recipes/healthcheck",
             "recipes/deploy-hooks",
+            "recipes/remote-trigger",
             "recipes/docker",
-            "recipes/migrating-from-docker-compose",
         ],
     },
+    {
+        label: "Running in production",
+        slugs: [
+            "operations/troubleshooting",
+            "operations/auth",
+            "operations/autostart",
+            "operations/reload",
+            "operations/logging",
+            "operations/metrics",
+        ],
+    },
+    { label: "Reference", slugs: ["reference/cli", "reference/agents"] },
 ];
 
 export const GET: APIRoute = async () => {
     const docs = await getCollection("docs");
     const byId = new Map(docs.map((entry) => [entry.id, entry]));
+
+    // Fail the build on a page this index forgot. Without this the omission is
+    // silent: the page simply never reaches an agent reading /llms.txt, which
+    // is how the whole cron-migration section and the CLI reference went
+    // missing from it once already.
+    const listed = new Set(SECTIONS.flatMap((section) => section.slugs));
+    const unlisted = docs.map((entry) => entry.id).filter((id) => !listed.has(id));
+    if (unlisted.length > 0) {
+        throw new Error(
+            `llms.txt is missing ${String(unlisted.length)} docs page(s): ${unlisted.sort().join(", ")}. ` +
+                "Add them to SECTIONS in src/pages/llms.txt.ts.",
+        );
+    }
 
     const lines: string[] = ["# RunWisp", "", `> ${SUMMARY}`, ""];
 

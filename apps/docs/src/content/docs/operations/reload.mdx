@@ -5,7 +5,7 @@ title: Reload
 description: Pick up runwisp.toml task changes in a running daemon without a full restart. Covers runwisp reload and SIGHUP, the validate-first guarantee, what reloads live versus what needs a restart, and how in-flight runs behave.
 ---
 
-import { Tabs, TabItem } from "@astrojs/starlight/components";
+import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 You edited `runwisp.toml` — added a task, tweaked a cron, dropped one you don't
 need anymore. You don't have to restart the whole daemon to pick that up. A
@@ -58,7 +58,7 @@ config. If it doesn't parse, fails validation, or changes a setting that can't
 be reloaded (see below), the reload is **rejected** and your running task set is
 left exactly as it was — no half-applied state.
 
-```sh
+```bash
 $ runwisp reload
 Error: reload rejected: [storage] changed; requires `runwisp restart`
 ```
@@ -88,7 +88,7 @@ can only change on a fresh start.
 
 ### Moving a task between files usually isn't a change
 
-[`runwisp promote`](/operations/cli/#take-ownership-of-a-task-with-promote)
+[`runwisp promote`](/reference/cli/#take-ownership-of-a-task-with-promote)
 moves a task's definition into your `runwisp.toml` — out of the staging file an
 import wrote (`runwisp.d/imported.toml`), or out of a live crontab. Promote a
 **staged** task, or a cron task you'd already taken over from cron, and a reload
@@ -105,7 +105,7 @@ RunWisp had been holding that job — standing down so cron alone ran it — and
 promote comments the crontab line out, so on the next load the job is native and
 no longer held. That _is_ a change: the reload reports it as a changed task and
 RunWisp takes over scheduling it. See
-[Graduating a job](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config).
+[Graduating a job](/coming-from/crontabs/#graduating-a-job-into-your-own-config).
 
 ## What a reload tells you
 
@@ -123,7 +123,7 @@ task changes" and leave you thinking it worked. The same warnings appear in
 `runwisp validate` before you deploy at all.
 
 A reload also re-checks whether a system cron daemon is still alive, so
-the jobs it was [holding](/replacing-cron/held-jobs/) become RunWisp's on
+the jobs it was [holding](/coming-from/cron/) become RunWisp's on
 the spot. You don't have to reload for that, though — the daemon re-checks
 on its own about once a minute either way. Reloading after you retire cron
 just makes the handover immediate.
@@ -143,3 +143,28 @@ A couple of boot-only behaviors deliberately **don't** fire on reload:
 
 If you want the full boot path — `run_on_start`, missed-run catch-up, a fresh
 read of the restart-only settings — use `runwisp restart` instead.
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="Configuration overview"
+        href="/configuration/overview/"
+        description="What's in runwisp.toml, and which settings reload live."
+    />
+    <LinkCard
+        title="CLI reference"
+        href="/reference/cli/"
+        description="reload, restart, stop, validate — every flag on each."
+    />
+    <LinkCard
+        title="How scheduling works"
+        href="/concepts/scheduling/"
+        description="What a reload does to schedules, and why new tasks get no catch-up."
+    />
+    <LinkCard
+        title="Troubleshooting"
+        href="/operations/troubleshooting/"
+        description="Edited the config and nothing changed? The usual causes."
+    />
+</CardGrid>

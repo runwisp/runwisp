@@ -28,46 +28,63 @@ before upgrading. Semver guarantees land with 1.0.
 
 ## Start here
 
+Two ways in, depending on what you've already got running.
+
 <CardGrid>
     <LinkCard
         title="Quick start"
-        description="Install RunWisp, scaffold a runwisp.toml, and watch your first task stream live."
+        description="Nothing to migrate? Install RunWisp, scaffold a runwisp.toml, and watch your first task stream live."
         href="/getting-started/quick-start/"
     />
     <LinkCard
-        title="The Web UI tour"
-        description="Login, runs, tasks, notifications — what the embedded dashboard does."
-        href="/getting-started/web-ui-tour/"
-    />
-    <LinkCard
-        title="Replacing cron"
-        description="Already on crond? One command hands every job over — nothing rewritten, nothing fires twice."
-        href="/replacing-cron/take-over-from-cron/"
-    />
-    <LinkCard
-        title="Docker"
-        description="Run RunWisp in a container — the official image, env vars, volumes, and why your tasks need their tools baked in."
-        href="/getting-started/docker/"
+        title="Coming from cron, supervisord, or docker-compose"
+        description="Already have jobs running? Pick your source — RunWisp reads your existing config instead of making you rewrite it."
+        href="/coming-from/"
     />
 </CardGrid>
 
-## Reference
+## Learn your way around
 
 <CardGrid>
     <LinkCard
-        title="Concepts"
-        description="How scheduling, concurrency, retries, logs, and notifications fit together."
+        title="Getting Started"
+        description="Install, first run, and guided tours of the embedded Web UI and the terminal UI."
+        href="/getting-started/quick-start/"
+    />
+    <LinkCard
+        title="How it works"
+        description="Why tasks and services differ, and how scheduling, concurrency, retries, and log retention actually behave."
         href="/concepts/tasks-vs-services/"
     />
     <LinkCard
-        title="Configuration"
-        description="Every key in runwisp.toml — tasks, services, storage, defaults."
+        title="Configuration Reference"
+        description="Every key in runwisp.toml, table by table, with its default and what it does."
         href="/configuration/overview/"
     />
     <LinkCard
         title="Notifications"
-        description="The notifications model, outbound providers, routing rules, and per-task notifications."
+        description="Declare a channel, route events to it, and set per-task alerts. Slack, Discord, Telegram, email, webhooks."
         href="/notifications/model/"
+    />
+</CardGrid>
+
+## Get things done
+
+<CardGrid>
+    <LinkCard
+        title="Guides"
+        description="Worked examples to crib from — nightly backups, health checks, deploy hooks, API triggers, Docker patterns."
+        href="/recipes/backup/"
+    />
+    <LinkCard
+        title="Running in Production"
+        description="Troubleshooting, auth, surviving reboots, applying config edits, the daemon's own logs, and Prometheus metrics."
+        href="/operations/troubleshooting/"
+    />
+    <LinkCard
+        title="Reference"
+        description="The lookup surfaces: every CLI command and flag, the REST API, and a dense guide for driving RunWisp with an AI agent."
+        href="/reference/cli/"
     />
     <LinkCard
         title="API reference"
@@ -76,35 +93,14 @@ before upgrading. Semver guarantees land with 1.0.
     />
 </CardGrid>
 
-## In production
-
-<CardGrid>
-    <LinkCard
-        title="Auth"
-        description="The password, CHAP login, sessions, the local Unix socket, and how to turn auth off for local dev."
-        href="/operations/auth/"
-    />
-    <LinkCard
-        title="Autostart"
-        description="One command to survive reboots — systemd, launchd, and the WSL recipe."
-        href="/operations/autostart/"
-    />
-    <LinkCard
-        title="Logging & metrics"
-        description="The daemon's own logs, plus the Prometheus-compatible /metrics endpoint."
-        href="/operations/logging/"
-    />
-    <LinkCard
-        title="Recipes"
-        description="Worked examples — nightly backups, health checks, Slack alerts, deploy hooks."
-        href="/recipes/backup/"
-    />
-</CardGrid>
-
 ## Looking for something specific?
 
 - **A TOML field you saw in an example** — search this site or jump
   straight to [Configuration overview](/configuration/overview/).
+- **A CLI command or flag** — [CLI reference](/reference/cli/) lists every one,
+  grouped by what you're trying to do.
+- **Something's broken** — [Troubleshooting](/operations/troubleshooting/) is
+  organised by symptom, not by subsystem.
 - **A REST endpoint** — [API reference](/api/) is generated from the
   OpenAPI schema; the same schema ships as `/openapi.json` from a
   running daemon.

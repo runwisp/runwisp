@@ -8,16 +8,26 @@ import starlightOpenAPI, { openAPISidebarGroups } from "starlight-openapi";
 
 export default defineConfig({
     site: "https://docs.runwisp.com",
-    // The cron-migration guide grew into its own "Replacing cron" section, so
-    // the single old recipe URL — the one linked from the README and the
-    // daemon's own output — has to keep resolving. The take-over and held-jobs
-    // pages were later folded into the section index; their URLs are linked
-    // from the README, CHANGELOG, and generated runwisp.toml, so they redirect
-    // too.
+    // Docs URLs are shipped inside released binaries, printed by the daemon,
+    // embedded in scaffolded runwisp.toml files, and quoted in released
+    // CHANGELOG entries — so a moved page keeps its old URL resolving forever.
+    // The migration guides (cron, supervisord, docker-compose) were scattered
+    // across two top-level sections and are now one "Coming from…" group; the
+    // CLI and agent references moved into "Reference". `/configuration/scheduling`
+    // never existed — a released CHANGELOG entry links it by mistake.
+    // Every entry points at its final target: no redirect chains.
     redirects: {
-        "/recipes/migrating-from-cron": "/replacing-cron/",
-        "/replacing-cron/take-over-from-cron": "/replacing-cron/",
-        "/replacing-cron/held-jobs": "/replacing-cron/",
+        "/recipes/migrating-from-cron": "/coming-from/cron/",
+        "/replacing-cron": "/coming-from/cron/",
+        "/replacing-cron/take-over-from-cron": "/coming-from/cron/",
+        "/replacing-cron/held-jobs": "/coming-from/cron/",
+        "/replacing-cron/converting-crontabs": "/coming-from/crontabs/",
+        "/replacing-cron/cron-mapping": "/coming-from/cron-mapping/",
+        "/recipes/migrating-from-supervisord": "/coming-from/supervisord/",
+        "/recipes/migrating-from-docker-compose": "/coming-from/docker-compose/",
+        "/operations/cli": "/reference/cli/",
+        "/operations/agents": "/reference/agents/",
+        "/configuration/scheduling": "/concepts/scheduling/",
     },
     integrations: [
         starlight({
@@ -83,21 +93,25 @@ export default defineConfig({
                     ],
                 },
                 {
-                    label: "Replacing cron",
+                    // Every migration route lives here, whatever the source. Cron
+                    // used to own a top-level section while supervisord and
+                    // docker-compose were filed under Recipes, so "I'm coming
+                    // from X" had two different answers in two different places.
+                    label: "Coming from…",
                     items: [
-                        { label: "Start here", slug: "replacing-cron" },
-                        {
-                            label: "Converting crontabs",
-                            slug: "replacing-cron/converting-crontabs",
-                        },
-                        {
-                            label: "How cron maps to TOML",
-                            slug: "replacing-cron/cron-mapping",
-                        },
+                        { label: "Start here", slug: "coming-from" },
+                        { label: "From cron", slug: "coming-from/cron" },
+                        { label: "Converting crontabs", slug: "coming-from/crontabs" },
+                        { label: "How cron maps to TOML", slug: "coming-from/cron-mapping" },
+                        { label: "From supervisord", slug: "coming-from/supervisord" },
+                        { label: "From docker-compose", slug: "coming-from/docker-compose" },
                     ],
                 },
                 {
-                    label: "Concepts",
+                    // Explanation, not lookup: these pages say why and when.
+                    // Every key, default, and accepted value belongs to
+                    // "Configuration Reference" and is not restated here.
+                    label: "How it works",
                     items: [
                         { label: "Tasks vs Services", slug: "concepts/tasks-vs-services" },
                         { label: "How scheduling works", slug: "concepts/scheduling" },
@@ -156,36 +170,35 @@ export default defineConfig({
                     ],
                 },
                 {
-                    label: "Recipes",
+                    // Worked examples only. The migration guides that used to sit
+                    // here now live under "Coming from…".
+                    label: "Guides",
                     items: [
-                        {
-                            label: "Migrating from supervisord",
-                            slug: "recipes/migrating-from-supervisord",
-                        },
                         { label: "Nightly backup", slug: "recipes/backup" },
                         { label: "Health checks", slug: "recipes/healthcheck" },
                         { label: "Deploy hooks", slug: "recipes/deploy-hooks" },
-                        {
-                            label: "Trigger via API",
-                            slug: "recipes/remote-trigger",
-                        },
+                        { label: "Trigger via API", slug: "recipes/remote-trigger" },
                         { label: "Docker patterns", slug: "recipes/docker" },
-                        {
-                            label: "Migrating from docker-compose",
-                            slug: "recipes/migrating-from-docker-compose",
-                        },
                     ],
                 },
                 {
-                    label: "Operations",
+                    label: "Running in Production",
                     items: [
-                        { label: "CLI reference", slug: "operations/cli" },
-                        { label: "Driving with an AI agent", slug: "operations/agents" },
+                        { label: "Troubleshooting", slug: "operations/troubleshooting" },
                         { label: "Auth", slug: "operations/auth" },
                         { label: "Autostart", slug: "operations/autostart" },
                         { label: "Reload", slug: "operations/reload" },
                         { label: "Logging", slug: "operations/logging" },
                         { label: "Metrics", slug: "operations/metrics" },
+                    ],
+                },
+                {
+                    // The three lookup surfaces in one place. The CLI reference
+                    // is a reference doc, not an operations task.
+                    label: "Reference",
+                    items: [
+                        { label: "CLI reference", slug: "reference/cli" },
+                        { label: "Driving with an AI agent", slug: "reference/agents" },
                     ],
                 },
                 ...openAPISidebarGroups,

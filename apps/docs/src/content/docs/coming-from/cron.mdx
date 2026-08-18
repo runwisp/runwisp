@@ -1,7 +1,7 @@
 ---
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
-title: Replacing cron
+title: From cron
 description: Cron runs your jobs but tells you nothing. On Linux, one command hands every cron job to RunWisp — same schedules, same crontabs, now with history, captured output, and failure alerts.
 head:
     - tag: title
@@ -26,7 +26,7 @@ It reads your crontabs in place, installs RunWisp as a service, and retires cron
 RunWisp reads the same files. For most people that's the whole migration.
 
 On **macOS or a box without systemd**, `takeover` can't retire the system cron
-for you, so you convert instead → [Converting crontabs](/replacing-cron/converting-crontabs/).
+for you, so you convert instead → [Converting crontabs](/coming-from/crontabs/).
 
 :::caution[Linux + systemd, as root]
 Retiring cron means _masking_ it — telling systemd to refuse to start
@@ -140,7 +140,7 @@ it also comments out the source crontab line, so it's just as safe before you
 retire cron as after — promote a job while its cron daemon is still live and that
 is what stops a double-fire.
 
-→ [Graduating a job into your own config](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config)
+→ [Graduating a job into your own config](/coming-from/crontabs/#graduating-a-job-into-your-own-config)
 
 ## Flags
 
@@ -153,18 +153,18 @@ is what stops a double-fire.
 The global `--config`, `--data`, `--port`, and `--host` set the values baked into
 the unit; left alone they resolve to root's defaults. See the full set — including
 `--binary` and `--allow-skipped-cron-jobs` — in the
-[CLI reference](/operations/cli/#retire-cron).
+[CLI reference](/reference/cli/#retire-cron).
 
 ## What it doesn't do
 
 - **Takeover never rewrites your crontabs.** Reading them live and retiring cron
   leaves the files exactly as they are; RunWisp re-reads them on
   [reload](/operations/reload/). Only an explicit
-  [`promote`](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config)
+  [`promote`](/coming-from/crontabs/#graduating-a-job-into-your-own-config)
   ever edits one, and then only to comment out the single source line of the job
   you're graduating.
 - **Never converts anything.** Your jobs keep living in the crontabs until you
-  [`promote`](/replacing-cron/converting-crontabs/#graduating-a-job-into-your-own-config)
+  [`promote`](/coming-from/crontabs/#graduating-a-job-into-your-own-config)
   one.
 - **Doesn't remove cron.** Masking is reversible with `service uninstall`.
 - **`service install` won't retire cron.** `sudo runwisp service install` only
@@ -176,12 +176,12 @@ the unit; left alone they resolve to root's defaults. See the full set — inclu
 <CardGrid>
     <LinkCard
         title="Converting crontabs"
-        href="/replacing-cron/converting-crontabs/"
+        href="/coming-from/crontabs/"
         description="The macOS / no-systemd route, and how to promote a taken-over job into TOML you own."
     />
     <LinkCard
         title="How cron maps to TOML"
-        href="/replacing-cron/cron-mapping/"
+        href="/coming-from/cron-mapping/"
         description="Field-by-field reference: what a crontab line becomes, and the handful of things that need a human."
     />
 </CardGrid>

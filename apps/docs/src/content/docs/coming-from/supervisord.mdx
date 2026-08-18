@@ -1,8 +1,11 @@
 ---
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
-title: Migrating from supervisord
+title: From supervisord
 description: Convert a supervisord config into runwisp.toml with one command — every [program] becomes a supervised RunWisp service with live logs, restart policy, and failure alerts.
+head:
+    - tag: title
+      content: "Migrate from supervisord to RunWisp: convert every [program] in one command"
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -133,7 +136,7 @@ runwisp promote --all      # or move all of them
 The block moves verbatim, comments and `# TODO` notes included, and the service
 keeps running while it happens. Re-running the import later skips programs you've
 already promoted rather than tripping over the duplicate name. The
-[cron recipe](/replacing-cron/converting-crontabs/#keeping-your-own-config-separate) has
+[cron recipe](/coming-from/crontabs/#keeping-your-own-config-separate) has
 the full picture of the two-tier layout, which works identically here.
 
 ## Nothing has retired supervisord yet
@@ -262,7 +265,7 @@ processes are defined.
     />
     <LinkCard
         title="Migrating from cron"
-        href="/replacing-cron/take-over-from-cron/"
+        href="/coming-from/cron/"
         description="For the scheduled half of your crontab + supervisord setup."
     />
 </CardGrid>

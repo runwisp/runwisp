@@ -12,6 +12,11 @@ plain cron expressions, fires the matching tasks when their time comes,
 and writes a row for every firing. No dependency graph, no leader
 election — one daemon owns its tasks and that's it.
 
+:::note[Looking for keys and defaults?]
+This page explains _how the scheduler behaves_. Every scheduling key and its
+default lives in [`[tasks.*]` → Scheduling](/configuration/tasks/#scheduling).
+:::
+
 :::note[Cron-sourced tasks]
 Everything on this page applies to a task read live from a real crontab
 through [`include_cron`](/configuration/daemon/#include_cron) too, once RunWisp
@@ -21,7 +26,7 @@ semantics, so a missed tick is recorded but never re-fired (`catch_up = "skip"`)
 While a system cron daemon still owns the file, though, the task isn't scheduled
 at all, and RunWisp isn't tracking its ticks either — so nothing is recorded
 during that window, not even as missed. See
-[Held jobs](/replacing-cron/held-jobs/).
+[Held jobs](/coming-from/cron/).
 :::
 
 ## The cron field
@@ -279,21 +284,19 @@ whole task set at once.
 
 ## Reload semantics
 
-The scheduler reads `runwisp.toml` at startup, and again whenever you run
-[`runwisp reload`](/operations/reload/) (or send `SIGHUP`). Reload is the
-explicit way to pick up schedule edits without bouncing the daemon — it's
-never automatic, there's no file watcher.
+The scheduler reads `runwisp.toml` at startup and again on
+[`runwisp reload`](/operations/reload/) — never on its own, and there is no file
+watcher. What that means for schedules specifically:
 
-A parse error at startup stops the boot cold: the daemon exits before it
-ever opens its port. The safe habit is to run
-`runwisp validate --config <path>` against the new file _before_ you
-restart. (A bad edit handed to `runwisp reload` is rejected instead, and
-the running scheduler keeps its current entries.)
+- A task that disappears from the file has its schedule dropped. Its run history
+  stays put.
+- A task that appears gets its schedule added, but **no catch-up** — it didn't
+  exist in the previous config, so there are no missed ticks to make up. That
+  holds whether it arrived via reload or restart.
 
-If a task disappears from the file, its schedule is dropped but its run
-history stays put. If a new task shows up, its schedule is added — and
-catchup does **not** apply to it, whether it appeared via a restart or a
-reload, since it didn't exist in the previous config.
+Everything else about reload — the validate-first guarantee, which settings need
+a full restart, what happens to in-flight runs — is on the
+[Reload](/operations/reload/) page.
 
 ## Intentional scope
 

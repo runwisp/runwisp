@@ -13,6 +13,12 @@ through old runs, or download the whole thing as one file. The
 database keeps the metadata — exit code, how long it took, when it
 started — and the actual log bytes sit on disk, one file per run.
 
+:::note[Looking for keys and defaults?]
+This page explains _how logging, rotation, and retention behave_. The keys and
+their defaults are in [`[tasks.*]` → Logs & retention](/configuration/tasks/#logs--retention)
+and [`[storage]`](/configuration/storage/).
+:::
+
 ## Where logs live
 
 ```

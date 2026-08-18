@@ -19,7 +19,7 @@ REST API — without rewriting anything.
 The containers themselves keep running under Docker exactly as before;
 RunWisp is the supervisor and observability layer on top. For the
 worked walkthrough, see
-[Migrating from docker-compose](/recipes/migrating-from-docker-compose/) —
+[Migrating from docker-compose](/coming-from/docker-compose/) —
 this page is the key-by-key reference.
 
 ## Minimum example
@@ -171,7 +171,7 @@ my service":
 A quick way to see what a given `profiles` value exposes before wiring
 it into RunWisp is to ask Compose directly:
 
-```sh
+```bash
 docker compose --profile workers config --services
 ```
 
@@ -325,7 +325,7 @@ system-log message pointing at install docs.
 <CardGrid>
     <LinkCard
         title="Migrating from docker-compose"
-        href="/recipes/migrating-from-docker-compose/"
+        href="/coming-from/docker-compose/"
         description="The 60-second walkthrough this reference backs."
     />
     <LinkCard
