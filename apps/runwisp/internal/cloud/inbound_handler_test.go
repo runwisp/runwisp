@@ -221,6 +221,51 @@ func TestHandleExecutionDispatch_DuplicateTerminal_ReQueuesTerminalUpdate(t *tes
 	assert.Equal(t, execID, updates[0].ExecutionID)
 }
 
+// TestHandleExecutionDispatch_DuplicateReserved_ReAcksBeforeRunning covers the
+// accept→running window: a redelivered dispatch that arrives after the first is
+// accepted but before its run reaches PhaseRunning (no active-tracker entry, no
+// persisted run yet) must still be deduped by the reservation, not started twice.
+func TestHandleExecutionDispatch_DuplicateReserved_ReAcksBeforeRunning(t *testing.T) {
+	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
+	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
+	h := newDispatchInboundHandler(runner, nil, avail)
+	h.tracker = NewExecutionTracker()
+
+	script := shellScript(t, "echo hi")
+	msg := protocol.ExecutionDispatchMessage{Execution: &protocol.Execution{
+		ExecutionID: "exec-win", TaskID: "task", Script: script,
+	}}
+
+	acked := 0
+	require.NoError(t, h.HandleExecutionDispatch(context.Background(), msg, func() { acked++ }))
+	require.NoError(t, h.HandleExecutionDispatch(context.Background(), msg, func() { acked++ }))
+
+	assert.Equal(t, []string{"exec-win"}, runner.triggered,
+		"a duplicate in the accept→running window must not start a second run")
+	assert.Equal(t, 2, acked, "both dispatches must be acked")
+}
+
+// TestHandleExecutionDispatch_ReservationReleasedAfterTriggerError proves a
+// failed start frees the reservation, so a legitimate re-dispatch can retry.
+func TestHandleExecutionDispatch_ReservationReleasedAfterTriggerError(t *testing.T) {
+	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
+	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task), trigErr: errors.New("boom")}
+	h := newDispatchInboundHandler(runner, nil, avail)
+	h.tracker = NewExecutionTracker()
+
+	script := shellScript(t, "echo hi")
+	msg := protocol.ExecutionDispatchMessage{Execution: &protocol.Execution{
+		ExecutionID: "exec-retry", TaskID: "task", Script: script,
+	}}
+
+	require.Error(t, h.HandleExecutionDispatch(context.Background(), msg, nil))
+	runner.trigErr = nil
+	require.NoError(t, h.HandleExecutionDispatch(context.Background(), msg, nil))
+
+	assert.Equal(t, []string{"exec-retry", "exec-retry"}, runner.triggered,
+		"re-dispatch after a failed start must be allowed to run again")
+}
+
 // --- HandleExecutionStop ---
 
 func TestHandleExecutionStop_EmptyID(t *testing.T) {
