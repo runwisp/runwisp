@@ -72,9 +72,9 @@ func NewPinned(baseURL, password string, pins CertPinStore) *Client {
 }
 
 // NewProbe constructs a short-timeout, password-less Client for one-shot local
-// identity probes (GET /api/instance). The brief timeout keeps a launcher that
+// identity probes (GET /api/daemon/identity). The brief timeout keeps a launcher that
 // hit a port conflict from stalling when the port-holder is slow or not even an
-// HTTP server. It carries no password — /api/instance is public but local-gated.
+// HTTP server. It carries no password — /api/daemon/identity is public but local-gated.
 func NewProbe(baseURL string) *Client {
 	return &Client{
 		baseURL: NormalizeBaseURL(baseURL),
@@ -135,7 +135,7 @@ func (c *Client) Authenticate() error {
 	var authResult struct {
 		Token string `json:"token"`
 	}
-	if err := c.doJSON("POST", "/api/auth", body, &authResult); err != nil {
+	if err := c.doJSON("POST", "/api/auth/login", body, &authResult); err != nil {
 		if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrRateLimited) {
 			return err
 		}
@@ -261,7 +261,7 @@ func IsHTTPStatus(err error, code int) bool {
 }
 
 // CreateLaunchTicket requests a single-use launch ticket from the daemon.
-// The ticket can be redeemed via GET /api/auth/launch?ticket=<ticket>.
+// The ticket can be redeemed via GET /api/auth/launch-ticket?ticket=<ticket>.
 func (c *Client) CreateLaunchTicket() (string, error) {
 	var resp struct {
 		Ticket string `json:"ticket"`

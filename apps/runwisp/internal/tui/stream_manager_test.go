@@ -6,7 +6,6 @@ package tui
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -39,7 +38,7 @@ func TestStreamManager_NilClientReturnsNilCommands(t *testing.T) {
 	// Each of these short-circuits to nil when the client is nil. We exercise
 	// every method to lock in that contract.
 	assert.Nil(t, sm.StartLogStream(&model.Run{ID: "r"}, 0))
-	assert.Nil(t, sm.FetchOlderLogs("t", "r", 100, 50))
+	assert.Nil(t, sm.FetchOlderLogs("r", 100, 50))
 	assert.Nil(t, sm.FetchSystemStats())
 	assert.Nil(t, sm.FetchRunSummary())
 	assert.Nil(t, sm.FetchMetricsHistory())
@@ -68,7 +67,7 @@ func TestStreamManager_FetchOlderLogs_LimitZeroReturnsNil(t *testing.T) {
 	sm := NewStreamManager(&apiclient.Client{})
 	t.Cleanup(sm.Shutdown)
 	// beforeLine == 0 → startLine == 0 → limit == 0 → cmd is nil.
-	assert.Nil(t, sm.FetchOlderLogs("t", "r", 0, 50))
+	assert.Nil(t, sm.FetchOlderLogs("r", 0, 50))
 }
 
 func TestStreamManager_ContinueListeningSSE(t *testing.T) {
@@ -105,7 +104,7 @@ func TestStreamManager_FetchOlderLogs_RunsAndReturnsLoadedMsg(t *testing.T) {
 	sm := NewStreamManager(apiclient.New(srv.URL, ""))
 	t.Cleanup(sm.Shutdown)
 
-	cmd := sm.FetchOlderLogs("task", "run", 10, 5)
+	cmd := sm.FetchOlderLogs("run", 10, 5)
 	require.NotNil(t, cmd)
 	msg := cmd()
 	loaded, ok := msg.(uikit.LogOlderLoadedMsg)
@@ -125,7 +124,7 @@ func TestStreamManager_FetchOlderLogs_ServerErrorReturnsDebugMsg(t *testing.T) {
 	sm := NewStreamManager(apiclient.New(srv.URL, ""))
 	t.Cleanup(sm.Shutdown)
 
-	cmd := sm.FetchOlderLogs("task", "run", 10, 5)
+	cmd := sm.FetchOlderLogs("run", 10, 5)
 	require.NotNil(t, cmd)
 	msg := cmd()
 	dbg, ok := msg.(uikit.DebugLogMsg)
@@ -587,7 +586,7 @@ func newBulkServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/api/notifications/read", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
-	mux.HandleFunc("/api/info", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/api/daemon", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{}`))
 	})
@@ -599,14 +598,17 @@ func newBulkServer(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"runs":[],"total":0}`))
 	})
-	// Per-task runs (FetchTaskSummary) and log-line history share the /api/tasks/ prefix.
-	mux.HandleFunc("/api/tasks/", func(w http.ResponseWriter, r *http.Request) {
+	// Per-task runs (FetchTaskSummary) live under /api/tasks/.
+	mux.HandleFunc("/api/tasks/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if strings.Contains(r.URL.Path, "/log/line/") {
-			_, _ = w.Write([]byte(`{"frames":[["frame-1"],["frame-2"]]}`))
-			return
-		}
 		_, _ = w.Write([]byte(`{"runs":[],"total":0}`))
+	})
+	// Log-line history is addressed by run ID: /api/runs/{runId}/log/line/{n}/history.
+	// The explicit /api/runs/summary and /api/runs/bulk/* patterns win for their
+	// own paths; this subtree handler covers the rest.
+	mux.HandleFunc("/api/runs/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"frames":[["frame-1"],["frame-2"]]}`))
 	})
 	return httptest.NewServer(mux)
 }
@@ -694,7 +696,7 @@ func TestStreamManager_Reload_HappyPath(t *testing.T) {
 	assert.NoError(t, msg.Err)
 	require.NotNil(t, msg.Result)
 	assert.Equal(t, []string{"new-task"}, msg.Result.Added)
-	// The follow-up /api/info read succeeds, so fresh info rides along.
+	// The follow-up /api/daemon read succeeds, so fresh info rides along.
 	assert.NotNil(t, msg.Info)
 }
 
@@ -720,7 +722,7 @@ func TestStreamManager_FetchLineHistory_HappyPath(t *testing.T) {
 	sm := NewStreamManager(apiclient.New(srv.URL, ""))
 	t.Cleanup(sm.Shutdown)
 
-	cmd := sm.FetchLineHistory("alpha", "r1", 7, "committed text")
+	cmd := sm.FetchLineHistory("r1", 7, "committed text")
 	require.NotNil(t, cmd)
 	msg, ok := cmd().(uikit.LogLineHistoryMsg)
 	require.True(t, ok)

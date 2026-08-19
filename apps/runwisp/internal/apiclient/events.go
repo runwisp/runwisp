@@ -74,8 +74,8 @@ type StreamLogOpts struct {
 // is one of the documented kinds (line / rotated / dropped / done / err).
 // The channel is closed after a Done message, after Err, or after ctx is
 // cancelled.
-func (c *Client) StreamLogLines(ctx context.Context, taskName, runID string, opts StreamLogOpts) (<-chan LogStreamMsg, error) {
-	path := fmt.Sprintf("/api/tasks/%s/runs/%s/log/stream?from=%d", taskName, runID, opts.FromLine)
+func (c *Client) StreamLogLines(ctx context.Context, runID string, opts StreamLogOpts) (<-chan LogStreamMsg, error) {
+	path := fmt.Sprintf("/api/runs/%s/log/stream?from=%d", runID, opts.FromLine)
 	if opts.ReplayLimit > 0 {
 		path += fmt.Sprintf("&replayLimit=%d", opts.ReplayLimit)
 	}

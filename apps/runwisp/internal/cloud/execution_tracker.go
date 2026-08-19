@@ -127,11 +127,11 @@ var terminalReasonMap = map[model.EndReason]protocol.ExecutionStatus{
 }
 
 func mapRunToExecutionUpdate(run *model.Run) *protocol.ExecutionUpdateMessage {
-	if run == nil || run.ExternalExecutionID == nil {
+	if run == nil || run.ExecutionID == nil {
 		return nil
 	}
 
-	executionID := *run.ExternalExecutionID
+	executionID := *run.ExecutionID
 	if run.Status == model.PhaseRunning {
 		return ptr(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusRunning, nil, run.StartedAt, nil))
 	}

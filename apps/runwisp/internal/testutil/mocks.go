@@ -39,8 +39,8 @@ func (m *MockRunRepository) GetRun(ctx context.Context, id string) (*model.Run, 
 	return args.Get(0).(*model.Run), args.Error(1)
 }
 
-func (m *MockRunRepository) GetRunByExternalExecutionID(ctx context.Context, externalExecutionID string) (*model.Run, error) {
-	args := m.Called(ctx, externalExecutionID)
+func (m *MockRunRepository) GetRunByExecutionID(ctx context.Context, executionID string) (*model.Run, error) {
+	args := m.Called(ctx, executionID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

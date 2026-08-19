@@ -492,7 +492,7 @@ func TestApplyDefaults(t *testing.T) {
 				MaxConcurrent: 5,
 				OnOverlap:     model.PolicySkip,
 				LogMaxSize:    50 * 1024 * 1024,
-				LogOnFull:     "kill_task",
+				LogOnFull:     "kill",
 				KeepRuns:      intPtr(5),
 			},
 		},
@@ -518,7 +518,7 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, model.PolicySkip, overridden.OnOverlap)
 	assert.Equal(t, 10*time.Minute, overridden.Timeout)
 	assert.Equal(t, int64(50*1024*1024), overridden.LogMaxSize)
-	assert.Equal(t, "kill_task", overridden.LogOnFull)
+	assert.Equal(t, "kill", overridden.LogOnFull)
 	assert.Equal(t, 5, *overridden.KeepRuns)
 	assert.Equal(t, 14*24*time.Hour, overridden.KeepFor)
 

@@ -97,7 +97,7 @@ func (r *fakeTaskRunner) GetTask(string) (*model.Task, bool)                    
 func (r *fakeTaskRunner) ListServiceTasks() []*model.Task                       { return nil }
 func (r *fakeTaskRunner) UpsertTask(*model.Task)                                {}
 func (r *fakeTaskRunner) TerminateRun(string) error                             { return nil }
-func (r *fakeTaskRunner) TerminateRunByExternalExecutionID(string) error        { return nil }
+func (r *fakeTaskRunner) TerminateRunByExecutionID(string) error                { return nil }
 func (r *fakeTaskRunner) RestartServiceInstances(string) error                  { return nil }
 func (r *fakeTaskRunner) StopService(string) error                              { return nil }
 func (r *fakeTaskRunner) StartServiceInstances(string, model.TriggeredBy) error { return nil }

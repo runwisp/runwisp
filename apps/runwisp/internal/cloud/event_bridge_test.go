@@ -84,11 +84,11 @@ func TestEventBridge_HandleRunEvent_RunningRun(t *testing.T) {
 	extID := "exec-running"
 	now := time.Now()
 	run := &model.Run{
-		ID:                  "r1",
-		TaskName:            "t1",
-		Status:              model.PhaseRunning,
-		ExternalExecutionID: &extID,
-		StartedAt:           &now,
+		ID:          "r1",
+		TaskName:    "t1",
+		Status:      model.PhaseRunning,
+		ExecutionID: &extID,
+		StartedAt:   &now,
 	}
 	b.handleRunEvent(context.Background(), events.Event{Data: events.RunEvent{Run: run}})
 	assert.True(t, b.tracker.HasActive())
@@ -106,11 +106,11 @@ func TestEventBridge_HandleRunEvent_TerminalRun(t *testing.T) {
 	extID := "exec-done"
 	reason := model.ReasonSuccess
 	run := &model.Run{
-		ID:                  "r1",
-		TaskName:            "t1",
-		Status:              model.PhaseEnded,
-		EndReason:           &reason,
-		ExternalExecutionID: &extID,
+		ID:          "r1",
+		TaskName:    "t1",
+		Status:      model.PhaseEnded,
+		EndReason:   &reason,
+		ExecutionID: &extID,
 	}
 	b.handleRunEvent(context.Background(), events.Event{Data: events.RunEvent{Run: run}})
 	assert.False(t, b.tracker.HasActive())
@@ -140,21 +140,21 @@ func TestEventBridge_Start_DispatchesPublishedEvents(t *testing.T) {
 	now := time.Now()
 	runStarted := &model.Run{
 		ID: "r1", TaskName: "t", Status: model.PhaseRunning,
-		ExternalExecutionID: &extID, StartedAt: &now,
+		ExecutionID: &extID, StartedAt: &now,
 	}
 	bus.Publish(events.EventRunStarted, events.RunEvent{Run: runStarted})
 
 	reason := model.ReasonSuccess
 	runDone := &model.Run{
 		ID: "r1", TaskName: "t", Status: model.PhaseEnded,
-		EndReason: &reason, ExternalExecutionID: &extID,
+		EndReason: &reason, ExecutionID: &extID,
 	}
 	bus.Publish(events.EventRunCompleted, events.RunEvent{Run: runDone})
 
 	failReason := model.ReasonFailed
 	runFail := &model.Run{
 		ID: "r2", TaskName: "t", Status: model.PhaseEnded,
-		EndReason: &failReason, ExternalExecutionID: &extID,
+		EndReason: &failReason, ExecutionID: &extID,
 	}
 	bus.Publish(events.EventRunFailed, events.RunEvent{Run: runFail})
 
@@ -165,9 +165,9 @@ func TestEventBridge_Start_DispatchesPublishedEvents(t *testing.T) {
 	logExtID := "exec-log"
 	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: logExtID})
 	bus.Publish(events.EventLogLine, events.LogLineEvent{
-		ExternalExecutionID: logExtID,
-		LineNum:             1,
-		Text:                "hi",
+		ExecutionID: logExtID,
+		LineNum:     1,
+		Text:        "hi",
 	})
 
 	assert.True(t, logLineSent)
@@ -198,7 +198,7 @@ func TestEventBridge_HandleRunEvent_EmitsServiceStatusByBareName(t *testing.T) {
 		func(msg any) error { sent = append(sent, msg); return nil },
 	)
 
-	run := &model.Run{TaskName: "heartbeat"} // no ExternalExecutionID
+	run := &model.Run{TaskName: "heartbeat"} // no ExecutionID
 	b.handleRunEvent(context.Background(), events.Event{Data: events.RunEvent{Run: run}})
 
 	require.Len(t, sent, 1)
@@ -267,7 +267,7 @@ func TestEventBridge_FinalizeRun_NilUploaderQueuesUpdateUnchanged(t *testing.T) 
 	reason := model.ReasonSuccess
 	run := &model.Run{
 		ID: "r", TaskName: "t", Status: model.PhaseEnded,
-		EndReason: &reason, ExternalExecutionID: &extID,
+		EndReason: &reason, ExecutionID: &extID,
 	}
 	update := protocol.ExecutionUpdateMessage{}
 	b.finalizeRun(context.Background(), run, update, extID)
@@ -287,7 +287,7 @@ func TestEventBridge_HandleLogLineEvent_IgnoresWrongData(t *testing.T) {
 
 func TestEventBridge_HandleLogLineEvent_IgnoresMissingExecID(t *testing.T) {
 	b := newTestBridge(newTestInboundHandler())
-	b.handleLogLineEvent(events.Event{Data: events.LogLineEvent{ExternalExecutionID: ""}})
+	b.handleLogLineEvent(events.Event{Data: events.LogLineEvent{ExecutionID: ""}})
 }
 
 func TestEventBridge_HandleLogLineEvent_IgnoresNonListenerExec(t *testing.T) {
@@ -299,7 +299,7 @@ func TestEventBridge_HandleLogLineEvent_IgnoresNonListenerExec(t *testing.T) {
 		func(any) error { sent++; return nil },
 	)
 	// No HandleLogListen — exec is not registered.
-	b.handleLogLineEvent(events.Event{Data: events.LogLineEvent{ExternalExecutionID: "x", LineNum: 1}})
+	b.handleLogLineEvent(events.Event{Data: events.LogLineEvent{ExecutionID: "x", LineNum: 1}})
 	assert.Equal(t, 0, sent)
 }
 
@@ -485,9 +485,9 @@ func TestEventBridge_HandleLogLineEvent_IsListener(t *testing.T) {
 	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: execID})
 	b.handleLogLineEvent(events.Event{
 		Data: events.LogLineEvent{
-			ExternalExecutionID: execID,
-			LineNum:             1,
-			Text:                "hello",
+			ExecutionID: execID,
+			LineNum:     1,
+			Text:        "hello",
 		},
 	})
 	assert.Equal(t, 1, sent)

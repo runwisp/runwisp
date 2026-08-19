@@ -28,11 +28,11 @@
 #      loaded zero value. A future ExecutionStatus sent to old cloud must not
 #      silently decode as "running" (iota 0) and strand the row.
 #
-#   5. The `v` envelope integer is a RESERVED protocol major-version hook. It
-#      is present on every message and currently always 2 (ProtocolVersion).
-#      Receivers IGNORE values they don't recognize — do not repurpose `v` as a
-#      feature flag; feature negotiation is the `X-Runner-Protocol-Features`
-#      header (rule 3).
+#   5. The `protocolVersion` envelope integer is a RESERVED protocol
+#      major-version hook. It is present on every message and currently always 2
+#      (ProtocolVersion). Receivers IGNORE values they don't recognize — do not
+#      repurpose it as a feature flag; feature negotiation is the
+#      `X-Runner-Protocol-Features` header (rule 3).
 #
 #   6. Regenerate Go/TS types from this file; never hand-edit generated output.
 #
@@ -197,7 +197,7 @@ components:
     errorDaemonToCloud:
       name: error
       payload:
-        $ref: "#/components/schemas/DaemonProtocolErrorMessage"
+        $ref: "#/components/schemas/ProtocolErrorMessage"
 
   schemas:
     ExecutionStatus:
@@ -210,22 +210,13 @@ components:
         - stopped
         - timeout
 
-    TriggerType:
-      $id: TriggerType
-      type: string
-      enum:
-        - manual
-        - schedule
-        - success
-        - failure
-
     AuthResultMessage:
       type: object
       properties:
         type:
           type: string
           const: auth:result
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -246,7 +237,7 @@ components:
         type:
           type: string
           const: pong
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -264,7 +255,7 @@ components:
         type:
           type: string
           const: execution:dispatch
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -286,8 +277,6 @@ components:
           type: string
         priority:
           type: integer
-        triggeredBy:
-          $ref: "#/components/schemas/TriggerType"
         inputValues:
           type: object
           additionalProperties:
@@ -302,27 +291,24 @@ components:
           type: string
           description: |
             Signed PUT URL the daemon uses to upload the gzipped terminal log
-            archive. Empty string means archival is disabled for this dispatch
-            (transient cloud-side issuance error); the daemon keeps the local
-            file and skips upload.
+            archive. Optional: omitted (or empty) means archival is disabled for
+            this dispatch (transient cloud-side issuance error); the daemon keeps
+            the local file and skips upload.
         logPath:
           type: string
           description: |
             S3 object key the daemon must echo back as `logPath` on the
             terminal `execution:update` message after a successful upload.
-            Format `{orgId}/{yyyy-mm}/{executionId}.log.gz`. Empty when
-            `logUploadUrl` is empty.
+            Format `{orgId}/{yyyy-mm}/{executionId}.log.gz`. Optional: omitted
+            (or empty) whenever `logUploadUrl` is.
       required:
         - taskId
         - taskName
         - executionId
         - priority
-        - triggeredBy
         - inputValues
         - script
         - timeout
-        - logUploadUrl
-        - logPath
 
     ExecutionTaskConfig:
       type: object
@@ -356,7 +342,7 @@ components:
           enum:
             - drop_new
             - drop_old
-            - kill_task
+            - kill
           description: What the daemon does when log output exceeds logMaxSize.
 
     ExecutionStopMessage:
@@ -365,7 +351,7 @@ components:
         type:
           type: string
           const: execution:stop
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -422,7 +408,7 @@ components:
         type:
           type: string
           const: service:apply
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -486,7 +472,7 @@ components:
         type:
           type: string
           const: service:control
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -517,7 +503,7 @@ components:
         type:
           type: string
           const: service:remove
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -569,7 +555,7 @@ components:
         type:
           type: string
           const: service:status
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -604,7 +590,7 @@ components:
         type:
           type: string
           const: log:replayRequest
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -640,7 +626,7 @@ components:
         type:
           type: string
           const: log:searchRequest
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -681,7 +667,7 @@ components:
         type:
           type: string
           const: log:listen
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -698,7 +684,7 @@ components:
         type:
           type: string
           const: log:stop
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -719,7 +705,7 @@ components:
         type:
           type: string
           const: agent:restart
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -729,11 +715,15 @@ components:
 
     ProtocolErrorMessage:
       type: object
+      description: |
+        The `error` frame, sent in both directions with an identical shape:
+        cloud→daemon and daemon→cloud. Receivers treat unrecognized codes as
+        connection-scoped diagnostics (log + metric, never a state flip).
       properties:
         type:
           type: string
           const: error
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -752,8 +742,9 @@ components:
         executionId:
           type: string
           description: |
-            Execution this error pertains to, when applicable. Empty for
-            connection-scoped errors.
+            Execution this error pertains to, when applicable. Empty (old peers
+            always omit it) means the error is connection-scoped and must not
+            flip any execution's state.
       required:
         - type
         - code
@@ -765,7 +756,7 @@ components:
         type:
           type: string
           const: ping
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -836,7 +827,7 @@ components:
         type:
           type: string
           const: execution:ack
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -853,7 +844,7 @@ components:
         type:
           type: string
           const: "execution:update"
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -927,7 +918,7 @@ components:
         type:
           type: string
           const: log:line
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -964,7 +955,7 @@ components:
         type:
           type: string
           const: log:replayChunk
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -997,7 +988,7 @@ components:
         type:
           type: string
           const: log:searchChunk
-        v:
+        protocolVersion:
           type: integer
         sentAt:
           type: string
@@ -1024,37 +1015,3 @@ components:
         - executionId
         - hits
         - exhausted
-
-    DaemonProtocolErrorMessage:
-      type: object
-      properties:
-        type:
-          type: string
-          const: error
-        v:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        code:
-          type: string
-          description: |
-            Canonical values: AUTH_ERROR, VALIDATION_ERROR, CONFLICT_ERROR,
-            TRANSIENT_ERROR, UNKNOWN_EXECUTION. Kept as a free-form string on
-            the wire so old daemons emitting other codes still decode; the
-            cloud treats unrecognized codes as connection-scoped diagnostics
-            (log + metric, never a state flip).
-        message:
-          type: string
-        requestId:
-          type: string
-        executionId:
-          type: string
-          description: |
-            Execution this error pertains to, when applicable. Empty (old
-            daemons always omit it) means the error is connection-scoped and
-            must not flip any execution's state.
-      required:
-        - type
-        - code
-        - message

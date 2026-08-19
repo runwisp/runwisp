@@ -55,7 +55,7 @@ func TestRunStatus_HealthyWithSystem(t *testing.T) {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/daemon", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(model.DaemonInfo{Port: 9477})
 	})
 	mux.HandleFunc("/api/system", func(w http.ResponseWriter, r *http.Request) {
@@ -78,7 +78,7 @@ func TestRunStatus_HealthOnlySystemMissing(t *testing.T) {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/daemon", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(model.DaemonInfo{Port: 1234})
 	})
 	// /api/system unhandled → 404, so the stats block is skipped.
@@ -96,7 +96,7 @@ func TestRunStatus_HealthOnlySystemBadJSON(t *testing.T) {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/daemon", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(model.DaemonInfo{Port: 1234})
 	})
 	mux.HandleFunc("/api/system", func(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +114,7 @@ func TestRunStatus_ConfigStaleWarns(t *testing.T) {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/daemon", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(model.DaemonInfo{Port: 9477, ConfigStale: true})
 	})
 	f := serveStatusSocket(t, mux)

@@ -140,7 +140,7 @@
     async function handleStop(runId: string) {
         if (!taskName) return;
         try {
-            await tasksApi.stopRun(taskName, runId);
+            await tasksApi.stopRun(runId);
             toast.success(`Stopped run`);
         } catch {
             toast.error(`Failed to stop run`);

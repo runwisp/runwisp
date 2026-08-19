@@ -95,11 +95,10 @@ func (sm *StreamManager) StartLogStream(run *model.Run, fromLine int64) tea.Cmd 
 	sm.logCancel = cancel
 
 	runID := run.ID
-	taskName := run.TaskName
 	client := sm.client
 
 	return func() tea.Msg {
-		ch, err := client.StreamLogLines(ctx, taskName, runID, apiclient.StreamLogOpts{FromLine: fromLine})
+		ch, err := client.StreamLogLines(ctx, runID, apiclient.StreamLogOpts{FromLine: fromLine})
 		if err != nil {
 			return uikit.LogDoneMsg{RunID: runID}
 		}
@@ -116,10 +115,9 @@ func (sm *StreamManager) FetchLogTail(run *model.Run, tail int64) tea.Cmd {
 		return nil
 	}
 	client := sm.client
-	taskName := run.TaskName
 	runID := run.ID
 	return func() tea.Msg {
-		page, err := client.GetLogPage(taskName, runID, -tail, tail)
+		page, err := client.GetLogPage(runID, -tail, tail)
 		if err != nil {
 			// Degrade gracefully: an empty tail makes the handler open the live
 			// stream at the tail anchor, i.e. the old line-by-line backfill.
@@ -138,7 +136,7 @@ func (sm *StreamManager) FetchLogTail(run *model.Run, tail int64) tea.Cmd {
 // via the JSON page endpoint. beforeLine is the absolute line number of the
 // first currently-loaded entry; the returned page covers
 // [max(0, beforeLine-count), beforeLine).
-func (sm *StreamManager) FetchOlderLogs(taskName, runID string, beforeLine, count int64) tea.Cmd {
+func (sm *StreamManager) FetchOlderLogs(runID string, beforeLine, count int64) tea.Cmd {
 	if sm.client == nil {
 		return nil
 	}
@@ -151,7 +149,7 @@ func (sm *StreamManager) FetchOlderLogs(taskName, runID string, beforeLine, coun
 	}
 
 	return func() tea.Msg {
-		page, err := client.GetLogPage(taskName, runID, startLine, limit)
+		page, err := client.GetLogPage(runID, startLine, limit)
 		if err != nil {
 			return uikit.DebugLogMsg{Message: "Failed to load older logs: " + err.Error()}
 		}
@@ -171,13 +169,13 @@ func (sm *StreamManager) FetchOlderLogs(taskName, runID string, beforeLine, coun
 // FetchLineHistory loads the prior whole-region frames an anchor line animated
 // through. committed is the line's final on-disk text, passed through so the
 // viewer can label where the animation settled.
-func (sm *StreamManager) FetchLineHistory(taskName, runID string, lineNum int64, committed string) tea.Cmd {
+func (sm *StreamManager) FetchLineHistory(runID string, lineNum int64, committed string) tea.Cmd {
 	if sm.client == nil {
 		return nil
 	}
 	client := sm.client
 	return func() tea.Msg {
-		frames, err := client.GetLogLineHistory(taskName, runID, lineNum)
+		frames, err := client.GetLogLineHistory(runID, lineNum)
 		return uikit.LogLineHistoryMsg{
 			RunID:     runID,
 			Line:      lineNum,
@@ -238,7 +236,7 @@ func (sm *StreamManager) FetchSystemStats() tea.Cmd {
 	}
 }
 
-// FetchDaemonInfo returns a command that re-reads /api/info. The daemon
+// FetchDaemonInfo returns a command that re-reads /api/daemon. The daemon
 // recomputes config_stale per request, so polling this keeps the
 // "restart to apply" notice live.
 func (sm *StreamManager) FetchDaemonInfo() tea.Cmd {
@@ -253,7 +251,7 @@ func (sm *StreamManager) FetchDaemonInfo() tea.Cmd {
 }
 
 // Reload triggers an explicit config reload (POST /api/reload). On success it
-// follows up with a fresh /api/info read so the caller can rebuild the sidebar
+// follows up with a fresh /api/daemon read so the caller can rebuild the sidebar
 // and clear the config-stale notice in one step. A reload error (e.g. a
 // restart-only setting changed) is reported as-is — the running task set is
 // untouched by the daemon.

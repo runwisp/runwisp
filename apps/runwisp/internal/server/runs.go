@@ -5,7 +5,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"time"
 
@@ -32,9 +31,9 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	protectedAPI := humachi.New(r, cfg)
 
 	huma.Register(protectedAPI, huma.Operation{
-		OperationID: "getInfo",
+		OperationID: "getDaemonInfo",
 		Method:      http.MethodGet,
-		Path:        "/api/info",
+		Path:        "/api/daemon",
 		Summary:     "Get daemon info",
 		Tags:        []string{"System"},
 	}, srv.humaGetInfo)
@@ -136,7 +135,7 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	huma.Register(protectedAPI, huma.Operation{
 		OperationID:   "deleteRun",
 		Method:        http.MethodDelete,
-		Path:          "/api/tasks/{taskName}/runs/{runId}",
+		Path:          "/api/runs/{runId}",
 		Summary:       "Delete a run",
 		Tags:          []string{"Runs"},
 		DefaultStatus: http.StatusNoContent,
@@ -145,7 +144,7 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	huma.Register(protectedAPI, huma.Operation{
 		OperationID:   "stopRun",
 		Method:        http.MethodPost,
-		Path:          "/api/tasks/{taskName}/runs/{runId}/stop",
+		Path:          "/api/runs/{runId}/stop",
 		Summary:       "Stop a running task",
 		Tags:          []string{"Runs"},
 		DefaultStatus: http.StatusNoContent,
@@ -187,7 +186,7 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	huma.Register(protectedAPI, huma.Operation{
 		OperationID: "getLogPage",
 		Method:      http.MethodGet,
-		Path:        "/api/tasks/{taskName}/runs/{runId}/log",
+		Path:        "/api/runs/{runId}/log",
 		Summary:     "Get a page of log lines",
 		Description: "Returns a JSON page of absolute-line-numbered log entries. Use `from` (negative for tail) and `limit` to window the result.",
 		Tags:        []string{"Logs"},
@@ -196,7 +195,7 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	huma.Register(protectedAPI, huma.Operation{
 		OperationID: "getLogRaw",
 		Method:      http.MethodGet,
-		Path:        "/api/tasks/{taskName}/runs/{runId}/log/raw",
+		Path:        "/api/runs/{runId}/log/raw",
 		Summary:     "Download the run's full log as text/plain",
 		Description: "Concatenates the rotated-away segment (`.log.prev`) and current segment so a single download captures the operator-visible byte stream.",
 		Tags:        []string{"Logs"},
@@ -205,7 +204,7 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	huma.Register(protectedAPI, huma.Operation{
 		OperationID: "getLogLineHistory",
 		Method:      http.MethodGet,
-		Path:        "/api/tasks/{taskName}/runs/{runId}/log/line/{lineNum}/history",
+		Path:        "/api/runs/{runId}/log/line/{lineNumber}/history",
 		Summary:     "Get the frame history of a settled progress bar / redraw line",
 		Description: "Returns the prior whole-region frames a progress bar or multi-line redraw passed through before settling into the committed line. Empty unless the line's `frame_count` is non-zero.",
 		Tags:        []string{"Logs"},
@@ -298,38 +297,18 @@ func (srv *Server) humaGetRun(ctx context.Context, input *RunIDInput) (*RunOutpu
 	return &RunOutput{Body: *run}, nil
 }
 
-func (srv *Server) humaDeleteRun(ctx context.Context, input *TaskRunInput) (*struct{}, error) {
-	if err := srv.requireRunInTask(ctx, input.TaskName, input.RunID); err != nil {
-		return nil, err
-	}
+func (srv *Server) humaDeleteRun(ctx context.Context, input *RunIDInput) (*struct{}, error) {
 	if err := srv.runService.DeleteRun(ctx, input.RunID); err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to delete run")
 	}
 	return nil, nil
 }
 
-func (srv *Server) humaStopRun(ctx context.Context, input *TaskRunInput) (*struct{}, error) {
-	if err := srv.requireRunInTask(ctx, input.TaskName, input.RunID); err != nil {
-		return nil, err
-	}
+func (srv *Server) humaStopRun(ctx context.Context, input *RunIDInput) (*struct{}, error) {
 	if err := srv.runService.StopRun(ctx, input.RunID); err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to stop run")
 	}
 	return nil, nil
-}
-
-// requireRunInTask rejects a run that does not belong to the taskName in the
-// URL, so DELETE/POST /api/tasks/{taskName}/runs/{runId} cannot act on another
-// task's run just because the run ID is known. Mirrors the 400/404 contract the
-// per-run log endpoints use.
-func (srv *Server) requireRunInTask(ctx context.Context, taskName, runID string) error {
-	if _, err := srv.getRunForTask(ctx, taskName, runID); err != nil {
-		if errors.Is(err, errInvalidRunID) {
-			return huma.Error400BadRequest("Invalid run ID")
-		}
-		return huma.Error404NotFound("Run not found")
-	}
-	return nil
 }
 
 func (srv *Server) humaBulkDeleteRuns(ctx context.Context, input *BulkRunSelectorInput) (*BulkAffectedOutput, error) {

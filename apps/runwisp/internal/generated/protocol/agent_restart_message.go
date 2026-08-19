@@ -6,7 +6,7 @@
 package protocol
 
 type AgentRestartMessage struct {
-	Type   string `json:"type" binding:"required"`
-	V      int    `json:"v,omitempty"`
-	SentAt string `json:"sentAt,omitempty"`
+	Type            string `json:"type" binding:"required"`
+	ProtocolVersion int    `json:"protocolVersion,omitempty"`
+	SentAt          string `json:"sentAt,omitempty"`
 }

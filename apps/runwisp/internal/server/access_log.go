@@ -29,7 +29,7 @@ func (slogAccessLogger) NewLogEntry(r *http.Request) middleware.LogEntry {
 		ctx:    r.Context(),
 		method: r.Method,
 		// Path only, never RequestURI: the query string can carry single-use
-		// bearer credentials (e.g. /api/auth/launch?ticket=…) that must not be
+		// bearer credentials (e.g. /api/auth/launch-ticket?ticket=…) that must not be
 		// persisted to the access log, which is itself streamable over the
 		// authenticated daemon-log endpoint.
 		path:   r.URL.Path,

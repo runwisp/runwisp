@@ -186,7 +186,7 @@ func buildStartupInfoFromDaemon(info *model.DaemonInfo) uikit.StartupInfo {
 	si.AuthDisabled = info.AuthDisabled
 	si.ConfigStale = info.ConfigStale
 	// The attach path used to drop these, so the header showed nothing until the
-	// first /api/info poll landed — for findings that have no runs anywhere else in
+	// first /api/daemon poll landed — for findings that have no runs anywhere else in
 	// the TUI, that meant a blank header on exactly the boot they mattered.
 	si.ConfigWarnings = info.ConfigWarnings
 	si.Timezone = info.ResolvedTimezone

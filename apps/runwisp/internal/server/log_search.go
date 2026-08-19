@@ -183,11 +183,16 @@ func indexOfRun(runs []logsearch.RunRef, id string) int {
 // offset, so the cursor can advance the window past the newest page.
 func (srv *Server) resolveSearchRuns(ctx context.Context, input *LogSearchInput, offset int) ([]logsearch.RunRef, error) {
 	if input.RunID != "" {
-		run, err := srv.getRunForTask(ctx, input.TaskName, input.RunID)
+		run, err := srv.getRunByID(ctx, input.RunID)
 		if err != nil {
 			if errors.Is(err, errInvalidRunID) {
 				return nil, huma.Error400BadRequest("Invalid run ID")
 			}
+			return nil, huma.Error404NotFound("Run not found")
+		}
+		// This search is scoped to the task in the URL, so a run_id belonging
+		// to a different task is not found here.
+		if run.TaskName != input.TaskName {
 			return nil, huma.Error404NotFound("Run not found")
 		}
 		return []logsearch.RunRef{{

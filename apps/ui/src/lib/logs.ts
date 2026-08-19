@@ -197,7 +197,7 @@ export function createLogStreamer(taskName: string) {
         };
 
         const startFrom = initialState?.fromLine ?? -1000;
-        const base = `/api/tasks/${taskName}/runs/${runId}/log/stream`;
+        const base = `/api/runs/${runId}/log/stream`;
         const connection = connectSSE({
             path: () => {
                 const from = state.lastReceivedId >= 0 ? state.lastReceivedId + 1 : startFrom;

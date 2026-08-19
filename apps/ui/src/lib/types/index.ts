@@ -37,7 +37,7 @@ const endReasonSchema = z.enum(END_REASONS);
 const runSchema = z
     .object({
         id: z.string(),
-        externalExecutionId: z.string().optional(),
+        executionId: z.string().optional(),
         taskName: z.string(),
         status: runPhaseSchema,
         endReason: endReasonSchema.optional(),

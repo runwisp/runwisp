@@ -21,22 +21,22 @@ and [`[[notification_route]]`](/notifications/routes/).
 ```toml
 [notify]
 global_notifiers  = ["inapp"]   # default — bell on
-# default_timeout = "30s"       # unset — uses the built-in 5-min retry budget
+# retry_budget = "30s"       # unset — uses the built-in 5-min retry budget
 keep_notifications      = 1024        # default
 keep_for  = "90d"       # default
 coalesce_window   = "1h"        # default
-occurrence_ring   = 10          # default
+keep_occurrences   = 10          # default
 coalesce_outbound = true        # default
 ```
 
 | Key                  | Default     | What it does                                                                                                                    |
 | -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `global_notifiers`   | `["inapp"]` | Channels added to every per-task notify list (deduplicated), and catch-all for tasks without one. Set `[]` to silence the bell. |
-| `default_timeout`    | _(unset)_   | Caps the total retry budget for one outbound delivery. Unset = 5 minutes.                                                       |
+| `retry_budget`       | _(unset)_   | Caps the total retry budget for one outbound delivery. Unset = 5 minutes.                                                       |
 | `keep_notifications` | `1024`      | Cap on bell rows kept in SQLite. Older rows are pruned in one pass.                                                             |
 | `keep_for`           | `90d`       | Maximum age of bell rows. Accepts `d` and `w` units.                                                                            |
 | `coalesce_window`    | `1h`        | Window during which repeats with the same kind for the same task update one row instead of writing a new one.                   |
-| `occurrence_ring`    | `10`        | Recent timestamps kept on each coalesced row.                                                                                   |
+| `keep_occurrences`   | `10`        | Recent timestamps kept on each coalesced row.                                                                                   |
 | `coalesce_outbound`  | `true`      | Coalesce outbound deliveries too, not just bell rows. Set `false` to send one message per event.                                |
 
 Set both `keep_notifications` and `keep_for` and they both apply at
@@ -60,18 +60,18 @@ agent, a CI shard — and nobody's ever looking at the Web UI. Reach for a
 non-empty list when you want every failure funneled to one channel
 without sprinkling per-task fields all over the file.
 
-## Retry budget — `default_timeout`
+## Retry budget — `retry_budget`
 
 When an outbound delivery hits a transient failure, it retries with
-exponential backoff. `default_timeout` is the cap on how much
+exponential backoff. `retry_budget` is the cap on how much
 wall-clock time that whole retry loop is allowed to burn.
 
 Leave it unset and the budget is **5 minutes** — a delivery can keep
-trying for that long. Set `default_timeout = "30s"` and you cut it to
+trying for that long. Set `retry_budget = "30s"` and you cut it to
 half a minute, so a hard outage shows up in the bell that much sooner.
 
 The per-attempt HTTP timeout is a separate thing entirely. Set
-`default_timeout` shorter than a single attempt and you've effectively
+`retry_budget` shorter than a single attempt and you've effectively
 asked for one try and no retries.
 
 ## Bell history
@@ -94,7 +94,7 @@ minute leaves you one bell row that ticks upward, not 60 separate ones.
 
 - `coalesce_window` — within this window, repeats update the same row:
   `count` climbs and the latest timestamp is recorded.
-- `occurrence_ring` — how many recent timestamps to keep on the row. The
+- `keep_occurrences` — how many recent timestamps to keep on the row. The
   UI uses these to draw a sparkline.
 
 Outbound channels coalesce on the same key by default too
@@ -114,11 +114,11 @@ surface quickly:
 ```toml
 [notify]
 global_notifiers  = ["inapp"]   # keep the bell
-default_timeout   = "30s"       # cap retry budget at 30s
+retry_budget   = "30s"       # cap retry budget at 30s
 keep_notifications      = 2000
 keep_for  = "60d"
 coalesce_window   = "30m"
-occurrence_ring   = 20
+keep_occurrences   = 20
 ```
 
 A headless build agent that sends everything off-host:

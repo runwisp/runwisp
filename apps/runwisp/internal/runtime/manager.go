@@ -42,10 +42,10 @@ var errShuttingDown = errors.New("task manager is shutting down")
 
 // TriggerRunOptions customise run creation for non-local invocations.
 type TriggerRunOptions struct {
-	TriggeredBy         model.TriggeredBy
-	ExternalExecutionID string
-	RetryAttempt        int
-	RetryOfRunID        *string
+	TriggeredBy  model.TriggeredBy
+	ExecutionID  string
+	RetryAttempt int
+	RetryOfRunID *string
 	// RestartAttempt is the number of consecutive restarts that precede this run
 	// in a non-service restart chain. It escalates the restart backoff the same
 	// way the supervisor's attempt counter does for services; without it every
@@ -409,10 +409,10 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		triggeredBy = model.TriggeredByService
 	}
 
-	var externalExecutionID *string
-	if options.ExternalExecutionID != "" {
-		externalIDCopy := options.ExternalExecutionID
-		externalExecutionID = &externalIDCopy
+	var executionID *string
+	if options.ExecutionID != "" {
+		externalIDCopy := options.ExecutionID
+		executionID = &externalIDCopy
 	}
 
 	// Resolve declared parameters against supplied values before any run row is
@@ -433,16 +433,16 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 			return nil, err
 		}
 		run := &model.Run{
-			ID:                  ulid.Make().String(),
-			ExternalExecutionID: externalExecutionID,
-			TaskName:            taskName,
-			Status:              model.PhasePending,
-			TriggeredBy:         triggeredBy,
-			CreatedAt:           m.clock(),
-			RetryAttempt:        options.RetryAttempt,
-			RetryOfRunID:        options.RetryOfRunID,
-			InstanceIndex:       idx,
-			Params:              resolvedParams,
+			ID:            ulid.Make().String(),
+			ExecutionID:   executionID,
+			TaskName:      taskName,
+			Status:        model.PhasePending,
+			TriggeredBy:   triggeredBy,
+			CreatedAt:     m.clock(),
+			RetryAttempt:  options.RetryAttempt,
+			RetryOfRunID:  options.RetryOfRunID,
+			InstanceIndex: idx,
+			Params:        resolvedParams,
 		}
 		m.persistence.PersistNew(run)
 		m.publishRun(events.EventRunCreated, run)
@@ -463,15 +463,15 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	}
 
 	run := &model.Run{
-		ID:                  ulid.Make().String(),
-		ExternalExecutionID: externalExecutionID,
-		TaskName:            taskName,
-		Status:              model.PhasePending,
-		TriggeredBy:         triggeredBy,
-		CreatedAt:           createdAt,
-		RetryAttempt:        options.RetryAttempt,
-		RetryOfRunID:        options.RetryOfRunID,
-		Params:              resolvedParams,
+		ID:           ulid.Make().String(),
+		ExecutionID:  executionID,
+		TaskName:     taskName,
+		Status:       model.PhasePending,
+		TriggeredBy:  triggeredBy,
+		CreatedAt:    createdAt,
+		RetryAttempt: options.RetryAttempt,
+		RetryOfRunID: options.RetryOfRunID,
+		Params:       resolvedParams,
 	}
 
 	m.persistence.PersistNew(run)
@@ -496,7 +496,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		// goroutine. Return a snapshot so the caller never races that promotion.
 		return run.Copy(), nil
 	case actionStart:
-		// PolicyTerminate: evaluateConcurrency already cancelled the oldest
+		// PolicyKill: evaluateConcurrency already cancelled the oldest
 		// run. Do NOT eagerly remove it from active here — let the goroutine
 		// clean up after executor.Execute returns, so the concurrency count
 		// stays accurate.
@@ -1158,12 +1158,12 @@ func (m *defaultTaskManager) TerminateRun(runID string) error {
 	}, fmt.Sprintf("run not found: %s", runID))
 }
 
-// TerminateRunByExternalExecutionID cancels a running run bound to an
+// TerminateRunByExecutionID cancels a running run bound to an
 // external execution ID.
-func (m *defaultTaskManager) TerminateRunByExternalExecutionID(externalExecutionID string) error {
+func (m *defaultTaskManager) TerminateRunByExecutionID(executionID string) error {
 	return m.cancelActiveRun(func(ar *ActiveRun) bool {
-		return ar.Run.ExternalExecutionID != nil && *ar.Run.ExternalExecutionID == externalExecutionID
-	}, fmt.Sprintf("run not found for external execution id: %s", externalExecutionID))
+		return ar.Run.ExecutionID != nil && *ar.Run.ExecutionID == executionID
+	}, fmt.Sprintf("run not found for external execution id: %s", executionID))
 }
 
 func (m *defaultTaskManager) cancelActiveRun(match func(*ActiveRun) bool, notFoundMsg string) error {

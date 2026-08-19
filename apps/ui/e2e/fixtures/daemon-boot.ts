@@ -44,7 +44,7 @@ export async function obtainToken(baseURL: string, password: string): Promise<st
 
     const response = await chapResponse(password, nonce);
 
-    const authRes = await fetch(`${baseURL}/api/auth`, {
+    const authRes = await fetch(`${baseURL}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nonce, response }),

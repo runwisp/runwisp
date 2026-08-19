@@ -1,5 +1,42 @@
 export interface paths {
-    "/api/daemon/log-stream": {
+    "/api/daemon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get daemon info */
+        get: operations["getDaemonInfo"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/daemon/identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get local daemon identity (loopback/socket only)
+         * @description Returns the running daemon's datadir, config path, socket path, pid, version and fingerprint. Used by a second `runwisp` that hit a port conflict to discover and offer to connect to or stop this daemon. Always 403 over non-loopback TCP — the paths are local-only.
+         */
+        get: operations["getDaemonIdentity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/daemon/log/stream": {
         parameters: {
             query?: never;
             header?: never;
@@ -11,43 +48,6 @@ export interface paths {
          * @description Server-Sent Events stream of daemon log lines. Replays the last 100 buffered lines, then emits new lines as they're written until the client disconnects.
          */
         get: operations["streamDaemonLog"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/info": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get daemon info */
-        get: operations["getInfo"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/instance": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get local daemon identity (loopback/socket only)
-         * @description Returns the running daemon's datadir, config path, socket path, pid, version and fingerprint. Used by a second `runwisp` that hit a port conflict to discover and offer to connect to or stop this daemon. Always 403 over non-loopback TCP — the paths are local-only.
-         */
-        get: operations["getInstance"];
         put?: never;
         post?: never;
         delete?: never;
@@ -317,6 +317,104 @@ export interface paths {
         get: operations["getRun"];
         put?: never;
         post?: never;
+        /** Delete a run */
+        delete: operations["deleteRun"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{runId}/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a page of log lines
+         * @description Returns a JSON page of absolute-line-numbered log entries. Use `from` (negative for tail) and `limit` to window the result.
+         */
+        get: operations["getLogPage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{runId}/log/line/{lineNumber}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the frame history of a settled progress bar / redraw line
+         * @description Returns the prior whole-region frames a progress bar or multi-line redraw passed through before settling into the committed line. Empty unless the line's `frame_count` is non-zero.
+         */
+        get: operations["getLogLineHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{runId}/log/raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download the run's full log as text/plain
+         * @description Concatenates the rotated-away segment (`.log.prev`) and current segment so a single download captures the operator-visible byte stream.
+         */
+        get: operations["getLogRaw"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{runId}/log/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream a run's log lines as SSE
+         * @description Server-Sent Events stream of absolute-line-numbered log entries. Replays history starting at `from` (or `Last-Event-ID + 1`), then follows live output until the run terminates.
+         */
+        get: operations["streamLog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{runId}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop a running task */
+        post: operations["stopRun"];
         delete?: never;
         options?: never;
         head?: never;
@@ -462,120 +560,6 @@ export interface paths {
         get: operations["listTaskRuns"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks/{taskName}/runs/{runId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete a run */
-        delete: operations["deleteRun"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks/{taskName}/runs/{runId}/log": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get a page of log lines
-         * @description Returns a JSON page of absolute-line-numbered log entries. Use `from` (negative for tail) and `limit` to window the result.
-         */
-        get: operations["getLogPage"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks/{taskName}/runs/{runId}/log/line/{lineNum}/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get the frame history of a settled progress bar / redraw line
-         * @description Returns the prior whole-region frames a progress bar or multi-line redraw passed through before settling into the committed line. Empty unless the line's `frame_count` is non-zero.
-         */
-        get: operations["getLogLineHistory"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks/{taskName}/runs/{runId}/log/raw": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Download the run's full log as text/plain
-         * @description Concatenates the rotated-away segment (`.log.prev`) and current segment so a single download captures the operator-visible byte stream.
-         */
-        get: operations["getLogRaw"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks/{taskName}/runs/{runId}/log/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Stream a run's log lines as SSE
-         * @description Server-Sent Events stream of absolute-line-numbered log entries. Replays history starting at `from` (or `Last-Event-ID + 1`), then follows live output until the run terminates.
-         */
-        get: operations["streamLog"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks/{taskName}/runs/{runId}/stop": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Stop a running task */
-        post: operations["stopRun"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1056,9 +1040,9 @@ export interface components {
             endReason?: components["schemas"]["EndReason"];
             /** Format: date-time */
             endedAt?: string;
+            executionId?: string;
             /** Format: int64 */
             exitCode: number;
-            externalExecutionId?: string;
             id: string;
             /** Format: int64 */
             instanceIndex: number;
@@ -1385,7 +1369,7 @@ export interface components {
              * @description What to do when log output exceeds log_max_size
              * @enum {string}
              */
-            logOnFull?: "drop_new" | "drop_old" | "kill_task";
+            logOnFull?: "drop_new" | "drop_old" | "kill";
             /**
              * Format: int64
              * @description Cap on catch-up runs triggered when catch_up = all
@@ -1403,7 +1387,7 @@ export interface components {
              * @description How overlapping runs are handled
              * @enum {string}
              */
-            onOverlap?: "queue" | "skip" | "terminate";
+            onOverlap?: "queue" | "skip" | "kill";
             /** @description Per-execution parameters an operator may supply at manual trigger time; scheduled runs use the declared defaults */
             parameters?: components["schemas"]["TaskParam"][] | null;
             /**
@@ -1515,47 +1499,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    streamDaemonLog: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": {
-                        data: components["schemas"]["DaemonLogLineEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "line";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    }[];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    getInfo: {
+    getDaemonInfo: {
         parameters: {
             query?: never;
             header?: never;
@@ -1584,7 +1528,7 @@ export interface operations {
             };
         };
     };
-    getInstance: {
+    getDaemonIdentity: {
         parameters: {
             query?: never;
             header?: never;
@@ -1600,6 +1544,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InstanceInfo"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    streamDaemonLog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": {
+                        data: components["schemas"]["DaemonLogLineEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "line";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    }[];
                 };
             };
             /** @description Error */
@@ -2144,6 +2128,265 @@ export interface operations {
             };
         };
     };
+    deleteRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run ULID */
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getLogPage: {
+        parameters: {
+            query?: {
+                /** @description Anchor line number; 0 is the first line, negative values count from end (default -1000) */
+                from?: number;
+                /** @description Max lines returned (default 1000) */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Run ULID */
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogPageBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getLogLineHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run ULID */
+                runId: string;
+                /** @description Anchor line number to fetch frame history for */
+                lineNumber: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogLineHistoryBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getLogRaw: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run ULID */
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Content-Type"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    streamLog: {
+        parameters: {
+            query?: {
+                /** @description Anchor line number; 0 is the first line, negative values count from end (default -1000) */
+                from?: number;
+                /** @description Cap on backfilled lines (default 5000) */
+                replayLimit?: number;
+            };
+            header?: {
+                /** @description Native SSE resume cursor; takes precedence over the from query */
+                "Last-Event-ID"?: string;
+            };
+            path: {
+                /** @description Run ULID */
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": ({
+                        data: components["schemas"]["LogDoneEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "done";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["LogDroppedEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "dropped";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["LogLineSSEEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "line";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["LogRegionSSEEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "region";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["LogRotatedEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "rotated";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    })[];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    stopRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run ULID */
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     streamAppEvents: {
         parameters: {
             query?: {
@@ -2561,277 +2804,6 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RunsResponseBody"];
                 };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    deleteRun: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Task name */
-                taskName: string;
-                /** @description Run ULID */
-                runId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No Content */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    getLogPage: {
-        parameters: {
-            query?: {
-                /** @description Anchor line number; 0 is the first line, negative values count from end (default -1000) */
-                from?: number;
-                /** @description Max lines returned (default 1000) */
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                /** @description Task name */
-                taskName: string;
-                /** @description Run ULID */
-                runId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LogPageBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    getLogLineHistory: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Task name */
-                taskName: string;
-                /** @description Run ULID */
-                runId: string;
-                /** @description Anchor line number to fetch frame history for */
-                lineNum: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LogLineHistoryBody"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    getLogRaw: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Task name */
-                taskName: string;
-                /** @description Run ULID */
-                runId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    "Content-Type"?: string;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": string;
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    streamLog: {
-        parameters: {
-            query?: {
-                /** @description Anchor line number; 0 is the first line, negative values count from end (default -1000) */
-                from?: number;
-                /** @description Cap on backfilled lines (default 5000) */
-                replayLimit?: number;
-            };
-            header?: {
-                /** @description Native SSE resume cursor; takes precedence over the from query */
-                "Last-Event-ID"?: string;
-            };
-            path: {
-                /** @description Task name */
-                taskName: string;
-                /** @description Run ULID */
-                runId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": ({
-                        data: components["schemas"]["LogDoneEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "done";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["LogDroppedEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "dropped";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["LogLineSSEEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "line";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["LogRegionSSEEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "region";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["LogRotatedEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "rotated";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    })[];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    stopRun: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Task name */
-                taskName: string;
-                /** @description Run ULID */
-                runId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No Content */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Error */
             default: {

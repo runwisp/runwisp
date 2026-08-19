@@ -343,7 +343,7 @@ func (m Model) openCursorFrameHistory() (Model, tea.Cmd, bool) {
 	if idx := m.execView.Pane.Cursor; idx >= 0 && idx < len(m.execView.Pane.Lines) {
 		committed = m.execView.Pane.Lines[idx].Text
 	}
-	cmd := m.streams.FetchLineHistory(m.execView.Run.TaskName, m.execView.Run.ID, lineNum, committed)
+	cmd := m.streams.FetchLineHistory(m.execView.Run.ID, lineNum, committed)
 	return m, cmd, true
 }
 

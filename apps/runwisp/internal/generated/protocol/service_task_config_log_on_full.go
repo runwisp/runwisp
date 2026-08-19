@@ -14,7 +14,7 @@ type ServiceTaskConfigLogOnFull uint
 const (
 	ServiceTaskConfigLogOnFullDropNew ServiceTaskConfigLogOnFull = iota
 	ServiceTaskConfigLogOnFullDropOld
-	ServiceTaskConfigLogOnFullKillTask
+	ServiceTaskConfigLogOnFullKill
 )
 
 // Value returns the value of the enum.
@@ -25,11 +25,11 @@ func (op ServiceTaskConfigLogOnFull) Value() any {
 	return ServiceTaskConfigLogOnFullValues[op]
 }
 
-var ServiceTaskConfigLogOnFullValues = []any{"drop_new", "drop_old", "kill_task"}
+var ServiceTaskConfigLogOnFullValues = []any{"drop_new", "drop_old", "kill"}
 var ValuesToServiceTaskConfigLogOnFull = map[any]ServiceTaskConfigLogOnFull{
-	ServiceTaskConfigLogOnFullValues[ServiceTaskConfigLogOnFullDropNew]:  ServiceTaskConfigLogOnFullDropNew,
-	ServiceTaskConfigLogOnFullValues[ServiceTaskConfigLogOnFullDropOld]:  ServiceTaskConfigLogOnFullDropOld,
-	ServiceTaskConfigLogOnFullValues[ServiceTaskConfigLogOnFullKillTask]: ServiceTaskConfigLogOnFullKillTask,
+	ServiceTaskConfigLogOnFullValues[ServiceTaskConfigLogOnFullDropNew]: ServiceTaskConfigLogOnFullDropNew,
+	ServiceTaskConfigLogOnFullValues[ServiceTaskConfigLogOnFullDropOld]: ServiceTaskConfigLogOnFullDropOld,
+	ServiceTaskConfigLogOnFullValues[ServiceTaskConfigLogOnFullKill]:    ServiceTaskConfigLogOnFullKill,
 }
 
 func (op *ServiceTaskConfigLogOnFull) UnmarshalJSON(raw []byte) error {

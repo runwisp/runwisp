@@ -89,7 +89,7 @@ type Task struct {
 	Restart       RestartPolicy     `toml:"restart,omitempty"       json:"restart,omitempty" enum:"never,always,on_failure" doc:"Whether and when a task is restarted after completion"`
 	MaxConcurrent int               `toml:"max_concurrent,omitempty" json:"maxConcurrent,omitempty" doc:"Maximum overlapping runs allowed for this task"`
 	QueueMax      int               `toml:"queue_max,omitempty"     json:"queueMax,omitempty" doc:"Maximum runs that can wait when on_overlap = queue"`
-	OnOverlap     ConcurrencyPolicy `toml:"on_overlap,omitempty"    json:"onOverlap,omitempty" enum:"queue,skip,terminate" doc:"How overlapping runs are handled"`
+	OnOverlap     ConcurrencyPolicy `toml:"on_overlap,omitempty"    json:"onOverlap,omitempty" enum:"queue,skip,kill" doc:"How overlapping runs are handled"`
 
 	Instances      int           `toml:"instances,omitempty"      json:"instances,omitempty" doc:"For services: number of always-running instances"`
 	RestartDelay   time.Duration `toml:"-"                        json:"restartDelay,omitempty" doc:"Base delay before each restart, in nanoseconds"`
@@ -125,7 +125,7 @@ type Task struct {
 	ExitCodes []int `toml:"-" json:"exitCodes,omitempty" doc:"Process exit codes treated as success; defaults to [0]"`
 
 	LogMaxSize int64  `toml:"-"                     json:"logMaxSize,omitempty" doc:"Per-run log size cap in bytes"`
-	LogOnFull  string `toml:"log_on_full,omitempty" json:"logOnFull,omitempty" enum:"drop_new,drop_old,kill_task" doc:"What to do when log output exceeds log_max_size"`
+	LogOnFull  string `toml:"log_on_full,omitempty" json:"logOnFull,omitempty" enum:"drop_new,drop_old,kill" doc:"What to do when log output exceeds log_max_size"`
 
 	KeepRuns *int          `toml:"keep_runs,omitempty" json:"keepRuns,omitempty" doc:"Row-count retention cap; 0 keeps no completed runs, omitted inherits the [defaults] value (or no cap)"`
 	KeepFor  time.Duration `toml:"-"                   json:"keepFor,omitempty" doc:"Retention window in nanoseconds; 0 means no cap was configured"`
@@ -247,9 +247,9 @@ func (t *Task) ResolvedExecutionDef() ExecutionDef {
 type ConcurrencyPolicy string
 
 const (
-	PolicyQueue     ConcurrencyPolicy = "queue"
-	PolicySkip      ConcurrencyPolicy = "skip"
-	PolicyTerminate ConcurrencyPolicy = "terminate"
+	PolicyQueue ConcurrencyPolicy = "queue"
+	PolicySkip  ConcurrencyPolicy = "skip"
+	PolicyKill  ConcurrencyPolicy = "kill"
 )
 
 // EnvBase selects what a host shell run's environment starts from, before the
@@ -405,12 +405,12 @@ const (
 
 // Log overflow behavior when task output exceeds log_max_size.
 const (
-	LogOverflowDropNew  = "drop_new"  // stop writing; keep older output (task keeps running)
-	LogOverflowDropOld  = "drop_old"  // rotate: keep recent output (task keeps running)
-	LogOverflowKillTask = "kill_task" // terminate the task
+	LogOverflowDropNew = "drop_new" // stop writing; keep older output (task keeps running)
+	LogOverflowDropOld = "drop_old" // rotate: keep recent output (task keeps running)
+	LogOverflowKill    = "kill"     // kill the task
 )
 
-// DaemonInfo holds static identity/config data exposed via /api/info.
+// DaemonInfo holds static identity/config data exposed via /api/daemon.
 //
 // ResolvedTimezone is the IANA zone the scheduler is actually using; it equals
 // either the operator's explicit [scheduler] timezone or — when omitted — the
@@ -453,7 +453,7 @@ type DaemonInfo struct {
 }
 
 // InstanceInfo is the local-only identity of a running daemon, returned by
-// GET /api/instance. It lets a second `runwisp` launching against an
+// GET /api/daemon/identity. It lets a second `runwisp` launching against an
 // already-occupied port discover which daemon holds it — and where that
 // daemon's datadir/config/socket live — so it can offer to connect or stop it.
 // The endpoint is reachable only over the Unix socket or a loopback TCP peer,
@@ -488,7 +488,7 @@ type TaskBrief struct {
 	Parameters    []TaskParam       `json:"parameters,omitempty"`
 }
 
-// NewTaskBrief trims a task down to what /api/info exposes.
+// NewTaskBrief trims a task down to what /api/daemon exposes.
 //
 // One mapping, because two callers build this list at different times and a
 // field either of them forgot would be silently absent from the API: the boot

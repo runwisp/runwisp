@@ -127,20 +127,20 @@ func finishQueryRuns(rows []sqlcdb.QueryRunsCreatedAtAscRow, err error) ([]model
 	out := make([]model.Run, len(rows))
 	for i, r := range rows {
 		out[i] = model.Run{
-			ID:                  r.ID,
-			ExternalExecutionID: r.ExternalExecutionID,
-			TaskName:            r.TaskName,
-			Status:              r.Status,
-			EndReason:           r.EndReason,
-			ExitCode:            r.ExitCode,
-			StartedAt:           r.StartedAt,
-			EndedAt:             r.EndedAt,
-			TriggeredBy:         r.TriggeredBy,
-			CreatedAt:           r.CreatedAt,
-			RetryAttempt:        r.RetryAttempt,
-			RetryOfRunID:        r.RetryOfRunID,
-			InstanceIndex:       r.InstanceIndex,
-			Params:              decodeParams(r.ParamsJson, r.ID),
+			ID:            r.ID,
+			ExecutionID:   r.ExecutionID,
+			TaskName:      r.TaskName,
+			Status:        r.Status,
+			EndReason:     r.EndReason,
+			ExitCode:      r.ExitCode,
+			StartedAt:     r.StartedAt,
+			EndedAt:       r.EndedAt,
+			TriggeredBy:   r.TriggeredBy,
+			CreatedAt:     r.CreatedAt,
+			RetryAttempt:  r.RetryAttempt,
+			RetryOfRunID:  r.RetryOfRunID,
+			InstanceIndex: r.InstanceIndex,
+			Params:        decodeParams(r.ParamsJson, r.ID),
 		}
 	}
 	return out, nil

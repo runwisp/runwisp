@@ -108,7 +108,7 @@ func resolvePortConflict(f Flags, bindErr error, info *model.InstanceInfo, inter
 
 // stopDaemonByInstance SIGTERMs the daemon described by info and waits for it to
 // exit, reusing the same path as `runwisp stop` (PID file in its datadir). The
-// data dir and socket come from the daemon's own /api/instance report, so it
+// data dir and socket come from the daemon's own /api/daemon/identity report, so it
 // targets the right daemon even when the local --data flag points elsewhere.
 func stopDaemonByInstance(f Flags, info *model.InstanceInfo) error {
 	other := f

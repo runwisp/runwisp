@@ -583,31 +583,31 @@ func setupFullTestDB(t *testing.T) Database {
 	return db
 }
 
-func TestGetRunByExternalExecutionID(t *testing.T) {
+func TestGetRunByExecutionID(t *testing.T) {
 	ctx := t.Context()
 	db := setupTestDB(t)
 	defer db.Close()
 
 	extID := "ext-exec-abc123"
 	run := &model.Run{
-		ID:                  ulid.Make().String(),
-		TaskName:            "task1",
-		Status:              model.PhasePending,
-		TriggeredBy:         model.TriggeredByAPI,
-		ExternalExecutionID: &extID,
+		ID:          ulid.Make().String(),
+		TaskName:    "task1",
+		Status:      model.PhasePending,
+		TriggeredBy: model.TriggeredByAPI,
+		ExecutionID: &extID,
 	}
 	require.NoError(t, db.CreateRun(ctx, run))
 
-	fetched, err := db.GetRunByExternalExecutionID(ctx, extID)
+	fetched, err := db.GetRunByExecutionID(ctx, extID)
 	require.NoError(t, err)
 	require.NotNil(t, fetched)
 	assert.Equal(t, run.ID, fetched.ID)
 	assert.Equal(t, run.TaskName, fetched.TaskName)
-	require.NotNil(t, fetched.ExternalExecutionID)
-	assert.Equal(t, extID, *fetched.ExternalExecutionID)
+	require.NotNil(t, fetched.ExecutionID)
+	assert.Equal(t, extID, *fetched.ExecutionID)
 
 	// Non-existent external execution ID returns ErrNotFound.
-	_, err = db.GetRunByExternalExecutionID(ctx, "does-not-exist")
+	_, err = db.GetRunByExecutionID(ctx, "does-not-exist")
 	assert.ErrorIs(t, err, ErrNotFound)
 }
 
@@ -696,10 +696,10 @@ func TestUpsertPendingLogUpload(t *testing.T) {
 	defer db.Close()
 
 	rec := model.PendingLogUpload{
-		ExternalExecutionID: "exec-upsert-1",
-		UploadURL:           "https://example.com/upload/1",
-		LogPath:             "/var/log/run1.log",
-		InsertedAt:          1234567890,
+		ExecutionID: "exec-upsert-1",
+		UploadURL:   "https://example.com/upload/1",
+		LogPath:     "/var/log/run1.log",
+		InsertedAt:  1234567890,
 	}
 
 	require.NoError(t, db.UpsertPendingLogUpload(ctx, rec))
@@ -720,10 +720,10 @@ func TestDeletePendingLogUpload(t *testing.T) {
 	defer db.Close()
 
 	rec := model.PendingLogUpload{
-		ExternalExecutionID: "exec-delete-1",
-		UploadURL:           "https://example.com/upload/del",
-		LogPath:             "/var/log/rundel.log",
-		InsertedAt:          111,
+		ExecutionID: "exec-delete-1",
+		UploadURL:   "https://example.com/upload/del",
+		LogPath:     "/var/log/rundel.log",
+		InsertedAt:  111,
 	}
 	require.NoError(t, db.UpsertPendingLogUpload(ctx, rec))
 
@@ -749,10 +749,10 @@ func TestListPendingLogUploads(t *testing.T) {
 
 	for i := range 3 {
 		rec := model.PendingLogUpload{
-			ExternalExecutionID: ulid.Make().String(),
-			UploadURL:           "https://example.com/" + ulid.Make().String(),
-			LogPath:             "/var/log/run.log",
-			InsertedAt:          int64(i),
+			ExecutionID: ulid.Make().String(),
+			UploadURL:   "https://example.com/" + ulid.Make().String(),
+			LogPath:     "/var/log/run.log",
+			InsertedAt:  int64(i),
 		}
 		require.NoError(t, db.UpsertPendingLogUpload(ctx, rec))
 	}
@@ -862,7 +862,7 @@ func TestSQLiteDatabase_ErrorPathsAfterClose(t *testing.T) {
 	_, err := db.GetRun(ctx, "any-id")
 	assert.Error(t, err)
 
-	_, err = db.GetRunByExternalExecutionID(ctx, "any-ext")
+	_, err = db.GetRunByExecutionID(ctx, "any-ext")
 	assert.Error(t, err)
 
 	_, err = db.GetRunSummary(ctx)
@@ -928,10 +928,10 @@ func TestSQLiteDatabase_ErrorPathsAfterClose(t *testing.T) {
 	assert.Error(t, db.SetConfigValue(ctx, "k", "v"))
 
 	assert.Error(t, db.UpsertPendingLogUpload(ctx, model.PendingLogUpload{
-		ExternalExecutionID: "ext",
-		UploadURL:           "https://example.com",
-		LogPath:             "/tmp/log",
-		InsertedAt:          time.Now().Unix(),
+		ExecutionID: "ext",
+		UploadURL:   "https://example.com",
+		LogPath:     "/tmp/log",
+		InsertedAt:  time.Now().Unix(),
 	}))
 	assert.Error(t, db.DeletePendingLogUpload(ctx, "ext"))
 

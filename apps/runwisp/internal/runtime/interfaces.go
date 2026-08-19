@@ -25,7 +25,7 @@ type TaskRunner interface {
 	GetTask(taskName string) (*model.Task, bool)
 	UpsertTask(task *model.Task)
 	TerminateRun(runID string) error
-	TerminateRunByExternalExecutionID(externalExecutionID string) error
+	TerminateRunByExecutionID(executionID string) error
 	// RecordSkippedFiring persists a run that was suppressed before the
 	// executor started — currently used by the scheduler to log DST wall-clock
 	// duplicates with end_reason = "dst_skipped".

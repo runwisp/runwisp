@@ -81,7 +81,7 @@ type SystemSampleEvent struct {
 
 // ConfigStaleEvent fires only when the daemon's config-staleness flips: a TOML
 // edit lands un-applied (true) or a reload clears it (false). Dashboards drive
-// the "restart to apply" banner off this instead of polling /api/info.
+// the "restart to apply" banner off this instead of polling /api/daemon.
 type ConfigStaleEvent struct {
 	Stale bool
 }
@@ -122,7 +122,7 @@ type ServiceFatalEvent struct {
 
 // LogDiskPressureEvent fires once per run when min_free_space crosses the
 // configured threshold during execution. KilledTask is true when the daemon
-// also cancelled the run because its log_on_full was "kill_task". For other
+// also cancelled the run because its log_on_full was "kill". For other
 // overflow policies the run keeps executing but its log writer is stopped.
 type LogDiskPressureEvent struct {
 	TaskName     string `json:"taskName"`
@@ -149,15 +149,15 @@ type LogDiskPressureEvent struct {
 // for that line in the `.fhist` sidecar, so a viewer knows the line is clickable
 // to rewind. Plain output carries 0.
 type LogLineEvent struct {
-	TaskName            string `json:"taskName"`
-	RunID               string `json:"runId"`
-	ExternalExecutionID string `json:"externalExecutionId,omitempty"`
-	LineNum             int64  `json:"lineNum"`
-	Timestamp           int64  `json:"timestamp"`
-	Stream              string `json:"stream"`
-	Text                string `json:"text"`
-	Continued           bool   `json:"continued,omitempty"`
-	FrameCount          int    `json:"frameCount,omitempty"`
+	TaskName    string `json:"taskName"`
+	RunID       string `json:"runId"`
+	ExecutionID string `json:"executionId,omitempty"`
+	LineNum     int64  `json:"lineNum"`
+	Timestamp   int64  `json:"timestamp"`
+	Stream      string `json:"stream"`
+	Text        string `json:"text"`
+	Continued   bool   `json:"continued,omitempty"`
+	FrameCount  int    `json:"frameCount,omitempty"`
 }
 
 // LogRegionEvent carries a snapshot of a still-animating output region (a `\r`
@@ -175,13 +175,13 @@ type LogLineEvent struct {
 // These events bypass line-number dedupe entirely (they carry no LineNum) and
 // are droppable under SSE backpressure without counting as a gap.
 type LogRegionEvent struct {
-	TaskName            string   `json:"taskName"`
-	RunID               string   `json:"runId"`
-	ExternalExecutionID string   `json:"externalExecutionId,omitempty"`
-	Timestamp           int64    `json:"timestamp"`
-	Stream              string   `json:"stream"`
-	Epoch               int      `json:"epoch"`
-	Rows                []string `json:"rows"`
+	TaskName    string   `json:"taskName"`
+	RunID       string   `json:"runId"`
+	ExecutionID string   `json:"executionId,omitempty"`
+	Timestamp   int64    `json:"timestamp"`
+	Stream      string   `json:"stream"`
+	Epoch       int      `json:"epoch"`
+	Rows        []string `json:"rows"`
 }
 
 // EventHandler processes events.

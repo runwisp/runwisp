@@ -31,11 +31,11 @@ const (
 	// defaultKeepFor is the age limit applied when
 	// notify.keep_for is omitted from TOML.
 	defaultKeepFor = 90 * 24 * time.Hour
-	// defaultOccurrenceRing is the coalescing ring size applied when
-	// notify.occurrence_ring is omitted. It drives both the in-app occurrence
+	// defaultKeepOccurrences is the coalescing ring size applied when
+	// notify.keep_occurrences is omitted. It drives both the in-app occurrence
 	// ring and the outbound "check-in every N events" cadence, so it must be
 	// resolved here rather than left 0 (outbound treats 0 as "never check in").
-	defaultOccurrenceRing = 10
+	defaultKeepOccurrences = 10
 )
 
 // parseNotifyToken splits a notify destination token into its parent notifier
@@ -60,14 +60,14 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 	out := NotifyConfig{
 		GlobalNotifiers:   resolveGlobalNotifiers(t.Notify.GlobalNotifiers),
 		KeepNotifications: t.Notify.KeepNotifications,
-		OccurrenceRing:    t.Notify.OccurrenceRing,
+		KeepOccurrences:   t.Notify.KeepOccurrences,
 		CoalesceOutbound:  t.Notify.CoalesceOutbound == nil || *t.Notify.CoalesceOutbound,
 	}
 	if out.KeepNotifications == 0 {
 		out.KeepNotifications = defaultKeepNotifications
 	}
-	if out.OccurrenceRing == 0 {
-		out.OccurrenceRing = defaultOccurrenceRing
+	if out.KeepOccurrences == 0 {
+		out.KeepOccurrences = defaultKeepOccurrences
 	}
 
 	if err := t.applyNotifyDurations(&out); err != nil {
@@ -101,12 +101,12 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 // applyNotifyDurations parses the [notify] duration knobs and stamps them onto
 // out, applying the documented default when keep_for is omitted.
 func (t *tomlConfig) applyNotifyDurations(out *NotifyConfig) error {
-	if t.Notify.DefaultTimeout != "" {
-		d, err := parseDuration(t.Notify.DefaultTimeout)
+	if t.Notify.RetryBudget != "" {
+		d, err := parseDuration(t.Notify.RetryBudget)
 		if err != nil {
-			return fmt.Errorf("invalid notify.default_timeout: %w", err)
+			return fmt.Errorf("invalid notify.retry_budget: %w", err)
 		}
-		out.DefaultTimeout = d
+		out.RetryBudget = d
 	}
 	if t.Notify.KeepFor != "" {
 		d, err := parseKeepFor(t.Notify.KeepFor)
@@ -537,7 +537,7 @@ func validateSMTPAuth(spec *NotifierSpec) error {
 		return fmt.Errorf("notifier %q: username and password must be set together (or both omitted for auth-less relays)", spec.ID)
 	}
 	if hasPassword && strings.TrimSpace(spec.TLSMode) == "off" {
-		return fmt.Errorf("notifier %q: tls=\"none\" is not allowed with credentials — refuse to send PLAIN auth over cleartext", spec.ID)
+		return fmt.Errorf("notifier %q: tls=\"off\" is not allowed with credentials — refuse to send PLAIN auth over cleartext", spec.ID)
 	}
 	return nil
 }

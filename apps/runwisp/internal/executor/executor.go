@@ -36,7 +36,7 @@ type ExecuteResult struct {
 	Error          error
 	TimedOut       bool
 	Stopped        bool
-	KilledByPolicy bool // log_on_full = "kill_task" tripped — recorded as failed, not stopped
+	KilledByPolicy bool // log_on_full = "kill" tripped — recorded as failed, not stopped
 	// SuccessExitCodes lists the exit codes treated as success. Empty/nil
 	// preserves the default contract that only 0 succeeds.
 	SuccessExitCodes []int
@@ -430,9 +430,9 @@ func commitGroup(
 }
 
 func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task *model.Task, run *model.Run, stream string) {
-	externalExecutionID := ""
-	if run.ExternalExecutionID != nil {
-		externalExecutionID = *run.ExternalExecutionID
+	executionID := ""
+	if run.ExecutionID != nil {
+		executionID = *run.ExecutionID
 	}
 
 	nowMs := func() int64 { return r.now().UnixMilli() }
@@ -442,15 +442,15 @@ func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task
 			return
 		}
 		r.eventBus.Publish(events.EventLogLine, events.LogLineEvent{
-			TaskName:            task.Name,
-			RunID:               run.ID,
-			ExternalExecutionID: externalExecutionID,
-			LineNum:             lineNum,
-			Timestamp:           nowMs(),
-			Stream:              stream,
-			Text:                text,
-			Continued:           continued,
-			FrameCount:          frameCount,
+			TaskName:    task.Name,
+			RunID:       run.ID,
+			ExecutionID: executionID,
+			LineNum:     lineNum,
+			Timestamp:   nowMs(),
+			Stream:      stream,
+			Text:        text,
+			Continued:   continued,
+			FrameCount:  frameCount,
 		})
 	}
 
@@ -459,13 +459,13 @@ func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task
 			return
 		}
 		r.eventBus.Publish(events.EventLogRegion, events.LogRegionEvent{
-			TaskName:            task.Name,
-			RunID:               run.ID,
-			ExternalExecutionID: externalExecutionID,
-			Timestamp:           nowMs(),
-			Stream:              stream,
-			Epoch:               epoch,
-			Rows:                rows,
+			TaskName:    task.Name,
+			RunID:       run.ID,
+			ExecutionID: executionID,
+			Timestamp:   nowMs(),
+			Stream:      stream,
+			Epoch:       epoch,
+			Rows:        rows,
 		})
 	}
 

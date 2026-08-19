@@ -63,8 +63,8 @@ func (m *mockTaskRunner) TerminateRun(runID string) error {
 	return args.Error(0)
 }
 
-func (m *mockTaskRunner) TerminateRunByExternalExecutionID(externalExecutionID string) error {
-	args := m.MethodCalled("TerminateRunByExternalExecutionID", externalExecutionID)
+func (m *mockTaskRunner) TerminateRunByExecutionID(executionID string) error {
+	args := m.MethodCalled("TerminateRunByExecutionID", executionID)
 	return args.Error(0)
 }
 

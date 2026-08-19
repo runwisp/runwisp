@@ -79,7 +79,7 @@ func TestMetricsCollector_OnSampleFires(t *testing.T) {
 
 // TestBroadcastSample asserts the metrics callback publishes a system event for
 // every sample but only emits a config.stale event when staleness flips —
-// exactly the behaviour that lets the UI drop its /api/system + /api/info
+// exactly the behaviour that lets the UI drop its /api/system + /api/daemon
 // polling.
 func TestBroadcastSample(t *testing.T) {
 	bus := events.NewEventBus()

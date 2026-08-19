@@ -14,7 +14,7 @@ type ExecutionTaskConfigLogOnFull uint
 const (
 	ExecutionTaskConfigLogOnFullDropNew ExecutionTaskConfigLogOnFull = iota
 	ExecutionTaskConfigLogOnFullDropOld
-	ExecutionTaskConfigLogOnFullKillTask
+	ExecutionTaskConfigLogOnFullKill
 )
 
 // Value returns the value of the enum.
@@ -25,11 +25,11 @@ func (op ExecutionTaskConfigLogOnFull) Value() any {
 	return ExecutionTaskConfigLogOnFullValues[op]
 }
 
-var ExecutionTaskConfigLogOnFullValues = []any{"drop_new", "drop_old", "kill_task"}
+var ExecutionTaskConfigLogOnFullValues = []any{"drop_new", "drop_old", "kill"}
 var ValuesToExecutionTaskConfigLogOnFull = map[any]ExecutionTaskConfigLogOnFull{
-	ExecutionTaskConfigLogOnFullValues[ExecutionTaskConfigLogOnFullDropNew]:  ExecutionTaskConfigLogOnFullDropNew,
-	ExecutionTaskConfigLogOnFullValues[ExecutionTaskConfigLogOnFullDropOld]:  ExecutionTaskConfigLogOnFullDropOld,
-	ExecutionTaskConfigLogOnFullValues[ExecutionTaskConfigLogOnFullKillTask]: ExecutionTaskConfigLogOnFullKillTask,
+	ExecutionTaskConfigLogOnFullValues[ExecutionTaskConfigLogOnFullDropNew]: ExecutionTaskConfigLogOnFullDropNew,
+	ExecutionTaskConfigLogOnFullValues[ExecutionTaskConfigLogOnFullDropOld]: ExecutionTaskConfigLogOnFullDropOld,
+	ExecutionTaskConfigLogOnFullValues[ExecutionTaskConfigLogOnFullKill]:    ExecutionTaskConfigLogOnFullKill,
 }
 
 func (op *ExecutionTaskConfigLogOnFull) UnmarshalJSON(raw []byte) error {

@@ -142,7 +142,7 @@ func newStatusTaskJSON(tr model.TaskResponse, last *model.Run) statusTaskJSON {
 }
 
 // runOutcome derives the EndReason/Failed/DurationMS fields lastRunJSON and
-// execJSONDoc both compute from a run's terminal (or not-yet-terminal) state.
+// runJSONDoc both compute from a run's terminal (or not-yet-terminal) state.
 func runOutcome(r *model.Run) (endReason *string, failed bool, durationMS *int64) {
 	if r.EndReason != nil {
 		reason := string(*r.EndReason)
@@ -174,12 +174,12 @@ func newLastRunJSON(r *model.Run) lastRunJSON {
 
 // --- exec ------------------------------------------------------------------
 
-// execJSONDoc is the machine-readable outcome of `runwisp run --json`: the one
+// runJSONDoc is the machine-readable outcome of `runwisp run --json`: the one
 // document written to stdout once the run reaches a terminal state (or is
 // triggered, under --detach). Live log lines are diverted to stderr so stdout
 // stays a single JSON document. failed is precomputed (retry.IsFailureReason)
 // so an agent branches on one boolean without knowing the end-reason taxonomy.
-type execJSONDoc struct {
+type runJSONDoc struct {
 	SchemaVersion int    `json:"schemaVersion"`
 	Task          string `json:"task"`
 	// Error is set only when the run never reached a terminal state (unknown
@@ -206,17 +206,17 @@ type execJSONDoc struct {
 // the task and the error text and nothing else, so an agent driving
 // `exec --json` learns of the failure from stdout — matching validate/list/status,
 // which also emit a JSON document on failure while still exiting non-zero.
-func newExecErrorJSONDoc(taskName string, err error) execJSONDoc {
-	return execJSONDoc{
+func newExecErrorJSONDoc(taskName string, err error) runJSONDoc {
+	return runJSONDoc{
 		SchemaVersion: jsonSchemaVersion,
 		Task:          taskName,
 		Error:         err.Error(),
 	}
 }
 
-func newExecJSONDoc(taskName string, r *model.Run) execJSONDoc {
+func newExecJSONDoc(taskName string, r *model.Run) runJSONDoc {
 	exitCode := r.ExitCode
-	doc := execJSONDoc{
+	doc := runJSONDoc{
 		SchemaVersion: jsonSchemaVersion,
 		Task:          taskName,
 		RunID:         r.ID,

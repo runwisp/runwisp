@@ -227,7 +227,7 @@ A few rules keep "what wins" obvious:
 
 Editing — or adding, or deleting — any included file shows up the same
 way a root-config edit does: the daemon flags the config as stale in
-`/api/info` (and the UI), and a [`runwisp reload`](/operations/reload/)
+`/api/daemon` (and the UI), and a [`runwisp reload`](/operations/reload/)
 (or a restart) re-globs the patterns and picks up the change. Includes
 are resolved fresh on every load, so dropping a new `conf.d/*.toml` in
 place gets it merged on the next reload — no restart required.

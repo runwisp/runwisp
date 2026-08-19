@@ -20,20 +20,20 @@ import (
 // wedge a whole batch.
 func runFromRow(s sqlcdb.Run) model.Run {
 	return model.Run{
-		ID:                  s.ID,
-		ExternalExecutionID: s.ExternalExecutionID,
-		TaskName:            s.TaskName,
-		Status:              s.Status,
-		EndReason:           s.EndReason,
-		ExitCode:            s.ExitCode,
-		StartedAt:           s.StartedAt,
-		EndedAt:             s.EndedAt,
-		TriggeredBy:         s.TriggeredBy,
-		CreatedAt:           s.CreatedAt,
-		RetryAttempt:        s.RetryAttempt,
-		RetryOfRunID:        s.RetryOfRunID,
-		InstanceIndex:       s.InstanceIndex,
-		Params:              decodeParams(s.ParamsJson, s.ID),
+		ID:            s.ID,
+		ExecutionID:   s.ExecutionID,
+		TaskName:      s.TaskName,
+		Status:        s.Status,
+		EndReason:     s.EndReason,
+		ExitCode:      s.ExitCode,
+		StartedAt:     s.StartedAt,
+		EndedAt:       s.EndedAt,
+		TriggeredBy:   s.TriggeredBy,
+		CreatedAt:     s.CreatedAt,
+		RetryAttempt:  s.RetryAttempt,
+		RetryOfRunID:  s.RetryOfRunID,
+		InstanceIndex: s.InstanceIndex,
+		Params:        decodeParams(s.ParamsJson, s.ID),
 	}
 }
 
@@ -62,40 +62,40 @@ func collectRunsByID(dst map[string]model.Run, rows []sqlcdb.Run) {
 // runToCreateParams maps a domain Run into sqlc CreateRun parameters.
 func runToCreateParams(r *model.Run) sqlcdb.CreateRunParams {
 	return sqlcdb.CreateRunParams{
-		ID:                  r.ID,
-		ExternalExecutionID: r.ExternalExecutionID,
-		TaskName:            r.TaskName,
-		Status:              r.Status,
-		EndReason:           r.EndReason,
-		ExitCode:            r.ExitCode,
-		StartedAt:           r.StartedAt,
-		EndedAt:             r.EndedAt,
-		TriggeredBy:         r.TriggeredBy,
-		CreatedAt:           r.CreatedAt,
-		RetryAttempt:        r.RetryAttempt,
-		RetryOfRunID:        r.RetryOfRunID,
-		InstanceIndex:       r.InstanceIndex,
-		ParamsJson:          encodeParams(r.Params),
+		ID:            r.ID,
+		ExecutionID:   r.ExecutionID,
+		TaskName:      r.TaskName,
+		Status:        r.Status,
+		EndReason:     r.EndReason,
+		ExitCode:      r.ExitCode,
+		StartedAt:     r.StartedAt,
+		EndedAt:       r.EndedAt,
+		TriggeredBy:   r.TriggeredBy,
+		CreatedAt:     r.CreatedAt,
+		RetryAttempt:  r.RetryAttempt,
+		RetryOfRunID:  r.RetryOfRunID,
+		InstanceIndex: r.InstanceIndex,
+		ParamsJson:    encodeParams(r.Params),
 	}
 }
 
 // runToUpdateParams maps a domain Run into sqlc UpdateRun parameters.
 func runToUpdateParams(r *model.Run) sqlcdb.UpdateRunParams {
 	return sqlcdb.UpdateRunParams{
-		ExternalExecutionID: r.ExternalExecutionID,
-		TaskName:            r.TaskName,
-		Status:              r.Status,
-		EndReason:           r.EndReason,
-		ExitCode:            r.ExitCode,
-		StartedAt:           r.StartedAt,
-		EndedAt:             r.EndedAt,
-		TriggeredBy:         r.TriggeredBy,
-		CreatedAt:           r.CreatedAt,
-		RetryAttempt:        r.RetryAttempt,
-		RetryOfRunID:        r.RetryOfRunID,
-		InstanceIndex:       r.InstanceIndex,
-		ParamsJson:          encodeParams(r.Params),
-		ID:                  r.ID,
+		ExecutionID:   r.ExecutionID,
+		TaskName:      r.TaskName,
+		Status:        r.Status,
+		EndReason:     r.EndReason,
+		ExitCode:      r.ExitCode,
+		StartedAt:     r.StartedAt,
+		EndedAt:       r.EndedAt,
+		TriggeredBy:   r.TriggeredBy,
+		CreatedAt:     r.CreatedAt,
+		RetryAttempt:  r.RetryAttempt,
+		RetryOfRunID:  r.RetryOfRunID,
+		InstanceIndex: r.InstanceIndex,
+		ParamsJson:    encodeParams(r.Params),
+		ID:            r.ID,
 	}
 }
 
@@ -160,9 +160,9 @@ func notificationFromSqlcdb(s sqlcdb.Notification) (*Notification, error) {
 // the Go-idiomatic UploadURL).
 func pendingLogUploadFromRow(s sqlcdb.PendingLogUpload) model.PendingLogUpload {
 	return model.PendingLogUpload{
-		ExternalExecutionID: s.ExternalExecutionID,
-		UploadURL:           s.UploadUrl,
-		LogPath:             s.LogPath,
-		InsertedAt:          s.InsertedAtUnix,
+		ExecutionID: s.ExecutionID,
+		UploadURL:   s.UploadUrl,
+		LogPath:     s.LogPath,
+		InsertedAt:  s.InsertedAtUnix,
 	}
 }

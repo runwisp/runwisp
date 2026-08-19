@@ -44,7 +44,7 @@ func TestSMTPPodman_DeliversAcrossTLSModes(t *testing.T) {
 		mpMode  mailpitTLSMode
 		useAuth bool
 	}{
-		{name: "Plain", tlsMode: "none", mpMode: mailpitTLSOff, useAuth: false},
+		{name: "Plain", tlsMode: "off", mpMode: mailpitTLSOff, useAuth: false},
 		{name: "STARTTLS_AUTH", tlsMode: "starttls", mpMode: mailpitTLSStartTLS, useAuth: true},
 		{name: "ImplicitTLS_AUTH", tlsMode: "implicit", mpMode: mailpitTLSImplicit, useAuth: true},
 	}

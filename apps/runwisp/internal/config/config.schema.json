@@ -61,7 +61,7 @@
     "logOnFull": {
       "type": "string",
       "description": "Behavior when a run's log hits log_max_size.",
-      "enum": ["drop_new", "drop_old", "kill_task"]
+      "enum": ["drop_new", "drop_old", "kill"]
     },
     "envBase": {
       "type": "string",
@@ -71,7 +71,7 @@
     "onOverlap": {
       "type": "string",
       "description": "What to do when a run is triggered while one is already active.",
-      "enum": ["queue", "skip", "terminate"]
+      "enum": ["queue", "skip", "kill"]
     },
     "backoff": {
       "type": "string",
@@ -326,11 +326,11 @@
       "additionalProperties": false,
       "properties": {
         "global_notifiers": { "type": "array", "items": { "type": "string" }, "default": ["inapp"], "description": "Channels added to every notify list + catch-all on failures; [] opts out." },
-        "default_timeout": { "$ref": "#/$defs/duration", "description": "Total retry budget per delivery." },
+        "retry_budget": { "$ref": "#/$defs/duration", "description": "Total retry budget per delivery." },
         "keep_notifications": { "type": "integer", "default": 1024, "description": "In-app bell row cap." },
         "keep_for": { "$ref": "#/$defs/duration", "description": "Max bell row age. Default 90d." },
         "coalesce_window": { "$ref": "#/$defs/duration", "description": "Collapse repeat (kind+task) into one bell row. Default 1h." },
-        "occurrence_ring": { "type": "integer", "default": 10, "description": "Recent timestamps kept per coalesced row." },
+        "keep_occurrences": { "type": "integer", "default": 10, "description": "Recent timestamps kept per coalesced row." },
         "coalesce_outbound": { "type": "boolean", "default": true, "description": "Coalesce outbound bursts too." }
       }
     },

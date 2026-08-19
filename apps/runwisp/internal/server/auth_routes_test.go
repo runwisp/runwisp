@@ -158,7 +158,7 @@ func TestHandleLaunchTicket_Success(t *testing.T) {
 	ticket, err := s.auth.CreateLaunchTicket()
 	require.NoError(t, err)
 
-	req := httptest.NewRequest("GET", "/api/auth/launch?ticket="+ticket, nil)
+	req := httptest.NewRequest("GET", "/api/auth/launch-ticket?ticket="+ticket, nil)
 	req.RemoteAddr = "127.0.0.1:54321"
 	w := httptest.NewRecorder()
 
@@ -187,14 +187,14 @@ func TestHandleLaunchTicket_SingleUse(t *testing.T) {
 	require.NoError(t, err)
 
 	// First request succeeds.
-	req := httptest.NewRequest("GET", "/api/auth/launch?ticket="+ticket, nil)
+	req := httptest.NewRequest("GET", "/api/auth/launch-ticket?ticket="+ticket, nil)
 	req.RemoteAddr = "127.0.0.1:54321"
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusSeeOther, w.Code)
 
 	// Second request with same ticket fails.
-	req = httptest.NewRequest("GET", "/api/auth/launch?ticket="+ticket, nil)
+	req = httptest.NewRequest("GET", "/api/auth/launch-ticket?ticket="+ticket, nil)
 	req.RemoteAddr = "127.0.0.1:54321"
 	w = httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
@@ -211,7 +211,7 @@ func TestHandleLaunchTicket_RedirectsToSafePath(t *testing.T) {
 		redirect   string
 		wantTarget string
 	}{
-		{name: "absolute-path", redirect: "/api/tasks/foo/runs/bar/log/raw", wantTarget: "/api/tasks/foo/runs/bar/log/raw"},
+		{name: "absolute-path", redirect: "/api/runs/bar/log/raw", wantTarget: "/api/runs/bar/log/raw"},
 		{name: "empty-falls-back-to-root", redirect: "", wantTarget: "/"},
 		{name: "scheme-relative-rejected", redirect: "//evil.example.com/x", wantTarget: "/"},
 		{name: "non-absolute-rejected", redirect: "evil", wantTarget: "/"},
@@ -230,7 +230,7 @@ func TestHandleLaunchTicket_RedirectsToSafePath(t *testing.T) {
 			ticket, err := s.auth.CreateLaunchTicket()
 			require.NoError(t, err)
 
-			url := "/api/auth/launch?ticket=" + ticket
+			url := "/api/auth/launch-ticket?ticket=" + ticket
 			if tc.redirect != "" {
 				url += "&redirect=" + neturl.QueryEscape(tc.redirect)
 			}
@@ -255,7 +255,7 @@ func TestHandleLaunchTicket_NonLoopbackRedeems(t *testing.T) {
 	ticket, err := s.auth.CreateLaunchTicket()
 	require.NoError(t, err)
 
-	req := httptest.NewRequest("GET", "/api/auth/launch?ticket="+ticket, nil)
+	req := httptest.NewRequest("GET", "/api/auth/launch-ticket?ticket="+ticket, nil)
 	req.RemoteAddr = "192.168.1.100:54321"
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
@@ -302,7 +302,7 @@ func TestHandleCreateLaunchTicket_NonLoopbackAuthenticatedSucceeds(t *testing.T)
 	// Mint a valid JWT cookie via the launch path.
 	ticket, err := s.auth.CreateLaunchTicket()
 	require.NoError(t, err)
-	launchReq := httptest.NewRequest("GET", "/api/auth/launch?ticket="+ticket, nil)
+	launchReq := httptest.NewRequest("GET", "/api/auth/launch-ticket?ticket="+ticket, nil)
 	launchReq.RemoteAddr = "127.0.0.1:54321"
 	launchW := httptest.NewRecorder()
 	s.router.ServeHTTP(launchW, launchReq)
@@ -351,7 +351,7 @@ func TestHandleCreateLaunchTicket_NonLoopbackUnauthenticatedRejected(t *testing.
 func TestHandleLaunchTicket_MissingTicket(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 
-	req := httptest.NewRequest("GET", "/api/auth/launch", nil)
+	req := httptest.NewRequest("GET", "/api/auth/launch-ticket", nil)
 	req.RemoteAddr = "127.0.0.1:54321"
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
@@ -362,7 +362,7 @@ func TestHandleLaunchTicket_MissingTicket(t *testing.T) {
 func TestHandleLaunchTicket_InvalidTicket(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 
-	req := httptest.NewRequest("GET", "/api/auth/launch?ticket=bogus", nil)
+	req := httptest.NewRequest("GET", "/api/auth/launch-ticket?ticket=bogus", nil)
 	req.RemoteAddr = "127.0.0.1:54321"
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
@@ -425,7 +425,7 @@ func TestAuthStatus_AuthenticatedViaCookie(t *testing.T) {
 	ticket, err := s.auth.CreateLaunchTicket()
 	require.NoError(t, err)
 
-	launchReq := httptest.NewRequest("GET", "/api/auth/launch?ticket="+ticket, nil)
+	launchReq := httptest.NewRequest("GET", "/api/auth/launch-ticket?ticket="+ticket, nil)
 	launchReq.RemoteAddr = "127.0.0.1:54321"
 	launchW := httptest.NewRecorder()
 	s.router.ServeHTTP(launchW, launchReq)

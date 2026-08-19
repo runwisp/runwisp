@@ -173,12 +173,12 @@ an **occurrence ring** (default size `10`).
 ```toml
 [notify]
 coalesce_window = "30m"
-occurrence_ring = 5
+keep_occurrences = 5
 ```
 
 Outbound channels coalesce on that same key by default. The first
 failure in a window goes out right away. After that, the rest are queued
-until one of two things happens: either `occurrence_ring` events
+until one of two things happens: either `keep_occurrences` events
 pile up (and the Nth goes out as a "check-in"), or the window runs out
 (and a single closing "summary" goes out). So in the channel you get the
 first failure, the occasional check-in, and one summary — not 60
@@ -192,7 +192,7 @@ separate pings.
 ### Worked timeline
 
 A `*/1 * * * *` task that starts failing at `T+0`, with defaults
-(`coalesce_window = 1h`, `occurrence_ring = 10`,
+(`coalesce_window = 1h`, `keep_occurrences = 10`,
 `coalesce_outbound = true`):
 
 | When          | Failure #          | Bell row                       | Outbound delivery                                                                 |
@@ -212,9 +212,9 @@ summary, the next failure kicks off a fresh window — so the "first"
 cadence just repeats for as long as failures keep rolling in.
 
 A handy rule of thumb for a task that's failing repeatedly: you'll get
-at most one outbound message every `coalesce_window / occurrence_ring`.
+at most one outbound message every `coalesce_window / keep_occurrences`.
 With the defaults, that's one message every six minutes. Want fewer?
-Raise `occurrence_ring`. Want the recovery summary sooner? Lower
+Raise `keep_occurrences`. Want the recovery summary sooner? Lower
 `coalesce_window`.
 
 If every single failure genuinely matters on its own — a CI build agent,

@@ -10,16 +10,16 @@ import (
 )
 
 const deletePendingLogUpload = `-- name: DeletePendingLogUpload :exec
-DELETE FROM pending_log_uploads WHERE external_execution_id = ?
+DELETE FROM pending_log_uploads WHERE execution_id = ?
 `
 
-func (q *Queries) DeletePendingLogUpload(ctx context.Context, externalExecutionID string) error {
-	_, err := q.db.ExecContext(ctx, deletePendingLogUpload, externalExecutionID)
+func (q *Queries) DeletePendingLogUpload(ctx context.Context, executionID string) error {
+	_, err := q.db.ExecContext(ctx, deletePendingLogUpload, executionID)
 	return err
 }
 
 const listPendingLogUploads = `-- name: ListPendingLogUploads :many
-SELECT external_execution_id, upload_url, log_path, inserted_at_unix FROM pending_log_uploads
+SELECT execution_id, upload_url, log_path, inserted_at_unix FROM pending_log_uploads
 `
 
 func (q *Queries) ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload, error) {
@@ -32,7 +32,7 @@ func (q *Queries) ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload
 	for rows.Next() {
 		var i PendingLogUpload
 		if err := rows.Scan(
-			&i.ExternalExecutionID,
+			&i.ExecutionID,
 			&i.UploadUrl,
 			&i.LogPath,
 			&i.InsertedAtUnix,
@@ -52,26 +52,26 @@ func (q *Queries) ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload
 
 const upsertPendingLogUpload = `-- name: UpsertPendingLogUpload :exec
 
-INSERT INTO pending_log_uploads (external_execution_id, upload_url, log_path, inserted_at_unix)
+INSERT INTO pending_log_uploads (execution_id, upload_url, log_path, inserted_at_unix)
 VALUES (?, ?, ?, ?)
-ON CONFLICT(external_execution_id) DO UPDATE SET
+ON CONFLICT(execution_id) DO UPDATE SET
   upload_url = excluded.upload_url,
   log_path = excluded.log_path,
   inserted_at_unix = excluded.inserted_at_unix
 `
 
 type UpsertPendingLogUploadParams struct {
-	ExternalExecutionID string `json:"external_execution_id"`
-	UploadUrl           string `json:"upload_url"`
-	LogPath             string `json:"log_path"`
-	InsertedAtUnix      int64  `json:"inserted_at_unix"`
+	ExecutionID    string `json:"execution_id"`
+	UploadUrl      string `json:"upload_url"`
+	LogPath        string `json:"log_path"`
+	InsertedAtUnix int64  `json:"inserted_at_unix"`
 }
 
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 func (q *Queries) UpsertPendingLogUpload(ctx context.Context, arg UpsertPendingLogUploadParams) error {
 	_, err := q.db.ExecContext(ctx, upsertPendingLogUpload,
-		arg.ExternalExecutionID,
+		arg.ExecutionID,
 		arg.UploadUrl,
 		arg.LogPath,
 		arg.InsertedAtUnix,

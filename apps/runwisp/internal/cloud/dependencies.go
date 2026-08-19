@@ -40,10 +40,10 @@ type TaskRunner interface {
 	// dispatch's inputValues — resolved against the task's declared parameters
 	// like any manual trigger. Implementations must set
 	// TriggeredBy = model.TriggeredByCloud.
-	TriggerCloudRun(taskName, externalExecutionID string, params map[string]string) (*model.Run, error)
-	// TerminateRunByExternalExecutionID cancels a running run identified by
+	TriggerCloudRun(taskName, executionID string, params map[string]string) (*model.Run, error)
+	// TerminateRunByExecutionID cancels a running run identified by
 	// the cloud-side execution id, if any.
-	TerminateRunByExternalExecutionID(externalExecutionID string) error
+	TerminateRunByExecutionID(executionID string) error
 	// StartServiceInstances brings a service up to its desired instance count.
 	StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error
 	// StopService marks a service operator-stopped and cancels its instances.
@@ -58,16 +58,16 @@ type TaskRunner interface {
 // Mirrors a slice of storage.RunRepository so the cloud doesn't depend on
 // the SQLite-backed concrete.
 type ExternalRunGetter interface {
-	// GetRunByExternalExecutionID returns the run tagged with the supplied
+	// GetRunByExecutionID returns the run tagged with the supplied
 	// cloud-side execution id, or ErrNotFound if no such run exists.
-	GetRunByExternalExecutionID(ctx context.Context, externalExecutionID string) (*model.Run, error)
+	GetRunByExecutionID(ctx context.Context, executionID string) (*model.Run, error)
 }
 
 // PendingLogUploadRepository persists dispatch metadata so the daemon can
 // resume terminal log archival after a crash.
 type PendingLogUploadRepository interface {
 	UpsertPendingLogUpload(ctx context.Context, rec model.PendingLogUpload) error
-	DeletePendingLogUpload(ctx context.Context, externalExecutionID string) error
+	DeletePendingLogUpload(ctx context.Context, executionID string) error
 	ListPendingLogUploads(ctx context.Context) ([]model.PendingLogUpload, error)
 }
 

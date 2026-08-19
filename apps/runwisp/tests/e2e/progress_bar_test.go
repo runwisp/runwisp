@@ -47,7 +47,7 @@ func TestProgressBarCommitsFinalFrameAndStreamsRegion(t *testing.T) {
 	// task spreads its frames over ~0.8s) so we observe a region snapshot.
 	streamCtx, cancelStream := context.WithCancel(context.Background())
 	t.Cleanup(cancelStream)
-	msgs, err := client.StreamLogLines(streamCtx, taskName, run.ID, apiclient.StreamLogOpts{FromLine: -100})
+	msgs, err := client.StreamLogLines(streamCtx, run.ID, apiclient.StreamLogOpts{FromLine: -100})
 	require.NoError(t, err, "StreamLogLines should connect")
 
 	sawRegion := waitForRegionFrame(t, msgs, "progress:", 10*time.Second)
@@ -60,7 +60,7 @@ func TestProgressBarCommitsFinalFrameAndStreamsRegion(t *testing.T) {
 	// gap before the trailing line commits.
 	logDir := filepath.Join(daemon.dataDir, "logs")
 	logPath := logutil.ResolveRunLogPath(logDir, run.TaskName, run.ID, run.CreatedAt)
-	body := waitForLogContains(t, client, taskName, run.ID, "done", 10*time.Second)
+	body := waitForLogContains(t, client, run.ID, "done", 10*time.Second)
 
 	require.NotContains(t, body, "\r", "committed log must not contain raw carriage returns")
 	require.Contains(t, body, "done", "the line after the bar should be committed")
@@ -92,13 +92,13 @@ func TestProgressBarExposesFrameHistory(t *testing.T) {
 	run := waitForListedRun(t, client, taskName, triggered.ID, 5*time.Second)
 
 	// Wait for the bar to settle on disk.
-	waitForLogContains(t, client, taskName, run.ID, "progress: 100%", 10*time.Second)
+	waitForLogContains(t, client, run.ID, "progress: 100%", 10*time.Second)
 
 	// The anchor line (the committed bar) advertises frame history.
-	anchor := waitForAnchorLine(t, client, taskName, run.ID, "progress:", 10*time.Second)
+	anchor := waitForAnchorLine(t, client, run.ID, "progress:", 10*time.Second)
 	require.Greater(t, anchor.FrameCount, 0, "the committed bar line should advertise frame history")
 
-	frames, err := client.GetLogLineHistory(taskName, run.ID, anchor.N)
+	frames, err := client.GetLogLineHistory(run.ID, anchor.N)
 	require.NoError(t, err, "history endpoint should succeed")
 	require.NotEmpty(t, frames, "expected prior frames for the settled bar")
 
@@ -126,12 +126,12 @@ func TestProgressBarExposesFrameHistory(t *testing.T) {
 	// terminal status yet (the trailing `echo done` and exit reaping lag the
 	// final frame, especially on slower runners). Wait for it to end before
 	// deleting, since the API rejects deleting a still-running run.
-	waitForRunEnded(t, client, taskName, run.ID, 10*time.Second)
+	waitForRunEnded(t, client, run.ID, 10*time.Second)
 
 	// Deleting the run removes the container along with the rest of the log
 	// files. Deletion is soft: the purger reclaims on-disk files after its
 	// TTL + sweep (≈9s), so allow generous slack here.
-	require.NoError(t, client.DeleteRun(taskName, run.ID))
+	require.NoError(t, client.DeleteRun(run.ID))
 	require.Eventually(t, func() bool {
 		_, err := os.Stat(containerPath)
 		return os.IsNotExist(err)
@@ -140,11 +140,11 @@ func TestProgressBarExposesFrameHistory(t *testing.T) {
 
 // waitForAnchorLine polls the log page until a committed line whose text
 // contains substr carries frame history (FrameCount>0), then returns it.
-func waitForAnchorLine(t *testing.T, client *apiclient.Client, taskName, runID, substr string, timeout time.Duration) server.LogLineEntry {
+func waitForAnchorLine(t *testing.T, client *apiclient.Client, runID, substr string, timeout time.Duration) server.LogLineEntry {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		page, err := client.GetLogPage(taskName, runID, 0, 0)
+		page, err := client.GetLogPage(runID, 0, 0)
 		if err == nil {
 			for _, l := range page.Lines {
 				if strings.Contains(l.Text, substr) && l.FrameCount > 0 {
@@ -160,7 +160,7 @@ func waitForAnchorLine(t *testing.T, client *apiclient.Client, taskName, runID, 
 
 // waitForRunEnded polls a single run until it reaches a terminal status, so
 // callers can safely delete it (the API rejects deleting a running run).
-func waitForRunEnded(t *testing.T, client *apiclient.Client, taskName, runID string, timeout time.Duration) {
+func waitForRunEnded(t *testing.T, client *apiclient.Client, runID string, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -218,12 +218,12 @@ func waitForRegionFrame(t *testing.T, msgs <-chan apiclient.LogStreamMsg, substr
 }
 
 // waitForLogContains polls /log/raw until want appears, then returns the body.
-func waitForLogContains(t *testing.T, client *apiclient.Client, taskName, runID, want string, timeout time.Duration) string {
+func waitForLogContains(t *testing.T, client *apiclient.Client, runID, want string, timeout time.Duration) string {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	var last string
 	for time.Now().Before(deadline) {
-		rc, err := client.GetLogRaw(taskName, runID)
+		rc, err := client.GetLogRaw(runID)
 		if err == nil {
 			b, readErr := io.ReadAll(rc)
 			rc.Close()

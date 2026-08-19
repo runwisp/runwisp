@@ -94,7 +94,7 @@ func TestMapRunToExecutionUpdateNilRun(t *testing.T) {
 	assert.Nil(t, mapRunToExecutionUpdate(nil))
 }
 
-func TestMapRunToExecutionUpdateNilExternalExecutionID(t *testing.T) {
+func TestMapRunToExecutionUpdateNilExecutionID(t *testing.T) {
 	run := &model.Run{Status: model.PhaseRunning}
 	assert.Nil(t, mapRunToExecutionUpdate(run))
 }
@@ -103,9 +103,9 @@ func TestMapRunToExecutionUpdateRunning(t *testing.T) {
 	execID := "ext-123"
 	now := time.Now()
 	run := &model.Run{
-		Status:              model.PhaseRunning,
-		ExternalExecutionID: &execID,
-		StartedAt:           &now,
+		Status:      model.PhaseRunning,
+		ExecutionID: &execID,
+		StartedAt:   &now,
 	}
 
 	result := mapRunToExecutionUpdate(run)
@@ -121,12 +121,12 @@ func TestMapRunToExecutionUpdateEndedSuccess(t *testing.T) {
 	reason := model.ReasonSuccess
 	now := time.Now()
 	run := &model.Run{
-		Status:              model.PhaseEnded,
-		ExternalExecutionID: &execID,
-		EndReason:           &reason,
-		ExitCode:            0,
-		StartedAt:           &now,
-		EndedAt:             &now,
+		Status:      model.PhaseEnded,
+		ExecutionID: &execID,
+		EndReason:   &reason,
+		ExitCode:    0,
+		StartedAt:   &now,
+		EndedAt:     &now,
 	}
 
 	result := mapRunToExecutionUpdate(run)
@@ -141,12 +141,12 @@ func TestMapRunToExecutionUpdateEndedStartFailed(t *testing.T) {
 	reason := model.ReasonStartFailed
 	now := time.Now()
 	run := &model.Run{
-		Status:              model.PhaseEnded,
-		ExternalExecutionID: &execID,
-		EndReason:           &reason,
-		ExitCode:            1,
-		StartedAt:           &now,
-		EndedAt:             &now,
+		Status:      model.PhaseEnded,
+		ExecutionID: &execID,
+		EndReason:   &reason,
+		ExitCode:    1,
+		StartedAt:   &now,
+		EndedAt:     &now,
 	}
 
 	// Without ReasonStartFailed in terminalReasonMap the control plane would
@@ -160,9 +160,9 @@ func TestMapRunToExecutionUpdateEndedStartFailed(t *testing.T) {
 func TestMapRunToExecutionUpdateEndedNilReason(t *testing.T) {
 	execID := "ext-789"
 	run := &model.Run{
-		Status:              model.PhaseEnded,
-		ExternalExecutionID: &execID,
-		EndReason:           nil,
+		Status:      model.PhaseEnded,
+		ExecutionID: &execID,
+		EndReason:   nil,
 	}
 	assert.Nil(t, mapRunToExecutionUpdate(run))
 }
@@ -193,11 +193,11 @@ func TestMapRunToExecutionUpdateTerminalReasonsExhaustive(t *testing.T) {
 		t.Run(string(reason), func(t *testing.T) {
 			r := reason
 			run := &model.Run{
-				Status:              model.PhaseEnded,
-				ExternalExecutionID: &execID,
-				EndReason:           &r,
-				StartedAt:           &now,
-				EndedAt:             &now,
+				Status:      model.PhaseEnded,
+				ExecutionID: &execID,
+				EndReason:   &r,
+				StartedAt:   &now,
+				EndedAt:     &now,
 			}
 			result := mapRunToExecutionUpdate(run)
 			require.NotNil(t, result, "terminal reason %q must produce an update", reason)
@@ -214,11 +214,11 @@ func TestMapRunToExecutionUpdateUnknownReasonFailsSafe(t *testing.T) {
 	reason := model.EndReason("some_future_reason")
 	now := time.Now()
 	run := &model.Run{
-		Status:              model.PhaseEnded,
-		ExternalExecutionID: &execID,
-		EndReason:           &reason,
-		StartedAt:           &now,
-		EndedAt:             &now,
+		Status:      model.PhaseEnded,
+		ExecutionID: &execID,
+		EndReason:   &reason,
+		StartedAt:   &now,
+		EndedAt:     &now,
 	}
 	result := mapRunToExecutionUpdate(run)
 	require.NotNil(t, result)

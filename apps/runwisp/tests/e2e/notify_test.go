@@ -258,7 +258,7 @@ func TestNotificationsDeliveryFailureSurfacesInApp(t *testing.T) {
 
 	configPath := writeNotifyConfig(t, fmt.Sprintf(`
 [notify]
-default_timeout = "1500ms"
+retry_budget = "1500ms"
 
 [tasks.fail-task]
 run = "exit 1"

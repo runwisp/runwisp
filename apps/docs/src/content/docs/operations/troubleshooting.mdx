@@ -115,7 +115,7 @@ Two different mechanisms throw output away, and they fail in different ways:
 - **Rotation** caps a _single_ run's output at `log_max_size`. What happens when
   a run exceeds it is `log_on_full`: `drop_old` (the default — the log is rotated
   to `.prev` and a fresh file started, so you keep the tail), `drop_new` (stop
-  writing but let the process run on, keeping the _start_), or `kill_task` (end
+  writing but let the process run on, keeping the _start_), or `kill` (end
   the run with reason `log_overflow`). Output that goes missing from the middle
   of a long run is rotation, not a bug.
 
@@ -132,7 +132,7 @@ comes due:
   a fast schedule builds a backlog this way, which looks like "runs are stuck".
 - `skip` — the new run is dropped. Trigger a task by hand while one is running
   and it can look like nothing happened at all.
-- `terminate` — the running one is killed so the new one can start.
+- `kill` — the running one is killed so the new one can start.
 
 [Concurrency policies](/concepts/concurrency/) covers all three, plus
 `max_concurrent` for letting a bounded number overlap on purpose.

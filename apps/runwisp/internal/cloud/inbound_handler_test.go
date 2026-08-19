@@ -28,7 +28,7 @@ type stubRunRepo struct {
 	getErr error
 }
 
-func (f *stubRunRepo) GetRunByExternalExecutionID(_ context.Context, _ string) (*model.Run, error) {
+func (f *stubRunRepo) GetRunByExecutionID(_ context.Context, _ string) (*model.Run, error) {
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
@@ -168,10 +168,10 @@ func TestHandleExecutionDispatch_DuplicateTerminal_ReQueuesTerminalUpdate(t *tes
 	reason := model.ReasonSuccess
 	execID := "exec-done"
 	repo := &stubRunRepo{run: &model.Run{
-		ID:                  "r1",
-		Status:              model.PhaseEnded,
-		EndReason:           &reason,
-		ExternalExecutionID: &execID,
+		ID:          "r1",
+		Status:      model.PhaseEnded,
+		EndReason:   &reason,
+		ExecutionID: &execID,
 	}}
 	h := newDispatchInboundHandler(runner, repo, avail)
 

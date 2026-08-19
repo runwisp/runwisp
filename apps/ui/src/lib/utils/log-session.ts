@@ -40,7 +40,7 @@ export function createLogSession(options: LogSessionOptions) {
 
         const limit = Math.max(1, to - from + 1);
         try {
-            const page = await tasksApi.getLogPage(options.getTaskName(run), runId, {
+            const page = await tasksApi.getLogPage(runId, {
                 from,
                 limit,
             });
@@ -65,7 +65,7 @@ export function createLogSession(options: LogSessionOptions) {
         const run = options.findRun(runId);
         if (!run) return [];
         try {
-            return await tasksApi.getLogLineHistory(options.getTaskName(run), runId, lineNum);
+            return await tasksApi.getLogLineHistory(runId, lineNum);
         } catch (err) {
             logger.error("Failed to fetch log line history", err);
             return [];

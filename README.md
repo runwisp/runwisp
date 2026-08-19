@@ -110,7 +110,7 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 
 **Scheduling & execution**
 
-- Standard cron expressions with per-task concurrency policies (`queue` · `skip` · `terminate`)
+- Standard cron expressions with per-task concurrency policies (`queue` · `skip` · `kill`)
 - Long-running services with one or more `instances`, exponential restart backoff, crash recovery, graceful shutdown
 - Retries with configurable backoff (`constant` · `linear` · `exponential`)
 - Per-task timeouts with automatic kill on deadline
@@ -121,7 +121,7 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 
 - Real-time stdout/stderr streaming over SSE, viewable in the web UI and TUI
 - Every run recorded in SQLite with exit code, duration, and timestamps
-- Built-in per-task log rotation with overflow policies (`drop_new` · `drop_old` · `kill_task`)
+- Built-in per-task log rotation with overflow policies (`drop_new` · `drop_old` · `kill`)
 - Failure alerts to Slack, Discord, Telegram, email (SMTP), generic webhooks, or the in-app inbox, routed per task with `notify_on_failure` · `notify_on_success` · `treat_missed_as_failure`
 
 **Interfaces**
@@ -157,7 +157,7 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 | Terminal UI          | No                   | No                 | No             | **Yes (Bubbletea)**                   |
 | REST API             | No                   | D-Bus              | XML-RPC        | **REST + JWT**                        |
 | Live log streaming   | No                   | `journalctl -f`    | Tail only      | **SSE**                               |
-| Concurrency policies | No                   | Overlap prevention | No             | **Queue · skip · terminate**          |
+| Concurrency policies | No                   | Overlap prevention | No             | **Queue · skip · kill**               |
 | Failure alerts       | No                   | `OnFailure=` unit  | Event listener | **Slack · Discord · email · webhook** |
 | Log rotation         | External (logrotate) | journald           | Built-in       | **Built-in, per-task**                |
 | Execution history    | No                   | `journalctl`       | No             | **SQLite, browsable in UI**           |

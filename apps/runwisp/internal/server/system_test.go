@@ -66,7 +66,7 @@ func TestHumaGetInfo(t *testing.T) {
 
 // TestHumaGetInfo_TasksComeFromTheLiveRegistry is the reporting half of the cron
 // hold releasing itself. The scheduler picking a job back up is invisible if
-// /api/info keeps serving the task list built at boot: `runwisp status` and the
+// /api/daemon keeps serving the task list built at boot: `runwisp status` and the
 // TUI header both read it, so they would go on saying "held by cron" for as long
 // as the daemon ran, long after RunWisp took the job over. A reload's added and
 // removed tasks were stale on those two surfaces for the same reason.
@@ -98,7 +98,7 @@ func TestHumaGetInfo_TasksComeFromTheLiveRegistry(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, out.Body.Tasks, 1)
 	assert.Empty(t, out.Body.Tasks[0].HeldBy,
-		"the hold is gone from the scheduler, so it has to be gone from /api/info too")
+		"the hold is gone from the scheduler, so it has to be gone from /api/daemon too")
 }
 
 // TestHumaGetInfo_NoRegistryKeepsTheBootList covers the modes that pass no

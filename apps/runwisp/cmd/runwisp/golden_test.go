@@ -103,7 +103,7 @@ func TestStatusJSONGolden(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	mux.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/daemon", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(model.DaemonInfo{
 			Version: "0.12.0", Port: 9477, SchedulingActive: true,
 			ResolvedTimezone: "UTC", TimezoneSource: "config",

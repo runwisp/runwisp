@@ -86,7 +86,7 @@ run.
         # 1. Log in (CHAP) → JWT.
         NONCE=$(curl -sSf "$BASE/api/auth/challenge" | jq -r .nonce)
         RESP=$(printf '%s:%s' "$RUNWISP_PASSWORD" "$NONCE" | sha256sum | cut -d' ' -f1)
-        TOKEN=$(curl -sSf -X POST "$BASE/api/auth" \
+        TOKEN=$(curl -sSf -X POST "$BASE/api/auth/login" \
           -H 'Content-Type: application/json' \
           -d "$(jq -nc --arg n "$NONCE" --arg r "$RESP" '{nonce:$n, response:$r}')" \
           | jq -r .token)

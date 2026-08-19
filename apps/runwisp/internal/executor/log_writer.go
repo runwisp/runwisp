@@ -49,7 +49,7 @@ type LogWriter struct {
 	// Size limiting
 	maxSize    int64  // 0 = unlimited
 	overflow   string // model.LogOverflow* constants
-	cancelFunc func() // cancel context for kill_task mode
+	cancelFunc func() // cancel context for kill mode
 
 	// Disk space monitoring
 	minFreeDisk       int64  // 0 = disabled
@@ -66,7 +66,7 @@ type LogWriter struct {
 	totalProduced  int64 // total bytes the process output (before any truncation)
 	truncated      bool
 	stopped        bool // drop_new mode or disk-full: no more writes accepted
-	killedByPolicy bool // kill_task overflow tripped — distinguishes policy-kill from clean stop
+	killedByPolicy bool // kill overflow tripped — distinguishes policy-kill from clean stop
 
 	// Rotation bookkeeping: cumulative counts from rotated-away files
 	rotatedLines int64
@@ -84,12 +84,12 @@ type LogWriterOpts struct {
 	LogPath     string
 	MaxSize     int64  // 0 = unlimited
 	Overflow    string // model.LogOverflow* constants; defaults to drop_old
-	CancelFunc  func() // for kill_task mode (log_max_size and disk-pressure)
+	CancelFunc  func() // for kill mode (log_max_size and disk-pressure)
 	MinFreeDisk int64  // 0 = disabled
 	LogDir      string
 	// OnDiskPressure fires once per writer when min_free_space first trips.
 	// killedTask reports whether the writer also cancelled the task because
-	// Overflow == kill_task. Invoked synchronously under the writer's mutex,
+	// Overflow == kill. Invoked synchronously under the writer's mutex,
 	// so the callback must not block.
 	OnDiskPressure func(free, min int64, killedTask bool)
 	// Now is the wall-clock source for system lines. Required (must not be nil);
@@ -138,7 +138,7 @@ func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
 // WriteLineEvent appends a single line for the given stream and returns the
 // absolute line number assigned by the writer (rotated_lines + line_count).
 // Returns -1 when the line is silently dropped (writer stopped, drop_new,
-// kill_task, disk-low). The returned number is monotonically non-decreasing
+// kill, disk-low). The returned number is monotonically non-decreasing
 // across rotations and is the canonical `n` for log events on the bus.
 func (w *LogWriter) WriteLineEvent(text, stream string) (int64, error) {
 	formatted := []byte(logutil.FormatLine(text, stream))
@@ -227,10 +227,10 @@ func (w *LogWriter) checkDiskPressure() bool {
 	if free < 0 || free >= w.minFreeDisk {
 		return false
 	}
-	killed := w.overflow == model.LogOverflowKillTask
+	killed := w.overflow == model.LogOverflowKill
 	if killed {
 		w.writeSystemLine(fmt.Sprintf(
-			"Process killed: disk space critically low (%s free, minimum %s required); log_on_full=\"kill_task\".",
+			"Process killed: disk space critically low (%s free, minimum %s required); log_on_full=\"kill\".",
 			config.FormatByteSize(free), config.FormatByteSize(w.minFreeDisk)))
 	} else {
 		w.writeSystemLine(fmt.Sprintf(
@@ -266,7 +266,7 @@ func (w *LogWriter) handleSizeOverflow(p []byte) bool {
 		w.stopped = true
 		w.truncated = true
 		return true
-	case model.LogOverflowKillTask:
+	case model.LogOverflowKill:
 		w.writeSystemLine(fmt.Sprintf(
 			"Process killed: log output exceeded log_max_size (%s).",
 			config.FormatByteSize(w.maxSize)))
@@ -497,7 +497,7 @@ func (w *LogWriter) writeTotalProducedLine() {
 }
 
 // KilledByPolicy reports whether the writer cancelled the run because the
-// task's log_on_full = "kill_task" policy tripped. Distinguishes a
+// task's log_on_full = "kill" policy tripped. Distinguishes a
 // policy-enforced kill from an operator-initiated stop.
 func (w *LogWriter) KilledByPolicy() bool {
 	w.mu.Lock()

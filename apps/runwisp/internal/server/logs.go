@@ -41,12 +41,11 @@ const (
 	LogStreamReplayMax     = 50000
 )
 
-// LogPageInput drives GET /api/tasks/{taskName}/runs/{runId}/log.
+// LogPageInput drives GET /api/runs/{runId}/log.
 type LogPageInput struct {
-	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
-	RunID    string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
-	From     int64  `query:"from" default:"-1000" doc:"Anchor line number; 0 is the first line, negative values count from end (default -1000)"`
-	Limit    int64  `query:"limit" minimum:"1" maximum:"10000" doc:"Max lines returned (default 1000)"`
+	RunID string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
+	From  int64  `query:"from" default:"-1000" doc:"Anchor line number; 0 is the first line, negative values count from end (default -1000)"`
+	Limit int64  `query:"limit" minimum:"1" maximum:"10000" doc:"Max lines returned (default 1000)"`
 }
 
 // LogLineEntry mirrors the line-event payload used on the SSE wire.
@@ -72,10 +71,9 @@ type LogPageOutput struct {
 	Body LogPageBody
 }
 
-// LogRawInput drives GET /api/tasks/{taskName}/runs/{runId}/log/raw.
+// LogRawInput drives GET /api/runs/{runId}/log/raw.
 type LogRawInput struct {
-	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
-	RunID    string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
+	RunID string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
 }
 
 // LogRawOutput streams the rotated-away segment (.log.prev) followed by the
@@ -85,20 +83,16 @@ type LogRawOutput struct {
 	Body        []byte
 }
 
-// errInvalidRunID / errRunTaskMismatch are getRunForTask's sentinel outcomes
-// for a malformed ULID and a run that exists but belongs to another task,
-// distinguished from a plain lookup failure (whose underlying error passes
-// through unwrapped) so each caller can map to its own response shape.
-var (
-	errInvalidRunID    = errors.New("invalid run id")
-	errRunTaskMismatch = errors.New("run belongs to a different task")
-)
+// errInvalidRunID is getRunByID's sentinel for a malformed ULID, distinguished
+// from a plain lookup failure (whose underlying error passes through unwrapped)
+// so each caller can map to its own response shape.
+var errInvalidRunID = errors.New("invalid run id")
 
-// getRunForTask parses runIDStr, loads the run, and verifies it belongs to
-// taskName — the lookup+ownership check shared by every endpoint scoped to a
-// single run. Callers translate the returned sentinel/wrapped errors into
-// their own response (a 400/404 pair for REST, a silent drop for SSE).
-func (srv *Server) getRunForTask(ctx context.Context, taskName, runIDStr string) (*model.Run, error) {
+// getRunByID parses runIDStr and loads the run. A run ULID is globally unique,
+// so a run is addressed by ID alone — no task name is needed. Callers translate
+// the returned sentinel/wrapped errors into their own response (a 400/404 pair
+// for REST, a silent drop for SSE).
+func (srv *Server) getRunByID(ctx context.Context, runIDStr string) (*model.Run, error) {
 	if _, err := ulid.Parse(runIDStr); err != nil {
 		return nil, errInvalidRunID
 	}
@@ -106,16 +100,13 @@ func (srv *Server) getRunForTask(ctx context.Context, taskName, runIDStr string)
 	if err != nil {
 		return nil, err
 	}
-	if run.TaskName != taskName {
-		return nil, errRunTaskMismatch
-	}
 	return run, nil
 }
 
-// resolveLogPathFor validates the run ID and computes the log path. Returns
+// resolveLogPath validates the run ID and computes the log path. Returns
 // an error suitable for huma to map to an HTTP status code.
-func (srv *Server) resolveLogPathFor(ctx context.Context, taskName, runIDStr string) (string, *model.Run, error) {
-	run, err := srv.getRunForTask(ctx, taskName, runIDStr)
+func (srv *Server) resolveLogPath(ctx context.Context, runIDStr string) (string, *model.Run, error) {
+	run, err := srv.getRunByID(ctx, runIDStr)
 	if err != nil {
 		if errors.Is(err, errInvalidRunID) {
 			return "", nil, huma.Error400BadRequest("Invalid run ID")
@@ -126,7 +117,7 @@ func (srv *Server) resolveLogPathFor(ctx context.Context, taskName, runIDStr str
 }
 
 func (srv *Server) humaGetLogPage(ctx context.Context, input *LogPageInput) (*LogPageOutput, error) {
-	logPath, run, err := srv.resolveLogPathFor(ctx, input.TaskName, input.RunID)
+	logPath, run, err := srv.resolveLogPath(ctx, input.RunID)
 	if err != nil {
 		return nil, err
 	}
@@ -169,11 +160,10 @@ func (srv *Server) humaGetLogPage(ctx context.Context, input *LogPageInput) (*Lo
 }
 
 // LogLineHistoryInput drives
-// GET /api/tasks/{taskName}/runs/{runId}/log/line/{lineNum}/history.
+// GET /api/runs/{runId}/log/line/{lineNumber}/history.
 type LogLineHistoryInput struct {
-	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
-	RunID    string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
-	LineNum  int64  `path:"lineNum" minimum:"0" doc:"Anchor line number to fetch frame history for"`
+	RunID      string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
+	LineNumber int64  `path:"lineNumber" minimum:"0" doc:"Anchor line number to fetch frame history for"`
 }
 
 // LogLineHistoryBody returns the prior whole-region frames a progress bar or
@@ -190,12 +180,12 @@ type LogLineHistoryOutput struct {
 }
 
 func (srv *Server) humaGetLogLineHistory(ctx context.Context, input *LogLineHistoryInput) (*LogLineHistoryOutput, error) {
-	logPath, _, err := srv.resolveLogPathFor(ctx, input.TaskName, input.RunID)
+	logPath, _, err := srv.resolveLogPath(ctx, input.RunID)
 	if err != nil {
 		return nil, err
 	}
 
-	frames, _ := logutil.ReadFrameHistory(logPath, input.LineNum)
+	frames, _ := logutil.ReadFrameHistory(logPath, input.LineNumber)
 	if frames == nil {
 		frames = [][]string{}
 	}
@@ -203,7 +193,7 @@ func (srv *Server) humaGetLogLineHistory(ctx context.Context, input *LogLineHist
 }
 
 func (srv *Server) humaGetLogRaw(ctx context.Context, input *LogRawInput) (*LogRawOutput, error) {
-	logPath, _, err := srv.resolveLogPathFor(ctx, input.TaskName, input.RunID)
+	logPath, _, err := srv.resolveLogPath(ctx, input.RunID)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +230,6 @@ func readRawLog(logPath string) ([]byte, error) {
 // LogStreamInput drives the SSE log endpoint. Huma performs path/query/header
 // validation against these tags so the handler only sees vetted values.
 type LogStreamInput struct {
-	TaskName    string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
 	RunID       string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
 	From        int64  `query:"from" default:"-1000" doc:"Anchor line number; 0 is the first line, negative values count from end (default -1000)"`
 	ReplayLimit int64  `query:"replayLimit" minimum:"1" maximum:"50000" doc:"Cap on backfilled lines (default 5000)"`
@@ -251,7 +240,7 @@ func (srv *Server) registerLogSSE(api huma.API) {
 	sse.Register(api, huma.Operation{
 		OperationID: "streamLog",
 		Method:      http.MethodGet,
-		Path:        "/api/tasks/{taskName}/runs/{runId}/log/stream",
+		Path:        "/api/runs/{runId}/log/stream",
 		Summary:     "Stream a run's log lines as SSE",
 		Description: "Server-Sent Events stream of absolute-line-numbered log entries. Replays history starting at `from` (or `Last-Event-ID + 1`), then follows live output until the run terminates.",
 		Tags:        []string{"Logs"},
@@ -268,9 +257,9 @@ func (srv *Server) registerLogSSE(api huma.API) {
 		}
 		defer release()
 
-		run, err := srv.getRunForTask(ctx, input.TaskName, input.RunID)
+		run, err := srv.getRunByID(ctx, input.RunID)
 		if err != nil {
-			if !errors.Is(err, errInvalidRunID) && !errors.Is(err, errRunTaskMismatch) {
+			if !errors.Is(err, errInvalidRunID) {
 				slog.Error("Failed to get run", "run", input.RunID, "err", err)
 			}
 			return

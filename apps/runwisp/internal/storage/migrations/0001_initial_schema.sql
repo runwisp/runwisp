@@ -8,14 +8,14 @@
 
 CREATE TABLE IF NOT EXISTS runs (
 id                    TEXT PRIMARY KEY,
-external_execution_id TEXT,
+execution_id          TEXT,
 task_name             TEXT NOT NULL DEFAULT '',
-status                VARCHAR(20) NOT NULL,
-end_reason            VARCHAR(20),
+status                TEXT NOT NULL,
+end_reason            TEXT,
 exit_code             INTEGER NOT NULL DEFAULT 0,
 start_at              DATETIME,
 end_at                DATETIME,
-triggered_by          VARCHAR(20) NOT NULL,
+triggered_by          TEXT NOT NULL,
 created_at            DATETIME NOT NULL,
 retry_attempt         INTEGER NOT NULL DEFAULT 0,
 retry_of_run_id       TEXT,
@@ -23,7 +23,7 @@ instance_index        INTEGER NOT NULL DEFAULT 0,
 params_json           TEXT,
 deleted_at            DATETIME
 );
-CREATE INDEX IF NOT EXISTS idx_runs_external_execution_id ON runs(external_execution_id);
+CREATE INDEX IF NOT EXISTS idx_runs_execution_id ON runs(execution_id);
 CREATE INDEX IF NOT EXISTS idx_runs_task_name ON runs(task_name);
 CREATE INDEX IF NOT EXISTS idx_runs_deleted_at ON runs(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_runs_created_at_desc ON runs(created_at DESC, id DESC);
@@ -59,7 +59,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_severity ON notifications(severity)
 CREATE INDEX IF NOT EXISTS idx_notifications_read_at ON notifications(read_at);
 
 CREATE TABLE IF NOT EXISTS pending_log_uploads (
-external_execution_id TEXT PRIMARY KEY,
+execution_id         TEXT PRIMARY KEY,
 upload_url            TEXT NOT NULL,
 log_path              TEXT NOT NULL,
 inserted_at           INTEGER NOT NULL

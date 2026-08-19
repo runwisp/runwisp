@@ -247,12 +247,12 @@ export type OutboundDaemonMessage = z.infer<typeof outboundDaemonMessageSchema>;
 `;
 
   outCode = outCode.replaceAll(
-    "v: z.number().int().optional()",
-    "v: z.literal(PROTOCOL_VERSION).optional()",
+    "protocolVersion: z.number().int().optional()",
+    "protocolVersion: z.literal(PROTOCOL_VERSION).optional()",
   );
   outCode = outCode.replaceAll(
-    '"v": z.number().int().optional()',
-    '"v": z.literal(PROTOCOL_VERSION).optional()',
+    '"protocolVersion": z.number().int().optional()',
+    '"protocolVersion": z.literal(PROTOCOL_VERSION).optional()',
   );
 
   writeFileSync(tsOutputFile, outCode);

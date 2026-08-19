@@ -27,7 +27,7 @@
         // Auth status is loaded once by the root layout; this modal only reacts
         // to authStore.current (see the effect below). Loading here too would
         // double the /api/auth/status hit and re-trigger the layout's auth
-        // effect, re-seeding /api/system + /api/info a second time.
+        // effect, re-seeding /api/system + /api/daemon a second time.
         const disposeAuthRequired = browserAuthEventBus.onAuthRequired(() => {
             if (!authRequired) {
                 return;

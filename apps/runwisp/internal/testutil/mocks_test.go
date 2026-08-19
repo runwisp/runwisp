@@ -27,8 +27,8 @@ func TestMockRunRepository(t *testing.T) {
 	m.On("UpdateRun", ctx, run).Return(nil)
 	m.On("GetRun", ctx, "r1").Return(run, nil)
 	m.On("GetRun", ctx, "missing").Return((*model.Run)(nil), wantErr)
-	m.On("GetRunByExternalExecutionID", ctx, "x").Return(run, nil)
-	m.On("GetRunByExternalExecutionID", ctx, "missing").Return((*model.Run)(nil), wantErr)
+	m.On("GetRunByExecutionID", ctx, "x").Return(run, nil)
+	m.On("GetRunByExecutionID", ctx, "missing").Return((*model.Run)(nil), wantErr)
 	m.On("CountRunsFiltered", ctx, model.RunFilter{TaskName: "t1", Search: "q"}).Return(int64(2), nil)
 	queryRunsArg := storage.RunQuery{
 		Filter: model.RunFilter{TaskName: "t1"},
@@ -68,11 +68,11 @@ func TestMockRunRepository(t *testing.T) {
 	if got, err := m.GetRun(ctx, "missing"); got != nil || !errors.Is(err, wantErr) {
 		t.Fatalf("GetRun miss: %v %v", got, err)
 	}
-	if got, err := m.GetRunByExternalExecutionID(ctx, "x"); err != nil || got != run {
-		t.Fatalf("GetRunByExternalExecutionID hit: %v %v", got, err)
+	if got, err := m.GetRunByExecutionID(ctx, "x"); err != nil || got != run {
+		t.Fatalf("GetRunByExecutionID hit: %v %v", got, err)
 	}
-	if got, err := m.GetRunByExternalExecutionID(ctx, "missing"); got != nil || !errors.Is(err, wantErr) {
-		t.Fatalf("GetRunByExternalExecutionID miss: %v %v", got, err)
+	if got, err := m.GetRunByExecutionID(ctx, "missing"); got != nil || !errors.Is(err, wantErr) {
+		t.Fatalf("GetRunByExecutionID miss: %v %v", got, err)
 	}
 	if n, err := m.CountRunsFiltered(ctx, model.RunFilter{TaskName: "t1", Search: "q"}); err != nil || n != 2 {
 		t.Fatalf("CountRunsFiltered: %d %v", n, err)
@@ -128,7 +128,7 @@ func TestMockRunRepository(t *testing.T) {
 
 	mNil := &MockRunRepository{}
 	mNil.On("GetRun", ctx, "x").Return(nil, errors.New("not found"))
-	mNil.On("GetRunByExternalExecutionID", ctx, "x").Return(nil, errors.New("nf"))
+	mNil.On("GetRunByExecutionID", ctx, "x").Return(nil, errors.New("nf"))
 	mNil.On("GetLastRunByTask", ctx, "x").Return(nil, errors.New("nf"))
 	mNil.On("GetRunSummary", ctx).Return(nil, errors.New("nf"))
 	mNil.On("GetTaskRegistration", ctx, "x").Return(nil, errors.New("nf"))
@@ -139,7 +139,7 @@ func TestMockRunRepository(t *testing.T) {
 	if _, err := mNil.GetRun(ctx, "x"); err == nil {
 		t.Fatal("expect err")
 	}
-	if _, err := mNil.GetRunByExternalExecutionID(ctx, "x"); err == nil {
+	if _, err := mNil.GetRunByExecutionID(ctx, "x"); err == nil {
 		t.Fatal("expect err")
 	}
 	if _, err := mNil.GetLastRunByTask(ctx, "x"); err == nil {

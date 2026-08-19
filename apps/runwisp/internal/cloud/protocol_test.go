@@ -167,7 +167,7 @@ func TestNewExecutionAckMessage(t *testing.T) {
 	assert.Equal(t, "execution:ack", ack.Type)
 	assert.Equal(t, "exec-123", ack.ExecutionID)
 	// Envelope fields are populated (version + timestamp), not left zero.
-	assert.NotZero(t, ack.V)
+	assert.NotZero(t, ack.ProtocolVersion)
 	assert.NotEmpty(t, ack.SentAt)
 }
 

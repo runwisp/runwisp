@@ -190,7 +190,7 @@ func TestHandleServiceApply_InvalidScriptRejected(t *testing.T) {
 // back to taskName, a sub-one instance count is clamped to 1, and the optional
 // logOnFull knob is overlaid onto the task.
 func TestHandleServiceApply_NameFallbackAndDefaults(t *testing.T) {
-	logOnFull := protocol.ServiceTaskConfigLogOnFullKillTask
+	logOnFull := protocol.ServiceTaskConfigLogOnFullKill
 	h := newDispatchHandler(shellAvailable(), nil)
 	runner := h.taskManager.(*fakeTaskRunner)
 
@@ -207,7 +207,7 @@ func TestHandleServiceApply_NameFallbackAndDefaults(t *testing.T) {
 	task := runner.upserted[0]
 	assert.Equal(t, "cloud-Fallback_Svc", task.Name)
 	assert.Equal(t, 1, task.Instances)
-	assert.Equal(t, "kill_task", task.LogOnFull)
+	assert.Equal(t, "kill", task.LogOnFull)
 }
 
 func TestHandleServiceApply_DefaultsToCloudServiceName(t *testing.T) {

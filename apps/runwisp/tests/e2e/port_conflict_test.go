@@ -18,7 +18,7 @@ import (
 
 // TestPortConflict_AnotherRunwispReportsIdentity boots a daemon, then launches a
 // second `runwisp` against a *different* data dir on the same port. The launcher
-// must discover (over the occupied port's GET /api/instance) that a RunWisp
+// must discover (over the occupied port's GET /api/daemon/identity) that a RunWisp
 // daemon holds it and report that daemon's data dir, instead of the generic
 // "another process" message. stdin is not a TTY, so it takes the
 // non-interactive branch and exits with the identity-rich error.

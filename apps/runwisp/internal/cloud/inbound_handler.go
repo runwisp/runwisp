@@ -160,7 +160,7 @@ func (h *InboundHandler) isDuplicateDispatch(ctx context.Context, executionID st
 		return false
 	}
 
-	run, err := h.runRepo.GetRunByExternalExecutionID(ctx, executionID)
+	run, err := h.runRepo.GetRunByExecutionID(ctx, executionID)
 	if err != nil || run == nil {
 		return false
 	}
@@ -194,11 +194,11 @@ func (h *InboundHandler) HandleExecutionStop(ctx context.Context, message protoc
 		return &CloudError{Kind: CloudErrorKindValidation, Message: "executionId is required"}
 	}
 
-	if err := h.taskManager.TerminateRunByExternalExecutionID(executionID); err == nil {
+	if err := h.taskManager.TerminateRunByExecutionID(executionID); err == nil {
 		return nil
 	}
 
-	run, runErr := h.runRepo.GetRunByExternalExecutionID(ctx, executionID)
+	run, runErr := h.runRepo.GetRunByExecutionID(ctx, executionID)
 	if runErr != nil {
 		if errors.Is(runErr, ErrNotFound) {
 			return &CloudError{Kind: CloudErrorKindUnknownExecution, Message: "execution not found"}
@@ -223,7 +223,7 @@ func (h *InboundHandler) HandleLogReplayRequest(ctx context.Context, message pro
 			&CloudError{Kind: CloudErrorKindValidation, Message: "executionId is required"}
 	}
 
-	run, err := h.runRepo.GetRunByExternalExecutionID(ctx, executionID)
+	run, err := h.runRepo.GetRunByExecutionID(ctx, executionID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			// Unknown execution ≠ end of log: a viewer can attach before the
@@ -258,7 +258,7 @@ func (h *InboundHandler) HandleLogSearchRequest(ctx context.Context, message pro
 			&CloudError{Kind: CloudErrorKindValidation, Message: "executionId is required"}
 	}
 
-	run, err := h.runRepo.GetRunByExternalExecutionID(ctx, executionID)
+	run, err := h.runRepo.GetRunByExecutionID(ctx, executionID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return NewLogSearchChunkMessage(message.RequestID, executionID, nil, 0, true), nil

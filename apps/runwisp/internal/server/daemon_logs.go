@@ -15,7 +15,7 @@ func (srv *Server) registerDaemonLogSSE(api huma.API) {
 	sse.Register(api, huma.Operation{
 		OperationID: "streamDaemonLog",
 		Method:      http.MethodGet,
-		Path:        "/api/daemon/log-stream",
+		Path:        "/api/daemon/log/stream",
 		Summary:     "Stream the daemon's recent log output",
 		Description: "Server-Sent Events stream of daemon log lines. Replays the last 100 buffered lines, then emits new lines as they're written until the client disconnects.",
 		Tags:        []string{"System"},

@@ -19,8 +19,8 @@ import (
 
 // fakeDaemon spins up an httptest server that speaks the handful of endpoints
 // the remote-TUI bootstrap touches: /health, /api/auth/status, and the CHAP
-// pair (/api/auth/challenge, /api/auth). password is the expected CHAP secret;
-// an empty password means /api/auth always 401s. authRequired toggles what the
+// pair (/api/auth/challenge, /api/auth/login). password is the expected CHAP secret;
+// an empty password means /api/auth/login always 401s. authRequired toggles what the
 // status probe reports.
 type fakeDaemon struct {
 	authRequired bool
@@ -48,7 +48,7 @@ func (d fakeDaemon) start(t *testing.T) *httptest.Server {
 				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]string{"nonce": nonce})
-		case "/api/auth":
+		case "/api/auth/login":
 			var body struct {
 				Response string `json:"response"`
 			}

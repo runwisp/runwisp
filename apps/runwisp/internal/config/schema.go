@@ -51,7 +51,7 @@ type Config struct {
 	// cronDaemon records whether a system cron daemon looked live when this config
 	// was resolved, and in what sense ("is running", "is enabled and will start on
 	// the next boot", …). Probed once rather than per question: it costs a
-	// systemctl exec, and Warnings is answered on every /api/info request.
+	// systemctl exec, and Warnings is answered on every /api/daemon request.
 	//
 	// Not fixed for the life of the config. The daemon re-probes on a timer and
 	// swaps in a re-derived config via WithCronHold, because the alternative — a
@@ -75,7 +75,7 @@ type Config struct {
 	// jobs RunWisp declined to schedule, and the ones running under a name the
 	// crontab doesn't mention. Exported, unlike the bookkeeping above, because a
 	// skipped job is a failure with no run record to make it visible — Warnings and
-	// /api/info are the only places it can surface. See CronFinding.
+	// /api/daemon are the only places it can surface. See CronFinding.
 	CronFindings []CronFinding
 
 	// origins maps each task/service/compose-alias name to the absolute path of
@@ -152,11 +152,11 @@ type NotifyConfig struct {
 	Notifiers         []NotifierSpec
 	Routes            []NotificationRoute
 	GlobalNotifiers   []string
-	DefaultTimeout    time.Duration
+	RetryBudget       time.Duration
 	KeepNotifications int
 	KeepFor           time.Duration
 	CoalesceWindow    time.Duration
-	OccurrenceRing    int
+	KeepOccurrences   int
 	CoalesceOutbound  bool
 }
 
@@ -180,7 +180,7 @@ type NotifierSpec struct {
 	// SMTP-specific
 	Host          string
 	Port          int
-	TLSMode       string // "starttls" | "implicit" | "none" | "" (port-derived)
+	TLSMode       string // "starttls" | "implicit" | "off" | "" (port-derived)
 	TLSSkipVerify bool
 	Username      string
 	Password      string

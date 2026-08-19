@@ -94,11 +94,11 @@ func (b *EventBridge) handleRunEvent(ctx context.Context, event events.Event) {
 	// rather than flip an execution row. Cloud keeps only the latest snapshot
 	// (no per-instance rows), mirroring the system-stats heartbeat pattern.
 	// Non-service local runs return ok=false from ServiceSnapshot and no-op.
-	if run.ExternalExecutionID == nil {
+	if run.ExecutionID == nil {
 		b.emitServiceStatus(run.TaskName)
 		return
 	}
-	executionID := *run.ExternalExecutionID
+	executionID := *run.ExecutionID
 	update := mapRunToExecutionUpdate(run)
 	if update == nil {
 		return
@@ -184,14 +184,14 @@ func (b *EventBridge) emitServiceStatus(taskName string) {
 
 func (b *EventBridge) handleLogLineEvent(event events.Event) {
 	logEvent, ok := event.Data.(events.LogLineEvent)
-	if !ok || logEvent.ExternalExecutionID == "" {
+	if !ok || logEvent.ExecutionID == "" {
 		return
 	}
-	if !b.handler.IsLogListener(logEvent.ExternalExecutionID) {
+	if !b.handler.IsLogListener(logEvent.ExecutionID) {
 		return
 	}
 	message := NewLogLineMessage(
-		logEvent.ExternalExecutionID,
+		logEvent.ExecutionID,
 		logEvent.LineNum,
 		logEvent.Timestamp,
 		logEvent.Stream,

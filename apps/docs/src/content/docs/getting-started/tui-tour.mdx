@@ -197,7 +197,7 @@ try failed even when the retry recovered; that's the bug-hunting use
 of [`keep_runs`](/concepts/logs/#retention-keep_runs-and-keep_for).
 
 If a run never ran at all (`skipped` because of [`on_overlap`](/concepts/concurrency/),
-`stopped` because of `on_overlap = "terminate"`), the row is still
+`stopped` because of `on_overlap = "kill"`), the row is still
 there with the policy's reason in the log and a sentinel exit code.
 A skipped firing is not silence — it's a row.
 
