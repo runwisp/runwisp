@@ -18,15 +18,48 @@ type activeExecution struct {
 // ExecutionTracker manages active cloud executions and buffers pending
 // status updates that could not be sent while disconnected.
 type ExecutionTracker struct {
-	mu                      sync.Mutex
-	activeExecutions        map[string]activeExecution
+	mu               sync.Mutex
+	activeExecutions map[string]activeExecution
+	// reserved holds executionIds accepted for dispatch but not yet running.
+	// It closes the window between accepting a dispatch and the run reaching
+	// PhaseRunning (when TrackRunning records it): without it a duplicate
+	// dispatch arriving in that window would start a second run, because the
+	// run row is persisted asynchronously and carries no unique constraint.
+	reserved                map[string]struct{}
 	pendingExecutionUpdates []protocol.ExecutionUpdateMessage
 }
 
 func NewExecutionTracker() *ExecutionTracker {
 	return &ExecutionTracker{
 		activeExecutions: make(map[string]activeExecution),
+		reserved:         make(map[string]struct{}),
 	}
+}
+
+// Reserve atomically claims executionID for a dispatch about to start. It
+// returns false if the id is already reserved or running — i.e. a duplicate
+// dispatch — so the caller re-acks without starting a second run. Pair a
+// successful Reserve with Release if the dispatch is rejected before a run is
+// created; Remove frees the reservation when the run reaches a terminal state.
+func (t *ExecutionTracker) Reserve(executionID string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if _, running := t.activeExecutions[executionID]; running {
+		return false
+	}
+	if _, reserved := t.reserved[executionID]; reserved {
+		return false
+	}
+	t.reserved[executionID] = struct{}{}
+	return true
+}
+
+// Release drops a reservation taken by Reserve when the dispatch never produced
+// a run (validation or trigger failure), so a legitimate re-dispatch can retry.
+func (t *ExecutionTracker) Release(executionID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.reserved, executionID)
 }
 
 func (t *ExecutionTracker) TrackRunning(executionID string, startedAt *time.Time) {
@@ -39,22 +72,13 @@ func (t *ExecutionTracker) Remove(executionID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	delete(t.activeExecutions, executionID)
+	delete(t.reserved, executionID)
 }
 
 func (t *ExecutionTracker) HasActive() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return len(t.activeExecutions) > 0
-}
-
-// IsActive reports whether the given execution is currently tracked as
-// running. Used by the dispatch idempotency guard to re-ack duplicate
-// dispatches without starting a second run.
-func (t *ExecutionTracker) IsActive(executionID string) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	_, ok := t.activeExecutions[executionID]
-	return ok
 }
 
 func (t *ExecutionTracker) QueueUpdate(update protocol.ExecutionUpdateMessage, trySend func(any) error) {

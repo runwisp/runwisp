@@ -124,6 +124,7 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 
 	taskName, _, resolveErr := h.resolveDispatchTask(message.Execution)
 	if resolveErr != nil {
+		h.releaseReservation(executionID)
 		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, ptr(-1), nil, nowPtr()))
 		if h.uploader != nil {
 			h.uploader.forget(ctx, executionID)
@@ -143,12 +144,17 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 	return nil
 }
 
-// isDuplicateDispatch reports whether the daemon already knows the execution:
-// actively running (tracker) or persisted as a run (repo). For terminal runs
-// the stored terminal update is re-queued so a control plane that missed the
+// isDuplicateDispatch reports whether the daemon already knows the execution.
+// It atomically reserves the executionId: a failed reservation means another
+// dispatch for the same id is already reserved (accepted, not yet running) or
+// running — a duplicate. A fresh reservation is held by the caller until the run
+// terminates (tracker.Remove) or the dispatch is rejected before a run exists
+// (releaseReservation on the failure paths). The persisted-run lookup is the
+// fallback for a daemon restart that lost the in-memory reservation; for a
+// terminal run the stored update is re-queued so a control plane that missed the
 // original report converges instead of re-running the task.
 func (h *InboundHandler) isDuplicateDispatch(ctx context.Context, executionID string) bool {
-	if h.tracker != nil && h.tracker.IsActive(executionID) {
+	if h.tracker != nil && !h.tracker.Reserve(executionID) {
 		return true
 	}
 	if h.runRepo == nil {
@@ -164,10 +170,24 @@ func (h *InboundHandler) isDuplicateDispatch(ctx context.Context, executionID st
 			h.queueExecUpdate(*update)
 		}
 	}
+	// A run already exists, so this dispatch won't create one — drop the
+	// reservation we just took so the id doesn't leak.
+	h.releaseReservation(executionID)
 	return true
 }
 
+// releaseReservation drops a dispatch reservation when no run was created.
+func (h *InboundHandler) releaseReservation(executionID string) {
+	if h.tracker != nil {
+		h.tracker.Release(executionID)
+	}
+}
+
 func (h *InboundHandler) handleTriggerError(ctx context.Context, executionID string, run *model.Run, triggerErr error) error {
+	// No run will drive this execution to terminal, so free the reservation.
+	// When run != nil its row is already persisted, so the runRepo fallback in
+	// isDuplicateDispatch still dedups a later re-dispatch.
+	h.releaseReservation(executionID)
 	if run != nil {
 		finishedAt := run.EndedAt
 		if finishedAt == nil {
