@@ -127,17 +127,28 @@ func (sr *sessionRunner) heartbeatLoop(ctx context.Context, session *wsSession) 
 	ticker := time.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
 
+	beat := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
+			// Piggyback the full systemStats snapshot only every Nth beat (and on
+			// the first): the volatile cpu/mem gauges don't need 5s resolution and
+			// the mostly-static identity fields never do, so shipping them every
+			// heartbeat is a per-runner Valkey write and payload the control plane
+			// throws away. Plain pings in between keep the socket warm.
+			var stats *protocol.SystemStats
+			if beat%statsEveryNHeartbeats == 0 {
+				stats = sr.currentSystemStats()
+			}
+			beat++
 			// A dropped heartbeat is not fatal: the watchdog governs liveness via
 			// lastReceived, and a full outbound buffer means we're already sending
 			// plenty (so the peer is hearing from us). Tearing down a healthy
 			// session over transient backpressure just drops the queued messages
 			// and forces a needless reconnect.
-			if err := sendMessage(session, NewPingMessage(sr.currentSystemStats())); err != nil {
+			if err := sendMessage(session, NewPingMessage(stats)); err != nil {
 				slog.Debug("skipped heartbeat", "error", err.Error())
 			}
 		}

@@ -5,6 +5,7 @@ package cloud
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"log/slog"
@@ -15,6 +16,16 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
+const (
+	// logBatchWindow is how long live log lines are coalesced before the batch
+	// is flushed as one log:lines frame. Sub-100ms keeps the live tail feeling
+	// instant while collapsing a burst into a single frame/publish/SSE write.
+	logBatchWindow = 50 * time.Millisecond
+	// logBatchMaxLines caps a single batch so a firehose run flushes on size
+	// (bounding frame memory) instead of waiting for the window.
+	logBatchMaxLines = 128
+)
+
 // EventBridge subscribes to runtime events and forwards execution status
 // and log lines to the cloud connection.
 type EventBridge struct {
@@ -23,6 +34,10 @@ type EventBridge struct {
 	tracker       *ExecutionTracker
 	sendReady     func(any) error
 	unsubscribers []func()
+
+	// pendingLogs coalesces live log lines per execution between flushes.
+	batchMu     sync.Mutex
+	pendingLogs map[string][]protocol.LinesItem
 }
 
 func NewEventBridge(
@@ -32,10 +47,11 @@ func NewEventBridge(
 	sendReady func(any) error,
 ) *EventBridge {
 	return &EventBridge{
-		eventBus:  eventBus,
-		handler:   handler,
-		tracker:   tracker,
-		sendReady: sendReady,
+		eventBus:    eventBus,
+		handler:     handler,
+		tracker:     tracker,
+		sendReady:   sendReady,
+		pendingLogs: make(map[string][]protocol.LinesItem),
 	}
 }
 
@@ -48,6 +64,7 @@ func (b *EventBridge) Start(ctx context.Context) {
 		b.eventBus.Subscribe(events.EventRunFailed, func(e events.Event) { b.handleRunEvent(ctx, e) }),
 		b.eventBus.Subscribe(events.EventLogLine, b.handleLogLineEvent),
 	)
+	go b.flushLogBatchesLoop(ctx)
 	// A service emits a status snapshot only on an instance lifecycle change, so a
 	// stable always-on service falls silent for as long as it keeps running — long
 	// past the control plane's snapshot TTL, which then shows the service as having
@@ -190,18 +207,68 @@ func (b *EventBridge) handleLogLineEvent(event events.Event) {
 	if !b.handler.IsLogListener(logEvent.ExecutionID) {
 		return
 	}
-	message := NewLogLineMessage(
-		logEvent.ExecutionID,
-		logEvent.LineNum,
-		logEvent.Timestamp,
-		logEvent.Stream,
-		logEvent.Text,
-		logEvent.Continued,
-	)
-	// Best-effort: a slow peer with a full outbound queue must not block the
-	// run. The handler caller (events.Bus.Publish) is sync — the outbound
-	// channel is bounded, so sendReady drops with an error rather than
-	// pushing back. We intentionally swallow that error: backpressure is
-	// surfaced as a "missed line" on the cloud side, never a stalled run.
-	_ = b.sendReady(message)
+	stream := linesItemStreamFromString(logEvent.Stream)
+	item := protocol.LinesItem{
+		N:         logEvent.LineNum,
+		Ts:        logEvent.Timestamp,
+		Stream:    &stream,
+		Text:      logEvent.Text,
+		Continued: logEvent.Continued,
+	}
+	execID := logEvent.ExecutionID
+
+	var full []protocol.LinesItem
+	b.batchMu.Lock()
+	b.pendingLogs[execID] = append(b.pendingLogs[execID], item)
+	if len(b.pendingLogs[execID]) >= logBatchMaxLines {
+		full = b.pendingLogs[execID]
+		delete(b.pendingLogs, execID)
+	}
+	b.batchMu.Unlock()
+
+	// Flush on a full batch immediately (bounds frame size under a firehose);
+	// otherwise the window loop ships it within logBatchWindow.
+	if full != nil {
+		b.sendLogBatch(execID, full)
+	}
+}
+
+// flushLogBatchesLoop ships coalesced log batches every logBatchWindow until
+// the session context is cancelled. Mirrors the heartbeat/watchdog loop shape.
+func (b *EventBridge) flushLogBatchesLoop(ctx context.Context) {
+	ticker := time.NewTicker(logBatchWindow)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			b.flushLogBatches()
+		}
+	}
+}
+
+// flushLogBatches drains every pending per-execution buffer into one log:lines
+// frame each. Snapshots under the lock, sends after releasing it so a slow
+// send never blocks the executor goroutine appending new lines.
+func (b *EventBridge) flushLogBatches() {
+	b.batchMu.Lock()
+	if len(b.pendingLogs) == 0 {
+		b.batchMu.Unlock()
+		return
+	}
+	batches := b.pendingLogs
+	b.pendingLogs = make(map[string][]protocol.LinesItem)
+	b.batchMu.Unlock()
+
+	for execID, lines := range batches {
+		b.sendLogBatch(execID, lines)
+	}
+}
+
+// sendLogBatch pushes one coalesced frame. Best-effort like the old per-line
+// path: a full outbound queue drops the batch rather than blocking the run —
+// the viewer backfills the gap via log:replayRequest. Never a stalled run.
+func (b *EventBridge) sendLogBatch(execID string, lines []protocol.LinesItem) {
+	_ = b.sendReady(NewLogLinesMessage(execID, lines))
 }

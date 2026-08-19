@@ -87,6 +87,7 @@ channels:
           - $ref: "#/components/messages/executionAck"
           - $ref: "#/components/messages/executionUpdate"
           - $ref: "#/components/messages/logLine"
+          - $ref: "#/components/messages/logLines"
           - $ref: "#/components/messages/logReplayChunk"
           - $ref: "#/components/messages/logSearchChunk"
           - $ref: "#/components/messages/serviceStatus"
@@ -178,6 +179,11 @@ components:
       name: log:line
       payload:
         $ref: "#/components/schemas/LogLineMessage"
+
+    logLines:
+      name: log:lines
+      payload:
+        $ref: "#/components/schemas/LogLinesMessage"
 
     logReplayChunk:
       name: log:replayChunk
@@ -931,6 +937,36 @@ components:
           required:
             - type
             - executionId
+
+    LogLinesMessage:
+      type: object
+      description: |
+        Daemon → cloud. A coalesced batch of live log lines for one execution
+        with an active log:listen subscription — the same per-line payload as
+        log:line, but grouped so a burst of output ships as one frame instead
+        of one frame per line (fewer WS frames, NATS publishes, and SSE writes
+        on the hot path). Lines are in ascending `n` order. An additive
+        daemon→cloud type: old cloud never receives it, and a daemon may still
+        send single log:line frames — a receiver must handle both.
+      properties:
+        type:
+          type: string
+          const: log:lines
+        protocolVersion:
+          type: integer
+        sentAt:
+          type: string
+          format: date-time
+        executionId:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/LogLineEntry"
+      required:
+        - type
+        - executionId
+        - lines
 
     LogReplayChunkMessage:
       type: object

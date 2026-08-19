@@ -83,20 +83,17 @@ func NewExecutionUpdateMessage(executionID string, status protocol.ExecutionStat
 	}
 }
 
-// NewLogLineMessage builds a single line-event push.
-func NewLogLineMessage(executionID string, n, ts int64, stream, text string, continued bool) protocol.LogLineMessage {
+// NewLogLinesMessage builds a coalesced batch of live line events for one
+// execution. Same per-line payload as NewLogLineMessage, grouped so a burst
+// ships as a single frame. lines must be in ascending n order.
+func NewLogLinesMessage(executionID string, lines []protocol.LinesItem) protocol.LogLinesMessage {
 	v, s := newEnvelopeFields()
-	streamEnum := streamEnumFromString(stream)
-	return protocol.LogLineMessage{
-		Type:            "log:line",
+	return protocol.LogLinesMessage{
+		Type:            "log:lines",
 		ProtocolVersion: v,
 		SentAt:          s,
 		ExecutionID:     executionID,
-		N:               n,
-		Ts:              ts,
-		Stream:          &streamEnum,
-		Text:            text,
-		Continued:       continued,
+		Lines:           lines,
 	}
 }
 
