@@ -106,7 +106,7 @@ func init() {
 	rootCmd.AddCommand(importCmd)
 	rootCmd.AddCommand(promoteCmd)
 	rootCmd.AddCommand(listCmd)
-	rootCmd.AddCommand(execCmd)
+	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(restartCmd)

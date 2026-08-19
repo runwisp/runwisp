@@ -33,15 +33,15 @@ func newFakePendingRepo() *fakePendingRepo {
 func (f *fakePendingRepo) UpsertPendingLogUpload(_ context.Context, rec model.PendingLogUpload) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.rows[rec.ExternalExecutionID] = rec
+	f.rows[rec.ExecutionID] = rec
 	f.upserts++
 	return nil
 }
 
-func (f *fakePendingRepo) DeletePendingLogUpload(_ context.Context, externalExecutionID string) error {
+func (f *fakePendingRepo) DeletePendingLogUpload(_ context.Context, executionID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	delete(f.rows, externalExecutionID)
+	delete(f.rows, executionID)
 	f.deletes++
 	return nil
 }
@@ -66,7 +66,7 @@ type fakeRunRepo struct {
 	byExt map[string]*model.Run
 }
 
-func (r *fakeRunRepo) GetRunByExternalExecutionID(_ context.Context, id string) (*model.Run, error) {
+func (r *fakeRunRepo) GetRunByExecutionID(_ context.Context, id string) (*model.Run, error) {
 	run, ok := r.byExt[id]
 	if !ok {
 		return nil, ErrNotFound
@@ -97,11 +97,11 @@ func writeRunLog(t *testing.T, logDir string, run *model.Run, body string) strin
 func newTerminalRun(taskName, runID, externalID string) *model.Run {
 	ext := externalID
 	return &model.Run{
-		ID:                  runID,
-		ExternalExecutionID: &ext,
-		TaskName:            taskName,
-		Status:              model.PhaseEnded,
-		CreatedAt:           time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+		ID:          runID,
+		ExecutionID: &ext,
+		TaskName:    taskName,
+		Status:      model.PhaseEnded,
+		CreatedAt:   time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
 	}
 }
 
@@ -333,10 +333,10 @@ func TestArchiveMissingLogFileForgetsEntry(t *testing.T) {
 func TestRecoverOrphansDropsRowWhenRunMissing(t *testing.T) {
 	repo := newFakePendingRepo()
 	_ = repo.UpsertPendingLogUpload(context.Background(), model.PendingLogUpload{
-		ExternalExecutionID: "exec-gone",
-		UploadURL:           "https://upload/x",
-		LogPath:             "key/x.log.gz",
-		InsertedAt:          time.Now().Unix(),
+		ExecutionID: "exec-gone",
+		UploadURL:   "https://upload/x",
+		LogPath:     "key/x.log.gz",
+		InsertedAt:  time.Now().Unix(),
 	})
 
 	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*model.Run{}}, t.TempDir(), fixedClock())
@@ -357,19 +357,19 @@ func TestRecoverOrphansDropsRowWhenRunMissing(t *testing.T) {
 func TestRecoverOrphansSkipsNonTerminalRun(t *testing.T) {
 	logDir := t.TempDir()
 	runningRun := &model.Run{
-		ID:                  "run-1",
-		ExternalExecutionID: strPtr("exec-running"),
-		TaskName:            "greet",
-		Status:              model.PhaseRunning,
-		CreatedAt:           time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
+		ID:          "run-1",
+		ExecutionID: strPtr("exec-running"),
+		TaskName:    "greet",
+		Status:      model.PhaseRunning,
+		CreatedAt:   time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC),
 	}
 
 	repo := newFakePendingRepo()
 	_ = repo.UpsertPendingLogUpload(context.Background(), model.PendingLogUpload{
-		ExternalExecutionID: "exec-running",
-		UploadURL:           "https://upload/x",
-		LogPath:             "key/x.log.gz",
-		InsertedAt:          time.Now().Unix(),
+		ExecutionID: "exec-running",
+		UploadURL:   "https://upload/x",
+		LogPath:     "key/x.log.gz",
+		InsertedAt:  time.Now().Unix(),
 	})
 
 	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*model.Run{"exec-running": runningRun}}, logDir, fixedClock())
@@ -399,10 +399,10 @@ func TestRecoverOrphansRetriesTerminatedRun(t *testing.T) {
 
 	repo := newFakePendingRepo()
 	_ = repo.UpsertPendingLogUpload(context.Background(), model.PendingLogUpload{
-		ExternalExecutionID: "exec-1",
-		UploadURL:           srv.URL,
-		LogPath:             "key/exec-1.log.gz",
-		InsertedAt:          time.Now().Unix(),
+		ExecutionID: "exec-1",
+		UploadURL:   srv.URL,
+		LogPath:     "key/exec-1.log.gz",
+		InsertedAt:  time.Now().Unix(),
 	})
 
 	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*model.Run{"exec-1": run}}, logDir, fixedClock())
@@ -445,17 +445,17 @@ type fakeRunRepoError struct {
 	err error
 }
 
-func (f *fakeRunRepoError) GetRunByExternalExecutionID(_ context.Context, _ string) (*model.Run, error) {
+func (f *fakeRunRepoError) GetRunByExecutionID(_ context.Context, _ string) (*model.Run, error) {
 	return nil, f.err
 }
 
 func TestRecoverOrphansKeepsRowOnTransientLookupError(t *testing.T) {
 	repo := newFakePendingRepo()
 	_ = repo.UpsertPendingLogUpload(context.Background(), model.PendingLogUpload{
-		ExternalExecutionID: "exec-flaky",
-		UploadURL:           "https://upload/x",
-		LogPath:             "key/x.log.gz",
-		InsertedAt:          time.Now().Unix(),
+		ExecutionID: "exec-flaky",
+		UploadURL:   "https://upload/x",
+		LogPath:     "key/x.log.gz",
+		InsertedAt:  time.Now().Unix(),
 	})
 
 	transient := &fakeRunRepoError{err: context.DeadlineExceeded}
@@ -546,10 +546,10 @@ func TestRecoverOrphansArchiveErrorKeepsRow(t *testing.T) {
 
 	repo := newFakePendingRepo()
 	_ = repo.UpsertPendingLogUpload(context.Background(), model.PendingLogUpload{
-		ExternalExecutionID: "exec-archive-fail",
-		UploadURL:           srv.URL,
-		LogPath:             "key/x.log.gz",
-		InsertedAt:          time.Now().Unix(),
+		ExecutionID: "exec-archive-fail",
+		UploadURL:   srv.URL,
+		LogPath:     "key/x.log.gz",
+		InsertedAt:  time.Now().Unix(),
 	})
 
 	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*model.Run{"exec-archive-fail": run}}, logDir, fixedClock())
@@ -576,10 +576,10 @@ func TestRecoverOrphansNilEmitIsSafe(t *testing.T) {
 
 	repo := newFakePendingRepo()
 	_ = repo.UpsertPendingLogUpload(context.Background(), model.PendingLogUpload{
-		ExternalExecutionID: "exec-niloemit",
-		UploadURL:           srv.URL,
-		LogPath:             "key/x.log.gz",
-		InsertedAt:          time.Now().Unix(),
+		ExecutionID: "exec-niloemit",
+		UploadURL:   srv.URL,
+		LogPath:     "key/x.log.gz",
+		InsertedAt:  time.Now().Unix(),
 	})
 	u := NewLogUploader(repo, &fakeRunRepo{byExt: map[string]*model.Run{"exec-niloemit": run}}, logDir, fixedClock())
 	u.httpClient = srv.Client()

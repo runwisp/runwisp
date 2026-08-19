@@ -43,7 +43,7 @@ type RunRepository interface {
 	CreateRun(ctx context.Context, run *model.Run) error
 	UpdateRun(ctx context.Context, run *model.Run) error
 	GetRun(ctx context.Context, id string) (*model.Run, error)
-	GetRunByExternalExecutionID(ctx context.Context, externalExecutionID string) (*model.Run, error)
+	GetRunByExecutionID(ctx context.Context, executionID string) (*model.Run, error)
 	CountRunsFiltered(ctx context.Context, filter model.RunFilter) (int64, error)
 	QueryRuns(ctx context.Context, q RunQuery) ([]model.Run, error)
 	DeleteRun(ctx context.Context, id string) error
@@ -71,7 +71,7 @@ type ConfigRepository interface {
 // resume terminal log archival after a crash.
 type PendingLogUploadRepository interface {
 	UpsertPendingLogUpload(ctx context.Context, rec model.PendingLogUpload) error
-	DeletePendingLogUpload(ctx context.Context, externalExecutionID string) error
+	DeletePendingLogUpload(ctx context.Context, executionID string) error
 	ListPendingLogUploads(ctx context.Context) ([]model.PendingLogUpload, error)
 }
 
@@ -147,8 +147,8 @@ func (db *SQLiteDatabase) GetRun(ctx context.Context, id string) (*model.Run, er
 	return runPtrFromRow(row), nil
 }
 
-func (db *SQLiteDatabase) GetRunByExternalExecutionID(ctx context.Context, externalExecutionID string) (*model.Run, error) {
-	row, err := db.q.GetRunByExternalExecutionID(ctx, &externalExecutionID)
+func (db *SQLiteDatabase) GetRunByExecutionID(ctx context.Context, executionID string) (*model.Run, error) {
+	row, err := db.q.GetRunByExecutionID(ctx, &executionID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -486,15 +486,15 @@ func (db *SQLiteDatabase) ShrinkMemory(ctx context.Context) error {
 
 func (db *SQLiteDatabase) UpsertPendingLogUpload(ctx context.Context, rec model.PendingLogUpload) error {
 	return db.q.UpsertPendingLogUpload(ctx, sqlcdb.UpsertPendingLogUploadParams{
-		ExternalExecutionID: rec.ExternalExecutionID,
-		UploadUrl:           rec.UploadURL,
-		LogPath:             rec.LogPath,
-		InsertedAtUnix:      rec.InsertedAt,
+		ExecutionID:    rec.ExecutionID,
+		UploadUrl:      rec.UploadURL,
+		LogPath:        rec.LogPath,
+		InsertedAtUnix: rec.InsertedAt,
 	})
 }
 
-func (db *SQLiteDatabase) DeletePendingLogUpload(ctx context.Context, externalExecutionID string) error {
-	return db.q.DeletePendingLogUpload(ctx, externalExecutionID)
+func (db *SQLiteDatabase) DeletePendingLogUpload(ctx context.Context, executionID string) error {
+	return db.q.DeletePendingLogUpload(ctx, executionID)
 }
 
 func (db *SQLiteDatabase) ListPendingLogUploads(ctx context.Context) ([]model.PendingLogUpload, error) {

@@ -35,19 +35,19 @@ func TestRun_Copy_PointerFieldsAreIndependent(t *testing.T) {
 	retryID := "retry-abc"
 
 	orig := &Run{
-		ID:                  "run-1",
-		ExternalExecutionID: &extID,
-		EndReason:           &reason,
-		StartedAt:           &now,
-		EndedAt:             &end,
-		RetryOfRunID:        &retryID,
+		ID:           "run-1",
+		ExecutionID:  &extID,
+		EndReason:    &reason,
+		StartedAt:    &now,
+		EndedAt:      &end,
+		RetryOfRunID: &retryID,
 	}
 
 	cpy := orig.Copy()
 	require.NotNil(t, cpy)
 
-	assert.NotSame(t, orig.ExternalExecutionID, cpy.ExternalExecutionID)
-	assert.Equal(t, extID, *cpy.ExternalExecutionID)
+	assert.NotSame(t, orig.ExecutionID, cpy.ExecutionID)
+	assert.Equal(t, extID, *cpy.ExecutionID)
 
 	assert.NotSame(t, orig.EndReason, cpy.EndReason)
 	assert.Equal(t, reason, *cpy.EndReason)

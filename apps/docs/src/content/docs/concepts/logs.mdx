@@ -64,18 +64,18 @@ bare number means bytes.
 
 `log_on_full` decides what happens when output hits that ceiling:
 
-| Value       | What it does                                                                                                                                                                                            |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `drop_old`  | The default. Renames the current log to `.prev` and starts a fresh file. You keep the tail — which is usually where the failure shows up.                                                               |
-| `drop_new`  | Stops writing, but lets the process keep running. Pick this when the start of the log is what you actually care about (a startup banner, the preamble of a long batch) and the rest is just repetition. |
-| `kill_task` | Cancels the run and kills the process. The run ends with reason `log_overflow` — still treated as a failure for retries and notifications, so you can see what happened without opening the log.        |
+| Value      | What it does                                                                                                                                                                                            |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `drop_old` | The default. Renames the current log to `.prev` and starts a fresh file. You keep the tail — which is usually where the failure shows up.                                                               |
+| `drop_new` | Stops writing, but lets the process keep running. Pick this when the start of the log is what you actually care about (a startup banner, the preamble of a long batch) and the rest is just repetition. |
+| `kill`     | Cancels the run and kills the process. The run ends with reason `log_overflow` — still treated as a failure for retries and notifications, so you can see what happened without opening the log.        |
 
 Whichever way it goes, the daemon drops a marker line into the log
 at the cut-off point. You can skim the file and immediately see where
 the limit hit. Nothing gets dropped silently.
 
 `log_on_full` does double duty: it also decides what happens when
-`[storage] min_free_space` trips mid-run. `kill_task` cancels the
+`[storage] min_free_space` trips mid-run. `kill` cancels the
 run. `drop_new` and `drop_old` quietly stop writing — and the daemon
 fires a `log.disk_pressure` notification so you find out before you
 go looking for output that isn't there. More on that in
@@ -182,7 +182,7 @@ A settled redraw line is marked as clickable. In the **Web UI**, click
 it and the prior frames unfold right underneath; click again to fold
 them away. In the **TUI**, step between marked lines with <kbd>[</kbd>
 and <kbd>]</kbd> and press <kbd>enter</kbd> to open a viewer. Over REST,
-`GET /api/tasks/{name}/runs/{id}/log/line/{n}/history` returns the
+`GET /api/runs/{id}/log/line/{n}/history` returns the
 frames for line `n` (multi-line redraws come back as whole frames, not
 per-row). Lines without history return an empty list.
 
@@ -212,8 +212,8 @@ When you want the whole log as one file, you can grab it.
         from.
     </TabItem>
     <TabItem label="REST API" icon="cloud-download">
-        `GET /api/tasks/{name}/runs/{id}/log/raw` returns the same bytes — handy when you want to
-        pipe them into `curl` or another shell tool.
+        `GET /api/runs/{id}/log/raw` returns the same bytes — handy when you want to pipe them into
+        `curl` or another shell tool.
     </TabItem>
 </Tabs>
 

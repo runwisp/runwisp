@@ -25,7 +25,7 @@ import (
 const (
 	tickInterval  = 1 * time.Second
 	maxDebugLines = 500
-	// infoPollInterval paces the /api/info refresh that keeps the
+	// infoPollInterval paces the /api/daemon refresh that keeps the
 	// config-stale notice live. The probe re-hashes a handful of small
 	// files over the local socket — cheap, but no need to do it every tick.
 	infoPollInterval = 5 * time.Second
@@ -100,7 +100,7 @@ type Model struct {
 	flushPending bool
 	lastRenderAt time.Time
 
-	// lastInfoFetch paces the periodic /api/info poll (see infoPollInterval).
+	// lastInfoFetch paces the periodic /api/daemon poll (see infoPollInterval).
 	lastInfoFetch time.Time
 
 	width    int
@@ -542,11 +542,10 @@ func (m *Model) downloadExecLog() tea.Cmd {
 		return nil
 	}
 	run := m.execView.Run
-	if run.TaskName == "" || run.ID == "" {
+	if run.ID == "" {
 		return nil
 	}
-	target := fmt.Sprintf("/api/tasks/%s/runs/%s/log/raw",
-		url.PathEscape(run.TaskName), url.PathEscape(run.ID))
+	target := fmt.Sprintf("/api/runs/%s/log/raw", url.PathEscape(run.ID))
 	return m.openLaunchURL(target)
 }
 
@@ -586,7 +585,7 @@ func (m *Model) launchBrowserCmd(base, target string) tea.Cmd {
 		if err != nil {
 			return uikit.OpenBrowserMsg{Err: err}
 		}
-		launchURL := fmt.Sprintf("%s/api/auth/launch?ticket=%s&redirect=%s",
+		launchURL := fmt.Sprintf("%s/api/auth/launch-ticket?ticket=%s&redirect=%s",
 			strings.TrimRight(base, "/"), ticket, url.QueryEscape(target))
 		if !canOpenBrowser() {
 			return uikit.OpenBrowserMsg{URL: launchURL}

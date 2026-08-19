@@ -72,7 +72,7 @@ export const authApi = {
 
         const response = await chapResponse(password, nonce);
 
-        const res = await fetch(`${API_BASE_URL}/api/auth`, {
+        const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ nonce, response }),
@@ -154,22 +154,21 @@ export const tasksApi = {
         return data;
     },
 
-    deleteRun: async (taskName: string, runId: string): Promise<void> => {
-        const { error } = await apiClient.DELETE("/api/tasks/{taskName}/runs/{runId}", {
-            params: { path: { taskName, runId } },
+    deleteRun: async (runId: string): Promise<void> => {
+        const { error } = await apiClient.DELETE("/api/runs/{runId}", {
+            params: { path: { runId } },
         });
         if (error) throw new Error("Failed to delete run");
     },
 
-    stopRun: async (taskName: string, runId: string): Promise<void> => {
-        const { error } = await apiClient.POST("/api/tasks/{taskName}/runs/{runId}/stop", {
-            params: { path: { taskName, runId } },
+    stopRun: async (runId: string): Promise<void> => {
+        const { error } = await apiClient.POST("/api/runs/{runId}/stop", {
+            params: { path: { runId } },
         });
         if (error) throw new Error("Failed to stop run");
     },
 
     getLogPage: async (
-        taskName: string,
         runId: string,
         options?: { from?: number; limit?: number },
     ): Promise<LogPage> => {
@@ -178,13 +177,7 @@ export const tasksApi = {
         if (options?.limit !== undefined) params.set("limit", String(options.limit));
         const qs = params.toString();
         const url =
-            API_BASE_URL +
-            "/api/tasks/" +
-            encodeURIComponent(taskName) +
-            "/runs/" +
-            encodeURIComponent(runId) +
-            "/log" +
-            (qs ? "?" + qs : "");
+            API_BASE_URL + "/api/runs/" + encodeURIComponent(runId) + "/log" + (qs ? "?" + qs : "");
 
         const response = await fetch(url, { headers: { Accept: "application/json" } });
         if (!response.ok) throw new Error("Log page fetch failed: " + String(response.status));
@@ -222,16 +215,10 @@ export const tasksApi = {
         return logSearchResponseSchema.parse(await response.json());
     },
 
-    getLogLineHistory: async (
-        taskName: string,
-        runId: string,
-        lineNum: number,
-    ): Promise<string[][]> => {
+    getLogLineHistory: async (runId: string, lineNum: number): Promise<string[][]> => {
         const url =
             API_BASE_URL +
-            "/api/tasks/" +
-            encodeURIComponent(taskName) +
-            "/runs/" +
+            "/api/runs/" +
             encodeURIComponent(runId) +
             "/log/line/" +
             String(lineNum) +
@@ -243,14 +230,8 @@ export const tasksApi = {
         return logLineHistorySchema.parse(await response.json()).frames;
     },
 
-    getLogRaw: async (taskName: string, runId: string): Promise<string> => {
-        const url =
-            API_BASE_URL +
-            "/api/tasks/" +
-            encodeURIComponent(taskName) +
-            "/runs/" +
-            encodeURIComponent(runId) +
-            "/log/raw";
+    getLogRaw: async (runId: string): Promise<string> => {
+        const url = API_BASE_URL + "/api/runs/" + encodeURIComponent(runId) + "/log/raw";
 
         const response = await fetch(url);
         if (!response.ok) throw new Error("Raw log fetch failed: " + String(response.status));
@@ -330,7 +311,7 @@ export const runsApi = {
 
 export const systemApi = {
     getInfo: async () => {
-        const { data, error } = await apiClient.GET("/api/info");
+        const { data, error } = await apiClient.GET("/api/daemon");
         if (error) throw new Error("Failed to fetch daemon info");
         return data;
     },
@@ -361,7 +342,7 @@ export type MetricsSample = z.infer<typeof metricsSampleSchema>;
 
 // Payloads pushed over the unified /api/stream feed (mirrors the server's
 // SystemSampleSSEEvent / ConfigStaleSSEEvent), so dashboards never poll
-// /api/system or /api/info on a timer.
+// /api/system or /api/daemon on a timer.
 export const systemEventSchema = z.object({
     sample: metricsSampleSchema,
     uptime: z.string(),

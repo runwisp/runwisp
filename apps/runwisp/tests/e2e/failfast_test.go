@@ -66,7 +66,7 @@ echo after
 		require.NotNil(t, run.EndReason)
 		assert.Equal(t, model.ReasonFailed, *run.EndReason)
 
-		logBody, err := client.GetLogPage("failfast", run.ID, 0, 100)
+		logBody, err := client.GetLogPage(run.ID, 0, 100)
 		require.NoError(t, err)
 		joined := joinLogLines(logBody.Lines)
 		assert.Contains(t, joined, "before", "output before the failure is still captured")
@@ -81,7 +81,7 @@ echo after
 		run := waitForEndedRun(t, client, "optout")
 		assert.Equal(t, 0, run.ExitCode, "set +e restores continue-on-error")
 
-		logBody, err := client.GetLogPage("optout", run.ID, 0, 100)
+		logBody, err := client.GetLogPage(run.ID, 0, 100)
 		require.NoError(t, err)
 		assert.Contains(t, joinLogLines(logBody.Lines), "after")
 	})

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Concurrency policies
-description: queue, skip, and terminate — what each on_overlap mode does, when to use it, and how max_concurrent interacts with the policy.
+description: queue, skip, and kill — what each on_overlap mode does, when to use it, and how max_concurrent interacts with the policy.
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -10,7 +10,7 @@ import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 Every so often a task fires while the last run is still going. RunWisp
 has to do _something_ about that, and `on_overlap` is how you tell it
 what. Three policies cover just about every real case: `queue`, `skip`,
-and `terminate`.
+and `kill`.
 
 :::note[Looking for keys and defaults?]
 This page explains _which policy to pick and why_. The keys themselves —
@@ -60,7 +60,7 @@ The queue isn't bottomless —
 next firing gets logged with `end_reason = "queue_full"` and the
 existing queue keeps draining in order. Seeing queue-full firings is a
 signal the task is over budget: slow the cron down, bump
-`max_concurrent`, or switch to `skip` / `terminate`.
+`max_concurrent`, or switch to `skip` / `kill`.
 
 ### `skip`
 
@@ -97,14 +97,14 @@ And to be clear, **`end_reason = "skipped"` is not a failure**:
 - The stats counters keep it apart from `failed` / `crashed` /
   `timeout`, so your failure rate stays honest.
 
-### `terminate`
+### `kill`
 
 **Reach for this when the newest run is the one that matters.** RunWisp
 stops the oldest active run, and once it's gone the new one starts.
 
 ```toml
 [tasks.deploy-hook]
-on_overlap = "terminate"
+on_overlap = "kill"
 run        = "/usr/local/bin/deploy.sh"
 ```
 
@@ -115,7 +115,7 @@ It's a good fit when:
 - The work goes stale the instant a new request lands — rebuilding a
   search index, regenerating a cached report, that kind of thing.
 
-When `terminate` stops the in-flight run, that run gets `graceful_stop`
+When `kill` stops the in-flight run, that run gets `graceful_stop`
 seconds to tidy up before a SIGKILL, and it's recorded with
 `end_reason = "stopped"` — exactly like a manual stop. Stopped runs
 don't retry. See [Retries](/concepts/retries/#interactions).

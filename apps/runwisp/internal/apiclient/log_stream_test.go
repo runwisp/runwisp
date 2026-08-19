@@ -22,7 +22,7 @@ import (
 // background goroutine down once we have read what we need.
 func TestStreamLogLines_ParsesEvents(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/tasks/t/runs/r/log/stream", r.URL.Path)
+		assert.Equal(t, "/api/runs/r/log/stream", r.URL.Path)
 		assert.Equal(t, "0", r.URL.Query().Get("from"))
 		assert.Equal(t, "100", r.URL.Query().Get("replayLimit"))
 
@@ -52,7 +52,7 @@ func TestStreamLogLines_ParsesEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ch, err := c.StreamLogLines(ctx, "t", "r", StreamLogOpts{FromLine: 0, ReplayLimit: 100})
+	ch, err := c.StreamLogLines(ctx, "r", StreamLogOpts{FromLine: 0, ReplayLimit: 100})
 	require.NoError(t, err)
 
 	read := func() LogStreamMsg {
@@ -102,7 +102,7 @@ func TestStreamLogLines_NoReplayLimitOmitsQueryParam(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ch, err := c.StreamLogLines(ctx, "t", "r", StreamLogOpts{FromLine: -100})
+	ch, err := c.StreamLogLines(ctx, "r", StreamLogOpts{FromLine: -100})
 	require.NoError(t, err)
 
 	select {

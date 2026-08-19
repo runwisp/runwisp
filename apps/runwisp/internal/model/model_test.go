@@ -60,7 +60,7 @@ func TestTaskNamePatternString_MatchesPattern(t *testing.T) {
 	assert.Equal(t, TaskNamePatternString, TaskNamePattern.String())
 }
 
-// TestDaemonInfo_JSONShapeIsLocked guards the /api/info wire shape against
+// TestDaemonInfo_JSONShapeIsLocked guards the /api/daemon wire shape against
 // silent additions of password / credential / ephemeral fields. The struct is
 // the surface a future contributor would touch when "exposing the password to
 // the Web UI for convenience" — locking the marshaled key set turns that into
@@ -94,7 +94,7 @@ func TestDaemonInfo_JSONShapeIsLocked(t *testing.T) {
 	}
 	sort.Strings(got)
 	assert.Equal(t, want, got,
-		"DaemonInfo's marshaled top-level keys must match the documented /api/info shape exactly")
+		"DaemonInfo's marshaled top-level keys must match the documented /api/daemon shape exactly")
 
 	lower := strings.ToLower(string(raw))
 	for _, banned := range []string{"password", "credential", "ephemeral"} {

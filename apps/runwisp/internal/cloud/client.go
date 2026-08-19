@@ -166,7 +166,7 @@ func (client *Client) RecoverArchiveBacklog(ctx context.Context) {
 		// Build a synthetic terminal update from the run record, then
 		// overlay the recovered logPath/logSize. We re-fetch via the
 		// run repo to get the canonical end_reason/exit_code.
-		run, err := client.runRepo.GetRunByExternalExecutionID(ctx, executionID)
+		run, err := client.runRepo.GetRunByExecutionID(ctx, executionID)
 		if err != nil || run == nil {
 			return
 		}

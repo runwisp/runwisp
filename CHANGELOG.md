@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`env_file` and `secrets_file` values are read literally**, so passwords and tokens containing `$`, `${...}`, or `#` are passed to the task exactly as written. See [Tasks](https://docs.runwisp.com/configuration/tasks/).
 - **A log stream resumed after a disconnect replays the most recent missed lines**, keeping a reconnecting browser continuous with the live tail even across a large gap. See [Web UI](https://docs.runwisp.com/getting-started/web-ui-tour/).
-- **Outbound notification channels (Slack, Telegram) send periodic check-ins during a sustained incident** on the default `occurrence_ring` cadence. See [Notification model](https://docs.runwisp.com/notifications/model/).
+- **Outbound notification channels (Slack, Telegram) send periodic check-ins during a sustained incident** on the default `keep_occurrences` cadence. See [Notification model](https://docs.runwisp.com/notifications/model/).
 - **`storage.max_size` enforcement accounts for rotated log segments** when trimming run history to the configured cap. See [Storage](https://docs.runwisp.com/configuration/storage/).
 - **Starting the daemon no longer reprints the startup log a second time after a successful start.** The log was already streamed live during startup; only a failed or timed-out start now prints the tail for diagnosis.
 
@@ -20,13 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Hardened `service install` unit generation, task-process environment isolation, config-file trust checks, privilege dropping, and outbound-request address filtering.** Internal safeguards with no configuration changes.
 - **HTTP-task run logs redact request/response credentials** — `Authorization`, `Cookie`, API-key headers, and URL passwords are shown as `[redacted]` instead of being persisted to disk.
 - **Control-plane dispatch is validated and bounded at the boundary** — peer-supplied shell `umask`/interpreter are re-validated, log-search size and the ephemeral dispatch queue are capped, and running the control-plane connection over plaintext (`RUNWISP_CLOUD_ALLOW_INSECURE`) now warns loudly at startup.
-- **Run delete/stop honor the task in the request path**, and log search runs under a request deadline. Internal safeguards with no configuration changes.
+- **Log search runs under a request deadline.** Internal safeguard with no configuration changes.
 
 ### Changed
 
 - **The CLI command that runs a task once is now `runwisp run <task>`** (was `runwisp exec`), matching the `run =` config key and freeing `exec` from colliding with `compose_mode = "exec"`. See [CLI](https://docs.runwisp.com/operations/cli/).
 - **Disable authentication with `RUNWISP_AUTH=off`** (was `RUNWISP_NO_AUTH=1`), matching the `tls = "off"` convention. `RUNWISP_AUTH` and `RUNWISP_PASSWORD` remain mutually exclusive. See [Auth](https://docs.runwisp.com/operations/auth/#running-without-a-password).
 - **`[notify]` retention keys are now `keep_notifications` and `keep_for`** (were `history_keep` and `history_keep_for`), matching the `keep_runs` / `keep_for` vocabulary tasks already use. See [Notifications](https://docs.runwisp.com/notifications/model/).
+- **`[notify]` knobs `retry_budget` and `keep_occurrences`** (were `default_timeout` and `occurrence_ring`) name the outbound retry cap and the coalesce-occurrence count by what they do rather than by their implementation. See [Notifications](https://docs.runwisp.com/notifications/global/).
 - **A compose block's import strategy is now `import = "services" | "stack"`** (was `mode`), so it reads distinctly from a task's `compose_mode`. See [Compose](https://docs.runwisp.com/configuration/compose/).
 - **Run timestamps on the API are now `startedAt` / `endedAt`** (were `startAt` / `endAt`), including the `?sortField=startedAt` value — matching the database columns and the neighbouring `createdAt`.
 - **The task parameter field is `allowCustom` on the REST API** (was `allow_custom`), matching the API's camelCase convention. The TOML key stays `allow_custom`.
@@ -34,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Metrics samples use `timestamp` / `cpuUsage` / `memUsage`** (were `ts` / `cpu` / `mem`), matching the system-stats fields.
 - **The unread-count stream event is `notification.unreadCountChanged`** (was `notifications.unread_count_changed`), matching the other `notification.*` events.
 - **List endpoints share one `{ items, … }` envelope** — `GET /api/tasks`, `/api/runs`, `/api/system/history`, and log search (was `runs` / `hits` / bare arrays).
+- **Per-run REST endpoints are addressed by run ID alone** — `/api/runs/{runId}` and its `/stop`, `/log`, `/log/raw`, `/log/stream`, and `/log/line/{lineNumber}/history` sub-paths (were nested under `/api/tasks/{taskName}/runs/{runId}`); `/api/tasks/{taskName}/runs` still lists a task's runs. The daemon log stream moves to `/api/daemon/log/stream`.
+- **Hard-kill is spelled `kill` in both policies** — `on_overlap = "kill"` (was `terminate`) and `log_on_full = "kill"` (was `kill_task`). See [Concurrency](https://docs.runwisp.com/configuration/concurrency/).
+- **Auth endpoints use one noun per concept** — login is `POST /api/auth/login` (was `POST /api/auth`), and a launch ticket is both minted (`POST`) and redeemed (`GET`) at `/api/auth/launch-ticket` (redeem was `GET /api/auth/launch`).
+- **Daemon-identity endpoints are grouped under `/api/daemon`** — the daemon overview is `GET /api/daemon` (was `/api/info`) and the local identity probe is `GET /api/daemon/identity` (was `/api/instance`); host resource stats stay at `/api/system`.
+- **A run's control-plane execution ID is `executionId`** (was `externalExecutionId`) on the REST API, matching the control-plane protocol.
 
 ## [0.15.1] - 2026-08-12
 

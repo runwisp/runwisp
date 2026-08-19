@@ -64,7 +64,7 @@ func TestGetRunSummary(t *testing.T) {
 
 func TestGetDaemonInfo(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/info", r.URL.Path)
+		assert.Equal(t, "/api/daemon", r.URL.Path)
 		_ = json.NewEncoder(w).Encode(model.DaemonInfo{Fingerprint: "fp-test"})
 	}))
 	defer srv.Close()
@@ -101,7 +101,7 @@ func TestAuthStatus_Error(t *testing.T) {
 
 func TestStreamDaemonLogs_DeliversLines(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/daemon/log-stream", r.URL.Path)
+		assert.Equal(t, "/api/daemon/log/stream", r.URL.Path)
 		w.Header().Set("Content-Type", "text/event-stream")
 		// One valid frame, one malformed data payload (skipped), then another
 		// valid frame. After the handler returns, Go closes the body, which

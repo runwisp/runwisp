@@ -15,13 +15,13 @@ import (
 // GetLogPage fetches a JSON page of log lines. A negative `from` counts from
 // the end (e.g. -1000 returns the tail). A positive `from` is interpreted as
 // an absolute line anchor. limit <= 0 lets the server pick its default.
-func (c *Client) GetLogPage(taskName, runID string, from, limit int64) (server.LogPageBody, error) {
+func (c *Client) GetLogPage(runID string, from, limit int64) (server.LogPageBody, error) {
 	q := url.Values{}
 	q.Set("from", fmt.Sprintf("%d", from))
 	if limit > 0 {
 		q.Set("limit", fmt.Sprintf("%d", limit))
 	}
-	path := fmt.Sprintf("/api/tasks/%s/runs/%s/log?%s", taskName, runID, q.Encode())
+	path := fmt.Sprintf("/api/runs/%s/log?%s", runID, q.Encode())
 	resp, err := c.doRaw(path)
 	if err != nil {
 		return server.LogPageBody{}, err
@@ -38,8 +38,8 @@ func (c *Client) GetLogPage(taskName, runID string, from, limit int64) (server.L
 // GetLogRaw streams the raw concatenated log file. The caller MUST close the
 // returned reader. Use this for export / `cat` ergonomics — never as a
 // streaming primitive.
-func (c *Client) GetLogRaw(taskName, runID string) (io.ReadCloser, error) {
-	path := fmt.Sprintf("/api/tasks/%s/runs/%s/log/raw", taskName, runID)
+func (c *Client) GetLogRaw(runID string) (io.ReadCloser, error) {
+	path := fmt.Sprintf("/api/runs/%s/log/raw", runID)
 	resp, err := c.doRaw(path)
 	if err != nil {
 		return nil, err
@@ -50,8 +50,8 @@ func (c *Client) GetLogRaw(taskName, runID string) (io.ReadCloser, error) {
 // GetLogLineHistory fetches the prior whole-region frames a settled progress
 // bar or multi-line redraw passed through before committing line n. Returns an
 // empty slice when the line has no recorded history.
-func (c *Client) GetLogLineHistory(taskName, runID string, n int64) ([][]string, error) {
-	path := fmt.Sprintf("/api/tasks/%s/runs/%s/log/line/%d/history", taskName, runID, n)
+func (c *Client) GetLogLineHistory(runID string, n int64) ([][]string, error) {
+	path := fmt.Sprintf("/api/runs/%s/log/line/%d/history", runID, n)
 	resp, err := c.doRaw(path)
 	if err != nil {
 		return nil, err

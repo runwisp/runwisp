@@ -522,10 +522,10 @@ func TestRecoverArchiveBacklog_SuccessfulUploadQueuesTerminalUpdate(t *testing.T
 
 	repo := newFakePendingRepo()
 	require.NoError(t, repo.UpsertPendingLogUpload(context.Background(), model.PendingLogUpload{
-		ExternalExecutionID: "exec-backlog-1",
-		UploadURL:           srv.URL,
-		LogPath:             "archive/exec-backlog-1.log.gz",
-		InsertedAt:          time.Now().Unix(),
+		ExecutionID: "exec-backlog-1",
+		UploadURL:   srv.URL,
+		LogPath:     "archive/exec-backlog-1.log.gz",
+		InsertedAt:  time.Now().Unix(),
 	}))
 
 	runs := &fakeRunRepo{byExt: map[string]*model.Run{"exec-backlog-1": run}}
@@ -552,10 +552,10 @@ func TestRecoverArchiveBacklog_SuccessfulUploadQueuesTerminalUpdate(t *testing.T
 func TestRecoverArchiveBacklog_RunMissingDropsRow(t *testing.T) {
 	repo := newFakePendingRepo()
 	require.NoError(t, repo.UpsertPendingLogUpload(context.Background(), model.PendingLogUpload{
-		ExternalExecutionID: "exec-orphan",
-		UploadURL:           "https://upload.invalid/x",
-		LogPath:             "archive/exec-orphan.log.gz",
-		InsertedAt:          time.Now().Unix(),
+		ExecutionID: "exec-orphan",
+		UploadURL:   "https://upload.invalid/x",
+		LogPath:     "archive/exec-orphan.log.gz",
+		InsertedAt:  time.Now().Unix(),
 	}))
 
 	runs := &fakeRunRepo{byExt: map[string]*model.Run{}} // ErrNotFound for every lookup
@@ -1217,16 +1217,16 @@ func (a *testTaskRunnerAdapter) RemoveTask(taskName string) {
 	a.inner.RemoveTask(taskName)
 }
 
-func (a *testTaskRunnerAdapter) TriggerCloudRun(taskName, externalExecutionID string, params map[string]string) (*model.Run, error) {
+func (a *testTaskRunnerAdapter) TriggerCloudRun(taskName, executionID string, params map[string]string) (*model.Run, error) {
 	return a.inner.TriggerRunWithOptions(taskName, runtime.TriggerRunOptions{
-		TriggeredBy:         model.TriggeredByCloud,
-		ExternalExecutionID: externalExecutionID,
-		Params:              model.PointerValues(params),
+		TriggeredBy: model.TriggeredByCloud,
+		ExecutionID: executionID,
+		Params:      model.PointerValues(params),
 	})
 }
 
-func (a *testTaskRunnerAdapter) TerminateRunByExternalExecutionID(externalExecutionID string) error {
-	return a.inner.TerminateRunByExternalExecutionID(externalExecutionID)
+func (a *testTaskRunnerAdapter) TerminateRunByExecutionID(executionID string) error {
+	return a.inner.TerminateRunByExecutionID(executionID)
 }
 
 func (a *testTaskRunnerAdapter) StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error {

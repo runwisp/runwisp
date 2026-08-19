@@ -24,7 +24,7 @@ func TestMapConcurrencyBehavior(t *testing.T) {
 	}{
 		{model.PolicyQueue, "queue"},
 		{model.PolicySkip, "skip"},
-		{model.PolicyTerminate, "terminate"},
+		{model.PolicyKill, "kill"},
 		{model.ConcurrencyPolicy("unknown"), ""},
 		{model.ConcurrencyPolicy(""), ""},
 	}

@@ -38,21 +38,21 @@ func (c *Client) GetRunSummary() (*model.RunSummary, error) {
 
 func (c *Client) GetDaemonInfo() (*model.DaemonInfo, error) {
 	var info model.DaemonInfo
-	if err := c.doJSON("GET", "/api/info", nil, &info); err != nil {
+	if err := c.doJSON("GET", "/api/daemon", nil, &info); err != nil {
 		return nil, err
 	}
 	return &info, nil
 }
 
 // GetInstanceInfo fetches the daemon's local identity (datadir, config, socket,
-// pid, version) from GET /api/instance. It is used by a launcher that hit a
+// pid, version) from GET /api/daemon/identity. It is used by a launcher that hit a
 // port conflict to discover whether a RunWisp daemon holds the port and where
 // it lives. The endpoint is public but local-gated, so a no-password TCP client
 // reaches it over loopback; a non-RunWisp port-holder yields a transport or
 // decode error, which the caller treats as "not a discoverable daemon".
 func (c *Client) GetInstanceInfo() (*model.InstanceInfo, error) {
 	var info model.InstanceInfo
-	if err := c.doJSON("GET", "/api/instance", nil, &info); err != nil {
+	if err := c.doJSON("GET", "/api/daemon/identity", nil, &info); err != nil {
 		return nil, err
 	}
 	return &info, nil
@@ -89,11 +89,11 @@ func (c *Client) HealthCheck() error {
 	return nil
 }
 
-// StreamDaemonLogs opens an SSE connection to /api/daemon/log-stream and
+// StreamDaemonLogs opens an SSE connection to /api/daemon/log/stream and
 // delivers log lines on the returned channel. The channel is closed when the
 // context is cancelled or the stream ends.
 func (c *Client) StreamDaemonLogs(ctx context.Context) (<-chan string, error) {
-	resp, err := c.doSSE(ctx, "/api/daemon/log-stream")
+	resp, err := c.doSSE(ctx, "/api/daemon/log/stream")
 	if err != nil {
 		return nil, err
 	}

@@ -75,7 +75,7 @@ func initNotify(
 		return notifyBundle{}, nil
 	}
 
-	if override := backoffOverride(notifyCfg.DefaultTimeout, logger); override != nil {
+	if override := backoffOverride(notifyCfg.RetryBudget, logger); override != nil {
 		for i := range resolved.Notifiers {
 			resolved.Notifiers[i].Transport = override()
 		}
@@ -90,7 +90,7 @@ func initNotify(
 
 		coalescerCfg := inapp.CoalescerConfig{
 			Window:      notifyCfg.CoalesceWindow,
-			OccurrenceN: notifyCfg.OccurrenceRing,
+			OccurrenceN: notifyCfg.KeepOccurrences,
 		}
 		coalescer := inapp.NewCoalescer(db, hub, notify.RealClock(), coalescerCfg, logger)
 
@@ -106,7 +106,7 @@ func initNotify(
 	outboundCoalesce := notifyCfg.CoalesceOutbound
 	coalesceCfg := coalesce.Config{
 		Window: notifyCfg.CoalesceWindow,
-		EveryN: notifyCfg.OccurrenceRing,
+		EveryN: notifyCfg.KeepOccurrences,
 	}
 
 	// The in-app channel is the failure sink for permanently-failed outbound
@@ -160,13 +160,13 @@ func mutedMissedTasks(tasks []model.Task) map[string]struct{} {
 }
 
 // backoffOverride returns a transport-builder that shrinks the outbound retry
-// budget when default_timeout is set in TOML. A separate transport is
+// budget when retry_budget is set in TOML. A separate transport is
 // constructed per-channel so per-channel Body429Fn customisation still applies.
 func backoffOverride(d time.Duration, logger *slog.Logger) func() *notify.HTTPProvider {
 	if d <= 0 {
 		return nil
 	}
-	logger.Info("notify backoff overridden via default_timeout", "max_elapsed", d)
+	logger.Info("notify backoff overridden via retry_budget", "max_elapsed", d)
 	return func() *notify.HTTPProvider {
 		t := notify.NewHTTPProvider()
 		bo := t.Backoff

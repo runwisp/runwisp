@@ -221,7 +221,7 @@ type SystemStatsMsg struct {
 	Err   error
 }
 
-// DaemonInfoMsg delivers a fresh /api/info read — the TUI polls it to keep
+// DaemonInfoMsg delivers a fresh /api/daemon read — the TUI polls it to keep
 // the config-stale notice current while the operator edits runwisp.toml.
 type DaemonInfoMsg struct {
 	Info *model.DaemonInfo
@@ -229,7 +229,7 @@ type DaemonInfoMsg struct {
 }
 
 // ReloadResultMsg delivers the outcome of an operator-triggered config reload.
-// Info carries a fresh /api/info read taken right after a successful reload so
+// Info carries a fresh /api/daemon read taken right after a successful reload so
 // the sidebar and config-stale notice can be rebuilt; it is nil when the reload
 // failed or the follow-up info read errored.
 type ReloadResultMsg struct {

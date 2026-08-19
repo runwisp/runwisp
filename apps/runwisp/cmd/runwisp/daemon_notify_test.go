@@ -223,8 +223,8 @@ func TestInitNotify_InappRouteWiresHubAndService(t *testing.T) {
 				Routes: []config.NotificationRoute{
 					{Kinds: []string{"run.failed"}, NotifierID: []string{"inapp"}},
 				},
-				CoalesceWindow: time.Minute,
-				OccurrenceRing: 5,
+				CoalesceWindow:  time.Minute,
+				KeepOccurrences: 5,
 			},
 		},
 	}

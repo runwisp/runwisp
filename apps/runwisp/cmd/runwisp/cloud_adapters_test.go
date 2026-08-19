@@ -60,7 +60,7 @@ func (s *stubTaskRunner) RemoveTask(taskName string) {
 
 func (s *stubTaskRunner) TerminateRun(string) error { panic("not used") }
 
-func (s *stubTaskRunner) TerminateRunByExternalExecutionID(id string) error {
+func (s *stubTaskRunner) TerminateRunByExecutionID(id string) error {
 	s.terminatedExternal = id
 	return s.terminatedErr
 }
@@ -113,7 +113,7 @@ func TestCloudTaskRunner_TriggerCloudRun_TagsTriggeredByCloud(t *testing.T) {
 	assert.Same(t, want, got)
 	assert.Equal(t, "alpha", inner.gotTriggerTask)
 	assert.Equal(t, model.TriggeredByCloud, inner.gotTrigger.TriggeredBy)
-	assert.Equal(t, "exec-123", inner.gotTrigger.ExternalExecutionID)
+	assert.Equal(t, "exec-123", inner.gotTrigger.ExecutionID)
 	// The cloud protocol carries a plain map; the adapter lifts it into the
 	// daemon's tri-state supplied shape (every value present, never an omit).
 	region := "eu"
@@ -129,19 +129,19 @@ func TestCloudTaskRunner_TriggerCloudRun_PropagatesError(t *testing.T) {
 	assert.ErrorIs(t, err, boom)
 }
 
-func TestCloudTaskRunner_TerminateRunByExternalExecutionID_Delegates(t *testing.T) {
+func TestCloudTaskRunner_TerminateRunByExecutionID_Delegates(t *testing.T) {
 	inner := &stubTaskRunner{}
 	a := &cloudTaskRunner{cloudRuntime: inner}
 
-	require.NoError(t, a.TerminateRunByExternalExecutionID("ext-42"))
+	require.NoError(t, a.TerminateRunByExecutionID("ext-42"))
 	assert.Equal(t, "ext-42", inner.terminatedExternal)
 }
 
-func TestCloudTaskRunner_TerminateRunByExternalExecutionID_PropagatesError(t *testing.T) {
+func TestCloudTaskRunner_TerminateRunByExecutionID_PropagatesError(t *testing.T) {
 	boom := errors.New("nope")
 	inner := &stubTaskRunner{terminatedErr: boom}
 	a := &cloudTaskRunner{cloudRuntime: inner}
 
-	err := a.TerminateRunByExternalExecutionID("ext")
+	err := a.TerminateRunByExecutionID("ext")
 	assert.ErrorIs(t, err, boom)
 }

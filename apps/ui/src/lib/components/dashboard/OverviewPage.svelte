@@ -88,7 +88,7 @@
 
     // When the local scheduler is inactive, scheduling-owned controls are
     // hidden. Reset any selection that points at one so the view stays
-    // coherent if schedulingActive flips false after first /api/info.
+    // coherent if schedulingActive flips false after first /api/daemon.
     $effect(() => {
         if (schedulingActive) return;
         if (SCHEDULING_FILTERS.has(taskFilter)) taskFilter = "all";

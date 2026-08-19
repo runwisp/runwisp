@@ -164,7 +164,7 @@ func TestModel_OpenLaunchURL_TicketSuccess_ReturnsURLMsg(t *testing.T) {
 	if !ok {
 		t.Fatalf("got %T, want uikit.OpenBrowserMsg", got)
 	}
-	if want := "http://localhost:8181/api/auth/launch?ticket=tkt-xyz&redirect=%2Fpath%2Ffoo"; bMsg.URL != want {
+	if want := "http://localhost:8181/api/auth/launch-ticket?ticket=tkt-xyz&redirect=%2Fpath%2Ffoo"; bMsg.URL != want {
 		t.Fatalf("URL = %q, want %q", bMsg.URL, want)
 	}
 	if bMsg.BrowserOpened {
@@ -216,7 +216,7 @@ func TestModel_DownloadExecLog_HappyPath(t *testing.T) {
 		t.Fatalf("got %T, want OpenBrowserMsg", msg)
 	}
 	// The redirect param is URL-encoded; check the encoded form.
-	want := "http://localhost:9090/api/auth/launch?ticket=tkt-dl&redirect=%2Fapi%2Ftasks%2Ftask-A%2Fruns%2Fr-1%2Flog%2Fraw"
+	want := "http://localhost:9090/api/auth/launch-ticket?ticket=tkt-dl&redirect=%2Fapi%2Fruns%2Fr-1%2Flog%2Fraw"
 	if bMsg.URL != want {
 		t.Fatalf("URL = %q, want %q", bMsg.URL, want)
 	}

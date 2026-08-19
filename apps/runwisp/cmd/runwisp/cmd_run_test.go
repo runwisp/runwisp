@@ -5,378 +5,280 @@ package main
 
 import (
 	"bytes"
-	"errors"
-	"io"
-	"log/slog"
-	"net"
-	"net/http"
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
-	"syscall"
 	"testing"
-	"time"
 
-	"github.com/runwisp/runwisp/internal/clilog"
-	"github.com/runwisp/runwisp/internal/cloud"
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/server"
-	"github.com/runwisp/runwisp/internal/testutil"
-	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/internal/events"
+	"github.com/runwisp/runwisp/internal/logutil"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// captureStderr runs fn with os.Stderr redirected to a pipe and returns
-// everything written. Tests use it to inspect non-loopback banners.
-func captureStderr(t *testing.T, fn func()) string {
-	t.Helper()
-	old := os.Stderr
-	r, w, err := os.Pipe()
-	require.NoError(t, err)
-	os.Stderr = w
-
-	var buf bytes.Buffer
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		_, _ = io.Copy(&buf, r)
-	}()
-
-	fn()
-
-	require.NoError(t, w.Close())
-	wg.Wait()
-	os.Stderr = old
-	return buf.String()
+func TestExitCodeFromRun_Nil(t *testing.T) {
+	assert.Equal(t, 0, exitCodeFromRun(nil))
 }
 
-// captureSlog redirects the slog default logger to an in-memory buffer for
-// the duration of fn.
-func captureSlog(t *testing.T, fn func()) string {
-	t.Helper()
-	var buf bytes.Buffer
-	old := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
-	t.Cleanup(func() { slog.SetDefault(old) })
-	fn()
-	return buf.String()
+func TestExitCodeFromRun_Success(t *testing.T) {
+	r := model.ReasonSuccess
+	run := &model.Run{ExitCode: 0, EndReason: &r}
+	assert.Equal(t, 0, exitCodeFromRun(run))
 }
 
-func TestPrintNonLoopbackBanner_MentionsHost(t *testing.T) {
-	out := captureStderr(t, func() { printNonLoopbackBanner("10.0.0.5") })
-	assert.Contains(t, out, "10.0.0.5")
-	assert.Contains(t, out, "SECURITY")
+func TestExitCodeFromRun_FailedPropagatesExitCode(t *testing.T) {
+	r := model.ReasonFailed
+	run := &model.Run{ExitCode: 42, EndReason: &r}
+	assert.Equal(t, 42, exitCodeFromRun(run))
 }
 
-func TestLogSecurityWarnings_EmitsCloudDispatchWarning(t *testing.T) {
-	out := captureSlog(t, func() {
-		cfg := &daemonConfig{Config: &config.Config{}}
-		cfg.Config.Daemon.AllowCloudDispatch = true
-		logSecurityWarnings(cfg, Flags{Host: "127.0.0.1"}, tlsSetup{Scheme: "http"})
-	})
-	assert.Contains(t, out, "Cloud dispatch enabled")
+func TestExitCodeFromRun_NoEndReason(t *testing.T) {
+	run := &model.Run{ExitCode: 99, EndReason: nil}
+	assert.Equal(t, 0, exitCodeFromRun(run))
 }
 
-func TestLogSecurityWarnings_PrintsBannerForNonLoopbackCleartext(t *testing.T) {
-	// Non-loopback bind with TLS off (scheme http) is the only case that still
-	// prints the loud cleartext-exposure banner.
-	out := captureStderr(t, func() {
-		cfg := &daemonConfig{Config: &config.Config{}}
-		logSecurityWarnings(cfg, Flags{Host: "0.0.0.0"}, tlsSetup{Scheme: "http"})
-	})
-	assert.True(t, strings.Contains(out, "0.0.0.0"), "banner must include the host")
-	assert.Contains(t, out, "SECURITY")
-}
-
-func TestLogSecurityWarnings_NonLoopbackHTTPSNoCleartextBanner(t *testing.T) {
-	// Auto-HTTPS removes the eavesdrop risk, so a non-loopback bind serving
-	// HTTPS gets a calm fingerprint line, not the cleartext banner.
-	stderr := captureStderr(t, func() {
-		cfg := &daemonConfig{Config: &config.Config{}}
-		logSecurityWarnings(cfg, Flags{Host: "0.0.0.0"}, tlsSetup{Scheme: "https", Generated: true, Fingerprint: "deadbeef"})
-	})
-	assert.NotContains(t, stderr, "cleartext", "HTTPS bind must not print the cleartext banner")
-
-	slogOut := captureSlog(t, func() {
-		cfg := &daemonConfig{Config: &config.Config{}}
-		logSecurityWarnings(cfg, Flags{Host: "0.0.0.0"}, tlsSetup{Scheme: "https", Generated: true, Fingerprint: "deadbeef"})
-	})
-	assert.Contains(t, slogOut, "Serving HTTPS")
-	assert.Contains(t, slogOut, "deadbeef")
-}
-
-func TestLogSecurityWarnings_LoopbackQuiet(t *testing.T) {
-	out := captureStderr(t, func() {
-		cfg := &daemonConfig{Config: &config.Config{}}
-		logSecurityWarnings(cfg, Flags{Host: "127.0.0.1"}, tlsSetup{Scheme: "http"})
-	})
-	assert.NotContains(t, out, "SECURITY", "loopback bind must not print the banner")
-}
-
-func TestRunDaemon_BadDBPathReturnsError(t *testing.T) {
-	// Point DataDir at a directory we can't write into so DBPath()
-	// resolves under it and storage.New fails.
-	f := Flags{
-		DataDir: "/proc/runwisp-cannot-create",
-		CfgFile: writeMinimalTOML(t),
-	}
-	err := runDaemon(modeStandalone, f, true)
-	require.Error(t, err)
-}
-
-func TestRunDaemon_MissingConfigReturnsError(t *testing.T) {
-	f := Flags{
-		DataDir: t.TempDir(),
-		CfgFile: "/no/such/runwisp.toml",
-		Host:    "127.0.0.1",
-		Port:    testutil.PickFreePort(t),
-	}
-	t.Setenv("RUNWISP_PASSWORD", "x")
-
-	err := runDaemon(modeStandalone, f, true)
-	require.Error(t, err)
-}
-
-func TestRunDaemon_BootsAndShutsDownOnSIGTERM(t *testing.T) {
-	if testing.Short() {
-		// Boots a full daemon and sends a real SIGTERM — too heavy for the
-		// local fast loop. CI never passes -short, so this still runs there.
-		t.Skip("skipping full daemon boot/SIGTERM test in -short mode")
-	}
-	// ShortTempDir keeps DataDir path under macOS' 104-byte sun_path limit so
-	// the daemon's runwisp.sock can actually bind. t.TempDir embeds the test
-	// name, blowing past the limit and failing with EINVAL.
-	dir := testutil.ShortTempDir(t)
-	f := Flags{
-		DataDir: dir,
-		CfgFile: writeMinimalTOML(t),
-		Host:    "127.0.0.1",
-		Port:    testutil.PickFreePort(t),
-	}
-
-	t.Setenv("RUNWISP_PASSWORD", "test-password")
-
-	done := make(chan error, 1)
-	go func() {
-		done <- runDaemon(modeStandalone, f, true)
-	}()
-
-	// Poll the bound HTTP port until the daemon is up. Server.Start does its
-	// own background bind; we treat a successful TCP connect as ready.
-	deadline := time.Now().Add(5 * time.Second)
-	ready := false
-	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort(f.Host, strconv.Itoa(f.Port)), 100*time.Millisecond)
-		if err == nil {
-			conn.Close()
-			ready = true
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	require.True(t, ready, "daemon never bound %d", f.Port)
-
-	// SIGTERM the test process; runHeadless installed the handler.
-	require.NoError(t, sendSelfSIGTERM())
-
-	select {
-	case err := <-done:
-		require.NoError(t, err)
-	case <-time.After(10 * time.Second):
-		t.Fatal("runDaemon did not return after SIGTERM")
-	}
-
-	// The daemon should have cleaned up its PID file.
-	_, err := os.Stat(dir + "/runwisp.pid")
-	assert.True(t, os.IsNotExist(err), "PID file should be removed on clean shutdown")
-
-	// Smoke-test that the listener was actually released.
-	_, err = http.Get("http://" + net.JoinHostPort(f.Host, strconv.Itoa(f.Port)) + "/health")
-	assert.Error(t, err, "port should be free after shutdown")
-}
-
-// TestRunDaemon_AutoHeadlessWithoutTerminal verifies the no-TTY fallback: when
-// runDaemon is asked for the TUI (headless=false) but stdin/stdout are not a
-// terminal (as under the test harness, systemd, or Docker), it must auto-disable
-// the TUI and boot headless instead of blocking forever on the TUI's stdin.
-func TestRunDaemon_AutoHeadlessWithoutTerminal(t *testing.T) {
-	if testing.Short() {
-		// Boots a full daemon and sends a real SIGTERM — too heavy for the
-		// local fast loop. CI never passes -short, so this still runs there.
-		t.Skip("skipping full daemon boot/SIGTERM test in -short mode")
-	}
-	require.False(t, isInteractiveTerminal(), "test harness must be non-interactive for this to be meaningful")
-
-	dir := testutil.ShortTempDir(t)
-	f := Flags{
-		DataDir: dir,
-		CfgFile: writeMinimalTOML(t),
-		Host:    "127.0.0.1",
-		Port:    testutil.PickFreePort(t),
-	}
-
-	t.Setenv("RUNWISP_PASSWORD", "test-password")
-
-	done := make(chan error, 1)
-	go func() {
-		// headless=false asks for the TUI, but with no interactive terminal
-		// runDaemon must flip to headless rather than block attaching it.
-		done <- runDaemon(modeStandalone, f, false)
-	}()
-
-	deadline := time.Now().Add(5 * time.Second)
-	ready := false
-	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort(f.Host, strconv.Itoa(f.Port)), 100*time.Millisecond)
-		if err == nil {
-			conn.Close()
-			ready = true
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	require.True(t, ready, "daemon never bound %d — likely blocked attaching the TUI", f.Port)
-
-	require.NoError(t, sendSelfSIGTERM())
-
-	select {
-	case err := <-done:
-		require.NoError(t, err)
-	case <-time.After(10 * time.Second):
-		t.Fatal("runDaemon did not return after SIGTERM")
-	}
-}
-
-func TestInstallSignalHandler_DeliversAndStops(t *testing.T) {
-	sigCh, stop := installSignalHandler()
-	defer stop()
-
-	p, err := os.FindProcess(os.Getpid())
-	require.NoError(t, err)
-	require.NoError(t, p.Signal(syscall.SIGTERM))
-
-	select {
-	case sig := <-sigCh:
-		assert.Equal(t, syscall.SIGTERM, sig)
-	case <-time.After(time.Second):
-		t.Fatal("signal not delivered to channel")
-	}
-}
-
-func TestConfigureBootLogRouting_HeadlessReturnsNilWriter(t *testing.T) {
-	buf := server.NewDaemonLogBuffer(8)
-	assert.Nil(t, configureBootLogRouting(buf, Flags{}, true))
-}
-
-func TestConfigureBootLogRouting_TUIReturnsNonNilWriter(t *testing.T) {
-	buf := server.NewDaemonLogBuffer(8)
-	dw := configureBootLogRouting(buf, Flags{}, false)
-	assert.NotNil(t, dw)
-}
-
-func TestStartCloudIfEnabled_StandaloneReturnsNoOps(t *testing.T) {
+func TestIsDaemonRunning_NoPidFile(t *testing.T) {
 	t.Parallel()
-	cancel, wg := startCloudIfEnabled(modeStandalone, nil, nil, nil)
-	require.NotNil(t, cancel)
-	require.NotNil(t, wg)
-	cancel() // must not panic
+	assert.False(t, isDaemonRunning(Flags{DataDir: t.TempDir()}), "no PID file → not running")
 }
 
-func TestStartCloudIfEnabled_CloudWithDisabledConfigShortCircuits(t *testing.T) {
+func TestIsDaemonRunning_StalePidFile(t *testing.T) {
 	t.Parallel()
-	cfg := &daemonConfig{CloudConfig: cloud.Config{Enabled: false}}
-	cancel, wg := startCloudIfEnabled(modeCloud, cfg, nil, nil)
-	require.NotNil(t, cancel)
-	require.NotNil(t, wg)
-	cancel()
-	wg.Wait() // empty, returns immediately
+	dir := t.TempDir()
+	// PID 0 cannot be signaled — write it so processAlive returns false.
+	pidPath := filepath.Join(dir, "daemon.pid")
+	require.NoError(t, os.WriteFile(pidPath, []byte(strconv.Itoa(0)), 0o600))
+
+	assert.False(t, isDaemonRunning(Flags{DataDir: dir}), "PID file present but PID dead → not running")
 }
 
-func TestSuperviseServerStart_SelfSignalsOnStartError(t *testing.T) {
-	// Run with our own installed signal handler so the supervisor's
-	// self-SIGTERM is caught here instead of killing the test process — the
-	// daemon's goroutine in production does the same because runDaemon
-	// installed signal.Notify first.
-	sigCh, stop := installSignalHandler()
-	defer stop()
+func TestIsDaemonRunning_LivePid(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	pidPath := filepath.Join(dir, "daemon.pid")
+	require.NoError(t, os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o600))
 
-	// Empty SocketPath makes openUnixListener fail, which makes Start return
-	// an error and the supervisor self-signal SIGTERM.
-	srv, err := server.New(server.Options{
-		Password:   "x",
-		JWTSecret:  "test-secret-test-secret-test-1234",
-		SocketPath: "",
-	})
+	assert.True(t, isDaemonRunning(Flags{DataDir: dir}), "PID file present and live PID → running")
+}
+
+func TestExecLogLineHandler_FiltersByTaskName(t *testing.T) {
+	// Wrong-task events route nowhere; verify the handler is a no-op
+	// (it does not panic and produces no observable output for the wrong
+	// task). Cross-type assertion failure is unreachable because EventData
+	// is a sealed interface.
+	h := runLogLineHandler("target", os.Stdout)
+	h(events.Event{Data: events.LogLineEvent{TaskName: "other", Text: "x"}})
+	// RunEvent reaches the wrong-type branch (LogLineEvent type assertion fails).
+	h(events.Event{Data: events.RunEvent{}})
+}
+
+func TestExecLogLineHandler_WritesToStdoutAndStderr(t *testing.T) {
+	// Redirect stdout/stderr to pipes so we can verify routing.
+	oldOut, oldErr := os.Stdout, os.Stderr
+	rOut, wOut, err := os.Pipe()
 	require.NoError(t, err)
+	rErr, wErr, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stdout = wOut
+	os.Stderr = wErr
+	t.Cleanup(func() {
+		os.Stdout = oldOut
+		os.Stderr = oldErr
+	})
 
-	fatalCh := make(chan error, 1)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		superviseServerStart(srv, fatalCh)
-	}()
+	h := runLogLineHandler("target", os.Stdout)
+	h(events.Event{Data: events.LogLineEvent{TaskName: "target", Stream: logutil.StreamStdout, Text: "hello stdout"}})
+	h(events.Event{Data: events.LogLineEvent{TaskName: "target", Stream: logutil.StreamStderr, Text: "hello stderr"}})
 
+	require.NoError(t, wOut.Close())
+	require.NoError(t, wErr.Close())
+
+	outBytes := make([]byte, 64)
+	n, _ := rOut.Read(outBytes)
+	assert.Contains(t, string(outBytes[:n]), "hello stdout")
+
+	errBytes := make([]byte, 64)
+	n, _ = rErr.Read(errBytes)
+	assert.Contains(t, string(errBytes[:n]), "hello stderr")
+}
+
+func TestExecRunTerminalHandler_DispatchesMatching(t *testing.T) {
+	done := make(chan *events.RunEvent, 1)
+	h := runTerminalHandler("foo", done)
+
+	// Non-RunEvent data (LogLineEvent) → ignored
+	h(events.Event{Data: events.LogLineEvent{}})
 	select {
-	case sig := <-sigCh:
-		assert.Equal(t, syscall.SIGTERM, sig)
-	case <-time.After(2 * time.Second):
-		t.Fatal("supervisor did not self-signal SIGTERM")
-	}
-	<-done
-
-	// The fatal cause must be reported on fatalCh before the self-signal, so the
-	// shutdown path can log it instead of a phantom external signal.
-	select {
-	case err := <-fatalCh:
-		assert.Error(t, err)
+	case <-done:
+		t.Fatal("expected no event for non-RunEvent data")
 	default:
-		t.Fatal("supervisor did not report the fatal error on fatalCh")
+	}
+
+	// RunEvent with wrong task → ignored
+	h(events.Event{Data: events.RunEvent{Run: &model.Run{TaskName: "bar"}}})
+	select {
+	case <-done:
+		t.Fatal("expected no event for wrong task")
+	default:
+	}
+
+	// nil Run → ignored
+	h(events.Event{Data: events.RunEvent{Run: nil}})
+	select {
+	case <-done:
+		t.Fatal("expected no event for nil run")
+	default:
+	}
+
+	// Matching event → delivered
+	h(events.Event{Data: events.RunEvent{Run: &model.Run{TaskName: "foo"}}})
+	select {
+	case got := <-done:
+		require.NotNil(t, got.Run)
+		assert.Equal(t, "foo", got.Run.TaskName)
+	default:
+		t.Fatal("expected event to be delivered")
 	}
 }
 
-func TestReadFatal(t *testing.T) {
-	// Empty channel → external signal, no fatal cause.
-	assert.NoError(t, readFatal(make(chan error, 1)))
-	// nil channel is treated as no fatal cause.
-	assert.NoError(t, readFatal(nil))
-	// A reported fatal error is surfaced so shutdown logs the real cause.
-	ch := make(chan error, 1)
-	ch <- errors.New("server failed")
-	assert.Error(t, readFatal(ch))
+func TestRunExec_DaemonFlagRequiresDaemon(t *testing.T) {
+	origFlag := runFlags.Daemon
+	runFlags.Daemon = true
+	t.Cleanup(func() { runFlags.Daemon = origFlag })
+
+	exitCode, err := runExec("anything", Flags{DataDir: t.TempDir()})
+	assert.Equal(t, 0, exitCode)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--daemon was set")
 }
 
-func TestEmitStartupBanner_DoesNotPanic(t *testing.T) {
-	// Cover both branches: the fancy banner path runs when FancyBanner is
-	// true (TTY + non-JSON), and logStartupSummary runs otherwise.
-	info := uikit.StartupInfo{Version: "test", Tasks: nil}
+func TestRunExec_StandaloneFlagForbidsDaemon(t *testing.T) {
+	dir := t.TempDir()
+	// Write the current PID — isDaemonRunning will see a live daemon.
+	pidPath := filepath.Join(dir, "daemon.pid")
+	require.NoError(t, os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o600))
 
-	emitStartupBanner(info, Flags{LogFormat: clilog.FormatJSON}) // forces non-fancy branch
-	emitStartupBanner(info, Flags{LogFormat: clilog.FormatText}) // whichever stderrTTY says
+	origFlag := runFlags.Standalone
+	runFlags.Standalone = true
+	t.Cleanup(func() { runFlags.Standalone = origFlag })
+
+	exitCode, err := runExec("anything", Flags{DataDir: dir})
+	assert.Equal(t, 0, exitCode)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "--standalone was set")
 }
 
-// TestLogStartupSummary_WarnsAboutEphemeralPassword covers the headless path
-// that a container takes: the fancy banner needs a TTY and the TUI header is
-// not running, so without this line `docker logs` would never mention that the
-// generated password makes the Web UI unloggable.
-func TestLogStartupSummary_WarnsAboutEphemeralPassword(t *testing.T) {
-	capture := func(info uikit.StartupInfo) string {
-		var buf bytes.Buffer
-		prev := slog.Default()
-		slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
-		defer slog.SetDefault(prev)
-		logStartupSummary(info)
-		return buf.String()
+func TestRunExecCLI_MutuallyExclusiveFlags(t *testing.T) {
+	origDaemon, origStandalone := runFlags.Daemon, runFlags.Standalone
+	runFlags.Daemon, runFlags.Standalone = true, true
+	t.Cleanup(func() { runFlags.Daemon, runFlags.Standalone = origDaemon, origStandalone })
+
+	var buf bytes.Buffer
+	exitCode, err := runTaskCLI(&buf, "anything", Flags{DataDir: t.TempDir()})
+	assert.Equal(t, 0, exitCode)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mutually exclusive")
+	assert.Empty(t, buf.String(), "no --json flag set → nothing written")
+}
+
+func TestRunExecCLI_JSONFlagEmitsErrorDocOnFailure(t *testing.T) {
+	origJSON := runFlags.JSON
+	runFlags.JSON = true
+	t.Cleanup(func() { runFlags.JSON = origJSON })
+
+	var buf bytes.Buffer
+	_, err := runTaskCLI(&buf, "missing", Flags{CfgFile: "/does/not/exist/runwisp.toml", DataDir: t.TempDir()})
+	require.Error(t, err)
+
+	var doc runJSONDoc
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc), "stdout must be valid JSON even on failure")
+	assert.Equal(t, "missing", doc.Task)
+	assert.Equal(t, err.Error(), doc.Error)
+	assert.Empty(t, doc.RunID, "error doc omits the identity fields of a real run")
+}
+
+func TestRunExecStandalone_UnknownTaskName(t *testing.T) {
+	// Write a minimal valid runwisp.toml that has no tasks named "missing".
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	const minimalCfg = `
+[scheduler]
+timezone = "UTC"
+
+[tasks.exists]
+cron = "* * * * *"
+run = "echo hi"
+`
+	require.NoError(t, os.WriteFile(cfgPath, []byte(minimalCfg), 0o600))
+
+	exitCode, err := runExecStandalone("missing", Flags{CfgFile: cfgPath})
+	assert.Equal(t, 0, exitCode)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `task "missing" not found`)
+}
+
+func TestRunExecStandalone_BadConfigFile(t *testing.T) {
+	t.Parallel()
+	_, err := runExecStandalone("anything", Flags{CfgFile: "/does/not/exist/runwisp.toml"})
+	require.Error(t, err)
+}
+
+func TestRunExecViaDaemon_DaemonUnreachable(t *testing.T) {
+	t.Parallel()
+	// No socket created — apiclient.NewUnix will fail HealthCheck.
+	exitCode, err := runExecViaDaemon("anything", Flags{DataDir: t.TempDir()})
+	assert.Equal(t, 0, exitCode)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "daemon is not reachable")
+}
+
+func TestRunExecStandalone_HappyPath_EchoTaskExitsZero(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns a subprocess")
 	}
 
-	assert.Contains(t, capture(uikit.StartupInfo{PasswordEphemeral: true}), "no RUNWISP_PASSWORD set",
-		"a headless boot with a generated password must say so")
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	cfg := `
+[scheduler]
+timezone = "UTC"
 
-	assert.NotContains(t, capture(uikit.StartupInfo{PasswordEphemeral: true, AuthDisabled: true}), "no RUNWISP_PASSWORD set",
-		"RUNWISP_AUTH=off already gets its own louder banner; no password to warn about")
+[tasks.greet]
+cron = "* * * * *"
+run = "echo runwisp-exec-test"
+`
+	require.NoError(t, os.WriteFile(cfgPath, []byte(cfg), 0o600))
 
-	assert.NotContains(t, capture(uikit.StartupInfo{}), "no RUNWISP_PASSWORD set",
-		"an operator-supplied password needs no warning")
+	exitCode, err := runExecStandalone("greet", Flags{CfgFile: cfgPath, DataDir: dir})
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode)
+}
+
+func TestRunExecStandalone_InvalidConfig(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(cfgPath, []byte("not valid toml ============="), 0o600))
+
+	_, err := runExecStandalone("x", Flags{CfgFile: cfgPath})
+	require.Error(t, err)
+}
+
+func TestExecRunTerminalHandler_ConcurrentSafe(t *testing.T) {
+	done := make(chan *events.RunEvent, 10)
+	h := runTerminalHandler("t", done)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h(events.Event{Data: events.RunEvent{Run: &model.Run{TaskName: "t"}}})
+		}()
+	}
+	wg.Wait()
+	assert.Len(t, done, 5)
 }

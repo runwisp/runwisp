@@ -106,8 +106,8 @@ func (c *Client) StopService(taskName string) error {
 }
 
 // StopRun sends a stop signal to a running execution.
-func (c *Client) StopRun(taskName, runID string) error {
-	return c.doJSON("POST", fmt.Sprintf("/api/tasks/%s/runs/%s/stop", taskName, runID), nil, nil)
+func (c *Client) StopRun(runID string) error {
+	return c.doJSON("POST", fmt.Sprintf("/api/runs/%s/stop", runID), nil, nil)
 }
 
 // GetRun fetches a run by its (globally unique) ULID — the endpoint is
@@ -120,8 +120,8 @@ func (c *Client) GetRun(runID string) (*model.Run, error) {
 	return &run, nil
 }
 
-func (c *Client) DeleteRun(taskName, runID string) error {
-	return c.doJSON("DELETE", fmt.Sprintf("/api/tasks/%s/runs/%s", taskName, runID), nil, nil)
+func (c *Client) DeleteRun(runID string) error {
+	return c.doJSON("DELETE", fmt.Sprintf("/api/runs/%s", runID), nil, nil)
 }
 
 // BulkDeleteRuns soft-deletes every run matched by sel and returns how many rows

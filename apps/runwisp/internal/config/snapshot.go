@@ -35,7 +35,7 @@ func digestFile(path string) fileDigest {
 // config became the daemon's live set. It lets the daemon *tell* the operator
 // when on-disk edits aren't live yet (config_stale). An explicit `runwisp
 // reload` re-pins it via Refresh so the freshly-applied config no longer reads
-// as stale. The mutex guards against Stale (per /api/info request) racing a
+// as stale. The mutex guards against Stale (per /api/daemon request) racing a
 // concurrent Refresh.
 //
 // The glob/bootMatched pairs let Stale re-evaluate the include patterns: a file
@@ -139,7 +139,7 @@ func (s *Snapshot) pinned() snapshotPins {
 // last pin — edited content, a deleted file, or a file that newly appeared all
 // count. It also re-evaluates the include globs so a file freshly added to (or
 // removed from) a watched conf.d/ counts even though it was never hashed. It is
-// called per /api/info request rather than from a watcher, so the answer is
+// called per /api/daemon request rather than from a watcher, so the answer is
 // always current and the daemon never reacts on its own.
 func (s *Snapshot) Stale() bool {
 	pins := s.pinned()

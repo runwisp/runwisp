@@ -72,7 +72,7 @@ func serviceFatalReason(d events.ServiceFatalEvent) string {
 
 func diskPressureReason(d events.LogDiskPressureEvent) string {
 	if d.KilledTask {
-		return fmt.Sprintf("disk space below %d bytes (free %d); task killed by log_on_full=\"kill_task\"",
+		return fmt.Sprintf("disk space below %d bytes (free %d); task killed by log_on_full=\"kill\"",
 			d.MinFreeBytes, d.FreeBytes)
 	}
 	return fmt.Sprintf("disk space below %d bytes (free %d); log output paused",

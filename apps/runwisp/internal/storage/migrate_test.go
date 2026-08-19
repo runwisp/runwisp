@@ -124,7 +124,7 @@ func TestMigration0002_RenamesTimestampColumns(t *testing.T) {
 	_, err = db.Exec(`INSERT INTO runs (id, task_name, status, start_at, end_at, triggered_by, created_at)
 		VALUES ('r1', 'backup', 'ended', '2026-01-02T03:04:05Z', '2026-01-02T03:05:00Z', 'schedule', '2026-01-02T03:04:00Z')`)
 	require.NoError(t, err)
-	_, err = db.Exec(`INSERT INTO pending_log_uploads (external_execution_id, upload_url, log_path, inserted_at)
+	_, err = db.Exec(`INSERT INTO pending_log_uploads (execution_id, upload_url, log_path, inserted_at)
 		VALUES ('e1', 'https://example.test/u', '/logs/e1', 1735787040)`)
 	require.NoError(t, err)
 
@@ -138,7 +138,7 @@ func TestMigration0002_RenamesTimestampColumns(t *testing.T) {
 	require.Equal(t, "2026-01-02T03:05:00Z", endedAt)
 
 	var insertedAtUnix int64
-	require.NoError(t, db.QueryRow(`SELECT inserted_at_unix FROM pending_log_uploads WHERE external_execution_id = 'e1'`).Scan(&insertedAtUnix))
+	require.NoError(t, db.QueryRow(`SELECT inserted_at_unix FROM pending_log_uploads WHERE execution_id = 'e1'`).Scan(&insertedAtUnix))
 	require.Equal(t, int64(1735787040), insertedAtUnix)
 
 	// The old column names must be gone.

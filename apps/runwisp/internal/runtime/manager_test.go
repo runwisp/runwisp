@@ -197,10 +197,10 @@ func TestPolicyQueueDropsAtCap(t *testing.T) {
 	assert.Equal(t, model.ReasonQueueFull, *dropped.EndReason)
 }
 
-func TestPolicyTerminate(t *testing.T) {
+func TestPolicyKill(t *testing.T) {
 	jm, exec, eb := newGatedManager(t)
 
-	task := testTask("task1", model.PolicyTerminate, 1)
+	task := testTask("task1", model.PolicyKill, 1)
 	jm.UpsertTask(task)
 
 	done := watchCompletions(eb)
@@ -250,7 +250,7 @@ func TestEvaluateConcurrency_TerminateSkipsAlreadyCancelled(t *testing.T) {
 	r1 := &ActiveRun{Run: &model.Run{ID: "r1"}, Cancel: func() { r1cancels++ }, cancelled: true}
 	r2 := &ActiveRun{Run: &model.Run{ID: "r2"}, Cancel: func() { r2cancels++ }}
 	ts := &taskState{
-		task:   testTask("t", model.PolicyTerminate, 1),
+		task:   testTask("t", model.PolicyKill, 1),
 		active: []*ActiveRun{r1, r2},
 	}
 
@@ -1239,29 +1239,29 @@ func TestGetActiveRunCount_KnownTaskWithNoActiveIsZero(t *testing.T) {
 	assert.Equal(t, 0, jm.GetActiveRunCount("idle"))
 }
 
-func TestTerminateRunByExternalExecutionID_NotFound(t *testing.T) {
+func TestTerminateRunByExecutionID_NotFound(t *testing.T) {
 	jm := NewTaskManager(new(testutil.MockExecutor), events.NewEventBus(), time.Now)
-	err := jm.TerminateRunByExternalExecutionID("unknown-ext-id")
+	err := jm.TerminateRunByExecutionID("unknown-ext-id")
 	assert.Error(t, err)
 }
 
-// TestTerminateRunByExternalExecutionID_MatchesActiveRun exercises the positive
-// path: a run triggered with an ExternalExecutionID is cancelled by passing the
-// same external ID into TerminateRunByExternalExecutionID.
-func TestTerminateRunByExternalExecutionID_MatchesActiveRun(t *testing.T) {
+// TestTerminateRunByExecutionID_MatchesActiveRun exercises the positive
+// path: a run triggered with an ExecutionID is cancelled by passing the
+// same external ID into TerminateRunByExecutionID.
+func TestTerminateRunByExecutionID_MatchesActiveRun(t *testing.T) {
 	jm, exec, _ := newGatedManager(t)
 
 	task := testTask("task1", model.PolicySkip, 1)
 	jm.UpsertTask(task)
 
 	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{
-		TriggeredBy:         model.TriggeredByCloud,
-		ExternalExecutionID: "ext-123",
+		TriggeredBy: model.TriggeredByCloud,
+		ExecutionID: "ext-123",
 	})
 	require.NoError(t, err)
 
 	exec.WaitStarted(t) // the run is active and holds its external ID
-	require.NoError(t, jm.TerminateRunByExternalExecutionID("ext-123"))
+	require.NoError(t, jm.TerminateRunByExecutionID("ext-123"))
 }
 
 func TestStopService_TaskNotFound(t *testing.T) {

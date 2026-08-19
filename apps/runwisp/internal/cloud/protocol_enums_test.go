@@ -114,38 +114,3 @@ func TestLinesItemStreamJSON(t *testing.T) {
 		t.Fatal("expected error on invalid json")
 	}
 }
-
-func TestTriggerTypeJSON(t *testing.T) {
-	cases := []struct {
-		val  protocol.TriggerType
-		want string
-	}{
-		{protocol.TriggerTypeManual, `"manual"`},
-		{protocol.TriggerTypeSchedule, `"schedule"`},
-		{protocol.TriggerTypeSuccess, `"success"`},
-		{protocol.TriggerTypeFailure, `"failure"`},
-	}
-	for _, c := range cases {
-		got, err := json.Marshal(c.val)
-		if err != nil {
-			t.Fatalf("marshal %v: %v", c.val, err)
-		}
-		if string(got) != c.want {
-			t.Fatalf("marshal %v: got %s, want %s", c.val, got, c.want)
-		}
-		var rt protocol.TriggerType
-		if err := json.Unmarshal(got, &rt); err != nil {
-			t.Fatalf("unmarshal %s: %v", got, err)
-		}
-		if rt != c.val {
-			t.Fatalf("round-trip mismatch: got %v want %v", rt, c.val)
-		}
-	}
-	if v := protocol.TriggerType(99).Value(); v != nil {
-		t.Fatalf("out-of-range Value: got %v want nil", v)
-	}
-	var bad protocol.TriggerType
-	if err := bad.UnmarshalJSON([]byte("]")); err == nil {
-		t.Fatal("expected error on invalid json")
-	}
-}

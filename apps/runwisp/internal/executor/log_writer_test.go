@@ -59,10 +59,10 @@ func TestLogWriter_DropNewOverflow(t *testing.T) {
 	assert.Contains(t, string(data), "SYSTEM")
 }
 
-func TestLogWriter_KillTaskOverflow(t *testing.T) {
+func TestLogWriter_KillOverflow(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	opts.MaxSize = 100
-	opts.Overflow = "kill_task"
+	opts.Overflow = "kill"
 	cancelled := false
 	opts.CancelFunc = func() { cancelled = true }
 	w, err := NewLogWriter(opts)
@@ -75,7 +75,7 @@ func TestLogWriter_KillTaskOverflow(t *testing.T) {
 	assert.True(t, cancelled)
 	assert.True(t, w.truncated)
 	assert.True(t, w.KilledByPolicy(),
-		"kill_task overflow must flag KilledByPolicy so the runtime records the run as failed, not stopped")
+		"kill overflow must flag KilledByPolicy so the runtime records the run as failed, not stopped")
 }
 
 func TestLogWriter_DropNewDoesNotMarkKilledByPolicy(t *testing.T) {
@@ -89,11 +89,11 @@ func TestLogWriter_DropNewDoesNotMarkKilledByPolicy(t *testing.T) {
 	require.NoError(t, w.Close())
 
 	assert.False(t, w.KilledByPolicy(),
-		"drop_new keeps the process alive — only kill_task should set KilledByPolicy")
+		"drop_new keeps the process alive — only kill should set KilledByPolicy")
 }
 
 // TestLogWriter_DiskPressure_DropNew_FiresCallback verifies the disk-pressure
-// path on a non-kill_task policy: log writes silently stop, the task keeps
+// path on a non-kill policy: log writes silently stop, the task keeps
 // running (cancelFunc is NOT called), and OnDiskPressure fires exactly once.
 func TestLogWriter_DiskPressure_DropNew_FiresCallback(t *testing.T) {
 	dir := t.TempDir()
@@ -140,14 +140,14 @@ func TestLogWriter_DiskPressure_DropNew_FiresCallback(t *testing.T) {
 	assert.NotContains(t, string(data), "should be dropped")
 }
 
-// TestLogWriter_DiskPressure_KillTask_CancelsContext verifies that disk
-// pressure on a kill_task task actually kills the task (calls cancelFunc),
+// TestLogWriter_DiskPressure_Kill_CancelsContext verifies that disk
+// pressure on a kill task actually kills the task (calls cancelFunc),
 // reports killedTask=true to OnDiskPressure, and stops further writes.
-func TestLogWriter_DiskPressure_KillTask_CancelsContext(t *testing.T) {
+func TestLogWriter_DiskPressure_Kill_CancelsContext(t *testing.T) {
 	dir := t.TempDir()
 	opts := newTestOpts(dir)
 	opts.LogDir = dir
-	opts.Overflow = "kill_task"
+	opts.Overflow = "kill"
 	opts.MinFreeDisk = math.MaxInt64
 	cancelled := false
 	opts.CancelFunc = func() { cancelled = true }
@@ -166,7 +166,7 @@ func TestLogWriter_DiskPressure_KillTask_CancelsContext(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
-	assert.True(t, cancelled, "kill_task must cancel the task context on disk pressure")
+	assert.True(t, cancelled, "kill must cancel the task context on disk pressure")
 	assert.True(t, seenKilled, "OnDiskPressure must report killedTask=true")
 	assert.True(t, w.truncated)
 }

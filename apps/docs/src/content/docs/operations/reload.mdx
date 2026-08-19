@@ -119,7 +119,7 @@ That's deliberately not part of the diff. A job that stopped being schedulable
 doesn't show up as a task change — from the task set's point of view it simply
 isn't there — so a reload after a bad `crontab -e` would otherwise report "no
 task changes" and leave you thinking it worked. The same warnings appear in
-`runwisp status`, in `/api/info` (so the UI and TUI header can show them), and in
+`runwisp status`, in `/api/daemon` (so the UI and TUI header can show them), and in
 `runwisp validate` before you deploy at all.
 
 A reload also re-checks whether a system cron daemon is still alive, so

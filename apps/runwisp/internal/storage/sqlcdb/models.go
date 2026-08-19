@@ -32,28 +32,28 @@ type Notification struct {
 }
 
 type PendingLogUpload struct {
-	ExternalExecutionID string `json:"external_execution_id"`
-	UploadUrl           string `json:"upload_url"`
-	LogPath             string `json:"log_path"`
-	InsertedAtUnix      int64  `json:"inserted_at_unix"`
+	ExecutionID    string `json:"execution_id"`
+	UploadUrl      string `json:"upload_url"`
+	LogPath        string `json:"log_path"`
+	InsertedAtUnix int64  `json:"inserted_at_unix"`
 }
 
 type Run struct {
-	ID                  string            `json:"id"`
-	ExternalExecutionID *string           `json:"external_execution_id"`
-	TaskName            string            `json:"task_name"`
-	Status              model.RunPhase    `json:"status"`
-	EndReason           *model.EndReason  `json:"end_reason"`
-	ExitCode            int               `json:"exit_code"`
-	StartedAt           *time.Time        `json:"started_at"`
-	EndedAt             *time.Time        `json:"ended_at"`
-	TriggeredBy         model.TriggeredBy `json:"triggered_by"`
-	CreatedAt           time.Time         `json:"created_at"`
-	RetryAttempt        int               `json:"retry_attempt"`
-	RetryOfRunID        *string           `json:"retry_of_run_id"`
-	InstanceIndex       int               `json:"instance_index"`
-	ParamsJson          *string           `json:"params_json"`
-	DeletedAt           *time.Time        `json:"deleted_at"`
+	ID            string            `json:"id"`
+	ExecutionID   *string           `json:"execution_id"`
+	TaskName      string            `json:"task_name"`
+	Status        model.RunPhase    `json:"status"`
+	EndReason     *model.EndReason  `json:"end_reason"`
+	ExitCode      int               `json:"exit_code"`
+	StartedAt     *time.Time        `json:"started_at"`
+	EndedAt       *time.Time        `json:"ended_at"`
+	TriggeredBy   model.TriggeredBy `json:"triggered_by"`
+	CreatedAt     time.Time         `json:"created_at"`
+	RetryAttempt  int               `json:"retry_attempt"`
+	RetryOfRunID  *string           `json:"retry_of_run_id"`
+	InstanceIndex int               `json:"instance_index"`
+	ParamsJson    *string           `json:"params_json"`
+	DeletedAt     *time.Time        `json:"deleted_at"`
 }
 
 type TaskRegistration struct {

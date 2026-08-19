@@ -69,7 +69,7 @@ func (f *fakeTaskRunner) TriggerCloudRun(taskName, externalID string, params map
 	return f.trigRun, f.trigErr
 }
 
-func (f *fakeTaskRunner) TerminateRunByExternalExecutionID(externalID string) error {
+func (f *fakeTaskRunner) TerminateRunByExecutionID(externalID string) error {
 	return errors.New("not found")
 }
 

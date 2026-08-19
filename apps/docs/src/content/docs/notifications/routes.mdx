@@ -41,7 +41,7 @@ Valid `kind` values:
 | `run.succeeded`          | A run ends with success.                                                                         |
 | `run.failed`             | A run ends with a non-zero exit code.                                                            |
 | `run.timeout`            | A run is killed for exceeding its `timeout`.                                                     |
-| `run.stopped`            | A run is cancelled (manual stop, or `on_overlap = "terminate"`).                                 |
+| `run.stopped`            | A run is cancelled (manual stop, or `on_overlap = "kill"`).                                      |
 | `run.crashed`            | A run is reconciled as crashed after the daemon was killed mid-flight.                           |
 | `run.missed`             | A scheduled run was missed while the daemon was down (detected on restart).                      |
 | `service.fatal`          | A service slot gave up after exhausting `restart_attempts` fast failures.                        |

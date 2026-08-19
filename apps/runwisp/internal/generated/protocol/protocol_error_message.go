@@ -6,11 +6,11 @@
 package protocol
 
 type ProtocolErrorMessage struct {
-	Type        string `json:"type" binding:"required"`
-	V           int    `json:"v,omitempty"`
-	SentAt      string `json:"sentAt,omitempty"`
-	Code        string `json:"code" binding:"required"`
-	Message     string `json:"message" binding:"required"`
-	RequestID   string `json:"requestId,omitempty"`
-	ExecutionID string `json:"executionId,omitempty"`
+	Type            string `json:"type" binding:"required"`
+	ProtocolVersion int    `json:"protocolVersion,omitempty"`
+	SentAt          string `json:"sentAt,omitempty"`
+	Code            string `json:"code" binding:"required"`
+	Message         string `json:"message" binding:"required"`
+	RequestID       string `json:"requestId,omitempty"`
+	ExecutionID     string `json:"executionId,omitempty"`
 }

@@ -74,38 +74,28 @@ func seedTerminalRun(t *testing.T, db storage.RunRepository, taskName string) *m
 	return run
 }
 
-func TestResolveLogPathFor_InvalidULIDReturns400(t *testing.T) {
+func TestResolveLogPath_InvalidULIDReturns400(t *testing.T) {
 	srv, _, _ := logsTestServer(t)
-	_, _, err := srv.resolveLogPathFor(t.Context(), "task", "not-a-ulid")
+	_, _, err := srv.resolveLogPath(t.Context(), "not-a-ulid")
 	require.Error(t, err)
 	statusErr, ok := err.(huma.StatusError)
 	require.True(t, ok)
 	assert.Equal(t, http.StatusBadRequest, statusErr.GetStatus())
 }
 
-func TestResolveLogPathFor_MissingRunReturns404(t *testing.T) {
+func TestResolveLogPath_MissingRunReturns404(t *testing.T) {
 	srv, _, _ := logsTestServer(t)
-	_, _, err := srv.resolveLogPathFor(t.Context(), "task", ulid.Make().String())
+	_, _, err := srv.resolveLogPath(t.Context(), ulid.Make().String())
 	require.Error(t, err)
 	statusErr, ok := err.(huma.StatusError)
 	require.True(t, ok)
 	assert.Equal(t, http.StatusNotFound, statusErr.GetStatus())
 }
 
-func TestResolveLogPathFor_TaskNameMismatchReturns404(t *testing.T) {
-	srv, db, _ := logsTestServer(t)
-	run := seedTerminalRun(t, db, "real-task")
-	_, _, err := srv.resolveLogPathFor(t.Context(), "other-task", run.ID)
-	require.Error(t, err)
-	statusErr, ok := err.(huma.StatusError)
-	require.True(t, ok)
-	assert.Equal(t, http.StatusNotFound, statusErr.GetStatus())
-}
-
-func TestResolveLogPathFor_Success(t *testing.T) {
+func TestResolveLogPath_Success(t *testing.T) {
 	srv, db, logDir := logsTestServer(t)
 	run := seedTerminalRun(t, db, "task")
-	got, gotRun, err := srv.resolveLogPathFor(t.Context(), "task", run.ID)
+	got, gotRun, err := srv.resolveLogPath(t.Context(), run.ID)
 	require.NoError(t, err)
 	assert.Equal(t, run.ID, gotRun.ID)
 	assert.Equal(t, logutil.ResolveRunLogPath(logDir, run.TaskName, run.ID, run.CreatedAt), got)
@@ -130,8 +120,7 @@ func writeLogLines(t *testing.T, srv *Server, run *model.Run, lines ...string) s
 func TestHumaGetLogPage_InvalidULIDReturns400(t *testing.T) {
 	srv, _, _ := logsTestServer(t)
 	_, err := srv.humaGetLogPage(context.Background(), &LogPageInput{
-		TaskName: "task",
-		RunID:    "not-a-ulid",
+		RunID: "not-a-ulid",
 	})
 	require.Error(t, err)
 	statusErr, ok := err.(huma.StatusError)
@@ -142,8 +131,7 @@ func TestHumaGetLogPage_InvalidULIDReturns400(t *testing.T) {
 func TestHumaGetLogPage_RunNotFoundReturns404(t *testing.T) {
 	srv, _, _ := logsTestServer(t)
 	_, err := srv.humaGetLogPage(context.Background(), &LogPageInput{
-		TaskName: "task",
-		RunID:    ulid.Make().String(),
+		RunID: ulid.Make().String(),
 	})
 	require.Error(t, err)
 	statusErr, ok := err.(huma.StatusError)
@@ -157,8 +145,7 @@ func TestHumaGetLogPage_DefaultsAndFinalizedFlag(t *testing.T) {
 	writeLogLines(t, srv, run, "alpha", "beta", "gamma")
 
 	out, err := srv.humaGetLogPage(context.Background(), &LogPageInput{
-		TaskName: "task",
-		RunID:    run.ID,
+		RunID: run.ID,
 	})
 	require.NoError(t, err)
 	assert.True(t, out.Body.Finalized, "ended run should be finalized")
@@ -172,10 +159,9 @@ func TestHumaGetLogPage_RespectsClampedLimit(t *testing.T) {
 
 	// Limit above max should be clamped silently.
 	out, err := srv.humaGetLogPage(context.Background(), &LogPageInput{
-		TaskName: "task",
-		RunID:    run.ID,
-		From:     1,
-		Limit:    LogPageMaxLimit + 5_000,
+		RunID: run.ID,
+		From:  1,
+		Limit: LogPageMaxLimit + 5_000,
 	})
 	require.NoError(t, err)
 	assert.LessOrEqual(t, len(out.Body.Lines), 4)
@@ -188,8 +174,7 @@ func TestHumaGetLogRaw_PrependsPrevSegment(t *testing.T) {
 	require.NoError(t, os.WriteFile(logutil.PrevPath(logPath), []byte("rotated-line\n"), 0o600))
 
 	out, err := srv.humaGetLogRaw(context.Background(), &LogRawInput{
-		TaskName: "task",
-		RunID:    run.ID,
+		RunID: run.ID,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "text/plain; charset=utf-8", out.ContentType)
@@ -200,8 +185,7 @@ func TestHumaGetLogRaw_MissingBothFilesIsEmpty(t *testing.T) {
 	srv, db, _ := logsTestServer(t)
 	run := seedTerminalRun(t, db, "task")
 	out, err := srv.humaGetLogRaw(context.Background(), &LogRawInput{
-		TaskName: "task",
-		RunID:    run.ID,
+		RunID: run.ID,
 	})
 	require.NoError(t, err)
 	assert.Empty(t, out.Body)
@@ -210,8 +194,7 @@ func TestHumaGetLogRaw_MissingBothFilesIsEmpty(t *testing.T) {
 func TestHumaGetLogRaw_PropagatesResolveError(t *testing.T) {
 	srv, _, _ := logsTestServer(t)
 	_, err := srv.humaGetLogRaw(context.Background(), &LogRawInput{
-		TaskName: "task",
-		RunID:    "not-a-ulid",
+		RunID: "not-a-ulid",
 	})
 	require.Error(t, err)
 	statusErr, ok := err.(huma.StatusError)

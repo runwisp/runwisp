@@ -38,7 +38,7 @@ const (
 	// to retries, notifications, or dashboards. Exit code is conventionally
 	// recorded as -1.
 	ReasonSkipped EndReason = "skipped"
-	// ReasonLogOverflow marks runs that log_on_full = "kill_task" cancelled
+	// ReasonLogOverflow marks runs that log_on_full = "kill" cancelled
 	// because output exceeded log_max_size. Treated as a failure for retry,
 	// notification, and UI purposes — the run failed to stay inside its log
 	// budget — but recorded as a distinct reason so operators can see the
@@ -134,19 +134,19 @@ const (
 // row-shaped twin (sqlcdb.Run with DeletedAt) and converts at the boundary so
 // no consumer outside storage sees row-internal fields.
 type Run struct {
-	ID                  string      `json:"id"`
-	ExternalExecutionID *string     `json:"externalExecutionId,omitempty"`
-	TaskName            string      `json:"taskName"`
-	Status              RunPhase    `json:"status" enum:"pending,running,ended" doc:"Run lifecycle phase"`
-	EndReason           *EndReason  `json:"endReason,omitempty"`
-	ExitCode            int         `json:"exitCode"`
-	StartedAt           *time.Time  `json:"startedAt,omitempty"`
-	EndedAt             *time.Time  `json:"endedAt,omitempty"`
-	TriggeredBy         TriggeredBy `json:"triggeredBy" enum:"cron,api,cloud,service,startup" doc:"How the run was triggered"`
-	CreatedAt           time.Time   `json:"createdAt"`
-	RetryAttempt        int         `json:"retryAttempt"`
-	RetryOfRunID        *string     `json:"retryOfRunId,omitempty"`
-	InstanceIndex       int         `json:"instanceIndex"`
+	ID            string      `json:"id"`
+	ExecutionID   *string     `json:"executionId,omitempty"`
+	TaskName      string      `json:"taskName"`
+	Status        RunPhase    `json:"status" enum:"pending,running,ended" doc:"Run lifecycle phase"`
+	EndReason     *EndReason  `json:"endReason,omitempty"`
+	ExitCode      int         `json:"exitCode"`
+	StartedAt     *time.Time  `json:"startedAt,omitempty"`
+	EndedAt       *time.Time  `json:"endedAt,omitempty"`
+	TriggeredBy   TriggeredBy `json:"triggeredBy" enum:"cron,api,cloud,service,startup" doc:"How the run was triggered"`
+	CreatedAt     time.Time   `json:"createdAt"`
+	RetryAttempt  int         `json:"retryAttempt"`
+	RetryOfRunID  *string     `json:"retryOfRunId,omitempty"`
+	InstanceIndex int         `json:"instanceIndex"`
 	// Params holds the resolved per-execution parameter values used for this
 	// run (identity key → value). Nil for tasks without declared parameters, so
 	// it is omitted from JSON/storage and adds no behaviour for the common case.
@@ -159,9 +159,9 @@ func (r *Run) Copy() *Run {
 		return nil
 	}
 	cpy := *r
-	if r.ExternalExecutionID != nil {
-		eid := *r.ExternalExecutionID
-		cpy.ExternalExecutionID = &eid
+	if r.ExecutionID != nil {
+		eid := *r.ExecutionID
+		cpy.ExecutionID = &eid
 	}
 	if r.EndReason != nil {
 		er := *r.EndReason

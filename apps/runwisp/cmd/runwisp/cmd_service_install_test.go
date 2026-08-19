@@ -78,7 +78,7 @@ func (noStatusInstaller) Status(context.Context, autostart.InstallOptions) (auto
 func runwispOnPort(t *testing.T, info model.InstanceInfo) int {
 	t.Helper()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/instance", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/api/daemon/identity", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(info)
 	})

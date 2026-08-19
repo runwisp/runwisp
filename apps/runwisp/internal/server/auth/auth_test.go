@@ -76,7 +76,7 @@ func TestHandleLogin_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	body := `{"nonce":"` + nonce + `","response":"` + computeChallenge("secret", nonce) + `"}`
-	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -110,7 +110,7 @@ func TestHandleLogin_WrongPassword(t *testing.T) {
 	require.NoError(t, err)
 
 	body := `{"nonce":"` + nonce + `","response":"` + computeChallenge("wrong-password", nonce) + `"}`
-	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	svc.HandleLogin(w, req)
 
@@ -122,7 +122,7 @@ func TestHandleLogin_InvalidNonce(t *testing.T) {
 	svc := newServiceOrFail(t, "secret", nil)
 
 	body := `{"nonce":"deadbeef","response":"anything"}`
-	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	svc.HandleLogin(w, req)
 
@@ -139,13 +139,13 @@ func TestHandleLogin_NonceReplay(t *testing.T) {
 
 	// First attempt should succeed
 	body := `{"nonce":"` + nonce + `","response":"` + response + `"}`
-	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	svc.HandleLogin(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	// Replay the same nonce — should fail
-	req = httptest.NewRequest("POST", "/api/auth", strings.NewReader(body))
+	req = httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(body))
 	w = httptest.NewRecorder()
 	svc.HandleLogin(w, req)
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
@@ -154,7 +154,7 @@ func TestHandleLogin_NonceReplay(t *testing.T) {
 func TestHandleLogin_MalformedBody(t *testing.T) {
 	svc := newServiceOrFail(t, "secret", nil)
 
-	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader("not-json"))
+	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader("not-json"))
 	w := httptest.NewRecorder()
 	svc.HandleLogin(w, req)
 
@@ -166,7 +166,7 @@ func TestHandleLogin_OversizedBody(t *testing.T) {
 
 	// MaxRequestBodySize is 1024 bytes; send a body larger than that
 	bigBody := strings.Repeat("x", MaxRequestBodySize+100)
-	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader(bigBody))
+	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(bigBody))
 	w := httptest.NewRecorder()
 	svc.HandleLogin(w, req)
 
@@ -180,7 +180,7 @@ func TestHandleLogin_JWTContainsExpAndIat(t *testing.T) {
 	require.NoError(t, err)
 
 	body := `{"nonce":"` + nonce + `","response":"` + computeChallenge("secret", nonce) + `"}`
-	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(body))
 	w := httptest.NewRecorder()
 	svc.HandleLogin(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
@@ -201,7 +201,7 @@ func TestHandleLogin_JWTContainsExpAndIat(t *testing.T) {
 func TestSetAuthCookie_HTTP(t *testing.T) {
 	svc := newServiceOrFail(t, "pass", nil)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/api/auth", nil)
+	r := httptest.NewRequest("POST", "/api/auth/login", nil)
 	svc.SetAuthCookie(w, r, "test-token", JWTTokenDuration)
 
 	cookies := w.Result().Cookies()
@@ -221,7 +221,7 @@ func TestSetAuthCookie_DirectTLSIsSecure(t *testing.T) {
 	// involved — this is the free win once the daemon serves HTTPS directly.
 	svc := newServiceOrFail(t, "pass", nil)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/api/auth", nil)
+	r := httptest.NewRequest("POST", "/api/auth/login", nil)
 	r.TLS = &tls.ConnectionState{}
 	svc.SetAuthCookie(w, r, "test-token", JWTTokenDuration)
 
@@ -236,7 +236,7 @@ func TestSetAuthCookie_XForwardedProtoFromUntrustedClientIgnored(t *testing.T) {
 	// the Secure flag on a cookie that travels in cleartext.
 	svc := newServiceOrFail(t, "pass", nil)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/api/auth", nil)
+	r := httptest.NewRequest("POST", "/api/auth/login", nil)
 	r.RemoteAddr = "203.0.113.50:1234"
 	r.Header.Set("X-Forwarded-Proto", "https")
 	svc.SetAuthCookie(w, r, "test-token", JWTTokenDuration)
@@ -250,7 +250,7 @@ func TestSetAuthCookie_XForwardedProtoFromTrustedProxyHonored(t *testing.T) {
 	svc := newServiceOrFail(t, "pass", func(_ *http.Request) bool { return true })
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/api/auth", nil)
+	r := httptest.NewRequest("POST", "/api/auth/login", nil)
 	r.RemoteAddr = "127.0.0.1:1234"
 	r.Header.Set("X-Forwarded-Proto", "https")
 	svc.SetAuthCookie(w, r, "test-token", JWTTokenDuration)

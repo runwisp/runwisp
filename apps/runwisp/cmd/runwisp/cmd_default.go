@@ -103,7 +103,7 @@ func runTUIConnect(client *apiclient.Client, f Flags) error {
 }
 
 // shutdownConnectedDaemon stops the daemon the TUI is actually attached to. It
-// resolves that daemon's data dir and PID from GET /api/instance rather than
+// resolves that daemon's data dir and PID from GET /api/daemon/identity rather than
 // trusting the local --data flag: `runwisp tui --socket <path>` connects by
 // socket alone, so f.DataDir may name a different daemon (or none), and
 // signalling it would leave the connected daemon running.

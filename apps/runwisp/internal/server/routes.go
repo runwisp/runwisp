@@ -143,7 +143,7 @@ func securityHeaders(next http.Handler) http.Handler {
 //   - Bearer-authenticated requests (a cross-site page cannot set an
 //     Authorization header on a simple request), and
 //   - requests with no session cookie at all (nothing ambient to abuse) —
-//     which keeps headless TCP API clients working under RUNWISP_NO_AUTH.
+//     which keeps headless TCP API clients working under RUNWISP_AUTH=off.
 func csrfGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -260,8 +260,8 @@ func (srv *Server) setupRoutes() error {
 	// to prevent nonce-store flooding (DoS on the auth flow).
 	authLimiter := httprate.LimitByIP(auth.MaxAuthAttempts, auth.AuthRateWindow)
 	srv.router.With(authLimiter).Get("/api/auth/challenge", srv.handleAuthChallenge)
-	srv.router.With(authLimiter).Post("/api/auth", srv.auth.HandleLogin)
-	srv.router.With(authLimiter).Get("/api/auth/launch", srv.handleLaunchTicket)
+	srv.router.With(authLimiter).Post("/api/auth/login", srv.auth.HandleLogin)
+	srv.router.With(authLimiter).Get("/api/auth/launch-ticket", srv.handleLaunchTicket)
 
 	// Protected routes. With RUNWISP_AUTH=off the JWT gate is skipped entirely
 	// — an explicit operator opt-in, warned about loudly at startup — but the

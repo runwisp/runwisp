@@ -24,7 +24,7 @@ function createSystemStore() {
     let timezone = $state("");
     let timezoneSource = $state("");
     let configStale = $state(false);
-    // Standalone assumptions until the first /api/info lands: a standalone
+    // Standalone assumptions until the first /api/daemon lands: a standalone
     // daemon must never flash a cloud chip or hide its scheduling UI during
     // hydration. Components read these getters reactively and self-correct.
     let cloudEnabled = $state(false);
@@ -35,7 +35,7 @@ function createSystemStore() {
 
     // init seeds the store once from REST, then rides the shared app-event
     // stream for live updates — replacing the old 2s/10s polling of
-    // /api/system + /api/info. Idempotent: the stream subscription is bound
+    // /api/system + /api/daemon. Idempotent: the stream subscription is bound
     // once and survives re-entrant init() calls on auth.
     async function init() {
         await seed();

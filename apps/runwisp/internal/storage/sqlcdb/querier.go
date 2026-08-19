@@ -15,7 +15,7 @@ type Querier interface {
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
 	CreateRun(ctx context.Context, arg CreateRunParams) error
-	DeletePendingLogUpload(ctx context.Context, externalExecutionID string) error
+	DeletePendingLogUpload(ctx context.Context, executionID string) error
 	DeleteRun(ctx context.Context, id string) error
 	DeleteRunsByIDs(ctx context.Context, ids []string) error
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
@@ -28,7 +28,7 @@ type Querier interface {
 	GetNotificationByID(ctx context.Context, id string) (Notification, error)
 	GetPendingRuns(ctx context.Context) ([]Run, error)
 	GetRun(ctx context.Context, id string) (Run, error)
-	GetRunByExternalExecutionID(ctx context.Context, externalExecutionID *string) (Run, error)
+	GetRunByExecutionID(ctx context.Context, executionID *string) (Run, error)
 	// 'missed' is counted on its own and deliberately excluded from 'failed':
 	// a missed run never executed, so folding it into the execution-failure
 	// count (and last_failure timestamp) would skew failure metrics.

@@ -78,7 +78,7 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
                                     NOT registered with the scheduler — no cron firing, no jitter plan, no
                                     catch-up, no run_on_start/@reboot, no missed-run rows, no FirstSeenAt anchor.
                                     Reported as "held_by": "cron" on each task in list/status --json and
-                                    /api/info. Manual triggers (exec, API, TUI r) STILL RUN a held task.
+                                    /api/daemon. Manual triggers (exec, API, TUI r) STILL RUN a held task.
                                     The gate is self-healing: the daemon re-probes cron liveness every 60s (only
                                     when include_cron is set) and releases or re-takes holds on its own, so
                                     retiring cron needs NO reload. `runwisp reload`/SIGHUP re-probes too. Either
@@ -98,7 +98,7 @@ shell:               path =/bin/sh — interpreter for run scripts (absolute pat
 stop_signal:         enum =SIGTERM — stop-ladder signal: SIGTERM|SIGINT|SIGQUIT|SIGHUP|SIGKILL|SIGUSR1|SIGUSR2
 exit_codes:          []int =[0]   — exit codes treated as success (0..255)
 log_max_size:        size =100mb  — per-run log cap (effective task default)
-log_on_full:         enum =drop_old — drop_new | drop_old | kill_task
+log_on_full:         enum =drop_old — drop_new | drop_old | kill
 keep_runs:           int          — row-count retention; 0..1000000 (0 = keep none)
 keep_for:            dur          — age retention; positive
 healthy_after:       dur  =60s    — service uptime that counts as healthy: resets the restart counter and clears the failed-start streak (SERVICES only)
@@ -130,7 +130,7 @@ stop_signal:       enum =SIGTERM    — stop-ladder signal (inherits [defaults])
 restart:           enum             — never | on_failure   (always => rejected on tasks)
 max_concurrent:    int  =1          — concurrent run cap; 1..1024
 queue_max:         int  =100        — queued-run depth; 0..10000
-on_overlap:        enum =queue      — queue | skip | terminate
+on_overlap:        enum =queue      — queue | skip | kill
 retry_attempts:    int  =0          — retries after a failed attempt; 0..100
 retry_delay:       dur  =5s         — delay between retries (<=0 floors to 5s)
 retry_backoff:     enum             — constant | linear | exponential
@@ -144,7 +144,7 @@ env_base:          enum =inherit    — inherit (daemon's env, minus RUNWISP_*) 
                                       only — rejected on compose. env/secrets/params layer over either.
 user:              string           — run as user or user:group (name/numeric id); needs daemon as root
 log_max_size:      size =100mb      — per-run log cap
-log_on_full:       enum =drop_old   — drop_new | drop_old | kill_task
+log_on_full:       enum =drop_old   — drop_new | drop_old | kill
 keep_runs:         int              — row retention (inherits [defaults]); 0..1000000 (0 = keep none)
 keep_for:          dur              — age retention (inherits [defaults])
 run:               string (req)     — shell command; with compose_file it is the command run in the service (see compose_mode)
@@ -206,11 +206,11 @@ Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, 
 
 ```
 global_notifiers:  []string =["inapp"] — channels added to every notify list + catch-all on failures; [] opts out
-default_timeout:   dur                  — total retry budget per delivery
+retry_budget:   dur                  — total retry budget per delivery
 keep_notifications:      int  =1024           — in-app bell row cap
 keep_for:  dur  =90d            — max bell row age
 coalesce_window:   dur  =1h             — collapse repeat (kind+task) into one bell row
-occurrence_ring:   int  =10             — recent timestamps kept per coalesced row
+keep_occurrences:   int  =10             — recent timestamps kept per coalesced row
 coalesce_outbound: bool =true           — coalesce outbound bursts too
 ```
 
@@ -282,7 +282,7 @@ runwisp run <task>          — run a task and stream output;  --daemon (via run
 runwisp reload               — re-read runwisp.toml + reconcile live (== SIGHUP); validate-first, no run_on_start/catch-up
                              — prints the diff, then the newly-live config's warnings on `!` lines
                                (ReloadResult.warnings). Same set as boot / `validate` / status /
-                               GET /api/info's config_warnings, re-derived per request so a reload's
+                               GET /api/daemon's config_warnings, re-derived per request so a reload's
                                replace boot's. A crontab job include_cron skipped is NOT a task
                                change — it only appears here.
 runwisp restart              — stop + fresh start (applies restart-only settings, re-fires run_on_start/catch-up); delegates to systemd/launchd if service-installed; --local to pin the per-user unit
@@ -393,16 +393,16 @@ Base `/api`. Auth (enforced at middleware, not declared in the OpenAPI doc): Web
 Read (GET):
 
 ```
-/api/info                                       daemon info
+/api/daemon                                     daemon info
 /api/system                                     system stats
 /api/system/history                             historical system metrics
-/api/daemon/log-stream                          daemon log (SSE)
+/api/daemon/log/stream                          daemon log (SSE)
 /api/tasks                                       list tasks
 /api/tasks/{task}/runs                           list runs for task
-/api/tasks/{task}/runs/{runId}                   one run
-/api/tasks/{task}/runs/{runId}/log               log-lines page
-/api/tasks/{task}/runs/{runId}/log/raw           full log download (text/plain)
-/api/tasks/{task}/runs/{runId}/log/stream        run log (SSE)
+/api/runs/{runId}                               one run
+/api/runs/{runId}/log                           log-lines page
+/api/runs/{runId}/log/raw                       full log download (text/plain)
+/api/runs/{runId}/log/stream                    run log (SSE)
 /api/tasks/{task}/log/search                     search log lines across runs
 /api/runs                                        list all runs
 /api/runs/summary                               aggregate run stats
@@ -420,8 +420,8 @@ POST   /api/reload                               re-read runwisp.toml + reconcil
 POST   /api/tasks/{task}/run                     trigger a new run
 POST   /api/tasks/{task}/stop                    stop service (for daemon lifetime)
 POST   /api/tasks/{task}/restart                 restart all service instances
-POST   /api/tasks/{task}/runs/{runId}/stop       stop a running task
-DELETE /api/tasks/{task}/runs/{runId}            delete a run
+POST   /api/runs/{runId}/stop                   stop a running task
+DELETE /api/runs/{runId}                        delete a run
 POST   /api/runs/bulk/stop                       stop runs by selector
 POST   /api/runs/bulk/delete                     soft-delete runs by selector
 POST   /api/runs/bulk/restore                    restore soft-deleted runs

@@ -13,7 +13,7 @@ import (
 	"github.com/runwisp/runwisp/internal/version"
 )
 
-// InstanceOutput wraps the identity payload returned by GET /api/instance.
+// InstanceOutput wraps the identity payload returned by GET /api/daemon/identity.
 type InstanceOutput struct {
 	Body model.InstanceInfo
 }
@@ -38,15 +38,15 @@ func (srv *Server) humaGetInstance(ctx context.Context, _ *struct{}) (*InstanceO
 	}}, nil
 }
 
-// registerInstanceRoute wires GET /api/instance into the public huma API
+// registerInstanceRoute wires GET /api/daemon/identity into the public huma API
 // (srv.api), parallel to /health — deliberately outside the authOrLocalTrusted
 // group so a password-less launcher can query it. The handler's own loopback
 // gate is what keeps it local.
 func (srv *Server) registerInstanceRoute() {
 	huma.Register(srv.api, huma.Operation{
-		OperationID: "getInstance",
+		OperationID: "getDaemonIdentity",
 		Method:      http.MethodGet,
-		Path:        "/api/instance",
+		Path:        "/api/daemon/identity",
 		Summary:     "Get local daemon identity (loopback/socket only)",
 		Description: "Returns the running daemon's datadir, config path, socket path, pid, version and fingerprint. " +
 			"Used by a second `runwisp` that hit a port conflict to discover and offer to connect to or stop this daemon. " +

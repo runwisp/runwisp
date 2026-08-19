@@ -42,7 +42,7 @@ func IsLocalTrustedCtx(ctx context.Context) bool {
 // The proxied check is load-bearing, not defence in depth: with a same-host
 // reverse proxy (the documented public-exposure setup) every internet request
 // has a loopback peer, so loopback alone would hand the payload to anyone.
-// Used to gate GET /api/instance, whose payload (datadir, config and socket
+// Used to gate GET /api/daemon/identity, whose payload (datadir, config and socket
 // paths) must never reach the network.
 func isLocalCtx(ctx context.Context) bool {
 	if IsLocalTrustedCtx(ctx) {

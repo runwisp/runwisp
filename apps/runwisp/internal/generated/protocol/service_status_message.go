@@ -7,7 +7,7 @@ package protocol
 
 type ServiceStatusMessage struct {
 	Type             string          `json:"type" binding:"required"`
-	V                int             `json:"v,omitempty"`
+	ProtocolVersion  int             `json:"protocolVersion,omitempty"`
 	SentAt           string          `json:"sentAt,omitempty"`
 	TaskID           string          `json:"taskId" binding:"required"`
 	State            *ServiceState   `json:"state" binding:"required"`

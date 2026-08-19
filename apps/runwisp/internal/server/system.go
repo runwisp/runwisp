@@ -92,7 +92,7 @@ func (srv *Server) humaGetInfo(ctx context.Context, input *struct{}) (*DaemonInf
 	return &DaemonInfoOutput{Body: info}, nil
 }
 
-// currentTaskBriefs rebuilds /api/info's task list from the live registry, in the
+// currentTaskBriefs rebuilds /api/daemon's task list from the live registry, in the
 // same name order the boot path used. nil when there is no registry to read, which
 // leaves the boot-time list in place.
 func (srv *Server) currentTaskBriefs() []model.TaskBrief {
@@ -125,7 +125,7 @@ func (srv *Server) currentConfigStale() bool {
 // bus as a system event, and — only when staleness has flipped since the last
 // tick — a config.stale event. It runs on the metrics collector goroutine, so
 // it owns configStaleLast exclusively (no lock needed). This is the single
-// server-side replacement for every dashboard polling /api/system + /api/info.
+// server-side replacement for every dashboard polling /api/system + /api/daemon.
 func (srv *Server) broadcastSample(sample model.MetricsSample) {
 	if srv.eventBus == nil {
 		return

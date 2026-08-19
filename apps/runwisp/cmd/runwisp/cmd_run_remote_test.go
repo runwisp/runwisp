@@ -40,7 +40,7 @@ func (s *remoteDaemonStub) handler(t *testing.T) http.HandlerFunc {
 		case r.URL.Path == "/api/auth/challenge":
 			_ = json.NewEncoder(w).Encode(map[string]string{"nonce": "test-nonce"})
 
-		case r.URL.Path == "/api/auth":
+		case r.URL.Path == "/api/auth/login":
 			s.authCount.Add(1)
 			_ = json.NewEncoder(w).Encode(map[string]string{"token": freshToken})
 

@@ -474,36 +474,36 @@ global_notifiers = ["does-not-exist"]
 	assert.Contains(t, err.Error(), "global_notifiers")
 }
 
-func TestDecode_NotifyDefaultTimeout(t *testing.T) {
+func TestDecode_NotifyRetryBudget(t *testing.T) {
 	src := schedulerTZHeader + `
 [notify]
-default_timeout = "5m"
+retry_budget = "5m"
 keep_for = "720h"
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
-	assert.NotZero(t, cfg.Notify.DefaultTimeout)
+	assert.NotZero(t, cfg.Notify.RetryBudget)
 	assert.NotZero(t, cfg.Notify.KeepFor)
 }
 
-func TestDecode_NotifyOccurrenceRingDefault(t *testing.T) {
-	// Omitted occurrence_ring must resolve to the documented default (10), not
+func TestDecode_NotifyKeepOccurrencesDefault(t *testing.T) {
+	// Omitted keep_occurrences must resolve to the documented default (10), not
 	// 0. The outbound coalescer treats 0 as "never check in", so a missing
 	// default silently disables the periodic check-in cadence.
 	cfg, err := decode([]byte(schedulerTZHeader+"\n[notify]\n"), "")
 	require.NoError(t, err)
-	assert.Equal(t, defaultOccurrenceRing, cfg.Notify.OccurrenceRing)
+	assert.Equal(t, defaultKeepOccurrences, cfg.Notify.KeepOccurrences)
 }
 
-func TestDecode_NotifyDefaultTimeout_Invalid(t *testing.T) {
+func TestDecode_NotifyRetryBudget_Invalid(t *testing.T) {
 	src := schedulerTZHeader + `
 [notify]
-default_timeout = "not-a-duration"
+retry_budget = "not-a-duration"
 `
 	_, err := decode([]byte(src), "")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "default_timeout")
+	assert.Contains(t, err.Error(), "retry_budget")
 }
 
 func TestDecode_NotifyKeepFor_Invalid(t *testing.T) {

@@ -248,7 +248,7 @@ func TestDeleteRun(t *testing.T) {
 		return !sel.MatchAll && len(sel.IDs) == 1 && sel.IDs[0] == id
 	}), mock.Anything).Return([]storage.RunRef{{ID: id, TaskName: "task1"}}, nil)
 
-	req := httptest.NewRequest("DELETE", "/api/tasks/task1/runs/"+id, nil)
+	req := httptest.NewRequest("DELETE", "/api/runs/"+id, nil)
 	w := httptest.NewRecorder()
 
 	addAuth(req, s)
@@ -343,7 +343,7 @@ func TestStopRun(t *testing.T) {
 	triggeredRun.Status = model.PhaseRunning
 	repo.On("GetRun", mock.Anything, triggeredRun.ID).Return(&triggeredRun, nil)
 
-	req := httptest.NewRequest("POST", "/api/tasks/task1/runs/"+triggeredRun.ID+"/stop", nil)
+	req := httptest.NewRequest("POST", "/api/runs/"+triggeredRun.ID+"/stop", nil)
 	w := httptest.NewRecorder()
 
 	addAuth(req, s)
@@ -406,7 +406,7 @@ func TestDeleteRun_NotFound(t *testing.T) {
 	id := ulid.Make().String()
 	repo.On("GetRun", mock.Anything, id).Return(nil, storage.ErrNotFound)
 
-	req := httptest.NewRequest("DELETE", "/api/tasks/task1/runs/"+id, nil)
+	req := httptest.NewRequest("DELETE", "/api/runs/"+id, nil)
 	w := httptest.NewRecorder()
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
@@ -419,7 +419,7 @@ func TestStopRun_NotFound(t *testing.T) {
 	id := ulid.Make().String()
 	repo.On("GetRun", mock.Anything, id).Return(nil, storage.ErrNotFound)
 
-	req := httptest.NewRequest("POST", "/api/tasks/task1/runs/"+id+"/stop", nil)
+	req := httptest.NewRequest("POST", "/api/runs/"+id+"/stop", nil)
 	w := httptest.NewRecorder()
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
@@ -456,7 +456,7 @@ func TestGetLogRaw(t *testing.T) {
 
 	repo.On("GetRun", mock.Anything, id).Return(run, nil)
 
-	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id+"/log/raw", nil)
+	req := httptest.NewRequest("GET", "/api/runs/"+id+"/log/raw", nil)
 	w := httptest.NewRecorder()
 
 	addAuth(req, s)
@@ -497,7 +497,7 @@ func chapAttempt(t *testing.T, s *Server, password string) *httptest.ResponseRec
 	t.Helper()
 	nonce := chapChallenge(t, s)
 	body := fmt.Sprintf(`{"nonce":%q,"response":%q}`, nonce, chap.Response(password, nonce))
-	req := httptest.NewRequest("POST", "/api/auth", strings.NewReader(body))
+	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
@@ -609,7 +609,7 @@ func TestLogStream(t *testing.T) {
 
 	repo.On("GetRun", mock.Anything, id).Return(run, nil)
 
-	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id+"/log/stream", nil)
+	req := httptest.NewRequest("GET", "/api/runs/"+id+"/log/stream", nil)
 	w := httptest.NewRecorder()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -667,7 +667,7 @@ func TestGetLogPage_NegativeFrom_Tail(t *testing.T) {
 
 	repo.On("GetRun", mock.Anything, id).Return(run, nil)
 
-	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id+"/log?from=-5", nil)
+	req := httptest.NewRequest("GET", "/api/runs/"+id+"/log?from=-5", nil)
 	w := httptest.NewRecorder()
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
@@ -709,7 +709,7 @@ func TestGetLogPage_FromZero_FirstLine(t *testing.T) {
 
 	repo.On("GetRun", mock.Anything, id).Return(run, nil)
 
-	req := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id+"/log?from=0&limit=5", nil)
+	req := httptest.NewRequest("GET", "/api/runs/"+id+"/log?from=0&limit=5", nil)
 	w := httptest.NewRecorder()
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
@@ -724,7 +724,7 @@ func TestGetLogPage_FromZero_FirstLine(t *testing.T) {
 	assert.Equal(t, int64(4), page.Lines[4].N)
 
 	// Absent from → default -1000 tail anchor: startLine = 1100-1000 = 100.
-	reqDef := httptest.NewRequest("GET", "/api/tasks/task1/runs/"+id+"/log?limit=5", nil)
+	reqDef := httptest.NewRequest("GET", "/api/runs/"+id+"/log?limit=5", nil)
 	wDef := httptest.NewRecorder()
 	addAuth(reqDef, s)
 	s.router.ServeHTTP(wDef, reqDef)

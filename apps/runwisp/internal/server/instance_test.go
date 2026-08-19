@@ -29,7 +29,7 @@ func newServerForInstanceTest(t *testing.T) *Server {
 func TestInstance_SocketReturnsIdentity(t *testing.T) {
 	s := newServerForInstanceTest(t)
 
-	req := httptest.NewRequest("GET", "/api/instance", nil)
+	req := httptest.NewRequest("GET", "/api/daemon/identity", nil)
 	req = req.WithContext(context.WithValue(req.Context(), localTrustedKey{}, true))
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
@@ -51,7 +51,7 @@ func TestInstance_LoopbackTCPReturnsIdentity(t *testing.T) {
 	// No local-trusted flag and no JWT: a plain loopback TCP caller. The
 	// endpoint is public, so the loopback gate (not the auth middleware) is
 	// what admits it — this is exactly the launcher's path on a port conflict.
-	req := httptest.NewRequest("GET", "/api/instance", nil)
+	req := httptest.NewRequest("GET", "/api/daemon/identity", nil)
 	req.RemoteAddr = "127.0.0.1:54321"
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
@@ -65,7 +65,7 @@ func TestInstance_LoopbackTCPReturnsIdentity(t *testing.T) {
 func TestInstance_NonLoopbackTCPReturns403(t *testing.T) {
 	s := newServerForInstanceTest(t)
 
-	req := httptest.NewRequest("GET", "/api/instance", nil)
+	req := httptest.NewRequest("GET", "/api/daemon/identity", nil)
 	req.RemoteAddr = "192.168.1.100:54321"
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
@@ -85,7 +85,7 @@ func TestInstance_ProxiedLoopbackReturns403(t *testing.T) {
 		t.Run(header, func(t *testing.T) {
 			s := newServerForInstanceTest(t)
 
-			req := httptest.NewRequest("GET", "/api/instance", nil)
+			req := httptest.NewRequest("GET", "/api/daemon/identity", nil)
 			req.RemoteAddr = "127.0.0.1:54321" // the same-host proxy
 			req.Header.Set(header, "203.0.113.9")
 			w := httptest.NewRecorder()

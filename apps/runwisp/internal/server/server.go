@@ -36,7 +36,7 @@ type Server struct {
 	notifyHub   NotificationHub
 	taskManager runtime.TaskRunner
 	scheduler   runtime.NextRunGetter
-	// tasks is the live task set, read per /api/info request so derived state that
+	// tasks is the live task set, read per /api/daemon request so derived state that
 	// changes while the daemon runs — a cron hold releasing itself, a reload adding
 	// or removing tasks — is reported as it is now, not as it was at boot.
 	tasks      *runtime.TaskRegistry
@@ -100,8 +100,8 @@ type Options struct {
 	Scheduler         runtime.NextRunGetter
 	Host              string // Bind address (default: 127.0.0.1)
 	Port              int
-	DataDir           string // Resolved data directory; disclosed via GET /api/instance (local only)
-	ConfigPath        string // Resolved runwisp.toml path; disclosed via GET /api/instance (local only)
+	DataDir           string // Resolved data directory; disclosed via GET /api/daemon/identity (local only)
+	ConfigPath        string // Resolved runwisp.toml path; disclosed via GET /api/daemon/identity (local only)
 	SocketPath        string // Unix socket path for local CLI/TUI; empty disables socket listener
 	LogDir            string
 	EventBus          *events.Bus
@@ -110,9 +110,9 @@ type Options struct {
 	JWTSecret         string                             // JWT signing secret (derived in-memory)
 	NoAuth            bool                               // RUNWISP_AUTH=off: serve all /api/* routes over TCP without JWT/CHAP
 	TrustedProxies    string                             // RUNWISP_TRUSTED_PROXIES value (comma-separated CIDRs/IPs); read by the caller, parsed here
-	DaemonInfo        *model.DaemonInfo                  // Static identity/config info for /api/info
-	ConfigStale       func() bool                        // Per-request staleness probe for /api/info (optional; nil reports never-stale)
-	ConfigWarnings    func() []string                    // Per-request live-config warnings for /api/info (optional; nil reports none)
+	DaemonInfo        *model.DaemonInfo                  // Static identity/config info for /api/daemon
+	ConfigStale       func() bool                        // Per-request staleness probe for /api/daemon (optional; nil reports never-stale)
+	ConfigWarnings    func() []string                    // Per-request live-config warnings for /api/daemon (optional; nil reports none)
 	DaemonLogBuffer   *DaemonLogBuffer                   // Ring buffer for daemon log streaming (optional)
 	MetricsEnabled    bool                               // When false, /metrics is not mounted anywhere
 	MetricsListen     string                             // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
@@ -198,7 +198,7 @@ func New(opts Options) (*Server, error) {
 func (srv *Server) Start() error {
 	// Seed the staleness baseline from the current value so the first sample
 	// tick doesn't emit a spurious flip; clients get the initial value from the
-	// one-shot GET /api/info.
+	// one-shot GET /api/daemon.
 	srv.configStaleLast = srv.currentConfigStale()
 	srv.metrics.onSample = srv.broadcastSample
 

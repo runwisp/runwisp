@@ -36,14 +36,10 @@ type TriggerRunInput struct {
 	}
 }
 
-type TaskRunInput struct {
-	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
-	RunID    string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
-}
-
-// RunIDInput drives GET /api/runs/{runId} — a run ULID is globally unique, so
-// fetching one needs no task name. Lets the cross-task /runs view restore a
-// deep-linked run that isn't on the loaded page.
+// RunIDInput drives the per-run endpoints (GET/DELETE /api/runs/{runId},
+// .../stop, .../log*) — a run ULID is globally unique, so addressing one needs
+// no task name. Lets the cross-task /runs view restore a deep-linked run that
+// isn't on the loaded page.
 type RunIDInput struct {
 	RunID string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
 }

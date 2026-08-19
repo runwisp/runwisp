@@ -1198,7 +1198,7 @@ var (
 	validOnOverlap = []string{
 		string(model.PolicyQueue),
 		string(model.PolicySkip),
-		string(model.PolicyTerminate),
+		string(model.PolicyKill),
 	}
 	validRestart = []string{
 		string(model.RestartNever),
@@ -1206,7 +1206,7 @@ var (
 		string(model.RestartOnFailure),
 	}
 	validBackoff          = []string{model.BackoffConstant, model.BackoffLinear, model.BackoffExponential}
-	validLogOnFull        = []string{model.LogOverflowDropNew, model.LogOverflowDropOld, model.LogOverflowKillTask}
+	validLogOnFull        = []string{model.LogOverflowDropNew, model.LogOverflowDropOld, model.LogOverflowKill}
 	validCatchUp          = []string{string(model.MissedRunLatest), string(model.MissedRunAll), string(model.MissedRunSkip)}
 	defaultTaskLogMaxSize = int64(100 * 1024 * 1024)
 	defaultRestartDelay   = time.Second

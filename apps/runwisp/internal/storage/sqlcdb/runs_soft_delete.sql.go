@@ -204,7 +204,7 @@ WHERE deleted_at IS NOT NULL
   AND (?8 IS NULL OR task_name = ?8)
   AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
   AND id NOT IN (/*SLICE:except_ids*/?)
-RETURNING id, external_execution_id, task_name, status, end_reason, exit_code,
+RETURNING id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
   instance_index, params_json, deleted_at
 `
@@ -254,7 +254,7 @@ func (q *Queries) RestoreRunsByFilter(ctx context.Context, arg RestoreRunsByFilt
 		var i Run
 		if err := rows.Scan(
 			&i.ID,
-			&i.ExternalExecutionID,
+			&i.ExecutionID,
 			&i.TaskName,
 			&i.Status,
 			&i.EndReason,
@@ -286,7 +286,7 @@ const restoreRunsByIDs = `-- name: RestoreRunsByIDs :many
 UPDATE runs SET deleted_at = NULL
 WHERE deleted_at IS NOT NULL
   AND id IN (/*SLICE:ids*/?)
-RETURNING id, external_execution_id, task_name, status, end_reason, exit_code,
+RETURNING id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
   instance_index, params_json, deleted_at
 `
@@ -312,7 +312,7 @@ func (q *Queries) RestoreRunsByIDs(ctx context.Context, ids []string) ([]Run, er
 		var i Run
 		if err := rows.Scan(
 			&i.ID,
-			&i.ExternalExecutionID,
+			&i.ExecutionID,
 			&i.TaskName,
 			&i.Status,
 			&i.EndReason,

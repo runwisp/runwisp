@@ -75,7 +75,7 @@ func TestAuthenticate(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/auth/challenge":
 			json.NewEncoder(w).Encode(map[string]string{"nonce": nonce})
-		case "/api/auth":
+		case "/api/auth/login":
 			var body map[string]string
 			json.NewDecoder(r.Body).Decode(&body)
 			if body["nonce"] != nonce {
@@ -101,7 +101,7 @@ func TestSetTokenSkipsHandshake(t *testing.T) {
 	var sawAuth bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/auth/challenge", "/api/auth":
+		case "/api/auth/challenge", "/api/auth/login":
 			sawAuth = true
 			http.Error(w, "should not authenticate", http.StatusInternalServerError)
 		case "/api/tasks/my-task/run":
@@ -129,7 +129,7 @@ func TestTokenReturnsMintedValue(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/auth/challenge":
 			json.NewEncoder(w).Encode(map[string]string{"nonce": "n"})
-		case "/api/auth":
+		case "/api/auth/login":
 			json.NewEncoder(w).Encode(map[string]string{"token": "fresh-jwt"})
 		}
 	}))
@@ -157,7 +157,7 @@ func TestAuthenticate_AuthError(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/auth/challenge":
 			json.NewEncoder(w).Encode(map[string]string{"nonce": "n"})
-		case "/api/auth":
+		case "/api/auth/login":
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 		}
 	}))
@@ -255,13 +255,13 @@ func TestTriggerRun(t *testing.T) {
 func TestStopRun(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "POST", r.Method)
-		assert.Equal(t, "/api/tasks/my-task/runs/run-1/stop", r.URL.Path)
+		assert.Equal(t, "/api/runs/run-1/stop", r.URL.Path)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.StopRun("my-task", "run-1")
+	err := c.StopRun("run-1")
 	assert.NoError(t, err)
 }
 
@@ -342,14 +342,14 @@ func TestDoJSON_AuthHeaderSent(t *testing.T) {
 
 func TestGetLogRaw(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/tasks/my-task/runs/run-1/log/raw", r.URL.Path)
+		assert.Equal(t, "/api/runs/run-1/log/raw", r.URL.Path)
 		fmt.Fprintln(w, "line 1")
 		fmt.Fprintln(w, "line 2")
 	}))
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	body, err := c.GetLogRaw("my-task", "run-1")
+	body, err := c.GetLogRaw("run-1")
 	require.NoError(t, err)
 	defer body.Close()
 	data, err := io.ReadAll(body)
@@ -471,13 +471,13 @@ func TestStopService_Unauthorized(t *testing.T) {
 func TestDeleteRun(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodDelete, r.Method)
-		assert.Equal(t, "/api/tasks/my-task/runs/run-1", r.URL.Path)
+		assert.Equal(t, "/api/runs/run-1", r.URL.Path)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.DeleteRun("my-task", "run-1")
+	err := c.DeleteRun("run-1")
 	assert.NoError(t, err)
 }
 
@@ -488,7 +488,7 @@ func TestDeleteRun_Error(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.DeleteRun("my-task", "run-1")
+	err := c.DeleteRun("run-1")
 	assert.Error(t, err)
 }
 
@@ -522,7 +522,7 @@ func TestCreateLaunchTicket_Error(t *testing.T) {
 func TestGetLogPage(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
-		assert.Equal(t, "/api/tasks/my-task/runs/run-1/log", r.URL.Path)
+		assert.Equal(t, "/api/runs/run-1/log", r.URL.Path)
 		assert.Equal(t, "-100", r.URL.Query().Get("from"))
 		assert.Equal(t, "50", r.URL.Query().Get("limit"))
 		w.Header().Set("Content-Type", "application/json")
@@ -537,7 +537,7 @@ func TestGetLogPage(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	page, err := c.GetLogPage("my-task", "run-1", -100, 50)
+	page, err := c.GetLogPage("run-1", -100, 50)
 	require.NoError(t, err)
 	assert.Equal(t, int64(5), page.TotalLines)
 	assert.True(t, page.Finalized)
@@ -554,7 +554,7 @@ func TestGetLogPage_NoLimit(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	page, err := c.GetLogPage("my-task", "run-1", 0, 0)
+	page, err := c.GetLogPage("run-1", 0, 0)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), page.TotalLines)
 }
@@ -566,6 +566,6 @@ func TestGetLogPage_Error(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	_, err := c.GetLogPage("my-task", "run-1", -100, 50)
+	_, err := c.GetLogPage("run-1", -100, 50)
 	assert.Error(t, err)
 }

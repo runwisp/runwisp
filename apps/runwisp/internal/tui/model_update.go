@@ -888,7 +888,7 @@ func (m Model) handleSystemStats(msg uikit.SystemStatsMsg) (tea.Model, tea.Cmd) 
 }
 
 // handleDaemonInfo refreshes the live bits of StartupInfo from the periodic
-// /api/info poll — currently the config-stale notice and the service-managed
+// /api/daemon poll — currently the config-stale notice and the service-managed
 // flag (the daemon may be restarted under a service manager mid-session).
 // Errors are ignored: the header just keeps its last known state.
 func (m Model) handleDaemonInfo(msg uikit.DaemonInfoMsg) (tea.Model, tea.Cmd) {
@@ -981,7 +981,6 @@ func (m *Model) maybeLoadOlderLogs() tea.Cmd {
 	}
 	m.execView.LoadingOlder = true
 	return m.streams.FetchOlderLogs(
-		m.execView.Run.TaskName,
 		m.execView.Run.ID,
 		int64(m.execView.Pane.FirstLoadedLineNum()),
 		int64(execlist.LogTailLines),

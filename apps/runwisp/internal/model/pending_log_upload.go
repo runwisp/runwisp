@@ -7,8 +7,8 @@ package model
 // for terminal log archival. The row is removed on a successful upload; the
 // crash-recovery sweep at startup retries any rows still present.
 type PendingLogUpload struct {
-	ExternalExecutionID string
-	UploadURL           string
-	LogPath             string
-	InsertedAt          int64
+	ExecutionID string
+	UploadURL   string
+	LogPath     string
+	InsertedAt  int64
 }

@@ -40,7 +40,7 @@ func TestFinishExecJSON_ReusesFetchedRunWithoutRefetch(t *testing.T) {
 	err := finishExecJSON(&buf, client, "alpha", "run-1", final)
 	require.NoError(t, err, "a terminal run already in hand must be reused, never re-fetched")
 
-	var doc execJSONDoc
+	var doc runJSONDoc
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
 	require.NotNil(t, doc.ExitCode)
 	assert.Equal(t, 0, *doc.ExitCode, "the real exit code must survive a failing trailing fetch")

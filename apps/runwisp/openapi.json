@@ -1054,12 +1054,12 @@
             "format": "date-time",
             "type": "string"
           },
+          "executionId": {
+            "type": "string"
+          },
           "exitCode": {
             "format": "int64",
             "type": "integer"
-          },
-          "externalExecutionId": {
-            "type": "string"
           },
           "id": {
             "type": "string"
@@ -1767,7 +1767,7 @@
             "enum": [
               "drop_new",
               "drop_old",
-              "kill_task"
+              "kill"
             ],
             "type": "string"
           },
@@ -1793,7 +1793,7 @@
             "enum": [
               "queue",
               "skip",
-              "terminate"
+              "kill"
             ],
             "type": "string"
           },
@@ -2006,7 +2006,70 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/api/daemon/log-stream": {
+    "/api/daemon": {
+      "get": {
+        "operationId": "getDaemonInfo",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DaemonInfo"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get daemon info",
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/api/daemon/identity": {
+      "get": {
+        "description": "Returns the running daemon's datadir, config path, socket path, pid, version and fingerprint. Used by a second `runwisp` that hit a port conflict to discover and offer to connect to or stop this daemon. Always 403 over non-loopback TCP — the paths are local-only.",
+        "operationId": "getDaemonIdentity",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceInfo"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get local daemon identity (loopback/socket only)",
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/api/daemon/log/stream": {
       "get": {
         "description": "Server-Sent Events stream of daemon log lines. Replays the last 100 buffered lines, then emits new lines as they're written until the client disconnects.",
         "operationId": "streamDaemonLog",
@@ -2065,69 +2128,6 @@
           }
         },
         "summary": "Stream the daemon's recent log output",
-        "tags": [
-          "System"
-        ]
-      }
-    },
-    "/api/info": {
-      "get": {
-        "operationId": "getInfo",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DaemonInfo"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Get daemon info",
-        "tags": [
-          "System"
-        ]
-      }
-    },
-    "/api/instance": {
-      "get": {
-        "description": "Returns the running daemon's datadir, config path, socket path, pid, version and fingerprint. Used by a second `runwisp` that hit a port conflict to discover and offer to connect to or stop this daemon. Always 403 over non-loopback TCP — the paths are local-only.",
-        "operationId": "getInstance",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InstanceInfo"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Get local daemon identity (loopback/socket only)",
         "tags": [
           "System"
         ]
@@ -2923,6 +2923,43 @@
       }
     },
     "/api/runs/{runId}": {
+      "delete": {
+        "operationId": "deleteRun",
+        "parameters": [
+          {
+            "description": "Run ULID",
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "description": "Run ULID",
+              "maxLength": 26,
+              "minLength": 26,
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete a run",
+        "tags": [
+          "Runs"
+        ]
+      },
       "get": {
         "operationId": "getRun",
         "parameters": [
@@ -2963,6 +3000,448 @@
           }
         },
         "summary": "Get a single run by ID",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/api/runs/{runId}/log": {
+      "get": {
+        "description": "Returns a JSON page of absolute-line-numbered log entries. Use `from` (negative for tail) and `limit` to window the result.",
+        "operationId": "getLogPage",
+        "parameters": [
+          {
+            "description": "Run ULID",
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "description": "Run ULID",
+              "maxLength": 26,
+              "minLength": 26,
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Anchor line number; 0 is the first line, negative values count from end (default -1000)",
+            "explode": false,
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "default": -1000,
+              "description": "Anchor line number; 0 is the first line, negative values count from end (default -1000)",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Max lines returned (default 1000)",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Max lines returned (default 1000)",
+              "format": "int64",
+              "maximum": 10000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogPageBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get a page of log lines",
+        "tags": [
+          "Logs"
+        ]
+      }
+    },
+    "/api/runs/{runId}/log/line/{lineNumber}/history": {
+      "get": {
+        "description": "Returns the prior whole-region frames a progress bar or multi-line redraw passed through before settling into the committed line. Empty unless the line's `frame_count` is non-zero.",
+        "operationId": "getLogLineHistory",
+        "parameters": [
+          {
+            "description": "Run ULID",
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "description": "Run ULID",
+              "maxLength": 26,
+              "minLength": 26,
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Anchor line number to fetch frame history for",
+            "in": "path",
+            "name": "lineNumber",
+            "required": true,
+            "schema": {
+              "description": "Anchor line number to fetch frame history for",
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogLineHistoryBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get the frame history of a settled progress bar / redraw line",
+        "tags": [
+          "Logs"
+        ]
+      }
+    },
+    "/api/runs/{runId}/log/raw": {
+      "get": {
+        "description": "Concatenates the rotated-away segment (`.log.prev`) and current segment so a single download captures the operator-visible byte stream.",
+        "operationId": "getLogRaw",
+        "parameters": [
+          {
+            "description": "Run ULID",
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "description": "Run ULID",
+              "maxLength": 26,
+              "minLength": 26,
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "contentEncoding": "base64",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Content-Type": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Download the run's full log as text/plain",
+        "tags": [
+          "Logs"
+        ]
+      }
+    },
+    "/api/runs/{runId}/log/stream": {
+      "get": {
+        "description": "Server-Sent Events stream of absolute-line-numbered log entries. Replays history starting at `from` (or `Last-Event-ID + 1`), then follows live output until the run terminates.",
+        "operationId": "streamLog",
+        "parameters": [
+          {
+            "description": "Run ULID",
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "description": "Run ULID",
+              "maxLength": 26,
+              "minLength": 26,
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Anchor line number; 0 is the first line, negative values count from end (default -1000)",
+            "explode": false,
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "default": -1000,
+              "description": "Anchor line number; 0 is the first line, negative values count from end (default -1000)",
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Cap on backfilled lines (default 5000)",
+            "explode": false,
+            "in": "query",
+            "name": "replayLimit",
+            "schema": {
+              "description": "Cap on backfilled lines (default 5000)",
+              "format": "int64",
+              "maximum": 50000,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Native SSE resume cursor; takes precedence over the from query",
+            "in": "header",
+            "name": "Last-Event-ID",
+            "schema": {
+              "description": "Native SSE resume cursor; takes precedence over the from query",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "description": "Each oneOf object in the array represents one possible Server Sent Events (SSE) message, serialized as UTF-8 text according to the SSE specification.",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/LogDoneEvent"
+                          },
+                          "event": {
+                            "const": "done",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event done",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/LogDroppedEvent"
+                          },
+                          "event": {
+                            "const": "dropped",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event dropped",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/LogLineSSEEvent"
+                          },
+                          "event": {
+                            "const": "line",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event line",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/LogRegionSSEEvent"
+                          },
+                          "event": {
+                            "const": "region",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event region",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/LogRotatedEvent"
+                          },
+                          "event": {
+                            "const": "rotated",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event rotated",
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "title": "Server Sent Events",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Stream a run's log lines as SSE",
+        "tags": [
+          "Logs"
+        ]
+      }
+    },
+    "/api/runs/{runId}/stop": {
+      "post": {
+        "operationId": "stopRun",
+        "parameters": [
+          {
+            "description": "Run ULID",
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "description": "Run ULID",
+              "maxLength": 26,
+              "minLength": 26,
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Stop a running task",
         "tags": [
           "Runs"
         ]
@@ -3867,565 +4346,6 @@
           }
         },
         "summary": "List runs for a task",
-        "tags": [
-          "Runs"
-        ]
-      }
-    },
-    "/api/tasks/{taskName}/runs/{runId}": {
-      "delete": {
-        "operationId": "deleteRun",
-        "parameters": [
-          {
-            "description": "Task name",
-            "in": "path",
-            "name": "taskName",
-            "required": true,
-            "schema": {
-              "description": "Task name",
-              "maxLength": 100,
-              "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._:-]+$",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Run ULID",
-            "in": "path",
-            "name": "runId",
-            "required": true,
-            "schema": {
-              "description": "Run ULID",
-              "maxLength": 26,
-              "minLength": 26,
-              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "No Content"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Delete a run",
-        "tags": [
-          "Runs"
-        ]
-      }
-    },
-    "/api/tasks/{taskName}/runs/{runId}/log": {
-      "get": {
-        "description": "Returns a JSON page of absolute-line-numbered log entries. Use `from` (negative for tail) and `limit` to window the result.",
-        "operationId": "getLogPage",
-        "parameters": [
-          {
-            "description": "Task name",
-            "in": "path",
-            "name": "taskName",
-            "required": true,
-            "schema": {
-              "description": "Task name",
-              "maxLength": 100,
-              "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._:-]+$",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Run ULID",
-            "in": "path",
-            "name": "runId",
-            "required": true,
-            "schema": {
-              "description": "Run ULID",
-              "maxLength": 26,
-              "minLength": 26,
-              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Anchor line number; 0 is the first line, negative values count from end (default -1000)",
-            "explode": false,
-            "in": "query",
-            "name": "from",
-            "schema": {
-              "default": -1000,
-              "description": "Anchor line number; 0 is the first line, negative values count from end (default -1000)",
-              "format": "int64",
-              "type": "integer"
-            }
-          },
-          {
-            "description": "Max lines returned (default 1000)",
-            "explode": false,
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "description": "Max lines returned (default 1000)",
-              "format": "int64",
-              "maximum": 10000,
-              "minimum": 1,
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LogPageBody"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Get a page of log lines",
-        "tags": [
-          "Logs"
-        ]
-      }
-    },
-    "/api/tasks/{taskName}/runs/{runId}/log/line/{lineNum}/history": {
-      "get": {
-        "description": "Returns the prior whole-region frames a progress bar or multi-line redraw passed through before settling into the committed line. Empty unless the line's `frame_count` is non-zero.",
-        "operationId": "getLogLineHistory",
-        "parameters": [
-          {
-            "description": "Task name",
-            "in": "path",
-            "name": "taskName",
-            "required": true,
-            "schema": {
-              "description": "Task name",
-              "maxLength": 100,
-              "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._:-]+$",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Run ULID",
-            "in": "path",
-            "name": "runId",
-            "required": true,
-            "schema": {
-              "description": "Run ULID",
-              "maxLength": 26,
-              "minLength": 26,
-              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Anchor line number to fetch frame history for",
-            "in": "path",
-            "name": "lineNum",
-            "required": true,
-            "schema": {
-              "description": "Anchor line number to fetch frame history for",
-              "format": "int64",
-              "minimum": 0,
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LogLineHistoryBody"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Get the frame history of a settled progress bar / redraw line",
-        "tags": [
-          "Logs"
-        ]
-      }
-    },
-    "/api/tasks/{taskName}/runs/{runId}/log/raw": {
-      "get": {
-        "description": "Concatenates the rotated-away segment (`.log.prev`) and current segment so a single download captures the operator-visible byte stream.",
-        "operationId": "getLogRaw",
-        "parameters": [
-          {
-            "description": "Task name",
-            "in": "path",
-            "name": "taskName",
-            "required": true,
-            "schema": {
-              "description": "Task name",
-              "maxLength": 100,
-              "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._:-]+$",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Run ULID",
-            "in": "path",
-            "name": "runId",
-            "required": true,
-            "schema": {
-              "description": "Run ULID",
-              "maxLength": 26,
-              "minLength": 26,
-              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "contentEncoding": "base64",
-                  "type": "string"
-                }
-              }
-            },
-            "description": "OK",
-            "headers": {
-              "Content-Type": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Download the run's full log as text/plain",
-        "tags": [
-          "Logs"
-        ]
-      }
-    },
-    "/api/tasks/{taskName}/runs/{runId}/log/stream": {
-      "get": {
-        "description": "Server-Sent Events stream of absolute-line-numbered log entries. Replays history starting at `from` (or `Last-Event-ID + 1`), then follows live output until the run terminates.",
-        "operationId": "streamLog",
-        "parameters": [
-          {
-            "description": "Task name",
-            "in": "path",
-            "name": "taskName",
-            "required": true,
-            "schema": {
-              "description": "Task name",
-              "maxLength": 100,
-              "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._:-]+$",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Run ULID",
-            "in": "path",
-            "name": "runId",
-            "required": true,
-            "schema": {
-              "description": "Run ULID",
-              "maxLength": 26,
-              "minLength": 26,
-              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Anchor line number; 0 is the first line, negative values count from end (default -1000)",
-            "explode": false,
-            "in": "query",
-            "name": "from",
-            "schema": {
-              "default": -1000,
-              "description": "Anchor line number; 0 is the first line, negative values count from end (default -1000)",
-              "format": "int64",
-              "type": "integer"
-            }
-          },
-          {
-            "description": "Cap on backfilled lines (default 5000)",
-            "explode": false,
-            "in": "query",
-            "name": "replayLimit",
-            "schema": {
-              "description": "Cap on backfilled lines (default 5000)",
-              "format": "int64",
-              "maximum": 50000,
-              "minimum": 1,
-              "type": "integer"
-            }
-          },
-          {
-            "description": "Native SSE resume cursor; takes precedence over the from query",
-            "in": "header",
-            "name": "Last-Event-ID",
-            "schema": {
-              "description": "Native SSE resume cursor; takes precedence over the from query",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "description": "Each oneOf object in the array represents one possible Server Sent Events (SSE) message, serialized as UTF-8 text according to the SSE specification.",
-                  "items": {
-                    "oneOf": [
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/LogDoneEvent"
-                          },
-                          "event": {
-                            "const": "done",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event done",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/LogDroppedEvent"
-                          },
-                          "event": {
-                            "const": "dropped",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event dropped",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/LogLineSSEEvent"
-                          },
-                          "event": {
-                            "const": "line",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event line",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/LogRegionSSEEvent"
-                          },
-                          "event": {
-                            "const": "region",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event region",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/LogRotatedEvent"
-                          },
-                          "event": {
-                            "const": "rotated",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event rotated",
-                        "type": "object"
-                      }
-                    ]
-                  },
-                  "title": "Server Sent Events",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Stream a run's log lines as SSE",
-        "tags": [
-          "Logs"
-        ]
-      }
-    },
-    "/api/tasks/{taskName}/runs/{runId}/stop": {
-      "post": {
-        "operationId": "stopRun",
-        "parameters": [
-          {
-            "description": "Task name",
-            "in": "path",
-            "name": "taskName",
-            "required": true,
-            "schema": {
-              "description": "Task name",
-              "maxLength": 100,
-              "minLength": 1,
-              "pattern": "^[a-zA-Z0-9._:-]+$",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Run ULID",
-            "in": "path",
-            "name": "runId",
-            "required": true,
-            "schema": {
-              "description": "Run ULID",
-              "maxLength": 26,
-              "minLength": 26,
-              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "No Content"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Stop a running task",
         "tags": [
           "Runs"
         ]

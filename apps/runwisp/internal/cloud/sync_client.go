@@ -288,9 +288,9 @@ func buildTaskSyncID(tasks []syncTask) string {
 }
 
 var concurrencyBehaviorMap = map[model.ConcurrencyPolicy]string{
-	model.PolicyQueue:     "queue",
-	model.PolicySkip:      "skip",
-	model.PolicyTerminate: "terminate",
+	model.PolicyQueue: "queue",
+	model.PolicySkip:  "skip",
+	model.PolicyKill:  "kill",
 }
 
 func durationToMillis(d time.Duration) int {

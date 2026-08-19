@@ -33,7 +33,7 @@ type ActiveRun struct {
 	// lock; not persisted.
 	RestartAttempt int
 	// cancelled latches once this run has been asked to stop (currently only the
-	// terminate overlap policy). It stops a later trigger from re-cancelling an
+	// kill overlap policy). It stops a later trigger from re-cancelling an
 	// already-dying run — which would leave the live run count growing past
 	// max_concurrent while the same victim drains. Guarded by m.mu.
 	cancelled bool
@@ -104,7 +104,7 @@ func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, 
 		ts.cond.Signal()
 		slog.Debug("Task queued", "name", ts.task.Name, "active", len(ts.active), "limit", concurrencyLimit, "queue", len(ts.queue))
 		return actionQueued, nil
-	case model.PolicyTerminate:
+	case model.PolicyKill:
 		// Cancel the oldest not-yet-cancelled runs until enough are draining that
 		// active returns to the limit once they exit. Skipping already-cancelled
 		// runs is what bounds the live set: re-cancelling the same dying run while

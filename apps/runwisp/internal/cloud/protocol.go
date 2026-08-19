@@ -36,7 +36,7 @@ func newEnvelopeFields() (int, string) {
 // ignores it).
 func NewPingMessage(stats *protocol.SystemStats) protocol.PingMessage {
 	v, s := newEnvelopeFields()
-	return protocol.PingMessage{Type: "ping", V: v, SentAt: s, SystemStats: stats}
+	return protocol.PingMessage{Type: "ping", ProtocolVersion: v, SentAt: s, SystemStats: stats}
 }
 
 // makeSystemStatsProvider adapts the daemon's model-typed stats source into the
@@ -72,14 +72,14 @@ func toProtocolSystemStats(s model.SystemStats) *protocol.SystemStats {
 func NewExecutionUpdateMessage(executionID string, status protocol.ExecutionStatus, exitCode *int, startedAt, finishedAt *time.Time) protocol.ExecutionUpdateMessage {
 	v, s := newEnvelopeFields()
 	return protocol.ExecutionUpdateMessage{
-		Type:        "execution:update",
-		V:           v,
-		SentAt:      s,
-		ExecutionID: executionID,
-		Status:      &status,
-		ExitCode:    exitCode,
-		StartedAt:   startedAt,
-		FinishedAt:  finishedAt,
+		Type:            "execution:update",
+		ProtocolVersion: v,
+		SentAt:          s,
+		ExecutionID:     executionID,
+		Status:          &status,
+		ExitCode:        exitCode,
+		StartedAt:       startedAt,
+		FinishedAt:      finishedAt,
 	}
 }
 
@@ -88,15 +88,15 @@ func NewLogLineMessage(executionID string, n, ts int64, stream, text string, con
 	v, s := newEnvelopeFields()
 	streamEnum := streamEnumFromString(stream)
 	return protocol.LogLineMessage{
-		Type:        "log:line",
-		V:           v,
-		SentAt:      s,
-		ExecutionID: executionID,
-		N:           n,
-		Ts:          ts,
-		Stream:      &streamEnum,
-		Text:        text,
-		Continued:   continued,
+		Type:            "log:line",
+		ProtocolVersion: v,
+		SentAt:          s,
+		ExecutionID:     executionID,
+		N:               n,
+		Ts:              ts,
+		Stream:          &streamEnum,
+		Text:            text,
+		Continued:       continued,
 	}
 }
 
@@ -105,13 +105,13 @@ func NewLogLineMessage(executionID string, n, ts int64, stream, text string, con
 func NewLogReplayChunkMessage(requestID, executionID string, lines []protocol.LinesItem, final bool) protocol.LogReplayChunkMessage {
 	v, s := newEnvelopeFields()
 	return protocol.LogReplayChunkMessage{
-		Type:        "log:replayChunk",
-		V:           v,
-		SentAt:      s,
-		RequestID:   requestID,
-		ExecutionID: executionID,
-		Lines:       lines,
-		Final:       final,
+		Type:            "log:replayChunk",
+		ProtocolVersion: v,
+		SentAt:          s,
+		RequestID:       requestID,
+		ExecutionID:     executionID,
+		Lines:           lines,
+		Final:           final,
 	}
 }
 
@@ -121,27 +121,27 @@ func NewLogReplayChunkMessage(requestID, executionID string, lines []protocol.Li
 func NewLogSearchChunkMessage(requestID, executionID string, hits []protocol.HitsItem, nextLine int64, exhausted bool) protocol.LogSearchChunkMessage {
 	v, s := newEnvelopeFields()
 	return protocol.LogSearchChunkMessage{
-		Type:        "log:searchChunk",
-		V:           v,
-		SentAt:      s,
-		RequestID:   requestID,
-		ExecutionID: executionID,
-		Hits:        hits,
-		NextLine:    int(nextLine),
-		Exhausted:   exhausted,
+		Type:            "log:searchChunk",
+		ProtocolVersion: v,
+		SentAt:          s,
+		RequestID:       requestID,
+		ExecutionID:     executionID,
+		Hits:            hits,
+		NextLine:        int(nextLine),
+		Exhausted:       exhausted,
 	}
 }
 
 func NewProtocolErrorMessage(code, message, requestID, executionID string) protocol.ProtocolErrorMessage {
 	v, s := newEnvelopeFields()
 	return protocol.ProtocolErrorMessage{
-		Type:        "error",
-		V:           v,
-		SentAt:      s,
-		Code:        code,
-		Message:     message,
-		RequestID:   requestID,
-		ExecutionID: executionID,
+		Type:            "error",
+		ProtocolVersion: v,
+		SentAt:          s,
+		Code:            code,
+		Message:         message,
+		RequestID:       requestID,
+		ExecutionID:     executionID,
 	}
 }
 
@@ -151,10 +151,10 @@ func NewProtocolErrorMessage(code, message, requestID, executionID string) proto
 func NewExecutionAckMessage(executionID string) protocol.ExecutionAckMessage {
 	v, s := newEnvelopeFields()
 	return protocol.ExecutionAckMessage{
-		Type:        "execution:ack",
-		V:           v,
-		SentAt:      s,
-		ExecutionID: executionID,
+		Type:            "execution:ack",
+		ProtocolVersion: v,
+		SentAt:          s,
+		ExecutionID:     executionID,
 	}
 }
 
@@ -183,7 +183,7 @@ func NewServiceStatusMessage(snapshot model.ServiceSnapshot) protocol.ServiceSta
 	}
 	return protocol.ServiceStatusMessage{
 		Type:             "service:status",
-		V:                v,
+		ProtocolVersion:  v,
 		SentAt:           s,
 		TaskID:           snapshot.TaskName,
 		State:            &state,

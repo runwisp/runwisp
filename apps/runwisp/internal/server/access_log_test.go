@@ -84,7 +84,7 @@ func TestSlogAccessLogger_SnapshotIsRequestEntryTime(t *testing.T) {
 // visible regardless of --log-level.
 func TestSlogAccessLogger_Panic(t *testing.T) {
 	buf := captureSlog(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/info", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/daemon", nil)
 	req.RemoteAddr = "127.0.0.1:54321"
 
 	entry := slogAccessLogger{}.NewLogEntry(req)

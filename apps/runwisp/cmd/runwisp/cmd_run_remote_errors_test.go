@@ -245,9 +245,9 @@ func TestFollowRun_ReconnectsAndPrintsTailWhenStreamDropsWithoutDone(t *testing.
 
 func TestRunExec_URLWithDaemonFlagRejected(t *testing.T) {
 	t.Setenv("RUNWISP_URL", "")
-	execFlags.URL = "https://example.com"
-	execFlags.Daemon = true
-	t.Cleanup(func() { execFlags.URL = ""; execFlags.Daemon = false })
+	runFlags.URL = "https://example.com"
+	runFlags.Daemon = true
+	t.Cleanup(func() { runFlags.URL = ""; runFlags.Daemon = false })
 
 	_, err := runExec("backup", Flags{})
 	require.Error(t, err)
@@ -262,9 +262,9 @@ func TestRunExec_RoutesToRemoteWithEnvPassword(t *testing.T) {
 	srv := httptest.NewServer(stub.handler(t))
 	defer srv.Close()
 
-	execFlags.URL = srv.URL
+	runFlags.URL = srv.URL
 	t.Setenv("RUNWISP_PASSWORD", "pw")
-	t.Cleanup(func() { execFlags.URL = "" })
+	t.Cleanup(func() { runFlags.URL = "" })
 
 	code, err := runExec("backup", Flags{})
 	require.NoError(t, err)

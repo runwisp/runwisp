@@ -38,12 +38,12 @@ fails — it defaults to `0`, so out of the box nothing retries. Set it to
 
 Not every ending counts as a failure worth retrying, though. A retry
 fires when a run ends in `failed` (non-zero exit), `timeout`, `crashed`,
-or `log_overflow` (which is what [`log_on_full = "kill_task"`](/concepts/logs/#rotation-log_max_size-and-log_on_full) does after
+or `log_overflow` (which is what [`log_on_full = "kill"`](/concepts/logs/#rotation-log_max_size-and-log_on_full) does after
 a run blows past `log_max_size`).
 
 It does **not** fire on `success`, `stopped`, or `skipped`. `stopped`
 means a human deliberately killed it from the API/CLI/UI, or a sibling
-run cancelled it via `on_overlap = "terminate"` — either way, retrying
+run cancelled it via `on_overlap = "kill"` — either way, retrying
 would override an intentional decision. `skipped` means the original run
 is _still going_, so another attempt would just race it.
 
@@ -105,7 +105,7 @@ doesn't eat into it.
 When the deadline passes, the daemon SIGTERMs the run's process group,
 gives it up to [`graceful_stop`](/configuration/tasks/#retries--timeout) (default `"5s"`) to bow out, then SIGKILLs
 whatever's left and records the run with end reason `timeout`. That same
-SIGTERM-then-wait dance is what `on_overlap = "terminate"`, manual stops,
+SIGTERM-then-wait dance is what `on_overlap = "kill"`, manual stops,
 and daemon shutdown all use — `graceful_stop` is the one knob behind all
 of it.
 
@@ -113,9 +113,9 @@ of it.
 
 A few places where retries bump into other features:
 
-- **`on_overlap = "terminate"` plus retries.** When a fresh firing
-  terminates the running attempt, that attempt ends as `stopped`, which
-  **shuts the retry chain down**. The run the terminate policy starts is
+- **`on_overlap = "kill"` plus retries.** When a fresh firing
+  kills the running attempt, that attempt ends as `stopped`, which
+  **shuts the retry chain down**. The run the kill policy starts is
   a brand-new execution, not a retry.
 - **Manual stop.** Same deal — stop a run from the API or UI and it ends
   as `stopped`, which ends the retry chain.
@@ -180,7 +180,7 @@ and self-healing indefinitely, that's `[services.*]`.
     <LinkCard
         title="Concurrency"
         href="/concepts/concurrency/"
-        description="What stops a retry chain when on_overlap = terminate fires."
+        description="What stops a retry chain when on_overlap = kill fires."
     />
     <LinkCard
         title="Notifications model"

@@ -73,8 +73,8 @@ required`. The daemon itself keeps running; only that run fails.
 
     - `drop_new` / `drop_old`: a system line `"Log output stopped: disk space critically low"`
       goes into the log and the process keeps running.
-    - `kill_task`: the run is cancelled (`end_reason = "log_overflow"`) with a system line
-      `"Process killed: disk space critically low …; log_on_full=\"kill_task\""`.
+    - `kill`: the run is cancelled (`end_reason = "log_overflow"`) with a system line
+      `"Process killed: disk space critically low …; log_on_full=\"kill\""`.
 
     You asked for loud failure over disk safety, and RunWisp honours that.
 
@@ -94,7 +94,7 @@ The two layers are independent:
 - `[storage] min_free_space` is a **partition-level emergency brake**
   that respects `log_on_full`: `drop_*` policies stop logging silently
   on disk (but always emit a `log.disk_pressure` notification);
-  `kill_task` cancels the run.
+  `kill` cancels the run.
 
 An easy way to keep them straight: `log_max_size` is "this one run is
 about to write too much," `max_size` is "we've piled up too much over
