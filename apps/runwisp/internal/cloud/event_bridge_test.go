@@ -121,14 +121,17 @@ func TestEventBridge_HandleRunEvent_TerminalRun(t *testing.T) {
 func TestEventBridge_Start_DispatchesPublishedEvents(t *testing.T) {
 	bus := events.NewEventBus()
 	h := newTestInboundHandler()
+	var logMu sync.Mutex
 	logLineSent := false
 	b := NewEventBridge(
 		bus,
 		h,
 		NewExecutionTracker(),
 		func(message any) error {
-			if _, ok := message.(protocol.LogLineMessage); ok {
+			if _, ok := message.(protocol.LogLinesMessage); ok {
+				logMu.Lock()
 				logLineSent = true
+				logMu.Unlock()
 			}
 			return nil
 		},
@@ -170,7 +173,13 @@ func TestEventBridge_Start_DispatchesPublishedEvents(t *testing.T) {
 		Text:        "hi",
 	})
 
-	assert.True(t, logLineSent)
+	// Live lines are coalesced and flushed on the batch window, so the frame
+	// arrives asynchronously rather than on the publish call.
+	assert.Eventually(t, func() bool {
+		logMu.Lock()
+		defer logMu.Unlock()
+		return logLineSent
+	}, time.Second, 5*time.Millisecond)
 }
 
 // --- handleRunEvent: guard branches ---
@@ -473,22 +482,32 @@ func TestEventBridge_FinalizeRun_NoUploaderSendsSingleUpdate(t *testing.T) {
 
 func TestEventBridge_HandleLogLineEvent_IsListener(t *testing.T) {
 	h := newTestInboundHandler()
-	sent := 0
+	var sent []any
 	b := NewEventBridge(
 		events.NewEventBus(),
 		h,
 		NewExecutionTracker(),
-		func(any) error { sent++; return nil },
+		func(m any) error { sent = append(sent, m); return nil },
 	)
 
 	execID := "exec-listen"
 	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: execID})
+	// Two lines for the same execution coalesce into a single log:lines frame
+	// on flush, not one frame per line.
 	b.handleLogLineEvent(events.Event{
-		Data: events.LogLineEvent{
-			ExecutionID: execID,
-			LineNum:     1,
-			Text:        "hello",
-		},
+		Data: events.LogLineEvent{ExecutionID: execID, LineNum: 1, Text: "hello"},
 	})
-	assert.Equal(t, 1, sent)
+	b.handleLogLineEvent(events.Event{
+		Data: events.LogLineEvent{ExecutionID: execID, LineNum: 2, Text: "world"},
+	})
+	assert.Empty(t, sent, "lines buffer until flush, not sent per line")
+
+	b.flushLogBatches()
+	require.Len(t, sent, 1)
+	batch, ok := sent[0].(protocol.LogLinesMessage)
+	require.True(t, ok)
+	assert.Equal(t, execID, batch.ExecutionID)
+	require.Len(t, batch.Lines, 2)
+	assert.Equal(t, "hello", batch.Lines[0].Text)
+	assert.Equal(t, "world", batch.Lines[1].Text)
 }
