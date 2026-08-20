@@ -209,6 +209,14 @@ type daemonLogDrainer struct {
 	reader *bufio.Reader
 }
 
+// drain reads every newly-appended line, echoing non-fatal ones to stderr live
+// so a slow-but-healthy startup shows real progress. Once a fatal line is
+// found, echoing stops and every remaining line already on disk is folded
+// into fatalMsg instead — the CLI error renderer writes its title followed by
+// blank-line-separated bullet details in one burst, and by the time this
+// polls, a daemon that died that fast has already flushed all of it. The
+// caller re-renders fatalMsg as the one polished error box; echoing the same
+// lines raw first would just print the failure twice.
 func (d *daemonLogDrainer) drain() (fatalMsg string, fatal bool) {
 	if d.reader == nil {
 		f, err := os.Open(d.path)
@@ -218,21 +226,34 @@ func (d *daemonLogDrainer) drain() (fatalMsg string, fatal bool) {
 		d.file = f
 		d.reader = bufio.NewReader(f)
 	}
+	var fatalLines []string
 	for {
 		line, err := d.reader.ReadString('\n')
 		if line != "" {
-			line = strings.TrimRight(line, "\n\r")
-			fmt.Fprintf(os.Stderr, "  %s\n", line)
-			if msg, isFatal := classifyDaemonLogLine(line); isFatal {
-				return msg, true
-			}
+			fatalLines = d.handleLine(strings.TrimRight(line, "\n\r"), fatalLines)
 		}
 		if err != nil {
 			// Reset so next drain picks up writes appended after EOF.
 			d.reader.Reset(d.file)
+			if fatalLines != nil {
+				return strings.Join(fatalLines, "\n"), true
+			}
 			return "", false
 		}
 	}
+}
+
+// handleLine echoes a non-fatal line live, or — once a fatal line has been
+// seen — folds it into fatalLines instead (see drain's doc comment for why).
+func (d *daemonLogDrainer) handleLine(line string, fatalLines []string) []string {
+	if fatalLines != nil {
+		return append(fatalLines, line)
+	}
+	if msg, isFatal := classifyDaemonLogLine(line); isFatal {
+		return []string{msg}
+	}
+	fmt.Fprintf(os.Stderr, "  %s\n", line)
+	return fatalLines
 }
 
 func (d *daemonLogDrainer) close() {
@@ -333,6 +354,20 @@ func classifyDaemonLogLine(line string) (string, bool) {
 		strings.Contains(line, "Server failed"),
 		strings.Contains(line, "address already in use"),
 		strings.Contains(line, "bind: permission denied"):
+		return line, true
+	// handleCLIError/renderError print an unbracketed "ERROR" badge right
+	// before the process exits on any fatal top-level command error (missing
+	// config, bad TLS cert, ...) — unlike slog's routine "[ERROR]" lines, which
+	// don't mean the process is dying. Catching it generically here lets
+	// waitForDaemonLoop report the real cause immediately instead of waiting
+	// out the full health-check timeout. The badge itself is stripped: the
+	// caller wraps this message in its own "daemon failed to start" error,
+	// which then goes through the same renderer and would otherwise print two
+	// "ERROR" badges back to back.
+	case strings.Contains(line, "ERROR") && !strings.Contains(line, "[ERROR]"):
+		if _, title, ok := strings.Cut(line, "ERROR"); ok {
+			return strings.TrimSpace(title), true
+		}
 		return line, true
 	}
 	return "", false

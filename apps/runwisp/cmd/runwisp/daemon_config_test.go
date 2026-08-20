@@ -39,6 +39,13 @@ func TestLoadConfigFile_MissingWithoutCloudErrors(t *testing.T) {
 	_, _, err := loadConfigFile("/this/does/not/exist/runwisp.toml", false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no runwisp.toml")
+
+	// It never silently swaps in a fallback config — the operator gets a
+	// userFacingError naming both ways forward instead.
+	ufe, ok := isUserFacing(err)
+	require.True(t, ok, "expected a *userFacingError")
+	assert.Contains(t, ufe.details, "runwisp demo")
+	assert.Contains(t, ufe.details, "docs.runwisp.com")
 }
 
 // loadDaemonConfig integrates loadConfigFile + fingerprint resolution +

@@ -213,5 +213,5 @@ func loadConfigFile(path string, cloudEnabled bool) (*config.Config, bool, error
 		return cfg, false, nil
 	}
 
-	return nil, false, fmt.Errorf("no runwisp.toml found at %s — create one to define your tasks (docs: https://docs.runwisp.com/configuration/overview/)", path)
+	return nil, false, noConfigError(path)
 }
