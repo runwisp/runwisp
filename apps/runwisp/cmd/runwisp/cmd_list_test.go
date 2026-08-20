@@ -28,7 +28,7 @@ const minimalCfgServiceTask = `
 [services.worker]
 instances = 3
 run = "/usr/bin/worker"
-api_trigger = true
+manual_trigger = true
 `
 
 const minimalCfgLongDescription = `
@@ -71,7 +71,7 @@ func TestRunList_ServiceTaskShowsInstances(t *testing.T) {
 	out := runListString(t, f)
 	assert.Contains(t, out, "worker")
 	assert.Contains(t, out, "(service x3)")
-	assert.Contains(t, out, "yes", "api_trigger=true renders 'yes'")
+	assert.Contains(t, out, "yes", "manual_trigger=true renders 'yes'")
 }
 
 func TestRunList_LongDescriptionTruncated(t *testing.T) {
@@ -109,7 +109,7 @@ func TestRunList_JSONServiceAndCron(t *testing.T) {
 	assert.Equal(t, "* * * * *", byName["hello"].Schedule)
 	assert.Equal(t, "service", byName["worker"].Kind)
 	assert.Equal(t, 3, byName["worker"].Instances)
-	assert.True(t, byName["worker"].APITrigger)
+	assert.True(t, byName["worker"].ManualTrigger)
 
 	// max_concurrent is a real setting for tasks but not services — services'
 	// copy count is `instances`. It must be present for the task and omitted

@@ -49,8 +49,8 @@ func TestMapDomainError_WrappedErrTaskNotFound_Returns404(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, result.GetStatus())
 }
 
-func TestMapDomainError_ErrAPIDisabled_Returns403(t *testing.T) {
-	result := mapDomainError(context.Background(), ErrAPIDisabled, "fallback")
+func TestMapDomainError_ErrManualTriggerDisabled_Returns403(t *testing.T) {
+	result := mapDomainError(context.Background(), ErrManualTriggerDisabled, "fallback")
 	require.NotNil(t, result)
 	assert.Equal(t, http.StatusForbidden, result.GetStatus())
 }

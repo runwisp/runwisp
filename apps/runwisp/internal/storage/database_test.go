@@ -446,7 +446,7 @@ func TestQueryRunsFiltersAndPagination(t *testing.T) {
 
 	// Status filter (ended).
 	rs, err := db.QueryRuns(ctx, RunQuery{
-		Filter:        model.RunFilter{Status: "success"},
+		Filter:        model.RunFilter{Status: "succeeded"},
 		Limit:         10,
 		SortField:     SortColumnTaskName,
 		SortDirection: SortAsc,

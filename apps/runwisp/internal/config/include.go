@@ -20,9 +20,10 @@ import (
 // map so later path resolution honors each entry's origin file.
 //
 // Merge semantics:
-//   - collections ([tasks.*], [services.*], [compose.*], [[notifier]],
-//     [[notification_route]]) accumulate — root first, then matched globs in
-//     lexicographic order;
+//   - collections ([tasks.*], [services.*], [compose.*], [[route]]) accumulate
+//     — root first, then matched globs in lexicographic order;
+//   - [notifiers.*] merges by id — a duplicate id across files is a hard error
+//     naming both files, same as a duplicate task/service/compose-alias name;
 //   - a task / service / compose-alias name defined in two files is a hard
 //     error naming both files;
 //   - singleton tables ([daemon], [storage], [defaults], [scheduler],
@@ -301,8 +302,30 @@ func mergeWire(root, inc *tomlConfig, incPath string, byName map[string]string) 
 		return err
 	}
 	mergeEntryTables(root, inc)
-	root.Notifiers = append(root.Notifiers, inc.Notifiers...)
+	if err := mergeNotifiers(root, inc, incPath); err != nil {
+		return err
+	}
 	root.Routes = append(root.Routes, inc.Routes...)
+	return nil
+}
+
+// mergeNotifiers folds the included file's [notifiers.<id>] map into the root,
+// rejecting any id already declared by an earlier file. Notifier ids are their
+// own namespace, independent of task/service/compose-alias names, so this
+// duplicate check runs separately from recordEntryOrigins/byName.
+func mergeNotifiers(root, inc *tomlConfig, incPath string) error {
+	if len(inc.Notifiers) == 0 {
+		return nil
+	}
+	if root.Notifiers == nil {
+		root.Notifiers = make(map[string]*notifierWire, len(inc.Notifiers))
+	}
+	for id, w := range inc.Notifiers {
+		if _, dup := root.Notifiers[id]; dup {
+			return fmt.Errorf("duplicate notifier id %q: already declared in another file, redeclared in %s", id, incPath)
+		}
+		root.Notifiers[id] = w
+	}
 	return nil
 }
 

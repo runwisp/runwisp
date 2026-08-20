@@ -209,6 +209,7 @@ components:
         - failed
         - stopped
         - timeout
+        - skipped
 
     AuthResultMessage:
       type: object
@@ -910,40 +911,26 @@ components:
         - text
 
     LogLineMessage:
-      type: object
       description: |
         Daemon → cloud. Pushed live for any execution with an active log:listen
         subscription. Each message carries exactly one absolute-numbered line.
-      properties:
-        type:
-          type: string
-          const: log:line
-        protocolVersion:
-          type: integer
-        sentAt:
-          type: string
-          format: date-time
-        executionId:
-          type: string
-        n:
-          type: integer
-          format: int64
-        ts:
-          type: integer
-          format: int64
-        stream:
-          type: string
-          enum: [stdout, stderr, system]
-        text:
-          type: string
-        continued:
-          type: boolean
-      required:
-        - type
-        - executionId
-        - n
-        - stream
-        - text
+      allOf:
+        - $ref: "#/components/schemas/LogLineEntry"
+        - type: object
+          properties:
+            type:
+              type: string
+              const: log:line
+            protocolVersion:
+              type: integer
+            sentAt:
+              type: string
+              format: date-time
+            executionId:
+              type: string
+          required:
+            - type
+            - executionId
 
     LogReplayChunkMessage:
       type: object

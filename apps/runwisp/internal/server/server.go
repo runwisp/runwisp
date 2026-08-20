@@ -46,7 +46,7 @@ type Server struct {
 	configPath string
 	logDir     string
 	eventBus   *events.Bus
-	// appEvents is the single bus consumer behind the /api/stream SSE feed. It
+	// appEvents is the single bus consumer behind the /api/events/stream SSE feed. It
 	// assigns each event a monotonic id and retains a replay ring so a
 	// reconnecting client resumes from Last-Event-ID without losing events.
 	appEvents         *appEventLog
@@ -85,7 +85,7 @@ type Server struct {
 	metricsListen  string
 	// reload re-reads runwisp.toml and reconciles the live task set. nil
 	// outside standalone mode (cloud mode has no local scheduler to reconcile),
-	// in which case POST /api/reload reports the operation is unavailable.
+	// in which case POST /api/daemon/reload reports the operation is unavailable.
 	reload func() (model.ReloadResult, error)
 }
 
@@ -118,7 +118,7 @@ type Options struct {
 	MetricsListen     string                             // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
 	TLSCert           string                             // PEM cert path; when set with TLSKey the main listener serves HTTPS
 	TLSKey            string                             // PEM key path; paired with TLSCert
-	Reload            func() (model.ReloadResult, error) // Reconciles the live task set against runwisp.toml; nil disables POST /api/reload
+	Reload            func() (model.ReloadResult, error) // Reconciles the live task set against runwisp.toml; nil disables POST /api/daemon/reload
 }
 
 func New(opts Options) (*Server, error) {

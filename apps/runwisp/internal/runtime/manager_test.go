@@ -167,14 +167,14 @@ func TestPolicyQueue(t *testing.T) {
 	assert.Equal(t, 2, exec.Calls())
 }
 
-// TestPolicyQueueDropsAtCap exercises the new queue_max bound: once the
-// pending queue holds queue_max runs, the next firing is recorded with
+// TestPolicyQueueDropsAtCap exercises the max_queued bound: once the
+// pending queue holds max_queued runs, the next firing is recorded with
 // end_reason = "queue_full" rather than growing the queue without bound.
 func TestPolicyQueueDropsAtCap(t *testing.T) {
 	jm, exec, _ := newGatedManager(t)
 
 	task := testTask("task1", model.PolicyQueue, 1)
-	task.QueueMax = 1
+	task.MaxQueued = 1
 	jm.UpsertTask(task)
 
 	first, err := jm.TriggerRun("task1", model.TriggeredByAPI)
@@ -183,12 +183,12 @@ func TestPolicyQueueDropsAtCap(t *testing.T) {
 	// Once first is executing it holds the slot and the queue is empty.
 	exec.WaitStarted(t)
 
-	// Second firing occupies the queue (fills queue_max = 1).
+	// Second firing occupies the queue (fills max_queued = 1).
 	queued, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	require.NoError(t, err)
 	require.Equal(t, model.PhasePending, queued.Status)
 
-	// Third firing trips queue_max and is dropped immediately.
+	// Third firing trips max_queued and is dropped immediately.
 	dropped, err := jm.TriggerRun("task1", model.TriggeredByAPI)
 	require.Error(t, err, "third firing should be rejected")
 	assert.Contains(t, err.Error(), "queue full")

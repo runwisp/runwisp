@@ -17,8 +17,9 @@ function makeTask(name: string, overrides: Partial<TaskWithId> = {}): TaskWithId
     return {
         id: name,
         name,
-        apiTrigger: false,
+        manualTrigger: false,
         autostart: true,
+        runOnStart: false,
         ...overrides,
     };
 }
@@ -81,8 +82,8 @@ describe("buildTaskOverviews", () => {
         expect(result.at(0)?.nextRunMs).toBeDefined();
     });
 
-    it("sets manual state when apiTrigger is true and no schedule", () => {
-        const tasks = [makeTask("trigger-only", { apiTrigger: true })];
+    it("sets manual state when manualTrigger is true and no schedule", () => {
+        const tasks = [makeTask("trigger-only", { manualTrigger: true })];
         const result = buildTaskOverviews(tasks, [], []);
         expect(result.at(0)?.state).toBe("manual");
         expect(result.at(0)?.isApiOnly).toBe(true);
@@ -105,7 +106,7 @@ describe("buildTaskOverviews", () => {
             id: "r-old",
             createdAt: "2024-01-01T00:00:00Z",
             status: "ended",
-            endReason: "success",
+            endReason: "succeeded",
         });
         const newer = makeRun("backup-db", {
             id: "r-new",
@@ -153,7 +154,7 @@ describe("countTaskOverviews", () => {
     });
 
     it("counts manual tasks (api-only, no schedule)", () => {
-        const task = makeTask("api-task", { apiTrigger: true });
+        const task = makeTask("api-task", { manualTrigger: true });
         const overviews = buildTaskOverviews([task], [], []);
         const counts = countTaskOverviews(overviews);
         expect(counts.manual).toBe(1);
@@ -316,7 +317,7 @@ describe("buildTaskOverviews ?? branches", () => {
             id: "r-good",
             createdAt: "2024-06-01T00:00:00Z",
             status: "ended",
-            endReason: "success",
+            endReason: "succeeded",
         });
         // good at index 0, bad at index 1: V8 calls compareFn(bad, good) so bad is `left`,
         // triggering the ?? LOWEST_PRIORITY_TIME fallback for leftTime (line 152).
@@ -326,9 +327,9 @@ describe("buildTaskOverviews ?? branches", () => {
 
     it("isApiOnly=true with nextRunMs set → not counted as manual", () => {
         const future = new Date(Date.now() + 3600000).toISOString();
-        const tasks = [makeTask("api-cron", { apiTrigger: true, nextRunAt: future })];
+        const tasks = [makeTask("api-cron", { manualTrigger: true, nextRunAt: future })];
         const result = buildTaskOverviews(tasks, [], []);
-        // isApiOnly = apiTrigger && !cron = true && !undefined = true; state = "scheduled"
+        // isApiOnly = manualTrigger && !cron = true && !undefined = true; state = "scheduled"
         expect(result.at(0)?.state).toBe("scheduled");
         expect(result.at(0)?.isApiOnly).toBe(true);
         const summary = buildOverviewSummary(result, []);

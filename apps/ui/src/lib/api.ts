@@ -323,7 +323,7 @@ export const systemApi = {
     },
 
     getMetricsHistory: async (): Promise<MetricsSample[]> => {
-        const response = await fetch(`${API_BASE_URL}/api/system/history`);
+        const response = await fetch(`${API_BASE_URL}/api/system/metrics`);
         if (!response.ok) throw new Error("Failed to fetch metrics history");
         return metricsHistoryResponseSchema.parse(await response.json()).items;
     },
@@ -340,7 +340,7 @@ const metricsHistoryResponseSchema = z.object({ items: z.array(metricsSampleSche
 
 export type MetricsSample = z.infer<typeof metricsSampleSchema>;
 
-// Payloads pushed over the unified /api/stream feed (mirrors the server's
+// Payloads pushed over the unified /api/events/stream feed (mirrors the server's
 // SystemSampleSSEEvent / ConfigStaleSSEEvent), so dashboards never poll
 // /api/system or /api/daemon on a timer.
 export const systemEventSchema = z.object({

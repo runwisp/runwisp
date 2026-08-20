@@ -316,8 +316,7 @@ func TestIncludeCron_MailtoIsSilentOnceMailWorks(t *testing.T) {
 [daemon]
 include_cron = ["crontabs/*"]
 
-[[notifier]]
-id = "mail"
+[notifiers.mail]
 type = "` + notifierType + `"
 from = "runwisp@example.com"
 to = ["ops@example.com"]

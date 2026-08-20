@@ -9,7 +9,7 @@ import (
 )
 
 // Default caps for concurrent SSE / log-stream connections. A browser tab now
-// holds a single unified app-event stream (/api/stream) plus an on-demand log
+// holds a single unified app-event stream (/api/events/stream) plus an on-demand log
 // tail, so these caps leave generous headroom for a handful of tabs while still
 // bounding resource use under abuse.
 const (

@@ -17,16 +17,15 @@ embeds Discord actually renders.)
 ## Fields
 
 ```toml
-[[notifier]]
-id   = "my-hook"
+[notifiers.my-hook]
 type = "webhook"
 url  = "${WEBHOOK_URL}"
 
-[notifier.headers]
+[notifiers.my-hook.headers]
 Authorization = "Bearer ${WEBHOOK_TOKEN}"
 ```
 
-`id`, `type`, and `url` are required.
+The id (as the table key), `type`, and `url` are required.
 
 | Key             | Required | What it does                                                     |
 | --------------- | -------- | ---------------------------------------------------------------- |
@@ -55,12 +54,11 @@ Pick where the URL lives and reference it with
         ```
 
         ```toml
-        [[notifier]]
-        id   = "my-hook"
+        [notifiers.my-hook]
         type = "webhook"
         url  = "${WEBHOOK_URL}"
 
-        [notifier.headers]
+        [notifiers.my-hook.headers]
         Authorization = "Bearer ${WEBHOOK_TOKEN}"
         ```
     </TabItem>
@@ -75,8 +73,7 @@ Pick where the URL lives and reference it with
         ```
 
         ```toml
-        [[notifier]]
-        id   = "my-hook"
+        [notifiers.my-hook]
         type = "webhook"
         url  = "${file:~/.config/runwisp/webhook.url}"
         ```
@@ -86,8 +83,7 @@ Pick where the URL lives and reference it with
         config files are often committed to git.
 
         ```toml
-        [[notifier]]
-        id   = "my-hook"
+        [notifiers.my-hook]
         type = "webhook"
         url  = "https://example.com/hooks/abc123"
         ```
@@ -109,9 +105,9 @@ run               = "..."
 ### In a notification rule
 
 ```toml
-[[notification_route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
-notify = ["my-hook"]
+[[route]]
+match     = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+notifiers = ["my-hook"]
 ```
 
 See [Per-task notifications](/notifications/per-task/) and
@@ -174,7 +170,7 @@ the same helpers available to other providers: `statusEmoji`,
 - A missing or empty `url`.
 - A `url` that isn't `http://` or `https://`.
 - An empty key in `headers`.
-- An `id` containing `:` (reserved for inline target overrides) or
+- A notifier id containing `:` (reserved for inline target overrides) or
   equal to `"inapp"` (reserved).
 
 Webhook notifiers do not support inline target overrides (like

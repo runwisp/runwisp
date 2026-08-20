@@ -75,8 +75,8 @@ func renderTaskTable(out io.Writer, tasks []model.Task) error {
 	}
 
 	w := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "NAME\tSCHEDULE\tCONCURRENCY\tPOLICY\tAPI\tDESCRIPTION")
-	fmt.Fprintln(w, "----\t--------\t-----------\t------\t---\t-----------")
+	fmt.Fprintln(w, "NAME\tSCHEDULE\tCONCURRENCY\tPOLICY\tTRIGGER\tDESCRIPTION")
+	fmt.Fprintln(w, "----\t--------\t-----------\t------\t-------\t-----------")
 
 	for _, task := range tasks {
 		var schedule string
@@ -89,9 +89,9 @@ func renderTaskTable(out io.Writer, tasks []model.Task) error {
 			schedule = "(manual)"
 		}
 
-		api := "no"
-		if task.APITrigger {
-			api = "yes"
+		trigger := "no"
+		if task.ManualTrigger {
+			trigger = "yes"
 		}
 
 		desc := task.Description
@@ -104,7 +104,7 @@ func renderTaskTable(out io.Writer, tasks []model.Task) error {
 			schedule,
 			task.MaxConcurrent,
 			task.OnOverlap,
-			api,
+			trigger,
 			desc,
 		)
 	}

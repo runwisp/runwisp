@@ -258,13 +258,13 @@ func certPinMismatchError(baseURL string, mismatch *apiclient.CertPinMismatchErr
 	}
 }
 
-// remoteAPITriggerDisabledError is returned when the task exists but has
-// api_trigger = false, so it can't be triggered over the API.
-func remoteAPITriggerDisabledError(taskName string) error {
+// remoteManualTriggerDisabledError is returned when the task exists but has
+// manual_trigger = false, so it can't be triggered over the API.
+func remoteManualTriggerDisabledError(taskName string) error {
 	return &userFacingError{
 		title: fmt.Sprintf("task %q cannot be triggered over the API", taskName),
-		details: "This task has api_trigger = false in runwisp.toml.\n" +
-			"  - Remove that line (api_trigger defaults to true) to allow remote triggering",
+		details: "This task has manual_trigger = false in runwisp.toml.\n" +
+			"  - Remove that line (manual_trigger defaults to true) to allow remote triggering",
 	}
 }
 

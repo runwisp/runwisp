@@ -27,13 +27,13 @@ test.describe("task execution", () => {
         // Poll the API for this run's terminal record before asserting on it —
         // this is the source of truth for the outcome, exit code, and timing.
         const apiRun = await waitForRunEnded(page, "echo-task", triggered.id, daemonState.token);
-        expect(apiRun.endReason).toBe("success");
+        expect(apiRun.endReason).toBe("succeeded");
         expect(apiRun.exitCode).toBe(0);
 
         // The panel settles on SUCCESS (exact match avoids the lowercase
-        // "success" in the run list, which uses CSS capitalize) and must show
+        // "succeeded" in the run list, which uses CSS capitalize) and must show
         // the API's status, exit code, and real timing — not a hardcoded badge.
-        await expect(runVerdict(page, "success")).toBeVisible({ timeout: 30_000 });
+        await expect(runVerdict(page, "succeeded")).toBeVisible({ timeout: 30_000 });
         await expectRunDetailMatchesApi(page, apiRun);
 
         // All captured stdout is present, in order — not just the first line.
@@ -77,7 +77,7 @@ test.describe("task execution", () => {
         const triggered = await triggerRunViaUI(page, "echo-task");
         await waitForRunEnded(page, "echo-task", triggered.id, daemonState.token);
 
-        await expect(runVerdict(page, "success")).toBeVisible({ timeout: 30_000 });
+        await expect(runVerdict(page, "succeeded")).toBeVisible({ timeout: 30_000 });
 
         // The run detail panel surfaces how the run was triggered: a manually
         // triggered run reads as an "API" trigger.
@@ -95,7 +95,7 @@ test.describe("task execution", () => {
         // feed has a completed run to surface.
         const triggered = await triggerRunViaUI(page, "echo-task");
         await waitForRunEnded(page, "echo-task", triggered.id, daemonState.token);
-        await expect(runVerdict(page, "success")).toBeVisible({ timeout: 30_000 });
+        await expect(runVerdict(page, "succeeded")).toBeVisible({ timeout: 30_000 });
 
         // Navigate to dashboard
         await page.goto("/");
@@ -128,7 +128,7 @@ test.describe("task execution", () => {
         await page
             .getByRole("main")
             .getByRole("button")
-            .filter({ hasText: "success" })
+            .filter({ hasText: "succeeded" })
             .first()
             .click();
         await expect(page).toHaveURL(new RegExp(`/tasks/echo-task/${newer.id}`));

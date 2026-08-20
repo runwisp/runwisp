@@ -124,7 +124,7 @@ func StatusStyle(status string) lipgloss.Style {
 	switch status {
 	case "running":
 		return base.Background(ColorRunning).Foreground(ColorBg)
-	case "success":
+	case "succeeded":
 		return base.Background(ColorSuccess).Foreground(ColorBg)
 	case "failed":
 		return base.Background(ColorError).Foreground(ColorBg)

@@ -109,8 +109,9 @@ func (t *ExecutionTracker) FlushPending(send func(any) error) {
 // terminal and must yield a terminal update — otherwise the cloud tracks the
 // execution as running forever. The protocol's status vocabulary is narrower
 // than the daemon's reasons, so the never-executed/interrupted reasons collapse
-// onto the closest fit (stopped for interruptions, err for everything that did
-// not complete successfully).
+// onto the closest fit: "skipped" for a run that never started because the
+// concurrency/schedule policy said not to (never ran, not a failure), stopped
+// for interruptions, and err for everything that did not complete successfully.
 var terminalReasonMap = map[model.EndReason]protocol.ExecutionStatus{
 	model.ReasonSuccess:       protocol.ExecutionStatusSucceeded,
 	model.ReasonStopped:       protocol.ExecutionStatusStopped,
@@ -120,10 +121,10 @@ var terminalReasonMap = map[model.EndReason]protocol.ExecutionStatus{
 	model.ReasonLogOverflow:   protocol.ExecutionStatusFailed,
 	model.ReasonStartFailed:   protocol.ExecutionStatusFailed,
 	model.ReasonDaemonStopped: protocol.ExecutionStatusStopped,
-	model.ReasonSkipped:       protocol.ExecutionStatusFailed,
+	model.ReasonSkipped:       protocol.ExecutionStatusSkipped,
 	model.ReasonQueueFull:     protocol.ExecutionStatusFailed,
-	model.ReasonDSTSkipped:    protocol.ExecutionStatusFailed,
-	model.ReasonMissed:        protocol.ExecutionStatusFailed,
+	model.ReasonDSTSkipped:    protocol.ExecutionStatusSkipped,
+	model.ReasonMissed:        protocol.ExecutionStatusSkipped,
 }
 
 func mapRunToExecutionUpdate(run *model.Run) *protocol.ExecutionUpdateMessage {

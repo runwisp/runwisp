@@ -48,7 +48,7 @@ function makeRun(id: string, overrides: Partial<Run> = {}): Run {
         taskName: "backup-db",
         createdAt: "2026-06-22T12:00:00.000Z",
         status: "ended",
-        endReason: "success",
+        endReason: "succeeded",
         triggeredBy: "api",
         exitCode: 0,
         instanceIndex: 0,

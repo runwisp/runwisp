@@ -236,11 +236,11 @@ shell = "/bin/sh"
 			doc: `[tasks.only]
 run = "echo hi"
 
-[[notifier]]
+[[route]]
 type = "slack"
 `,
 			want:      "[tasks.only]\nrun = \"echo hi\"",
-			remaining: "[[notifier]]\ntype = \"slack\"\n",
+			remaining: "[[route]]\ntype = \"slack\"\n",
 		},
 		{
 			name: "a same-named child of another family does not extend the block",

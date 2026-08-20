@@ -80,15 +80,15 @@ type statusSystem struct {
 }
 
 type statusTaskJSON struct {
-	Name       string       `json:"name"`
-	Kind       string       `json:"kind"`
-	Cron       string       `json:"cron,omitempty"`
-	APITrigger bool         `json:"apiTrigger"`
-	Source     string       `json:"source,omitempty"`
-	SourceFile string       `json:"sourceFile,omitempty"`
-	HeldBy     string       `json:"heldBy,omitempty"`
-	NextRunAt  *time.Time   `json:"nextRunAt,omitempty"`
-	LastRun    *lastRunJSON `json:"lastRun"`
+	Name          string       `json:"name"`
+	Kind          string       `json:"kind"`
+	Cron          string       `json:"cron,omitempty"`
+	ManualTrigger bool         `json:"manualTrigger"`
+	Source        string       `json:"source,omitempty"`
+	SourceFile    string       `json:"sourceFile,omitempty"`
+	HeldBy        string       `json:"heldBy,omitempty"`
+	NextRunAt     *time.Time   `json:"nextRunAt,omitempty"`
+	LastRun       *lastRunJSON `json:"lastRun"`
 }
 
 // lastRunJSON is the most recent run of a task. failed/missed are precomputed
@@ -125,14 +125,14 @@ func newStatusSystem(s *model.SystemStats) *statusSystem {
 
 func newStatusTaskJSON(tr model.TaskResponse, last *model.Run) statusTaskJSON {
 	st := statusTaskJSON{
-		Name:       tr.Name,
-		Kind:       taskKindString(tr.Kind),
-		Cron:       tr.Cron,
-		APITrigger: tr.APITrigger,
-		Source:     string(tr.Source),
-		SourceFile: tr.SourceFile,
-		HeldBy:     string(tr.HeldBy),
-		NextRunAt:  tr.NextRunAt,
+		Name:          tr.Name,
+		Kind:          taskKindString(tr.Kind),
+		Cron:          tr.Cron,
+		ManualTrigger: tr.ManualTrigger,
+		Source:        string(tr.Source),
+		SourceFile:    tr.SourceFile,
+		HeldBy:        string(tr.HeldBy),
+		NextRunAt:     tr.NextRunAt,
 	}
 	if last != nil {
 		lr := newLastRunJSON(last)
@@ -172,7 +172,7 @@ func newLastRunJSON(r *model.Run) lastRunJSON {
 	return lr
 }
 
-// --- exec ------------------------------------------------------------------
+// --- run -------------------------------------------------------------------
 
 // runJSONDoc is the machine-readable outcome of `runwisp run --json`: the one
 // document written to stdout once the run reaches a terminal state (or is
@@ -204,7 +204,7 @@ type runJSONDoc struct {
 // newExecErrorJSONDoc is the --json document emitted when a run never reaches a
 // terminal state (unknown task, daemon unreachable, auth failure, …). It carries
 // the task and the error text and nothing else, so an agent driving
-// `exec --json` learns of the failure from stdout — matching validate/list/status,
+// `run --json` learns of the failure from stdout — matching validate/list/status,
 // which also emit a JSON document on failure while still exiting non-zero.
 func newExecErrorJSONDoc(taskName string, err error) runJSONDoc {
 	return runJSONDoc{
@@ -251,7 +251,7 @@ type listTaskJSON struct {
 	// overlap cap. Emitting a fabricated `1` here would contradict the config docs.
 	MaxConcurrent *int   `json:"maxConcurrent,omitempty"`
 	OnOverlap     string `json:"onOverlap"`
-	APITrigger    bool   `json:"apiTrigger"`
+	ManualTrigger bool   `json:"manualTrigger"`
 	Source        string `json:"source,omitempty"`
 	SourceFile    string `json:"sourceFile,omitempty"`
 	HeldBy        string `json:"heldBy,omitempty"`
@@ -260,15 +260,15 @@ type listTaskJSON struct {
 
 func newListTaskJSON(t model.Task) listTaskJSON {
 	lt := listTaskJSON{
-		Name:        t.Name,
-		Kind:        taskKindString(t.Kind),
-		Schedule:    t.Cron,
-		OnOverlap:   string(t.OnOverlap),
-		APITrigger:  t.APITrigger,
-		Source:      string(t.Source),
-		SourceFile:  t.SourceFile,
-		HeldBy:      string(t.HeldBy),
-		Description: t.Description,
+		Name:          t.Name,
+		Kind:          taskKindString(t.Kind),
+		Schedule:      t.Cron,
+		OnOverlap:     string(t.OnOverlap),
+		ManualTrigger: t.ManualTrigger,
+		Source:        string(t.Source),
+		SourceFile:    t.SourceFile,
+		HeldBy:        string(t.HeldBy),
+		Description:   t.Description,
 	}
 	if t.Kind.IsService() {
 		lt.Instances = t.Instances

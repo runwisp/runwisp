@@ -250,7 +250,7 @@ func (sm *StreamManager) FetchDaemonInfo() tea.Cmd {
 	}
 }
 
-// Reload triggers an explicit config reload (POST /api/reload). On success it
+// Reload triggers an explicit config reload (POST /api/daemon/reload). On success it
 // follows up with a fresh /api/daemon read so the caller can rebuild the sidebar
 // and clear the config-stale notice in one step. A reload error (e.g. a
 // restart-only setting changed) is reported as-is — the running task set is

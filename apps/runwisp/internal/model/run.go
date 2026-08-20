@@ -27,7 +27,7 @@ func (p RunPhase) IsTerminal() bool {
 type EndReason string
 
 const (
-	ReasonSuccess EndReason = "success"
+	ReasonSuccess EndReason = "succeeded"
 	ReasonFailed  EndReason = "failed"
 	ReasonStopped EndReason = "stopped"
 	ReasonTimeout EndReason = "timeout"
@@ -45,7 +45,7 @@ const (
 	// specific cause without inspecting logs.
 	ReasonLogOverflow EndReason = "log_overflow"
 	// ReasonQueueFull marks runs the queue overflow policy rejected because
-	// the per-task queue_max cap was already full when the firing arrived.
+	// the per-task max_queued cap was already full when the firing arrived.
 	// Distinct from ReasonSkipped (which only applies under PolicySkip) so
 	// dashboards can call out queue saturation as its own signal.
 	ReasonQueueFull EndReason = "queue_full"

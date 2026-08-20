@@ -198,7 +198,7 @@
       "EndReason": {
         "description": "Why a run ended. Set when status=ended.",
         "enum": [
-          "success",
+          "succeeded",
           "failed",
           "stopped",
           "timeout",
@@ -1486,9 +1486,6 @@
       "TaskBrief": {
         "additionalProperties": false,
         "properties": {
-          "apiTrigger": {
-            "type": "boolean"
-          },
           "catchUp": {
             "type": "string"
           },
@@ -1528,6 +1525,9 @@
             ],
             "type": "string"
           },
+          "manualTrigger": {
+            "type": "boolean"
+          },
           "maxConcurrent": {
             "format": "int64",
             "type": "integer"
@@ -1563,7 +1563,7 @@
         },
         "required": [
           "name",
-          "apiTrigger"
+          "manualTrigger"
         ],
         "type": "object"
       },
@@ -1647,8 +1647,14 @@
       "TaskResponse": {
         "additionalProperties": false,
         "properties": {
-          "apiTrigger": {
-            "type": "boolean"
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/TaskResponse.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
           },
           "autostart": {
             "description": "For services: whether instances start at boot. False boots in the stopped state until started via API/UI.",
@@ -1771,6 +1777,9 @@
             ],
             "type": "string"
           },
+          "manualTrigger": {
+            "type": "boolean"
+          },
           "maxCatchUpRuns": {
             "description": "Cap on catch-up runs triggered when catch_up = all",
             "format": "int64",
@@ -1778,6 +1787,11 @@
           },
           "maxConcurrent": {
             "description": "Maximum overlapping runs allowed for this task",
+            "format": "int64",
+            "type": "integer"
+          },
+          "maxQueued": {
+            "description": "Maximum runs that can wait when on_overlap = queue",
             "format": "int64",
             "type": "integer"
           },
@@ -1809,11 +1823,6 @@
           },
           "priority": {
             "description": "For services: boot start order, lowest first (name breaks ties). Start order only — not a dependency.",
-            "format": "int64",
-            "type": "integer"
-          },
-          "queueMax": {
-            "description": "Maximum runs that can wait when on_overlap = queue",
             "format": "int64",
             "type": "integer"
           },
@@ -1924,7 +1933,8 @@
         },
         "required": [
           "name",
-          "apiTrigger",
+          "manualTrigger",
+          "runOnStart",
           "autostart"
         ],
         "type": "object"
@@ -2130,6 +2140,409 @@
         "summary": "Stream the daemon's recent log output",
         "tags": [
           "System"
+        ]
+      }
+    },
+    "/api/daemon/reload": {
+      "post": {
+        "description": "Re-reads the config file and reconciles the live task set (added/changed/removed). Validate-first: a config that fails to load or changes a restart-only setting is rejected and nothing is applied.",
+        "operationId": "reload",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReloadResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Reload runwisp.toml",
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/api/events/stream": {
+      "get": {
+        "description": "Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.",
+        "operationId": "streamAppEvents",
+        "parameters": [
+          {
+            "description": "Native SSE resume cursor; takes precedence over the lastEventId query",
+            "in": "header",
+            "name": "Last-Event-ID",
+            "schema": {
+              "description": "Native SSE resume cursor; takes precedence over the lastEventId query",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Explicit resume id for a fresh EventSource whose native Last-Event-ID is empty (cross-tab leader handoff)",
+            "explode": false,
+            "in": "query",
+            "name": "lastEventId",
+            "schema": {
+              "description": "Explicit resume id for a fresh EventSource whose native Last-Event-ID is empty (cross-tab leader handoff)",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "description": "Each oneOf object in the array represents one possible Server Sent Events (SSE) message, serialized as UTF-8 text according to the SSE specification.",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/ConfigStaleSSEEvent"
+                          },
+                          "event": {
+                            "const": "config.stale",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event config.stale",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/NotificationCreatedEvent"
+                          },
+                          "event": {
+                            "const": "notification.created",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event notification.created",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/NotificationUnreadCountEvent"
+                          },
+                          "event": {
+                            "const": "notification.unreadCountChanged",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event notification.unreadCountChanged",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/NotificationUpdatedEvent"
+                          },
+                          "event": {
+                            "const": "notification.updated",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event notification.updated",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/PingEvent"
+                          },
+                          "event": {
+                            "const": "ping",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event ping",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/RunCompletedEvent"
+                          },
+                          "event": {
+                            "const": "run.completed",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event run.completed",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/RunCreatedEvent"
+                          },
+                          "event": {
+                            "const": "run.created",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event run.created",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/RunDeletedSSEEvent"
+                          },
+                          "event": {
+                            "const": "run.deleted",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event run.deleted",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/RunFailedEvent"
+                          },
+                          "event": {
+                            "const": "run.failed",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event run.failed",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/RunStartedEvent"
+                          },
+                          "event": {
+                            "const": "run.started",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event run.started",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/RunUpdatedEvent"
+                          },
+                          "event": {
+                            "const": "run.updated",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event run.updated",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/SystemSampleSSEEvent"
+                          },
+                          "event": {
+                            "const": "system",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event system",
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "title": "Server Sent Events",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Stream live application events",
+        "tags": [
+          "Runs"
         ]
       }
     },
@@ -2395,7 +2808,7 @@
         ]
       }
     },
-    "/api/notifications/unread-count": {
+    "/api/notifications/unreadCount": {
       "get": {
         "operationId": "getUnreadNotificationCount",
         "responses": {
@@ -2495,38 +2908,6 @@
         "summary": "Mark a single notification unread",
         "tags": [
           "Notifications"
-        ]
-      }
-    },
-    "/api/reload": {
-      "post": {
-        "description": "Re-reads the config file and reconciles the live task set (added/changed/removed). Validate-first: a config that fails to load or changes a restart-only setting is rejected and nothing is applied.",
-        "operationId": "reload",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReloadResult"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Reload runwisp.toml",
-        "tags": [
-          "System"
         ]
       }
     },
@@ -3447,377 +3828,6 @@
         ]
       }
     },
-    "/api/stream": {
-      "get": {
-        "description": "Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.",
-        "operationId": "streamAppEvents",
-        "parameters": [
-          {
-            "description": "Native SSE resume cursor; takes precedence over the lastEventId query",
-            "in": "header",
-            "name": "Last-Event-ID",
-            "schema": {
-              "description": "Native SSE resume cursor; takes precedence over the lastEventId query",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Explicit resume id for a fresh EventSource whose native Last-Event-ID is empty (cross-tab leader handoff)",
-            "explode": false,
-            "in": "query",
-            "name": "lastEventId",
-            "schema": {
-              "description": "Explicit resume id for a fresh EventSource whose native Last-Event-ID is empty (cross-tab leader handoff)",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "description": "Each oneOf object in the array represents one possible Server Sent Events (SSE) message, serialized as UTF-8 text according to the SSE specification.",
-                  "items": {
-                    "oneOf": [
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/ConfigStaleSSEEvent"
-                          },
-                          "event": {
-                            "const": "config.stale",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event config.stale",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/NotificationCreatedEvent"
-                          },
-                          "event": {
-                            "const": "notification.created",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event notification.created",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/NotificationUnreadCountEvent"
-                          },
-                          "event": {
-                            "const": "notification.unreadCountChanged",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event notification.unreadCountChanged",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/NotificationUpdatedEvent"
-                          },
-                          "event": {
-                            "const": "notification.updated",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event notification.updated",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/PingEvent"
-                          },
-                          "event": {
-                            "const": "ping",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event ping",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/RunCompletedEvent"
-                          },
-                          "event": {
-                            "const": "run.completed",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event run.completed",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/RunCreatedEvent"
-                          },
-                          "event": {
-                            "const": "run.created",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event run.created",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/RunDeletedSSEEvent"
-                          },
-                          "event": {
-                            "const": "run.deleted",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event run.deleted",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/RunFailedEvent"
-                          },
-                          "event": {
-                            "const": "run.failed",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event run.failed",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/RunStartedEvent"
-                          },
-                          "event": {
-                            "const": "run.started",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event run.started",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/RunUpdatedEvent"
-                          },
-                          "event": {
-                            "const": "run.updated",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event run.updated",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/SystemSampleSSEEvent"
-                          },
-                          "event": {
-                            "const": "system",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event system",
-                        "type": "object"
-                      }
-                    ]
-                  },
-                  "title": "Server Sent Events",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Stream live application events",
-        "tags": [
-          "Runs"
-        ]
-      }
-    },
     "/api/system": {
       "get": {
         "operationId": "getSystemStats",
@@ -3849,7 +3859,7 @@
         ]
       }
     },
-    "/api/system/history": {
+    "/api/system/metrics": {
       "get": {
         "operationId": "getMetricsHistory",
         "responses": {
@@ -3906,6 +3916,52 @@
           }
         },
         "summary": "List all tasks",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/api/tasks/{taskName}": {
+      "get": {
+        "operationId": "getTask",
+        "parameters": [
+          {
+            "description": "Task name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get a single task by name",
         "tags": [
           "Tasks"
         ]
@@ -4065,7 +4121,7 @@
     "/api/tasks/{taskName}/run": {
       "post": {
         "description": "Triggers the task and returns the pending run immediately. Pass `wait=true` to instead hold the request open until the run finishes and return it with its exit code and end reason — a one-call alternative to triggering then polling.",
-        "operationId": "triggerRun",
+        "operationId": "runTask",
         "parameters": [
           {
             "description": "Task name",
@@ -4081,12 +4137,12 @@
             }
           },
           {
-            "description": "Block until the run finishes and return the completed run (with exit_code and end_reason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead.",
+            "description": "Block until the run finishes and return the completed run (with exitCode and endReason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead.",
             "explode": false,
             "in": "query",
             "name": "wait",
             "schema": {
-              "description": "Block until the run finishes and return the completed run (with exit_code and end_reason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead.",
+              "description": "Block until the run finishes and return the completed run (with exitCode and endReason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead.",
               "type": "boolean"
             }
           },

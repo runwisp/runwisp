@@ -312,7 +312,7 @@ func triggerRemote(client *apiclient.Client, taskName, baseURL, password string)
 		case apiclient.IsHTTPStatus(err, http.StatusNotFound):
 			return nil, unknownTaskError(taskName, daemonTaskNames(client))
 		case apiclient.IsHTTPStatus(err, http.StatusForbidden):
-			return nil, remoteAPITriggerDisabledError(taskName)
+			return nil, remoteManualTriggerDisabledError(taskName)
 		case errors.Is(err, apiclient.ErrUnauthorized):
 			return nil, remoteAuthFailedError(baseURL)
 		case errors.Is(err, apiclient.ErrRateLimited):

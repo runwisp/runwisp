@@ -37,7 +37,7 @@ func TestProtocolEnumsMatchModel(t *testing.T) {
 	assert.ElementsMatch(t, logOnFull, enumStrings(t, protocol.ServiceTaskConfigLogOnFullValues))
 
 	assert.ElementsMatch(t,
-		[]string{model.BackoffConstant, model.BackoffLinear, model.BackoffExponential},
+		[]string{string(model.BackoffConstant), string(model.BackoffLinear), string(model.BackoffExponential)},
 		enumStrings(t, protocol.ServiceRestartBackoffValues))
 
 	assert.ElementsMatch(t,
@@ -50,9 +50,10 @@ func TestProtocolEnumsMatchModel(t *testing.T) {
 }
 
 // TestProtocolStreamEnumsAgree guards the log-line stream enum, which the
-// generator emits three times (LogLineEntry rides both the replay `lines` and
-// search `hits` arrays, and LogLineMessage inlines the same fields). Nothing
-// forces those copies to stay in sync, so assert they do.
+// generator emits three times (LogLineEntry rides the replay `lines` array,
+// the search `hits` array, and LogLineMessage's allOf composition — each a
+// separate generateToFiles() call with no visibility into the others).
+// Nothing forces those copies to stay in sync, so assert they do.
 func TestProtocolStreamEnumsAgree(t *testing.T) {
 	stream := enumStrings(t, protocol.StreamValues)
 	assert.ElementsMatch(t, stream, enumStrings(t, protocol.LinesItemStreamValues))
@@ -66,6 +67,6 @@ func TestProtocolStreamEnumsAgree(t *testing.T) {
 func TestProtocolWireOnlyEnumsFrozen(t *testing.T) {
 	assert.ElementsMatch(t, []string{"start", "stop", "restart"}, enumStrings(t, protocol.ActionValues))
 	assert.ElementsMatch(t,
-		[]string{"running", "succeeded", "failed", "stopped", "timeout"},
+		[]string{"running", "succeeded", "failed", "stopped", "timeout", "skipped"},
 		enumStrings(t, protocol.ExecutionStatusValues))
 }

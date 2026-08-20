@@ -103,7 +103,7 @@ The default view. Two modes:
 
 The run list is newest-first — `Home`/`End`/`PgUp`/`PgDn` move you
 through the history. Press `f` to filter it by outcome (running /
-success / failed); while a filter is active, a banner under the column
+succeeded / failed); while a filter is active, a banner under the column
 header spells out exactly what you're looking at, so you never forget
 the list is narrowed. Press `i` on a task to inspect it — a pop-up with
 the full definition and its recent health (success rate, last failure).
@@ -192,7 +192,7 @@ sidebar tells you which tasks need attention without opening each one.
 
 For a task with [retries](/concepts/retries/), every attempt is a separate row in the run
 history with its own end reason — attempt 0 might be `failed` and
-attempt 1 `success`. Read attempt 0's log to find out why the first
+attempt 1 `succeeded`. Read attempt 0's log to find out why the first
 try failed even when the retry recovered; that's the bug-hunting use
 of [`keep_runs`](/concepts/logs/#retention-keep_runs-and-keep_for).
 

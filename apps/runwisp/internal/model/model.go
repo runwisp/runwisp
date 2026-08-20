@@ -75,25 +75,25 @@ type Task struct {
 	// like the queue policy. Task-only (services start every instance at boot)
 	// and a no-op without a cron.
 	Jitter         time.Duration   `toml:"-" json:"jitter,omitempty" doc:"Cap how far a cron task's start may slip so tasks sharing a fire time take turns through a daemon-wide one-at-a-time gate instead of stampeding; a run starts as soon as the gate frees and slips up to this window only under contention, in nanoseconds"`
-	APITrigger     bool            `toml:"api_trigger,omitempty"        json:"apiTrigger"`
+	ManualTrigger  bool            `toml:"manual_trigger,omitempty"        json:"manualTrigger"`
 	CatchUp        MissedRunPolicy `toml:"catch_up,omitempty"           json:"catchUp,omitempty" enum:"latest,all,skip" doc:"What to do when cron ticks are missed during downtime"`
 	MaxCatchUpRuns int             `toml:"max_catch_up_runs,omitempty"  json:"maxCatchUpRuns,omitempty" doc:"Cap on catch-up runs triggered when catch_up = all"`
 	// RunOnStart fires the task once at daemon boot, independent of cron and
 	// catch-up. The @reboot equivalent. Task-only — services already start every
 	// instance at boot.
-	RunOnStart bool `toml:"-" json:"runOnStart,omitempty" doc:"For tasks: fire once at daemon startup, in addition to any cron schedule"`
+	RunOnStart bool `toml:"-" json:"runOnStart" doc:"For tasks: fire once at daemon startup, in addition to any cron schedule"`
 
 	Timeout       time.Duration     `toml:"-"                       json:"timeout,omitempty" doc:"Per-run timeout in nanoseconds"`
 	GracefulStop  time.Duration     `toml:"-"                       json:"gracefulStop,omitempty" doc:"Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds"`
 	StopSignal    string            `toml:"-"                       json:"stopSignal,omitempty" enum:"SIGTERM,SIGINT,SIGQUIT,SIGHUP,SIGKILL,SIGUSR1,SIGUSR2" doc:"Signal sent to stop a run before SIGKILL; defaults to SIGTERM"`
 	Restart       RestartPolicy     `toml:"restart,omitempty"       json:"restart,omitempty" enum:"never,always,on_failure" doc:"Whether and when a task is restarted after completion"`
 	MaxConcurrent int               `toml:"max_concurrent,omitempty" json:"maxConcurrent,omitempty" doc:"Maximum overlapping runs allowed for this task"`
-	QueueMax      int               `toml:"queue_max,omitempty"     json:"queueMax,omitempty" doc:"Maximum runs that can wait when on_overlap = queue"`
+	MaxQueued     int               `toml:"max_queued,omitempty"    json:"maxQueued,omitempty" doc:"Maximum runs that can wait when on_overlap = queue"`
 	OnOverlap     ConcurrencyPolicy `toml:"on_overlap,omitempty"    json:"onOverlap,omitempty" enum:"queue,skip,kill" doc:"How overlapping runs are handled"`
 
 	Instances      int           `toml:"instances,omitempty"      json:"instances,omitempty" doc:"For services: number of always-running instances"`
 	RestartDelay   time.Duration `toml:"-"                        json:"restartDelay,omitempty" doc:"Base delay before each restart, in nanoseconds"`
-	RestartBackoff string        `toml:"restart_backoff,omitempty" json:"restartBackoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive restarts"`
+	RestartBackoff BackoffCurve  `toml:"restart_backoff,omitempty" json:"restartBackoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive restarts"`
 	// HealthyAfter is the uptime an instance must reach to count as healthy.
 	// Reaching it both resets the restart-backoff counter and clears the
 	// failed-start streak; fast failures below it accrue toward RestartAttempts.
@@ -117,7 +117,7 @@ type Task struct {
 
 	RetryAttempts int           `toml:"retry_attempts,omitempty" json:"retryAttempts,omitempty"`
 	RetryDelay    time.Duration `toml:"-"                        json:"retryDelay,omitempty" doc:"Base delay before each retry, in nanoseconds"`
-	RetryBackoff  string        `toml:"retry_backoff,omitempty"  json:"retryBackoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive retries"`
+	RetryBackoff  BackoffCurve  `toml:"retry_backoff,omitempty"  json:"retryBackoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive retries"`
 
 	// ExitCodes lists the process exit codes treated as success. Defaults to
 	// [0]. Any code not in the list ends the run as failed (which then drives
@@ -387,11 +387,14 @@ type ServiceSnapshot struct {
 	Instances        []ServiceInstanceStatus
 }
 
-// Backoff curves shared by retry_backoff (tasks) and restart_backoff (services).
+// BackoffCurve is the shape of delay growth between consecutive restarts
+// (restart_backoff) or retries (retry_backoff).
+type BackoffCurve string
+
 const (
-	BackoffConstant    = "constant"
-	BackoffLinear      = "linear"
-	BackoffExponential = "exponential"
+	BackoffConstant    BackoffCurve = "constant"
+	BackoffLinear      BackoffCurve = "linear"
+	BackoffExponential BackoffCurve = "exponential"
 )
 
 // MissedRunPolicy controls what happens when cron ticks are missed (e.g. daemon downtime).
@@ -474,7 +477,7 @@ type TaskBrief struct {
 	Kind          TaskKind          `json:"kind,omitempty" enum:"task,service"`
 	Group         string            `json:"group,omitempty"`
 	Cron          string            `json:"cron,omitempty"`
-	APITrigger    bool              `json:"apiTrigger"`
+	ManualTrigger bool              `json:"manualTrigger"`
 	CatchUp       MissedRunPolicy   `json:"catchUp,omitempty"`
 	Restart       RestartPolicy     `json:"restart,omitempty"`
 	MaxConcurrent int               `json:"maxConcurrent,omitempty"`
@@ -501,7 +504,7 @@ func NewTaskBrief(task *Task) TaskBrief {
 		Kind:          task.Kind,
 		Group:         task.Group,
 		Cron:          task.Cron,
-		APITrigger:    task.APITrigger,
+		ManualTrigger: task.ManualTrigger,
 		CatchUp:       task.CatchUp,
 		Restart:       task.Restart,
 		MaxConcurrent: task.MaxConcurrent,

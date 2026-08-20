@@ -133,7 +133,7 @@ func runStatusColor(status string) color.Color {
 	switch status {
 	case "running":
 		return uikit.ColorRunning
-	case "success":
+	case "succeeded":
 		return uikit.ColorSuccess
 	case "pending":
 		return uikit.ColorPending

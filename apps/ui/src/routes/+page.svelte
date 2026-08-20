@@ -26,7 +26,7 @@
     const RECENT_RUN_LIMIT = 16;
     const RUNNING_RUN_LIMIT = 8;
     const TASKS_REFRESH_DEBOUNCE_MS = 1000;
-    // Live window for the metrics chart: seeded from /api/system/history, then
+    // Live window for the metrics chart: seeded from /api/system/metrics, then
     // grown by pushed samples (one every ~5s). 120 ≈ 10 minutes.
     const METRICS_HISTORY_LIMIT = 120;
 
@@ -88,7 +88,7 @@
         for (const r of dashState.recentRuns) {
             if (r.status === "ended") {
                 completed++;
-                if (r.endReason === "success") successes++;
+                if (r.endReason === "succeeded") successes++;
             }
         }
 

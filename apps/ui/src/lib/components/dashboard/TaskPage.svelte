@@ -214,7 +214,7 @@
     // A run can always be *triggered* — at max concurrency it queues (the modal
     // says so), so concurrency must not gate the button, only its warning.
     // Disabled only when the task forbids API triggering or a trigger is mid-flight.
-    const runTriggerable = $derived(!taskIsService && (task.apiTrigger ?? true) && !triggering);
+    const runTriggerable = $derived(!taskIsService && (task.manualTrigger ?? true) && !triggering);
 
     // In cloud mode the cloud owns scheduling/dispatch; triggering here is the
     // operator's "run it here, now" escape hatch against the local runner.

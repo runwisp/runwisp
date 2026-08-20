@@ -27,7 +27,7 @@ type TaskNameInput struct {
 // keyed by the parameter identities declared in runwisp.toml.
 type TriggerRunInput struct {
 	TaskName    string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
-	Wait        bool   `query:"wait" doc:"Block until the run finishes and return the completed run (with exit_code and end_reason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead."`
+	Wait        bool   `query:"wait" doc:"Block until the run finishes and return the completed run (with exitCode and endReason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead."`
 	WaitTimeout int    `query:"waitTimeout" minimum:"1" maximum:"3600" default:"300" doc:"With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state."`
 	// Body is a pointer so it is optional — a zero-param trigger can POST with
 	// no payload at all.
@@ -121,6 +121,10 @@ type TasksOutput struct {
 
 type TasksResponseBody struct {
 	Items []model.TaskResponse `json:"items" doc:"List of tasks"`
+}
+
+type TaskOutput struct {
+	Body model.TaskResponse
 }
 
 type RunsOutput struct {

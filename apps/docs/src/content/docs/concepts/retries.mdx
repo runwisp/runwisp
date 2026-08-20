@@ -41,7 +41,7 @@ fires when a run ends in `failed` (non-zero exit), `timeout`, `crashed`,
 or `log_overflow` (which is what [`log_on_full = "kill"`](/concepts/logs/#rotation-log_max_size-and-log_on_full) does after
 a run blows past `log_max_size`).
 
-It does **not** fire on `success`, `stopped`, or `skipped`. `stopped`
+It does **not** fire on `succeeded`, `stopped`, or `skipped`. `stopped`
 means a human deliberately killed it from the API/CLI/UI, or a sibling
 run cancelled it via `on_overlap = "kill"` — either way, retrying
 would override an intentional decision. `skipped` means the original run

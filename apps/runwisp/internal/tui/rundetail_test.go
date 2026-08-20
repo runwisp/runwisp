@@ -73,7 +73,7 @@ func TestRunDetailDialog_View_SuccessServiceInstance(t *testing.T) {
 	d := NewRunDetailDialog(run, true, 3)
 	out := d.View(80, 30)
 
-	for _, want := range []string{"web #2", "success", "Exit code", "0", "Instance", "Started", "Ended", "Params"} {
+	for _, want := range []string{"web #2", "succeeded", "Exit code", "0", "Instance", "Started", "Ended", "Params"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("success service run view missing %q\n%s", want, out)
 		}

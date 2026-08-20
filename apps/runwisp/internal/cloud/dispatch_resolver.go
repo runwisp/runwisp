@@ -41,14 +41,14 @@ func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (task
 		if !exists {
 			return "", false, &CloudError{Kind: CloudErrorKindConflict, Message: fmt.Sprintf("config task '%s' not found", cfg.TaskName)}
 		}
-		// api_trigger governs whether a task may be fired outside the scheduler.
+		// manual_trigger governs whether a task may be fired outside the scheduler.
 		// The control plane is an out-of-scheduler trigger like the REST surface,
-		// so it honors the same gate: a task the operator marked api_trigger=false
+		// so it honors the same gate: a task the operator marked manual_trigger=false
 		// is cron/schedule-only everywhere, not just over HTTP.
-		if !task.APITrigger {
+		if !task.ManualTrigger {
 			return "", false, &CloudError{
 				Kind:    CloudErrorKindConflict,
-				Message: fmt.Sprintf("config task '%s' has api_trigger disabled and cannot be triggered by the control plane", cfg.TaskName),
+				Message: fmt.Sprintf("config task '%s' has manual_trigger disabled and cannot be triggered by the control plane", cfg.TaskName),
 			}
 		}
 		return cfg.TaskName, true, nil
@@ -86,9 +86,9 @@ func buildDynamicCloudTask(dispatch *protocol.Execution, execDef model.Execution
 		MaxConcurrent: 1,
 		OnOverlap:     model.PolicyQueue,
 		// Cloud dynamic tasks bypass config defaulting, so set the same bound a
-		// TOML queue task gets — otherwise QueueMax stays 0 (unbounded) and a
+		// TOML queue task gets — otherwise MaxQueued stays 0 (unbounded) and a
 		// stream of dispatches to one slow name grows the queue without limit.
-		QueueMax: config.DefaultQueueMax,
+		MaxQueued: config.DefaultMaxQueued,
 		// One-shot cloud dispatch: the run manager reaps this task (and its
 		// queue-drain goroutine) once the run retires, so a long-running daemon
 		// doesn't leak state per distinct dispatched name.

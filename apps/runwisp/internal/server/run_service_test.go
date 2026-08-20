@@ -148,7 +148,7 @@ func TestTriggerRun_ServiceTask_ReturnsServiceNotRunnable(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
-		"svc": {Name: "svc", Kind: model.KindService, APITrigger: true},
+		"svc": {Name: "svc", Kind: model.KindService, ManualTrigger: true},
 	}
 	svc := makeRunService(tasks, repo, runner)
 
@@ -161,7 +161,7 @@ func TestTriggerRun_InvalidParamsRejected(t *testing.T) {
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
 		"t": {
-			Name: "t", Kind: model.KindTask, APITrigger: true,
+			Name: "t", Kind: model.KindTask, ManualTrigger: true,
 			Parameters: []model.TaskParam{{Kind: model.ParamArg, Key: "source", Required: true}},
 		},
 	}
@@ -178,7 +178,7 @@ func TestTriggerRun_UnknownParamKeyRejected(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
-		"t": {Name: "t", Kind: model.KindTask, APITrigger: true},
+		"t": {Name: "t", Kind: model.KindTask, ManualTrigger: true},
 	}
 	svc := makeRunService(tasks, repo, runner)
 
@@ -187,23 +187,23 @@ func TestTriggerRun_UnknownParamKeyRejected(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidParams)
 }
 
-func TestTriggerRun_APITriggerDisabled(t *testing.T) {
+func TestTriggerRun_ManualTriggerDisabled(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
-		"t": {Name: "t", Kind: model.KindTask, APITrigger: false},
+		"t": {Name: "t", Kind: model.KindTask, ManualTrigger: false},
 	}
 	svc := makeRunService(tasks, repo, runner)
 
 	_, err := svc.TriggerRun(context.Background(), "t", nil)
-	assert.ErrorIs(t, err, ErrAPIDisabled)
+	assert.ErrorIs(t, err, ErrManualTriggerDisabled)
 }
 
 func TestTriggerRun_Success(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
-		"t": {Name: "t", Kind: model.KindTask, APITrigger: true},
+		"t": {Name: "t", Kind: model.KindTask, ManualTrigger: true},
 	}
 	svc := makeRunService(tasks, repo, runner)
 
@@ -222,7 +222,7 @@ func TestTriggerRunAndWait_ReturnsTerminalRunFromEvent(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	bus := events.NewEventBus()
-	tasks := map[string]*model.Task{"t": {Name: "t", Kind: model.KindTask, APITrigger: true}}
+	tasks := map[string]*model.Task{"t": {Name: "t", Kind: model.KindTask, ManualTrigger: true}}
 	svc := makeRunServiceWithBus(tasks, repo, runner, bus)
 
 	reason := model.ReasonFailed
@@ -249,7 +249,7 @@ func TestTriggerRunAndWait_IgnoresOtherRunsEvents(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	bus := events.NewEventBus()
-	tasks := map[string]*model.Task{"t": {Name: "t", Kind: model.KindTask, APITrigger: true}}
+	tasks := map[string]*model.Task{"t": {Name: "t", Kind: model.KindTask, ManualTrigger: true}}
 	svc := makeRunServiceWithBus(tasks, repo, runner, bus)
 
 	reason := model.ReasonSuccess
@@ -273,7 +273,7 @@ func TestTriggerRunAndWait_TimeoutReturnsCurrentState(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	bus := events.NewEventBus()
-	tasks := map[string]*model.Task{"t": {Name: "t", Kind: model.KindTask, APITrigger: true}}
+	tasks := map[string]*model.Task{"t": {Name: "t", Kind: model.KindTask, ManualTrigger: true}}
 	svc := makeRunServiceWithBus(tasks, repo, runner, bus)
 
 	// No terminal event is published, so the wait times out and falls back to
@@ -302,7 +302,7 @@ func TestTriggerRunAndWait_TimeoutWithGetRunErrorReturnsTriggeredRun(t *testing.
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	bus := events.NewEventBus()
-	tasks := map[string]*model.Task{"t": {Name: "t", Kind: model.KindTask, APITrigger: true}}
+	tasks := map[string]*model.Task{"t": {Name: "t", Kind: model.KindTask, ManualTrigger: true}}
 	svc := makeRunServiceWithBus(tasks, repo, runner, bus)
 
 	// No terminal event, and the deadline re-read of storage fails — the wait
@@ -320,7 +320,7 @@ func TestTriggerRun_RunnerError(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
-		"t": {Name: "t", Kind: model.KindTask, APITrigger: true},
+		"t": {Name: "t", Kind: model.KindTask, ManualTrigger: true},
 	}
 	svc := makeRunService(tasks, repo, runner)
 
@@ -338,7 +338,7 @@ func TestHumaTriggerRun_WaitReturnsTerminalRun(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	bus := events.NewEventBus()
-	tasks := map[string]*model.Task{"t": {Name: "t", Kind: model.KindTask, APITrigger: true}}
+	tasks := map[string]*model.Task{"t": {Name: "t", Kind: model.KindTask, ManualTrigger: true}}
 	svc := makeRunServiceWithBus(tasks, repo, runner, bus)
 	srv := &Server{runService: svc}
 
@@ -368,7 +368,7 @@ func TestHumaTriggerRun_WaitTaskNotFound(t *testing.T) {
 func TestHumaTriggerRun_NoWaitReturnsPendingRun(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
-	tasks := map[string]*model.Task{"t": {Name: "t", Kind: model.KindTask, APITrigger: true}}
+	tasks := map[string]*model.Task{"t": {Name: "t", Kind: model.KindTask, ManualTrigger: true}}
 	svc := makeRunService(tasks, repo, runner)
 	srv := &Server{runService: svc}
 
@@ -683,12 +683,12 @@ func TestBulkRerun_TriggersOnePerTaskAndDedupes(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
-		"alpha": {Name: "alpha", APITrigger: true, Kind: model.KindTask, Parameters: []model.TaskParam{
+		"alpha": {Name: "alpha", ManualTrigger: true, Kind: model.KindTask, Parameters: []model.TaskParam{
 			{Kind: model.ParamArg, Key: "source"},
 		}},
-		"beta":  {Name: "beta", APITrigger: true, Kind: model.KindTask},
-		"svc":   {Name: "svc", APITrigger: true, Kind: model.KindService},
-		"noapi": {Name: "noapi", APITrigger: false, Kind: model.KindTask},
+		"beta":  {Name: "beta", ManualTrigger: true, Kind: model.KindTask},
+		"svc":   {Name: "svc", ManualTrigger: true, Kind: model.KindService},
+		"noapi": {Name: "noapi", ManualTrigger: false, Kind: model.KindTask},
 	}
 	svc := makeRunService(tasks, repo, runner)
 
@@ -698,7 +698,7 @@ func TestBulkRerun_TriggersOnePerTaskAndDedupes(t *testing.T) {
 		{ID: "r2", TaskName: "alpha"},
 		{ID: "r3", TaskName: "beta"},
 		{ID: "r4", TaskName: "svc"},   // service task — should be skipped
-		{ID: "r5", TaskName: "noapi"}, // APITrigger=false — skipped
+		{ID: "r5", TaskName: "noapi"}, // ManualTrigger=false — skipped
 	}, nil)
 	// The representative run per task (first seen) is loaded so its params carry
 	// forward. r1 represents alpha, r3 represents beta.
@@ -728,7 +728,7 @@ func TestBulkRerun_TriggerErrorIsSkipped(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
-		"alpha": {Name: "alpha", APITrigger: true, Kind: model.KindTask},
+		"alpha": {Name: "alpha", ManualTrigger: true, Kind: model.KindTask},
 	}
 	svc := makeRunService(tasks, repo, runner)
 
@@ -779,7 +779,7 @@ func TestHumaBulkRerunRuns_ReturnsTriggeredList(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
-		"alpha": {Name: "alpha", APITrigger: true, Kind: model.KindTask},
+		"alpha": {Name: "alpha", ManualTrigger: true, Kind: model.KindTask},
 	}
 	svc := makeRunService(tasks, repo, runner)
 

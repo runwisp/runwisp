@@ -46,7 +46,7 @@ func NormalizeBaseURL(baseURL string) string {
 // URL; the client will run CHAP via Authenticate to obtain a JWT. It performs
 // no certificate pinning — over HTTPS it relies on the system trust store, so
 // it suits tests (plain-HTTP httptest servers) and callers behind a CA-signed
-// reverse proxy. The user-facing `exec --url` path uses NewPinned instead.
+// reverse proxy. The user-facing `run --url` path uses NewPinned instead.
 func New(baseURL, password string) *Client {
 	return &Client{
 		baseURL:  NormalizeBaseURL(baseURL),

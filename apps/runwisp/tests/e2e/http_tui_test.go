@@ -53,7 +53,7 @@ func TestHTTPTUI_AuthenticatesAndStreamsLiveLogs(t *testing.T) {
 	tui.press(t, "y")
 
 	tui.waitForAll(t, 8*time.Second, "running", "alpha-line-1")
-	tui.waitForAll(t, 8*time.Second, "success", "alpha-line-3")
+	tui.waitForAll(t, 8*time.Second, "succeeded", "alpha-line-3")
 }
 
 // TestHTTPTUI_NoAuthConnectsWithoutPassword mirrors the no-auth contract for

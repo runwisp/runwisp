@@ -6,7 +6,7 @@ import { SharedAppStream } from "./shared-app-stream";
 /**
  * appEventStream is the app's live data feed. The daemon folds run lifecycle
  * events, periodic system samples, config-staleness flips, and in-app
- * notifications onto a single `/api/stream` SSE endpoint, so every store that
+ * notifications onto a single `/api/events/stream` SSE endpoint, so every store that
  * needs live data subscribes through this one object instead of opening its own
  * connection.
  *
@@ -18,4 +18,4 @@ import { SharedAppStream } from "./shared-app-stream";
  * the leader closes, a follower is promoted automatically. See
  * {@link SharedAppStream}.
  */
-export const appEventStream = new SharedAppStream({ path: "/api/stream" });
+export const appEventStream = new SharedAppStream({ path: "/api/events/stream" });

@@ -19,7 +19,7 @@ func TestRun_DisplayStatus_Running(t *testing.T) {
 func TestRun_DisplayStatus_EndedSuccess(t *testing.T) {
 	reason := ReasonSuccess
 	r := &Run{Status: PhaseEnded, EndReason: &reason}
-	assert.Equal(t, "success", r.DisplayStatus())
+	assert.Equal(t, "succeeded", r.DisplayStatus())
 }
 
 func TestRun_DisplayStatus_EndedNilReason(t *testing.T) {

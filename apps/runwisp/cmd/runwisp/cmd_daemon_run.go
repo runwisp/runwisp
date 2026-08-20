@@ -252,7 +252,7 @@ func rerouteLogsToStderrOnError(err *error) {
 
 // newReconciler wires the reload reconciler that powers `runwisp reload` /
 // SIGHUP. Standalone only: cloud mode has no local scheduler to reconcile, so
-// it returns (nil, nil), leaving POST /api/reload reporting "not available in
+// it returns (nil, nil), leaving POST /api/daemon/reload reporting "not available in
 // this mode".
 func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Flags, snap *config.Snapshot) (*runtime.Reconciler, func() (model.ReloadResult, error)) {
 	if mode != modeStandalone {

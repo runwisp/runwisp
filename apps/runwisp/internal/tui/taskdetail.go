@@ -112,8 +112,8 @@ func (d *TaskDetailDialog) definitionRows(row func(label, value string, color co
 
 	d.kindRows(add)
 	add("Group", task.Group)
-	if task.APITrigger {
-		add("API trigger", "enabled")
+	if task.ManualTrigger {
+		add("Manual trigger", "enabled")
 	}
 	if len(task.DependsOn) > 0 {
 		add("Depends on", strings.Join(task.DependsOn, ", "))

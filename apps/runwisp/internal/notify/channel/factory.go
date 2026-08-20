@@ -21,7 +21,7 @@ import (
 )
 
 // NotifierSpec is the resolved-from-TOML, secret-substituted description of a
-// single [[notifier]]. The factory produces one Channel per spec; specs are
+// single [notifiers.<id>]. The factory produces one Channel per spec; specs are
 // supplied by the configload package.
 type NotifierSpec struct {
 	ID           string

@@ -18,7 +18,7 @@ function makeRun(id: string, overrides: Partial<Run> = {}): Run {
         taskName: "backup-db",
         createdAt: "2026-06-22T12:00:00.000Z",
         status: "ended",
-        endReason: "success",
+        endReason: "succeeded",
         triggeredBy: "api",
         exitCode: 0,
         instanceIndex: 0,
@@ -130,7 +130,7 @@ describe("createRunsSource SSE filter parity (matchesFilters)", () => {
         // run's phase is "ended" — matching must consult displayStatus.
         const src = await loadedWith({ statuses: ["failed"] });
         src.upsert(makeRun("a", { status: "ended", endReason: "failed" }));
-        src.upsert(makeRun("b", { status: "ended", endReason: "success" }));
+        src.upsert(makeRun("b", { status: "ended", endReason: "succeeded" }));
         expect(src.items.map((r) => r.id)).toEqual(["a"]);
     });
 
@@ -139,7 +139,7 @@ describe("createRunsSource SSE filter parity (matchesFilters)", () => {
         // end reason), so the "running" filter matches on phase alone.
         const src = await loadedWith({ statuses: ["running"] });
         src.upsert(makeRun("a", { status: "running" }));
-        src.upsert(makeRun("b", { status: "ended", endReason: "success" }));
+        src.upsert(makeRun("b", { status: "ended", endReason: "succeeded" }));
         expect(src.items.map((r) => r.id)).toEqual(["a"]);
     });
 
@@ -164,7 +164,7 @@ describe("createRunsSource SSE filter parity (matchesFilters)", () => {
     it("gates on an exact exit code", async () => {
         const src = await loadedWith({ exitCode: "137" });
         src.upsert(makeRun("oom", { status: "ended", endReason: "failed", exitCode: 137 }));
-        src.upsert(makeRun("ok", { status: "ended", endReason: "success", exitCode: 0 }));
+        src.upsert(makeRun("ok", { status: "ended", endReason: "succeeded", exitCode: 0 }));
         expect(src.items.map((r) => r.id)).toEqual(["oom"]);
     });
 
@@ -172,7 +172,7 @@ describe("createRunsSource SSE filter parity (matchesFilters)", () => {
         const src = await loadedWith({ exitCode: ">100 <150" });
         src.upsert(makeRun("oom", { status: "ended", endReason: "failed", exitCode: 137 }));
         src.upsert(makeRun("high", { status: "ended", endReason: "failed", exitCode: 200 }));
-        src.upsert(makeRun("ok", { status: "ended", endReason: "success", exitCode: 0 }));
+        src.upsert(makeRun("ok", { status: "ended", endReason: "succeeded", exitCode: 0 }));
         expect(src.items.map((r) => r.id)).toEqual(["oom"]);
     });
 

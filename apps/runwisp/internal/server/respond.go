@@ -39,7 +39,7 @@ func mapDomainError(ctx context.Context, err error, fallback500 string) huma.Sta
 		errors.Is(err, ErrRunNotFound),
 		errors.Is(err, storage.ErrNotFound):
 		return huma.Error404NotFound(err.Error())
-	case errors.Is(err, ErrAPIDisabled):
+	case errors.Is(err, ErrManualTriggerDisabled):
 		return huma.Error403Forbidden(err.Error())
 	case errors.Is(err, ErrServiceNotRunnable),
 		errors.Is(err, ErrCannotDeleteActiveRun):

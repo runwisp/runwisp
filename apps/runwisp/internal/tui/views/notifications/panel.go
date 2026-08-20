@@ -48,7 +48,7 @@ type Panel struct {
 
 	// unread is the server-authoritative count of rows with read_at IS NULL.
 	// It is *replaced* (never delta'd) — seeded once at startup from
-	// /api/notifications/unread-count and overwritten on every SSE event that
+	// /api/notifications/unreadCount and overwritten on every SSE event that
 	// carries an unread_count. Local mark-read/unread does NOT touch it; the
 	// next SSE event corrects the badge within ~1 round-trip.
 	unread int

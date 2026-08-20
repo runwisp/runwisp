@@ -13,7 +13,7 @@ type TaskResponse struct {
 
 // ReloadResult is the diff produced by an explicit config reload: which tasks
 // were added, removed, or changed relative to the previously-live set. It is
-// the wire shape returned by POST /api/reload and by `runwisp reload`.
+// the wire shape returned by POST /api/daemon/reload and by `runwisp reload`.
 type ReloadResult struct {
 	Added   []string           `json:"added" doc:"Names of tasks added by the reload"`
 	Removed []string           `json:"removed" doc:"Names of tasks removed by the reload"`

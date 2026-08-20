@@ -107,7 +107,7 @@ func ComputeRestartDelay(task *model.Task, attempt int) time.Duration {
 	return computeBackoff(task.RestartBackoff, base, attempt, RestartBackoffCap)
 }
 
-func computeBackoff(strategy string, base time.Duration, attempt int, cap time.Duration) time.Duration {
+func computeBackoff(strategy model.BackoffCurve, base time.Duration, attempt int, cap time.Duration) time.Duration {
 	var delay time.Duration
 	switch strategy {
 	case model.BackoffExponential:

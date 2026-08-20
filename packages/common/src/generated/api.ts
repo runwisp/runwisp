@@ -56,6 +56,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/daemon/reload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reload runwisp.toml
+         * @description Re-reads the config file and reconciles the live task set (added/changed/removed). Validate-first: a config that fails to load or changes a restart-only setting is rejected and nothing is applied.
+         */
+        post: operations["reload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/events/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream live application events
+         * @description Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.
+         */
+        get: operations["streamAppEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/local/credentials": {
         parameters: {
             query?: never;
@@ -130,7 +170,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/notifications/unread-count": {
+    "/api/notifications/unreadCount": {
         parameters: {
             query?: never;
             header?: never;
@@ -175,26 +215,6 @@ export interface paths {
         put?: never;
         /** Mark a single notification unread */
         post: operations["markNotificationUnread"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/reload": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reload runwisp.toml
-         * @description Re-reads the config file and reconciles the live task set (added/changed/removed). Validate-first: a config that fails to load or changes a restart-only setting is rejected and nothing is applied.
-         */
-        post: operations["reload"];
         delete?: never;
         options?: never;
         head?: never;
@@ -421,26 +441,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Stream live application events
-         * @description Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.
-         */
-        get: operations["streamAppEvents"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/system": {
         parameters: {
             query?: never;
@@ -458,7 +458,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/system/history": {
+    "/api/system/metrics": {
         parameters: {
             query?: never;
             header?: never;
@@ -484,6 +484,23 @@ export interface paths {
         };
         /** List all tasks */
         get: operations["listTasks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{taskName}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a single task by name */
+        get: operations["getTask"];
         put?: never;
         post?: never;
         delete?: never;
@@ -542,7 +559,7 @@ export interface paths {
          * Trigger a new run
          * @description Triggers the task and returns the pending run immediately. Pass `wait=true` to instead hold the request open until the run finishes and return it with its exit code and end reason — a one-call alternative to triggering then polling.
          */
-        post: operations["triggerRun"];
+        post: operations["runTask"];
         delete?: never;
         options?: never;
         head?: never;
@@ -656,7 +673,7 @@ export interface components {
          * @description Why a run ended. Set when status=ended.
          * @enum {string}
          */
-        EndReason: "success" | "failed" | "stopped" | "timeout" | "crashed" | "skipped" | "log_overflow" | "queue_full" | "dst_skipped" | "daemon_stopped" | "missed" | "start_failed";
+        EndReason: "succeeded" | "failed" | "stopped" | "timeout" | "crashed" | "skipped" | "log_overflow" | "queue_full" | "dst_skipped" | "daemon_stopped" | "missed" | "start_failed";
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
             location?: string;
@@ -1240,7 +1257,6 @@ export interface components {
             workDir: string;
         };
         TaskBrief: {
-            apiTrigger: boolean;
             catchUp?: string;
             compose?: components["schemas"]["TaskComposeRef"];
             cron?: string;
@@ -1255,6 +1271,7 @@ export interface components {
             instances?: number;
             /** @enum {string} */
             kind?: "task" | "service";
+            manualTrigger: boolean;
             /** Format: int64 */
             maxConcurrent?: number;
             name: string;
@@ -1295,7 +1312,12 @@ export interface components {
             type?: "string" | "number";
         };
         TaskResponse: {
-            apiTrigger: boolean;
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/TaskResponse.json
+             */
+            readonly $schema?: string;
             /** @description For services: whether instances start at boot. False boots in the stopped state until started via API/UI. */
             autostart: boolean;
             /**
@@ -1370,6 +1392,7 @@ export interface components {
              * @enum {string}
              */
             logOnFull?: "drop_new" | "drop_old" | "kill";
+            manualTrigger: boolean;
             /**
              * Format: int64
              * @description Cap on catch-up runs triggered when catch_up = all
@@ -1380,6 +1403,11 @@ export interface components {
              * @description Maximum overlapping runs allowed for this task
              */
             maxConcurrent?: number;
+            /**
+             * Format: int64
+             * @description Maximum runs that can wait when on_overlap = queue
+             */
+            maxQueued?: number;
             name: string;
             /** Format: date-time */
             nextRunAt?: string;
@@ -1395,11 +1423,6 @@ export interface components {
              * @description For services: boot start order, lowest first (name breaks ties). Start order only — not a dependency.
              */
             priority?: number;
-            /**
-             * Format: int64
-             * @description Maximum runs that can wait when on_overlap = queue
-             */
-            queueMax?: number;
             /**
              * @description Whether and when a task is restarted after completion
              * @enum {string}
@@ -1433,7 +1456,7 @@ export interface components {
              */
             retryDelay?: number;
             /** @description For tasks: fire once at daemon startup, in addition to any cron schedule */
-            runOnStart?: boolean;
+            runOnStart: boolean;
             /** @description Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values never leave the daemon. */
             secretsFile?: string;
             /** @description Absolute path to the shell interpreter for run scripts; defaults to /bin/sh */
@@ -1584,6 +1607,202 @@ export interface operations {
                         /** @description The retry time in milliseconds. */
                         retry?: number;
                     }[];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    reload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReloadResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    streamAppEvents: {
+        parameters: {
+            query?: {
+                /** @description Explicit resume id for a fresh EventSource whose native Last-Event-ID is empty (cross-tab leader handoff) */
+                lastEventId?: string;
+            };
+            header?: {
+                /** @description Native SSE resume cursor; takes precedence over the lastEventId query */
+                "Last-Event-ID"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": ({
+                        data: components["schemas"]["ConfigStaleSSEEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "config.stale";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["NotificationCreatedEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "notification.created";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["NotificationUnreadCountEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "notification.unreadCountChanged";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["NotificationUpdatedEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "notification.updated";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["PingEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "ping";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["RunCompletedEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "run.completed";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["RunCreatedEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "run.created";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["RunDeletedSSEEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "run.deleted";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["RunFailedEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "run.failed";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["RunStartedEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "run.started";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["RunUpdatedEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "run.updated";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["SystemSampleSSEEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "system";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    })[];
                 };
             };
             /** @description Error */
@@ -1838,35 +2057,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    reload: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ReloadResult"];
-                };
             };
             /** @description Error */
             default: {
@@ -2387,173 +2577,6 @@ export interface operations {
             };
         };
     };
-    streamAppEvents: {
-        parameters: {
-            query?: {
-                /** @description Explicit resume id for a fresh EventSource whose native Last-Event-ID is empty (cross-tab leader handoff) */
-                lastEventId?: string;
-            };
-            header?: {
-                /** @description Native SSE resume cursor; takes precedence over the lastEventId query */
-                "Last-Event-ID"?: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": ({
-                        data: components["schemas"]["ConfigStaleSSEEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "config.stale";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["NotificationCreatedEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "notification.created";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["NotificationUnreadCountEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "notification.unreadCountChanged";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["NotificationUpdatedEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "notification.updated";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["PingEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "ping";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["RunCompletedEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "run.completed";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["RunCreatedEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "run.created";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["RunDeletedSSEEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "run.deleted";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["RunFailedEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "run.failed";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["RunStartedEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "run.started";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["RunUpdatedEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "run.updated";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["SystemSampleSSEEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "system";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    })[];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
     getSystemStats: {
         parameters: {
             query?: never;
@@ -2628,6 +2651,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TasksResponseBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Task name */
+                taskName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskResponse"];
                 };
             };
             /** @description Error */
@@ -2716,10 +2771,10 @@ export interface operations {
             };
         };
     };
-    triggerRun: {
+    runTask: {
         parameters: {
             query?: {
-                /** @description Block until the run finishes and return the completed run (with exit_code and end_reason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead. */
+                /** @description Block until the run finishes and return the completed run (with exitCode and endReason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead. */
                 wait?: boolean;
                 /** @description With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state. */
                 waitTimeout?: number;

@@ -44,7 +44,7 @@ type ExecWindow struct {
 // bucket's label — a clean one-word banner token that also keys StatusStyle —
 // which statusFilterWire expands to the full multi-status set sent to the
 // server, so the buckets match the web UI exactly (not just the literal token).
-var statusFilterCycle = []string{"", "running", "success", "failed", "skipped", "stopped"}
+var statusFilterCycle = []string{"", "running", "succeeded", "failed", "skipped", "stopped"}
 
 // statusFilterWire maps each statusFilterCycle label to the comma-separated set
 // of run statuses (phases + end reasons) sent to the server, mirroring the web
@@ -55,12 +55,12 @@ var statusFilterCycle = []string{"", "running", "success", "failed", "skipped", 
 // daemon_stopped. The "failed" set must stay in sync with the web UI's
 // NEEDS_ATTENTION_STATUSES (FAILURE_END_REASONS + "missed").
 var statusFilterWire = map[string]string{
-	"":        "",
-	"running": "pending,running",
-	"success": "success",
-	"failed":  "failed,crashed,timeout,log_overflow,start_failed,missed",
-	"skipped": "skipped,dst_skipped,queue_full",
-	"stopped": "stopped,daemon_stopped",
+	"":          "",
+	"running":   "pending,running",
+	"succeeded": "succeeded",
+	"failed":    "failed,crashed,timeout,log_overflow,start_failed,missed",
+	"skipped":   "skipped,dst_skipped,queue_full",
+	"stopped":   "stopped,daemon_stopped",
 }
 
 func NewExecWindow(client *apiclient.Client) *ExecWindow {
@@ -137,7 +137,7 @@ func (w *ExecWindow) HasStatusFilter() bool {
 }
 
 // StatusFilter returns the raw active status filter (one of statusFilterCycle,
-// e.g. "running"/"success"/"failed"/"skipped"/"stopped"), or "" when no filter
+// e.g. "running"/"succeeded"/"failed"/"skipped"/"stopped"), or "" when no filter
 // is active.
 func (w *ExecWindow) StatusFilter() string {
 	w.mu.Lock()

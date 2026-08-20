@@ -343,8 +343,8 @@ func (m *defaultTaskManager) resumePendingRun(ts *taskState, r *model.Run, resul
 }
 
 func (m *defaultTaskManager) requeuePendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) {
-	queueMax := ts.task.QueueMax
-	if queueMax > 0 && len(ts.queue) >= queueMax {
+	maxQueued := ts.task.MaxQueued
+	if maxQueued > 0 && len(ts.queue) >= maxQueued {
 		r.End(model.ReasonQueueFull, -1, m.clock())
 		m.persistence.PersistExisting(r)
 		result.Failed++

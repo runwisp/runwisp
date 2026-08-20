@@ -182,10 +182,10 @@ func TestMapRunToExecutionUpdateTerminalReasonsExhaustive(t *testing.T) {
 		model.ReasonLogOverflow:   protocol.ExecutionStatusFailed,
 		model.ReasonStartFailed:   protocol.ExecutionStatusFailed,
 		model.ReasonDaemonStopped: protocol.ExecutionStatusStopped,
-		model.ReasonSkipped:       protocol.ExecutionStatusFailed,
+		model.ReasonSkipped:       protocol.ExecutionStatusSkipped,
 		model.ReasonQueueFull:     protocol.ExecutionStatusFailed,
-		model.ReasonDSTSkipped:    protocol.ExecutionStatusFailed,
-		model.ReasonMissed:        protocol.ExecutionStatusFailed,
+		model.ReasonDSTSkipped:    protocol.ExecutionStatusSkipped,
+		model.ReasonMissed:        protocol.ExecutionStatusSkipped,
 	}
 	execID := "ext-terminal"
 	now := time.Now()

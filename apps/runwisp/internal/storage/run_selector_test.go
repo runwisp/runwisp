@@ -38,7 +38,7 @@ func TestBuildRunFilterArgs_StatusSetRendering(t *testing.T) {
 	}{
 		{"empty", "", nil},
 		{"all-blank", " , , ", nil},
-		{"single end reason", string(model.ReasonSuccess), "|success|"},
+		{"single end reason", string(model.ReasonSuccess), "|succeeded|"},
 		{"single phase", string(model.PhaseRunning), "|running|"},
 		{"multi", "failed,crashed,timeout", "|failed|crashed|timeout|"},
 		{"trims and skips blanks", " failed , , crashed ", "|failed|crashed|"},

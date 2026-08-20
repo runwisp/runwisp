@@ -6,13 +6,13 @@
 package protocol
 
 type LogLineMessage struct {
-	Type            string  `json:"type" binding:"required"`
-	ProtocolVersion int     `json:"protocolVersion,omitempty"`
-	SentAt          string  `json:"sentAt,omitempty"`
-	ExecutionID     string  `json:"executionId" binding:"required"`
 	N               int64   `json:"n" binding:"required"`
 	Ts              int64   `json:"ts,omitempty"`
 	Stream          *Stream `json:"stream" binding:"required"`
 	Text            string  `json:"text" binding:"required"`
 	Continued       bool    `json:"continued,omitempty"`
+	Type            string  `json:"type" binding:"required"`
+	ProtocolVersion int     `json:"protocolVersion,omitempty"`
+	SentAt          string  `json:"sentAt,omitempty"`
+	ExecutionID     string  `json:"executionId" binding:"required"`
 }

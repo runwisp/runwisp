@@ -160,7 +160,7 @@ type NotifyConfig struct {
 	CoalesceOutbound  bool
 }
 
-// NotifierSpec is one [[notifier]] block, post-decode. Secret-bearing fields
+// NotifierSpec is one [notifiers.<id>] block, post-decode. Secret-bearing fields
 // (webhook_url, bot_token, password) hold their final values already — the
 // ${VAR} / ${file:...} substitution pass resolved any indirection at decode
 // time.

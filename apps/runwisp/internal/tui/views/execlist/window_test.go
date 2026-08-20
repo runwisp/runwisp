@@ -531,7 +531,7 @@ func TestStatusFilterCycle(t *testing.T) {
 		t.Fatalf("default StatusFilter = %q, want empty", got)
 	}
 	// The cycle mirrors the web UI's five status buckets, in order.
-	want := []string{"running", "success", "failed", "skipped", "stopped"}
+	want := []string{"running", "succeeded", "failed", "skipped", "stopped"}
 	for _, exp := range want {
 		w.CycleStatusFilter()
 		if !w.HasStatusFilter() {

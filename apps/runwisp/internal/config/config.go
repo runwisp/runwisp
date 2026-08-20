@@ -1014,11 +1014,11 @@ func validateTaskLimits(task *model.Task) error {
 	if task.MaxConcurrent > MaxConcurrentCap {
 		return fmt.Errorf("invalid max_concurrent for task %s: %d exceeds the cap of %d", task.Name, task.MaxConcurrent, MaxConcurrentCap)
 	}
-	if task.QueueMax < 0 {
-		return fmt.Errorf("invalid queue_max for task %s: must be a positive integer", task.Name)
+	if task.MaxQueued < 0 {
+		return fmt.Errorf("invalid max_queued for task %s: must be a positive integer", task.Name)
 	}
-	if task.QueueMax > QueueMaxCap {
-		return fmt.Errorf("invalid queue_max for task %s: %d exceeds the cap of %d", task.Name, task.QueueMax, QueueMaxCap)
+	if task.MaxQueued > MaxQueuedCap {
+		return fmt.Errorf("invalid max_queued for task %s: %d exceeds the cap of %d", task.Name, task.MaxQueued, MaxQueuedCap)
 	}
 	if task.GracefulStop < 0 {
 		return fmt.Errorf("invalid graceful_stop for task %s: must be zero or a positive duration", task.Name)
@@ -1084,7 +1084,7 @@ func validateTaskEnums(task *model.Task) error {
 	}{
 		{"on_overlap for task " + task.Name, string(task.OnOverlap), validOnOverlap, false},
 		{"restart for task " + task.Name, string(task.Restart), validRestart, true},
-		{"retry_backoff for task " + task.Name, task.RetryBackoff, validBackoff, true},
+		{"retry_backoff for task " + task.Name, string(task.RetryBackoff), validBackoff, true},
 		{"log_on_full for task " + task.Name, task.LogOnFull, validLogOnFull, true},
 		{"catch_up for task " + task.Name, string(task.CatchUp), validCatchUp, true},
 	}
@@ -1117,7 +1117,7 @@ func validateServiceTask(task *model.Task) error {
 		return fmt.Errorf("invalid instances for service %s: must be <= %d", task.Name, MaxServiceInstances)
 	}
 	if err := requireOneOf(fmt.Sprintf("restart_backoff for service %s", task.Name),
-		task.RestartBackoff, validBackoff, true); err != nil {
+		string(task.RestartBackoff), validBackoff, true); err != nil {
 		return err
 	}
 	if task.HealthyAfter < 0 {
@@ -1205,7 +1205,7 @@ var (
 		string(model.RestartAlways),
 		string(model.RestartOnFailure),
 	}
-	validBackoff          = []string{model.BackoffConstant, model.BackoffLinear, model.BackoffExponential}
+	validBackoff          = []string{string(model.BackoffConstant), string(model.BackoffLinear), string(model.BackoffExponential)}
 	validLogOnFull        = []string{model.LogOverflowDropNew, model.LogOverflowDropOld, model.LogOverflowKill}
 	validCatchUp          = []string{string(model.MissedRunLatest), string(model.MissedRunAll), string(model.MissedRunSkip)}
 	defaultTaskLogMaxSize = int64(100 * 1024 * 1024)
@@ -1218,7 +1218,7 @@ var (
 // configuring something pathological and should rethink, not raise the cap.
 const (
 	MaxConcurrentCap = 1024
-	QueueMaxCap      = 10000
+	MaxQueuedCap     = 10000
 	KeepRunsCap      = 1_000_000
 	RetryAttemptsCap = 100
 	// ExitCodesCap bounds the success-exit-code list. POSIX exit codes are
@@ -1258,7 +1258,7 @@ const (
 // Built-in defaults applied by ApplyDefaults when a field is omitted entirely.
 const (
 	DefaultMaxCatchUpRuns = 100
-	DefaultQueueMax       = 100
+	DefaultMaxQueued      = 100
 	DefaultGracefulStop   = 5 * time.Second
 	DefaultDaemonShutdown = 10 * time.Second
 	DefaultHealthyAfter   = 60 * time.Second
@@ -1435,8 +1435,8 @@ func applyTaskDefaults(task *model.Task) {
 	if task.OnOverlap == "" {
 		task.OnOverlap = model.PolicyQueue
 	}
-	if task.QueueMax == 0 {
-		task.QueueMax = DefaultQueueMax
+	if task.MaxQueued == 0 {
+		task.MaxQueued = DefaultMaxQueued
 	}
 }
 

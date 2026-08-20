@@ -327,7 +327,7 @@ func newFakeDaemonServer(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{}`))
 	})
-	mux.HandleFunc("/api/system/history", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/api/system/metrics", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"items":[]}`))
 	})
@@ -339,7 +339,7 @@ func newFakeDaemonServer(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"items":[]}`))
 	})
-	mux.HandleFunc("/api/notifications/unread-count", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/api/notifications/unreadCount", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"unread_count":0}`))
 	})
@@ -590,7 +590,7 @@ func newBulkServer(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{}`))
 	})
-	mux.HandleFunc("/api/reload", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/api/daemon/reload", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"added":["new-task"],"removed":[],"changed":[]}`))
 	})

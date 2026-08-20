@@ -88,7 +88,7 @@ description = "nightly backup"
 [services.web]
 run = "exec /usr/bin/web"
 instances = 2
-api_trigger = true
+manual_trigger = true
 `)}
 	var buf bytes.Buffer
 	require.NoError(t, runList(&buf, f, true))
@@ -118,7 +118,7 @@ func TestStatusJSONGolden(t *testing.T) {
 	mux.HandleFunc("/api/tasks", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(server.TasksResponseBody{Items: []model.TaskResponse{
 			{Task: model.Task{Name: "backup", Cron: "0 3 * * *"}, NextRunAt: &nextRun},
-			{Task: model.Task{Name: "web", Kind: model.KindService, APITrigger: true}},
+			{Task: model.Task{Name: "web", Kind: model.KindService, ManualTrigger: true}},
 		}})
 	})
 	mux.HandleFunc("/api/tasks/backup/runs", func(w http.ResponseWriter, r *http.Request) {

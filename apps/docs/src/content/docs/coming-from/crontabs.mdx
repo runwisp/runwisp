@@ -115,8 +115,7 @@ Notes:
   ! crontab sets MAILTO=ops@example.com. crond mails a job's output; RunWisp
     notifies on the event instead, so the closest equivalent is a sendmail
     notifier through the same MTA. Add to your root runwisp.toml:
-        [[notifier]]
-        id   = "mta"
+        [notifiers.mta]
         type = "sendmail"
         from = "runwisp@localhost"
         to   = ["ops@example.com"]
@@ -324,7 +323,7 @@ run writes nothing, so the summary is all it has to show you.
 - **It never edits your hand-written tasks.** `--write` only owns
   `runwisp.d/imported.toml`.
 - **It never writes daemon-wide settings.** A `MAILTO` becomes a notifier block in
-  the summary for you to paste, not a `[[notifier]]` the importer adds.
+  the summary for you to paste, not a `[notifiers.*]` entry the importer adds.
 - **It doesn't guess.** Anything that can't map cleanly gets a `# TODO` and a row
   in the summary — see
   [What needs a human](/coming-from/cron-mapping/#what-needs-a-human).

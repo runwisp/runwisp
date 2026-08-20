@@ -22,7 +22,7 @@
       "name": "backup",
       "kind": "task",
       "cron": "0 3 * * *",
-      "apiTrigger": false,
+      "manualTrigger": false,
       "nextRunAt": "2026-07-16T03:00:00Z",
       "lastRun": {
         "id": "01JZZBACKUP0000000000000000",
@@ -40,7 +40,7 @@
     {
       "name": "web",
       "kind": "service",
-      "apiTrigger": true,
+      "manualTrigger": true,
       "lastRun": {
         "id": "01JZZWEB00000000000000000000",
         "status": "running",

@@ -17,6 +17,7 @@ const (
 	ExecutionStatusFailed
 	ExecutionStatusStopped
 	ExecutionStatusTimeout
+	ExecutionStatusSkipped
 )
 
 // Value returns the value of the enum.
@@ -27,13 +28,14 @@ func (op ExecutionStatus) Value() any {
 	return ExecutionStatusValues[op]
 }
 
-var ExecutionStatusValues = []any{"running", "succeeded", "failed", "stopped", "timeout"}
+var ExecutionStatusValues = []any{"running", "succeeded", "failed", "stopped", "timeout", "skipped"}
 var ValuesToExecutionStatus = map[any]ExecutionStatus{
 	ExecutionStatusValues[ExecutionStatusRunning]:   ExecutionStatusRunning,
 	ExecutionStatusValues[ExecutionStatusSucceeded]: ExecutionStatusSucceeded,
 	ExecutionStatusValues[ExecutionStatusFailed]:    ExecutionStatusFailed,
 	ExecutionStatusValues[ExecutionStatusStopped]:   ExecutionStatusStopped,
 	ExecutionStatusValues[ExecutionStatusTimeout]:   ExecutionStatusTimeout,
+	ExecutionStatusValues[ExecutionStatusSkipped]:   ExecutionStatusSkipped,
 }
 
 func (op *ExecutionStatus) UnmarshalJSON(raw []byte) error {

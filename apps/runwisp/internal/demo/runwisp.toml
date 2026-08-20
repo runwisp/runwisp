@@ -51,20 +51,17 @@ keep_for           = "30d"
 # Placeholder secrets (`.invalid` never resolves) keep the demo self-contained
 # and offline. Swap in real values for actual delivery; see the header comment.
 
-[[notifier]]
-id          = "slack-ops"
+[notifiers.slack-ops]
 type        = "slack"
 webhook_url = "https://hooks.slack.invalid/services/T0DEMO/B0DEMO/ops"
 channel     = "#ops-alerts"
 
-[[notifier]]
-id          = "slack-deploys"
+[notifiers.slack-deploys]
 type        = "slack"
 webhook_url = "https://hooks.slack.invalid/services/T0DEMO/B0DEMO/deploys"
 channel     = "#deploys"
 
-[[notifier]]
-id        = "telegram-oncall"
+[notifiers.telegram-oncall]
 type      = "telegram"
 bot_token = "123456789:DEMO-not-a-real-telegram-token"
 chat_id   = "-1001234567890"
@@ -73,20 +70,20 @@ chat_id   = "-1001234567890"
 
 # Any backup-* failure pages ops and on-call; inline override sends Slack to
 # the dedicated #backups channel.
-[[notification_route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
-notify = ["slack-ops:#backups", "telegram-oncall"]
+[[route]]
+match     = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+notifiers = ["slack-ops:#backups", "telegram-oncall"]
 
 # Surface successful deploys to the deploys channel.
-[[notification_route]]
-match  = { kinds = ["run.succeeded"], task = "deploy-*" }
-notify = ["slack-deploys"]
+[[route]]
+match     = { kinds = ["run.succeeded"], task = "deploy-*" }
+notifiers = ["slack-deploys"]
 
 # Mirror notifier-delivery failures into the in-app bell so the operator
 # notices a broken webhook without staring at the daemon log.
-[[notification_route]]
-match  = { kinds = ["notify.delivery_failed"] }
-notify = ["inapp"]
+[[route]]
+match     = { kinds = ["notify.delivery_failed"] }
+notifiers = ["inapp"]
 
 # ── Backups ──────────────────────────────────────────────────────────────────
 
@@ -267,7 +264,7 @@ df -h / | awk 'NR==1 || NR==2 { print }'
 [tasks.deploy-migrate]
 group             = "Deploys"
 description       = "Database migrations. Triggered from the deploy pipeline via the REST API; never scheduled."
-api_trigger       = true
+manual_trigger    = true
 timeout           = "10m"
 on_overlap        = "skip"
 notify_on_success = ["slack-deploys"]
@@ -296,7 +293,7 @@ echo "${GREEN}[migrate]${RST} done in 0.8s"
 [tasks.reindex-search]
 group       = "Manual"
 description = "Rebuilds the full-text search index from scratch. Run by hand after a mapping change — emits one line per indexed document, so expect tens of thousands of lines."
-api_trigger = true
+manual_trigger = true
 timeout     = "1h"
 keep_runs   = 20
 log_max_size = "200mb"
@@ -315,7 +312,7 @@ echo "[reindex] done: 8000 docs in 4.7s"
 [tasks.import-legacy-data]
 group       = "Manual"
 description = "One-off importer for the legacy MySQL export. Verbose by design: every row that needs a fix-up is logged as the full rewrite statement, so the lines run wide and the migration is auditable."
-api_trigger = true
+manual_trigger = true
 timeout     = "2h"
 keep_runs   = 20
 log_max_size = "200mb"
@@ -350,7 +347,7 @@ echo "[import] complete"
 [tasks.export-org-data]
 group       = "Manual"
 description = "On-demand data export for a single tenant (GDPR / data-portability request). Run by hand with per-execution parameters — pick the tenant, format, region, and options when you trigger it."
-api_trigger = true
+manual_trigger = true
 timeout     = "20m"
 keep_runs   = 40
 params = [

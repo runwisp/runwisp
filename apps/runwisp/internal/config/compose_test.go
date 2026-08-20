@@ -199,8 +199,7 @@ exit_codes       = [0, 2]
 }
 
 func TestComposeExpansion_BlockDefaultsNotifyDesugarsPerService(t *testing.T) {
-	cfg, err := Load(writeConfig(t, `[[notifier]]
-id = "slack-prod"
+	cfg, err := Load(writeConfig(t, `[notifiers.slack-prod]
 type = "slack"
 webhook_url = "https://example/hook"
 
@@ -484,13 +483,11 @@ func TestComposeExpansion_NoComposeFileFoundProducesClearError(t *testing.T) {
 }
 
 func TestComposeExpansion_PerServiceNotifyDesugarsToRoutes(t *testing.T) {
-	cfg, err := Load(writeConfig(t, `[[notifier]]
-id = "slack-prod"
+	cfg, err := Load(writeConfig(t, `[notifiers.slack-prod]
 type = "slack"
 webhook_url = "https://example/hook"
 
-[[notifier]]
-id = "slack-ok"
+[notifiers.slack-ok]
 type = "slack"
 webhook_url = "https://example/ok"
 
@@ -522,8 +519,7 @@ notify_on_success = ["slack-ok"]
 }
 
 func TestComposeExpansion_PerServiceNotifyInlineTokenMaterialisesNotifier(t *testing.T) {
-	cfg, err := Load(writeConfig(t, `[[notifier]]
-id = "slack-prod"
+	cfg, err := Load(writeConfig(t, `[notifiers.slack-prod]
 type = "slack"
 webhook_url = "https://example/hook"
 channel = "#default"

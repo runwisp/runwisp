@@ -68,11 +68,11 @@ exit 1
 '''
 
 [tasks.deploy-thing]
-api_trigger = true
+manual_trigger = true
 run = "echo deployed"
 
 [tasks.export-thing]
-api_trigger = true
+manual_trigger = true
 params = [
   { env = "ORG_ID", required = true },
   { arg = "format", choices = ["json", "csv"], default = "json" },

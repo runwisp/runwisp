@@ -112,7 +112,7 @@ func skipSingleLineString(s string, basic bool) int {
 
 // tableHeader parses a table header line, allowing surrounding whitespace and a
 // trailing comment: "[daemon]" yields ("daemon", false, true) and
-// "[[notifier]]" yields ("notifier", true, true). ok is false for any other
+// "[[route]]" yields ("route", true, true). ok is false for any other
 // line. Callers must check tomlLine.Code first — this function looks at one
 // line and cannot know it sits inside a string.
 func tableHeader(line string) (name string, array, ok bool) {

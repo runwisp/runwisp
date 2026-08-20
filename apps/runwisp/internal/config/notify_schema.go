@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"path"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 
 var allowedNotifierTypes = []string{"slack", "discord", "telegram", "smtp", "sendmail", "webhook"}
 
-// allowedSMTPTLSModes enumerates the values accepted for [[notifier]].tls. An
+// allowedSMTPTLSModes enumerates the values accepted for [notifiers.*].tls_mode. An
 // empty string falls back to a port-derived default (465 → implicit; everything
 // else → starttls).
 var allowedSMTPTLSModes = []string{"starttls", "implicit", "off"}
@@ -53,7 +54,7 @@ func parseNotifyToken(s string) (parentID, override string, hasOverride bool) {
 	return strings.TrimSpace(before), strings.TrimSpace(after), true
 }
 
-// toNotifyConfig translates the raw [[notifier]], [[notification_route]],
+// toNotifyConfig translates the raw [notifiers.<id>], [[route]],
 // [notify], and per-task notify_on_failure/notify_on_success blocks into a
 // resolved-but-not-secret-substituted NotifyConfig.
 func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*taskWire, serviceNames []string, serviceWires map[string]*serviceWire) (NotifyConfig, error) {
@@ -83,7 +84,7 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 			Kinds:      append([]string(nil), r.Match.Kinds...),
 			Severity:   strings.TrimSpace(r.Match.Severity),
 			TaskGlob:   strings.TrimSpace(r.Match.Task),
-			NotifierID: append([]string(nil), r.Notify...),
+			NotifierID: append([]string(nil), r.Notifiers...),
 		})
 	}
 
@@ -128,14 +129,21 @@ func (t *tomlConfig) applyNotifyDurations(out *NotifyConfig) error {
 	return nil
 }
 
-// buildNotifierSpecs translates the raw [[notifier]] entries into NotifierSpec
-// rows on out. ID-shape rules (non-empty, not the reserved "inapp", no inline
-// override separator) are enforced here so the rest of the pipeline can trust
-// the result.
-func buildNotifierSpecs(notifiers []notifierWire, out *NotifyConfig) error {
-	for i, n := range notifiers {
+// buildNotifierSpecs translates the raw [notifiers.<id>] entries into
+// NotifierSpec rows on out, in sorted-id order for deterministic output.
+// ID-shape rules (non-empty, not the reserved "inapp", no inline override
+// separator) are enforced here so the rest of the pipeline can trust the
+// result.
+func buildNotifierSpecs(notifiers map[string]*notifierWire, out *NotifyConfig) error {
+	ids := make([]string, 0, len(notifiers))
+	for id := range notifiers {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		n := notifiers[id]
 		spec := NotifierSpec{
-			ID:           strings.TrimSpace(n.ID),
+			ID:           id,
 			Type:         strings.TrimSpace(n.Type),
 			WebhookURL:   n.WebhookURL,
 			SlackChannel: n.Channel,
@@ -148,7 +156,7 @@ func buildNotifierSpecs(notifiers []notifierWire, out *NotifyConfig) error {
 
 			Host:          n.Host,
 			Port:          n.Port,
-			TLSMode:       n.TLS,
+			TLSMode:       n.TLSMode,
 			TLSSkipVerify: n.TLSSkipVerify,
 			Username:      n.Username,
 			Password:      n.Password,
@@ -161,7 +169,7 @@ func buildNotifierSpecs(notifiers []notifierWire, out *NotifyConfig) error {
 			SendmailPath: n.SendmailPath,
 		}
 		if spec.ID == "" {
-			return fmt.Errorf("notifier #%d: id is required", i)
+			return fmt.Errorf("notifier: id is required")
 		}
 		if spec.ID == inappNotifierID {
 			return fmt.Errorf("notifier id %q is reserved for the in-app channel", inappNotifierID)
@@ -392,7 +400,7 @@ func validateNotify(cfg *NotifyConfig) error {
 
 	for _, id := range cfg.GlobalNotifiers {
 		if _, ok := known[id]; !ok {
-			return fmt.Errorf("notify.global_notifiers: unknown notifier id %q (declare a [[notifier]] with this id, or use \"inapp\")", id)
+			return fmt.Errorf("notify.global_notifiers: unknown notifier id %q (declare a [notifiers.%s], or use \"inapp\")", id, id)
 		}
 	}
 
@@ -463,7 +471,7 @@ func validateSMTPNotifier(spec *NotifierSpec) error {
 	if spec.Port < 0 || spec.Port > 65535 {
 		return fmt.Errorf("notifier %q: port %d is out of range", spec.ID, spec.Port)
 	}
-	if err := requireOneOf(fmt.Sprintf("notifier %q tls", spec.ID),
+	if err := requireOneOf(fmt.Sprintf("notifier %q tls_mode", spec.ID),
 		spec.TLSMode, allowedSMTPTLSModes, true); err != nil {
 		return err
 	}
@@ -537,7 +545,7 @@ func validateSMTPAuth(spec *NotifierSpec) error {
 		return fmt.Errorf("notifier %q: username and password must be set together (or both omitted for auth-less relays)", spec.ID)
 	}
 	if hasPassword && strings.TrimSpace(spec.TLSMode) == "off" {
-		return fmt.Errorf("notifier %q: tls=\"off\" is not allowed with credentials — refuse to send PLAIN auth over cleartext", spec.ID)
+		return fmt.Errorf("notifier %q: tls_mode=\"off\" is not allowed with credentials — refuse to send PLAIN auth over cleartext", spec.ID)
 	}
 	return nil
 }
@@ -605,7 +613,7 @@ func buildKnownNotifierSet(seenID map[string]struct{}) map[string]struct{} {
 }
 
 func validateRoute(idx int, r NotificationRoute, known map[string]struct{}) error {
-	scope := fmt.Sprintf("notification_route #%d", idx)
+	scope := fmt.Sprintf("route #%d", idx)
 	for _, k := range r.Kinds {
 		if err := requireOneOf(scope+" match.kinds", k, kinds.AllKindStrings, false); err != nil {
 			return err
@@ -620,7 +628,7 @@ func validateRoute(idx int, r NotificationRoute, known map[string]struct{}) erro
 		}
 	}
 	if len(r.NotifierID) == 0 {
-		return fmt.Errorf("%s: notify list is empty", scope)
+		return fmt.Errorf("%s: notifiers list is empty", scope)
 	}
 	for _, id := range r.NotifierID {
 		if _, ok := known[id]; !ok {

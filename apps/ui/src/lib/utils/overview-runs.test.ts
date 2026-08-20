@@ -11,7 +11,7 @@ function makeRun(id: string, overrides: Partial<Run> = {}): Run {
         taskName: "backup-db",
         createdAt: "2026-06-22T12:00:00.000Z",
         status: "ended",
-        endReason: "success",
+        endReason: "succeeded",
         triggeredBy: "api",
         exitCode: 0,
         instanceIndex: 0,
@@ -25,7 +25,7 @@ describe("mergeRecentRuns", () => {
     // before that landed still carries it as "running". Merging the snapshot
     // must not revert the run's phase.
     it("does not regress an SSE-advanced run to an older phase", () => {
-        const live = [makeRun("r1", { status: "ended", endReason: "success" })];
+        const live = [makeRun("r1", { status: "ended", endReason: "succeeded" })];
         const snapshot = [makeRun("r1", { status: "running" })];
 
         const merged = mergeRecentRuns(live, snapshot, 16);
@@ -46,7 +46,7 @@ describe("mergeRecentRuns", () => {
 
 describe("mergeRunningRuns", () => {
     it("drops a stale snapshot's running copy of a finished run", () => {
-        const live = [makeRun("r1", { status: "ended", endReason: "success" })];
+        const live = [makeRun("r1", { status: "ended", endReason: "succeeded" })];
         const snapshot = [makeRun("r1", { status: "running" })];
 
         const merged = mergeRunningRuns(live, snapshot, 8);

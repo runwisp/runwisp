@@ -67,7 +67,7 @@ describe("isNeedsAttention", () => {
 
     it("is false for a strict subset or a different set", () => {
         expect(isNeedsAttention(["failed"])).toBe(false);
-        expect(isNeedsAttention(["success"])).toBe(false);
+        expect(isNeedsAttention(["succeeded"])).toBe(false);
         expect(isNeedsAttention([])).toBe(false);
     });
 });
@@ -158,7 +158,7 @@ describe("statusChipLabel", () => {
         // The Failed bucket is the needs-attention set.
         expect(statusChipLabel([...NEEDS_ATTENTION_STATUSES])).toBe("Failed");
         expect(statusChipLabel(["pending", "running"])).toBe("Running");
-        expect(statusChipLabel(["success"])).toBe("Succeeded");
+        expect(statusChipLabel(["succeeded"])).toBe("Succeeded");
     });
 
     it("humanizes a single status that is not a whole bucket", () => {
@@ -200,9 +200,9 @@ describe("bucketState / toggleBucket", () => {
     });
 
     it("clears a fully-selected bucket without touching other statuses", () => {
-        const f = base({ statuses: [...failed.statuses, "success"] });
+        const f = base({ statuses: [...failed.statuses, "succeeded"] });
         const cleared = toggleBucket(f, failed);
-        expect(cleared.statuses).toEqual(["success"]);
+        expect(cleared.statuses).toEqual(["succeeded"]);
     });
 });
 

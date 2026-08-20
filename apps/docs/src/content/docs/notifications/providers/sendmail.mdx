@@ -28,15 +28,14 @@ this is the closest thing to what you had.
 ## Fields
 
 ```toml
-[[notifier]]
-id   = "mta"
+[notifiers.mta]
 type = "sendmail"
 from = "runwisp@example.com"
 to   = ["ops@example.com"]
 ```
 
-That's a complete notifier. `id`, `type`, `from`, and at least one
-`to` are required; everything else is optional.
+That's a complete notifier. The id (as the table key), `type`, `from`,
+and at least one `to` are required; everything else is optional.
 
 | Key             | Required | What it does                                                                 |
 | --------------- | -------- | ---------------------------------------------------------------------------- |
@@ -58,8 +57,7 @@ Set `sendmail_path` when you want a specific mailer rather than
 whichever one happens to own the compatibility symlink:
 
 ```toml
-[[notifier]]
-id            = "mta"
+[notifiers.mta]
 type          = "sendmail"
 from          = "runwisp@example.com"
 to            = ["ops@example.com"]
@@ -92,9 +90,9 @@ notify_on_failure = ["mta"]
 Or once, for everything:
 
 ```toml
-[[notification_route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
-notify = ["mta"]
+[[route]]
+match     = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+notifiers = ["mta"]
 ```
 
 Inline overrides work too, which is the closest equivalent to a
@@ -204,7 +202,7 @@ rest of the mapping.
 - A `from`, `reply_to`, `to`, `cc`, or `bcc` value that doesn't
   parse as an RFC 5322 address.
 - A relative `sendmail_path`.
-- An `id` containing `:` (reserved for inline target overrides) or
+- A notifier id containing `:` (reserved for inline target overrides) or
   equal to `"inapp"` (reserved).
 
 ---

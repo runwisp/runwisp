@@ -88,8 +88,7 @@ when one workspace or one bot serves several destinations — one Slack
 workspace covering several channels:
 
 ```toml
-[[notifier]]
-id          = "slack"
+[notifiers.slack]
 type        = "slack"
 webhook_url = "${RUNWISP_SLACK_URL}"
 # no `channel` set — each task picks one inline
@@ -109,8 +108,7 @@ The form of `<target>` depends on the provider: for Slack it is a
 channel (`#name` or `@user`); for Telegram it is the chat id.
 
 ```toml
-[[notifier]]
-id        = "tg"
+[notifiers.tg]
 type      = "telegram"
 bot_token = "${RUNWISP_TG_TOKEN}"
 chat_id   = "-1001"
@@ -125,14 +123,14 @@ no target and `"inapp:anything"` is rejected. Twenty tasks all writing
 `"slack:#ops"` share one connection — `#ops` is not messaged twice
 for the same event.
 
-Use an explicit `[[notifier]]` block (with `channel = "#…"` set on
+Use an explicit `[notifiers.<id>]` block (with `channel = "#…"` set on
 the block itself) when the same channel is used by enough tasks that
 the override gets repetitive. Use the inline override when each task
 has its own destination.
 
 ## When to use a notification rule instead
 
-A per-task field is for one task; a [`[[notification_route]]`
+A per-task field is for one task; a [`[[route]]`
 block](/notifications/routes/) is for one rule covering many tasks.
 Reach for a rule when you need a pattern across many tasks
 (`match.task = "backup-*"`), a custom set of event kinds (the
@@ -148,8 +146,7 @@ unique channel.
 ### Different settings per task
 
 ```toml
-[[notifier]]
-id          = "slack-ops"
+[notifiers.slack-ops]
 type        = "slack"
 webhook_url = "${RUNWISP_SLACK_OPS_URL}"
 
@@ -179,9 +176,9 @@ run               = "/usr/local/bin/process"
 notify_on_failure = ["slack-ops"]
 
 # Backups also send to the on-call channel, in addition to the per-task setting
-[[notification_route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "*-backup" }
-notify = ["tg-oncall"]
+[[route]]
+match     = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "*-backup" }
+notifiers = ["tg-oncall"]
 ```
 
 A failed `audit-log` run sends one message to `slack-ops` and adds one row
@@ -191,7 +188,7 @@ to `tg-oncall`, and adds one row to the bell.
 ## What the config loader rejects
 
 The loader rejects unknown notifier ids in `notify_on_failure` /
-`notify_on_success` (anything that isn't declared in `[[notifier]]`
+`notify_on_success` (anything that isn't declared under `[notifiers.*]`
 and isn't `"inapp"`); inline overrides whose parent doesn't exist,
 whose target is empty, or — for Slack — doesn't start with `#` or
 `@`; and `"inapp:something"`. An empty list (`notify_on_failure = []`)

@@ -27,8 +27,8 @@ type tomlConfig struct {
 	Compose   map[string]map[string]any `toml:"compose,omitempty"`
 	Notify    notifyWire                `toml:"notify,omitempty"`
 
-	Notifiers []notifierWire `toml:"notifier,omitempty"`
-	Routes    []routeWire    `toml:"notification_route,omitempty"`
+	Notifiers map[string]*notifierWire `toml:"notifiers,omitempty"`
+	Routes    []routeWire              `toml:"route,omitempty"`
 }
 
 // taskServiceWireCore holds the TOML keys shared by [tasks.*] and [services.*]
@@ -38,8 +38,8 @@ type taskServiceWireCore struct {
 	Group       string `toml:"group,omitempty"`
 	Description string `toml:"description,omitempty"`
 
-	APITrigger *bool                   `toml:"api_trigger,omitempty"`
-	OnOverlap  model.ConcurrencyPolicy `toml:"on_overlap,omitempty"`
+	ManualTrigger *bool                   `toml:"manual_trigger,omitempty"`
+	OnOverlap     model.ConcurrencyPolicy `toml:"on_overlap,omitempty"`
 
 	Timeout      string `toml:"timeout,omitempty"`
 	GracefulStop string `toml:"graceful_stop,omitempty"`
@@ -210,9 +210,9 @@ func canonicalizeParamDefault(v any) (*string, error) {
 // task-only / service-only fields on top. label ("task" or "service") names
 // the entry kind in error messages.
 func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind) (model.Task, error) {
-	apiTrigger := true
-	if w.APITrigger != nil {
-		apiTrigger = *w.APITrigger
+	manualTrigger := true
+	if w.ManualTrigger != nil {
+		manualTrigger = *w.ManualTrigger
 	}
 	timeout, err := parseDuration(w.Timeout)
 	if err != nil {
@@ -247,7 +247,7 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 		Kind:                 kind,
 		Group:                w.Group,
 		Description:          w.Description,
-		APITrigger:           apiTrigger,
+		ManualTrigger:        manualTrigger,
 		OnOverlap:            w.OnOverlap,
 		Timeout:              timeout,
 		GracefulStop:         gracefulStop,
@@ -382,7 +382,7 @@ func (w *taskServiceWireCore) resolveComposeMode(name, label string) (string, er
 }
 
 // taskWire is the over-the-wire task shape used only during TOML decoding.
-// It exists so api_trigger can be distinguished between "absent" (nil, default true)
+// It exists so manual_trigger can be distinguished between "absent" (nil, default true)
 // and "explicitly false" (&false).
 type taskWire struct {
 	taskServiceWireCore
@@ -396,7 +396,7 @@ type taskWire struct {
 
 	Restart       model.RestartPolicy `toml:"restart,omitempty"`
 	MaxConcurrent int                 `toml:"max_concurrent,omitempty"`
-	QueueMax      int                 `toml:"queue_max,omitempty"`
+	MaxQueued     int                 `toml:"max_queued,omitempty"`
 
 	// Instances is rejected on [tasks.*]; carried as a pointer so the validator
 	// can distinguish "unset" from "explicitly zero".
@@ -407,9 +407,9 @@ type taskWire struct {
 	// key decodes into a friendly rejection instead of an undecoded-key error.
 	DependsOn []string `toml:"depends_on,omitempty"`
 
-	RetryAttempts int    `toml:"retry_attempts,omitempty"`
-	RetryDelay    string `toml:"retry_delay,omitempty"`
-	RetryBackoff  string `toml:"retry_backoff,omitempty"`
+	RetryAttempts int                `toml:"retry_attempts,omitempty"`
+	RetryDelay    string             `toml:"retry_delay,omitempty"`
+	RetryBackoff  model.BackoffCurve `toml:"retry_backoff,omitempty"`
 }
 
 func (w *taskWire) toTask(name string) (model.Task, error) {
@@ -433,7 +433,7 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	task.RunOnStart = w.RunOnStart
 	task.Restart = w.Restart
 	task.MaxConcurrent = w.MaxConcurrent
-	task.QueueMax = w.QueueMax
+	task.MaxQueued = w.MaxQueued
 	task.RetryAttempts = w.RetryAttempts
 	task.RetryDelay = retryDelay
 	task.RetryBackoff = w.RetryBackoff
@@ -442,16 +442,16 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 
 // serviceWire is the over-the-wire shape for [services.*] entries. Cron and
 // catch_up are intentionally omitted — services are not cron-driven. Services
-// have no max_concurrent or queue_max: instance count is governed by `instances`
+// have no max_concurrent or max_queued: instance count is governed by `instances`
 // and overlap behaviour by `on_overlap`.
 type serviceWire struct {
 	taskServiceWireCore
 
 	Instances int `toml:"instances,omitempty"`
 
-	RestartDelay   string `toml:"restart_delay,omitempty"`
-	RestartBackoff string `toml:"restart_backoff,omitempty"`
-	HealthyAfter   string `toml:"healthy_after,omitempty"`
+	RestartDelay   string             `toml:"restart_delay,omitempty"`
+	RestartBackoff model.BackoffCurve `toml:"restart_backoff,omitempty"`
+	HealthyAfter   string             `toml:"healthy_after,omitempty"`
 
 	RestartAttempts int `toml:"restart_attempts,omitempty"`
 
@@ -662,10 +662,10 @@ type notifyWire struct {
 	CoalesceOutbound *bool `toml:"coalesce_outbound,omitempty"`
 }
 
-// notifierWire is one [[notifier]] block. Secret-bearing values arrive final:
-// operators use ${VAR} / ${file:...} substitution for indirection.
+// notifierWire is one [notifiers.<id>] block, keyed by its id. Secret-bearing
+// values arrive final: operators use ${VAR} / ${file:...} substitution for
+// indirection.
 type notifierWire struct {
-	ID   string `toml:"id"`
 	Type string `toml:"type"`
 
 	WebhookURL string `toml:"webhook_url,omitempty"`
@@ -677,7 +677,7 @@ type notifierWire struct {
 
 	Host          string   `toml:"host,omitempty"`
 	Port          int      `toml:"port,omitempty"`
-	TLS           string   `toml:"tls,omitempty"`
+	TLSMode       string   `toml:"tls_mode,omitempty"`
 	TLSSkipVerify bool     `toml:"tls_skip_verify,omitempty"`
 	Username      string   `toml:"username,omitempty"`
 	Password      string   `toml:"password,omitempty"`
@@ -695,10 +695,10 @@ type notifierWire struct {
 	TemplatePath string `toml:"template_path,omitempty"`
 }
 
-// routeWire is one [[notification_route]] block before validation.
+// routeWire is one [[route]] block before validation.
 type routeWire struct {
-	Match  routeMatchWire `toml:"match"`
-	Notify []string       `toml:"notify"`
+	Match     routeMatchWire `toml:"match"`
+	Notifiers []string       `toml:"notifiers"`
 }
 
 type routeMatchWire struct {
