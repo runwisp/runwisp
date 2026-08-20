@@ -268,6 +268,21 @@ func remoteAPITriggerDisabledError(taskName string) error {
 	}
 }
 
+// noConfigError is returned when the daemon can't find runwisp.toml and isn't
+// running under `runwisp cloud` (which tolerates an absent config and relies
+// on ad-hoc dispatch instead). It never substitutes a fallback config — a
+// missing file that silently ran something else would hide the operator's
+// actual mistake, so the daemon fails loudly and points at the two ways
+// forward: write one, or explore without one via the explicit demo command.
+func noConfigError(path string) error {
+	return &userFacingError{
+		title: fmt.Sprintf("no runwisp.toml found at %s", configLocation(path)),
+		details: "Create one to define your tasks:\n" +
+			"  - See https://docs.runwisp.com/configuration/overview/ for the format\n" +
+			"  - Or run `runwisp demo` to explore a fully-populated instance without writing one",
+	}
+}
+
 // authRateLimitedError is returned when the daemon's auth rate limiter
 // rejects our login attempt. The window and limit are exported constants in
 // the server package, but we avoid importing them here to keep this file

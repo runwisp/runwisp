@@ -33,6 +33,13 @@ func TestClassifyDaemonLogLine(t *testing.T) {
 		{"bind_perm_denied", "bind: permission denied", true, "bind: permission denied"},
 		{"benign_info", "INFO: daemon listening on :9477", false, ""},
 		{"empty", "", false, ""},
+		{
+			"cli_error_badge",
+			" ERROR  no runwisp.toml found at /tmp/x — create one to define your tasks",
+			true,
+			"no runwisp.toml found at /tmp/x — create one to define your tasks",
+		},
+		{"routine_slog_error_bracket", "[ERROR] notify delivery failed, retrying", false, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -220,6 +227,43 @@ func TestWaitForDaemonLoop_ReturnsFatalFromLog(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Fatal error")
 	assert.False(t, timedOut)
+}
+
+// TestWaitForDaemonLoop_ReturnsFatalFromRenderedCLIErrorBadge reproduces the
+// real daemon.log content a spawned `runwisp daemon` writes when
+// loadDaemonConfig fails (e.g. no runwisp.toml): fang's handleCLIError renders
+// an unbracketed "ERROR" badge and the process exits immediately. Before
+// classifyDaemonLogLine recognized that badge, this fell through to the full
+// health-check timeout instead of surfacing the real cause right away.
+func TestWaitForDaemonLoop_ReturnsFatalFromRenderedCLIErrorBadge(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "daemon.log")
+	rendered := " ERROR  no runwisp.toml found at " + dir + "\n\n" +
+		"Create one to define your tasks:\n" +
+		"  • See https://docs.runwisp.com/configuration/overview/ for the format\n" +
+		"  • Or run `runwisp demo` to explore a fully-populated instance without writing one\n"
+	require.NoError(t, os.WriteFile(logPath, []byte(rendered), 0o600))
+	drainer := &daemonLogDrainer{path: logPath}
+	defer drainer.close()
+
+	pidPath := filepath.Join(dir, "daemon.pid")
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	client := apiclient.New("http://127.0.0.1:1", "")
+	start := time.Now()
+	err, timedOut := waitForDaemonLoop(client, drainer, pidPath, time.Now().Add(10*time.Second), ticker, dir)
+	require.Error(t, err)
+	// The badge is stripped (the caller re-renders through the same "ERROR"
+	// badge machinery, so keeping it would print two badges back to back),
+	// but the rest of the operator's guidance survives intact.
+	assert.NotContains(t, err.Error(), "ERROR")
+	assert.Contains(t, err.Error(), "no runwisp.toml found at "+dir)
+	assert.Contains(t, err.Error(), "runwisp demo")
+	assert.False(t, timedOut)
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("expected a fast fail, took %v", elapsed)
+	}
 }
 
 func TestWaitForDaemonLoop_TimesOut(t *testing.T) {

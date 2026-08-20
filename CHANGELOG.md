@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Outbound notification channels (Slack, Telegram) send periodic check-ins during a sustained incident** on the default `keep_occurrences` cadence. See [Notification model](https://docs.runwisp.com/notifications/model/).
 - **`storage.max_size` enforcement accounts for rotated log segments** when trimming run history to the configured cap. See [Storage](https://docs.runwisp.com/configuration/storage/).
 - **Starting the daemon no longer reprints the startup log a second time after a successful start.** The log was already streamed live during startup; only a failed or timed-out start now prints the tail for diagnosis.
+- **Running `runwisp` with no `runwisp.toml` in the current directory now fails immediately with a clear error**, instead of hanging for the full 10-second startup timeout before reporting a generic "health check timed out". See [Configuration](https://docs.runwisp.com/configuration/overview/).
 
 ### Security
 
