@@ -230,17 +230,7 @@ func (d *daemonLogDrainer) drain() (fatalMsg string, fatal bool) {
 	for {
 		line, err := d.reader.ReadString('\n')
 		if line != "" {
-			line = strings.TrimRight(line, "\n\r")
-			switch {
-			case fatalLines != nil:
-				fatalLines = append(fatalLines, line)
-			default:
-				if msg, isFatal := classifyDaemonLogLine(line); isFatal {
-					fatalLines = []string{msg}
-				} else {
-					fmt.Fprintf(os.Stderr, "  %s\n", line)
-				}
-			}
+			fatalLines = d.handleLine(strings.TrimRight(line, "\n\r"), fatalLines)
 		}
 		if err != nil {
 			// Reset so next drain picks up writes appended after EOF.
@@ -251,6 +241,19 @@ func (d *daemonLogDrainer) drain() (fatalMsg string, fatal bool) {
 			return "", false
 		}
 	}
+}
+
+// handleLine echoes a non-fatal line live, or — once a fatal line has been
+// seen — folds it into fatalLines instead (see drain's doc comment for why).
+func (d *daemonLogDrainer) handleLine(line string, fatalLines []string) []string {
+	if fatalLines != nil {
+		return append(fatalLines, line)
+	}
+	if msg, isFatal := classifyDaemonLogLine(line); isFatal {
+		return []string{msg}
+	}
+	fmt.Fprintf(os.Stderr, "  %s\n", line)
+	return fatalLines
 }
 
 func (d *daemonLogDrainer) close() {
