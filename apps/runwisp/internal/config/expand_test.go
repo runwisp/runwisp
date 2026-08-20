@@ -110,8 +110,7 @@ secrets = { TOKEN = "${file:hook.url}" }
 run = "worker --region ${REGION}"
 instances = 1
 
-[[notifier]]
-id = "ops"
+[notifiers.ops]
 type = "slack"
 webhook_url = "${file:hook.url}"
 `
@@ -135,7 +134,7 @@ webhook_url = "${file:hook.url}"
 	assert.Equal(t, "worker --region ${REGION}", svc.Run, "service run is exempt too")
 
 	assert.Equal(t, "eu-1", raw.Defaults.Env["SHARED"])
-	assert.Equal(t, "https://hooks.example/XYZ", raw.Notifiers[0].WebhookURL)
+	assert.Equal(t, "https://hooks.example/XYZ", raw.Notifiers["ops"].WebhookURL)
 }
 
 func TestExpandConfig_MapKeysStayLiteral(t *testing.T) {
@@ -189,8 +188,7 @@ env = { MODE = "${MODE}" }
 
 func TestExpandConfig_ErrorNamesNotifierPath(t *testing.T) {
 	src := `
-[[notifier]]
-id = "ops"
+[notifiers.ops]
 type = "slack"
 webhook_url = "${MISSING_HOOK}"
 `
@@ -199,7 +197,7 @@ webhook_url = "${MISSING_HOOK}"
 
 	err := expandConfig(&raw, t.TempDir(), fakeEnv(nil))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "notifier[0].webhook_url")
+	assert.Contains(t, err.Error(), "notifiers.ops.webhook_url")
 	assert.Contains(t, err.Error(), "MISSING_HOOK")
 }
 
@@ -232,13 +230,11 @@ timezone = "UTC"
 cron = "${RUNWISP_TEST_E2E_CRON}"
 run = "backup.sh ${NOT_EXPANDED}"
 
-[[notifier]]
-id = "ops"
+[notifiers.ops]
 type = "slack"
 webhook_url = "${file:hook.url}"
 
-[[notifier]]
-id = "oncall"
+[notifiers.oncall]
 type = "telegram"
 bot_token = "${RUNWISP_TEST_E2E_TOKEN}"
 chat_id = "-1001"
@@ -254,8 +250,8 @@ chat_id = "-1001"
 	assert.Equal(t, "backup.sh ${NOT_EXPANDED}", cfg.Tasks[0].Run)
 
 	require.Len(t, cfg.Notify.Notifiers, 2)
-	assert.Equal(t, "https://hooks.slack.test/T/B/Z", cfg.Notify.Notifiers[0].WebhookURL)
-	assert.Equal(t, "tg-token", cfg.Notify.Notifiers[1].BotToken)
+	assert.Equal(t, "https://hooks.slack.test/T/B/Z", cfg.Notify.Notifiers[1].WebhookURL)
+	assert.Equal(t, "tg-token", cfg.Notify.Notifiers[0].BotToken)
 }
 
 func TestLoad_SubstitutionUnsetVarFailsLoad(t *testing.T) {

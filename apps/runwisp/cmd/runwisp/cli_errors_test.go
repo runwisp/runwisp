@@ -172,12 +172,12 @@ func TestRemoteUnreachableError(t *testing.T) {
 	assert.Contains(t, ufe.details, "URL is correct")
 }
 
-func TestRemoteAPITriggerDisabledError(t *testing.T) {
-	err := remoteAPITriggerDisabledError("backup")
+func TestRemoteManualTriggerDisabledError(t *testing.T) {
+	err := remoteManualTriggerDisabledError("backup")
 	var ufe *userFacingError
 	require.True(t, errors.As(err, &ufe))
 	assert.Contains(t, ufe.title, `"backup"`)
-	assert.Contains(t, ufe.details, "api_trigger = false")
+	assert.Contains(t, ufe.details, "manual_trigger = false")
 }
 
 func TestRunwispPortConflictError(t *testing.T) {

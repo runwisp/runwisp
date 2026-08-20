@@ -16,8 +16,7 @@ cron        = "${BACKUP_CRON}"          # from the daemon's environment
 description = "backs up ${REGION}"      # works mid-string too
 run         = "/usr/local/bin/backup.sh"
 
-[[notifier]]
-id          = "slack-ops"
+[notifiers.slack-ops]
 type        = "slack"
 webhook_url = "${file:secrets/slack.url}"   # from a file
 ```
@@ -129,13 +128,11 @@ run  = "/usr/local/bin/export"
 [tasks.export.secrets]
 API_TOKEN = "${file:secrets/export.token}"
 
-[[notifier]]
-id          = "slack-ops"
+[notifiers.slack-ops]
 type        = "slack"
 webhook_url = "${SLACK_OPS_WEBHOOK}"
 
-[[notifier]]
-id        = "tg-oncall"
+[notifiers.tg-oncall]
 type      = "telegram"
 bot_token = "${file:~/.config/runwisp/tg.token}"
 chat_id   = "-1001234567890"

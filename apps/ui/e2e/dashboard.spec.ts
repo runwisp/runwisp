@@ -69,9 +69,9 @@ test.describe("dashboard", () => {
         ).toBeVisible();
         await expect(page.getByRole("heading", { name: "Running now", exact: true })).toBeVisible();
 
-        // An activity row for echo-task carrying a success status badge.
+        // An activity row for echo-task carrying a succeeded status badge.
         await expect(
-            page.getByRole("button", { name: /echo-task[\s\S]*success/i }).first(),
+            page.getByRole("button", { name: /echo-task[\s\S]*succeeded/i }).first(),
         ).toBeVisible();
     });
 

@@ -53,14 +53,13 @@ coalesce_window = "1m"
 [tasks.fail-task]
 run = "exit 1"
 
-[[notifier]]
-id          = "ops"
+[notifiers.ops]
 type        = "slack"
 webhook_url = "%s"
 
-[[notification_route]]
+[[route]]
 match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
-notify = ["ops", "inapp"]
+notifiers = ["ops", "inapp"]
 `, webhook.URL))
 
 	projectDir := runwispProjectDir(t)
@@ -144,15 +143,14 @@ func TestNotificationsGenericWebhookFires(t *testing.T) {
 [tasks.fail-task]
 run = "exit 1"
 
-[[notifier]]
-id      = "hook"
+[notifiers.hook]
 type    = "webhook"
 url     = "%s"
 headers = { Authorization = "Bearer e2e-test-token" }
 
-[[notification_route]]
+[[route]]
 match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
-notify = ["hook"]
+notifiers = ["hook"]
 `, hook.URL))
 
 	projectDir := runwispProjectDir(t)
@@ -218,14 +216,13 @@ coalesce_outbound = false
 [tasks.fail-task]
 run = "exit 1"
 
-[[notifier]]
-id          = "ops"
+[notifiers.ops]
 type        = "slack"
 webhook_url = "%s"
 
-[[notification_route]]
+[[route]]
 match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
-notify = ["ops"]
+notifiers = ["ops"]
 `, webhook.URL))
 
 	projectDir := runwispProjectDir(t)
@@ -263,14 +260,13 @@ retry_budget = "1500ms"
 [tasks.fail-task]
 run = "exit 1"
 
-[[notifier]]
-id          = "broken"
+[notifiers.broken]
 type        = "slack"
 webhook_url = "%s"
 
-[[notification_route]]
+[[route]]
 match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
-notify = ["broken", "inapp"]
+notifiers = ["broken", "inapp"]
 `, webhook.URL))
 
 	projectDir := runwispProjectDir(t)
@@ -300,8 +296,8 @@ notify = ["broken", "inapp"]
 }
 
 // TestNotificationsZeroConfigInappFires verifies the zero-setup default: a
-// TOML with no [notify] section, no [[notifier]] blocks, no
-// [[notification_route]] rules, and no per-task notify_on_failure still
+// TOML with no [notify] section, no [notifiers.*] blocks, no
+// [[route]] rules, and no per-task notify_on_failure still
 // produces an in-app notification when a run fails. The bell in the Web UI
 // and the footer line in the TUI must light up out of the box.
 func TestNotificationsZeroConfigInappFires(t *testing.T) {
@@ -353,18 +349,17 @@ coalesce_window = "1m"
 [tasks.fail-task]
 run = "exit 1"
 
-[[notifier]]
-id   = "email-ops"
+[notifiers.email-ops]
 type = "smtp"
 host = "%s"
 port = %s
-tls  = "off"
+tls_mode = "off"
 from = "RunWisp <runwisp@example.test>"
 to   = ["alerts@example.test"]
 
-[[notification_route]]
+[[route]]
 match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
-notify = ["email-ops"]
+notifiers = ["email-ops"]
 `, host, portStr))
 
 	projectDir := runwispProjectDir(t)
@@ -393,7 +388,7 @@ notify = ["email-ops"]
 
 // testSMTPServer is a tiny stdlib-only fake that accepts EHLO → MAIL → RCPT →
 // DATA → QUIT and captures the message body. It speaks just enough of the
-// SMTP protocol to satisfy go-mail with TLS disabled (`tls = "off"`).
+// SMTP protocol to satisfy go-mail with TLS disabled (`tls_mode = "off"`).
 type testSMTPServer struct {
 	ln     net.Listener
 	bodies chan string

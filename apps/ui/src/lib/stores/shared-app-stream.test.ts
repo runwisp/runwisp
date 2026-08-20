@@ -154,14 +154,14 @@ function makeWorld() {
     function makeTab() {
         let leaderES: FakeEventSource | null = null;
         const stream = new SharedAppStream({
-            path: "/api/stream",
+            path: "/api/events/stream",
             createBus: () => bus.create(),
             createElector: () => election.create(),
             createLeaderManager: () => {
                 const es = new FakeEventSource();
                 leaderES = es;
                 return new EventManager({
-                    path: "/api/stream",
+                    path: "/api/events/stream",
                     createEventSource: () => es,
                     getApiUrl: () => "http://test",
                 });
@@ -290,14 +290,14 @@ describe("SharedAppStream", () => {
         function makeSeedTab() {
             let leaderES: FakeEventSource | null = null;
             const stream = new SharedAppStream({
-                path: "/api/stream",
+                path: "/api/events/stream",
                 createBus: () => bus.create(),
                 createElector: () => election.create(),
                 createLeaderManager: (seed) => {
                     const es = new FakeEventSource();
                     leaderES = es;
                     return new EventManager({
-                        path: "/api/stream",
+                        path: "/api/events/stream",
                         initialLastEventId: seed,
                         createEventSource: (url) => {
                             connectUrls.push(url);
@@ -328,7 +328,7 @@ describe("SharedAppStream", () => {
         unsubA();
 
         expect(b.leaderES()).not.toBeNull();
-        expect(connectUrls.at(-1)).toBe("http://test/api/stream?lastEventId=5");
+        expect(connectUrls.at(-1)).toBe("http://test/api/events/stream?lastEventId=5");
     });
 
     it("syncs a late-joining follower to the current open state", () => {
@@ -494,7 +494,7 @@ describe("SharedAppStream", () => {
     it("reports sharing as unavailable when Web Locks are missing", () => {
         vi.stubGlobal("navigator", {}); // no `locks`
         try {
-            const stream = new SharedAppStream({ path: "/api/stream" });
+            const stream = new SharedAppStream({ path: "/api/events/stream" });
             expect(stream.sharing).toBe(false);
         } finally {
             vi.unstubAllGlobals();
@@ -506,7 +506,7 @@ describe("SharedAppStream", () => {
         try {
             let leaderES: FakeEventSource | null = null;
             const stream = new SharedAppStream({
-                path: "/api/stream",
+                path: "/api/events/stream",
                 // Bus uses the real default (BroadcastChannel); the elector uses the
                 // no-lock fallback that wins immediately. Only the leader's real
                 // connection is stubbed.
@@ -514,7 +514,7 @@ describe("SharedAppStream", () => {
                     const es = new FakeEventSource();
                     leaderES = es;
                     return new EventManager({
-                        path: "/api/stream",
+                        path: "/api/events/stream",
                         createEventSource: () => es,
                         getApiUrl: () => "http://test",
                     });
@@ -639,13 +639,13 @@ describe("SharedAppStream", () => {
         try {
             let leaderES: FakeEventSource | null = null;
             const stream = new SharedAppStream({
-                path: "/api/stream",
+                path: "/api/events/stream",
                 createBus: () => ({ post: () => {}, onMessage: () => {}, close: () => {} }),
                 createLeaderManager: () => {
                     const es = new FakeEventSource();
                     leaderES = es;
                     return new EventManager({
-                        path: "/api/stream",
+                        path: "/api/events/stream",
                         createEventSource: () => es,
                         getApiUrl: () => "http://test",
                     });

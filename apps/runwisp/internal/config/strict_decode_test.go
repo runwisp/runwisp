@@ -66,7 +66,7 @@ run = "echo hi"
 		},
 		{
 			name: "notifier",
-			toml: `[[notifier]]
+			toml: `[notifiers.ops]
 type = "slack"
 bogus = "x"
 

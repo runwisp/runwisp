@@ -55,8 +55,7 @@ Declare a channel (here, the
 service's [`notify_on_failure`](/notifications/per-task/) at it:
 
 ```toml
-[[notifier]]
-id          = "slack-prod"
+[notifiers.slack-prod]
 type        = "slack"
 webhook_url = "https://hooks.slack.com/services/..."
 

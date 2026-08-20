@@ -60,7 +60,7 @@ func (c *Client) UnreadNotificationCount() (int64, error) {
 	var resp struct {
 		Count int64 `json:"count"`
 	}
-	if err := c.doJSON("GET", "/api/notifications/unread-count", nil, &resp); err != nil {
+	if err := c.doJSON("GET", "/api/notifications/unreadCount", nil, &resp); err != nil {
 		return 0, err
 	}
 	return resp.Count, nil

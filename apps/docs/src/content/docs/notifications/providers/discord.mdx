@@ -17,13 +17,12 @@ Discord needs.
 ## Fields
 
 ```toml
-[[notifier]]
-id          = "discord-ops"
+[notifiers.discord-ops]
 type        = "discord"
 webhook_url = "${RUNWISP_DISCORD_OPS_URL}"
 ```
 
-`id`, `type`, and `webhook_url` are required. Use
+The id in the table header, plus `type` and `webhook_url`, are required. Use
 [`${...}` substitution](/configuration/substitution/) to pull the URL
 from an env var or a file instead of writing it inline —
 [storing the secret](/notifications/model/#storing-the-secret).
@@ -63,8 +62,7 @@ Pick where the URL lives and reference it with
         ```
 
         ```toml
-        [[notifier]]
-        id          = "discord-ops"
+        [notifiers.discord-ops]
         type        = "discord"
         webhook_url = "${RUNWISP_DISCORD_OPS_URL}"
         ```
@@ -83,8 +81,7 @@ Pick where the URL lives and reference it with
         ```
 
         ```toml
-        [[notifier]]
-        id          = "discord-ops"
+        [notifiers.discord-ops]
         type        = "discord"
         webhook_url = "${file:~/.config/runwisp/discord-ops.url}"
         ```
@@ -95,8 +92,7 @@ Pick where the URL lives and reference it with
         and an inline URL will leak.
 
         ```toml
-        [[notifier]]
-        id          = "discord-ops"
+        [notifiers.discord-ops]
         type        = "discord"
         webhook_url = "https://discord.com/api/webhooks/123.../XXX..."
         ```
@@ -104,10 +100,10 @@ Pick where the URL lives and reference it with
 
 </Tabs>
 
-The `id` is what other parts of `runwisp.toml` refer to. Pick
+The id is what other parts of `runwisp.toml` refer to. Pick
 something readable — `discord-ops`, `discord-deploys` both work. A
 webhook is bound to the channel it was created in; for a second
-channel, create a second webhook and a second `[[notifier]]`.
+channel, create a second webhook and a second `[notifiers.*]` entry.
 
 ## 3. Route failures to it
 
@@ -131,9 +127,9 @@ of options, including `notify_on_success`.
 ### In a notification rule (one rule covering many tasks)
 
 ```toml
-[[notification_route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
-notify = ["discord-ops"]
+[[route]]
+match     = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+notifiers = ["discord-ops"]
 ```
 
 Omit `match.task` and the rule matches every task. Add a `match.task`
@@ -141,9 +137,9 @@ pattern for finer control:
 
 ```toml
 # Backup failures also ping the on-call channel
-[[notification_route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
-notify = ["discord-ops", "discord-oncall"]
+[[route]]
+match     = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+notifiers = ["discord-ops", "discord-oncall"]
 ```
 
 The router removes duplicates — if a backup failure matches both a

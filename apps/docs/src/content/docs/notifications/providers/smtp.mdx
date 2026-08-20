@@ -16,8 +16,7 @@ Mailgun, Postmark, SendGrid, or your own Postfix on `127.0.0.1`.
 ## Fields
 
 ```toml
-[[notifier]]
-id       = "email-ops"
+[notifiers.email-ops]
 type     = "smtp"
 host     = "smtp.example.com"
 port     = 587
@@ -27,7 +26,7 @@ username = "apikey"
 password = "${RUNWISP_SMTP_PASSWORD}"
 ```
 
-`id`, `type`, `host`, `from`, and at least one `to` are required.
+The id (as the table key), `type`, `host`, `from`, and at least one `to` are required.
 Credentials are optional — leave `username` and `password` unset to
 talk to a local relay (Postfix listening on `127.0.0.1:25`, an
 internal MTA, etc.). Set them together or not at all. Use
@@ -39,7 +38,7 @@ password from an env var or a file —
 | ----------------- | -------- | ---------------------------------------------------------------------------- |
 | `host`            | yes      | SMTP relay hostname (e.g. `smtp.gmail.com`).                                 |
 | `port`            | no       | TCP port. Defaults to 25; common values: 587 (STARTTLS), 465 (implicit TLS). |
-| `tls`             | no       | `"starttls"` (default for 25/587), `"implicit"` (default for 465), `"off"`.  |
+| `tls_mode`        | no       | `"starttls"` (default for 25/587), `"implicit"` (default for 465), `"off"`.  |
 | `tls_skip_verify` | no       | Skip TLS certificate verification. **Do not** set this in production.        |
 | `username`        | no       | SMTP AUTH username. Required when sending creds.                             |
 | `password`        | no       | SMTP AUTH password — inline, `${VAR}`, or `${file:path}`.                    |
@@ -59,8 +58,7 @@ password from an env var or a file —
         — Gmail rejects regular account passwords for SMTP.
 
         ```toml
-        [[notifier]]
-        id       = "email-ops"
+        [notifiers.email-ops]
         type     = "smtp"
         host     = "smtp.gmail.com"
         port     = 587
@@ -79,8 +77,7 @@ password from an env var or a file —
         the password.
 
         ```toml
-        [[notifier]]
-        id       = "email-ops"
+        [notifiers.email-ops]
         type     = "smtp"
         host     = "smtp.sendgrid.net"
         port     = 587
@@ -95,8 +92,7 @@ password from an env var or a file —
         SES console under **SMTP settings**, not your IAM password.
 
         ```toml
-        [[notifier]]
-        id       = "email-ops"
+        [notifiers.email-ops]
         type     = "smtp"
         host     = "email-smtp.eu-west-1.amazonaws.com"
         port     = 587
@@ -112,8 +108,7 @@ password from an env var or a file —
 
         ```toml
         # Mailgun
-        [[notifier]]
-        id       = "email-ops"
+        [notifiers.email-ops]
         type     = "smtp"
         host     = "smtp.eu.mailgun.org"
         port     = 587
@@ -125,8 +120,7 @@ password from an env var or a file —
 
         ```toml
         # Postmark
-        [[notifier]]
-        id       = "email-ops"
+        [notifiers.email-ops]
         type     = "smtp"
         host     = "smtp.postmarkapp.com"
         port     = 587
@@ -139,15 +133,14 @@ password from an env var or a file —
     <TabItem label="Local Postfix" icon="seti:shell">
         A relay you already trust on the same host — no auth, no
         TLS. The daemon refuses to send credentials over cleartext,
-        so `tls = "off"` only works alongside an auth-less relay.
+        so `tls_mode = "off"` only works alongside an auth-less relay.
 
         ```toml
-        [[notifier]]
-        id   = "email-local"
+        [notifiers.email-local]
         type = "smtp"
         host = "127.0.0.1"
         port = 25
-        tls  = "off"
+        tls_mode = "off"
         from = "runwisp@myhost"
         to   = ["ops@example.com"]
         ```
@@ -172,8 +165,7 @@ Pick where the password lives and reference it with
         ```
 
         ```toml
-        [[notifier]]
-        id       = "email-ops"
+        [notifiers.email-ops]
         type     = "smtp"
         host     = "smtp.example.com"
         from     = "runwisp@example.com"
@@ -196,8 +188,7 @@ Pick where the password lives and reference it with
         ```
 
         ```toml
-        [[notifier]]
-        id       = "email-ops"
+        [notifiers.email-ops]
         type     = "smtp"
         host     = "smtp.example.com"
         from     = "runwisp@example.com"
@@ -212,8 +203,7 @@ Pick where the password lives and reference it with
         chat.
 
         ```toml
-        [[notifier]]
-        id       = "email-ops"
+        [notifiers.email-ops]
         type     = "smtp"
         host     = "smtp.example.com"
         from     = "runwisp@example.com"
@@ -237,9 +227,9 @@ notify_on_failure = ["email-ops"]
 # …
 
 # Or in a notification rule:
-[[notification_route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
-notify = ["email-ops"]
+[[route]]
+match     = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+notifiers = ["email-ops"]
 ```
 
 Inline recipient overrides reuse one credential set across many
@@ -271,8 +261,8 @@ Emails typically arrive in a few seconds. If yours doesn't:
 
 - **Check the bell** for a `notify.delivery_failed` event with the
   underlying SMTP error.
-- **Common causes:** wrong port for the chosen `tls` mode (Gmail
-  needs `587` + STARTTLS; SES on `465` needs `tls = "implicit"`),
+- **Common causes:** wrong port for the chosen `tls_mode` (Gmail
+  needs `587` + STARTTLS; SES on `465` needs `tls_mode = "implicit"`),
   expired app password, recipient address rejected by the relay
   (`550 No such user`).
 - **Spam folder:** the first message from a new sender often lands
@@ -322,11 +312,11 @@ as your starting point. The helpers `statusEmoji`, `statusVerb`,
 
 - `username` set without `password` — or `password` set without
   `username`. Either both or neither.
-- `tls = "off"` combined with credentials — RunWisp refuses to
+- `tls_mode = "off"` combined with credentials — RunWisp refuses to
   send PLAIN auth over cleartext.
 - A `from`, `reply_to`, `to`, `cc`, or `bcc` value that doesn't
   parse as an RFC 5322 address.
-- An `id` containing `:` (reserved for inline target overrides) or
+- A notifier id containing `:` (reserved for inline target overrides) or
   equal to `"inapp"` (reserved).
 
 ---

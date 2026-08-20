@@ -155,7 +155,7 @@ report their `instances` and omit `max_concurrent` — a service's copy count is
             "schedule": "0 3 * * *",
             "max_concurrent": 1,
             "on_overlap": "queue",
-            "api_trigger": true,
+            "manual_trigger": true,
             "description": "nightly backup"
         }
     ]
@@ -188,7 +188,7 @@ yourself:
             "name": "backup",
             "kind": "task",
             "cron": "0 3 * * *",
-            "api_trigger": false,
+            "manual_trigger": false,
             "next_run_at": "2026-07-16 03:00:00",
             "last_run": {
                 "id": "01JZZBACKUP0000000000000000",
@@ -235,7 +235,7 @@ JSON value — ideal for an agent that needs the result, not the noise:
     "task": "backup",
     "run_id": "01JZZBACKUP0000000000000000",
     "status": "ended",
-    "end_reason": "success",
+    "end_reason": "succeeded",
     "exit_code": 0,
     "duration_ms": 812,
     "failed": false

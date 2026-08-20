@@ -51,7 +51,7 @@ func TestHandleServiceApply_UpsertsServiceTask(t *testing.T) {
 	assert.Equal(t, model.RestartAlways, task.Restart)
 	assert.Equal(t, 3, task.Instances)
 	assert.Equal(t, 3, task.MaxConcurrent)
-	assert.Equal(t, "exponential", task.RestartBackoff)
+	assert.Equal(t, model.BackoffExponential, task.RestartBackoff)
 	assert.Equal(t, "bar", task.Env["FOO"])
 	// autostart=true brings the service up to its desired count.
 	assert.Equal(t, []string{task.Name}, runner.startedServices)
@@ -354,7 +354,7 @@ func TestHandleServiceApply_MergeOverlaysRestartFields(t *testing.T) {
 	task := runner.upserted[0]
 	assert.Equal(t, 2*time.Second, task.RestartDelay)
 	assert.Equal(t, time.Minute, task.HealthyAfter)
-	assert.Equal(t, "exponential", task.RestartBackoff)
+	assert.Equal(t, model.BackoffExponential, task.RestartBackoff)
 }
 
 // An unparseable script override on the merge path surfaces as a validation

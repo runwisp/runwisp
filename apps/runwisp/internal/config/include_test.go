@@ -35,8 +35,7 @@ include = ["conf.d/*.toml"]
 [tasks.root_task]
 run = "echo root"
 
-[[notifier]]
-id = "root-slack"
+[notifiers.root-slack]
 type = "slack"
 webhook_url = "https://example.com/root"
 `,
@@ -44,14 +43,13 @@ webhook_url = "https://example.com/root"
 [tasks.a_task]
 run = "echo a"
 
-[[notifier]]
-id = "a-slack"
+[notifiers.a-slack]
 type = "slack"
 webhook_url = "https://example.com/a"
 
-[[notification_route]]
+[[route]]
 match = { task = "a_task" }
-notify = ["a-slack"]
+notifiers = ["a-slack"]
 `,
 		"conf.d/b.toml": `
 [services.b_svc]
@@ -160,6 +158,31 @@ run = "echo root"
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "dup")
 	assert.Contains(t, err.Error(), "runwisp.toml")
+	assert.Contains(t, err.Error(), filepath.Join("conf.d", "a.toml"))
+}
+
+func TestInclude_DuplicateNotifierIDAcrossFilesIsError(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include = ["conf.d/*.toml"]
+
+[notifiers.dup]
+type = "slack"
+webhook_url = "https://example.com/root"
+
+[tasks.t]
+run = "echo hi"
+`,
+		"conf.d/a.toml": `
+[notifiers.dup]
+type = "slack"
+webhook_url = "https://example.com/a"
+`,
+	})
+	_, err := Load(filepath.Join(dir, "runwisp.toml"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "dup")
 	assert.Contains(t, err.Error(), filepath.Join("conf.d", "a.toml"))
 }
 

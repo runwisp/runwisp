@@ -48,7 +48,7 @@ describe("EventManager stall detection", () => {
     function setup() {
         const es = new ControllableEventSource();
         const mgr = new EventManager({
-            path: "/api/stream",
+            path: "/api/events/stream",
             createEventSource: () => es,
             getApiUrl: () => "http://test",
         });
@@ -168,7 +168,7 @@ describe("EventManager subscription and dispatch", () => {
     function setup() {
         const es = new FakeEventSource();
         const mgr = new EventManager({
-            path: "/api/stream",
+            path: "/api/events/stream",
             createEventSource: () => es,
             getApiUrl: () => "http://test",
         });
@@ -259,7 +259,7 @@ describe("EventManager subscription and dispatch", () => {
         // After close, subscribing must not open a new connection.
         let created = 0;
         const mgr2 = new EventManager({
-            path: "/api/stream",
+            path: "/api/events/stream",
             createEventSource: () => {
                 created++;
                 return new FakeEventSource();
@@ -311,7 +311,7 @@ describe("EventManager errors and reconnect", () => {
     it("notifies error with details and reconnects after a backoff", () => {
         const sources: FakeEventSource[] = [];
         const mgr = new EventManager({
-            path: "/api/stream",
+            path: "/api/events/stream",
             createEventSource: () => {
                 const es = new FakeEventSource();
                 sources.push(es);
@@ -341,7 +341,7 @@ describe("EventManager errors and reconnect", () => {
         let calls = 0;
         const recovered = new FakeEventSource();
         const mgr = new EventManager({
-            path: "/api/stream",
+            path: "/api/events/stream",
             createEventSource: () => {
                 calls++;
                 if (calls === 1) throw new Error("construct failed");
@@ -362,7 +362,7 @@ describe("EventManager errors and reconnect", () => {
     it("a throwing onError handler is caught", () => {
         const es = new FakeEventSource();
         const mgr = new EventManager({
-            path: "/api/stream",
+            path: "/api/events/stream",
             createEventSource: () => es,
             getApiUrl: () => "http://test",
         });
@@ -381,7 +381,7 @@ describe("EventManager errors and reconnect", () => {
     it("a throwing onStall handler is caught", () => {
         const es = new FakeEventSource();
         const mgr = new EventManager({
-            path: "/api/stream",
+            path: "/api/events/stream",
             createEventSource: () => es,
             getApiUrl: () => "http://test",
         });
@@ -406,7 +406,7 @@ describe("EventManager resume cursor", () => {
     it("passes the SSE event id (Last-Event-ID) to handlers", () => {
         const es = new FakeEventSource();
         const mgr = new EventManager({
-            path: "/api/stream",
+            path: "/api/events/stream",
             createEventSource: () => es,
             getApiUrl: () => "http://test",
         });
@@ -422,7 +422,7 @@ describe("EventManager resume cursor", () => {
     it("seeds a fresh connection URL with ?lastEventId from initialLastEventId", () => {
         let captured = "";
         const mgr = new EventManager({
-            path: "/api/stream",
+            path: "/api/events/stream",
             createEventSource: (url) => {
                 captured = url;
                 return new FakeEventSource();
@@ -431,13 +431,13 @@ describe("EventManager resume cursor", () => {
             initialLastEventId: () => "7",
         });
         mgr.subscribe("system", () => {});
-        expect(captured).toBe("http://test/api/stream?lastEventId=7");
+        expect(captured).toBe("http://test/api/events/stream?lastEventId=7");
     });
 
     it("omits the query when there is no seed id (fresh client)", () => {
         let captured = "";
         const mgr = new EventManager({
-            path: "/api/stream",
+            path: "/api/events/stream",
             createEventSource: (url) => {
                 captured = url;
                 return new FakeEventSource();
@@ -446,6 +446,6 @@ describe("EventManager resume cursor", () => {
             initialLastEventId: () => null,
         });
         mgr.subscribe("system", () => {});
-        expect(captured).toBe("http://test/api/stream");
+        expect(captured).toBe("http://test/api/events/stream");
     });
 });

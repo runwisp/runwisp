@@ -77,7 +77,7 @@ export interface StatusBucket {
 
 export const STATUS_BUCKETS: readonly StatusBucket[] = [
     { key: "running", label: "Running", dot: "bg-info-surface", statuses: ["pending", "running"] },
-    { key: "succeeded", label: "Succeeded", dot: "bg-success-surface", statuses: ["success"] },
+    { key: "succeeded", label: "Succeeded", dot: "bg-success-surface", statuses: ["succeeded"] },
     {
         key: "failed",
         label: "Failed",

@@ -32,13 +32,13 @@ bounded exponential backoff.
 
 ## Identity & metadata
 
-| Key            | Default      | What it does                                                                               |
-| -------------- | ------------ | ------------------------------------------------------------------------------------------ |
-| `[services.*]` | required     | The service name (the TOML table key). Used in CLI, API, and log paths.                    |
-| `run`          | required     | Shell command. Multi-line OK with TOML triple-quotes.                                      |
-| `description`  | _(empty)_    | Human-readable description shown in the UI and TUI.                                        |
-| `group`        | `"Services"` | UI grouping label.                                                                         |
-| `api_trigger`  | `true`       | Allow manual trigger from CLI / API / UI. (Restart is the usual interaction for services.) |
+| Key              | Default      | What it does                                                                               |
+| ---------------- | ------------ | ------------------------------------------------------------------------------------------ |
+| `[services.*]`   | required     | The service name (the TOML table key). Used in CLI, API, and log paths.                    |
+| `run`            | required     | Shell command. Multi-line OK with TOML triple-quotes.                                      |
+| `description`    | _(empty)_    | Human-readable description shown in the UI and TUI.                                        |
+| `group`          | `"Services"` | UI grouping label.                                                                         |
+| `manual_trigger` | `true`       | Allow manual trigger from CLI / API / UI. (Restart is the usual interaction for services.) |
 
 ## Instances
 
@@ -337,7 +337,7 @@ An instance that catches `SIGTERM` and exits cleanly is recorded with
 - `cron`, `catch_up` — services aren't cron-driven.
 - [`params`](/configuration/tasks/#parameters) — services don't take per-execution parameters; they aren't manually triggered.
 - `retry_attempts`, `retry_delay`, `retry_backoff` — services restart instead of retry. Use `restart_delay` / `restart_backoff`.
-- `max_concurrent`, `queue_max` — instance count is `instances`; services don't queue.
+- `max_concurrent`, `max_queued` — instance count is `instances`; services don't queue.
 - A name shared with a `[tasks.*]` entry.
 - Empty or missing `run`.
 - `instances` outside `[1, 64]`.

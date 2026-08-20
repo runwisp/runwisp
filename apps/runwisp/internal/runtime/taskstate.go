@@ -76,7 +76,7 @@ const (
 	actionStart     concurrencyAction = iota // start the run immediately
 	actionQueued                             // run was enqueued; do not start
 	actionRejected                           // run was rejected (policy: skip)
-	actionQueueFull                          // queue at queue_max; drop new firing
+	actionQueueFull                          // queue at max_queued; drop new firing
 )
 
 // evaluateConcurrency decides whether a run can start and mutates queue state
@@ -96,9 +96,9 @@ func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, 
 	case model.PolicySkip:
 		return actionRejected, fmt.Errorf("task already running, skipping (policy: skip)")
 	case model.PolicyQueue:
-		queueMax := ts.task.QueueMax
-		if queueMax > 0 && len(ts.queue) >= queueMax {
-			return actionQueueFull, fmt.Errorf("queue full (%d pending) for task %s", queueMax, ts.task.Name)
+		maxQueued := ts.task.MaxQueued
+		if maxQueued > 0 && len(ts.queue) >= maxQueued {
+			return actionQueueFull, fmt.Errorf("queue full (%d pending) for task %s", maxQueued, ts.task.Name)
 		}
 		ts.queue = append(ts.queue, run)
 		ts.cond.Signal()

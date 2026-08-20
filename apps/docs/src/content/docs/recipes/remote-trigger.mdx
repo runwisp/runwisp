@@ -180,8 +180,8 @@ the machine you're triggering from:
    plain HTTP in the clear, and anyone who can watch the traffic can
    grab that token and reuse it. TLS is what closes that gap.
 2. **The task allows API triggering.** Tasks are triggerable over the
-   API by default (`api_trigger = true`). If you've set
-   `api_trigger = false` on a task to wall it off, the trigger comes
+   API by default (`manual_trigger = true`). If you've set
+   `manual_trigger = false` on a task to wall it off, the trigger comes
    back `403` and so does `runwisp run --url`. Drop the line to
    re-enable it.
 
@@ -210,7 +210,7 @@ _when_.
     <LinkCard
         title="[tasks.*] ref"
         href="/configuration/tasks/"
-        description="api_trigger and every other task key."
+        description="manual_trigger and every other task key."
     />
     <LinkCard
         title="Quick start"

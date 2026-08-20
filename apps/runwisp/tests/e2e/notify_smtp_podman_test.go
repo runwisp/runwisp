@@ -70,19 +70,18 @@ coalesce_window = "1m"
 [tasks.fail-task]
 run = "exit 1"
 
-[[notifier]]
-id              = "email-ops"
+[notifiers.email-ops]
 type            = "smtp"
 host            = "127.0.0.1"
 port            = %s
-tls             = "%s"
+tls_mode        = "%s"
 tls_skip_verify = true
 %sfrom            = "RunWisp <runwisp@example.test>"
 to              = ["alerts@example.test"]
 
-[[notification_route]]
+[[route]]
 match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
-notify = ["email-ops"]
+notifiers = ["email-ops"]
 `, mp.smtpPort, tc.tlsMode, authBlock))
 
 			projectDir := runwispProjectDir(t)
@@ -124,21 +123,20 @@ func TestSMTPPodman_AuthFailureSurfacesDeliveryFailed(t *testing.T) {
 [tasks.fail-task]
 run = "exit 1"
 
-[[notifier]]
-id              = "email-ops"
+[notifiers.email-ops]
 type            = "smtp"
 host            = "127.0.0.1"
 port            = %s
-tls             = "starttls"
+tls_mode        = "starttls"
 tls_skip_verify = true
 username        = "e2e"
 password        = "WRONG"
 from            = "RunWisp <runwisp@example.test>"
 to              = ["alerts@example.test"]
 
-[[notification_route]]
+[[route]]
 match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
-notify = ["email-ops", "inapp"]
+notifiers = ["email-ops", "inapp"]
 `, mp.smtpPort))
 
 	projectDir := runwispProjectDir(t)

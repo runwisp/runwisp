@@ -48,7 +48,7 @@ func setupServerWithOpts(t *testing.T, mutate func(*Options)) (*Server, *testuti
 	task := &model.Task{
 		Name:          "task1",
 		Run:           "echo hi",
-		APITrigger:    true,
+		ManualTrigger: true,
 		MaxConcurrent: 1,
 		OnOverlap:     model.PolicyQueue,
 	}
@@ -96,6 +96,34 @@ func TestGetTasks(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, resp.Items, 1)
 	assert.Equal(t, "task1", resp.Items[0].Name)
+}
+
+func TestGetTask(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	req := httptest.NewRequest("GET", "/api/tasks/task1", nil)
+	w := httptest.NewRecorder()
+
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp model.TaskResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "task1", resp.Name)
+}
+
+func TestGetTask_NotFound(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	req := httptest.NewRequest("GET", "/api/tasks/does-not-exist", nil)
+	w := httptest.NewRecorder()
+
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestTriggerRun(t *testing.T) {
@@ -561,7 +589,7 @@ func TestProtectedRoute_AcceptedWithValidToken(t *testing.T) {
 func TestAppStream(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 
-	req := httptest.NewRequest("GET", "/api/stream", nil)
+	req := httptest.NewRequest("GET", "/api/events/stream", nil)
 	w := httptest.NewRecorder()
 
 	ctx, cancel := context.WithCancel(context.Background())

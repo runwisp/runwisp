@@ -47,8 +47,8 @@ Work down this list — it's ordered by how often each one is the answer.
    schedule it actually parsed.
 2. **The daemon hasn't picked up your edit.** RunWisp never watches files. See
    [the next section](#i-edited-runwisptoml-and-nothing-changed).
-3. **`api_trigger = false`.** That makes the task
-   [cron-only](/configuration/tasks/#api_trigger--false--cron-only-tasks) — the
+3. **`manual_trigger = false`.** That makes the task
+   [cron-only](/configuration/tasks/#manual_trigger--false--cron-only-tasks) — the
    CLI, API, and UI will all refuse to trigger it by hand. Intentional, but easy
    to forget you set it.
 4. **The timezone isn't what you think.** Cron is evaluated in the task's
@@ -161,7 +161,7 @@ has the full state machine.
 Check them in this order:
 
 1. **Is anything routed?** With zero config you get in-app notifications only.
-   An outbound channel needs a `[[notifier]]` _and_ something routing events to
+   An outbound channel needs a `[notifiers.<id>]` block _and_ something routing events to
    it — either [`global_notifiers`](/notifications/global/#the-bell--global_notifiers),
    a [notification rule](/notifications/routes/), or
    [per-task notifications](/notifications/per-task/).

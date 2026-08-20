@@ -100,18 +100,18 @@ test.describe("run lifecycle", () => {
         await expect(page.getByText("timed-phase-3")).toBeVisible({ timeout: 10_000 });
 
         // --- Natural finish, observed live (no reload/goto since the trigger) ---
-        await expect(runVerdict(page, "success")).toBeVisible({ timeout: 15_000 });
+        await expect(runVerdict(page, "succeeded")).toBeVisible({ timeout: 15_000 });
         await expect(page.getByText("Streaming", { exact: true })).toBeHidden();
         await expect(page.getByText("timed-done")).toBeVisible();
 
         // The same row flips from running to success without a refresh: no row is
         // running any more, and the newest row (ours) now reads success.
         await expect(listRow("running")).toHaveCount(0, { timeout: 10_000 });
-        await expect(listRow("success").first()).toBeVisible();
+        await expect(listRow("succeeded").first()).toBeVisible();
 
         // The record is a clean success and the panel matches it exactly.
         const ended = await waitForRunEnded(page, "timed-task", running.id, daemonState.token);
-        expect(ended.endReason).toBe("success");
+        expect(ended.endReason).toBe("succeeded");
         expect(ended.exitCode).toBe(0);
         await expectRunDetailMatchesApi(page, ended);
     });

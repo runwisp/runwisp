@@ -22,7 +22,7 @@ func (c *Client) GetSystemStats() (*model.SystemStats, error) {
 // GetMetricsHistory fetches historical system metrics from the ring buffer.
 func (c *Client) GetMetricsHistory() ([]model.MetricsSample, error) {
 	var resp server.MetricsHistoryBody
-	if err := c.doJSON("GET", "/api/system/history", nil, &resp); err != nil {
+	if err := c.doJSON("GET", "/api/system/metrics", nil, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Items, nil
@@ -63,7 +63,7 @@ func (c *Client) GetInstanceInfo() (*model.InstanceInfo, error) {
 // restart-only change) comes back as an error from the daemon.
 func (c *Client) Reload() (*model.ReloadResult, error) {
 	var result model.ReloadResult
-	if err := c.doJSON("POST", "/api/reload", nil, &result); err != nil {
+	if err := c.doJSON("POST", "/api/daemon/reload", nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

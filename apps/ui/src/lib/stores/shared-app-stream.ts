@@ -15,7 +15,7 @@ import {
 // Why this exists: a browser caps concurrent connections to one origin at ~6
 // over HTTP/1.1, and that pool is shared across every tab in the whole browser.
 // The daemon speaks plain HTTP, and each tab held its own long-lived SSE on
-// `/api/stream`, so ~6 open RunWisp tabs saturated the pool — the 7th tab's SSE
+// `/api/events/stream`, so ~6 open RunWisp tabs saturated the pool — the 7th tab's SSE
 // hung in CONNECTING forever, and even plain REST calls queued behind the live
 // streams. SharedAppStream fixes the root cause: across all tabs exactly one —
 // the elected leader — holds the real EventSource; every other tab (a follower)
@@ -61,7 +61,7 @@ export interface LeaderElector {
 }
 
 export interface SharedAppStreamOptions {
-    /** SSE path the leader connects to, e.g. `/api/stream`. */
+    /** SSE path the leader connects to, e.g. `/api/events/stream`. */
     path: string;
     channelName?: string;
     lockName?: string;

@@ -92,7 +92,7 @@ func TestTableHeader(t *testing.T) {
 		{line: "  [daemon]  ", wantName: "daemon", wantOK: true},
 		{line: "[daemon] # trailing comment", wantName: "daemon", wantOK: true},
 		{line: "[tasks.backup]\n", wantName: "tasks.backup", wantOK: true},
-		{line: "[[notifier]]", wantName: "notifier", wantArray: true, wantOK: true},
+		{line: "[[route]]", wantName: "route", wantArray: true, wantOK: true},
 		{line: "include = [\"a\"]", wantOK: false},
 		{line: "[daemon] include = []", wantOK: false},
 		{line: "[]", wantOK: false},

@@ -16,14 +16,13 @@ override lets a single webhook fan out to several destinations.
 ## Fields
 
 ```toml
-[[notifier]]
-id          = "slack-ops"
+[notifiers.slack-ops]
 type        = "slack"
 webhook_url = "${RUNWISP_SLACK_OPS_URL}"
 channel     = "#ops"          # optional override
 ```
 
-`id`, `type`, and `webhook_url` are required. Use
+The id (as the table key), `type`, and `webhook_url` are required. Use
 [`${...}` substitution](/configuration/substitution/) to pull the URL
 from an env var or a file instead of writing it inline —
 [storing the secret](/notifications/model/#storing-the-secret).
@@ -66,8 +65,7 @@ Pick where the URL lives and reference it with
         ```
 
         ```toml
-        [[notifier]]
-        id          = "slack-ops"
+        [notifiers.slack-ops]
         type        = "slack"
         webhook_url = "${RUNWISP_SLACK_OPS_URL}"
         channel     = "#ops"
@@ -87,8 +85,7 @@ Pick where the URL lives and reference it with
         ```
 
         ```toml
-        [[notifier]]
-        id          = "slack-ops"
+        [notifiers.slack-ops]
         type        = "slack"
         webhook_url = "${file:~/.config/runwisp/slack-ops.url}"
         channel     = "#ops"
@@ -100,8 +97,7 @@ Pick where the URL lives and reference it with
         and an inline URL will leak.
 
         ```toml
-        [[notifier]]
-        id          = "slack-ops"
+        [notifiers.slack-ops]
         type        = "slack"
         webhook_url = "https://hooks.slack.com/services/T.../B.../X..."
         channel     = "#ops"
@@ -110,7 +106,7 @@ Pick where the URL lives and reference it with
 
 </Tabs>
 
-The `id` is what other parts of `runwisp.toml` refer to. Pick
+The id is what other parts of `runwisp.toml` refer to. Pick
 something readable — `slack-ops`, `slack-deploys`, `slack-marketing`
 all work. Without `channel`, the webhook posts to whatever channel
 was selected when it was created.
@@ -137,9 +133,9 @@ options, including `notify_on_success` and inline channel overrides.
 ### In a notification rule (one rule covering many tasks)
 
 ```toml
-[[notification_route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
-notify = ["slack-ops"]
+[[route]]
+match     = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+notifiers = ["slack-ops"]
 ```
 
 Omit `match.task` and the rule matches every task. Add a `match.task`
@@ -147,9 +143,9 @@ pattern for finer control:
 
 ```toml
 # Backup failures also send to the on-call channel
-[[notification_route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
-notify = ["slack-ops", "tg-oncall"]
+[[route]]
+match     = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+notifiers = ["slack-ops", "tg-oncall"]
 ```
 
 The router removes duplicates — if a backup failure matches both a
@@ -219,7 +215,7 @@ task name, run id, exit code, end reason, timestamp, captured tail.
 
 - `channel` that doesn't start with `#` (channel) or `@` (user).
 - A missing or empty `webhook_url`.
-- An `id` containing `:` (reserved for inline target overrides) or
+- A notifier id containing `:` (reserved for inline target overrides) or
   equal to `"inapp"` (reserved).
 
 ---

@@ -62,7 +62,7 @@ export function buildTaskOverviews(
         const lastRun = activeRun ?? recentRunsByTask.get(task.name);
         const lastStatus = lastRun ? displayStatus(lastRun.status, lastRun.endReason) : undefined;
         const nextRunMs = toTimestamp(task.nextRunAt);
-        const isApiOnly = task.apiTrigger && !task.cron;
+        const isApiOnly = task.manualTrigger && !task.cron;
 
         let state: OverviewTaskState = "idle";
         if (activeRun) {

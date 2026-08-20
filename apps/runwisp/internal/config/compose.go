@@ -193,7 +193,7 @@ type composeServiceOverrideWire struct {
 	Group       string `toml:"group,omitempty"`
 	Description string `toml:"description,omitempty"`
 
-	APITrigger *bool `toml:"api_trigger,omitempty"`
+	ManualTrigger *bool `toml:"manual_trigger,omitempty"`
 
 	Timeout      string                  `toml:"timeout,omitempty"`
 	GracefulStop string                  `toml:"graceful_stop,omitempty"`
@@ -202,10 +202,10 @@ type composeServiceOverrideWire struct {
 	Restart      model.RestartPolicy     `toml:"restart,omitempty"`
 	Instances    int                     `toml:"instances,omitempty"`
 
-	RestartDelay    string `toml:"restart_delay,omitempty"`
-	RestartBackoff  string `toml:"restart_backoff,omitempty"`
-	HealthyAfter    string `toml:"healthy_after,omitempty"`
-	RestartAttempts int    `toml:"restart_attempts,omitempty"`
+	RestartDelay    string             `toml:"restart_delay,omitempty"`
+	RestartBackoff  model.BackoffCurve `toml:"restart_backoff,omitempty"`
+	HealthyAfter    string             `toml:"healthy_after,omitempty"`
+	RestartAttempts int                `toml:"restart_attempts,omitempty"`
 
 	// Priority orders boot start; Autostart is a pointer so an omitted key
 	// (nil → keep the compose-import default of true) is distinguishable from
@@ -523,13 +523,13 @@ func expandComposeStack(block *composeBlock, _ *composespec.Project, existingNam
 		return nil, fmt.Errorf("name %q (compose stack) collides with an existing task or service", taskName)
 	}
 	task := model.Task{
-		Name:       taskName,
-		Kind:       model.KindService,
-		Group:      block.Group,
-		APITrigger: true,
-		Autostart:  true,
-		Restart:    model.RestartOnFailure,
-		Instances:  1,
+		Name:          taskName,
+		Kind:          model.KindService,
+		Group:         block.Group,
+		ManualTrigger: true,
+		Autostart:     true,
+		Restart:       model.RestartOnFailure,
+		Instances:     1,
 		ExecutionDef: &model.ComposeExecution{
 			File:        block.File,
 			ProjectName: block.ProjectName,
@@ -556,13 +556,13 @@ func expandComposeStack(block *composeBlock, _ *composespec.Project, existingNam
 // the per-service [compose.<alias>.<svc>] override.
 func buildComposeServiceTask(block *composeBlock, svc *composespec.Service, svcName, taskName string) (model.Task, error) {
 	task := model.Task{
-		Name:       taskName,
-		Kind:       model.KindService,
-		Group:      block.Group,
-		APITrigger: true,
-		Autostart:  true,
-		Restart:    model.RestartOnFailure,
-		Instances:  1,
+		Name:          taskName,
+		Kind:          model.KindService,
+		Group:         block.Group,
+		ManualTrigger: true,
+		Autostart:     true,
+		Restart:       model.RestartOnFailure,
+		Instances:     1,
 	}
 	if svc != nil && svc.StopGracePeriod > 0 {
 		task.GracefulStop = svc.StopGracePeriod
@@ -594,7 +594,7 @@ func buildComposeServiceTask(block *composeBlock, svc *composespec.Service, svcN
 
 // applyComposeOverride merges a per-service override into the task in place.
 // Empty/zero override fields leave the compose-import default intact. The
-// override's APITrigger pointer distinguishes "unset" from "explicitly false".
+// override's ManualTrigger pointer distinguishes "unset" from "explicitly false".
 func applyComposeOverride(task *model.Task, w *composeServiceOverrideWire, svcName string) error {
 	if w == nil {
 		return nil
@@ -615,8 +615,8 @@ func applyComposeOverrideSupervision(task *model.Task, w *composeServiceOverride
 	if w.Description != "" {
 		task.Description = w.Description
 	}
-	if w.APITrigger != nil {
-		task.APITrigger = *w.APITrigger
+	if w.ManualTrigger != nil {
+		task.ManualTrigger = *w.ManualTrigger
 	}
 	if w.OnOverlap != "" {
 		task.OnOverlap = w.OnOverlap

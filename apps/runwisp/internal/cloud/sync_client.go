@@ -211,7 +211,7 @@ func buildOneSyncTask(t *model.Task) (syncTask, bool) {
 		task.RetryDelay = &delayMs
 	}
 	if t.RetryBackoff != "" {
-		task.RetryBackoff = t.RetryBackoff
+		task.RetryBackoff = string(t.RetryBackoff)
 	}
 	if t.MaxConcurrent > 0 {
 		limit := t.MaxConcurrent
@@ -270,7 +270,7 @@ func applyServiceSyncFields(task *syncTask, t *model.Task) {
 		task.RestartDelay = &delayMs
 	}
 	if t.RestartBackoff != "" {
-		task.RestartBackoff = t.RestartBackoff
+		task.RestartBackoff = string(t.RestartBackoff)
 	}
 	if resetMs := durationToMillis(t.HealthyAfter); resetMs > 0 {
 		task.BackoffResetAfter = &resetMs

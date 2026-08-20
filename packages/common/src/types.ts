@@ -38,7 +38,7 @@ export type RunPhase = (typeof RUN_PHASES)[number];
  * `_EndReasonsExhaustive` check below rejects missing ones.
  */
 export const END_REASONS = [
-  "success",
+  "succeeded",
   "failed",
   "stopped",
   "timeout",

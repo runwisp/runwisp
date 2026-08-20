@@ -84,7 +84,7 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
         const method =
             init?.method ?? (typeof input !== "string" && "method" in input ? input.method : "GET");
         requests.push({ url, method });
-        if (url.includes("/api/notifications/unread-count")) {
+        if (url.includes("/api/notifications/unreadCount")) {
             return Promise.resolve(
                 new Response(JSON.stringify({ count: unread }), {
                     status: 200,
@@ -111,7 +111,7 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
 
     const fakeES = new FakeEventSource();
     const events = new EventManager({
-        path: "/api/stream",
+        path: "/api/events/stream",
         createEventSource: () => fakeES,
         getApiUrl: () => "http://test",
     });

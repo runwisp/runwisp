@@ -14,7 +14,7 @@ test.describe("frame history", () => {
         await page.getByRole("button", { name: "Run Task" }).click();
         await page.getByRole("button", { name: "Run Now" }).click();
 
-        await expect(runVerdict(page, "success")).toBeVisible({ timeout: 30_000 });
+        await expect(runVerdict(page, "succeeded")).toBeVisible({ timeout: 30_000 });
 
         // Reload so the run is loaded fresh from disk (backfill only, no live
         // events) — the path where frame history used to be lost on a finished run.

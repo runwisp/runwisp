@@ -20,12 +20,12 @@ const (
 	ssePrefixData  = "data: "
 )
 
-// StreamRunEvents opens an SSE connection to the unified /api/stream feed and
+// StreamRunEvents opens an SSE connection to the unified /api/events/stream feed and
 // delivers parsed run events on the returned channel. The stream also carries
 // system/config/notification events, which the parser ignores. The channel is
 // closed when the context is cancelled or the stream ends.
 func (c *Client) StreamRunEvents(ctx context.Context) (<-chan RunStreamEvent, error) {
-	resp, err := c.doSSE(ctx, "/api/stream")
+	resp, err := c.doSSE(ctx, "/api/events/stream")
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +202,7 @@ type SSEEvent struct {
 	Data json.RawMessage
 }
 
-// RunStreamEvent is an SSEEvent from the unified /api/stream endpoint.
+// RunStreamEvent is an SSEEvent from the unified /api/events/stream endpoint.
 type RunStreamEvent = SSEEvent
 
 // simpleSSELoop is the shared parse loop for SSE streams that deliver

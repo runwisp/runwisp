@@ -38,12 +38,12 @@ func TestDecodeUnknownKeySuggestions(t *testing.T) {
 		},
 		{
 			name: "notifier key typo",
-			toml: "[[notifier]]\nid = \"ops\"\ntype = \"slack\"\nwebhok_url = \"https://example.com\"\n[tasks.t]\nrun = \"echo hi\"\n",
+			toml: "[notifiers.ops]\ntype = \"slack\"\nwebhok_url = \"https://example.com\"\n[tasks.t]\nrun = \"echo hi\"\n",
 			want: []string{`unknown key "webhok_url"`, `did you mean "webhook_url"?`},
 		},
 		{
 			name: "route match key typo",
-			toml: "[[notification_route]]\nnotify = [\"ops\"]\n[notification_route.match]\nseverty = \"error\"\n[tasks.t]\nrun = \"echo hi\"\n",
+			toml: "[[route]]\nnotifiers = [\"ops\"]\n[route.match]\nseverty = \"error\"\n[tasks.t]\nrun = \"echo hi\"\n",
 			want: []string{`unknown key "severty"`, `did you mean "severity"?`},
 		},
 		{

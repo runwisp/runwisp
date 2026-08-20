@@ -20,7 +20,7 @@ describe("runVerdict", () => {
     });
 
     it("phrases a timed outcome so a duration reads after it", () => {
-        expect(runVerdict("success")).toEqual({ verb: "succeeded in", timed: true });
+        expect(runVerdict("succeeded")).toEqual({ verb: "succeeded in", timed: true });
         expect(runVerdict("failed")).toEqual({ verb: "failed after", timed: true });
     });
 

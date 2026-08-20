@@ -18,8 +18,7 @@ import (
 
 func TestValidate_Sendmail_NeedsNothingButAddresses(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id   = "mta"
+[notifiers.mta]
 type = "sendmail"
 from = "RunWisp <runwisp@example.com>"
 to   = ["ops@example.com"]
@@ -36,8 +35,7 @@ to   = ["ops@example.com"]
 
 func TestValidate_Sendmail_AcceptsAnExplicitBinary(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id            = "mta"
+[notifiers.mta]
 type          = "sendmail"
 from          = "runwisp@example.com"
 to            = ["ops@example.com"]
@@ -61,8 +59,7 @@ sendmail_path = "/usr/local/bin/msmtp"
 // a different binary than the one you configured.
 func TestValidate_Sendmail_RejectsARelativeBinary(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id            = "mta"
+[notifiers.mta]
 type          = "sendmail"
 from          = "runwisp@example.com"
 to            = ["ops@example.com"]
@@ -78,14 +75,12 @@ sendmail_path = "bin/sendmail"
 func TestValidate_Sendmail_RequiresFromAndTo(t *testing.T) {
 	cases := map[string]string{
 		"from is required for type=sendmail": `
-[[notifier]]
-id   = "mta"
+[notifiers.mta]
 type = "sendmail"
 to   = ["ops@example.com"]
 `,
 		"to is required for type=sendmail": `
-[[notifier]]
-id   = "mta"
+[notifiers.mta]
 type = "sendmail"
 from = "runwisp@example.com"
 `,
@@ -103,8 +98,7 @@ from = "runwisp@example.com"
 
 func TestValidate_Sendmail_RejectsAMalformedAddress(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id   = "mta"
+[notifiers.mta]
 type = "sendmail"
 from = "runwisp@example.com"
 to   = ["not an address"]
@@ -127,8 +121,7 @@ run               = "/bin/backup"
 on_overlap        = "queue"
 notify_on_failure = ["mta:oncall@example.com"]
 
-[[notifier]]
-id   = "mta"
+[notifiers.mta]
 type = "sendmail"
 from = "runwisp@example.com"
 to   = ["ops@example.com"]
@@ -157,8 +150,7 @@ run               = "/bin/backup"
 on_overlap        = "queue"
 notify_on_failure = ["mta:not an address"]
 
-[[notifier]]
-id   = "mta"
+[notifiers.mta]
 type = "sendmail"
 from = "runwisp@example.com"
 to   = ["ops@example.com"]

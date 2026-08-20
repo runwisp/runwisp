@@ -144,7 +144,7 @@ export async function markAllReadViaAPI(page: Page, token: string): Promise<void
 }
 
 /**
- * Poll `GET /api/notifications/unread-count` until at least one notification is
+ * Poll `GET /api/notifications/unreadCount` until at least one notification is
  * unread (backend truth that the in-app notification has been persisted).
  *
  * The bell badge only updates via a forward-only SSE stream with no replay, so
@@ -161,7 +161,7 @@ export async function waitForUnreadNotification(
     await expect
         .poll(
             async () => {
-                const response = await page.request.get("/api/notifications/unread-count", {
+                const response = await page.request.get("/api/notifications/unreadCount", {
                     headers: authHeaders(token),
                 });
                 if (!response.ok()) return 0;

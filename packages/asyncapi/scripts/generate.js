@@ -6,6 +6,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -154,6 +155,10 @@ function postProcessGoFile(filePath) {
     content = goFileHeader + content;
   }
   content = content.replaceAll("ReservedType", "Type");
+  // LogLineMessage's allOf composition makes modelina name its flattened
+  // `stream` enum after the anonymous allOf branch instead of the property;
+  // the schema has exactly one allOf, so this is unambiguous.
+  content = content.replaceAll("AllOf_0Stream", "Stream");
   content = content.split("\n").map(transformGoLine).join("\n");
   content = injectGoImports(content);
   writeFileSync(filePath, content);
@@ -164,6 +169,9 @@ function postProcessGo(dir) {
   for (const file of files) {
     postProcessGoFile(join(dir, file));
   }
+  // File name follows modelina's schema id (all_of_0_stream), which no
+  // longer matches the type name after the rename above.
+  renameSync(join(dir, "all_of_0_stream.go"), join(dir, "stream.go"));
   execSync(`gofmt -w .`, { cwd: dir });
 }
 
@@ -180,7 +188,23 @@ function numberToZod(schema) {
   return base;
 }
 
+// mergeAllOf flattens a dereferenced `allOf` (each entry already inlined by
+// $RefParser) into one object schema, so typeToZod can treat schema
+// composition the same as a plain object.
+function mergeAllOf(schema) {
+  const properties = {};
+  const required = [];
+  for (const sub of schema.allOf) {
+    Object.assign(properties, sub.properties ?? {});
+    required.push(...(sub.required ?? []));
+  }
+  return { type: "object", properties, required };
+}
+
 function objectToZod(schema) {
+  if (schema.allOf) {
+    return objectToZod(mergeAllOf(schema));
+  }
   if (schema.properties) {
     const props = Object.entries(schema.properties).map(([key, value]) => {
       let zType = typeToZod(value, key.endsWith("At") && key !== "sentAt");
@@ -198,6 +222,7 @@ function objectToZod(schema) {
 
 function typeToZod(schema, isDate = false) {
   if (!schema) return "z.unknown()";
+  if (schema.allOf) return objectToZod(schema);
   if (schema.const) return `z.literal(${JSON.stringify(schema.const)})`;
   if (schema.enum)
     return `z.enum([${schema.enum.map((value) => JSON.stringify(value)).join(", ")}])`;

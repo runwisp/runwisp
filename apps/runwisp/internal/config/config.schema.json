@@ -26,14 +26,14 @@
       "additionalProperties": { "$ref": "#/$defs/composeAlias" }
     },
     "notify": { "$ref": "#/$defs/notify" },
-    "notifier": {
-      "type": "array",
-      "description": "Outbound notification channels ([[notifier]] blocks).",
-      "items": { "$ref": "#/$defs/notifier" }
+    "notifiers": {
+      "type": "object",
+      "description": "Outbound notification channels, keyed by id ([notifiers.<id>] blocks).",
+      "additionalProperties": { "$ref": "#/$defs/notifier" }
     },
-    "notification_route": {
+    "route": {
       "type": "array",
-      "description": "Rules routing events to notifiers ([[notification_route]] blocks).",
+      "description": "Rules routing events to notifiers ([[route]] blocks).",
       "items": { "$ref": "#/$defs/notificationRoute" }
     }
   },
@@ -50,8 +50,11 @@
     },
     "stopSignal": {
       "type": "string",
-      "description": "Signal used to stop a process.",
-      "enum": ["SIGTERM", "SIGINT", "SIGQUIT", "SIGHUP", "SIGKILL", "SIGUSR1", "SIGUSR2"]
+      "description": "Signal used to stop a process. The SIG prefix is optional.",
+      "enum": [
+        "SIGTERM", "SIGINT", "SIGQUIT", "SIGHUP", "SIGKILL", "SIGUSR1", "SIGUSR2",
+        "TERM", "INT", "QUIT", "HUP", "KILL", "USR1", "USR2"
+      ]
     },
     "composeUnitMode": {
       "type": "string",
@@ -171,7 +174,7 @@
         "timezone": { "type": "string", "description": "Per-task IANA timezone override." },
         "jitter": { "$ref": "#/$defs/duration", "description": "Cap how far this cron task's start may slip; needs cron." },
         "run_on_start": { "type": "boolean", "default": false, "description": "Fire once at daemon start, on top of any cron." },
-        "api_trigger": { "type": "boolean", "default": true, "description": "Allow CLI/API/UI trigger; false = cron-only." },
+        "manual_trigger": { "type": "boolean", "default": true, "description": "Allow CLI/API/UI trigger; false = cron-only." },
         "catch_up": { "type": "string", "enum": ["latest", "all", "skip"], "default": "latest", "description": "Missed-firing policy." },
         "max_catch_up_runs": { "type": "integer", "minimum": 1, "default": 100, "description": "Cap when catch_up=all." },
         "timeout": { "$ref": "#/$defs/duration", "description": "Per-attempt cap (inherits [defaults])." },
@@ -179,7 +182,7 @@
         "stop_signal": { "$ref": "#/$defs/stopSignal" },
         "restart": { "type": "string", "enum": ["never", "on_failure"], "description": "Restart policy (always is rejected on tasks — use [services.*])." },
         "max_concurrent": { "type": "integer", "minimum": 1, "maximum": 1024, "default": 1, "description": "Concurrent run cap." },
-        "queue_max": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 100, "description": "Queued-run depth." },
+        "max_queued": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 100, "description": "Queued-run depth." },
         "on_overlap": { "$ref": "#/$defs/onOverlap", "default": "queue" },
         "retry_attempts": { "type": "integer", "minimum": 0, "maximum": 100, "default": 0, "description": "Retries after a failed attempt." },
         "retry_delay": { "$ref": "#/$defs/duration", "description": "Delay between retries. Default 5s." },
@@ -215,7 +218,7 @@
       "properties": {
         "group": { "type": "string", "default": "Services", "description": "UI grouping label." },
         "description": { "type": "string" },
-        "api_trigger": { "type": "boolean", "default": true },
+        "manual_trigger": { "type": "boolean", "default": true },
         "on_overlap": { "$ref": "#/$defs/onOverlap", "default": "skip" },
         "timeout": { "$ref": "#/$defs/duration" },
         "graceful_stop": { "$ref": "#/$defs/duration" },
@@ -294,7 +297,7 @@
       "properties": {
         "group": { "type": "string" },
         "description": { "type": "string" },
-        "api_trigger": { "type": "boolean" },
+        "manual_trigger": { "type": "boolean" },
         "timeout": { "$ref": "#/$defs/duration" },
         "graceful_stop": { "$ref": "#/$defs/duration" },
         "stop_signal": { "$ref": "#/$defs/stopSignal" },
@@ -336,11 +339,10 @@
     },
     "notifier": {
       "type": "object",
-      "description": "One [[notifier]] block. id and type are required; other fields depend on type.",
+      "description": "One [notifiers.<id>] block, keyed by its id (non-empty, not \"inapp\", no \":\"). type is required; other fields depend on it.",
       "additionalProperties": false,
-      "required": ["id", "type"],
+      "required": ["type"],
       "properties": {
-        "id": { "type": "string", "description": "Notifier id; non-empty, not \"inapp\", no \":\"." },
         "type": { "type": "string", "enum": ["slack", "discord", "telegram", "smtp", "sendmail", "webhook"] },
         "template_path": { "type": "string" },
         "webhook_url": { "type": "string", "description": "slack/discord webhook URL." },
@@ -350,7 +352,7 @@
         "parse_mode": { "type": "string", "description": "telegram parse mode." },
         "host": { "type": "string", "description": "smtp host." },
         "port": { "type": "integer", "minimum": 0, "maximum": 65535, "description": "smtp port." },
-        "tls": { "type": "string", "enum": ["starttls", "implicit", "off"], "description": "smtp TLS mode." },
+        "tls_mode": { "type": "string", "enum": ["starttls", "implicit", "off"], "description": "smtp TLS mode." },
         "tls_skip_verify": { "type": "boolean" },
         "username": { "type": "string" },
         "password": { "type": "string" },
@@ -366,9 +368,9 @@
     },
     "notificationRoute": {
       "type": "object",
-      "description": "One [[notification_route]] block.",
+      "description": "One [[route]] block.",
       "additionalProperties": false,
-      "required": ["notify"],
+      "required": ["notifiers"],
       "properties": {
         "match": {
           "type": "object",
@@ -385,7 +387,7 @@
             "task": { "type": "string", "description": "Glob over task name." }
           }
         },
-        "notify": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Notifier ids (or \"inapp\"); \"id:#override\" inline target." }
+        "notifiers": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Notifier ids (or \"inapp\"); \"id:#override\" inline target." }
       }
     }
   }

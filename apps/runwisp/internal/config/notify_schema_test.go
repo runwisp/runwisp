@@ -19,20 +19,18 @@ timezone = "UTC"
 
 func TestDecode_NotifierAndRoutes(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id = "ops"
+[notifiers.ops]
 type = "slack"
 webhook_url = "https://hooks.slack.test/ops"
 
-[[notifier]]
-id = "oncall"
+[notifiers.oncall]
 type = "telegram"
 bot_token = "tok"
 chat_id = "-1001"
 
-[[notification_route]]
+[[route]]
 match = { kinds = ["run.failed"], task = "backup-*" }
-notify = ["ops", "oncall", "inapp"]
+notifiers = ["ops", "oncall", "inapp"]
 
 [notify]
 global_notifiers = ["inapp"]
@@ -50,8 +48,8 @@ notify_on_failure = ["ops"]
 	require.NoError(t, Validate(cfg))
 
 	assert.Len(t, cfg.Notify.Notifiers, 2)
-	assert.Equal(t, "ops", cfg.Notify.Notifiers[0].ID)
-	assert.Equal(t, "telegram", cfg.Notify.Notifiers[1].Type)
+	assert.Equal(t, "oncall", cfg.Notify.Notifiers[0].ID)
+	assert.Equal(t, "slack", cfg.Notify.Notifiers[1].Type)
 	assert.Equal(t, []string{"inapp"}, cfg.Notify.GlobalNotifiers)
 
 	require.Len(t, cfg.Notify.Routes, 3, "explicit route + per-task sugar + default inapp catch-all")
@@ -92,24 +90,24 @@ run         = "exit 1"
 	assert.Equal(t, []string{"inapp"}, r.NotifierID)
 }
 
-func TestValidate_RejectsDuplicateNotifierID(t *testing.T) {
+// TestDecode_RejectsDuplicateNotifierID: [notifiers.<id>] is a map table, so
+// TOML itself rejects a redeclared id within one file — the duplicate is
+// caught at decode, before Validate ever sees the config.
+func TestDecode_RejectsDuplicateNotifierID(t *testing.T) {
 	src := `
-[[notifier]]
-id = "x"
+[notifiers.x]
 type = "slack"
 webhook_url = "https://example/x"
 
-[[notifier]]
-id = "x"
+[notifiers.x]
 type = "telegram"
 bot_token = "t"
 chat_id = "-1"
 `
-	cfg, err := decode([]byte(src), "")
-	require.NoError(t, err)
-	err = Validate(cfg)
+	_, err := decode([]byte(src), "")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "duplicate notifier id")
+	assert.Contains(t, err.Error(), "x")
+	assert.Contains(t, err.Error(), "already exists")
 }
 
 // TestDecode_RejectsRemovedSecretSourceKeys pins the breaking change: the
@@ -124,8 +122,7 @@ func TestDecode_RejectsRemovedSecretSourceKeys(t *testing.T) {
 	} {
 		t.Run(key, func(t *testing.T) {
 			src := `
-[[notifier]]
-id = "x"
+[notifiers.x]
 type = "slack"
 ` + key + ` = "whatever"
 `
@@ -138,8 +135,7 @@ type = "slack"
 
 func TestValidate_RejectsReservedInappID(t *testing.T) {
 	src := `
-[[notifier]]
-id = "inapp"
+[notifiers.inapp]
 type = "slack"
 webhook_url = "https://example/x"
 `
@@ -150,9 +146,9 @@ webhook_url = "https://example/x"
 
 func TestValidate_RejectsRouteWithUnknownNotifier(t *testing.T) {
 	src := `
-[[notification_route]]
+[[route]]
 match = { kinds = ["run.failed"] }
-notify = ["does-not-exist"]
+notifiers = ["does-not-exist"]
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -163,9 +159,9 @@ notify = ["does-not-exist"]
 
 func TestValidate_RejectsBadKind(t *testing.T) {
 	src := `
-[[notification_route]]
+[[route]]
 match = { kinds = ["run.bogus"] }
-notify = ["inapp"]
+notifiers = ["inapp"]
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -200,8 +196,7 @@ func TestParseNotifyToken(t *testing.T) {
 
 func TestInlineToken_SlackChannelOverride(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id          = "slack"
+[notifiers.slack]
 type        = "slack"
 webhook_url = "https://hooks.slack.test/T/B/Z"
 channel     = "#default"
@@ -239,8 +234,7 @@ notify_on_failure = ["slack:#ops"]
 
 func TestInlineToken_TelegramChatIDOverride(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id        = "tg"
+[notifiers.tg]
 type      = "telegram"
 bot_token = "tok"
 chat_id   = "-1001"
@@ -268,8 +262,7 @@ notify_on_success = ["tg:-3003"]
 
 func TestInlineToken_DedupAcrossTasks(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id              = "slack"
+[notifiers.slack]
 type            = "slack"
 webhook_url     = "https://example/hook"
 
@@ -309,14 +302,13 @@ notify_on_failure = ["slack:#ops", "slack:#fyi"]
 
 func TestInlineToken_InRouteNotifyList(t *testing.T) {
 	src := `
-[[notifier]]
-id              = "slack"
+[notifiers.slack]
 type            = "slack"
 webhook_url     = "https://example/hook"
 
-[[notification_route]]
+[[route]]
 match  = { kinds = ["run.failed"], task = "backup-*" }
-notify = ["slack:#ops"]
+notifiers = ["slack:#ops"]
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -362,8 +354,7 @@ notify_on_failure = ["inapp:foo"]
 
 func TestInlineToken_EmptyOverride(t *testing.T) {
 	src := `
-[[notifier]]
-id              = "slack"
+[notifiers.slack]
 type            = "slack"
 webhook_url     = "https://example/hook"
 
@@ -381,8 +372,7 @@ notify_on_failure = ["slack:"]
 
 func TestInlineToken_SlackOverrideMustStartWithHashOrAt(t *testing.T) {
 	src := `
-[[notifier]]
-id              = "slack"
+[notifiers.slack]
 type            = "slack"
 webhook_url     = "https://example/hook"
 
@@ -400,8 +390,7 @@ notify_on_failure = ["slack:ops"]
 
 func TestValidate_RejectsColonInNotifierID(t *testing.T) {
 	src := `
-[[notifier]]
-id              = "slack:foo"
+[notifiers."slack:foo"]
 type            = "slack"
 webhook_url     = "https://example/hook"
 `
@@ -412,8 +401,7 @@ webhook_url     = "https://example/hook"
 
 func TestNotifyConfig_EmptyGlobalNotifiersDropsImplicitInappFromSugar(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id = "ops"
+[notifiers.ops]
 type = "slack"
 webhook_url = "https://example/x"
 
@@ -438,8 +426,7 @@ notify_on_failure = ["ops"]
 
 func TestNotifyConfig_GlobalNotifiersWithCustomChannel(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id = "slack-ops"
+[notifiers.slack-ops]
 type = "slack"
 webhook_url = "https://example/x"
 
@@ -518,8 +505,7 @@ keep_for = "bad-value"
 
 func TestValidate_RejectsTelegramMissingChatID(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id = "tg"
+[notifiers.tg]
 type = "telegram"
 bot_token = "tok"
 `
@@ -532,8 +518,7 @@ bot_token = "tok"
 
 func TestValidate_RejectsTelegramMissingBotToken(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id = "tg"
+[notifiers.tg]
 type = "telegram"
 chat_id = "-1001"
 `
@@ -546,8 +531,7 @@ chat_id = "-1001"
 
 func TestValidate_RejectsTelegramMarkdownV2WithoutTemplatePath(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id = "tg"
+[notifiers.tg]
 type = "telegram"
 bot_token = "tok"
 chat_id = "-1001"
@@ -562,8 +546,7 @@ parse_mode = "MarkdownV2"
 
 func TestValidate_AcceptsTelegramMarkdownV2WithTemplatePath(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id = "tg"
+[notifiers.tg]
 type = "telegram"
 bot_token = "tok"
 chat_id = "-1001"
@@ -577,8 +560,7 @@ template_path = "/etc/runwisp/tg.html"
 
 func TestValidate_SlackChannelBadPrefix(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id = "s"
+[notifiers.s]
 type = "slack"
 webhook_url = "https://example.com/hook"
 channel = "ops"
@@ -592,8 +574,7 @@ channel = "ops"
 
 func TestValidate_SlackChannelWithAtPrefix(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id = "s"
+[notifiers.s]
 type = "slack"
 webhook_url = "https://example.com/hook"
 channel = "@user"
@@ -605,8 +586,7 @@ channel = "@user"
 
 func TestValidate_UnknownNotifierType(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id = "x"
+[notifiers.x]
 type = "pagerduty"
 `
 	cfg, err := decode([]byte(src), "")
@@ -618,8 +598,7 @@ type = "pagerduty"
 
 func TestValidate_RejectsSlackMissingWebhookURL(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id = "s"
+[notifiers.s]
 type = "slack"
 `
 	cfg, err := decode([]byte(src), "")
@@ -631,8 +610,7 @@ type = "slack"
 
 func TestDesugarServiceNotify(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id = "ops"
+[notifiers.ops]
 type = "slack"
 webhook_url = "https://example/x"
 
@@ -658,9 +636,9 @@ notify_on_failure = ["ops"]
 
 func TestValidate_RouteWithEmptySeverity(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notification_route]]
+[[route]]
 match = { kinds = ["run.failed"] }
-notify = ["inapp"]
+notifiers = ["inapp"]
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -669,9 +647,9 @@ notify = ["inapp"]
 
 func TestValidate_RouteWithBadSeverity(t *testing.T) {
 	src := `
-[[notification_route]]
+[[route]]
 match = { kinds = ["run.failed"], severity = "unknown-sev" }
-notify = ["inapp"]
+notifiers = ["inapp"]
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -682,9 +660,9 @@ notify = ["inapp"]
 
 func TestValidate_RouteWithInvalidGlob(t *testing.T) {
 	src := `
-[[notification_route]]
+[[route]]
 match = { kinds = ["run.failed"], task = "[invalid" }
-notify = ["inapp"]
+notifiers = ["inapp"]
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -697,8 +675,7 @@ notify = ["inapp"]
 
 func TestValidate_SMTP_HappyPath(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id           = "email-ops"
+[notifiers.email-ops]
 type         = "smtp"
 host         = "smtp.example.com"
 port         = 587
@@ -707,7 +684,7 @@ to           = ["ops@example.com", "Alerts Team <alerts@example.com>"]
 cc           = ["audit@example.com"]
 username     = "apikey"
 password     = "secret"
-tls          = "starttls"
+tls_mode     = "starttls"
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -723,8 +700,7 @@ tls          = "starttls"
 
 func TestValidate_SMTP_AuthlessLocalRelay(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id   = "email-local"
+[notifiers.email-local]
 type = "smtp"
 host = "127.0.0.1"
 port = 25
@@ -738,8 +714,7 @@ to   = ["ops@example.com"]
 
 func TestValidate_SMTP_MissingHost(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id   = "email-ops"
+[notifiers.email-ops]
 type = "smtp"
 from = "runwisp@example.com"
 to   = ["ops@example.com"]
@@ -753,8 +728,7 @@ to   = ["ops@example.com"]
 
 func TestValidate_SMTP_MissingFrom(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id   = "email-ops"
+[notifiers.email-ops]
 type = "smtp"
 host = "smtp.example.com"
 to   = ["ops@example.com"]
@@ -768,8 +742,7 @@ to   = ["ops@example.com"]
 
 func TestValidate_SMTP_InvalidFrom(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id   = "email-ops"
+[notifiers.email-ops]
 type = "smtp"
 host = "smtp.example.com"
 from = "not-an-email"
@@ -784,8 +757,7 @@ to   = ["ops@example.com"]
 
 func TestValidate_SMTP_EmptyTo(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id   = "email-ops"
+[notifiers.email-ops]
 type = "smtp"
 host = "smtp.example.com"
 from = "runwisp@example.com"
@@ -799,15 +771,14 @@ from = "runwisp@example.com"
 
 func TestValidate_SMTP_TLSOffRejectedWithCreds(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id       = "email-ops"
+[notifiers.email-ops]
 type     = "smtp"
 host     = "smtp.example.com"
 from     = "runwisp@example.com"
 to       = ["ops@example.com"]
 username = "u"
 password = "p"
-tls      = "off"
+tls_mode = "off"
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -818,13 +789,12 @@ tls      = "off"
 
 func TestValidate_SMTP_BadTLSValue(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id   = "email-ops"
+[notifiers.email-ops]
 type = "smtp"
 host = "smtp.example.com"
 from = "runwisp@example.com"
 to   = ["ops@example.com"]
-tls  = "wat"
+tls_mode = "wat"
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -835,8 +805,7 @@ tls  = "wat"
 
 func TestValidate_SMTP_BadRecipientAddress(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id   = "email-ops"
+[notifiers.email-ops]
 type = "smtp"
 host = "smtp.example.com"
 from = "runwisp@example.com"
@@ -851,8 +820,7 @@ to   = ["not-an-email"]
 
 func TestValidate_SMTP_UsernameWithoutPasswordRejected(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id       = "email-ops"
+[notifiers.email-ops]
 type     = "smtp"
 host     = "smtp.example.com"
 from     = "runwisp@example.com"
@@ -868,8 +836,7 @@ username = "u"
 
 func TestInlineToken_SMTPRecipientOverride(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id           = "email-ops"
+[notifiers.email-ops]
 type         = "smtp"
 host         = "smtp.example.com"
 from         = "RunWisp <runwisp@example.com>"
@@ -902,8 +869,7 @@ notify_on_failure = ["email-ops:alerts@example.com"]
 
 func TestInlineToken_SMTPRejectsBadEmail(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id           = "email-ops"
+[notifiers.email-ops]
 type         = "smtp"
 host         = "smtp.example.com"
 from         = "runwisp@example.com"
@@ -925,12 +891,11 @@ notify_on_failure = ["email-ops:bad@@@"]
 
 func TestValidate_WebhookHappyPath(t *testing.T) {
 	src := `
-[[notifier]]
-id   = "my-hook"
+[notifiers.my-hook]
 type = "webhook"
 url  = "https://example.com/hook"
 
-[notifier.headers]
+[notifiers.my-hook.headers]
 Authorization = "Bearer tok"
 `
 	cfg, err := decode([]byte(src), "")
@@ -943,8 +908,7 @@ Authorization = "Bearer tok"
 
 func TestValidate_WebhookMissingURL(t *testing.T) {
 	src := `
-[[notifier]]
-id   = "my-hook"
+[notifiers.my-hook]
 type = "webhook"
 `
 	cfg, err := decode([]byte(src), "")
@@ -956,8 +920,7 @@ type = "webhook"
 
 func TestValidate_WebhookInvalidScheme(t *testing.T) {
 	src := `
-[[notifier]]
-id   = "my-hook"
+[notifiers.my-hook]
 type = "webhook"
 url  = "ftp://example.com/hook"
 `
@@ -982,8 +945,7 @@ func TestValidate_WebhookEmptyHeaderKey(t *testing.T) {
 
 func TestInlineToken_WebhookRejectsOverride(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id   = "my-hook"
+[notifiers.my-hook]
 type = "webhook"
 url  = "https://example.com/hook"
 
@@ -999,8 +961,7 @@ notify_on_failure = ["my-hook:override"]
 
 func TestValidate_DiscordHappyPath(t *testing.T) {
 	src := `
-[[notifier]]
-id          = "discord-ops"
+[notifiers.discord-ops]
 type        = "discord"
 webhook_url = "https://discord.com/api/webhooks/123/token"
 `
@@ -1013,8 +974,7 @@ webhook_url = "https://discord.com/api/webhooks/123/token"
 
 func TestValidate_DiscordMissingWebhookURL(t *testing.T) {
 	src := `
-[[notifier]]
-id   = "discord-ops"
+[notifiers.discord-ops]
 type = "discord"
 `
 	cfg, err := decode([]byte(src), "")
@@ -1026,8 +986,7 @@ type = "discord"
 
 func TestValidate_DiscordInvalidScheme(t *testing.T) {
 	src := `
-[[notifier]]
-id          = "discord-ops"
+[notifiers.discord-ops]
 type        = "discord"
 webhook_url = "ftp://discord.com/api/webhooks/123/token"
 `
@@ -1040,8 +999,7 @@ webhook_url = "ftp://discord.com/api/webhooks/123/token"
 
 func TestInlineToken_DiscordRejectsOverride(t *testing.T) {
 	src := schedulerTZHeader + `
-[[notifier]]
-id          = "discord-ops"
+[notifiers.discord-ops]
 type        = "discord"
 webhook_url = "https://discord.com/api/webhooks/123/token"
 
@@ -1057,13 +1015,13 @@ notify_on_failure = ["discord-ops:override"]
 
 func TestValidate_RouteEmptyNotifyList(t *testing.T) {
 	src := `
-[[notification_route]]
+[[route]]
 match = { kinds = ["run.failed"] }
-notify = []
+notifiers = []
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
 	err = Validate(cfg)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "notify list is empty")
+	assert.Contains(t, err.Error(), "notifiers list is empty")
 }

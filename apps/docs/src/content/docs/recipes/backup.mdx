@@ -52,7 +52,7 @@ echo "Wrote $DEST/app_production-$TS.dump.gz ($(du -h "$DEST/app_production-$TS.
 """
 ```
 
-The matching `[[notifier]]` block — described on the
+The matching `[notifiers.<id>]` block — described on the
 [Slack provider page][slack] — receives `run.failed`, `run.timeout`, and
 `run.crashed`, because those are the run-end kinds that
 `notify_on_failure` covers.

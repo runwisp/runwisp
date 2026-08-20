@@ -35,13 +35,13 @@ stdout/stderr to a log file, and writes a row for every run to SQLite.
 
 ## Identity & metadata
 
-| Key           | Default   | What it does                                                                           |
-| ------------- | --------- | -------------------------------------------------------------------------------------- |
-| _table key_   | required  | The task name. Used in CLI (`runwisp run <name>`), API, log paths.                     |
-| `run`         | required  | Shell command. Multi-line OK with TOML triple-quotes (`"""…"""`).                      |
-| `description` | _(empty)_ | Human-readable description shown in the UI and TUI.                                    |
-| `group`       | `"Tasks"` | UI grouping label. Set to share a section header with related tasks.                   |
-| `api_trigger` | `true`    | Allow manual triggers from CLI / API / UI. Set `false` to make the task **cron-only**. |
+| Key              | Default   | What it does                                                                           |
+| ---------------- | --------- | -------------------------------------------------------------------------------------- |
+| _table key_      | required  | The task name. Used in CLI (`runwisp run <name>`), API, log paths.                     |
+| `run`            | required  | Shell command. Multi-line OK with TOML triple-quotes (`"""…"""`).                      |
+| `description`    | _(empty)_ | Human-readable description shown in the UI and TUI.                                    |
+| `group`          | `"Tasks"` | UI grouping label. Set to share a section header with related tasks.                   |
+| `manual_trigger` | `true`    | Allow manual triggers from CLI / API / UI. Set `false` to make the task **cron-only**. |
 
 ## Scheduling
 
@@ -153,14 +153,14 @@ A few more things worth knowing:
 Set it once in [`[defaults]`](/configuration/defaults/) and every
 cron task inherits it — one line to pace your whole schedule.
 
-### `api_trigger = false` — cron-only tasks
+### `manual_trigger = false` — cron-only tasks
 
-With the default `api_trigger = true`, you can kick the task off on
+With the default `manual_trigger = true`, you can kick the task off on
 demand from the CLI (`runwisp run <name>`), the REST API
 (`POST /api/tasks/{name}/run`), the Web UI's **Run Task** button, or the
 TUI's `r` key.
 
-Set `api_trigger = false` and the rule becomes **only the scheduler gets
+Set `manual_trigger = false` and the rule becomes **only the scheduler gets
 to start this task**. That's the one you want for tasks that are
 genuinely risky to fire off-schedule — an overnight rebuild, a data job
 that isn't safe to run twice, anything timed around another schedule
@@ -169,20 +169,20 @@ that a curious operator could break by double-firing it.
 ```toml
 [tasks.nightly-merge]
 cron        = "0 4 * * *"
-api_trigger = false        # only fires from cron, never from the UI / API / CLI
+manual_trigger = false        # only fires from cron, never from the UI / API / CLI
 run         = "/usr/local/bin/merge-shards"
 ```
 
-Here's what flips when `api_trigger = false`:
+Here's what flips when `manual_trigger = false`:
 
 - `POST /api/tasks/{name}/run` comes back **403 Forbidden** with the
-  message `API triggering disabled for this task`.
+  message `manual triggering disabled for this task`.
 - `runwisp run <name>` shows the same error and exits non-zero.
 - Cron firings, retries, and `on_overlap` are **untouched** — the
-  scheduler isn't "API triggering," so it runs the task as normal.
+  scheduler isn't a manual trigger, so it runs the task as normal.
 
-`api_trigger` and `cron` are independent of each other, which leaves one
-trap: a task with `api_trigger = false` **and** no `cron` is a dead task
+`manual_trigger` and `cron` are independent of each other, which leaves one
+trap: a task with `manual_trigger = false` **and** no `cron` is a dead task
 — nothing can ever start it. The loader won't reject that combination
 today, but it's almost always a mistake.
 
@@ -192,7 +192,7 @@ today, but it's almost always a mistake.
 | ---------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `max_concurrent` | `1`       | Maximum overlapping runs of this task. Positive integer; hard internal cap of 1024.                                                                                                                                   |
 | `on_overlap`     | `"queue"` | What happens when a new firing arrives at the `max_concurrent` limit: `queue` / `skip` / `kill`.                                                                                                                      |
-| `queue_max`      | `100`     | When `on_overlap = "queue"`, cap on pending firings. New firings past the cap record `end_reason = "queue_full"`. Positive integer; hard internal cap of 10000. Zero means "use the default"; negatives are rejected. |
+| `max_queued`     | `100`     | When `on_overlap = "queue"`, cap on pending firings. New firings past the cap record `end_reason = "queue_full"`. Positive integer; hard internal cap of 10000. Zero means "use the default"; negatives are rejected. |
 
 Most cron-style work is happiest with `max_concurrent = 1`.
 [Concurrency policies](/concepts/concurrency/) walks through when each
@@ -593,8 +593,8 @@ command instead.
 | `notify_on_success`       | _(none)_ | Notifier IDs to alert on `run.succeeded`.                                                                                                                                                                                 |
 | `treat_missed_as_failure` | `true`   | Whether a [missed scheduled run](/concepts/scheduling/#alerting-on-missed-runs) alerts. It rides `notify_on_failure`'s channels automatically; set `false` to silence the alert (the `missed` run row is still recorded). |
 
-Each entry of `notify_on_failure` / `notify_on_success` is a notifier `id` you've declared in a
-[`[[notifier]]`](/notifications/model/#notifier--declaring-a-channel)
+Each entry of `notify_on_failure` / `notify_on_success` is a notifier id you've declared in a
+[`[notifiers.<id>]`](/notifications/model/#notifiersid--declaring-a-channel)
 block. Whatever's listed in `[notify] global_notifiers` (default
 `["inapp"]`) gets tacked on automatically — set `global_notifiers = []`
 to opt out, or `["slack-ops"]` to route every failure there instead.

@@ -108,19 +108,19 @@ func TestTaskDetailDialog_View_RendersDefinitionAndHealth(t *testing.T) {
 
 func TestTaskDetailDialog_View_ServiceWithAllFields(t *testing.T) {
 	d := NewTaskDetailDialog("web", &model.TaskBrief{
-		Name:       "web",
-		Kind:       model.KindService,
-		Group:      "frontend",
-		Instances:  3,
-		Restart:    model.RestartOnFailure,
-		APITrigger: true,
-		DependsOn:  []string{"db", "cache"},
-		Compose:    &model.TaskComposeRef{File: "docker-compose.yml", Service: "web"},
-		Parameters: []model.TaskParam{{Kind: model.ParamEnv, Key: "PORT"}},
+		Name:          "web",
+		Kind:          model.KindService,
+		Group:         "frontend",
+		Instances:     3,
+		Restart:       model.RestartOnFailure,
+		ManualTrigger: true,
+		DependsOn:     []string{"db", "cache"},
+		Compose:       &model.TaskComposeRef{File: "docker-compose.yml", Service: "web"},
+		Parameters:    []model.TaskParam{{Kind: model.ParamEnv, Key: "PORT"}},
 	})
 
 	out := d.View(80, 40)
-	for _, want := range []string{"service", "Instances", "Restart", "frontend", "API trigger", "Depends on", "db, cache", "Compose", "docker-compose.yml", "PORT"} {
+	for _, want := range []string{"service", "Instances", "Restart", "frontend", "Manual trigger", "Depends on", "db, cache", "Compose", "docker-compose.yml", "PORT"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("service view should contain %q", want)
 		}

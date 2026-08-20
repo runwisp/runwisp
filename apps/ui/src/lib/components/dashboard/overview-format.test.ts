@@ -16,7 +16,14 @@ import {
 } from "./overview-format";
 
 function makeTask(overrides: Partial<Task> = {}): TaskWithId {
-    return { id: "task-id-1", name: "my-task", apiTrigger: false, autostart: true, ...overrides };
+    return {
+        id: "task-id-1",
+        name: "my-task",
+        manualTrigger: false,
+        autostart: true,
+        runOnStart: false,
+        ...overrides,
+    };
 }
 
 function makeRun(overrides: Partial<Run> = {}): Run {
@@ -73,8 +80,8 @@ describe("formatTaskLastResultLabel", () => {
     });
 
     it("returns a formatted string when lastStatus is set", () => {
-        const overview = makeOverview({ lastStatus: "success" });
-        expect(formatTaskLastResultLabel(overview)).toBe("Success");
+        const overview = makeOverview({ lastStatus: "succeeded" });
+        expect(formatTaskLastResultLabel(overview)).toBe("Succeeded");
     });
 
     it("returns a formatted string when lastStatus is 'failed'", () => {

@@ -183,7 +183,7 @@ func (h *InboundHandler) buildServiceTask(svc *protocol.Service) (*model.Task, e
 	}
 	if svc.RestartBackoff != nil {
 		if s, ok := svc.RestartBackoff.Value().(string); ok && s != "" {
-			task.RestartBackoff = s
+			task.RestartBackoff = model.BackoffCurve(s)
 		}
 	}
 
@@ -275,7 +275,7 @@ func (h *InboundHandler) mergeServiceApply(task *model.Task, svc *protocol.Servi
 	}
 	if svc.RestartBackoff != nil {
 		if s, ok := svc.RestartBackoff.Value().(string); ok && s != "" {
-			task.RestartBackoff = s
+			task.RestartBackoff = model.BackoffCurve(s)
 		}
 	}
 

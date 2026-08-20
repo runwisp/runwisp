@@ -18,7 +18,7 @@ import (
 
 var (
 	ErrTaskNotFound          = errors.New("task not found")
-	ErrAPIDisabled           = errors.New("API triggering disabled for this task")
+	ErrManualTriggerDisabled = errors.New("manual triggering disabled for this task")
 	ErrRunNotFound           = errors.New("run not found")
 	ErrNotRunning            = errors.New("run is not currently running")
 	ErrServiceNotRunnable    = errors.New("services cannot be triggered; use the restart endpoint")
@@ -51,15 +51,28 @@ func newRunService(db storage.RunRepository, jm runtime.TaskRunner, tasks *runti
 func (s *runService) ListTasks() []model.TaskResponse {
 	tasks := make([]model.TaskResponse, 0, s.tasks.Len())
 	s.tasks.Range(func(_ string, task *model.Task) bool {
-		tr := model.TaskResponse{Task: *task}
-		if task.Cron != "" && s.scheduler != nil {
-			tr.NextRunAt = s.scheduler.GetNextRun(task.Name)
-		}
-		tasks = append(tasks, tr)
+		tasks = append(tasks, s.toTaskResponse(task))
 		return true
 	})
 	sort.Slice(tasks, func(i, j int) bool { return tasks[i].Name < tasks[j].Name })
 	return tasks
+}
+
+func (s *runService) GetTask(name string) (*model.TaskResponse, error) {
+	task, ok := s.tasks.Get(name)
+	if !ok {
+		return nil, ErrTaskNotFound
+	}
+	tr := s.toTaskResponse(task)
+	return &tr, nil
+}
+
+func (s *runService) toTaskResponse(task *model.Task) model.TaskResponse {
+	tr := model.TaskResponse{Task: *task}
+	if task.Cron != "" && s.scheduler != nil {
+		tr.NextRunAt = s.scheduler.GetNextRun(task.Name)
+	}
+	return tr
 }
 
 // mapNotFound translates storage.ErrNotFound to ErrRunNotFound.
@@ -111,8 +124,8 @@ func (s *runService) TriggerRun(ctx context.Context, taskName string, params map
 	if task.Kind.IsService() {
 		return nil, ErrServiceNotRunnable
 	}
-	if !task.APITrigger {
-		return nil, ErrAPIDisabled
+	if !task.ManualTrigger {
+		return nil, ErrManualTriggerDisabled
 	}
 	// Validate supplied values at the boundary so a bad value surfaces as a 400
 	// (the manager re-resolves the same pure transform before persisting).
@@ -311,7 +324,7 @@ func (s *runService) bulkRerun(ctx context.Context, sel model.RunSelector) ([]Tr
 	out := make([]TriggeredRunRef, 0, len(taskNames))
 	for _, name := range taskNames {
 		task, ok := s.tasks.Get(name)
-		if !ok || task.Kind.IsService() || !task.APITrigger {
+		if !ok || task.Kind.IsService() || !task.ManualTrigger {
 			continue
 		}
 		var params map[string]*string

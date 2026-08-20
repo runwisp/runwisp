@@ -266,7 +266,7 @@ func (q *Queries) GetRunByExecutionID(ctx context.Context, executionID *string) 
 const getRunSummary = `-- name: GetRunSummary :one
 SELECT
   CAST(COUNT(*) AS INTEGER) AS total,
-  CAST(COALESCE(SUM(CASE WHEN end_reason = 'success' THEN 1 ELSE 0 END), 0) AS INTEGER) AS success,
+  CAST(COALESCE(SUM(CASE WHEN end_reason = 'succeeded' THEN 1 ELSE 0 END), 0) AS INTEGER) AS success,
   CAST(COALESCE(SUM(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow','start_failed')
                          THEN 1 ELSE 0 END), 0) AS INTEGER) AS failed,
   CAST(COALESCE(SUM(CASE WHEN end_reason = 'missed' THEN 1 ELSE 0 END), 0) AS INTEGER) AS missed,

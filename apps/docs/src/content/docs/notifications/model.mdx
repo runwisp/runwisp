@@ -11,7 +11,7 @@ When a task fails, you want to know. RunWisp has two layers for that:
 
 1. **The bell** in the [Web UI](/getting-started/web-ui-tour/) and the alert line in the [TUI](/getting-started/tui-tour/). Always on, no
    config required.
-2. **Outbound channels** — off by default. Add one with a `[[notifier]]`
+2. **Outbound channels** — off by default. Add one with a `[notifiers.<id>]`
    block. See the **Providers** section for the channels that ship today.
 
 All of this is baked into the binary. No plugins, no remote service to
@@ -33,18 +33,17 @@ That's the default behaviour — you don't write a line of TOML to get it.
 
 It's three steps, and the shape is the same for every provider:
 
-1. **Declare the channel** in a `[[notifier]]` block. One per channel.
+1. **Declare the channel** in a `[notifiers.<id>]` block. One per channel.
 2. **Wire it up** in one of two ways:
     - [Per-task notifications](/notifications/per-task/) —
       `notify_on_failure` directly on the task. Best when one task has its
       own destination.
     - [Notification rules](/notifications/routes/) — a
-      `[[notification_route]]` block. Best when one rule covers many tasks.
+      `[[route]]` block. Best when one rule covers many tasks.
 3. **Test it** by triggering a task that fails on purpose.
 
 ```toml
-[[notifier]]
-id          = "slack-ops"
+[notifiers.slack-ops]
 type        = "slack"
 webhook_url = "${RUNWISP_SLACK_OPS_URL}"
 
@@ -63,27 +62,26 @@ provider — see the **Providers** section:
 [Email (local MTA)](/notifications/providers/sendmail/) ·
 [Webhook](/notifications/providers/webhook/).
 
-## `[[notifier]]` — declaring a channel
+## `[notifiers.<id>]` — declaring a channel
 
-Every notifier needs two things:
+Every notifier needs two things: an id — the key in `[notifiers.<id>]` —
+and a `type`.
 
-| Key    | Type   | Required | What it does                                                                                                                                                                                                                |
-| ------ | ------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`   | string | yes      | Name you use to refer to the channel from routes and per-task fields. Must be unique. `"inapp"` is reserved. Cannot contain `:` (reserved for [inline target overrides](/notifications/per-task/#inline-target-overrides)). |
-| `type` | enum   | yes      | `"slack"`, `"discord"`, `"telegram"`, `"smtp"`, `"sendmail"`, or `"webhook"`.                                                                                                                                               |
+| Key    | Type      | Required | What it does                                                                                                                                                                                                                |
+| ------ | --------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<id>` | table key | yes      | Name you use to refer to the channel from routes and per-task fields. Must be unique. `"inapp"` is reserved. Cannot contain `:` (reserved for [inline target overrides](/notifications/per-task/#inline-target-overrides)). |
+| `type` | enum      | yes      | `"slack"`, `"discord"`, `"telegram"`, `"smtp"`, `"sendmail"`, or `"webhook"`.                                                                                                                                               |
 
 Everything beyond those two depends on the `type` — the provider page
 has the full list for each.
 
 ```toml
-[[notifier]]
-id          = "slack-ops"
+[notifiers.slack-ops]
 type        = "slack"
 webhook_url = "${RUNWISP_SLACK_OPS_URL}"
 channel     = "#ops-alerts"   # optional
 
-[[notifier]]
-id        = "tg-oncall"
+[notifiers.tg-oncall]
 type      = "telegram"
 bot_token = "${RUNWISP_TG_TOKEN}"
 chat_id   = "-1001234567890"
@@ -125,7 +123,7 @@ together.
   `[services.*]` block. Best when a task has its own destination and you
   want that setting to sit next to the task definition.
 - **[Notification rules](/notifications/routes/)** — a
-  `[[notification_route]]` block that matches many tasks by name pattern
+  `[[route]]` block that matches many tasks by name pattern
   and any mix of event kinds. Best when one rule should blanket a whole
   set of tasks.
 
@@ -155,7 +153,7 @@ task's `notify_on_failure = ["slack-ops"]` means the failure goes to
 `slack-ops` **and** lands a row in the bell. It's "and," not "instead
 of."
 
-`"inapp"` is the one id that doesn't need its own `[[notifier]]` block.
+`"inapp"` is the one id that doesn't need its own `[notifiers.*]` block.
 Every other id you put in `global_notifiers` has to point at a notifier
 you've declared.
 
@@ -237,8 +235,8 @@ in the bell naming the original task and kind.
 
 `notify.delivery_failed` events bypass the notification route engine
 entirely — they are delivered directly to the in-app channel. A
-`[[notification_route]]` rule with `match.kinds = ["notify.delivery_failed"]`
-will never fire, no matter what `notify` channel you point it at. If you
+`[[route]]` rule with `match.kinds = ["notify.delivery_failed"]`
+will never fire, no matter what `notifiers` list you point it at. If you
 need a backup path, add a second notifier ID to the original
 `notify_on_failure` list instead — that way both channels get the same
 event and if one goes down the other still sees it.

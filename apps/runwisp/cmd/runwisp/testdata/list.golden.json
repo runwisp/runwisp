@@ -7,7 +7,7 @@
       "schedule": "0 3 * * *",
       "maxConcurrent": 1,
       "onOverlap": "queue",
-      "apiTrigger": true,
+      "manualTrigger": true,
       "description": "nightly backup"
     },
     {
@@ -16,7 +16,7 @@
       "schedule": "",
       "instances": 2,
       "onOverlap": "skip",
-      "apiTrigger": true
+      "manualTrigger": true
     }
   ]
 }

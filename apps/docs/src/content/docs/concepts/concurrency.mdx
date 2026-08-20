@@ -56,7 +56,7 @@ It's a good fit when:
   rather than fighting over shared state.
 
 The queue isn't bottomless —
-[`queue_max`](/configuration/tasks/#concurrency) caps it. Once it's full, the
+[`max_queued`](/configuration/tasks/#concurrency) caps it. Once it's full, the
 next firing gets logged with `end_reason = "queue_full"` and the
 existing queue keeps draining in order. Seeing queue-full firings is a
 signal the task is over budget: slow the cron down, bump

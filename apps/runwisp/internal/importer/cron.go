@@ -315,7 +315,7 @@ func (cp *crontabParser) handleJob(line string) {
 //
 // An empty MAILTO is cron's "mail nobody", which is not a gap to fill.
 //
-// The importer stops at telling: writing [[notifier]] would mean an import
+// The importer stops at telling: writing [notifiers.mta] would mean an import
 // reaching into daemon-wide settings, which is the line Phase A drew when it
 // stopped emitting [defaults] and [scheduler]. It is also the operator's
 // identity to choose, not a machine-owned staging file's.
@@ -331,8 +331,7 @@ func (cp *crontabParser) noteMailto(value string) {
 		"crontab sets MAILTO="+addr+". crond mails a job's output; RunWisp notifies on "+
 			"the event instead, so the closest equivalent is a sendmail notifier through "+
 			"the same MTA. Add to your root runwisp.toml:\n"+
-			"    [[notifier]]\n"+
-			"    id   = \"mta\"\n"+
+			"    [notifiers.mta]\n"+
 			"    type = \"sendmail\"\n"+
 			"    from = \"runwisp@localhost\"\n"+
 			"    to   = [\""+addr+"\"]\n"+

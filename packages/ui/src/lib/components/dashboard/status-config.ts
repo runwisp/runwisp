@@ -38,7 +38,7 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
         badge: "bg-info-soft text-info-soft-text",
         description: "This run is executing right now.",
     },
-    success: {
+    succeeded: {
         icon: CircleCheck,
         color: "text-success-surface",
         bg: "bg-success-soft",
@@ -111,7 +111,7 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
         border: "border-warning-soft",
         dot: "bg-warning-surface",
         badge: "bg-warning-soft text-warning-soft-text",
-        description: "Skipped because the task's queue was already at queue_max.",
+        description: "Skipped because the task's queue was already at max_queued.",
     },
     dst_skipped: {
         icon: SkipForward,

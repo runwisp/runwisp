@@ -49,9 +49,9 @@ And if you catch yourself writing `while true; do ...; done` inside a
 
 Everything else behaves identically on both sides — `timeout`,
 `graceful_stop`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`,
-`notify_on_failure`, `notify_on_success`, `description`, `api_trigger`.
+`notify_on_failure`, `notify_on_success`, `description`, `manual_trigger`.
 The only stragglers:
-[`max_concurrent` and `queue_max`](/configuration/tasks/#concurrency)
+[`max_concurrent` and `max_queued`](/configuration/tasks/#concurrency)
 are task-only, and
 [`healthy_after`](/concepts/retries/#healthy-threshold-healthy_after)
 is service-only.
@@ -64,11 +64,11 @@ with:
 - A unique ID and a row in the run history.
 - A captured stdout/stderr stream, written to a per-task log file and
   tailed live in the Web UI.
-- An end reason — `success`, `failed`, `stopped`, `timeout`,
+- An end reason — `succeeded`, `failed`, `stopped`, `timeout`,
   `crashed`, `skipped`, `log_overflow`, `missed`, `queue_full`,
   `dst_skipped`, `daemon_stopped`, or `start_failed`.
 - The same notification surface (per-task [`notify_on_failure` /
-  `notify_on_success`](/notifications/per-task/), plus full [`[[notification_route]]`](/notifications/routes/) matching).
+  `notify_on_success`](/notifications/per-task/), plus full [`[[route]]`](/notifications/routes/) matching).
 
 That's really the whole idea: switching from task to service changes how
 the process gets _run_, not what you can see or how you operate it.
@@ -129,7 +129,7 @@ built up in memory — it's a service.
 Still a task — just leave `cron` off. It shows up in the UI and takes
 manual triggers from `runwisp run <name>`, the [Web UI](/getting-started/web-ui-tour/)'s **Run Task**
 button, the [TUI](/getting-started/tui-tour/), or `POST /api/tasks/{name}/run`. Set
-`api_trigger = false` if you want it to be cron-only and not runnable
+`manual_trigger = false` if you want it to be cron-only and not runnable
 over the API.
 
 ### A task that "should never overlap"

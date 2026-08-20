@@ -10,7 +10,7 @@ head:
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-A `[[notification_route]]` block is one rule: when an event matches the
+A `[[route]]` block is one rule: when an event matches the
 filter, it goes to the listed channels. An event can match several rules
 at once — when that happens the router gathers up every channel named by
 every match, throws out the duplicates, and sends one message per
@@ -20,9 +20,9 @@ either matches or it doesn't.
 ## Shape
 
 ```toml
-[[notification_route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
-notify = ["slack-ops", "tg-oncall", "inapp"]
+[[route]]
+match     = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+notifiers = ["slack-ops", "tg-oncall", "inapp"]
 ```
 
 ## `match`
@@ -54,9 +54,9 @@ sequence except `/`, `?` matches any single character except `/`, and
 **case-sensitive** (so `Backup-*` won't match `backup-db`) and brace
 expansion isn't supported.
 
-## `notify`
+## `notifiers`
 
-You need at least one entry. Each one is either a `[[notifier]] id`
+You need at least one entry. Each one is either a notifier id
 you've declared elsewhere in the file (e.g. `"slack-ops"`); the literal
 `"inapp"`, which is always there; or an **inline target override** of
 the form `"<id>:<target>"` that borrows a parent notifier's credentials
@@ -92,7 +92,7 @@ When an outbound notifier burns through its retry budget, the daemon
 raises a `notify.delivery_failed` event. To keep a dead channel from
 generating yet more delivery attempts on itself, this one goes **only to
 the bell** — it bypasses the route engine entirely and is delivered
-directly to the in-app channel. A `[[notification_route]]` rule targeting
+directly to the in-app channel. A `[[route]]` rule targeting
 `notify.delivery_failed` will never fire, no matter what channel you point
 it at. If you need a backup path, add a second notifier ID to the original
 list instead — both channels get the same original event, and if one
@@ -102,14 +102,14 @@ delivery fails the other is unaffected.
 
 ```toml
 # Every failed/timeout/crashed run is sent to the team channel
-[[notification_route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
-notify = ["slack-ops"]
+[[route]]
+match     = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+notifiers = ["slack-ops"]
 
 # Backups also send to the on-call channel
-[[notification_route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
-notify = ["tg-oncall"]
+[[route]]
+match     = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+notifiers = ["tg-oncall"]
 ```
 
 A failure of `backup-postgres` sends one message to `slack-ops`, one
@@ -119,13 +119,13 @@ to `slack-ops` and adds one row to the bell.
 
 ## What the config loader rejects
 
-The loader rejects routes that reference a notifier `id` not declared
-in `[[notifier]]` (and not `"inapp"`); empty `notify` lists;
+The loader rejects routes that reference a notifier id not declared
+under `[notifiers.*]` (and not `"inapp"`); empty `notifiers` lists;
 `match.kinds` values that aren't one of the valid kinds listed above;
 `match.task` globs that can't be parsed (e.g. unmatched `[`); inline
 overrides whose parent isn't declared, whose target is empty, or —
 for Slack — doesn't start with `#` or `@`; `"inapp:something"` (the
-bell has no target); and `[[notifier]]` ids containing `:`.
+bell has no target); and notifier ids containing `:`.
 
 ---
 

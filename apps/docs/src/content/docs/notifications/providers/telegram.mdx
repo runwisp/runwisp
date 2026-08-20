@@ -16,14 +16,13 @@ catches people out the first time is finding their `chat_id`.
 ## Fields
 
 ```toml
-[[notifier]]
-id        = "tg-oncall"
+[notifiers.tg-oncall]
 type      = "telegram"
 bot_token = "${RUNWISP_TG_TOKEN}"
 chat_id   = "-1001234567890"
 ```
 
-`id`, `type`, `bot_token`, and `chat_id` are required. Use
+The id (as the table key), `type`, `bot_token`, and `chat_id` are required. Use
 [`${...}` substitution](/configuration/substitution/) to pull the token
 from an env var or a file instead of writing it inline —
 [storing the secret](/notifications/model/#storing-the-secret).
@@ -96,8 +95,7 @@ Pick where the token lives and reference it with
         ```
 
         ```toml
-        [[notifier]]
-        id        = "tg-oncall"
+        [notifiers.tg-oncall]
         type      = "telegram"
         bot_token = "${RUNWISP_TG_TOKEN}"
         chat_id   = "-1001234567890"
@@ -117,8 +115,7 @@ Pick where the token lives and reference it with
         ```
 
         ```toml
-        [[notifier]]
-        id        = "tg-oncall"
+        [notifiers.tg-oncall]
         type      = "telegram"
         bot_token = "${file:~/.config/runwisp/tg-oncall.token}"
         chat_id   = "-1001234567890"
@@ -129,8 +126,7 @@ Pick where the token lives and reference it with
         config files are often committed to git or shared in chat.
 
         ```toml
-        [[notifier]]
-        id        = "tg-oncall"
+        [notifiers.tg-oncall]
         type      = "telegram"
         bot_token = "123456789:AAEa-PXxx..."
         chat_id   = "-1001234567890"
@@ -151,9 +147,9 @@ notify_on_failure = ["tg-oncall"]
 # …
 
 # Or in a notification rule:
-[[notification_route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
-notify = ["tg-oncall"]
+[[route]]
+match     = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+notifiers = ["tg-oncall"]
 ```
 
 You can list two notifiers in the same array — the router sends to both,
@@ -224,7 +220,7 @@ as your starting point. The helpers `statusEmoji`, `statusVerb`,
 ## What the loader rejects
 
 - A missing or empty `bot_token` or `chat_id`.
-- An `id` containing `:` (reserved for inline target overrides) or
+- A notifier id containing `:` (reserved for inline target overrides) or
   equal to `"inapp"` (reserved).
 
 ---

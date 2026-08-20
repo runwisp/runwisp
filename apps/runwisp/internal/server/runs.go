@@ -49,7 +49,7 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	huma.Register(protectedAPI, huma.Operation{
 		OperationID: "reload",
 		Method:      http.MethodPost,
-		Path:        "/api/reload",
+		Path:        "/api/daemon/reload",
 		Summary:     "Reload runwisp.toml",
 		Description: "Re-reads the config file and reconciles the live task set (added/changed/removed). Validate-first: a config that fails to load or changes a restart-only setting is rejected and nothing is applied.",
 		Tags:        []string{"System"},
@@ -58,7 +58,7 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	huma.Register(protectedAPI, huma.Operation{
 		OperationID: "getMetricsHistory",
 		Method:      http.MethodGet,
-		Path:        "/api/system/history",
+		Path:        "/api/system/metrics",
 		Summary:     "Get historical system metrics",
 		Tags:        []string{"System"},
 	}, srv.humaGetMetricsHistory)
@@ -70,6 +70,14 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 		Summary:     "List all tasks",
 		Tags:        []string{"Tasks"},
 	}, srv.humaListTasks)
+
+	huma.Register(protectedAPI, huma.Operation{
+		OperationID: "getTask",
+		Method:      http.MethodGet,
+		Path:        "/api/tasks/{taskName}",
+		Summary:     "Get a single task by name",
+		Tags:        []string{"Tasks"},
+	}, srv.humaGetTask)
 
 	huma.Register(protectedAPI, huma.Operation{
 		OperationID: "listRuns",
@@ -104,7 +112,7 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaListTaskRuns)
 
 	huma.Register(protectedAPI, huma.Operation{
-		OperationID:   "triggerRun",
+		OperationID:   "runTask",
 		Method:        http.MethodPost,
 		Path:          "/api/tasks/{taskName}/run",
 		Summary:       "Trigger a new run",
@@ -228,6 +236,14 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 
 func (srv *Server) humaListTasks(ctx context.Context, input *struct{}) (*TasksOutput, error) {
 	return &TasksOutput{Body: TasksResponseBody{Items: srv.runService.ListTasks()}}, nil
+}
+
+func (srv *Server) humaGetTask(ctx context.Context, input *TaskNameInput) (*TaskOutput, error) {
+	task, err := srv.runService.GetTask(input.TaskName)
+	if err != nil {
+		return nil, mapDomainError(ctx, err, "Failed to fetch task")
+	}
+	return &TaskOutput{Body: *task}, nil
 }
 
 func (srv *Server) humaListRuns(ctx context.Context, input *RunsQueryInput) (*RunsOutput, error) {
@@ -370,7 +386,7 @@ func (srv *Server) registerAppStreamSSE(api huma.API) {
 	sse.Register(api, huma.Operation{
 		OperationID: "streamAppEvents",
 		Method:      http.MethodGet,
-		Path:        "/api/stream",
+		Path:        "/api/events/stream",
 		Summary:     "Stream live application events",
 		Description: "Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.",
 		Tags:        []string{"Runs"},

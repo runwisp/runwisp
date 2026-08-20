@@ -32,13 +32,13 @@ describe("upsertRun", () => {
 
     it("updates an existing run in place when its status advances", () => {
         const existing = makeRun("a", { status: "running" });
-        const advanced = makeRun("a", { status: "ended", endReason: "success" });
+        const advanced = makeRun("a", { status: "ended", endReason: "succeeded" });
 
         const result = upsertRun([existing], advanced);
 
         expect(result).toHaveLength(1);
         expect(result[0]?.status).toBe("ended");
-        expect(result[0]?.endReason).toBe("success");
+        expect(result[0]?.endReason).toBe("succeeded");
     });
 
     it("rejects a status regression (stale update arriving after a later phase)", () => {
@@ -65,7 +65,9 @@ describe("removeRun", () => {
 });
 
 describe("TaskStore.loadIfNeeded", () => {
-    const tasks: Task[] = [{ name: "t1", apiTrigger: false, autostart: false }];
+    const tasks: Task[] = [
+        { name: "t1", manualTrigger: false, autostart: false, runOnStart: false },
+    ];
 
     it("populates items and marks loaded on success", async () => {
         const store = createTaskStore({

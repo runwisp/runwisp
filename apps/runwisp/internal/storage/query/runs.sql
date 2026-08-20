@@ -247,7 +247,7 @@ ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) ASC LIMIT sq
 -- the failed run metric (runwisp_runs_total status=failed) will undercount.
 SELECT
   CAST(COUNT(*) AS INTEGER) AS total,
-  CAST(COALESCE(SUM(CASE WHEN end_reason = 'success' THEN 1 ELSE 0 END), 0) AS INTEGER) AS success,
+  CAST(COALESCE(SUM(CASE WHEN end_reason = 'succeeded' THEN 1 ELSE 0 END), 0) AS INTEGER) AS success,
   CAST(COALESCE(SUM(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow','start_failed')
                          THEN 1 ELSE 0 END), 0) AS INTEGER) AS failed,
   CAST(COALESCE(SUM(CASE WHEN end_reason = 'missed' THEN 1 ELSE 0 END), 0) AS INTEGER) AS missed,

@@ -52,7 +52,7 @@ function shoot(page: Page, name: string): Promise<Buffer> {
 }
 
 async function unreadCount(page: Page, token: string): Promise<number> {
-    const res = await page.request.get("/api/notifications/unread-count", {
+    const res = await page.request.get("/api/notifications/unreadCount", {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok()) return 0;
@@ -124,7 +124,7 @@ test("overview, runs, task detail", async ({ authenticatedPage: page, daemonStat
         // Task detail — a finished, successful run
         await page.goto(`/tasks/${SUCCESS_TASK}`);
         await expect(page.getByRole("heading", { name: SUCCESS_TASK, level: 1 })).toBeVisible();
-        await expect(runVerdict(page, "success")).toBeVisible();
+        await expect(runVerdict(page, "succeeded")).toBeVisible();
         await settle(page);
         await shoot(page, `web-ui-task-detail-${theme}`);
 

@@ -10,7 +10,7 @@ Notation in schema blocks: `key: type =default — note`. `=default` omitted mea
 ## Model
 
 - `runwisp.toml` is the ONLY source of task definitions. REST/UI/TUI can read + trigger/stop/restart runs, never create or edit definitions.
-- Config reload is explicit: `runwisp reload` / `SIGHUP` / `POST /api/reload` re-read the whole TOML and reconcile the live task set (add/change/remove tasks, services, `[defaults]`). Validate-first/atomic — a parse/validation failure, or a change to a restart-only setting (`[daemon]`, `[scheduler] timezone`, `[storage]`, `[notify]`, bind host/port), is rejected and leaves the running set untouched. Reload is NOT a restart: added tasks get no `run_on_start`/catch-up, in-flight runs finish under their old definition. The daemon never auto-watches the file. Restart-only settings (and re-firing `run_on_start`/catch-up) need `runwisp restart`.
+- Config reload is explicit: `runwisp reload` / `SIGHUP` / `POST /api/daemon/reload` re-read the whole TOML and reconcile the live task set (add/change/remove tasks, services, `[defaults]`). Validate-first/atomic — a parse/validation failure, or a change to a restart-only setting (`[daemon]`, `[scheduler] timezone`, `[storage]`, `[notify]`, bind host/port), is rejected and leaves the running set untouched. Reload is NOT a restart: added tasks get no `run_on_start`/catch-up, in-flight runs finish under their old definition. The daemon never auto-watches the file. Restart-only settings (and re-firing `run_on_start`/catch-up) need `runwisp restart`.
 - Two unit kinds: `[tasks.<name>]` run-to-exit (cron or manual); `[services.<name>]` long-running, `restart=always` forced. Names must be unique across both tables. `name` validated by RunWisp's task-name rules.
 - `run =` is shell, executed from disk only — never from an HTTP/WS body.
 - Inheritance: `[defaults]` → each task/service → per-key override. `env` merges (task wins); `[compose.<alias>.<svc>]` overrides per imported service.
@@ -121,7 +121,7 @@ cron:              string          — 5- or 6-field cron (optional leading seco
 timezone:          IANA string      — per-task TZ override (else [scheduler] timezone)
 jitter:            dur              — cap how far this cron task's start may slip; needs cron (inherits [defaults])
 run_on_start:      bool =false      — fire once at daemon start, on top of any cron (the @reboot equivalent)
-api_trigger:       bool =true       — allow CLI/API/UI trigger; false = cron-only
+manual_trigger:    bool =true       — allow CLI/API/UI trigger; false = cron-only
 catch_up:          enum =latest     — missed-firing policy: latest | all | skip
 max_catch_up_runs: int  =100        — cap when catch_up=all; >=1
 timeout:           dur              — per-attempt cap (inherits [defaults])
@@ -129,7 +129,7 @@ graceful_stop:     dur  =5s         — grace before SIGKILL on stop
 stop_signal:       enum =SIGTERM    — stop-ladder signal (inherits [defaults]); SIGTERM|SIGINT|SIGQUIT|SIGHUP|SIGKILL|SIGUSR1|SIGUSR2
 restart:           enum             — never | on_failure   (always => rejected on tasks)
 max_concurrent:    int  =1          — concurrent run cap; 1..1024
-queue_max:         int  =100        — queued-run depth; 0..10000
+max_queued:        int  =100        — queued-run depth; 0..10000
 on_overlap:        enum =queue      — queue | skip | kill
 retry_attempts:    int  =0          — retries after a failed attempt; 0..100
 retry_delay:       dur  =5s         — delay between retries (<=0 floors to 5s)
@@ -168,7 +168,7 @@ treat_missed_as_failure:  bool =true       — alert on missed scheduled runs (i
 
 ### [services.&lt;name&gt;] (long-running)
 
-`restart=always` is forced. Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `max_catch_up_runs`, `restart`, `max_concurrent`, `queue_max`, `retry_*`. Shares the core task keys: `group` (default `Services`), `description`, `api_trigger`, `on_overlap` (default `skip`), `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `env_base`, `user`, `exit_codes`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify_on_failure`/`notify_on_success`/`treat_missed_as_failure`. Service-only:
+`restart=always` is forced. Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `max_catch_up_runs`, `restart`, `max_concurrent`, `max_queued`, `retry_*`. Shares the core task keys: `group` (default `Services`), `description`, `manual_trigger`, `on_overlap` (default `skip`), `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `env_base`, `user`, `exit_codes`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify_on_failure`/`notify_on_success`/`treat_missed_as_failure`. Service-only:
 
 ```
 instances:           int  =1           — parallel instances; 1..64
@@ -200,7 +200,7 @@ pull:         enum =missing        — missing | always | never
 name_format:  string ={alias}.{service} — generated task name; must contain {service} when import="services"
 ```
 
-Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `api_trigger`, `timeout`, `graceful_stop`, `stop_signal`, `on_overlap`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `restart_attempts`, `priority`, `autostart`, `exit_codes`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `env`, `env_file`, `secrets`, `secrets_file`, `notify_on_failure`, `notify_on_success`. Not allowed: `run`/`compose_file`/`compose_service` (the parent block owns the backend), and the host-process keys `shell`/`umask`/`env_base`/`user`. `import="stack"` forbids overrides and include/exclude. Per-service `notify_on_failure`/`notify_on_success` desugar into notify routes keyed by the generated task name, exactly like `[services.*]`. The reserved sub-table `[compose.<alias>.defaults]` accepts the same keys and applies them to every imported service before the per-service override wins (precedence: compose-import default → `defaults` → `<svc>`); its `notify_on_*` add routes to all services. A compose service literally named `defaults` is rejected (rename hint); `import="stack"` forbids `defaults` too.
+Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `manual_trigger`, `timeout`, `graceful_stop`, `stop_signal`, `on_overlap`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `restart_attempts`, `priority`, `autostart`, `exit_codes`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `env`, `env_file`, `secrets`, `secrets_file`, `notify_on_failure`, `notify_on_success`. Not allowed: `run`/`compose_file`/`compose_service` (the parent block owns the backend), and the host-process keys `shell`/`umask`/`env_base`/`user`. `import="stack"` forbids overrides and include/exclude. Per-service `notify_on_failure`/`notify_on_success` desugar into notify routes keyed by the generated task name, exactly like `[services.*]`. The reserved sub-table `[compose.<alias>.defaults]` accepts the same keys and applies them to every imported service before the per-service override wins (precedence: compose-import default → `defaults` → `<svc>`); its `notify_on_*` add routes to all services. A compose service literally named `defaults` is rejected (rename hint); `import="stack"` forbids `defaults` too.
 
 ### [notify] (global notification settings)
 
@@ -214,17 +214,17 @@ keep_occurrences:   int  =10             — recent timestamps kept per coalesce
 coalesce_outbound: bool =true           — coalesce outbound bursts too
 ```
 
-### [[notifier]] (outbound channel; repeatable)
+### [notifiers.&lt;id&gt;] (outbound channel; map keyed by id)
 
-Common: `id` (req, non-empty, not "inapp", no ":"), `type` (req: `slack`|`discord`|`telegram`|`smtp`|`sendmail`|`webhook`), `template_path` (optional).
+Common: `<id>` (map key; non-empty, not "inapp", no ":"), `type` (req: `slack`|`discord`|`telegram`|`smtp`|`sendmail`|`webhook`), `template_path` (optional).
 
 ```
 slack:    webhook_url (req); channel (optional; starts # or @)
 discord:  webhook_url (req; http/https)
 telegram: bot_token (req); chat_id (req); parse_mode (MarkdownV2 needs template_path)
-smtp:     host(req); port 0..65535; tls starttls|implicit|none (default: 465→implicit else starttls);
+smtp:     host(req); port 0..65535; tls_mode starttls|implicit|off (default: 465→implicit else starttls);
           tls_skip_verify bool; from(req email); reply_to(email); to(req,>=1) + cc/bcc(emails);
-          username + password (set together or both omitted); tls=none forbids credentials
+          username + password (set together or both omitted); tls_mode=off forbids credentials
 sendmail: from(req email); to(req,>=1) + cc/bcc(emails); reply_to(email);
           sendmail_path (optional, must be absolute; default: /usr/sbin/sendmail,
           /usr/lib/sendmail, /usr/bin/sendmail, then $PATH — resolved at send time, not load).
@@ -235,13 +235,13 @@ webhook:  url (req; http/https); headers (optional map<str,str>)
 
 Secret-bearing values (`webhook_url`, `bot_token`, `password`, …) arrive final — use `${VAR}` / `${file:...}` substitution for indirection; never inline a secret you don't control. Secrets are never logged or sent over the cloud integration.
 
-### [[notification_route]] (route events to channels; repeatable)
+### [[route]] (route events to channels; repeatable)
 
 ```
 match.kinds:     []string — run.started | run.succeeded | run.failed | run.timeout | run.stopped | run.crashed | run.missed | service.fatal | notify.delivery_failed
 match.severity: string   — info | warn | error (optional)
 match.task:     string   — glob over task name (optional)
-notify:         []string (req, non-empty) — notifier ids (or "inapp"); "id:#override" inline target (slack #/@, telegram chat_id, smtp/sendmail email)
+notifiers:      []string (req, non-empty) — notifier ids (or "inapp"); "id:#override" inline target (slack #/@, telegram chat_id, smtp/sendmail email)
 ```
 
 ### FAIL-FAST (run script execution)
@@ -395,9 +395,10 @@ Read (GET):
 ```
 /api/daemon                                     daemon info
 /api/system                                     system stats
-/api/system/history                             historical system metrics
+/api/system/metrics                             historical system metrics
 /api/daemon/log/stream                          daemon log (SSE)
 /api/tasks                                       list tasks
+/api/tasks/{task}                                one task
 /api/tasks/{task}/runs                           list runs for task
 /api/runs/{runId}                               one run
 /api/runs/{runId}/log                           log-lines page
@@ -406,9 +407,9 @@ Read (GET):
 /api/tasks/{task}/log/search                     search log lines across runs
 /api/runs                                        list all runs
 /api/runs/summary                               aggregate run stats
-/api/runs/stream                                run lifecycle events (SSE)
+/api/events/stream                              run lifecycle + system + config-stale events (SSE)
 /api/notifications                              in-app notifications
-/api/notifications/unread-count                 unread count
+/api/notifications/unreadCount                   unread count
 /api/notifications/stream                       notification events (SSE)
 /api/local/credentials                          ephemeral password (Unix socket only)
 ```
@@ -416,7 +417,7 @@ Read (GET):
 Trigger / stop / mutate runs (POST/DELETE — never touches definitions):
 
 ```
-POST   /api/reload                               re-read runwisp.toml + reconcile live task set (validate-first; reads from disk, never edits definitions)
+POST   /api/daemon/reload                        re-read runwisp.toml + reconcile live task set (validate-first; reads from disk, never edits definitions)
 POST   /api/tasks/{task}/run                     trigger a new run
 POST   /api/tasks/{task}/stop                    stop service (for daemon lifetime)
 POST   /api/tasks/{task}/restart                 restart all service instances

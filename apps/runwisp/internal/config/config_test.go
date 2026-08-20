@@ -67,7 +67,7 @@ run = "echo hello"
 		task := cfg.Tasks[0]
 		assert.Equal(t, "test-task", task.Name)
 		assert.Equal(t, "*/5 * * * *", task.Cron)
-		assert.True(t, task.APITrigger)
+		assert.True(t, task.ManualTrigger)
 		assert.Equal(t, model.PolicySkip, task.OnOverlap)
 		assert.Equal(t, 1, task.MaxConcurrent)
 		assert.Equal(t, 30*time.Minute, task.Timeout)
@@ -95,23 +95,23 @@ run = "echo hi"
 		assert.Equal(t, "db:backup", cfg.Tasks[0].Name)
 	})
 
-	t.Run("api_trigger explicit false is preserved", func(t *testing.T) {
+	t.Run("manual_trigger explicit false is preserved", func(t *testing.T) {
 		path := writeTOML(t, `
 [scheduler]
 timezone = "UTC"
 
 [tasks.silent]
-api_trigger = false
+manual_trigger = false
 cron = "*/5 * * * *"
 run = "echo hi"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
 		require.Len(t, cfg.Tasks, 1)
-		assert.False(t, cfg.Tasks[0].APITrigger)
+		assert.False(t, cfg.Tasks[0].ManualTrigger)
 	})
 
-	t.Run("api_trigger defaults to true when absent", func(t *testing.T) {
+	t.Run("manual_trigger defaults to true when absent", func(t *testing.T) {
 		path := writeTOML(t, `
 [tasks.loud]
 run = "echo hi"
@@ -119,7 +119,7 @@ run = "echo hi"
 		cfg, err := Load(path)
 		require.NoError(t, err)
 		require.Len(t, cfg.Tasks, 1)
-		assert.True(t, cfg.Tasks[0].APITrigger)
+		assert.True(t, cfg.Tasks[0].ManualTrigger)
 	})
 
 	t.Run("unknown keys are rejected", func(t *testing.T) {
@@ -172,7 +172,7 @@ run = "exec ./bin/web"
 		assert.Equal(t, time.Second, s.RestartDelay)
 		assert.Equal(t, model.BackoffExponential, s.RestartBackoff)
 		assert.Equal(t, DefaultHealthyAfter, s.HealthyAfter)
-		assert.True(t, s.APITrigger)
+		assert.True(t, s.ManualTrigger)
 	})
 
 	t.Run("service with multiple instances", func(t *testing.T) {
@@ -208,10 +208,10 @@ run = "exec ./bin/web"
 		assert.Contains(t, err.Error(), "unknown key")
 	})
 
-	t.Run("service rejects queue_max (not a service knob)", func(t *testing.T) {
+	t.Run("service rejects max_queued (not a service knob)", func(t *testing.T) {
 		path := writeTOML(t, `
 [services.web]
-queue_max = 10
+max_queued = 10
 run = "exec ./bin/web"
 `)
 		_, err := Load(path)
@@ -374,17 +374,17 @@ func TestValidate(t *testing.T) {
 			wantErr: "max_concurrent",
 		},
 		{
-			name: "queue_max above cap",
+			name: "max_queued above cap",
 			cfg: &Config{
 				Tasks: []model.Task{{
 					Name:          "task1",
 					Run:           "echo hello",
 					MaxConcurrent: 1,
-					QueueMax:      QueueMaxCap + 1,
+					MaxQueued:     MaxQueuedCap + 1,
 					OnOverlap:     model.PolicyQueue,
 				}},
 			},
-			wantErr: "queue_max",
+			wantErr: "max_queued",
 		},
 		{
 			name: "retry_attempts above cap",
@@ -511,7 +511,7 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, 14*24*time.Hour, defaulted.KeepFor)
 	assert.Equal(t, DefaultGracefulStop, defaulted.GracefulStop)
 	assert.Equal(t, DefaultMaxCatchUpRuns, defaulted.MaxCatchUpRuns)
-	assert.Equal(t, DefaultQueueMax, defaulted.QueueMax)
+	assert.Equal(t, DefaultMaxQueued, defaulted.MaxQueued)
 
 	overridden := cfg.Tasks[1]
 	assert.Equal(t, 5, overridden.MaxConcurrent)
@@ -1126,17 +1126,17 @@ func TestValidate_MoreCases(t *testing.T) {
 			wantErr: "max_concurrent",
 		},
 		{
-			name: "negative queue_max",
+			name: "negative max_queued",
 			cfg: &Config{
 				Tasks: []model.Task{{
 					Name:          "t1",
 					Run:           "echo hi",
 					MaxConcurrent: 1,
-					QueueMax:      -1,
+					MaxQueued:     -1,
 					OnOverlap:     model.PolicyQueue,
 				}},
 			},
-			wantErr: "queue_max",
+			wantErr: "max_queued",
 		},
 		{
 			name: "negative retry_attempts",
@@ -1460,25 +1460,25 @@ func TestLoad_ParseErrors(t *testing.T) {
 	}
 }
 
-func TestLoad_ServiceAPITriggerFalse(t *testing.T) {
+func TestLoad_ServiceManualTriggerFalse(t *testing.T) {
 	path := writeTOML(t, `
 [services.svc]
 run = "exec ./bin/svc"
-api_trigger = false
+manual_trigger = false
 `)
 	cfg, err := Load(path)
 	require.NoError(t, err)
 	require.Len(t, cfg.Tasks, 1)
-	assert.False(t, cfg.Tasks[0].APITrigger)
+	assert.False(t, cfg.Tasks[0].ManualTrigger)
 }
 
 func TestNewSchemaFields(t *testing.T) {
-	t.Run("graceful_stop, max_concurrent, queue_max parse on tasks", func(t *testing.T) {
+	t.Run("graceful_stop, max_concurrent, max_queued parse on tasks", func(t *testing.T) {
 		path := writeTOML(t, `
 [tasks.t]
 graceful_stop  = "8s"
 max_concurrent = 4
-queue_max      = 50
+max_queued     = 50
 run            = "echo hi"
 `)
 		cfg, err := Load(path)
@@ -1486,7 +1486,7 @@ run            = "echo hi"
 		task := cfg.Tasks[0]
 		assert.Equal(t, 8*time.Second, task.GracefulStop)
 		assert.Equal(t, 4, task.MaxConcurrent)
-		assert.Equal(t, 50, task.QueueMax)
+		assert.Equal(t, 50, task.MaxQueued)
 	})
 
 	t.Run("healthy_after parses on services and inherits from defaults", func(t *testing.T) {

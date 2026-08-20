@@ -73,7 +73,7 @@ func TestFormatTimeAgo(t *testing.T) {
 }
 
 func TestStatusStyle(t *testing.T) {
-	statuses := []string{"running", "success", "failed", "pending", "stopped", "timeout", "crashed", "unknown-xyz"}
+	statuses := []string{"running", "succeeded", "failed", "pending", "stopped", "timeout", "crashed", "unknown-xyz"}
 	for _, s := range statuses {
 		style := StatusStyle(s)
 		// Just verify it doesn't panic and returns a valid style

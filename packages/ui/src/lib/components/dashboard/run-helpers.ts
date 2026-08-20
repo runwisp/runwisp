@@ -21,7 +21,7 @@ export interface RunVerdict {
  * separate duration readout for the same glance.
  */
 const RUN_VERDICTS: Record<RunStatus, RunVerdict> = {
-    success: { verb: "succeeded in", timed: true },
+    succeeded: { verb: "succeeded in", timed: true },
     failed: { verb: "failed after", timed: true },
     crashed: { verb: "crashed after", timed: true },
     timeout: { verb: "timed out after", timed: true },
@@ -106,7 +106,7 @@ export function runRetryLabel(run: Pick<Run, "retryAttempt" | "retryOfRunId">): 
 /**
  * Monotonic position of a run's status in its lifecycle. Used to reject stale
  * updates (e.g. a `pending` HTTP response arriving after an SSE already
- * advanced the row to `success`). Higher = further along.
+ * advanced the row to `succeeded`). Higher = further along.
  */
 export function runPhaseOrder(status: string): number {
     if (status === "pending") return 0;
