@@ -33,7 +33,7 @@ run.
     <TabItem label="Remote CLI" icon="seti:shell">
         Install the `runwisp` binary wherever your script runs (it's
         a single static binary — no daemon, no data dir needed for
-        this), then point `exec` at the remote daemon:
+        this), then point `run` at the remote daemon:
 
         ```bash
         export RUNWISP_URL=https://runwisp.example.com
@@ -67,7 +67,7 @@ run.
         You can quote that ULID back when you go looking for the run
         in the Web UI or [`runwisp` history](/concepts/logs/).
 
-        **Parameters?** `runwisp exec` doesn't take per-run parameter
+        **Parameters?** `runwisp run` doesn't take per-run parameter
         values — a CLI trigger runs the task with its declared
         [`params`](/concepts/parameters/) defaults. To supply values,
         use the REST API tab or the Web UI / TUI form.
@@ -149,7 +149,7 @@ run.
 
         # 2. Poll until it ends, then read the exit code.
         while :; do
-          RUN=$(curl -sSf "$BASE/api/tasks/backup/runs/$RUN_ID" \
+          RUN=$(curl -sSf "$BASE/api/runs/$RUN_ID" \
             -H "Authorization: Bearer $TOKEN")
           [ "$(jq -r .status <<<"$RUN")" = "ended" ] && break
           sleep 5
@@ -159,7 +159,7 @@ run.
 
         Want live output instead of polling? That same `id` feeds the
         SSE stream at
-        `GET /api/tasks/backup/runs/$RUN_ID/log/stream`, which emits
+        `GET /api/runs/$RUN_ID/log/stream`, which emits
         `line` events and a final `done` event when the run ends —
         that's exactly what the CLI follows under the hood.
     </TabItem>

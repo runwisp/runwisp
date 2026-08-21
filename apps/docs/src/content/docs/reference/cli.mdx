@@ -13,7 +13,7 @@ import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 `runwisp` is one binary with a handful of subcommands. Run it with no
 subcommand and it does the friendly thing — attaches to a running daemon,
 or scaffolds a config and starts one. Everything else is a verb:
-`validate`, `reload`, `exec`, `import`, and so on. This page is the full
+`validate`, `reload`, `run`, `import`, and so on. This page is the full
 list; each command also prints its own `--help`. Help pages and error
 messages are colored when you're on a terminal and plain otherwise —
 piping to a file, or setting `NO_COLOR`, gets you clean text with no
@@ -244,7 +244,7 @@ JSON value — ideal for an agent that needs the result, not the noise:
 
 If the run can't even start — an unknown task, an unreachable daemon, a failed
 login — the document carries an `error` string instead of a run outcome, and
-`exec` still exits non-zero. So a caller parsing stdout always gets JSON, never
+`run` still exits non-zero. So a caller parsing stdout always gets JSON, never
 silence:
 
 ```json

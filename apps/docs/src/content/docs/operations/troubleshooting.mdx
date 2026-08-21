@@ -97,7 +97,7 @@ instead. It's read in memory only and never written to disk, so it works with
 Docker secrets and systemd's `LoadCredential`.
 
 Working purely locally and the login wall is just in the way? Set
-[`RUNWISP_NO_AUTH=1`](/operations/auth/#running-without-a-password) to disable
+[`RUNWISP_AUTH=off`](/operations/auth/#running-without-a-password) to disable
 the boundary entirely. It warns loudly at startup and is mutually exclusive
 with `RUNWISP_PASSWORD` — don't reach for it on anything reachable from a
 network you don't control.

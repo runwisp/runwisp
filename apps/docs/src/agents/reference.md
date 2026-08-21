@@ -78,7 +78,7 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
                                     NOT registered with the scheduler — no cron firing, no jitter plan, no
                                     catch-up, no run_on_start/@reboot, no missed-run rows, no FirstSeenAt anchor.
                                     Reported as "held_by": "cron" on each task in list/status --json and
-                                    /api/daemon. Manual triggers (exec, API, TUI r) STILL RUN a held task.
+                                    /api/daemon. Manual triggers (run, API, TUI) STILL RUN a held task.
                                     The gate is self-healing: the daemon re-probes cron liveness every 60s (only
                                     when include_cron is set) and releases or re-takes holds on its own, so
                                     retiring cron needs NO reload. `runwisp reload`/SIGHUP re-probes too. Either

@@ -4,8 +4,10 @@
 package coalesce
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -116,6 +118,27 @@ func TestCoalesce_NewWindowAfterExpiry(t *testing.T) {
 	got := inner.Received()
 	require.Len(t, got, 2)
 	assert.Nil(t, got[1].Extra, "post-window delivery is a fresh first, not a summary")
+}
+
+// TestCoalesce_ExpiryWithPendingLogsWarning covers the drift guard: a window
+// that expires with a suppressed event still buffered (the timer should have
+// flushed it first) logs a warning instead of silently dropping the count.
+func TestCoalesce_ExpiryWithPendingLogsWarning(t *testing.T) {
+	inner := testutil.NewFakeChannel("slack-ops")
+	clock := testutil.NewFakeClock(time.Unix(0, 0))
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+	c := New(inner, Config{Window: time.Hour, EveryN: 100}, clock, logger, nil)
+	defer c.Close(context.Background())
+
+	require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
+	require.NoError(t, c.Execute(context.Background(), failEvent("etl"))) // suppressed, pending=1
+	clock.Advance(time.Hour + time.Second)
+	require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
+
+	got := inner.Received()
+	require.Len(t, got, 2, "the suppressed event stays suppressed; only forward + post-expiry fresh land")
+	assert.Contains(t, logBuf.String(), "dropping stale pending count")
 }
 
 // withManualTimers swaps the channel's afterFunc seam for a deterministic
