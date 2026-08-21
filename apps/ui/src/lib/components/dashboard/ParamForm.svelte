@@ -75,6 +75,7 @@
     // Raw field state keyed by parameter identity. Flags hold "true"/"false";
     // everything else holds the entered string ("" means "not supplied").
     let vals = $state<Record<string, string>>(
+        // svelte-ignore state_referenced_locally -- seeded once at construction by design (re-seed = remount; see `initial` above)
         Object.fromEntries(params.map((p) => [p.key, seedValue(p)])),
     );
     let touched = $state<Record<string, boolean>>({});
@@ -89,6 +90,7 @@
     // the free-text input shows). Seeded true when a default isn't a listed
     // choice, so a custom default opens in custom mode pre-filled.
     let customMode = $state<Record<string, boolean>>(
+        // svelte-ignore state_referenced_locally -- seeded once at construction by design (re-seed = remount; see `initial` above)
         Object.fromEntries(
             params.filter(isComboParam).map((p) => {
                 const v = vals[p.key] ?? "";

@@ -65,7 +65,28 @@ See [Docker](https://docs.runwisp.com/getting-started/docker/) for image variant
 
 ## Quick Start
 
-**1. Create `runwisp.toml`:**
+**1. Run it:**
+
+```bash
+runwisp
+```
+
+With no `runwisp.toml` next to you yet, RunWisp doesn't guess — it asks:
+
+```
+No runwisp.toml at /home/you/project.
+Create a starter with one example task? [Y/n]
+```
+
+Press `Enter`. RunWisp writes a starter config (one `hello` task plus commented cron and service hints), starts the daemon in the background, and drops you into the **terminal UI**: task list, live logs, run history, one-click triggering. The Home page shows the web dashboard URL and an auto-generated password — highlight the password row and press `Enter` to copy it.
+
+Want your own password instead of the generated one? Set `RUNWISP_PASSWORD`. Running purely locally and the login wall's just in the way? Set [`RUNWISP_AUTH=off`](https://docs.runwisp.com/operations/auth/#running-without-a-password).
+
+> **Headless box?** On a server with no terminal — cron, systemd, Docker, a piped SSH command, CI — run `runwisp daemon` instead of bare `runwisp`. It skips the scaffold prompt and exits non-zero on a missing `runwisp.toml`, so misconfiguration fails loudly in your init scripts instead of waiting on a prompt nobody can answer. To survive reboots, `runwisp service install` wires the daemon into systemd or launchd.
+
+**2. Make it yours:**
+
+Swap the example `hello` task out for what you actually came here to run:
 
 ```toml
 [tasks.backup-db]
@@ -80,27 +101,19 @@ cron = "*/5 * * * *"
 run  = "curl -sf https://myapp.example.com/health || exit 1"
 
 [services.worker]
-instances    = 3              # keep three replicas always running
+instances    = 3              # keep three copies running
 env          = { NODE_ENV = "production" }   # visible in the UI
 secrets_file = "/etc/runwisp/worker.env"     # never shown in the API/UI
 run          = "node /app/worker.js"
 ```
 
-`[tasks.*]` are scheduled or manually triggered jobs. `[services.*]` are always-on processes that RunWisp keeps alive with exponential restart backoff; each replica is its own visible run with its own exit code, duration, and captured logs.
+`[tasks.*]` are scheduled or manually triggered jobs. `[services.*]` are always-on processes that RunWisp keeps alive with exponential restart backoff; each instance is its own visible run with its own exit code, duration, and captured logs. Pick up your edits with `runwisp reload` (or `SIGHUP`) — no restart needed.
 
 **Already running something?** You don't have to rewrite it to get observability:
 
 - **crond**: run `sudo runwisp takeover` and it finds your existing crontabs, imports every job, and takes over from cron in one command. No config to write, no lines to rewrite. See [Take over from cron](https://docs.runwisp.com/coming-from/cron/).
 - **Docker Compose**: add `[compose.myapp]` next to your `docker-compose.yml` and every service in it gains logs, restart policies, notifications, and trigger/stop, without touching the compose file. See [`[compose.*]`](https://docs.runwisp.com/configuration/compose/).
 - **supervisord (or converting a crontab)**: `runwisp import supervisord` (or `import cron`) turns an existing config into an annotated `runwisp.toml` with inline `# TODO`s for anything that needs a human. See [Converting configs](https://docs.runwisp.com/coming-from/crontabs/).
-
-**2. Run it:**
-
-```bash
-runwisp
-```
-
-That's it. `runwisp` starts the daemon and drops you straight into the **terminal UI**: task list, live logs, run history, one-click triggering. The web dashboard URL appears on the TUI's Home page, secured by an auto-generated password (press `Enter` to copy it). Want headless? `runwisp daemon`. Want your own password? Set `RUNWISP_PASSWORD`. No login wall for local dev (e.g. Docker)? Set [`RUNWISP_AUTH=off`](https://docs.runwisp.com/operations/auth/#running-without-a-password). Want it to survive reboot? `runwisp service install`.
 
 Full configuration reference, REST API docs, and operational guides live at **[docs.runwisp.com](https://docs.runwisp.com)**.
 
@@ -158,7 +171,7 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 | REST API             | No                   | D-Bus              | XML-RPC        | **REST + JWT**                        |
 | Live log streaming   | No                   | `journalctl -f`    | Tail only      | **SSE**                               |
 | Concurrency policies | No                   | Overlap prevention | No             | **Queue · skip · kill**               |
-| Failure alerts       | No                   | `OnFailure=` unit  | Event listener | **Slack · Discord · email · webhook** |
+| Failure alerts       | No                   | `OnFailure=` unit  | Event listener | **Slack · Discord · Telegram · email · webhook** |
 | Log rotation         | External (logrotate) | journald           | Built-in       | **Built-in, per-task**                |
 | Execution history    | No                   | `journalctl`       | No             | **SQLite, browsable in UI**           |
 | Runtime dependencies | libc                 | systemd            | Python         | **None**                              |
@@ -181,7 +194,7 @@ Full user and operator documentation lives at **[docs.runwisp.com](https://docs.
 - [Security Policy](SECURITY.md) - responsible disclosure
 - [Issue tracker](https://github.com/runwisp/runwisp/issues) - bug reports and feature requests
 
-> **Status: pre-1.0, moving fast.** The single-machine essentials are here: scheduling, supervision, live logs, and persistent run history. But RunWisp is young software, so treat it that way: pin a version, keep backups of anything you'd hate to lose, and skim [CHANGELOG.md](CHANGELOG.md) before upgrading, since pre-1.0 bumps can ship breaking changes and reset run history. A few things (like the cloud control plane) aren't here yet. Kick the tyres and tell us what breaks.
+> **Status: pre-1.0, moving fast.** The single-machine essentials are here: scheduling, supervision, live logs, and persistent run history. Treat it like young software — pin a version, keep backups of anything you'd hate to lose, and skim [CHANGELOG.md](CHANGELOG.md) before upgrading, since pre-1.0 bumps can ship breaking changes and reset run history. Kick the tyres and tell us what breaks.
 
 ---
 
