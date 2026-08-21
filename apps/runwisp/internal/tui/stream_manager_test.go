@@ -596,12 +596,12 @@ func newBulkServer(t *testing.T) *httptest.Server {
 	})
 	mux.HandleFunc("/api/runs", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"runs":[],"total":0}`))
+		_, _ = w.Write([]byte(`{"items":[],"total":0}`))
 	})
 	// Per-task runs (FetchTaskSummary) live under /api/tasks/.
 	mux.HandleFunc("/api/tasks/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"runs":[],"total":0}`))
+		_, _ = w.Write([]byte(`{"items":[],"total":0}`))
 	})
 	// Log-line history is addressed by run ID: /api/runs/{runId}/log/line/{n}/history.
 	// The explicit /api/runs/summary and /api/runs/bulk/* patterns win for their

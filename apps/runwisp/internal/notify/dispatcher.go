@@ -186,13 +186,13 @@ func ReportDeliveryFailure(sink SyntheticIngester, clock Clocker, actionID strin
 		Timestamp: clock.Now(),
 		Reason:    cause.Error(),
 		Extra: map[string]any{
-			"channel":       actionID,
-			"original_kind": string(original.Kind),
-			"task_name":     original.TaskName,
+			"channel": actionID,
 		},
 	}
 	if original != nil {
 		syn.TaskName = original.TaskName
+		syn.Extra["original_kind"] = string(original.Kind)
+		syn.Extra["task_name"] = original.TaskName
 	}
 	sink.IngestSynthetic(syn)
 }

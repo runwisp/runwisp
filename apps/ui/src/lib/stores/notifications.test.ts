@@ -164,6 +164,13 @@ describe("NotificationStore", () => {
         expect(store.unread).toBe(1);
     });
 
+    it("sets unread directly from a notification.unreadCountChanged SSE event", async () => {
+        const { store, es } = setupHarness({ items: [], unread: 0 });
+        await store.init();
+        es.fire("notification.unreadCountChanged", { unreadCount: 7 });
+        expect(store.unread).toBe(7);
+    });
+
     it("decrements unread when SSE update flips a row from unread to read", async () => {
         const id = "01H000000000000000000UPD01";
         const { store, es } = setupHarness({

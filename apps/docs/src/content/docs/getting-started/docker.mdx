@@ -292,7 +292,7 @@ mount hint and exit 1 instead.
 Both checks cover every invocation that would bring a daemon up —
 `daemon`, `cloud`, `restart`, `demo`, and bare `runwisp` — and anything
 the entrypoint doesn't recognise is treated as one of those. One-shot
-subcommands (`validate`, `exec`, `list`, `status`, `stop`, `reload`,
+subcommands (`validate`, `run`, `list`, `status`, `stop`, `reload`,
 `password`, `import`, `schema`, `openapi`, `tui`, `service`) skip both,
 since they need neither a password nor a long-lived config:
 

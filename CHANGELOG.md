@@ -13,13 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **`env_file` and `secrets_file` values are read literally**, so passwords and tokens containing `$`, `${...}`, or `#` are passed to the task exactly as written. See [Tasks](https://docs.runwisp.com/configuration/tasks/).
-- **A log stream resumed after a disconnect replays the most recent missed lines**, keeping a reconnecting browser continuous with the live tail even across a large gap. See [Web UI](https://docs.runwisp.com/getting-started/web-ui-tour/).
-- **Outbound notification channels (Slack, Telegram) send periodic check-ins during a sustained incident** on the default `keep_occurrences` cadence. See [Notification model](https://docs.runwisp.com/notifications/model/).
-- **`storage.max_size` enforcement accounts for rotated log segments** when trimming run history to the configured cap. See [Storage](https://docs.runwisp.com/configuration/storage/).
+- **`env_file` and `secrets_file` values are read literally**, so passwords and tokens containing `$`, `${...}`, or `#` are passed to the task exactly as written.
+- **A log stream resumed after a disconnect replays the most recent missed lines**, keeping a reconnecting browser continuous with the live tail even across a large gap.
+- **Outbound notification channels (Slack, Telegram) send periodic check-ins during a sustained incident** on the default `keep_occurrences` cadence.
+- **`storage.max_size` enforcement accounts for rotated log segments** when trimming run history to the configured cap.
 - **Starting the daemon no longer reprints the startup log a second time after a successful start.** The log was already streamed live during startup; only a failed or timed-out start now prints the tail for diagnosis.
 - **Running `runwisp` non-interactively with no `runwisp.toml` in the current directory now fails immediately with a clear error**.
 - **The config JSON Schema for `stop_signal` now accepts the short forms** (`TERM`, `INT`, `KILL`, ...) the daemon already did, so editor validation stops flagging configs that were always valid.
+- **The unread notification badge now updates across other open tabs/sessions** when a mutation (e.g. mark-all-read) changes the count without shipping a notification.
 
 ### Security
 
@@ -30,11 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **The CLI command that runs a task once is now `runwisp run <task>`** (was `runwisp exec`), matching the `run =` config key and freeing `exec` from colliding with `compose_mode = "exec"`. See [CLI](https://docs.runwisp.com/operations/cli/).
-- **Disable authentication with `RUNWISP_AUTH=off`** (was `RUNWISP_NO_AUTH=1`), matching the `tls = "off"` convention. `RUNWISP_AUTH` and `RUNWISP_PASSWORD` remain mutually exclusive. See [Auth](https://docs.runwisp.com/operations/auth/#running-without-a-password).
-- **`[notify]` retention keys are now `keep_notifications` and `keep_for`** (were `history_keep` and `history_keep_for`), matching the `keep_runs` / `keep_for` vocabulary tasks already use. See [Notifications](https://docs.runwisp.com/notifications/model/).
-- **`[notify]` knobs `retry_budget` and `keep_occurrences`** (were `default_timeout` and `occurrence_ring`) name the outbound retry cap and the coalesce-occurrence count by what they do rather than by their implementation. See [Notifications](https://docs.runwisp.com/notifications/global/).
-- **A compose block's import strategy is now `import = "services" | "stack"`** (was `mode`), so it reads distinctly from a task's `compose_mode`. See [Compose](https://docs.runwisp.com/configuration/compose/).
+- **The CLI command that runs a task once is now `runwisp run <task>`** (was `runwisp exec`), matching the `run =` config key and freeing `exec` from colliding with `compose_mode = "exec"`.
+- **Disable authentication with `RUNWISP_AUTH=off`** (was `RUNWISP_NO_AUTH=1`), matching the `tls = "off"` convention. `RUNWISP_AUTH` and `RUNWISP_PASSWORD` remain mutually exclusive.
+- **`[notify]` retention keys are now `keep_notifications` and `keep_for`** (were `history_keep` and `history_keep_for`), matching the `keep_runs` / `keep_for` vocabulary tasks already use.
+- **`[notify]` knobs `retry_budget` and `keep_occurrences`** (were `default_timeout` and `occurrence_ring`) name the outbound retry cap and the coalesce-occurrence count by what they do rather than by their implementation.
+- **A compose block's import strategy is now `import = "services" | "stack"`** (was `mode`), so it reads distinctly from a task's `compose_mode`.
 - **Run timestamps on the API are now `startedAt` / `endedAt`** (were `startAt` / `endAt`), including the `?sortField=startedAt` value — matching the database columns and the neighbouring `createdAt`.
 - **The task parameter field is `allowCustom` on the REST API** (was `allow_custom`), matching the API's camelCase convention. The TOML key stays `allow_custom`.
 - **`nextRunAt` on the tasks API is an RFC3339 timestamp** (was a pre-formatted string), like every other timestamp field.
@@ -42,21 +43,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The unread-count stream event is `notification.unreadCountChanged`** (was `notifications.unread_count_changed`), matching the other `notification.*` events.
 - **List endpoints share one `{ items, … }` envelope** — `GET /api/tasks`, `/api/runs`, `/api/system/metrics`, and log search (was `runs` / `hits` / bare arrays).
 - **Per-run REST endpoints are addressed by run ID alone** — `/api/runs/{runId}` and its `/stop`, `/log`, `/log/raw`, `/log/stream`, and `/log/line/{lineNumber}/history` sub-paths (were nested under `/api/tasks/{taskName}/runs/{runId}`); `/api/tasks/{taskName}/runs` still lists a task's runs. The daemon log stream moves to `/api/daemon/log/stream`.
-- **Hard-kill is spelled `kill` in both policies** — `on_overlap = "kill"` (was `terminate`) and `log_on_full = "kill"` (was `kill_task`). See [Concurrency](https://docs.runwisp.com/configuration/concurrency/).
+- **Hard-kill is spelled `kill` in both policies** — `on_overlap = "kill"` (was `terminate`) and `log_on_full = "kill"` (was `kill_task`).
 - **Auth endpoints use one noun per concept** — login is `POST /api/auth/login` (was `POST /api/auth`), and a launch ticket is both minted (`POST`) and redeemed (`GET`) at `/api/auth/launch-ticket` (redeem was `GET /api/auth/launch`).
 - **Daemon-identity endpoints are grouped under `/api/daemon`** — the daemon overview is `GET /api/daemon` (was `/api/info`) and the local identity probe is `GET /api/daemon/identity` (was `/api/instance`); host resource stats stay at `/api/system`.
 - **A run's control-plane execution ID is `executionId`** (was `externalExecutionId`) on the REST API, matching the control-plane protocol.
-- **A run's end reason is `succeeded`** (was `success`), matching the past-tense form of every other end reason. See [Scheduling](https://docs.runwisp.com/concepts/scheduling/#what-fired-means).
-- **The concurrency queue cap is `max_queued`** (was `queue_max`). See [Tasks](https://docs.runwisp.com/configuration/tasks/#concurrency).
-- **The manual-trigger gate is `manual_trigger`** (was `api_trigger`), since it also gates the CLI and web UI, not just the REST API. See [Tasks](https://docs.runwisp.com/configuration/tasks/).
-- **A notifier's TLS setting is `tls_mode`** (was `tls`), naming the handshake mode it picks rather than just "on/off". See [SMTP](https://docs.runwisp.com/notifications/providers/smtp/).
-- **Notification routes are `[[route]]` blocks with a `notifiers` list** (were `[[notification_route]]` with `notify`), and notifiers are declared as `[notifiers.<id>]` tables keyed by id (was `[[notifier]]` blocks with an `id` field). See [Routes](https://docs.runwisp.com/notifications/routes/).
+- **A run's end reason is `succeeded`** (was `success`), matching the past-tense form of every other end reason.
+- **The concurrency queue cap is `max_queued`** (was `queue_max`).
+- **The manual-trigger gate is `manual_trigger`** (was `api_trigger`), since it also gates the CLI and web UI, not just the REST API.
+- **A notifier's TLS setting is `tls_mode`** (was `tls`), naming the handshake mode it picks rather than just "on/off".
+- **Notification routes are `[[route]]` blocks with a `notifiers` list** (were `[[notification_route]]` with `notify`), and notifiers are declared as `[notifiers.<id>]` tables keyed by id (was `[[notifier]]` blocks with an `id` field).
 - **Config reload is `POST /api/daemon/reload`** (was `/api/reload`), grouped with the other daemon-lifecycle endpoints.
 - **The app event stream is `GET /api/events/stream`** (was `/api/stream`).
 - **The system metrics endpoint is `GET /api/system/metrics`** (was `/api/system/history`), matching its `MetricsSample` payload.
 - **The unread-notification-count endpoint is `/api/notifications/unreadCount`** (was `/unread-count`), matching the API's camelCase convention.
 - **`runOnStart` is always present on the tasks API** (previously omitted when `false`), matching `manualTrigger` and `autostart`.
-- **A run that never started (skipped, missed, or interrupted by a DST fold) reports as `skipped`, not `failed`, on the control-plane connection.** See [Control plane](https://docs.runwisp.com/configuration/daemon/#allow_cloud_dispatch).
+- **A run that never started (skipped, missed, or interrupted by a DST fold) reports as `skipped`, not `failed`, on the control-plane connection.**
 
 ## [0.15.1] - 2026-08-12
 

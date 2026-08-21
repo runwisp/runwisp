@@ -328,6 +328,7 @@ func waitForDaemonLoop(client *apiclient.Client, drainer *daemonLogDrainer, pidP
 		}
 
 		if time.Now().After(deadline) {
+			drainer.drain()
 			return errors.New("daemon failed to start: health check timed out"), true
 		}
 

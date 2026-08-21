@@ -35,6 +35,10 @@ const unreadResponseSchema = z.object({
     count: z.number().int().nonnegative(),
 });
 
+const unreadCountChangedSchema = z.object({
+    unreadCount: z.number().int().nonnegative(),
+});
+
 const streamEnvelopeSchema = z.object({ notification: notificationSchema });
 
 export interface NotificationStoreDeps {
@@ -249,6 +253,19 @@ class NotificationStore {
         this.#unsubscribes.push(
             this.#events.subscribe("notification.created", onNotification("notification.created")),
             this.#events.subscribe("notification.updated", onNotification("notification.updated")),
+            this.#events.subscribe("notification.unreadCountChanged", (data: string) => {
+                try {
+                    const raw: unknown = JSON.parse(data);
+                    const parsed = unreadCountChangedSchema.safeParse(raw);
+                    if (!parsed.success) {
+                        this.#logger.warn("Invalid unread-count SSE payload", parsed.error.message);
+                        return;
+                    }
+                    this.#unread = parsed.data.unreadCount;
+                } catch (e) {
+                    this.#logger.error("Malformed unread-count SSE event", e);
+                }
+            }),
         );
     }
 

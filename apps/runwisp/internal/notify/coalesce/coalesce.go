@@ -195,6 +195,10 @@ func (c *Channel) decide(ev *notify.Event) decision {
 	if now.Sub(st.lastSent) >= c.cfg.Window {
 		// Window already closed without a summary firing (shouldn't happen
 		// when timer fired, but guard against drift). Treat as a fresh window.
+		if st.pending > 0 {
+			c.logger.Warn("coalesce window closed before timer fired; dropping stale pending count",
+				"fingerprint", fp, "dropped_pending", st.pending)
+		}
 		st.lastSent = now
 		st.pending = 0
 		st.lastEvent = nil
