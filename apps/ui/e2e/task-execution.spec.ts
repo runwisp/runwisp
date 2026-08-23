@@ -67,6 +67,44 @@ test.describe("task execution", () => {
         await expect(page.getByText("fail-line-2-stderr")).toBeVisible();
     });
 
+    test("run confirmation modal traps focus and restores it on close", async ({
+        authenticatedPage: page,
+    }) => {
+        await page.goto("/tasks/echo-task");
+        await expect(page.getByRole("heading", { name: "echo-task", level: 1 })).toBeVisible();
+
+        const runButton = page.getByRole("button", { name: /^Run( task)?$/ });
+        await runButton.click();
+
+        const dialog = page.getByRole("dialog");
+        await expect(dialog).toBeVisible();
+
+        // Opening the dialog must move focus inside it (the "Close" button is
+        // the first focusable element) rather than leaving it on the trigger
+        // or the page behind the overlay.
+        const closeButton = dialog.getByRole("button", { name: "Close" });
+        await expect(closeButton).toBeFocused();
+
+        // Shift+Tab from the first focusable element must wrap to the last
+        // ("Run Now") — proving Tab is trapped inside the dialog instead of
+        // escaping to whatever the portaled dialog happens to sit next to in
+        // the DOM.
+        await page.keyboard.press("Shift+Tab");
+        await expect(dialog.getByRole("button", { name: "Run Now" })).toBeFocused();
+
+        // Tab forward from the last element wraps back to the first, and at
+        // every step focus stays inside the dialog (never on the page behind).
+        await page.keyboard.press("Tab");
+        await expect(closeButton).toBeFocused();
+        await expect(dialog.locator(":focus")).toHaveCount(1);
+
+        // Escape closes the dialog and restores focus to the button that
+        // opened it, rather than dropping focus to the document body.
+        await page.keyboard.press("Escape");
+        await expect(dialog).toBeHidden();
+        await expect(runButton).toBeFocused();
+    });
+
     test("run appears in task run history", async ({ authenticatedPage: page, daemonState }) => {
         await page.goto("/tasks/echo-task");
 

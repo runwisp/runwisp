@@ -598,9 +598,10 @@ func (m Model) handleLogTailLoaded(msg uikit.LogTailLoadedMsg) (tea.Model, tea.C
 	for _, l := range msg.Lines {
 		m.execView.Pane.AppendLogLine(l.N, l.Stream, l.Text, l.FrameCount)
 	}
-	if n := len(msg.Lines); m.pendingHighlight != 0 && n > 0 && msg.Lines[n-1].N >= m.pendingHighlight {
+	if n := len(msg.Lines); m.pendingHighlight != 0 && m.pendingHighlightRun == msg.RunID && n > 0 && msg.Lines[n-1].N >= m.pendingHighlight {
 		m.execView.Pane.JumpToLine(m.pendingHighlight)
 		m.pendingHighlight = 0
+		m.pendingHighlightRun = ""
 	}
 	if msg.Finalized {
 		return m, nil
@@ -635,9 +636,10 @@ func (m Model) handleLogLine(msg uikit.LogLineMsg) (tea.Model, tea.Cmd) {
 	// If a search hit selected this run, jump as soon as the target line
 	// lands in the buffer. The pending marker is cleared so subsequent
 	// scroll input isn't yanked back to the hit.
-	if m.pendingHighlight != 0 && msg.Line.N >= m.pendingHighlight {
+	if m.pendingHighlight != 0 && m.pendingHighlightRun == msg.RunID && msg.Line.N >= m.pendingHighlight {
 		m.execView.Pane.JumpToLine(m.pendingHighlight)
 		m.pendingHighlight = 0
+		m.pendingHighlightRun = ""
 	}
 	return m, m.streams.ContinueListeningLog(msg.RunID)
 }
@@ -1024,36 +1026,25 @@ func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 
 const logReconnectDelay = 500 * time.Millisecond
 
-// execConfirmCmd runs a confirm-dialog callback synchronously and returns the
-// appropriate tea.Cmd. For quit callbacks this handles the quit inline —
-// calling Shutdown and returning tea.Quit directly — which prevents the quit
-// message from being starved by mouse-motion events that flood BubbleTea's
-// unbuffered message channel when WithMouseAllMotion is enabled.
+// execConfirmCmd hands a confirm-dialog callback back to Bubble Tea as an
+// ordinary async tea.Cmd. Most callbacks (trigger/restart/stop run, etc.) make
+// a real network call through the client — invoking cmd() synchronously here
+// would block the whole Update loop, freezing repaints and key handling, for
+// as long as that call takes. Whatever message the callback eventually
+// produces — including uikit.QuitMsg — flows back through the normal dispatch
+// tables (dispatchLifecycleMsg → handleQuit, dispatchActionMsg → the
+// trigger/restart/stop handlers, ...), so no special-casing is needed here.
 //
-// closed indicates whether the dialog signalled it should close. When the
-// callback triggers a shutdown we keep the dialog open and transition it into
-// the spinner state; otherwise we dismiss it.
+// closed indicates whether the dialog signalled it should close; when true we
+// dismiss it up front. handleQuit's startShutdownSpinner already tolerates
+// the dialog having been dismissed already (it opens a fresh spinner dialog
+// if none is active), so this is safe for the quit-and-shut-down-daemon path
+// too.
 func (m *Model) execConfirmCmd(cmd tea.Cmd, closed bool) tea.Cmd {
-	result := cmd()
-	if result == nil {
-		if closed {
-			m.dialogs.DismissConfirm()
-		}
-		return nil
-	}
-	if qm, ok := result.(uikit.QuitMsg); ok {
-		m.streams.Shutdown()
-		m.quitAction = qm.Action
-		if qm.Action == uikit.QuitShutdownDaemon && m.shutdownFunc != nil {
-			return m.startShutdownSpinner()
-		}
-		m.dialogs.DismissConfirm()
-		return tea.Quit
-	}
 	if closed {
 		m.dialogs.DismissConfirm()
 	}
-	return func() tea.Msg { return result }
+	return cmd
 }
 
 // startShutdownSpinner transitions the confirm dialog into the shutting-down

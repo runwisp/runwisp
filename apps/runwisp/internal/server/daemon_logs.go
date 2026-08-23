@@ -35,14 +35,14 @@ func (srv *Server) sseDaemonLogHandler(ctx context.Context, _ *struct{}, send ss
 		return
 	}
 
-	for _, line := range srv.daemonLogBuffer.Lines(100) {
+	subID, backlog, ch := srv.daemonLogBuffer.SubscribeWithBacklog(100)
+	defer srv.daemonLogBuffer.Unsubscribe(subID)
+
+	for _, line := range backlog {
 		if err := send(sse.Message{Data: DaemonLogLineEvent{Line: line}}); err != nil {
 			return
 		}
 	}
-
-	subID, ch := srv.daemonLogBuffer.Subscribe()
-	defer srv.daemonLogBuffer.Unsubscribe(subID)
 
 	for {
 		select {

@@ -65,6 +65,14 @@ func normalizeTrustProxyCIDR(raw string) (string, error) {
 	if ones == 0 && bits != 0 {
 		return "", fmt.Errorf("RUNWISP_TRUSTED_PROXIES rejects %q: trusting the entire address space defeats spoofing protection", cidr)
 	}
+	// net.IPNet.Contains folds an IPv4-mapped IPv6 network (e.g. ::ffff:0:0/96)
+	// down to its last 4 mask bytes before comparing, so a /96-or-shorter prefix
+	// in that form covers every IPv4 address despite ones != 0 above.
+	if bits == 8*net.IPv6len {
+		if ipNet.IP.To4() != nil && ones <= 96 {
+			return "", fmt.Errorf("RUNWISP_TRUSTED_PROXIES rejects %q: trusting the entire address space defeats spoofing protection", cidr)
+		}
+	}
 	return cidr, nil
 }
 

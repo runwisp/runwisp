@@ -255,7 +255,9 @@ func TestBuildContainerConfig(t *testing.T) {
 	containerCfg, hostCfg := b.buildContainerConfig("test-image:latest", ctr, nil, nil)
 
 	assert.Equal(t, "test-image:latest", containerCfg.Image)
-	assert.Equal(t, []string{"FOO=bar", "BAZ=qux"}, containerCfg.Env)
+	// Order is not part of the contract: buildProcessEnv merges layers through
+	// a map and emits them key-sorted.
+	assert.ElementsMatch(t, []string{"FOO=bar", "BAZ=qux"}, containerCfg.Env)
 	_, has80 := containerCfg.ExposedPorts[network.MustParsePort("80/tcp")]
 	assert.True(t, has80)
 	_, has5432 := containerCfg.ExposedPorts[network.MustParsePort("5432/tcp")]
@@ -283,6 +285,32 @@ func TestBuildContainerConfigEmpty(t *testing.T) {
 	assert.Empty(t, containerCfg.ExposedPorts)
 	assert.Empty(t, hostCfg.PortBindings)
 	assert.Empty(t, hostCfg.Mounts)
+}
+
+// TestBuildContainerConfig_CtrEnvNotFilteredAsDaemonEnv is the bug-first
+// regression for a mismatch with buildProcessEnv's daemon-env-stripping rule:
+// that rule exists to keep the daemon's own RUNWISP_-prefixed secrets (drawn
+// from its OS environment) out of a task's process, but ctr.Env is a
+// container execution's own declared vars, never the daemon's OS environment.
+// Before the fix, buildContainerConfig fed ctr.Env in as buildProcessEnv's
+// "parent" whenever a Task with any Env/Secrets/param was present, silently
+// dropping any RUNWISP_-prefixed key the container declared for itself — with
+// no error, warning, or log, and inconsistently: the same ctr.Env passed
+// through unfiltered whenever the Task had nothing to overlay.
+func TestBuildContainerConfig_CtrEnvNotFilteredAsDaemonEnv(t *testing.T) {
+	b := NewContainerBackendFromClient(&mockDockerClient{})
+	ctr := &model.ContainerExecution{
+		Script:    "echo test",
+		BaseImage: "alpine",
+		Env: []model.KeyValue{
+			{Key: "RUNWISP_CONFIG_PATH", Value: "/etc/myapp/config"},
+		},
+	}
+	task := &model.Task{Env: map[string]string{"DEBUG": "1"}}
+
+	containerCfg, _ := b.buildContainerConfig("img", ctr, task, nil)
+
+	assert.ElementsMatch(t, []string{"RUNWISP_CONFIG_PATH=/etc/myapp/config", "DEBUG=1"}, containerCfg.Env)
 }
 
 func TestAvailable(t *testing.T) {

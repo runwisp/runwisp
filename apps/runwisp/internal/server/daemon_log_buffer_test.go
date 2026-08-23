@@ -59,6 +59,54 @@ func TestDaemonLogBuffer_SubscribeReceivesNewLines(t *testing.T) {
 	assert.False(t, open, "unsubscribe must close the channel")
 }
 
+func TestDaemonLogBuffer_SubscribeWithBacklogIncludesPriorLines(t *testing.T) {
+	b := NewDaemonLogBuffer(4)
+	_, err := b.Write([]byte("first\nsecond\n"))
+	require.NoError(t, err)
+
+	id, backlog, ch := b.SubscribeWithBacklog(10)
+	defer b.Unsubscribe(id)
+	assert.Equal(t, []string{"first", "second"}, backlog)
+
+	_, err = b.Write([]byte("third\n"))
+	require.NoError(t, err)
+	assert.Equal(t, "third", <-ch)
+}
+
+func TestDaemonLogBuffer_SubscribeWithBacklogNeverMissesAConcurrentWrite(t *testing.T) {
+	// Regression: the handler used to call Lines(n) then Subscribe()
+	// separately, leaving a gap where a write landing between the two was
+	// delivered to nobody. SubscribeWithBacklog snapshots and registers
+	// under one lock, so every line is either in the backlog or the channel.
+	b := NewDaemonLogBuffer(1000)
+	for i := range 50 {
+		_, err := b.Write([]byte("pre-" + string(rune('a'+i%26)) + "\n"))
+		require.NoError(t, err)
+	}
+
+	id, backlog, ch := b.SubscribeWithBacklog(100)
+	defer b.Unsubscribe(id)
+
+	_, err := b.Write([]byte("during\n"))
+	require.NoError(t, err)
+
+	found := false
+	for _, l := range backlog {
+		if l == "during" {
+			found = true
+		}
+	}
+	if !found {
+		select {
+		case l := <-ch:
+			assert.Equal(t, "during", l)
+			found = true
+		default:
+		}
+	}
+	assert.True(t, found, "line written right after subscribing must appear in the backlog or the channel")
+}
+
 func TestDaemonLogBuffer_UnsubscribeUnknownIDIsNoop(t *testing.T) {
 	b := NewDaemonLogBuffer(2)
 	b.Unsubscribe(999)

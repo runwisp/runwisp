@@ -4,6 +4,7 @@
 package executor
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -150,4 +151,56 @@ func TestStreamManager_OversizedLineSplit(t *testing.T) {
 	for i := 1; i < len(got); i++ {
 		assert.Equal(t, got[i-1].LineNum+1, got[i].LineNum)
 	}
+}
+
+// errAfterReader yields data once, then fails every subsequent Read with a
+// fixed non-EOF error — standing in for a genuine I/O failure (disk full,
+// fd closed out from under the reader, permission revoked mid-run) rather
+// than the process's output ending normally.
+type errAfterReader struct {
+	data []byte
+	err  error
+	sent bool
+}
+
+func (r *errAfterReader) Read(p []byte) (int, error) {
+	if !r.sent {
+		r.sent = true
+		n := copy(p, r.data)
+		return n, nil
+	}
+	return 0, r.err
+}
+
+// TestStreamManager_NonEOFReadErrorIsSurfaced is the bug-first regression for
+// streamToFile silently treating every read error as a normal stream end.
+// Before the fix, a genuine I/O error (anything other than io.EOF) broke the
+// read loop exactly like EOF, with no log line, no daemon-side warning, and
+// no trace that the captured output might be incomplete. The fix must log
+// the failure and write a SYSTEM line into the run's own log so an operator
+// reading it can tell the capture was cut short by an error, not a clean
+// exit.
+func TestStreamManager_NonEOFReadErrorIsSurfaced(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "test.log")
+	w, err := NewLogWriter(LogWriterOpts{
+		LogPath: logPath,
+	})
+	require.NoError(t, err)
+
+	sm := &RoutingExecutor{clock: time.Now}
+	task := &model.Task{Name: "t"}
+	run := &model.Run{ID: "r1"}
+
+	readErr := errors.New("simulated I/O error: input/output error")
+	src := &errAfterReader{data: []byte("partial output\n"), err: readErr}
+	sm.streamToFile(src, w, task, run, logutil.StreamStdout)
+	require.NoError(t, w.Close())
+
+	disk, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(disk), "partial output")
+	assert.Contains(t, string(disk), "[SYSTEM]")
+	assert.Contains(t, string(disk), readErr.Error(),
+		"a non-EOF stream read error must be surfaced in the run's own log, not swallowed like a clean EOF")
 }

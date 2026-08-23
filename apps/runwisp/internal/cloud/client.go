@@ -81,6 +81,14 @@ type wsSession struct {
 	conn         *websocket.Conn
 	outbound     chan []byte
 	lastReceived atomic.Int64
+	// closed is set once sessionRunner.run's loops have all exited (in
+	// particular writeLoop, the only reader of outbound). connectionManager's
+	// ready flag only flips to false after run() returns to its caller, which
+	// leaves a window where ready is still true but nothing will ever drain
+	// outbound again; sendMessage consults this field directly so a send
+	// racing that window fails loudly instead of reporting success into a
+	// channel with no reader.
+	closed atomic.Bool
 }
 
 func NewClient(cfg Config, deps Dependencies) (*Client, error) {
@@ -379,6 +387,10 @@ func closeConnection(conn *websocket.Conn, reason string) {
 }
 
 func sendMessage(session *wsSession, message any) error {
+	if session.closed.Load() {
+		return &CloudError{Kind: CloudErrorKindTransient, Message: "session closed"}
+	}
+
 	payload, err := json.Marshal(message)
 	if err != nil {
 		return &CloudError{Kind: CloudErrorKindValidation, Message: "failed to encode outbound message", Err: err}

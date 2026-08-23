@@ -21,9 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Running `runwisp` non-interactively with no `runwisp.toml` in the current directory now fails immediately with a clear error**.
 - **The config JSON Schema for `stop_signal` now accepts the short forms** (`TERM`, `INT`, `KILL`, ...) the daemon already did, so editor validation stops flagging configs that were always valid.
 - **The unread notification badge now updates across other open tabs/sessions** when a mutation (e.g. mark-all-read) changes the count without shipping a notification.
-- **`POST /api/tasks/{taskName}/run?wait=true`'s `waitTimeout` is now capped at 240s (default 120s, down from 3600s/300s)**, so a long wait can no longer outlive the server's 5-minute write timeout and drop the response after the run had already finished.
-- **Sorting runs by duration (`sortField=duration`) returns them in the correct order** instead of a fallback that treated every run's duration as zero.
-- **Two `runwisp daemon` processes started against the same data dir can no longer both proceed** — ownership is now claimed atomically instead of via a racy PID-file check.
+- **`POST /api/tasks/{taskName}/run?wait=true`'s `waitTimeout` now maxes out at 240s (default 120s)** so it can no longer exceed the server's write timeout and drop the response after the run had already finished.
+- **Sorting runs by duration (`sortField=duration`) now returns them in the correct order** instead of leaving them unsorted.
+- **Two `runwisp daemon` processes started against the same data dir can no longer both proceed** — ownership of the data dir is now claimed atomically.
 - **A cron day-of-week field using a bare `7` with a step (e.g. `7/2`) now always means Sunday alone**, instead of the step wrapping into other days.
 - **Daemon shutdown no longer hangs on an unresponsive Docker/Podman engine** during container or compose task cleanup.
 - **A run's log output from just before a rotation is no longer deleted the instant the run ends** — it stays available until the run itself is purged by retention.
@@ -33,15 +33,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Logging out mid-session now disconnects the live event stream immediately** instead of letting it keep applying pushed updates behind the login screen.
 - **Reloading a task away from `on_overlap = "queue"` no longer leaves its already-queued runs stuck pending forever.**
 - **The daemon's identity fingerprint no longer changes when the binary is moved or the hostname changes** — only the machine ID and working directory are hashed.
+- **The daemon's live log/event streams no longer have a narrow gap where a line or notification published right as a client (re)connects could be delivered to nobody.**
+- **Reconnecting to the app after a dropped connection now resyncs notifications from the server** instead of silently missing anything that happened during the gap.
+- **Marking all notifications read no longer discounts a notification that was created while the request was still in flight.**
+- **The runs list sorted oldest-first no longer undercounts newly arrived runs against the list's total.**
+- **A cron task reclaimed by the system's own crond while queued in the daemon's start-spread window could still fire once more** — it's now dropped instead of double-running for that tick.
+- **A run stopped because its log hit the disk free-space guard is now recorded as a policy-initiated stop** instead of looking like a crash.
+- **A log rotation that fails immediately after freeing the old segment no longer risks silently destroying already-captured output on the next write.**
+- **A run's output capture that stops due to a real I/O error is now logged and noted in the run's own log** instead of looking like the process simply exited.
+- **A container-execution task's own `RUNWISP_`-prefixed environment variables are no longer silently dropped** when the task also had other env vars or secrets configured.
+- **A notification delivery that timed out is no longer silently dropped without a retry or failure record** — only a real daemon shutdown is now treated as a shutdown.
+- **A run's status update to the cloud control plane is no longer silently lost** if the connection dropped at the exact moment it was being sent.
+- **The TUI no longer freezes while confirming an action** (restart/stop/trigger/retry a run) if the daemon is slow to respond.
+- **Switching between runs' logs in the TUI no longer occasionally drops or misattributes lines** from the run you just left.
+- **Jumping to a log search result in the TUI no longer highlights the wrong run's line** if you navigated away before it finished opening.
+- **Browsers without the Web Locks API (but with `BroadcastChannel`) no longer open a duplicate SSE connection per tab** instead of sharing one.
+- **The run picker's select-all checkbox no longer shows "all selected" after paging or filtering changed which rows were visible.**
+- **The run filter popover's exit-code field no longer shows a stale value** after the filter was cleared elsewhere (e.g. removing its chip).
+- **The notification bell's error indicator no longer lights up for unrelated unread notifications** when an actual error notification had already been read.
+- **Modal and Drawer dialogs now trap keyboard focus while open and restore it on close**, instead of letting Tab escape to the page behind them.
+- **Select, Dropdown, and Popover menus now keep keyboard focus inside them while open** instead of letting Tab jump to an unrelated part of the page.
 
 ### Security
 
 - **Hardened `service install` unit generation, task-process environment isolation, config-file trust checks, privilege dropping, and outbound-request address filtering.** Internal safeguards with no configuration changes.
 - **HTTP-task run logs redact request/response credentials** — `Authorization`, `Cookie`, API-key headers, and URL passwords are shown as `[redacted]` instead of being persisted to disk.
 - **Control-plane dispatch is validated and bounded at the boundary** — peer-supplied shell `umask`/interpreter are re-validated, log-search size and the ephemeral dispatch queue are capped, and running the control-plane connection over plaintext (`RUNWISP_CLOUD_ALLOW_INSECURE`) now warns loudly at startup.
-- **`allow_cloud_dispatch` now also gates HTTP-type ad-hoc dispatch and cloud-created services**, not just shell/container/compose — HTTP still makes a peer-directed network call, so it's no longer exempt from the opt-in.
+- **`allow_cloud_dispatch` now also gates HTTP-type ad-hoc dispatch and cloud-created services**, not just shell/container/compose, since HTTP dispatch makes a peer-directed network call too.
 - **Log search runs under a request deadline.** Internal safeguard with no configuration changes.
 - **A shutdown race and a panic risk in the notification retry/coalescing path are fixed.** Internal safeguard with no configuration changes.
+- **`RUNWISP_TRUSTED_PROXIES` rejects an IPv4-mapped IPv6 range that would cover every IPv4 address** (e.g. `::ffff:0:0/96`), closing a gap that let a peer spoof `X-Forwarded-For`/`X-Forwarded-Proto` past the trusted-proxy check.
 
 ### Changed
 

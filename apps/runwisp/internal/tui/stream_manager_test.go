@@ -92,6 +92,22 @@ func TestStreamManager_ContinueListeningLog(t *testing.T) {
 	assert.NotNil(t, sm.ContinueListeningLog("r"))
 }
 
+// TestStreamManager_ContinueListeningLog_StaleRunIDReturnsNil is the
+// regression test for the mistagging bug: a stray ContinueListeningLog call
+// tagged with a superseded run's ID must not grab whatever channel logCh
+// currently holds — otherwise it would keep tagging the CURRENT run's log
+// lines with the OLD run's ID, silently misattributing (and dropping) them.
+func TestStreamManager_ContinueListeningLog_StaleRunIDReturnsNil(t *testing.T) {
+	sm := newNilClientSM()
+	t.Cleanup(sm.Shutdown)
+
+	ch := make(chan apiclient.LogStreamMsg, 1)
+	sm.OnLogConnected("r1", ch)
+
+	assert.Nil(t, sm.ContinueListeningLog("r2"), "a runID that doesn't own logCh must not attach to it")
+	assert.NotNil(t, sm.ContinueListeningLog("r1"), "the runID that owns logCh may still continue listening")
+}
+
 func TestStreamManager_FetchOlderLogs_RunsAndReturnsLoadedMsg(t *testing.T) {
 	// Spin a fake daemon that serves a single log page; FetchOlderLogs should
 	// translate it into a LogOlderLoadedMsg.

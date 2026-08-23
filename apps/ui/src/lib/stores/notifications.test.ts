@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { createNotificationStore, type Notification } from "./notifications.svelte";
 import { EventManager } from "./event-manager";
+import { connectionStore } from "./connection.svelte";
 import type { SSEStream } from "$lib/adapters/browser";
 
 function makeNotification(overrides: Partial<Notification> = {}): Notification {
@@ -71,11 +72,19 @@ interface Harness {
     store: ReturnType<typeof createNotificationStore>;
     es: FakeEventSource;
     requests: RecordedRequest[];
+    setUnread: (n: number) => void;
+    setItems: (items: Notification[]) => void;
+    /** Gate the /api/notifications/read response behind a caller-controlled promise. */
+    setMarkAllReadGate: (gate: Promise<void>) => void;
+    /** Force the per-row mark-read/unread POST to fail with a 500. */
+    setRowActionFails: (fail: boolean) => void;
 }
 
 function setupHarness(opts: { unread?: number; items?: Notification[] }): Harness {
-    const items = opts.items ?? [];
-    const unread = opts.unread ?? 0;
+    let items = opts.items ?? [];
+    let unread = opts.unread ?? 0;
+    let markAllReadGate: Promise<void> = Promise.resolve();
+    let rowActionFails = false;
     const requests: RecordedRequest[] = [];
 
     const fakeFetch: typeof fetch = (input, init) => {
@@ -93,10 +102,10 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
             );
         }
         if (url.match(/\/api\/notifications\/[^/]+\/(read|unread)$/)) {
-            return Promise.resolve(new Response(null, { status: 204 }));
+            return Promise.resolve(new Response(null, { status: rowActionFails ? 500 : 204 }));
         }
         if (url.endsWith("/api/notifications/read")) {
-            return Promise.resolve(new Response(null, { status: 204 }));
+            return markAllReadGate.then(() => new Response(null, { status: 204 }));
         }
         if (url.includes("/api/notifications")) {
             return Promise.resolve(
@@ -120,7 +129,23 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
         events,
         getApiUrl: () => "http://test",
     });
-    return { store, es: fakeES, requests };
+    return {
+        store,
+        es: fakeES,
+        requests,
+        setUnread: (n) => {
+            unread = n;
+        },
+        setItems: (next) => {
+            items = next;
+        },
+        setMarkAllReadGate: (gate) => {
+            markAllReadGate = gate;
+        },
+        setRowActionFails: (fail) => {
+            rowActionFails = fail;
+        },
+    };
 }
 
 describe("NotificationStore", () => {
@@ -269,5 +294,101 @@ describe("NotificationStore", () => {
         expect(store.unread).toBe(1);
         const call = requests.find((r) => r.url.endsWith(`/api/notifications/${id}/unread`));
         expect(call?.method).toBe("POST");
+    });
+
+    it("does not sweep a notification created while markAllRead() is still in flight", async () => {
+        const existingId = "01H000000000000000000EXIST1";
+        const { store, es, setMarkAllReadGate } = setupHarness({
+            items: [makeNotification({ id: existingId })],
+            unread: 1,
+        });
+        await store.init();
+
+        let releaseGate: () => void = () => {
+            throw new Error("gate resolver not assigned");
+        };
+        setMarkAllReadGate(
+            new Promise<void>((resolve) => {
+                releaseGate = resolve;
+            }),
+        );
+
+        const markAllReadPromise = store.markAllRead();
+
+        // A brand-new notification is created (and delivered via its own SSE
+        // event, with its own authoritative count) while the mark-all-read
+        // POST is still pending.
+        const newId = "01H000000000000000000NEWCR1";
+        es.fire("notification.created", {
+            notification: makeNotification({ id: newId }),
+            unreadCount: 2,
+        });
+        expect(store.unread).toBe(2);
+
+        releaseGate();
+        await markAllReadPromise;
+
+        expect(store.items.find((n) => n.id === existingId)?.readAt).not.toBeNull();
+        expect(store.items.find((n) => n.id === newId)?.readAt).toBeNull();
+        expect(store.unread).toBe(1);
+    });
+
+    it("on markRead() failure, rolls back only readAt and keeps a newer SSE update", async () => {
+        const id = "01H000000000000000000RB0001";
+        const { store, es, setRowActionFails } = setupHarness({
+            items: [makeNotification({ id, count: 1 })],
+            unread: 1,
+        });
+        await store.init();
+        setRowActionFails(true);
+
+        const markReadPromise = store.markRead(id);
+
+        // The row is coalesced again (bumped count) while the failing POST is
+        // still in flight.
+        es.fire("notification.updated", {
+            notification: makeNotification({ id, count: 5, readAt: null }),
+            unreadCount: 1,
+        });
+        expect(store.items[0]?.count).toBe(5);
+
+        await markReadPromise;
+
+        // Rolled back to unread, but the SSE-delivered count bump survives —
+        // the old rollback restored the whole stale `previous` snapshot,
+        // which would have reverted count back to 1 here.
+        expect(store.items[0]?.readAt).toBeNull();
+        expect(store.items[0]?.count).toBe(5);
+    });
+
+    it("resyncs items and unread count when connectionStore reports a reconnect", async () => {
+        const existingId = "01H000000000000000000RES001";
+        const { store, setItems, setUnread } = setupHarness({
+            items: [makeNotification({ id: existingId })],
+            unread: 1,
+        });
+        await store.init();
+        expect(store.unread).toBe(1);
+
+        // Prime the singleton: markConnected() only treats a later call as a
+        // recovery (and fires reconnect listeners) once it has a prior
+        // successful connection to recover from.
+        connectionStore.markConnected();
+
+        // Server state moved on while this tab was disconnected (or a
+        // cross-tab leader handoff dropped events): a differently-shaped page
+        // is waiting behind the resync fetch.
+        const freshId = "01H000000000000000000RES002";
+        setItems([makeNotification({ id: freshId })]);
+        setUnread(9);
+
+        connectionStore.markDisconnected(new Error("test gap"));
+        connectionStore.markConnected();
+        // Flush the async #resync() fetch chain the reconnect listener kicked off.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(store.unread).toBe(9);
+        expect(store.items).toHaveLength(1);
+        expect(store.items[0]?.id).toBe(freshId);
     });
 });

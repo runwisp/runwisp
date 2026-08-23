@@ -65,8 +65,14 @@ type Model struct {
 	// pendingHighlight, when non-zero, is the absolute log-line number the
 	// next exec-view fetch should land on. Set when a search hit is
 	// selected for a run that's not yet open; consumed by the log
-	// streamer/fetcher when the buffer is ready.
-	pendingHighlight int64
+	// streamer/fetcher when the buffer is ready. pendingHighlightRun is the
+	// run ID it targets — required because opening that run can be
+	// asynchronous (openRunByID falls back to a GetRun fetch), leaving a
+	// window where the user navigates to a different run before it lands. A
+	// bare line number without this guard could jump an unrelated run's pane
+	// to whatever line happens to satisfy the numeric comparison.
+	pendingHighlight    int64
+	pendingHighlightRun string
 
 	panelFocus uikit.PanelFocus
 	info       uikit.StartupInfo

@@ -625,6 +625,49 @@ describe("SharedAppStream", () => {
         }
     });
 
+    it("does not open a real BroadcastChannel when Web Locks are unavailable (bus gate must match canShare)", () => {
+        // BroadcastChannel present, navigator.locks missing (e.g. Firefox < 96):
+        // canShare() is false, so the elector already falls back to "every tab
+        // wins immediately". The bus must degrade in step — otherwise these
+        // independent "leaders" still gossip over a live cross-tab channel that
+        // the leader/follower protocol was never designed to handle from more
+        // than one leader at once.
+        let constructed = 0;
+        class SpyBroadcastChannel {
+            onmessage: ((event: MessageEvent) => void) | null = null;
+            constructor(_name: string) {
+                constructed++;
+                void _name;
+            }
+            postMessage(_data: unknown): void {
+                void _data;
+            }
+            close(): void {}
+        }
+        vi.stubGlobal("BroadcastChannel", SpyBroadcastChannel);
+        vi.stubGlobal("navigator", {}); // no `locks`
+        try {
+            const stream = new SharedAppStream({
+                path: "/api/events/stream",
+                createLeaderManager: () => {
+                    const es = new FakeEventSource();
+                    return new EventManager({
+                        path: "/api/events/stream",
+                        createEventSource: () => es,
+                        getApiUrl: () => "http://test",
+                    });
+                },
+            });
+
+            expect(stream.sharing).toBe(false);
+            stream.subscribe("system", () => {});
+
+            expect(constructed).toBe(0);
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    });
+
     it("uses Web Locks for election when available", () => {
         const requested: string[] = [];
         const fakeLocks = {

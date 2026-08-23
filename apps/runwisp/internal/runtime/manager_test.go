@@ -1465,6 +1465,110 @@ func TestUpsertTask_PolicyChangeAwayFromQueueExitsQueueLoop(t *testing.T) {
 	}
 }
 
+// TestUpsertTask_PolicyChangeAwayFromQueueFinalizesQueuedRuns pins the queue-
+// stranding bug: a reload that flips a task off queue policy while a run is
+// still waiting in ts.queue must finalize that run, exactly like RemoveTask
+// does. Before the fix, UpsertTask swapped in the new (non-queue) definition
+// and left the queue untouched; queueProcessLoop's own policy re-check would
+// just return without ever popping it, leaving the persisted 'pending' row
+// stranded forever with nothing to start or end it.
+func TestUpsertTask_PolicyChangeAwayFromQueueFinalizesQueuedRuns(t *testing.T) {
+	jm, exec, _ := newGatedManager(t)
+
+	var mu sync.Mutex
+	ended := map[string]model.EndReason{}
+	jm.BindPersistenceHook(func(_ context.Context, run *model.Run, _ bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		if run.Status == model.PhaseEnded && run.EndReason != nil {
+			ended[run.ID] = *run.EndReason
+		}
+	})
+
+	// Queue-policy task at concurrency 1: first run occupies the slot, second
+	// waits in the queue.
+	task := testTask("q", model.PolicyQueue, 1)
+	jm.UpsertTask(task)
+
+	_, err := jm.TriggerRun("q", model.TriggeredByAPI)
+	require.NoError(t, err)
+	exec.WaitStarted(t)
+
+	queued, err := jm.TriggerRun("q", model.TriggeredByAPI)
+	require.NoError(t, err)
+
+	// Reload flips the policy away from queue while the run is still waiting —
+	// the active run keeps going under its old definition, but the queued one
+	// must not be left behind.
+	jm.UpsertTask(testTask("q", model.PolicySkip, 1))
+
+	jm.persistence.Flush()
+	mu.Lock()
+	gotReason, gotEnded := ended[queued.ID]
+	mu.Unlock()
+	assert.True(t, gotEnded, "queued run must be finalized when a reload changes the task off queue policy")
+	assert.Equal(t, model.ReasonSkipped, gotReason)
+
+	jm.mu.RLock()
+	assert.Empty(t, jm.tasks["q"].queue, "the stale queue must be cleared, not left to strand a later upsert")
+	jm.mu.RUnlock()
+}
+
+// TestScheduleJitteredRun_HeldTaskFireDroppedNotDoubleRun pins the fix for the
+// jitter-gate/cron-hold interaction that could double-run a task. A jittered
+// fire submitted to the gate can sit pending behind another in-flight jittered
+// run; in that window a system cron daemon can come back live and reclaim the
+// task (HeldBy set via UpsertTask, exactly what RefreshCronHolds does). The
+// stale fire must never start once the gate frees up — a live system cron
+// daemon owns this tick now, so RunWisp starting its own run for it would be
+// exactly the double-execution the hold exists to prevent.
+func TestScheduleJitteredRun_HeldTaskFireDroppedNotDoubleRun(t *testing.T) {
+	clk := testutil.NewClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	exec := testutil.NewGateExecutor()
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb, clk.Now).(*defaultTaskManager)
+	t.Cleanup(jm.Shutdown)
+
+	jm.UpsertTask(testTask("a", model.PolicySkip, 1))
+	jm.UpsertTask(testTask("b", model.PolicySkip, 1))
+
+	created := watchRuns(eb, events.EventRunCreated)
+
+	tick := clk.Now()
+	// "a" fires immediately (the gate starts free) and occupies it.
+	jm.ScheduleJitteredRun("a", tick, tick, time.Hour)
+	exec.WaitStarted(t)
+
+	// "b" is submitted with a slot far in the future so the congested gate
+	// holds it pending instead of pulling it forward or breaching now.
+	jm.ScheduleJitteredRun("b", tick, tick.Add(time.Hour), time.Hour)
+
+	// A system cron daemon reclaims "b" while its fire still sits in the gate —
+	// this is exactly what RefreshCronHolds does to the live task set.
+	held := testTask("b", model.PolicySkip, 1)
+	held.HeldBy = model.HeldByCron
+	jm.UpsertTask(held)
+
+	baseline := created.count()
+
+	// Finishing "a" frees the gate, which pulls "b"'s pending fire forward.
+	exec.ReleaseAll()
+
+	// Bounded settle window: without the fix, the gate's synchronous
+	// advance-on-complete would already have started "b" well within this.
+	require.Never(t, func() bool {
+		for _, r := range created.snapshot()[baseline:] {
+			if r.TaskName == "b" {
+				return true
+			}
+		}
+		return false
+	}, 300*time.Millisecond, 10*time.Millisecond,
+		"a held task's already-queued jitter fire must not start a new run")
+
+	assert.Equal(t, 1, exec.Calls(), "only 'a' should ever have executed")
+}
+
 // TestRemoveTask_InFlightCronRunFinishes is the crux of the "reload doesn't kill
 // running work" guarantee: removing a cron task while a run is in flight must
 // keep the taskState alive until that run retires under its original

@@ -155,7 +155,18 @@ func (d *dispatcher) executeOne(ctx context.Context, id string, ch Channel, ev *
 	if err == nil {
 		return
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if cErr := ctx.Err(); cErr != nil && errors.Is(err, cErr) {
+		// The worker's own ctx was cancelled (daemon shutdown) and that is
+		// specifically why the channel returned an error — not a real
+		// delivery failure. Requiring both ctx.Err() != nil AND errors.Is(err,
+		// ctx.Err()) (rather than the old blanket errors.Is(err,
+		// context.Canceled/DeadlineExceeded)) matters: an HTTP channel's own
+		// per-request timeout (e.g. HTTPProvider's http.Client{Timeout: 15s})
+		// also surfaces as context.DeadlineExceeded via its own internally
+		// derived context, even though this worker ctx is still live. The old
+		// check matched that sentinel regardless of which context produced
+		// it, silently swallowing a real, reportable timeout as if it were a
+		// shutdown no-op.
 		return
 	}
 	if d.failures == nil {

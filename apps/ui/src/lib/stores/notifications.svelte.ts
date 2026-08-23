@@ -154,14 +154,29 @@ class NotificationStore {
      * change locally to the loaded slice. */
     async markAllRead(): Promise<void> {
         const now = new Date().toISOString();
+        // Snapshot which rows were unread when the request was ISSUED, not
+        // when it resolves — a notification created while the request is in
+        // flight (delivered via its own SSE event, with its own authoritative
+        // unread count) must not be swept into "read" just because it's
+        // unread in #items at response time.
+        const unreadIds = new Set(this.#items.filter(isUnread).map((n) => n.id));
         try {
             const res = await this.#fetch(`${this.#getApiUrl()}/api/notifications/read`, {
                 method: "POST",
                 credentials: "include",
             });
             if (!res.ok) throw new Error(`Mark-read returned ${res.status.toString()}`);
-            this.#items = this.#items.map((n) => (isUnread(n) ? { ...n, readAt: now } : n));
-            this.#unread = 0;
+            this.#items = this.#items.map((n) =>
+                unreadIds.has(n.id) && isUnread(n) ? { ...n, readAt: now } : n,
+            );
+            // The server just marked every pre-existing row read, so the new
+            // total is however many *still-unread* rows we know about that
+            // weren't part of that snapshot — i.e. arrived during the
+            // request. Not a subtraction from the old #unread: that count may
+            // already have been bumped by a concurrent notification.created
+            // SSE event, and subtracting the full snapshot size from it would
+            // double-discount rows the server never touched.
+            this.#unread = this.#items.filter((n) => !unreadIds.has(n.id) && isUnread(n)).length;
         } catch (e) {
             this.#logger.error("Failed to mark notifications read", e);
         }
@@ -203,11 +218,15 @@ class NotificationStore {
             if (!res.ok) throw new Error(`Mark-${verb} returned ${res.status.toString()}`);
         } catch (e) {
             this.#logger.error(`Failed to mark notification ${verb}`, e);
-            // Roll back the optimistic change.
+            // Roll back only the readAt field, against whatever is currently
+            // in #items — an SSE notification.updated for this same row may
+            // have landed while the request was in flight, and restoring the
+            // whole pre-optimistic `previous` snapshot would discard it.
             const rollback = this.#items.slice();
             const j = rollback.findIndex((n) => n.id === id);
-            if (j >= 0) {
-                rollback[j] = previous;
+            const current = rollback[j];
+            if (current) {
+                rollback[j] = { ...current, readAt: previous.readAt };
                 this.#items = rollback;
                 this.#unread = Math.max(0, this.#unread + (read ? 1 : -1));
             }
@@ -243,6 +262,14 @@ class NotificationStore {
                 this.#connected = false;
                 connectionStore.reportSourceStalled(SOURCE_ID);
             }),
+            // The notification hub has no replay of its own (unlike the
+            // id-sequenced run/system event ring), so any reconnect gap —
+            // a real network drop, or a cross-tab leader handoff — can drop
+            // a notification permanently. Resync from REST, the same pattern
+            // every sibling data source (runs-source, AsyncData) already uses.
+            connectionStore.onReconnect(() => {
+                void this.#resync();
+            }),
         );
         const onNotification = (eventType: string) => (data: string) => {
             try {
@@ -276,6 +303,19 @@ class NotificationStore {
                 }
             }),
         );
+    }
+
+    /** Re-fetch the first page and unread count, replacing local state. */
+    async #resync(): Promise<void> {
+        try {
+            const page = await this.#fetchPage();
+            this.#items = [...page.items];
+            this.#cursor = page.nextCursor ?? null;
+            this.#hasMore = Boolean(page.nextCursor);
+            this.#unread = await this.#fetchUnread();
+        } catch (e) {
+            this.#logger.error("Failed to resync notifications after reconnect", e);
+        }
     }
 
     #applyUpdate(n: Notification): void {

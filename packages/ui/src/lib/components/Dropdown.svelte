@@ -45,6 +45,7 @@
     let transformOrigin = $state("top right");
 
     import { portal } from "../actions/portal.js";
+    import { trapFocus } from "../actions/focusTrap.js";
 
     async function setupFloating() {
         if (!triggerEl || !menuEl) return;
@@ -133,6 +134,7 @@
     {#if open}
         <div
             use:portal
+            use:trapFocus
             bind:this={menuEl}
             role="menu"
             class="

@@ -31,7 +31,14 @@ type StreamManager struct {
 
 	logCancel context.CancelFunc
 	logCh     <-chan apiclient.LogStreamMsg
-	sseCh     <-chan apiclient.RunStreamEvent
+	// logRunID is the run ID logCh currently belongs to. ContinueListeningLog
+	// checks it before reusing logCh: without this guard, a stale
+	// continuation call for a superseded run (its own goroutine still
+	// finishing up after StartLogStream moved on) would grab whatever
+	// channel logCh currently holds and keep tagging its messages with the
+	// old run's ID, silently misattributing/dropping the new run's log lines.
+	logRunID string
+	sseCh    <-chan apiclient.RunStreamEvent
 
 	daemonLogCh    <-chan string
 	notificationCh <-chan apiclient.NotificationStreamEvent
@@ -189,12 +196,16 @@ func (sm *StreamManager) FetchLineHistory(runID string, lineNum int64, committed
 // OnLogConnected stores the log channel and returns a command to start listening.
 func (sm *StreamManager) OnLogConnected(runID string, ch <-chan apiclient.LogStreamMsg) tea.Cmd {
 	sm.logCh = ch
+	sm.logRunID = runID
 	return listenLogStream(runID, ch)
 }
 
-// ContinueListeningLog returns a command to listen for the next log chunk.
+// ContinueListeningLog returns a command to listen for the next log chunk, for
+// the run that is still the one logCh belongs to. A stale call for a run that
+// StartLogStream has since superseded returns nil rather than reusing the
+// current channel under the old run's ID.
 func (sm *StreamManager) ContinueListeningLog(runID string) tea.Cmd {
-	if sm.logCh != nil {
+	if sm.logCh != nil && sm.logRunID == runID {
 		return listenLogStream(runID, sm.logCh)
 	}
 	return nil
@@ -207,6 +218,7 @@ func (sm *StreamManager) CancelLogStream() {
 		sm.logCancel = nil
 	}
 	sm.logCh = nil
+	sm.logRunID = ""
 }
 
 // FetchExecWindow returns a command that loads execution data for the viewport.
