@@ -37,6 +37,8 @@ export default defineConfig({
                 "packages/ui/src/lib/components/dashboard/run-helpers.ts",
                 "packages/ui/src/lib/utils/ticking-now.svelte.ts",
                 "packages/ui/src/lib/log-console/ansi.ts",
+                "packages/ui/src/lib/actions/focusTrap.ts",
+                "packages/ui/src/lib/components/data-grid-selection.ts",
                 "packages/common/src/utils/ulid.ts",
             ],
             exclude: [

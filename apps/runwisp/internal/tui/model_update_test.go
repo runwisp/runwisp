@@ -701,6 +701,34 @@ func TestHandleLogTailLoaded_PendingHighlightNotAppliedToDifferentRun(t *testing
 	}
 }
 
+// TestHandleLogTailLoaded_PendingHighlightAppliedToMatchingRun is the
+// positive counterpart to TestHandleLogTailLoaded_PendingHighlightNotAppliedToDifferentRun:
+// once the target run's own tail load lands, the pending highlight jumps and
+// clears.
+func TestHandleLogTailLoaded_PendingHighlightAppliedToMatchingRun(t *testing.T) {
+	m := newTestModel(nil)
+	m.pendingHighlight = 5
+	m.pendingHighlightRun = "r-a"
+
+	run := &model.Run{ID: "r-a", TaskName: "t1", Status: model.PhaseEnded}
+	ev := execlist.NewExecView(run)
+	m.execView = &ev
+
+	updated, _ := m.handleLogTailLoaded(uikit.LogTailLoadedMsg{
+		RunID:     "r-a",
+		Lines:     []server.LogLineEntry{{N: 1, Text: "l1"}, {N: 10, Text: "l10"}},
+		Finalized: true,
+	})
+	got := updated.(Model)
+	if got.execView.Pane.HighlightLine != 5 {
+		t.Fatalf("expected jump to highlight line 5, got HighlightLine=%d", got.execView.Pane.HighlightLine)
+	}
+	if got.pendingHighlight != 0 || got.pendingHighlightRun != "" {
+		t.Fatalf("expected pending highlight cleared after jump, got line=%d run=%q",
+			got.pendingHighlight, got.pendingHighlightRun)
+	}
+}
+
 // ─── handleLogLine ───────────────────────────────────────────────────────────
 
 func TestHandleLogLine_NotViewingRunIgnoresButContinuesListening(t *testing.T) {
@@ -751,6 +779,33 @@ func TestHandleLogLine_PendingHighlightNotAppliedToDifferentRun(t *testing.T) {
 	}
 	if got.pendingHighlight != 5 || got.pendingHighlightRun != "r-a" {
 		t.Fatalf("expected r-a's pending highlight to survive r-b's log line, got line=%d run=%q",
+			got.pendingHighlight, got.pendingHighlightRun)
+	}
+}
+
+// TestHandleLogLine_PendingHighlightAppliedToMatchingRun is the positive
+// counterpart to TestHandleLogLine_PendingHighlightNotAppliedToDifferentRun:
+// once the target line arrives on the run the highlight was meant for, it
+// jumps and clears.
+func TestHandleLogLine_PendingHighlightAppliedToMatchingRun(t *testing.T) {
+	m := newTestModel(nil)
+	m.pendingHighlight = 5
+	m.pendingHighlightRun = "r-a"
+
+	run := &model.Run{ID: "r-a", TaskName: "t1"}
+	ev := execlist.NewExecView(run)
+	m.execView = &ev
+
+	updated, _ := m.handleLogLine(uikit.LogLineMsg{
+		RunID: "r-a",
+		Line:  server.LogLineEntry{N: 10, Text: "hello", Stream: "stdout"},
+	})
+	got := updated.(Model)
+	if got.execView.Pane.HighlightLine != 5 {
+		t.Fatalf("expected jump to highlight line 5, got HighlightLine=%d", got.execView.Pane.HighlightLine)
+	}
+	if got.pendingHighlight != 0 || got.pendingHighlightRun != "" {
+		t.Fatalf("expected pending highlight cleared after jump, got line=%d run=%q",
 			got.pendingHighlight, got.pendingHighlightRun)
 	}
 }
