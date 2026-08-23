@@ -312,3 +312,86 @@ func TestSocketPath_UnderDataDir(t *testing.T) {
 		t.Fatalf("SocketPath(%q) = %q, want %q", dir, got, want)
 	}
 }
+
+// TestAcquireDaemonLock_SucceedsWhenFree guards the happy path: nothing else
+// holds the PID file, so the lock is granted and the PID file is populated.
+func TestAcquireDaemonLock_SucceedsWhenFree(t *testing.T) {
+	dataDir := t.TempDir()
+	lock, err := AcquireDaemonLock(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+
+	pid, err := ReadPidFile(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pid != os.Getpid() {
+		t.Fatalf("ReadPidFile = %d, want %d", pid, os.Getpid())
+	}
+}
+
+// TestAcquireDaemonLock_SecondCallConflicts is the regression test for the
+// TOCTOU race: a second daemon racing on the same data dir must be refused
+// while the first lock is held, not merely warned. flock is scoped per open
+// file description, so a second *open* of the same path from this same
+// process still conflicts at the OS level — a valid stand-in for "two
+// processes."
+func TestAcquireDaemonLock_SecondCallConflicts(t *testing.T) {
+	dataDir := t.TempDir()
+	first, err := AcquireDaemonLock(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Release()
+
+	if _, err := AcquireDaemonLock(dataDir); err == nil {
+		t.Fatal("expected second AcquireDaemonLock to fail while the first lock is held")
+	}
+}
+
+// TestAcquireDaemonLock_ReacquireAfterRelease confirms Release genuinely frees
+// the lock (and removes the PID file) rather than leaving it in a state that
+// permanently wedges the data dir.
+func TestAcquireDaemonLock_ReacquireAfterRelease(t *testing.T) {
+	dataDir := t.TempDir()
+	first, err := AcquireDaemonLock(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Release()
+
+	if _, err := os.Stat(PidFilePath(dataDir)); !os.IsNotExist(err) {
+		t.Fatalf("expected PID file removed after Release, got err=%v", err)
+	}
+
+	second, err := AcquireDaemonLock(dataDir)
+	if err != nil {
+		t.Fatalf("expected re-acquire after Release to succeed: %v", err)
+	}
+	defer second.Release()
+}
+
+// TestWriteSecretFile_RefusesForeignOwner guards the ownership check the
+// WriteSecretFile doc comment has always claimed but the code never enforced
+// until now. Only root can chown a file away from the current euid, so an
+// unprivileged test sandbox skips rather than faking a UID mismatch in a way
+// that would weaken the real check.
+func TestWriteSecretFile_RefusesForeignOwner(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("requires root to create a file owned by a different UID")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "secret")
+	if err := os.WriteFile(path, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	const foreignUID = 1 // "daemon" on most Linux distros; distinct from root (0)
+	if err := os.Chown(path, foreignUID, -1); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteSecretFile(path, []byte("y")); err == nil {
+		t.Fatal("expected WriteSecretFile to refuse a file owned by a different user")
+	}
+}

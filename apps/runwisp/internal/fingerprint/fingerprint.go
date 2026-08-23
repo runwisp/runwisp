@@ -19,10 +19,8 @@ import (
 func Generate() string {
 	machineID := readMachineID()
 	cwd, _ := os.Getwd()
-	exe, _ := os.Executable()
-	hostname, _ := os.Hostname()
 
-	hash := sha256.Sum256([]byte(machineID + "\x00" + cwd + "\x00" + exe + "\x00" + hostname))
+	hash := sha256.Sum256([]byte(machineID + "\x00" + cwd))
 	seed := int64(binary.BigEndian.Uint64(hash[0:8]))
 
 	//nolint:gosec // deterministic fingerprint, not crypto

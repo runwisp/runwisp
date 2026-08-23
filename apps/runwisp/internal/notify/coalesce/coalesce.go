@@ -154,15 +154,12 @@ func (c *Channel) Close(ctx context.Context) error {
 	}
 	c.mu.Unlock()
 
-	done := make(chan struct{})
-	go func() {
-		c.wg.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-ctx.Done():
-	}
+	// Wait unconditionally: a window-close summary goroutine calls
+	// c.inner.Execute independently of ctx (see timerFlush), so racing this
+	// wait against ctx.Done() could return here while that goroutine is still
+	// calling Execute concurrently with the Close below — exactly what the
+	// doc comment above promises callers won't happen.
+	c.wg.Wait()
 	return c.inner.Close(ctx)
 }
 
@@ -275,6 +272,11 @@ func (c *Channel) timerFlush(fp string) {
 
 	go func() {
 		defer c.wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				c.logger.Error("notify channel panicked", "channel", c.inner.ID(), "panic", r)
+			}
+		}()
 		select {
 		case <-c.timerDone:
 			return

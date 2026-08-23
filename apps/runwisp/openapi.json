@@ -4147,15 +4147,15 @@
             }
           },
           {
-            "description": "With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state.",
+            "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout (with margin for request/dispatch overhead) since the response is a single write made after the full wait elapses. On timeout the run keeps running and the response returns it in its current (non-terminal) state.",
             "explode": false,
             "in": "query",
             "name": "waitTimeout",
             "schema": {
-              "default": 300,
-              "description": "With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state.",
+              "default": 120,
+              "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout (with margin for request/dispatch overhead) since the response is a single write made after the full wait elapses. On timeout the run keeps running and the response returns it in its current (non-terminal) state.",
               "format": "int64",
-              "maximum": 3600,
+              "maximum": 240,
               "minimum": 1,
               "type": "integer"
             }

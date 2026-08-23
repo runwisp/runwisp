@@ -35,6 +35,30 @@ func TestScanLines_PrevStartAfterMultipleRotations(t *testing.T) {
 	assert.Equal(t, []int64{3, 4, 5, 6}, got)
 }
 
+// TestReadLineRange_PrevStartAfterMultipleRotations mirrors
+// TestScanLines_PrevStartAfterMultipleRotations: ReadLineRange must also
+// number the `.prev` segment from meta.PrevStart, not 0, and must be able to
+// serve a range that starts in `.prev` and continues into the current
+// segment. Same layout: segment 1 (3 lines, already discarded) → segment 2 in
+// .prev starting at line 3 → current segment starting at line 5.
+func TestReadLineRange_PrevStartAfterMultipleRotations(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "task.log")
+	require.NoError(t, os.WriteFile(PrevPath(logPath), []byte("p3\np4\n"), 0644))
+	require.NoError(t, os.WriteFile(logPath, []byte("c5\nc6\n"), 0644))
+	writeContainer(t, logPath, MetaRecord(LogMeta{RotatedLines: 5, PrevStart: 3}))
+
+	lines, firstAvailable, totalLines, err := ReadLineRange(logPath, 3, 10)
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), firstAvailable, "lines below PrevStart are gone, not RotatedLines")
+	assert.Equal(t, int64(7), totalLines)
+
+	var got []int64
+	for _, l := range lines {
+		got = append(got, l.LineNum)
+	}
+	assert.Equal(t, []int64{3, 4, 5, 6}, got)
+}
+
 func tempFileWithContent(t *testing.T, content string) *os.File {
 	t.Helper()
 	f, err := os.CreateTemp(t.TempDir(), "logtest-*")

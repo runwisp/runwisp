@@ -294,6 +294,109 @@ func TestTimerFlush_ConcurrentWithCloseNoPanic(t *testing.T) {
 	}
 }
 
+// blockingChannel is a local fake (testutil.FakeChannel has no way to hold
+// Execute open) used to prove Close waits for a slow in-flight Execute rather
+// than returning early against ctx.Done(). Only the second call (the
+// window-close summary in this test) blocks; the first (the immediate
+// actionForward delivery) must complete instantly or the test would deadlock
+// before ever arming the timer.
+type blockingChannel struct {
+	id      string
+	started chan struct{}
+	release chan struct{}
+
+	mu       sync.Mutex
+	calls    int
+	received []*notify.Event
+	closed   bool
+}
+
+func newBlockingChannel(id string) *blockingChannel {
+	return &blockingChannel{id: id, started: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (b *blockingChannel) ID() string { return b.id }
+
+func (b *blockingChannel) Execute(_ context.Context, ev *notify.Event) error {
+	b.mu.Lock()
+	call := b.calls
+	b.calls++
+	b.mu.Unlock()
+	if call > 0 {
+		close(b.started)
+		<-b.release
+	}
+	b.mu.Lock()
+	b.received = append(b.received, ev)
+	b.mu.Unlock()
+	return nil
+}
+
+func (b *blockingChannel) Close(context.Context) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.closed = true
+	return nil
+}
+
+func (b *blockingChannel) Received() []*notify.Event {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]*notify.Event(nil), b.received...)
+}
+
+func (b *blockingChannel) Closed() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.closed
+}
+
+// TestCoalesce_CloseWaitsForSlowInFlightSummary is the regression test for the
+// Close-contract bug: Close's doc comment promises it "blocks until all
+// in-flight summary goroutines return", but the old implementation raced that
+// wait against ctx.Done() and could return while the window-close goroutine
+// was still calling inner.Execute — letting inner.Close run concurrently with
+// it and silently dropping the final summary. Close must wait for the slow
+// Execute to finish before returning, even under a tight ctx deadline.
+func TestCoalesce_CloseWaitsForSlowInFlightSummary(t *testing.T) {
+	inner := newBlockingChannel("slack-ops")
+	c := New(inner, Config{Window: time.Hour, EveryN: 1000}, testutil.NewFakeClock(time.Unix(0, 0)), nil, nil)
+	mt := withManualTimers(c)
+
+	require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
+	require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
+	require.Equal(t, 1, mt.Pending(), "a window-close timer must be armed")
+
+	mt.FireAll() // spawns the window-close goroutine; it blocks in inner.Execute
+	<-inner.started
+
+	closeReturned := make(chan struct{})
+	go func() {
+		// A tight deadline: a buggy Close racing ctx.Done() would return almost
+		// immediately instead of waiting for the slow Execute below.
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		defer cancel()
+		_ = c.Close(ctx)
+		close(closeReturned)
+	}()
+
+	select {
+	case <-closeReturned:
+		t.Fatal("Close returned before the in-flight summary Execute finished")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(inner.release)
+	select {
+	case <-closeReturned:
+	case <-time.After(time.Second):
+		t.Fatal("Close never returned after the in-flight Execute finished")
+	}
+
+	assert.Len(t, inner.Received(), 2, "first forwarded delivery + window-close summary must both have completed before Close returned")
+	assert.True(t, inner.Closed(), "inner.Close must run only after the summary Execute finished")
+}
+
 func TestSummarize_NonNilExtra(t *testing.T) {
 	ev := &notify.Event{
 		Kind:  notify.KindRunFailed,

@@ -77,12 +77,17 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		defer rerouteLogsToStderrOnError(&err)
 	}
 
-	// Refuse to boot if another daemon already owns this data dir. Two daemons
-	// on one data dir clobber the shared PID file (orphaning the first) and open
-	// the same SQLite database, so fail hard before touching any state.
-	if err := ensureNoRunningDaemon(f); err != nil {
+	// Atomically claim ownership of the data dir via an OS-level flock before
+	// touching any state. A read-then-write PID file leaves a window where two
+	// racing `runwisp daemon` processes both pass the check and both start
+	// executing tasks; the flock held here for the rest of the process's life
+	// makes that impossible, and the kernel releases it the instant the
+	// process dies (including SIGKILL) with no stale-PID heuristic needed.
+	lock, err := datadir.AcquireDaemonLock(f.DataDir)
+	if err != nil {
 		return err
 	}
+	defer lock.Release()
 
 	// Open database first — config values (fingerprint, jwt_secret) live there.
 	db, err := storage.New(f.DBPath())
@@ -121,11 +126,6 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		return err
 	}
 	defer svc.DB.Close()
-
-	if pidErr := datadir.WritePidFile(f.DataDir); pidErr != nil {
-		return fmt.Errorf("write PID file: %w", pidErr)
-	}
-	defer datadir.CleanPidFile(f.DataDir)
 
 	daemonInfo := buildDaemonInfo(cfg, svc, configSnap.LoadedAt(), f.Port)
 

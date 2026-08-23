@@ -207,9 +207,16 @@ func dowField(field string) string {
 func dowTerm(term string) string {
 	base, step, hasStep := strings.Cut(term, "/")
 	lo, hi, isRange := strings.Cut(base, "-")
-	if (!isRange && base == "7") || (isRange && lo == "7" && hi != "7") {
-		// A bare 7, a 7 with a step, or a range starting at 7: the value is Sunday,
-		// so 0 says the same thing in robfig's bounds.
+	if !isRange && base == "7" {
+		// Bare 7 is Sunday, and 7 is already vixie's own max for this field, so no
+		// attached step can ever add a value beyond Sunday itself — drop it rather
+		// than pass it through to robfig, whose max of 6 would make "0/N" wrap
+		// around into other days.
+		return "0"
+	}
+	if isRange && lo == "7" && hi != "7" {
+		// A range starting at 7: the value is Sunday, so 0 says the same thing in
+		// robfig's bounds.
 		return "0" + term[1:]
 	}
 	if !isRange || hi != "7" {

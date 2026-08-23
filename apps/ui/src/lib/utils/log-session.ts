@@ -46,8 +46,12 @@ export function createLogSession(options: LogSessionOptions) {
             });
             return parseLogPage(page);
         } catch (err) {
+            // Log for diagnostics, then rethrow instead of swallowing into a
+            // benign empty LogEvent: callers (RunDetailPanel's seed fetch,
+            // LogConsole's internal LogFetcher) already catch this and must be
+            // able to tell "fetch failed" apart from "run produced no output".
             logger.error("Failed to fetch logs", err);
-            return { lines: {}, sizeLines: 0, finished };
+            throw err;
         }
     }
 
@@ -67,8 +71,11 @@ export function createLogSession(options: LogSessionOptions) {
         try {
             return await tasksApi.getLogLineHistory(runId, lineNum);
         } catch (err) {
+            // LogConsole's frame-history toggle already catches this and
+            // renders "Failed to load frame history" — swallowing it here
+            // instead hid every failure behind a silent no-op.
             logger.error("Failed to fetch log line history", err);
-            return [];
+            throw err;
         }
     }
 

@@ -107,10 +107,10 @@ type Options struct {
 // have full access.
 //
 // CloudDispatchEnabled is the operator opt-in (daemon.allow_cloud_dispatch). The
-// policy is a whitelist: only HTTP and config-backed dispatch (triggering an
-// existing TOML task) are permitted without it, since they don't run
-// peer-supplied local code. Shell, container, compose — and any future
-// code-executing type — require the opt-in.
+// policy is a whitelist: only config-backed dispatch (triggering an existing
+// TOML task) is permitted without it, since that's the sole type that doesn't
+// run peer-supplied code or make a peer-directed network call. HTTP, shell,
+// container, compose — and any future dispatchable type — require the opt-in.
 func New(opts Options) Executor {
 	backends := make(map[string]Backend)
 	avail := Availability{}
@@ -126,21 +126,22 @@ func New(opts Options) Executor {
 		backends["compose"] = opts.Compose
 	}
 
-	// Always dispatchable: HTTP, and config-backed dispatch when local tasks exist.
-	avail.HTTP = BackendStatus{Available: true}
+	// Always dispatchable: config-backed dispatch when local tasks exist.
 	if opts.HasLocalTasks {
 		avail.Config = BackendStatus{Available: true}
 	} else {
 		avail.Config = BackendStatus{Available: false, Reason: "no local tasks configured"}
 	}
 
-	// Code-executing types require the dispatch opt-in.
+	// HTTP and the code-executing types require the dispatch opt-in.
 	if !opts.CloudDispatchEnabled {
 		const reason = "cloud dispatch disabled (set [daemon] allow_cloud_dispatch = true to enable)"
+		avail.HTTP = BackendStatus{Available: false, Reason: reason}
 		avail.Shell = BackendStatus{Available: false, Reason: reason}
 		avail.Container = BackendStatus{Available: false, Reason: reason}
 		avail.Compose = BackendStatus{Available: false, Reason: reason}
 	} else {
+		avail.HTTP = BackendStatus{Available: true}
 		avail.Shell = BackendStatus{Available: true}
 		if opts.Docker != nil {
 			avail.Container = BackendStatus{Available: true}

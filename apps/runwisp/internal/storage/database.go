@@ -94,7 +94,15 @@ type SQLiteDatabase struct {
 // New opens the SQLite database and applies any pending forward-only
 // migrations (see migrate.go).
 func New(dbPath string) (Database, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	// modernc.org/sqlite's default time.Time write format is Go's
+	// time.Time.String() (e.g. "2026-08-22 14:39:12.06 +0200 CEST"): a
+	// trailing zone-name abbreviation SQLite's own date/time functions
+	// (julianday, strftime, ...) cannot parse, so they silently treat every
+	// timestamp as NULL. _time_format=sqlite switches writes to a numeric-offset
+	// format from the SQLite date/time spec (https://www.sqlite.org/lang_datefunc.html
+	// "Time Strings" format 5), which those functions can parse. Read-side
+	// parsing already tries this format regardless, so this only affects writes.
+	db, err := sql.Open("sqlite", dbPath+"?_time_format=sqlite")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}

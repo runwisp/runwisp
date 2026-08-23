@@ -1429,6 +1429,42 @@ func TestRemoveTask_ExitsQueueLoop(t *testing.T) {
 	}
 }
 
+// TestUpsertTask_PolicyChangeAwayFromQueueExitsQueueLoop pins the fix for the
+// queue-drain goroutine leak on reload: upserting a task with OnOverlap: queue
+// spawns a drain loop; a later reload that flips the same (still-live) task to
+// a different policy must stop that loop rather than leave it parked forever
+// on cond.Wait(), woken by every retireRun signal but with nothing to drain.
+func TestUpsertTask_PolicyChangeAwayFromQueueExitsQueueLoop(t *testing.T) {
+	jm, _, _ := newTestManager(t)
+
+	jm.UpsertTask(testTask("task1", model.PolicyQueue, 1))
+	jm.mu.RLock()
+	require.True(t, jm.tasks["task1"].queueDraining, "the drain loop must be alive under queue policy")
+	jm.mu.RUnlock()
+
+	// Reload flips the policy away from queue without removing the task.
+	jm.UpsertTask(testTask("task1", model.PolicySkip, 1))
+
+	require.Eventually(t, func() bool {
+		jm.mu.RLock()
+		defer jm.mu.RUnlock()
+		return !jm.tasks["task1"].queueDraining
+	}, time.Second, 10*time.Millisecond, "the drain loop must exit once the policy is no longer queue")
+
+	// Confirm it's not just the flag: Shutdown's WaitGroup drain must not block
+	// on a leaked goroutine still parked in cond.Wait().
+	done := make(chan struct{})
+	go func() {
+		jm.Shutdown()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Shutdown blocked — the queue-drain goroutine leaked after a policy change")
+	}
+}
+
 // TestRemoveTask_InFlightCronRunFinishes is the crux of the "reload doesn't kill
 // running work" guarantee: removing a cron task while a run is in flight must
 // keep the taskState alive until that run retires under its original

@@ -171,7 +171,7 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 	}
 
 	if err := notify.RetryWithBackoff(ctx, c.backoff, op); err != nil {
-		return fmt.Errorf("%s: %s", c, notify.Redact(err.Error(), c.password))
+		return fmt.Errorf("%s: %w", c, notify.RedactError(err, c.password))
 	}
 	return nil
 }

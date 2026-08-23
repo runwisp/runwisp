@@ -2776,7 +2776,7 @@ export interface operations {
             query?: {
                 /** @description Block until the run finishes and return the completed run (with exitCode and endReason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead. */
                 wait?: boolean;
-                /** @description With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state. */
+                /** @description With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout (with margin for request/dispatch overhead) since the response is a single write made after the full wait elapses. On timeout the run keeps running and the response returns it in its current (non-terminal) state. */
                 waitTimeout?: number;
             };
             header?: never;

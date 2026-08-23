@@ -404,15 +404,22 @@ func TestQueryRunsAllSortVariants(t *testing.T) {
 		})
 	}
 
-	// Duration sort relies on julianday() over the persisted timestamps;
-	// the driver stores them in a non-ISO format that SQLite can't parse,
-	// so every row evaluates to a tied 0 and the ORDER BY produces an
-	// unspecified order. We still exercise both dispatch branches so the
-	// sqlc-generated queries are reached — we just don't assert order.
-	for _, dir := range []SortDirection{SortAsc, SortDesc} {
-		rs, err := db.QueryRuns(ctx, RunQuery{Limit: 10, SortField: SortColumnDuration, SortDirection: dir})
-		require.NoError(t, err)
-		assert.Len(t, rs, 3)
+	// Duration sort relies on julianday() over the persisted started_at/ended_at
+	// timestamps. a/b/c above were built with durations 10s/20s/5s respectively.
+	durationCases := []struct {
+		name string
+		dir  SortDirection
+		want []string
+	}{
+		{"duration asc", SortAsc, []string{"charlie", "alpha", "bravo"}},
+		{"duration desc", SortDesc, []string{"bravo", "alpha", "charlie"}},
+	}
+	for _, tc := range durationCases {
+		t.Run(tc.name, func(t *testing.T) {
+			rs, err := db.QueryRuns(ctx, RunQuery{Limit: 10, SortField: SortColumnDuration, SortDirection: tc.dir})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, names(rs))
+		})
 	}
 }
 

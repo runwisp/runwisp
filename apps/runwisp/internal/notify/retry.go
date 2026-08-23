@@ -127,3 +127,20 @@ func Redact(s, secret string) string {
 	}
 	return strings.ReplaceAll(s, secret, "[redacted]")
 }
+
+// redactedError wraps err so Error() has secrets redacted from its message
+// while Unwrap() still exposes the original error for errors.Is/As.
+type redactedError struct {
+	err    error
+	secret string
+}
+
+func (r *redactedError) Error() string { return Redact(r.err.Error(), r.secret) }
+func (r *redactedError) Unwrap() error { return r.err }
+
+// RedactError is the %w-safe replacement for
+// `fmt.Errorf("%s: %s", ..., Redact(err.Error(), secret))`. Using %s on
+// err.Error() breaks the Unwrap() chain, which hides context.Canceled /
+// context.DeadlineExceeded from errors.Is during shutdown. Wrap with %w and
+// this type instead so the chain survives while the message stays redacted.
+func RedactError(err error, secret string) error { return &redactedError{err: err, secret: secret} }

@@ -474,7 +474,11 @@ func (w *LogWriter) Close() error {
 		}
 	}
 
-	os.Remove(logutil.PrevPath(w.mainPath))
+	// The `.prev` segment (if any) is NOT removed here: retention already
+	// accounts for its size and deletes it when the run itself is purged
+	// (see internal/runtime/retention.go, softdelete_purger.go). Deleting it
+	// on every Close would destroy the pre-rotation output of a run the
+	// instant it ends, before an operator can ever view or download it.
 
 	return errors.Join(errs...)
 }

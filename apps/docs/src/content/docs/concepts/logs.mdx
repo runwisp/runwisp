@@ -281,8 +281,10 @@ history is safe to lose, so a `kill -9`, a rotation, or a torn write
 never costs you any committed output — the durable `.log` is untouched.
 A short run that never drew a progress bar just gets a tiny container
 holding its final metadata. (While a log is mid-rotation you may also
-briefly see a hidden `.<name>.log.prev` — the rotated-away chunk —
-which is cleaned up when the run ends.)
+briefly see a hidden `.<name>.log.prev` — the rotated-away chunk. It
+sticks around after the run ends too, same as the `.log` and its
+container, so the download and viewer can still stitch it back in —
+retention cleans it up along with the rest of the run.)
 
 ## Crash safety
 

@@ -39,7 +39,10 @@ const unreadCountChangedSchema = z.object({
     unreadCount: z.number().int().nonnegative(),
 });
 
-const streamEnvelopeSchema = z.object({ notification: notificationSchema });
+const streamEnvelopeSchema = z.object({
+    notification: notificationSchema,
+    unreadCount: z.number().int().nonnegative(),
+});
 
 export interface NotificationStoreDeps {
     fetch?: typeof fetch;
@@ -58,9 +61,14 @@ function isUnread(n: Notification): boolean {
 
 class NotificationStore {
     #items = $state<Notification[]>([]);
-    // unread is the server's authoritative snapshot, adjusted by the deltas
-    // we observe locally (SSE events + per-row mark-read/unread). We never
-    // recompute it from #items because items is paginated.
+    // unread is the server's authoritative snapshot. Every SSE event
+    // (notification.created/updated/unreadCountChanged) carries the
+    // post-mutation count and we set it directly from that — never delta
+    // math, since a row absent from our paginated #items would otherwise
+    // drift the count on every recurrence. Local mark-read/unread actions
+    // apply an optimistic delta until the server round-trip (and its own
+    // SSE echo) resolves it. We never recompute it from #items because
+    // items is paginated.
     #unread = $state(0);
     readonly #events: AppEventStream;
     #subscribed = false;
@@ -246,6 +254,7 @@ class NotificationStore {
                     return;
                 }
                 this.#applyUpdate(parsed.data.notification);
+                this.#unread = parsed.data.unreadCount;
             } catch (e) {
                 this.#logger.error("Malformed notification SSE event", e);
             }
@@ -271,17 +280,13 @@ class NotificationStore {
 
     #applyUpdate(n: Notification): void {
         const idx = this.#items.findIndex((x) => x.id === n.id);
-        const prev = this.#items[idx];
-        if (prev) {
+        if (idx !== -1) {
             const next = this.#items.slice();
             next[idx] = n;
             this.#items = next;
-            const delta = (isUnread(n) ? 1 : 0) - (isUnread(prev) ? 1 : 0);
-            if (delta !== 0) this.#unread = Math.max(0, this.#unread + delta);
             return;
         }
         this.#items = [n, ...this.#items];
-        if (isUnread(n)) this.#unread += 1;
     }
 
     async #fetchPage(before?: string): Promise<z.infer<typeof listResponseSchema>> {

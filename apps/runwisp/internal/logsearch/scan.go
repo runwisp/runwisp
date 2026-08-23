@@ -7,6 +7,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/logutil"
@@ -167,6 +168,18 @@ func runStartIndex(runs []RunRef, startAfterRunID string) int {
 // scanPending scans every pending run in parallel (bounded by ScanWorkers),
 // returning per-run results in input order plus the count of runs scanned.
 // Only the first run honors startAfterN; later runs restart at line 0.
+//
+// A single hit budget (remaining) is shared across the scans instead of
+// handing every run the full maxHits independently: once ScanWorkers scans
+// are already in flight, the next one only starts by waiting for one of them
+// to finish and free a slot — so by the time it starts, remaining reflects
+// what those finished scans actually found, and a run starting once maxHits
+// is already satisfied is skipped outright instead of independently
+// re-scanning a full budget's worth for flattenResults to discard. The
+// initial wave of up to ScanWorkers runs still gets the full maxHits each —
+// they start together with no ordering between them, so there is no
+// meaningful "already found" state yet to share, and racing them against
+// each other would just make results depend on goroutine scheduling.
 func scanPending(ctx context.Context, pending []RunRef, matcherFactory func() Matcher, maxHits int, startAfterN int64) ([]runResult, int, error) {
 	results := make([]runResult, len(pending))
 
@@ -174,9 +187,11 @@ func scanPending(ctx context.Context, pending []RunRef, matcherFactory func() Ma
 	g.SetLimit(ScanWorkers)
 
 	var (
-		mu      sync.Mutex
-		scanned int
+		mu        sync.Mutex
+		scanned   int
+		remaining atomic.Int64
 	)
+	remaining.Store(int64(maxHits))
 	for i, r := range pending {
 		i, r := i, r
 		var skipN int64
@@ -184,10 +199,24 @@ func scanPending(ctx context.Context, pending []RunRef, matcherFactory func() Ma
 			skipN = startAfterN
 		}
 		g.Go(func() error {
-			hits, more, err := ScanRun(gctx, r, matcherFactory(), maxHits, skipN)
+			perRunMax := maxHits
+			if i >= ScanWorkers {
+				budget := remaining.Load()
+				if budget <= 0 {
+					// Every worker slot this run waited on was freed by a
+					// scan that, combined, already found maxHits hits.
+					// Nothing this run finds would survive flattenResults,
+					// so don't scan it at all — flattenResults still emits a
+					// cursor pointing here since it was never visited.
+					return nil
+				}
+				perRunMax = int(budget)
+			}
+			hits, more, err := ScanRun(gctx, r, matcherFactory(), perRunMax, skipN)
 			if err != nil {
 				return err
 			}
+			remaining.Add(-int64(len(hits)))
 			mu.Lock()
 			results[i] = runResult{hits: hits, more: more}
 			scanned++

@@ -102,6 +102,12 @@ type LogLineRecord struct {
 // this were rotated away). totalLines is the total number of lines produced
 // across all segments.
 //
+// When a `.log.prev` segment is present, requests that reach back that far are
+// served from it — numbered from meta.PrevStart, per its doc — before falling
+// through to the current segment, the same two-segment order ScanLines uses.
+// Only lines below PrevStart (or RotatedLines, absent a `.prev`) are treated
+// as genuinely gone.
+//
 // limit > 0 caps the returned slice; pass 0 for an internal default.
 func ReadLineRange(logPath string, from, limit int64) (lines []LogLineRecord, firstAvailable, totalLines int64, err error) {
 	if limit <= 0 {
@@ -109,7 +115,7 @@ func ReadLineRange(logPath string, from, limit int64) (lines []LogLineRecord, fi
 	}
 	sc := ReadSidecar(logPath)
 	meta := sc.Meta
-	firstAvailable = meta.RotatedLines
+	prevPath, prevExists, firstAvailable := resolvePrevSegment(logPath, meta)
 
 	file, openErr := os.Open(logPath)
 	if openErr != nil {
@@ -126,43 +132,122 @@ func ReadLineRange(logPath string, from, limit int64) (lines []LogLineRecord, fi
 	}
 	indices := sc.Index
 	totalLines = int64(CalculateTotalLines(file, indices, stat.Size(), meta))
-
 	if totalLines <= firstAvailable {
 		return nil, firstAvailable, totalLines, nil
 	}
 
-	startLine := from
-	if startLine < 0 {
-		startLine = totalLines + from
-	}
-	if startLine < firstAvailable {
-		startLine = firstAvailable
-	}
+	startLine := resolveStartLine(from, firstAvailable, totalLines)
 	if startLine >= totalLines {
 		return nil, firstAvailable, totalLines, nil
 	}
 
-	startOffset := CalculateLineOffset(file, indices, int(startLine), meta)
+	if prevExists && startLine < meta.RotatedLines {
+		lines, err = readSegmentRange(prevPath, meta.PrevStart, startLine, limit)
+		if err != nil {
+			return lines, firstAvailable, totalLines, err
+		}
+		if int64(len(lines)) >= limit {
+			return lines, firstAvailable, totalLines, nil
+		}
+	}
+
+	// Either starting directly in the current segment, or continuing into it
+	// right after the .prev segment ended (which lines up exactly at
+	// RotatedLines by construction — see rotateTail).
+	currentStart := startLine
+	if len(lines) > 0 {
+		currentStart = meta.RotatedLines
+	}
+
+	startOffset := CalculateLineOffset(file, indices, int(currentStart), meta)
 	if _, seekErr := file.Seek(startOffset, io.SeekStart); seekErr != nil {
-		return nil, firstAvailable, totalLines, seekErr
+		return lines, firstAvailable, totalLines, seekErr
 	}
 
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, ScanBufferSize), 1024*1024)
-	current := startLine
-	for scanner.Scan() && int64(len(lines)) < limit {
-		stream, text := ParseStreamPrefix(scanner.Text())
-		lines = append(lines, LogLineRecord{
-			LineNum: current,
-			Stream:  stream,
-			Text:    text,
-		})
-		current++
-	}
-	if scanErr := scanner.Err(); scanErr != nil {
+	more, scanErr := collectLines(scanner, currentStart, limit-int64(len(lines)))
+	lines = append(lines, more...)
+	if scanErr != nil {
 		return lines, firstAvailable, totalLines, scanErr
 	}
 	return lines, firstAvailable, totalLines, nil
+}
+
+// resolvePrevSegment reports whether logPath has a `.log.prev` segment and
+// returns the resulting firstAvailable: numbered from meta.PrevStart when a
+// `.prev` survives, else meta.RotatedLines.
+func resolvePrevSegment(logPath string, meta LogMeta) (prevPath string, exists bool, firstAvailable int64) {
+	prevPath = PrevPath(logPath)
+	_, statErr := os.Stat(prevPath)
+	exists = statErr == nil
+	firstAvailable = meta.RotatedLines
+	if exists {
+		firstAvailable = meta.PrevStart
+	}
+	return prevPath, exists, firstAvailable
+}
+
+// resolveStartLine converts `from` into an absolute line number: negative
+// values count back from totalLines (a tail request), then the result is
+// clamped to the oldest surviving line, firstAvailable.
+func resolveStartLine(from, firstAvailable, totalLines int64) int64 {
+	start := from
+	if start < 0 {
+		start = totalLines + from
+	}
+	if start < firstAvailable {
+		start = firstAvailable
+	}
+	return start
+}
+
+// collectLines scans up to `limit` lines from scanner, numbering them
+// sequentially from startLineNum. Shared by ReadLineRange's current-segment
+// read and readSegmentRange's `.prev` read.
+func collectLines(scanner *bufio.Scanner, startLineNum, limit int64) ([]LogLineRecord, error) {
+	var lines []LogLineRecord
+	current := startLineNum
+	for scanner.Scan() && int64(len(lines)) < limit {
+		stream, text := ParseStreamPrefix(scanner.Text())
+		lines = append(lines, LogLineRecord{LineNum: current, Stream: stream, Text: text})
+		current++
+	}
+	return lines, scanner.Err()
+}
+
+// readSegmentRange reads up to `limit` lines from a single segment file
+// starting at the absolute line number `startAt`, which must be >=
+// segmentStart (the absolute line number the segment's first line
+// represents). The segment has no byte-offset index of its own (that index is
+// reset on rotation), so the skip is a linear scan — acceptable since this
+// only runs for reads reaching back into `.prev`, not the common current-
+// segment path, which still uses the sidecar index via CalculateLineOffset.
+func readSegmentRange(path string, segmentStart, startAt, limit int64) ([]LogLineRecord, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer f.Close()
+
+	skip := int(startAt - segmentStart)
+	if skip < 0 {
+		skip = 0
+	}
+	offset, _, scanErr := ScanOffset(f, 0, skip)
+	if scanErr != nil && !errors.Is(scanErr, io.EOF) {
+		return nil, scanErr
+	}
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return nil, err
+	}
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, ScanBufferSize), 1024*1024)
+	return collectLines(scanner, segmentStart+int64(skip), limit)
 }
 
 // ScanLines streams every on-disk line of a run in display order: the

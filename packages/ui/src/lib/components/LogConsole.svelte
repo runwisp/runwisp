@@ -31,6 +31,12 @@
         // "muted" (default) renders the terminus in the gutter grey; "warn"
         // tints it amber for runs that ended by intervention rather than naturally.
         endTone?: "muted" | "warn";
+        // Message from the most recent fetchLogs failure (session expiry,
+        // daemon restart mid-request, network blip, ...). Rendered as a small
+        // banner above the log surface so a fetch failure never looks like a
+        // run that simply produced no output. Null/undefined renders nothing;
+        // the caller clears it once a subsequent fetch succeeds.
+        error?: string | null;
         // Wrap long lines instead of horizontally scrolling them. When on, each
         // rendered row's height becomes a multiple of `lineHeight` (one per
         // wrapped visual row), so the virtualizer switches from the fixed-height
@@ -48,6 +54,7 @@
         fetchLineHistory,
         endLabel = "end of output",
         endTone = "muted",
+        error = null,
         wrap = $bindable(false),
     }: Props = $props();
 
@@ -556,6 +563,15 @@
         class="pointer-events-none absolute -top-[9999px] left-0 whitespace-pre select-none"
         >{RULER_SAMPLE}</span
     >
+
+    {#if error}
+        <div
+            class="flex shrink-0 items-center gap-2 border-b border-[var(--rw-con-gutter)] px-3.5 py-2 text-[11.5px]"
+            style="color: var(--rw-term-bad); background-color: color-mix(in srgb, var(--rw-term-bad) 12%, transparent);"
+        >
+            Failed to load log: {error}
+        </div>
+    {/if}
 
     <div bind:this={containerEl} class="flex-1 overflow-auto" onscroll={onScroll}>
         <div

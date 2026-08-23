@@ -267,10 +267,33 @@ func TestResolveDispatchTask_ContainerInlineUpsertedWhenEnabled(t *testing.T) {
 	assert.Len(t, runner.upserted, 1)
 }
 
-// TestResolveDispatchTask_HTTPAllowedWithoutDispatch confirms the whitelist:
-// HTTP dispatch is permitted even with the dispatch opt-in off, since it runs no
-// peer-supplied local code.
-func TestResolveDispatchTask_HTTPAllowedWithoutDispatch(t *testing.T) {
+// TestResolveDispatchTask_HTTPRejectedWithoutDispatch confirms HTTP-type
+// dispatch is gated by allow_cloud_dispatch like shell/container/compose: it
+// still makes a peer-directed network call, so it's not exempt from the opt-in.
+func TestResolveDispatchTask_HTTPRejectedWithoutDispatch(t *testing.T) {
+	avail := executor.Availability{
+		HTTP: executor.BackendStatus{Available: false, Reason: "cloud dispatch disabled (set [daemon] allow_cloud_dispatch = true to enable)"},
+	}
+	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
+	h := &InboundHandler{
+		taskManager:     runner,
+		logDir:          "/tmp",
+		availability:    avail,
+		queueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
+		logListeners:    make(map[string]struct{}),
+	}
+
+	_, _, err := h.resolveDispatchTask(&protocol.Execution{TaskID: "probe", Script: httpScript(t, "https://example.com")})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindConflict, ce.Kind)
+	assert.Empty(t, runner.upserted, "rejected dispatch must not upsert a task")
+}
+
+// TestResolveDispatchTask_HTTPAllowedWithDispatch confirms HTTP-type dispatch
+// succeeds once the operator opts in via allow_cloud_dispatch.
+func TestResolveDispatchTask_HTTPAllowedWithDispatch(t *testing.T) {
 	avail := executor.Availability{
 		HTTP: executor.BackendStatus{Available: true},
 	}
@@ -293,8 +316,9 @@ func TestResolveDispatchTask_HTTPAllowedWithoutDispatch(t *testing.T) {
 // rest of the name and can aim an inline dispatch at a locally-defined task
 // called cloud-*. Upserting over it would replace a disk-defined task's
 // execution — and the ephemeral reaper would then delete the task outright — so
-// the collision must be rejected. http is reachable with allow_cloud_dispatch
-// off, so this is not gated by the availability check above.
+// the collision must be rejected. This test uses an HTTP dispatch with
+// availability granted, so the rejection below is the name-collision guard, not
+// the availability check exercised above.
 func TestResolveDispatchTask_RejectsConfigTaskNameCollision(t *testing.T) {
 	origExec := &model.ShellExecution{Script: "sync.sh"}
 	local := &model.Task{Name: "cloud-sync", Kind: model.KindTask, Cron: "* * * * *", ExecutionDef: origExec}

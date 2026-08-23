@@ -82,7 +82,7 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 		return fmt.Errorf("%s: render: %w", c, err)
 	}
 	if err := c.transport.PostJSONWithHeaders(ctx, c.url, "application/json", rendered.Body, c.headers); err != nil {
-		return fmt.Errorf("%s: %s", c, notify.Redact(err.Error(), c.url))
+		return fmt.Errorf("%s: %w", c, notify.RedactError(err, c.url))
 	}
 	return nil
 }

@@ -86,6 +86,38 @@ func TestHandleServiceApply_UnavailableBackendRejected(t *testing.T) {
 	assert.Equal(t, CloudErrorKindConflict, ce.Kind)
 }
 
+// TestHandleServiceApply_HTTPRejectedWithoutDispatch confirms an HTTP-type
+// cloud-created service is gated by allow_cloud_dispatch just like
+// shell/container/compose: HTTP still makes a peer-directed network call and a
+// persistent auto-restarting service, so it is not exempt from the opt-in.
+func TestHandleServiceApply_HTTPRejectedWithoutDispatch(t *testing.T) {
+	avail := executor.Availability{
+		HTTP: executor.BackendStatus{Available: false, Reason: "cloud dispatch disabled (set [daemon] allow_cloud_dispatch = true to enable)"},
+	}
+	h := newDispatchHandler(avail, nil)
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{TaskID: "svc-http", TaskName: "svc-http", Script: httpScript(t, "https://example.com"), Instances: 1},
+	})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindConflict, ce.Kind)
+}
+
+// TestHandleServiceApply_HTTPAllowedWithDispatch confirms HTTP-type service
+// creation succeeds once the operator opts in via allow_cloud_dispatch.
+func TestHandleServiceApply_HTTPAllowedWithDispatch(t *testing.T) {
+	h := newDispatchHandler(executor.Availability{HTTP: executor.BackendStatus{Available: true}}, nil)
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{TaskID: "svc-http", TaskName: "svc-http", Script: httpScript(t, "https://example.com"), Instances: 1},
+	})
+	require.NoError(t, err)
+	require.Len(t, runner.upserted, 1)
+	assert.Equal(t, model.KindService, runner.upserted[0].Kind)
+}
+
 func TestHandleServiceApply_MissingServiceRejected(t *testing.T) {
 	h := newDispatchHandler(shellAvailable(), nil)
 	err := h.HandleServiceApply(protocol.ServiceApplyMessage{})

@@ -150,6 +150,7 @@ describe("NotificationStore", () => {
                 id: "01H000000000000000000RD000",
                 readAt: "2026-05-05T12:00:00.000Z",
             }),
+            unreadCount: 0,
         });
         expect(store.unread).toBe(0);
         expect(store.items).toHaveLength(1);
@@ -160,8 +161,30 @@ describe("NotificationStore", () => {
         await store.init();
         es.fire("notification.created", {
             notification: makeNotification({ id: "01H000000000000000000NEW01" }),
+            unreadCount: 1,
         });
         expect(store.unread).toBe(1);
+    });
+
+    it("sets unread directly from the unreadCount on the envelope, ignoring #items entirely, for a recurring notification not loaded in this tab", async () => {
+        const { store, es } = setupHarness({ items: [], unread: 5 });
+        await store.init();
+        expect(store.unread).toBe(5);
+        // Simulate a coalesced/recurring failure re-firing as `notification.updated`
+        // whose row has scrolled off this tab's loaded page (or the tab opened
+        // after it was first created): absent from #items, but the server ships
+        // the authoritative post-mutation count alongside it. Old delta math would
+        // have unconditionally bumped #unread to 6 here; the fix must land on the
+        // exact server value instead.
+        es.fire("notification.updated", {
+            notification: makeNotification({
+                id: "01H000000000000000000OFF01",
+                count: 4,
+                readAt: null,
+            }),
+            unreadCount: 9,
+        });
+        expect(store.unread).toBe(9);
     });
 
     it("sets unread directly from a notification.unreadCountChanged SSE event", async () => {
@@ -181,6 +204,7 @@ describe("NotificationStore", () => {
         expect(store.unread).toBe(1);
         es.fire("notification.updated", {
             notification: makeNotification({ id, readAt: "2026-05-05T12:05:00.000Z" }),
+            unreadCount: 0,
         });
         expect(store.unread).toBe(0);
         expect(store.items[0]?.readAt).toBe("2026-05-05T12:05:00.000Z");
@@ -196,6 +220,7 @@ describe("NotificationStore", () => {
         expect(store.unread).toBe(0);
         es.fire("notification.updated", {
             notification: makeNotification({ id, count: 2, readAt: null }),
+            unreadCount: 1,
         });
         expect(store.unread).toBe(1);
         expect(store.items[0]?.readAt).toBeNull();

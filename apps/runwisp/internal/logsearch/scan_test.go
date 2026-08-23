@@ -5,6 +5,7 @@ package logsearch
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -214,6 +215,65 @@ func TestScanTask_ExactFillAtRunBoundaryEmitsCursor(t *testing.T) {
 	}
 	if len(hits2) != 2 || hits2[0].RunID != "01HRUNAAAAAAAAAAAAAAAAAAAA" {
 		t.Fatalf("resume should return run C's 2 hits, got %d", len(hits2))
+	}
+}
+
+// TestScanPending_SharedBudgetSkipsLaterRuns guards the fix for the
+// "scan everything then discard" bug: scanPending used to hand every pending
+// run the full per-request maxHits independently, so a task with many
+// match-heavy runs scanned up to (numRuns * maxHits) hits only for
+// flattenResults to throw most of them away. Runs now share a decrementing
+// budget, so a run that can only start once an earlier one has already
+// satisfied maxHits is skipped instead of re-scanning a full budget's worth.
+func TestScanPending_SharedBudgetSkipsLaterRuns(t *testing.T) {
+	dir := t.TempDir()
+	factory := func() Matcher {
+		m, _ := NewMatcher("foo", false, false)
+		return m
+	}
+
+	// Every run has far more than maxHits matching lines, so whichever run
+	// completes first satisfies the whole budget on its own.
+	const numRuns = 6
+	const maxHits = 5
+	pending := make([]RunRef, numRuns)
+	for i := range pending {
+		lines := make([]string, 30)
+		for j := range lines {
+			lines[j] = "foo line"
+		}
+		path := filepath.Join(dir, fmt.Sprintf("run%d.log", i))
+		writeLog(t, path, lines...)
+		pending[i] = RunRef{ID: fmt.Sprintf("R%d", i), LogPath: path, CreatedAt: time.Unix(int64(i), 0)}
+	}
+
+	results, _, err := scanPending(context.Background(), pending, factory, maxHits, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Runs beyond ScanWorkers cannot start until an earlier run has released
+	// a worker slot by completing — and completing means it already found
+	// hits against the shared budget (given every file matches far more than
+	// maxHits lines). So they must be skipped outright, not independently
+	// re-scanned up to the full maxHits.
+	for i := ScanWorkers; i < numRuns; i++ {
+		if len(results[i].hits) != 0 || results[i].more {
+			t.Fatalf("run %d: expected to be skipped once the shared budget was exhausted, got %+v", i, results[i])
+		}
+	}
+
+	// The shared budget bounds total scanning effort: at most ScanWorkers
+	// goroutines can start before any of them has recorded its hits, so the
+	// sum of hits actually found can never exceed ScanWorkers*maxHits. The
+	// pre-fix code (full maxHits handed to every one of the 6 runs
+	// independently) would total up to numRuns*maxHits = 30.
+	var total int
+	for _, r := range results {
+		total += len(r.hits)
+	}
+	if total > ScanWorkers*maxHits {
+		t.Fatalf("want total hits <= %d (shared budget), got %d", ScanWorkers*maxHits, total)
 	}
 }
 

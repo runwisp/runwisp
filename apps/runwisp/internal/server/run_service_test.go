@@ -6,6 +6,8 @@ package server
 import (
 	"context"
 	"errors"
+	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
@@ -363,6 +365,34 @@ func TestHumaTriggerRun_WaitTaskNotFound(t *testing.T) {
 
 	_, err := srv.humaTriggerRun(context.Background(), &TriggerRunInput{TaskName: "missing", Wait: true, WaitTimeout: 5})
 	assert.Error(t, err)
+}
+
+// TestTriggerRunInput_WaitTimeoutBounds guards against a regression of the
+// bug where waitTimeout's advertised maximum (formerly 3600s, default 300s)
+// let the wait=true handler's single final JSON write land after the HTTP
+// server's 5-minute WriteTimeout, failing with an i/o timeout even though the
+// triggered run had completed. It checks two things that must stay true
+// together: the struct tag literals actually match the named constants (tags
+// can't reference constants, so they drift silently otherwise), and the max
+// leaves real margin under WriteTimeout.
+func TestTriggerRunInput_WaitTimeoutBounds(t *testing.T) {
+	field, ok := reflect.TypeOf(TriggerRunInput{}).FieldByName("WaitTimeout")
+	require.True(t, ok, "TriggerRunInput.WaitTimeout field must exist")
+
+	assert.Equal(t, strconv.Itoa(TriggerWaitTimeoutMax), field.Tag.Get("maximum"),
+		"struct tag `maximum` must match TriggerWaitTimeoutMax")
+	assert.Equal(t, strconv.Itoa(TriggerWaitTimeoutDefault), field.Tag.Get("default"),
+		"struct tag `default` must match TriggerWaitTimeoutDefault")
+
+	require.Less(t, TriggerWaitTimeoutDefault, TriggerWaitTimeoutMax,
+		"default should be comfortably below the max, not equal to it")
+
+	// Mirrors internal/server/server.go's newHTTPServer WriteTimeout (5*time.Minute).
+	// If that value ever changes, this margin check must be revisited too.
+	const serverWriteTimeout = 5 * time.Minute
+	const requiredMargin = time.Minute
+	require.LessOrEqualf(t, time.Duration(TriggerWaitTimeoutMax)*time.Second, serverWriteTimeout-requiredMargin,
+		"TriggerWaitTimeoutMax must leave at least %s of margin under the server's WriteTimeout for request/dispatch overhead", requiredMargin)
 }
 
 func TestHumaTriggerRun_NoWaitReturnsPendingRun(t *testing.T) {

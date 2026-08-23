@@ -76,7 +76,7 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 		}
 	}
 	if err := c.transport.PostJSON(ctx, c.webhookURL, "application/json", body); err != nil {
-		return fmt.Errorf("%s: %s", c, notify.Redact(err.Error(), c.webhookURL))
+		return fmt.Errorf("%s: %w", c, notify.RedactError(err, c.webhookURL))
 	}
 	return nil
 }
