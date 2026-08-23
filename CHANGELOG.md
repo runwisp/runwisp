@@ -22,18 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The config JSON Schema for `stop_signal` now accepts the short forms** (`TERM`, `INT`, `KILL`, ...) the daemon already did, so editor validation stops flagging configs that were always valid.
 - **The unread notification badge now updates across other open tabs/sessions** when a mutation (e.g. mark-all-read) changes the count without shipping a notification.
 - **`POST /api/tasks/{taskName}/run?wait=true`'s `waitTimeout` is now capped at 240s (default 120s, down from 3600s/300s)**, so a long wait can no longer outlive the server's 5-minute write timeout and drop the response after the run had already finished.
-- **Sorting runs by duration (`sortField=duration`) now actually sorts by duration** instead of leaving every row at a fallback of zero.
-- **Two `runwisp daemon` processes started against the same data dir can no longer both proceed** — ownership is now claimed with an atomic OS-level lock instead of a read-then-write PID file.
+- **Sorting runs by duration (`sortField=duration`) returns them in the correct order** instead of a fallback that treated every run's duration as zero.
+- **Two `runwisp daemon` processes started against the same data dir can no longer both proceed** — ownership is now claimed atomically instead of via a racy PID-file check.
 - **A cron day-of-week field using a bare `7` with a step (e.g. `7/2`) now always means Sunday alone**, instead of the step wrapping into other days.
 - **Daemon shutdown no longer hangs on an unresponsive Docker/Podman engine** during container or compose task cleanup.
 - **A run's log output from just before a rotation is no longer deleted the instant the run ends** — it stays available until the run itself is purged by retention.
 - **Viewing log lines from before a run's most recent log rotation now returns their actual content** instead of coming back empty.
 - **The unread notification count no longer drifts out of sync** — it's taken directly from the server on every event instead of computed from local deltas.
 - **A failed log fetch now shows as an error in the log viewer** instead of silently rendering as if the run produced no output.
-- **Logging out mid-session now stops the daemon's SSE streams immediately** instead of letting them keep applying pushed updates underneath the login screen.
-- **Reloading a task away from `on_overlap = "queue"` no longer leaves its queued runs stuck forever** with a leaked drain goroutine.
+- **Logging out mid-session now disconnects the live event stream immediately** instead of letting it keep applying pushed updates behind the login screen.
+- **Reloading a task away from `on_overlap = "queue"` no longer leaves its already-queued runs stuck pending forever.**
 - **The daemon's identity fingerprint no longer changes when the binary is moved or the hostname changes** — only the machine ID and working directory are hashed.
-- **Notify channel shutdown is safer**: closing a coalescing channel no longer races its in-flight window-close summary, a panicking channel no longer takes down the dispatcher, and redacted delivery errors keep their underlying type so shutdown can still recognize `context.Canceled`.
 
 ### Security
 
@@ -42,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Control-plane dispatch is validated and bounded at the boundary** — peer-supplied shell `umask`/interpreter are re-validated, log-search size and the ephemeral dispatch queue are capped, and running the control-plane connection over plaintext (`RUNWISP_CLOUD_ALLOW_INSECURE`) now warns loudly at startup.
 - **`allow_cloud_dispatch` now also gates HTTP-type ad-hoc dispatch and cloud-created services**, not just shell/container/compose — HTTP still makes a peer-directed network call, so it's no longer exempt from the opt-in.
 - **Log search runs under a request deadline.** Internal safeguard with no configuration changes.
+- **A shutdown race and a panic risk in the notification retry/coalescing path are fixed.** Internal safeguard with no configuration changes.
 
 ### Changed
 
