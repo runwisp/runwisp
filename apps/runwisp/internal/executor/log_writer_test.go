@@ -234,9 +234,10 @@ func TestLogWriter_DropOldRotation(t *testing.T) {
 	data, err := os.ReadFile(opts.LogPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "latest output")
-	// The rotated-away segment should be cleaned up by Close.
+	// The rotated-away segment must survive Close(): retention owns its
+	// lifecycle (deleted when the run itself is purged), not the writer.
 	_, err = os.Stat(logutil.PrevPath(opts.LogPath))
-	assert.True(t, os.IsNotExist(err))
+	assert.NoError(t, err, ".log.prev must survive Close() so it stays viewable/downloadable until retention purges the run")
 	// The container should record rotation info.
 	meta := logutil.ReadLogMeta(opts.LogPath)
 	assert.True(t, meta.Finalized)

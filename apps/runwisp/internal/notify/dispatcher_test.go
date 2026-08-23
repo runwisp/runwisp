@@ -144,6 +144,44 @@ func TestDispatcher_ContextCancelDoesNotSurfaceFailure(t *testing.T) {
 	assert.Empty(t, sink.Captured(), "ctx cancel must not be surfaced as a delivery failure")
 }
 
+// TestDispatcher_RedactErrorPreservesCancelDetection is the regression test
+// for the RedactError bug: channels used to build their returned error with
+// fmt.Errorf("%s: %s", ..., Redact(err.Error(), secret)), which stringifies
+// the cause and breaks the Unwrap() chain. errors.Is(err, context.Canceled)
+// then could never see through to the real cause, so a channel interrupted by
+// shutdown looked like a permanent failure. RedactError wraps with %w so the
+// chain survives redaction.
+func TestDispatcher_RedactErrorPreservesCancelDetection(t *testing.T) {
+	wrapped := RedactError(context.Canceled, "super-secret-token")
+	require.True(t, errors.Is(wrapped, context.Canceled),
+		"RedactError must preserve Unwrap() so errors.Is still finds context.Canceled")
+
+	released := make(chan struct{})
+	a := &executeChannel{
+		id: "slack:ops",
+		execFn: func(ctx context.Context, _ *Event) error {
+			<-ctx.Done()
+			close(released)
+			return RedactError(ctx.Err(), "super-secret-token")
+		},
+	}
+	channels := map[string]Channel{a.id: a}
+	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slack:ops"}}}, channels)
+	sink := &recordingFailureSink{}
+	d := newDispatcher(router, channels, 4, RealClock(), sink, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	d.startWorkers(ctx)
+	d.dispatch(&Event{Kind: KindRunFailed})
+	require.Eventually(t, func() bool { return a.hits.Load() == 1 }, time.Second, 10*time.Millisecond)
+	cancel()
+	<-released
+	d.closeQueues()
+	d.waitWorkers()
+	assert.Empty(t, sink.Captured(),
+		"a RedactError-wrapped context.Canceled must still be recognized as shutdown, not surfaced as a delivery failure")
+}
+
 func TestDispatcher_DropsOldestWhenQueueFull(t *testing.T) {
 	release := make(chan struct{})
 	startedFirst := make(chan struct{})

@@ -134,9 +134,40 @@
 
     let logConsole = $state<{ onStream: (event: LogEvent) => void } | null>(null);
 
+    // Message from the most recent seed-fetch failure (session expiry, daemon
+    // restart mid-request, ...), surfaced to LogConsole instead of letting a
+    // failed fetch render as an indistinguishable blank "no output" pane.
+    let logFetchError = $state<string | null>(null);
+
     // Derive a stable scalar so the effect only re-runs when the id actually
     // changes, not on every run object reference swap from SSE array updates.
     let runId = $derived(run?.id);
+
+    // Fetches the batched tail page a run's console opens on (see the effect
+    // below) and paints it into the console. Resolves the line the live
+    // stream should resume from, or null when there's nothing left to stream
+    // (the run already ended, or the caller cancelled while we were waiting).
+    // A failed fetch still falls back to an SSE tail backfill from scratch —
+    // it does not stop the console from live-tailing — but records the
+    // failure so LogConsole can show it instead of looking like a quiet run.
+    async function seedConsoleTail(
+        id: string,
+        isCancelled: () => boolean,
+    ): Promise<{ fromLine: number } | null> {
+        try {
+            const seed = await fetchLogs(id, -TAIL_LINES, -1);
+            if (isCancelled()) return null;
+            if (!isLogEvent(seed)) return { fromLine: -TAIL_LINES };
+            if (logConsole) logConsole.onStream(seed);
+            return seed.finished // ended run: nothing live to follow
+                ? null
+                : { fromLine: seed.sizeLines > 0 ? seed.sizeLines : -TAIL_LINES };
+        } catch (err) {
+            if (isCancelled()) return null;
+            logFetchError = err instanceof Error ? err.message : "Failed to load logs";
+            return { fromLine: -TAIL_LINES };
+        }
+    }
 
     $effect(() => {
         const id = runId;
@@ -144,6 +175,8 @@
 
         const stream = streamLogs;
         if (!stream) return;
+
+        logFetchError = null;
 
         let cleanup: (() => void) | undefined;
         let cancelled = false;
@@ -156,25 +189,14 @@
                 // the end. The live stream then picks up after the seeded tail
                 // (its disk backfill from that anchor closes the fetch↔stream
                 // race, and the daemon dedupes anything already shown).
-                let fromLine = -TAIL_LINES;
-                try {
-                    const seed = await fetchLogs(id, -TAIL_LINES, -1);
-                    if (cancelled) return;
-                    if (isLogEvent(seed)) {
-                        if (logConsole) logConsole.onStream(seed);
-                        if (seed.finished) return; // ended run: nothing live to follow
-                        if (seed.sizeLines > 0) fromLine = seed.sizeLines;
-                    }
-                } catch {
-                    // Seed failed — fall back to the SSE tail backfill.
-                }
-                if (cancelled) return;
+                const seeded = await seedConsoleTail(id, () => cancelled);
+                if (cancelled || !seeded) return;
                 cleanup = stream(
                     id,
                     (event: LogEvent) => {
                         if (logConsole) logConsole.onStream(event);
                     },
-                    { fromLine },
+                    { fromLine: seeded.fromLine },
                 );
             })();
         });
@@ -763,6 +785,7 @@
                     {highlightLine}
                     {endLabel}
                     {endTone}
+                    error={logFetchError}
                 />
             {/key}
         </div>

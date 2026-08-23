@@ -359,6 +359,64 @@ func TestComposeBackend_Start_CleanupRemovesInstance(t *testing.T) {
 	assert.Contains(t, calls, "rm -f live456")
 }
 
+// TestComposeBackend_CleanupBoundedWhenDockerHangs pins the fix for the
+// shutdown-hang bug: Process.Cleanup used to run `docker ps`/`docker rm -f` on
+// context.Background(), so a hung (not merely unreachable — that fails fast)
+// Docker/Podman engine could block the daemon shutdown coordinator's
+// ForceKill goroutine forever. Cleanup must bound those calls with
+// composeCleanupTimeout — shrunk here so the test doesn't wait out the real
+// production duration — so a shim that never returns from `rm -f` still lets
+// Cleanup return promptly instead of blocking for the full hang.
+func TestComposeBackend_CleanupBoundedWhenDockerHangs(t *testing.T) {
+	original := composeCleanupTimeout
+	composeCleanupTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { composeCleanupTimeout = original })
+
+	dir := t.TempDir()
+	counter := filepath.Join(dir, "ps.count")
+	body := "#!/bin/sh\n" +
+		"if [ \"$1\" = \"ps\" ]; then\n" +
+		"  n=$(cat '" + counter + "' 2>/dev/null || echo 0)\n" +
+		"  n=$((n+1))\n" +
+		"  echo $n > '" + counter + "'\n" +
+		"  if [ \"$n\" = \"1\" ]; then\n" +
+		"    exit 0\n" + // reclaim-on-start: nothing to reclaim yet
+		"  fi\n" +
+		"  printf '%s' 'abc123'\n" + // cleanup's ps discovers the leftover container
+		"  exit 0\n" +
+		"fi\n" +
+		"if [ \"$1\" = \"rm\" ]; then\n" +
+		"  sleep 30\n" + // simulate a hung engine
+		"  exit 0\n" +
+		"fi\n" +
+		"exit 0\n"
+	installDockerShimScript(t, dir, body)
+
+	b := &ComposeBackend{dockerCmd: "docker", fingerprint: "fp-test"}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", ProjectName: "demo", Service: "web", Mode: model.ComposeModeRun}
+	task := &model.Task{Name: "boxes.web"}
+
+	proc, err := b.Start(context.Background(), task, &model.Run{InstanceIndex: 0}, ce)
+	require.NoError(t, err)
+	go drain(proc.Stdout)
+	go drain(proc.Stderr)
+	proc.Wait()
+
+	require.NotNil(t, proc.Cleanup, "services-mode Process must carry a Cleanup")
+
+	done := make(chan struct{})
+	go func() {
+		proc.Cleanup()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Cleanup blocked on a hung `docker rm -f` — the bounded context did not fire")
+	}
+}
+
 // TestComposeBackend_Start_StackModeNoReclaimOrCleanup confirms stack mode
 // neither reclaims nor sets a Cleanup — compose owns those container lifecycles.
 func TestComposeBackend_Start_StackModeNoReclaimOrCleanup(t *testing.T) {

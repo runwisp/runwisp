@@ -61,10 +61,15 @@ func startCloudClient(
 	}
 
 	if cloudClient != nil {
-		cloudClient.RecoverArchiveBacklog(cloudCtx)
 		cloudWG.Add(1)
 		go func() {
 			defer cloudWG.Done()
+			// Backlog recovery does real HTTP PUTs (up to 90s each) against the
+			// cloud peer; running it here (not before srv.Start) means a slow or
+			// unreachable peer can never delay the UI/API from becoming
+			// available. cloudCtx cancellation (on shutdown) unblocks it the same
+			// way it unblocks Run below.
+			cloudClient.RecoverArchiveBacklog(cloudCtx)
 			if runErr := cloudClient.Run(cloudCtx); runErr != nil {
 				slog.Error("Cloud integration stopped", "err", runErr)
 			}

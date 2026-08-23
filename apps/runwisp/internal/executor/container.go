@@ -30,6 +30,15 @@ var allowedVolumePrefixes = []string{
 	"/tmp",
 }
 
+// containerCleanupTimeout bounds the ContainerRemove/ImageRemove calls made
+// from Process.Cleanup. Cleanup runs in the same goroutine the daemon shutdown
+// coordinator waits on after ForceKill has already unblocked it; without a
+// deadline a hung (not merely unreachable — that fails fast) Docker/Podman
+// engine would stall shutdown indefinitely even though the process itself is
+// already dead. A var (not const) so tests can shrink it instead of waiting
+// out the real 10s to prove the deadline fires.
+var containerCleanupTimeout = 10 * time.Second
+
 // validateVolumeMount rejects host paths that are not under an allowed prefix.
 // Symlinks are resolved to prevent bypass via indirection.
 func validateVolumeMount(hostPath string) error {
@@ -213,8 +222,10 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, run *mod
 		Cleanup: func() {
 			closeDone()
 			attachResp.Close()
-			b.removeContainer(context.Background(), containerID)
-			b.builder.Remove(context.Background(), imageTag)
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), containerCleanupTimeout)
+			defer cancel()
+			b.removeContainer(cleanupCtx, containerID)
+			b.builder.Remove(cleanupCtx, imageTag)
 		},
 	}, nil
 }

@@ -115,6 +115,44 @@ func TestEnforceMaxTotalSize_SubtractsPrevSegment(t *testing.T) {
 	repo.AssertNotCalled(t, "DeleteRun", mock.Anything, newest.ID)
 }
 
+// The log file must be removed before the DB row is deleted — a lingering
+// log-less "ghost" row is treated as benign (indistinguishable from a
+// legitimate no-log run) while an orphaned log file is an unidentifiable,
+// unreclaimable disk leak that stays counted against the size cap forever.
+// This is a deliberate divergence from cleanOldRuns/softdelete_purger.purge
+// (which delete the row first): do not "fix" it into consistency with them.
+func TestEnforceMaxTotalSize_DeletesLogFileBeforeDBRow(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	logDir := t.TempDir()
+	now := time.Now()
+
+	runID := ulid.Make().String()
+	logPath := logutil.ResolveRunLogPath(logDir, "task1", runID, now)
+	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0755))
+	require.NoError(t, os.WriteFile(logPath, make([]byte, 200), 0644))
+
+	run := model.Run{ID: runID, TaskName: "task1", CreatedAt: now, Status: model.PhaseEnded}
+
+	enforceQuery := storage.RunQuery{
+		Limit:         100,
+		Offset:        0,
+		SortField:     storage.SortColumnCreatedAt,
+		SortDirection: storage.SortAsc,
+	}
+	repo.On("QueryRuns", mock.Anything, enforceQuery).Return([]model.Run{run}, nil).Once()
+	repo.On("QueryRuns", mock.Anything, enforceQuery).Return([]model.Run{}, nil)
+	repo.On("DeleteRun", mock.Anything, runID).Run(func(mock.Arguments) {
+		// The log file must already be gone by the time the DB delete happens.
+		_, err := os.Stat(logPath)
+		assert.True(t, os.IsNotExist(err), "log file must already be removed when DeleteRun is called")
+	}).Return(nil)
+
+	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 100)
+	cleaner.enforceMaxTotalSize(context.Background())
+
+	repo.AssertCalled(t, "DeleteRun", mock.Anything, runID)
+}
+
 func TestEnforceMaxTotalSize_PrunesOldestTerminalRun(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	logDir := t.TempDir()

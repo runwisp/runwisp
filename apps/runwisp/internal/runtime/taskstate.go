@@ -147,7 +147,7 @@ func (m *defaultTaskManager) queueProcessLoop(taskName string) {
 	defer func() { ts.queueDraining = false }()
 	for {
 		for len(ts.queue) == 0 || len(ts.active) >= m.getConcurrencyLimit(ts.task) {
-			if m.isShutdown.Load() || ts.removed {
+			if m.isShutdown.Load() || ts.removed || ts.task.OnOverlap != model.PolicyQueue {
 				return
 			}
 			ts.cond.Wait()
@@ -157,8 +157,12 @@ func (m *defaultTaskManager) queueProcessLoop(taskName string) {
 		// Starting a run here would happen after the single cancel pass, leaving
 		// its context live forever — an orphaned process and a drain that never
 		// completes. The check is race-free under m.mu: the flag is set before
-		// the lock is taken for the cancel+broadcast pass.
-		if m.isShutdown.Load() || ts.removed {
+		// the lock is taken for the cancel+broadcast pass. ts.task.OnOverlap is
+		// read under the same lock UpsertTask holds when it swaps in a reloaded
+		// definition, so a reload that flips the policy away from queue is
+		// observed here too — otherwise this goroutine would idle forever,
+		// woken by every retireRun signal but never draining anything.
+		if m.isShutdown.Load() || ts.removed || ts.task.OnOverlap != model.PolicyQueue {
 			return
 		}
 		run := ts.queue[0]

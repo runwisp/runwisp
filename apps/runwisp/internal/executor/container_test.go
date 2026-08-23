@@ -782,6 +782,61 @@ func TestBuildContainerConfigPortDefaultProtocol(t *testing.T) {
 	assert.True(t, hasBinding)
 }
 
+// TestCleanupBoundedWhenDockerHangs pins the fix for the shutdown-hang bug:
+// Process.Cleanup used to call ContainerRemove/ImageRemove on
+// context.Background(), so a hung (not merely unreachable) Docker/Podman
+// engine could block the daemon shutdown coordinator's ForceKill goroutine
+// forever. Cleanup must now bound those calls with containerCleanupTimeout,
+// so a client that only returns once its context is cancelled still unblocks
+// Cleanup promptly. The timeout is shrunk for the test so it doesn't wait out
+// the real production duration.
+func TestCleanupBoundedWhenDockerHangs(t *testing.T) {
+	original := containerCleanupTimeout
+	containerCleanupTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { containerCleanupTimeout = original })
+
+	removeSawCancellation := make(chan struct{}, 1)
+	mock := &mockDockerClient{
+		imageBuildFunc: func(ctx context.Context, _ io.Reader, _ client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{Body: io.NopCloser(strings.NewReader(`{"stream":"ok"}`))}, nil
+		},
+		containerAttachFunc: func(ctx context.Context, _ string, _ client.ContainerAttachOptions) (client.ContainerAttachResult, error) {
+			return newHijackedResponse(""), nil
+		},
+		containerRemoveFunc: func(ctx context.Context, _ string, _ client.ContainerRemoveOptions) (client.ContainerRemoveResult, error) {
+			// A hung engine: only returns once the caller's context gives up.
+			<-ctx.Done()
+			removeSawCancellation <- struct{}{}
+			return client.ContainerRemoveResult{}, ctx.Err()
+		},
+	}
+	b := NewContainerBackendFromClient(mock)
+
+	proc, err := b.Start(context.Background(), &model.Task{}, nil, &model.ContainerExecution{
+		Script:    "echo test",
+		BaseImage: "alpine",
+	})
+	require.NoError(t, err)
+
+	done := make(chan struct{})
+	go func() {
+		proc.Cleanup()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Cleanup blocked forever against a hung Docker client — the bounded context did not fire")
+	}
+
+	select {
+	case <-removeSawCancellation:
+	default:
+		t.Fatal("ContainerRemove never observed its context being cancelled")
+	}
+}
+
 func TestRemoveContainerLogsError(t *testing.T) {
 	called := false
 	mock := &mockDockerClient{

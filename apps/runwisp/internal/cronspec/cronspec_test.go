@@ -75,6 +75,12 @@ func TestSundayIsSeven(t *testing.T) {
 		{name: "range 1-7 is every day", spec: "0 3 * * 1-7", equiv: "0 3 * * *"},
 		{name: "range 0-7 is every day", spec: "0 3 * * 0-7", equiv: "0 3 * * *"},
 		{name: "range with a step", spec: "0 3 * * 5-7/2", equiv: "0 3 * * 0,5"},
+		// A bare 7 is already vixie's field max, so no step can ever add a value
+		// beyond Sunday itself — this must resolve to Sunday only, not wrap around
+		// into other days under robfig's 0-6 bounds.
+		{name: "bare 7 with a step", spec: "0 3 * * 7/2", equiv: "0 3 * * 0"},
+		{name: "bare 7 with a step of 1", spec: "0 3 * * 7/1", equiv: "0 3 * * 0"},
+		{name: "list with a stepped 7", spec: "0 3 * * 1,7/3", equiv: "0 3 * * 0,1"},
 		{name: "six-field form", spec: "30 47 6 * * 7", equiv: "30 47 6 * * 0"},
 		{name: "with a CRON_TZ prefix", spec: "CRON_TZ=UTC 47 6 * * 7", equiv: "CRON_TZ=UTC 47 6 * * 0"},
 		// The rewrite must not reach any other field, nor a step of 7.

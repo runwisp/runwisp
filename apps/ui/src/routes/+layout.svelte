@@ -38,7 +38,16 @@
 
     $effect(() => {
         const status = authStore.current;
-        if (!status.loaded || !status.authenticated) return;
+        if (!status.loaded || !status.authenticated) {
+            // A mid-session logout (401 on any REST call flips authStore to
+            // unauthenticated) re-runs this effect into this branch. Without
+            // tearing the stores down here they keep applying SSE-pushed state
+            // underneath the auth modal until the whole page unmounts.
+            runUpdatesStore.disconnect();
+            notificationStore.disconnect();
+            systemStore.disconnect();
+            return;
+        }
 
         runUpdatesStore.connect();
         void taskStore.loadIfNeeded();

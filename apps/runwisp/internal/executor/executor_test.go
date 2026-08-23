@@ -383,11 +383,12 @@ func newTestExecutor(t *testing.T, opts Options) *RoutingExecutor {
 	return e
 }
 
-func TestRoutingExecutor_Availability_DefaultsHTTPOnly(t *testing.T) {
+func TestRoutingExecutor_Availability_DefaultsConfigOnly(t *testing.T) {
 	e := newTestExecutor(t, Options{})
 	avail := e.Availability()
 
-	assert.True(t, avail.HTTP.Available, "HTTP dispatch is allowed without the opt-in")
+	assert.False(t, avail.HTTP.Available, "HTTP dispatch requires the opt-in")
+	assert.NotEmpty(t, avail.HTTP.Reason)
 	assert.False(t, avail.Shell.Available, "shell defaults to unavailable when cloud dispatch is disabled")
 	assert.NotEmpty(t, avail.Shell.Reason)
 	assert.False(t, avail.Container.Available, "container defaults to unavailable when cloud dispatch is disabled")
@@ -397,7 +398,9 @@ func TestRoutingExecutor_Availability_DefaultsHTTPOnly(t *testing.T) {
 
 func TestRoutingExecutor_Availability_CloudDispatchEnabled(t *testing.T) {
 	e := newTestExecutor(t, Options{CloudDispatchEnabled: true})
-	assert.True(t, e.Availability().Shell.Available)
+	avail := e.Availability()
+	assert.True(t, avail.HTTP.Available)
+	assert.True(t, avail.Shell.Available)
 }
 
 // TestRoutingExecutor_Availability_ContainerGatedOnDispatch proves the opt-in,

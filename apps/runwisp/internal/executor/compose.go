@@ -26,6 +26,15 @@ import (
 // payoff to a longer wait.
 const composeAvailableTimeout = 2 * time.Second
 
+// composeCleanupTimeout bounds the `docker ps`/`docker rm -f` calls made from
+// Process.Cleanup (via removeManagedInstance). Cleanup runs in the same
+// goroutine the daemon shutdown coordinator waits on after ForceKill has
+// already unblocked it; without a deadline a hung (not merely unreachable —
+// that fails fast) Docker/Podman engine would stall shutdown indefinitely even
+// though the process itself is already dead. A var (not const) so tests can
+// shrink it instead of waiting out the real 10s to prove the deadline fires.
+var composeCleanupTimeout = 10 * time.Second
+
 // composeExecShell is the interpreter exec-mode hands the script to *inside the
 // target container*. It is not the daemon's `shell` setting: that key is
 // rejected on compose-backed units because it configures a host process, and
@@ -136,7 +145,9 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 	if ce.Mode == model.ComposeModeRun {
 		taskName := task.Name
 		proc.Cleanup = func() {
-			b.removeManagedInstance(context.Background(), taskName, instanceIndex)
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), composeCleanupTimeout)
+			defer cancel()
+			b.removeManagedInstance(cleanupCtx, taskName, instanceIndex)
 		}
 	}
 

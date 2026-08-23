@@ -136,8 +136,8 @@ run.
         #### Long-running tasks: trigger, then poll
 
         `wait=true` blocks for up to `wait_timeout` seconds (default
-        `300`); if the run hasn't finished by then the call returns it
-        still `running` rather than hanging forever. For tasks that
+        `120`, capped at `240`); if the run hasn't finished by then the
+        call returns it still `running` rather than hanging forever. For tasks that
         outlast a sensible HTTP timeout — yours or your reverse
         proxy's — skip `wait`, take the run `id` the trigger returns,
         and poll it on your own schedule:

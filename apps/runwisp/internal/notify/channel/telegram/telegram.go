@@ -97,7 +97,7 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 
 	endpoint := fmt.Sprintf("%s/bot%s/sendMessage", c.apiBase, c.botToken)
 	if err := c.transport.PostJSON(ctx, endpoint, "application/x-www-form-urlencoded", []byte(form.Encode())); err != nil {
-		return fmt.Errorf("%s: %s", c, notify.Redact(err.Error(), c.botToken))
+		return fmt.Errorf("%s: %w", c, notify.RedactError(err, c.botToken))
 	}
 	return nil
 }

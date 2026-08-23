@@ -18,6 +18,25 @@ type TaskNameInput struct {
 	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
 }
 
+// TriggerWaitTimeoutMax and TriggerWaitTimeoutDefault back the waitTimeout
+// field's huma `maximum`/`default` struct tags below. Struct tags are string
+// literals, so a tag edit can't reference these constants directly — they're
+// kept in sync by hand, guarded by TestTriggerRunInput_WaitTimeoutBounds.
+const (
+	// TriggerWaitTimeoutMax must stay safely under the HTTP server's 5-minute
+	// WriteTimeout (internal/server/server.go), with real margin for request/
+	// dispatch overhead. The wait=true handler makes exactly one JSON write,
+	// after blocking for up to waitTimeout seconds, on a plain
+	// (non-streaming) response whose write deadline is set once — when
+	// headers finish being read — and never refreshed afterward. Wait too
+	// close to (or past) WriteTimeout and that final write fails with an i/o
+	// timeout even though the triggered run completed successfully.
+	TriggerWaitTimeoutMax = 240
+	// TriggerWaitTimeoutDefault is a shorter, comfortable default for a
+	// "trigger and wait a bit" convenience call.
+	TriggerWaitTimeoutDefault = 120
+)
+
 // TriggerRunInput drives POST /api/tasks/{taskName}/run. With wait=false
 // (default) it returns immediately with the pending run; with wait=true the
 // request blocks until the run finishes so a single call yields its exit code.
@@ -28,7 +47,7 @@ type TaskNameInput struct {
 type TriggerRunInput struct {
 	TaskName    string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
 	Wait        bool   `query:"wait" doc:"Block until the run finishes and return the completed run (with exitCode and endReason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead."`
-	WaitTimeout int    `query:"waitTimeout" minimum:"1" maximum:"3600" default:"300" doc:"With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state."`
+	WaitTimeout int    `query:"waitTimeout" minimum:"1" maximum:"240" default:"120" doc:"With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout (with margin for request/dispatch overhead) since the response is a single write made after the full wait elapses. On timeout the run keeps running and the response returns it in its current (non-terminal) state."`
 	// Body is a pointer so it is optional — a zero-param trigger can POST with
 	// no payload at all.
 	Body *struct {
