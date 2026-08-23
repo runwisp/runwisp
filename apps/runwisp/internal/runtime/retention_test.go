@@ -115,12 +115,13 @@ func TestEnforceMaxTotalSize_SubtractsPrevSegment(t *testing.T) {
 	repo.AssertNotCalled(t, "DeleteRun", mock.Anything, newest.ID)
 }
 
-// The DB row must be deleted before the log file is removed from disk — a
-// SIGKILL between the two steps should leave an orphaned log file (harmless)
-// rather than a DB row pointing at a deleted log. Assert order by checking
-// the log file still exists at the moment DeleteRun is invoked, and is gone
-// only afterward.
-func TestEnforceMaxTotalSize_DeletesDBRowBeforeLogFile(t *testing.T) {
+// The log file must be removed before the DB row is deleted — a lingering
+// log-less "ghost" row is treated as benign (indistinguishable from a
+// legitimate no-log run) while an orphaned log file is an unidentifiable,
+// unreclaimable disk leak that stays counted against the size cap forever.
+// This is a deliberate divergence from cleanOldRuns/softdelete_purger.purge
+// (which delete the row first): do not "fix" it into consistency with them.
+func TestEnforceMaxTotalSize_DeletesLogFileBeforeDBRow(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	logDir := t.TempDir()
 	now := time.Now()
@@ -141,17 +142,15 @@ func TestEnforceMaxTotalSize_DeletesDBRowBeforeLogFile(t *testing.T) {
 	repo.On("QueryRuns", mock.Anything, enforceQuery).Return([]model.Run{run}, nil).Once()
 	repo.On("QueryRuns", mock.Anything, enforceQuery).Return([]model.Run{}, nil)
 	repo.On("DeleteRun", mock.Anything, runID).Run(func(mock.Arguments) {
-		// The log file must still be on disk when the DB delete happens.
+		// The log file must already be gone by the time the DB delete happens.
 		_, err := os.Stat(logPath)
-		assert.NoError(t, err, "log file must still exist when DeleteRun is called")
+		assert.True(t, os.IsNotExist(err), "log file must already be removed when DeleteRun is called")
 	}).Return(nil)
 
 	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 100)
 	cleaner.enforceMaxTotalSize(context.Background())
 
 	repo.AssertCalled(t, "DeleteRun", mock.Anything, runID)
-	_, err := os.Stat(logPath)
-	assert.True(t, os.IsNotExist(err), "log file must be removed after DeleteRun succeeds")
 }
 
 func TestEnforceMaxTotalSize_PrunesOldestTerminalRun(t *testing.T) {

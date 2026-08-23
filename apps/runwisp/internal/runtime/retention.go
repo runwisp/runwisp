@@ -158,30 +158,24 @@ func (cleaner *RetentionCleaner) deleteRunBatch(ctx context.Context, runs []mode
 			continue
 		}
 		logPath := logutil.ResolveRunLogPath(cleaner.logDir, run.TaskName, run.ID, run.CreatedAt)
-		var freed int64
 		if info, statErr := os.Stat(logPath); statErr == nil {
-			freed += info.Size()
+			*totalSize -= info.Size()
 		}
 		if info, statErr := os.Stat(logutil.MetaPath(logPath)); statErr == nil {
-			freed += info.Size()
+			*totalSize -= info.Size()
 		}
 		// RemoveLogFiles also deletes the rotated-away .prev segment, and the
 		// initial dirSize counted it — subtract it too or the tracked total
 		// stays high and the loop over-deletes runs.
 		if info, statErr := os.Stat(logutil.PrevPath(logPath)); statErr == nil {
-			freed += info.Size()
+			*totalSize -= info.Size()
 		}
-		// Delete the DB row before the log file (matching cleanOldRuns and
-		// softdelete_purger.purge): a SIGKILL between the two steps leaves an
-		// orphaned log file (harmless) rather than a DB row pointing at a
-		// deleted log (a "ghost" the operator can click into and get an error).
+		logutil.RemoveLogFiles(logPath)
+		logutil.RemoveEmptyParents(logPath, cleaner.logDir)
 		if err := cleaner.db.DeleteRun(ctx, run.ID); err != nil {
 			slog.Warn("Failed to delete run during size enforcement", "id", run.ID, "err", err)
 			continue
 		}
-		*totalSize -= freed
-		logutil.RemoveLogFiles(logPath)
-		logutil.RemoveEmptyParents(logPath, cleaner.logDir)
 		deleted++
 		if *totalSize <= cleaner.maxTotalSize {
 			break
