@@ -527,7 +527,7 @@ function canShare(): boolean {
 }
 
 function defaultCreateBus(name: string): SharedBus {
-    if (typeof BroadcastChannel === "undefined") {
+    if (!canShare()) {
         return { post: () => {}, onMessage: () => {}, close: () => {} };
     }
     const channel = new BroadcastChannel(name);

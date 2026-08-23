@@ -21,6 +21,7 @@
     }
 
     import { portal } from "../actions/portal.js";
+    import { trapFocus } from "../actions/focusTrap.js";
 
     let {
         open = $bindable(false),
@@ -79,6 +80,7 @@
         {/if}
 
         <div
+            use:trapFocus
             class="
 				relative z-10 w-full {sizeClasses[size]}
 				flex max-h-[90vh] flex-col

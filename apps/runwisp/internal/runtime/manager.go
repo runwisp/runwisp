@@ -205,6 +205,21 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 			m.wg.Add(1)
 			go m.queueProcessLoop(task.Name)
 		}
+	} else if ts.cond != nil {
+		// A reload (or any other UpsertTask caller) just flipped this task off
+		// queue policy. queueProcessLoop only ever pops ts.queue for itself and
+		// only re-checks the policy around a cond.Wait() — with nothing left to
+		// signal it, a goroutine already parked there (or any run still waiting
+		// in ts.queue) would sit forever: the loop never gets a chance to observe
+		// the new policy and exit, and any queued runs would stay persisted as
+		// 'pending' with no goroutine left to start or finalize them. Finalize
+		// whatever is queued the same way RemoveTask does, then broadcast
+		// unconditionally so a loop parked on an already-empty queue wakes too.
+		for _, r := range ts.queue {
+			m.endOrphanedPending(r)
+		}
+		ts.queue = nil
+		ts.cond.Broadcast()
 	}
 }
 
@@ -526,7 +541,26 @@ func (m *defaultTaskManager) ScheduleJitteredRun(taskName string, tick, slot tim
 // trigger (shutdown) or a policy-rejected run is reported as not started and
 // never tracked. Called by the gate under its own lock; TriggerRunWithOptions
 // re-acquires the manager lock beneath it.
+//
+// A fire can sit in the gate's pending queue for a while (waiting for the gate
+// to free or for its slot to breach), and a cron hold can newly apply to the
+// task in that window: RefreshCronHolds unregisters the task from the live
+// scheduler, but has no way to reach into the gate and cancel a fire already
+// submitted for it. Without this check the stale fire runs anyway once the
+// gate frees up — starting a RunWisp-triggered run for a tick that a system
+// cron daemon, now live again, is also about to run itself, which is exactly
+// the double-execution the hold exists to prevent. Removed tasks are refused
+// the same way; only the automatic gate path is guarded — manual/API triggers
+// of a held task are still allowed by design.
 func (m *defaultTaskManager) triggerJittered(taskName string, tick time.Time) (string, bool) {
+	m.mu.RLock()
+	ts, exists := m.tasks[taskName]
+	stale := !exists || ts.removed || ts.task.Held()
+	m.mu.RUnlock()
+	if stale {
+		return "", false
+	}
+
 	run, err := m.TriggerRunWithOptions(taskName, TriggerRunOptions{
 		TriggeredBy: model.TriggeredByCron,
 		ScheduledAt: tick,

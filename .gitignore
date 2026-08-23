@@ -47,3 +47,6 @@ npm-debug.log*
 .worktrees/
 
 .scannerwork
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

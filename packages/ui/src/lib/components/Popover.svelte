@@ -8,6 +8,7 @@
     import { computePosition, autoUpdate, flip, shift, offset } from "@floating-ui/dom";
     import { fade } from "svelte/transition";
     import { portal } from "../actions/portal.js";
+    import { trapFocus } from "../actions/focusTrap.js";
 
     interface Props {
         open?: boolean;
@@ -144,6 +145,7 @@
         {/if}
         <div
             use:portal
+            use:trapFocus
             bind:this={contentEl}
             class="
                 z-[9999] max-h-[80vh] overflow-y-auto

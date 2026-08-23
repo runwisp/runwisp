@@ -345,9 +345,9 @@ func (b *ContainerBackend) removeContainer(ctx context.Context, containerID stri
 }
 
 func (b *ContainerBackend) buildContainerConfig(imageTag string, ctr *model.ContainerExecution, task *model.Task, run *model.Run) (*container.Config, *container.HostConfig) {
-	baseEnv := make([]string, 0, len(ctr.Env))
+	ctrEnv := make(map[string]string, len(ctr.Env))
 	for _, kv := range ctr.Env {
-		baseEnv = append(baseEnv, kv.Key+"="+kv.Value)
+		ctrEnv[kv.Key] = kv.Value
 	}
 	// Overlay Task.Env then Task.Secrets then any env-kind per-run params on top
 	// of the container-execution env so task-level entries (defined alongside
@@ -356,16 +356,22 @@ func (b *ContainerBackend) buildContainerConfig(imageTag string, ctr *model.Cont
 	// entrypoint is a fixed script, not an argv we control), so only env params
 	// reach a container run — container/HTTP backends aren't built from
 	// [tasks.*] TOML today, so this is forward-safety, not a reachable path.
+	//
+	// buildProcessEnv's first argument is meant to be the daemon's own OS
+	// environment, whose RUNWISP_-prefixed secrets it strips before a task
+	// inherits it. ctr.Env is a container execution's own declared vars, not
+	// the daemon's process env, so it must never go through that filter — it
+	// layers in as an ordinary map instead, same as the other layers.
 	var paramEnv map[string]string
-	if task != nil && run != nil {
-		paramEnv = model.ParamEnvLayer(task.Parameters, run.Params)
+	var taskEnv, taskSecrets map[string]string
+	if task != nil {
+		taskEnv = task.Env
+		taskSecrets = task.Secrets
+		if run != nil {
+			paramEnv = model.ParamEnvLayer(task.Parameters, run.Params)
+		}
 	}
-	var env []string
-	if task != nil && (len(task.Env) > 0 || len(task.Secrets) > 0 || len(paramEnv) > 0) {
-		env = buildProcessEnv(baseEnv, task.Env, task.Secrets, paramEnv)
-	} else {
-		env = baseEnv
-	}
+	env := buildProcessEnv(nil, ctrEnv, taskEnv, taskSecrets, paramEnv)
 
 	exposedPorts := network.PortSet{}
 	portBindings := network.PortMap{}

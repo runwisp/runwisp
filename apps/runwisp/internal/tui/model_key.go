@@ -669,10 +669,12 @@ func (m Model) handleLogSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleLogSearchSelect(msg logsearch.SelectMsg) (tea.Model, tea.Cmd) {
 	m.logSearch = nil
 	m.pendingHighlight = msg.Line
+	m.pendingHighlightRun = msg.RunID
 	if m.execView != nil && m.execView.Run != nil && m.execView.Run.ID == msg.RunID {
 		// Already open — jump immediately and clear the pending marker.
 		m.execView.Pane.JumpToLine(msg.Line)
 		m.pendingHighlight = 0
+		m.pendingHighlightRun = ""
 		return m, nil
 	}
 	return m, m.openRunByID(msg.TaskName, msg.RunID)

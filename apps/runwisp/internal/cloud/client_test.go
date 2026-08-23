@@ -444,6 +444,48 @@ func TestSendMessageQueueFull(t *testing.T) {
 	assert.Contains(t, ce.Message, "full")
 }
 
+// TestSessionClosed_AfterRunReturns_SendMessageFails is the regression test
+// for a reconnect-vs-teardown race: connectionManager.detachSession() only
+// runs after sessionRunner.run() returns to startSession, but by then
+// writeLoop (the only reader of session.outbound) is already dead. Any
+// caller racing that gap — EventBridge, which reacts to run events on its
+// own goroutine independent of the session lifecycle — would see
+// connectionManager still reporting ready+session, call sendMessage, and get
+// a nil error even though the message can never be delivered (nothing will
+// ever drain the channel). ExecutionTracker.QueueUpdate treats a nil error as
+// "delivered" and never buffers it for retry, so the update is silently lost.
+// This test proves sendMessage rejects sends on a session whose run() has
+// already returned, closing that window without needing to hit the race
+// timing directly.
+func TestSessionClosed_AfterRunReturns_SendMessageFails(t *testing.T) {
+	env := newTestEnv(t, func(conn *websocket.Conn) {
+		for {
+			if _, _, err := conn.Read(context.Background()); err != nil {
+				return
+			}
+		}
+	})
+	defer env.close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := env.client.dialWebSocket(ctx)
+	require.NoError(t, err)
+
+	session := &wsSession{conn: conn, outbound: make(chan []byte, 4)}
+	session.lastReceived.Store(time.Now().UnixMilli())
+
+	runCtx, runCancel := context.WithCancel(ctx)
+	runCancel() // simulate the session ending (e.g. peer drop) immediately
+
+	runErr := env.client.sessions.run(runCtx, session)
+	require.NoError(t, runErr)
+
+	sendErr := sendMessage(session, "late-update")
+	require.Error(t, sendErr, "sendMessage on a session whose run() already returned must fail, not silently queue into a dead channel")
+}
+
 // ---------- WebSocket URL derivation ----------
 
 func TestWebSocketURLDerivation(t *testing.T) {

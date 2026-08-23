@@ -565,66 +565,81 @@ func TestScheduleLogReconnect_ProducesTickCmd(t *testing.T) {
 
 // ─── execConfirmCmd ──────────────────────────────────────────────────────────
 
-func TestExecConfirmCmd_NilResultDismissesIfClosed(t *testing.T) {
+// TestExecConfirmCmd_DoesNotInvokeCmdSynchronously is the regression test for
+// the TUI-freeze bug: execConfirmCmd used to call cmd() inline on the Update
+// goroutine to inspect its result, which blocks the whole event loop (no
+// repaint, no key handling) for as long as a network-calling confirm callback
+// (trigger/restart/stop run, ...) takes. It must now hand the cmd back
+// untouched for Bubble Tea to run asynchronously.
+func TestExecConfirmCmd_DoesNotInvokeCmdSynchronously(t *testing.T) {
+	m := newTestModel(nil)
+	m.dialogs.ShowConfirm(NewConfirmDialog("t", "msg", func() tea.Msg { return nil }))
+
+	invoked := false
+	slowCmd := func() tea.Msg {
+		invoked = true
+		return uikit.DebugLogMsg{Message: "hello"}
+	}
+
+	out := m.execConfirmCmd(slowCmd, true)
+	if invoked {
+		t.Fatal("execConfirmCmd must not invoke cmd() synchronously")
+	}
+	if out == nil {
+		t.Fatal("expected the cmd to be handed back for async execution")
+	}
+	msg := out()
+	if !invoked {
+		t.Fatal("expected invoking the returned cmd to run the original callback")
+	}
+	if got, ok := msg.(uikit.DebugLogMsg); !ok || got.Message != "hello" {
+		t.Fatalf("expected pass-through DebugLogMsg, got %v", msg)
+	}
+}
+
+func TestExecConfirmCmd_ClosedDismissesDialogImmediately(t *testing.T) {
 	m := newTestModel(nil)
 	m.dialogs.ShowConfirm(NewConfirmDialog("t", "msg", func() tea.Msg { return nil }))
 	if !m.dialogs.HasConfirm() {
 		t.Fatal("precondition: confirm dialog must be open")
 	}
-	out := m.execConfirmCmd(func() tea.Msg { return nil }, true)
-	if out != nil {
-		t.Fatal("expected nil out for nil-result + closed=true")
-	}
+	m.execConfirmCmd(func() tea.Msg { return nil }, true)
 	if m.dialogs.HasConfirm() {
-		t.Fatal("expected dialog dismissed for closed=true with nil result")
+		t.Fatal("expected dialog dismissed immediately when closed=true")
 	}
 }
 
-func TestExecConfirmCmd_NilResultNotClosedKeepsDialog(t *testing.T) {
+func TestExecConfirmCmd_NotClosedKeepsDialogOpen(t *testing.T) {
 	m := newTestModel(nil)
 	m.dialogs.ShowConfirm(NewConfirmDialog("t", "msg", func() tea.Msg { return nil }))
-	_ = m.execConfirmCmd(func() tea.Msg { return nil }, false)
+	m.execConfirmCmd(func() tea.Msg { return nil }, false)
 	if !m.dialogs.HasConfirm() {
 		t.Fatal("dialog must stay open when closed=false")
 	}
 }
 
-func TestExecConfirmCmd_QuitMsgKeepDaemonReturnsTeaQuit(t *testing.T) {
+// TestExecConfirmCmd_QuitMsgFlowsThroughNormalDispatch confirms that a
+// QuitMsg produced by the (now async) confirm callback is handled correctly
+// once it re-enters Update via the ordinary dispatch tables, with no
+// special-casing left in execConfirmCmd itself.
+func TestExecConfirmCmd_QuitMsgFlowsThroughNormalDispatch(t *testing.T) {
 	m := newTestModel(nil)
 	m.dialogs.ShowConfirm(NewConfirmDialog("Quit", "msg", nil))
 	cmd := m.execConfirmCmd(func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitKeepDaemon} }, true)
 	if cmd == nil {
-		t.Fatal("expected tea.Quit cmd for QuitMsg")
+		t.Fatal("expected the QuitMsg-producing cmd to be handed back")
+	}
+	msg := cmd()
+	quitMsg, ok := msg.(uikit.QuitMsg)
+	if !ok {
+		t.Fatalf("expected uikit.QuitMsg, got %T", msg)
+	}
+	_, quitCmd := m.handleQuit(quitMsg)
+	if quitCmd == nil {
+		t.Fatal("expected handleQuit to return tea.Quit")
 	}
 	if m.quitAction != uikit.QuitKeepDaemon {
 		t.Fatalf("expected QuitKeepDaemon, got %v", m.quitAction)
-	}
-}
-
-func TestExecConfirmCmd_QuitMsgShutdownNoFuncReturnsTeaQuit(t *testing.T) {
-	m := newTestModel(nil)
-	m.shutdownFunc = nil
-	m.dialogs.ShowConfirm(NewConfirmDialog("Quit", "msg", nil))
-	cmd := m.execConfirmCmd(func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitShutdownDaemon} }, true)
-	if cmd == nil {
-		t.Fatal("expected tea.Quit cmd when no shutdownFunc is wired")
-	}
-	if m.quitAction != uikit.QuitShutdownDaemon {
-		t.Fatalf("expected QuitShutdownDaemon, got %v", m.quitAction)
-	}
-}
-
-func TestExecConfirmCmd_OtherResultProducesPassthroughCmd(t *testing.T) {
-	m := newTestModel(nil)
-	m.dialogs.ShowConfirm(NewConfirmDialog("t", "msg", nil))
-	want := uikit.DebugLogMsg{Message: "hello"}
-	cmd := m.execConfirmCmd(func() tea.Msg { return want }, true)
-	if cmd == nil {
-		t.Fatal("expected passthrough cmd")
-	}
-	got := cmd()
-	if msg, ok := got.(uikit.DebugLogMsg); !ok || msg.Message != "hello" {
-		t.Fatalf("expected pass-through DebugLogMsg, got %v", got)
 	}
 }
 
@@ -655,6 +670,65 @@ func TestStartShutdownSpinner_KeepsExistingDialog(t *testing.T) {
 	}
 }
 
+// ─── handleLogTailLoaded ─────────────────────────────────────────────────────
+
+// TestHandleLogTailLoaded_PendingHighlightNotAppliedToDifferentRun mirrors
+// TestHandleLogLine_PendingHighlightNotAppliedToDifferentRun for the tail-load
+// path: opening a different run than the one a pending search highlight
+// targets is the most common trigger, since a freshly opened run's own tail
+// load is usually the first message to arrive.
+func TestHandleLogTailLoaded_PendingHighlightNotAppliedToDifferentRun(t *testing.T) {
+	m := newTestModel(nil)
+	m.pendingHighlight = 5
+	m.pendingHighlightRun = "r-a"
+
+	run := &model.Run{ID: "r-b", TaskName: "t1", Status: model.PhaseEnded}
+	ev := execlist.NewExecView(run)
+	m.execView = &ev
+
+	updated, _ := m.handleLogTailLoaded(uikit.LogTailLoadedMsg{
+		RunID:     "r-b",
+		Lines:     []server.LogLineEntry{{N: 1, Text: "l1"}, {N: 10, Text: "l10"}},
+		Finalized: true,
+	})
+	got := updated.(Model)
+	if got.execView.Pane.HighlightLine != 0 {
+		t.Fatalf("expected r-b's pane untouched, got HighlightLine=%d", got.execView.Pane.HighlightLine)
+	}
+	if got.pendingHighlight != 5 || got.pendingHighlightRun != "r-a" {
+		t.Fatalf("expected r-a's pending highlight to survive r-b's tail load, got line=%d run=%q",
+			got.pendingHighlight, got.pendingHighlightRun)
+	}
+}
+
+// TestHandleLogTailLoaded_PendingHighlightAppliedToMatchingRun is the
+// positive counterpart to TestHandleLogTailLoaded_PendingHighlightNotAppliedToDifferentRun:
+// once the target run's own tail load lands, the pending highlight jumps and
+// clears.
+func TestHandleLogTailLoaded_PendingHighlightAppliedToMatchingRun(t *testing.T) {
+	m := newTestModel(nil)
+	m.pendingHighlight = 5
+	m.pendingHighlightRun = "r-a"
+
+	run := &model.Run{ID: "r-a", TaskName: "t1", Status: model.PhaseEnded}
+	ev := execlist.NewExecView(run)
+	m.execView = &ev
+
+	updated, _ := m.handleLogTailLoaded(uikit.LogTailLoadedMsg{
+		RunID:     "r-a",
+		Lines:     []server.LogLineEntry{{N: 1, Text: "l1"}, {N: 10, Text: "l10"}},
+		Finalized: true,
+	})
+	got := updated.(Model)
+	if got.execView.Pane.HighlightLine != 5 {
+		t.Fatalf("expected jump to highlight line 5, got HighlightLine=%d", got.execView.Pane.HighlightLine)
+	}
+	if got.pendingHighlight != 0 || got.pendingHighlightRun != "" {
+		t.Fatalf("expected pending highlight cleared after jump, got line=%d run=%q",
+			got.pendingHighlight, got.pendingHighlightRun)
+	}
+}
+
 // ─── handleLogLine ───────────────────────────────────────────────────────────
 
 func TestHandleLogLine_NotViewingRunIgnoresButContinuesListening(t *testing.T) {
@@ -677,6 +751,63 @@ func TestHandleLogLine_ViewingRunAppends(t *testing.T) {
 		RunID: "r-1",
 		Line:  server.LogLineEntry{N: 1, Text: "hello", Stream: "stdout"},
 	})
+}
+
+// TestHandleLogLine_PendingHighlightNotAppliedToDifferentRun is the
+// regression test for pendingHighlight leaking across runs: a search hit
+// selected for a run that wasn't open yet (r-a) leaves pendingHighlight set
+// while openRunByID's GetRun fetch is still in flight. If the user opens a
+// different run (r-b) in the meantime, r-b's own unrelated log lines must not
+// be mistaken for the r-a highlight target just because the line numbers
+// happen to satisfy the numeric comparison.
+func TestHandleLogLine_PendingHighlightNotAppliedToDifferentRun(t *testing.T) {
+	m := newTestModel(nil)
+	m.pendingHighlight = 5
+	m.pendingHighlightRun = "r-a"
+
+	run := &model.Run{ID: "r-b", TaskName: "t1"}
+	ev := execlist.NewExecView(run)
+	m.execView = &ev
+
+	updated, _ := m.handleLogLine(uikit.LogLineMsg{
+		RunID: "r-b",
+		Line:  server.LogLineEntry{N: 10, Text: "hello", Stream: "stdout"},
+	})
+	got := updated.(Model)
+	if got.execView.Pane.HighlightLine != 0 {
+		t.Fatalf("expected r-b's pane untouched, got HighlightLine=%d", got.execView.Pane.HighlightLine)
+	}
+	if got.pendingHighlight != 5 || got.pendingHighlightRun != "r-a" {
+		t.Fatalf("expected r-a's pending highlight to survive r-b's log line, got line=%d run=%q",
+			got.pendingHighlight, got.pendingHighlightRun)
+	}
+}
+
+// TestHandleLogLine_PendingHighlightAppliedToMatchingRun is the positive
+// counterpart to TestHandleLogLine_PendingHighlightNotAppliedToDifferentRun:
+// once the target line arrives on the run the highlight was meant for, it
+// jumps and clears.
+func TestHandleLogLine_PendingHighlightAppliedToMatchingRun(t *testing.T) {
+	m := newTestModel(nil)
+	m.pendingHighlight = 5
+	m.pendingHighlightRun = "r-a"
+
+	run := &model.Run{ID: "r-a", TaskName: "t1"}
+	ev := execlist.NewExecView(run)
+	m.execView = &ev
+
+	updated, _ := m.handleLogLine(uikit.LogLineMsg{
+		RunID: "r-a",
+		Line:  server.LogLineEntry{N: 10, Text: "hello", Stream: "stdout"},
+	})
+	got := updated.(Model)
+	if got.execView.Pane.HighlightLine != 5 {
+		t.Fatalf("expected jump to highlight line 5, got HighlightLine=%d", got.execView.Pane.HighlightLine)
+	}
+	if got.pendingHighlight != 0 || got.pendingHighlightRun != "" {
+		t.Fatalf("expected pending highlight cleared after jump, got line=%d run=%q",
+			got.pendingHighlight, got.pendingHighlightRun)
+	}
 }
 
 // ─── handleLogRotated ────────────────────────────────────────────────────────

@@ -169,6 +169,9 @@ func TestLogWriter_DiskPressure_Kill_CancelsContext(t *testing.T) {
 	assert.True(t, cancelled, "kill must cancel the task context on disk pressure")
 	assert.True(t, seenKilled, "OnDiskPressure must report killedTask=true")
 	assert.True(t, w.truncated)
+	assert.True(t, w.KilledByPolicy(),
+		"disk-pressure kill must flag KilledByPolicy, same as log_max_size kill, so the runtime "+
+			"records the run as a policy-initiated kill (ReasonLogOverflow) instead of a plain stop")
 }
 
 // TestLogWriter_DiskPressure_SurvivesRotation guards the regression where the
@@ -234,6 +237,10 @@ func TestLogWriter_DropOldRotation(t *testing.T) {
 	data, err := os.ReadFile(opts.LogPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "latest output")
+	// The rotation SYSTEM line must reference the current TOML key name
+	// (log_max_size), not a stale pre-rename name like "logs.maxSize".
+	assert.Contains(t, string(data), "log_max_size")
+	assert.NotContains(t, string(data), "logs.maxSize")
 	// The rotated-away segment must survive Close(): retention owns its
 	// lifecycle (deleted when the run itself is purged), not the writer.
 	_, err = os.Stat(logutil.PrevPath(opts.LogPath))

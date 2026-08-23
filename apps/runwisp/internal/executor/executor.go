@@ -485,6 +485,16 @@ func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task
 			renderer.Write(buf[:n])
 		}
 		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				// A genuine I/O error (disk full, fd closed out from under us,
+				// permission revoked mid-run, ...) is not the same as the
+				// process's output ending normally. Surface it instead of
+				// silently treating it like EOF, both to the daemon log and
+				// inline in the run's own log so the operator can tell the
+				// capture was cut short by a real error.
+				slog.Warn("Process output stream ended with a non-EOF error", "stream", stream, "task", task.Name, "err", err)
+				writer.WriteLineEvent(fmt.Sprintf("Output capture stopped: %v", err), logutil.StreamSystem)
+			}
 			break
 		}
 	}

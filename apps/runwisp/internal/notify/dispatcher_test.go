@@ -6,6 +6,7 @@ package notify
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -180,6 +181,43 @@ func TestDispatcher_RedactErrorPreservesCancelDetection(t *testing.T) {
 	d.waitWorkers()
 	assert.Empty(t, sink.Captured(),
 		"a RedactError-wrapped context.Canceled must still be recognized as shutdown, not surfaced as a delivery failure")
+}
+
+// TestDispatcher_HTTPTimeoutNotMisclassifiedAsShutdown is the regression test
+// for a bug where executeOne used errors.Is(err, context.DeadlineExceeded) to
+// detect "we're shutting down". That sentinel is also what an HTTP channel's
+// own per-request timeout produces (e.g. HTTPProvider's
+// http.Client{Timeout: 15s} derives its own context.WithDeadline internally),
+// completely independent of the worker's ctx. A real, permanent delivery
+// timeout was therefore silently discarded instead of being reported —
+// nothing logged, no notify_delivery_failed synthetic event. The worker's ctx
+// is still live here (never cancelled), so this must be treated as a real
+// failure.
+func TestDispatcher_HTTPTimeoutNotMisclassifiedAsShutdown(t *testing.T) {
+	cause := fmt.Errorf("slack:ops: post https://hooks.example/x: %w", context.DeadlineExceeded)
+	a := &executeChannel{
+		id:     "slack:ops",
+		execFn: func(context.Context, *Event) error { return cause },
+	}
+	channels := map[string]Channel{a.id: a}
+	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slack:ops"}}}, channels)
+	sink := &recordingFailureSink{}
+	d := newDispatcher(router, channels, 8, RealClock(), sink, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d.startWorkers(ctx)
+
+	d.dispatch(&Event{Kind: KindRunFailed, TaskName: "backup-db"})
+	require.Eventually(t, func() bool { return len(sink.Captured()) == 1 }, time.Second, 10*time.Millisecond,
+		"an HTTP request timeout unrelated to shutdown must surface as a delivery failure")
+
+	got := sink.Captured()[0]
+	assert.Equal(t, KindNotifyDeliveryFailed, got.Kind)
+	assert.Equal(t, "slack:ops", got.Extra["channel"])
+
+	d.closeQueues()
+	d.waitWorkers()
 }
 
 func TestDispatcher_DropsOldestWhenQueueFull(t *testing.T) {

@@ -213,6 +213,12 @@ export function createRunsSource(): RunsSource {
             if (insertAt === -1) next.push(run);
             else next.splice(insertAt, 0, run);
             items = next;
+        } else if (items.length >= total) {
+            // Ascending (oldest-first): a new run is always the newest overall,
+            // i.e. the very last item. Only safe to append directly once every
+            // earlier page is already loaded — otherwise it would visually sit
+            // ahead of older, not-yet-loaded runs that belong before it.
+            items = [...items, run];
         }
         total += 1;
     }

@@ -5,13 +5,12 @@
     import { Bell } from "@lucide/svelte";
     import { notificationStore } from "$lib/stores";
     import NotificationsPopover from "./NotificationsPopover.svelte";
+    import { hasUnreadError } from "./notification-bell.js";
 
     let open = $state(false);
 
     let unread = $derived(notificationStore.unread);
-    let hasError = $derived(
-        notificationStore.items.slice(0, 5).some((n) => n.severity === "error" && unread > 0),
-    );
+    let hasError = $derived(hasUnreadError(notificationStore.items));
 
     function toggle(): void {
         open = !open;

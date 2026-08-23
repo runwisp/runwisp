@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -48,6 +49,26 @@ func TestNormalizeTrustProxyCIDR_CatchAllIPv4Rejected(t *testing.T) {
 func TestNormalizeTrustProxyCIDR_CatchAllIPv6Rejected(t *testing.T) {
 	_, err := normalizeTrustProxyCIDR("::/0")
 	assert.Error(t, err)
+}
+
+func TestNormalizeTrustProxyCIDR_IPv4MappedCatchAllRejected(t *testing.T) {
+	// ::ffff:0:0/96 has ones=96 (not caught by the ones==0 check), but
+	// net.IPNet.Contains folds an IPv4-mapped network to its last 4 mask
+	// bytes before comparing, so this matches every IPv4 address.
+	_, err := normalizeTrustProxyCIDR("::ffff:0:0/96")
+	require.Error(t, err)
+
+	_, ipNet, parseErr := net.ParseCIDR("::ffff:0:0/96")
+	require.NoError(t, parseErr)
+	assert.True(t, ipNet.Contains(net.ParseIP("8.8.8.8")), "sanity check: this network really does fold to match any IPv4 address")
+}
+
+func TestNormalizeTrustProxyCIDR_IPv4MappedNarrowRangeAllowed(t *testing.T) {
+	// ::ffff:10.0.0.0/104 folds to the equivalent of 10.0.0.0/8 — a
+	// legitimately scoped range, not a catch-all — and must be allowed.
+	cidr, err := normalizeTrustProxyCIDR("::ffff:10.0.0.0/104")
+	require.NoError(t, err)
+	assert.Equal(t, "::ffff:10.0.0.0/104", cidr)
 }
 
 func TestNormalizeTrustProxyCIDR_BadCIDRReturnsError(t *testing.T) {

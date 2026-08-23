@@ -40,6 +40,7 @@
         dayStartIso,
         dayEndIso,
         isExitCodeExprValid,
+        exitCodePropChanged,
         type RunsListFilters,
     } from "./run-filters.js";
 
@@ -122,9 +123,20 @@
 
     // Exit code: a free-form expression (`137`, `>100`, `>100 <150`) normalized
     // to an inclusive range at the wire. Edited in a local buffer for smooth
-    // typing and committed on change; the popover content remounts on each open,
-    // so the buffer re-seeds from `filters` every time it opens.
+    // typing and committed on change. `RunFilterPopover` itself is long-lived
+    // (its trigger button stays mounted while the popover is closed), so the
+    // buffer does NOT re-seed on its own — it must explicitly resync whenever
+    // `filters.exitCode` changes from outside (a chip removal, "clear
+    // filters"), without clobbering in-progress typing when some unrelated
+    // filter dimension changes instead.
     let exitCodeInput = $state(filters.exitCode ?? "");
+    let lastExitCode = filters.exitCode;
+    $effect(() => {
+        if (exitCodePropChanged(lastExitCode, filters.exitCode)) {
+            exitCodeInput = filters.exitCode ?? "";
+        }
+        lastExitCode = filters.exitCode;
+    });
     const exitCodeValid = $derived(isExitCodeExprValid(exitCodeInput));
 
     function commitExitCode() {

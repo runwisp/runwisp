@@ -431,19 +431,24 @@ func (srv *Server) appStreamHandler(ctx context.Context, input *AppStreamInput, 
 		return
 	}
 
+	// Subscribe to the notification hub before flushing the appEvents replay
+	// backlog below: that flush can block on network writes for a while, and
+	// the hub has no replay of its own, so a notification published during
+	// the flush would otherwise be delivered to nobody. Subscribing first
+	// means it queues in this subscriber's own buffered channel instead.
+	var notifyCh <-chan inapp.Update
+	if srv.notifyHub != nil {
+		nsub, unsubscribe := srv.notifyHub.Subscribe()
+		defer unsubscribe()
+		notifyCh = nsub.Channel()
+	}
+
 	replay, sub, unsub := srv.appEvents.subscribe(resolveResumeID(input.LastEventID, input.LastEventQuery))
 	defer unsub()
 	for _, e := range replay {
 		if err := send(sse.Message{ID: e.id, Data: toSSEEventData(e.ev)}); err != nil {
 			return
 		}
-	}
-
-	var notifyCh <-chan inapp.Update
-	if srv.notifyHub != nil {
-		nsub, unsubscribe := srv.notifyHub.Subscribe()
-		defer unsubscribe()
-		notifyCh = nsub.Channel()
 	}
 
 	srv.pumpAppStream(ctx, sub, notifyCh, send)

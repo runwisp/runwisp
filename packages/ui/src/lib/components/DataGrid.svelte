@@ -54,6 +54,7 @@
     import Input from "./Input.svelte";
     import Pagination from "./Pagination.svelte";
     import Fuse from "fuse.js";
+    import { selectionState } from "./data-grid-selection.js";
 
     let {
         columns,
@@ -162,8 +163,9 @@
         return filteredData.slice(start, start + pageSize);
     });
 
-    let allSelected = $derived(pagedData.length > 0 && selectedRows.length === pagedData.length);
-    let someSelected = $derived(selectedRows.length > 0 && selectedRows.length < pagedData.length);
+    const selection = $derived(selectionState(pagedData, selectedRows, rowKey));
+    let allSelected = $derived(selection.allSelected);
+    let someSelected = $derived(selection.someSelected);
 </script>
 
 <div

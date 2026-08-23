@@ -28,6 +28,7 @@ import {
     exitCodeRangeActive,
     isExitCodeExprValid,
     exitCodeChipLabel,
+    exitCodePropChanged,
     type StatusBucket,
     type RunsListFilters,
 } from "./run-filters.js";
@@ -293,5 +294,21 @@ describe("exit-code expression", () => {
     it("labels the chip with the raw expression", () => {
         expect(exitCodeChipLabel(">100 <150")).toBe("Exit >100 <150");
         expect(exitCodeChipLabel(" 137 ")).toBe("Exit 137");
+    });
+});
+
+describe("exitCodePropChanged", () => {
+    it("is false when the committed value is unchanged (unrelated filters update)", () => {
+        expect(exitCodePropChanged("137", "137")).toBe(false);
+        expect(exitCodePropChanged(undefined, undefined)).toBe(false);
+    });
+
+    it("is true when the exit-code filter was cleared externally (chip removed)", () => {
+        expect(exitCodePropChanged("137", undefined)).toBe(true);
+    });
+
+    it("is true when the exit-code filter was set to a new committed value", () => {
+        expect(exitCodePropChanged(undefined, "200")).toBe(true);
+        expect(exitCodePropChanged("137", "200")).toBe(true);
     });
 });

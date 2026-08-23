@@ -74,6 +74,13 @@ func (sr *sessionRunner) run(ctx context.Context, session *wsSession) error {
 		slog.Info("failed to close session", "err", err)
 	}
 	waitGroup.Wait()
+	// writeLoop (the only reader of session.outbound) is now guaranteed dead.
+	// Mark the session closed here, before returning to the caller, so any
+	// concurrent sendIfReady call (e.g. from EventBridge, which runs
+	// independently of the session lifecycle) racing the caller's subsequent
+	// detachSession() sees the send fail instead of silently succeeding into
+	// a channel nothing will ever drain.
+	session.closed.Store(true)
 
 	if errors.Is(firstErr, context.Canceled) {
 		return nil

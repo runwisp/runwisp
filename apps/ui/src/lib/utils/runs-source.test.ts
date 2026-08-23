@@ -116,8 +116,15 @@ describe("createRunsSource", () => {
 // the row lands.
 describe("createRunsSource SSE filter parity (matchesFilters)", () => {
     async function loadedWith(overrides: Partial<RunsFilters>): Promise<RunsSource> {
+        return loadedWithRuns(overrides, []);
+    }
+
+    async function loadedWithRuns(
+        overrides: Partial<RunsFilters>,
+        runs: Run[],
+    ): Promise<RunsSource> {
         const src = createRunsSource();
-        vi.mocked(runsApi.getAll).mockResolvedValue({ runs: [], total: 0 });
+        vi.mocked(runsApi.getAll).mockResolvedValue({ runs, total: runs.length });
         src.setFilters(baseFilters(overrides));
         await vi.waitFor(() => {
             expect(src.loaded).toBe(true);
@@ -181,6 +188,17 @@ describe("createRunsSource SSE filter parity (matchesFilters)", () => {
         src.upsert(makeRun("retried", { retryAttempt: 2 }));
         src.upsert(makeRun("first", { retryAttempt: 0 }));
         expect(src.items.map((r) => r.id)).toEqual(["retried"]);
+    });
+
+    // Regression: ascending sort ("oldest first") previously bumped `total`
+    // for a new SSE row without ever splicing it into `items`, undercounting
+    // the visible list relative to `total` even though every earlier page was
+    // already loaded.
+    it("appends a new run directly when ascending-sorted and every page is already loaded", async () => {
+        const src = await loadedWithRuns({ sortDirection: "asc" }, [makeRun("a"), makeRun("b")]);
+        src.upsert(makeRun("c"));
+        expect(src.items.map((r) => r.id)).toEqual(["a", "b", "c"]);
+        expect(src.total).toBe(3);
     });
 
     // Guards M3: the optimistic remove and the server's run.deleted SSE echo

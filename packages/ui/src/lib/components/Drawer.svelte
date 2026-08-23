@@ -5,6 +5,7 @@
     import type { Snippet } from "svelte";
     import { X } from "@lucide/svelte";
     import { portal } from "../actions/portal.js";
+    import { trapFocus } from "../actions/focusTrap.js";
     import { fly } from "svelte/transition";
 
     type Side = "left" | "right" | "top" | "bottom";
@@ -98,6 +99,7 @@
         {/if}
 
         <div
+            use:trapFocus
             class="
                 absolute z-10 flex flex-col
                 border border-outline bg-surface-overlay shadow-lg

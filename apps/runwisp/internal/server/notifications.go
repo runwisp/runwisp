@@ -192,7 +192,14 @@ func (srv *Server) humaMarkAllNotificationsRead(ctx context.Context, _ *struct{}
 	if err := srv.notifyRepo.MarkAllNotificationsRead(ctx, time.Now()); err != nil {
 		return nil, huma.Error500InternalServerError("Failed to mark notifications read")
 	}
-	srv.publishUnreadCountChanged(0)
+	// Re-query rather than assume 0: a notification created concurrently with
+	// this mutation (after the UPDATE committed) is still unread, and other
+	// subscribers need the real count, not a hardcoded value that ignores it.
+	count, err := srv.notifyRepo.CountUnreadNotifications(ctx)
+	if err != nil {
+		count = -1
+	}
+	srv.publishUnreadCountChanged(count)
 	return nil, nil
 }
 

@@ -60,6 +60,12 @@ type LogWriter struct {
 	onDiskPressure    func(free, min int64, killedTask bool)
 	freeDisk          func(dir string) int64 // injected for tests; defaults to freeDiskSpace
 
+	// createSegment creates the fresh log file after a drop_old rotation moves
+	// the old segment into .prev. Injected for tests to simulate a create
+	// failure (e.g. ENOSPC) immediately following a successful rename;
+	// defaults to os.Create.
+	createSegment func(path string) (*os.File, error)
+
 	// State
 	currentOffset  int64
 	lineCount      int64
@@ -131,6 +137,7 @@ func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
 		onDiskPressure:    opts.OnDiskPressure,
 		diskCheckInterval: defaultDiskCheckInterval,
 		freeDisk:          freeDiskSpace,
+		createSegment:     os.Create,
 		now:               now,
 	}, nil
 }
@@ -239,8 +246,11 @@ func (w *LogWriter) checkDiskPressure() bool {
 	}
 	w.stopped = true
 	w.truncated = true
-	if killed && w.cancelFunc != nil {
-		w.cancelFunc()
+	if killed {
+		w.killedByPolicy = true
+		if w.cancelFunc != nil {
+			w.cancelFunc()
+		}
 	}
 	if !w.diskPressureHit {
 		w.diskPressureHit = true
@@ -280,6 +290,13 @@ func (w *LogWriter) handleSizeOverflow(p []byte) bool {
 	case model.LogOverflowDropOld:
 		if err := w.rotateTail(); err != nil {
 			slog.Error("Failed to rotate log file, continuing without rotation", "err", err)
+		}
+		// rotateTail sets w.stopped when it leaves w.file unusable (both the
+		// rename+reopen and the rename+create failure combos). In that case the
+		// current write must be dropped like any other post-stop write, not
+		// fall through to Write() on a closed/stale handle.
+		if w.stopped {
+			return true
 		}
 	}
 	return false
@@ -385,8 +402,17 @@ func (w *LogWriter) rotateTail() error {
 		return fmt.Errorf("failed to rotate log: %w", err)
 	}
 
-	f, err := os.Create(w.mainPath)
+	f, err := w.createSegment(w.mainPath)
 	if err != nil {
+		// The old segment is already gone (renamed into .prev) and w.file is
+		// closed. Without stopping here, every later write would fail against
+		// the closed handle and — worse — the next overflow-triggered rotation
+		// would os.Remove(prevPath) again, destroying the segment we just
+		// rotated for no replacement. Stop the writer, mirroring the
+		// reopen-failure branch above.
+		w.stopped = true
+		w.truncated = true
+		slog.Error("Failed to create new log file after rotation; log writer stopped", "err", err)
 		return fmt.Errorf("failed to create new log file after rotation: %w", err)
 	}
 	w.file = f
@@ -405,7 +431,7 @@ func (w *LogWriter) rotateTail() error {
 	}
 
 	w.writeSystemLine(fmt.Sprintf(
-		"Log rotated: output exceeded logs.maxSize (%s). Earlier output truncated.",
+		"Log rotated: output exceeded log_max_size (%s). Earlier output truncated.",
 		config.FormatByteSize(w.maxSize)))
 
 	return nil

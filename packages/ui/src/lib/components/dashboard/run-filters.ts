@@ -382,3 +382,18 @@ export function isExitCodeExprValid(expr: string): boolean {
 export function exitCodeChipLabel(expr: string | undefined): string {
     return `Exit ${(expr ?? "").trim()}`;
 }
+
+/**
+ * Whether the popover's exit-code text buffer must resync to the `filters`
+ * prop. True only when the committed `exitCode` value actually moved since
+ * the buffer last matched it — e.g. the "Exit code" chip was removed, or
+ * "clear filters" ran elsewhere. An unrelated filters update (any other
+ * dimension) leaves `exitCode` untouched and must not clobber in-progress
+ * typing in the still-open popover.
+ */
+export function exitCodePropChanged(
+    previous: string | undefined,
+    next: string | undefined,
+): boolean {
+    return previous !== next;
+}

@@ -108,6 +108,7 @@
     });
 
     import { portal } from "../actions/portal.js";
+    import { trapFocus } from "../actions/focusTrap.js";
 
     async function setupFloating() {
         if (!triggerEl || !menuEl) return;
@@ -299,7 +300,12 @@
     {/if}
 
     {#if isOpen}
-        <div use:portal bind:this={menuEl} class="z-[9999] min-w-[200px]">
+        <div
+            use:portal
+            use:trapFocus={{ autoFocus: false }}
+            bind:this={menuEl}
+            class="z-[9999] min-w-[200px]"
+        >
             <div
                 class="
                 overflow-hidden rounded-[4px] border border-outline bg-surface-overlay shadow-md
