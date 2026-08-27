@@ -284,6 +284,7 @@ func TestLogWriter_MultipleRotationsMeta(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		w.WriteLineEvent(line, logutil.StreamStdout)
 	}
+	wantPrevStart := w.prevSegmentStart
 	require.NoError(t, w.Close())
 
 	assert.True(t, w.truncated)
@@ -293,6 +294,13 @@ func TestLogWriter_MultipleRotationsMeta(t *testing.T) {
 	assert.Greater(t, meta.RotatedLines, int64(0), "should have rotated away some lines")
 	assert.Greater(t, meta.RotatedBytes, int64(0), "should have rotated away some bytes")
 	assert.Greater(t, meta.FinalLines, int64(0), "current file should have lines")
+
+	// Regression: Close()'s finalized meta record must carry PrevStart forward
+	// from the last rotation. Sidecar records are last-write-wins, so omitting
+	// it there zeroes out the .prev segment's real start line the instant the
+	// run ends, corrupting every reader's line numbering for that segment.
+	require.Greater(t, wantPrevStart, int64(0), "test must exercise 2+ rotations for PrevStart to be meaningful")
+	assert.Equal(t, wantPrevStart, meta.PrevStart, "Close() must preserve PrevStart from the last rotation")
 
 	// Total lines should account for all written lines
 	totalLines := meta.RotatedLines + meta.FinalLines

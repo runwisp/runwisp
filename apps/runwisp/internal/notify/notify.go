@@ -36,9 +36,13 @@ type Service struct {
 	// mutedMissed is the set of task names whose run.missed events are
 	// suppressed (treat_missed_as_failure = false). The browsable missed run row is
 	// still persisted by the runtime; only the active notification is dropped,
-	// at ingress, before routing. Restart-static — config reload is
-	// restart-only — so a plain set is correct.
-	mutedMissed map[string]struct{}
+	// at ingress, before routing. treat_missed_as_failure is an ordinary
+	// per-task field (not part of [notify]), so a `runwisp reload`/SIGHUP can
+	// change it live — SetMutedMissed lets the reload path push the refreshed
+	// set in. An atomic.Pointer lets onBusEvent (called from the bus
+	// publisher goroutine) read it without locking against a concurrent
+	// reload.
+	mutedMissed atomic.Pointer[map[string]struct{}]
 
 	clock  Clocker
 	logger *slog.Logger
@@ -101,7 +105,7 @@ func New(cfg Config) *Service {
 	router := NewRouter(cfg.Rules, channelByID)
 	disp := newDispatcher(router, channelByID, DefaultActionQueueSize, clock, cfg.FailureSink, logger)
 
-	return &Service{
+	s := &Service{
 		bus:            cfg.Bus,
 		ingressCh:      make(chan *Event, DefaultActionQueueSize),
 		router:         router,
@@ -112,8 +116,17 @@ func New(cfg Config) *Service {
 		logger:         logger,
 		retentionEvery: retentionEvery,
 		retentionFn:    cfg.RetentionFn,
-		mutedMissed:    cfg.MutedMissedTasks,
 	}
+	s.mutedMissed.Store(&cfg.MutedMissedTasks)
+	return s
+}
+
+// SetMutedMissed replaces the set of task names whose run.missed events are
+// suppressed. Safe to call concurrently with onBusEvent — used by the reload
+// path so a live `treat_missed_as_failure` change takes effect immediately
+// instead of only after a full daemon restart.
+func (s *Service) SetMutedMissed(muted map[string]struct{}) {
+	s.mutedMissed.Store(&muted)
 }
 
 // Start subscribes to the event bus, launches the dispatch goroutine and the
@@ -237,8 +250,10 @@ func (s *Service) onBusEvent(e events.Event) {
 	// after mapping, because the additive route model can't express a per-task
 	// deny against the global catch-all that delivers run.missed by default.
 	if ev.Kind == KindRunMissed {
-		if _, muted := s.mutedMissed[ev.TaskName]; muted {
-			return
+		if muted := s.mutedMissed.Load(); muted != nil {
+			if _, ok := (*muted)[ev.TaskName]; ok {
+				return
+			}
 		}
 	}
 	// RLock lets concurrent publishes send in parallel (channel sends are

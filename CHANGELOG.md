@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Missed-run catch-up no longer misses gaps on tasks with `run_on_start`.** The daemon now anchors catch-up detection to the last run recorded before boot, rather than a run created during startup.
+- **`reload` and `SIGHUP` now apply a task's `treat_missed_as_failure` change immediately**, instead of requiring a full daemon restart.
+- **Fixed line numbering on `.log.prev` after 2+ log rotations**, once the run had finished.
+
 ## [0.16.0] - 2026-08-23
 
 ### Added

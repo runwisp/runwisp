@@ -24,14 +24,21 @@ type CatchUpResult struct {
 	Errors    int
 }
 
-// RunMissedTickCatchUp inspects each scheduled task and triggers catch-up runs
-// for cron ticks that were missed while the daemon was down. defaultLoc is the
-// scheduler's resolved timezone ([scheduler] timezone); a task's own timezone
-// overrides it, exactly as the live scheduler resolves it.
-func RunMissedTickCatchUp(ctx context.Context, db storage.RunRepository, tasks map[string]*model.Task, runner TaskRunner, now time.Time, defaultLoc *time.Location) CatchUpResult {
-	var result CatchUpResult
-	parser := cronspec.NewScheduleParser()
-
+// SnapshotCatchupAnchors resolves every schedulable task's catch-up anchor
+// (registering its first-seen timestamp along the way) and returns a snapshot
+// keyed by task name; a task absent from the result has no usable anchor
+// (never seen before and its registration couldn't be read back) and must be
+// skipped by RunMissedTickCatchUp. errs counts registration/lookup failures.
+//
+// Call this before the scheduler starts and before RunStartupTasks fires —
+// both can create a run for this boot, and if that happens before the anchor
+// is read, the boot's own run masquerades as "the last run", hiding the real
+// downtime gap it exists to detect. RunMissedTickCatchUp itself must still run
+// later, once notify has subscribed (see its own doc comment) — this split is
+// what lets detection happen at the right time while alerting still happens
+// after the right time.
+func SnapshotCatchupAnchors(ctx context.Context, db storage.RunRepository, tasks map[string]*model.Task, now time.Time) (anchors map[string]time.Time, errs int) {
+	anchors = make(map[string]time.Time, len(tasks))
 	for _, task := range tasks {
 		// The re-run policy is not consulted: detection is independent of it, so
 		// even catch_up = "skip" records and alerts on the gap. What is consulted
@@ -47,7 +54,43 @@ func RunMissedTickCatchUp(ctx context.Context, db storage.RunRepository, tasks m
 		if !task.Schedulable() {
 			continue
 		}
-		triggered, errors := catchupOneTask(ctx, db, parser, task, runner, now, defaultLoc)
+		// Persist first-seen timestamp; INSERT OR IGNORE is a no-op on every
+		// restart after the first. On first startup firstSeenAt == now, so
+		// countMissedTicks returns 0 — no spurious initial run.
+		if err := db.EnsureTaskRegistered(ctx, task.Name, now); err != nil {
+			slog.Warn("Failed to register task for catch-up", "task", task.Name, "err", err)
+			errs++
+			continue
+		}
+		at, ok, errCount := resolveCatchupAnchor(ctx, db, task)
+		errs += errCount
+		if ok {
+			anchors[task.Name] = at
+		}
+	}
+	return anchors, errs
+}
+
+// RunMissedTickCatchUp triggers catch-up runs for cron ticks that were missed
+// while the daemon was down, for every task with an entry in anchors (from a
+// prior SnapshotCatchupAnchors call — a task with no entry is skipped).
+// defaultLoc is the scheduler's resolved timezone ([scheduler] timezone); a
+// task's own timezone overrides it, exactly as the live scheduler resolves it.
+// snapshotErrors seeds the result so registration/lookup failures from the
+// snapshot phase are still reflected in the total.
+func RunMissedTickCatchUp(tasks map[string]*model.Task, runner TaskRunner, now time.Time, defaultLoc *time.Location, anchors map[string]time.Time, snapshotErrors int) CatchUpResult {
+	result := CatchUpResult{Errors: snapshotErrors}
+	parser := cronspec.NewScheduleParser()
+
+	for _, task := range tasks {
+		if !task.Schedulable() {
+			continue
+		}
+		anchor, ok := anchors[task.Name]
+		if !ok {
+			continue
+		}
+		triggered, errors := catchupOneTask(parser, task, runner, now, defaultLoc, anchor)
 		result.Triggered += triggered
 		result.Errors += errors
 	}
@@ -69,16 +112,9 @@ func catchupSchedule(parser cron.ScheduleParser, task *model.Task, defaultLoc *t
 }
 
 // catchupOneTask processes a single task's catch-up logic and returns the
-// number of runs triggered and errors encountered.
-func catchupOneTask(ctx context.Context, db storage.RunRepository, parser cron.ScheduleParser, task *model.Task, runner TaskRunner, now time.Time, defaultLoc *time.Location) (triggered, errors int) {
-	// Persist first-seen timestamp; INSERT OR IGNORE is a no-op on every
-	// restart after the first. On first startup firstSeenAt == now, so
-	// countMissedTicks returns 0 — no spurious initial run.
-	if err := db.EnsureTaskRegistered(ctx, task.Name, now); err != nil {
-		slog.Warn("Failed to register task for catch-up", "task", task.Name, "err", err)
-		return 0, 1
-	}
-
+// number of runs triggered and errors encountered. anchor is the task's
+// catch-up anchor, resolved earlier by SnapshotCatchupAnchors.
+func catchupOneTask(parser cron.ScheduleParser, task *model.Task, runner TaskRunner, now time.Time, defaultLoc *time.Location, anchor time.Time) (triggered, errors int) {
 	schedule, loc, err := catchupSchedule(parser, task, defaultLoc)
 	if err != nil {
 		slog.Warn("Failed to parse schedule for catch-up", "task", task.Name, "err", err)
@@ -88,11 +124,6 @@ func catchupOneTask(ctx context.Context, db storage.RunRepository, parser cron.S
 	// case the schedule preserves the input location, so converting the anchor
 	// and now here is what pins evaluation to defaultLoc.
 	now = now.In(loc)
-
-	anchor, ok, errCount := resolveCatchupAnchor(ctx, db, task)
-	if !ok {
-		return 0, errCount
-	}
 	anchor = anchor.In(loc)
 
 	// Bound counting at max(cap, floor)+1: the +1 lets computeCatchupTriggers

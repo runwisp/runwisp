@@ -18,8 +18,8 @@ import (
 	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/clilog"
 	"github.com/runwisp/runwisp/internal/cloud"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runlog"
-	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/tui"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -276,7 +276,7 @@ type daemonRuntime struct {
 	svc         *daemonServices
 	srv         *server.Server
 	fatalCh     chan error
-	reconciler  *runtime.Reconciler
+	reload      func() (model.ReloadResult, error)
 	debugWriter *tui.DebugLogWriter
 	logBuffer   *server.DaemonLogBuffer
 	cancelCloud context.CancelFunc
@@ -332,12 +332,12 @@ func readFatal(ch <-chan error) error {
 // logged and the daemon keeps running on its current set — SIGHUP never tears
 // the process down. nil reconciler (cloud mode) makes this a logged no-op.
 func handleReloadSignal(rt *daemonRuntime) {
-	if rt.reconciler == nil {
+	if rt.reload == nil {
 		slog.Warn("received SIGHUP but reload is not available in this mode")
 		return
 	}
 	slog.Info("received SIGHUP, reloading configuration")
-	result, err := rt.reconciler.Reconcile()
+	result, err := rt.reload()
 	if err != nil {
 		slog.Error("reload rejected", "err", err)
 		return
