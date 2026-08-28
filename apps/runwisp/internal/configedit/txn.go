@@ -65,7 +65,7 @@ func New() *Txn { return &Txn{} }
 // Apply is still the file's original content. Nothing touches the disk until
 // Apply.
 func (t *Txn) Write(path string, data []byte, perm fs.FileMode) {
-	t.queued = append(t.queued, queuedWrite{path: path, data: data, perm: perm})
+	t.enqueue(queuedWrite{path: path, data: data, perm: perm})
 }
 
 // Remove queues the deletion of a file. Its pre-image is captured at Apply like
@@ -77,7 +77,7 @@ func (t *Txn) Write(path string, data []byte, perm fs.FileMode) {
 // into the operator's own config: an empty runwisp.d/imported.toml would only
 // look like it still had something to say.
 func (t *Txn) Remove(path string) {
-	t.queued = append(t.queued, queuedWrite{path: path, remove: true})
+	t.enqueue(queuedWrite{path: path, remove: true})
 }
 
 // WritePreservingOwner queues a full rewrite of a file that must land under the
@@ -88,7 +88,22 @@ func (t *Txn) Remove(path string) {
 // writeFileAtomicPreservingOwner) rather than silently landing owned by
 // whoever the daemon runs as.
 func (t *Txn) WritePreservingOwner(path string, data []byte) {
-	t.queued = append(t.queued, queuedWrite{path: path, data: data, preserveOwner: true})
+	t.enqueue(queuedWrite{path: path, data: data, preserveOwner: true})
+}
+
+// enqueue queues w, replacing any earlier queued operation on the same path so
+// "last write wins" holds at queue time rather than at Apply: at most one
+// queued operation ever exists per path, so Apply never performs a write that
+// a later one in the same Txn immediately discards, and its backup step never
+// needs to distinguish a path's first appearance from a repeat.
+func (t *Txn) enqueue(w queuedWrite) {
+	for i := range t.queued {
+		if t.queued[i].path == w.path {
+			t.queued[i] = w
+			return
+		}
+	}
+	t.queued = append(t.queued, w)
 }
 
 // Apply writes every queued file through temp+rename (or removes it, for a
@@ -108,6 +123,9 @@ func (t *Txn) Apply(gate func() error) error {
 		}
 	}
 
+	// enqueue collapses repeat writes to the same path down to one queued
+	// operation, so each path appears here at most once — its backup is
+	// always the true pre-transaction original.
 	for _, w := range t.queued {
 		backups = append(backups, backupFile(w.path))
 		if err := w.perform(); err != nil {

@@ -45,7 +45,7 @@ func startCloudClient(
 		RunRepo:           svc.DB,
 		PendingUploadRepo: svc.DB,
 		EventBus:          svc.EventBus,
-		LocalTasks:        svc.Tasks.Snapshot(),
+		LocalTasks:        svc.Tasks,
 		LogDir:            flags.LogDir(),
 		Availability:      svc.Executor.Availability(),
 		Now:               time.Now,

@@ -49,6 +49,44 @@ func TestTxn_GateFailureRestoresEveryPreImage(t *testing.T) {
 	assert.True(t, os.IsNotExist(statErr), "a file that didn't exist must not survive a rollback")
 }
 
+// TestTxn_GateFailureRestoresOriginalWhenPathWrittenTwice is the same
+// guarantee as TestTxn_GateFailureRestoresEveryPreImage, but for a path
+// queued more than once in the same Txn (Write's own doc: "the pre-image
+// captured at Apply is still the file's original content"). A rollback must
+// land back on the true original, not on the intermediate write.
+func TestTxn_GateFailureRestoresOriginalWhenPathWrittenTwice(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{"existing.toml": "original\n"})
+	existing := filepath.Join(dir, "existing.toml")
+
+	txn := New()
+	txn.Write(existing, []byte("intermediate\n"), DefaultPerm)
+	txn.Write(existing, []byte("final\n"), DefaultPerm)
+
+	sentinel := errors.New("gate says no")
+	err := txn.Apply(func() error { return sentinel })
+	require.ErrorIs(t, err, sentinel)
+
+	assert.Equal(t, "original\n", readFile(t, existing), "must roll back to the true original, not the intermediate write")
+}
+
+// TestTxn_RepeatedWriteCollapsesAtQueueTime pins down where "last write wins"
+// is enforced: at Write time, not at Apply. A repeat write to an already-queued
+// path replaces the earlier entry in place rather than piling up a second one,
+// so Apply never performs (and then discards) an intermediate write.
+func TestTxn_RepeatedWriteCollapsesAtQueueTime(t *testing.T) {
+	txn := New()
+	txn.Write("/a", []byte("first"), DefaultPerm)
+	txn.Write("/b", []byte("other"), DefaultPerm)
+	txn.Write("/a", []byte("second"), DefaultPerm)
+
+	require.Len(t, txn.queued, 2)
+	for _, w := range txn.queued {
+		if w.path == "/a" {
+			assert.Equal(t, []byte("second"), w.data)
+		}
+	}
+}
+
 // TestTxn_RemoveDeletesTheFile covers `promote` retiring the staging file once
 // its last entry has moved into the operator's own config.
 func TestTxn_RemoveDeletesTheFile(t *testing.T) {

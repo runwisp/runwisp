@@ -562,7 +562,7 @@ func parseSupervisordEnv(value string) map[string]string {
 			} else {
 				val.WriteByte(c)
 			}
-		case (c == '"' || c == '\'') && !inKey:
+		case (c == '"' || c == '\'') && !inKey && val.Len() == 0:
 			inQuote = c
 		case c == '=' && inKey:
 			inKey = false

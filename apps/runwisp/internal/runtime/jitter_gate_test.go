@@ -361,3 +361,54 @@ func TestJitterGate_ShutdownAbandonsPending(t *testing.T) {
 	assert.Equal(t, 0, jm.GetActiveRunCount("b"), "no run is created for the abandoned fire")
 	exec.noMoreStarts(t)
 }
+
+// gateInflightIDs snapshots the gate's in-flight run IDs under its lock.
+func gateInflightIDs(g *jitterGate) map[string]bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	out := make(map[string]bool, len(g.inflight))
+	for id := range g.inflight {
+		out[id] = true
+	}
+	return out
+}
+
+// TestJitterGate_RemoveTaskRetiresOrphanedQueuedRunFromGate is the bug: a
+// jittered fire that breaches into the manager's own per-task queue (because
+// OnOverlap=Queue and the concurrency slot is already taken by an earlier
+// gate-fired run) is recorded as in-flight in the gate — by design, since it
+// still has to run eventually. But if the task is removed (a `runwisp
+// reload`) while that run is still sitting in the queue, RemoveTask finalizes
+// it via endOrphanedPending without ever telling the gate, so it never runs
+// and never completes — leaving a permanent stale entry in the gate's
+// in-flight set that (for one jitter window) makes freeFor() wrongly report
+// the gate as busy for unrelated tasks, and leaks forever after that.
+func TestJitterGate_RemoveTaskRetiresOrphanedQueuedRunFromGate(t *testing.T) {
+	clk := testutil.NewClock(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
+	jm, exec, mt, _ := newJitterTestManager(t, clk.Now)
+	jm.UpsertTask(testTask("t", model.PolicyQueue, 1))
+
+	tick := clk.Now()
+	jm.ScheduleJitteredRun("t", tick, tick, 30*time.Minute) // gate free: pulled forward at once
+	idA := exec.waitStarted(t)                              // occupies t's only concurrency slot
+
+	// A second tick for the same task: the daemon-wide gate is busy (a is
+	// in flight), so this one is held — then forced through by its breach
+	// timer despite the gate being congested, straight into t's own queue
+	// (OnOverlap=Queue, MaxConcurrent=1, a still holds the slot).
+	jm.ScheduleJitteredRun("t", tick.Add(time.Minute), tick.Add(time.Minute), 30*time.Minute)
+	require.Equal(t, 1, mt.pending(), "b is held behind a")
+	mt.fireAll()
+	exec.noMoreStarts(t) // b is sitting in t's queue, not executing
+
+	inflight := gateInflightIDs(jm.gate)
+	require.Len(t, inflight, 2, "both the running a and the queued b are tracked in-flight")
+	require.True(t, inflight[idA])
+
+	// A reload removes the task while b is still queued.
+	jm.RemoveTask("t")
+
+	after := gateInflightIDs(jm.gate)
+	assert.Len(t, after, 1, "the orphaned queued run must be retired from the gate's in-flight set")
+	assert.True(t, after[idA], "only the still-running a may remain in-flight")
+}

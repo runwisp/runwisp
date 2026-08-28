@@ -163,6 +163,17 @@ func (m *defaultTaskManager) registerForceKill(runID string, forceKill func()) {
 
 // UpsertTask adds a task if missing or replaces the existing definition.
 func (m *defaultTaskManager) UpsertTask(task *model.Task) {
+	// A run orphaned out of the queue below may have been recorded as
+	// in-flight by the jitter gate (a breached fire that queued behind the
+	// concurrency limit). Retiring it from the gate must happen after m.mu is
+	// released (gateMu -> mu lock order; see jitterGate's doc), so the flush
+	// is deferred ahead of the lock — LIFO defer order runs it after Unlock.
+	var orphanedRunIDs []string
+	defer func() {
+		for _, id := range orphanedRunIDs {
+			m.gate.onComplete(id)
+		}
+	}()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -215,12 +226,27 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 		// 'pending' with no goroutine left to start or finalize them. Finalize
 		// whatever is queued the same way RemoveTask does, then broadcast
 		// unconditionally so a loop parked on an already-empty queue wakes too.
-		for _, r := range ts.queue {
-			m.endOrphanedPending(r)
-		}
-		ts.queue = nil
+		orphanedRunIDs = m.finalizeOrphanedQueue(ts)
 		ts.cond.Broadcast()
 	}
+}
+
+// finalizeOrphanedQueue ends every run still sitting in ts.queue (a policy
+// change or task removal left them with no drain loop to ever start them)
+// and reports their IDs, so the caller can retire them from the jitter gate
+// once m.mu is released — a queued run can be one it marked in-flight (see
+// jitterGate.fire). Caller holds m.mu.
+func (m *defaultTaskManager) finalizeOrphanedQueue(ts *taskState) []string {
+	if len(ts.queue) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(ts.queue))
+	for _, r := range ts.queue {
+		m.endOrphanedPending(r)
+		ids = append(ids, r.ID)
+	}
+	ts.queue = nil
+	return ids
 }
 
 // RemoveTask drops a task from the manager when a reload removes it.
@@ -232,6 +258,14 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 // taskState is deleted now when nothing is in flight; otherwise the last run's
 // recordRunOutcome deletes it on retirement (single-writer-per-task preserved).
 func (m *defaultTaskManager) RemoveTask(taskName string) {
+	// See UpsertTask: a queued run orphaned below may be tracked in-flight by
+	// the jitter gate, and retiring it must happen after m.mu is released.
+	var orphanedRunIDs []string
+	defer func() {
+		for _, id := range orphanedRunIDs {
+			m.gate.onComplete(id)
+		}
+	}()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -245,10 +279,7 @@ func (m *defaultTaskManager) RemoveTask(taskName string) {
 	// Queued runs were already persisted as 'pending'; finalize them here so a
 	// reload that removes the task never leaves a permanent non-terminal row.
 	if ts.cond != nil {
-		for _, r := range ts.queue {
-			m.endOrphanedPending(r)
-		}
-		ts.queue = nil
+		orphanedRunIDs = m.finalizeOrphanedQueue(ts)
 		ts.cond.Broadcast()
 	}
 

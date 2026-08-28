@@ -54,6 +54,15 @@ type TaskRunner interface {
 	ServiceSnapshot(taskName string) (model.ServiceSnapshot, bool)
 }
 
+// LocalTaskSource returns the daemon's current TOML-defined task set. The
+// cloud client re-reads it on every sync rather than caching it once, so a
+// `runwisp reload` (which mutates the registry live, without a process
+// restart) is reflected on the next reconnect. *runtime.TaskRegistry
+// satisfies this directly via its existing Snapshot method.
+type LocalTaskSource interface {
+	Snapshot() map[string]*model.Task
+}
+
 // ExternalRunGetter is the subset of run persistence the cloud package needs.
 // Mirrors a slice of storage.RunRepository so the cloud doesn't depend on
 // the SQLite-backed concrete.
