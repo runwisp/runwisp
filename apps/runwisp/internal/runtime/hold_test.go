@@ -263,7 +263,7 @@ func TestCatchUpSkipsHeldTaskAndLeavesNoAnchor(t *testing.T) {
 	held := heldCronTask("held", "0 * * * *")
 	now := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
 
-	result := RunMissedTickCatchUp(context.Background(), db,
+	result := runCatchUp(context.Background(), db,
 		map[string]*model.Task{"held": held}, runner, now, time.UTC)
 
 	assert.Equal(t, 0, result.Triggered)
@@ -285,13 +285,13 @@ func TestCatchUpAfterHoldLiftsCountsNoMissedTicks(t *testing.T) {
 
 	// A week of the daemon running with the job held by cron.
 	start := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
-	RunMissedTickCatchUp(context.Background(), db, held, runner, start, time.UTC)
+	runCatchUp(context.Background(), db, held, runner, start, time.UTC)
 
 	// cron is retired, the config reloads, the hold is gone.
 	unheld := *task
 	unheld.HeldBy = model.HeldByNothing
 	later := start.Add(7 * 24 * time.Hour)
-	result := RunMissedTickCatchUp(context.Background(), db,
+	result := runCatchUp(context.Background(), db,
 		map[string]*model.Task{"job": &unheld}, runner, later, time.UTC)
 
 	assert.Equal(t, 0, result.Triggered,

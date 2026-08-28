@@ -747,7 +747,7 @@ func TestNewClient_MissingEventBus(t *testing.T) {
 	assert.Contains(t, err.Error(), "event bus")
 }
 
-func TestNewClient_CopiesLocalTasksAndSkipsNil(t *testing.T) {
+func TestNewClient_SkipsNilLocalTask(t *testing.T) {
 	baseURL, _ := url.Parse("http://localhost:0")
 	bus := events.NewEventBus()
 	mockExec := &testutil.MockExecutor{}
@@ -755,6 +755,7 @@ func TestNewClient_CopiesLocalTasksAndSkipsNil(t *testing.T) {
 	defer jm.Shutdown()
 
 	original := &model.Task{Name: "alpha"}
+	registry := runtime.NewTaskRegistry(map[string]*model.Task{"alpha": original, "beta": nil})
 	client, err := NewClient(Config{
 		Enabled: true,
 		BaseURL: baseURL,
@@ -762,18 +763,56 @@ func TestNewClient_CopiesLocalTasksAndSkipsNil(t *testing.T) {
 		TaskManager: &testTaskRunnerAdapter{inner: jm},
 		RunRepo:     &testutil.MockRunRepository{},
 		EventBus:    bus,
-		LocalTasks:  map[string]*model.Task{"alpha": original, "beta": nil},
+		LocalTasks:  registry,
 		LogDir:      t.TempDir(),
 	})
 	require.NoError(t, err)
 	require.NotNil(t, client)
 
-	// localTasks copy must contain "alpha" but skip the nil "beta" entry.
-	require.Contains(t, client.localTasks, "alpha")
-	assert.NotContains(t, client.localTasks, "beta")
-	// And the copy is a distinct pointer from the caller-supplied value.
-	assert.NotSame(t, original, client.localTasks["alpha"])
-	assert.Equal(t, "alpha", client.localTasks["alpha"].Name)
+	snapshot := client.snapshotForSync()
+	require.Contains(t, snapshot, "alpha")
+	assert.NotContains(t, snapshot, "beta")
+	assert.Equal(t, "alpha", snapshot["alpha"].Name)
+}
+
+// TestSnapshotForSync_ReflectsLiveReload is the bug: a `runwisp reload` that
+// adds/renames/removes tasks mutates the daemon's live TaskRegistry without a
+// process restart, but the cloud client used to snapshot that registry once
+// at startCloudClient time. tasks.sync kept reporting the boot-time task set
+// forever, even across reconnects, until the whole daemon process restarted.
+func TestSnapshotForSync_ReflectsLiveReload(t *testing.T) {
+	baseURL, _ := url.Parse("http://localhost:0")
+	bus := events.NewEventBus()
+	mockExec := &testutil.MockExecutor{}
+	jm := runtime.NewTaskManager(mockExec, bus, time.Now)
+	defer jm.Shutdown()
+
+	registry := runtime.NewTaskRegistry(map[string]*model.Task{"backup": {Name: "backup"}})
+	client, err := NewClient(Config{
+		Enabled: true,
+		BaseURL: baseURL,
+	}, Dependencies{
+		TaskManager: &testTaskRunnerAdapter{inner: jm},
+		RunRepo:     &testutil.MockRunRepository{},
+		EventBus:    bus,
+		LocalTasks:  registry,
+		LogDir:      t.TempDir(),
+	})
+	require.NoError(t, err)
+
+	before := client.snapshotForSync()
+	require.Contains(t, before, "backup")
+	require.NotContains(t, before, "cleanup")
+
+	// Simulate `runwisp reload`: rename backup -> nightly-backup, add cleanup.
+	registry.Delete("backup")
+	registry.Set(&model.Task{Name: "nightly-backup"})
+	registry.Set(&model.Task{Name: "cleanup"})
+
+	after := client.snapshotForSync()
+	assert.NotContains(t, after, "backup", "reload removed this task; sync must stop reporting it")
+	assert.Contains(t, after, "nightly-backup")
+	assert.Contains(t, after, "cleanup")
 }
 
 // Nil-receiver Run is a safe no-op so callers can wire the cloud client

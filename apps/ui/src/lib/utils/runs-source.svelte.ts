@@ -142,9 +142,34 @@ export function createRunsSource(): RunsSource {
 
     const done = $derived(currentFilters !== null && items.length >= total);
 
+    // A live upsert() or remove() can mutate `items` while a page request is in
+    // flight, shifting every later run's true server-side rank — forward on an
+    // insert, back on a removal. Either way the page fetched at `offset` no
+    // longer lines up with what's already loaded: applying it directly would
+    // re-deliver an already-loaded run (rank shifted forward) or silently skip
+    // one (rank shifted back). `expectedLength` is the pre-fetch length; a
+    // mismatch means drift occurred, so retry from the corrected offset
+    // instead of guessing.
+    function resolvePage(
+        res: { runs: Run[]; total: number },
+        replace: boolean,
+        expectedLength: number,
+    ): void {
+        if (replace) {
+            items = res.runs;
+        } else if (items.length !== expectedLength) {
+            void fetchPage(items.length, false);
+            return;
+        } else {
+            items = [...items, ...res.runs];
+        }
+        total = res.total;
+    }
+
     async function fetchPage(offset: number, replace: boolean): Promise<void> {
         if (!currentFilters) return;
         const f = currentFilters;
+        const expectedLength = replace ? 0 : items.length;
         const token = ++fetchToken;
         loading = true;
         try {
@@ -153,8 +178,7 @@ export function createRunsSource(): RunsSource {
                 ? await tasksApi.getRuns(f.taskName, query)
                 : await runsApi.getAll(query);
             if (token !== fetchToken) return;
-            items = replace ? res.runs : [...items, ...res.runs];
-            total = res.total;
+            resolvePage(res, replace, expectedLength);
             error = null;
         } catch (err) {
             if (token !== fetchToken) return;

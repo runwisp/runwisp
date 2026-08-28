@@ -107,6 +107,107 @@ describe("createRunsSource", () => {
         src.refresh();
         expect(runsApi.getAll).not.toHaveBeenCalled();
     });
+
+    // A loadMore() page fetch captures its offset from items.length at call
+    // time. If a live SSE upsert() splices a new row to the front while that
+    // fetch is still in flight, every already-loaded run's true server-side
+    // rank shifts forward by one — so the in-flight page (computed at the old
+    // offset) would re-deliver an already-loaded row if merged blindly.
+    // fetchPage detects the drift (items.length no longer matches what it was
+    // when the request started) and retries from the corrected offset instead.
+    it("retries loadMore's page instead of duplicating a run when a live SSE insert shifts ranks forward", async () => {
+        const src = createRunsSource();
+        const r5 = makeRun("r5", { createdAt: "2026-06-22T12:05:00.000Z" });
+        const r4 = makeRun("r4", { createdAt: "2026-06-22T12:04:00.000Z" });
+        const r3 = makeRun("r3", { createdAt: "2026-06-22T12:03:00.000Z" });
+        vi.mocked(runsApi.getAll).mockResolvedValueOnce({ runs: [r5, r4, r3], total: 10 });
+        src.setFilters(baseFilters());
+        await vi.waitFor(() => {
+            expect(src.loaded).toBe(true);
+        });
+        expect(src.items.map((r) => r.id)).toEqual(["r5", "r4", "r3"]);
+
+        // Kick off loadMore() (offset=3) but hold the response back.
+        let resolveStale: (v: { runs: Run[]; total: number }) => void = () => {};
+        const stale = new Promise<{ runs: Run[]; total: number }>((resolve) => {
+            resolveStale = resolve;
+        });
+        vi.mocked(runsApi.getAll).mockReturnValueOnce(stale);
+        src.loadMore();
+        expect(runsApi.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 3 }));
+
+        // A run finishes and its SSE update arrives before the page above
+        // resolves — inserted at the front, shifting r5/r4/r3's true rank.
+        const fresh = makeRun("fresh", { createdAt: "2026-06-22T12:06:00.000Z" });
+        src.upsert(fresh);
+        expect(src.items.map((r) => r.id)).toEqual(["fresh", "r5", "r4", "r3"]);
+
+        // The stale page (whatever it contains) must be discarded, never
+        // merged — its content is irrelevant to the assertions below.
+        const ghost = makeRun("ghost", { createdAt: "2026-06-22T12:03:30.000Z" });
+        resolveStale({ runs: [ghost], total: 11 });
+
+        // A retry fires at the corrected offset (4, matching items.length
+        // after the insert), and its response is what actually gets merged.
+        const r2 = makeRun("r2", { createdAt: "2026-06-22T12:02:00.000Z" });
+        vi.mocked(runsApi.getAll).mockResolvedValueOnce({ runs: [r2], total: 11 });
+        await vi.waitFor(() => {
+            expect(runsApi.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 4 }));
+        });
+        await vi.waitFor(() => {
+            expect(src.items.map((r) => r.id)).toContain("r2");
+        });
+
+        expect(src.items.map((r) => r.id)).toEqual(["fresh", "r5", "r4", "r3", "r2"]);
+    });
+
+    // The opposite direction of the same race: a live remove() (the optimistic
+    // delete, or its SSE echo) shifts every later run's true server-side rank
+    // *back* by one while loadMore()'s page is in flight. Blindly appending
+    // that page would silently skip a run entirely — there's no duplicate id
+    // to filter out, the row is just gone. The same drift detection that
+    // fixes the insert case must also catch this and retry.
+    it("retries loadMore's page instead of skipping a run when a live remove shifts ranks back", async () => {
+        const src = createRunsSource();
+        const r5 = makeRun("r5", { createdAt: "2026-06-22T12:05:00.000Z" });
+        const r4 = makeRun("r4", { createdAt: "2026-06-22T12:04:00.000Z" });
+        const r3 = makeRun("r3", { createdAt: "2026-06-22T12:03:00.000Z" });
+        vi.mocked(runsApi.getAll).mockResolvedValueOnce({ runs: [r5, r4, r3], total: 10 });
+        src.setFilters(baseFilters());
+        await vi.waitFor(() => {
+            expect(src.loaded).toBe(true);
+        });
+
+        let resolveStale: (v: { runs: Run[]; total: number }) => void = () => {};
+        const stale = new Promise<{ runs: Run[]; total: number }>((resolve) => {
+            resolveStale = resolve;
+        });
+        vi.mocked(runsApi.getAll).mockReturnValueOnce(stale);
+        src.loadMore();
+        expect(runsApi.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 3 }));
+
+        // r4 is deleted (the SSE echo of a real deletion) while that page is
+        // still in flight.
+        src.remove("r4");
+        expect(src.items.map((r) => r.id)).toEqual(["r5", "r3"]);
+
+        const ghost = makeRun("ghost", { createdAt: "2026-06-22T12:03:30.000Z" });
+        resolveStale({ runs: [ghost], total: 10 });
+
+        // Without drift detection this page (fetched at the pre-removal
+        // offset 3) would land at what is now rank 2, and the run that
+        // belongs there — r2 — would never be fetched at all.
+        const r2 = makeRun("r2", { createdAt: "2026-06-22T12:02:00.000Z" });
+        vi.mocked(runsApi.getAll).mockResolvedValueOnce({ runs: [r2], total: 9 });
+        await vi.waitFor(() => {
+            expect(runsApi.getAll).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 2 }));
+        });
+        await vi.waitFor(() => {
+            expect(src.items.map((r) => r.id)).toContain("r2");
+        });
+
+        expect(src.items.map((r) => r.id)).toEqual(["r5", "r3", "r2"]);
+    });
 });
 
 // A live SSE row is merged through `upsert`, which re-evaluates the active

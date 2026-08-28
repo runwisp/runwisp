@@ -654,6 +654,19 @@ func TestCronSystemLineWithARealUserColumnStillImports(t *testing.T) {
 	}
 }
 
+// TestCronSystemUserColumnAcceptsUppercase: POSIX login names may contain
+// uppercase letters (RHEL/cronie/openSUSE useradd all permit them), so a real
+// account like "Deploy" must not be declined as an unlikely username.
+func TestCronSystemUserColumnAcceptsUppercase(t *testing.T) {
+	res := parseCron(t, "0 3 * * * Deploy /usr/bin/backup.sh --now\n", CronOptions{System: true})
+	out := res.TOML()
+	mustContain(t, out, `user = "Deploy"`)
+	mustContain(t, out, `run = "/usr/bin/backup.sh --now"`)
+	if got := res.Items()[0].Status(); got != StatusClean {
+		t.Errorf("status = %v, want clean", got)
+	}
+}
+
 // TestCronSystemUserColumnMustNameARealAccount closes the half of the missing
 // user column the shape sniff cannot see: `echo` is a flawless login name by
 // shape, so `* * * * * echo "hi"` in /etc/cron.d imported as user `echo` running

@@ -15,6 +15,7 @@ import (
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -65,7 +66,7 @@ func TestRunMissedTickCatchUp_RecordedRowAnchorsNextRestart(t *testing.T) {
 	}))
 
 	now1 := time.Date(2026, 4, 7, 10, 20, 0, 0, time.UTC)
-	res1 := RunMissedTickCatchUp(context.Background(), db, tasks, jm, now1, time.UTC)
+	res1 := runCatchUp(context.Background(), db, tasks, jm, now1, time.UTC)
 	assert.Equal(t, 0, res1.Errors)
 	assert.Equal(t, 0, res1.Triggered, "skip re-fires nothing")
 
@@ -86,7 +87,7 @@ func TestRunMissedTickCatchUp_RecordedRowAnchorsNextRestart(t *testing.T) {
 	// Second restart two minutes later — still inside the same */5 window, so
 	// there is nothing new to miss.
 	now2 := time.Date(2026, 4, 7, 10, 22, 0, 0, time.UTC)
-	res2 := RunMissedTickCatchUp(context.Background(), db, tasks, jm, now2, time.UTC)
+	res2 := runCatchUp(context.Background(), db, tasks, jm, now2, time.UTC)
 	assert.Equal(t, 0, res2.Errors)
 	assert.Equal(t, 0, res2.Triggered)
 
@@ -97,4 +98,70 @@ func TestRunMissedTickCatchUp_RecordedRowAnchorsNextRestart(t *testing.T) {
 		return sErr == nil && s.Missed != 1
 	}, 100*time.Millisecond, 10*time.Millisecond,
 		"a restart inside the same tick window must not record a second missed row")
+}
+
+// TestSnapshotCatchupAnchors_FreezesBeforeContaminatingWrites is the
+// regression test for the boot-order bug: production calls
+// SnapshotCatchupAnchors before the scheduler starts or run_on_start fires,
+// specifically because either can write a fresh run for this boot before
+// catch-up ever runs (catch-up itself is deferred until notify subscribes).
+// Before the fix, the equivalent of this anchor read happened live, at
+// catch-up time — so a run_on_start task's own boot-time run (or a tick the
+// live scheduler already fired) became "the last run", and a real downtime
+// gap was silently reported as zero missed ticks.
+func TestSnapshotCatchupAnchors_FreezesBeforeContaminatingWrites(t *testing.T) {
+	db, err := storage.New(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	ctx := context.Background()
+	task := catchupTask(model.MissedRunAll) // */5 * * * *, MaxCatchUpRuns: 100
+	task.RunOnStart = true
+	tasks := map[string]*model.Task{task.Name: task}
+
+	// The real last run before the daemon went down: six hours ago.
+	staleAnchor := time.Date(2026, 4, 7, 4, 0, 0, 0, time.UTC)
+	require.NoError(t, db.CreateRun(ctx, &model.Run{
+		ID:        ulid.Make().String(),
+		TaskName:  task.Name,
+		Status:    model.PhaseEnded,
+		EndReason: model.EndReasonPtr(model.ReasonSuccess),
+		CreatedAt: staleAnchor,
+	}))
+
+	now := time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC)
+
+	// Snapshot the anchor at true boot time, before anything else can write a
+	// run for this boot.
+	anchors, errs := SnapshotCatchupAnchors(ctx, db, tasks, now)
+	require.Equal(t, 0, errs)
+
+	// Simulate what RunStartupTasks (or a live scheduler tick) does next in
+	// the real boot sequence: create a fresh run for this boot, stamped "now".
+	require.NoError(t, db.CreateRun(ctx, &model.Run{
+		ID:          ulid.Make().String(),
+		TaskName:    task.Name,
+		Status:      model.PhaseEnded,
+		EndReason:   model.EndReasonPtr(model.ReasonSuccess),
+		TriggeredBy: model.TriggeredByStartup,
+		CreatedAt:   now,
+	}))
+
+	// Prove the contamination is real: a live query for "the last run" now
+	// returns the boot-time run, not the stale one — this is exactly what the
+	// pre-fix code queried at catch-up time.
+	lastRun, err := db.GetLastRunByTask(ctx, task.Name)
+	require.NoError(t, err)
+	require.True(t, lastRun.CreatedAt.Equal(now), "sanity: the boot-time run is now the DB's most recent row")
+
+	runner := new(mockTaskRunner)
+	runner.On("RecordMissedRun", task.Name, mock.Anything, mock.Anything).Return(nil)
+	runner.On("TriggerRun", task.Name, model.TriggeredByCron).Return(&model.Run{}, nil)
+
+	result := RunMissedTickCatchUp(tasks, runner, now, time.UTC, anchors, errs)
+
+	// Six hours at */5 = 72 missed ticks, detected despite the DB's "last run"
+	// now being the contaminating boot-time write.
+	assert.Equal(t, 72, result.Triggered,
+		"catch-up must use the frozen pre-boot anchor, not the live (contaminated) last run")
 }

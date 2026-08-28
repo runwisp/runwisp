@@ -40,7 +40,7 @@ type Dependencies struct {
 	RunRepo           ExternalRunGetter
 	PendingUploadRepo PendingLogUploadRepository
 	EventBus          EventSubscriber
-	LocalTasks        map[string]*model.Task
+	LocalTasks        LocalTaskSource
 	LogDir            string
 	Availability      executor.Availability
 	OnConnected       func()
@@ -65,7 +65,7 @@ type Client struct {
 
 	syncClient   *TaskSyncClient
 	taskManager  TaskRunner
-	localTasks   map[string]*model.Task
+	localTasks   LocalTaskSource
 	availability executor.Availability
 	onConnected  func()
 	handler      *InboundHandler
@@ -105,15 +105,6 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		return nil, fmt.Errorf("cloud client requires event bus")
 	}
 
-	localTasks := make(map[string]*model.Task, len(deps.LocalTasks))
-	for name, task := range deps.LocalTasks {
-		if task == nil {
-			continue
-		}
-		copyTask := *task
-		localTasks[name] = &copyTask
-	}
-
 	tracker := NewExecutionTracker()
 	connMgr := newConnectionManager(tracker)
 
@@ -125,7 +116,7 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 		logDir:       deps.LogDir,
 		syncClient:   NewTaskSyncClient(cfg.TaskSyncURL(), requestTimeout),
 		taskManager:  deps.TaskManager,
-		localTasks:   localTasks,
+		localTasks:   deps.LocalTasks,
 		availability: deps.Availability,
 		onConnected:  deps.OnConnected,
 		tracker:      tracker,
@@ -320,15 +311,24 @@ func (client *Client) syncTasks(ctx context.Context, connection *websocket.Conn)
 // snapshotForSync builds the task set reported in tasks.sync: the TOML-loaded
 // local tasks plus every daemon-supervised service the task manager currently
 // holds that the TOML doesn't already cover. The extras are cloud-declared
-// services (registered at runtime via service:apply, named "cloud-<id>"); folding
-// them in tells the cloud they are live on this runner, which gates their
-// deletion. A cold-start's first sync runs before any service:apply has landed,
-// so a freshly declared service is confirmed on the next sync (reconnect or
-// TOML reload), not this one — the task manager retains it across reconnects.
+// services (registered at runtime via service:apply, named "cloud-<id>");
+// folding them in tells the cloud they are live on this runner, which gates
+// their deletion. Run-to-completion tasks the manager also holds (e.g. an
+// ad-hoc inline cloud dispatch) are deliberately excluded by the
+// ListServiceTasks filter — those are one-shot executions, never a live task
+// on this runner, and reporting them would misrepresent them as persistent.
+// A cold-start's first sync runs before any service:apply has landed, so a
+// freshly declared service is confirmed on the next sync (reconnect or TOML
+// reload), not this one — the task manager retains it across reconnects.
 func (client *Client) snapshotForSync() map[string]*model.Task {
-	snapshot := make(map[string]*model.Task, len(client.localTasks))
-	for name, task := range client.localTasks {
-		snapshot[name] = task
+	snapshot := map[string]*model.Task{}
+	if client.localTasks != nil {
+		for name, task := range client.localTasks.Snapshot() {
+			if task == nil {
+				continue
+			}
+			snapshot[name] = task
+		}
 	}
 	if client.taskManager != nil {
 		for _, svc := range client.taskManager.ListServiceTasks() {

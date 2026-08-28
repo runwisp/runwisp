@@ -224,7 +224,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		svc:         svc,
 		srv:         srv,
 		fatalCh:     fatalCh,
-		reconciler:  reconciler,
+		reload:      reloadFn,
 		debugWriter: debugWriter,
 		logBuffer:   logBuffer,
 		cancelCloud: cancelCloud,
@@ -268,7 +268,18 @@ func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Fl
 		Snapshot:   snap,
 		Now:        time.Now,
 	})
-	return r, r.Reconcile
+	reload := func() (model.ReloadResult, error) {
+		result, err := r.Reconcile()
+		if err == nil {
+			// treat_missed_as_failure lives on model.Task, not [notify], so
+			// Reconcile() can change it live — refresh notify's mute set here
+			// rather than leaving it fixed at boot, or the change silently
+			// never takes effect short of a full restart.
+			syncMutedMissed(svc)
+		}
+		return result, err
+	}
+	return r, reload
 }
 
 // startCronHoldWatcher starts the loop that keeps the cron holds honest, so an

@@ -479,9 +479,14 @@ func (w *LogWriter) Close() error {
 
 	// Persist finalized metadata so readers never need to scan the file. This
 	// also creates the container for short runs that produced no index/frames.
+	// PrevStart must be carried forward from the last rotation (see
+	// rewriteContainerForRotation) — sidecar records are last-write-wins, so
+	// omitting it here would zero out the .prev segment's real start line the
+	// moment the run ends.
 	w.appendRecord(logutil.MetaRecord(logutil.LogMeta{
 		RotatedLines: w.rotatedLines,
 		RotatedBytes: w.rotatedBytes,
+		PrevStart:    w.prevSegmentStart,
 		FinalLines:   w.lineCount,
 		Finalized:    true,
 	}))

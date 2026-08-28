@@ -108,13 +108,14 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 
 	debugSrv := startDebugServer()
 
-	notifyB := startNotify(ctx, cfg, db, eventBus, addWarning)
+	notifyB := startNotify(ctx, cfg, db, eventBus, tasksMap, addWarning)
 
 	if mode == modeStandalone {
 		// Run catch-up now that notify is subscribed, so a missed-run gap
 		// detected from persisted history raises a run.missed alert instead of
-		// emitting into a bus nobody is listening on yet.
-		boot.catchUpResult = runMissedTickCatchUp(ctx, db, tasksMap, taskManager, boot.schedLoc)
+		// emitting into a bus nobody is listening on yet. Uses the anchor
+		// snapshot captured before the scheduler/run_on_start could taint it.
+		boot.catchUpResult = runMissedTickCatchUp(tasksMap, taskManager, boot.catchUpNow, boot.schedLoc, boot.catchUpAnchors, boot.catchUpSnapshotErrors)
 	}
 
 	return &daemonServices{
@@ -150,6 +151,13 @@ type standaloneBoot struct {
 	pendingSummary   uikit.PendingRunsSummary
 	runOnStartResult runtime.RunOnStartResult
 	catchUpResult    runtime.CatchUpResult
+	// catchUpNow and catchUpAnchors/catchUpSnapshotErrors are captured by
+	// SnapshotCatchupAnchors before the scheduler starts or run_on_start
+	// fires — see the comment in startStandaloneScheduling. The deferred
+	// runMissedTickCatchUp call (after notify subscribes) consumes them.
+	catchUpNow            time.Time
+	catchUpAnchors        map[string]time.Time
+	catchUpSnapshotErrors int
 }
 
 // startStandaloneScheduling brings up the scheduler, resumes pending runs, and
@@ -169,6 +177,17 @@ func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storag
 		return boot, locErr
 	}
 	boot.schedLoc = schedLoc
+
+	// Snapshot catch-up anchors now, before anything below can create a run
+	// for this boot: scheduler.Start() can fire a live tick and
+	// RunStartupTasks always creates a run for run_on_start tasks. Reading
+	// "the last run" any later would pick up that boot-time run instead of
+	// the real last run before the daemon went down, silently hiding the
+	// downtime gap catch-up exists to detect. runMissedTickCatchUp consumes
+	// this snapshot later, once notify has subscribed.
+	boot.catchUpNow = time.Now()
+	boot.catchUpAnchors, boot.catchUpSnapshotErrors = runtime.SnapshotCatchupAnchors(ctx, db, tasksMap, boot.catchUpNow)
+
 	scheduler := runtime.NewScheduler(taskManager, tasksMap, schedLoc, nil)
 	boot.scheduler = scheduler
 	schedResult, err := scheduler.Start()
@@ -197,8 +216,8 @@ func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storag
 // startNotify initializes the notify subsystem and starts its service, routing
 // both the init failure and the start failure to warnings (non-fatal: the
 // daemon must boot even when notify is misconfigured or unavailable).
-func startNotify(ctx context.Context, cfg *daemonConfig, db storage.Database, eventBus *events.Bus, addWarning func(string, ...any)) notifyBundle {
-	notifyB, err := initNotify(cfg, db, eventBus, slog.Default())
+func startNotify(ctx context.Context, cfg *daemonConfig, db storage.Database, eventBus *events.Bus, tasksMap map[string]*model.Task, addWarning func(string, ...any)) notifyBundle {
+	notifyB, err := initNotify(cfg, db, eventBus, tasksMap, slog.Default())
 	if err != nil {
 		addWarning("Failed to initialize notify subsystem: %v", err)
 	}
@@ -212,9 +231,11 @@ func startNotify(ctx context.Context, cfg *daemonConfig, db storage.Database, ev
 
 // runMissedTickCatchUp runs missed-tick catch-up and narrates the outcome via
 // slog only when something went wrong; the banner already shows the triggered
-// total, so default-verbosity INFO output stays uncluttered.
-func runMissedTickCatchUp(ctx context.Context, db storage.Database, tasksMap map[string]*model.Task, taskManager runtime.TaskManager, schedLoc *time.Location) runtime.CatchUpResult {
-	catchUpResult := runtime.RunMissedTickCatchUp(ctx, db, tasksMap, taskManager, time.Now(), schedLoc)
+// total, so default-verbosity INFO output stays uncluttered. now and anchors
+// come from startStandaloneScheduling's SnapshotCatchupAnchors call, captured
+// before the scheduler or run_on_start could create a run for this boot.
+func runMissedTickCatchUp(tasksMap map[string]*model.Task, taskManager runtime.TaskManager, now time.Time, schedLoc *time.Location, anchors map[string]time.Time, snapshotErrors int) runtime.CatchUpResult {
+	catchUpResult := runtime.RunMissedTickCatchUp(tasksMap, taskManager, now, schedLoc, anchors, snapshotErrors)
 	if catchUpResult.Errors > 0 {
 		slog.Warn("Missed-tick catch-up completed with errors",
 			"triggered", catchUpResult.Triggered, "errors", catchUpResult.Errors)

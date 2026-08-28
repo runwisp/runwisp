@@ -7,15 +7,18 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/channel"
 	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
 	"github.com/runwisp/runwisp/internal/notify/coalesce"
+	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -202,7 +205,7 @@ func TestInitNotify_NoNotifiersNoRoutesReturnsZero(t *testing.T) {
 		},
 	}
 
-	bundle, err := initNotify(cfg, db, events.NewEventBus(), slog.Default())
+	bundle, err := initNotify(cfg, db, events.NewEventBus(), nil, slog.Default())
 	require.NoError(t, err)
 	assert.Nil(t, bundle.Service, "expected zero bundle when nothing is configured")
 	assert.Nil(t, bundle.Hub)
@@ -229,10 +232,21 @@ func TestInitNotify_InappRouteWiresHubAndService(t *testing.T) {
 		},
 	}
 
-	bundle, err := initNotify(cfg, db, events.NewEventBus(), slog.Default())
+	bundle, err := initNotify(cfg, db, events.NewEventBus(), nil, slog.Default())
 	require.NoError(t, err)
 	require.NotNil(t, bundle.Service, "expected Service when inapp route is wired")
 	require.NotNil(t, bundle.Hub, "expected Hub when inapp route is wired")
+}
+
+// taskMap builds the name-keyed map mutedMissedTasks expects, from a
+// varargs list — mirrors both the boot path (built from cfg.Config.Tasks)
+// and the reload path (a TaskRegistry snapshot).
+func taskMap(tasks ...model.Task) map[string]*model.Task {
+	m := make(map[string]*model.Task, len(tasks))
+	for i := range tasks {
+		m[tasks[i].Name] = &tasks[i]
+	}
+	return m
 }
 
 func TestMutedMissedTasks(t *testing.T) {
@@ -240,20 +254,20 @@ func TestMutedMissedTasks(t *testing.T) {
 	muteTrue := true
 
 	t.Run("nil when nothing is muted", func(t *testing.T) {
-		tasks := []model.Task{
-			{Name: "a"}, // omitted → notifies
-			{Name: "b", TreatMissedAsFailure: &muteTrue}, // explicit true → notifies
-		}
+		tasks := taskMap(
+			model.Task{Name: "a"}, // omitted → notifies
+			model.Task{Name: "b", TreatMissedAsFailure: &muteTrue}, // explicit true → notifies
+		)
 		assert.Nil(t, mutedMissedTasks(tasks),
 			"the common case must allocate nothing")
 	})
 
 	t.Run("collects only the explicit-false tasks", func(t *testing.T) {
-		tasks := []model.Task{
-			{Name: "loud"},
-			{Name: "quiet", TreatMissedAsFailure: &muteFalse},
-			{Name: "also-quiet", TreatMissedAsFailure: &muteFalse},
-		}
+		tasks := taskMap(
+			model.Task{Name: "loud"},
+			model.Task{Name: "quiet", TreatMissedAsFailure: &muteFalse},
+			model.Task{Name: "also-quiet", TreatMissedAsFailure: &muteFalse},
+		)
 		muted := mutedMissedTasks(tasks)
 		require.Len(t, muted, 2)
 		_, hasQuiet := muted["quiet"]
@@ -281,4 +295,73 @@ func TestRoutesReferenceInapp(t *testing.T) {
 			assert.Equal(t, tt.want, routesReferenceInapp(tt.routes))
 		})
 	}
+}
+
+// recordingChannel is a minimal notify.Channel that counts deliveries, for
+// asserting whether an event reached routing.
+type recordingChannel struct {
+	delivered atomic.Int64
+}
+
+func (c *recordingChannel) ID() string { return "test" }
+func (c *recordingChannel) Execute(context.Context, *notify.Event) error {
+	c.delivered.Add(1)
+	return nil
+}
+func (c *recordingChannel) Close(context.Context) error { return nil }
+
+func publishMissedRun(bus *events.Bus, taskName string) {
+	reason := model.ReasonMissed
+	bus.Publish(events.EventRunFailed, events.RunEvent{
+		Run: &model.Run{
+			TaskName:  taskName,
+			Status:    model.PhaseEnded,
+			EndReason: &reason,
+			ExitCode:  -1,
+		},
+	})
+}
+
+// TestSyncMutedMissed_ReloadTakesEffectWithoutRestart is the end-to-end
+// regression test for the reload-staleness bug: notify.Service used to fix
+// its missed-run mute set at construction time under the assumption that
+// treat_missed_as_failure could only change via a full restart. It's an
+// ordinary per-task field, so `runwisp reload`/SIGHUP can change it live —
+// syncMutedMissed (wired into every successful reload) must re-derive the
+// mute set from the live task registry and apply it immediately, with no
+// service restart.
+func TestSyncMutedMissed_ReloadTakesEffectWithoutRestart(t *testing.T) {
+	bus := events.NewEventBus()
+	recorder := &recordingChannel{}
+	svc := notify.New(notify.Config{
+		Bus:      bus,
+		Channels: []notify.Channel{recorder},
+		Rules: []notify.Rule{{
+			Match:     func(ev *notify.Event) bool { return ev.Kind == notify.KindRunMissed },
+			ActionIDs: []string{recorder.ID()},
+		}},
+	})
+	require.NoError(t, svc.Start(context.Background()))
+	t.Cleanup(func() { _ = svc.Stop(context.Background()) })
+
+	tasks := runtime.NewTaskRegistry(map[string]*model.Task{
+		"nightly": {Name: "nightly"}, // notifies by default
+	})
+	daemonSvc := &daemonServices{Tasks: tasks, Notify: notifyBundle{Service: svc}}
+	syncMutedMissed(daemonSvc)
+
+	publishMissedRun(bus, "nightly")
+	require.Eventually(t, func() bool { return recorder.delivered.Load() == 1 }, time.Second, time.Millisecond,
+		"nightly must alert on miss before the reload")
+
+	// Simulate a reload that flips treat_missed_as_failure to false, the way
+	// Reconciler.applyChanged swaps the changed task into the live registry.
+	muteFalse := false
+	tasks.Set(&model.Task{Name: "nightly", TreatMissedAsFailure: &muteFalse})
+	syncMutedMissed(daemonSvc)
+
+	publishMissedRun(bus, "nightly")
+	time.Sleep(50 * time.Millisecond) // let the async dispatch settle
+	assert.Equal(t, int64(1), recorder.delivered.Load(),
+		"reload must mute run.missed immediately, without restarting the daemon")
 }

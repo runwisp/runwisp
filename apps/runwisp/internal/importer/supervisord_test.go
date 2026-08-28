@@ -261,3 +261,35 @@ func TestSupervisordSkipEmitsNoOtherNotes(t *testing.T) {
 		t.Fatalf("a skipped program must not explain a mapping that never happened: %+v", allNotes(res))
 	}
 }
+
+// TestParseSupervisordEnvApostropheMidValue guards against a quote character
+// appearing mid-value (an English contraction, an apostrophe-name) being
+// mistaken for the start of a quoted value — which previously swallowed
+// every subsequent KEY=value pair into the current one.
+func TestParseSupervisordEnvApostropheMidValue(t *testing.T) {
+	got := parseSupervisordEnv(`MSG=it's fine,DEBUG=1`)
+	want := map[string]string{"MSG": "it's fine", "DEBUG": "1"}
+	if len(got) != len(want) {
+		t.Fatalf("parseSupervisordEnv(...) = %#v, want %#v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("parseSupervisordEnv(...) = %#v, want %#v", got, want)
+		}
+	}
+}
+
+// TestParseSupervisordEnvQuotedValueStillHonored makes sure a genuinely
+// quoted value (the documented syntax) still has its commas protected.
+func TestParseSupervisordEnvQuotedValueStillHonored(t *testing.T) {
+	got := parseSupervisordEnv(`GREETING="a,b",OTHER=x`)
+	want := map[string]string{"GREETING": "a,b", "OTHER": "x"}
+	if len(got) != len(want) {
+		t.Fatalf("parseSupervisordEnv(...) = %#v, want %#v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("parseSupervisordEnv(...) = %#v, want %#v", got, want)
+		}
+	}
+}

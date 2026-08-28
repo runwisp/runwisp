@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Missed-run catch-up no longer misses gaps on tasks with `run_on_start`.** The daemon now anchors catch-up detection to the last run recorded before boot, rather than a run created during startup.
+- **`reload` and `SIGHUP` now apply a task's `treat_missed_as_failure` change immediately**, instead of requiring a full daemon restart.
+- **Fixed line numbering on `.log.prev` after 2+ log rotations**, once the run had finished.
+- **`import cron`/`import supervisord` no longer drop or corrupt data on plausible input.** A supervisord `environment=` value containing an apostrophe or stray quote (an English contraction, `O'Brien`) no longer swallows every subsequent `KEY=value` pair; a system crontab's user column now accepts uppercase account names (`Deploy`, not just `deploy`).
+- **The optional cloud integration's task list now reflects `reload`/`SIGHUP` on the next reconnect**, instead of staying frozen at whatever the daemon's task set looked like at startup.
+- **A jittered task with `on_overlap = "queue"` no longer leaks a stale in-flight slot when its queued run is orphaned by a `reload`** that removes or reconfigures the task.
+- **Fixed the runs list occasionally showing a duplicate or skipping a row** when a run started, finished, or was deleted live while the list was loading its next page.
+
 ## [0.16.0] - 2026-08-23
 
 ### Added
