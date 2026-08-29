@@ -278,7 +278,7 @@ func (srv *Server) registerNotificationsSSE(api huma.API) {
 }
 
 func (srv *Server) sseNotificationsHandler(ctx context.Context, _ *struct{}, send sse.Sender) {
-	release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
+	release, ok := srv.streams.acquire(ctx)
 	if !ok {
 		return
 	}

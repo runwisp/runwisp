@@ -37,26 +37,41 @@ func newStreamLimiter(maxGlobal, maxPerIP int) *streamLimiter {
 	}
 }
 
-// acquire reserves a slot for ip. It returns release (always non-nil when ok)
-// which the caller must invoke when the stream finishes.
-func (l *streamLimiter) acquire(ip string) (release func(), ok bool) {
+// acquire reserves a stream slot for the request carried by ctx. The global
+// cap always applies; the per-IP sub-cap does not, for connections accepted
+// on the local Unix socket (PEERCRED-verified). Those connections have no
+// usable peer address — net.UnixConn.RemoteAddr() is empty for an unnamed
+// client socket — so every local TUI/CLI stream would otherwise collapse
+// into one shared bucket keyed by "", capping all local clients on the
+// machine combined at maxPerIP instead of bounding each one individually.
+// It returns release (always non-nil when ok) which the caller must invoke
+// when the stream finishes.
+func (l *streamLimiter) acquire(ctx context.Context) (release func(), ok bool) {
+	ip := streamClientIPFromCtx(ctx)
+	exempt := IsLocalTrustedCtx(ctx)
+
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	if l.total >= l.maxGlobal {
 		return nil, false
 	}
-	if l.perIP[ip] >= l.maxPerIP {
+	if !exempt && l.perIP[ip] >= l.maxPerIP {
 		return nil, false
 	}
 
 	l.total++
-	l.perIP[ip]++
+	if !exempt {
+		l.perIP[ip]++
+	}
 
 	return func() {
 		l.mu.Lock()
 		defer l.mu.Unlock()
 		l.total--
+		if exempt {
+			return
+		}
 		if l.perIP[ip] <= 1 {
 			delete(l.perIP, ip)
 		} else {

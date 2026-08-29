@@ -25,7 +25,7 @@ func (srv *Server) registerDaemonLogSSE(api huma.API) {
 }
 
 func (srv *Server) sseDaemonLogHandler(ctx context.Context, _ *struct{}, send sse.Sender) {
-	release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
+	release, ok := srv.streams.acquire(ctx)
 	if !ok {
 		return
 	}

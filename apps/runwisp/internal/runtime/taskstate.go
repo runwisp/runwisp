@@ -66,6 +66,18 @@ type taskState struct {
 	// spawn on cond==nil alone would silently leave a revived queue task with no
 	// drain. Guarded by m.mu.
 	queueDraining bool
+
+	// stoppedByRemoval latches when RemoveTask stops a service's supervisor as
+	// mechanical bookkeeping (the operator never asked to stop it — the task
+	// simply hasn't finished draining yet). UpsertTask's revival branch
+	// consults it to decide whether the resulting stopped flag should clear:
+	// an operator's own StopService must still survive a reload, but
+	// RemoveTask's stop must not silently outlive the removal it was for, or
+	// a revived service task comes back registered with zero live instances
+	// and no error surfaced anywhere. Cleared by StopService/
+	// RestartServiceInstances too, since either one makes the stop (or lack
+	// of it) unambiguously operator-driven from that point on.
+	stoppedByRemoval bool
 }
 
 // concurrencyAction describes what the caller should do after evaluating a

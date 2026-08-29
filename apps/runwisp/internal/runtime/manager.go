@@ -192,12 +192,7 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 	ts.task = &taskCopy
 
 	if task.Kind.IsService() {
-		if ts.supervisor == nil {
-			ts.supervisor = services.NewSupervisor(task.Name, task.Instances, task.HealthyAfter, !task.Autostart, m.clock)
-		} else {
-			ts.supervisor.SetInstances(task.Instances)
-			ts.supervisor.SetHealthyAfter(task.HealthyAfter)
-		}
+		m.upsertSupervisor(ts, task)
 	}
 
 	if task.OnOverlap == model.PolicyQueue {
@@ -228,6 +223,27 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 		// unconditionally so a loop parked on an already-empty queue wakes too.
 		orphanedRunIDs = m.finalizeOrphanedQueue(ts)
 		ts.cond.Broadcast()
+	}
+}
+
+// upsertSupervisor creates or updates ts's service supervisor for task.
+// Caller holds m.mu.
+func (m *defaultTaskManager) upsertSupervisor(ts *taskState, task *model.Task) {
+	if ts.supervisor == nil {
+		ts.supervisor = services.NewSupervisor(task.Name, task.Instances, task.HealthyAfter, !task.Autostart, m.clock)
+		return
+	}
+	ts.supervisor.SetInstances(task.Instances)
+	ts.supervisor.SetHealthyAfter(task.HealthyAfter)
+	// Reviving a service RemoveTask stopped only as mechanical bookkeeping
+	// (see stoppedByRemoval's doc): resume it exactly as a brand-new
+	// supervisor would — i.e. per the revived definition's own Autostart —
+	// instead of leaving it permanently stopped with no error ever surfaced.
+	if ts.stoppedByRemoval {
+		if task.Autostart {
+			ts.supervisor.MarkRunning()
+		}
+		ts.stoppedByRemoval = false
 	}
 }
 
@@ -287,6 +303,7 @@ func (m *defaultTaskManager) RemoveTask(taskName string) {
 	// the exit handler won't bring them back.
 	if ts.task.Kind.IsService() && ts.supervisor != nil {
 		ts.supervisor.MarkStopped()
+		ts.stoppedByRemoval = true
 		for _, ar := range ts.active {
 			ar.Cancel()
 		}
@@ -737,6 +754,7 @@ func (m *defaultTaskManager) RestartServiceInstances(taskName string) error {
 	wasStopped := ts.supervisor.IsStopped()
 	wasFatal := ts.supervisor.IsAnyFatal()
 	ts.supervisor.MarkRunning()
+	ts.stoppedByRemoval = false
 	for _, ar := range ts.active {
 		ar.Cancel()
 	}
@@ -763,6 +781,7 @@ func (m *defaultTaskManager) StopService(taskName string) error {
 		return fmt.Errorf(errTaskNotServiceFmt, taskName)
 	}
 	ts.supervisor.MarkStopped()
+	ts.stoppedByRemoval = false
 	for _, ar := range ts.active {
 		ar.Cancel()
 	}

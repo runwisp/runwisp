@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A task removed by `reload` and then re-added by a later `reload` now resumes as a normal running service**, instead of coming back with all instances stopped.
+- **Log rotation no longer deletes the previous rotated segment (`.log.prev`) when the rename that replaces it fails**, and a failed write to the active log file no longer advances its line/byte counters as though it had succeeded.
+- **A notifier's `retry_budget` now applies to SMTP and sendmail notifiers too**, not just Slack, Discord, Telegram, and webhook.
+- **The unread-notification badge no longer overcounts after a failed "mark read" action**, even if a newer update for that notification had arrived while the request was in flight.
+- **Local CLI/TUI streaming connections (log tail, event stream) are no longer subject to the same per-IP cap as remote clients** — only the overall connection limit still applies to them.
+
 ## [0.16.1] - 2026-08-28
 
 ### Fixed

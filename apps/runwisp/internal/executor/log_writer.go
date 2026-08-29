@@ -66,6 +66,11 @@ type LogWriter struct {
 	// defaults to os.Create.
 	createSegment func(path string) (*os.File, error)
 
+	// renameFile moves the current segment into its .prev slot during
+	// rotation. Injected for tests to simulate a rename failure; defaults to
+	// os.Rename.
+	renameFile func(oldpath, newpath string) error
+
 	// State
 	currentOffset  int64
 	lineCount      int64
@@ -138,6 +143,7 @@ func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
 		diskCheckInterval: defaultDiskCheckInterval,
 		freeDisk:          freeDiskSpace,
 		createSegment:     os.Create,
+		renameFile:        os.Rename,
 		now:               now,
 	}, nil
 }
@@ -362,6 +368,7 @@ func (w *LogWriter) writeSystemLine(msg string) {
 	n, err := w.file.Write([]byte(line))
 	if err != nil {
 		slog.Warn("Failed to write system log line", "err", err)
+		return
 	}
 	w.currentOffset += int64(n)
 	w.lineCount++
@@ -386,10 +393,13 @@ func (w *LogWriter) rotateTail() error {
 		slog.Warn("Failed to close log file before rotation", "err", err)
 	}
 
+	// os.Rename atomically replaces prevPath if it already exists (POSIX
+	// rename(2)), so there's no need to remove it first — doing so would
+	// destroy the previously rotated segment even when the rename below
+	// then fails, with nothing left to replace it.
 	prevPath := logutil.PrevPath(w.mainPath)
-	os.Remove(prevPath) // drop a previous rotation artifact
 
-	if err := os.Rename(w.mainPath, prevPath); err != nil {
+	if err := w.renameFile(w.mainPath, prevPath); err != nil {
 		// Undo accumulation and re-open the original log for appending.
 		w.rotatedLines -= w.lineCount
 		w.rotatedBytes -= w.currentOffset

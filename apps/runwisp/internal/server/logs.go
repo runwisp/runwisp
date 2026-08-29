@@ -251,7 +251,7 @@ func (srv *Server) registerLogSSE(api huma.API) {
 		"dropped": LogDroppedEvent{},
 		"done":    LogDoneEvent{},
 	}, func(ctx context.Context, input *LogStreamInput, send sse.Sender) {
-		release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
+		release, ok := srv.streams.acquire(ctx)
 		if !ok {
 			return
 		}
