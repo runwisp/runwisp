@@ -198,3 +198,24 @@ func TestReconcile_ChangedServiceIsStillRecycled(t *testing.T) {
 	assert.Equal(t, []string{"worker"}, mgr.recycled)
 	assert.Empty(t, mgr.restarted, "reload must not use the operator-restart path")
 }
+
+// TestReconcile_TaskToServiceKindFlipStartsNotRecycles is the reload-invariant
+// regression: when a plain cron/manual task is redefined as a service on reload,
+// the run that was in flight under the old non-service definition must finish
+// under it. Recycling (RecycleServiceInstances) cancels every active run, so it
+// would kill that draining run — a run the supervisor never managed. The flip
+// must instead only bring the new service up to its instance count
+// (StartServiceInstances), exactly as a freshly added service would.
+func TestReconcile_TaskToServiceKindFlipStartsNotRecycles(t *testing.T) {
+	before := &model.Task{Name: "web", Cron: "*/5 * * * *", Run: "web --once"}
+	after := &model.Task{Name: "web", Kind: model.KindService, Run: "web --loop", Instances: 1, Autostart: true}
+
+	mgr, _, diff := applyDiff(taskSet(before), taskSet(after))
+
+	require.Len(t, diff.Changed, 1)
+	assert.True(t, diff.Changed[0].Has(config.ReasonKind), "task→service is a kind change")
+	assert.Equal(t, []string{"web"}, mgr.started, "a newly-serviced task must be started, so the old run drains")
+	assert.Empty(t, mgr.recycled, "recycling would cancel the in-flight non-service run")
+	assert.Empty(t, mgr.restarted)
+	assert.Empty(t, mgr.stopped)
+}

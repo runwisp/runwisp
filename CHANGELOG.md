@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fetching a run's log or searching logs now returns a proper error instead of a misleading "not found" when the underlying storage lookup itself fails.**
 - **A rejected config write (failed validation on `reload`) now rolls back through the same crash-safe atomic write every config write uses**, instead of a plain in-place write that could leave the file corrupted if interrupted mid-rollback.
 - **A notifier's `retry_budget` is now honoured even when a single delivery attempt hangs**, by capping the HTTP client's own timeout to the configured budget.
+- **Redefining a plain task as a service on `reload` now starts the new service like any newly-added one and lets the in-flight run finish under its old definition**, instead of cancelling that still-draining run.
+- **A coalesced notification now states how many repeats it stands in for** (`×N`), so a folded burst of failures no longer reads as a single occurrence.
+- **A hung (not merely down) Docker/Podman engine no longer blocks container-task startup indefinitely** — the first-connect probe is now time-bounded, so one wedged engine can't stall every other container task's start.
+- **`import supervisord` now merges a `[program]` that appears in more than one included file** (last value wins, as supervisord itself assembles it), instead of importing it twice as `web` and `web-2`.
 
 ## [0.16.1] - 2026-08-28
 
