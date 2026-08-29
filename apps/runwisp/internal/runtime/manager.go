@@ -766,6 +766,38 @@ func (m *defaultTaskManager) RestartServiceInstances(taskName string) error {
 	return nil
 }
 
+// RecycleServiceInstances lets a reload-changed service definition (new
+// command, env, or instance count) take effect without treating the reload
+// as an operator restart: a service the operator stopped, or one never
+// started because Autostart is false, is left exactly as it is — reload adds/
+// changes/removes tasks live, it is not a restart. A FATAL instance likewise
+// stays FATAL; only an explicit restart clears it. When the service is
+// running, every live instance is cancelled so the exit handler respawns it
+// under the new definition, and any slots freed by an instance-count increase
+// are filled.
+func (m *defaultTaskManager) RecycleServiceInstances(taskName string) error {
+	m.mu.Lock()
+	ts, exists := m.tasks[taskName]
+	if !exists {
+		m.mu.Unlock()
+		return fmt.Errorf(errTaskNotFoundFmt, taskName)
+	}
+	if !ts.task.Kind.IsService() {
+		m.mu.Unlock()
+		return fmt.Errorf(errTaskNotServiceFmt, taskName)
+	}
+	if ts.supervisor.IsStopped() {
+		m.mu.Unlock()
+		return nil
+	}
+	for _, ar := range ts.active {
+		ar.Cancel()
+	}
+	m.mu.Unlock()
+
+	return m.StartServiceInstances(taskName, model.TriggeredByService)
+}
+
 // StopService marks the service as operator-stopped (in-memory only, cleared
 // on daemon restart) and cancels every live instance. The exit handler honours
 // the flag and stops refilling slots.

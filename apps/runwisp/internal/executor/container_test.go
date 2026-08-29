@@ -865,6 +865,104 @@ func TestCleanupBoundedWhenDockerHangs(t *testing.T) {
 	}
 }
 
+// TestForceKillBoundedWhenDockerHangs pins the fix for the shutdown-freeze
+// bug: ForceKill's ContainerKill call used context.Background(), and
+// forceKillSurvivors (internal/runtime/manager.go) calls ForceKill
+// synchronously while holding the task manager's lock. A Docker/Podman engine
+// that merely hangs (not fails fast like "unreachable") would therefore block
+// that lock forever — freezing every other task operation, not just this
+// run's shutdown. ForceKill must bound the call with containerCleanupTimeout
+// the same way Cleanup already does.
+func TestForceKillBoundedWhenDockerHangs(t *testing.T) {
+	original := containerCleanupTimeout
+	containerCleanupTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { containerCleanupTimeout = original })
+
+	killSawCancellation := make(chan struct{}, 1)
+	mock := &mockDockerClient{
+		imageBuildFunc: func(ctx context.Context, _ io.Reader, _ client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{Body: io.NopCloser(strings.NewReader(`{"stream":"ok"}`))}, nil
+		},
+		containerAttachFunc: func(ctx context.Context, _ string, _ client.ContainerAttachOptions) (client.ContainerAttachResult, error) {
+			return newHijackedResponse(""), nil
+		},
+		containerKillFunc: func(ctx context.Context, _ string, _ client.ContainerKillOptions) (client.ContainerKillResult, error) {
+			// A hung engine: only returns once the caller's context gives up.
+			<-ctx.Done()
+			killSawCancellation <- struct{}{}
+			return client.ContainerKillResult{}, ctx.Err()
+		},
+	}
+	b := NewContainerBackendFromClient(mock)
+
+	proc, err := b.Start(context.Background(), &model.Task{}, nil, &model.ContainerExecution{
+		Script:    "echo test",
+		BaseImage: "alpine",
+	})
+	require.NoError(t, err)
+
+	done := make(chan struct{})
+	go func() {
+		proc.ForceKill()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ForceKill blocked forever against a hung Docker client — the bounded context did not fire")
+	}
+
+	select {
+	case <-killSawCancellation:
+	default:
+		t.Fatal("ContainerKill never observed its context being cancelled")
+	}
+}
+
+// TestGracefulStopContainerHonoursGracePeriod proves the ContainerStop bound
+// added alongside the ForceKill fix never cuts short the operator-configured
+// graceful_stop window: the call must still be in flight (not yet cancelled)
+// once graceful_stop has elapsed, and only the safety margin on top of it may
+// time the call out.
+func TestGracefulStopContainerHonoursGracePeriod(t *testing.T) {
+	original := containerCleanupTimeout
+	containerCleanupTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { containerCleanupTimeout = original })
+
+	const graceful = 200 * time.Millisecond
+	stillWaitingAtGrace := make(chan bool, 1)
+	mock := &mockDockerClient{
+		containerStopFunc: func(ctx context.Context, _ string, _ client.ContainerStopOptions) (client.ContainerStopResult, error) {
+			timer := time.NewTimer(graceful)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				stillWaitingAtGrace <- true
+			case <-ctx.Done():
+				stillWaitingAtGrace <- false
+			}
+			return client.ContainerStopResult{}, nil
+		},
+	}
+	b := NewContainerBackendFromClient(mock)
+
+	done := make(chan struct{})
+	go func() {
+		b.gracefulStopContainer("ctr", &model.Task{GracefulStop: graceful})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("gracefulStopContainer never returned")
+	}
+
+	require.True(t, <-stillWaitingAtGrace,
+		"the bounding context must not fire before the configured graceful_stop window elapses")
+}
+
 func TestRemoveContainerLogsError(t *testing.T) {
 	called := false
 	mock := &mockDockerClient{

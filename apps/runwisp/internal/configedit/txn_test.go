@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -203,6 +204,38 @@ func TestTxn_WriteFailureRollsBackEarlierFiles(t *testing.T) {
 	assert.Equal(t, "original\n", readFile(t, first))
 }
 
+// TestFileBackup_RestoreUsesAtomicReplace guards the crash-safety fix for
+// restore(): it used to rewrite an existing file in place via os.WriteFile,
+// which is not crash-safe — a kill mid-write can leave a torn file, exactly
+// what this package's "every file goes through temp+rename" contract exists to
+// prevent. restore must now replace the file the same way every forward write
+// does. Exercised directly against backupFile/restore (bypassing Txn.Apply,
+// whose own forward write already rotates the inode once) so the assertion
+// isolates restore's own behavior: an in-place rewrite leaves the inode from
+// the intervening write untouched, a rename-based replace does not.
+func TestFileBackup_RestoreUsesAtomicReplace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.toml")
+	require.NoError(t, os.WriteFile(path, []byte("original\n"), 0o644))
+	b := backupFile(path)
+
+	// The write this backup exists to undo — an in-place rewrite, so it does
+	// not itself touch the inode.
+	require.NoError(t, os.WriteFile(path, []byte("changed\n"), 0o644))
+	changed, err := os.Stat(path)
+	require.NoError(t, err)
+	changedIno := changed.Sys().(*syscall.Stat_t).Ino
+
+	b.restore()
+
+	assert.Equal(t, "original\n", readFile(t, path))
+	after, err := os.Stat(path)
+	require.NoError(t, err)
+	afterIno := after.Sys().(*syscall.Stat_t).Ino
+	assert.NotEqual(t, changedIno, afterIno,
+		"restore must replace the file via rename (a new inode), not rewrite it in place")
+}
+
 // TestTxn_LeavesNoTempFiles guards against the temp+rename mechanism littering
 // the operator's config dir when a write is rolled back.
 func TestTxn_LeavesNoTempFiles(t *testing.T) {
@@ -254,10 +287,16 @@ func TestTxn_WritePreservingOwnerRefusesAMissingFile(t *testing.T) {
 
 // TestTxn_WritePreservingOwnerRollsBackOnFailure covers a WritePreservingOwner
 // queued alongside a write that later fails: the crontab rewrite must unwind
-// exactly like an ordinary Write does.
+// exactly like an ordinary Write does. It must also land back under the file's
+// original owner: restore replaces the file via rename, which — unlike an
+// in-place rewrite — takes on the temp file's own ownership unless the backup
+// explicitly chowns it back.
 func TestTxn_WritePreservingOwnerRollsBackOnFailure(t *testing.T) {
 	dir := writeFileTree(t, map[string]string{"crontab": "original\n"})
 	crontab := filepath.Join(dir, "crontab")
+	before, err := os.Stat(crontab)
+	require.NoError(t, err)
+	beforeOwner := before.Sys().(*syscall.Stat_t)
 
 	txn := New()
 	txn.WritePreservingOwner(crontab, []byte("rewritten\n"))
@@ -265,4 +304,10 @@ func TestTxn_WritePreservingOwnerRollsBackOnFailure(t *testing.T) {
 	sentinel := errors.New("gate says no")
 	require.ErrorIs(t, txn.Apply(func() error { return sentinel }), sentinel)
 	assert.Equal(t, "original\n", readFile(t, crontab))
+
+	after, err := os.Stat(crontab)
+	require.NoError(t, err)
+	afterOwner := after.Sys().(*syscall.Stat_t)
+	assert.Equal(t, beforeOwner.Uid, afterOwner.Uid, "restore must preserve the original owner")
+	assert.Equal(t, beforeOwner.Gid, afterOwner.Gid, "restore must preserve the original group")
 }

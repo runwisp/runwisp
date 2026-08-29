@@ -30,12 +30,14 @@ var allowedVolumePrefixes = []string{
 	"/tmp",
 }
 
-// containerCleanupTimeout bounds the ContainerRemove/ImageRemove calls made
-// from Process.Cleanup. Cleanup runs in the same goroutine the daemon shutdown
-// coordinator waits on after ForceKill has already unblocked it; without a
-// deadline a hung (not merely unreachable — that fails fast) Docker/Podman
-// engine would stall shutdown indefinitely even though the process itself is
-// already dead. A var (not const) so tests can shrink it instead of waiting
+// containerCleanupTimeout bounds every Docker SDK call issued outside a run's
+// own context: ContainerRemove/ImageRemove from Process.Cleanup, ContainerKill
+// from ForceKill, and ContainerStop from the graceful-stop watcher. ForceKill
+// in particular runs synchronously under the task manager's lock (see
+// forceKillSurvivors) while the daemon shutdown coordinator waits on it; a
+// hung (not merely unreachable — that fails fast) Docker/Podman engine would
+// otherwise freeze that lock, and with it every other task operation, not
+// just shutdown. A var (not const) so tests can shrink it instead of waiting
 // out the real 10s to prove the deadline fires.
 var containerCleanupTimeout = 10 * time.Second
 
@@ -213,9 +215,14 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, run *mod
 			return code, waitErr
 		},
 		// ForceKill skips the graceful window (daemon shutdown fast path):
-		// SIGKILL the container now rather than sending stop_signal first.
+		// SIGKILL the container now rather than sending stop_signal first. It
+		// runs under the task manager's lock (forceKillSurvivors), so the call
+		// is bounded the same way Cleanup is — an unbounded call here would
+		// freeze that lock, not just this one run's shutdown.
 		ForceKill: func() {
-			if _, err := b.docker.ContainerKill(context.Background(), containerID, client.ContainerKillOptions{Signal: "SIGKILL"}); err != nil {
+			killCtx, cancel := context.WithTimeout(context.Background(), containerCleanupTimeout)
+			defer cancel()
+			if _, err := b.docker.ContainerKill(killCtx, containerID, client.ContainerKillOptions{Signal: "SIGKILL"}); err != nil {
 				slog.Warn("Failed to kill container", "id", containerID, "err", err)
 			}
 		},
@@ -242,7 +249,15 @@ func (b *ContainerBackend) gracefulStopContainer(containerID string, task *model
 	}
 	secs := gracefulStopSeconds(task.GracefulStop)
 	opts.Timeout = &secs
-	if _, err := b.docker.ContainerStop(context.Background(), containerID, opts); err != nil {
+	// Docker's own wait (opts.Timeout) is the graceful window the operator
+	// configured via graceful_stop; the call is expected to block that long
+	// before Docker's native ladder falls back to SIGKILL. containerCleanupTimeout
+	// is added on top purely as a safety margin against an engine that never
+	// honours its own timeout — it must never cut the configured grace window
+	// short.
+	stopCtx, cancel := context.WithTimeout(context.Background(), time.Duration(secs)*time.Second+containerCleanupTimeout)
+	defer cancel()
+	if _, err := b.docker.ContainerStop(stopCtx, containerID, opts); err != nil {
 		slog.Warn("Failed to stop container gracefully", "id", containerID, "err", err)
 	}
 }

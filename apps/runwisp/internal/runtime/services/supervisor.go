@@ -220,11 +220,16 @@ func (s *Supervisor) LiveCount() int {
 }
 
 // MissingSlots returns the indexes in [0, instances) that are not currently
-// live. Used by StartServiceInstances to bring a service up to desired count.
+// live and not FATAL. Used by StartServiceInstances to bring a service up to
+// desired count. A FATAL slot is deliberately excluded: it has exhausted its
+// start-retry budget and only comes back once something clears the flag
+// (MarkRunning/ClearFatal) — treating it as "missing" would silently retry a
+// slot the supervisor already gave up on.
 func (s *Supervisor) MissingSlots() []int {
 	missing := make([]int, 0, s.instances)
 	for i := 0; i < s.instances; i++ {
-		if !s.slot(i).live {
+		st := s.slot(i)
+		if !st.live && !st.fatal {
 			missing = append(missing, i)
 		}
 	}

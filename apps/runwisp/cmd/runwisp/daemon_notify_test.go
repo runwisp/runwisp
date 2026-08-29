@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -67,6 +68,31 @@ func TestBackoffOverride(t *testing.T) {
 		assert.LessOrEqual(t, provider.Backoff.MaxElapsedTime, cap)
 		assert.LessOrEqual(t, provider.Backoff.InitialInterval, cap)
 		assert.LessOrEqual(t, provider.Backoff.MaxInterval, cap)
+	})
+	// Regression: retry_budget used to only rewrite the backoff schedule, never
+	// the HTTP client's own fixed 15s request timeout. A single hanging request
+	// could then block far longer than the operator's configured budget before
+	// MaxElapsedTime (checked only between attempts) ever got a chance to fire.
+	t.Run("shrinks the client timeout when smaller than the default", func(t *testing.T) {
+		cap := 2 * time.Second
+		fn := backoffOverride(cap, slog.Default())
+		require.NotNil(t, fn)
+		provider := fn()
+		require.NotNil(t, provider)
+		client, ok := provider.Client.(*http.Client)
+		require.True(t, ok)
+		assert.LessOrEqual(t, client.Timeout, cap,
+			"a single request must not be able to outlive retry_budget")
+	})
+	t.Run("leaves the client timeout alone when the budget is larger", func(t *testing.T) {
+		cap := time.Minute
+		fn := backoffOverride(cap, slog.Default())
+		require.NotNil(t, fn)
+		provider := fn()
+		require.NotNil(t, provider)
+		client, ok := provider.Client.(*http.Client)
+		require.True(t, ok)
+		assert.Equal(t, 15*time.Second, client.Timeout)
 	})
 }
 

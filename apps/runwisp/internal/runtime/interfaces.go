@@ -70,6 +70,11 @@ type TaskManager interface {
 	RemoveTask(taskName string)
 	GetActiveRuns(taskName string) []*ActiveRun
 	LoadPendingRuns(runs []model.Run) PendingRunsResult
+	// RecycleServiceInstances picks up a reload-changed service definition
+	// without the operator-restart semantics of RestartServiceInstances: a
+	// stopped (or never-autostarted) service, and any FATAL instance, is left
+	// untouched. Used only by the reconciler.
+	RecycleServiceInstances(taskName string) error
 	// ServiceHealthy reports whether a service has at least one instance that
 	// has been running for at least its healthy_after — the live readiness
 	// signal depends_on boot gating waits on. Non-services report false.

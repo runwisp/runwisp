@@ -187,6 +187,22 @@ func TestMissingSlots(t *testing.T) {
 	assert.Equal(t, []int{0, 2, 3}, missing)
 }
 
+// TestMissingSlotsExcludesFatal guards a FATAL slot from being reported as
+// spawnable: StartServiceInstances fills every "missing" slot unconditionally,
+// so a FATAL slot showing up here would get silently respawned outside of an
+// explicit restart (MarkRunning/ClearFatal) — the exact thing FATAL exists to
+// prevent.
+func TestMissingSlotsExcludesFatal(t *testing.T) {
+	s := newSupervisorForTest("svc", 1)
+	_, err := s.Reserve(nil)
+	require.NoError(t, err)
+	s.MarkLive(0)
+	_, fatal := s.RecordExit(0, time.Millisecond, 0, true)
+	require.True(t, fatal)
+
+	assert.Empty(t, s.MissingSlots(), "a FATAL slot must not be reported as missing")
+}
+
 func TestIsHealthyTracksLiveUptime(t *testing.T) {
 	const threshold = 30 * time.Second
 	now := time.Unix(0, 0)

@@ -463,3 +463,76 @@ func TestStopServiceHaltsRestarts(t *testing.T) {
 		return len(djm.tasks["svc"].active) == 2
 	}, 2*time.Second, 10*time.Millisecond, "Restart should bring instances back")
 }
+
+// TestRecycleServiceInstances_LeavesStoppedServiceStopped is the regression
+// test for a reload recycling a service the operator stopped: reload adds/
+// changes/removes tasks live, it is never a restart, so it must not revive a
+// service the operator explicitly stopped. Only an operator/cloud-initiated
+// RestartServiceInstances may clear that flag.
+func TestRecycleServiceInstances_LeavesStoppedServiceStopped(t *testing.T) {
+	djm, _, eb := newGatedManager(t)
+	jm := TaskManager(djm)
+
+	task := serviceTask("svc", 2)
+	jm.UpsertTask(task)
+
+	started := watchRuns(eb, events.EventRunStarted)
+	done := watchCompletions(eb)
+	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+	started.waitFor(t, 2)
+
+	require.NoError(t, jm.StopService("svc"))
+	done.waitFor(t, 2)
+
+	// A reload picks up a definition change (e.g. a new command) for this
+	// still-stopped service.
+	require.NoError(t, jm.RecycleServiceInstances("svc"))
+
+	djm.mu.RLock()
+	stillStopped := djm.tasks["svc"].supervisor.IsStopped()
+	active := len(djm.tasks["svc"].active)
+	djm.mu.RUnlock()
+	assert.True(t, stillStopped, "reload must not clear an operator stop")
+	assert.Equal(t, 0, active, "a reload-recycled stopped service must stay at zero instances")
+}
+
+// TestRecycleServiceInstances_LeavesAutostartFalseStopped is the sibling case:
+// a service that never started because Autostart is false must not be
+// force-started just because reload picked up a change to its definition.
+func TestRecycleServiceInstances_LeavesAutostartFalseStopped(t *testing.T) {
+	djm, _, _ := newTestManager(t)
+	jm := TaskManager(djm)
+
+	task := serviceTask("manual", 1)
+	task.Autostart = false
+	jm.UpsertTask(task)
+
+	require.NoError(t, jm.RecycleServiceInstances("manual"))
+	time.Sleep(50 * time.Millisecond)
+
+	djm.mu.RLock()
+	active := len(djm.tasks["manual"].active)
+	djm.mu.RUnlock()
+	assert.Equal(t, 0, active, "reload must not start an autostart=false service")
+}
+
+// TestRecycleServiceInstances_CancelsRunningInstances proves the positive case
+// still works: a running service's instances are cancelled and refilled so a
+// genuine command/env/instance-count change takes effect.
+func TestRecycleServiceInstances_CancelsRunningInstances(t *testing.T) {
+	djm, _, eb := newGatedManager(t)
+	jm := TaskManager(djm)
+
+	task := serviceTask("svc", 3)
+	jm.UpsertTask(task)
+
+	started := watchRuns(eb, events.EventRunStarted)
+	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+	started.waitFor(t, 3)
+
+	require.NoError(t, jm.RecycleServiceInstances("svc"))
+
+	// Each of the three instances is cancelled and refilled; six starts total
+	// proves the refills happened.
+	started.waitFor(t, 6)
+}
