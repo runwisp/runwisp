@@ -4,6 +4,7 @@
 package executor
 
 import (
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -520,4 +521,57 @@ func TestLogWriter_InjectedClockStampsSystemLine(t *testing.T) {
 	want := fixed.Format("2006-01-02 15:04:05")
 	assert.Contains(t, string(data), want,
 		"SYSTEM line must use the injected clock's formatted timestamp")
+}
+
+// TestLogWriter_WriteSystemLine_LeavesCountersOnWriteFailure guards against a
+// desync bug: writeSystemLine used to bump lineCount/currentOffset even when
+// the underlying write failed, unlike writeOneLine which correctly leaves
+// counters untouched on error. A miscounted lineCount throws off every later
+// LineNum handed out on the event bus and recorded in the sidecar index.
+func TestLogWriter_WriteSystemLine_LeavesCountersOnWriteFailure(t *testing.T) {
+	opts := newTestOpts(t.TempDir())
+	w, err := NewLogWriter(opts)
+	require.NoError(t, err)
+	require.NoError(t, w.file.Close()) // force the next write against it to fail
+
+	w.writeSystemLine("disk critically low")
+
+	assert.Equal(t, int64(0), w.lineCount,
+		"a failed system-line write must not be counted as a written line")
+	assert.Equal(t, int64(0), w.currentOffset,
+		"a failed system-line write must not advance the offset")
+}
+
+// TestLogWriter_RotateRenameFailure_PreservesExistingPrev guards against a
+// data-loss bug: rotateTail used to unconditionally os.Remove the .prev slot
+// before attempting the rename that repopulates it. os.Rename already
+// atomically replaces an existing destination, so that remove bought nothing
+// on the happy path — but if the rename then failed, the previously rotated
+// segment was gone with nothing to replace it.
+func TestLogWriter_RotateRenameFailure_PreservesExistingPrev(t *testing.T) {
+	opts := newTestOpts(t.TempDir())
+	opts.MaxSize = 200
+	opts.Overflow = "drop_old"
+	w, err := NewLogWriter(opts)
+	require.NoError(t, err)
+
+	w.WriteLineEvent(strings.Repeat("a", 100), logutil.StreamStdout)
+	w.WriteLineEvent(strings.Repeat("b", 100), logutil.StreamStdout) // triggers the first rotation
+
+	prevPath := logutil.PrevPath(opts.LogPath)
+	firstRotation, err := os.ReadFile(prevPath)
+	require.NoError(t, err)
+	require.NotEmpty(t, firstRotation, "first rotation must have populated .prev")
+
+	w.renameFile = func(oldpath, newpath string) error {
+		return errors.New("simulated rename failure")
+	}
+
+	w.WriteLineEvent(strings.Repeat("c", 100), logutil.StreamStdout) // attempts a second rotation, which fails to rename
+	require.NoError(t, w.Close())
+
+	afterFailedRotation, err := os.ReadFile(prevPath)
+	require.NoError(t, err)
+	assert.Equal(t, firstRotation, afterFailedRotation,
+		".prev must survive a rotation whose rename fails, not just one whose remove would have failed too")
 }

@@ -359,6 +359,11 @@ describe("NotificationStore", () => {
         // which would have reverted count back to 1 here.
         expect(store.items[0]?.readAt).toBeNull();
         expect(store.items[0]?.count).toBe(5);
+        // The SSE update already set unread to its authoritative value (1)
+        // before the POST failed. The rollback must not layer another delta
+        // on top of that (the old code computed max(0, 1 + 1) = 2) — it
+        // re-fetches the authoritative count instead.
+        expect(store.unread).toBe(1);
     });
 
     it("resyncs items and unread count when connectionStore reports a reconnect", async () => {

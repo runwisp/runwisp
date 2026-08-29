@@ -405,6 +405,47 @@ func TestReloadDropReAddRevivesQueueTask(t *testing.T) {
 	assert.True(t, ok, "retiring the old run must not delete the revived task")
 }
 
+// TestUpsertTask_RevivesServiceStoppedOnlyByRemoval guards against a reload
+// race: RemoveTask stops a service's supervisor as mechanical bookkeeping
+// before its taskState can be deleted, but the taskState (and supervisor)
+// survive removal when an instance hasn't retired yet. A reload that re-adds
+// the same-named service before that instance retires used to leave the
+// revived supervisor permanently stopped — StartServiceInstances silently
+// no-ops on a stopped supervisor, so the service came back registered with
+// zero live instances and no error surfaced anywhere.
+func TestUpsertTask_RevivesServiceStoppedOnlyByRemoval(t *testing.T) {
+	jm, exec, eb := newGatedManager(t)
+	started := watchRuns(eb, events.EventRunStarted)
+
+	jm.UpsertTask(serviceTask("svc", 1))
+	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+	started.waitFor(t, 1) // the one instance is live; ts.active is non-empty
+
+	// Reproduce RemoveTask's exact effect on a service whose instance hasn't
+	// retired yet, without depending on real cancellation timing — which
+	// would race the goroutine that finalizes the cancelled run (and, once
+	// ts.active empties, deletes the taskState) against this same test
+	// goroutine's next statement.
+	jm.mu.Lock()
+	ts := jm.tasks["svc"]
+	require.NotNil(t, ts)
+	ts.removed = true
+	ts.supervisor.MarkStopped()
+	ts.stoppedByRemoval = true
+	jm.mu.Unlock()
+
+	jm.UpsertTask(serviceTask("svc", 1)) // reload #2 re-adds it before the old instance retires
+
+	jm.mu.Lock()
+	stillStopped := ts.supervisor.IsStopped()
+	jm.mu.Unlock()
+	assert.False(t, stillStopped,
+		"revival must clear a stop RemoveTask itself set, not one the operator asked for — "+
+			"leaving it set makes StartServiceInstances silently no-op forever")
+
+	exec.ReleaseAll()
+}
+
 // TestEphemeralTaskReapedAfterRun is the regression test for Bug 7: a
 // cloud-inline task is marked Ephemeral and never enters the TOML registry, so
 // reconcile can never RemoveTask it. Its taskState (and, for PolicyQueue, its

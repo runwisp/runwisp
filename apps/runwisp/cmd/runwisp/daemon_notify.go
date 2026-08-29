@@ -78,7 +78,12 @@ func initNotify(
 
 	if override := backoffOverride(notifyCfg.RetryBudget, logger); override != nil {
 		for i := range resolved.Notifiers {
-			resolved.Notifiers[i].Transport = override()
+			t := override()
+			resolved.Notifiers[i].Transport = t
+			// SMTP/sendmail don't go through Transport at all, so the override
+			// must also be threaded through as a plain BackoffConfig or
+			// retry_budget silently has no effect on those channels.
+			resolved.Notifiers[i].Backoff = t.Backoff
 		}
 	}
 

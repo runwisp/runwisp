@@ -56,8 +56,13 @@ type NotifierSpec struct {
 	TemplatePath string // optional override
 	// Transport overrides the channel's HTTP transport. Nil means use defaults.
 	// Daemon-level glue uses this to apply a global backoff override on HTTP
-	// providers (Slack, Telegram).
+	// providers (Slack, Discord, Telegram, webhook).
 	Transport *notify.HTTPProvider
+	// Backoff overrides the channel's retry backoff for non-HTTP providers
+	// (SMTP, sendmail), which don't go through Transport. Zero means use
+	// notify.DefaultBackoff(). Daemon-level glue sets this from the same
+	// retry_budget override applied to Transport above.
+	Backoff notify.BackoffConfig
 	// RenderContext binds per-daemon values (external URL, fingerprint, tail
 	// reader) into the template's func map. Zero values produce safe defaults:
 	// missing external URL collapses link blocks, missing fingerprint shortens
@@ -156,6 +161,7 @@ func buildSMTP(spec NotifierSpec) (notify.Channel, error) {
 		Recipients:    spec.Recipients,
 		CC:            spec.CC,
 		BCC:           spec.BCC,
+		Backoff:       spec.Backoff,
 		Renderer:      r,
 	})
 }
@@ -173,6 +179,7 @@ func buildSendmail(spec NotifierSpec) (notify.Channel, error) {
 		Recipients: spec.Recipients,
 		CC:         spec.CC,
 		BCC:        spec.BCC,
+		Backoff:    spec.Backoff,
 		Renderer:   r,
 	})
 }

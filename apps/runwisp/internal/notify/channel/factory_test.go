@@ -4,12 +4,15 @@
 package channel
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/runwisp/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/internal/testutil"
 )
 
 func TestBuild_UnknownTypeReturnsClearError(t *testing.T) {
@@ -136,6 +139,54 @@ func TestBuild_SmtpEmptyHostReturnsError(t *testing.T) {
 	_, err := Build(NotifierSpec{ID: "mail", Type: "smtp"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "host is required")
+}
+
+// TestBuild_SmtpPropagatesBackoff guards against a wiring bug: unlike
+// Transport (Slack/Discord/Telegram/webhook), spec.Backoff used to never
+// reach smtp.Config, so a configured notify.retry_budget silently had no
+// effect on SMTP (and sendmail, which shares the same factory pattern) and
+// every failed send retried for the full 5-minute default instead. Dialing a
+// closed local port fails immediately, so a channel actually honoring a tiny
+// injected MaxElapsedTime gives up in well under a second; one still using
+// the 5-minute default would still be retrying when the safety-net deadline
+// below fires.
+func TestBuild_SmtpPropagatesBackoff(t *testing.T) {
+	port := testutil.PickFreePort(t)
+	ch, err := Build(NotifierSpec{
+		ID:         "mail",
+		Type:       "smtp",
+		Host:       "127.0.0.1",
+		Port:       port,
+		From:       "RunWisp <runwisp@example.test>",
+		Recipients: []string{"oncall@example.test"},
+		Backoff: notify.BackoffConfig{
+			InitialInterval: time.Millisecond,
+			MaxInterval:     5 * time.Millisecond,
+			MaxElapsedTime:  50 * time.Millisecond,
+			Multiplier:      2,
+		},
+	})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- ch.Execute(ctx, &notify.Event{
+			Kind:      notify.KindRunFailed,
+			Severity:  notify.SevError,
+			TaskName:  "backup-db",
+			Reason:    "exit 1",
+			Timestamp: time.Now().UTC(),
+		})
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(1500 * time.Millisecond):
+		t.Fatal("smtp channel ignored spec.Backoff and is still retrying under the default 5-minute budget")
+	}
 }
 
 func TestBuild_SlackTemplatePathMissing(t *testing.T) {

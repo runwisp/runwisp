@@ -228,7 +228,16 @@ class NotificationStore {
             if (current) {
                 rollback[j] = { ...current, readAt: previous.readAt };
                 this.#items = rollback;
-                this.#unread = Math.max(0, this.#unread + (read ? 1 : -1));
+            }
+            // #unread is always the server's authoritative snapshot (see the
+            // field comment above) — re-fetch it instead of reapplying a
+            // relative delta, which would drift if an authoritative SSE
+            // update (e.g. from this same notification recurring) landed
+            // while the request was in flight.
+            try {
+                this.#unread = await this.#fetchUnread();
+            } catch (refetchErr) {
+                this.#logger.error("Failed to refresh unread count after rollback", refetchErr);
             }
         }
     }

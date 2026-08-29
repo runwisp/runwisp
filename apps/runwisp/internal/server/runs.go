@@ -414,7 +414,7 @@ func (srv *Server) registerAppStreamSSE(api huma.API) {
 // connection until the client disconnects. Folding these onto a single stream
 // is what keeps a browser tab to one EventSource instead of three.
 func (srv *Server) appStreamHandler(ctx context.Context, input *AppStreamInput, send sse.Sender) {
-	release, ok := srv.streams.acquire(streamClientIPFromCtx(ctx))
+	release, ok := srv.streams.acquire(ctx)
 	if !ok {
 		// huma owns the response writer here, so we communicate refusal via
 		// the SSE channel and return; the client will see a single ping then
