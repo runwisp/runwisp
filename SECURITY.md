@@ -46,7 +46,7 @@ Before reporting, understand the boundaries RunWisp commits to:
   - **Network clients (Web UI, remote REST)** log in with a password using a challenge-response handshake, so the password never travels in plaintext even over HTTP. A successful login issues a session in a secure cookie.
   - The TUI's "Open in browser" action mints a single-use launch ticket over the local socket; the browser redeems it on `127.0.0.1` to receive a session cookie. The password never leaves the host.
 - **No secrets on disk.** The daemon password is either supplied via `RUNWISP_PASSWORD` (in-memory only) or freshly generated each boot (ephemeral). The JWT signing key is **derived** from the password and the per-install fingerprint via HKDF-SHA-256; it is never written. Setting a fresh `RUNWISP_PASSWORD` and restarting invalidates every existing session.
-- **No required network.** The daemon must work fully offline; outbound integrations (`internal/cloud/`, Slack, Telegram) are strictly opt-in.
+- **No required network.** The daemon must work fully offline; outbound integrations (`internal/cloud/`, notification channels, TLS cert lookups) are strictly opt-in.
 
 This is single-tenant by design. RunWisp does not ship SSO, directory integration, or fine-grained RBAC — those are stated non-goals.
 
@@ -58,7 +58,7 @@ We welcome reports against:
 - Unix-socket trust bypass — anything that lets a foreign UID drive the daemon despite `SO_PEERCRED` / `LOCAL_PEERCRED`, or that lets a network caller reach socket-only endpoints (e.g. `GET /api/local/credentials`)
 - Launch-ticket flaws — replay, forgery, or off-host redemption of a ticket meant for `127.0.0.1`
 - Authorization flaws — unauthorized triggering, listing, stopping, or observing of tasks via REST or the control-plane protocol
-- Injection into the REST API, SSE log stream, or notification channels (Slack, Telegram, in-app)
+- Injection into the REST API, SSE log stream, or notification channels (Slack, Discord, Telegram, email/SMTP, generic webhooks, in-app)
 - Path traversal or arbitrary file disclosure via the daemon
 - TOML parser bugs that escalate privilege beyond what `run = "..."` already permits
 - Misuse of `X-Forwarded-*` headers — spoofing the source IP or scheme past `RUNWISP_TRUSTED_PROXIES`
@@ -72,7 +72,8 @@ We'll close these without a fix:
 - **Arbitrary code execution via `runwisp.toml`.** That's the documented behaviour — `run =` is a shell command. Anyone with write access to the TOML can run shell as the daemon user.
 - **Anything reachable by reading the data directory.** A user who can read `<datadir>` can connect to the Unix socket and drive the daemon. The data dir's `0700` perms are the boundary; if you've already crossed it, you're inside the trust circle.
 - **Denial of service against the local daemon by the operator running it.** RunWisp is single-tenant.
-- Missing security headers on a UI that's intended to be reverse-proxied for any non-loopback exposure (TLS, HSTS, etc. are the proxy's job).
+- **Unrestricted access when the operator has explicitly set `RUNWISP_AUTH=off`.** That flag disables the auth boundary wholesale, on purpose, and warns loudly at startup. Anyone who can reach the bound address is meant to act as an authenticated user.
+- Missing security headers (HSTS, etc.) when a reverse proxy is placed in front of the daemon — those are the proxy's job. Building on the daemon's own HTTPS (`tls = "auto"` or a supplied certificate) doesn't change this: the proxy, if present, still owns headers for whatever it terminates.
 - Missing rate limits or CAPTCHAs on the auth endpoint when bound to loopback.
 - Findings against the marketing site (`runwisp.com`) or docs site (`docs.runwisp.com`) — those are separate properties, but email us and we'll route it.
 - Social engineering, physical access, or supply-chain attacks against contributors.
@@ -83,21 +84,20 @@ If you're running RunWisp in production, here's the short list:
 
 1. **Keep the data directory at `0700`.** Local-socket trust assumes only the daemon's user can read it. Don't loosen perms; don't share the data dir across users.
 2. **Set `RUNWISP_PASSWORD` for network clients.** If unset, the daemon mints a random ephemeral password every boot — fine for a local workstation, lousy for shared servers because every restart logs every browser session out. Source the password from a Docker secret, systemd `LoadCredential=`, or your sealed-secrets workflow.
-3. **Keep `--host 127.0.0.1`.** The daemon binds to loopback by default. If you must expose it, terminate TLS at a reverse proxy (nginx, Caddy, Traefik) and forward over the loopback interface — the challenge-response handshake protects the password on the wire, but the session cookie does not.
+3. **Keep `--host 127.0.0.1`.** The daemon binds to loopback by default. If you must expose it, either set `daemon.tls = "auto"` (or supply `tls_cert`/`tls_key`) so the daemon serves HTTPS itself, or terminate TLS at a reverse proxy (nginx, Caddy, Traefik) and forward over the loopback interface — the challenge-response handshake protects the password on the wire, but the session cookie does not.
 4. **Set `RUNWISP_TRUSTED_PROXIES` to your proxy's CIDR** (e.g. `127.0.0.1/32`). The daemon will then honour `X-Forwarded-Proto: https` for secure cookie issuance and `X-Forwarded-For` for rate-limit accounting. Catch-all ranges (`0.0.0.0/0`, `::/0`) are rejected — trusting the entire internet would let any client spoof their IP.
-5. **Don't ignore the non-loopback warning banner.** The daemon prints it to stderr when it starts on a non-loopback address without a trusted proxy. It exists for a reason.
+5. **Don't ignore the non-loopback warning banner.** The daemon prints it to stderr when it starts on a non-loopback address serving plain HTTP (`tls = "off"`). It exists for a reason.
 6. **Run as an unprivileged user** wherever possible. The daemon needs only the permissions required to execute its tasks and own its data dir.
 7. **Stay on the latest release.** Watch [GitHub Releases](https://github.com/runwisp/runwisp/releases) — pre-1.0, security fixes ship on the moving train.
 
 ## Network exposure
 
-By default the daemon binds to `127.0.0.1` and is reachable only from the same host. If you bind to a non-loopback address (`--host 0.0.0.0`, a public IP, …) the API and the session cookie travel in **cleartext HTTP** — anyone on path can capture the cookie and ride your session. (The password itself is protected by the challenge-response handshake, but a captured session cookie is sufficient to act as you until it expires.)
+By default the daemon binds to `127.0.0.1` and is reachable only from the same host. If you bind to a non-loopback address (`--host 0.0.0.0`, a public IP, …) with `tls` left at its default (`"off"`), the API and the session cookie travel in **cleartext HTTP** — anyone on path can capture the cookie and ride your session. (The password itself is protected by the challenge-response handshake, but a captured session cookie is sufficient to act as you until it expires.)
 
-The recommended deployment for any non-loopback exposure:
+For any non-loopback exposure, pick one:
 
-1. Keep `--host 127.0.0.1` (or `::1`).
-2. Run a reverse proxy on the same host that terminates TLS and forwards to the daemon over loopback.
-3. Set `RUNWISP_TRUSTED_PROXIES` to the CIDR of that proxy.
+- **Built-in TLS.** Set `daemon.tls = "auto"` to have the daemon self-sign and serve HTTPS on its own, or supply `tls_cert`/`tls_key` for a certificate you manage. No reverse proxy required.
+- **Reverse proxy.** Keep `--host 127.0.0.1` (or `::1`) and `tls = "off"`, run a reverse proxy on the same host that terminates TLS and forwards to the daemon over loopback, and set `RUNWISP_TRUSTED_PROXIES` to that proxy's CIDR.
 
 ## Acknowledgments
 
