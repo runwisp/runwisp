@@ -949,7 +949,7 @@ func TestGracefulStopContainerHonoursGracePeriod(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		b.gracefulStopContainer("ctr", &model.Task{GracefulStop: graceful})
+		b.gracefulStopContainer("ctr", &model.Task{GracefulStop: graceful}, containerCleanupTimeout)
 		close(done)
 	}()
 
@@ -961,6 +961,95 @@ func TestGracefulStopContainerHonoursGracePeriod(t *testing.T) {
 
 	require.True(t, <-stillWaitingAtGrace,
 		"the bounding context must not fire before the configured graceful_stop window elapses")
+}
+
+// blockingConn is a net.Conn whose Read blocks until Close is called — it models
+// an attach stream from a wedged engine that never EOFs on its own.
+type blockingConn struct {
+	r *io.PipeReader
+}
+
+func (c *blockingConn) Read(b []byte) (int, error)       { return c.r.Read(b) }
+func (c *blockingConn) Write(b []byte) (int, error)      { return len(b), nil }
+func (c *blockingConn) Close() error                     { return c.r.Close() }
+func (c *blockingConn) LocalAddr() net.Addr              { return nil }
+func (c *blockingConn) RemoteAddr() net.Addr             { return nil }
+func (c *blockingConn) SetDeadline(time.Time) error      { return nil }
+func (c *blockingConn) SetReadDeadline(time.Time) error  { return nil }
+func (c *blockingConn) SetWriteDeadline(time.Time) error { return nil }
+
+func newBlockingHijackedResponse() client.ContainerAttachResult {
+	pr, _ := io.Pipe() // write end never used: the read side blocks until Close
+	return client.ContainerAttachResult{HijackedResponse: client.NewHijackedResponse(&blockingConn{r: pr}, "")}
+}
+
+// TestStartWedgedEngineDoesNotHangRun pins the remaining half of the hung-engine
+// fix: bounding ForceKill/Cleanup/ContainerStop is not enough on its own,
+// because a wedged engine — one that accepts the socket but never reports the
+// container's exit and never EOFs the attach stream — pins the run goroutine in
+// two places the earlier bounds don't reach: the stream copy (which runs before
+// Process.Wait) and ContainerWait itself, whose context was deliberately
+// un-cancelable. A stop/timeout must still drive the run to a terminal state
+// within a bounded window: the stop watcher escalates to a SIGKILL and, when
+// even that goes unanswered, severs the local attach + wait so the run can
+// finalize instead of hanging — and, with it, freezing daemon shutdown.
+func TestStartWedgedEngineDoesNotHangRun(t *testing.T) {
+	original := containerCleanupTimeout
+	containerCleanupTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { containerCleanupTimeout = original })
+
+	mock := &mockDockerClient{
+		imageBuildFunc: func(ctx context.Context, _ io.Reader, _ client.ImageBuildOptions) (client.ImageBuildResult, error) {
+			return client.ImageBuildResult{Body: io.NopCloser(strings.NewReader(`{"stream":"ok"}`))}, nil
+		},
+		containerAttachFunc: func(ctx context.Context, _ string, _ client.ContainerAttachOptions) (client.ContainerAttachResult, error) {
+			return newBlockingHijackedResponse(), nil
+		},
+		// The exit is never reported until the wait's own context is cancelled —
+		// the give-up escape hatch the fix adds.
+		containerWaitFunc: func(ctx context.Context, _ string, _ client.ContainerWaitOptions) client.ContainerWaitResult {
+			errCh := make(chan error, 1)
+			go func() {
+				<-ctx.Done()
+				errCh <- ctx.Err()
+			}()
+			return client.ContainerWaitResult{Result: make(chan container.WaitResponse), Error: errCh}
+		},
+		// Stop and kill both hang until their own bounded context gives up: the
+		// engine never actually acts on them.
+		containerStopFunc: func(ctx context.Context, _ string, _ client.ContainerStopOptions) (client.ContainerStopResult, error) {
+			<-ctx.Done()
+			return client.ContainerStopResult{}, ctx.Err()
+		},
+		containerKillFunc: func(ctx context.Context, _ string, _ client.ContainerKillOptions) (client.ContainerKillResult, error) {
+			<-ctx.Done()
+			return client.ContainerKillResult{}, ctx.Err()
+		},
+	}
+	b := NewContainerBackendFromClient(mock)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	proc, err := b.Start(ctx, &model.Task{}, nil, &model.ContainerExecution{Script: "sleep 100", BaseImage: "alpine"})
+	require.NoError(t, err)
+
+	// Mirror the executor's real ordering: drain both streams to EOF (where the
+	// run goroutine blocks first), then Wait, then Cleanup.
+	finished := make(chan struct{})
+	go func() {
+		io.Copy(io.Discard, proc.Stdout)
+		io.Copy(io.Discard, proc.Stderr)
+		proc.Wait()
+		proc.Cleanup()
+		close(finished)
+	}()
+
+	cancel() // a stop/timeout cancels the run ctx
+
+	select {
+	case <-finished:
+	case <-time.After(3 * time.Second):
+		t.Fatal("a wedged engine froze the run: stream+wait never finalized after the run ctx was cancelled")
+	}
 }
 
 func TestRemoveContainerLogsError(t *testing.T) {

@@ -4,6 +4,8 @@
 package importer
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -39,6 +41,47 @@ user=www-data
 
 	if tally := res.Tally(); tally.Tasks != 0 || tally.Services != 1 {
 		t.Fatalf("counts: got %+v, want 0 tasks / 1 service", tally)
+	}
+}
+
+// TestSupervisordIncludeMergesSameProgram proves a [program] that reappears
+// across included files is merged key-by-key, later value winning — the way
+// supervisord's own ConfigParser assembles a base config plus a conf.d
+// override — rather than being imported twice as `web` and `web-2`, which would
+// start the same process on both.
+func TestSupervisordIncludeMergesSameProgram(t *testing.T) {
+	dir := t.TempDir()
+	confd := filepath.Join(dir, "conf.d")
+	if err := os.MkdirAll(confd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(p, content string) {
+		t.Helper()
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(dir, "supervisord.conf"), "[include]\nfiles=conf.d/*.conf\n")
+	write(filepath.Join(confd, "10-base.conf"),
+		"[program:web]\ncommand=/bin/old\nuser=www-data\nautorestart=true\n")
+	// Loads after 10-base.conf (glob sorts), so its command wins and numprocs is added.
+	write(filepath.Join(confd, "20-override.conf"),
+		"[program:web]\ncommand=/bin/new\nnumprocs=3\n")
+
+	res, err := ParseSupervisordFiles([]string{filepath.Join(dir, "supervisord.conf")}, SupervisordOptions{})
+	if err != nil {
+		t.Fatalf("ParseSupervisordFiles: %v", err)
+	}
+
+	out := res.TOML()
+	mustContain(t, out, "[services.web]")
+	mustNotContain(t, out, "web-2")          // one merged program, not a duplicate
+	mustContain(t, out, `run = "/bin/new"`)  // later file wins on a shared key
+	mustContain(t, out, `user = "www-data"`) // base-only key preserved
+	mustContain(t, out, "instances = 3")     // key present only in the override
+
+	if tally := res.Tally(); tally.Services != 1 {
+		t.Fatalf("counts: got %+v, want exactly 1 service", tally)
 	}
 }
 

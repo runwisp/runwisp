@@ -51,7 +51,11 @@ type supervisordState struct {
 	res      *Result
 	names    *namer
 	sections []iniSection
-	visited  map[string]bool
+	// byName maps a section's [header] to its index in sections, so a section
+	// that reappears across included files merges into the first rather than
+	// duplicating it — see addSection.
+	byName  map[string]int
+	visited map[string]bool
 }
 
 func newSupervisordState(opts SupervisordOptions) *supervisordState {
@@ -59,6 +63,7 @@ func newSupervisordState(opts SupervisordOptions) *supervisordState {
 	return &supervisordState{
 		res:     res,
 		names:   newNamer(res, opts.Existing, ""),
+		byName:  map[string]int{},
 		visited: map[string]bool{},
 	}
 }
@@ -95,8 +100,27 @@ func (sd *supervisordState) collect(sections []iniSection, baseDir string) {
 			sd.expandInclude(&s, baseDir)
 			continue
 		}
-		sd.sections = append(sd.sections, s)
+		sd.addSection(s)
 	}
+}
+
+// addSection folds one section into the collected set. supervisord assembles its
+// config with Python's ConfigParser, which merges a section that reappears
+// across included files key-by-key with the later value winning — the standard
+// "base config + conf.d override" pattern. Mirror that: merge into the
+// first-seen section (keeping its position) instead of appending a duplicate,
+// which would otherwise import one program twice as `web` and `web-2`.
+func (sd *supervisordState) addSection(s iniSection) {
+	if idx, ok := sd.byName[s.name]; ok {
+		dst := &sd.sections[idx]
+		for _, k := range s.keys {
+			v, _ := s.get(k)
+			dst.set(k, v)
+		}
+		return
+	}
+	sd.byName[s.name] = len(sd.sections)
+	sd.sections = append(sd.sections, s)
 }
 
 func (sd *supervisordState) expandInclude(s *iniSection, baseDir string) {

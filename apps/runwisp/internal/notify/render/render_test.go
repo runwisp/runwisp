@@ -130,6 +130,22 @@ func TestEventSentence(t *testing.T) {
 	}
 }
 
+// TestEventSentenceCoalescedCount proves a delivery that folded repeats (the
+// outbound coalescer stamps coalesced_count on Extra) discloses the fold in the
+// rendered body. Without it a flap folded into one alert reads identically to a
+// single occurrence — a silent loss.
+func TestEventSentenceCoalescedCount(t *testing.T) {
+	base := &notify.Event{Kind: notify.KindRunFailed}
+	assert.Equal(t, "Exited with code ?.", eventSentence(base), "no Extra means no suffix")
+
+	folded := &notify.Event{Kind: notify.KindRunFailed, Extra: map[string]any{"coalesced_count": 5}}
+	assert.Equal(t, "Exited with code ?. (×5 — earlier repeats coalesced into this alert)", eventSentence(folded))
+
+	// A count of one is a lone event, not a fold: no suffix.
+	single := &notify.Event{Kind: notify.KindRunFailed, Extra: map[string]any{"coalesced_count": 1}}
+	assert.Equal(t, "Exited with code ?.", eventSentence(single))
+}
+
 func TestEventTrigger(t *testing.T) {
 	assert.Equal(t, "Event", eventTrigger(&notify.Event{}))
 	assert.Equal(t, "Scheduled run", eventTrigger(&notify.Event{Run: &model.Run{TriggeredBy: model.TriggeredByCron}}))

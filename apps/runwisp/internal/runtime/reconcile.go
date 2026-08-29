@@ -281,7 +281,20 @@ func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *mo
 	}
 
 	if newTask.Kind.IsService() {
-		r.recycleChangedService(newTask)
+		if oldTask.Kind.IsService() {
+			// A genuine service-definition change: bounce the running instances so
+			// the new command, env, or instance count takes effect.
+			r.recycleChangedService(newTask)
+		} else {
+			// A task→service kind flip: the run in flight under the old non-service
+			// definition must finish under it — reload never cancels an in-flight
+			// run — so it is left to drain on its own goroutine. Recycling here would
+			// cancel it (RecycleServiceInstances cancels every active run, and that
+			// old run was never a supervisor-managed instance). Only bring the new
+			// service up to its instance count, exactly as a freshly added service
+			// would; StartServiceInstances honours Autostart / a stopped supervisor.
+			r.startChangedService(newTask)
+		}
 	}
 }
 
@@ -334,6 +347,17 @@ func (r *Reconciler) anchorUnheld(oldTask, newTask *model.Task) {
 func (r *Reconciler) recycleChangedService(newTask *model.Task) {
 	if err := r.manager.RecycleServiceInstances(newTask.Name); err != nil {
 		slog.Error("Failed to recycle changed service", "task", newTask.Name, "err", err)
+	}
+}
+
+// startChangedService brings a task that a reload just turned into a service up
+// to its instance count without disturbing any run still draining under the
+// prior non-service definition. It mirrors applyAdded's service path — a fresh
+// supervisor with no live slots — because to the new definition that is exactly
+// what this is: a service starting from zero live instances.
+func (r *Reconciler) startChangedService(newTask *model.Task) {
+	if err := r.manager.StartServiceInstances(newTask.Name, model.TriggeredByService); err != nil {
+		slog.Error("Failed to start instances for newly-serviced task", "task", newTask.Name, "err", err)
 	}
 }
 

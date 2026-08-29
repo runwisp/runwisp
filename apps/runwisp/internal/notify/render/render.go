@@ -287,11 +287,36 @@ func triggerPhrase(t model.TriggeredBy) string {
 	}
 }
 
-// eventSentence renders the per-kind body sentence ending in a period. It is
-// the single source of truth for the failure/success phrasing previously
-// duplicated inside the Telegram and Slack templates. Output is plain text;
-// callers apply the provider-specific escape (tgEscape, jsonStr).
+// eventSentence renders the per-kind body sentence ending in a period, plus a
+// coalesced-count suffix when this delivery folded several repeats. It is the
+// single source of truth for the failure/success phrasing previously duplicated
+// inside the Telegram and Slack templates. Output is plain text; callers apply
+// the provider-specific escape (tgEscape, jsonStr).
 func eventSentence(e *notify.Event) string {
+	return kindSentence(e) + coalescedSuffix(e)
+}
+
+// coalescedSuffix discloses that an outbound delivery stands in for several
+// suppressed repeats. The outbound coalescer (internal/notify/coalesce) folds a
+// flapping task's bursts into one delivery and records the fold count on the
+// event's Extra map; without surfacing it here the folded delivery would read
+// exactly like a single occurrence, hiding how bad the flap really is — a silent
+// loss the coalescer's own doc comment promises the renderer discloses. The key
+// is written by coalesce.summarize; a plain (uncoalesced) event has no such key
+// and gets no suffix.
+func coalescedSuffix(e *notify.Event) string {
+	if e == nil || e.Extra == nil {
+		return ""
+	}
+	n, ok := e.Extra["coalesced_count"].(int)
+	if !ok || n < 2 {
+		return ""
+	}
+	return fmt.Sprintf(" (×%d — earlier repeats coalesced into this alert)", n)
+}
+
+// kindSentence renders just the per-kind body sentence, ending in a period.
+func kindSentence(e *notify.Event) string {
 	switch e.Kind {
 	case notify.KindRunFailed:
 		return failedSentence(e)
