@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A notifier's `retry_budget` now applies to SMTP and sendmail notifiers too**, not just Slack, Discord, Telegram, and webhook.
 - **The unread-notification badge no longer overcounts after a failed "mark read" action**, even if a newer update for that notification had arrived while the request was in flight.
 - **Local CLI/TUI streaming connections (log tail, event stream) are no longer subject to the same per-IP cap as remote clients** — only the overall connection limit still applies to them.
+- **`reload` no longer silently restarts a service the operator had stopped (or that had exhausted its retry budget) when only its config changed.** A changed service now recycles its running instances in place, leaving a stopped or fatally-failed service exactly as it was.
+- **Killing a task's Docker/Podman container during shutdown or a `graceful_stop` no longer hangs indefinitely if the container engine itself stops responding.**
+- **Fetching a run's log or searching logs now returns a proper error instead of a misleading "not found" when the underlying storage lookup itself fails.**
+- **A rejected config write (failed validation on `reload`) now rolls back through the same crash-safe atomic write every config write uses**, instead of a plain in-place write that could leave the file corrupted if interrupted mid-rollback.
+- **A notifier's `retry_budget` is now honoured even when a single delivery attempt hangs**, by capping the HTTP client's own timeout to the configured budget.
 
 ## [0.16.1] - 2026-08-28
 

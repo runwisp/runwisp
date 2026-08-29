@@ -188,7 +188,7 @@ func (srv *Server) resolveSearchRuns(ctx context.Context, input *LogSearchInput,
 			if errors.Is(err, errInvalidRunID) {
 				return nil, huma.Error400BadRequest("Invalid run ID")
 			}
-			return nil, huma.Error404NotFound("Run not found")
+			return nil, mapDomainError(ctx, err, "Failed to load run")
 		}
 		// This search is scoped to the task in the URL, so a run_id belonging
 		// to a different task is not found here.
@@ -210,7 +210,7 @@ func (srv *Server) resolveSearchRuns(ctx context.Context, input *LogSearchInput,
 		SortDirection: storage.SortDesc,
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to list runs")
+		return nil, mapDomainError(ctx, err, "Failed to list runs")
 	}
 	out := make([]logsearch.RunRef, 0, len(runs))
 	for _, r := range runs {

@@ -104,14 +104,16 @@ func (srv *Server) getRunByID(ctx context.Context, runIDStr string) (*model.Run,
 }
 
 // resolveLogPath validates the run ID and computes the log path. Returns
-// an error suitable for huma to map to an HTTP status code.
+// an error suitable for huma to map to an HTTP status code. A genuine storage
+// failure (not just "no such run") is routed through mapDomainError so it
+// surfaces as a logged 500 instead of silently masquerading as a 404.
 func (srv *Server) resolveLogPath(ctx context.Context, runIDStr string) (string, *model.Run, error) {
 	run, err := srv.getRunByID(ctx, runIDStr)
 	if err != nil {
 		if errors.Is(err, errInvalidRunID) {
 			return "", nil, huma.Error400BadRequest("Invalid run ID")
 		}
-		return "", nil, huma.Error404NotFound("Run not found")
+		return "", nil, mapDomainError(ctx, err, "Failed to load run")
 	}
 	return logutil.ResolveRunLogPath(srv.logDir, run.TaskName, run.ID, run.CreatedAt), run, nil
 }

@@ -173,6 +173,12 @@ type fileBackup struct {
 	path    string
 	existed bool
 	perm    fs.FileMode
+	// owner is the file's uid/gid at backup time, captured so restore's
+	// rename-based replace (which otherwise takes on the temp file's own
+	// ownership) can put a preserve-owner write's file back under its original
+	// owner. Nil when the platform can't report it (restore then falls back to
+	// whatever owns the process doing the restore).
+	owner   *ownerID
 	content []byte
 }
 
@@ -186,20 +192,21 @@ func backupFile(path string) fileBackup {
 	b.content = data
 	if info, err := os.Stat(path); err == nil {
 		b.perm = info.Mode().Perm()
+		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+			b.owner = &ownerID{uid: int(stat.Uid), gid: int(stat.Gid)}
+		}
 	}
 	return b
 }
 
-// restore returns the file to its snapshotted state: rewriting the prior content
-// and mode, or removing the file if it didn't exist before. Best-effort — a
+// restore returns the file to its snapshotted state: rewriting the prior
+// content, mode, and owner through the same temp+rename path every forward
+// write uses, or removing the file if it didn't exist before. Best-effort — a
 // rollback runs on an already-failing path, and reporting a second error there
 // would only bury the first.
 func (b fileBackup) restore() {
 	if b.existed {
-		// WriteFile only applies the mode when it creates the file, and the file
-		// exists at this point, so the mode is restored explicitly.
-		_ = os.WriteFile(b.path, b.content, b.perm)
-		_ = os.Chmod(b.path, b.perm)
+		_ = atomicReplace(b.path, b.content, b.perm, b.owner)
 		return
 	}
 	_ = os.Remove(b.path)

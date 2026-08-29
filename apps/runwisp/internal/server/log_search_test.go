@@ -5,6 +5,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -141,6 +142,50 @@ func TestSearchLogs_SingleRun_WrongTask(t *testing.T) {
 	s.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+// TestSearchLogs_RunLookupStorageErrorReturns500 is the regression test for a
+// bug where any non-"not found" failure looking up runId (a locked DB, a disk
+// I/O error) was silently reported as a plain 404, identical to a bad or
+// unknown run ID, with nothing logged. A genuine storage failure must surface
+// as a 500.
+func TestSearchLogs_RunLookupStorageErrorReturns500(t *testing.T) {
+	s, repo, _, _ := setupServer(t)
+
+	id := ulid.Make().String()
+	repo.On("GetRun", mock.Anything, id).Return((*model.Run)(nil), errors.New("disk read error"))
+
+	req := httptest.NewRequest(http.MethodGet,
+		fmt.Sprintf("/api/tasks/task1/log/search?q=foo&runId=%s", id), nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code,
+		"a storage failure must not masquerade as a 404")
+}
+
+// TestSearchLogs_QueryRunsErrorReturns500 is the sibling regression for the
+// task-wide listing path: a QueryRuns failure must surface as a logged 500,
+// not the same "Failed to list runs" 500 masking whatever actually broke —
+// mapDomainError is what supplies the logging.
+func TestSearchLogs_QueryRunsErrorReturns500(t *testing.T) {
+	s, repo, _, _ := setupServer(t)
+
+	repo.On("QueryRuns", mock.Anything, storage.RunQuery{
+		Filter:        model.RunFilter{TaskName: "task1"},
+		Limit:         LogSearchRunPageSize,
+		SortField:     storage.SortColumnCreatedAt,
+		SortDirection: storage.SortDesc,
+	}).Return([]model.Run(nil), errors.New("disk read error"))
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/tasks/task1/log/search?q="+url.QueryEscape("connection refused"), nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
 func TestSearchLogs_BadCursor(t *testing.T) {

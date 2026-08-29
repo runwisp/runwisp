@@ -92,6 +92,24 @@ func TestResolveLogPath_MissingRunReturns404(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, statusErr.GetStatus())
 }
 
+// TestResolveLogPath_StorageErrorReturns500 is the regression test for a bug
+// where any non-"not found" failure from the run lookup (a locked DB, a disk
+// I/O error) was silently reported as a plain 404 "Run not found", identical
+// to a bad run ID, with nothing logged anywhere. A genuine storage failure
+// must surface as a 500 so the operator can see it.
+func TestResolveLogPath_StorageErrorReturns500(t *testing.T) {
+	srv, db, _ := logsTestServer(t)
+	run := seedTerminalRun(t, db, "task")
+	require.NoError(t, db.Close()) // any query now fails with a non-ErrNoRows error
+
+	_, _, err := srv.resolveLogPath(t.Context(), run.ID)
+	require.Error(t, err)
+	statusErr, ok := err.(huma.StatusError)
+	require.True(t, ok)
+	assert.Equal(t, http.StatusInternalServerError, statusErr.GetStatus(),
+		"a storage failure must not masquerade as a 404")
+}
+
 func TestResolveLogPath_Success(t *testing.T) {
 	srv, db, logDir := logsTestServer(t)
 	run := seedTerminalRun(t, db, "task")

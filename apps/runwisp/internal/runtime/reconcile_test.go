@@ -82,6 +82,7 @@ type recordingManager struct {
 	TaskManager
 	upserted  []string
 	restarted []string
+	recycled  []string
 	started   []string
 	stopped   []string
 	removed   []string
@@ -93,6 +94,11 @@ func (m *recordingManager) UpsertTask(task *model.Task) {
 
 func (m *recordingManager) RestartServiceInstances(name string) error {
 	m.restarted = append(m.restarted, name)
+	return nil
+}
+
+func (m *recordingManager) RecycleServiceInstances(name string) error {
+	m.recycled = append(m.recycled, name)
 	return nil
 }
 
@@ -147,6 +153,7 @@ func TestReconcile_PromotedServiceIsNotRestarted(t *testing.T) {
 	assert.Empty(t, diff.Changed, "provenance is not a task change")
 	assert.Equal(t, []string{"worker"}, diff.Restamped)
 	assert.Empty(t, mgr.restarted, "a promoted service must keep running")
+	assert.Empty(t, mgr.recycled, "a promoted service must keep running")
 	assert.Empty(t, mgr.started)
 	assert.Empty(t, mgr.stopped)
 	assert.Empty(t, mgr.removed)
@@ -173,7 +180,10 @@ func TestReconcile_PromotedTaskIsNotRescheduled(t *testing.T) {
 }
 
 // TestReconcile_ChangedServiceIsStillRecycled guards the masking from going too
-// far: a genuine definition change must still recycle the service.
+// far: a genuine definition change must still recycle the service. It must go
+// through RecycleServiceInstances, not the operator-restart
+// RestartServiceInstances — recycling a changed service on reload must never
+// revive one the operator stopped (see manager package tests for that guard).
 func TestReconcile_ChangedServiceIsStillRecycled(t *testing.T) {
 	before := &model.Task{Name: "worker", Kind: model.KindService, Run: "worker --loop", Source: model.SourceStaged}
 	after := *before
@@ -185,5 +195,6 @@ func TestReconcile_ChangedServiceIsStillRecycled(t *testing.T) {
 	require.Len(t, diff.Changed, 1)
 	assert.True(t, diff.Changed[0].Has(config.ReasonCommand))
 	assert.Empty(t, diff.Restamped, "a real change is reported as a change, not a restamp")
-	assert.Equal(t, []string{"worker"}, mgr.restarted)
+	assert.Equal(t, []string{"worker"}, mgr.recycled)
+	assert.Empty(t, mgr.restarted, "reload must not use the operator-restart path")
 }

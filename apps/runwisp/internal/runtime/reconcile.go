@@ -328,13 +328,12 @@ func (r *Reconciler) anchorUnheld(oldTask, newTask *model.Task) {
 }
 
 // recycleChangedService recycles running instances to pick up the new
-// definition, then fills any slots added by an instance-count increase.
+// definition, then fills any slots added by an instance-count increase. It
+// never revives a service the operator stopped (or one waiting on Autostart)
+// and never clears a FATAL instance — reload is not a restart.
 func (r *Reconciler) recycleChangedService(newTask *model.Task) {
-	if err := r.manager.RestartServiceInstances(newTask.Name); err != nil {
-		slog.Error("Failed to restart changed service", "task", newTask.Name, "err", err)
-	}
-	if err := r.manager.StartServiceInstances(newTask.Name, model.TriggeredByService); err != nil {
-		slog.Error("Failed to start instances for changed service", "task", newTask.Name, "err", err)
+	if err := r.manager.RecycleServiceInstances(newTask.Name); err != nil {
+		slog.Error("Failed to recycle changed service", "task", newTask.Name, "err", err)
 	}
 }
 
