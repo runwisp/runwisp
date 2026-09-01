@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A run that finishes during a clean daemon shutdown now always has its final status and exit code persisted to run history.**
+- **`import supervisord` now correctly parses an `environment=` value where whitespace separates `=` from the opening quote** (e.g. `FOO= "bar,baz"`).
+- **The TUI's event stream now resumes from where it left off on reconnect** (daemon restart, network blip).
+- **A container task that finishes cleanly no longer sometimes logs a spurious "failed to stop container gracefully" warning.**
+- **A run ended by daemon shutdown, or skipped by the DST fall-back dedup, no longer triggers a false "run failed" notification**, and a daemon-shutdown stop is now described as such in the notification body instead of always reading "Stopped manually."
+- **A queued run under `on_overlap = "queue"` now keeps its restart attempt count when it restarts from the queue**, instead of resetting to attempt zero and skipping the configured backoff escalation.
+- **A run left queued when its task is removed, redefined, or the daemon restarts now always gets a final `run.failed` event and a terminal status in run history**, instead of sometimes vanishing from the live view with no end state recorded.
+- **Missed-run catch-up across a DST fall-back no longer double-counts the repeated wall-clock hour as extra missed runs.**
+- **A run search filter longer than the length cap no longer risks splitting a multi-byte character mid-codepoint when truncating.**
+- **A genuine disk error while capturing a task's output now stops the writer and marks where output was lost**, instead of silently dropping output line by line for the rest of the run.
+- **Fixed two log-rendering bugs affecting tasks with progress bars/redraws or a pager-style alternate screen (`less`, `htop`, `vim`): a cursor-down move no longer reorders surrounding lines, and exiting the alternate screen no longer leaves later output stuck as ephemeral and never saved to the log.**
+
 ## [0.16.2] - 2026-08-29
 
 ### Fixed

@@ -183,6 +183,33 @@ func TestMapRunEventType_RunFailed_ReasonMissed(t *testing.T) {
 	assert.Equal(t, SevError, sev, "a missed run alerts at failure level")
 }
 
+// TestMapRunEventType_RunFailed_ReasonDaemonStopped guards against a routine
+// daemon restart/upgrade posing as a task failure: manager.go explicitly
+// records "a daemon-stopped exit is not a failure", and the cloud tracker
+// maps it to ExecutionStatusStopped alongside ReasonStopped — the bridge must
+// agree instead of falling through to its default KindRunFailed/SevError.
+func TestMapRunEventType_RunFailed_ReasonDaemonStopped(t *testing.T) {
+	r := model.ReasonDaemonStopped
+	run := &model.Run{EndReason: &r}
+	kind, sev, ok := mapRunEventType(events.EventRunFailed, run)
+	assert.True(t, ok)
+	assert.Equal(t, KindRunStopped, kind)
+	assert.Equal(t, SevWarn, sev)
+}
+
+// TestMapRunEventType_RunFailed_ReasonDSTSkipped guards against the annual
+// DST fall-back dedup posing as a task failure. It's produced by the same
+// RecordSkippedFiring path as ReasonSkipped (the policy doing its job, never
+// routed through notifications) and the cloud tracker maps it to
+// ExecutionStatusSkipped, not Failed — the bridge must mute it the same way
+// it mutes ReasonSkipped instead of falling through to its default.
+func TestMapRunEventType_RunFailed_ReasonDSTSkipped(t *testing.T) {
+	r := model.ReasonDSTSkipped
+	run := &model.Run{EndReason: &r}
+	_, _, ok := mapRunEventType(events.EventRunFailed, run)
+	assert.False(t, ok, "a DST dedup is not a failure and must not notify")
+}
+
 func TestMapRunEventType_RunFailed_DefaultReason(t *testing.T) {
 	r := model.ReasonSuccess // not a typical failure reason, hits default branch
 	run := &model.Run{EndReason: &r}

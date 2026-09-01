@@ -37,7 +37,7 @@ func TestLogSearchEndpointFindsLine(t *testing.T) {
 
 	streamCtx, cancelStream := context.WithCancel(context.Background())
 	t.Cleanup(cancelStream)
-	stream, err := client.StreamRunEvents(streamCtx)
+	stream, err := client.StreamRunEvents(streamCtx, "")
 	require.NoError(t, err)
 	waitForRunStreamPing(t, stream, 5*time.Second)
 

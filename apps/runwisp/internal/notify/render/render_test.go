@@ -97,6 +97,8 @@ func TestEventSentence(t *testing.T) {
 	end := start.Add(300 * time.Millisecond)
 	withDur := &model.Run{StartedAt: &start, EndedAt: &end, ExitCode: 1}
 	noDur := &model.Run{ExitCode: 2}
+	daemonStoppedReason := model.ReasonDaemonStopped
+	daemonStopped := &model.Run{StartedAt: &start, EndedAt: &end, EndReason: &daemonStoppedReason}
 
 	cases := []struct {
 		name string
@@ -112,6 +114,7 @@ func TestEventSentence(t *testing.T) {
 		{"timeout without duration", &notify.Event{Kind: notify.KindRunTimeout}, "The task was killed after the configured timeout."},
 		{"stopped with duration", &notify.Event{Kind: notify.KindRunStopped, Run: withDur}, "Stopped manually after 0.3s."},
 		{"stopped without duration", &notify.Event{Kind: notify.KindRunStopped}, "Stopped manually."},
+		{"stopped by daemon shutdown", &notify.Event{Kind: notify.KindRunStopped, Run: daemonStopped}, "Stopped by daemon shutdown after 0.3s."},
 		{"crashed with reason", &notify.Event{Kind: notify.KindRunCrashed, Reason: "exec format error"}, "The process couldn't start: exec format error."},
 		{"crashed without reason", &notify.Event{Kind: notify.KindRunCrashed}, "The process couldn't start."},
 		{"missed with reason", &notify.Event{Kind: notify.KindRunMissed, Reason: "3 scheduled runs missed since 2026-06-09 03:00 (daemon was down)"}, "3 scheduled runs missed since 2026-06-09 03:00 (daemon was down)"},

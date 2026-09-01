@@ -481,6 +481,37 @@ func TestStreamManager_SubscribeEvents_ConnectedReturnsChannel(t *testing.T) {
 	assert.True(t, ok, "expected SSEConnectedMsg, got %T", msg)
 }
 
+// TestStreamManager_SubscribeEvents_ResumesFromRecordedEventID guards against
+// a reconnect silently dropping every event that fired during the gap: once
+// RecordEventID has recorded the last event the caller saw, the next
+// SubscribeEvents call must send it back as the resume cursor.
+func TestStreamManager_SubscribeEvents_ResumesFromRecordedEventID(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query().Get("lastEventId")
+		w.Header().Set("Content-Type", "text/event-stream")
+	}))
+	defer srv.Close()
+	sm := NewStreamManager(apiclient.New(srv.URL, ""))
+	t.Cleanup(sm.Shutdown)
+
+	sm.RecordEventID("42")
+	cmd := sm.SubscribeEvents()
+	require.NotNil(t, cmd)
+	cmd()
+
+	assert.Equal(t, "42", gotQuery, "reconnect must resume from the last recorded event ID")
+}
+
+func TestStreamManager_RecordEventID_IgnoresEmpty(t *testing.T) {
+	sm := newNilClientSM()
+	t.Cleanup(sm.Shutdown)
+
+	sm.RecordEventID("7")
+	sm.RecordEventID("")
+	assert.Equal(t, "7", sm.lastEventID, "an empty id (ping/notification) must not clear the resume cursor")
+}
+
 func TestStreamManager_SubscribeDaemonLogs_ConnectedReturnsChannel(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

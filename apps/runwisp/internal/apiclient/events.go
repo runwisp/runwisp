@@ -18,14 +18,24 @@ import (
 const (
 	ssePrefixEvent = "event: "
 	ssePrefixData  = "data: "
+	ssePrefixID    = "id: "
 )
 
 // StreamRunEvents opens an SSE connection to the unified /api/events/stream feed and
 // delivers parsed run events on the returned channel. The stream also carries
 // system/config/notification events, which the parser ignores. The channel is
 // closed when the context is cancelled or the stream ends.
-func (c *Client) StreamRunEvents(ctx context.Context) (<-chan RunStreamEvent, error) {
-	resp, err := c.doSSE(ctx, "/api/events/stream")
+//
+// lastEventID, when non-empty, is sent as the lastEventId query param so a
+// reconnecting caller resumes the replay from the last event it saw instead
+// of silently losing everything that fired during the gap — pass the ID
+// field of the last RunStreamEvent this caller received.
+func (c *Client) StreamRunEvents(ctx context.Context, lastEventID string) (<-chan RunStreamEvent, error) {
+	path := "/api/events/stream"
+	if lastEventID != "" {
+		path += "?lastEventId=" + lastEventID
+	}
+	resp, err := c.doSSE(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -196,9 +206,12 @@ func parseLogStreamFrame(event, data string) (LogStreamMsg, bool) {
 	return LogStreamMsg{}, false
 }
 
-// SSEEvent is the client-side SSE dispatch frame: event type + raw JSON payload.
+// SSEEvent is the client-side SSE dispatch frame: event type + raw JSON
+// payload, plus the frame's id (empty when the server sent none — pings and
+// notification updates carry no id and stay out of the resume sequence).
 type SSEEvent struct {
 	Type string
+	ID   string
 	Data json.RawMessage
 }
 
@@ -206,17 +219,23 @@ type SSEEvent struct {
 type RunStreamEvent = SSEEvent
 
 // simpleSSELoop is the shared parse loop for SSE streams that deliver
-// single-line data frames. It reads lines from body, pairs event:/data: into
-// SSEEvent values, and sends them on ch until the body closes or ctx cancels.
+// single-line data frames. It reads lines from body, pairs id:/event:/data:
+// into SSEEvent values, and sends them on ch until the body closes or ctx
+// cancels.
 func simpleSSELoop(ctx context.Context, body io.ReadCloser, ch chan<- SSEEvent) {
 	defer close(ch)
 	defer body.Close()
 
 	scanner := bufio.NewScanner(body)
-	var eventType string
+	var eventType, eventID string
 
 	for scanner.Scan() {
 		line := scanner.Text()
+
+		if strings.HasPrefix(line, ssePrefixID) {
+			eventID = strings.TrimPrefix(line, ssePrefixID)
+			continue
+		}
 
 		if strings.HasPrefix(line, ssePrefixEvent) {
 			eventType = strings.TrimPrefix(line, ssePrefixEvent)
@@ -227,17 +246,19 @@ func simpleSSELoop(ctx context.Context, body io.ReadCloser, ch chan<- SSEEvent) 
 			data := strings.TrimPrefix(line, ssePrefixData)
 			if eventType != "" {
 				select {
-				case ch <- SSEEvent{Type: eventType, Data: json.RawMessage(data)}:
+				case ch <- SSEEvent{Type: eventType, ID: eventID, Data: json.RawMessage(data)}:
 				case <-ctx.Done():
 					return
 				}
 				eventType = ""
+				eventID = ""
 			}
 			continue
 		}
 
 		if line == "" {
 			eventType = ""
+			eventID = ""
 		}
 	}
 }

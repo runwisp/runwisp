@@ -466,6 +466,21 @@ func TestRendererCursorPositionRedraw(t *testing.T) {
 	}
 }
 
+func TestRendererCursorDownLocksRegionLikeOtherCursorMoves(t *testing.T) {
+	// CSI B (cursor down) is a region-addressing move exactly like CSI A (up)
+	// and CSI H (position), which both lock the region so a following '\n'
+	// stays inside the live redraw instead of finalizing a forward line out of
+	// order. Without the cursor down here ever locking, the '\n' after "row1"
+	// would forward-commit whatever sits at the cursor's row instead of
+	// leaving both rows for a single, correctly ordered region commit.
+	h := newHarness()
+	h.feed("row0\x1b[1B\rrow1\n", 0)
+	h.tr.Close()
+	if !eq(h.committed, []string{"row0", "row1"}) {
+		t.Fatalf("cursor-down redraw render = %q, want [row0 row1] in original order", h.committed)
+	}
+}
+
 func TestRendererEraseLineModes(t *testing.T) {
 	// CSI 2K clears the whole line; the cursor keeps its column, so a following
 	// write lands padded at that column.
@@ -509,6 +524,21 @@ func TestRendererAltScreenEntryResets(t *testing.T) {
 	}
 	if startEpoch == 0 {
 		t.Fatalf("alt-screen entry should advance the epoch")
+	}
+}
+
+func TestRendererAltScreenExitUnlocksForwardMode(t *testing.T) {
+	// Exiting the alternate screen (CSI ?1049l) must finalize whatever the
+	// alt-screen left showing and return to forward mode, symmetric with
+	// entry. Without this, everything printed after a pager (less, vim,
+	// htop) exits stays locked in redraw mode and is never durably committed
+	// until the process eventually exits — a long-running task that leaves
+	// the alt screen keeps producing output that is only ever ephemeral
+	// (provisional), never persisted to the log.
+	h := newHarness()
+	h.feed("before\n\x1b[?1049hinside\x1b[?1049lafter\n", 0)
+	if !eq(h.committed, []string{"before", "inside", "after"}) {
+		t.Fatalf("alt-screen exit render = %q", h.committed)
 	}
 }
 

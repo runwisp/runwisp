@@ -46,7 +46,7 @@ func TestGoldenPathFireAppearsInAPILogAndSSE(t *testing.T) {
 
 	streamCtx, cancelStream := context.WithCancel(context.Background())
 	t.Cleanup(cancelStream)
-	stream, err := client.StreamRunEvents(streamCtx)
+	stream, err := client.StreamRunEvents(streamCtx, "")
 	require.NoError(t, err, "StreamRunEvents should connect")
 
 	// Drain the initial keepalive ping the server emits to flush response

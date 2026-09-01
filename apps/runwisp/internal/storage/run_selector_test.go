@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
@@ -108,6 +109,16 @@ func TestBuildRunFilterArgs_SearchTruncatedToMaxLength(t *testing.T) {
 	long := strings.Repeat("a", MaxSearchQueryLength+50)
 	args := buildRunFilterArgs(model.RunFilter{Search: long})
 	assert.Len(t, args.SearchPattern, MaxSearchQueryLength+2, "pattern is truncated body wrapped in %%")
+}
+
+func TestBuildRunFilterArgs_SearchTruncationRespectsUTF8Boundary(t *testing.T) {
+	// A 3-byte rune repeated so the byte-100 cut point lands mid-rune: 33 full
+	// runes take 99 bytes, so a raw s[:100] slice would keep only the first
+	// byte of the 34th rune, producing an invalid UTF-8 tail.
+	long := strings.Repeat("中", 40)
+	args := buildRunFilterArgs(model.RunFilter{Search: long})
+
+	assert.True(t, utf8.ValidString(args.SearchPattern), "search pattern must not split a multi-byte rune")
 }
 
 func TestExceptIDsForSlice_EmptyInputYieldsSentinelOnly(t *testing.T) {

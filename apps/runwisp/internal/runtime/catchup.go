@@ -247,9 +247,36 @@ const catchupCountDisplayFloor = 1000
 // when count is 0. Counting stops once count reaches maxCount, returning
 // truncated=true so callers can report the gap as "at least N+" rather than
 // walking an unbounded per-second backlog.
+//
+// A tick whose wall-clock reading (year/month/day/hour/minute/second, per
+// robfig/cron.Schedule.Next returning ticks in lastRunTime's location) repeats
+// one already seen within the same wall-hour is the DST fall-back duplicate
+// fireOnce suppresses live as ReasonDSTSkipped: on a schedule with more than
+// one tick per hour (e.g. "0,30 2 * * *"), the rewound hour replays every one
+// of them — 02:00 CEST, 02:30 CEST, then 02:00 CET, 02:30 CET — so the
+// duplicate of a tick is not necessarily the one immediately before it. This
+// mirrors fireOnce's firedHour exactly (same wall-hour scoping, reset when the
+// hour changes) so catch-up and the live scheduler agree on what would have
+// fired. Even if the daemon had been running through the gap, a duplicate
+// firing would never have executed as a real run — it isn't a missed one, so
+// it is walked past without being counted or becoming lastTick.
 func countMissedTicks(schedule cron.Schedule, lastRunTime, now time.Time, maxCount int) (count int, lastTick time.Time, truncated bool) {
 	next := schedule.Next(lastRunTime)
+	var curHour wallHour
+	var seen map[wallSecond]struct{}
 	for !next.After(now) {
+		wall := newWallSecond(next)
+		hour := wall.inHour()
+		if seen == nil || hour != curHour {
+			curHour = hour
+			seen = make(map[wallSecond]struct{})
+		}
+		if _, duplicate := seen[wall]; duplicate {
+			next = schedule.Next(next)
+			continue
+		}
+		seen[wall] = struct{}{}
+
 		count++
 		lastTick = next
 		if count >= maxCount {

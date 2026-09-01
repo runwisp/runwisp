@@ -315,6 +315,13 @@ func (tr *TerminalRenderer) handlePrivateMode(set bool) {
 			// Entering the alternate screen: clear and redraw in place.
 			tr.resetScreen()
 			tr.screenLocked = true
+		case (p == 1049 || p == 47 || p == 1047) && !set:
+			// Exiting the alternate screen: finalize whatever it left showing
+			// and return to durable forward output on the main screen,
+			// symmetric with entry. Without this the region stays locked
+			// forever and everything printed afterwards is only ever
+			// ephemeral (provisional), never persisted.
+			tr.resetScreen()
 		case p == 25 && !set:
 			// Hiding the cursor almost always precedes an in-place redraw.
 			tr.screenLocked = true
@@ -408,6 +415,8 @@ func (tr *TerminalRenderer) cursorUp(n int) {
 }
 
 func (tr *TerminalRenderer) cursorDown(n int) {
+	tr.recordRegionFrame()
+	tr.screenLocked = true
 	tr.curRow += n
 	tr.cur()
 	tr.scrollIfNeeded()

@@ -575,3 +575,28 @@ func TestLogWriter_RotateRenameFailure_PreservesExistingPrev(t *testing.T) {
 	assert.Equal(t, firstRotation, afterFailedRotation,
 		".prev must survive a rotation whose rename fails, not just one whose remove would have failed too")
 }
+
+// TestLogWriter_WriteError_StopsWriterInsteadOfRetryingForever guards against a
+// prime-directive violation: a genuine OS-level write error (disk failure,
+// revoked permissions, closed fd) used to fall through writeOneLine as a
+// one-off error with the writer left believing it was still healthy. Every
+// subsequent line for the rest of the run would then repeat the same failing
+// syscall and vanish with nothing durable in the run's own log — unlike the
+// disk-pressure and size-overflow paths, which stop the writer and leave a
+// SYSTEM line marking exactly where output was lost.
+func TestLogWriter_WriteError_StopsWriterInsteadOfRetryingForever(t *testing.T) {
+	opts := newTestOpts(t.TempDir())
+	w, err := NewLogWriter(opts)
+	require.NoError(t, err)
+	require.NoError(t, w.file.Close()) // force the next write against it to fail
+
+	n, err := w.WriteLineEvent("first line lost to the write error", logutil.StreamStdout)
+	require.NoError(t, err, "a write failure is a drop, like disk-pressure and size-overflow, not a caller-visible error")
+	assert.Equal(t, int64(-1), n)
+	assert.True(t, w.stopped, "writer must stop after a genuine write error instead of retrying the same failing syscall on every later line")
+	assert.True(t, w.truncated, "a lost line must count as truncation like every other drop reason")
+
+	n2, err2 := w.WriteLineEvent("second line", logutil.StreamStdout)
+	require.NoError(t, err2)
+	assert.Equal(t, int64(-1), n2, "once stopped, later lines are dropped too rather than re-attempting the broken write")
+}

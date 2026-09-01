@@ -239,6 +239,19 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, run *mod
 		case <-done:
 			return
 		}
+		// The wake above can fire for ctx.Done() even when done was actually
+		// closed first: Execute cancels ctx unconditionally on return (after
+		// Wait closes done and Cleanup removes the container), so if this
+		// goroutine hasn't been scheduled since done closed, both channels
+		// are ready by the time it runs and select ties uniformly at random.
+		// Re-check done on its own before treating this as a stop/timeout —
+		// a run that already exited cleanly must never attempt a graceful
+		// stop against a container Cleanup has already removed.
+		select {
+		case <-done:
+			return
+		default:
+		}
 		// A stop/timeout/shutdown asked the run to end. Run Docker's native
 		// graceful ladder first (stop_signal, then SIGKILL after graceful_stop);
 		// if the container still hasn't exited afterwards — a wedged engine that

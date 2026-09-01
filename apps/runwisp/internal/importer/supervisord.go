@@ -586,14 +586,17 @@ func parseSupervisordEnv(value string) map[string]string {
 			} else {
 				val.WriteByte(c)
 			}
-		case (c == '"' || c == '\'') && !inKey && val.Len() == 0:
-			inQuote = c
 		case c == '=' && inKey:
 			inKey = false
 		case c == ',':
 			flush()
 		case inKey:
 			key.WriteByte(c)
+		case (c == '"' || c == '\'') && val.Len() == 0:
+			inQuote = c
+		case (c == ' ' || c == '\t') && val.Len() == 0:
+			// Leading whitespace between `=` and the value hasn't committed
+			// the value yet, so it must not disqualify a quote that follows.
 		default:
 			val.WriteByte(c)
 		}

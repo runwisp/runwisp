@@ -360,8 +360,10 @@ func TestGetLogRaw(t *testing.T) {
 func TestStreamRunEvents(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/events/stream", r.URL.Path)
+		assert.Equal(t, "", r.URL.RawQuery, "a fresh subscribe must not send a resume cursor")
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "id: 5")
 		fmt.Fprintln(w, "event: run.created")
 		fmt.Fprintln(w, `data: {"type":"run.created","timestamp":"2025-01-01T00:00:00Z","data":{}}`)
 		fmt.Fprintln(w, "")
@@ -372,11 +374,32 @@ func TestStreamRunEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ch, err := c.StreamRunEvents(ctx)
+	ch, err := c.StreamRunEvents(ctx, "")
 	require.NoError(t, err)
 
 	evt := <-ch
 	assert.Equal(t, "run.created", evt.Type)
+	assert.Equal(t, "5", evt.ID, "the id: line must be captured so a reconnect can resume from it")
+}
+
+// TestStreamRunEvents_ResumesFromLastEventID guards against a reconnect
+// silently losing every event that fired during the gap: the client must
+// forward the caller's last-seen event ID as the lastEventId query param so
+// the server's replay ring resumes instead of starting live-only.
+func TestStreamRunEvents_ResumesFromLastEventID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "42", r.URL.Query().Get("lastEventId"))
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, err := c.StreamRunEvents(ctx, "42")
+	require.NoError(t, err)
 }
 
 func TestBaseURL(t *testing.T) {

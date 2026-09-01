@@ -578,6 +578,7 @@ func (m Model) handleSSEConnected(msg uikit.SSEConnectedMsg) (tea.Model, tea.Cmd
 }
 
 func (m Model) handleSSEEventMsg(msg uikit.SSEEventMsg) (tea.Model, tea.Cmd) {
+	m.streams.RecordEventID(msg.Event.ID)
 	cmd := m.handleSSEEvent(msg.Event)
 	return m, tea.Batch(cmd, m.streams.ContinueListeningSSE())
 }
