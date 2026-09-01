@@ -223,6 +223,36 @@ func TestCountMissedTicks(t *testing.T) {
 	}
 }
 
+// TestCountMissedTicks_DSTFallbackDuplicateNotDoubleCounted guards against
+// catch-up over-reporting the 2026-10-25 Europe/Bratislava fall-back as twice
+// as many missed runs as ever could have fired. schedule.Next walks in
+// absolute time, so it yields four ticks across the rewound hour — 02:00 CEST,
+// 02:30 CEST, 02:00 CET, 02:30 CET — but only the first two wall-clock
+// readings are real: the live scheduler's fireOnce would suppress the CET
+// pair as ReasonDSTSkipped, never a genuine missed run. Before the fix,
+// countMissedTicks counted all four.
+func TestCountMissedTicks_DSTFallbackDuplicateNotDoubleCounted(t *testing.T) {
+	loc, err := time.LoadLocation("Europe/Bratislava")
+	assert.NoError(t, err)
+
+	parser := cronspec.NewScheduleParser()
+	sched, err := parser.Parse("CRON_TZ=Europe/Bratislava 0,30 2 * * *")
+	assert.NoError(t, err)
+
+	// Anchor the day before, in the same location countupOneTask would use
+	// (anchor.In(loc)) — well before any of the fall-back day's ticks.
+	lastRun := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC).In(loc)
+	// After all four absolute ticks (00:00, 00:30, 01:00, 01:30 UTC) have passed.
+	now := time.Date(2026, 10, 25, 3, 0, 0, 0, time.UTC).In(loc)
+
+	got, lastTick, truncated := countMissedTicks(sched, lastRun, now, 1000)
+	assert.False(t, truncated)
+	assert.Equal(t, 2, got,
+		"only the two distinct wall-clock ticks (02:00, 02:30) are real misses; the DST-rewound duplicates must not double the count")
+	assert.Equal(t, 2, lastTick.In(loc).Hour())
+	assert.Equal(t, 30, lastTick.In(loc).Minute())
+}
+
 func TestRunMissedTickCatchUp(t *testing.T) {
 	t.Run("policy=latest triggers one run", func(t *testing.T) {
 		db := new(testutil.MockRunRepository)

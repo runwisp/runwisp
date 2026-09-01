@@ -97,7 +97,7 @@ func mapRunEventType(t events.EventType, run *model.Run) (Kind, Severity, bool) 
 			return KindRunFailed, SevError, true
 		case model.ReasonTimeout:
 			return KindRunTimeout, SevError, true
-		case model.ReasonStopped:
+		case model.ReasonStopped, model.ReasonDaemonStopped:
 			return KindRunStopped, SevWarn, true
 		case model.ReasonCrashed:
 			return KindRunCrashed, SevError, true
@@ -107,10 +107,10 @@ func mapRunEventType(t events.EventType, run *model.Run) (Kind, Severity, bool) 
 			// (treat_missed_as_failure = false) is applied downstream at ingress, not
 			// here, so the browsable run row is always recorded regardless.
 			return KindRunMissed, SevError, true
-		case model.ReasonSkipped:
-			// PolicySkip is the policy doing its job, not a failure: never
-			// route it through the notification system. Operators who care
-			// about chronic skips read the run history.
+		case model.ReasonSkipped, model.ReasonDSTSkipped:
+			// PolicySkip and the DST fall-back dedup are the scheduler doing
+			// its job, not a failure: never route either through the
+			// notification system. Operators who care read the run history.
 			return "", "", false
 		case model.ReasonStartFailed:
 			// The give-up is announced by the dedicated EventServiceFatal →

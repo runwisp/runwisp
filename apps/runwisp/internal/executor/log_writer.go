@@ -151,8 +151,9 @@ func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
 // WriteLineEvent appends a single line for the given stream and returns the
 // absolute line number assigned by the writer (rotated_lines + line_count).
 // Returns -1 when the line is silently dropped (writer stopped, drop_new,
-// kill, disk-low). The returned number is monotonically non-decreasing
-// across rotations and is the canonical `n` for log events on the bus.
+// kill, disk-low, write error). The returned number is monotonically
+// non-decreasing across rotations and is the canonical `n` for log events on
+// the bus.
 func (w *LogWriter) WriteLineEvent(text, stream string) (int64, error) {
 	formatted := []byte(logutil.FormatLine(text, stream))
 	lineNum, _, err := w.writeOneLine(formatted)
@@ -189,8 +190,10 @@ func (w *LogWriter) WriteFrameHistory(anchor int64, frames [][]string) error {
 }
 
 // writeOneLine is the single mutex-guarded write path. Returns the absolute
-// line number assigned (or -1 if the line was dropped) plus the io.Writer
-// `n` (always len(p) for drop cases, matching the prior contract).
+// line number assigned (or -1 if the line was dropped, including a genuine
+// write error — treated as a drop like disk-pressure and size-overflow, not
+// surfaced as an error to the caller) plus the io.Writer `n` (always len(p)
+// for drop cases, matching the prior contract).
 func (w *LogWriter) writeOneLine(p []byte) (lineNum int64, written int, err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -215,7 +218,16 @@ func (w *LogWriter) writeOneLine(p []byte) (lineNum int64, written int, err erro
 
 	n, err := w.file.Write(p)
 	if err != nil {
-		return -1, n, err
+		// A genuine write error gets the same treatment as disk-pressure and
+		// size-overflow: stop the writer so every later line drops cheaply
+		// instead of repeating the same failing syscall for the rest of the
+		// run, and leave a SYSTEM line marking where output was lost (best
+		// effort — if the file is truly unusable this write fails too and is
+		// swallowed, same as any other writeSystemLine caller).
+		w.stopped = true
+		w.truncated = true
+		w.writeSystemLine(fmt.Sprintf("Log output stopped: write error (%v). Process continues running.", err))
+		return -1, len(p), nil
 	}
 
 	if n > 0 {

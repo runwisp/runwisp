@@ -165,13 +165,15 @@ func (m *defaultTaskManager) registerForceKill(runID string, forceKill func()) {
 func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 	// A run orphaned out of the queue below may have been recorded as
 	// in-flight by the jitter gate (a breached fire that queued behind the
-	// concurrency limit). Retiring it from the gate must happen after m.mu is
+	// concurrency limit), and its terminal event must not publish while m.mu is
+	// still held (see TriggerRunWithOptions). Both must happen after m.mu is
 	// released (gateMu -> mu lock order; see jitterGate's doc), so the flush
 	// is deferred ahead of the lock — LIFO defer order runs it after Unlock.
-	var orphanedRunIDs []string
+	var orphanedRuns []*model.Run
 	defer func() {
-		for _, id := range orphanedRunIDs {
-			m.gate.onComplete(id)
+		for _, r := range orphanedRuns {
+			m.gate.onComplete(r.ID)
+			m.publishTerminal(events.EventRunFailed, r)
 		}
 	}()
 	m.mu.Lock()
@@ -197,7 +199,7 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 
 	if task.OnOverlap == model.PolicyQueue {
 		if ts.queue == nil {
-			ts.queue = make([]*model.Run, 0)
+			ts.queue = make([]queuedRun, 0)
 		}
 		if ts.cond == nil {
 			ts.cond = sync.NewCond(&m.mu)
@@ -221,7 +223,7 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 		// 'pending' with no goroutine left to start or finalize them. Finalize
 		// whatever is queued the same way RemoveTask does, then broadcast
 		// unconditionally so a loop parked on an already-empty queue wakes too.
-		orphanedRunIDs = m.finalizeOrphanedQueue(ts)
+		orphanedRuns = m.finalizeOrphanedQueue(ts)
 		ts.cond.Broadcast()
 	}
 }
@@ -248,21 +250,23 @@ func (m *defaultTaskManager) upsertSupervisor(ts *taskState, task *model.Task) {
 }
 
 // finalizeOrphanedQueue ends every run still sitting in ts.queue (a policy
-// change or task removal left them with no drain loop to ever start them)
-// and reports their IDs, so the caller can retire them from the jitter gate
-// once m.mu is released — a queued run can be one it marked in-flight (see
-// jitterGate.fire). Caller holds m.mu.
-func (m *defaultTaskManager) finalizeOrphanedQueue(ts *taskState) []string {
+// change or task removal left them with no drain loop to ever start them) and
+// returns them, so the caller can retire them from the jitter gate and publish
+// their terminal events once m.mu is released — a queued run can be one the
+// gate marked in-flight (see jitterGate.fire), and publishing a terminal event
+// while still holding the write lock risks deadlocking a re-entrant subscriber
+// (see TriggerRunWithOptions). Caller holds m.mu.
+func (m *defaultTaskManager) finalizeOrphanedQueue(ts *taskState) []*model.Run {
 	if len(ts.queue) == 0 {
 		return nil
 	}
-	ids := make([]string, 0, len(ts.queue))
-	for _, r := range ts.queue {
-		m.endOrphanedPending(r)
-		ids = append(ids, r.ID)
+	runs := make([]*model.Run, 0, len(ts.queue))
+	for _, q := range ts.queue {
+		m.endOrphanedPending(q.run)
+		runs = append(runs, q.run)
 	}
 	ts.queue = nil
-	return ids
+	return runs
 }
 
 // RemoveTask drops a task from the manager when a reload removes it.
@@ -275,11 +279,13 @@ func (m *defaultTaskManager) finalizeOrphanedQueue(ts *taskState) []string {
 // recordRunOutcome deletes it on retirement (single-writer-per-task preserved).
 func (m *defaultTaskManager) RemoveTask(taskName string) {
 	// See UpsertTask: a queued run orphaned below may be tracked in-flight by
-	// the jitter gate, and retiring it must happen after m.mu is released.
-	var orphanedRunIDs []string
+	// the jitter gate, and both retiring it and publishing its terminal event
+	// must happen after m.mu is released.
+	var orphanedRuns []*model.Run
 	defer func() {
-		for _, id := range orphanedRunIDs {
-			m.gate.onComplete(id)
+		for _, r := range orphanedRuns {
+			m.gate.onComplete(r.ID)
+			m.publishTerminal(events.EventRunFailed, r)
 		}
 	}()
 	m.mu.Lock()
@@ -295,7 +301,7 @@ func (m *defaultTaskManager) RemoveTask(taskName string) {
 	// Queued runs were already persisted as 'pending'; finalize them here so a
 	// reload that removes the task never leaves a permanent non-terminal row.
 	if ts.cond != nil {
-		orphanedRunIDs = m.finalizeOrphanedQueue(ts)
+		orphanedRuns = m.finalizeOrphanedQueue(ts)
 		ts.cond.Broadcast()
 	}
 
@@ -360,6 +366,18 @@ type PendingRunsResult struct {
 // the configured Instances count instead. Pending service rows are marked
 // failed so they don't linger in the database.
 func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult {
+	// A pending run this pass ends immediately (never resumed) gets its
+	// terminal event published after m.mu is released, same as every other
+	// path that can end a run without executing it (see TriggerRunWithOptions)
+	// — harmless this early in boot (nothing subscribes yet), but the run
+	// still deserves one instead of silently going straight from 'pending' to
+	// an ended row no live subscriber ever heard about.
+	var endedRuns []*model.Run
+	defer func() {
+		for _, r := range endedRuns {
+			m.publishTerminal(events.EventRunFailed, r)
+		}
+	}()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -369,10 +387,13 @@ func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult
 		ts, exists := m.tasks[r.TaskName]
 		if !exists {
 			m.endOrphanedPending(&r)
+			endedRuns = append(endedRuns, &r)
 			result.Skipped++
 			continue
 		}
-		m.resumePendingRun(ts, &r, &result)
+		if ended := m.resumePendingRun(ts, &r, &result); ended != nil {
+			endedRuns = append(endedRuns, ended)
+		}
 	}
 	return result
 }
@@ -390,44 +411,51 @@ func (m *defaultTaskManager) endOrphanedPending(r *model.Run) {
 // are marked failed (the supervisor spawns fresh instances on boot), queued
 // tasks rejoin their queue (or fail when it is full), and concurrent tasks
 // either restart immediately or fail when capacity is exhausted.
-func (m *defaultTaskManager) resumePendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) {
+// resumePendingRun applies the per-run policy from LoadPendingRuns and
+// returns the run if it ended immediately (for the caller to publish once
+// m.mu is released), or nil if it started or joined the queue instead.
+func (m *defaultTaskManager) resumePendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) *model.Run {
 	if ts.task.Kind.IsService() {
 		r.End(model.ReasonFailed, -1, m.clock())
 		m.persistence.PersistExisting(r)
 		result.Skipped++
-		return
+		return r
 	}
 
 	if ts.task.OnOverlap == model.PolicyQueue {
-		m.requeuePendingRun(ts, r, result)
-		return
+		return m.requeuePendingRun(ts, r, result)
 	}
-	m.restartOrFailPendingRun(ts, r, result)
+	return m.restartOrFailPendingRun(ts, r, result)
 }
 
-func (m *defaultTaskManager) requeuePendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) {
+func (m *defaultTaskManager) requeuePendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) *model.Run {
 	maxQueued := ts.task.MaxQueued
 	if maxQueued > 0 && len(ts.queue) >= maxQueued {
 		r.End(model.ReasonQueueFull, -1, m.clock())
 		m.persistence.PersistExisting(r)
 		result.Failed++
-		return
+		return r
 	}
-	ts.queue = append(ts.queue, r)
+	// Restart-chain depth can't survive a crash (ActiveRun.RestartAttempt is
+	// in-memory only, never persisted), so a boot-resumed queued run always
+	// restarts its backoff from zero.
+	ts.queue = append(ts.queue, queuedRun{run: r})
 	ts.cond.Signal()
 	result.Queued++
+	return nil
 }
 
-func (m *defaultTaskManager) restartOrFailPendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) {
+func (m *defaultTaskManager) restartOrFailPendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) *model.Run {
 	concurrencyLimit := m.getConcurrencyLimit(ts.task)
 	if len(ts.active) < concurrencyLimit {
 		m.startRun(ts.task, r, 0)
 		result.Resumed++
-		return
+		return nil
 	}
 	r.End(model.ReasonFailed, -1, m.clock())
 	m.persistence.PersistExisting(r)
 	result.Failed++
+	return r
 }
 
 func (m *defaultTaskManager) TriggerRun(taskName string, triggeredBy model.TriggeredBy) (*model.Run, error) {
@@ -541,7 +569,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	m.publishRun(events.EventRunCreated, run)
 
 	concurrencyLimit := m.getConcurrencyLimit(ts.task)
-	action, actionErr := m.evaluateConcurrency(ts, run, concurrencyLimit)
+	action, actionErr := m.evaluateConcurrency(ts, run, concurrencyLimit, options.RestartAttempt)
 
 	switch action {
 	case actionRejected:

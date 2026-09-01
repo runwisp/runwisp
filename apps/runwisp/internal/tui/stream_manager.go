@@ -39,6 +39,11 @@ type StreamManager struct {
 	// old run's ID, silently misattributing/dropping the new run's log lines.
 	logRunID string
 	sseCh    <-chan apiclient.RunStreamEvent
+	// lastEventID is the ID of the last app-stream event delivered to the
+	// caller. SubscribeEvents sends it back as the resume cursor on
+	// reconnect, so a daemon restart or network blip replays what the TUI
+	// missed instead of silently skipping it.
+	lastEventID string
 
 	daemonLogCh    <-chan string
 	notificationCh <-chan apiclient.NotificationStreamEvent
@@ -58,17 +63,28 @@ func (sm *StreamManager) Shutdown() {
 	sm.cancel()
 }
 
-// SubscribeEvents connects to the SSE run-events stream.
+// SubscribeEvents connects to the SSE run-events stream, resuming from
+// lastEventID (set via RecordEventID) so a reconnect after a daemon restart
+// or network blip replays whatever fired during the gap instead of losing it.
 func (sm *StreamManager) SubscribeEvents() tea.Cmd {
 	return func() tea.Msg {
 		if sm.client == nil {
 			return nil
 		}
-		ch, err := sm.client.StreamRunEvents(sm.streamCtx)
+		ch, err := sm.client.StreamRunEvents(sm.streamCtx, sm.lastEventID)
 		if err != nil {
 			return uikit.DebugLogMsg{Message: "Events stream failed: " + err.Error()}
 		}
 		return uikit.SSEConnectedMsg{Ch: ch}
+	}
+}
+
+// RecordEventID updates the resume cursor SubscribeEvents sends on its next
+// reconnect. Call it with the ID of every app-stream event as it's consumed;
+// events without an ID (pings, notification updates) don't advance it.
+func (sm *StreamManager) RecordEventID(id string) {
+	if id != "" {
+		sm.lastEventID = id
 	}
 }
 

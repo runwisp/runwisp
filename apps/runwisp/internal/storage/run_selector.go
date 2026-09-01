@@ -6,6 +6,7 @@ package storage
 import (
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -102,7 +103,11 @@ func buildRunFilterArgs(f model.RunFilter) runFilterArgs {
 	if f.Search != "" {
 		s := f.Search
 		if len(s) > MaxSearchQueryLength {
-			s = s[:MaxSearchQueryLength]
+			cut := MaxSearchQueryLength
+			for cut > 0 && !utf8.RuneStart(s[cut]) {
+				cut--
+			}
+			s = s[:cut]
 		}
 		s = strings.ReplaceAll(s, "%", "")
 		s = strings.ReplaceAll(s, "_", "")

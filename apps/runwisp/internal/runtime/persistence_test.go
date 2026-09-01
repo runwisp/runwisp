@@ -86,6 +86,49 @@ func TestPersistenceCoordinatorAfterShutdown(t *testing.T) {
 	})
 }
 
+// TestPersistenceCoordinatorShutdownDoesNotCancelAlreadyQueuedTask guards
+// against a clean shutdown silently dropping a completed run's final write.
+// The worker's select race is between "apply the queued task" and "ctx just
+// got cancelled" — when both fire at once (a task already sitting in the
+// buffered channel at the exact moment Shutdown cancels), Go's select picks
+// between them pseudo-randomly. A task that hasn't started applying yet must
+// never observe an already-cancelled context: there is nothing in-flight for
+// the cancellation to bound, so applying it with a cancelled ctx only drops
+// data. Runs the race window many times since a single trial can pass by luck.
+func TestPersistenceCoordinatorShutdownDoesNotCancelAlreadyQueuedTask(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		var gotCancelled atomic.Bool
+		first := make(chan struct{})
+		release := make(chan struct{})
+
+		pc := NewPersistenceCoordinator(4)
+		pc.hook = func(ctx context.Context, run *model.Run, isNew bool) {
+			if run.TaskName == "first" {
+				close(first)
+				<-release // hold the worker here so "second" queues up behind it
+				return
+			}
+			if ctx.Err() != nil {
+				gotCancelled.Store(true)
+			}
+		}
+
+		pc.PersistExisting(&model.Run{TaskName: "first"})
+		<-first // worker is now blocked applying "first" with a still-live ctx
+
+		pc.PersistExisting(&model.Run{TaskName: "second"}) // queues behind, unapplied
+
+		pc.cancel() // ctx.Done() and pc.ch (holding "second") are now both ready
+
+		close(release) // let "first" return; the worker's select re-evaluates
+		pc.wg.Wait()   // drain "second" and exit
+
+		if gotCancelled.Load() {
+			t.Fatalf("iteration %d: a task queued before Shutdown was applied with an already-cancelled context", i)
+		}
+	}
+}
+
 func TestPublishRunNilBus(t *testing.T) {
 	jm := NewTaskManager(new(testutil.MockExecutor), nil, time.Now).(*defaultTaskManager)
 	assert.NotPanics(t, func() {

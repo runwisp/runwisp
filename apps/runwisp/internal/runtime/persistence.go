@@ -11,9 +11,10 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// RunPersistenceHook persists run state transitions. ctx is the
-// coordinator's worker context — cancelled at Shutdown so in-flight DB
-// writes can abort cleanly when the daemon is stopping.
+// RunPersistenceHook persists run state transitions. ctx is cancelled at
+// Shutdown so a write already in flight at that moment can abort cleanly
+// instead of hanging the daemon on a wedged DB. A task that hasn't started
+// applying yet never sees an already-cancelled ctx — see worker.
 type RunPersistenceHook func(ctx context.Context, run *model.Run, isNew bool)
 
 // persistTask is the unit of work dispatched through the buffered channel.
@@ -113,15 +114,23 @@ func (pc *PersistenceCoordinator) enqueue(task persistTask) {
 
 func (pc *PersistenceCoordinator) worker(ctx context.Context) {
 	defer pc.wg.Done()
-	// Drain pending tasks with an uncancellable derivative of ctx after
-	// cancellation so in-flight persistence still completes during shutdown —
-	// the worker ctx is only the "stop accepting new work" signal.
+	// drainCtx is what a task applies under once ctx is already cancelled —
+	// whether because we're in the drain loop below, or because the select
+	// case that read a queued task happened to fire in the same instant
+	// ctx.Done() became ready (select picks between ready cases at random, so
+	// that queued task must not be at the mercy of the coin flip: it hasn't
+	// started applying yet, so cancelling it here would only drop data, never
+	// bound a hang).
+	drainCtx := context.WithoutCancel(ctx)
 	for {
 		select {
 		case task := <-pc.ch:
-			pc.apply(ctx, task)
+			applyCtx := ctx
+			if ctx.Err() != nil {
+				applyCtx = drainCtx
+			}
+			pc.apply(applyCtx, task)
 		case <-ctx.Done():
-			drainCtx := context.WithoutCancel(ctx)
 			for {
 				select {
 				case task := <-pc.ch:

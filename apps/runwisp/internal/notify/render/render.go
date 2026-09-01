@@ -371,10 +371,14 @@ func timeoutSentence(e *notify.Event) string {
 
 // stoppedSentence reports a manually stopped run, including duration when known.
 func stoppedSentence(e *notify.Event) string {
-	if d := runDuration(e.Run); d != "" {
-		return fmt.Sprintf("Stopped manually after %s.", d)
+	verb := "Stopped manually"
+	if e.Run != nil && e.Run.EndReason != nil && *e.Run.EndReason == model.ReasonDaemonStopped {
+		verb = "Stopped by daemon shutdown"
 	}
-	return "Stopped manually."
+	if d := runDuration(e.Run); d != "" {
+		return fmt.Sprintf("%s after %s.", verb, d)
+	}
+	return verb + "."
 }
 
 // crashedSentence reports a process that couldn't start, including the reason when present.

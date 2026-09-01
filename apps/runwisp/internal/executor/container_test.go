@@ -13,7 +13,9 @@ import (
 	"io"
 	"net"
 	"os"
+	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -573,6 +575,59 @@ func TestStartGracefulStopUsesSignalAndTimeout(t *testing.T) {
 	case <-killed:
 		t.Fatal("the graceful stop path must not SIGKILL the container")
 	default:
+	}
+}
+
+// TestStartWatcherDoesNotGracefulStopAfterCleanSuccess guards against the same
+// race class fixed in internal/runtime/persistence.go this session: the stop
+// watcher's select blocks on <-ctx.Done() and <-done (closed by a successful
+// Wait). Execute closes done (inside Wait) strictly before it cancels ctx (a
+// deferred cancelFunc that fires only after Cleanup has already removed the
+// container) — but if the watcher goroutine hasn't been scheduled since done
+// closed, ctx may already be cancelled too by the time it finally runs, and
+// both cases are simultaneously ready: select ties uniformly at random. A
+// purely successful run could then still call gracefulStopContainer
+// (ContainerStop) against a container Cleanup already removed, logging a
+// false "failed to stop gracefully" warning for a run that actually
+// succeeded. GOMAXPROCS(1) forces the race window open: the test goroutine
+// runs Wait+Cleanup+cancel with no blocking call in between, so the watcher
+// goroutine spawned by Start cannot run until we explicitly yield afterward —
+// by which point both channels are already closed, exactly reproducing the
+// tie. Repeated because a single trial can pass by luck.
+func TestStartWatcherDoesNotGracefulStopAfterCleanSuccess(t *testing.T) {
+	prevProcs := runtime.GOMAXPROCS(1)
+	t.Cleanup(func() { runtime.GOMAXPROCS(prevProcs) })
+
+	for i := 0; i < 200; i++ {
+		var stopCalled atomic.Bool
+		mock := &mockDockerClient{
+			containerStopFunc: func(ctx context.Context, _ string, _ client.ContainerStopOptions) (client.ContainerStopResult, error) {
+				stopCalled.Store(true)
+				return client.ContainerStopResult{}, nil
+			},
+		}
+		b := NewContainerBackendFromClient(mock)
+		ctx, cancel := context.WithCancel(context.Background())
+
+		task := &model.Task{StopSignal: "SIGTERM", GracefulStop: time.Second}
+		proc, err := b.Start(ctx, task, nil, &model.ContainerExecution{Script: "echo hi", BaseImage: "alpine"})
+		require.NoError(t, err)
+
+		// No blocking call between Wait and cancel: under GOMAXPROCS(1) the
+		// watcher goroutine spawned inside Start cannot preempt this sequence.
+		_, waitErr := proc.Wait() // closes done
+		require.NoError(t, waitErr)
+		proc.Cleanup()
+		cancel() // mirrors Execute's deferred cancelFunc firing right after Cleanup
+
+		// Let the watcher goroutine finally run, now that both channels are
+		// already closed.
+		runtime.Gosched()
+		time.Sleep(5 * time.Millisecond)
+
+		if stopCalled.Load() {
+			t.Fatalf("iteration %d: watcher called gracefulStopContainer (ContainerStop) after the run had already exited cleanly via done", i)
+		}
 	}
 }
 

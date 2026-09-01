@@ -336,3 +336,22 @@ func TestParseSupervisordEnvQuotedValueStillHonored(t *testing.T) {
 		}
 	}
 }
+
+// TestParseSupervisordEnvQuotedValueWithLeadingSpace guards against a space
+// between the `=` and the opening quote (legal, common supervisord INI
+// style) disqualifying the quote from being recognized — which previously
+// left the quote characters in the value and, because commas were then no
+// longer protected, split the quoted value's internal comma into a bogus
+// extra key/value pair.
+func TestParseSupervisordEnvQuotedValueWithLeadingSpace(t *testing.T) {
+	got := parseSupervisordEnv(`FOO= "bar,baz",OTHER=x`)
+	want := map[string]string{"FOO": "bar,baz", "OTHER": "x"}
+	if len(got) != len(want) {
+		t.Fatalf("parseSupervisordEnv(...) = %#v, want %#v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Fatalf("parseSupervisordEnv(...) = %#v, want %#v", got, want)
+		}
+	}
+}

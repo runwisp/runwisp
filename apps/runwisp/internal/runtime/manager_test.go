@@ -228,16 +228,16 @@ func TestEvaluateConcurrency_QueuePreservesFIFOWhenSlotFree(t *testing.T) {
 	ts := &taskState{
 		task:  testTask("t", model.PolicyQueue, 2),
 		cond:  sync.NewCond(&sync.Mutex{}),
-		queue: []*model.Run{{ID: "queued-1"}}, // one run already waiting
+		queue: []queuedRun{{run: &model.Run{ID: "queued-1"}}}, // one run already waiting
 	}
 
 	// A slot is free (0 active < limit 2), but the queue is non-empty.
-	action, err := m.evaluateConcurrency(ts, &model.Run{ID: "new"}, 2)
+	action, err := m.evaluateConcurrency(ts, &model.Run{ID: "new"}, 2, 0)
 	require.NoError(t, err)
 	assert.Equal(t, actionQueued, action, "a free slot must not let a new trigger jump the queue")
 	require.Len(t, ts.queue, 2)
-	assert.Equal(t, "queued-1", ts.queue[0].ID, "the existing queued run stays at the head")
-	assert.Equal(t, "new", ts.queue[1].ID, "the new trigger goes to the back")
+	assert.Equal(t, "queued-1", ts.queue[0].run.ID, "the existing queued run stays at the head")
+	assert.Equal(t, "new", ts.queue[1].run.ID, "the new trigger goes to the back")
 }
 
 // TestEvaluateConcurrency_TerminateSkipsAlreadyCancelled pins the terminate fix:
@@ -254,7 +254,7 @@ func TestEvaluateConcurrency_TerminateSkipsAlreadyCancelled(t *testing.T) {
 		active: []*ActiveRun{r1, r2},
 	}
 
-	action, err := m.evaluateConcurrency(ts, &model.Run{ID: "r3"}, 1)
+	action, err := m.evaluateConcurrency(ts, &model.Run{ID: "r3"}, 1, 0)
 	require.NoError(t, err)
 	assert.Equal(t, actionStart, action)
 	assert.Equal(t, 0, r1cancels, "an already-cancelled run must not be re-cancelled")
@@ -1026,6 +1026,68 @@ func TestNonServiceRestartBackoffEscalates(t *testing.T) {
 		"escalated gap must clearly exceed the flat base delay, got %v (base %v)", gap3, base)
 }
 
+// TestQueuedRestartPreservesRestartAttempt guards the queue-policy sibling of
+// TestNonServiceRestartBackoffEscalates: a non-service restart racing a
+// concurrent trigger under OnOverlap=queue must carry its restart-chain depth
+// into the queue and out again, not reset to 0. Before the fix, ts.queue held
+// bare *model.Run values with nowhere to carry the depth, so
+// queueProcessLoop always called startRun with a hardcoded 0 — collapsing the
+// escalating backoff back to the flat base delay for any restart unlucky
+// enough to queue instead of starting immediately.
+func TestQueuedRestartPreservesRestartAttempt(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	eb := events.NewEventBus()
+	jm := NewTaskManager(exec, eb, time.Now)
+	defer jm.Shutdown()
+
+	task := testTask("task1", model.PolicyQueue, 1)
+	jm.UpsertTask(task)
+
+	firstStarted := make(chan struct{})
+	holdFirst := make(chan struct{})
+	exec.On("Execute", mock.Anything, task, mock.Anything).Once().Run(func(mock.Arguments) {
+		close(firstStarted)
+		<-holdFirst
+	}).Return(&executor.ExecuteResult{ExitCode: 0})
+
+	var capturedAttempt int
+	secondDone := make(chan struct{})
+	exec.On("Execute", mock.Anything, task, mock.Anything).Once().Run(func(args mock.Arguments) {
+		run, _ := args.Get(2).(*model.Run)
+		for _, ar := range jm.GetActiveRuns("task1") {
+			if ar.Run.ID == run.ID {
+				capturedAttempt = ar.RestartAttempt
+			}
+		}
+		close(secondDone)
+	}).Return(&executor.ExecuteResult{ExitCode: 0})
+
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+	<-firstStarted // run1 holds the only slot
+
+	// Simulate what scheduleRestart sends on a non-service restart: the
+	// escalating attempt depth, arriving while the slot is still held by run1
+	// (a concurrent trigger racing the restart chain), so it must queue.
+	queuedRunSnapshot, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{
+		TriggeredBy:    model.TriggeredByService,
+		RestartAttempt: 3,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, model.PhasePending, queuedRunSnapshot.Status, "must queue behind the active run")
+
+	close(holdFirst) // run1 finishes, freeing the slot for queueProcessLoop to promote the queued run
+
+	select {
+	case <-secondDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for the queued restart to execute")
+	}
+
+	assert.Equal(t, 3, capturedAttempt,
+		"the queued run must start with the restart-chain depth it was queued with, not reset to 0")
+}
+
 // TestLoadPendingRunsResumed: a pending cron task with a free slot is
 // resumed and starts execution.
 func TestLoadPendingRunsResumed(t *testing.T) {
@@ -1148,9 +1210,12 @@ func TestLoadPendingRunsSkippedTaskNotFound(t *testing.T) {
 
 // TestRemoveTask_FinalizesQueuedRuns: removing a task on reload must finalize any
 // still-queued (persisted 'pending') run instead of dropping the slice and
-// leaving a permanent non-terminal row that retention never sweeps.
+// leaving a permanent non-terminal row that retention never sweeps. It must
+// also publish the terminal event, exactly like TestPolicySkipPublishesTerminalEvent
+// — otherwise the run ends in storage but a live SSE/notify subscriber never
+// sees it leave 'pending'.
 func TestRemoveTask_FinalizesQueuedRuns(t *testing.T) {
-	jm, exec, _ := newGatedManager(t)
+	jm, exec, eb := newGatedManager(t)
 
 	var mu sync.Mutex
 	ended := map[string]model.EndReason{}
@@ -1161,6 +1226,9 @@ func TestRemoveTask_FinalizesQueuedRuns(t *testing.T) {
 			ended[run.ID] = *run.EndReason
 		}
 	})
+
+	// Subscribe before triggering so we never race the publish.
+	failed := watchRuns(eb, events.EventRunFailed)
 
 	// Queue-policy task at concurrency 1: first run occupies the slot, second
 	// waits in the queue.
@@ -1181,6 +1249,11 @@ func TestRemoveTask_FinalizesQueuedRuns(t *testing.T) {
 	defer mu.Unlock()
 	assert.Equal(t, model.ReasonSkipped, ended[queued.ID],
 		"queued run must be finalized when its task is removed")
+
+	failed.waitFor(t, 1)
+	published := failed.snapshot()[0]
+	assert.Equal(t, queued.ID, published.ID,
+		"the finalized run must publish a terminal event, not just persist silently")
 }
 
 func TestResolveRunOutcomeKilledByPolicy(t *testing.T) {
@@ -1514,7 +1587,7 @@ func TestUpsertTask_PolicyChangeAwayFromQueueExitsQueueLoop(t *testing.T) {
 // just return without ever popping it, leaving the persisted 'pending' row
 // stranded forever with nothing to start or end it.
 func TestUpsertTask_PolicyChangeAwayFromQueueFinalizesQueuedRuns(t *testing.T) {
-	jm, exec, _ := newGatedManager(t)
+	jm, exec, eb := newGatedManager(t)
 
 	var mu sync.Mutex
 	ended := map[string]model.EndReason{}
@@ -1525,6 +1598,9 @@ func TestUpsertTask_PolicyChangeAwayFromQueueFinalizesQueuedRuns(t *testing.T) {
 			ended[run.ID] = *run.EndReason
 		}
 	})
+
+	// Subscribe before triggering so we never race the publish.
+	failed := watchRuns(eb, events.EventRunFailed)
 
 	// Queue-policy task at concurrency 1: first run occupies the slot, second
 	// waits in the queue.
@@ -1553,6 +1629,13 @@ func TestUpsertTask_PolicyChangeAwayFromQueueFinalizesQueuedRuns(t *testing.T) {
 	jm.mu.RLock()
 	assert.Empty(t, jm.tasks["q"].queue, "the stale queue must be cleared, not left to strand a later upsert")
 	jm.mu.RUnlock()
+
+	// It must also publish the terminal event — persisting alone leaves a live
+	// SSE/notify subscriber seeing the run stuck in 'pending'.
+	failed.waitFor(t, 1)
+	published := failed.snapshot()[0]
+	assert.Equal(t, queued.ID, published.ID,
+		"the finalized run must publish a terminal event, not just persist silently")
 }
 
 // TestScheduleJitteredRun_HeldTaskFireDroppedNotDoubleRun pins the fix for the
