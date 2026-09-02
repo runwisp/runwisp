@@ -733,6 +733,33 @@ func TestHandleKeyR_CapitalRReloadsConfig(t *testing.T) {
 	}
 }
 
+// ─── handleKeyUpdate ────────────────────────────────────────────────────────
+
+func TestHandleKeyUpdate_NoOpWithoutUpdateAvailable(t *testing.T) {
+	m := newTestModelWithClient(nil)
+	_, cmd, handled := handleKeyUpdate(m, tea.KeyPressMsg{Code: 'U', Text: "U"})
+	if handled {
+		t.Fatal("expected handled=false when no update is available")
+	}
+	if cmd != nil {
+		t.Fatal("expected nil cmd when no update is available")
+	}
+}
+
+func TestHandleKeyUpdate_TriggersUpdateWhenAvailable(t *testing.T) {
+	m := newTestModelWithClient(nil)
+	m.info.UpdateAvailable = true
+	m.info.UpdateMethod = "self"
+	m.info.LatestVersion = "v9.9.9"
+	_, cmd, handled := handleKeyUpdate(m, tea.KeyPressMsg{Code: 'U', Text: "U"})
+	if !handled {
+		t.Fatal("expected handled=true when an update is available")
+	}
+	if cmd == nil {
+		t.Fatal("expected a non-nil cmd when an update is available")
+	}
+}
+
 func TestHandleKeyR_WithExecViewRetry(t *testing.T) {
 	m := newTestModel(nil)
 	reason := model.ReasonFailed

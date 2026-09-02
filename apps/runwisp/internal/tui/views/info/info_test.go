@@ -385,6 +385,15 @@ func TestInfoView_View_RenderBranches(t *testing.T) {
 			contains: []string{"Connected"},
 		},
 		{
+			name: "update-available",
+			setup: func() *InfoView {
+				v := NewInfoView(uikit.StartupInfo{UpdateAvailable: true, LatestVersion: "v9.9.9"})
+				v.SetSize(80, 40)
+				return &v
+			},
+			contains: []string{"v9.9.9 available (press U)"},
+		},
+		{
 			name: "with-warnings",
 			setup: func() *InfoView {
 				v := NewInfoView(uikit.StartupInfo{

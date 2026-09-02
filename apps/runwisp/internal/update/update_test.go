@@ -150,6 +150,23 @@ func TestLatestReleaseError(t *testing.T) {
 	}
 }
 
+func TestUpgradeCommand(t *testing.T) {
+	cases := []struct {
+		m    Method
+		want string
+	}{
+		{MethodDocker, "docker pull runwisp/runwisp"},
+		{MethodNpm, "npm update -g runwisp"},
+		{MethodManual, "re-run the installer: curl -fsSL https://get.runwisp.com | sh"},
+		{MethodSelf, "re-run the installer: curl -fsSL https://get.runwisp.com | sh"},
+	}
+	for _, c := range cases {
+		if got := UpgradeCommand(c.m); got != c.want {
+			t.Errorf("UpgradeCommand(%q)=%q want %q", c.m, got, c.want)
+		}
+	}
+}
+
 // --- Apply safety ---
 
 const oldBinary = "OLD-BINARY-CONTENT"
@@ -224,6 +241,147 @@ func TestApplyReexecFailureRestoresBinary(t *testing.T) {
 	if !fileContains(t, exe, oldBinary) {
 		t.Error("old binary was not restored after reexec failure")
 	}
+}
+
+func TestApplyAlreadyInProgress(t *testing.T) {
+	if !applying.CompareAndSwap(false, true) {
+		t.Fatal("applying was already true at test start")
+	}
+	defer applying.Store(false)
+
+	err := Apply(context.Background(), http.DefaultClient, "v9.9.9", func() error {
+		t.Fatal("reexec must not run when an update is already in progress")
+		return nil
+	})
+	if err == nil {
+		t.Fatal("expected an error when an update is already in progress")
+	}
+}
+
+func TestApplyLocateExecutableError(t *testing.T) {
+	orig := osExecutable
+	osExecutable = func() (string, error) { return "", fmt.Errorf("boom") }
+	defer func() { osExecutable = orig }()
+
+	err := Apply(context.Background(), http.DefaultClient, "v9.9.9", func() error {
+		t.Fatal("reexec must not run when the executable can't be located")
+		return nil
+	})
+	if err == nil {
+		t.Fatal("expected an error when the executable can't be located")
+	}
+}
+
+func TestApplyDownloadFailure(t *testing.T) {
+	exe := setupFakeInstall(t)
+	// No handlers registered: every request 404s.
+	srv := httptest.NewServer(http.NewServeMux())
+	defer srv.Close()
+	swapVar(t, &releaseDownloadBase, srv.URL)
+
+	err := Apply(context.Background(), srv.Client(), "v9.9.9", func() error {
+		t.Fatal("reexec must not run when the download fails")
+		return nil
+	})
+	if err == nil {
+		t.Fatal("expected a download error")
+	}
+	assertUntouched(t, exe)
+}
+
+func TestApplyChecksumFetchFailure(t *testing.T) {
+	exe := setupFakeInstall(t)
+	tarball := buildTarball(t, script("9.9.9"))
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v9.9.9/"+AssetName(), func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarball)
+	})
+	mux.HandleFunc("/v9.9.9/checksums-sha256.txt", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	swapVar(t, &releaseDownloadBase, srv.URL)
+
+	err := Apply(context.Background(), srv.Client(), "v9.9.9", func() error {
+		t.Fatal("reexec must not run when the checksum fetch fails")
+		return nil
+	})
+	if err == nil {
+		t.Fatal("expected a checksum-fetch error")
+	}
+	assertUntouched(t, exe)
+}
+
+func TestApplyChecksumNotFoundForAsset(t *testing.T) {
+	exe := setupFakeInstall(t)
+	tarball := buildTarball(t, script("9.9.9"))
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v9.9.9/"+AssetName(), func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarball)
+	})
+	mux.HandleFunc("/v9.9.9/checksums-sha256.txt", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprintf(w, "%s  some-other-file.tar.gz\n", sha256hex(tarball))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	swapVar(t, &releaseDownloadBase, srv.URL)
+
+	err := Apply(context.Background(), srv.Client(), "v9.9.9", func() error {
+		t.Fatal("reexec must not run when no checksum matches the asset")
+		return nil
+	})
+	if err == nil {
+		t.Fatal("expected a 'no checksum for asset' error")
+	}
+	assertUntouched(t, exe)
+}
+
+func TestApplyArchiveMissingBinary(t *testing.T) {
+	exe := setupFakeInstall(t)
+	// A well-formed tarball whose only entry is not named "runwisp".
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	content := []byte("not the binary")
+	if err := tw.WriteHeader(&tar.Header{
+		Name:     "README",
+		Mode:     0o644,
+		Size:     int64(len(content)),
+		Typeflag: tar.TypeReg,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	tarball := buf.Bytes()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v9.9.9/"+AssetName(), func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarball)
+	})
+	mux.HandleFunc("/v9.9.9/checksums-sha256.txt", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprintf(w, "%s  %s\n", sha256hex(tarball), AssetName())
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	swapVar(t, &releaseDownloadBase, srv.URL)
+
+	err := Apply(context.Background(), srv.Client(), "v9.9.9", func() error {
+		t.Fatal("reexec must not run when the archive lacks the binary")
+		return nil
+	})
+	if err == nil {
+		t.Fatal("expected an 'archive did not contain' error")
+	}
+	assertUntouched(t, exe)
 }
 
 // --- helpers ---

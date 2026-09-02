@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -78,6 +79,16 @@ func TestHumaGetInfo_SurfacesUpdateStatus(t *testing.T) {
 
 func TestHumaUpdate_UnavailableWithoutHook(t *testing.T) {
 	srv := &Server{} // no selfUpdate hook: docker/npm/manual install
+	_, err := srv.humaUpdate(context.Background(), &struct{}{})
+	require.Error(t, err)
+}
+
+func TestHumaUpdate_HookError(t *testing.T) {
+	srv := &Server{
+		selfUpdate: func() (model.UpdateResult, error) {
+			return model.UpdateResult{}, errors.New("checksum mismatch")
+		},
+	}
 	_, err := srv.humaUpdate(context.Background(), &struct{}{})
 	require.Error(t, err)
 }

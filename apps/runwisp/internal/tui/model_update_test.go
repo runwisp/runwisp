@@ -6,6 +6,7 @@ package tui
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -940,6 +941,108 @@ func TestHandleDeleteRun_ArmsUndo(t *testing.T) {
 	}
 	if got.dialogs.TakeUndo() == nil {
 		t.Fatal("expected a successful delete to arm an undo")
+	}
+}
+
+// ─── update ──────────────────────────────────────────────────────────────────
+
+func TestTriggerUpdate_NilClientReturnsNil(t *testing.T) {
+	m := newTestModel(nil)
+	m.info.UpdateAvailable = true
+	m.info.UpdateMethod = "self"
+	if cmd := m.triggerUpdate(); cmd != nil {
+		t.Fatal("expected nil cmd with no client")
+	}
+}
+
+func TestTriggerUpdate_NoUpdateAvailableReturnsNil(t *testing.T) {
+	m := newTestModelWithClient(nil)
+	if cmd := m.triggerUpdate(); cmd != nil {
+		t.Fatal("expected nil cmd when no update is available")
+	}
+}
+
+func TestTriggerUpdate_NonSelfMethodFlashesUpgradeCommand(t *testing.T) {
+	m := newTestModelWithClient(nil)
+	m.info.UpdateAvailable = true
+	m.info.UpdateMethod = "docker"
+	m.info.LatestVersion = "v9.9.9"
+	cmd := m.triggerUpdate()
+	if cmd == nil {
+		t.Fatal("expected a non-nil cmd")
+	}
+	flash, active := m.dialogs.FlashActive()
+	if !active {
+		t.Fatal("expected a flash to be active")
+	}
+	if !strings.Contains(flash, "docker pull runwisp/runwisp") {
+		t.Errorf("expected flash to name the upgrade command, got %q", flash)
+	}
+}
+
+func TestTriggerUpdate_SelfMethodFlashesAndTriggersStreamUpdate(t *testing.T) {
+	m := newTestModelWithClient(nil)
+	m.info.UpdateAvailable = true
+	m.info.UpdateMethod = "self"
+	m.info.LatestVersion = "v9.9.9"
+	cmd := m.triggerUpdate()
+	if cmd == nil {
+		t.Fatal("expected a non-nil cmd")
+	}
+	flash, active := m.dialogs.FlashActive()
+	if !active {
+		t.Fatal("expected a flash to be active")
+	}
+	if !strings.Contains(flash, "Updating to v9.9.9") {
+		t.Errorf("expected flash to mention the version being applied, got %q", flash)
+	}
+}
+
+func TestHandleUpdateResult_ErrorFlashes(t *testing.T) {
+	m := newTestModel(nil)
+	updated, cmd := m.handleUpdateResult(uikit.UpdateResultMsg{Err: errors.New("checksum mismatch")})
+	if cmd == nil {
+		t.Fatal("expected a non-nil cmd on update failure")
+	}
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updated)
+	}
+	flash, active := got.dialogs.FlashActive()
+	if !active || !strings.Contains(flash, "Update failed: checksum mismatch") {
+		t.Fatalf("expected an update-failed flash, got %q (active=%v)", flash, active)
+	}
+}
+
+func TestHandleUpdateResult_SuccessFlashesNewVersion(t *testing.T) {
+	m := newTestModel(nil)
+	updated, cmd := m.handleUpdateResult(uikit.UpdateResultMsg{Result: &model.UpdateResult{NewVersion: "0.17.0"}})
+	if cmd == nil {
+		t.Fatal("expected a non-nil cmd on update success")
+	}
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updated)
+	}
+	flash, active := got.dialogs.FlashActive()
+	if !active || !strings.Contains(flash, "Updated to 0.17.0") {
+		t.Fatalf("expected an updated-version flash, got %q (active=%v)", flash, active)
+	}
+}
+
+func TestHandleUpdateResult_SuccessWithNilResultUsesGenericSummary(t *testing.T) {
+	m := newTestModel(nil)
+	updated, cmd := m.handleUpdateResult(uikit.UpdateResultMsg{})
+	if cmd == nil {
+		t.Fatal("expected a non-nil cmd on update success")
+	}
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updated)
+	}
+	flash, active := got.dialogs.FlashActive()
+	if !active || !strings.Contains(flash, "Update applied") {
+		t.Fatalf("expected a generic update-applied flash, got %q (active=%v)", flash, active)
 	}
 }
 
