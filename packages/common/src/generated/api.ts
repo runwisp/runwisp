@@ -76,6 +76,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/daemon/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Update the daemon to the latest release
+         * @description Downloads, checksum-verifies, and swaps in the newest GitHub release, then restarts the daemon into it. Standalone binary installs only; docker/npm installs are rejected with a 400 and should upgrade via their package manager.
+         */
+        post: operations["selfUpdate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/events/stream": {
         parameters: {
             query?: never;
@@ -655,6 +675,7 @@ export interface components {
             configWarnings?: string[] | null;
             externalUrl: string;
             fingerprint: string;
+            latestVersion?: string;
             /** Format: int64 */
             port: number;
             resolvedTimezone: string;
@@ -663,6 +684,9 @@ export interface components {
             tasks: components["schemas"]["TaskBrief"][] | null;
             /** @enum {string} */
             timezoneSource: "config" | "system";
+            updateAvailable: boolean;
+            /** @enum {string} */
+            updateMethod: "self" | "docker" | "npm" | "manual";
             version: string;
         };
         DaemonLogLineEvent: {
@@ -1513,6 +1537,16 @@ export interface components {
             runId: string;
             taskName: string;
         };
+        UpdateResult: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/UpdateResult.json
+             */
+            readonly $schema?: string;
+            newVersion: string;
+            oldVersion: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -1636,6 +1670,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReloadResult"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    selfUpdate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateResult"];
                 };
             };
             /** @description Error */

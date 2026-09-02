@@ -247,6 +247,10 @@ type Daemon struct {
 	TLS                string
 	TLSCert            string
 	TLSKey             string
+	// CheckUpdates polls GitHub in the background for a newer release and
+	// surfaces it in the Web UI / TUI. Default on; disable to keep the daemon
+	// fully offline. Restart-only, like every other [daemon] key.
+	CheckUpdates bool
 }
 
 // Defaults provides fallback values applied to every task.

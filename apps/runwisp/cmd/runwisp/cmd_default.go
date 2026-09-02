@@ -58,7 +58,7 @@ func runDefault(f Flags) error {
 
 	if err := spawnDaemon(f); err != nil {
 		slog.Warn("Failed to spawn background daemon, running inline", "err", err)
-		return runDaemon(modeStandalone, f, false)
+		return runDaemonAndReexec(modeStandalone, f, false)
 	}
 
 	if err := waitForDaemon(client, logPath, 10*time.Second, f); err != nil {

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **When a newer RunWisp release is available it shows up as a clearable in-app notification, and the daemon can update in place.** Standalone binary installs get a one-click/one-key self-update from the notification (checksum-verified, smoke-tested, with automatic rollback); Docker and npm installs show the right upgrade command instead. Marking the notification read dismisses it until the next release. The background check is opt-out via `[daemon] check_updates = false`.
+
 ## [0.16.3] - 2026-09-02
 
 ### Fixed

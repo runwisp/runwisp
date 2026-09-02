@@ -75,6 +75,31 @@ func TestGetDaemonInfo(t *testing.T) {
 	assert.Equal(t, "fp-test", got.Fingerprint)
 }
 
+func TestTriggerUpdate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/daemon/update", r.URL.Path)
+		assert.Equal(t, http.MethodPost, r.Method)
+		_ = json.NewEncoder(w).Encode(model.UpdateResult{OldVersion: "0.16.0", NewVersion: "0.17.0"})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	got, err := c.TriggerUpdate()
+	require.NoError(t, err)
+	assert.Equal(t, "0.17.0", got.NewVersion)
+}
+
+func TestTriggerUpdate_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	_, err := c.TriggerUpdate()
+	assert.Error(t, err)
+}
+
 func TestAuthStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/auth/status", r.URL.Path)

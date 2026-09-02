@@ -121,6 +121,9 @@ func gracefulShutdown(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, s
 	if svc.MemoryReclaimer != nil {
 		svc.MemoryReclaimer.Stop()
 	}
+	if svc.UpdateChecker != nil {
+		svc.UpdateChecker.Stop()
+	}
 	// nil receiver when the pprof endpoint was never enabled — Close handles it.
 	svc.DebugServer.Close()
 

@@ -14,6 +14,7 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/textutil"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/internal/update"
 )
 
 // Field identifies a focusable field in the home header.
@@ -90,6 +91,19 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 			Foreground(uikit.ColorWarning).
 			Render("\u26a0 runwisp.toml changed \u2014 press R to reload")
 		parts = append(parts, warn)
+	}
+	if info.UpdateAvailable && info.LatestVersion != "" {
+		// Success color: a new release is good, actionable news. Self-updatable
+		// installs get the keystroke; docker/npm/manual get the right command.
+		action := "press U to update"
+		if info.UpdateMethod != "self" {
+			action = update.UpgradeCommand(update.Method(info.UpdateMethod))
+		}
+		up := lipgloss.NewStyle().
+			Background(uikit.ColorBgLight).
+			Foreground(uikit.ColorSuccess).
+			Render(fmt.Sprintf("⬆ %s available — %s", info.LatestVersion, action))
+		parts = append(parts, up)
 	}
 	if n := HeldTaskCount(info.Tasks); n > 0 {
 		// Warning color: these are the operator's own jobs, loaded and listed, that

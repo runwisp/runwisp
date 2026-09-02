@@ -160,6 +160,8 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		TLSCert:           tlsCfg.CertPath,
 		TLSKey:            tlsCfg.KeyPath,
 		Reload:            reloadFn,
+		UpdateStatus:      updateStatusHook(svc.UpdateChecker),
+		SelfUpdate:        selfUpdateHook(cfg),
 	})
 	if err != nil {
 		return err

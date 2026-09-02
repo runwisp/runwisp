@@ -380,3 +380,50 @@ func TestUpsertByFingerprint_CoalesceClearsReadAt(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, got.ReadAt, "fresh occurrence must reset read state")
 }
+
+func TestEnsureNotificationByFingerprint_InsertsOnce(t *testing.T) {
+	ctx := t.Context()
+	db := setupNotificationDB(t)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	first := newNotification(now, "fp-ensure")
+	created, err := db.EnsureNotificationByFingerprint(ctx, first)
+	require.NoError(t, err)
+	assert.True(t, created, "first call must insert")
+
+	// A second announcement with the same fingerprint must NOT insert a new row,
+	// even long after the coalescing window would have elapsed.
+	second := newNotification(now.Add(48*time.Hour), "fp-ensure")
+	created, err = db.EnsureNotificationByFingerprint(ctx, second)
+	require.NoError(t, err)
+	assert.False(t, created, "same fingerprint must be a no-op")
+
+	rows, err := db.ListNotifications(ctx, 50, "")
+	require.NoError(t, err)
+	assert.Len(t, rows, 1, "only one row for the fingerprint")
+}
+
+// The core "don't reappear once read" guarantee: a re-announcement must never
+// clear read_at on an already-acknowledged row.
+func TestEnsureNotificationByFingerprint_PreservesReadState(t *testing.T) {
+	ctx := t.Context()
+	db := setupNotificationDB(t)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	n := newNotification(now, "fp-read")
+	_, err := db.EnsureNotificationByFingerprint(ctx, n)
+	require.NoError(t, err)
+
+	_, err = db.MarkNotificationRead(ctx, n.ID, now)
+	require.NoError(t, err)
+
+	// Re-announce the same fingerprint (e.g. next poll, or after a restart).
+	again := newNotification(now.Add(time.Hour), "fp-read")
+	created, err := db.EnsureNotificationByFingerprint(ctx, again)
+	require.NoError(t, err)
+	require.False(t, created)
+
+	got, err := db.GetNotificationByID(ctx, n.ID)
+	require.NoError(t, err)
+	assert.NotNil(t, got.ReadAt, "read state must survive a re-announcement")
+}

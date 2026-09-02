@@ -215,6 +215,10 @@ type ReloadOutput struct {
 	Body model.ReloadResult
 }
 
+type UpdateOutput struct {
+	Body model.UpdateResult
+}
+
 // ---------- Auth types ----------
 
 type AuthStatusOutput struct {

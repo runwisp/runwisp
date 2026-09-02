@@ -71,6 +71,14 @@ type StartupInfo struct {
 	// the TUI can mention it at all.
 	ConfigWarnings []string
 
+	// UpdateAvailable/LatestVersion/UpdateMethod mirror /api/daemon's update
+	// fields, refreshed by the periodic poll. When UpdateAvailable, the header
+	// shows a chip: "press U to update" for a self-updatable install, else the
+	// upgrade command for the detected UpdateMethod (docker/npm/manual).
+	UpdateAvailable bool
+	LatestVersion   string
+	UpdateMethod    string
+
 	// Headless is set when the daemon runs without an interactive TUI. The
 	// startup banner renders one extra dim line ("Press Ctrl+C to stop.") in
 	// that case, replacing what used to be a separate timestamped slog INFO.

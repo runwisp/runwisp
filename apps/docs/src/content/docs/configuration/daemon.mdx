@@ -28,6 +28,7 @@ tls_cert         = ""
 tls_key          = ""
 metrics_enabled  = false
 metrics_listen   = ""
+check_updates    = true
 include          = ["conf.d/*.toml"]
 # include_cron   = ["/etc/crontab", "/etc/cron.d/*"]
 ```
@@ -41,6 +42,7 @@ include          = ["conf.d/*.toml"]
 | `tls_key`              | _unset_ | Path to the PEM private key matching `tls_cert`. Both keys are set together or not at all.                                                                                                                                                          |
 | `metrics_enabled`      | `false` | Master switch for the Prometheus-compatible `/metrics` endpoint. Off by default — task names and the daemon version label are visible to anyone who can reach the endpoint, so it stays closed until you turn it on.                                |
 | `metrics_listen`       | _unset_ | Optional `host:port` for a dedicated metrics listener (e.g. `"127.0.0.1:9478"`). When set, `/metrics` is **only** reachable on this address — never on the main UI/REST listener. Only consulted when `metrics_enabled = true`.                     |
+| `check_updates`        | `true`  | Poll GitHub in the background for a newer release and surface it in the Web UI and TUI. Set `false` to keep the daemon fully offline. See [`check_updates`](#check_updates) below.                                                                  |
 | `allow_cloud_dispatch` | `false` | Opt in to ad-hoc runs requested by a connected control-plane peer. Off by default. Dispatched runs are one-shot and never modify your task set — see [the control-plane section](#allow_cloud_dispatch) below.                                      |
 | `include`              | _unset_ | Glob patterns for extra TOML files to merge into this config at load. Lets you split tasks across `conf.d/*.toml` instead of one giant file. Only valid in the root config.                                                                         |
 | `include_cron`         | _unset_ | Glob patterns for real crontabs (system, `cron.d`, or per-user spool) to read as live task definitions at every load and reload. Point RunWisp at what cron already reads instead of converting everything up front. Only valid in the root config. |
@@ -157,6 +159,32 @@ locally or through a proxy; don't expose it on a public interface.
 
 And if you set `metrics_listen` but never turned `metrics_enabled` on,
 the daemon rejects it at boot instead of quietly ignoring it.
+
+### `check_updates`
+
+Every few hours the daemon asks GitHub whether there's a newer RunWisp
+release, and if there is, the Web UI and TUI both show a small banner. It's
+the only thing RunWisp reaches out over the network for on its own, so if you
+want a daemon that never phones home, turn it off:
+
+```toml
+[daemon]
+check_updates = false
+```
+
+The check is best-effort — if you're offline or GitHub is unreachable, it
+fails silently and tries again next time. Nothing in the daemon waits on it,
+and disabling it takes the network call away entirely.
+
+When there **is** an update and you installed the plain binary (from the
+install script or a direct download), the banner offers an **Update now**
+button — the daemon downloads the new release, verifies its checksum, smoke-
+tests it, atomically swaps its own binary, and restarts into it. It only
+ever swaps a verified, runnable binary, so a bad download or a half-written
+file leaves your working install untouched (the previous binary is kept
+alongside as `runwisp.bak`). Docker and npm installs can't swap themselves,
+so there the banner just shows the right upgrade command
+(`docker pull runwisp/runwisp` or `npm update -g runwisp`) instead.
 
 ### `allow_cloud_dispatch`
 

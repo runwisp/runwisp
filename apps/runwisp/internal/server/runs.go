@@ -56,6 +56,15 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaReload)
 
 	huma.Register(protectedAPI, huma.Operation{
+		OperationID: "selfUpdate",
+		Method:      http.MethodPost,
+		Path:        "/api/daemon/update",
+		Summary:     "Update the daemon to the latest release",
+		Description: "Downloads, checksum-verifies, and swaps in the newest GitHub release, then restarts the daemon into it. Standalone binary installs only; docker/npm installs are rejected with a 400 and should upgrade via their package manager.",
+		Tags:        []string{"System"},
+	}, srv.humaUpdate)
+
+	huma.Register(protectedAPI, huma.Operation{
 		OperationID: "getMetricsHistory",
 		Method:      http.MethodGet,
 		Path:        "/api/system/metrics",

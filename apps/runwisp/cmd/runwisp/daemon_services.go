@@ -17,9 +17,12 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/internal/update"
 	"github.com/runwisp/runwisp/internal/version"
 )
 
@@ -34,6 +37,7 @@ type daemonServices struct {
 	RetentionCleaner    *runtime.RetentionCleaner
 	SoftDeletePurger    *runtime.SoftDeletePurger
 	MemoryReclaimer     *runtime.MemoryReclaimer
+	UpdateChecker       *runtime.UpdateChecker
 	DebugServer         *debugServer
 	Notify              notifyBundle
 	ScheduleResult      runtime.ScheduleResult
@@ -108,7 +112,12 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 
 	debugSrv := startDebugServer()
 
+	// Notify comes up before the update checker so the checker's Announcer can
+	// share the in-app Hub for live SSE push (nil Hub still persists + resyncs).
 	notifyB := startNotify(ctx, cfg, db, eventBus, tasksMap, addWarning)
+
+	announcer := inapp.NewAnnouncer(db, notifyB.Hub, notify.RealClock())
+	updateChecker := startUpdateChecker(cfg, newUpdateAvailableNotifier(announcer))
 
 	if mode == modeStandalone {
 		// Run catch-up now that notify is subscribed, so a missed-run gap
@@ -128,6 +137,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		RetentionCleaner:    retentionCleaner,
 		SoftDeletePurger:    softDeletePurger,
 		MemoryReclaimer:     memoryReclaimer,
+		UpdateChecker:       updateChecker,
 		DebugServer:         debugSrv,
 		Notify:              notifyB,
 		ScheduleResult:      boot.schedResult,
@@ -485,6 +495,9 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time
 		TimezoneSource:   cfg.Config.Scheduler.Source,
 		Tasks:            tasks,
 		Capabilities:     capInfos,
+		// Boot-static: the install location doesn't move at runtime, so classify
+		// once here rather than probing the filesystem per /api/daemon request.
+		UpdateMethod: string(update.DetectMethod()),
 	}
 }
 

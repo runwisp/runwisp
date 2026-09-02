@@ -105,6 +105,9 @@ type fakeNotificationRepo struct {
 func (f *fakeNotificationRepo) UpsertByFingerprint(context.Context, *storage.Notification, time.Duration, int) (bool, error) {
 	panic("not used")
 }
+func (f *fakeNotificationRepo) EnsureNotificationByFingerprint(context.Context, *storage.Notification) (bool, error) {
+	panic("not used")
+}
 func (f *fakeNotificationRepo) ListNotifications(context.Context, int, string) ([]storage.Notification, error) {
 	panic("not used")
 }

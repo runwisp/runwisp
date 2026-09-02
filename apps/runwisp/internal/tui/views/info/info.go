@@ -333,6 +333,9 @@ func (v *InfoView) renderQuickInfoSection(w int) []string {
 	if v.info.CloudEnabled {
 		fields = append(fields, kv{"Cloud", "Connected"})
 	}
+	if v.info.UpdateAvailable && v.info.LatestVersion != "" {
+		fields = append(fields, kv{"Update", v.info.LatestVersion + " available (press U)"})
+	}
 
 	for _, f := range fields {
 		if f.value == "" {

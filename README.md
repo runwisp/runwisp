@@ -152,6 +152,7 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 - Local-first, offline-complete. No signup, no telemetry, no account required.
 - TOML configuration: one file, version-controllable, reviewable in pull requests
 - Live config reload via `runwisp reload` or `SIGHUP`: pick up `runwisp.toml` edits without a restart; validate-first, so a bad edit leaves the running task set untouched
+- In-app updates: the Web UI and TUI show when a newer release is out and self-update the binary in place for standalone installs (checksum-verified, with rollback); optional and off-path (`check_updates`, default on)
 
 <div align="center">
 <img alt="RunWisp terminal UI screenshot: task sidebar, live log output, and execution controls over SSH" src="apps/docs/src/assets/screenshots/tui-home.png" width="780">

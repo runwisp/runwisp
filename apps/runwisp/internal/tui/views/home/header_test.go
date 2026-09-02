@@ -256,6 +256,35 @@ func TestRenderHeader_ConfigStale(t *testing.T) {
 	assert.Contains(t, header, "press R to reload")
 }
 
+func TestRenderHeader_ShowsUpdateChip_Self(t *testing.T) {
+	info := uikit.StartupInfo{
+		Port:            9477,
+		UpdateAvailable: true,
+		LatestVersion:   "v9.9.9",
+		UpdateMethod:    "self",
+	}
+	header, _ := RenderHeader(info, false, 100, -1, -1)
+	assert.Contains(t, header, "v9.9.9")
+	assert.Contains(t, header, "press U to update")
+}
+
+func TestRenderHeader_ShowsUpdateChip_NonSelfShowsCommand(t *testing.T) {
+	info := uikit.StartupInfo{
+		Port:            9477,
+		UpdateAvailable: true,
+		LatestVersion:   "v9.9.9",
+		UpdateMethod:    "docker",
+	}
+	header, _ := RenderHeader(info, false, 100, -1, -1)
+	assert.Contains(t, header, "docker pull runwisp/runwisp")
+}
+
+func TestRenderHeader_NoUpdateChipWhenUnavailable(t *testing.T) {
+	info := uikit.StartupInfo{Port: 9477}
+	header, _ := RenderHeader(info, false, 100, -1, -1)
+	assert.NotContains(t, header, "available —")
+}
+
 func TestRenderHeader_ConfigFresh_NoNotice(t *testing.T) {
 	info := uikit.StartupInfo{Port: 9477}
 	header, _ := RenderHeader(info, false, 80, -1, -1)

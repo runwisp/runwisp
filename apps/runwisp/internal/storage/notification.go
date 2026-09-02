@@ -40,6 +40,12 @@ type NotificationRepository interface {
 	// ringSize trims the merged occurrence list (0 = no trim). A successful
 	// coalesce clears ReadAt so a fresh occurrence makes the row unread again.
 	UpsertByFingerprint(ctx context.Context, n *Notification, window time.Duration, ringSize int) (created bool, err error)
+	// EnsureNotificationByFingerprint inserts n only when no row with its
+	// fingerprint exists at all; otherwise it is a no-op and leaves the existing
+	// row (including its read state) untouched. Unlike UpsertByFingerprint it
+	// never coalesces and never clears read_at — the "announce once, ever"
+	// primitive for slow-moving daemon facts like an available update.
+	EnsureNotificationByFingerprint(ctx context.Context, n *Notification) (created bool, err error)
 	ListNotifications(ctx context.Context, limit int, before string) ([]Notification, error)
 	GetNotificationByID(ctx context.Context, id string) (*Notification, error)
 	PruneNotificationsByCount(ctx context.Context, keep int) (int64, error)
@@ -162,6 +168,64 @@ func (db *SQLiteDatabase) UpsertByFingerprint(ctx context.Context, n *Notificati
 	n.CreatedAt = existing.CreatedAt
 	n.RunID = existing.RunID
 	n.ReadAt = nil
+	return false, nil
+}
+
+// EnsureNotificationByFingerprint inserts n only if no row with its fingerprint
+// exists yet, in a single transaction. An existing row (read or unread, any age)
+// is left exactly as-is — read state is never cleared — so an already-read
+// announcement never resurfaces, even across daemon restarts. Returns created=false
+// when a matching row was already present.
+func (db *SQLiteDatabase) EnsureNotificationByFingerprint(ctx context.Context, n *Notification) (bool, error) {
+	if n == nil {
+		return false, errors.New("notification is nil")
+	}
+
+	tx, err := db.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	qtx := db.q.WithTx(tx)
+
+	// Zero-time cutoff matches any existing row for this fingerprint regardless
+	// of the coalescing window: we care whether the announcement was ever raised,
+	// not whether it was recent.
+	_, err = qtx.SelectExistingForFingerprint(ctx, sqlcdb.SelectExistingForFingerprintParams{
+		Fingerprint:    n.Fingerprint,
+		LastOccurredAt: time.Time{},
+	})
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		occJSON, err := encodeOccurrences(n.Occurrences)
+		if err != nil {
+			return false, err
+		}
+		if err := qtx.InsertNotification(ctx, sqlcdb.InsertNotificationParams{
+			ID:              n.ID,
+			Fingerprint:     n.Fingerprint,
+			Kind:            n.Kind,
+			Severity:        n.Severity,
+			TaskName:        n.TaskName,
+			RunID:           n.RunID,
+			Title:           n.Title,
+			Body:            n.Body,
+			Count:           n.Count,
+			OccurrencesJson: occJSON,
+			CreatedAt:       n.CreatedAt,
+			LastOccurredAt:  n.LastOccurredAt,
+		}); err != nil {
+			return false, err
+		}
+		if err := tx.Commit(); err != nil {
+			return false, err
+		}
+		n.ReadAt = nil
+		return true, nil
+	case err != nil:
+		return false, err
+	}
+	// Already present — leave it (and its read state) untouched.
 	return false, nil
 }
 

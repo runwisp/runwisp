@@ -131,6 +131,9 @@
           "fingerprint": {
             "type": "string"
           },
+          "latestVersion": {
+            "type": "string"
+          },
           "port": {
             "format": "int64",
             "type": "integer"
@@ -160,6 +163,18 @@
             ],
             "type": "string"
           },
+          "updateAvailable": {
+            "type": "boolean"
+          },
+          "updateMethod": {
+            "enum": [
+              "self",
+              "docker",
+              "npm",
+              "manual"
+            ],
+            "type": "string"
+          },
           "version": {
             "type": "string"
           }
@@ -178,7 +193,9 @@
           "resolvedTimezone",
           "timezoneSource",
           "tasks",
-          "capabilities"
+          "capabilities",
+          "updateAvailable",
+          "updateMethod"
         ],
         "type": "object"
       },
@@ -2007,6 +2024,31 @@
           "runId"
         ],
         "type": "object"
+      },
+      "UpdateResult": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/UpdateResult.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "newVersion": {
+            "type": "string"
+          },
+          "oldVersion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "oldVersion",
+          "newVersion"
+        ],
+        "type": "object"
       }
     }
   },
@@ -2170,6 +2212,38 @@
           }
         },
         "summary": "Reload runwisp.toml",
+        "tags": [
+          "System"
+        ]
+      }
+    },
+    "/api/daemon/update": {
+      "post": {
+        "description": "Downloads, checksum-verifies, and swaps in the newest GitHub release, then restarts the daemon into it. Standalone binary installs only; docker/npm installs are rejected with a 400 and should upgrade via their package manager.",
+        "operationId": "selfUpdate",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Update the daemon to the latest release",
         "tags": [
           "System"
         ]

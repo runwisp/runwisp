@@ -128,6 +128,7 @@
         "tls": { "type": "string", "default": "off", "description": "TLS mode for the HTTP server." },
         "tls_cert": { "type": "string", "description": "Path to the TLS certificate." },
         "tls_key": { "type": "string", "description": "Path to the TLS private key." },
+        "check_updates": { "type": "boolean", "default": true, "description": "Poll GitHub in the background for a newer release and show it in the Web UI/TUI. Set false to keep the daemon fully offline." },
         "include": {
           "type": "array",
           "description": "Glob(s) of extra TOML files merged at load. Root config only, no nesting.",

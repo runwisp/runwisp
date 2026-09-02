@@ -238,6 +238,14 @@ type ReloadResultMsg struct {
 	Err    error
 }
 
+// UpdateResultMsg delivers the outcome of an operator-triggered self-update
+// (POST /api/daemon/update). On success the daemon re-execs into NewVersion, so
+// the TUI briefly loses its connection and reconnects on the next poll.
+type UpdateResultMsg struct {
+	Result *model.UpdateResult
+	Err    error
+}
+
 // MetricsHistoryMsg delivers historical metrics for sparkline pre-fill.
 type MetricsHistoryMsg struct {
 	Samples []model.MetricsSample

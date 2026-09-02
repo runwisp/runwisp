@@ -453,6 +453,20 @@ type DaemonInfo struct {
 	TimezoneSource   string      `json:"timezoneSource" enum:"config,system"`
 	Tasks            []TaskBrief `json:"tasks"`
 	Capabilities     []CapInfo   `json:"capabilities"`
+	// UpdateAvailable/LatestVersion come from the background update checker; both
+	// zero when checking is disabled, offline, or already current. UpdateMethod
+	// tells UIs whether to offer an in-app self-update ("self") or the right
+	// upgrade command for a docker/npm/manual install.
+	UpdateAvailable bool   `json:"updateAvailable"`
+	LatestVersion   string `json:"latestVersion,omitempty"`
+	UpdateMethod    string `json:"updateMethod" enum:"self,docker,npm,manual"`
+}
+
+// UpdateResult is returned by POST /api/daemon/update after a verified binary
+// swap; the daemon then re-execs into NewVersion.
+type UpdateResult struct {
+	OldVersion string `json:"oldVersion"`
+	NewVersion string `json:"newVersion"`
 }
 
 // InstanceInfo is the local-only identity of a running daemon, returned by

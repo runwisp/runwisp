@@ -50,6 +50,7 @@ func TestStreamManager_NilClientReturnsNilCommands(t *testing.T) {
 	assert.Nil(t, sm.MarkNotificationRead("id"))
 	assert.Nil(t, sm.MarkNotificationUnread(""))
 	assert.Nil(t, sm.MarkNotificationUnread("id"))
+	assert.Nil(t, sm.TriggerUpdate())
 }
 
 func TestStreamManager_SubscribeEventsNilReturnsNil(t *testing.T) {
@@ -641,6 +642,10 @@ func newBulkServer(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"added":["new-task"],"removed":[],"changed":[]}`))
 	})
+	mux.HandleFunc("/api/daemon/update", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"oldVersion":"0.16.0","newVersion":"0.17.0"}`))
+	})
 	mux.HandleFunc("/api/runs", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"items":[],"total":0}`))
@@ -745,6 +750,21 @@ func TestStreamManager_Reload_HappyPath(t *testing.T) {
 	assert.Equal(t, []string{"new-task"}, msg.Result.Added)
 	// The follow-up /api/daemon read succeeds, so fresh info rides along.
 	assert.NotNil(t, msg.Info)
+}
+
+func TestStreamManager_TriggerUpdate_HappyPath(t *testing.T) {
+	srv := newBulkServer(t)
+	defer srv.Close()
+	sm := NewStreamManager(apiclient.New(srv.URL, ""))
+	t.Cleanup(sm.Shutdown)
+
+	cmd := sm.TriggerUpdate()
+	require.NotNil(t, cmd)
+	msg, ok := cmd().(uikit.UpdateResultMsg)
+	require.True(t, ok)
+	assert.NoError(t, msg.Err)
+	require.NotNil(t, msg.Result)
+	assert.Equal(t, "0.17.0", msg.Result.NewVersion)
 }
 
 func TestStreamManager_FetchTaskSummary_HappyPath(t *testing.T) {

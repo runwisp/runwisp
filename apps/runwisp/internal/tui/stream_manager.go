@@ -303,6 +303,21 @@ func (sm *StreamManager) Reload() tea.Cmd {
 	}
 }
 
+// TriggerUpdate asks the daemon to self-update (POST /api/daemon/update). On
+// success the daemon re-execs into the new binary; the result comes back as an
+// UpdateResultMsg. A non-self install or a download/verify failure is reported
+// as-is — the running daemon is left intact.
+func (sm *StreamManager) TriggerUpdate() tea.Cmd {
+	if sm.client == nil {
+		return nil
+	}
+	client := sm.client
+	return func() tea.Msg {
+		result, err := client.TriggerUpdate()
+		return uikit.UpdateResultMsg{Result: result, Err: err}
+	}
+}
+
 // RestoreRuns un-deletes every run matched by sel (the inverse of a delete).
 func (sm *StreamManager) RestoreRuns(sel model.RunSelector) tea.Cmd {
 	return sm.bulkAction("Restored", func(c *apiclient.Client) (int, error) {

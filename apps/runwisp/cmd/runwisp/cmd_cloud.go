@@ -27,7 +27,7 @@ The local scheduler is not started — task scheduling is managed by the cloud.`
 		if err := resolveCloudEnv(cloudFlags.EnvFile, cmd.Flags().Changed("env-file"), cloudFlags.Token, cloudFlags.URL); err != nil {
 			return err
 		}
-		return runDaemon(modeCloud, flags, noTUI)
+		return runDaemonAndReexec(modeCloud, flags, noTUI)
 	},
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/internal/tui/views/logpane"
 	"github.com/runwisp/runwisp/internal/tui/views/logsearch"
+	"github.com/runwisp/runwisp/internal/update"
 )
 
 const keyCtrlC = "ctrl+c"
@@ -251,6 +252,9 @@ func (m Model) dispatchLifecycleMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return model, cmd, true
 	case uikit.ReloadResultMsg:
 		model, cmd := m.handleReloadResult(msg)
+		return model, cmd, true
+	case uikit.UpdateResultMsg:
+		model, cmd := m.handleUpdateResult(msg)
 		return model, cmd, true
 	case uikit.MetricsHistoryMsg:
 		model, cmd := m.handleMetricsHistory(msg)
@@ -899,8 +903,42 @@ func (m Model) handleDaemonInfo(msg uikit.DaemonInfoMsg) (tea.Model, tea.Cmd) {
 		m.info.ConfigStale = msg.Info.ConfigStale
 		m.info.ConfigWarnings = msg.Info.ConfigWarnings
 		m.info.ServiceManaged = msg.Info.ServiceManaged
+		m.info.UpdateAvailable = msg.Info.UpdateAvailable
+		m.info.LatestVersion = msg.Info.LatestVersion
+		m.info.UpdateMethod = msg.Info.UpdateMethod
 	}
 	return m, nil
+}
+
+// triggerUpdate asks the daemon to self-update from inside the TUI. Only wired
+// for a self-updatable install (UpdateMethod "self"); other installs get a hint
+// pointing at the right upgrade command instead. The result arrives as an
+// UpdateResultMsg.
+func (m *Model) triggerUpdate() tea.Cmd {
+	if m.client == nil || !m.info.UpdateAvailable {
+		return nil
+	}
+	if m.info.UpdateMethod != "self" {
+		return m.dialogs.Flash("Update available: "+m.info.LatestVersion+" — "+update.UpgradeCommand(update.Method(m.info.UpdateMethod)), 8*time.Second)
+	}
+	return tea.Batch(
+		m.dialogs.Flash("Updating to "+m.info.LatestVersion+"… the daemon will restart", 6*time.Second),
+		m.streams.TriggerUpdate(),
+	)
+}
+
+// handleUpdateResult reports a self-update outcome. On success the daemon
+// re-execs into the new binary, so the TUI drops its connection and reconnects
+// on the next poll; on failure the running daemon is untouched.
+func (m Model) handleUpdateResult(msg uikit.UpdateResultMsg) (tea.Model, tea.Cmd) {
+	if msg.Err != nil {
+		return m, m.dialogs.Flash("Update failed: "+msg.Err.Error(), 8*time.Second)
+	}
+	summary := "✓ Update applied — daemon restarting"
+	if msg.Result != nil {
+		summary = "✓ Updated to " + msg.Result.NewVersion + " — daemon restarting"
+	}
+	return m, m.dialogs.Flash(summary, 6*time.Second)
 }
 
 // reloadConfig triggers an explicit config reload from inside the TUI. The
