@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.3] - 2026-09-02
+
 ### Fixed
 
 - **A run that finishes during a clean daemon shutdown now always has its final status and exit code persisted to run history.**
@@ -654,7 +656,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.16.2...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.16.3...main
+[0.16.3]: https://github.com/runwisp/runwisp/compare/v0.16.2...v0.16.3
 [0.16.2]: https://github.com/runwisp/runwisp/compare/v0.16.1...v0.16.2
 [0.16.1]: https://github.com/runwisp/runwisp/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/runwisp/runwisp/compare/v0.15.1...v0.16.0
