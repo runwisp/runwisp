@@ -40,6 +40,7 @@ const (
 	KindServiceFatal         Kind = "service.fatal"
 	KindLogDiskPressure      Kind = "log.disk_pressure"
 	KindNotifyDeliveryFailed Kind = "notify.delivery_failed"
+	KindUpdateAvailable      Kind = "update.available"
 )
 
 // Title returns the user-facing title fragment for this Kind.
@@ -63,6 +64,13 @@ func (k Kind) Title(ev *Event) string {
 		return fmt.Sprintf("%s gave up: instance keeps failing to start", ev.TaskName)
 	case KindLogDiskPressure:
 		return fmt.Sprintf("%s log output paused: low disk", ev.TaskName)
+	case KindUpdateAvailable:
+		if ev.Extra != nil {
+			if v, ok := ev.Extra["latest_version"].(string); ok && v != "" {
+				return fmt.Sprintf("RunWisp %s is available", v)
+			}
+		}
+		return "A new RunWisp release is available"
 	case KindNotifyDeliveryFailed:
 		channel := ""
 		if ev.Extra != nil {
@@ -99,6 +107,13 @@ func FingerprintKey(ev *Event) string {
 		ch, _ := ev.Extra["channel"].(string)
 		ok, _ := ev.Extra["original_kind"].(string)
 		extra = ch + "|" + ok
+	}
+	// Key update-available rows by version so each release is its own row: a
+	// newer version surfaces even after the previous one was read, while
+	// re-detecting the same version stays a single stable fingerprint.
+	if ev.Kind == KindUpdateAvailable && ev.Extra != nil {
+		v, _ := ev.Extra["latest_version"].(string)
+		extra = v
 	}
 	return string(ev.Kind) + "|" + ev.TaskName + "|" + extra
 }

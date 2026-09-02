@@ -15,7 +15,11 @@ import (
 
 	"log/slog"
 
+	"github.com/oklog/ulid/v2"
+
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/update"
 	"github.com/runwisp/runwisp/internal/version"
@@ -45,14 +49,48 @@ func updatesEnabled(cfg *daemonConfig) bool {
 }
 
 // startUpdateChecker builds and starts the background release poller, or returns
-// nil when updates are disabled or this is a dev build.
-func startUpdateChecker(cfg *daemonConfig) *runtime.UpdateChecker {
+// nil when updates are disabled or this is a dev build. onAvailable (may be nil)
+// fires whenever a check finds a newer release.
+func startUpdateChecker(cfg *daemonConfig, onAvailable func(latest string)) *runtime.UpdateChecker {
 	if !updatesEnabled(cfg) {
 		return nil
 	}
-	checker := runtime.NewUpdateChecker(version.Version, updateHTTPClient())
+	checker := runtime.NewUpdateChecker(version.Version, updateHTTPClient(), onAvailable)
 	checker.Start()
 	return checker
+}
+
+// newUpdateAvailableNotifier returns the checker callback that records a
+// once-per-version "update available" in-app notification via the Announcer.
+// Idempotency lives in storage, so it's safe to call on every poll.
+func newUpdateAvailableNotifier(announcer *inapp.Announcer) func(latest string) {
+	return func(latest string) {
+		v := strings.TrimPrefix(latest, "v")
+		ev := &notify.Event{
+			ID:        ulid.Make().String(),
+			Kind:      notify.KindUpdateAvailable,
+			Severity:  notify.SevInfo,
+			Timestamp: time.Now(),
+			Extra:     map[string]any{"latest_version": v},
+		}
+		title := fmt.Sprintf("RunWisp %s is available", v)
+		body := updateAvailableBody(version.Version, update.DetectMethod())
+		if err := announcer.Announce(context.Background(), ev, title, body); err != nil {
+			slog.Warn("failed to record update-available notification", "err", err)
+		}
+	}
+}
+
+// updateAvailableBody is the notification body: how to upgrade this install.
+// Self-updatable installs get the inline "Update now" action (see the Web UI's
+// notification-action registry), so their body just points at it; every other
+// install gets the exact command to run.
+func updateAvailableBody(current string, method update.Method) string {
+	cur := strings.TrimPrefix(current, "v")
+	if method == update.MethodSelf {
+		return fmt.Sprintf("You're running %s. Use “Update now” to upgrade in place.", cur)
+	}
+	return fmt.Sprintf("You're running %s. Upgrade with: %s", cur, update.UpgradeCommand(method))
 }
 
 // updateStatusHook exposes the poller's cached snapshot to /api/daemon, or nil

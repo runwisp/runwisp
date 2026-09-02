@@ -17,6 +17,8 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -108,11 +110,14 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	memoryReclaimer := runtime.NewMemoryReclaimer(sqliteShrinkHook(db))
 	memoryReclaimer.Start()
 
-	updateChecker := startUpdateChecker(cfg)
-
 	debugSrv := startDebugServer()
 
+	// Notify comes up before the update checker so the checker's Announcer can
+	// share the in-app Hub for live SSE push (nil Hub still persists + resyncs).
 	notifyB := startNotify(ctx, cfg, db, eventBus, tasksMap, addWarning)
+
+	announcer := inapp.NewAnnouncer(db, notifyB.Hub, notify.RealClock())
+	updateChecker := startUpdateChecker(cfg, newUpdateAvailableNotifier(announcer))
 
 	if mode == modeStandalone {
 		// Run catch-up now that notify is subscribed, so a missed-run gap

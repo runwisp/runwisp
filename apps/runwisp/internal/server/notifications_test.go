@@ -31,6 +31,11 @@ func (m *mockNotificationRepository) UpsertByFingerprint(ctx context.Context, n 
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *mockNotificationRepository) EnsureNotificationByFingerprint(ctx context.Context, n *storage.Notification) (bool, error) {
+	args := m.Called(ctx, n)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *mockNotificationRepository) ListNotifications(ctx context.Context, limit int, before string) ([]storage.Notification, error) {
 	args := m.Called(ctx, limit, before)
 	if args.Get(0) == nil {

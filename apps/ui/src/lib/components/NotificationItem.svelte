@@ -7,6 +7,7 @@
     import { formatShortId, TickingNow } from "@runwisp/ui";
     import { phrase } from "$lib/utils/notification-rhythm";
     import NotificationSparkline from "./NotificationSparkline.svelte";
+    import { notificationActionFor } from "./notification-actions";
     import type { Notification } from "$lib/stores/notifications.svelte";
 
     interface Props {
@@ -36,6 +37,12 @@
         }),
     );
 
+    // Inline action for this kind (e.g. "Update now" on update.available), or
+    // undefined for kinds without one. Action-bearing kinds are daemon-level
+    // (no taskName), so they render in the <article> branch below — never nested
+    // inside the task/run <a> link.
+    let Action = $derived(notificationActionFor(notification.kind));
+
     let dotClass = $derived.by(() => {
         switch (notification.severity) {
             case "error":
@@ -62,6 +69,12 @@
 
         {#if !compact && notification.body}
             <p class="line-clamp-2 text-xs text-on-surface-muted">{notification.body}</p>
+        {/if}
+
+        {#if Action}
+            <div class="pt-1">
+                <Action {notification} />
+            </div>
         {/if}
 
         {#if notification.runId}

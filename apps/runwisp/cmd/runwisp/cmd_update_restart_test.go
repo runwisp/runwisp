@@ -46,13 +46,13 @@ func TestUpdatesEnabled(t *testing.T) {
 
 func TestStartUpdateChecker_DisabledReturnsNil(t *testing.T) {
 	cfg := &daemonConfig{Config: &config.Config{Daemon: config.Daemon{CheckUpdates: false}}}
-	assert.Nil(t, startUpdateChecker(cfg))
+	assert.Nil(t, startUpdateChecker(cfg, nil))
 }
 
 func TestUpdateStatusHook(t *testing.T) {
 	assert.Nil(t, updateStatusHook(nil))
 
-	checker := runtime.NewUpdateChecker("0.16.0", nil)
+	checker := runtime.NewUpdateChecker("0.16.0", nil, nil)
 	hook := updateStatusHook(checker)
 	require.NotNil(t, hook)
 	available, latest := hook()

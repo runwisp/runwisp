@@ -13,7 +13,6 @@
     import HeaderSearch from "$lib/components/HeaderSearch.svelte";
     import NotificationBell from "$lib/components/NotificationBell.svelte";
     import StaleConfigBanner from "$lib/components/StaleConfigBanner.svelte";
-    import UpdateAvailableBanner from "$lib/components/UpdateAvailableBanner.svelte";
     import ThemeToggle from "$lib/components/ThemeToggle.svelte";
 
     let {
@@ -268,7 +267,6 @@
         </header>
 
         <StaleConfigBanner />
-        <UpdateAvailableBanner />
 
         <div class="flex-1 overflow-y-auto scroll-smooth p-6">
             {@render children()}

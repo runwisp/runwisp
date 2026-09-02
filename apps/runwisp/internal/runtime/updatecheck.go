@@ -42,20 +42,28 @@ type UpdateChecker struct {
 	// instead of hitting the network.
 	fetch  func(context.Context) (string, error)
 	cancel context.CancelFunc
+	// onAvailable, when set, is invoked with the latest tag on every check that
+	// finds a newer release. Best-effort and idempotency are the callback's
+	// concern (the daemon dedupes by persisting a once-per-version notification),
+	// so it's called on every poll, not just the first. nil = no-op.
+	onAvailable func(latest string)
 
 	mu     sync.Mutex
 	status UpdateStatus
 }
 
 // NewUpdateChecker builds a checker for the given running version. client is used
-// for the outbound GitHub call (nil transport honors HTTP(S)_PROXY).
-func NewUpdateChecker(current string, client *http.Client) *UpdateChecker {
+// for the outbound GitHub call (nil transport honors HTTP(S)_PROXY). onAvailable
+// may be nil; when set it fires with the latest tag whenever a check finds a
+// newer release.
+func NewUpdateChecker(current string, client *http.Client, onAvailable func(latest string)) *UpdateChecker {
 	return &UpdateChecker{
 		current:  current,
 		interval: DefaultUpdateCheckInterval,
 		fetch: func(ctx context.Context) (string, error) {
 			return update.LatestRelease(ctx, client)
 		},
+		onAvailable: onAvailable,
 	}
 }
 
@@ -93,6 +101,9 @@ func (c *UpdateChecker) checkOnce(ctx context.Context) {
 	if available && first {
 		slog.Info("a newer RunWisp release is available",
 			"current", c.current, "latest", latest, "hint", "update via the Web UI/TUI or re-run the installer")
+	}
+	if available && c.onAvailable != nil {
+		c.onAvailable(latest)
 	}
 }
 

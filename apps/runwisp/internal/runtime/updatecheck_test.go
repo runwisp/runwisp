@@ -12,7 +12,7 @@ import (
 )
 
 func TestNewUpdateChecker_ZeroValueStatus(t *testing.T) {
-	c := NewUpdateChecker("0.16.0", http.DefaultClient)
+	c := NewUpdateChecker("0.16.0", http.DefaultClient, nil)
 	available, latest := c.Status()
 	if available || latest != "" {
 		t.Errorf("expected zero-value status before any check, got available=%v latest=%q", available, latest)
@@ -20,7 +20,7 @@ func TestNewUpdateChecker_ZeroValueStatus(t *testing.T) {
 }
 
 func TestUpdateChecker_StartRunsAnInitialCheck(t *testing.T) {
-	c := NewUpdateChecker("0.16.0", http.DefaultClient)
+	c := NewUpdateChecker("0.16.0", http.DefaultClient, nil)
 	// Swap the fetch stub in before Start so the background goroutine never
 	// touches the network.
 	c.fetch = func(context.Context) (string, error) { return "v0.17.0", nil }
@@ -41,8 +41,29 @@ func TestUpdateChecker_StartRunsAnInitialCheck(t *testing.T) {
 }
 
 func TestUpdateChecker_StopBeforeStartIsSafe(t *testing.T) {
-	c := NewUpdateChecker("0.16.0", http.DefaultClient)
+	c := NewUpdateChecker("0.16.0", http.DefaultClient, nil)
 	c.Stop() // cancel is nil until Start(); must not panic
+}
+
+func TestUpdateChecker_OnAvailableFiresOnlyWhenNewer(t *testing.T) {
+	var got []string
+	c := &UpdateChecker{
+		current:     "0.16.0",
+		fetch:       func(context.Context) (string, error) { return "v0.17.0", nil },
+		onAvailable: func(latest string) { got = append(got, latest) },
+	}
+	c.checkOnce(context.Background())
+	if len(got) != 1 || got[0] != "v0.17.0" {
+		t.Fatalf("onAvailable calls = %v, want [v0.17.0]", got)
+	}
+
+	// Already current: no newer release, so the callback must not fire.
+	got = nil
+	c.current = "0.17.0"
+	c.checkOnce(context.Background())
+	if len(got) != 0 {
+		t.Fatalf("onAvailable fired when up to date: %v", got)
+	}
 }
 
 func TestUpdateCheckerAvailable(t *testing.T) {
