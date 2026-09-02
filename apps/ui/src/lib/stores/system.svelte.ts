@@ -24,6 +24,12 @@ function createSystemStore() {
     let timezone = $state("");
     let timezoneSource = $state("");
     let configStale = $state(false);
+    // Update availability from the daemon's background check. Seeded from
+    // /api/daemon (refreshed on load/reconnect) — a new release is a slow-moving
+    // fact, so no live SSE push is needed.
+    let updateAvailable = $state(false);
+    let latestVersion = $state("");
+    let updateMethod = $state("");
     // Standalone assumptions until the first /api/daemon lands: a standalone
     // daemon must never flash a cloud chip or hide its scheduling UI during
     // hydration. Components read these getters reactively and self-correct.
@@ -69,6 +75,9 @@ function createSystemStore() {
             timezone = info.resolvedTimezone;
             timezoneSource = info.timezoneSource;
             configStale = info.configStale;
+            updateAvailable = info.updateAvailable;
+            latestVersion = info.latestVersion ?? "";
+            updateMethod = info.updateMethod;
             cloudEnabled = info.cloudEnabled;
             schedulingActive = info.schedulingActive;
         } catch (err) {
@@ -153,6 +162,15 @@ function createSystemStore() {
         },
         get configStale() {
             return configStale;
+        },
+        get updateAvailable() {
+            return updateAvailable;
+        },
+        get latestVersion() {
+            return latestVersion;
+        },
+        get updateMethod() {
+            return updateMethod;
         },
         get cloudEnabled() {
             return cloudEnabled;

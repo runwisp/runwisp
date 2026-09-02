@@ -87,6 +87,14 @@ type Server struct {
 	// outside standalone mode (cloud mode has no local scheduler to reconcile),
 	// in which case POST /api/daemon/reload reports the operation is unavailable.
 	reload func() (model.ReloadResult, error)
+	// updateStatus is the background checker's cached snapshot for /api/daemon.
+	// nil when update checking is disabled (reports never-available).
+	updateStatus func() (available bool, latest string)
+	// selfUpdate downloads, verifies, and swaps in the newest release, then
+	// restarts the daemon into it. nil unless this is a writable standalone
+	// binary install, in which case POST /api/daemon/update reports it as
+	// unavailable and the UI shows the right upgrade command instead.
+	selfUpdate func() (model.UpdateResult, error)
 }
 
 // DaemonInfo, TaskBrief, and CapInfo live in the model package.
@@ -105,20 +113,22 @@ type Options struct {
 	SocketPath        string // Unix socket path for local CLI/TUI; empty disables socket listener
 	LogDir            string
 	EventBus          *events.Bus
-	Password          string                             // Authentication password (required even with NoAuth — keeps the cookie/launch-ticket machinery alive)
-	PasswordEphemeral bool                               // True when the daemon minted Password in memory at boot (no RUNWISP_PASSWORD)
-	JWTSecret         string                             // JWT signing secret (derived in-memory)
-	NoAuth            bool                               // RUNWISP_AUTH=off: serve all /api/* routes over TCP without JWT/CHAP
-	TrustedProxies    string                             // RUNWISP_TRUSTED_PROXIES value (comma-separated CIDRs/IPs); read by the caller, parsed here
-	DaemonInfo        *model.DaemonInfo                  // Static identity/config info for /api/daemon
-	ConfigStale       func() bool                        // Per-request staleness probe for /api/daemon (optional; nil reports never-stale)
-	ConfigWarnings    func() []string                    // Per-request live-config warnings for /api/daemon (optional; nil reports none)
-	DaemonLogBuffer   *DaemonLogBuffer                   // Ring buffer for daemon log streaming (optional)
-	MetricsEnabled    bool                               // When false, /metrics is not mounted anywhere
-	MetricsListen     string                             // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
-	TLSCert           string                             // PEM cert path; when set with TLSKey the main listener serves HTTPS
-	TLSKey            string                             // PEM key path; paired with TLSCert
-	Reload            func() (model.ReloadResult, error) // Reconciles the live task set against runwisp.toml; nil disables POST /api/daemon/reload
+	Password          string                                 // Authentication password (required even with NoAuth — keeps the cookie/launch-ticket machinery alive)
+	PasswordEphemeral bool                                   // True when the daemon minted Password in memory at boot (no RUNWISP_PASSWORD)
+	JWTSecret         string                                 // JWT signing secret (derived in-memory)
+	NoAuth            bool                                   // RUNWISP_AUTH=off: serve all /api/* routes over TCP without JWT/CHAP
+	TrustedProxies    string                                 // RUNWISP_TRUSTED_PROXIES value (comma-separated CIDRs/IPs); read by the caller, parsed here
+	DaemonInfo        *model.DaemonInfo                      // Static identity/config info for /api/daemon
+	ConfigStale       func() bool                            // Per-request staleness probe for /api/daemon (optional; nil reports never-stale)
+	ConfigWarnings    func() []string                        // Per-request live-config warnings for /api/daemon (optional; nil reports none)
+	DaemonLogBuffer   *DaemonLogBuffer                       // Ring buffer for daemon log streaming (optional)
+	MetricsEnabled    bool                                   // When false, /metrics is not mounted anywhere
+	MetricsListen     string                                 // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
+	TLSCert           string                                 // PEM cert path; when set with TLSKey the main listener serves HTTPS
+	TLSKey            string                                 // PEM key path; paired with TLSCert
+	Reload            func() (model.ReloadResult, error)     // Reconciles the live task set against runwisp.toml; nil disables POST /api/daemon/reload
+	UpdateStatus      func() (available bool, latest string) // Background update-checker snapshot for /api/daemon; nil reports never-available
+	SelfUpdate        func() (model.UpdateResult, error)     // Verified binary swap + restart; nil disables POST /api/daemon/update (non-standalone installs)
 }
 
 func New(opts Options) (*Server, error) {
@@ -165,6 +175,8 @@ func New(opts Options) (*Server, error) {
 		metricsEnabled:    opts.MetricsEnabled,
 		metricsListen:     opts.MetricsListen,
 		reload:            opts.Reload,
+		updateStatus:      opts.UpdateStatus,
+		selfUpdate:        opts.SelfUpdate,
 		ready:             make(chan struct{}),
 	}
 

@@ -89,7 +89,30 @@ func (srv *Server) humaGetInfo(ctx context.Context, input *struct{}) (*DaemonInf
 	if tasks := srv.currentTaskBriefs(); tasks != nil {
 		info.Tasks = tasks
 	}
+	// Update availability is polled in the background; read the latest cached
+	// answer per request so the indicator clears itself the moment a check finds
+	// we're current again. UpdateMethod is boot-static (install location doesn't
+	// move) and already set on the provider's DaemonInfo.
+	if srv.updateStatus != nil {
+		info.UpdateAvailable, info.LatestVersion = srv.updateStatus()
+	}
 	return &DaemonInfoOutput{Body: info}, nil
+}
+
+// humaUpdate downloads, verifies, and swaps in the newest release, then restarts
+// the daemon into it. A nil hook means this install can't self-update (docker /
+// npm / a non-writable location) — a 400 tells the operator to use their package
+// manager instead. A download/verify/smoke-test failure surfaces as a 500 with
+// the real cause: the running binary is always left intact (see internal/update).
+func (srv *Server) humaUpdate(ctx context.Context, input *struct{}) (*UpdateOutput, error) {
+	if srv.selfUpdate == nil {
+		return nil, huma.Error400BadRequest("self-update is not available for this installation")
+	}
+	result, err := srv.selfUpdate()
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &UpdateOutput{Body: result}, nil
 }
 
 // currentTaskBriefs rebuilds /api/daemon's task list from the live registry, in the

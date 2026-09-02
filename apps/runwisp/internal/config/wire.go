@@ -597,16 +597,19 @@ func (w *storageWire) toStorage() (Storage, error) {
 // make adding a crontab require a restart. Only the root config may set them;
 // either key in an included file is a hard error.
 type daemonWire struct {
-	AllowCloudDispatch bool     `toml:"allow_cloud_dispatch,omitempty"`
-	ShutdownTimeout    string   `toml:"shutdown_timeout,omitempty"`
-	ExternalURL        string   `toml:"external_url,omitempty"`
-	MetricsEnabled     bool     `toml:"metrics_enabled,omitempty"`
-	MetricsListen      string   `toml:"metrics_listen,omitempty"`
-	TLS                string   `toml:"tls,omitempty"`
-	TLSCert            string   `toml:"tls_cert,omitempty"`
-	TLSKey             string   `toml:"tls_key,omitempty"`
-	Include            []string `toml:"include,omitempty"`
-	IncludeCron        []string `toml:"include_cron,omitempty"`
+	AllowCloudDispatch bool   `toml:"allow_cloud_dispatch,omitempty"`
+	ShutdownTimeout    string `toml:"shutdown_timeout,omitempty"`
+	ExternalURL        string `toml:"external_url,omitempty"`
+	MetricsEnabled     bool   `toml:"metrics_enabled,omitempty"`
+	MetricsListen      string `toml:"metrics_listen,omitempty"`
+	TLS                string `toml:"tls,omitempty"`
+	TLSCert            string `toml:"tls_cert,omitempty"`
+	TLSKey             string `toml:"tls_key,omitempty"`
+	// CheckUpdates is *bool so an unset key means default-on; false must be
+	// distinguishable from omitted.
+	CheckUpdates *bool    `toml:"check_updates,omitempty"`
+	Include      []string `toml:"include,omitempty"`
+	IncludeCron  []string `toml:"include_cron,omitempty"`
 }
 
 func (w *daemonWire) toDaemon() (Daemon, error) {
@@ -638,6 +641,7 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 		TLS:                tlsMode,
 		TLSCert:            strings.TrimSpace(w.TLSCert),
 		TLSKey:             strings.TrimSpace(w.TLSKey),
+		CheckUpdates:       w.CheckUpdates == nil || *w.CheckUpdates,
 	}, nil
 }
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The Web UI and TUI now show when a newer RunWisp release is available and can update the daemon in place.** Standalone binary installs get a one-click/one-key self-update (checksum-verified, smoke-tested, with automatic rollback); Docker and npm installs show the right upgrade command instead. The background check is opt-out via `[daemon] check_updates = false`.
+
 ## [0.16.3] - 2026-09-02
 
 ### Fixed

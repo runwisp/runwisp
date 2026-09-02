@@ -47,10 +47,14 @@ RUN chmod +x /usr/local/bin/runwisp /usr/local/bin/docker-entrypoint.sh
 # container is meant to sit behind a reverse proxy or be port-mapped
 # directly. Operators wanting the daemon to terminate TLS itself (self-signed
 # HTTPS) can set RUNWISP_TLS=auto.
+# RUNWISP_CONTAINER=1 marks this as a container install so the update checker
+# offers `docker pull` instead of trying to swap the binary inside an immutable
+# image.
 ENV RUNWISP_CONFIG=/etc/runwisp/runwisp.toml \
 	RUNWISP_DATA=/var/lib/runwisp \
 	RUNWISP_HOST=0.0.0.0 \
-	RUNWISP_LOG_FORMAT=text
+	RUNWISP_LOG_FORMAT=text \
+	RUNWISP_CONTAINER=1
 
 EXPOSE 9477
 VOLUME ["/var/lib/runwisp"]

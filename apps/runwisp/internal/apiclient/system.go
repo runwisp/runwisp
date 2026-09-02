@@ -69,6 +69,18 @@ func (c *Client) Reload() (*model.ReloadResult, error) {
 	return &result, nil
 }
 
+// TriggerUpdate asks the daemon to download, verify, and swap in the latest
+// release, then restart into it. Returns the old/new versions on success. A
+// non-self install (docker/npm) or a download/verify failure comes back as an
+// error from the daemon.
+func (c *Client) TriggerUpdate() (*model.UpdateResult, error) {
+	var result model.UpdateResult
+	if err := c.doJSON("POST", "/api/daemon/update", nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // AuthStatus reports whether the daemon requires authentication, via the public
 // GET /api/auth/status endpoint. A remote client probes it before prompting for
 // a password so a RUNWISP_AUTH=off daemon connects without one.

@@ -39,6 +39,7 @@ var (
 	Quit         = Binding{Keys: "q / ctrl+c", Desc: "quit", Bar: "q/^C quit"}
 	NotifPanel   = Binding{Keys: "n", Desc: "notifications panel (Home)", Bar: "n notifications"}
 	ReloadConfig = Binding{Keys: "R", Desc: "reload runwisp.toml", Bar: "R reload"}
+	Update       = Binding{Keys: "U", Desc: "update RunWisp (when a newer release is available)", Bar: "U update"}
 	SearchLogs   = Binding{Keys: "/", Desc: "search logs of the focused task"}
 	// FilterTasks shares `/` with SearchLogs; it applies when the sidebar is
 	// focused, SearchLogs applies in an exec view / on the main panel.
@@ -119,7 +120,7 @@ var (
 // Each row's Keys/Desc come from the bindings above, so the overlay and the
 // contextual bars are guaranteed consistent.
 var OverlaySections = []Section{
-	{Title: "Global", Bindings: []Binding{Help, Quit, NotifPanel, ReloadConfig, SearchLogs}},
+	{Title: "Global", Bindings: []Binding{Help, Quit, NotifPanel, ReloadConfig, Update, SearchLogs}},
 	{Title: "Navigate", Bindings: []Binding{Move, SwitchPanel, Open, Back, FilterTasks}},
 	{Title: "Task", Bindings: []Binding{Run, OpenRun, TaskInfo, Undo}},
 	{Title: "Run list", Bindings: []Binding{Filter, Select, SelectAll, BulkDelete, BulkCancel, BulkRerun, ClearSelect}},

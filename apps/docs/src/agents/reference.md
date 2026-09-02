@@ -41,6 +41,8 @@ shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flig
 external_url:         string      — public Web UI base for notification deep-links; absolute http(s) w/ host
 metrics_enabled:      bool =false — master switch for /metrics
 metrics_listen:       host:port   — dedicated metrics listener; REQUIRES metrics_enabled=true
+check_updates:        bool =true  — background-poll GitHub for a newer release; shows in Web UI/TUI (self-update
+                                    for standalone installs). false = fully offline, no outbound call
 include:              []string    — glob(s) of extra TOML files merged at load; root config only, no nesting
 include_cron:         []string    — glob(s) of REAL crontabs read as live task defs at every load/reload; root
                                     config only. Format is PATH-DERIVED, never flagged: /etc/crontab + **/cron.d/*
@@ -418,6 +420,7 @@ Trigger / stop / mutate runs (POST/DELETE — never touches definitions):
 
 ```
 POST   /api/daemon/reload                        re-read runwisp.toml + reconcile live task set (validate-first; reads from disk, never edits definitions)
+POST   /api/daemon/update                         download+verify+swap the latest release and restart into it (standalone installs only; 400 on docker/npm/manual). GET /api/daemon carries updateAvailable/latestVersion/updateMethod
 POST   /api/tasks/{task}/run                     trigger a new run
 POST   /api/tasks/{task}/stop                    stop service (for daemon lifetime)
 POST   /api/tasks/{task}/restart                 restart all service instances

@@ -64,6 +64,38 @@ func TestHumaGetInfo(t *testing.T) {
 	assert.Equal(t, "test-fp", out.Body.Fingerprint)
 }
 
+func TestHumaGetInfo_SurfacesUpdateStatus(t *testing.T) {
+	srv := &Server{
+		stats:        newStatsProvider(&model.DaemonInfo{UpdateMethod: "self"}, time.Now()),
+		updateStatus: func() (bool, string) { return true, "v9.9.9" },
+	}
+	out, err := srv.humaGetInfo(context.Background(), &struct{}{})
+	require.NoError(t, err)
+	assert.True(t, out.Body.UpdateAvailable)
+	assert.Equal(t, "v9.9.9", out.Body.LatestVersion)
+	assert.Equal(t, "self", out.Body.UpdateMethod)
+}
+
+func TestHumaUpdate_UnavailableWithoutHook(t *testing.T) {
+	srv := &Server{} // no selfUpdate hook: docker/npm/manual install
+	_, err := srv.humaUpdate(context.Background(), &struct{}{})
+	require.Error(t, err)
+}
+
+func TestHumaUpdate_InvokesHook(t *testing.T) {
+	called := false
+	srv := &Server{
+		selfUpdate: func() (model.UpdateResult, error) {
+			called = true
+			return model.UpdateResult{OldVersion: "0.16.0", NewVersion: "0.17.0"}, nil
+		},
+	}
+	out, err := srv.humaUpdate(context.Background(), &struct{}{})
+	require.NoError(t, err)
+	assert.True(t, called)
+	assert.Equal(t, "0.17.0", out.Body.NewVersion)
+}
+
 // TestHumaGetInfo_TasksComeFromTheLiveRegistry is the reporting half of the cron
 // hold releasing itself. The scheduler picking a job back up is invisible if
 // /api/daemon keeps serving the task list built at boot: `runwisp status` and the

@@ -327,7 +327,23 @@ export const systemApi = {
         if (!response.ok) throw new Error("Failed to fetch metrics history");
         return metricsHistoryResponseSchema.parse(await response.json()).items;
     },
+
+    triggerUpdate: async () => {
+        const { data, error } = await apiClient.POST("/api/daemon/update");
+        if (error) throw new Error(errorDetail(error) || "Failed to update");
+        return data;
+    },
 };
+
+// errorDetail pulls the daemon's huma error message ({ detail }) out of an
+// openapi-fetch error body, falling back to "" so callers can supply their own.
+function errorDetail(e: unknown): string {
+    if (typeof e === "object" && e && "detail" in e) {
+        const detail = e.detail;
+        if (typeof detail === "string") return detail;
+    }
+    return "";
+}
 
 export const metricsSampleSchema = z.object({
     timestamp: z.number(),

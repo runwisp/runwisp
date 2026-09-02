@@ -35,6 +35,7 @@ var globalKeyHandlers = map[string]keyHandlerFn{
 	"enter":     handleKeyEnter,
 	"r":         handleKeyR,
 	"R":         handleKeyR,
+	"U":         handleKeyUpdate,
 	"i":         handleKeyI,
 	"u":         handleKeyU,
 	"s":         handleKeyS,
@@ -368,6 +369,15 @@ func handleKeyR(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 		return handleKeyRExecView(m)
 	}
 	return m, m.confirmAction(confirmActionTrigger), true
+}
+
+// handleKeyUpdate triggers a self-update when the header is advertising a newer
+// release; otherwise it's a no-op so "U" stays free elsewhere.
+func handleKeyUpdate(m Model, _ tea.KeyPressMsg) (Model, tea.Cmd, bool) {
+	if !m.info.UpdateAvailable {
+		return m, nil, false
+	}
+	return m, m.triggerUpdate(), true
 }
 
 func handleKeyRExecView(m Model) (Model, tea.Cmd, bool) {
