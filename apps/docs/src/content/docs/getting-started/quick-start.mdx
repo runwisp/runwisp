@@ -8,24 +8,20 @@ description: Install RunWisp, scaffold a starter runwisp.toml, watch your first 
 import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
 import Screenshot from "../../../components/Screenshot.astro";
 
-RunWisp is one small Go binary. You list the shell commands you want
-to run in a `runwisp.toml`, and RunWisp takes care of the rest —
-firing jobs on cron, restarting services when they crash, and
-capturing every line of stdout and stderr so you can go back and
-look at what happened. There's a [TUI](/getting-started/tui-tour/)
-in your terminal and a [Web UI](/getting-started/web-ui-tour/)
-in your browser for poking around. No external database, no agent,
-no sidecar.
+RunWisp is one small Go binary. You list your shell commands in a
+`runwisp.toml`; RunWisp fires them on cron, restarts services when
+they crash, and captures every line of stdout and stderr so nothing
+fails silently. Watch it all from a [TUI](/getting-started/tui-tour/)
+in your terminal or a [Web UI](/getting-started/web-ui-tour/) in your
+browser. No external database, no agent, no sidecar.
 
-It runs on Linux, macOS, and WSL — on `x86_64` or `arm64`. There's
-no native Windows build; if Windows is where you live, run RunWisp
-inside WSL.
+Runs on Linux, macOS, and WSL, on `x86_64` or `arm64`.
 
 ## 1. Install
 
-Pick whichever channel feels most natural for how you install
-software. The binary is statically linked with zero runtime
-dependencies, so as soon as it lands on your `PATH`, you're done.
+Pick whichever channel suits how you install software. The binary is
+statically linked with zero runtime dependencies — once it's on your
+`PATH`, you're done.
 
 <Tabs syncKey="install-method">
     <TabItem label="Install script" icon="seti:shell">
@@ -82,9 +78,6 @@ dependencies, so as soon as it lands on your `PATH`, you're done.
         sudo install -m 0755 runwisp /usr/local/bin/runwisp
         ```
 
-        `install -m 0755` sets the executable bit as it copies, so
-        RunWisp runs whatever mode the tarball happened to carry.
-
         [releases]: https://github.com/runwisp/runwisp/releases
     </TabItem>
     <TabItem label="From source" icon="seti:go">
@@ -116,66 +109,40 @@ dependencies, so as soon as it lands on your `PATH`, you're done.
 
 </Tabs>
 
-## 2. First run
+## 2. Start RunWisp
 
-Pick a directory where you'd like your tasks to live — a project
-root, your home folder, anywhere you'd happily keep a config file —
-and run:
+Pick a directory where your tasks should live (a project root, your
+home folder, anywhere you'd keep a config file) and run:
 
 ```bash
 runwisp
 ```
 
-The first time, when there's no `runwisp.toml` next to you yet,
-RunWisp won't go behind your back. It asks:
+With no `runwisp.toml` next to you yet, RunWisp won't go behind your
+back. It asks first:
 
 ```
 No runwisp.toml at /home/user/myproject.
 Create a starter with one example task? [Y/n]
 ```
 
-That's the plain case. If RunWisp also finds a `docker-compose.yml`
-next to you, or a crontab it can read, the prompt says so and the
-starter it writes wires that in too. Either way, answering with
-anything but yes leaves your directory untouched and tells you how to
-write `runwisp.toml` yourself.
-
-On a root Linux box with systemd and cron actually running, that
-crontab case becomes the whole cutover in one question:
-
-```
-RunWisp can take over from cron. It will:
-  · read /etc/crontab and /etc/cron.d as RunWisp tasks (nothing rewritten — crontab -e still works)
-  · install itself as a system service, so it starts on boot
-  · stop and mask cron.service, so nothing fires twice
-
-Take over from cron? [Y/n]
-```
-
-[Take over from cron](/coming-from/cron/) covers when
-you get that prompt and what to do when you don't.
-
-Hit <kbd>Enter</kbd>. RunWisp writes a starter file, fires up its
-daemon in the background, and drops you into the **TUI**. (The
-screenshot below shows a demo instance with some history; yours
-will start with just the `hello` task.)
+Hit <kbd>Enter</kbd> and RunWisp writes a starter file, launches its
+daemon in the background, and drops you into the **TUI**. Answer
+anything but yes and your directory is left untouched. (The screenshot
+below shows a demo instance with history; yours starts with just the
+`hello` task.)
 
 ![TUI Home page: sidebar with task groups, right pane showing Open Web UI row, Web UI URL, masked password, and a recent-activity table.](../../../assets/screenshots/tui-home.png)
 
-The Home page hands you two things worth remembering: the **Web UI
-URL** (`http://localhost:9477` out of the box) and an
-**[auto-generated password](/operations/auth/#the-password)** for
-logging in from the browser. You
-won't need the password to open the dashboard from this TUI — it
-shoves a logged-in session straight at your browser. But if you'll
-ever want to hit the dashboard from another machine, or from a
-fresh browser, highlight the password row now and press
+The Home page shows you two things you'll want: the **Web UI URL**
+(`http://localhost:9477` out of the box) and an
+**[auto-generated password](/operations/auth/#the-password)** for the
+browser login. Opening the dashboard from this TUI logs you in
+automatically — but to reach it from another machine or a fresh browser,
+highlight the password row and press <kbd>Enter</kbd> to copy it.
 
-<kbd>Enter</kbd> to copy it to the clipboard.
-
-Here's the `runwisp.toml` that just got written: one task you can
-actually run, plus a couple of commented hints showing the most
-common next steps.
+Here's the `runwisp.toml` it wrote — one task you can run now, plus a
+couple of commented hints for the most common next steps.
 
 ```toml
 # runwisp.toml
@@ -196,6 +163,14 @@ run = "echo hello from runwisp"
 # run       = "node ./worker.js"
 ```
 
+:::note[Want to replace cron?]
+On a systemd box, that same prompt can take over from cron in one
+question: read your crontab as tasks (nothing rewritten — `crontab -e`
+still works), install RunWisp on boot, and mask `cron.service` so
+nothing fires twice. [Take over from cron](/coming-from/cron/) walks
+through it.
+:::
+
 :::tip[Headless boxes]
 On a host with no terminal — cron, systemd, Docker — start the
 daemon with `runwisp daemon` instead of bare `runwisp`. That skips
@@ -214,12 +189,6 @@ same daemon and land in the same history — pick whichever is closest
 to where your hands already are.
 
 <Tabs syncKey="surface">
-    <TabItem label="Web UI" icon="laptop">
-        Open the dashboard (step 4 walks through that the first time
-        around), click `hello` in the sidebar, and hit **Run Task**.
-        `hello from runwisp` streams into the log pane live, and the
-        run shows up in the task's history.
-    </TabItem>
     <TabItem label="TUI" icon="seti:shell">
         The sidebar on the left lists every task and service in your
         config. Press <kbd>←</kbd> (or just click) to focus the
@@ -235,7 +204,12 @@ to where your hands already are.
         sidebar. Older runs sit in the list above the active one —
         scroll up to replay any of them.
     </TabItem>
-    <TabItem label="REST API" icon="cloud-download">
+    <TabItem label="Web UI" icon="laptop">
+        Open the dashboard (next step), click `hello` in the sidebar,
+        and hit **Run Task**. `hello from runwisp` streams into the
+        log pane live, and the run shows up in the task's history.
+    </TabItem>
+    <TabItem label="CLI" icon="cloud-download">
         From a shell:
 
         ```bash
@@ -269,7 +243,7 @@ machine and sign in with the password you copied in step 2.
     alt="Web UI dashboard: sidebar with tasks and services, daemon header with sparklines, recent activity feed below."
 />
 
-A few knobs worth knowing while you're here:
+A few knobs while you're here:
 
 - Set [`RUNWISP_PASSWORD`](/operations/auth/#the-password) to pick
   your own password instead of the generated one. The daemon reads
@@ -319,24 +293,22 @@ _and_ `[services.worker]` in the same file and the daemon will
 refuse to start.
 :::
 
-RunWisp doesn't watch `runwisp.toml` for changes — you tell it when to
-pick them up. For the everyday edits — adding, changing, or removing
-tasks and services, or tweaking `[defaults]` — run
-[`runwisp reload`](/operations/reload/) (or send `SIGHUP`). It re-reads
-the file and reconciles the running task set in place. Reload is
-validate-first, so a typo is rejected and the daemon keeps running, and
-in-flight runs finish under the definition they started with.
+RunWisp never watches `runwisp.toml` on its own — you tell it when to
+pick up changes. For everyday edits (adding, changing, or removing tasks
+and services, or tweaking `[defaults]`), run
+[`runwisp reload`](/operations/reload/) or send `SIGHUP`: it re-reads the
+file and reconciles the running set in place. Reload is validate-first,
+so a typo is rejected and the daemon keeps running, and in-flight runs
+finish under the definition they started with.
 
-Reach for `runwisp restart` when you've changed a restart-only setting
-(`[daemon]`, the scheduler timezone, `[storage]`, `[notify]`, or the
-bind host/port), or when you want a fresh boot to re-fire `run_on_start`
-and missed-run catch-up. It stops the daemon and starts a new one with
-your edits loaded. (If you installed RunWisp as a service, it asks
-systemd or launchd to do the restart so the service manager stays in the
-loop.) Until you reload or restart, the TUI header, `runwisp status`,
-and the Web UI all show a notice that the config on disk no longer
-matches what the daemon is running. `runwisp stop` shuts the daemon down
-without starting a new one.
+Reach for `runwisp restart` when you change a restart-only setting
+(`[daemon]`, the scheduler timezone, `[storage]`, `[notify]`, the bind
+host/port), or to re-fire `run_on_start` and missed-run catch-up from a
+clean boot — it stops the daemon and starts a fresh one with your edits.
+(Installed as a service, it routes the restart through systemd or
+launchd.) Until you reload or restart, the TUI header, `runwisp status`,
+and the Web UI all flag that the config on disk no longer matches what's
+running. `runwisp stop` stops the daemon without starting a new one.
 
 :::tip[Want to see it full of history?]
 Your fresh instance starts empty, so there's not much to scroll
