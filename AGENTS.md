@@ -9,7 +9,7 @@ RunWisp replaces **crond + supervisord** with one small Go binary that a single 
 
 **Prime directives** (in priority order; when they conflict, the higher one wins):
 
-1. **Nothing silently fails.** Every run has an exit code, duration, timestamps, and captured output — persisted, browsable, and streamable. If a change makes failures invisible, reject it.
+1. **Failures stay visible.** Every run has an exit code, duration, timestamps, and captured output — persisted, browsable, and streamable. Prefer changes that make failures easier to see.
 2. **One binary, zero runtime deps.** No Python, Node, external DB, systemd, or sidecars required to run RunWisp. SQLite and the web UI are *embedded*. Do not add runtime deps; prefer a vendored Go lib over a service.
 3. **TOML is the sole source of truth.** `runwisp.toml` defines every task. The REST API and Web UI are **read-only + trigger** — they never mutate task definitions. Schema changes are user-visible breaking changes; treat the TOML surface as an API even pre-1.0. Never add a feature that *requires* the UI or API to configure.
 4. **Local-first, offline-complete.** The daemon must work fully offline. Any network integration (`internal/cloud/`) is strictly optional — no feature may degrade when it's disabled or unreachable.
