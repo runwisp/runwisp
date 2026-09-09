@@ -62,9 +62,14 @@ func (m *MockRunRepository) DeleteRun(ctx context.Context, id string) error {
 	return args.Error(0)
 }
 
-func (m *MockRunRepository) DeleteOldRuns(ctx context.Context, task *model.Task) ([]model.Run, error) {
+func (m *MockRunRepository) SelectOldRuns(ctx context.Context, task *model.Task) ([]model.Run, error) {
 	args := m.Called(ctx, task)
 	return args.Get(0).([]model.Run), args.Error(1)
+}
+
+func (m *MockRunRepository) DeleteRunsByIDs(ctx context.Context, ids []string) error {
+	args := m.Called(ctx, ids)
+	return args.Error(0)
 }
 
 func (m *MockRunRepository) MarkCrashedRuns(ctx context.Context) (int64, error) {
@@ -130,7 +135,7 @@ func (m *MockRunRepository) ResolveSelectorIDs(ctx context.Context, sel model.Ru
 	return args.Get(0).([]storage.RunRef), args.Error(1)
 }
 
-func (m *MockRunRepository) PurgeExpiredSoftDeletes(ctx context.Context, ttl time.Duration) ([]storage.RunRef, error) {
+func (m *MockRunRepository) SelectExpiredSoftDeletes(ctx context.Context, ttl time.Duration) ([]storage.RunRef, error) {
 	args := m.Called(ctx, ttl)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

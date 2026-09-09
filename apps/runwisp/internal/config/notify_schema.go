@@ -615,6 +615,9 @@ func buildKnownNotifierSet(seenID map[string]struct{}) map[string]struct{} {
 func validateRoute(idx int, r NotificationRoute, known map[string]struct{}) error {
 	scope := fmt.Sprintf("route #%d", idx)
 	for _, k := range r.Kinds {
+		if k == kinds.DeliveryFailedKind {
+			return fmt.Errorf("%s match.kinds: %q bypasses the route engine and is delivered to the bell only; a route matching on it can never fire", scope, kinds.DeliveryFailedKind)
+		}
 		if err := requireOneOf(scope+" match.kinds", k, kinds.AllKindStrings, false); err != nil {
 			return err
 		}

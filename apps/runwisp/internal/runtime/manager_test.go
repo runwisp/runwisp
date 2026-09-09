@@ -27,6 +27,14 @@ func testTask(name string, policy model.ConcurrencyPolicy, limit int) *model.Tas
 	}
 }
 
+// durPtr returns a pointer to d — for building *time.Duration task fields
+// (RestartDelay, HealthyAfter) in struct literals.
+func durPtr(d time.Duration) *time.Duration { return &d }
+
+// intPtr returns a pointer to n — for building *int task fields
+// (RestartAttempts) in struct literals.
+func intPtr(n int) *int { return &n }
+
 func TestUpsertTask(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
@@ -406,13 +414,13 @@ func TestReloadDropReAddRevivesQueueTask(t *testing.T) {
 }
 
 // TestUpsertTask_RevivesServiceStoppedOnlyByRemoval guards against a reload
-// race: RemoveTask stops a service's supervisor as mechanical bookkeeping
-// before its taskState can be deleted, but the taskState (and supervisor)
-// survive removal when an instance hasn't retired yet. A reload that re-adds
-// the same-named service before that instance retires used to leave the
-// revived supervisor permanently stopped — StartServiceInstances silently
-// no-ops on a stopped supervisor, so the service came back registered with
-// zero live instances and no error surfaced anywhere.
+// race: RemoveTask stops a service's supervisor as mechanical bookkeeping and
+// moves its taskState into removedTasks rather than deleting it outright when
+// an instance hasn't retired yet. A reload that re-adds the same-named
+// service before that instance retires used to leave the revived supervisor
+// permanently stopped — StartServiceInstances silently no-ops on a stopped
+// supervisor, so the service came back registered with zero live instances
+// and no error surfaced anywhere.
 func TestUpsertTask_RevivesServiceStoppedOnlyByRemoval(t *testing.T) {
 	jm, exec, eb := newGatedManager(t)
 	started := watchRuns(eb, events.EventRunStarted)
@@ -429,9 +437,11 @@ func TestUpsertTask_RevivesServiceStoppedOnlyByRemoval(t *testing.T) {
 	jm.mu.Lock()
 	ts := jm.tasks["svc"]
 	require.NotNil(t, ts)
+	delete(jm.tasks, "svc")
 	ts.removed = true
 	ts.supervisor.MarkStopped()
 	ts.stoppedByRemoval = true
+	jm.removedTasks["svc"] = ts
 	jm.mu.Unlock()
 
 	jm.UpsertTask(serviceTask("svc", 1)) // reload #2 re-adds it before the old instance retires
@@ -833,6 +843,57 @@ func TestPersistenceHook(t *testing.T) {
 	assert.True(t, updated.Load())
 }
 
+// TestExecute_ProcessSpawnWaitsForRunningPersist guards the crash-safety
+// barrier in execute(): the process must not spawn until the run's 'running'
+// status is durably persisted. Without it, a crash between the (async)
+// persist and the process actually starting can leave the row stuck at
+// 'pending' even though a real process is running — LoadPendingRuns then
+// resumes it on the next boot, double-executing the same logical run instead
+// of MarkCrashedRuns catching it as crashed. The hook here blocks on a gate
+// so the test can prove ordering deterministically instead of racing timing.
+func TestExecute_ProcessSpawnWaitsForRunningPersist(t *testing.T) {
+	jm, exec, _ := newTestManager(t)
+
+	release := make(chan struct{})
+	persistedRunning := make(chan struct{})
+	jm.BindPersistenceHook(func(_ context.Context, run *model.Run, isNew bool) {
+		if !isNew && run.Status == model.PhaseRunning {
+			close(persistedRunning)
+			<-release
+		}
+	})
+
+	spawned := make(chan struct{})
+	task := testTask("task1", model.PolicySkip, 1)
+	jm.UpsertTask(task)
+	exec.On("Execute", mock.Anything, task, mock.Anything).
+		Run(func(mock.Arguments) { close(spawned) }).
+		Return(&executor.ExecuteResult{ExitCode: 0})
+
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+
+	select {
+	case <-persistedRunning:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for the running-status persist")
+	}
+
+	select {
+	case <-spawned:
+		t.Fatal("process spawned before the running status was durably persisted")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(release)
+
+	select {
+	case <-spawned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("process never spawned after the running status was persisted")
+	}
+}
+
 // TestRetryFiresOnFailure exercises the retry path end-to-end: a failed
 // run must trigger a follow-up run with RetryAttempt incremented and
 // RetryOfRunID pointing back at the original.
@@ -943,9 +1004,13 @@ func TestRetryNotFiredWhenRestartPolicySet(t *testing.T) {
 		MaxConcurrent: 1,
 		OnOverlap:     model.PolicySkip,
 		Restart:       model.RestartOnFailure,
-		RestartDelay:  5 * time.Millisecond,
-		RetryAttempts: 3,
-		RetryDelay:    5 * time.Millisecond,
+		RestartDelay:  durPtr(5 * time.Millisecond),
+		// Well above the give-up threshold this test needs to clear (retry
+		// would cap at 4 total runs) — a nil RestartAttempts would fall back
+		// to the protective default of 3 and give up before proving the point.
+		RestartAttempts: intPtr(1000),
+		RetryAttempts:   3,
+		RetryDelay:      5 * time.Millisecond,
 	}
 	jm.UpsertTask(task)
 
@@ -987,7 +1052,7 @@ func TestNonServiceRestartBackoffEscalates(t *testing.T) {
 		MaxConcurrent:  1,
 		OnOverlap:      model.PolicySkip,
 		Restart:        model.RestartOnFailure,
-		RestartDelay:   base,
+		RestartDelay:   durPtr(base),
 		RestartBackoff: model.BackoffExponential,
 	}
 	jm.UpsertTask(task)
@@ -1024,6 +1089,85 @@ func TestNonServiceRestartBackoffEscalates(t *testing.T) {
 	// (≈ 4×base) must clear that bar with room for scheduling jitter.
 	assert.Greater(t, gap3, 2*base,
 		"escalated gap must clearly exceed the flat base delay, got %v (base %v)", gap3, base)
+}
+
+// TestNonServiceRestartGivesUpAfterRestartAttempts guards the give-up cap on a
+// restarting non-service task: before this, restart = "on_failure" on a
+// [tasks.*] entry had no equivalent of the service supervisor's FATAL
+// give-up, so a task that fails immediately every time restarted forever.
+// RestartAttempts = 2 must tolerate exactly 2 restarts (3 runs total) and
+// then stop, marking the last run start_failed instead of failed.
+func TestNonServiceRestartGivesUpAfterRestartAttempts(t *testing.T) {
+	jm, exec, eb := newTestManager(t)
+
+	task := &model.Task{
+		Name:            "task1",
+		Kind:            model.KindTask,
+		Run:             "exit 1",
+		MaxConcurrent:   1,
+		OnOverlap:       model.PolicySkip,
+		Restart:         model.RestartOnFailure,
+		RestartDelay:    durPtr(5 * time.Millisecond),
+		RestartAttempts: intPtr(2),
+	}
+	jm.UpsertTask(task)
+	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 1})
+
+	done := watchRuns(eb, events.EventRunFailed)
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+
+	done.waitFor(t, 3)
+
+	// No further restart should ever fire — give it well past the restart
+	// delay and confirm the count stays put.
+	time.Sleep(100 * time.Millisecond)
+	runs := done.snapshot()
+	require.Len(t, runs, 3, "restart chain must stop after RestartAttempts restarts, not keep going")
+
+	last := runs[2]
+	require.NotNil(t, last.EndReason)
+	assert.Equal(t, model.ReasonStartFailed, *last.EndReason,
+		"the give-up run must be recorded as start_failed, like a service's FATAL instance")
+}
+
+// TestNonServiceRestartGivesUpImmediatelyWhenZero is the runtime-level,
+// bug-first guard for the defaulting fix itself: restart_attempts = 0 must
+// mean "give up on the very first failure" end to end, not just survive
+// config load as a literal zero. Before the fix this was unreachable (0 was
+// indistinguishable from "unset", which the give-up check itself also read
+// as "unlimited"), so a task could never actually give up immediately.
+func TestNonServiceRestartGivesUpImmediatelyWhenZero(t *testing.T) {
+	jm, exec, eb := newTestManager(t)
+
+	task := &model.Task{
+		Name:            "task1",
+		Kind:            model.KindTask,
+		Run:             "exit 1",
+		MaxConcurrent:   1,
+		OnOverlap:       model.PolicySkip,
+		Restart:         model.RestartOnFailure,
+		RestartDelay:    durPtr(5 * time.Millisecond),
+		RestartAttempts: intPtr(0),
+	}
+	jm.UpsertTask(task)
+	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 1})
+
+	done := watchRuns(eb, events.EventRunFailed)
+	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	require.NoError(t, err)
+
+	done.waitFor(t, 1)
+
+	// No restart should ever fire — give it well past the restart delay and
+	// confirm the count stays put at exactly one run.
+	time.Sleep(100 * time.Millisecond)
+	runs := done.snapshot()
+	require.Len(t, runs, 1, "restart_attempts = 0 must give up after the first failure, no restarts at all")
+
+	require.NotNil(t, runs[0].EndReason)
+	assert.Equal(t, model.ReasonStartFailed, *runs[0].EndReason,
+		"the give-up run must be recorded as start_failed")
 }
 
 // TestQueuedRestartPreservesRestartAttempt guards the queue-policy sibling of
@@ -1437,7 +1581,7 @@ func TestListServiceTasks(t *testing.T) {
 		MaxConcurrent:  1,
 		OnOverlap:      model.PolicySkip,
 		Instances:      1,
-		RestartDelay:   time.Millisecond,
+		RestartDelay:   durPtr(time.Millisecond),
 		RestartBackoff: model.BackoffConstant,
 	})
 	jm.UpsertTask(&model.Task{Name: "plain", Run: "echo x", MaxConcurrent: 1})
@@ -1469,7 +1613,7 @@ func TestStartServiceInstances_StoppedServiceIsNoop(t *testing.T) {
 		MaxConcurrent:  1,
 		OnOverlap:      model.PolicySkip,
 		Instances:      2,
-		RestartDelay:   time.Millisecond,
+		RestartDelay:   durPtr(time.Millisecond),
 		RestartBackoff: model.BackoffConstant,
 	}
 	jm.UpsertTask(task)
@@ -1693,10 +1837,14 @@ func TestScheduleJitteredRun_HeldTaskFireDroppedNotDoubleRun(t *testing.T) {
 	assert.Equal(t, 1, exec.Calls(), "only 'a' should ever have executed")
 }
 
-// TestRemoveTask_InFlightCronRunFinishes is the crux of the "reload doesn't kill
-// running work" guarantee: removing a cron task while a run is in flight must
-// keep the taskState alive until that run retires under its original
-// definition, then delete it.
+// TestRemoveTask_InFlightCronRunFinishes is the crux of the "reload doesn't
+// kill running work" guarantee, and the regression test for the cloud
+// service-resurrection bug: removing a cron task while a run is in flight
+// must let that run finish under its original definition, but the task must
+// become unresolvable by name (GetTask, TriggerRunWithOptions, ...) the
+// instant RemoveTask returns — not just once the run has drained. Its
+// taskState lives on in removedTasks purely for internal bookkeeping (retire,
+// force-kill, shutdown) until the run retires, then it is deleted from there.
 func TestRemoveTask_InFlightCronRunFinishes(t *testing.T) {
 	jm, exec, eb := newGatedManager(t)
 
@@ -1711,22 +1859,35 @@ func TestRemoveTask_InFlightCronRunFinishes(t *testing.T) {
 	jm.RemoveTask("task1")
 
 	jm.mu.RLock()
-	ts, stillThere := jm.tasks["task1"]
+	_, stillInLiveRegistry := jm.tasks["task1"]
+	ts, draining := jm.removedTasks["task1"]
 	jm.mu.RUnlock()
-	require.True(t, stillThere, "a removed task with an in-flight run must survive until it drains")
+	assert.False(t, stillInLiveRegistry, "a removed task must be unresolvable by name at once, even with a run still in flight")
+	require.True(t, draining, "the in-flight run's taskState must be tracked until it drains")
 	assert.True(t, ts.removed, "the taskState must be latched removed")
 
+	// Name-based resolution — including the surface a cloud peer or a delayed
+	// local restart/retry would use — must refuse the task immediately, not
+	// just once the run has finished. This is what closes the resurrection
+	// race: previously the task stayed resolvable via m.tasks for the entire
+	// drain window, so a well-timed restart/apply on the still-registered name
+	// could bring a just-removed service back to life with no opt-in check.
+	_, found := jm.GetTask("task1")
+	assert.False(t, found, "a removed task must not resolve by name while its old run drains")
+	_, err = jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
+	assert.Error(t, err, "a removed task must refuse new triggers by name while its old run drains")
+
 	// Let the run finish; it must complete (drains under the old definition),
-	// and the taskState must then be deleted by recordRunOutcome.
+	// and the taskState must then be deleted from removedTasks.
 	exec.ReleaseAll()
 	done.waitFor(t, 1)
 
 	assert.Eventually(t, func() bool {
 		jm.mu.RLock()
 		defer jm.mu.RUnlock()
-		_, exists := jm.tasks["task1"]
+		_, exists := jm.removedTasks["task1"]
 		return !exists
-	}, 2*time.Second, 5*time.Millisecond, "the last draining run must delete the removed task")
+	}, 2*time.Second, 5*time.Millisecond, "the last draining run must delete the removed task's bookkeeping")
 }
 
 // TestRemoveTask_StopsServiceInstances verifies a removed service is torn down:
@@ -1751,6 +1912,56 @@ func TestRemoveTask_StopsServiceInstances(t *testing.T) {
 		_, exists := djm.tasks["svc"]
 		return !exists
 	}, 2*time.Second, 5*time.Millisecond, "a removed service must stop and be deleted")
+}
+
+// TestRemoveTask_RestartCannotResurrectDuringDrain is the regression test for
+// the cloud service-resurrection bug: a service:control restart (or a REST/
+// CLI restart) racing the drain window between RemoveTask and its cancelled
+// instance actually exiting used to be able to bring the service back to
+// life — RestartServiceInstances resolved the task by name straight off
+// m.tasks, which stayed populated for the entire drain, with no check that
+// the task was mid-removal and no allow_cloud_dispatch gate at all. It must
+// now fail outright: the task is unresolvable by name from the instant
+// RemoveTask returns, independent of how long the old instance takes to exit.
+//
+// The instance is held "in flight" past its own cancellation with a callback
+// that blocks on a channel this test controls instead of selecting on ctx —
+// standing in for a process that received SIGTERM but hasn't exited yet — so
+// the restart attempt deterministically lands mid-drain rather than racing a
+// mock that exits the instant Cancel() fires.
+func TestRemoveTask_RestartCannotResurrectDuringDrain(t *testing.T) {
+	exec := new(testutil.MockExecutor)
+	release := make(chan struct{})
+	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).
+		Run(func(mock.Arguments) { <-release }).
+		Return(&executor.ExecuteResult{ExitCode: -1, Stopped: true})
+
+	eb := events.NewEventBus()
+	djm := NewTaskManager(exec, eb, time.Now).(*defaultTaskManager)
+	jm := TaskManager(djm)
+	t.Cleanup(func() {
+		close(release)
+		jm.Shutdown()
+	})
+
+	jm.UpsertTask(serviceTask("svc", 1))
+
+	started := watchRuns(eb, events.EventRunStarted)
+	require.NoError(t, jm.StartServiceInstances("svc", model.TriggeredByService))
+	started.waitFor(t, 1)
+
+	jm.RemoveTask("svc")
+
+	djm.mu.RLock()
+	_, stillDraining := djm.removedTasks["svc"]
+	djm.mu.RUnlock()
+	require.True(t, stillDraining, "the old instance must still be draining for this test to exercise the race window")
+
+	err := jm.RestartServiceInstances("svc")
+	assert.Error(t, err, "restarting a removed-but-draining service must fail, not resurrect it")
+
+	_, found := jm.GetTask("svc")
+	assert.False(t, found, "a removed service must not resolve by name while its old instance drains")
 }
 
 // TestTerminalEventFollowsPersistedTerminalRow is the regression test for the

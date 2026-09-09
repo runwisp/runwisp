@@ -1,9 +1,12 @@
 -- SPDX-FileCopyrightText: PoppyCake, s.r.o.
 -- SPDX-License-Identifier: GPL-3.0-or-later
 
--- name: PurgeExpiredSoftDeletes :many
-DELETE FROM runs WHERE deleted_at IS NOT NULL AND deleted_at <= ?
-RETURNING id, task_name, created_at;
+-- name: SelectExpiredSoftDeletes :many
+-- Select-only: callers must remove the on-disk log files for the returned
+-- refs before hard-deleting the rows (via DeleteRunsByIDs), so a crash
+-- mid-purge leaves an orphan row rather than an orphan log file.
+SELECT id, task_name, created_at FROM runs
+WHERE deleted_at IS NOT NULL AND deleted_at <= ?;
 
 -- name: SoftDeleteRunsByIDs :many
 UPDATE runs SET deleted_at = sqlc.arg(deleted_at)

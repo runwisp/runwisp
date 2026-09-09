@@ -7,9 +7,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 )
+
+// durPtr returns a pointer to d — for building *time.Duration task fields
+// (RestartDelay) in struct literals.
+func durPtr(d time.Duration) *time.Duration { return &d }
 
 func TestIsFailureReason(t *testing.T) {
 	for _, tc := range []struct {
@@ -170,7 +175,7 @@ func TestRestartDelay(t *testing.T) {
 
 	t.Run("operator stop refills immediately regardless of backoff", func(t *testing.T) {
 		task := &model.Task{
-			RestartDelay:   5 * time.Second,
+			RestartDelay:   durPtr(5 * time.Second),
 			RestartBackoff: model.BackoffExponential,
 		}
 		for attempt := 0; attempt < 5; attempt++ {
@@ -181,7 +186,7 @@ func TestRestartDelay(t *testing.T) {
 
 	t.Run("crash keeps the configured backoff", func(t *testing.T) {
 		task := &model.Task{
-			RestartDelay:   time.Second,
+			RestartDelay:   durPtr(time.Second),
 			RestartBackoff: model.BackoffExponential,
 		}
 		assert.Equal(t, ComputeRestartDelay(task, 2), RestartDelay(task, 2, &crashed))
@@ -192,7 +197,7 @@ func TestRestartDelay(t *testing.T) {
 func TestComputeRestartDelay(t *testing.T) {
 	t.Run("first attempt returns base delay", func(t *testing.T) {
 		task := &model.Task{
-			RestartDelay:   time.Second,
+			RestartDelay:   durPtr(time.Second),
 			RestartBackoff: model.BackoffExponential,
 		}
 		assert.Equal(t, time.Second, ComputeRestartDelay(task, 0))
@@ -200,7 +205,7 @@ func TestComputeRestartDelay(t *testing.T) {
 
 	t.Run("constant backoff stays at base", func(t *testing.T) {
 		task := &model.Task{
-			RestartDelay:   500 * time.Millisecond,
+			RestartDelay:   durPtr(500 * time.Millisecond),
 			RestartBackoff: model.BackoffConstant,
 		}
 		for attempt := 0; attempt < 10; attempt++ {
@@ -211,7 +216,7 @@ func TestComputeRestartDelay(t *testing.T) {
 
 	t.Run("empty backoff stays at base", func(t *testing.T) {
 		task := &model.Task{
-			RestartDelay:   750 * time.Millisecond,
+			RestartDelay:   durPtr(750 * time.Millisecond),
 			RestartBackoff: "",
 		}
 		assert.Equal(t, 750*time.Millisecond, ComputeRestartDelay(task, 5))
@@ -219,7 +224,7 @@ func TestComputeRestartDelay(t *testing.T) {
 
 	t.Run("exponential doubles each attempt up to cap", func(t *testing.T) {
 		task := &model.Task{
-			RestartDelay:   time.Second,
+			RestartDelay:   durPtr(time.Second),
 			RestartBackoff: model.BackoffExponential,
 		}
 		want := []time.Duration{
@@ -239,17 +244,29 @@ func TestComputeRestartDelay(t *testing.T) {
 		}
 	})
 
-	t.Run("zero base delay falls back to one second", func(t *testing.T) {
+	t.Run("nil restart delay falls back to the built-in default", func(t *testing.T) {
 		task := &model.Task{
-			RestartDelay:   0,
 			RestartBackoff: model.BackoffExponential,
 		}
-		assert.Equal(t, time.Second, ComputeRestartDelay(task, 0))
+		assert.Equal(t, config.DefaultRestartDelay, ComputeRestartDelay(task, 0))
+	})
+
+	// Bug-first regression: an explicit restart_delay = "0s" must be preserved
+	// literally (restart instantly), not silently defaulted back up — including
+	// through backoff math at later attempts, where a naive "delay <= 0 means
+	// unset" guard would have clamped it to the cap instead of keeping it zero.
+	t.Run("explicit zero restart delay is preserved through backoff", func(t *testing.T) {
+		task := &model.Task{
+			RestartDelay:   durPtr(0),
+			RestartBackoff: model.BackoffExponential,
+		}
+		assert.Equal(t, time.Duration(0), ComputeRestartDelay(task, 0))
+		assert.Equal(t, time.Duration(0), ComputeRestartDelay(task, 5))
 	})
 
 	t.Run("large attempt clamps to cap", func(t *testing.T) {
 		task := &model.Task{
-			RestartDelay:   time.Second,
+			RestartDelay:   durPtr(time.Second),
 			RestartBackoff: model.BackoffExponential,
 		}
 		assert.Equal(t, RestartBackoffCap, ComputeRestartDelay(task, 100))
@@ -257,7 +274,7 @@ func TestComputeRestartDelay(t *testing.T) {
 
 	t.Run("linear scales with attempt+1", func(t *testing.T) {
 		task := &model.Task{
-			RestartDelay:   2 * time.Second,
+			RestartDelay:   durPtr(2 * time.Second),
 			RestartBackoff: model.BackoffLinear,
 		}
 		// delay = base * (attempt+1)
@@ -268,7 +285,7 @@ func TestComputeRestartDelay(t *testing.T) {
 
 	t.Run("linear clamps to cap", func(t *testing.T) {
 		task := &model.Task{
-			RestartDelay:   time.Minute,
+			RestartDelay:   durPtr(time.Minute),
 			RestartBackoff: model.BackoffLinear,
 		}
 		assert.Equal(t, RestartBackoffCap, ComputeRestartDelay(task, 10))

@@ -64,6 +64,7 @@ func (cleaner *RetentionCleaner) cleanOldRuns(ctx context.Context) {
 	slog.Debug("Running retention cleanup")
 
 	totalDeleted := 0
+	var allIDs []string
 	cleaner.tasks.Range(func(_ string, task *model.Task) bool {
 		// KeepRuns: nil = no cap; 0 = keep no completed runs; >0 = cap.
 		// KeepFor:  0 = no cap; >0 = cap. Either a set KeepRuns or a positive
@@ -72,24 +73,34 @@ func (cleaner *RetentionCleaner) cleanOldRuns(ctx context.Context) {
 			return true
 		}
 
-		deletedRuns, err := cleaner.db.DeleteOldRuns(ctx, task)
+		oldRuns, err := cleaner.db.SelectOldRuns(ctx, task)
 		if err != nil {
-			slog.Error("Failed to clean runs", "task", task.Name, "err", err)
+			slog.Error("Failed to select old runs", "task", task.Name, "err", err)
 			return true
 		}
 
-		for _, run := range deletedRuns {
+		// Log files come off disk before the row is deleted (batched below): a
+		// crash in between leaves a harmless log-less row rather than an
+		// unreclaimable orphan log file — same policy as deleteRunBatch.
+		for _, run := range oldRuns {
 			logPath := logutil.ResolveRunLogPath(cleaner.logDir, run.TaskName, run.ID, run.CreatedAt)
 			logutil.RemoveLogFiles(logPath)
 			logutil.RemoveEmptyParents(logPath, cleaner.logDir)
+			allIDs = append(allIDs, run.ID)
 		}
 
-		if len(deletedRuns) > 0 {
-			slog.Info("Retention cleaned runs", "count", len(deletedRuns), "task", task.Name)
-			totalDeleted += len(deletedRuns)
+		if len(oldRuns) > 0 {
+			slog.Info("Retention cleaned runs", "count", len(oldRuns), "task", task.Name)
+			totalDeleted += len(oldRuns)
 		}
 		return true
 	})
+
+	if len(allIDs) > 0 {
+		if err := cleaner.db.DeleteRunsByIDs(ctx, allIDs); err != nil {
+			slog.Error("Failed to delete old run rows", "count", len(allIDs), "err", err)
+		}
+	}
 
 	if totalDeleted > 0 {
 		slog.Info("Retention cleanup complete", "deleted", totalDeleted)

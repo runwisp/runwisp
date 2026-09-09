@@ -5,6 +5,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -132,4 +133,29 @@ func TestSoftDeletePurger_RemovesExpiredButKeepsFresh(t *testing.T) {
 	require.Len(t, restored, 1)
 	_, err = os.Stat(freshLog)
 	require.NoError(t, err)
+}
+
+// TestPurge_LogFileRemovedBeforeRowOnDeleteFailure proves purge removes a
+// run's log file unconditionally before attempting the row delete: forcing
+// DeleteRunsByIDs to fail must still leave the log file gone, while the DB
+// row survives (soft-deleted, restorable) — the accepted failure mode is an
+// orphan row, never an orphan log file.
+func TestPurge_LogFileRemovedBeforeRowOnDeleteFailure(t *testing.T) {
+	logDir := t.TempDir()
+	realDB, err := storage.New(":memory:")
+	require.NoError(t, err)
+	defer realDB.Close()
+
+	runID, logPath := makeRunWithLog(t, realDB, logDir, time.Now().Add(-time.Hour))
+
+	repo := &failingDeleteRepo{RunRepository: realDB, deleteErr: errors.New("delete boom")}
+	p := NewSoftDeletePurger(repo, logDir)
+	p.purge(context.Background(), time.Minute)
+
+	_, err = os.Stat(logPath)
+	assert.True(t, os.IsNotExist(err), "log file must be removed even though the row delete failed")
+
+	restored, err := realDB.RestoreRuns(context.Background(), model.RunSelector{IDs: []string{runID}})
+	require.NoError(t, err, "row must survive a failed DeleteRunsByIDs — an orphan row, never an orphan log")
+	require.Len(t, restored, 1)
 }

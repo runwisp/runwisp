@@ -112,9 +112,9 @@ func TestBuildOneSyncTask(t *testing.T) {
 			Restart:        model.RestartAlways,
 			Instances:      3,
 			Autostart:      true,
-			RestartDelay:   2 * time.Second,
+			RestartDelay:   durPtr(2 * time.Second),
 			RestartBackoff: model.BackoffExponential,
-			HealthyAfter:   60 * time.Second,
+			HealthyAfter:   durPtr(60 * time.Second),
 			Compose:        compose,
 			// A cron on a service would be a config bug; assert it is never emitted.
 			Cron: "*/5 * * * *",

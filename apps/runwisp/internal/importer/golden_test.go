@@ -86,11 +86,13 @@ var supervisordGoldenCases = []struct {
 	expectNotes []NoteKind
 }{
 	// Two services with the full knob set, plus skipped daemon sections and a
-	// numprocs that fans out into instances.
+	// numprocs that fans out into instances. worker has no autorestart= line,
+	// which is supervisord's own "unexpected" default and now gets noted.
 	{name: "full", file: "testdata/supervisord/full.conf", expectNotes: []NoteKind{
-		NoteSectionDaemon, // [supervisord]/[unix_http_server]
-		NoteLogsDropped,   // dropped log files
-		NoteInstances,     // numprocs=3
+		NoteSectionDaemon,         // [supervisord]/[unix_http_server]
+		NoteLogsDropped,           // dropped log files
+		NoteInstances,             // numprocs=3
+		NoteAutorestartUnexpected, // worker's autorestart is omitted
 	}},
 	// A group, an autorestart=unexpected service, a run-once task, and an
 	// eventlistener RunWisp can't represent.
@@ -101,9 +103,10 @@ var supervisordGoldenCases = []struct {
 		NoteSectionUnsupported,    // [eventlistener:memmon]
 	}},
 	// A config that exercises the quiet drops: an unmapped key, a value RunWisp
-	// can't read, and a purely cosmetic key that must stay silent.
+	// can't read, and a purely cosmetic key that must stay silent. Its program
+	// also has no autorestart= line, so it gets the omitted-autorestart note too.
 	{name: "lossy", file: "testdata/supervisord/lossy.conf", expectNotes: []NoteKind{
-		NoteKeysUnsupported, NoteKeyUnreadable,
+		NoteKeysUnsupported, NoteKeyUnreadable, NoteAutorestartUnexpected,
 	}},
 }
 

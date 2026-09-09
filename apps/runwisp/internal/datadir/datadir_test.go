@@ -373,6 +373,77 @@ func TestAcquireDaemonLock_ReacquireAfterRelease(t *testing.T) {
 	defer second.Release()
 }
 
+// TestWriteSecretFile_AtomicNoTempFileLeftBehind guards the crash-safety fix:
+// WriteSecretFile must go through a temp-file-in-same-dir + rename, and must
+// never leave a stray .tmp-* file behind in the happy path (which would
+// otherwise accumulate in the data dir forever).
+func TestWriteSecretFile_AtomicNoTempFileLeftBehind(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "secret")
+	if err := WriteSecretFile(path, []byte("v1")); err != nil {
+		t.Fatalf("WriteSecretFile: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "secret" {
+		t.Fatalf("expected only the final file in dir, got %v", entries)
+	}
+}
+
+// TestWriteSecretFile_FailedWriteLeavesOriginalIntact is the regression test
+// for the non-atomic O_TRUNC write: a failure partway through must never
+// leave a truncated or partially-written file at path. Simulated by making
+// the directory unwritable after the original file exists, so the temp file
+// can't be created — the pre-existing content at path must survive untouched.
+func TestWriteSecretFile_FailedWriteLeavesOriginalIntact(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory write permission checks")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "secret")
+	if err := os.WriteFile(path, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chmod(dir, 0500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0700) }) // let t.TempDir() clean up
+
+	if err := WriteSecretFile(path, []byte("new-and-longer-content")); err == nil {
+		t.Fatal("expected WriteSecretFile to fail when the temp file can't be created")
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "original" {
+		t.Fatalf("original content was clobbered by a failed write: %q", got)
+	}
+}
+
+// TestWriteSecretFile_TempFileNotRenamedOnWriteError is the direct regression
+// test for "a failed write must never leave a truncated file at the target
+// path": when the temp file can't be created at all (parent dir missing),
+// WriteSecretFile must fail without ever touching path, and must not leave a
+// temp file behind anywhere.
+func TestWriteSecretFile_TempFileNotRenamedOnWriteError(t *testing.T) {
+	dataDir := t.TempDir()
+	path := filepath.Join(dataDir, "missing-parent", "secret")
+
+	// Seed nothing at path (parent doesn't even exist) — WriteSecretFile must
+	// fail cleanly, per its documented contract that callers EnsureDir first.
+	if err := WriteSecretFile(path, []byte("new")); err == nil {
+		t.Fatal("expected WriteSecretFile to fail when the parent dir doesn't exist")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected no file at path after a failed write, got err=%v", err)
+	}
+}
+
 // TestWriteSecretFile_RefusesForeignOwner guards the ownership check the
 // WriteSecretFile doc comment has always claimed but the code never enforced
 // until now. Only root can chown a file away from the current euid, so an

@@ -28,14 +28,14 @@ func serviceTask(name string, instances int) *model.Task {
 		OnOverlap:     model.PolicySkip,
 		Instances:     instances,
 		Autostart:     true,
-		RestartDelay:  time.Millisecond,
+		RestartDelay:  durPtr(time.Millisecond),
 		// A tiny healthy_after means every test exit clears the healthy bar and
 		// counts as a successful start — these helpers model services that come
 		// up fine and later exit (refill), not ones that fail to start (FATAL).
 		// Tests exercising FATAL or backoff accumulation set HealthyAfter /
 		// RestartAttempts explicitly.
-		HealthyAfter:    time.Nanosecond,
-		RestartAttempts: 3,
+		HealthyAfter:    durPtr(time.Nanosecond),
+		RestartAttempts: intPtr(3),
 		RestartBackoff:  model.BackoffConstant,
 	}
 }
@@ -251,12 +251,12 @@ func TestRestartAttemptsIncrementOnQuickExit(t *testing.T) {
 	jm := TaskManager(djm)
 
 	task := serviceTask("svc", 1)
-	task.RestartDelay = 30 * time.Millisecond
+	task.RestartDelay = durPtr(30 * time.Millisecond)
 	// Pin the healthy bar high and the FATAL budget out of reach so every quick
 	// exit stays a "fast failure": the backoff counter (the subject here) climbs
 	// without the instance going FATAL and halting the climb.
-	task.HealthyAfter = time.Hour
-	task.RestartAttempts = 1_000_000
+	task.HealthyAfter = durPtr(time.Hour)
+	task.RestartAttempts = intPtr(1_000_000)
 	jm.UpsertTask(task)
 
 	// Each instance run exits quickly with failure; well under the healthy_after
@@ -310,9 +310,9 @@ func TestServiceFatalAfterStartRetries(t *testing.T) {
 	})
 
 	task := serviceTask("flapper", 1)
-	task.RestartAttempts = 2
-	task.HealthyAfter = 2 * time.Second // every quick exit is a "fast failure"
-	task.RestartDelay = time.Millisecond
+	task.RestartAttempts = intPtr(2)
+	task.HealthyAfter = durPtr(2 * time.Second) // every quick exit is a "fast failure"
+	task.RestartDelay = durPtr(time.Millisecond)
 	jm.UpsertTask(task)
 
 	// Each run fails fast, well under healthy_after. Count executions via an

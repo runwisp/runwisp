@@ -5,6 +5,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,6 +20,20 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+// failingDeleteRepo wraps a real storage.RunRepository but forces
+// DeleteRunsByIDs to fail. Used to prove that log-file removal in
+// cleanOldRuns/softdelete_purger.purge happens unconditionally, before the
+// row delete is even attempted — a crash or error at the row-delete step
+// must never leave an orphaned log file with a still-live DB row.
+type failingDeleteRepo struct {
+	storage.RunRepository
+	deleteErr error
+}
+
+func (f *failingDeleteRepo) DeleteRunsByIDs(ctx context.Context, ids []string) error {
+	return f.deleteErr
+}
 
 func TestRetentionCleaner(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
@@ -39,11 +54,12 @@ func TestRetentionCleaner(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0755))
 	require.NoError(t, os.WriteFile(logPath, []byte("log data"), 0644))
 
-	deletedRuns := []model.Run{
+	oldRuns := []model.Run{
 		{ID: runID, TaskName: "task1", CreatedAt: now},
 	}
 
-	repo.On("DeleteOldRuns", mock.Anything, task).Return(deletedRuns, nil)
+	repo.On("SelectOldRuns", mock.Anything, task).Return(oldRuns, nil)
+	repo.On("DeleteRunsByIDs", mock.Anything, []string{runID}).Return(nil)
 
 	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(tasks), 10*time.Millisecond, logDir, 0)
 	// Start runs the first cleanup pass synchronously, so the deletion is
@@ -119,8 +135,9 @@ func TestEnforceMaxTotalSize_SubtractsPrevSegment(t *testing.T) {
 // log-less "ghost" row is treated as benign (indistinguishable from a
 // legitimate no-log run) while an orphaned log file is an unidentifiable,
 // unreclaimable disk leak that stays counted against the size cap forever.
-// This is a deliberate divergence from cleanOldRuns/softdelete_purger.purge
-// (which delete the row first): do not "fix" it into consistency with them.
+// cleanOldRuns and softdelete_purger.purge follow the same log-then-row
+// ordering (see TestCleanOldRuns_LogFileRemovedBeforeRowOnDeleteFailure and
+// TestPurge_LogFileRemovedBeforeRowOnDeleteFailure) — keep all three in sync.
 func TestEnforceMaxTotalSize_DeletesLogFileBeforeDBRow(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	logDir := t.TempDir()
@@ -181,4 +198,43 @@ func TestEnforceMaxTotalSize_PrunesOldestTerminalRun(t *testing.T) {
 	cleaner.enforceMaxTotalSize(context.Background())
 
 	repo.AssertCalled(t, "DeleteRun", mock.Anything, runID)
+}
+
+// TestCleanOldRuns_LogFileRemovedBeforeRowOnDeleteFailure proves cleanOldRuns
+// removes a run's log file unconditionally before attempting the row delete:
+// forcing DeleteRunsByIDs to fail must still leave the log file gone, while
+// the DB row survives (the accepted failure mode is an orphan row, never an
+// orphan log file — see deleteRunBatch's identical policy in retention.go).
+func TestCleanOldRuns_LogFileRemovedBeforeRowOnDeleteFailure(t *testing.T) {
+	ctx := t.Context()
+	logDir := t.TempDir()
+
+	realDB, err := storage.New(":memory:")
+	require.NoError(t, err)
+	defer realDB.Close()
+
+	now := time.Now()
+	old := now.Add(-25 * time.Hour)
+	run := model.Run{
+		ID: ulid.Make().String(), TaskName: "task1", Status: model.PhaseEnded,
+		EndReason: model.EndReasonPtr(model.ReasonSuccess), CreatedAt: old, TriggeredBy: model.TriggeredByAPI,
+	}
+	require.NoError(t, realDB.CreateRun(ctx, &run))
+
+	logPath := logutil.ResolveRunLogPath(logDir, "task1", run.ID, run.CreatedAt)
+	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0755))
+	require.NoError(t, os.WriteFile(logPath, []byte("log data"), 0644))
+
+	repo := &failingDeleteRepo{RunRepository: realDB, deleteErr: errors.New("delete boom")}
+	task := &model.Task{Name: "task1", KeepFor: 24 * time.Hour}
+	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(map[string]*model.Task{"task1": task}), time.Hour, logDir, 0)
+
+	cleaner.cleanOldRuns(ctx)
+
+	_, err = os.Stat(logPath)
+	assert.True(t, os.IsNotExist(err), "log file must be removed even though the row delete failed")
+
+	got, err := realDB.GetRun(ctx, run.ID)
+	require.NoError(t, err, "row must survive a failed DeleteRunsByIDs — an orphan row, never an orphan log")
+	assert.Equal(t, run.ID, got.ID)
 }

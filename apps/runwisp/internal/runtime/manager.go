@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
@@ -74,10 +75,25 @@ var _ TaskManager = (*defaultTaskManager)(nil)
 
 // defaultTaskManager coordinates run lifecycles and concurrency policies.
 type defaultTaskManager struct {
-	executor    executor.Executor
-	tasks       map[string]*taskState
-	persistence *PersistenceCoordinator
-	eventBus    *events.Bus
+	executor executor.Executor
+	// tasks is the name-resolvable live registry. Every lookup-by-name path
+	// (GetTask, TriggerRunWithOptions, the service-control methods, cloud's
+	// dispatch/service handlers via those) reads only this map, so a task
+	// dropped by RemoveTask becomes instantly unresolvable by name — a cloud
+	// peer (or REST/CLI restart) can no longer race the drain window to
+	// resurrect a task outside the current TOML set. See removedTasks.
+	tasks map[string]*taskState
+	// removedTasks holds taskStates RemoveTask evicted from tasks while a run
+	// was still draining under its old definition — tracked here only so
+	// internal bookkeeping that must reach every in-flight run regardless of
+	// removal (retirement, force-kill, shutdown cancel/wait) still can, and so
+	// UpsertTask can reattach the same object — active list and all — if the
+	// same name is re-added before the drain finishes, preserving its
+	// concurrency/instance accounting across the gap. Never consulted by a
+	// name-based lookup. See allTaskStates and taskStateFor.
+	removedTasks map[string]*taskState
+	persistence  *PersistenceCoordinator
+	eventBus     *events.Bus
 	// clock is injected so tests can pin run timestamps deterministically and
 	// so the manager honours the project-wide invariant that wall-clock reads
 	// inside scheduling logic come through an injected source. Production
@@ -118,6 +134,7 @@ func NewTaskManager(exec executor.Executor, bus *events.Bus, clock func() time.T
 	m := &defaultTaskManager{
 		executor:       exec,
 		tasks:          make(map[string]*taskState),
+		removedTasks:   make(map[string]*taskState),
 		persistence:    NewPersistenceCoordinator(PersistenceChannelSize),
 		eventBus:       bus,
 		clock:          clock,
@@ -151,7 +168,7 @@ func (m *defaultTaskManager) registerForceKill(runID string, forceKill func()) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for _, ts := range m.tasks {
+	for _, ts := range m.allTaskStates() {
 		for _, ar := range ts.active {
 			if ar.Run.ID == runID {
 				ar.ForceKill = forceKill
@@ -159,6 +176,32 @@ func (m *defaultTaskManager) registerForceKill(runID string, forceKill func()) {
 			}
 		}
 	}
+}
+
+// allTaskStates returns every taskState the manager currently tracks: live
+// registry entries plus tasks RemoveTask evicted while a run was still
+// draining. Bookkeeping that must reach every in-flight run regardless of
+// removal (retirement lookup, force-kill, shutdown cancel/wait) uses this;
+// name-based resolution must not — it reads m.tasks alone so a removed task
+// is immediately unresolvable by name. Caller holds m.mu (either mode).
+func (m *defaultTaskManager) allTaskStates() []*taskState {
+	out := make([]*taskState, 0, len(m.tasks)+len(m.removedTasks))
+	for _, ts := range m.tasks {
+		out = append(out, ts)
+	}
+	for _, ts := range m.removedTasks {
+		out = append(out, ts)
+	}
+	return out
+}
+
+// taskStateFor looks up a taskState by name across both the live registry and
+// tasks currently draining after removal. Caller holds m.mu (either mode).
+func (m *defaultTaskManager) taskStateFor(name string) *taskState {
+	if ts, ok := m.tasks[name]; ok {
+		return ts
+	}
+	return m.removedTasks[name]
 }
 
 // UpsertTask adds a task if missing or replaces the existing definition.
@@ -178,18 +221,64 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 	}()
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	orphanedRuns = m.upsertTaskLocked(task)
+}
+
+// MutateTask atomically reads the named task's live definition, applies
+// mutate to a copy, and re-installs it — all under one lock acquisition. This
+// closes the lost-update race a separate GetTask-then-UpsertTask pair has
+// against a concurrent reload (or another MutateTask/UpsertTask call)
+// touching the same task in between: with two lock acquisitions, whichever
+// writer's UpsertTask lands last silently wins even if it started from a
+// definition the other writer had already changed. found is false (mutate is
+// never called) if the task is not currently registered by name — a task mid-
+// removal-drain (see RemoveTask) counts as not found, same as GetTask. A
+// non-nil error from mutate aborts the write; the task is left untouched.
+func (m *defaultTaskManager) MutateTask(taskName string, mutate func(*model.Task) error) (found bool, err error) {
+	var orphanedRuns []*model.Run
+	defer func() {
+		for _, r := range orphanedRuns {
+			m.gate.onComplete(r.ID)
+			m.publishTerminal(events.EventRunFailed, r)
+		}
+	}()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	ts, exists := m.tasks[taskName]
+	if !exists {
+		return false, nil
+	}
+	taskCopy := *ts.task
+	if mutateErr := mutate(&taskCopy); mutateErr != nil {
+		return true, mutateErr
+	}
+	orphanedRuns = m.upsertTaskLocked(&taskCopy)
+	return true, nil
+}
+
+// upsertTaskLocked installs or replaces task's definition and returns any
+// queued runs orphaned by the change, for the caller to retire/publish once
+// m.mu is released. Caller holds m.mu (write) and owns flushing the result.
+func (m *defaultTaskManager) upsertTaskLocked(task *model.Task) []*model.Run {
+	var orphanedRuns []*model.Run
 
 	taskCopy := *task
 	ts, exists := m.tasks[task.Name]
 	if !exists {
-		ts = &taskState{active: make([]*ActiveRun, 0)}
+		if draining, ok := m.removedTasks[task.Name]; ok {
+			// Reviving a task a prior reload removed while a run was still
+			// draining: reattach the same taskState (active list and all)
+			// instead of starting a fresh one, so the still-running instance
+			// keeps counting against this generation's concurrency/instance
+			// limits until it retires, exactly as it did before removal.
+			delete(m.removedTasks, task.Name)
+			ts = draining
+			ts.removed = false
+		} else {
+			ts = &taskState{active: make([]*ActiveRun, 0)}
+		}
 		m.tasks[task.Name] = ts
-	} else {
-		// Reviving a task a prior reload had removed while a run was still
-		// draining: clear the stale removed latch so the old run's retireRun
-		// won't delete the now-live task, and so the queue re-arms below. The
-		// flag is reset nowhere else.
-		ts.removed = false
 	}
 	ts.task = &taskCopy
 
@@ -226,17 +315,19 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 		orphanedRuns = m.finalizeOrphanedQueue(ts)
 		ts.cond.Broadcast()
 	}
+	return orphanedRuns
 }
 
 // upsertSupervisor creates or updates ts's service supervisor for task.
 // Caller holds m.mu.
 func (m *defaultTaskManager) upsertSupervisor(ts *taskState, task *model.Task) {
+	healthyAfter := config.DurationOrDefault(task.HealthyAfter, config.DefaultHealthyAfter)
 	if ts.supervisor == nil {
-		ts.supervisor = services.NewSupervisor(task.Name, task.Instances, task.HealthyAfter, !task.Autostart, m.clock)
+		ts.supervisor = services.NewSupervisor(task.Name, task.Instances, healthyAfter, !task.Autostart, m.clock)
 		return
 	}
 	ts.supervisor.SetInstances(task.Instances)
-	ts.supervisor.SetHealthyAfter(task.HealthyAfter)
+	ts.supervisor.SetHealthyAfter(healthyAfter)
 	// Reviving a service RemoveTask stopped only as mechanical bookkeeping
 	// (see stoppedByRemoval's doc): resume it exactly as a brand-new
 	// supervisor would — i.e. per the revived definition's own Autostart —
@@ -271,12 +362,18 @@ func (m *defaultTaskManager) finalizeOrphanedQueue(ts *taskState) []*model.Run {
 
 // RemoveTask drops a task from the manager when a reload removes it.
 //
+// The taskState is always evicted from the name-resolvable registry
+// immediately — GetTask, TriggerRunWithOptions, and every service-control
+// method stop resolving this name the instant this call returns, regardless
+// of what is still in flight. This is what stops a cloud peer (or a delayed
+// local restart/retry) from racing the drain window to act on a task that no
+// longer exists in the operator's TOML.
+//
 // The queue-drain goroutine (if any) is woken and exits via the removed flag.
 // For services, every live instance is cancelled and the supervisor is marked
 // stopped so the exit handler does not refill the slots. Cron tasks keep their
-// in-flight runs — those finish under the definition they captured. The
-// taskState is deleted now when nothing is in flight; otherwise the last run's
-// recordRunOutcome deletes it on retirement (single-writer-per-task preserved).
+// in-flight runs — those finish under the definition they captured, tracked in
+// removedTasks until the last one retires (single-writer-per-task preserved).
 func (m *defaultTaskManager) RemoveTask(taskName string) {
 	// See UpsertTask: a queued run orphaned below may be tracked in-flight by
 	// the jitter gate, and both retiring it and publishing its terminal event
@@ -315,8 +412,9 @@ func (m *defaultTaskManager) RemoveTask(taskName string) {
 		}
 	}
 
-	if len(ts.active) == 0 {
-		delete(m.tasks, taskName)
+	delete(m.tasks, taskName)
+	if len(ts.active) > 0 {
+		m.removedTasks[taskName] = ts
 	}
 }
 
@@ -631,7 +729,9 @@ func (m *defaultTaskManager) ScheduleJitteredRun(taskName string, tick, slot tim
 func (m *defaultTaskManager) triggerJittered(taskName string, tick time.Time) (string, bool) {
 	m.mu.RLock()
 	ts, exists := m.tasks[taskName]
-	stale := !exists || ts.removed || ts.task.Held()
+	// A removed task is never in m.tasks (RemoveTask evicts immediately), so
+	// exists==true already implies not removed; only Held needs checking.
+	stale := !exists || ts.task.Held()
 	m.mu.RUnlock()
 	if stale {
 		return "", false
@@ -1035,17 +1135,25 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	}
 	m.mu.Unlock()
 	m.persistence.PersistExisting(run)
+	// Flush before the process spawns: LoadPendingRuns resumes any row still
+	// 'pending' at boot, while MarkCrashedRuns fails any row 'running'. Without
+	// this barrier the async write racing a crash could leave a row 'pending'
+	// even though its process had already started, and boot would spawn a
+	// second process for it. Blocking here guarantees the row is durably
+	// 'running' before the OS process exists, so a crash after this point is
+	// always caught by MarkCrashedRuns instead of double-executing on restart.
+	m.persistence.Flush()
 	m.publishRun(events.EventRunStarted, run)
 
 	result := m.executor.Execute(ctx, task, run)
 
-	nextRestartAttempt, serviceFatal := m.recordRunOutcome(task, run, active, result)
+	nextRestartAttempt, giveUp := m.recordRunOutcome(task, run, active, result)
 	// Advance the jitter gate now the run is retired from active and the
 	// manager lock is released — recordRunOutcome unlocks before returning, so
 	// the gate may re-enter TriggerRunWithOptions without deadlocking. A no-op
 	// for runs the gate never triggered.
 	m.gate.onComplete(run.ID)
-	if !serviceFatal {
+	if !giveUp {
 		m.scheduleFollowup(task, run, nextRestartAttempt)
 	}
 }
@@ -1053,8 +1161,11 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 // recordRunOutcome classifies the executor result, ends and persists the run,
 // publishes the terminal event, and retires the run from the task's active set
 // (refreshing supervisor bookkeeping for services). It returns the next
-// restart-attempt counter for the run's instance — meaningful only for
-// services, zero otherwise — and whether the run's service instance is FATAL.
+// restart-attempt counter for the run's instance — meaningful only for a
+// restarting run, zero otherwise — and whether this run's restart chain has
+// given up: a service instance marked FATAL, or a restarting task ([tasks.*]
+// with restart = "always"/"on_failure") that hit its own restart_attempts
+// cap. Either way the caller must not schedule another restart.
 func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, active *ActiveRun, result *executor.ExecuteResult) (int, bool) {
 	endTime := m.clock()
 	runDuration := endTime.Sub(active.StartedAt)
@@ -1078,9 +1189,10 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 	// Supervisor bookkeeping happens before run.End so a FATAL transition can
 	// rewrite the end reason: RecordExit needs runDuration, and whether the
 	// instance has exhausted its start-retry budget decides the audit row.
-	nextRestartAttempt, serviceFatal, fatalAttempts := m.retireRun(task, run, runDuration, outcome.endReason)
+	nextRestartAttempt, serviceFatal, fatalAttempts, taskGaveUp := m.retireRun(task, run, runDuration, outcome.endReason)
+	giveUp := serviceFatal || taskGaveUp
 
-	if serviceFatal {
+	if giveUp {
 		outcome.endReason = model.ReasonStartFailed
 		outcome.eventType = events.EventRunFailed
 	}
@@ -1089,29 +1201,36 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 	m.persistence.PersistExisting(run)
 	m.publishTerminal(outcome.eventType, run)
 
-	if serviceFatal {
+	switch {
+	case serviceFatal:
 		m.publishServiceFatal(task.Name, run.InstanceIndex, fatalAttempts, result.ExitCode)
 		slog.Error("Service instance gave up: marked FATAL",
 			"task", task.Name, "instance", run.InstanceIndex,
 			"attempts", fatalAttempts, "exit_code", result.ExitCode)
+	case taskGaveUp:
+		slog.Error("Task gave up restarting after repeated failures",
+			"task", task.Name, "attempts", nextRestartAttempt+1, "exit_code", result.ExitCode)
 	}
 
-	return nextRestartAttempt, serviceFatal
+	return nextRestartAttempt, giveUp
 }
 
 // retireRun removes the run from its task's active set and updates supervisor
 // bookkeeping under the manager lock. It returns the next restart-attempt
-// counter (services only), whether the run's service instance is now FATAL, and
-// the recorded start-fail count when FATAL (zero otherwise).
-func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDuration time.Duration, endReason model.EndReason) (nextRestartAttempt int, serviceFatal bool, fatalAttempts int) {
+// counter (meaningful only for a restarting run, zero otherwise), whether a
+// service instance is now FATAL, the recorded start-fail count when FATAL
+// (zero otherwise), and whether a restarting [tasks.*] run has exhausted its
+// own restart_attempts and must not be restarted again.
+func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDuration time.Duration, endReason model.EndReason) (nextRestartAttempt int, serviceFatal bool, fatalAttempts int, taskGaveUp bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	ts := m.tasks[task.Name]
-	// ts can be nil only if the task was already deleted — RemoveTask never
-	// deletes while a run is in flight, so in practice ts is present here; the
-	// guard keeps a removed-then-resurrected edge from panicking.
+	// This run's presence in some taskState's active list means that state has
+	// not yet been reaped (reapRetiredTaskState only reaps at zero active), so
+	// it must still be in m.tasks or removedTasks — the nil guard is
+	// defensive, not an expected path.
+	ts := m.taskStateFor(task.Name)
 	if ts == nil {
-		return nextRestartAttempt, serviceFatal, fatalAttempts
+		return nextRestartAttempt, serviceFatal, fatalAttempts, taskGaveUp
 	}
 	var retired *ActiveRun
 	for i, ar := range ts.active {
@@ -1123,8 +1242,9 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 	}
 	if task.Kind.IsService() {
 		wasFailure := retry.IsFailureReason(endReason)
+		startRetries := config.IntOrDefault(task.RestartAttempts, config.DefaultStartRetries)
 		nextRestartAttempt, serviceFatal = ts.supervisor.RecordExit(
-			run.InstanceIndex, runDuration, task.RestartAttempts, wasFailure)
+			run.InstanceIndex, runDuration, startRetries, wasFailure)
 		if serviceFatal {
 			fatalAttempts = ts.supervisor.StartFails(run.InstanceIndex)
 		}
@@ -1134,21 +1254,33 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 		// next restart delay is computed from; scheduleRestart advances it for the
 		// respawned run so consecutive failures escalate instead of hot-looping.
 		nextRestartAttempt = retired.RestartAttempt
+		// Mirrors the service supervisor's FATAL check above: give up once this
+		// failure is the (RestartAttempts)-th consecutive one for the chain,
+		// same "at most RestartAttempts restarts" semantics as RecordExit's
+		// startFails > startRetries. A success resets the chain to zero (it
+		// never reaches this branch), so only a failure streak counts. A nil
+		// RestartAttempts (never went through config.Load) falls back to the
+		// same protective default the service path uses — never to "unlimited".
+		restartAttempts := config.IntOrDefault(task.RestartAttempts, config.DefaultStartRetries)
+		if nextRestartAttempt >= restartAttempts {
+			taskGaveUp = true
+		}
 	}
 	if ts.cond != nil {
 		ts.cond.Signal()
 	}
 	m.reapRetiredTaskState(task, ts)
-	return nextRestartAttempt, serviceFatal, fatalAttempts
+	return nextRestartAttempt, serviceFatal, fatalAttempts, taskGaveUp
 }
 
-// reapRetiredTaskState drops a taskState from the registry once its last run has
-// retired, for the two cases where nothing else will: a reload-removed task
-// whose runs were still draining, and an ephemeral cloud-inline task that never
-// entered the TOML registry. Caller must hold m.mu.
+// reapRetiredTaskState drops a taskState once its last run has retired, for
+// the two cases where nothing else will: a reload-removed task whose runs
+// were still draining (tracked in removedTasks since RemoveTask), and an
+// ephemeral cloud-inline task that never entered the TOML registry (tracked
+// in tasks, since it was never removed). Caller must hold m.mu.
 func (m *defaultTaskManager) reapRetiredTaskState(task *model.Task, ts *taskState) {
 	if ts.removed && len(ts.active) == 0 {
-		delete(m.tasks, task.Name)
+		delete(m.removedTasks, task.Name)
 	} else if ts.task != nil && ts.task.Ephemeral && len(ts.active) == 0 && len(ts.queue) == 0 {
 		// Ephemeral cloud-inline tasks are one-shot and never enter the TOML
 		// registry, so reconcile can't remove them. Reap here once the run
@@ -1314,7 +1446,7 @@ func (m *defaultTaskManager) cancelActiveRun(match func(*ActiveRun) bool, notFou
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	for _, ts := range m.tasks {
+	for _, ts := range m.allTaskStates() {
 		for _, ar := range ts.active {
 			if match(ar) {
 				ar.Cancel()
@@ -1348,7 +1480,7 @@ func (m *defaultTaskManager) ShutdownWithDeadline(deadline time.Duration) {
 	// manager lock held here), preserving the gateMu → mu order.
 	m.gate.shutdown()
 	m.mu.Lock()
-	for _, ts := range m.tasks {
+	for _, ts := range m.allTaskStates() {
 		for _, ar := range ts.active {
 			ar.Cancel()
 		}
@@ -1393,7 +1525,7 @@ func (m *defaultTaskManager) ShutdownWithDeadline(deadline time.Duration) {
 func (m *defaultTaskManager) forceKillSurvivors() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for _, ts := range m.tasks {
+	for _, ts := range m.allTaskStates() {
 		for _, ar := range ts.active {
 			if ar.ForceKill == nil {
 				continue

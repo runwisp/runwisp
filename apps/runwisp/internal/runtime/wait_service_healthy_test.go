@@ -40,7 +40,7 @@ func TestWaitServiceHealthyTimesOut(t *testing.T) {
 	jm := TaskManager(djm)
 
 	task := serviceTask("svc", 1)
-	task.HealthyAfter = time.Hour // never crosses the bar within the test
+	task.HealthyAfter = durPtr(time.Hour) // never crosses the bar within the test
 	jm.UpsertTask(task)
 
 	started := watchRuns(eb, events.EventRunStarted)

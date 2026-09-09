@@ -159,7 +159,7 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 		return fmt.Errorf("%s: build message: %w", c, err)
 	}
 
-	op := func() error {
+	op := func(ctx context.Context) error {
 		client, err := c.dial()
 		if err != nil {
 			return err

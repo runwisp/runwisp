@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A shell or compose task whose backgrounded child escapes the process group (e.g. via `setsid`) could hang a stopped or timed-out run forever**, holding its output pipes open past the tracked process's own exit. They're now force-closed after a bounded grace period.
+- **A log rotation failure (e.g. a filesystem error) now stops output capture and marks it in the run's log**, instead of silently letting the log keep growing past the configured `log_max_size`.
+- **A task removed by `reload` while a run was still draining could be resurrected and re-triggered by a restart racing the drain window.** Removal now evicts the task from lookup immediately; the drain no longer leaves a window where the old task is both "gone" and still reachable by name.
+- **A service-definition update racing a concurrent reload could silently discard one of the two changes** (last write wins on a stale read). The update is now applied atomically against the task's current definition.
+- **A crash landing between a run starting and its "running" status reaching disk could cause the run to execute twice on restart**, instead of being correctly marked crashed. The status write is now durable before the process is allowed to spawn.
+- **`catch_up = "all"` combined with `on_overlap = "skip"` or `"kill"` is now rejected at config load.** That combination silently replayed only the first missed tick (or repeatedly killed and restarted the replay) instead of running every missed tick as documented; use `on_overlap = "queue"`.
+- **A `[tasks.*]` entry with `restart = "on_failure"` that keeps failing immediately now gives up after `restart_attempts` consecutive failures** (new task-level key, default 3, same as services) instead of restarting forever; the last run is recorded `start_failed`.
+- **`max_catch_up_runs` now has an upper bound (10000)** instead of accepting any value, which could try to fire tens of thousands of catch-up runs back-to-back after a long outage.
+- **A `[[route]]` rule with `match.kinds = ["notify.delivery_failed"]` is now rejected at config load**, instead of silently accepting a rule that can never fire — that event always bypasses routing and goes straight to the in-app bell.
+- **Explicit `restart_attempts = 0`, `healthy_after = "0s"`, or `restart_delay = "0s"` were silently overridden back to the built-in defaults instead of being honored.** All three now keep the literal value you set.
+- **`import supervisord` now explains an omitted `autorestart` the same way it already explained an explicit `autorestart=unexpected`** — both default to an always-on RunWisp service that restarts on any exit, not just unexpected ones, and previously only the explicit form got a note.
+- **Secret files (PID file, JWT secrets, self-signed TLS cert/key) are now written atomically**, so a crash mid-write can no longer leave a corrupted secret on disk; a mismatched TLS cert/key pair from an interrupted regeneration is now detected and regenerated automatically.
+- **`keep_for`/`keep_runs` retention and soft-delete purging now remove a run's log file before deleting its database row**, matching the existing storage-cap cleanup path. A crash between the two steps can no longer leak an orphaned log file that nothing will ever clean up.
+- **A remote restart request could restart the daemon even with `[daemon] allow_cloud_dispatch = false`.** `agent:restart` now requires the same opt-in as every other dispatched action.
+- **`runwisp service install` on systemd now warns instead of claiming success when the daemon crash-loops immediately after start.** `enable --now` returns as soon as the process forks, so a config that fails only at runtime used to print a plain "Installed and started." either way; it now polls `is-active` first and points you at `journalctl` when the unit isn't actually up.
+- **A run's log file failing to fsync on close is now logged instead of discarded**, and `POST /api/notifications/{notificationId}/{read,unread}` now rejects a malformed ID with `422` instead of forwarding it to storage, matching every other ID path parameter.
+- **A run status update racing a deleted row (e.g. a manual delete mid-run) now surfaces as a logged persistence failure** instead of silently no-oping, so the in-memory and on-disk state can no longer diverge without a trace.
+- **Two runs of the same task landing in the same wall-clock second (concurrent `instances`, or a retrigger a moment after a scheduled fire) could resolve to the same log file path and silently corrupt or lose one run's output.** Log filenames now use the full run ID instead of a 4-character suffix, which can no longer collide.
+
 ## [0.16.3] - 2026-09-02
 
 ### Fixed

@@ -204,7 +204,11 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	if err != nil {
 		return &ExecuteResult{ExitCode: -1, Error: err}
 	}
-	defer writer.Close()
+	defer func() {
+		if err := writer.Close(); err != nil {
+			slog.Warn("Failed to close run log writer", "task", task.Name, "run", run.ID, "err", err)
+		}
+	}()
 	defer cancelFunc()
 
 	r.notifyRunUpdated(run, logPath)

@@ -47,7 +47,8 @@ type RunRepository interface {
 	CountRunsFiltered(ctx context.Context, filter model.RunFilter) (int64, error)
 	QueryRuns(ctx context.Context, q RunQuery) ([]model.Run, error)
 	DeleteRun(ctx context.Context, id string) error
-	DeleteOldRuns(ctx context.Context, task *model.Task) ([]model.Run, error)
+	SelectOldRuns(ctx context.Context, task *model.Task) ([]model.Run, error)
+	DeleteRunsByIDs(ctx context.Context, ids []string) error
 	MarkCrashedRuns(ctx context.Context) (int64, error)
 	GetPendingRuns(ctx context.Context) ([]model.Run, error)
 	GetLastRunByTask(ctx context.Context, taskName string) (*model.Run, error)
@@ -57,7 +58,7 @@ type RunRepository interface {
 	SoftDeleteRuns(ctx context.Context, sel model.RunSelector, deletedAt time.Time) ([]RunRef, error)
 	RestoreRuns(ctx context.Context, sel model.RunSelector) ([]model.Run, error)
 	ResolveSelectorIDs(ctx context.Context, sel model.RunSelector, statusFilter string) ([]RunRef, error)
-	PurgeExpiredSoftDeletes(ctx context.Context, ttl time.Duration) ([]RunRef, error)
+	SelectExpiredSoftDeletes(ctx context.Context, ttl time.Duration) ([]RunRef, error)
 	Close() error
 }
 
@@ -141,7 +142,14 @@ func (db *SQLiteDatabase) CreateRun(ctx context.Context, run *model.Run) error {
 }
 
 func (db *SQLiteDatabase) UpdateRun(ctx context.Context, run *model.Run) error {
-	return db.q.UpdateRun(ctx, runToUpdateParams(run))
+	rows, err := db.q.UpdateRun(ctx, runToUpdateParams(run))
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (db *SQLiteDatabase) GetRun(ctx context.Context, id string) (*model.Run, error) {
@@ -226,6 +234,18 @@ func (db *SQLiteDatabase) QueryRuns(ctx context.Context, q RunQuery) ([]model.Ru
 // SoftDeleteRuns instead.
 func (db *SQLiteDatabase) DeleteRun(ctx context.Context, id string) error {
 	return db.q.DeleteRun(ctx, id)
+}
+
+// DeleteRunsByIDs hard-deletes the given rows in a single batch. Used by
+// retention/purge callers as the second half of a select-then-delete
+// sequence: they must remove the on-disk log files for these rows first, so
+// a crash between the two steps leaves an orphan row (harmless) rather than
+// an orphan log file (a permanent disk leak). A no-op for an empty slice.
+func (db *SQLiteDatabase) DeleteRunsByIDs(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return db.q.DeleteRunsByIDs(ctx, ids)
 }
 
 // RunRef is the minimum identifying tuple needed to resolve a run's log path
@@ -360,21 +380,27 @@ func (db *SQLiteDatabase) ResolveSelectorIDs(ctx context.Context, sel model.RunS
 	}), nil
 }
 
-// PurgeExpiredSoftDeletes hard-deletes every soft-deleted row whose
-// deleted_at is older than ttl ago (use ttl=0 to drain all on boot).
-// Returns refs so the caller can wipe the matching log files.
-func (db *SQLiteDatabase) PurgeExpiredSoftDeletes(ctx context.Context, ttl time.Duration) ([]RunRef, error) {
+// SelectExpiredSoftDeletes returns refs for every soft-deleted row whose
+// deleted_at is older than ttl ago (use ttl=0 to select everything currently
+// soft-deleted, for the boot-time drain) without deleting anything. Callers
+// must remove the referenced log files before hard-deleting the rows via
+// DeleteRunsByIDs — see the SQL query's comment for why the order matters.
+func (db *SQLiteDatabase) SelectExpiredSoftDeletes(ctx context.Context, ttl time.Duration) ([]RunRef, error) {
 	cutoff := time.Now().Add(-ttl)
-	rows, err := db.q.PurgeExpiredSoftDeletes(ctx, &cutoff)
+	rows, err := db.q.SelectExpiredSoftDeletes(ctx, &cutoff)
 	if err != nil {
 		return nil, err
 	}
-	return runRefsFrom(rows, func(r sqlcdb.PurgeExpiredSoftDeletesRow) RunRef {
+	return runRefsFrom(rows, func(r sqlcdb.SelectExpiredSoftDeletesRow) RunRef {
 		return RunRef{ID: r.ID, TaskName: r.TaskName, CreatedAt: r.CreatedAt}
 	}), nil
 }
 
-func (db *SQLiteDatabase) DeleteOldRuns(ctx context.Context, task *model.Task) ([]model.Run, error) {
+// SelectOldRuns returns the runs that KeepFor/KeepRuns retention would evict
+// for task, without deleting anything. Callers must remove the runs' log
+// files before hard-deleting the rows via DeleteRunsByIDs — see
+// SelectExpiredSoftDeletes for why the order matters.
+func (db *SQLiteDatabase) SelectOldRuns(ctx context.Context, task *model.Task) ([]model.Run, error) {
 	uniqueRuns := make(map[string]model.Run)
 
 	if task.KeepFor > 0 {
@@ -407,15 +433,9 @@ func (db *SQLiteDatabase) DeleteOldRuns(ctx context.Context, task *model.Task) (
 		return []model.Run{}, nil
 	}
 
-	ids := make([]string, 0, len(uniqueRuns))
 	finalRuns := make([]model.Run, 0, len(uniqueRuns))
-	for id, run := range uniqueRuns {
-		ids = append(ids, id)
+	for _, run := range uniqueRuns {
 		finalRuns = append(finalRuns, run)
-	}
-
-	if err := db.q.DeleteRunsByIDs(ctx, ids); err != nil {
-		return nil, fmt.Errorf("delete old runs for %s: %w", task.Name, err)
 	}
 
 	return finalRuns, nil

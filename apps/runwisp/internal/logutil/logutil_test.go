@@ -7,10 +7,27 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// TestResolveRunLogPath_SameSecondDifferentIDsNeverCollide is the bug-first
+// regression for the old 4-char-of-ID suffix: two runs of the same task
+// created in the same wall-clock second (concurrent `instances`, or an
+// unrelated retrigger a moment after a scheduled fire) used to have a real,
+// if rare, chance of landing on the identical path and silently corrupting
+// or losing one run's output. The suffix is now the full run ID, so distinct
+// IDs can never collide.
+func TestResolveRunLogPath_SameSecondDifferentIDsNeverCollide(t *testing.T) {
+	createdAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	// Same last 4 characters, different everywhere else — exactly the case a
+	// truncated suffix would have collided on.
+	a := ResolveRunLogPath("/var/log", "task1", "01ARZ3NDEKTSV4RRFFQ69G5FAA", createdAt)
+	b := ResolveRunLogPath("/var/log", "task1", "01BRZ3NDEKTSV4RRFFQ69G5FAA", createdAt)
+	assert.NotEqual(t, a, b, "distinct run IDs sharing a suffix in the same second must resolve to distinct paths")
+}
 
 func TestRemoveLogFiles(t *testing.T) {
 	dir := t.TempDir()

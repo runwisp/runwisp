@@ -307,12 +307,14 @@ func (w *LogWriter) handleSizeOverflow(p []byte) bool {
 		return true
 	case model.LogOverflowDropOld:
 		if err := w.rotateTail(); err != nil {
-			slog.Error("Failed to rotate log file, continuing without rotation", "err", err)
+			slog.Error("Failed to rotate log file; log capture stopped", "err", err)
 		}
-		// rotateTail sets w.stopped when it leaves w.file unusable (both the
-		// rename+reopen and the rename+create failure combos). In that case the
-		// current write must be dropped like any other post-stop write, not
-		// fall through to Write() on a closed/stale handle.
+		// rotateTail sets w.stopped on every rotation failure (rename, rename+
+		// reopen, and rename+create combos) — even when the reopen leaves w.file
+		// perfectly writable, since a broken rotation can no longer enforce
+		// log_max_size. In every case the current write must be dropped like any
+		// other post-stop write, not fall through to Write() on a closed/stale
+		// handle or continue growing the file past the configured cap.
 		if w.stopped {
 			return true
 		}
@@ -420,7 +422,17 @@ func (w *LogWriter) rotateTail() error {
 		if reopenErr != nil {
 			w.stopped = true
 			slog.Error("Failed to re-open log file after rotation failure", "err", reopenErr)
+			return fmt.Errorf("failed to rotate log: %w", err)
 		}
+		// The reopen succeeded, so the file itself is still writable — but
+		// rotation, the mechanism that enforces log_max_size, is broken. Letting
+		// the write fall through here would grow the log unbounded past the
+		// operator's configured cap with nothing but a daemon-side slog line to
+		// show for it. Stop capture instead and say so inline in the run's own
+		// log, the same treatment a genuine write error gets below.
+		w.stopped = true
+		w.truncated = true
+		w.writeSystemLine(fmt.Sprintf("Log output stopped: log rotation failed (%v). Process continues running.", err))
 		return fmt.Errorf("failed to rotate log: %w", err)
 	}
 
@@ -515,13 +527,17 @@ func (w *LogWriter) Close() error {
 
 	var errs []error
 	if w.file != nil {
-		w.file.Sync()
+		if err := w.file.Sync(); err != nil {
+			errs = append(errs, err)
+		}
 		if err := w.file.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	if w.metaFile != nil {
-		w.metaFile.Sync()
+		if err := w.metaFile.Sync(); err != nil {
+			errs = append(errs, err)
+		}
 		if err := w.metaFile.Close(); err != nil {
 			errs = append(errs, err)
 		}

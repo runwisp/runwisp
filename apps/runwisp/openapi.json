@@ -1724,7 +1724,7 @@
             "type": "string"
           },
           "healthyAfter": {
-            "description": "For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds",
+            "description": "For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start",
             "format": "int64",
             "type": "integer"
           },
@@ -1836,7 +1836,7 @@
             "type": "string"
           },
           "restartAttempts": {
-            "description": "For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting",
+            "description": "Consecutive failures tolerated before giving up on restarting — for services, marks the instance FATAL; for a restarting task, stops the restart chain; 0 means give up after the very first failure",
             "format": "int64",
             "type": "integer"
           },
@@ -1850,7 +1850,7 @@
             "type": "string"
           },
           "restartDelay": {
-            "description": "Base delay before each restart, in nanoseconds",
+            "description": "For services: base delay before each restart, in nanoseconds; 0 means restart instantly",
             "format": "int64",
             "type": "integer"
           },
@@ -2850,6 +2850,9 @@
             "required": true,
             "schema": {
               "description": "Notification ULID",
+              "maxLength": 26,
+              "minLength": 26,
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
               "type": "string"
             }
           }
@@ -2886,6 +2889,9 @@
             "required": true,
             "schema": {
               "description": "Notification ULID",
+              "maxLength": 26,
+              "minLength": 26,
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
               "type": "string"
             }
           }

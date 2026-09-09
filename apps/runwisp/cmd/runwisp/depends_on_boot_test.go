@@ -21,6 +21,7 @@ import (
 // tests. healthyAfter governs how long an instance must stay live to count as
 // healthy — the readiness bar a dependent waits on.
 func bootTestService(name string, healthyAfter time.Duration, dependsOn ...string) *model.Task {
+	restartAttempts := 3
 	return &model.Task{
 		Name:            name,
 		Kind:            model.KindService,
@@ -30,8 +31,8 @@ func bootTestService(name string, healthyAfter time.Duration, dependsOn ...strin
 		OnOverlap:       model.PolicySkip,
 		Instances:       1,
 		Autostart:       true,
-		HealthyAfter:    healthyAfter,
-		RestartAttempts: 3,
+		HealthyAfter:    &healthyAfter,
+		RestartAttempts: &restartAttempts,
 		RestartBackoff:  model.BackoffConstant,
 		DependsOn:       dependsOn,
 	}

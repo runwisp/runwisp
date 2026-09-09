@@ -6,6 +6,7 @@ package executor
 import (
 	"context"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -113,6 +114,57 @@ func TestExecuteTimeout(t *testing.T) {
 
 	result := exec.Execute(ctx, task, run)
 	assert.NotEqual(t, 0, result.ExitCode) // Should be killed
+}
+
+// TestExecuteReturnsWhenBackgroundedChildEscapesProcessGroup is the bug-first
+// regression for the WaitDelay/hang-risk finding: a task that backgrounds a
+// child via `setsid` (a new session, hence a new process group) leaves that
+// child holding the run's stdout/stderr pipes open long after the tracked
+// shell process itself has exited. Before the fix, RoutingExecutor.Execute
+// drains those pipes to EOF *before* calling Process.Wait, and nothing ever
+// closed them, so Execute (and the daemon's shutdown drain, which waits on
+// the same call) hung forever — signalling -pgid on stop/timeout never
+// reaches a process that escaped the group. The fix force-closes the pipes a
+// bounded time after the stop ladder fires, if the run still hasn't been
+// reaped by then. stdioCloseGrace is shrunk here so the test doesn't have to
+// wait out the real (10s) production delay.
+func TestExecuteReturnsWhenBackgroundedChildEscapesProcessGroup(t *testing.T) {
+	if _, err := exec.LookPath("setsid"); err != nil {
+		t.Skip("setsid not available on this host")
+	}
+
+	origGrace := stdioCloseGrace
+	stdioCloseGrace = 200 * time.Millisecond
+	t.Cleanup(func() { stdioCloseGrace = origGrace })
+
+	tmpDir := t.TempDir()
+	eb := events.NewEventBus()
+	e := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
+
+	// setsid detaches `sleep 30` into a new session/process group, still
+	// inheriting the shell's stdout/stderr fds, then the shell itself exits.
+	// The backgrounded sleep is never signalled by a -pgid kill, so only the
+	// stdio-close backstop can unblock the executor's stream read.
+	task := &model.Task{
+		Name: "escaped-child",
+		Run:  "setsid sleep 30 >&1 2>&2 < /dev/null &\nexit 0\n",
+	}
+	run := &model.Run{ID: ulid.Make().String(), Status: model.PhaseRunning}
+
+	// A short ctx timeout stands in for an operator stop or a task timeout —
+	// either way, it's what starts the stop ladder that arms the backstop.
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	resultCh := make(chan *ExecuteResult, 1)
+	go func() { resultCh <- e.Execute(ctx, task, run) }()
+
+	select {
+	case result := <-resultCh:
+		require.NotNil(t, result)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Execute must return within a bounded time even when a backgrounded child keeps stdout/stderr open past the tracked process's own exit")
+	}
 }
 
 func TestExecuteStderr(t *testing.T) {

@@ -172,7 +172,7 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 		return fmt.Errorf("%s: %w", c, err)
 	}
 
-	op := func() error {
+	op := func(ctx context.Context) error {
 		// -t takes the recipients from the headers, so no address ever reaches
 		// the command line — an address cannot become an argument, let alone a
 		// flag. -i stops a body line consisting of a single "." from being read

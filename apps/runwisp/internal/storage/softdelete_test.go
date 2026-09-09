@@ -125,7 +125,7 @@ func TestRestoreRunsReversesSoftDelete(t *testing.T) {
 	assert.Equal(t, r.ID, got.ID)
 }
 
-func TestPurgeExpiredSoftDeletesHardDeletesPastTTL(t *testing.T) {
+func TestSelectExpiredSoftDeletesThenDeleteHardDeletesPastTTL(t *testing.T) {
 	ctx := t.Context()
 	db := setupTestDB(t)
 	defer db.Close()
@@ -142,17 +142,27 @@ func TestPurgeExpiredSoftDeletesHardDeletesPastTTL(t *testing.T) {
 	require.NoError(t, err)
 
 	// TTL=5s: old is past it, fresh is not.
-	refs, err := db.PurgeExpiredSoftDeletes(ctx, 5*time.Second)
+	refs, err := db.SelectExpiredSoftDeletes(ctx, 5*time.Second)
 	require.NoError(t, err)
 	require.Len(t, refs, 1)
 	assert.Equal(t, old.ID, refs[0].ID)
 
-	// Restoring the fresh run should still work — it was not purged.
-	restored, err := db.RestoreRuns(ctx, model.RunSelector{IDs: []string{fresh.ID}})
+	// Select-only: the row must still be there, restorable, until DeleteRunsByIDs runs.
+	restored, err := db.RestoreRuns(ctx, model.RunSelector{IDs: []string{old.ID}})
+	require.NoError(t, err)
+	require.Len(t, restored, 1)
+	// Put it back into soft-deleted state for the delete step below.
+	_, err = db.SoftDeleteRuns(ctx, model.RunSelector{IDs: []string{old.ID}}, time.Now().Add(-10*time.Second))
+	require.NoError(t, err)
+
+	require.NoError(t, db.DeleteRunsByIDs(ctx, []string{refs[0].ID}))
+
+	// Restoring the fresh run should still work — it was never selected.
+	restored, err = db.RestoreRuns(ctx, model.RunSelector{IDs: []string{fresh.ID}})
 	require.NoError(t, err)
 	require.Len(t, restored, 1)
 
-	// Restoring the old run finds nothing.
+	// Restoring the old run finds nothing — it's hard-deleted now.
 	restored, err = db.RestoreRuns(ctx, model.RunSelector{IDs: []string{old.ID}})
 	require.NoError(t, err)
 	assert.Empty(t, restored)
@@ -228,11 +238,17 @@ func TestPurgeAllOnBoot(t *testing.T) {
 	_, err := db.SoftDeleteRuns(ctx, model.RunSelector{IDs: []string{r.ID}}, time.Now())
 	require.NoError(t, err)
 
-	// TTL=0 drains everything currently soft-deleted (boot-time scenario).
-	refs, err := db.PurgeExpiredSoftDeletes(ctx, 0)
+	// TTL=0 selects everything currently soft-deleted (boot-time scenario).
+	refs, err := db.SelectExpiredSoftDeletes(ctx, 0)
 	require.NoError(t, err)
 	require.Len(t, refs, 1)
 	assert.Equal(t, r.ID, refs[0].ID)
+
+	require.NoError(t, db.DeleteRunsByIDs(ctx, []string{refs[0].ID}))
+
+	restored, err := db.RestoreRuns(ctx, model.RunSelector{IDs: []string{r.ID}})
+	require.NoError(t, err)
+	assert.Empty(t, restored)
 }
 
 func TestResolveSelectorIDsHonorsStatusFilter(t *testing.T) {

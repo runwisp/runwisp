@@ -4,6 +4,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -169,9 +170,11 @@ run = "exec ./bin/web"
 		assert.Equal(t, model.RestartAlways, s.Restart)
 		assert.Equal(t, model.PolicySkip, s.OnOverlap)
 		assert.Equal(t, 1, s.Instances)
-		assert.Equal(t, time.Second, s.RestartDelay)
+		require.NotNil(t, s.RestartDelay)
+		assert.Equal(t, time.Second, *s.RestartDelay)
 		assert.Equal(t, model.BackoffExponential, s.RestartBackoff)
-		assert.Equal(t, DefaultHealthyAfter, s.HealthyAfter)
+		require.NotNil(t, s.HealthyAfter)
+		assert.Equal(t, DefaultHealthyAfter, *s.HealthyAfter)
 		assert.True(t, s.ManualTrigger)
 	})
 
@@ -349,6 +352,32 @@ func TestValidate(t *testing.T) {
 			wantErr: "invalid catch_up",
 		},
 		{
+			name: "catch_up all with on_overlap skip",
+			cfg: &Config{
+				Tasks: []model.Task{{
+					Name:          "task1",
+					Run:           "echo hello",
+					MaxConcurrent: 1,
+					OnOverlap:     model.PolicySkip,
+					CatchUp:       model.MissedRunAll,
+				}},
+			},
+			wantErr: "invalid catch_up for task task1",
+		},
+		{
+			name: "catch_up all with on_overlap kill",
+			cfg: &Config{
+				Tasks: []model.Task{{
+					Name:          "task1",
+					Run:           "echo hello",
+					MaxConcurrent: 1,
+					OnOverlap:     model.PolicyKill,
+					CatchUp:       model.MissedRunAll,
+				}},
+			},
+			wantErr: "invalid catch_up for task task1",
+		},
+		{
 			name: "invalid restart",
 			cfg: &Config{
 				Tasks: []model.Task{{
@@ -446,7 +475,7 @@ func TestValidate(t *testing.T) {
 					Run:           "echo hello",
 					MaxConcurrent: 1,
 					OnOverlap:     model.PolicyQueue,
-					RestartDelay:  -time.Second,
+					RestartDelay:  durPtr(-time.Second),
 				}},
 			},
 			wantErr: "restart_delay",
@@ -526,7 +555,8 @@ func TestApplyDefaults(t *testing.T) {
 	// the operator omits it.
 	assert.Equal(t, DefaultDaemonShutdown, cfg.Daemon.ShutdownTimeout)
 	// [defaults] healthy_after picks up the built-in default too.
-	assert.Equal(t, DefaultHealthyAfter, cfg.Defaults.HealthyAfter)
+	require.NotNil(t, cfg.Defaults.HealthyAfter)
+	assert.Equal(t, DefaultHealthyAfter, *cfg.Defaults.HealthyAfter)
 }
 
 func TestNotifyOnMissedRules(t *testing.T) {
@@ -1025,7 +1055,22 @@ run               = "echo hi"
 		assert.Contains(t, err.Error(), "max_catch_up_runs")
 	})
 
-	t.Run("large value is accepted", func(t *testing.T) {
+	t.Run("value at the cap is accepted", func(t *testing.T) {
+		path := writeTOML(t, fmt.Sprintf(`
+[scheduler]
+timezone = "UTC"
+
+[tasks.t]
+cron              = "* * * * *"
+max_catch_up_runs = %d
+run               = "echo hi"
+`, MaxCatchUpRunsCap))
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, MaxCatchUpRunsCap, cfg.Tasks[0].MaxCatchUpRuns)
+	})
+
+	t.Run("value above the cap is rejected", func(t *testing.T) {
 		path := writeTOML(t, `
 [scheduler]
 timezone = "UTC"
@@ -1035,9 +1080,10 @@ cron              = "* * * * *"
 max_catch_up_runs = 100000
 run               = "echo hi"
 `)
-		cfg, err := Load(path)
-		require.NoError(t, err)
-		assert.Equal(t, 100000, cfg.Tasks[0].MaxCatchUpRuns)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "max_catch_up_runs")
+		assert.Contains(t, err.Error(), "cap")
 	})
 }
 
@@ -1096,7 +1142,7 @@ func TestValidate_MoreCases(t *testing.T) {
 		{
 			name: "negative defaults.healthy_after",
 			cfg: &Config{
-				Defaults: Defaults{HealthyAfter: -time.Second},
+				Defaults: Defaults{HealthyAfter: durPtr(-time.Second)},
 				Tasks:    []model.Task{testTask("t1")},
 			},
 			wantErr: "defaults.healthy_after",
@@ -1217,7 +1263,7 @@ func TestValidate_MoreCases(t *testing.T) {
 			cfg: &Config{
 				Tasks: []model.Task{func() model.Task {
 					t := serviceTask("svc1")
-					t.HealthyAfter = -time.Second
+					t.HealthyAfter = durPtr(-time.Second)
 					return t
 				}()},
 			},
@@ -1505,8 +1551,10 @@ run = "exec ./bin/svc"
 		require.NoError(t, err)
 		require.Len(t, cfg.Tasks, 2)
 		// Tasks are sorted alphabetically.
-		assert.Equal(t, 2*time.Minute, cfg.Tasks[0].HealthyAfter)
-		assert.Equal(t, 30*time.Second, cfg.Tasks[1].HealthyAfter)
+		require.NotNil(t, cfg.Tasks[0].HealthyAfter)
+		assert.Equal(t, 2*time.Minute, *cfg.Tasks[0].HealthyAfter)
+		require.NotNil(t, cfg.Tasks[1].HealthyAfter)
+		assert.Equal(t, 30*time.Second, *cfg.Tasks[1].HealthyAfter)
 	})
 
 	t.Run("daemon shutdown_timeout parses", func(t *testing.T) {
@@ -1656,3 +1704,7 @@ max_concurrent = "not-a-number"
 // intPtr returns a pointer to n — for building *int config fields (e.g. keep_runs)
 // in struct literals.
 func intPtr(n int) *int { return &n }
+
+// durPtr returns a pointer to d — for building *time.Duration config fields
+// (e.g. restart_delay, healthy_after) in struct literals.
+func durPtr(d time.Duration) *time.Duration { return &d }

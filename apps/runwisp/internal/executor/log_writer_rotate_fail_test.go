@@ -87,3 +87,58 @@ func TestLogWriter_RotateCreateFailure_StopsInsteadOfDestroyingPrev(t *testing.T
 	require.NoError(t, err)
 	assert.Equal(t, prevContentAfterFailedRotation, prevContentAfterClose)
 }
+
+// TestLogWriter_RotateRenameFailure_StopsWriterAndSurfacesFailure is the
+// bug-first regression for the silent-rotation-failure finding: a drop_old
+// rotation whose rename fails, but whose fallback reopen of the original file
+// succeeds, used to log a single slog.Error ("continuing without rotation")
+// and then fall straight through to Write() on the reopened handle — meaning
+// log_max_size stopped being enforced for the rest of the run with nothing
+// but a daemon-log line, invisible to anyone watching the run's own log or
+// the web UI, to show for it. The fix treats this exactly like a genuine
+// write error: stop the writer and leave a SYSTEM line in the run's own log
+// marking what happened, instead of growing the file unbounded.
+func TestLogWriter_RotateRenameFailure_StopsWriterAndSurfacesFailure(t *testing.T) {
+	dir := t.TempDir()
+	opts := newTestOpts(dir)
+	opts.MaxSize = 200
+	opts.Overflow = "drop_old"
+	w, err := NewLogWriter(opts)
+	require.NoError(t, err)
+
+	_, err = w.WriteLineEvent(strings.Repeat("a", 100), logutil.StreamStdout)
+	require.NoError(t, err)
+	_, err = w.WriteLineEvent(strings.Repeat("b", 100), logutil.StreamStdout) // triggers the first rotation, which must succeed
+	require.NoError(t, err)
+	require.False(t, w.stopped, "the first (unforced) rotation must succeed and leave the writer capturing")
+
+	w.renameFile = func(oldpath, newpath string) error {
+		return errors.New("simulated rename failure")
+	}
+
+	// Attempts a second rotation: the rename fails, but the fallback reopen of
+	// the still-present original file succeeds, so the file handle itself
+	// stays perfectly writable.
+	n, err := w.WriteLineEvent(strings.Repeat("c", 100), logutil.StreamStdout)
+	require.NoError(t, err, "a rotation failure is a drop, like a genuine write error, not a caller-visible error")
+	assert.Equal(t, int64(-1), n, "the write that triggered the failed rotation must be dropped, not written past the cap")
+	assert.True(t, w.stopped, "log_max_size can no longer be enforced once rotation fails, so the writer must stop instead of growing the file unbounded")
+	assert.True(t, w.truncated)
+
+	// Further writes must stay dropped, not resume just because the file
+	// handle happens to still be open and writable.
+	n2, err2 := w.WriteLineEvent(strings.Repeat("d", 100), logutil.StreamStdout)
+	require.NoError(t, err2)
+	assert.Equal(t, int64(-1), n2)
+
+	require.NoError(t, w.Close())
+
+	logContent, err := os.ReadFile(opts.LogPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(logContent), "[SYSTEM]",
+		"the rotation failure must be visible inline in the run's own log, not just the daemon's slog output")
+	assert.Contains(t, string(logContent), "rotation failed",
+		"the SYSTEM line must say what happened, mirroring the genuine write-error and disk-pressure messages")
+	assert.NotContains(t, string(logContent), "ddddddddd",
+		"output written after the writer stopped must never reach the log file")
+}

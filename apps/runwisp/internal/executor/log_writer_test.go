@@ -39,6 +39,31 @@ func TestLogWriter_BasicWrite(t *testing.T) {
 	assert.Greater(t, w.totalProduced, int64(0))
 }
 
+// TestLogWriter_Close_ReportsSyncFailure is the bug-first regression for
+// Close() discarding file.Sync()/metaFile.Sync() errors instead of joining
+// them into its return value like every other error in the method. Closing
+// w.file out from under the writer makes both its Sync and its own Close
+// fail with the same os.ErrClosed — deterministic and portable, unlike
+// forcing a genuine fsync failure — so the joined error must report both,
+// not just the one from w.file.Close() that was already wired up.
+func TestLogWriter_Close_ReportsSyncFailure(t *testing.T) {
+	opts := newTestOpts(t.TempDir())
+	w, err := NewLogWriter(opts)
+	require.NoError(t, err)
+
+	_, err = w.WriteLineEvent("hello", logutil.StreamStdout)
+	require.NoError(t, err)
+
+	require.NoError(t, w.file.Close())
+
+	err = w.Close()
+	require.Error(t, err)
+	joined, ok := err.(interface{ Unwrap() []error })
+	require.True(t, ok, "expected a joined error, got %T: %v", err, err)
+	assert.GreaterOrEqual(t, len(joined.Unwrap()), 2,
+		"both the Sync and the Close failure on the same file must be reported, not just one")
+}
+
 func TestLogWriter_DropNewOverflow(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	opts.MaxSize = 100

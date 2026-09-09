@@ -1529,7 +1529,7 @@ func (q *Queries) QueryRunsTaskNameDesc(ctx context.Context, arg QueryRunsTaskNa
 	return items, nil
 }
 
-const updateRun = `-- name: UpdateRun :exec
+const updateRun = `-- name: UpdateRun :execrows
 UPDATE runs SET execution_id = ?, task_name = ?, status = ?,
   end_reason = ?, exit_code = ?, started_at = ?, ended_at = ?, triggered_by = ?,
   created_at = ?, retry_attempt = ?, retry_of_run_id = ?, instance_index = ?,
@@ -1554,8 +1554,8 @@ type UpdateRunParams struct {
 	ID            string            `json:"id"`
 }
 
-func (q *Queries) UpdateRun(ctx context.Context, arg UpdateRunParams) error {
-	_, err := q.db.ExecContext(ctx, updateRun,
+func (q *Queries) UpdateRun(ctx context.Context, arg UpdateRunParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateRun,
 		arg.ExecutionID,
 		arg.TaskName,
 		arg.Status,
@@ -1571,5 +1571,8 @@ func (q *Queries) UpdateRun(ctx context.Context, arg UpdateRunParams) error {
 		arg.ParamsJson,
 		arg.ID,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

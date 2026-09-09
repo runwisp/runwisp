@@ -19,14 +19,18 @@ import (
 const LogIndexInterval = 1024
 
 // ResolveRunLogPath computes the log path for a run from its fields.
-// Format: {logDir}/{sanitizedTask}/{YYYYMMDD}_{HHMMSS}_{ulidSuffix}.log
+// Format: {logDir}/{sanitizedTask}/{YYYYMMDD}_{HHMMSS}_{runID}.log
 // Timestamps are formatted in UTC so the on-disk cadence stays stable when
 // the host timezone changes (DST flips, traveling laptops, container moves).
+// The full run ID is used (not a truncated suffix) so two runs of the same
+// task landing in the same wall-clock second — e.g. concurrent `instances`,
+// or an unrelated retrigger a moment after a scheduled fire — can never
+// collide onto the same path: nothing parses this filename back into an ID,
+// so there is no readability trade-off to make here.
 func ResolveRunLogPath(logDir, taskName, runID string, createdAt time.Time) string {
 	sanitized := model.SanitizeTaskName(taskName)
 	ts := createdAt.UTC().Format("20060102_150405")
-	suffix := runID[max(0, len(runID)-4):]
-	return filepath.Join(logDir, sanitized, fmt.Sprintf("%s_%s.log", ts, suffix))
+	return filepath.Join(logDir, sanitized, fmt.Sprintf("%s_%s.log", ts, runID))
 }
 
 // PrevPath returns the rotated-away segment path for a log file. Like the

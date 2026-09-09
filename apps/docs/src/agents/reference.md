@@ -101,8 +101,8 @@ log_max_size:        size =100mb  — per-run log cap (effective task default)
 log_on_full:         enum =drop_old — drop_new | drop_old | kill
 keep_runs:           int          — row-count retention; 0..1000000 (0 = keep none)
 keep_for:            dur          — age retention; positive
-healthy_after:       dur  =60s    — service uptime that counts as healthy: resets the restart counter and clears the failed-start streak (SERVICES only)
-restart_attempts:       int  =3      — consecutive fast failures before an instance goes FATAL (SERVICES only)
+healthy_after:       dur  =60s    — service uptime that counts as healthy: resets the restart counter and clears the failed-start streak (SERVICES only); 0 = healthy immediately, kept literally if set
+restart_attempts:       int  =3      — consecutive failures before giving up: a service goes FATAL, a restarting task is recorded start_failed; 0 = give up after the first failure, kept literally if set
 treat_missed_as_failure:    bool =true   — alert on missed scheduled runs; false silences daemon-wide (per-task still wins)
 env:                 map<str,str> — inline env merged into every task; key ^[A-Za-z_][A-Za-z0-9_]*$, <=256 entries, value <=32KiB, no NUL
 env_file:            path         — dotenv file merged into every task; relative to runwisp.toml dir
@@ -122,12 +122,13 @@ timezone:          IANA string      — per-task TZ override (else [scheduler] t
 jitter:            dur              — cap how far this cron task's start may slip; needs cron (inherits [defaults])
 run_on_start:      bool =false      — fire once at daemon start, on top of any cron (the @reboot equivalent)
 manual_trigger:    bool =true       — allow CLI/API/UI trigger; false = cron-only
-catch_up:          enum =latest     — missed-firing policy: latest | all | skip
+catch_up:          enum =latest     — missed-firing policy: latest | all | skip; all requires on_overlap=queue (rejected otherwise)
 max_catch_up_runs: int  =100        — cap when catch_up=all; >=1
 timeout:           dur              — per-attempt cap (inherits [defaults])
 graceful_stop:     dur  =5s         — grace before SIGKILL on stop
 stop_signal:       enum =SIGTERM    — stop-ladder signal (inherits [defaults]); SIGTERM|SIGINT|SIGQUIT|SIGHUP|SIGKILL|SIGUSR1|SIGUSR2
 restart:           enum             — never | on_failure   (always => rejected on tasks)
+restart_attempts:  int  =3          — consecutive failures a restart chain tolerates before giving up (run recorded start_failed); 0..100, kept literally if set (0 = give up after the first failure); only meaningful with restart=on_failure
 max_concurrent:    int  =1          — concurrent run cap; 1..1024
 max_queued:        int  =100        — queued-run depth; 0..10000
 on_overlap:        enum =queue      — queue | skip | kill
@@ -168,14 +169,13 @@ treat_missed_as_failure:  bool =true       — alert on missed scheduled runs (i
 
 ### [services.&lt;name&gt;] (long-running)
 
-`restart=always` is forced. Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `max_catch_up_runs`, `restart`, `max_concurrent`, `max_queued`, `retry_*`. Shares the core task keys: `group` (default `Services`), `description`, `manual_trigger`, `on_overlap` (default `skip`), `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `env_base`, `user`, `exit_codes`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify_on_failure`/`notify_on_success`/`treat_missed_as_failure`. Service-only:
+`restart=always` is forced. Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `max_catch_up_runs`, `restart`, `max_concurrent`, `max_queued`, `retry_*`. Shares the core task keys (including `restart_attempts`, see above): `group` (default `Services`), `description`, `manual_trigger`, `on_overlap` (default `skip`), `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `env_base`, `user`, `exit_codes`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify_on_failure`/`notify_on_success`/`treat_missed_as_failure`. Service-only:
 
 ```
 instances:           int  =1           — parallel instances; 1..64
-restart_delay:       dur  =1s          — delay before a restart
+restart_delay:       dur  =1s          — delay before a restart; 0 = restart instantly, kept literally if set
 restart_backoff:     enum =exponential — constant | linear | exponential
-healthy_after:       dur  =60s         — uptime that counts as healthy: resets the restart counter and clears the failed-start streak
-restart_attempts:       int  =3           — consecutive fast failures (exit below healthy_after) before an instance goes FATAL and stops restarting
+healthy_after:       dur  =60s         — uptime that counts as healthy: resets the restart counter and clears the failed-start streak; 0 = healthy immediately, kept literally if set
 priority:            int  =0           — boot start order across services; lower starts first, ties break on name
 autostart:           bool =true        — start at boot; false boots it stopped until started from UI/API
 depends_on:          []string          — services that must be healthy before this one starts at boot (order only)

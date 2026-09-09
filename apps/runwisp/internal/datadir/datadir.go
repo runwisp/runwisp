@@ -37,21 +37,47 @@ func EnsureDir(dir string) error {
 // sensitive target the caller can write (e.g. ~/.ssh/authorized_keys). It is
 // the shared primitive for any secret-bearing file (PID file, daemon secrets,
 // the CLI's cached JWT); callers must EnsureDir the parent first.
+//
+// The write is atomic: data lands in a temp file in the same directory (so
+// the final rename is same-filesystem), is fsync'd, and only then replaces
+// path via os.Rename. A crash (SIGKILL, power loss) at any point before the
+// rename leaves the original file untouched — never a truncated or
+// partially-written secret. os.Rename replacing an existing path never
+// follows a symlink at the destination (unlike open()), so this is at least
+// as safe against the TOCTOU class checkSecretFileTarget guards against.
 func WriteSecretFile(path string, data []byte) error {
 	if err := checkSecretFileTarget(path); err != nil {
 		return err
 	}
 
-	flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC | syscall.O_NOFOLLOW
-	f, err := os.OpenFile(path, flags, 0600)
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
 	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
+	tmpPath := tmp.Name()
+	ok := false
+	defer func() {
+		if !ok {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
 		return err
 	}
-	return f.Close()
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	ok = true
+	return nil
 }
 
 // checkSecretFileTarget refuses a path that isn't safe to open for a secret

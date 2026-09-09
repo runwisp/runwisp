@@ -265,15 +265,26 @@ func programKind(s *iniSection) model.TaskKind {
 }
 
 // noteKindChoice explains an autorestart value whose mapping isn't obvious.
+// An omitted autorestart gets the same explanation as an explicit
+// autorestart=unexpected: supervisord's own default IS "unexpected" (see
+// programKind), so the two cases behave identically and both deserve the
+// same heads-up — omitting the key is, in practice, the most common way
+// operators end up here.
 func (sd *supervisordState) noteKindChoice(s *iniSection, ref itemRef) {
 	v, ok := s.get("autorestart")
-	if !ok || !strings.EqualFold(strings.TrimSpace(v), "unexpected") {
-		return
+	switch {
+	case !ok:
+		ref.note(NoteAutorestartUnexpected,
+			"autorestart not set (supervisord defaults to unexpected) → imported "+
+				"as an always-on service. RunWisp services restart on any exit, not "+
+				"only unexpected ones; set exit_codes if some non-zero codes should "+
+				"count as success.")
+	case strings.EqualFold(strings.TrimSpace(v), "unexpected"):
+		ref.note(NoteAutorestartUnexpected,
+			"autorestart=unexpected → imported as an always-on service. RunWisp "+
+				"services restart on any exit, not only unexpected ones; set "+
+				"exit_codes if some non-zero codes should count as success.")
 	}
-	ref.note(NoteAutorestartUnexpected,
-		"autorestart=unexpected → imported as an always-on service. RunWisp "+
-			"services restart on any exit, not only unexpected ones; set "+
-			"exit_codes if some non-zero codes should count as success.")
 }
 
 // programCommand returns the run line a program would import to, so identity

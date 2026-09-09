@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/user"
+	"time"
 
 	"github.com/mattn/go-isatty"
 	"github.com/runwisp/runwisp/internal/fingerprint"
@@ -19,6 +20,12 @@ type Deps struct {
 	Cmd      Runner
 	Prompter Prompter
 	Stdout   io.Writer
+
+	// Sleep is the seam behind any bounded polling wait (e.g. checking
+	// whether a just-installed systemd unit stayed active). Tests inject a
+	// fast/no-op replacement so polling logic runs in milliseconds instead
+	// of real wall-clock time.
+	Sleep func(time.Duration)
 
 	// Home is the operator's home directory. Drives unit path,
 	// linger username, the "binary under ~/.cache" warning, etc.
@@ -73,6 +80,7 @@ func DefaultDeps(stdout io.Writer, stdin *os.File, autoOK bool) (Deps, error) {
 		Fingerprint: fingerprint.Generate(),
 		StdinIsTTY:  isTTY,
 		Euid:        os.Geteuid(),
+		Sleep:       time.Sleep,
 	}
 	var stdinReader io.Reader = os.Stdin
 	if stdin != nil {

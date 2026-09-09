@@ -41,12 +41,24 @@ func (h *InboundHandler) HandleServiceApply(message protocol.ServiceApplyMessage
 		return err
 	}
 	if existing {
-		base, _ := h.taskManager.GetTask(name)
-		if err := h.mergeServiceApply(base, svc); err != nil {
-			return err
+		var applied *model.Task
+		found, mutateErr := h.taskManager.MutateTask(name, func(task *model.Task) error {
+			if err := h.mergeServiceApply(task, svc); err != nil {
+				return err
+			}
+			applied = task
+			return nil
+		})
+		if mutateErr != nil {
+			return mutateErr
 		}
-		h.taskManager.UpsertTask(base)
-		slog.Info("service override applied", "task", name, "instances", base.Instances)
+		if !found {
+			// resolveServiceTarget confirmed the task existed moments ago; a
+			// concurrent reload or service:remove can still have dropped it
+			// in between. Fail closed rather than silently no-op.
+			return &CloudError{Kind: CloudErrorKindConflict, Message: fmt.Sprintf("service %q no longer exists", name)}
+		}
+		slog.Info("service override applied", "task", name, "instances", applied.Instances)
 		return nil
 	}
 
@@ -173,13 +185,15 @@ func (h *InboundHandler) buildServiceTask(svc *protocol.Service) (*model.Task, e
 	}
 
 	if svc.RestartDelay > 0 {
-		task.RestartDelay = time.Duration(svc.RestartDelay) * time.Millisecond
+		d := time.Duration(svc.RestartDelay) * time.Millisecond
+		task.RestartDelay = &d
 	}
 	// Wire field is backoffResetAfter; the daemon models this uptime-resets-the-
 	// restart-counter threshold as HealthyAfter (which also clears the
 	// failed-start streak — a superset of the cloud-side semantics).
 	if svc.BackoffResetAfter > 0 {
-		task.HealthyAfter = time.Duration(svc.BackoffResetAfter) * time.Millisecond
+		d := time.Duration(svc.BackoffResetAfter) * time.Millisecond
+		task.HealthyAfter = &d
 	}
 	if svc.RestartBackoff != nil {
 		if s, ok := svc.RestartBackoff.Value().(string); ok && s != "" {
@@ -268,10 +282,12 @@ func (h *InboundHandler) mergeServiceApply(task *model.Task, svc *protocol.Servi
 		task.MaxConcurrent = svc.Instances
 	}
 	if svc.RestartDelay > 0 {
-		task.RestartDelay = time.Duration(svc.RestartDelay) * time.Millisecond
+		d := time.Duration(svc.RestartDelay) * time.Millisecond
+		task.RestartDelay = &d
 	}
 	if svc.BackoffResetAfter > 0 {
-		task.HealthyAfter = time.Duration(svc.BackoffResetAfter) * time.Millisecond
+		d := time.Duration(svc.BackoffResetAfter) * time.Millisecond
+		task.HealthyAfter = &d
 	}
 	if svc.RestartBackoff != nil {
 		if s, ok := svc.RestartBackoff.Value().(string); ok && s != "" {

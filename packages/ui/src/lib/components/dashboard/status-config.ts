@@ -151,7 +151,7 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
         dot: "bg-danger-surface",
         badge: "bg-danger-soft text-danger-soft-text",
         description:
-            "The service kept failing to stay up for healthy_after; after restart_attempts the supervisor gave up (FATAL) and stopped restarting it.",
+            "The run (or service instance) kept failing; after restart_attempts consecutive failures, RunWisp gave up restarting it automatically.",
     },
     pending: {
         icon: Clock,

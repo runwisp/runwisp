@@ -384,8 +384,10 @@ func TestHandleServiceApply_MergeOverlaysRestartFields(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, runner.upserted, 1)
 	task := runner.upserted[0]
-	assert.Equal(t, 2*time.Second, task.RestartDelay)
-	assert.Equal(t, time.Minute, task.HealthyAfter)
+	require.NotNil(t, task.RestartDelay)
+	assert.Equal(t, 2*time.Second, *task.RestartDelay)
+	require.NotNil(t, task.HealthyAfter)
+	assert.Equal(t, time.Minute, *task.HealthyAfter)
 	assert.Equal(t, model.BackoffExponential, task.RestartBackoff)
 }
 

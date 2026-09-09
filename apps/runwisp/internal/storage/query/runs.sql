@@ -7,7 +7,7 @@ INSERT INTO runs (id, execution_id, task_name, status, end_reason,
   retry_of_run_id, instance_index, params_json)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
--- name: UpdateRun :exec
+-- name: UpdateRun :execrows
 UPDATE runs SET execution_id = ?, task_name = ?, status = ?,
   end_reason = ?, exit_code = ?, started_at = ?, ended_at = ?, triggered_by = ?,
   created_at = ?, retry_attempt = ?, retry_of_run_id = ?, instance_index = ?,

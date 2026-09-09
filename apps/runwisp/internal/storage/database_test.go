@@ -64,6 +64,30 @@ func TestUpdateRun(t *testing.T) {
 	assert.Equal(t, model.PhaseRunning, fetched.Status)
 }
 
+// TestUpdateRun_MissingRowReturnsErrNotFound is the bug-first regression for
+// UpdateRun silently succeeding when its WHERE id = ? matches nothing (a
+// generated sqlc :exec discards RowsAffected). The persistence hook that
+// calls UpdateRun on every run status transition (cmd/runwisp/daemon_services.go)
+// treats a nil error as "durably persisted" — a silent no-op there means a
+// run's on-disk status can diverge from its in-memory state with no trace in
+// the logs, violating "nothing silently fails".
+func TestUpdateRun_MissingRowReturnsErrNotFound(t *testing.T) {
+	ctx := t.Context()
+	db := setupTestDB(t)
+	defer db.Close()
+
+	run := &model.Run{
+		ID:          ulid.Make().String(),
+		TaskName:    "test-task",
+		Status:      model.PhaseRunning,
+		TriggeredBy: model.TriggeredByAPI,
+		CreatedAt:   time.Now(),
+	}
+
+	err := db.UpdateRun(ctx, run)
+	require.ErrorIs(t, err, ErrNotFound)
+}
+
 func TestCountRunsFiltered(t *testing.T) {
 	ctx := t.Context()
 	db := setupTestDB(t)
@@ -200,10 +224,18 @@ func TestDeleteOldRuns(t *testing.T) {
 		KeepFor: 24 * time.Hour,
 	}
 
-	deleted, err := db.DeleteOldRuns(ctx, task)
+	selected, err := db.SelectOldRuns(ctx, task)
 	require.NoError(t, err)
-	assert.Len(t, deleted, 1)
-	assert.Equal(t, run1.ID, deleted[0].ID)
+	assert.Len(t, selected, 1)
+	assert.Equal(t, run1.ID, selected[0].ID)
+
+	// SelectOldRuns is select-only: both rows must still be present.
+	_, err = db.GetRun(ctx, run1.ID)
+	assert.NoError(t, err)
+	_, err = db.GetRun(ctx, run2.ID)
+	assert.NoError(t, err)
+
+	require.NoError(t, db.DeleteRunsByIDs(ctx, []string{selected[0].ID}))
 
 	_, err = db.GetRun(ctx, run1.ID)
 	assert.Error(t, err)
@@ -230,11 +262,13 @@ func TestDeleteOldRunsSkipsNonTerminal(t *testing.T) {
 	pending := model.Run{ID: ulid.Make().String(), TaskName: "task1", Status: model.PhasePending, CreatedAt: old, TriggeredBy: model.TriggeredByCron}
 	require.NoError(t, db.CreateRun(ctx, &pending))
 
-	deleted, err := db.DeleteOldRuns(ctx, &model.Task{Name: "task1", KeepFor: 24 * time.Hour})
+	selected, err := db.SelectOldRuns(ctx, &model.Task{Name: "task1", KeepFor: 24 * time.Hour})
 	require.NoError(t, err)
 
-	require.Len(t, deleted, 1)
-	assert.Equal(t, ended.ID, deleted[0].ID)
+	require.Len(t, selected, 1)
+	assert.Equal(t, ended.ID, selected[0].ID)
+
+	require.NoError(t, db.DeleteRunsByIDs(ctx, []string{selected[0].ID}))
 
 	// The non-terminal runs must survive.
 	_, err = db.GetRun(ctx, running.ID)
@@ -264,11 +298,22 @@ func TestDeleteOldRunsByCount(t *testing.T) {
 		KeepRuns: intPtr(2),
 	}
 
-	deleted, err := db.DeleteOldRuns(ctx, task)
+	selected, err := db.SelectOldRuns(ctx, task)
 	require.NoError(t, err)
-	assert.Len(t, deleted, 1) // Should delete the oldest one (1 out of 3, keeping 2)
+	assert.Len(t, selected, 1) // Should select the oldest one (1 out of 3, keeping 2)
 
+	// Select-only: nothing has been deleted yet.
 	count, err := db.CountRunsFiltered(ctx, model.RunFilter{TaskName: "task1"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), count)
+
+	ids := make([]string, len(selected))
+	for i, r := range selected {
+		ids[i] = r.ID
+	}
+	require.NoError(t, db.DeleteRunsByIDs(ctx, ids))
+
+	count, err = db.CountRunsFiltered(ctx, model.RunFilter{TaskName: "task1"})
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count)
 }
@@ -888,11 +933,13 @@ func TestSQLiteDatabase_ErrorPathsAfterClose(t *testing.T) {
 
 	assert.Error(t, db.DeleteRun(ctx, "any-id"))
 
-	_, err = db.DeleteOldRuns(ctx, &model.Task{Name: "t", KeepFor: 24 * time.Hour})
+	_, err = db.SelectOldRuns(ctx, &model.Task{Name: "t", KeepFor: 24 * time.Hour})
 	assert.Error(t, err)
 
-	_, err = db.DeleteOldRuns(ctx, &model.Task{Name: "t", KeepRuns: intPtr(5)})
+	_, err = db.SelectOldRuns(ctx, &model.Task{Name: "t", KeepRuns: intPtr(5)})
 	assert.Error(t, err)
+
+	assert.Error(t, db.DeleteRunsByIDs(ctx, []string{"x"}))
 
 	_, err = db.MarkCrashedRuns(ctx)
 	assert.Error(t, err)
@@ -926,7 +973,7 @@ func TestSQLiteDatabase_ErrorPathsAfterClose(t *testing.T) {
 	_, err = db.ResolveSelectorIDs(ctx, model.RunSelector{MatchAll: true}, "")
 	assert.Error(t, err)
 
-	_, err = db.PurgeExpiredSoftDeletes(ctx, time.Hour)
+	_, err = db.SelectExpiredSoftDeletes(ctx, time.Hour)
 	assert.Error(t, err)
 
 	_, _, err = db.GetConfigValue(ctx, "k")

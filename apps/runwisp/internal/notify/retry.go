@@ -102,13 +102,54 @@ func IsPermanentHTTPStatus(code int) bool {
 	return code >= 400 && code < 500
 }
 
+// rateLimitAwareBackOff wraps a backoff.BackOff so a rate-limited HTTP
+// response (429 + Retry-After) can hand the retry loop its own next-interval
+// instead of letting the library additionally compute and wait out its usual
+// exponential interval on top of a delay the caller already honored once.
+type rateLimitAwareBackOff struct {
+	backoff.BackOff
+	override time.Duration
+}
+
+func (b *rateLimitAwareBackOff) NextBackOff() time.Duration {
+	if b.override > 0 {
+		d := b.override
+		b.override = 0
+		return d
+	}
+	return b.BackOff.NextBackOff()
+}
+
+// retryOverrideKey is the context.Value key RetryWithBackoff uses to expose
+// its backoff instance to op, so op can call SetNextRetryInterval.
+type retryOverrideKey struct{}
+
+// SetNextRetryInterval overrides the delay RetryWithBackoff's retry loop
+// waits before its next call to op, using the ctx that RetryWithBackoff
+// passed into op. Intended for a server-supplied delay (e.g. HTTP 429
+// Retry-After) that op has already decided to honor: the loop then waits
+// exactly that long, once, instead of appending its own independently
+// computed exponential interval on top. d <= 0, or a ctx not sourced from
+// RetryWithBackoff, is a no-op — the library's normal backoff applies.
+func SetNextRetryInterval(ctx context.Context, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	if bo, ok := ctx.Value(retryOverrideKey{}).(*rateLimitAwareBackOff); ok {
+		bo.override = d
+	}
+}
+
 // RetryWithBackoff runs op under cfg's exponential backoff, unwrapping any
 // *backoff.PermanentError so callers see the underlying cause without the
-// wrapper appearing in the error chain or log line.
-func RetryWithBackoff(ctx context.Context, cfg BackoffConfig, op func() error) error {
-	bo := cfg.NewExponential()
+// wrapper appearing in the error chain or log line. op is called with a
+// context derived from ctx that carries the retry loop's backoff instance —
+// see SetNextRetryInterval.
+func RetryWithBackoff(ctx context.Context, cfg BackoffConfig, op func(ctx context.Context) error) error {
+	bo := &rateLimitAwareBackOff{BackOff: cfg.NewExponential()}
 	bo.Reset()
-	if err := backoff.Retry(op, backoff.WithContext(bo, ctx)); err != nil {
+	rctx := context.WithValue(ctx, retryOverrideKey{}, bo)
+	if err := backoff.Retry(func() error { return op(rctx) }, backoff.WithContext(bo, rctx)); err != nil {
 		var perm *backoff.PermanentError
 		if errors.As(err, &perm) {
 			return perm.Err

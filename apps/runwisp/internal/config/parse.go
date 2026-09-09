@@ -77,6 +77,21 @@ func parseDuration(raw string) (time.Duration, error) {
 	return d, nil
 }
 
+// parseDurationPtr parses an optional duration. An empty string means
+// "omitted" (nil, inherits/defaults downstream); any parseable value,
+// including "0s", is preserved literally — unlike parseDuration, zero is not
+// collapsed into "unset".
+func parseDurationPtr(raw string) (*time.Duration, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%q is not a valid duration; use a duration like \"30s\", \"5m\", \"2h30m\" (h/m/s)", raw)
+	}
+	return &d, nil
+}
+
 // parseKeepFor parses a retention window using the extended syntax that also
 // accepts day/week suffixes (e.g. "30d", "2w"). An empty string means
 // "omitted, inherit the default". Zero and negative durations are rejected.

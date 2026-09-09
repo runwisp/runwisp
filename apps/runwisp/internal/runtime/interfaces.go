@@ -24,6 +24,12 @@ type TaskRunner interface {
 	ScheduleJitteredRun(taskName string, tick, slot time.Time, window time.Duration)
 	GetTask(taskName string) (*model.Task, bool)
 	UpsertTask(task *model.Task)
+	// MutateTask atomically reads, mutates, and re-installs a task's live
+	// definition under a single lock acquisition — unlike a caller-side
+	// GetTask+UpsertTask pair, a concurrent reload touching the same task
+	// cannot land in between and be silently clobbered. found is false (mutate
+	// is never called) if the task is not currently registered by name.
+	MutateTask(taskName string, mutate func(*model.Task) error) (found bool, err error)
 	TerminateRun(runID string) error
 	TerminateRunByExecutionID(executionID string) error
 	// RecordSkippedFiring persists a run that was suppressed before the

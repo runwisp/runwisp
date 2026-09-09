@@ -120,7 +120,8 @@ autostart     = false
 	web := findTask(t, cfg, "myapp.web")
 	assert.Equal(t, "SIGINT", web.StopSignal)
 	assert.Equal(t, []int{0, 42}, web.ExitCodes)
-	assert.Equal(t, 1, web.RestartAttempts)
+	require.NotNil(t, web.RestartAttempts)
+	assert.Equal(t, 1, *web.RestartAttempts)
 	assert.Equal(t, 5, web.Priority)
 	assert.False(t, web.Autostart)
 
@@ -193,7 +194,8 @@ exit_codes       = [0, 2]
 
 	for _, name := range []string{"myapp.web", "myapp.worker", "myapp.db"} {
 		task := findTask(t, cfg, name)
-		assert.Equal(t, 3, task.RestartAttempts, "%s inherits restart_attempts", name)
+		require.NotNil(t, task.RestartAttempts, "%s restart_attempts must resolve to non-nil", name)
+		assert.Equal(t, 3, *task.RestartAttempts, "%s inherits restart_attempts", name)
 		assert.Equal(t, []int{0, 2}, task.ExitCodes, "%s inherits exit_codes", name)
 	}
 }

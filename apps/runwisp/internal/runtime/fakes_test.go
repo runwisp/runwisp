@@ -93,9 +93,12 @@ func (r *fakeTaskRunner) triggerCount() int {
 
 func (r *fakeTaskRunner) RecordMissedRun(string, time.Time, string) error { return nil }
 
-func (r *fakeTaskRunner) GetTask(string) (*model.Task, bool)                    { return nil, false }
-func (r *fakeTaskRunner) ListServiceTasks() []*model.Task                       { return nil }
-func (r *fakeTaskRunner) UpsertTask(*model.Task)                                {}
+func (r *fakeTaskRunner) GetTask(string) (*model.Task, bool) { return nil, false }
+func (r *fakeTaskRunner) ListServiceTasks() []*model.Task    { return nil }
+func (r *fakeTaskRunner) UpsertTask(*model.Task)             {}
+func (r *fakeTaskRunner) MutateTask(string, func(*model.Task) error) (bool, error) {
+	return false, nil
+}
 func (r *fakeTaskRunner) TerminateRun(string) error                             { return nil }
 func (r *fakeTaskRunner) TerminateRunByExecutionID(string) error                { return nil }
 func (r *fakeTaskRunner) RestartServiceInstances(string) error                  { return nil }

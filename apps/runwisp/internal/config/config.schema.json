@@ -155,7 +155,7 @@
         "keep_runs": { "type": "integer", "minimum": 0, "maximum": 1000000, "description": "Row-count retention; 0 keeps no completed runs." },
         "keep_for": { "$ref": "#/$defs/duration", "description": "Age retention; positive." },
         "healthy_after": { "$ref": "#/$defs/duration", "description": "Service uptime counted as healthy (services only). Default 60s." },
-        "restart_attempts": { "type": "integer", "minimum": 0, "description": "Consecutive fast failures before a service instance goes FATAL (services only). Default 3." },
+        "restart_attempts": { "type": "integer", "minimum": 0, "maximum": 100, "description": "Consecutive failures before giving up restarting — a service instance goes FATAL, a restarting task is recorded start_failed. Default 3." },
         "treat_missed_as_failure": { "type": "boolean", "default": true, "description": "Treat a missed scheduled run as a failure so it alerts on the notify_on_failure channels; false silences it daemon-wide." },
         "env": { "$ref": "#/$defs/envMap" },
         "env_file": { "type": "string", "description": "Dotenv file merged into every task; relative to runwisp.toml dir." },
@@ -175,12 +175,13 @@
         "jitter": { "$ref": "#/$defs/duration", "description": "Cap how far this cron task's start may slip; needs cron." },
         "run_on_start": { "type": "boolean", "default": false, "description": "Fire once at daemon start, on top of any cron." },
         "manual_trigger": { "type": "boolean", "default": true, "description": "Allow CLI/API/UI trigger; false = cron-only." },
-        "catch_up": { "type": "string", "enum": ["latest", "all", "skip"], "default": "latest", "description": "Missed-firing policy." },
-        "max_catch_up_runs": { "type": "integer", "minimum": 1, "default": 100, "description": "Cap when catch_up=all." },
+        "catch_up": { "type": "string", "enum": ["latest", "all", "skip"], "default": "latest", "description": "Missed-firing policy. \"all\" requires on_overlap = queue." },
+        "max_catch_up_runs": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 100, "description": "Cap when catch_up=all." },
         "timeout": { "$ref": "#/$defs/duration", "description": "Per-attempt cap (inherits [defaults])." },
         "graceful_stop": { "$ref": "#/$defs/duration", "description": "Grace before SIGKILL on stop. Default 5s." },
         "stop_signal": { "$ref": "#/$defs/stopSignal" },
         "restart": { "type": "string", "enum": ["never", "on_failure"], "description": "Restart policy (always is rejected on tasks — use [services.*])." },
+        "restart_attempts": { "type": "integer", "minimum": 0, "maximum": 100, "default": 3, "description": "Consecutive failures a restarting run tolerates before giving up (recorded as start_failed). Only meaningful with restart = on_failure." },
         "max_concurrent": { "type": "integer", "minimum": 1, "maximum": 1024, "default": 1, "description": "Concurrent run cap." },
         "max_queued": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 100, "description": "Queued-run depth." },
         "on_overlap": { "$ref": "#/$defs/onOverlap", "default": "queue" },
@@ -248,7 +249,7 @@
         "restart_delay": { "$ref": "#/$defs/duration", "description": "Delay before a restart. Default 1s." },
         "restart_backoff": { "$ref": "#/$defs/backoff", "default": "exponential" },
         "healthy_after": { "$ref": "#/$defs/duration", "description": "Uptime counted as healthy. Default 60s." },
-        "restart_attempts": { "type": "integer", "minimum": 0, "default": 3, "description": "Consecutive fast failures before an instance goes FATAL." },
+        "restart_attempts": { "type": "integer", "minimum": 0, "maximum": 100, "default": 3, "description": "Consecutive fast failures before an instance goes FATAL." },
         "priority": { "type": "integer", "default": 0, "description": "Boot start order; lower starts first." },
         "autostart": { "type": "boolean", "default": true, "description": "Start at boot; false boots it stopped." },
         "depends_on": { "type": "array", "items": { "type": "string" }, "description": "Services that must be healthy before this one starts at boot (order only)." }
@@ -380,7 +381,7 @@
               "type": "array",
               "items": {
                 "type": "string",
-                "enum": ["run.started", "run.succeeded", "run.failed", "run.timeout", "run.stopped", "run.crashed", "run.missed", "service.fatal", "notify.delivery_failed"]
+                "enum": ["run.started", "run.succeeded", "run.failed", "run.timeout", "run.stopped", "run.crashed", "run.missed", "service.fatal", "log.disk_pressure"]
               }
             },
             "severity": { "type": "string", "enum": ["info", "warn", "error"] },

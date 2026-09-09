@@ -49,7 +49,7 @@ func (p *HTTPProvider) PostJSON(ctx context.Context, url, contentType string, bo
 // PostJSONWithHeaders is like PostJSON but merges extra into the request
 // headers. Used by the webhook channel for operator-configured auth headers.
 func (p *HTTPProvider) PostJSONWithHeaders(ctx context.Context, url, contentType string, body []byte, extra http.Header) error {
-	return RetryWithBackoff(ctx, p.Backoff, func() error {
+	return RetryWithBackoff(ctx, p.Backoff, func(ctx context.Context) error {
 		return p.doHTTPRequest(ctx, url, contentType, body, extra)
 	})
 }
@@ -96,13 +96,11 @@ func (p *HTTPProvider) handleRateLimit(ctx context.Context, statusCode int, head
 		d = p.Body429Fn(body)
 	}
 	d = clampRetryAfter(d, p.Backoff)
-	if d > 0 {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(d):
-		}
-	}
+	// Hand the server-supplied delay to the retry loop instead of sleeping it
+	// here ourselves: RetryWithBackoff's single wait (see
+	// SetNextRetryInterval) then honors ctx.Done() the same way the library's
+	// own backoff wait always has, without a redundant second wait on top.
+	SetNextRetryInterval(ctx, d)
 	return fmt.Errorf("rate-limited: status=%d body=%s", statusCode, truncateBody(body))
 }
 

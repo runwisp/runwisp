@@ -1250,7 +1250,7 @@ func TestSnapshotForSyncFoldsInCloudServices(t *testing.T) {
 		MaxConcurrent:  1,
 		OnOverlap:      model.PolicySkip,
 		Instances:      1,
-		RestartDelay:   time.Millisecond,
+		RestartDelay:   durPtr(time.Millisecond),
 		RestartBackoff: model.BackoffConstant,
 	})
 	// A non-service task the manager also holds must not be folded in.
@@ -1292,6 +1292,10 @@ func (a *testTaskRunnerAdapter) ListServiceTasks() []*model.Task {
 
 func (a *testTaskRunnerAdapter) UpsertTask(task *model.Task) {
 	a.inner.UpsertTask(task)
+}
+
+func (a *testTaskRunnerAdapter) MutateTask(name string, mutate func(*model.Task) error) (bool, error) {
+	return a.inner.MutateTask(name, mutate)
 }
 
 func (a *testTaskRunnerAdapter) RemoveTask(taskName string) {

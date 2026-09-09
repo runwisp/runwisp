@@ -60,6 +60,11 @@ func (m *mockTaskRunner) UpsertTask(task *model.Task) {
 	m.Called(task)
 }
 
+func (m *mockTaskRunner) MutateTask(taskName string, mutate func(*model.Task) error) (bool, error) {
+	args := m.Called(taskName, mutate)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *mockTaskRunner) TerminateRun(runID string) error {
 	args := m.MethodCalled("TerminateRun", runID)
 	return args.Error(0)

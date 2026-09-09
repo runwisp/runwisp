@@ -54,6 +54,19 @@ func (s *stubTaskRunner) UpsertTask(t *model.Task) {
 	s.upsertedTask = t
 }
 
+func (s *stubTaskRunner) MutateTask(name string, mutate func(*model.Task) error) (bool, error) {
+	s.getTaskName = name
+	if !s.getTaskOK {
+		return false, nil
+	}
+	taskCopy := *s.getTaskOut
+	if err := mutate(&taskCopy); err != nil {
+		return true, err
+	}
+	s.upsertedTask = &taskCopy
+	return true, nil
+}
+
 func (s *stubTaskRunner) RemoveTask(taskName string) {
 	s.removedTask = taskName
 }

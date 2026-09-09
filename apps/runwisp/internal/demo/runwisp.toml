@@ -79,11 +79,15 @@ notifiers = ["slack-ops:#backups", "telegram-oncall"]
 match     = { kinds = ["run.succeeded"], task = "deploy-*" }
 notifiers = ["slack-deploys"]
 
-# Mirror notifier-delivery failures into the in-app bell so the operator
-# notices a broken webhook without staring at the daemon log.
+# A service that gave up restarting is down for good until someone looks —
+# page ops and on-call the same way a backup failure would.
 [[route]]
-match     = { kinds = ["notify.delivery_failed"] }
-notifiers = ["inapp"]
+match     = { kinds = ["service.fatal"] }
+notifiers = ["slack-ops", "telegram-oncall"]
+
+# Notifier-delivery failures always reach the in-app bell on their own — that
+# event bypasses routing entirely (see notify/router.go) — so no route is
+# needed to mirror it there.
 
 # ── Backups ──────────────────────────────────────────────────────────────────
 

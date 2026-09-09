@@ -398,6 +398,10 @@ type taskWire struct {
 	MaxConcurrent int                 `toml:"max_concurrent,omitempty"`
 	MaxQueued     int                 `toml:"max_queued,omitempty"`
 
+	// RestartAttempts is a pointer so an explicit `restart_attempts = 0` (give
+	// up on the very first failure) is distinguishable from an omitted key.
+	RestartAttempts *int `toml:"restart_attempts,omitempty"`
+
 	// Instances is rejected on [tasks.*]; carried as a pointer so the validator
 	// can distinguish "unset" from "explicitly zero".
 	Instances *int `toml:"instances,omitempty"`
@@ -432,6 +436,7 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	task.MaxCatchUpRuns = w.MaxCatchUpRuns
 	task.RunOnStart = w.RunOnStart
 	task.Restart = w.Restart
+	task.RestartAttempts = w.RestartAttempts
 	task.MaxConcurrent = w.MaxConcurrent
 	task.MaxQueued = w.MaxQueued
 	task.RetryAttempts = w.RetryAttempts
@@ -453,7 +458,9 @@ type serviceWire struct {
 	RestartBackoff model.BackoffCurve `toml:"restart_backoff,omitempty"`
 	HealthyAfter   string             `toml:"healthy_after,omitempty"`
 
-	RestartAttempts int `toml:"restart_attempts,omitempty"`
+	// RestartAttempts is a pointer so an explicit `restart_attempts = 0` (give
+	// up on the very first failure) is distinguishable from an omitted key.
+	RestartAttempts *int `toml:"restart_attempts,omitempty"`
 
 	Priority int `toml:"priority,omitempty"`
 	// Autostart is a pointer so an omitted key (nil → default true) is
@@ -471,11 +478,11 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 	if err != nil {
 		return model.Task{}, err
 	}
-	restartDelay, err := parseDuration(w.RestartDelay)
+	restartDelay, err := parseDurationPtr(w.RestartDelay)
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid restart_delay for task %q: %w", name, err)
 	}
-	healthyAfter, err := parseDuration(w.HealthyAfter)
+	healthyAfter, err := parseDurationPtr(w.HealthyAfter)
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid healthy_after for task %q: %w", name, err)
 	}
@@ -497,16 +504,18 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 
 // defaultsWire mirrors [defaults] before parsing.
 type defaultsWire struct {
-	Timeout         string `toml:"timeout,omitempty"`
-	Jitter          string `toml:"jitter,omitempty"`
-	Shell           string `toml:"shell,omitempty"`
-	StopSignal      string `toml:"stop_signal,omitempty"`
-	LogMaxSize      string `toml:"log_max_size,omitempty"`
-	LogOnFull       string `toml:"log_on_full,omitempty"`
-	KeepRuns        *int   `toml:"keep_runs,omitempty"`
-	KeepFor         string `toml:"keep_for,omitempty"`
-	HealthyAfter    string `toml:"healthy_after,omitempty"`
-	RestartAttempts int    `toml:"restart_attempts,omitempty"`
+	Timeout      string `toml:"timeout,omitempty"`
+	Jitter       string `toml:"jitter,omitempty"`
+	Shell        string `toml:"shell,omitempty"`
+	StopSignal   string `toml:"stop_signal,omitempty"`
+	LogMaxSize   string `toml:"log_max_size,omitempty"`
+	LogOnFull    string `toml:"log_on_full,omitempty"`
+	KeepRuns     *int   `toml:"keep_runs,omitempty"`
+	KeepFor      string `toml:"keep_for,omitempty"`
+	HealthyAfter string `toml:"healthy_after,omitempty"`
+	// RestartAttempts is a pointer so an explicit `restart_attempts = 0` in
+	// [defaults] is distinguishable from an omitted key.
+	RestartAttempts *int `toml:"restart_attempts,omitempty"`
 
 	ExitCodes []int `toml:"exit_codes,omitempty"`
 
@@ -541,7 +550,7 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 	if err != nil {
 		return Defaults{}, fmt.Errorf("invalid defaults.log_max_size: %w", err)
 	}
-	healthyAfter, err := parseDuration(w.HealthyAfter)
+	healthyAfter, err := parseDurationPtr(w.HealthyAfter)
 	if err != nil {
 		return Defaults{}, fmt.Errorf("invalid defaults.healthy_after: %w", err)
 	}

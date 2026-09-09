@@ -10,6 +10,7 @@ package retry
 import (
 	"time"
 
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
 )
 
@@ -96,11 +97,14 @@ func RestartDelay(task *model.Task, attempt int, reason *model.EndReason) time.D
 // re-spawned after exiting. attempt is the number of consecutive prior
 // restarts without a healthy run (a run that lived past the supervisor's
 // configured healthy_after).
+//
+// A nil task.RestartDelay (a *model.Task built without going through
+// config.Load — a test literal, a cloud ephemeral dispatch task) falls back
+// to config.DefaultRestartDelay; an explicit zero (restart_delay = "0s") is
+// honored literally, including through backoff — see computeBackoff's
+// overflow guard, which must not treat a legitimate zero delay as overflow.
 func ComputeRestartDelay(task *model.Task, attempt int) time.Duration {
-	base := task.RestartDelay
-	if base <= 0 {
-		base = time.Second
-	}
+	base := config.DurationOrDefault(task.RestartDelay, config.DefaultRestartDelay)
 	if attempt <= 0 {
 		return base
 	}
@@ -117,7 +121,11 @@ func computeBackoff(strategy model.BackoffCurve, base time.Duration, attempt int
 	default:
 		return base
 	}
-	if delay > cap || delay <= 0 {
+	// delay < 0 (not <= 0) so a legitimate zero base — restart_delay = "0s",
+	// meaning "always instant, at any backoff step" — is not clamped up to the
+	// cap; only genuine overflow (a huge base times a huge multiplier
+	// wrapping negative) hits this branch.
+	if delay > cap || delay < 0 {
 		return cap
 	}
 	return delay

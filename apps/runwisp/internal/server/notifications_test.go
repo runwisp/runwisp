@@ -268,8 +268,8 @@ func TestHumaMarkNotificationRead_Success(t *testing.T) {
 	repo := new(mockNotificationRepository)
 	hub := new(mockNotificationHub)
 
-	n := &storage.Notification{ID: "01JT000000000000000000001", Kind: "run.failed"}
-	repo.On("MarkNotificationRead", mock.Anything, "01JT000000000000000000001", mock.AnythingOfType("time.Time")).Return(n, nil)
+	n := &storage.Notification{ID: "01JT0000000000000000000001", Kind: "run.failed"}
+	repo.On("MarkNotificationRead", mock.Anything, "01JT0000000000000000000001", mock.AnythingOfType("time.Time")).Return(n, nil)
 	repo.On("CountUnreadNotifications", mock.Anything).Return(int64(3), nil)
 	hub.On("Publish", mock.MatchedBy(func(u inapp.Update) bool {
 		return u.Type == inapp.UpdateTypeUpdated && u.Notification.ID == n.ID && u.UnreadCount == 3
@@ -277,7 +277,7 @@ func TestHumaMarkNotificationRead_Success(t *testing.T) {
 
 	s := notificationServer(t, repo, hub)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/notifications/01JT000000000000000000001/read", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/notifications/01JT0000000000000000000001/read", nil)
 	w := httptest.NewRecorder()
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
@@ -290,12 +290,12 @@ func TestHumaMarkNotificationRead_Success(t *testing.T) {
 func TestHumaMarkNotificationRead_NotFound(t *testing.T) {
 	repo := new(mockNotificationRepository)
 
-	repo.On("MarkNotificationRead", mock.Anything, "01JT000000000000000000001", mock.AnythingOfType("time.Time")).
+	repo.On("MarkNotificationRead", mock.Anything, "01JT0000000000000000000001", mock.AnythingOfType("time.Time")).
 		Return(nil, storage.ErrNotFound)
 
 	s := notificationServer(t, repo, nil)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/notifications/01JT000000000000000000001/read", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/notifications/01JT0000000000000000000001/read", nil)
 	w := httptest.NewRecorder()
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
@@ -307,12 +307,12 @@ func TestHumaMarkNotificationRead_NotFound(t *testing.T) {
 func TestHumaMarkNotificationRead_RepoError(t *testing.T) {
 	repo := new(mockNotificationRepository)
 
-	repo.On("MarkNotificationRead", mock.Anything, "01JT000000000000000000001", mock.AnythingOfType("time.Time")).
+	repo.On("MarkNotificationRead", mock.Anything, "01JT0000000000000000000001", mock.AnythingOfType("time.Time")).
 		Return(nil, errors.New("db error"))
 
 	s := notificationServer(t, repo, nil)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/notifications/01JT000000000000000000001/read", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/notifications/01JT0000000000000000000001/read", nil)
 	w := httptest.NewRecorder()
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
@@ -327,8 +327,8 @@ func TestHumaMarkNotificationUnread_Success(t *testing.T) {
 	repo := new(mockNotificationRepository)
 	hub := new(mockNotificationHub)
 
-	n := &storage.Notification{ID: "01JT000000000000000000002", Kind: "run.failed"}
-	repo.On("MarkNotificationUnread", mock.Anything, "01JT000000000000000000002").Return(n, nil)
+	n := &storage.Notification{ID: "01JT0000000000000000000002", Kind: "run.failed"}
+	repo.On("MarkNotificationUnread", mock.Anything, "01JT0000000000000000000002").Return(n, nil)
 	repo.On("CountUnreadNotifications", mock.Anything).Return(int64(5), nil)
 	hub.On("Publish", mock.MatchedBy(func(u inapp.Update) bool {
 		return u.Type == inapp.UpdateTypeUpdated && u.Notification.ID == n.ID && u.UnreadCount == 5
@@ -336,7 +336,7 @@ func TestHumaMarkNotificationUnread_Success(t *testing.T) {
 
 	s := notificationServer(t, repo, hub)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/notifications/01JT000000000000000000002/unread", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/notifications/01JT0000000000000000000002/unread", nil)
 	w := httptest.NewRecorder()
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
@@ -349,16 +349,33 @@ func TestHumaMarkNotificationUnread_Success(t *testing.T) {
 func TestHumaMarkNotificationUnread_NotFound(t *testing.T) {
 	repo := new(mockNotificationRepository)
 
-	repo.On("MarkNotificationUnread", mock.Anything, "01JT000000000000000000002").Return(nil, storage.ErrNotFound)
+	repo.On("MarkNotificationUnread", mock.Anything, "01JT0000000000000000000002").Return(nil, storage.ErrNotFound)
 
 	s := notificationServer(t, repo, nil)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/notifications/01JT000000000000000000002/unread", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/notifications/01JT0000000000000000000002/unread", nil)
 	w := httptest.NewRecorder()
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNotFound, w.Code)
+	repo.AssertExpectations(t)
+}
+
+// TestInvalidNotificationID guards notificationId path-param validation
+// (added to match runId's existing minLength/maxLength/pattern — see
+// TestInvalidRunID in server_test.go): a malformed ID must be rejected by
+// huma before it ever reaches the repository, not forwarded as-is.
+func TestInvalidNotificationID(t *testing.T) {
+	repo := new(mockNotificationRepository)
+	s := notificationServer(t, repo, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/notifications/invalid-id/read", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
 	repo.AssertExpectations(t)
 }
 
@@ -540,7 +557,7 @@ func TestListNotifications_Success(t *testing.T) {
 	repo := new(mockNotificationRepository)
 	now := time.Now()
 	rows := []storage.Notification{
-		{ID: "01JT000000000000000000001", Kind: "run.failed", CreatedAt: now, LastOccurredAt: now, Occurrences: []time.Time{now}},
+		{ID: "01JT0000000000000000000001", Kind: "run.failed", CreatedAt: now, LastOccurredAt: now, Occurrences: []time.Time{now}},
 	}
 	repo.On("ListNotifications", mock.Anything, 50, "").Return(rows, nil)
 
@@ -555,7 +572,7 @@ func TestListNotifications_Success(t *testing.T) {
 	var body NotificationsListBody
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&body))
 	assert.Len(t, body.Items, 1)
-	assert.Equal(t, "01JT000000000000000000001", body.Items[0].ID)
+	assert.Equal(t, "01JT0000000000000000000001", body.Items[0].ID)
 	repo.AssertExpectations(t)
 }
 

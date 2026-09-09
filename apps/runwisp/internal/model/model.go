@@ -91,17 +91,30 @@ type Task struct {
 	MaxQueued     int               `toml:"max_queued,omitempty"    json:"maxQueued,omitempty" doc:"Maximum runs that can wait when on_overlap = queue"`
 	OnOverlap     ConcurrencyPolicy `toml:"on_overlap,omitempty"    json:"onOverlap,omitempty" enum:"queue,skip,kill" doc:"How overlapping runs are handled"`
 
-	Instances      int           `toml:"instances,omitempty"      json:"instances,omitempty" doc:"For services: number of always-running instances"`
-	RestartDelay   time.Duration `toml:"-"                        json:"restartDelay,omitempty" doc:"Base delay before each restart, in nanoseconds"`
-	RestartBackoff BackoffCurve  `toml:"restart_backoff,omitempty" json:"restartBackoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive restarts"`
+	Instances int `toml:"instances,omitempty"      json:"instances,omitempty" doc:"For services: number of always-running instances"`
+	// RestartDelay is a pointer so an explicit `restart_delay = "0s"` (restart
+	// instantly, no delay) is distinguishable from an omitted key (nil, inherits
+	// the built-in default). Service-only; always resolved to non-nil by the
+	// config loader's defaulting pass.
+	RestartDelay   *time.Duration `toml:"-"                        json:"restartDelay,omitempty" doc:"For services: base delay before each restart, in nanoseconds; 0 means restart instantly"`
+	RestartBackoff BackoffCurve   `toml:"restart_backoff,omitempty" json:"restartBackoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive restarts"`
 	// HealthyAfter is the uptime an instance must reach to count as healthy.
 	// Reaching it both resets the restart-backoff counter and clears the
 	// failed-start streak; fast failures below it accrue toward RestartAttempts.
-	// Service-only.
-	HealthyAfter time.Duration `toml:"-" json:"healthyAfter,omitempty" doc:"For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds"`
-	// RestartAttempts is the number of consecutive fast failures the supervisor
-	// tolerates before marking an instance FATAL and giving up. Service-only.
-	RestartAttempts int `toml:"-" json:"restartAttempts,omitempty" doc:"For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting"`
+	// Service-only. A pointer so an explicit `healthy_after = "0s"` (healthy the
+	// instant it starts) is distinguishable from an omitted key (nil, inherits
+	// [defaults] then the built-in default). Always resolved to non-nil by the
+	// config loader's defaulting pass.
+	HealthyAfter *time.Duration `toml:"-" json:"healthyAfter,omitempty" doc:"For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start"`
+	// RestartAttempts is the number of consecutive fast failures tolerated
+	// before giving up: for a service, the supervisor marks the instance FATAL;
+	// for a task with restart = "always"/"on_failure", the restart chain simply
+	// stops and the last run is recorded as start_failed. A pointer so an
+	// explicit `restart_attempts = 0` (give up on the very first failure) is
+	// distinguishable from an omitted key (nil, inherits [defaults] then the
+	// built-in default). Always resolved to non-nil by the config loader's
+	// defaulting pass.
+	RestartAttempts *int `toml:"-" json:"restartAttempts,omitempty" doc:"Consecutive failures tolerated before giving up on restarting — for services, marks the instance FATAL; for a restarting task, stops the restart chain; 0 means give up after the very first failure"`
 	// Priority orders service start at boot only (lower starts first; ties break
 	// on name). It is not a dependency or readiness gate. Service-only.
 	Priority int `toml:"-" json:"priority,omitempty" doc:"For services: boot start order, lowest first (name breaks ties). Start order only — not a dependency."`

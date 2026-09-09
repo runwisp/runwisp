@@ -63,6 +63,23 @@ func (f *fakeTaskRunner) RemoveTask(taskName string) {
 	f.removed = append(f.removed, taskName)
 }
 
+func (f *fakeTaskRunner) MutateTask(name string, mutate func(*model.Task) error) (bool, error) {
+	t, ok := f.tasks[name]
+	if !ok {
+		return false, nil
+	}
+	taskCopy := *t
+	if err := mutate(&taskCopy); err != nil {
+		return true, err
+	}
+	if f.tasks == nil {
+		f.tasks = make(map[string]*model.Task)
+	}
+	f.tasks[name] = &taskCopy
+	f.upserted = append(f.upserted, &taskCopy)
+	return true, nil
+}
+
 func (f *fakeTaskRunner) TriggerCloudRun(taskName, externalID string, params map[string]string) (*model.Run, error) {
 	f.trigParams = params
 	f.triggered = append(f.triggered, externalID)

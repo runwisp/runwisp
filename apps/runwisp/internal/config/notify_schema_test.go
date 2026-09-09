@@ -170,6 +170,28 @@ notifiers = ["inapp"]
 	assert.Contains(t, err.Error(), "match.kinds")
 }
 
+// TestValidate_RejectsDeliveryFailedInRouteKinds is the bug-first regression
+// for notify.delivery_failed silently accepted in match.kinds: the event
+// bypasses the route engine entirely (delivered straight to the in-app bell,
+// the cycle guard against a delivery-failure route triggering more delivery
+// failures — see notify.Router.Route and the docs at
+// notifications/routes.mdx), so a route matching on it validates but can
+// never fire. It must be rejected at config load, not silently accepted as
+// dead configuration.
+func TestValidate_RejectsDeliveryFailedInRouteKinds(t *testing.T) {
+	src := `
+[[route]]
+match = { kinds = ["notify.delivery_failed"] }
+notifiers = ["inapp"]
+`
+	cfg, err := decode([]byte(src), "")
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "match.kinds")
+	assert.Contains(t, err.Error(), "notify.delivery_failed")
+}
+
 func TestParseNotifyToken(t *testing.T) {
 	cases := []struct {
 		in              string

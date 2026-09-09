@@ -58,17 +58,29 @@ func (p *SoftDeletePurger) Stop() {
 }
 
 func (p *SoftDeletePurger) purge(ctx context.Context, ttl time.Duration) {
-	refs, err := p.db.PurgeExpiredSoftDeletes(ctx, ttl)
+	refs, err := p.db.SelectExpiredSoftDeletes(ctx, ttl)
 	if err != nil {
 		slog.Warn("Soft-delete purge failed", "err", err)
 		return
 	}
+	if len(refs) == 0 {
+		return
+	}
+
+	// Log files come off disk before the rows are hard-deleted: a crash in
+	// between leaves a harmless log-less row rather than an unreclaimable
+	// orphan log file.
+	ids := make([]string, 0, len(refs))
 	for _, ref := range refs {
 		logPath := logutil.ResolveRunLogPath(p.logDir, ref.TaskName, ref.ID, ref.CreatedAt)
 		logutil.RemoveLogFiles(logPath)
 		logutil.RemoveEmptyParents(logPath, p.logDir)
+		ids = append(ids, ref.ID)
 	}
-	if len(refs) > 0 {
-		slog.Debug("Purged soft-deleted runs", "count", len(refs))
+
+	if err := p.db.DeleteRunsByIDs(ctx, ids); err != nil {
+		slog.Warn("Failed to delete soft-deleted run rows", "count", len(ids), "err", err)
+		return
 	}
+	slog.Debug("Purged soft-deleted runs", "count", len(refs))
 }

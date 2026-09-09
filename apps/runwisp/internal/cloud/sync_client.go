@@ -266,13 +266,13 @@ func applyServiceSyncFields(task *syncTask, t *model.Task) {
 	}
 	autostart := t.Autostart
 	task.Autostart = &autostart
-	if delayMs := durationToMillis(t.RestartDelay); delayMs > 0 {
+	if delayMs := durationPtrToMillis(t.RestartDelay); delayMs > 0 {
 		task.RestartDelay = &delayMs
 	}
 	if t.RestartBackoff != "" {
 		task.RestartBackoff = string(t.RestartBackoff)
 	}
-	if resetMs := durationToMillis(t.HealthyAfter); resetMs > 0 {
+	if resetMs := durationPtrToMillis(t.HealthyAfter); resetMs > 0 {
 		task.BackoffResetAfter = &resetMs
 	}
 	task.Compose = t.Compose
@@ -298,6 +298,21 @@ func durationToMillis(d time.Duration) int {
 		return 0
 	}
 	return int(d.Milliseconds())
+}
+
+// durationPtrToMillis is durationToMillis's pointer-typed sibling for
+// RestartDelay/HealthyAfter, which model.Task now carries as *time.Duration
+// so an explicit local "0s" override is distinguishable from "unconfigured".
+// That distinction is local-only: the outbound sync payload has no way to
+// represent "explicitly zero" separately from "not set" (both omit the
+// field), so a nil pointer and an explicit non-positive value are reported
+// identically here — this is a best-effort observability push, not an
+// enforcement path.
+func durationPtrToMillis(d *time.Duration) int {
+	if d == nil {
+		return 0
+	}
+	return durationToMillis(*d)
 }
 
 func classifySyncHTTPError(statusCode int) CloudErrorKind {

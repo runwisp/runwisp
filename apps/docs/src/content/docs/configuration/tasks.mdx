@@ -45,14 +45,14 @@ stdout/stderr to a log file, and writes a row for every run to SQLite.
 
 ## Scheduling
 
-| Key                 | Default    | What it does                                                                                                                                                                                                    |
-| ------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cron`              | _(none)_   | 5- or 6-field cron expression (the optional 6th field is leading seconds). Supports `@hourly`, `@every 1h30m`.                                                                                                  |
-| `timezone`          | inherited  | IANA timezone for this task's cron evaluation (e.g. `"Europe/Bratislava"`). Falls back to [`[scheduler] timezone`](/concepts/scheduling/#timezone), which itself falls back to the host's system zone if unset. |
-| `jitter`            | inherited  | Cap how far this cron task's start may slip (up to this window) so tasks sharing a fire time take turns instead of stampeding. Needs a `cron` (no-op without one). [Details below](#jitter).                    |
-| `catch_up`          | `"latest"` | What to do for missed firings on startup: `latest`, `all`, or `skip`.                                                                                                                                           |
-| `max_catch_up_runs` | `100`      | Cap on catch-up runs when `catch_up = "all"`. Positive integer. Zero means "use the default" (100); negatives are rejected at config load.                                                                      |
-| `run_on_start`      | `false`    | Fire the task once every time the daemon starts, on top of any `cron`. The `@reboot` equivalent.                                                                                                                |
+| Key                 | Default    | What it does                                                                                                                                                                                                       |
+| ------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `cron`              | _(none)_   | 5- or 6-field cron expression (the optional 6th field is leading seconds). Supports `@hourly`, `@every 1h30m`.                                                                                                     |
+| `timezone`          | inherited  | IANA timezone for this task's cron evaluation (e.g. `"Europe/Bratislava"`). Falls back to [`[scheduler] timezone`](/concepts/scheduling/#timezone), which itself falls back to the host's system zone if unset.    |
+| `jitter`            | inherited  | Cap how far this cron task's start may slip (up to this window) so tasks sharing a fire time take turns instead of stampeding. Needs a `cron` (no-op without one). [Details below](#jitter).                       |
+| `catch_up`          | `"latest"` | What to do for missed firings on startup: `latest`, `all`, or `skip`. `"all"` requires `on_overlap = "queue"` — it replays every missed tick back-to-back, and `skip`/`kill` would only let the first one through. |
+| `max_catch_up_runs` | `100`      | Cap on catch-up runs when `catch_up = "all"`. Positive integer. Zero means "use the default" (100); negatives are rejected at config load.                                                                         |
+| `run_on_start`      | `false`    | Fire the task once every time the daemon starts, on top of any `cron`. The `@reboot` equivalent.                                                                                                                   |
 
 Leave `cron` off and the task becomes **manual-only** — it runs only
 when something explicitly triggers it. That's a perfectly good pattern
@@ -200,16 +200,17 @@ policy is the right call.
 
 ## Retries & timeout
 
-| Key              | Default                     | What it does                                                                                                                                                         |
-| ---------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `retry_attempts` | `0`                         | Additional attempts after the initial failure. Non-negative integer; hard internal cap of 100.                                                                       |
-| `retry_delay`    | `"5s"`                      | Base delay between attempts. Only consulted when `retry_attempts > 0`.                                                                                               |
-| `retry_backoff`  | `"constant"`                | Curve applied to `retry_delay`: `constant`, `linear`, or `exponential`.                                                                                              |
-| `restart`        | `"never"`                   | What to do after a run ends: `"never"` or `"on_failure"`. `"always"` is rejected on tasks — use [`[services.*]`](/configuration/services/) for an always-on process. |
-| `timeout`        | inherited from `[defaults]` | Per-attempt wall-clock cap. Unset means no timeout.                                                                                                                  |
-| `graceful_stop`  | `"5s"`                      | Grace period after the stop signal, before SIGKILL — on `timeout`, `on_overlap = "kill"`, manual stop, and daemon shutdown. Set `"0s"` for insta-kill.               |
-| `stop_signal`    | `"SIGTERM"`                 | Signal that opens the stop ladder. One of `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`, `SIGUSR2` (the `SIG` prefix is optional).                  |
-| `exit_codes`     | `[0]`                       | Exit codes treated as **success**. Anything else is `failed` (which then drives retries, `restart`, and failure notifications). Codes are `0`–`255`.                 |
+| Key                | Default                     | What it does                                                                                                                                                                          |
+| ------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `retry_attempts`   | `0`                         | Additional attempts after the initial failure. Non-negative integer; hard internal cap of 100.                                                                                        |
+| `retry_delay`      | `"5s"`                      | Base delay between attempts. Only consulted when `retry_attempts > 0`.                                                                                                                |
+| `retry_backoff`    | `"constant"`                | Curve applied to `retry_delay`: `constant`, `linear`, or `exponential`.                                                                                                               |
+| `restart`          | `"never"`                   | What to do after a run ends: `"never"` or `"on_failure"`. `"always"` is rejected on tasks — use [`[services.*]`](/configuration/services/) for an always-on process.                  |
+| `restart_attempts` | `3`                         | Consecutive failures a restart chain tolerates before giving up — the last run is recorded `start_failed` instead of restarting forever. Only relevant when `restart = "on_failure"`. |
+| `timeout`          | inherited from `[defaults]` | Per-attempt wall-clock cap. Unset means no timeout.                                                                                                                                   |
+| `graceful_stop`    | `"5s"`                      | Grace period after the stop signal, before SIGKILL — on `timeout`, `on_overlap = "kill"`, manual stop, and daemon shutdown. Set `"0s"` for insta-kill.                                |
+| `stop_signal`      | `"SIGTERM"`                 | Signal that opens the stop ladder. One of `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`, `SIGUSR2` (the `SIG` prefix is optional).                                   |
+| `exit_codes`       | `[0]`                       | Exit codes treated as **success**. Anything else is `failed` (which then drives retries, `restart`, and failure notifications). Codes are `0`–`255`.                                  |
 
 By default only exit `0` is success. Some tools signal "nothing to do"
 or "changes pending" with a non-zero code that isn't really a failure —

@@ -7,6 +7,10 @@
 // source of truth without an import cycle.
 package kinds
 
+// AllKindStrings lists the event kinds a [[notify.routes]] rule may match on.
+// DeliveryFailedKind is deliberately excluded: it bypasses the route engine
+// entirely (see DeliveryFailedKind), so a rule matching on it would validate
+// but could never fire.
 var AllKindStrings = []string{
 	"run.started",
 	"run.succeeded",
@@ -17,7 +21,14 @@ var AllKindStrings = []string{
 	"run.missed",
 	"service.fatal",
 	"log.disk_pressure",
-	"notify.delivery_failed",
 }
+
+// DeliveryFailedKind is the synthetic event a permanently-failed delivery
+// raises. It goes straight to the in-app bell as a cycle guard against a
+// route that could itself trigger more delivery failures, never through the
+// route engine — see internal/config/notify_schema.go's validateRoute, which
+// rejects it in match.kinds with a message pointing at this instead of the
+// less clear "not a valid kind".
+const DeliveryFailedKind = "notify.delivery_failed"
 
 var AllSeverityStrings = []string{"info", "warn", "error"}

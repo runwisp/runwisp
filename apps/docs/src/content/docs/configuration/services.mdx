@@ -67,7 +67,11 @@ just that one.
 | `restart_delay`    | `1s`            | Base delay between restarts. Go duration string.                                                                                                                                                                                                              |
 | `restart_backoff`  | `"exponential"` | Curve applied to `restart_delay`: `constant`, `linear`, or `exponential` (shared with task `retry_backoff`).                                                                                                                                                  |
 | `healthy_after`    | inherited       | Uptime an instance must reach to count as healthy — resets its restart counter **and** clears the failed-start streak. Exits faster than this count as failed starts. See [`[defaults]`](/configuration/defaults/) for the inherited value (default `"60s"`). |
-| `restart_attempts` | `3`             | Consecutive failed starts an instance tolerates before it's marked **FATAL** and stops restarting.                                                                                                                                                            |
+| `restart_attempts` | `3`             | Consecutive failed starts an instance tolerates before it's marked **FATAL** and stops restarting. `0` means give up after the very first failed start.                                                                                                       |
+
+An explicit `0` (or `"0s"`) on any of these three keys is kept exactly as
+written — it is never silently replaced by the default. Only omitting the
+key falls back to `[defaults]` and then the built-in.
 
 The backoff has a ceiling, so even after a long stretch of flapping the
 delay between restarts won't climb forever. And once an instance has

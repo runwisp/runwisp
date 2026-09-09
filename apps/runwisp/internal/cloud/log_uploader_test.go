@@ -611,3 +611,7 @@ func TestRegisterDispatchPropagatesUpsertError(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// durPtr returns a pointer to d — for building *time.Duration model.Task
+// fields (RestartDelay, HealthyAfter) in struct literals.
+func durPtr(d time.Duration) *time.Duration { return &d }

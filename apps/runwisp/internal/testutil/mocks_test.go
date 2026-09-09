@@ -36,7 +36,8 @@ func TestMockRunRepository(t *testing.T) {
 	}
 	m.On("QueryRuns", ctx, queryRunsArg).Return([]model.Run{*run}, nil)
 	m.On("DeleteRun", ctx, "r1").Return(nil)
-	m.On("DeleteOldRuns", ctx, task).Return([]model.Run{*run}, nil)
+	m.On("SelectOldRuns", ctx, task).Return([]model.Run{*run}, nil)
+	m.On("DeleteRunsByIDs", ctx, []string{"r1"}).Return(nil)
 	m.On("MarkCrashedRuns", ctx).Return(int64(1), nil)
 	m.On("GetPendingRuns", ctx).Return([]model.Run{*run}, nil)
 	m.On("GetLastRunByTask", ctx, "t1").Return(run, nil)
@@ -53,7 +54,7 @@ func TestMockRunRepository(t *testing.T) {
 	m.On("SoftDeleteRuns", ctx, sel, now).Return(refs, nil)
 	m.On("RestoreRuns", ctx, sel).Return([]model.Run{*run}, nil)
 	m.On("ResolveSelectorIDs", ctx, sel, "").Return(refs, nil)
-	m.On("PurgeExpiredSoftDeletes", ctx, time.Hour).Return(refs, nil)
+	m.On("SelectExpiredSoftDeletes", ctx, time.Hour).Return(refs, nil)
 	m.On("Close").Return(nil)
 
 	if err := m.CreateRun(ctx, run); err != nil {
@@ -83,8 +84,11 @@ func TestMockRunRepository(t *testing.T) {
 	if err := m.DeleteRun(ctx, "r1"); err != nil {
 		t.Fatalf("DeleteRun: %v", err)
 	}
-	if got, err := m.DeleteOldRuns(ctx, task); err != nil || len(got) != 1 {
-		t.Fatalf("DeleteOldRuns: %v %v", got, err)
+	if got, err := m.SelectOldRuns(ctx, task); err != nil || len(got) != 1 {
+		t.Fatalf("SelectOldRuns: %v %v", got, err)
+	}
+	if err := m.DeleteRunsByIDs(ctx, []string{"r1"}); err != nil {
+		t.Fatalf("DeleteRunsByIDs: %v", err)
 	}
 	if n, err := m.MarkCrashedRuns(ctx); err != nil || n != 1 {
 		t.Fatalf("MarkCrashedRuns: %d %v", n, err)
@@ -119,8 +123,8 @@ func TestMockRunRepository(t *testing.T) {
 	if got, err := m.ResolveSelectorIDs(ctx, sel, ""); err != nil || len(got) != 1 {
 		t.Fatalf("ResolveSelectorIDs: %v %v", got, err)
 	}
-	if got, err := m.PurgeExpiredSoftDeletes(ctx, time.Hour); err != nil || len(got) != 1 {
-		t.Fatalf("PurgeExpiredSoftDeletes: %v %v", got, err)
+	if got, err := m.SelectExpiredSoftDeletes(ctx, time.Hour); err != nil || len(got) != 1 {
+		t.Fatalf("SelectExpiredSoftDeletes: %v %v", got, err)
 	}
 	if err := m.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -135,7 +139,7 @@ func TestMockRunRepository(t *testing.T) {
 	mNil.On("SoftDeleteRuns", ctx, sel, now).Return(nil, errors.New("nf"))
 	mNil.On("RestoreRuns", ctx, sel).Return(nil, errors.New("nf"))
 	mNil.On("ResolveSelectorIDs", ctx, sel, "").Return(nil, errors.New("nf"))
-	mNil.On("PurgeExpiredSoftDeletes", ctx, time.Hour).Return(nil, errors.New("nf"))
+	mNil.On("SelectExpiredSoftDeletes", ctx, time.Hour).Return(nil, errors.New("nf"))
 	if _, err := mNil.GetRun(ctx, "x"); err == nil {
 		t.Fatal("expect err")
 	}
@@ -160,7 +164,7 @@ func TestMockRunRepository(t *testing.T) {
 	if _, err := mNil.ResolveSelectorIDs(ctx, sel, ""); err == nil {
 		t.Fatal("expect err")
 	}
-	if _, err := mNil.PurgeExpiredSoftDeletes(ctx, time.Hour); err == nil {
+	if _, err := mNil.SelectExpiredSoftDeletes(ctx, time.Hour); err == nil {
 		t.Fatal("expect err")
 	}
 }

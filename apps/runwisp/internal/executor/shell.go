@@ -6,6 +6,7 @@ package executor
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -131,9 +132,6 @@ func startCmd(cmd *exec.Cmd, grace time.Duration, stopSig syscall.Signal, cred *
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Credential: cred}
 
-	done := make(chan struct{})
-	cmd.Cancel = makeCancelFunc(cmd, grace, stopSig, done)
-
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("stdout pipe: %w", err)
@@ -142,6 +140,9 @@ func startCmd(cmd *exec.Cmd, grace time.Duration, stopSig syscall.Signal, cred *
 	if err != nil {
 		return nil, fmt.Errorf("stderr pipe: %w", err)
 	}
+
+	done := make(chan struct{})
+	cmd.Cancel = makeCancelFunc(cmd, grace, stopSig, done, stdout, stderr)
 
 	if err := cmd.Start(); err != nil {
 		return nil, startError(err, cred, startErrPrefix)
@@ -181,18 +182,44 @@ func validateWorkingDir(dir, startErrPrefix string) error {
 	return nil
 }
 
+// stdioCloseGrace bounds how long a run's stdout/stderr pipes are allowed to
+// stay open, past the stop ladder finishing, before Execute forces them shut.
+//
+// The executor drains those pipes to EOF *before* calling Process.Wait (see
+// RoutingExecutor.streamProcessOutput) — the documented, correct order for
+// os/exec's StdoutPipe/StderrPipe, and the only one that never loses buffered
+// output. But it means the read side has no bound of its own: a shell task
+// that backgrounds a child which escapes the process group (`cmd & disown`
+// combined with setsid, or a double-forked daemon) keeps that child's copy of
+// the pipe open long after the tracked process is dead. Signalling -pgid never
+// reaches it, so nothing ever closes the write end, and the executor's read
+// loop — and with it the run, and (if this fires mid-shutdown) the daemon's
+// shutdown drain — hangs forever. cmd.WaitDelay does not help here: it only
+// bounds os/exec's own internal io.Copy goroutines, which StdoutPipe/
+// StderrPipe never use (see the Stdout/Stderr field docs on exec.Cmd).
+// closeStdioAfterGrace is the manual equivalent for this pipe-pull style.
+//
+// A var (not const) so tests can shrink it instead of waiting out the real
+// delay, matching containerCleanupTimeout/composeCleanupTimeout.
+var stdioCloseGrace = 10 * time.Second
+
 // makeCancelFunc builds the cmd.Cancel callback that opens the stop ladder:
 // stopSig first, then SIGKILL after grace (or straight to SIGKILL when grace is
 // non-positive or stopSig is already SIGKILL). done aborts the pending kill once
-// the process has been reaped.
-func makeCancelFunc(cmd *exec.Cmd, grace time.Duration, stopSig syscall.Signal, done <-chan struct{}) func() error {
+// the process has been reaped. stdout/stderr are the run's pipe read ends,
+// force-closed by closeStdioAfterGrace once the kill ladder has had
+// stdioCloseGrace to work and the run still hasn't been reaped — see
+// stdioCloseGrace for why.
+func makeCancelFunc(cmd *exec.Cmd, grace time.Duration, stopSig syscall.Signal, done <-chan struct{}, stdout, stderr io.Closer) func() error {
 	return func() error {
 		if cmd.Process == nil {
 			return nil
 		}
 		pgid := cmd.Process.Pid
 		if grace <= 0 || stopSig == syscall.SIGKILL {
-			return syscall.Kill(-pgid, syscall.SIGKILL)
+			err := syscall.Kill(-pgid, syscall.SIGKILL)
+			go closeStdioAfterGrace(done, stdout, stderr, stdioCloseGrace)
+			return err
 		}
 		_ = syscall.Kill(-pgid, stopSig)
 		go func() {
@@ -202,7 +229,22 @@ func makeCancelFunc(cmd *exec.Cmd, grace time.Duration, stopSig syscall.Signal, 
 			case <-done:
 			}
 		}()
+		go closeStdioAfterGrace(done, stdout, stderr, grace+stdioCloseGrace)
 		return nil
+	}
+}
+
+// closeStdioAfterGrace force-closes a run's stdout/stderr pipes if the run
+// still hasn't been reaped (done) by the time d has elapsed since the stop
+// ladder fired. Closing them unblocks any Read the executor's stream capture
+// is stuck in, letting streamProcessOutput return so Execute can reach
+// Process.Wait — see stdioCloseGrace for the scenario this backstops.
+func closeStdioAfterGrace(done <-chan struct{}, stdout, stderr io.Closer, d time.Duration) {
+	select {
+	case <-done:
+	case <-time.After(d):
+		_ = stdout.Close()
+		_ = stderr.Close()
 	}
 }
 

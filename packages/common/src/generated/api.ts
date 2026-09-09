@@ -1349,7 +1349,7 @@ export interface components {
             group?: string;
             /**
              * Format: int64
-             * @description For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds
+             * @description For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start
              */
             healthyAfter?: number;
             /**
@@ -1430,7 +1430,7 @@ export interface components {
             restart?: "never" | "always" | "on_failure";
             /**
              * Format: int64
-             * @description For services: consecutive fast failures tolerated before an instance is marked FATAL and stops restarting
+             * @description Consecutive failures tolerated before giving up on restarting — for services, marks the instance FATAL; for a restarting task, stops the restart chain; 0 means give up after the very first failure
              */
             restartAttempts?: number;
             /**
@@ -1440,7 +1440,7 @@ export interface components {
             restartBackoff?: "constant" | "linear" | "exponential";
             /**
              * Format: int64
-             * @description Base delay before each restart, in nanoseconds
+             * @description For services: base delay before each restart, in nanoseconds; 0 means restart instantly
              */
             restartDelay?: number;
             /** Format: int64 */

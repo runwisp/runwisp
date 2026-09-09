@@ -52,7 +52,7 @@ func startCloudClient(
 		OnConnected: func() {
 			slog.Info("Cloud connected")
 		},
-		RequestRestart: requestSelfRestart,
+		RequestRestart: func() error { return requestSelfRestart(cfg.Config.Daemon.AllowCloudDispatch) },
 		SystemStats:    srv.SystemStats,
 	})
 	if clientErr != nil {
@@ -83,8 +83,13 @@ func startCloudClient(
 // this process, which the signal handler turns into the same graceful shutdown
 // a `runwisp stop` would — and the service manager then brings the daemon back.
 // It is refused when the daemon is not service-managed, since exiting would
-// then stop the agent for good rather than restart it.
-func requestSelfRestart() error {
+// then stop the agent for good rather than restart it, and when the operator
+// hasn't opted into cloud dispatch — restarting the daemon process is at least
+// as sensitive as the ad-hoc task execution that flag already gates.
+func requestSelfRestart(allowCloudDispatch bool) error {
+	if !allowCloudDispatch {
+		return fmt.Errorf("cloud dispatch disabled (set [daemon] allow_cloud_dispatch = true to enable)")
+	}
 	if !autostart.RunningUnderServiceManager() {
 		return fmt.Errorf("daemon is not managed by a service manager; restart it manually")
 	}

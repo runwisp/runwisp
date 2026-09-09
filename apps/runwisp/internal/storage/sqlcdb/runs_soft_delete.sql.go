@@ -13,43 +13,6 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-const purgeExpiredSoftDeletes = `-- name: PurgeExpiredSoftDeletes :many
-
-DELETE FROM runs WHERE deleted_at IS NOT NULL AND deleted_at <= ?
-RETURNING id, task_name, created_at
-`
-
-type PurgeExpiredSoftDeletesRow struct {
-	ID        string    `json:"id"`
-	TaskName  string    `json:"task_name"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// SPDX-FileCopyrightText: PoppyCake, s.r.o.
-// SPDX-License-Identifier: GPL-3.0-or-later
-func (q *Queries) PurgeExpiredSoftDeletes(ctx context.Context, deletedAt *time.Time) ([]PurgeExpiredSoftDeletesRow, error) {
-	rows, err := q.db.QueryContext(ctx, purgeExpiredSoftDeletes, deletedAt)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []PurgeExpiredSoftDeletesRow{}
-	for rows.Next() {
-		var i PurgeExpiredSoftDeletesRow
-		if err := rows.Scan(&i.ID, &i.TaskName, &i.CreatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const resolveSelectorIDsByFilter = `-- name: ResolveSelectorIDsByFilter :many
 SELECT id, task_name, created_at FROM runs
 WHERE deleted_at IS NULL
@@ -327,6 +290,46 @@ func (q *Queries) RestoreRunsByIDs(ctx context.Context, ids []string) ([]Run, er
 			&i.ParamsJson,
 			&i.DeletedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectExpiredSoftDeletes = `-- name: SelectExpiredSoftDeletes :many
+
+SELECT id, task_name, created_at FROM runs
+WHERE deleted_at IS NOT NULL AND deleted_at <= ?
+`
+
+type SelectExpiredSoftDeletesRow struct {
+	ID        string    `json:"id"`
+	TaskName  string    `json:"task_name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Select-only: callers must remove the on-disk log files for the returned
+// refs before hard-deleting the rows (via DeleteRunsByIDs), so a crash
+// mid-purge leaves an orphan row rather than an orphan log file.
+func (q *Queries) SelectExpiredSoftDeletes(ctx context.Context, deletedAt *time.Time) ([]SelectExpiredSoftDeletesRow, error) {
+	rows, err := q.db.QueryContext(ctx, selectExpiredSoftDeletes, deletedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SelectExpiredSoftDeletesRow{}
+	for rows.Next() {
+		var i SelectExpiredSoftDeletesRow
+		if err := rows.Scan(&i.ID, &i.TaskName, &i.CreatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

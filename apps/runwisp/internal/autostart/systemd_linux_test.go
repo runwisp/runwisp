@@ -39,7 +39,8 @@ func newFakeInstaller(t *testing.T, wsl bool) (*systemdInstaller, *FakeFS, *Fake
 		WSL:         wsl,
 		Fingerprint: "bright-falcon",
 		StdinIsTTY:  false,
-		Euid:        1000, // alice: non-root, so a systemWide call needs "sudo".
+		Euid:        1000,                   // alice: non-root, so a systemWide call needs "sudo".
+		Sleep:       func(time.Duration) {}, // no-op: tests never wait out the real poll interval.
 	}
 	return &systemdInstaller{deps: deps}, fs, cmd, prompter, binaryPath
 }
@@ -144,6 +145,8 @@ func TestSystemdInstall_HappyPath(t *testing.T) {
 	cmd.Expect("systemctl", []string{"--user", "daemon-reload"}, nil, nil, nil)
 	cmd.Expect("sudo", []string{"loginctl", "enable-linger", "alice"}, nil, nil, nil)
 	cmd.Expect("systemctl", []string{"--user", "enable", "--now", "runwisp-bright-falcon.service"}, nil, nil, nil)
+	// applyInstall polls is-active once the unit reports active promptly.
+	cmd.Expect("systemctl", []string{"--user", "is-active", "runwisp-bright-falcon.service"}, []byte("active\n"), nil, nil)
 
 	// `preflight` checks config exists.
 	require.NoError(t, fs.WriteFile(opts.Config, []byte("[scheduler]\n"), 0644))
@@ -157,6 +160,41 @@ func TestSystemdInstall_HappyPath(t *testing.T) {
 	assert.Contains(t, string(written), ManagedMarker)
 	assert.Contains(t, string(written), opts.Binary)
 	assert.Equal(t, 0, cmd.Remaining(), "every scripted command must have been consumed")
+	assert.Contains(t, out.String(), "Installed and started.")
+}
+
+// TestSystemdInstall_CrashLoopWarnsInsteadOfClaimingSuccess covers the
+// Type=simple gap: `enable --now` returns as soon as the process forks, so a
+// unit that's already crash-looping (is-active never reports "active" within
+// the poll window) must not be reported as a plain success.
+func TestSystemdInstall_CrashLoopWarnsInsteadOfClaimingSuccess(t *testing.T) {
+	inst, fs, cmd, prompter, binary := newFakeInstaller(t, false)
+	opts := defaultInstallOpts(binary)
+	prompter.YesNo = []bool{true}
+
+	cmd.Expect("loginctl", []string{"show-user", "--property=Linger", "alice"},
+		[]byte("Linger=no\n"), nil, nil)
+	cmd.Expect("systemctl", []string{"--user", "daemon-reload"}, nil, nil, nil)
+	cmd.Expect("sudo", []string{"loginctl", "enable-linger", "alice"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"--user", "enable", "--now", "runwisp-bright-falcon.service"}, nil, nil, nil)
+	// Every poll attempt reports the unit already failed.
+	for i := 0; i < installActivePollAttempts; i++ {
+		cmd.Expect("systemctl", []string{"--user", "is-active", "runwisp-bright-falcon.service"}, []byte("failed\n"), nil, nil)
+	}
+
+	require.NoError(t, fs.WriteFile(opts.Config, []byte("[scheduler]\n"), 0644))
+
+	out := &bytes.Buffer{}
+	err := inst.Install(context.Background(), opts, out)
+	// The install steps themselves all genuinely succeeded; this is a
+	// warning, not a hard failure of the Install call.
+	require.NoError(t, err)
+	assert.Equal(t, 0, cmd.Remaining(), "every scripted poll attempt must have been consumed")
+
+	assert.NotContains(t, out.String(), "Installed and started.")
+	assert.Contains(t, out.String(), "not active yet")
+	assert.Contains(t, out.String(), "journalctl --user -u runwisp-bright-falcon.service")
+	assert.Contains(t, out.String(), "runwisp service status")
 }
 
 func TestSystemdInstall_ConfigMissingErrors(t *testing.T) {

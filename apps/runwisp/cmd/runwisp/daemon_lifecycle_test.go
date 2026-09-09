@@ -76,6 +76,24 @@ func TestWaitInput_ImmediateReturnWhenNothingPending(t *testing.T) {
 	}
 }
 
+// TestRequestSelfRestart_RejectsWithoutCloudDispatchOptIn is the bug-first
+// regression for agent:restart bypassing allow_cloud_dispatch: restarting the
+// daemon process is at least as sensitive as the ad-hoc dispatch that flag
+// already gates (see internal/cloud/dispatch_resolver.go), so it must be
+// refused the same way — regardless of whether the daemon happens to be
+// service-managed. The dispatch check runs before the service-manager check,
+// so this is exercised without depending on the test host's environment.
+func TestRequestSelfRestart_RejectsWithoutCloudDispatchOptIn(t *testing.T) {
+	err := requestSelfRestart(false)
+	if err == nil {
+		t.Fatal("expected requestSelfRestart(false) to be rejected")
+	}
+	const want = "cloud dispatch disabled (set [daemon] allow_cloud_dispatch = true to enable)"
+	if err.Error() != want {
+		t.Fatalf("err = %q, want %q", err.Error(), want)
+	}
+}
+
 func TestStartCloudClient_DisabledReturnsZeroWG(t *testing.T) {
 	cfg := &daemonConfig{}
 	cfg.CloudConfig.Enabled = false

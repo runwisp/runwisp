@@ -118,6 +118,60 @@ func TestUsableCert_RejectsExpired(t *testing.T) {
 	}
 }
 
+// TestUsableCert_RejectsMismatchedPair is the regression test for the gap
+// left by writing the cert and key as two separate files: a crash between
+// the two WriteSecretFile calls (or any other way the pair falls out of
+// sync) leaves a cert whose SANs/expiry look perfectly fine but whose key is
+// stale. usableCert must not silently accept that — a mismatch should force
+// full regeneration, exactly like an expired cert does.
+func TestUsableCert_RejectsMismatchedPair(t *testing.T) {
+	dir := t.TempDir()
+	hosts := []string{"example.local"}
+
+	// Generation 1: keep its cert.
+	certPath, keyPath, err := EnsureSelfSigned(dir, hosts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleCert, err := os.ReadFile(certPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Force a second, independent generation so its key is provably different,
+	// then splice generation 1's cert back in — the on-disk pair now has a
+	// valid, unexpired, host-covering cert with the WRONG key next to it.
+	other := t.TempDir()
+	_, otherKeyPath, err := EnsureSelfSigned(other, hosts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	freshKey, err := os.ReadFile(otherKeyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(certPath, staleCert, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, freshKey, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	if usableCert(certPath, keyPath, hosts, time.Now()) {
+		t.Fatal("a cert paired with a non-matching key must not be considered usable")
+	}
+
+	// EnsureSelfSigned must self-heal: detect the mismatch via usableCert and
+	// regenerate a matching pair rather than serving the broken one forever.
+	certPath2, keyPath2, err := ensureSelfSigned(dir, hosts, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tls.LoadX509KeyPair(certPath2, keyPath2); err != nil {
+		t.Fatalf("expected regeneration to produce a matching pair, got: %v", err)
+	}
+}
+
 func TestFingerprint_StableAndMatchesDER(t *testing.T) {
 	dir := t.TempDir()
 	certPath, _, err := EnsureSelfSigned(dir, []string{"example.local"})

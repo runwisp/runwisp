@@ -49,9 +49,6 @@ type Querier interface {
 	MarkNotificationUnread(ctx context.Context, id string) (int64, error)
 	PruneNotificationsByAge(ctx context.Context, lastOccurredAt time.Time) (int64, error)
 	PruneNotificationsByCount(ctx context.Context, offset int64) (int64, error)
-	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
-	// SPDX-License-Identifier: GPL-3.0-or-later
-	PurgeExpiredSoftDeletes(ctx context.Context, deletedAt *time.Time) ([]PurgeExpiredSoftDeletesRow, error)
 	QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreatedAtAscParams) ([]QueryRunsCreatedAtAscRow, error)
 	QueryRunsCreatedAtDesc(ctx context.Context, arg QueryRunsCreatedAtDescParams) ([]QueryRunsCreatedAtDescRow, error)
 	QueryRunsDurationAsc(ctx context.Context, arg QueryRunsDurationAscParams) ([]QueryRunsDurationAscRow, error)
@@ -75,6 +72,12 @@ type Querier interface {
 	SelectExistingForFingerprint(ctx context.Context, arg SelectExistingForFingerprintParams) (SelectExistingForFingerprintRow, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
+	// Select-only: callers must remove the on-disk log files for the returned
+	// refs before hard-deleting the rows (via DeleteRunsByIDs), so a crash
+	// mid-purge leaves an orphan row rather than an orphan log file.
+	SelectExpiredSoftDeletes(ctx context.Context, deletedAt *time.Time) ([]SelectExpiredSoftDeletesRow, error)
+	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+	// SPDX-License-Identifier: GPL-3.0-or-later
 	// Only terminal (ended) runs are eligible for retention: a run that is still
 	// pending or running must never have its row or live log files removed.
 	SelectOldRunsByAge(ctx context.Context, arg SelectOldRunsByAgeParams) ([]Run, error)
@@ -85,7 +88,7 @@ type Querier interface {
 	SoftDeleteRunsByFilter(ctx context.Context, arg SoftDeleteRunsByFilterParams) ([]SoftDeleteRunsByFilterRow, error)
 	SoftDeleteRunsByIDs(ctx context.Context, arg SoftDeleteRunsByIDsParams) ([]SoftDeleteRunsByIDsRow, error)
 	UpdateNotificationCoalesced(ctx context.Context, arg UpdateNotificationCoalescedParams) error
-	UpdateRun(ctx context.Context, arg UpdateRunParams) error
+	UpdateRun(ctx context.Context, arg UpdateRunParams) (int64, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
 	UpsertPendingLogUpload(ctx context.Context, arg UpsertPendingLogUploadParams) error

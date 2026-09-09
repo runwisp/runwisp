@@ -63,10 +63,11 @@ type taskState struct {
 	// only when task.Kind.IsService().
 	supervisor *services.Supervisor
 
-	// removed latches when a reload drops this task. It stops the queue-drain
-	// goroutine and tells recordRunOutcome to delete the taskState once the last
-	// in-flight run retires. Guarded by m.mu like every other taskState field.
-	// Cleared when UpsertTask revives a task a prior reload had removed.
+	// removed latches when RemoveTask evicts this task from the name-resolvable
+	// registry (m.tasks) into removedTasks. It stops the queue-drain goroutine
+	// and tells reapRetiredTaskState to delete it from removedTasks once the
+	// last in-flight run retires. Guarded by m.mu like every other taskState
+	// field. Cleared when UpsertTask revives a task a prior reload had removed.
 	removed bool
 
 	// queueDraining reports whether a queueProcessLoop goroutine is currently

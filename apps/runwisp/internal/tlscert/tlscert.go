@@ -19,6 +19,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
@@ -88,9 +89,16 @@ func ensureSelfSigned(dataDir string, hosts []string, now time.Time) (certPath, 
 }
 
 // usableCert reports whether the on-disk pair can be reused as-is: both files
-// load, the cert is in its validity window (with renewBefore margin), and it
-// covers every requested host. Any failure falls through to regeneration —
-// the on-disk pair is fully owned by the daemon, so replacing it is safe.
+// load, the cert and key actually pair up, the cert is in its validity window
+// (with renewBefore margin), and it covers every requested host. Any failure
+// falls through to regeneration — the on-disk pair is fully owned by the
+// daemon, so replacing it is safe.
+//
+// The pairing check matters because the cert and key are written via two
+// separate WriteSecretFile calls: a crash between them (cert written, key
+// not yet written to its new value) would otherwise leave a cert paired with
+// a stale key from a previous generation, silently passing every other check
+// here and only failing later when the HTTP server loads them for TLS.
 func usableCert(certPath, keyPath string, hosts []string, now time.Time) bool {
 	if _, err := os.Stat(keyPath); err != nil {
 		return false
@@ -102,7 +110,13 @@ func usableCert(certPath, keyPath string, hosts []string, now time.Time) bool {
 	if now.Before(leaf.NotBefore) || now.Add(renewBefore).After(leaf.NotAfter) {
 		return false
 	}
-	return coversHosts(leaf, hosts)
+	if !coversHosts(leaf, hosts) {
+		return false
+	}
+	if _, err := tls.LoadX509KeyPair(certPath, keyPath); err != nil {
+		return false
+	}
+	return true
 }
 
 // coversHosts reports whether leaf's SANs include every host requested. A miss

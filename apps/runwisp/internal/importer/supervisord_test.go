@@ -87,15 +87,43 @@ func TestSupervisordIncludeMergesSameProgram(t *testing.T) {
 
 func TestSupervisordAutorestartService(t *testing.T) {
 	// true and unexpected (and an omitted value) are always-on services; a
-	// service is always-restart, so no restart key is emitted.
-	for _, value := range []string{"true", "unexpected"} {
-		res := parseSup(t, "[program:x]\ncommand=/bin/x\nautorestart="+value+"\n")
+	// service is always-restart, so no restart key is emitted. Only
+	// "unexpected" is a genuine behavior change from what supervisord would
+	// have done, so only it (not "true", which already means "restart on any
+	// exit" in supervisord too) gets the explanatory note.
+	cases := []struct {
+		value     string
+		wantNoted bool
+	}{
+		{value: "true", wantNoted: false},
+		{value: "unexpected", wantNoted: true},
+	}
+	for _, tc := range cases {
+		res := parseSup(t, "[program:x]\ncommand=/bin/x\nautorestart="+tc.value+"\n")
 		out := res.TOML()
 		mustContain(t, out, "[services.x]")
 		mustNotContain(t, out, "restart =")
 		if tally := res.Tally(); tally.Tasks != 0 || tally.Services != 1 {
-			t.Fatalf("%s: counts %+v, want 0 tasks / 1 service", value, tally)
+			t.Fatalf("%s: counts %+v, want 0 tasks / 1 service", tc.value, tally)
 		}
+		if got := hasNoteKind(res, NoteAutorestartUnexpected); got != tc.wantNoted {
+			t.Fatalf("autorestart=%s: note present = %v, want %v (%+v)", tc.value, got, tc.wantNoted, allNotes(res))
+		}
+	}
+}
+
+// TestSupervisordAutorestartOmittedNotedAsService is the regression test for
+// the silent case: no autorestart= line at all — probably the single most
+// common real-world supervisord config — still imports as an always-on
+// service (supervisord's own default is "unexpected"), and that must now
+// come with the same explanatory note an explicit autorestart=unexpected
+// gets, not silence.
+func TestSupervisordAutorestartOmittedNotedAsService(t *testing.T) {
+	res := parseSup(t, "[program:x]\ncommand=/bin/x\n")
+	out := res.TOML()
+	mustContain(t, out, "[services.x]")
+	if !hasNoteKind(res, NoteAutorestartUnexpected) {
+		t.Fatalf("expected an autorestart-unexpected note when autorestart is omitted, got %+v", allNotes(res))
 	}
 }
 
@@ -183,8 +211,12 @@ command=/bin/worker
 }
 
 func TestSupervisordLogFilesDropped(t *testing.T) {
+	// autorestart=true keeps this fixture scoped to the log-note dedup this
+	// test is about; an omitted autorestart would also add an unrelated
+	// autorestart-unexpected note and throw off the note count below.
 	in := `[program:x]
 command=/bin/x
+autorestart=true
 stdout_logfile=/var/log/x.log
 stderr_logfile=/var/log/x.err
 `

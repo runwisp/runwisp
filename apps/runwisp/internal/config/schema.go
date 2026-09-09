@@ -264,19 +264,24 @@ type Defaults struct {
 	// don't set their own. Tasks-only: services never inherit it (they start
 	// every instance at boot). The deliberate exception to "don't default
 	// cron-tied keys" — one line in [defaults] spreads the whole task set.
-	Jitter       time.Duration
-	Shell        string
-	StopSignal   string
-	ExitCodes    []int
-	LogMaxSize   int64
-	LogOnFull    string
-	KeepRuns     *int
-	KeepFor      time.Duration
-	HealthyAfter time.Duration
-	// RestartAttempts is the default number of consecutive fast failures a service
-	// instance may accrue before going FATAL. Zero means "unset" — services
-	// fall back to DefaultStartRetries.
-	RestartAttempts int
+	Jitter     time.Duration
+	Shell      string
+	StopSignal string
+	ExitCodes  []int
+	LogMaxSize int64
+	LogOnFull  string
+	KeepRuns   *int
+	KeepFor    time.Duration
+	// HealthyAfter is a pointer so an explicit `healthy_after = "0s"` in
+	// [defaults] is distinguishable from an omitted key (nil, services fall
+	// back to the built-in DefaultHealthyAfter).
+	HealthyAfter *time.Duration
+	// RestartAttempts is the default number of consecutive fast failures a
+	// service (or restarting task) instance may accrue before going FATAL /
+	// giving up. A pointer so an explicit `restart_attempts = 0` in [defaults]
+	// is distinguishable from an omitted key (nil, falls back to
+	// DefaultStartRetries).
+	RestartAttempts *int
 
 	// TreatMissedAsFailure is the [defaults] override for per-task missed-run alerts.
 	// nil means the operator didn't set it, so the built-in default (true)

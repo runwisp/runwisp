@@ -202,10 +202,13 @@ type composeServiceOverrideWire struct {
 	Restart      model.RestartPolicy     `toml:"restart,omitempty"`
 	Instances    int                     `toml:"instances,omitempty"`
 
-	RestartDelay    string             `toml:"restart_delay,omitempty"`
-	RestartBackoff  model.BackoffCurve `toml:"restart_backoff,omitempty"`
-	HealthyAfter    string             `toml:"healthy_after,omitempty"`
-	RestartAttempts int                `toml:"restart_attempts,omitempty"`
+	RestartDelay   string             `toml:"restart_delay,omitempty"`
+	RestartBackoff model.BackoffCurve `toml:"restart_backoff,omitempty"`
+	HealthyAfter   string             `toml:"healthy_after,omitempty"`
+	// RestartAttempts is a pointer so an explicit `restart_attempts = 0`
+	// override (give up on the very first failure) is distinguishable from an
+	// omitted key (nil, leaves the compose-import default untouched).
+	RestartAttempts *int `toml:"restart_attempts,omitempty"`
 
 	// Priority orders boot start; Autostart is a pointer so an omitted key
 	// (nil → keep the compose-import default of true) is distinguishable from
@@ -633,7 +636,7 @@ func applyComposeOverrideSupervision(task *model.Task, w *composeServiceOverride
 	if w.ExitCodes != nil {
 		task.ExitCodes = w.ExitCodes
 	}
-	if w.RestartAttempts != 0 {
+	if w.RestartAttempts != nil {
 		task.RestartAttempts = w.RestartAttempts
 	}
 	if w.Priority != 0 {
@@ -683,10 +686,10 @@ func applyComposeOverrideParsed(task *model.Task, w *composeServiceOverrideWire,
 	if err := parseOverrideDuration(w.GracefulStop, svcName, "graceful_stop", &task.GracefulStop); err != nil {
 		return err
 	}
-	if err := parseOverrideDuration(w.RestartDelay, svcName, "restart_delay", &task.RestartDelay); err != nil {
+	if err := parseOverrideDurationPtr(w.RestartDelay, svcName, "restart_delay", &task.RestartDelay); err != nil {
 		return err
 	}
-	if err := parseOverrideDuration(w.HealthyAfter, svcName, "healthy_after", &task.HealthyAfter); err != nil {
+	if err := parseOverrideDurationPtr(w.HealthyAfter, svcName, "healthy_after", &task.HealthyAfter); err != nil {
 		return err
 	}
 	if w.KeepFor != "" {
@@ -718,6 +721,24 @@ func parseOverrideDuration(raw, svcName, field string, dst *time.Duration) error
 		return fmt.Errorf("service %q override: invalid %s: %w", svcName, field, err)
 	}
 	*dst = d
+	return nil
+}
+
+// parseOverrideDurationPtr parses one duration-valued override field for a
+// pointer-typed task field (RestartDelay, HealthyAfter), leaving dst
+// untouched when raw is empty. Unlike parseOverrideDuration, an explicit
+// "0s" override is preserved literally rather than colliding with the
+// "not overridden" zero value — a fresh pointer is written on any non-empty
+// raw, including one that parses to zero.
+func parseOverrideDurationPtr(raw, svcName, field string, dst **time.Duration) error {
+	if raw == "" {
+		return nil
+	}
+	d, err := parseDuration(raw)
+	if err != nil {
+		return fmt.Errorf("service %q override: invalid %s: %w", svcName, field, err)
+	}
+	*dst = &d
 	return nil
 }
 

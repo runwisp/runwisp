@@ -456,14 +456,11 @@ func validateDefaults(d *Defaults) error {
 	if d.Timeout < 0 {
 		return fmt.Errorf("invalid defaults.timeout: must be zero or a positive duration")
 	}
-	if d.HealthyAfter < 0 {
+	if d.HealthyAfter != nil && *d.HealthyAfter < 0 {
 		return fmt.Errorf("invalid defaults.healthy_after: must be a positive duration")
 	}
-	if d.RestartAttempts < 0 {
-		return fmt.Errorf("invalid defaults.restart_attempts: must be non-negative")
-	}
-	if d.RestartAttempts > StartRetriesCap {
-		return fmt.Errorf("invalid defaults.restart_attempts: %d exceeds the cap of %d", d.RestartAttempts, StartRetriesCap)
+	if err := validateRestartAttempts("defaults.restart_attempts", d.RestartAttempts); err != nil {
+		return err
 	}
 	if d.Jitter < 0 {
 		return fmt.Errorf("invalid defaults.jitter: must be zero or a positive duration")
@@ -665,6 +662,9 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 		return err
 	}
 	if err := validateTaskEnums(task); err != nil {
+		return err
+	}
+	if err := validateCatchUpOverlap(task); err != nil {
 		return err
 	}
 	if err := validateTaskEnv(task); err != nil {
@@ -1008,6 +1008,27 @@ func validateTaskRunUser(task *model.Task) error {
 }
 
 func validateTaskLimits(task *model.Task) error {
+	if err := validateConcurrencyLimits(task); err != nil {
+		return err
+	}
+	if err := validateRetryLimits(task); err != nil {
+		return err
+	}
+	// Services validate their own restart_attempts in validateServiceTask
+	// (scoped message, "service" not "task"); this covers restarting
+	// [tasks.*], which now get the same give-up cap.
+	if !task.Kind.IsService() {
+		if err := validateRestartAttempts(fmt.Sprintf("restart_attempts for task %s", task.Name), task.RestartAttempts); err != nil {
+			return err
+		}
+	}
+	if err := validateTaskDurations(task); err != nil {
+		return err
+	}
+	return validateExitCodes(fmt.Sprintf("exit_codes for task %s", task.Name), task.ExitCodes)
+}
+
+func validateConcurrencyLimits(task *model.Task) error {
 	if task.MaxConcurrent < 0 {
 		return fmt.Errorf("invalid max_concurrent for task %s: must be a positive integer", task.Name)
 	}
@@ -1020,9 +1041,10 @@ func validateTaskLimits(task *model.Task) error {
 	if task.MaxQueued > MaxQueuedCap {
 		return fmt.Errorf("invalid max_queued for task %s: %d exceeds the cap of %d", task.Name, task.MaxQueued, MaxQueuedCap)
 	}
-	if task.GracefulStop < 0 {
-		return fmt.Errorf("invalid graceful_stop for task %s: must be zero or a positive duration", task.Name)
-	}
+	return nil
+}
+
+func validateRetryLimits(task *model.Task) error {
 	if task.Jitter < 0 {
 		return fmt.Errorf("invalid jitter for task %s: must be zero or a positive duration", task.Name)
 	}
@@ -1038,19 +1060,29 @@ func validateTaskLimits(task *model.Task) error {
 	if task.MaxCatchUpRuns < 0 {
 		return fmt.Errorf("invalid max_catch_up_runs for task %s: must be a positive integer", task.Name)
 	}
-	// A negative timeout would parse but then be silently ignored (the run
-	// manager only arms the timer when > 0), so the operator's intent to bound
-	// the run is dropped without a word. Reject it instead. Same for the delays.
+	if task.MaxCatchUpRuns > MaxCatchUpRunsCap {
+		return fmt.Errorf("invalid max_catch_up_runs for task %s: %d exceeds the cap of %d", task.Name, task.MaxCatchUpRuns, MaxCatchUpRunsCap)
+	}
+	return nil
+}
+
+// validateTaskDurations rejects negative durations that would otherwise
+// parse but then be silently ignored (e.g. the run manager only arms the
+// timeout timer when > 0), dropping the operator's intent without a word.
+func validateTaskDurations(task *model.Task) error {
+	if task.GracefulStop < 0 {
+		return fmt.Errorf("invalid graceful_stop for task %s: must be zero or a positive duration", task.Name)
+	}
 	if task.Timeout < 0 {
 		return fmt.Errorf("invalid timeout for task %s: must be zero or a positive duration", task.Name)
 	}
 	if task.RetryDelay < 0 {
 		return fmt.Errorf("invalid retry_delay for task %s: must be zero or a positive duration", task.Name)
 	}
-	if task.RestartDelay < 0 {
+	if task.RestartDelay != nil && *task.RestartDelay < 0 {
 		return fmt.Errorf("invalid restart_delay for task %s: must be zero or a positive duration", task.Name)
 	}
-	return validateExitCodes(fmt.Sprintf("exit_codes for task %s", task.Name), task.ExitCodes)
+	return nil
 }
 
 // validateExitCodes enforces the shape of the success-exit-code list. A nil
@@ -1096,6 +1128,26 @@ func validateTaskEnums(task *model.Task) error {
 	return nil
 }
 
+// validateCatchUpOverlap rejects a combination that silently defeats
+// catch_up = "all": the runtime replays every missed tick by firing
+// TriggerRun back-to-back, which only lands every replay when on_overlap =
+// "queue" serializes them. Under "skip" all but the first replay is
+// immediately rejected as an overlap (recorded, but not what the operator
+// asked for), and under "kill" each replay cancels the previous one
+// mid-run, wasting the work already done. Runs after defaults are applied,
+// so both fields already hold their effective values.
+func validateCatchUpOverlap(task *model.Task) error {
+	if task.CatchUp != model.MissedRunAll {
+		return nil
+	}
+	if task.OnOverlap == model.PolicySkip || task.OnOverlap == model.PolicyKill {
+		return fmt.Errorf(
+			"invalid catch_up for task %s: catch_up = \"all\" replays missed ticks back-to-back, but on_overlap = %q lets only one through at a time — use on_overlap = \"queue\", or catch_up = \"latest\"/\"skip\" instead",
+			task.Name, task.OnOverlap)
+	}
+	return nil
+}
+
 func validateTaskRetention(task *model.Task) error {
 	if err := validateKeepRuns(fmt.Sprintf("keep_runs for task %s", task.Name), task.KeepRuns); err != nil {
 		return err
@@ -1120,14 +1172,28 @@ func validateServiceTask(task *model.Task) error {
 		string(task.RestartBackoff), validBackoff, true); err != nil {
 		return err
 	}
-	if task.HealthyAfter < 0 {
+	if task.HealthyAfter != nil && *task.HealthyAfter < 0 {
 		return fmt.Errorf("invalid healthy_after for service %s: must be a positive duration", task.Name)
 	}
-	if task.RestartAttempts < 0 {
-		return fmt.Errorf("invalid restart_attempts for service %s: must be non-negative", task.Name)
+	return validateRestartAttempts(fmt.Sprintf("restart_attempts for service %s", task.Name), task.RestartAttempts)
+}
+
+// validateRestartAttempts bounds restart_attempts the same way for services,
+// restarting tasks, and [defaults]: negative is meaningless (there's no
+// "tolerate a negative number of failures"), and StartRetriesCap keeps a
+// misconfigured value from disabling the give-up behaviour in practice. A nil
+// pointer means the key was omitted (inherit/default); an explicit 0 means
+// "give up after the very first failure" and is accepted like any other
+// in-range value. Mirrors validateKeepRuns's nil-vs-zero shape.
+func validateRestartAttempts(scope string, attempts *int) error {
+	if attempts == nil {
+		return nil
 	}
-	if task.RestartAttempts > StartRetriesCap {
-		return fmt.Errorf("invalid restart_attempts for service %s: %d exceeds the cap of %d", task.Name, task.RestartAttempts, StartRetriesCap)
+	if *attempts < 0 {
+		return fmt.Errorf("invalid %s: must be non-negative", scope)
+	}
+	if *attempts > StartRetriesCap {
+		return fmt.Errorf("invalid %s: %d exceeds the cap of %d", scope, *attempts, StartRetriesCap)
 	}
 	return nil
 }
@@ -1209,7 +1275,12 @@ var (
 	validLogOnFull        = []string{model.LogOverflowDropNew, model.LogOverflowDropOld, model.LogOverflowKill}
 	validCatchUp          = []string{string(model.MissedRunLatest), string(model.MissedRunAll), string(model.MissedRunSkip)}
 	defaultTaskLogMaxSize = int64(100 * 1024 * 1024)
-	defaultRestartDelay   = time.Second
+	// DefaultRestartDelay is the delay before a service instance's first
+	// restart when neither the service nor a caller supplies one. Exported so
+	// runtime consumers of a *model.Task built without going through Load
+	// (test literals, cloud ephemeral dispatch) can fall back to the same
+	// protective default Load would have applied — see DurationOrDefault.
+	DefaultRestartDelay = time.Second
 )
 
 // Hard caps for integer config fields. Above-cap values fail config load with
@@ -1227,6 +1298,11 @@ const (
 	// StartRetriesCap bounds restart_attempts. A service that fast-fails this many
 	// times in a row is broken; allowing more just delays the FATAL signal.
 	StartRetriesCap = 100
+	// MaxCatchUpRunsCap bounds max_catch_up_runs. Unlike the typo-protection caps
+	// above, each catch-up run is a real process spawned in a tight loop at boot —
+	// this exists to stop a misconfigured value from trying to fire tens of
+	// thousands of processes back-to-back after a long outage.
+	MaxCatchUpRunsCap = 10_000
 	// JitterCap bounds the jitter window at a full day. The runtime clamps each
 	// fire to the gap before the next tick, so this is pure typo protection
 	// (e.g. "30h" meant "30m") rather than a correctness limit.
@@ -1278,6 +1354,29 @@ const (
 	DefaultStopSignal = "SIGTERM"
 )
 
+// IntOrDefault returns *p, or fallback when p is nil. For RestartAttempts,
+// nil only reaches a runtime consumer for a *model.Task built without going
+// through Load (a test literal, a cloud ephemeral dispatch task) — never for
+// one that loaded from TOML, which Load's defaulting pass always resolves to
+// a concrete pointer. A missing value must fall back to the protective
+// built-in default, not to 0 ("give up on the first failure") or any other
+// literal — 0 is meaningful only when the operator wrote it.
+func IntOrDefault(p *int, fallback int) int {
+	if p == nil {
+		return fallback
+	}
+	return *p
+}
+
+// DurationOrDefault is IntOrDefault's duration-typed sibling, used by runtime
+// consumers of RestartDelay/HealthyAfter.
+func DurationOrDefault(p *time.Duration, fallback time.Duration) time.Duration {
+	if p == nil {
+		return fallback
+	}
+	return *p
+}
+
 // ApplyDefaults fills in zero-valued fields with sensible defaults. The
 // scheduler timezone, in particular, falls back to the host's system zone
 // when the operator left [scheduler] timezone unset — so a fresh install
@@ -1297,8 +1396,9 @@ func ApplyDefaults(cfg *Config) {
 	if cfg.Daemon.TLS == "" {
 		cfg.Daemon.TLS = TLSModeOff
 	}
-	if cfg.Defaults.HealthyAfter == 0 {
-		cfg.Defaults.HealthyAfter = DefaultHealthyAfter
+	if cfg.Defaults.HealthyAfter == nil {
+		v := DefaultHealthyAfter
+		cfg.Defaults.HealthyAfter = &v
 	}
 
 	for i := range cfg.Tasks {
@@ -1307,7 +1407,7 @@ func ApplyDefaults(cfg *Config) {
 		if task.Kind.IsService() {
 			applyServiceDefaults(task, cfg.Defaults)
 		} else {
-			applyTaskDefaults(task)
+			applyTaskDefaults(task, cfg.Defaults)
 		}
 		if task.CatchUp == "" {
 			task.CatchUp = model.MissedRunLatest
@@ -1425,7 +1525,35 @@ func mergeEnv(base, overlay map[string]string) map[string]string {
 	return out
 }
 
-func applyTaskDefaults(task *model.Task) {
+// resolveIntDefault fills an unset (nil) task-level pointer from [defaults],
+// then from a built-in fallback, without ever colliding an explicit zero at
+// either level with "unset" — the whole point of RestartAttempts being a
+// pointer. Always returns non-nil.
+func resolveIntDefault(task, fromDefaults *int, builtin int) *int {
+	if task != nil {
+		return task
+	}
+	if fromDefaults != nil {
+		return fromDefaults
+	}
+	v := builtin
+	return &v
+}
+
+// resolveDurationDefault is resolveIntDefault's duration-typed sibling, used
+// for RestartDelay/HealthyAfter.
+func resolveDurationDefault(task, fromDefaults *time.Duration, builtin time.Duration) *time.Duration {
+	if task != nil {
+		return task
+	}
+	if fromDefaults != nil {
+		return fromDefaults
+	}
+	v := builtin
+	return &v
+}
+
+func applyTaskDefaults(task *model.Task, d Defaults) {
 	if task.Group == "" {
 		task.Group = "Tasks"
 	}
@@ -1438,6 +1566,10 @@ func applyTaskDefaults(task *model.Task) {
 	if task.MaxQueued == 0 {
 		task.MaxQueued = DefaultMaxQueued
 	}
+	// Mirrors applyServiceDefaults: a restarting task gives up after the same
+	// number of consecutive failures a service would, instead of restarting
+	// forever. Harmless when restart is never/unset — nothing reads it.
+	task.RestartAttempts = resolveIntDefault(task.RestartAttempts, d.RestartAttempts, DefaultStartRetries)
 }
 
 func applyServiceDefaults(task *model.Task, d Defaults) {
@@ -1453,21 +1585,12 @@ func applyServiceDefaults(task *model.Task, d Defaults) {
 	if task.Instances == 0 {
 		task.Instances = 1
 	}
-	if task.RestartDelay == 0 {
-		task.RestartDelay = defaultRestartDelay
-	}
+	task.RestartDelay = resolveDurationDefault(task.RestartDelay, nil, DefaultRestartDelay)
 	if task.RestartBackoff == "" {
 		task.RestartBackoff = model.BackoffExponential
 	}
-	if task.HealthyAfter == 0 {
-		task.HealthyAfter = d.HealthyAfter
-	}
+	task.HealthyAfter = resolveDurationDefault(task.HealthyAfter, d.HealthyAfter, DefaultHealthyAfter)
 	// restart_attempts: explicit on the service wins; else [defaults]; else the
 	// built-in default.
-	if task.RestartAttempts == 0 {
-		task.RestartAttempts = d.RestartAttempts
-	}
-	if task.RestartAttempts == 0 {
-		task.RestartAttempts = DefaultStartRetries
-	}
+	task.RestartAttempts = resolveIntDefault(task.RestartAttempts, d.RestartAttempts, DefaultStartRetries)
 }

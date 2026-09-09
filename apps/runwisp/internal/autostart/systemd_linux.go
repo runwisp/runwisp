@@ -326,7 +326,22 @@ func (s *systemdInstaller) applyInstall(ctx context.Context, plan Plan, opts Ins
 		return err
 	}
 
-	fmt.Fprintln(out, "Installed and started. `runwisp service status` to check.")
+	// Type=simple means `enable --now` returns as soon as the process is
+	// forked, without waiting to see whether it stays up — so a config that
+	// passes preflight but fails at runtime (unparsable once actually
+	// loaded, a port taken between preflight and bind, a startup panic) can
+	// already be crash-looping by the time we'd otherwise print success. The
+	// install itself genuinely succeeded (unit written, enabled, systemd's
+	// own Restart=on-failure may yet bring it up), so this warns rather than
+	// failing the call or rolling back.
+	if s.awaitActiveAfterInstall(ctx, opts.System, s.serviceName(opts.System)) {
+		fmt.Fprintln(out, "Installed and started. `runwisp service status` to check.")
+	} else {
+		fmt.Fprintln(out, "Installed and enabled, but the service is not active yet.")
+		fmt.Fprintln(out, "It may still be starting, or it's already crash-looping — check:")
+		fmt.Fprintf(out, "  %s\n", logsHint(opts.System, s.serviceName(opts.System)))
+		fmt.Fprintln(out, "  runwisp service status")
+	}
 
 	if s.deps.WSL {
 		fmt.Fprint(out, "\n"+wslTaskSchedulerPostscript()+"\n")
@@ -413,6 +428,33 @@ func (s *systemdInstaller) runEnableNow(ctx context.Context, systemWide bool) er
 		return fmt.Errorf("%s: %w: %s", systemctlErrLabel(systemWide, "enable", "--now"), err, string(stderr))
 	}
 	return nil
+}
+
+// installActivePollAttempts / installActivePollInterval bound how long
+// awaitActiveAfterInstall waits: enough to catch a Type=simple unit that
+// crash-loops immediately (typically within milliseconds), not enough to
+// meaningfully slow down the normal-success case.
+const (
+	installActivePollAttempts = 5
+	installActivePollInterval = 400 * time.Millisecond
+)
+
+// awaitActiveAfterInstall polls `is-active` (same query/logic as
+// populateRuntimeStatus uses for status reporting) a bounded number of times
+// after a successful `enable --now`, so applyInstall can tell a genuine
+// startup from an immediate crash loop before printing success. Respects ctx
+// cancellation between polls.
+func (s *systemdInstaller) awaitActiveAfterInstall(ctx context.Context, systemWide bool, name string) bool {
+	for attempt := 0; ; attempt++ {
+		if stdout, _, err := s.runSystemctl(ctx, systemWide, "is-active", name); err == nil &&
+			strings.TrimSpace(string(stdout)) == "active" {
+			return true
+		}
+		if attempt == installActivePollAttempts-1 || ctx.Err() != nil {
+			return false
+		}
+		s.deps.Sleep(installActivePollInterval)
+	}
 }
 
 // Stop implements Installer: stops the unit without disabling it.

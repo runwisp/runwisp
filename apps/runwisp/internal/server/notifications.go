@@ -89,7 +89,7 @@ type NotificationUnreadBody struct {
 }
 
 type NotificationByIDInput struct {
-	ID string `path:"notificationId" doc:"Notification ULID"`
+	ID string `path:"notificationId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Notification ULID"`
 }
 
 // ---------- SSE wrapper types ----------

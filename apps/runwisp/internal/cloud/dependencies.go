@@ -30,6 +30,12 @@ type TaskRunner interface {
 	// UpsertTask installs (or replaces) a task definition. Used by the cloud
 	// dispatcher when resolving ad-hoc inline executions.
 	UpsertTask(task *model.Task)
+	// MutateTask atomically reads, mutates, and re-installs a task's live
+	// definition under a single lock acquisition, so a service:apply merge
+	// cannot be silently clobbered by a concurrent reload touching the same
+	// task. found is false (mutate is never called) if the task isn't
+	// currently registered by name.
+	MutateTask(taskName string, mutate func(*model.Task) error) (found bool, err error)
 	// RemoveTask drops a task from the runner (cancelling service instances and
 	// stopping the queue drain). Used by service:remove to tear down a
 	// cloud-declared service, which never enters the TOML registry and so has no
