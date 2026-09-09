@@ -23,6 +23,7 @@ function makeRun(id: string, overrides: Partial<Run> = {}): Run {
         exitCode: 0,
         instanceIndex: 0,
         retryAttempt: 0,
+        isFailure: false,
         ...overrides,
     };
 }

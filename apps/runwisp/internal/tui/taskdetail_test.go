@@ -17,13 +17,15 @@ func TestSummarizeTaskRuns_ClassifiesAndPicksLatestFailure(t *testing.T) {
 	newest := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
 	older := newest.Add(-time.Hour)
 
-	// Newest-first, as the fetch requests.
+	// Newest-first, as the fetch requests. IsFailure is the persisted
+	// classification manager writes at termination — the TUI reads that bit
+	// rather than re-deriving failure from the end reason.
 	runs := []model.Run{
 		{Status: model.PhaseRunning}, // other
-		{Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonCrashed), EndedAt: &newest}, // failure (latest)
-		{Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess)},                   // success
-		{Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonFailed), EndedAt: &older},   // failure
-		{Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSkipped)},                   // other
+		{Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonCrashed), IsFailure: true, EndedAt: &newest}, // failure (latest)
+		{Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess)},                                    // success
+		{Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonFailed), IsFailure: true, EndedAt: &older},   // failure
+		{Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSkipped)},                                    // other
 	}
 
 	got := summarizeTaskRuns("alpha", runs, 99)

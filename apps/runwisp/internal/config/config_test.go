@@ -559,61 +559,107 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, DefaultHealthyAfter, *cfg.Defaults.HealthyAfter)
 }
 
-func TestNotifyOnMissedRules(t *testing.T) {
-	t.Run("omitted defaults to notifying (true)", func(t *testing.T) {
+func TestFailuresClassification(t *testing.T) {
+	t.Run("omitted → built-in default set treats missed as a failure", func(t *testing.T) {
 		path := writeTOML(t, `
 [tasks.t]
 run = "echo hi"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		require.NotNil(t, cfg.Tasks[0].TreatMissedAsFailure)
-		assert.True(t, *cfg.Tasks[0].TreatMissedAsFailure)
-		assert.True(t, cfg.Tasks[0].NotifiesOnMissed())
+		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonMissed, 0))
+		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonFailed, 1))
+		assert.False(t, cfg.Tasks[0].IsFailureReason(model.ReasonStopped, 0))
 	})
 
-	t.Run("explicit false on a task mutes that task", func(t *testing.T) {
+	t.Run("per-task failures without missed demotes it", func(t *testing.T) {
 		path := writeTOML(t, `
 [tasks.t]
 run = "echo hi"
-treat_missed_as_failure = false
+failures = ["failed", "crashed"]
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		require.NotNil(t, cfg.Tasks[0].TreatMissedAsFailure)
-		assert.False(t, *cfg.Tasks[0].TreatMissedAsFailure)
-		assert.False(t, cfg.Tasks[0].NotifiesOnMissed())
+		assert.False(t, cfg.Tasks[0].IsFailureReason(model.ReasonMissed, 0),
+			"a task that omits missed from failures is not alerted on misses")
+		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonFailed, 1))
 	})
 
-	t.Run("omitted inherits treat_missed_as_failure = false from defaults", func(t *testing.T) {
+	t.Run("per-task failures can promote stopped", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+run = "echo hi"
+failures = ["failed", "stopped"]
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonStopped, 0),
+			"promoting stopped makes a killed run count as a failure")
+	})
+
+	t.Run("omitted inherits failures from defaults", func(t *testing.T) {
 		path := writeTOML(t, `
 [defaults]
-treat_missed_as_failure = false
+failures = ["failed"]
 
 [tasks.inheritor]
 run = "echo hi"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		require.NotNil(t, cfg.Tasks[0].TreatMissedAsFailure)
-		assert.False(t, *cfg.Tasks[0].TreatMissedAsFailure,
-			"a task that omits the key inherits the muted default")
+		assert.False(t, cfg.Tasks[0].IsFailureReason(model.ReasonMissed, 0),
+			"a task that omits the key inherits the [defaults] set (missed demoted)")
+		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonFailed, 1))
 	})
 
-	t.Run("explicit true overrides a muted default", func(t *testing.T) {
+	t.Run("per-task failures wins over defaults", func(t *testing.T) {
 		path := writeTOML(t, `
 [defaults]
-treat_missed_as_failure = false
+failures = ["failed"]
 
 [tasks.loud]
 run = "echo hi"
-treat_missed_as_failure = true
+failures = ["failed", "missed"]
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		require.NotNil(t, cfg.Tasks[0].TreatMissedAsFailure)
-		assert.True(t, *cfg.Tasks[0].TreatMissedAsFailure,
-			"a per-task true wins over a muted [defaults]")
+		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonMissed, 0),
+			"a per-task failures list overrides [defaults]")
+	})
+
+	t.Run("exit-code range tokens classify specific codes", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.rsync]
+run = "rsync ..."
+failures = ["timeout", "23", "30-35"]
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		task := cfg.Tasks[0]
+		assert.True(t, task.IsFailureReason(model.ReasonFailed, 23), "exit 23 is a failure")
+		assert.True(t, task.IsFailureReason(model.ReasonFailed, 32), "exit 32 is within 30-35")
+		assert.False(t, task.IsFailureReason(model.ReasonFailed, 50), "exit 50 matches no token")
+		assert.True(t, task.IsFailureReason(model.ReasonTimeout, 0), "timeout reason still classified")
+	})
+
+	t.Run("rejects succeeded as a failure token", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+run = "echo hi"
+failures = ["succeeded"]
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+	})
+
+	t.Run("rejects out-of-range exit token", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+run = "echo hi"
+failures = ["300"]
+`)
+		_, err := Load(path)
+		require.Error(t, err)
 	})
 }
 

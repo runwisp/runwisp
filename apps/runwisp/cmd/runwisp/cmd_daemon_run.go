@@ -268,18 +268,11 @@ func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Fl
 		Snapshot:   snap,
 		Now:        time.Now,
 	})
-	reload := func() (model.ReloadResult, error) {
-		result, err := r.Reconcile()
-		if err == nil {
-			// treat_missed_as_failure lives on model.Task, not [notify], so
-			// Reconcile() can change it live — refresh notify's mute set here
-			// rather than leaving it fixed at boot, or the change silently
-			// never takes effect short of a full restart.
-			syncMutedMissed(svc)
-		}
-		return result, err
-	}
-	return r, reload
+	// The `failures` policy lives on model.Task, so Reconcile() swaps it into the
+	// live registry and every run terminating afterwards is classified under the
+	// new policy — notify routes on that persisted bit, so no notify-side refresh
+	// is needed on reload.
+	return r, r.Reconcile
 }
 
 // startCronHoldWatcher starts the loop that keeps the cron holds honest, so an

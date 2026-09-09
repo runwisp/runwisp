@@ -63,8 +63,8 @@ const createRun = `-- name: CreateRun :exec
 
 INSERT INTO runs (id, execution_id, task_name, status, end_reason,
   exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt,
-  retry_of_run_id, instance_index, params_json)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  retry_of_run_id, instance_index, params_json, is_failure)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateRunParams struct {
@@ -82,6 +82,7 @@ type CreateRunParams struct {
 	RetryOfRunID  *string           `json:"retry_of_run_id"`
 	InstanceIndex int               `json:"instance_index"`
 	ParamsJson    *string           `json:"params_json"`
+	IsFailure     int64             `json:"is_failure"`
 }
 
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
@@ -102,6 +103,7 @@ func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) error {
 		arg.RetryOfRunID,
 		arg.InstanceIndex,
 		arg.ParamsJson,
+		arg.IsFailure,
 	)
 	return err
 }
@@ -135,7 +137,7 @@ func (q *Queries) DeleteRunsByIDs(ctx context.Context, ids []string) error {
 }
 
 const getLastRunByTask = `-- name: GetLastRunByTask :one
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at FROM runs WHERE task_name = ? AND deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure FROM runs WHERE task_name = ? AND deleted_at IS NULL
 ORDER BY created_at DESC LIMIT 1
 `
 
@@ -158,6 +160,7 @@ func (q *Queries) GetLastRunByTask(ctx context.Context, taskName string) (Run, e
 		&i.InstanceIndex,
 		&i.ParamsJson,
 		&i.DeletedAt,
+		&i.IsFailure,
 	)
 	return i, err
 }
@@ -165,11 +168,13 @@ func (q *Queries) GetLastRunByTask(ctx context.Context, taskName string) (Run, e
 const getPendingRuns = `-- name: GetPendingRuns :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
-  instance_index, params_json, deleted_at
+  instance_index, params_json, deleted_at, is_failure
 FROM runs WHERE status = 'pending' AND deleted_at IS NULL
 ORDER BY created_at ASC
 `
 
+// Full table projection in column order so sqlc reuses the Run model struct
+// (is_failure is last because the migration appended the column).
 func (q *Queries) GetPendingRuns(ctx context.Context) ([]Run, error) {
 	rows, err := q.db.QueryContext(ctx, getPendingRuns)
 	if err != nil {
@@ -195,6 +200,7 @@ func (q *Queries) GetPendingRuns(ctx context.Context) ([]Run, error) {
 			&i.InstanceIndex,
 			&i.ParamsJson,
 			&i.DeletedAt,
+			&i.IsFailure,
 		); err != nil {
 			return nil, err
 		}
@@ -210,7 +216,7 @@ func (q *Queries) GetPendingRuns(ctx context.Context) ([]Run, error) {
 }
 
 const getRun = `-- name: GetRun :one
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at FROM runs WHERE id = ? AND deleted_at IS NULL LIMIT 1
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure FROM runs WHERE id = ? AND deleted_at IS NULL LIMIT 1
 `
 
 func (q *Queries) GetRun(ctx context.Context, id string) (Run, error) {
@@ -232,12 +238,13 @@ func (q *Queries) GetRun(ctx context.Context, id string) (Run, error) {
 		&i.InstanceIndex,
 		&i.ParamsJson,
 		&i.DeletedAt,
+		&i.IsFailure,
 	)
 	return i, err
 }
 
 const getRunByExecutionID = `-- name: GetRunByExecutionID :one
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at FROM runs WHERE execution_id = ? AND deleted_at IS NULL LIMIT 1
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure FROM runs WHERE execution_id = ? AND deleted_at IS NULL LIMIT 1
 `
 
 func (q *Queries) GetRunByExecutionID(ctx context.Context, executionID *string) (Run, error) {
@@ -259,6 +266,7 @@ func (q *Queries) GetRunByExecutionID(ctx context.Context, executionID *string) 
 		&i.InstanceIndex,
 		&i.ParamsJson,
 		&i.DeletedAt,
+		&i.IsFailure,
 	)
 	return i, err
 }
@@ -267,11 +275,11 @@ const getRunSummary = `-- name: GetRunSummary :one
 SELECT
   CAST(COUNT(*) AS INTEGER) AS total,
   CAST(COALESCE(SUM(CASE WHEN end_reason = 'succeeded' THEN 1 ELSE 0 END), 0) AS INTEGER) AS success,
-  CAST(COALESCE(SUM(CASE WHEN end_reason IN ('failed','crashed','timeout','log_overflow','start_failed')
+  CAST(COALESCE(SUM(CASE WHEN is_failure = 1 AND end_reason != 'missed'
                          THEN 1 ELSE 0 END), 0) AS INTEGER) AS failed,
   CAST(COALESCE(SUM(CASE WHEN end_reason = 'missed' THEN 1 ELSE 0 END), 0) AS INTEGER) AS missed,
   (SELECT ended_at FROM runs
-   WHERE end_reason IN ('failed','crashed','timeout','log_overflow','start_failed')
+   WHERE is_failure = 1 AND end_reason != 'missed'
      AND deleted_at IS NULL
    ORDER BY ended_at DESC LIMIT 1) AS ended_at
 FROM runs WHERE deleted_at IS NULL
@@ -288,9 +296,9 @@ type GetRunSummaryRow struct {
 // 'missed' is counted on its own and deliberately excluded from 'failed':
 // a missed run never executed, so folding it into the execution-failure
 // count (and last_failure timestamp) would skew failure metrics.
-// The failure set below must mirror runtime/retry.IsFailureReason (Go): keep
-// them in sync when a new failure end_reason is added, or this summary count and
-// the failed run metric (runwisp_runs_total status=failed) will undercount.
+// 'failed' and last_failure read the persisted is_failure bit (each run's
+// `failures` policy, resolved at termination) rather than a hardcoded end_reason
+// set, so this metric can never drift from the rest of the failure readouts.
 func (q *Queries) GetRunSummary(ctx context.Context) (GetRunSummaryRow, error) {
 	row := q.db.QueryRowContext(ctx, getRunSummary)
 	var i GetRunSummaryRow
@@ -305,10 +313,14 @@ func (q *Queries) GetRunSummary(ctx context.Context) (GetRunSummaryRow, error) {
 }
 
 const markCrashedRuns = `-- name: MarkCrashedRuns :execrows
-UPDATE runs SET status = 'ended', end_reason = 'crashed', ended_at = ?, exit_code = -2
+UPDATE runs SET status = 'ended', end_reason = 'crashed', ended_at = ?, exit_code = -2, is_failure = 1
 WHERE status = 'running' AND ended_at IS NULL AND deleted_at IS NULL
 `
 
+// Boot-time crash recovery marks these orphans is_failure=1 using the default
+// classification: a task that demoted 'crashed' from its `failures` would
+// mis-tag its own boot-marked orphans, but that combination is exotic and the
+// alternative (loading every task's policy in the recovery path) is not worth it.
 func (q *Queries) MarkCrashedRuns(ctx context.Context, endedAt *time.Time) (int64, error) {
 	result, err := q.db.ExecContext(ctx, markCrashedRuns, endedAt)
 	if err != nil {
@@ -319,7 +331,7 @@ func (q *Queries) MarkCrashedRuns(ctx context.Context, endedAt *time.Time) (int6
 
 const queryRunsCreatedAtAsc = `-- name: QueryRunsCreatedAtAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
   AND (?1 IS NULL
        OR instr(?1, '|' || status || '|') > 0
@@ -365,6 +377,7 @@ type QueryRunsCreatedAtAscRow struct {
 	RetryOfRunID  *string           `json:"retry_of_run_id"`
 	InstanceIndex int               `json:"instance_index"`
 	ParamsJson    *string           `json:"params_json"`
+	IsFailure     int64             `json:"is_failure"`
 }
 
 func (q *Queries) QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreatedAtAscParams) ([]QueryRunsCreatedAtAscRow, error) {
@@ -404,6 +417,7 @@ func (q *Queries) QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreate
 			&i.RetryOfRunID,
 			&i.InstanceIndex,
 			&i.ParamsJson,
+			&i.IsFailure,
 		); err != nil {
 			return nil, err
 		}
@@ -420,7 +434,7 @@ func (q *Queries) QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreate
 
 const queryRunsCreatedAtDesc = `-- name: QueryRunsCreatedAtDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
   AND (?1 IS NULL
        OR instr(?1, '|' || status || '|') > 0
@@ -466,6 +480,7 @@ type QueryRunsCreatedAtDescRow struct {
 	RetryOfRunID  *string           `json:"retry_of_run_id"`
 	InstanceIndex int               `json:"instance_index"`
 	ParamsJson    *string           `json:"params_json"`
+	IsFailure     int64             `json:"is_failure"`
 }
 
 func (q *Queries) QueryRunsCreatedAtDesc(ctx context.Context, arg QueryRunsCreatedAtDescParams) ([]QueryRunsCreatedAtDescRow, error) {
@@ -505,6 +520,7 @@ func (q *Queries) QueryRunsCreatedAtDesc(ctx context.Context, arg QueryRunsCreat
 			&i.RetryOfRunID,
 			&i.InstanceIndex,
 			&i.ParamsJson,
+			&i.IsFailure,
 		); err != nil {
 			return nil, err
 		}
@@ -521,7 +537,7 @@ func (q *Queries) QueryRunsCreatedAtDesc(ctx context.Context, arg QueryRunsCreat
 
 const queryRunsDurationAsc = `-- name: QueryRunsDurationAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
   AND (?1 IS NULL
        OR instr(?1, '|' || status || '|') > 0
@@ -567,6 +583,7 @@ type QueryRunsDurationAscRow struct {
 	RetryOfRunID  *string           `json:"retry_of_run_id"`
 	InstanceIndex int               `json:"instance_index"`
 	ParamsJson    *string           `json:"params_json"`
+	IsFailure     int64             `json:"is_failure"`
 }
 
 func (q *Queries) QueryRunsDurationAsc(ctx context.Context, arg QueryRunsDurationAscParams) ([]QueryRunsDurationAscRow, error) {
@@ -606,6 +623,7 @@ func (q *Queries) QueryRunsDurationAsc(ctx context.Context, arg QueryRunsDuratio
 			&i.RetryOfRunID,
 			&i.InstanceIndex,
 			&i.ParamsJson,
+			&i.IsFailure,
 		); err != nil {
 			return nil, err
 		}
@@ -622,7 +640,7 @@ func (q *Queries) QueryRunsDurationAsc(ctx context.Context, arg QueryRunsDuratio
 
 const queryRunsDurationDesc = `-- name: QueryRunsDurationDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
   AND (?1 IS NULL
        OR instr(?1, '|' || status || '|') > 0
@@ -668,6 +686,7 @@ type QueryRunsDurationDescRow struct {
 	RetryOfRunID  *string           `json:"retry_of_run_id"`
 	InstanceIndex int               `json:"instance_index"`
 	ParamsJson    *string           `json:"params_json"`
+	IsFailure     int64             `json:"is_failure"`
 }
 
 func (q *Queries) QueryRunsDurationDesc(ctx context.Context, arg QueryRunsDurationDescParams) ([]QueryRunsDurationDescRow, error) {
@@ -707,6 +726,7 @@ func (q *Queries) QueryRunsDurationDesc(ctx context.Context, arg QueryRunsDurati
 			&i.RetryOfRunID,
 			&i.InstanceIndex,
 			&i.ParamsJson,
+			&i.IsFailure,
 		); err != nil {
 			return nil, err
 		}
@@ -723,7 +743,7 @@ func (q *Queries) QueryRunsDurationDesc(ctx context.Context, arg QueryRunsDurati
 
 const queryRunsExitCodeAsc = `-- name: QueryRunsExitCodeAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
   AND (?1 IS NULL
        OR instr(?1, '|' || status || '|') > 0
@@ -769,6 +789,7 @@ type QueryRunsExitCodeAscRow struct {
 	RetryOfRunID  *string           `json:"retry_of_run_id"`
 	InstanceIndex int               `json:"instance_index"`
 	ParamsJson    *string           `json:"params_json"`
+	IsFailure     int64             `json:"is_failure"`
 }
 
 func (q *Queries) QueryRunsExitCodeAsc(ctx context.Context, arg QueryRunsExitCodeAscParams) ([]QueryRunsExitCodeAscRow, error) {
@@ -808,6 +829,7 @@ func (q *Queries) QueryRunsExitCodeAsc(ctx context.Context, arg QueryRunsExitCod
 			&i.RetryOfRunID,
 			&i.InstanceIndex,
 			&i.ParamsJson,
+			&i.IsFailure,
 		); err != nil {
 			return nil, err
 		}
@@ -824,7 +846,7 @@ func (q *Queries) QueryRunsExitCodeAsc(ctx context.Context, arg QueryRunsExitCod
 
 const queryRunsExitCodeDesc = `-- name: QueryRunsExitCodeDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
   AND (?1 IS NULL
        OR instr(?1, '|' || status || '|') > 0
@@ -870,6 +892,7 @@ type QueryRunsExitCodeDescRow struct {
 	RetryOfRunID  *string           `json:"retry_of_run_id"`
 	InstanceIndex int               `json:"instance_index"`
 	ParamsJson    *string           `json:"params_json"`
+	IsFailure     int64             `json:"is_failure"`
 }
 
 func (q *Queries) QueryRunsExitCodeDesc(ctx context.Context, arg QueryRunsExitCodeDescParams) ([]QueryRunsExitCodeDescRow, error) {
@@ -909,6 +932,7 @@ func (q *Queries) QueryRunsExitCodeDesc(ctx context.Context, arg QueryRunsExitCo
 			&i.RetryOfRunID,
 			&i.InstanceIndex,
 			&i.ParamsJson,
+			&i.IsFailure,
 		); err != nil {
 			return nil, err
 		}
@@ -925,7 +949,7 @@ func (q *Queries) QueryRunsExitCodeDesc(ctx context.Context, arg QueryRunsExitCo
 
 const queryRunsStartAtAsc = `-- name: QueryRunsStartAtAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
   AND (?1 IS NULL
        OR instr(?1, '|' || status || '|') > 0
@@ -971,6 +995,7 @@ type QueryRunsStartAtAscRow struct {
 	RetryOfRunID  *string           `json:"retry_of_run_id"`
 	InstanceIndex int               `json:"instance_index"`
 	ParamsJson    *string           `json:"params_json"`
+	IsFailure     int64             `json:"is_failure"`
 }
 
 func (q *Queries) QueryRunsStartAtAsc(ctx context.Context, arg QueryRunsStartAtAscParams) ([]QueryRunsStartAtAscRow, error) {
@@ -1010,6 +1035,7 @@ func (q *Queries) QueryRunsStartAtAsc(ctx context.Context, arg QueryRunsStartAtA
 			&i.RetryOfRunID,
 			&i.InstanceIndex,
 			&i.ParamsJson,
+			&i.IsFailure,
 		); err != nil {
 			return nil, err
 		}
@@ -1026,7 +1052,7 @@ func (q *Queries) QueryRunsStartAtAsc(ctx context.Context, arg QueryRunsStartAtA
 
 const queryRunsStartAtDesc = `-- name: QueryRunsStartAtDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
   AND (?1 IS NULL
        OR instr(?1, '|' || status || '|') > 0
@@ -1072,6 +1098,7 @@ type QueryRunsStartAtDescRow struct {
 	RetryOfRunID  *string           `json:"retry_of_run_id"`
 	InstanceIndex int               `json:"instance_index"`
 	ParamsJson    *string           `json:"params_json"`
+	IsFailure     int64             `json:"is_failure"`
 }
 
 func (q *Queries) QueryRunsStartAtDesc(ctx context.Context, arg QueryRunsStartAtDescParams) ([]QueryRunsStartAtDescRow, error) {
@@ -1111,6 +1138,7 @@ func (q *Queries) QueryRunsStartAtDesc(ctx context.Context, arg QueryRunsStartAt
 			&i.RetryOfRunID,
 			&i.InstanceIndex,
 			&i.ParamsJson,
+			&i.IsFailure,
 		); err != nil {
 			return nil, err
 		}
@@ -1127,7 +1155,7 @@ func (q *Queries) QueryRunsStartAtDesc(ctx context.Context, arg QueryRunsStartAt
 
 const queryRunsStatusAsc = `-- name: QueryRunsStatusAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
   AND (?1 IS NULL
        OR instr(?1, '|' || status || '|') > 0
@@ -1173,6 +1201,7 @@ type QueryRunsStatusAscRow struct {
 	RetryOfRunID  *string           `json:"retry_of_run_id"`
 	InstanceIndex int               `json:"instance_index"`
 	ParamsJson    *string           `json:"params_json"`
+	IsFailure     int64             `json:"is_failure"`
 }
 
 func (q *Queries) QueryRunsStatusAsc(ctx context.Context, arg QueryRunsStatusAscParams) ([]QueryRunsStatusAscRow, error) {
@@ -1212,6 +1241,7 @@ func (q *Queries) QueryRunsStatusAsc(ctx context.Context, arg QueryRunsStatusAsc
 			&i.RetryOfRunID,
 			&i.InstanceIndex,
 			&i.ParamsJson,
+			&i.IsFailure,
 		); err != nil {
 			return nil, err
 		}
@@ -1228,7 +1258,7 @@ func (q *Queries) QueryRunsStatusAsc(ctx context.Context, arg QueryRunsStatusAsc
 
 const queryRunsStatusDesc = `-- name: QueryRunsStatusDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
   AND (?1 IS NULL
        OR instr(?1, '|' || status || '|') > 0
@@ -1274,6 +1304,7 @@ type QueryRunsStatusDescRow struct {
 	RetryOfRunID  *string           `json:"retry_of_run_id"`
 	InstanceIndex int               `json:"instance_index"`
 	ParamsJson    *string           `json:"params_json"`
+	IsFailure     int64             `json:"is_failure"`
 }
 
 func (q *Queries) QueryRunsStatusDesc(ctx context.Context, arg QueryRunsStatusDescParams) ([]QueryRunsStatusDescRow, error) {
@@ -1313,6 +1344,7 @@ func (q *Queries) QueryRunsStatusDesc(ctx context.Context, arg QueryRunsStatusDe
 			&i.RetryOfRunID,
 			&i.InstanceIndex,
 			&i.ParamsJson,
+			&i.IsFailure,
 		); err != nil {
 			return nil, err
 		}
@@ -1329,7 +1361,7 @@ func (q *Queries) QueryRunsStatusDesc(ctx context.Context, arg QueryRunsStatusDe
 
 const queryRunsTaskNameAsc = `-- name: QueryRunsTaskNameAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
   AND (?1 IS NULL
        OR instr(?1, '|' || status || '|') > 0
@@ -1375,6 +1407,7 @@ type QueryRunsTaskNameAscRow struct {
 	RetryOfRunID  *string           `json:"retry_of_run_id"`
 	InstanceIndex int               `json:"instance_index"`
 	ParamsJson    *string           `json:"params_json"`
+	IsFailure     int64             `json:"is_failure"`
 }
 
 func (q *Queries) QueryRunsTaskNameAsc(ctx context.Context, arg QueryRunsTaskNameAscParams) ([]QueryRunsTaskNameAscRow, error) {
@@ -1414,6 +1447,7 @@ func (q *Queries) QueryRunsTaskNameAsc(ctx context.Context, arg QueryRunsTaskNam
 			&i.RetryOfRunID,
 			&i.InstanceIndex,
 			&i.ParamsJson,
+			&i.IsFailure,
 		); err != nil {
 			return nil, err
 		}
@@ -1430,7 +1464,7 @@ func (q *Queries) QueryRunsTaskNameAsc(ctx context.Context, arg QueryRunsTaskNam
 
 const queryRunsTaskNameDesc = `-- name: QueryRunsTaskNameDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
   AND (?1 IS NULL
        OR instr(?1, '|' || status || '|') > 0
@@ -1476,6 +1510,7 @@ type QueryRunsTaskNameDescRow struct {
 	RetryOfRunID  *string           `json:"retry_of_run_id"`
 	InstanceIndex int               `json:"instance_index"`
 	ParamsJson    *string           `json:"params_json"`
+	IsFailure     int64             `json:"is_failure"`
 }
 
 func (q *Queries) QueryRunsTaskNameDesc(ctx context.Context, arg QueryRunsTaskNameDescParams) ([]QueryRunsTaskNameDescRow, error) {
@@ -1515,6 +1550,7 @@ func (q *Queries) QueryRunsTaskNameDesc(ctx context.Context, arg QueryRunsTaskNa
 			&i.RetryOfRunID,
 			&i.InstanceIndex,
 			&i.ParamsJson,
+			&i.IsFailure,
 		); err != nil {
 			return nil, err
 		}
@@ -1533,7 +1569,7 @@ const updateRun = `-- name: UpdateRun :execrows
 UPDATE runs SET execution_id = ?, task_name = ?, status = ?,
   end_reason = ?, exit_code = ?, started_at = ?, ended_at = ?, triggered_by = ?,
   created_at = ?, retry_attempt = ?, retry_of_run_id = ?, instance_index = ?,
-  params_json = ?
+  params_json = ?, is_failure = ?
 WHERE id = ?
 `
 
@@ -1551,6 +1587,7 @@ type UpdateRunParams struct {
 	RetryOfRunID  *string           `json:"retry_of_run_id"`
 	InstanceIndex int               `json:"instance_index"`
 	ParamsJson    *string           `json:"params_json"`
+	IsFailure     int64             `json:"is_failure"`
 	ID            string            `json:"id"`
 }
 
@@ -1569,6 +1606,7 @@ func (q *Queries) UpdateRun(ctx context.Context, arg UpdateRunParams) (int64, er
 		arg.RetryOfRunID,
 		arg.InstanceIndex,
 		arg.ParamsJson,
+		arg.IsFailure,
 		arg.ID,
 	)
 	if err != nil {

@@ -408,7 +408,7 @@ func (s *seeder) execOne(ctx context.Context, spec *runSpec) error {
 			end = s.now
 		}
 	}
-	spec.run.End(reason, res.ExitCode, end)
+	spec.run.End(spec.task, reason, res.ExitCode, end)
 	return s.db.CreateRun(ctx, spec.run)
 }
 

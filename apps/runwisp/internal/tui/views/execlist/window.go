@@ -53,7 +53,8 @@ var statusFilterCycle = []string{"", "running", "succeeded", "failed", "skipped"
 // crashed/timeout/log_overflow/start_failed/missed; likewise Running dropped
 // pending, Skipped dropped dst_skipped/queue_full, Stopped dropped
 // daemon_stopped. The "failed" set must stay in sync with the web UI's
-// NEEDS_ATTENTION_STATUSES (FAILURE_END_REASONS + "missed").
+// NEEDS_ATTENTION_STATUSES (the "Failed" browse bucket in run-filters.ts). This
+// is a status-string browse filter, separate from a run's is_failure bit.
 var statusFilterWire = map[string]string{
 	"":          "",
 	"running":   "pending,running",

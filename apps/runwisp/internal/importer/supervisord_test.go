@@ -162,9 +162,15 @@ stopsignal=INT
 	mustContain(t, out, `stop_signal = "SIGINT"`)
 }
 
-func TestSupervisordExitCodes(t *testing.T) {
-	out := parseSup(t, "[program:x]\ncommand=/bin/x\nexitcodes=0,2\n").TOML()
-	mustContain(t, out, "exit_codes = [0, 2]")
+// TestSupervisordExitCodesDropped pins that supervisord's exitcodes= has no
+// RunWisp equivalent: RunWisp maps exit 0 → success and any non-zero → failed,
+// so a success-code allowlist is dropped with a note rather than translated.
+func TestSupervisordExitCodesDropped(t *testing.T) {
+	res := parseSup(t, "[program:x]\ncommand=/bin/x\nexitcodes=0,2\n")
+	mustNotContain(t, res.TOML(), "exit_codes")
+	if !hasNoteKind(res, NoteKeysUnsupported) {
+		t.Fatalf("expected exitcodes to be noted as dropped, got %+v", allNotes(res))
+	}
 }
 
 func TestSupervisordEnvironment(t *testing.T) {

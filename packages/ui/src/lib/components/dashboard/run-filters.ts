@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import { FAILURE_END_REASONS, TRIGGERS, type Trigger } from "@runwisp/common";
+import { TRIGGERS, type Trigger } from "@runwisp/common";
 
 export type RunsListSortDirection = "asc" | "desc" | "";
 
@@ -42,12 +42,21 @@ export function emptyRunFilters(): RunsListFilters {
 }
 
 /**
- * Statuses worth an operator's attention: every end reason the retry policy
- * treats as a failure, plus `missed` (a scheduled run the daemon was down
- * for). Backs the one-click preset that serves Prime Directive #1 — nothing
- * silently fails.
+ * The end-reason statuses grouped under the "Failed" browse filter — the
+ * execution-failure reasons plus `missed` (a scheduled run the daemon was down
+ * for). This is a server-side status filter (the runs query matches on
+ * end_reason strings), distinct from a run's per-task `isFailure` classification
+ * that drives attention badges. Backs the one-click preset that serves Prime
+ * Directive #1 — nothing silently fails.
  */
-export const NEEDS_ATTENTION_STATUSES: readonly string[] = [...FAILURE_END_REASONS, "missed"];
+export const NEEDS_ATTENTION_STATUSES: readonly string[] = [
+    "failed",
+    "crashed",
+    "timeout",
+    "log_overflow",
+    "start_failed",
+    "missed",
+];
 
 /** True when `statuses` is exactly the needs-attention set (order-insensitive). */
 export function isNeedsAttention(statuses: string[]): boolean {

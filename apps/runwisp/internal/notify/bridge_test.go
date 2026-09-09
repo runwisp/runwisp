@@ -104,7 +104,7 @@ func TestMapEvent_ServiceFatal(t *testing.T) {
 func TestMapRunEventType_StartFailedSuppressed(t *testing.T) {
 	r := model.ReasonStartFailed
 	run := &model.Run{EndReason: &r}
-	_, _, ok := mapRunEventType(events.EventRunFailed, run)
+	_, ok := mapRunEventType(events.EventRunFailed, run)
 	assert.False(t, ok, "start_failed run row must not produce a second notification")
 }
 
@@ -135,16 +135,15 @@ func TestDiskPressureReason_NotKilled(t *testing.T) {
 
 func TestMapRunEventType_RunFailed_NilEndReason(t *testing.T) {
 	run := &model.Run{Status: model.PhaseEnded}
-	kind, sev, ok := mapRunEventType(events.EventRunFailed, run)
+	kind, ok := mapRunEventType(events.EventRunFailed, run)
 	assert.True(t, ok)
 	assert.Equal(t, KindRunFailed, kind)
-	assert.Equal(t, SevError, sev)
 }
 
 func TestMapRunEventType_RunFailed_ReasonFailed(t *testing.T) {
 	r := model.ReasonFailed
 	run := &model.Run{EndReason: &r}
-	kind, _, ok := mapRunEventType(events.EventRunFailed, run)
+	kind, ok := mapRunEventType(events.EventRunFailed, run)
 	assert.True(t, ok)
 	assert.Equal(t, KindRunFailed, kind)
 }
@@ -152,7 +151,7 @@ func TestMapRunEventType_RunFailed_ReasonFailed(t *testing.T) {
 func TestMapRunEventType_RunFailed_ReasonTimeout(t *testing.T) {
 	r := model.ReasonTimeout
 	run := &model.Run{EndReason: &r}
-	kind, _, ok := mapRunEventType(events.EventRunFailed, run)
+	kind, ok := mapRunEventType(events.EventRunFailed, run)
 	assert.True(t, ok)
 	assert.Equal(t, KindRunTimeout, kind)
 }
@@ -160,16 +159,15 @@ func TestMapRunEventType_RunFailed_ReasonTimeout(t *testing.T) {
 func TestMapRunEventType_RunFailed_ReasonStopped(t *testing.T) {
 	r := model.ReasonStopped
 	run := &model.Run{EndReason: &r}
-	kind, sev, ok := mapRunEventType(events.EventRunFailed, run)
+	kind, ok := mapRunEventType(events.EventRunFailed, run)
 	assert.True(t, ok)
 	assert.Equal(t, KindRunStopped, kind)
-	assert.Equal(t, SevWarn, sev)
 }
 
 func TestMapRunEventType_RunFailed_ReasonCrashed(t *testing.T) {
 	r := model.ReasonCrashed
 	run := &model.Run{EndReason: &r}
-	kind, _, ok := mapRunEventType(events.EventRunFailed, run)
+	kind, ok := mapRunEventType(events.EventRunFailed, run)
 	assert.True(t, ok)
 	assert.Equal(t, KindRunCrashed, kind)
 }
@@ -177,24 +175,21 @@ func TestMapRunEventType_RunFailed_ReasonCrashed(t *testing.T) {
 func TestMapRunEventType_RunFailed_ReasonMissed(t *testing.T) {
 	r := model.ReasonMissed
 	run := &model.Run{EndReason: &r}
-	kind, sev, ok := mapRunEventType(events.EventRunFailed, run)
+	kind, ok := mapRunEventType(events.EventRunFailed, run)
 	assert.True(t, ok)
 	assert.Equal(t, KindRunMissed, kind)
-	assert.Equal(t, SevError, sev, "a missed run alerts at failure level")
 }
 
 // TestMapRunEventType_RunFailed_ReasonDaemonStopped guards against a routine
 // daemon restart/upgrade posing as a task failure: manager.go explicitly
-// records "a daemon-stopped exit is not a failure", and the cloud tracker
-// maps it to ExecutionStatusStopped alongside ReasonStopped — the bridge must
-// agree instead of falling through to its default KindRunFailed/SevError.
+// records "a daemon-stopped exit is not a failure", so the bridge maps it to
+// the stopped kind instead of falling through to its default KindRunFailed.
 func TestMapRunEventType_RunFailed_ReasonDaemonStopped(t *testing.T) {
 	r := model.ReasonDaemonStopped
 	run := &model.Run{EndReason: &r}
-	kind, sev, ok := mapRunEventType(events.EventRunFailed, run)
+	kind, ok := mapRunEventType(events.EventRunFailed, run)
 	assert.True(t, ok)
 	assert.Equal(t, KindRunStopped, kind)
-	assert.Equal(t, SevWarn, sev)
 }
 
 // TestMapRunEventType_RunFailed_ReasonDSTSkipped guards against the annual
@@ -206,16 +201,43 @@ func TestMapRunEventType_RunFailed_ReasonDaemonStopped(t *testing.T) {
 func TestMapRunEventType_RunFailed_ReasonDSTSkipped(t *testing.T) {
 	r := model.ReasonDSTSkipped
 	run := &model.Run{EndReason: &r}
-	_, _, ok := mapRunEventType(events.EventRunFailed, run)
+	_, ok := mapRunEventType(events.EventRunFailed, run)
 	assert.False(t, ok, "a DST dedup is not a failure and must not notify")
 }
 
 func TestMapRunEventType_RunFailed_DefaultReason(t *testing.T) {
 	r := model.ReasonSuccess // not a typical failure reason, hits default branch
 	run := &model.Run{EndReason: &r}
-	kind, _, ok := mapRunEventType(events.EventRunFailed, run)
+	kind, ok := mapRunEventType(events.EventRunFailed, run)
 	assert.True(t, ok)
 	assert.Equal(t, KindRunFailed, kind)
+}
+
+// TestRunSeverity covers the failure-driven severity derivation now decoupled
+// from mapRunEventType: a classified failure is an error, a start/success is
+// informational, and any other terminal outcome (a demoted missed, an ordinary
+// stopped) is a warning.
+func TestRunSeverity(t *testing.T) {
+	assert.Equal(t, SevError, runSeverity(KindRunFailed, true))
+	assert.Equal(t, SevError, runSeverity(KindRunMissed, true), "a missed run classified as a failure alerts at error level")
+	assert.Equal(t, SevWarn, runSeverity(KindRunMissed, false), "a demoted missed run is a warning, not an error")
+	assert.Equal(t, SevWarn, runSeverity(KindRunStopped, false))
+	assert.Equal(t, SevInfo, runSeverity(KindRunStarted, false))
+	assert.Equal(t, SevInfo, runSeverity(KindRunSucceeded, false))
+}
+
+// TestMapEvent_RunEventCarriesIsFailure verifies a run event propagates the
+// persisted run.IsFailure bit onto the notify Event and derives severity from
+// it — the single classification the failure route matches on.
+func TestMapEvent_RunEventCarriesIsFailure(t *testing.T) {
+	r := model.ReasonStopped
+	run := &model.Run{ID: "01HSTOP", TaskName: "deploy", Status: model.PhaseEnded, EndReason: &r, IsFailure: true}
+	ev := events.Event{Type: events.EventRunFailed, Timestamp: time.Now(), Data: events.RunEvent{Run: run}}
+	got := MapEvent(ev)
+	require.NotNil(t, got)
+	assert.Equal(t, KindRunStopped, got.Kind)
+	assert.True(t, got.IsFailure, "a promoted stopped run is a failure")
+	assert.Equal(t, SevError, got.Severity)
 }
 
 func TestRunReasonString_WithErrMsg(t *testing.T) {

@@ -36,6 +36,7 @@ function makeRun(overrides: Partial<Run> = {}): Run {
         triggeredBy: "cron",
         retryAttempt: 0,
         instanceIndex: 0,
+        isFailure: false,
         ...overrides,
     };
 }

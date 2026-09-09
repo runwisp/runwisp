@@ -48,64 +48,12 @@ func missedRunEvent(taskName string) events.Event {
 	}
 }
 
-// TestOnBusEvent_MutedMissedTaskDropped verifies treat_missed_as_failure = false drops
-// the run.missed alert at ingress without counting it as a backpressure drop.
-func TestOnBusEvent_MutedMissedTaskDropped(t *testing.T) {
-	svc := New(Config{MutedMissedTasks: map[string]struct{}{"quiet-task": {}}})
-
-	before := svc.droppedIngress.Load()
-	svc.onBusEvent(missedRunEvent("quiet-task"))
-
-	assert.Empty(t, svc.ingressCh, "muted task's run.missed must not reach routing")
-	assert.Equal(t, before, svc.droppedIngress.Load(),
-		"an intentional mute is not a backpressure drop")
-}
-
-// TestOnBusEvent_UnmutedMissedTaskRoutes verifies a task without the mute still
-// delivers its run.missed event, and that the mute is strictly per-task.
-func TestOnBusEvent_UnmutedMissedTaskRoutes(t *testing.T) {
-	svc := New(Config{MutedMissedTasks: map[string]struct{}{"quiet-task": {}}})
-
-	svc.onBusEvent(missedRunEvent("loud-task"))
-
-	select {
-	case ev := <-svc.ingressCh:
-		assert.Equal(t, KindRunMissed, ev.Kind)
-		assert.Equal(t, "loud-task", ev.TaskName)
-	default:
-		t.Fatal("expected the un-muted task's run.missed in ingressCh")
-	}
-}
-
-// TestSetMutedMissed_TakesEffectImmediately is the regression test for the
-// reload-staleness bug: mutedMissed used to be fixed at construction time
-// under the (false) assumption that treat_missed_as_failure could only change
-// via a full restart. It is an ordinary per-task field, so a live
-// `runwisp reload`/SIGHUP can change it — SetMutedMissed must be observed by
-// onBusEvent right away, in both directions, without reconstructing the
-// Service.
-func TestSetMutedMissed_TakesEffectImmediately(t *testing.T) {
-	svc := New(Config{MutedMissedTasks: map[string]struct{}{"quiet-task": {}}})
-
-	svc.SetMutedMissed(nil)
-	svc.onBusEvent(missedRunEvent("quiet-task"))
-	select {
-	case ev := <-svc.ingressCh:
-		assert.Equal(t, "quiet-task", ev.TaskName, "unmuting must take effect without a restart")
-	default:
-		t.Fatal("expected quiet-task's run.missed to route once unmuted")
-	}
-
-	svc.SetMutedMissed(map[string]struct{}{"loud-task": {}})
-	before := svc.droppedIngress.Load()
-	svc.onBusEvent(missedRunEvent("loud-task"))
-	assert.Empty(t, svc.ingressCh, "muting must take effect without a restart")
-	assert.Equal(t, before, svc.droppedIngress.Load(), "an intentional mute is not a backpressure drop")
-}
-
-// TestOnBusEvent_MissedRoutesByDefault confirms misses alert with no mute set —
-// the default-on behaviour (decision: misses reach failure subscribers).
-func TestOnBusEvent_MissedRoutesByDefault(t *testing.T) {
+// TestOnBusEvent_MissedReachesIngress confirms a run.missed event is mapped and
+// enqueued for routing — onBusEvent no longer filters by task (the old
+// per-task mute is gone). Whether it actually pages is decided downstream by the
+// classified failure bit (run.IsFailure) against the failure route, covered by
+// the MatchFailure predicate and configload route-compilation tests.
+func TestOnBusEvent_MissedReachesIngress(t *testing.T) {
 	svc := New(Config{})
 
 	svc.onBusEvent(missedRunEvent("task-x"))
@@ -114,7 +62,7 @@ func TestOnBusEvent_MissedRoutesByDefault(t *testing.T) {
 	case ev := <-svc.ingressCh:
 		assert.Equal(t, KindRunMissed, ev.Kind)
 	default:
-		t.Fatal("with no mute configured, run.missed must route by default")
+		t.Fatal("run.missed must be mapped and enqueued for routing")
 	}
 }
 

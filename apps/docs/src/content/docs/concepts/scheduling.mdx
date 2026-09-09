@@ -209,22 +209,24 @@ only decides whether anything **re-runs**. Even when
 detected count, not the smaller number that re-ran.
 
 Some tasks miss ticks by design — a laptop that's only on during the
-day, a task you only ever trigger by hand. For those, silence the alert
-with a single flag (the run row is still recorded — only the
-notification is suppressed):
+day, a task you only ever trigger by hand. For those, drop `missed` from
+the task's [`failures`](/configuration/tasks/#what-counts-as-a-failure)
+list so a miss no longer counts as a failure (the run row is still
+recorded — only the classification and its alert change):
 
 ```toml
 [tasks.daytime-only]
-cron             = "*/30 9-17 * * 1-5"
-treat_missed_as_failure = false   # expected to be down overnight; don't page
+cron     = "*/30 9-17 * * 1-5"
+failures = ["failed", "timeout", "crashed"]   # expected to be down overnight; don't page on misses
 
 # Or quiet every task at once:
 [defaults]
-treat_missed_as_failure = false
+failures = ["failed", "timeout", "crashed", "log_overflow", "start_failed"]
 ```
 
-`treat_missed_as_failure` defaults to `true` and inherits from `[defaults]`
-like the other per-task flags. See
+`failures` defaults to
+`["failed", "timeout", "crashed", "log_overflow", "start_failed", "missed"]`
+and inherits from `[defaults]` like the other per-task keys. See
 [Per-task notifications](/notifications/per-task/#missed-run-alerts) for
 how it fits with `notify_on_failure`.
 

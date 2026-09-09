@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { FAILURE_END_REASONS, END_REASONS } from "@runwisp/common";
+import { END_REASONS } from "@runwisp/common";
 import {
     emptyRunFilters,
     NEEDS_ATTENTION_STATUSES,
@@ -59,8 +59,8 @@ describe("isNeedsAttention", () => {
         expect(isNeedsAttention([...NEEDS_ATTENTION_STATUSES].reverse())).toBe(true);
     });
 
-    it("includes every failure reason plus missed", () => {
-        for (const reason of FAILURE_END_REASONS) {
+    it("includes every execution-failure reason plus missed", () => {
+        for (const reason of ["failed", "crashed", "timeout", "log_overflow", "start_failed"]) {
             expect(NEEDS_ATTENTION_STATUSES).toContain(reason);
         }
         expect(NEEDS_ATTENTION_STATUSES).toContain("missed");

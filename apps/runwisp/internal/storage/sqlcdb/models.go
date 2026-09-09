@@ -54,6 +54,7 @@ type Run struct {
 	InstanceIndex int               `json:"instance_index"`
 	ParamsJson    *string           `json:"params_json"`
 	DeletedAt     *time.Time        `json:"deleted_at"`
+	IsFailure     int64             `json:"is_failure"`
 }
 
 type TaskRegistration struct {

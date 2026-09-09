@@ -204,11 +204,18 @@ type NotifierSpec struct {
 // NotificationRoute pairs a predicate description with target action IDs.
 // Match values are stored as strings (kinds, severity, glob); the consumer
 // in internal/notify/configload compiles them into notify.Predicate.
+//
+// MatchFailure is set only on the internally-generated failure routes (the
+// zero-config catch-all and per-task notify_on_failure sugar). It compiles to
+// notify.MatchFailure, so those routes fire on the classified failure bit
+// (per-task `failures` policy) rather than a fixed Kind list. User-authored
+// [[route]] blocks never set it — they match on kinds/severity/glob.
 type NotificationRoute struct {
-	Kinds      []string
-	Severity   string
-	TaskGlob   string
-	NotifierID []string
+	Kinds        []string
+	Severity     string
+	TaskGlob     string
+	MatchFailure bool
+	NotifierID   []string
 }
 
 // Daemon holds daemon-wide toggles.
@@ -267,7 +274,6 @@ type Defaults struct {
 	Jitter     time.Duration
 	Shell      string
 	StopSignal string
-	ExitCodes  []int
 	LogMaxSize int64
 	LogOnFull  string
 	KeepRuns   *int
@@ -283,10 +289,12 @@ type Defaults struct {
 	// DefaultStartRetries).
 	RestartAttempts *int
 
-	// TreatMissedAsFailure is the [defaults] override for per-task missed-run alerts.
-	// nil means the operator didn't set it, so the built-in default (true)
-	// applies. ApplyDefaults resolves each task's pointer from this.
-	TreatMissedAsFailure *bool
+	// FailureReasons and FailureExitRanges are the [defaults] failure
+	// classification, always resolved (to the operator's `failures` list or the
+	// built-in default) by toDefaults. A task that leaves `failures` unset inherits
+	// this matcher; one that sets it overrides wholesale.
+	FailureReasons    map[model.EndReason]struct{}
+	FailureExitRanges [][2]int
 
 	// Env is the inline env block from [defaults.env]; env_file values merge
 	// in beneath it at load time. Visible in API/UI.

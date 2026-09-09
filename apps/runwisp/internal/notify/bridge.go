@@ -20,13 +20,14 @@ func MapEvent(e events.Event) *Event {
 		if d.Run == nil {
 			return nil
 		}
-		kind, severity, ok := mapRunEventType(e.Type, d.Run)
+		kind, ok := mapRunEventType(e.Type, d.Run)
 		if !ok {
 			return nil
 		}
 		return &Event{
 			Kind:      kind,
-			Severity:  severity,
+			Severity:  runSeverity(kind, d.Run.IsFailure),
+			IsFailure: d.Run.IsFailure,
 			Timestamp: e.Timestamp,
 			TaskName:  d.Run.TaskName,
 			Run:       d.Run,
@@ -37,6 +38,7 @@ func MapEvent(e events.Event) *Event {
 		return &Event{
 			Kind:      KindLogDiskPressure,
 			Severity:  SevWarn,
+			IsFailure: false,
 			Timestamp: e.Timestamp,
 			TaskName:  d.TaskName,
 			Reason:    diskPressureReason(d),
@@ -51,6 +53,7 @@ func MapEvent(e events.Event) *Event {
 		return &Event{
 			Kind:      KindServiceFatal,
 			Severity:  SevError,
+			IsFailure: true,
 			Timestamp: e.Timestamp,
 			TaskName:  d.TaskName,
 			Reason:    serviceFatalReason(d),
@@ -79,54 +82,71 @@ func diskPressureReason(d events.LogDiskPressureEvent) string {
 		d.MinFreeBytes, d.FreeBytes)
 }
 
+// runSeverity derives an event's severity from its classified failure bit: a
+// failure is an error, a start/success is informational, and anything else
+// (a non-failure terminal reason like a demoted `missed` or an ordinary
+// `stopped`) is a warning. Kept separate from the failure routing decision,
+// which reads IsFailure directly.
+func runSeverity(kind Kind, isFailure bool) Severity {
+	if isFailure {
+		return SevError
+	}
+	switch kind {
+	case KindRunStarted, KindRunSucceeded:
+		return SevInfo
+	default:
+		return SevWarn
+	}
+}
+
 // mapRunEventType collapses (events.EventType, run state) into the public Kind
-// + Severity. Returns ok=false for events the notify subsystem ignores
-// (e.g. EventLogLine).
-func mapRunEventType(t events.EventType, run *model.Run) (Kind, Severity, bool) {
+// used for message text and icon. Returns ok=false for events the notify
+// subsystem ignores (e.g. EventLogLine). Whether the event *pages* and its
+// severity are decided from run.IsFailure, not from the Kind returned here.
+func mapRunEventType(t events.EventType, run *model.Run) (Kind, bool) {
 	switch t {
 	case events.EventRunStarted:
-		return KindRunStarted, SevInfo, true
+		return KindRunStarted, true
 	case events.EventRunCompleted:
-		return KindRunSucceeded, SevInfo, true
+		return KindRunSucceeded, true
 	case events.EventRunFailed:
 		if run.EndReason == nil {
-			return KindRunFailed, SevError, true
+			return KindRunFailed, true
 		}
 		switch *run.EndReason {
 		case model.ReasonFailed, model.ReasonLogOverflow:
-			return KindRunFailed, SevError, true
+			return KindRunFailed, true
 		case model.ReasonTimeout:
-			return KindRunTimeout, SevError, true
+			return KindRunTimeout, true
 		case model.ReasonStopped, model.ReasonDaemonStopped:
-			return KindRunStopped, SevWarn, true
+			return KindRunStopped, true
 		case model.ReasonCrashed:
-			return KindRunCrashed, SevError, true
+			return KindRunCrashed, true
 		case model.ReasonMissed:
-			// A scheduled run that never happened. Treated as failure-level:
-			// it reaches whoever already gets failure alerts. Per-task muting
-			// (treat_missed_as_failure = false) is applied downstream at ingress, not
-			// here, so the browsable run row is always recorded regardless.
-			return KindRunMissed, SevError, true
+			// A scheduled run that never happened. Whether it pages is decided by
+			// the task's `failures` policy (run.IsFailure); the browsable run row
+			// is always persisted regardless, upstream of notify.
+			return KindRunMissed, true
 		case model.ReasonSkipped, model.ReasonDSTSkipped:
 			// PolicySkip and the DST fall-back dedup are the scheduler doing
 			// its job, not a failure: never route either through the
 			// notification system. Operators who care read the run history.
-			return "", "", false
+			return "", false
 		case model.ReasonStartFailed:
 			// The give-up is announced by the dedicated EventServiceFatal →
 			// KindServiceFatal notification. Suppress the run row here so the
 			// FATAL transition rings the bell exactly once instead of pairing a
 			// generic "failed" with the specific "gave up". The run row still
 			// persists and streams over SSE for the history view.
-			return "", "", false
+			return "", false
 		default:
-			return KindRunFailed, SevError, true
+			return KindRunFailed, true
 		}
 	default:
 		// EventRunCreated, EventRunUpdated, EventLogLine: not surfaced as
 		// notifications. Created is implicit in started/completed; updated
 		// reflects intermediate state changes that would just be noise.
-		return "", "", false
+		return "", false
 	}
 }
 

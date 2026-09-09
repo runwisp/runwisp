@@ -210,17 +210,12 @@ policy is the right call.
 | `timeout`          | inherited from `[defaults]` | Per-attempt wall-clock cap. Unset means no timeout.                                                                                                                                   |
 | `graceful_stop`    | `"5s"`                      | Grace period after the stop signal, before SIGKILL — on `timeout`, `on_overlap = "kill"`, manual stop, and daemon shutdown. Set `"0s"` for insta-kill.                                |
 | `stop_signal`      | `"SIGTERM"`                 | Signal that opens the stop ladder. One of `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`, `SIGUSR2` (the `SIG` prefix is optional).                                   |
-| `exit_codes`       | `[0]`                       | Exit codes treated as **success**. Anything else is `failed` (which then drives retries, `restart`, and failure notifications). Codes are `0`–`255`.                                  |
 
-By default only exit `0` is success. Some tools signal "nothing to do"
-or "changes pending" with a non-zero code that isn't really a failure —
-list those alongside `0` so they don't trip retries or alerts:
-
-```toml
-[tasks.rsync-mirror]
-run        = "rsync --quiet ... ; exit $?"
-exit_codes = [0, 24]   # 24 = "some files vanished during transfer", harmless here
-```
+Exit `0` is always success; any non-zero exit ends the run as `failed`,
+which drives retries and `restart`. Whether that (or a `timeout`, a
+`missed` tick, …) counts as a **failure** for stats, the UI, and
+notifications is a separate, declarative choice — see
+[What counts as a failure](#what-counts-as-a-failure).
 
 ### Fail-fast
 
@@ -250,8 +245,10 @@ To turn fail-fast off for one task, make `set +e` the first line of its
 `run` — a runtime `set` overrides the flag, so there's no config key for
 this. Reach for it when a script's _last_ command is the one whose exit
 code you want and the earlier ones are allowed to fail. For a single
-command that's expected to return non-zero, `exit_codes` above is the
-better tool.
+command that's _expected_ to return non-zero, end the line with
+`|| true` so the run exits `0` — a non-zero exit is always `failed`, and
+whether that pages is governed by [`failures`](#what-counts-as-a-failure),
+not by re-labelling the code as success.
 
 :::note[Non-POSIX interpreters]
 `shell` accepts any absolute path, including things that aren't shells at
@@ -279,6 +276,60 @@ your `graceful_stop` is longer than
 [`[daemon] shutdown_timeout`](/configuration/daemon/#shutdown_timeout),
 the daemon warns you at boot and names the task — because at shutdown
 it'll SIGKILL the straggler before the per-task window is even up.
+
+## What counts as a failure
+
+Every run ends with a reason — `succeeded`, `failed`, `timeout`,
+`crashed`, `missed`, `stopped`, and a few more — plus an exit code when
+the process actually ran. Which of those outcomes count as a **failure**
+— the thing that turns a run red in the UI, bumps the _failed_ stat, and
+fires `notify_on_failure` — is yours to declare with `failures`:
+
+| Key        | Default                                                                      | What it does                                                                |
+| ---------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `failures` | `["failed", "timeout", "crashed", "log_overflow", "start_failed", "missed"]` | The outcomes classified as failures. Inherits from `[defaults]` when unset. |
+
+Each entry is either an **end-reason name** or an **exit-code token**:
+
+- a reason — `"failed"`, `"timeout"`, `"crashed"`, `"log_overflow"`,
+  `"start_failed"`, `"missed"`, `"stopped"`, `"daemon_stopped"`
+- a single exit code `"42"`, or an inclusive range `"1-23"` (codes are
+  `1`–`255`; exit `0` is always success)
+
+A finished run is a failure when its reason is in the list, **or** — for
+a run that exited non-zero (reason `failed`) — when its exit code falls
+in one of the ranges. So the two exit-code styles compose like this:
+
+- **list `"failed"`** and every non-zero exit is a failure (the ranges
+  add nothing).
+- **omit `"failed"`** and only the exit codes you list fail; every other
+  non-zero exit stays neutral — recorded, visible, but not red and not
+  paged.
+
+The list _replaces_ the default rather than extending it, so it works in
+both directions:
+
+```toml
+[tasks.flaky-probe]
+failures = ["failed", "crashed"]              # demote timeout & missed: no red, no page
+
+[tasks.deploy]
+failures = ["failed", "stopped", "missed"]    # promote a killed deploy to a failure
+
+[tasks.rsync]
+failures = ["timeout", "crashed", "23", "24"] # only exits 23 & 24 fail; every other
+                                              # non-zero exit is neutral
+```
+
+Because you're replacing the whole list, a task that sets `failures` opts
+out of any reasons RunWisp adds to the built-in default later — copy the
+default and tweak it if you only mean to add or drop one.
+
+`failures` is purely an **observability** choice. It does **not** change
+retries or restarts: those always fire on `failed`, `timeout`, `crashed`,
+`log_overflow`, and `start_failed`, whatever you list here. Demoting
+`failed` won't quietly stop a task retrying, and promoting `stopped`
+won't make the daemon re-run something you stopped on purpose.
 
 ## Logs & retention
 
@@ -588,11 +639,15 @@ command instead.
 
 ## Notifications
 
-| Key                       | Default  | What it does                                                                                                                                                                                                              |
-| ------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `notify_on_failure`       | _(none)_ | Notifier IDs to alert on `run.failed` / `run.timeout` / `run.crashed`.                                                                                                                                                    |
-| `notify_on_success`       | _(none)_ | Notifier IDs to alert on `run.succeeded`.                                                                                                                                                                                 |
-| `treat_missed_as_failure` | `true`   | Whether a [missed scheduled run](/concepts/scheduling/#alerting-on-missed-runs) alerts. It rides `notify_on_failure`'s channels automatically; set `false` to silence the alert (the `missed` run row is still recorded). |
+| Key                 | Default  | What it does                                                               |
+| ------------------- | -------- | -------------------------------------------------------------------------- |
+| `notify_on_failure` | _(none)_ | Notifier IDs to alert on any [failure outcome](#what-counts-as-a-failure). |
+| `notify_on_success` | _(none)_ | Notifier IDs to alert on `run.succeeded`.                                  |
+
+`notify_on_failure` fires on whatever [`failures`](#what-counts-as-a-failure)
+classifies as a failure — so silencing a missed-run page, or promoting a
+stopped one, is a `failures` edit, not a separate toggle. A demoted
+outcome still records its run row; it just doesn't go red or page.
 
 Each entry of `notify_on_failure` / `notify_on_success` is a notifier id you've declared in a
 [`[notifiers.<id>]`](/notifications/model/#notifiersid--declaring-a-channel)

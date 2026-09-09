@@ -16,7 +16,7 @@ import (
 // (RestartDelay) in struct literals.
 func durPtr(d time.Duration) *time.Duration { return &d }
 
-func TestIsFailureReason(t *testing.T) {
+func TestIsFailedExecution(t *testing.T) {
 	for _, tc := range []struct {
 		reason model.EndReason
 		want   bool
@@ -29,9 +29,10 @@ func TestIsFailureReason(t *testing.T) {
 		{model.ReasonSuccess, false},
 		{model.ReasonStopped, false},
 		{model.ReasonSkipped, false},
+		{model.ReasonMissed, false},
 	} {
-		assert.Equalf(t, tc.want, IsFailureReason(tc.reason),
-			"IsFailureReason(%q)", tc.reason)
+		assert.Equalf(t, tc.want, IsFailedExecution(tc.reason),
+			"IsFailedExecution(%q)", tc.reason)
 	}
 }
 

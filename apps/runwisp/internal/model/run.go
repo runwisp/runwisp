@@ -4,6 +4,7 @@
 package model
 
 import (
+	"maps"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -134,11 +135,17 @@ const (
 // row-shaped twin (sqlcdb.Run with DeletedAt) and converts at the boundary so
 // no consumer outside storage sees row-internal fields.
 type Run struct {
-	ID            string      `json:"id"`
-	ExecutionID   *string     `json:"executionId,omitempty"`
-	TaskName      string      `json:"taskName"`
-	Status        RunPhase    `json:"status" enum:"pending,running,ended" doc:"Run lifecycle phase"`
-	EndReason     *EndReason  `json:"endReason,omitempty"`
+	ID          string     `json:"id"`
+	ExecutionID *string    `json:"executionId,omitempty"`
+	TaskName    string     `json:"taskName"`
+	Status      RunPhase   `json:"status" enum:"pending,running,ended" doc:"Run lifecycle phase"`
+	EndReason   *EndReason `json:"endReason,omitempty"`
+	// IsFailure is the task's failure classification for this run, resolved once
+	// at termination from the task's `failures` policy (Task.IsFailureReason) and
+	// persisted. Every failure-aware consumer — the failed metric, UI attention
+	// badges, notification routing/severity — reads this bit rather than
+	// re-deriving from EndReason, so the classification lives in exactly one place.
+	IsFailure     bool        `json:"isFailure"`
 	ExitCode      int         `json:"exitCode"`
 	StartedAt     *time.Time  `json:"startedAt,omitempty"`
 	EndedAt       *time.Time  `json:"endedAt,omitempty"`
@@ -181,20 +188,25 @@ func (r *Run) Copy() *Run {
 	}
 	if r.Params != nil {
 		params := make(map[string]string, len(r.Params))
-		for k, v := range r.Params {
-			params[k] = v
-		}
+		maps.Copy(params, r.Params)
 		cpy.Params = params
 	}
 	return &cpy
 }
 
-// End transitions a run to the ended phase with the given reason.
-func (r *Run) End(reason EndReason, exitCode int, endedAt time.Time) {
+// End transitions a run to the ended phase with the given reason and records the
+// task's failure classification (IsFailure) in the same step, so a run can never
+// reach a terminal state without being classified. task may be nil only for a run
+// finalized without an owning task (an orphaned pending run whose task was
+// removed); IsFailure then stays false, which is correct for its ReasonSkipped.
+func (r *Run) End(task *Task, reason EndReason, exitCode int, endedAt time.Time) {
 	r.Status = PhaseEnded
 	r.EndReason = &reason
 	r.ExitCode = exitCode
 	r.EndedAt = &endedAt
+	if task != nil {
+		r.IsFailure = task.IsFailureReason(reason, exitCode)
+	}
 }
 
 // IsRetryable reports whether a run ended with a reason that warrants

@@ -76,11 +76,12 @@ type taskServiceWireCore struct {
 
 	NotifyOnFailure []string `toml:"notify_on_failure,omitempty"`
 	NotifyOnSuccess []string `toml:"notify_on_success,omitempty"`
-	// TreatMissedAsFailure is a *bool so "unset" (nil → inherit [defaults], then
-	// default true) is distinct from an explicit `treat_missed_as_failure = false`.
-	TreatMissedAsFailure *bool `toml:"treat_missed_as_failure,omitempty"`
-
-	ExitCodes []int `toml:"exit_codes,omitempty"`
+	// Failures declares which outcomes count as a failure for this task: a list of
+	// EndReason names and/or exit-code tokens ("42", "1-23"). nil means "unset"
+	// (inherit [defaults], then the built-in default) — distinct from an explicit
+	// empty list, which means "nothing is a failure". Parsed and validated by
+	// ApplyDefaults into model.Task.FailureReasons / FailureExitRanges.
+	Failures []string `toml:"failures,omitempty"`
 
 	// Params declares per-execution inputs. Carried on the shared core so the
 	// key decodes on [services.*] into a friendly rejection (services are never
@@ -242,32 +243,42 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid env_base for %s %q: %w", label, name, err)
 	}
+	// A nil Failures leaves the matcher unset so ApplyDefaults inherits [defaults];
+	// a present list (even empty) is parsed now and overrides wholesale.
+	var failureReasons map[model.EndReason]struct{}
+	var failureRanges [][2]int
+	if w.Failures != nil {
+		failureReasons, failureRanges, err = model.ParseFailures(w.Failures)
+		if err != nil {
+			return model.Task{}, fmt.Errorf("invalid %s %q: %w", label, name, err)
+		}
+	}
 	task := model.Task{
-		Name:                 name,
-		Kind:                 kind,
-		Group:                w.Group,
-		Description:          w.Description,
-		ManualTrigger:        manualTrigger,
-		OnOverlap:            w.OnOverlap,
-		Timeout:              timeout,
-		GracefulStop:         gracefulStop,
-		StopSignal:           w.StopSignal,
-		LogMaxSize:           logMaxSize,
-		LogOnFull:            w.LogOnFull,
-		KeepRuns:             keepRuns,
-		KeepFor:              keepFor,
-		WorkingDir:           w.WorkingDir,
-		Shell:                w.Shell,
-		Umask:                umask,
-		EnvBase:              envBase,
-		RunUser:              w.User,
-		ExitCodes:            w.ExitCodes,
-		Run:                  w.Run,
-		Env:                  w.Env,
-		EnvFile:              w.EnvFile,
-		Secrets:              w.Secrets,
-		SecretsFile:          w.SecretsFile,
-		TreatMissedAsFailure: w.TreatMissedAsFailure,
+		Name:              name,
+		Kind:              kind,
+		Group:             w.Group,
+		Description:       w.Description,
+		ManualTrigger:     manualTrigger,
+		OnOverlap:         w.OnOverlap,
+		Timeout:           timeout,
+		GracefulStop:      gracefulStop,
+		StopSignal:        w.StopSignal,
+		LogMaxSize:        logMaxSize,
+		LogOnFull:         w.LogOnFull,
+		KeepRuns:          keepRuns,
+		KeepFor:           keepFor,
+		WorkingDir:        w.WorkingDir,
+		Shell:             w.Shell,
+		Umask:             umask,
+		EnvBase:           envBase,
+		RunUser:           w.User,
+		FailureReasons:    failureReasons,
+		FailureExitRanges: failureRanges,
+		Run:               w.Run,
+		Env:               w.Env,
+		EnvFile:           w.EnvFile,
+		Secrets:           w.Secrets,
+		SecretsFile:       w.SecretsFile,
 	}
 	params, err := toTaskParams(w.Params, name)
 	if err != nil {
@@ -517,11 +528,9 @@ type defaultsWire struct {
 	// [defaults] is distinguishable from an omitted key.
 	RestartAttempts *int `toml:"restart_attempts,omitempty"`
 
-	ExitCodes []int `toml:"exit_codes,omitempty"`
-
-	// TreatMissedAsFailure sets the global default for missed-run alerts; a task may
-	// still override it. *bool so an unset key leaves the built-in true.
-	TreatMissedAsFailure *bool `toml:"treat_missed_as_failure,omitempty"`
+	// Failures is the global default failure classification; a task may override
+	// it. nil leaves the built-in default set (see model.DefaultFailureTokens).
+	Failures []string `toml:"failures,omitempty"`
 
 	Env         map[string]string `toml:"env,omitempty"`
 	EnvFile     string            `toml:"env_file,omitempty"`
@@ -554,23 +563,34 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 	if err != nil {
 		return Defaults{}, fmt.Errorf("invalid defaults.healthy_after: %w", err)
 	}
+	// [defaults] always resolves to a concrete failure classification: the
+	// operator's `failures` list, or the built-in default when the key is unset.
+	// Tasks that leave `failures` unset inherit this resolved matcher.
+	failureTokens := w.Failures
+	if failureTokens == nil {
+		failureTokens = model.DefaultFailureTokens
+	}
+	failureReasons, failureRanges, err := model.ParseFailures(failureTokens)
+	if err != nil {
+		return Defaults{}, fmt.Errorf("invalid defaults.%w", err)
+	}
 	return Defaults{
-		Timeout:              timeout,
-		Jitter:               jitter,
-		Shell:                w.Shell,
-		StopSignal:           w.StopSignal,
-		ExitCodes:            w.ExitCodes,
-		LogMaxSize:           logMaxSize,
-		LogOnFull:            w.LogOnFull,
-		KeepRuns:             keepRuns,
-		KeepFor:              keepFor,
-		HealthyAfter:         healthyAfter,
-		RestartAttempts:      w.RestartAttempts,
-		TreatMissedAsFailure: w.TreatMissedAsFailure,
-		Env:                  w.Env,
-		EnvFile:              w.EnvFile,
-		Secrets:              w.Secrets,
-		SecretsFile:          w.SecretsFile,
+		Timeout:           timeout,
+		Jitter:            jitter,
+		Shell:             w.Shell,
+		StopSignal:        w.StopSignal,
+		LogMaxSize:        logMaxSize,
+		LogOnFull:         w.LogOnFull,
+		KeepRuns:          keepRuns,
+		KeepFor:           keepFor,
+		HealthyAfter:      healthyAfter,
+		RestartAttempts:   w.RestartAttempts,
+		FailureReasons:    failureReasons,
+		FailureExitRanges: failureRanges,
+		Env:               w.Env,
+		EnvFile:           w.EnvFile,
+		Secrets:           w.Secrets,
+		SecretsFile:       w.SecretsFile,
 	}, nil
 }
 

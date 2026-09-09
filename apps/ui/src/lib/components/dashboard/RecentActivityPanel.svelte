@@ -6,7 +6,7 @@
     import Card from "@runwisp/ui/components/Card.svelte";
     import EmptyState from "@runwisp/ui/components/EmptyState.svelte";
     import { getRunStatusConfig, runDisplayStatus, instanceSuffix } from "@runwisp/ui";
-    import { isFailureEndReason, type Run } from "@runwisp/common";
+    import type { Run } from "@runwisp/common";
     import {
         formatRunDurationLabel,
         formatRunStartedLabel,
@@ -101,7 +101,7 @@
                             {formatRunStartedLabel(run, now)} &middot;
                             {formatRunDurationLabel(run)}
                             &middot; {formatTriggeredByLabel(run.triggeredBy)}
-                            {#if isFailureEndReason(run.endReason)}
+                            {#if run.isFailure}
                                 <span class="text-danger-soft-text">· Exit {run.exitCode}</span>
                             {/if}
                         </p>

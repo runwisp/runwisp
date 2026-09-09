@@ -16,13 +16,11 @@ func TestEndReason_ExitCodeClassification(t *testing.T) {
 		result  ExecuteResult
 		wantEnd model.EndReason
 	}{
-		{"default zero is success", ExecuteResult{ExitCode: 0}, model.ReasonSuccess},
-		{"default non-zero is failed", ExecuteResult{ExitCode: 1}, model.ReasonFailed},
-		{"listed code is success", ExecuteResult{ExitCode: 2, SuccessExitCodes: []int{0, 2}}, model.ReasonSuccess},
-		{"zero still success in custom set", ExecuteResult{ExitCode: 0, SuccessExitCodes: []int{0, 2}}, model.ReasonSuccess},
-		{"unlisted code is failed", ExecuteResult{ExitCode: 1, SuccessExitCodes: []int{0, 2}}, model.ReasonFailed},
-		{"timeout overrides exit code", ExecuteResult{ExitCode: 2, TimedOut: true, SuccessExitCodes: []int{0, 2}}, model.ReasonTimeout},
-		{"stopped overrides exit code", ExecuteResult{ExitCode: 2, Stopped: true, SuccessExitCodes: []int{0, 2}}, model.ReasonStopped},
+		{"zero is success", ExecuteResult{ExitCode: 0}, model.ReasonSuccess},
+		{"non-zero is failed", ExecuteResult{ExitCode: 1}, model.ReasonFailed},
+		{"other non-zero is failed", ExecuteResult{ExitCode: 2}, model.ReasonFailed},
+		{"timeout overrides exit code", ExecuteResult{ExitCode: 2, TimedOut: true}, model.ReasonTimeout},
+		{"stopped overrides exit code", ExecuteResult{ExitCode: 2, Stopped: true}, model.ReasonStopped},
 		{"log overflow overrides exit code", ExecuteResult{ExitCode: 0, KilledByPolicy: true}, model.ReasonLogOverflow},
 	}
 	for _, tt := range tests {

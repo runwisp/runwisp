@@ -81,10 +81,10 @@
       "description": "Backoff curve between attempts.",
       "enum": ["constant", "linear", "exponential"]
     },
-    "exitCodes": {
+    "failures": {
       "type": "array",
-      "description": "Exit codes treated as success (0..255).",
-      "items": { "type": "integer", "minimum": 0, "maximum": 255 }
+      "description": "Which outcomes count as a failure (for stats, UI badges, and notifications). Each token is an EndReason name (failed, timeout, crashed, log_overflow, start_failed, missed, stopped, …) or an exit code / inclusive range (\"42\", \"1-23\"). Exit tokens only apply to a run that actually exited (reason failed); 0 always succeeds. Omit to inherit; the built-in default is [\"failed\",\"timeout\",\"crashed\",\"log_overflow\",\"start_failed\",\"missed\"].",
+      "items": { "type": "string", "pattern": "^([a-z_]+|[0-9]{1,3}(-[0-9]{1,3})?)$" }
     },
     "envMap": {
       "type": "object",
@@ -149,14 +149,13 @@
         "jitter": { "$ref": "#/$defs/duration", "description": "Start-spread window inherited by cron tasks (tasks only)." },
         "shell": { "type": "string", "default": "/bin/sh", "description": "Interpreter for run scripts (absolute path)." },
         "stop_signal": { "$ref": "#/$defs/stopSignal", "default": "SIGTERM" },
-        "exit_codes": { "$ref": "#/$defs/exitCodes", "default": [0] },
+        "failures": { "$ref": "#/$defs/failures", "description": "Which outcomes count as a failure, inherited by every unit. Built-in default: [\"failed\",\"timeout\",\"crashed\",\"log_overflow\",\"start_failed\",\"missed\"]." },
         "log_max_size": { "$ref": "#/$defs/byteSize", "description": "Per-run log cap. Default 100mb." },
         "log_on_full": { "$ref": "#/$defs/logOnFull", "default": "drop_old" },
         "keep_runs": { "type": "integer", "minimum": 0, "maximum": 1000000, "description": "Row-count retention; 0 keeps no completed runs." },
         "keep_for": { "$ref": "#/$defs/duration", "description": "Age retention; positive." },
         "healthy_after": { "$ref": "#/$defs/duration", "description": "Service uptime counted as healthy (services only). Default 60s." },
         "restart_attempts": { "type": "integer", "minimum": 0, "maximum": 100, "description": "Consecutive failures before giving up restarting — a service instance goes FATAL, a restarting task is recorded start_failed. Default 3." },
-        "treat_missed_as_failure": { "type": "boolean", "default": true, "description": "Treat a missed scheduled run as a failure so it alerts on the notify_on_failure channels; false silences it daemon-wide." },
         "env": { "$ref": "#/$defs/envMap" },
         "env_file": { "type": "string", "description": "Dotenv file merged into every task; relative to runwisp.toml dir." },
         "secrets": { "$ref": "#/$defs/secretsMap" },
@@ -188,7 +187,7 @@
         "retry_attempts": { "type": "integer", "minimum": 0, "maximum": 100, "default": 0, "description": "Retries after a failed attempt." },
         "retry_delay": { "$ref": "#/$defs/duration", "description": "Delay between retries. Default 5s." },
         "retry_backoff": { "$ref": "#/$defs/backoff" },
-        "exit_codes": { "$ref": "#/$defs/exitCodes" },
+        "failures": { "$ref": "#/$defs/failures" },
         "working_dir": { "type": "string", "description": "Process cwd; relative to runwisp.toml dir, ~ expands." },
         "shell": { "type": "string", "description": "Interpreter for run (absolute path); invoked as <shell> -e -c <script>, so a multi-line script stops at its first failing command. Non-POSIX interpreters get no -e." },
         "umask": { "type": "string", "description": "Octal file-creation mask, e.g. \"027\"." },
@@ -206,9 +205,8 @@
         "env_file": { "type": "string" },
         "secrets": { "$ref": "#/$defs/secretsMap" },
         "secrets_file": { "type": "string" },
-        "notify_on_failure": { "type": "array", "items": { "type": "string" }, "description": "Route on run.failed/timeout/crashed/missed; notifier ids, \"id:override\", or \"inapp\"." },
+        "notify_on_failure": { "type": "array", "items": { "type": "string" }, "description": "Route on any failure outcome (see failures); notifier ids, \"id:override\", or \"inapp\"." },
         "notify_on_success": { "type": "array", "items": { "type": "string" }, "description": "Route on run.succeeded." },
-        "treat_missed_as_failure": { "type": "boolean", "description": "Treat a missed scheduled run as a failure (inherits [defaults]); false silences the alert." },
         "params": { "type": "array", "items": { "$ref": "#/$defs/param" }, "description": "Per-execution inputs ([tasks.*.params])." }
       }
     },
@@ -229,7 +227,7 @@
         "umask": { "type": "string" },
         "env_base": { "$ref": "#/$defs/envBase" },
         "user": { "type": "string" },
-        "exit_codes": { "$ref": "#/$defs/exitCodes" },
+        "failures": { "$ref": "#/$defs/failures" },
         "log_max_size": { "$ref": "#/$defs/byteSize" },
         "log_on_full": { "$ref": "#/$defs/logOnFull" },
         "keep_runs": { "type": "integer", "minimum": 0, "maximum": 1000000 },
@@ -244,7 +242,6 @@
         "secrets_file": { "type": "string" },
         "notify_on_failure": { "type": "array", "items": { "type": "string" } },
         "notify_on_success": { "type": "array", "items": { "type": "string" } },
-        "treat_missed_as_failure": { "type": "boolean" },
         "instances": { "type": "integer", "minimum": 1, "maximum": 64, "default": 1, "description": "Parallel instances." },
         "restart_delay": { "$ref": "#/$defs/duration", "description": "Delay before a restart. Default 1s." },
         "restart_backoff": { "$ref": "#/$defs/backoff", "default": "exponential" },
@@ -311,7 +308,7 @@
         "restart_attempts": { "type": "integer", "minimum": 0 },
         "priority": { "type": "integer" },
         "autostart": { "type": "boolean" },
-        "exit_codes": { "$ref": "#/$defs/exitCodes" },
+        "failures": { "$ref": "#/$defs/failures" },
         "log_max_size": { "$ref": "#/$defs/byteSize" },
         "log_on_full": { "$ref": "#/$defs/logOnFull" },
         "keep_runs": { "type": "integer", "minimum": 0, "maximum": 1000000 },

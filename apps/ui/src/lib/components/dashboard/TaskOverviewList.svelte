@@ -12,7 +12,6 @@
     import TaskHeldBadge from "../TaskHeldBadge.svelte";
     import TaskSourceBadge from "../TaskSourceBadge.svelte";
     import { getRunStatusConfig } from "@runwisp/ui";
-    import { isFailureEndReason } from "@runwisp/common";
     import type {
         OverviewTaskFilter,
         OverviewTaskSortKey,
@@ -360,7 +359,7 @@ run  = "echo hello"</pre>
                         />
                     </div>
 
-                    {#if isFailureEndReason(task.lastRun?.endReason)}
+                    {#if task.lastRun?.isFailure}
                         <div
                             class="mt-2 rounded-[3px] border border-danger-soft-border bg-danger-soft/80 px-3 py-2 text-xs text-danger-soft-text"
                         >

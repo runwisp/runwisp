@@ -124,7 +124,7 @@ func TestStatusJSONGolden(t *testing.T) {
 	mux.HandleFunc("/api/tasks/backup/runs", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(server.RunsResponseBody{Total: 1, Items: []model.Run{{
 			ID: "01JZZBACKUP0000000000000000", TaskName: "backup", Status: model.PhaseEnded,
-			EndReason: &failed, ExitCode: 1, TriggeredBy: model.TriggeredByCron,
+			EndReason: &failed, ExitCode: 1, IsFailure: true, TriggeredBy: model.TriggeredByCron,
 			StartedAt: &start, EndedAt: &end,
 		}}})
 	})

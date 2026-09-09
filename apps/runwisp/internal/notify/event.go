@@ -112,6 +112,13 @@ type Event struct {
 	Severity  Severity
 	Timestamp time.Time
 	TaskName  string
+	// IsFailure is the classified failure bit for this event: run events carry
+	// the persisted run.IsFailure (the task's `failures` policy applied at
+	// termination), service.fatal is always a failure, and informational events
+	// (disk pressure, delivery-failed) are not. It is what the built-in failure
+	// route matches on (MatchFailure) — never the raw Kind — so a task that
+	// promotes `stopped` or demotes `missed` re-routes automatically.
+	IsFailure bool
 	Run       *model.Run
 	// LogPath is the on-disk path of the captured output for this run. It is
 	// sourced from the executor's event envelope (never persisted on the Run

@@ -10,7 +10,6 @@ import (
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/runtime/retry"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 	"github.com/runwisp/runwisp/internal/tui/views/notifications"
@@ -396,21 +395,22 @@ func (sm *StreamManager) FetchTaskSummary(taskName string) tea.Cmd {
 
 // summarizeTaskRuns classifies a newest-first page of runs into the
 // success/failed/other breakdown the task-detail panel shows. It is pure so the
-// classification (which failure reasons count, where last-failure comes from)
-// is testable without a client. Runs must be ordered newest-first so the first
-// failure encountered is the most recent.
+// classification is testable without a client, and it reads the run's persisted
+// IsFailure bit (the task's `failures` policy applied at termination) so it can
+// never drift from every other failure readout. Runs must be ordered
+// newest-first so the first failure encountered is the most recent.
 func summarizeTaskRuns(taskName string, runs []model.Run, total int64) uikit.TaskSummaryMsg {
 	msg := uikit.TaskSummaryMsg{TaskName: taskName, Total: total, Window: len(runs)}
 	for i := range runs {
 		run := &runs[i]
 		switch {
-		case run.EndReason != nil && *run.EndReason == model.ReasonSuccess:
-			msg.Success++
-		case run.EndReason != nil && retry.IsFailureReason(*run.EndReason):
+		case run.IsFailure:
 			msg.Failed++
 			if msg.LastFailure == nil {
 				msg.LastFailure = run.EndedAt
 			}
+		case run.EndReason != nil && *run.EndReason == model.ReasonSuccess:
+			msg.Success++
 		default:
 			msg.Other++
 		}

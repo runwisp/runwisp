@@ -12,7 +12,6 @@ import (
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/channel"
 	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
@@ -51,7 +50,6 @@ func initNotify(
 	cfg *daemonConfig,
 	db storage.Database,
 	bus *events.Bus,
-	tasksMap map[string]*model.Task,
 	logger *slog.Logger,
 ) (notifyBundle, error) {
 	notifyCfg := cfg.Config.Notify
@@ -134,49 +132,16 @@ func initNotify(
 	retentionFn := buildRetentionFn(db, notifyCfg, logger)
 
 	svc := notify.New(notify.Config{
-		Bus:              bus,
-		Channels:         channels,
-		Rules:            resolved.Rules,
-		FailureSink:      failureSink,
-		Logger:           logger,
-		RetentionEvery:   5 * time.Minute,
-		RetentionFn:      retentionFn,
-		MutedMissedTasks: mutedMissedTasks(tasksMap),
+		Bus:            bus,
+		Channels:       channels,
+		Rules:          resolved.Rules,
+		FailureSink:    failureSink,
+		Logger:         logger,
+		RetentionEvery: 5 * time.Minute,
+		RetentionFn:    retentionFn,
 	})
 
 	return notifyBundle{Service: svc, Hub: hub}, nil
-}
-
-// syncMutedMissed refreshes the notify service's per-task missed-run mute set
-// from the live task registry. Called after every successful reload (SIGHUP
-// and POST /api/daemon/reload both route through this) so a task's
-// treat_missed_as_failure change takes effect immediately instead of only
-// after a full daemon restart.
-func syncMutedMissed(svc *daemonServices) {
-	if svc.Notify.Service == nil {
-		return
-	}
-	svc.Notify.Service.SetMutedMissed(mutedMissedTasks(svc.Tasks.Snapshot()))
-}
-
-// mutedMissedTasks collects the names of tasks with treat_missed_as_failure = false.
-// The notify Service drops run.missed events for these at ingress, leaving the
-// browsable missed run row untouched. Returns nil when none are muted so the
-// common case allocates nothing. Takes a name-keyed map so both the boot path
-// (built from cfg.Config.Tasks) and the reload path (the live TaskRegistry
-// snapshot) can share it.
-func mutedMissedTasks(tasks map[string]*model.Task) map[string]struct{} {
-	var muted map[string]struct{}
-	for _, t := range tasks {
-		if t.NotifiesOnMissed() {
-			continue
-		}
-		if muted == nil {
-			muted = make(map[string]struct{})
-		}
-		muted[t.Name] = struct{}{}
-	}
-	return muted
 }
 
 // backoffOverride returns a transport-builder that shrinks the outbound retry

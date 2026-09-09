@@ -468,9 +468,6 @@ func validateDefaults(d *Defaults) error {
 	if d.Jitter > JitterCap {
 		return fmt.Errorf("invalid defaults.jitter: %s exceeds the cap of %s", d.Jitter, JitterCap)
 	}
-	if err := validateExitCodes("defaults.exit_codes", d.ExitCodes); err != nil {
-		return err
-	}
 	return validateStopSignal("defaults.stop_signal", d.StopSignal)
 }
 
@@ -1022,10 +1019,7 @@ func validateTaskLimits(task *model.Task) error {
 			return err
 		}
 	}
-	if err := validateTaskDurations(task); err != nil {
-		return err
-	}
-	return validateExitCodes(fmt.Sprintf("exit_codes for task %s", task.Name), task.ExitCodes)
+	return validateTaskDurations(task)
 }
 
 func validateConcurrencyLimits(task *model.Task) error {
@@ -1081,28 +1075,6 @@ func validateTaskDurations(task *model.Task) error {
 	}
 	if task.RestartDelay != nil && *task.RestartDelay < 0 {
 		return fmt.Errorf("invalid restart_delay for task %s: must be zero or a positive duration", task.Name)
-	}
-	return nil
-}
-
-// validateExitCodes enforces the shape of the success-exit-code list. A nil
-// slice means "unset" (defaults fill it); an explicit empty list is rejected
-// because it would make even exit 0 a failure. Codes must be in the POSIX
-// range 0-255 and the list is capped.
-func validateExitCodes(scope string, codes []int) error {
-	if codes == nil {
-		return nil
-	}
-	if len(codes) == 0 {
-		return fmt.Errorf("invalid %s: list at least one exit code, or omit the key to default to [0]", scope)
-	}
-	if len(codes) > ExitCodesCap {
-		return fmt.Errorf("invalid %s: %d entries exceeds the cap of %d", scope, len(codes), ExitCodesCap)
-	}
-	for _, c := range codes {
-		if c < 0 || c > 255 {
-			return fmt.Errorf("invalid %s: %d is out of range (exit codes are 0-255)", scope, c)
-		}
 	}
 	return nil
 }
@@ -1292,9 +1264,6 @@ const (
 	MaxQueuedCap     = 10000
 	KeepRunsCap      = 1_000_000
 	RetryAttemptsCap = 100
-	// ExitCodesCap bounds the success-exit-code list. POSIX exit codes are
-	// 0-255, so a list longer than this is almost certainly a mistake.
-	ExitCodesCap = 256
 	// StartRetriesCap bounds restart_attempts. A service that fast-fails this many
 	// times in a row is broken; allowing more just delays the FATAL signal.
 	StartRetriesCap = 100
@@ -1442,7 +1411,6 @@ func applyInheritedDefaults(task *model.Task, d Defaults) {
 		task.Shell = DefaultShell
 	}
 	applyInheritedStopSignal(task, d)
-	applyInheritedExitCodes(task, d)
 	if task.LogMaxSize == 0 {
 		task.LogMaxSize = d.LogMaxSize
 	}
@@ -1461,7 +1429,7 @@ func applyInheritedDefaults(task *model.Task, d Defaults) {
 	if task.LogOnFull == "" {
 		task.LogOnFull = model.LogOverflowDropOld
 	}
-	applyInheritedNotifyOnMissed(task, d)
+	applyInheritedFailures(task, d)
 	task.Env = mergeEnv(d.Env, task.Env)
 	task.Secrets = mergeEnv(d.Secrets, task.Secrets)
 }
@@ -1481,30 +1449,16 @@ func applyInheritedStopSignal(task *model.Task, d Defaults) {
 	}
 }
 
-// applyInheritedExitCodes treats nil exit_codes as "unset" (inherit, then
-// default to [0]); an explicit empty list survives so Validate can reject it.
-func applyInheritedExitCodes(task *model.Task, d Defaults) {
-	if task.ExitCodes == nil {
-		task.ExitCodes = d.ExitCodes
+// applyInheritedFailures resolves an unset per-task failure matcher by
+// inheriting the resolved [defaults] matcher. toDefaults always leaves the
+// defaults matcher non-nil (built-in set when the key is omitted), so a task
+// that never set failures ends up with a concrete matcher and downstream
+// readers never see nil.
+func applyInheritedFailures(task *model.Task, d Defaults) {
+	if task.FailureReasons == nil {
+		task.FailureReasons = d.FailureReasons
+		task.FailureExitRanges = d.FailureExitRanges
 	}
-	if task.ExitCodes == nil {
-		task.ExitCodes = []int{0}
-	}
-}
-
-// applyInheritedNotifyOnMissed resolves an unset per-task treat_missed_as_failure by
-// inheriting [defaults], then falling back to the built-in true. The result is
-// a concrete pointer so downstream readers never see nil regardless of how the
-// task was built.
-func applyInheritedNotifyOnMissed(task *model.Task, d Defaults) {
-	if task.TreatMissedAsFailure != nil {
-		return
-	}
-	resolved := true
-	if d.TreatMissedAsFailure != nil {
-		resolved = *d.TreatMissedAsFailure
-	}
-	task.TreatMissedAsFailure = &resolved
 }
 
 // mergeEnv returns a map containing every key in base then in overlay, with

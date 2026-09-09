@@ -29,7 +29,7 @@ import { test, expect } from "../fixtures/test-base";
 import { runVerdict } from "../fixtures/api";
 import { DemoCursor } from "./cursor-overlay";
 import { Screencast } from "./screencast";
-import { isFailureEndReason, type Run } from "@runwisp/common";
+import { type Run } from "@runwisp/common";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_PATH = resolve(__dirname, "../.state.json");
@@ -82,7 +82,7 @@ test.beforeAll(async () => {
                 }
                 await new Promise((r) => setTimeout(r, 150));
             }
-            if (ended && isFailureEndReason(ended.endReason)) return; // a real failure landed
+            if (ended?.isFailure) return; // a real failure landed
         }
     } finally {
         await ctx.dispose();

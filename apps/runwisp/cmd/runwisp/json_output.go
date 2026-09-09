@@ -11,7 +11,6 @@ import (
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/runtime/retry"
 )
 
 // jsonSchemaVersion identifies the shape of every --json document RunWisp's
@@ -92,8 +91,9 @@ type statusTaskJSON struct {
 }
 
 // lastRunJSON is the most recent run of a task. failed/missed are precomputed
-// so an agent never has to know RunWisp's end-reason taxonomy: failed reuses
-// retry.IsFailureReason, missed is the single ReasonMissed value.
+// so an agent never has to know RunWisp's end-reason taxonomy: failed is the
+// run's classified failure bit (the task's `failures` policy) with missed
+// excluded, and missed is the single ReasonMissed value.
 type lastRunJSON struct {
 	ID          string     `json:"id"`
 	Status      string     `json:"status"`
@@ -147,7 +147,9 @@ func runOutcome(r *model.Run) (endReason *string, failed bool, durationMS *int64
 	if r.EndReason != nil {
 		reason := string(*r.EndReason)
 		endReason = &reason
-		failed = retry.IsFailureReason(*r.EndReason)
+		// missed is surfaced as its own field, so keep it out of failed (mirrors
+		// the stats "failed" tile, which also excludes missed).
+		failed = r.IsFailure && *r.EndReason != model.ReasonMissed
 	}
 	if r.StartedAt != nil && r.EndedAt != nil {
 		ms := r.EndedAt.Sub(*r.StartedAt).Milliseconds()
@@ -177,8 +179,9 @@ func newLastRunJSON(r *model.Run) lastRunJSON {
 // runJSONDoc is the machine-readable outcome of `runwisp run --json`: the one
 // document written to stdout once the run reaches a terminal state (or is
 // triggered, under --detach). Live log lines are diverted to stderr so stdout
-// stays a single JSON document. failed is precomputed (retry.IsFailureReason)
-// so an agent branches on one boolean without knowing the end-reason taxonomy.
+// stays a single JSON document. failed is precomputed (the run's classified
+// failure bit) so an agent branches on one boolean without knowing the
+// end-reason taxonomy.
 type runJSONDoc struct {
 	SchemaVersion int    `json:"schemaVersion"`
 	Task          string `json:"task"`

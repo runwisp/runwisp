@@ -28,15 +28,6 @@ export interface OverviewSummary {
 
 export type OverviewTaskCounts = Record<OverviewTaskFilter, number>;
 
-const ATTENTION_STATUSES = new Set<RunStatus>([
-    "failed",
-    "crashed",
-    "stopped",
-    "timeout",
-    "log_overflow",
-    "missed",
-    "start_failed",
-]);
 const TASK_STATE_ORDER: Record<OverviewTaskState, number> = {
     attention: 0,
     running: 1,
@@ -67,7 +58,7 @@ export function buildTaskOverviews(
         let state: OverviewTaskState = "idle";
         if (activeRun) {
             state = "running";
-        } else if (lastStatus && ATTENTION_STATUSES.has(lastStatus)) {
+        } else if (lastRun?.isFailure === true) {
             state = "attention";
         } else if (nextRunMs !== undefined) {
             state = "scheduled";

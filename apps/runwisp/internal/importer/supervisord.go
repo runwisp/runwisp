@@ -277,13 +277,11 @@ func (sd *supervisordState) noteKindChoice(s *iniSection, ref itemRef) {
 		ref.note(NoteAutorestartUnexpected,
 			"autorestart not set (supervisord defaults to unexpected) → imported "+
 				"as an always-on service. RunWisp services restart on any exit, not "+
-				"only unexpected ones; set exit_codes if some non-zero codes should "+
-				"count as success.")
+				"only unexpected ones.")
 	case strings.EqualFold(strings.TrimSpace(v), "unexpected"):
 		ref.note(NoteAutorestartUnexpected,
 			"autorestart=unexpected → imported as an always-on service. RunWisp "+
-				"services restart on any exit, not only unexpected ones; set "+
-				"exit_codes if some non-zero codes should count as success.")
+				"services restart on any exit, not only unexpected ones.")
 	}
 }
 
@@ -379,12 +377,6 @@ func (sd *supervisordState) applyProgramKeys(b *block, s *iniSection, ref itemRe
 		case "stopwaitsecs":
 			if d, ok := secondsValue(value); ok {
 				b.set("graceful_stop", tomlString(d))
-			} else {
-				sd.noteUnreadable(ref, key, value)
-			}
-		case "exitcodes":
-			if codes, ok := parseExitCodes(value); ok {
-				b.set("exit_codes", tomlIntArray(codes))
 			} else {
 				sd.noteUnreadable(ref, key, value)
 			}
@@ -541,22 +533,6 @@ func secondsValue(value string) (string, bool) {
 func normalizeSignal(value string) string {
 	canonical, _ := model.NormalizeSignalName(value)
 	return canonical
-}
-
-func parseExitCodes(value string) ([]int, bool) {
-	parts := strings.Split(value, ",")
-	codes := make([]int, 0, len(parts))
-	for _, p := range parts {
-		n, err := strconv.Atoi(strings.TrimSpace(p))
-		if err != nil {
-			return nil, false
-		}
-		codes = append(codes, n)
-	}
-	if len(codes) == 0 {
-		return nil, false
-	}
-	return codes, true
 }
 
 // expandSupervisordTokens resolves the %(program_name)s expansion and reports

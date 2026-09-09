@@ -501,7 +501,7 @@ func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult
 // as a permanent non-terminal 'pending' row — retention only sweeps ended runs.
 // Caller holds m.mu.
 func (m *defaultTaskManager) endOrphanedPending(r *model.Run) {
-	r.End(model.ReasonSkipped, -1, m.clock())
+	r.End(nil, model.ReasonSkipped, -1, m.clock())
 	m.persistence.PersistExisting(r)
 }
 
@@ -514,7 +514,7 @@ func (m *defaultTaskManager) endOrphanedPending(r *model.Run) {
 // m.mu is released), or nil if it started or joined the queue instead.
 func (m *defaultTaskManager) resumePendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) *model.Run {
 	if ts.task.Kind.IsService() {
-		r.End(model.ReasonFailed, -1, m.clock())
+		r.End(ts.task, model.ReasonFailed, -1, m.clock())
 		m.persistence.PersistExisting(r)
 		result.Skipped++
 		return r
@@ -529,7 +529,7 @@ func (m *defaultTaskManager) resumePendingRun(ts *taskState, r *model.Run, resul
 func (m *defaultTaskManager) requeuePendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) *model.Run {
 	maxQueued := ts.task.MaxQueued
 	if maxQueued > 0 && len(ts.queue) >= maxQueued {
-		r.End(model.ReasonQueueFull, -1, m.clock())
+		r.End(ts.task, model.ReasonQueueFull, -1, m.clock())
 		m.persistence.PersistExisting(r)
 		result.Failed++
 		return r
@@ -550,7 +550,7 @@ func (m *defaultTaskManager) restartOrFailPendingRun(ts *taskState, r *model.Run
 		result.Resumed++
 		return nil
 	}
-	r.End(model.ReasonFailed, -1, m.clock())
+	r.End(ts.task, model.ReasonFailed, -1, m.clock())
 	m.persistence.PersistExisting(r)
 	result.Failed++
 	return r
@@ -671,12 +671,12 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 
 	switch action {
 	case actionRejected:
-		run.End(model.ReasonSkipped, -1, m.clock())
+		run.End(ts.task, model.ReasonSkipped, -1, m.clock())
 		m.persistence.PersistExisting(run)
 		publishTerminal = func() { m.publishTerminal(events.EventRunFailed, run) }
 		return run.Copy(), actionErr
 	case actionQueueFull:
-		run.End(model.ReasonQueueFull, -1, m.clock())
+		run.End(ts.task, model.ReasonQueueFull, -1, m.clock())
 		m.persistence.PersistExisting(run)
 		publishTerminal = func() { m.publishTerminal(events.EventRunFailed, run) }
 		return run.Copy(), actionErr
@@ -766,7 +766,8 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.E
 	}()
 	defer m.mu.Unlock()
 
-	if _, exists := m.tasks[taskName]; !exists {
+	ts, exists := m.tasks[taskName]
+	if !exists {
 		return fmt.Errorf(errTaskNotFoundFmt, taskName)
 	}
 
@@ -780,7 +781,7 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.E
 	}
 	m.persistence.PersistNew(run)
 	m.publishRun(events.EventRunCreated, run)
-	run.End(reason, -1, now)
+	run.End(ts.task, reason, -1, now)
 	m.persistence.PersistExisting(run)
 	publishTerminal = func() { m.publishTerminal(events.EventRunFailed, run) }
 	return nil
@@ -807,7 +808,8 @@ func (m *defaultTaskManager) RecordMissedRun(taskName string, scheduledAt time.T
 	}()
 	defer m.mu.Unlock()
 
-	if _, exists := m.tasks[taskName]; !exists {
+	ts, exists := m.tasks[taskName]
+	if !exists {
 		return fmt.Errorf(errTaskNotFoundFmt, taskName)
 	}
 
@@ -820,7 +822,7 @@ func (m *defaultTaskManager) RecordMissedRun(taskName string, scheduledAt time.T
 	}
 	m.persistence.PersistNew(run)
 	m.publishRun(events.EventRunCreated, run)
-	run.End(model.ReasonMissed, -1, scheduledAt)
+	run.End(ts.task, model.ReasonMissed, -1, scheduledAt)
 	m.persistence.PersistExisting(run)
 	publishTerminal = func() { m.publishTerminalErr(events.EventRunFailed, run, reason) }
 	return nil
@@ -1196,7 +1198,7 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 		outcome.endReason = model.ReasonStartFailed
 		outcome.eventType = events.EventRunFailed
 	}
-	run.End(outcome.endReason, result.ExitCode, endTime)
+	run.End(task, outcome.endReason, result.ExitCode, endTime)
 
 	m.persistence.PersistExisting(run)
 	m.publishTerminal(outcome.eventType, run)
@@ -1241,14 +1243,14 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 		}
 	}
 	if task.Kind.IsService() {
-		wasFailure := retry.IsFailureReason(endReason)
+		wasFailure := retry.IsFailedExecution(endReason)
 		startRetries := config.IntOrDefault(task.RestartAttempts, config.DefaultStartRetries)
 		nextRestartAttempt, serviceFatal = ts.supervisor.RecordExit(
 			run.InstanceIndex, runDuration, startRetries, wasFailure)
 		if serviceFatal {
 			fatalAttempts = ts.supervisor.StartFails(run.InstanceIndex)
 		}
-	} else if retry.IsFailureReason(endReason) && retired != nil {
+	} else if retry.IsFailedExecution(endReason) && retired != nil {
 		// Non-service restart backoff has no supervisor to count attempts, so we
 		// carry the chain depth on the ActiveRun. Return it as the attempt the
 		// next restart delay is computed from; scheduleRestart advances it for the

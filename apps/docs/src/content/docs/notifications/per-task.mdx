@@ -55,27 +55,29 @@ lists are independent.
 
 ## Missed-run alerts
 
-There's no `treat_missed_as_failure = [...]` channel list, and that's
-deliberate. A [missed scheduled run](/concepts/scheduling/#alerting-on-missed-runs) —
-one the daemon was down for — is a failure, so it rides the **exact same
-channels you already named in `notify_on_failure`** (plus the bell, via
-`global_notifiers`). You don't wire it up; it's just there.
+There's no separate missed-run channel list, and that's deliberate. A
+[missed scheduled run](/concepts/scheduling/#alerting-on-missed-runs) —
+one the daemon was down for — counts as a failure by default, so it rides
+the **exact same channels you already named in `notify_on_failure`** (plus
+the bell, via `global_notifiers`). You don't wire it up; it's just there.
 
-What you _can_ do is turn it off for a task that's expected to miss
-ticks — a laptop job that only runs while you're at your desk, say:
+What you _can_ do is stop treating misses as failures for a task that's
+expected to miss ticks — a laptop job that only runs while you're at your
+desk, say — by dropping `missed` from its
+[`failures`](/configuration/tasks/#what-counts-as-a-failure) list:
 
 ```toml
 [tasks.daytime-sync]
 cron              = "*/30 9-17 * * 1-5"
 run               = "/usr/local/bin/sync"
 notify_on_failure = ["slack-ops"]
-treat_missed_as_failure  = false   # failures still page; missed ticks stay quiet
+failures          = ["failed", "timeout", "crashed"]   # real failures still page; missed ticks stay quiet
 ```
 
-`treat_missed_as_failure` is a boolean, not a channel list. It defaults to
-`true`, inherits from `[defaults]`, and only silences the **alert** —
-the `missed` run row is still recorded and browsable, so nothing
-actually goes invisible. Use it instead of hollowing out
+`failures` reclassifies outcomes for stats, the UI, _and_ alerts in one
+place — it only changes whether a missed tick counts as a failure, not
+whether it's recorded. The `missed` run row is still there and browsable,
+so nothing goes invisible. Reach for it instead of hollowing out
 `notify_on_failure`, which would also drop your real failure alerts.
 
 ## Inline target overrides

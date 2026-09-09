@@ -1068,6 +1068,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "isFailure": {
+            "type": "boolean"
+          },
           "params": {
             "additionalProperties": {
               "type": "string"
@@ -1113,6 +1116,7 @@
           "id",
           "taskName",
           "status",
+          "isFailure",
           "exitCode",
           "triggeredBy",
           "createdAt",
@@ -1703,17 +1707,6 @@
           "envFile": {
             "description": "Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env.",
             "type": "string"
-          },
-          "exitCodes": {
-            "description": "Process exit codes treated as success; defaults to [0]",
-            "items": {
-              "format": "int64",
-              "type": "integer"
-            },
-            "type": [
-              "array",
-              "null"
-            ]
           },
           "gracefulStop": {
             "description": "Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds",

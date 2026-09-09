@@ -216,8 +216,6 @@ type composeServiceOverrideWire struct {
 	Priority  int   `toml:"priority,omitempty"`
 	Autostart *bool `toml:"autostart,omitempty"`
 
-	ExitCodes []int `toml:"exit_codes,omitempty"`
-
 	LogMaxSize string `toml:"log_max_size,omitempty"`
 	LogOnFull  string `toml:"log_on_full,omitempty"`
 
@@ -632,9 +630,6 @@ func applyComposeOverrideSupervision(task *model.Task, w *composeServiceOverride
 	}
 	if w.StopSignal != "" {
 		task.StopSignal = w.StopSignal
-	}
-	if w.ExitCodes != nil {
-		task.ExitCodes = w.ExitCodes
 	}
 	if w.RestartAttempts != nil {
 		task.RestartAttempts = w.RestartAttempts

@@ -174,24 +174,24 @@ just never leave one enabled in both places.
 A `[program]` is a long-running, auto-restarted process — which is exactly a
 RunWisp **service**. Most keys carry straight over:
 
-| supervisord                     | runwisp.toml             | Notes                                                |
-| ------------------------------- | ------------------------ | ---------------------------------------------------- |
-| `[program:web]`                 | `[services.web]`         | One program → one service.                           |
-| `command`                       | `run`                    | `%(program_name)s` is expanded.                      |
-| `directory`                     | `working_dir`            |                                                      |
-| `user`                          | `user`                   | Needs the daemon running as root to switch users.    |
-| `umask`                         | `umask`                  |                                                      |
-| `numprocs`                      | `instances`              | Each gets a `RUNWISP_INSTANCE_INDEX` (0-based).      |
-| `startsecs`                     | `healthy_after`          | Uptime that marks an instance healthy.               |
-| `startretries`                  | `restart_attempts`       | Fast failures tolerated before FATAL.                |
-| `stopsignal`                    | `stop_signal`            | `INT` → `SIGINT`.                                    |
-| `stopwaitsecs`                  | `graceful_stop`          | Grace window before SIGKILL.                         |
-| `exitcodes`                     | `exit_codes`             | Which codes count as success.                        |
-| `priority`                      | `priority`               | Boot start order.                                    |
-| `autostart`                     | `autostart`              | Whether instances start at boot.                     |
-| `environment`                   | `[services.NAME.env]`    | Quoted values are parsed correctly.                  |
-| `[group:site] programs=web,…`   | `group = "site"` on each | RunWisp has no program _groups_; members are tagged. |
-| `[include] files=conf.d/*.conf` | _(followed and merged)_  | Resolved relative to the config file.                |
+| supervisord                     | runwisp.toml             | Notes                                                                               |
+| ------------------------------- | ------------------------ | ----------------------------------------------------------------------------------- |
+| `[program:web]`                 | `[services.web]`         | One program → one service.                                                          |
+| `command`                       | `run`                    | `%(program_name)s` is expanded.                                                     |
+| `directory`                     | `working_dir`            |                                                                                     |
+| `user`                          | `user`                   | Needs the daemon running as root to switch users.                                   |
+| `umask`                         | `umask`                  |                                                                                     |
+| `numprocs`                      | `instances`              | Each gets a `RUNWISP_INSTANCE_INDEX` (0-based).                                     |
+| `startsecs`                     | `healthy_after`          | Uptime that marks an instance healthy.                                              |
+| `startretries`                  | `restart_attempts`       | Fast failures tolerated before FATAL.                                               |
+| `stopsignal`                    | `stop_signal`            | `INT` → `SIGINT`.                                                                   |
+| `stopwaitsecs`                  | `graceful_stop`          | Grace window before SIGKILL.                                                        |
+| `exitcodes`                     | _(dropped)_              | RunWisp has no success-code allowlist: exit `0` succeeds, any non-zero is `failed`. |
+| `priority`                      | `priority`               | Boot start order.                                                                   |
+| `autostart`                     | `autostart`              | Whether instances start at boot.                                                    |
+| `environment`                   | `[services.NAME.env]`    | Quoted values are parsed correctly.                                                 |
+| `[group:site] programs=web,…`   | `group = "site"` on each | RunWisp has no program _groups_; members are tagged.                                |
+| `[include] files=conf.d/*.conf` | _(followed and merged)_  | Resolved relative to the config file.                                               |
 
 ## What needs a human
 
@@ -205,9 +205,13 @@ mattered. The ones to know about:
   a service directly. `autorestart=false` is different: that's a run-once
   process, so it's imported as a **task** with
   [`run_on_start`](/configuration/tasks/) and `restart = "never"` instead of a
-  service. If you relied on `unexpected` to _not_ restart on a clean exit, set
-  [`exit_codes`](/configuration/services/) so RunWisp knows which codes are
-  success.
+  service. RunWisp treats only exit `0` as success, so if your program signals
+  "done, no restart" with a non-zero code, end its `run` with `|| true` so it
+  exits `0`.
+- **`exitcodes`.** Dropped — RunWisp has no success-code allowlist. Exit `0`
+  succeeds and any non-zero exit is `failed`; use
+  [`failures`](/configuration/tasks/#what-counts-as-a-failure) to choose which
+  outcomes count as failures for stats and alerts.
 - **`%(...)s` expansions.** `%(program_name)s` is filled in. Anything else —
   `%(process_num)s`, `%(ENV_x)s`, `%(host_node_name)s` — is left in place with a
   TODO. For `numprocs`, the per-instance index is `RUNWISP_INSTANCE_INDEX` in the

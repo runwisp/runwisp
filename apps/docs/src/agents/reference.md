@@ -96,14 +96,13 @@ timeout:             dur          — per-attempt wall-clock cap; unset = no tim
 jitter:              dur          — start-spread window inherited by cron tasks; off when unset (TASKS only)
 shell:               path =/bin/sh — interpreter for run scripts (absolute path); see FAIL-FAST
 stop_signal:         enum =SIGTERM — stop-ladder signal: SIGTERM|SIGINT|SIGQUIT|SIGHUP|SIGKILL|SIGUSR1|SIGUSR2
-exit_codes:          []int =[0]   — exit codes treated as success (0..255)
+failures:            []str        — outcomes classified as a failure (stats/UI/notify); tokens are reason names (failed,timeout,crashed,log_overflow,start_failed,missed,stopped,…) or exit codes ("42","1-23"; 1..255). Default [failed,timeout,crashed,log_overflow,start_failed,missed]. is_failure = reason∈tokens OR (reason==failed AND exit∈ranges). Full-list replace; exit 0 always success. Does NOT affect retry/restart
 log_max_size:        size =100mb  — per-run log cap (effective task default)
 log_on_full:         enum =drop_old — drop_new | drop_old | kill
 keep_runs:           int          — row-count retention; 0..1000000 (0 = keep none)
 keep_for:            dur          — age retention; positive
 healthy_after:       dur  =60s    — service uptime that counts as healthy: resets the restart counter and clears the failed-start streak (SERVICES only); 0 = healthy immediately, kept literally if set
 restart_attempts:       int  =3      — consecutive failures before giving up: a service goes FATAL, a restarting task is recorded start_failed; 0 = give up after the first failure, kept literally if set
-treat_missed_as_failure:    bool =true   — alert on missed scheduled runs; false silences daemon-wide (per-task still wins)
 env:                 map<str,str> — inline env merged into every task; key ^[A-Za-z_][A-Za-z0-9_]*$, <=256 entries, value <=32KiB, no NUL
 env_file:            path         — dotenv file merged into every task; relative to runwisp.toml dir
 secrets:             map<str,str> — inline secrets merged into every task; never shown in API/UI
@@ -135,7 +134,7 @@ on_overlap:        enum =queue      — queue | skip | kill
 retry_attempts:    int  =0          — retries after a failed attempt; 0..100
 retry_delay:       dur  =5s         — delay between retries (<=0 floors to 5s)
 retry_backoff:     enum             — constant | linear | exponential
-exit_codes:        []int =[0]       — exit codes treated as success (inherits [defaults]); 0..255
+failures:          []str           — outcomes classified as a failure (inherits [defaults]); see [defaults].failures
 working_dir:       path             — process cwd; relative to runwisp.toml dir; ~ = home of whoever the
                                      task runs as (daemon's, or `user`'s — resolved at run time). Default: daemon cwd
 shell:             path =/bin/sh    — interpreter for run (absolute path); invoked as <shell> -e -c <script>; see FAIL-FAST
@@ -162,14 +161,13 @@ env:               map<str,str>     — inline env (merged over defaults.env)
 env_file:          path             — dotenv file
 secrets:           map<str,str>     — inline secrets (merged over defaults.secrets); never shown in API/UI
 secrets_file:      path             — dotenv file merged beneath secrets; only the path is visible
-notify_on_failure: []string         — sugar → route on run.failed/timeout/crashed/missed; notifier ids, "id:override", or "inapp"
+notify_on_failure: []string         — sugar → route on any failure outcome (see failures); notifier ids, "id:override", or "inapp"
 notify_on_success: []string         — sugar → route on run.succeeded
-treat_missed_as_failure:  bool =true       — alert on missed scheduled runs (inherits [defaults]); false silences
 ```
 
 ### [services.&lt;name&gt;] (long-running)
 
-`restart=always` is forced. Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `max_catch_up_runs`, `restart`, `max_concurrent`, `max_queued`, `retry_*`. Shares the core task keys (including `restart_attempts`, see above): `group` (default `Services`), `description`, `manual_trigger`, `on_overlap` (default `skip`), `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `env_base`, `user`, `exit_codes`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify_on_failure`/`notify_on_success`/`treat_missed_as_failure`. Service-only:
+`restart=always` is forced. Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `max_catch_up_runs`, `restart`, `max_concurrent`, `max_queued`, `retry_*`. Shares the core task keys (including `restart_attempts`, see above): `group` (default `Services`), `description`, `manual_trigger`, `on_overlap` (default `skip`), `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `env_base`, `user`, `failures`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify_on_failure`/`notify_on_success`. Service-only:
 
 ```
 instances:           int  =1           — parallel instances; 1..64
@@ -200,7 +198,7 @@ pull:         enum =missing        — missing | always | never
 name_format:  string ={alias}.{service} — generated task name; must contain {service} when import="services"
 ```
 
-Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `manual_trigger`, `timeout`, `graceful_stop`, `stop_signal`, `on_overlap`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `restart_attempts`, `priority`, `autostart`, `exit_codes`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `env`, `env_file`, `secrets`, `secrets_file`, `notify_on_failure`, `notify_on_success`. Not allowed: `run`/`compose_file`/`compose_service` (the parent block owns the backend), and the host-process keys `shell`/`umask`/`env_base`/`user`. `import="stack"` forbids overrides and include/exclude. Per-service `notify_on_failure`/`notify_on_success` desugar into notify routes keyed by the generated task name, exactly like `[services.*]`. The reserved sub-table `[compose.<alias>.defaults]` accepts the same keys and applies them to every imported service before the per-service override wins (precedence: compose-import default → `defaults` → `<svc>`); its `notify_on_*` add routes to all services. A compose service literally named `defaults` is rejected (rename hint); `import="stack"` forbids `defaults` too.
+Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `manual_trigger`, `timeout`, `graceful_stop`, `stop_signal`, `on_overlap`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `restart_attempts`, `priority`, `autostart`, `failures`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `env`, `env_file`, `secrets`, `secrets_file`, `notify_on_failure`, `notify_on_success`. Not allowed: `run`/`compose_file`/`compose_service` (the parent block owns the backend), and the host-process keys `shell`/`umask`/`env_base`/`user`. `import="stack"` forbids overrides and include/exclude. Per-service `notify_on_failure`/`notify_on_success` desugar into notify routes keyed by the generated task name, exactly like `[services.*]`. The reserved sub-table `[compose.<alias>.defaults]` accepts the same keys and applies them to every imported service before the per-service override wins (precedence: compose-import default → `defaults` → `<svc>`); its `notify_on_*` add routes to all services. A compose service literally named `defaults` is rejected (rename hint); `import="stack"` forbids `defaults` too.
 
 ### [notify] (global notification settings)
 

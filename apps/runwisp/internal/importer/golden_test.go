@@ -87,12 +87,14 @@ var supervisordGoldenCases = []struct {
 }{
 	// Two services with the full knob set, plus skipped daemon sections and a
 	// numprocs that fans out into instances. worker has no autorestart= line,
-	// which is supervisord's own "unexpected" default and now gets noted.
+	// which is supervisord's own "unexpected" default and now gets noted, and an
+	// exitcodes= that RunWisp has no equivalent for and drops.
 	{name: "full", file: "testdata/supervisord/full.conf", expectNotes: []NoteKind{
 		NoteSectionDaemon,         // [supervisord]/[unix_http_server]
 		NoteLogsDropped,           // dropped log files
 		NoteInstances,             // numprocs=3
 		NoteAutorestartUnexpected, // worker's autorestart is omitted
+		NoteKeysUnsupported,       // worker's exitcodes= is dropped
 	}},
 	// A group, an autorestart=unexpected service, a run-once task, and an
 	// eventlistener RunWisp can't represent.

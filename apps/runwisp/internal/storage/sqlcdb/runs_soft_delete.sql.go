@@ -169,7 +169,7 @@ WHERE deleted_at IS NOT NULL
   AND id NOT IN (/*SLICE:except_ids*/?)
 RETURNING id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
-  instance_index, params_json, deleted_at
+  instance_index, params_json, deleted_at, is_failure
 `
 
 type RestoreRunsByFilterParams struct {
@@ -231,6 +231,7 @@ func (q *Queries) RestoreRunsByFilter(ctx context.Context, arg RestoreRunsByFilt
 			&i.InstanceIndex,
 			&i.ParamsJson,
 			&i.DeletedAt,
+			&i.IsFailure,
 		); err != nil {
 			return nil, err
 		}
@@ -251,7 +252,7 @@ WHERE deleted_at IS NOT NULL
   AND id IN (/*SLICE:ids*/?)
 RETURNING id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
-  instance_index, params_json, deleted_at
+  instance_index, params_json, deleted_at, is_failure
 `
 
 func (q *Queries) RestoreRunsByIDs(ctx context.Context, ids []string) ([]Run, error) {
@@ -289,6 +290,7 @@ func (q *Queries) RestoreRunsByIDs(ctx context.Context, ids []string) ([]Run, er
 			&i.InstanceIndex,
 			&i.ParamsJson,
 			&i.DeletedAt,
+			&i.IsFailure,
 		); err != nil {
 			return nil, err
 		}

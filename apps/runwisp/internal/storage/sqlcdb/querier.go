@@ -26,15 +26,17 @@ type Querier interface {
 	GetConfigValue(ctx context.Context, key string) (string, error)
 	GetLastRunByTask(ctx context.Context, taskName string) (Run, error)
 	GetNotificationByID(ctx context.Context, id string) (Notification, error)
+	// Full table projection in column order so sqlc reuses the Run model struct
+	// (is_failure is last because the migration appended the column).
 	GetPendingRuns(ctx context.Context) ([]Run, error)
 	GetRun(ctx context.Context, id string) (Run, error)
 	GetRunByExecutionID(ctx context.Context, executionID *string) (Run, error)
 	// 'missed' is counted on its own and deliberately excluded from 'failed':
 	// a missed run never executed, so folding it into the execution-failure
 	// count (and last_failure timestamp) would skew failure metrics.
-	// The failure set below must mirror runtime/retry.IsFailureReason (Go): keep
-	// them in sync when a new failure end_reason is added, or this summary count and
-	// the failed run metric (runwisp_runs_total status=failed) will undercount.
+	// 'failed' and last_failure read the persisted is_failure bit (each run's
+	// `failures` policy, resolved at termination) rather than a hardcoded end_reason
+	// set, so this metric can never drift from the rest of the failure readouts.
 	GetRunSummary(ctx context.Context) (GetRunSummaryRow, error)
 	GetTaskRegistration(ctx context.Context, taskName string) (TaskRegistration, error)
 	InsertNotification(ctx context.Context, arg InsertNotificationParams) error
@@ -44,6 +46,10 @@ type Querier interface {
 	ListNotificationsBefore(ctx context.Context, arg ListNotificationsBeforeParams) ([]Notification, error)
 	ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload, error)
 	MarkAllNotificationsRead(ctx context.Context, readAt *time.Time) error
+	// Boot-time crash recovery marks these orphans is_failure=1 using the default
+	// classification: a task that demoted 'crashed' from its `failures` would
+	// mis-tag its own boot-marked orphans, but that combination is exotic and the
+	// alternative (loading every task's policy in the recovery path) is not worth it.
 	MarkCrashedRuns(ctx context.Context, endedAt *time.Time) (int64, error)
 	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) (int64, error)
 	MarkNotificationUnread(ctx context.Context, id string) (int64, error)

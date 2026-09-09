@@ -33,17 +33,6 @@ type Service struct {
 	channels []Channel
 	failures SyntheticIngester
 
-	// mutedMissed is the set of task names whose run.missed events are
-	// suppressed (treat_missed_as_failure = false). The browsable missed run row is
-	// still persisted by the runtime; only the active notification is dropped,
-	// at ingress, before routing. treat_missed_as_failure is an ordinary
-	// per-task field (not part of [notify]), so a `runwisp reload`/SIGHUP can
-	// change it live — SetMutedMissed lets the reload path push the refreshed
-	// set in. An atomic.Pointer lets onBusEvent (called from the bus
-	// publisher goroutine) read it without locking against a concurrent
-	// reload.
-	mutedMissed atomic.Pointer[map[string]struct{}]
-
 	clock  Clocker
 	logger *slog.Logger
 
@@ -76,10 +65,6 @@ type Config struct {
 	Logger         *slog.Logger          // 0 → slog.Default
 	RetentionEvery time.Duration         // 0 → 5min
 	RetentionFn    func(context.Context) // executed on each tick; injected by Service builder
-	// MutedMissedTasks names the tasks with treat_missed_as_failure = false. Their
-	// run.missed events are dropped at ingress. Nil/empty means every task
-	// alerts on misses (the default).
-	MutedMissedTasks map[string]struct{}
 }
 
 // New constructs a Service from already-built channels and pre-compiled rules.
@@ -117,16 +102,7 @@ func New(cfg Config) *Service {
 		retentionEvery: retentionEvery,
 		retentionFn:    cfg.RetentionFn,
 	}
-	s.mutedMissed.Store(&cfg.MutedMissedTasks)
 	return s
-}
-
-// SetMutedMissed replaces the set of task names whose run.missed events are
-// suppressed. Safe to call concurrently with onBusEvent — used by the reload
-// path so a live `treat_missed_as_failure` change takes effect immediately
-// instead of only after a full daemon restart.
-func (s *Service) SetMutedMissed(muted map[string]struct{}) {
-	s.mutedMissed.Store(&muted)
 }
 
 // Start subscribes to the event bus, launches the dispatch goroutine and the
@@ -244,17 +220,6 @@ func (s *Service) onBusEvent(e events.Event) {
 	ev := MapEvent(e)
 	if ev == nil {
 		return
-	}
-	// Per-task mute: treat_missed_as_failure = false suppresses the active alert while
-	// the runtime still persists the browsable missed run row. Applied here,
-	// after mapping, because the additive route model can't express a per-task
-	// deny against the global catch-all that delivers run.missed by default.
-	if ev.Kind == KindRunMissed {
-		if muted := s.mutedMissed.Load(); muted != nil {
-			if _, ok := (*muted)[ev.TaskName]; ok {
-				return
-			}
-		}
 	}
 	// RLock lets concurrent publishes send in parallel (channel sends are
 	// themselves safe) while excluding Stop's close. A closed ingress means the

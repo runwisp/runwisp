@@ -64,34 +64,6 @@ type _EndReasonsExhaustive = Exclude<
 // Triggers a compile-time error if any EndReason is missing from END_REASONS.
 true satisfies _EndReasonsExhaustive;
 
-/**
- * End reasons treated as failures by retry policy, dashboards, and the
- * "Last run failed" UI surface. Mirrors `retry.IsFailureReason` in Go —
- * keep them in sync.
- *
- * queue_full / dst_skipped are policy outcomes, not failures, so they
- * intentionally stay out of this list (alongside skipped). daemon_stopped
- * is operator-driven shutdown, not a task fault.
- */
-export const FAILURE_END_REASONS = [
-  "failed",
-  "crashed",
-  "timeout",
-  "log_overflow",
-  "start_failed",
-] as const satisfies readonly EndReason[];
-export type FailureEndReason = (typeof FAILURE_END_REASONS)[number];
-
-export function isFailureEndReason(
-  reason: EndReason | null | undefined,
-): reason is FailureEndReason {
-  if (!reason) return false;
-  for (const candidate of FAILURE_END_REASONS) {
-    if (candidate === reason) return true;
-  }
-  return false;
-}
-
 /** Union of phases and end-reasons for UI display/filtering. */
 export const RUN_STATUSES = [...RUN_PHASES, ...END_REASONS] as const;
 

@@ -34,6 +34,7 @@ function makeRun(taskName: string, overrides: Partial<Run> = {}): Run {
         exitCode: 0,
         instanceIndex: 0,
         retryAttempt: 0,
+        isFailure: false,
         ...overrides,
     };
 }
@@ -62,14 +63,18 @@ describe("buildTaskOverviews", () => {
 
     it("sets attention state when last run was failed", () => {
         const tasks = [makeTask("backup-db")];
-        const run = makeRun("backup-db", { status: "ended", endReason: "failed" });
+        const run = makeRun("backup-db", { status: "ended", endReason: "failed", isFailure: true });
         const result = buildTaskOverviews(tasks, [run], []);
         expect(result.at(0)?.state).toBe("attention");
     });
 
     it("sets attention state for crashed", () => {
         const tasks = [makeTask("backup-db")];
-        const run = makeRun("backup-db", { status: "ended", endReason: "crashed" });
+        const run = makeRun("backup-db", {
+            status: "ended",
+            endReason: "crashed",
+            isFailure: true,
+        });
         const result = buildTaskOverviews(tasks, [run], []);
         expect(result.at(0)?.state).toBe("attention");
     });
@@ -91,7 +96,11 @@ describe("buildTaskOverviews", () => {
 
     it("running state takes priority over attention (active run wins)", () => {
         const tasks = [makeTask("backup-db")];
-        const failedRun = makeRun("backup-db", { status: "ended", endReason: "failed" });
+        const failedRun = makeRun("backup-db", {
+            status: "ended",
+            endReason: "failed",
+            isFailure: true,
+        });
         const activeRun = makeRun("backup-db", {
             status: "running",
             startedAt: new Date().toISOString(),
@@ -113,6 +122,7 @@ describe("buildTaskOverviews", () => {
             createdAt: "2024-06-01T00:00:00Z",
             status: "ended",
             endReason: "failed",
+            isFailure: true,
         });
         const result = buildTaskOverviews(tasks, [older, newer], []);
         expect(result.at(0)?.lastRun?.id).toBe("r-new");
@@ -137,7 +147,7 @@ describe("buildOverviewSummary", () => {
 
     it("counts attention tasks", () => {
         const tasks = [makeTask("a"), makeTask("b")];
-        const failedRun = makeRun("a", { status: "ended", endReason: "failed" });
+        const failedRun = makeRun("a", { status: "ended", endReason: "failed", isFailure: true });
         const overviews = buildTaskOverviews(tasks, [failedRun], []);
         const summary = buildOverviewSummary(overviews, []);
         expect(summary.attentionTasks).toBe(1);

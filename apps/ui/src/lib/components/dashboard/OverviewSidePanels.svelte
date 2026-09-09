@@ -9,7 +9,7 @@
     import TaskSourceBadge from "../TaskSourceBadge.svelte";
     import { getRunStatusConfig, TaskCard, instanceSuffix } from "@runwisp/ui";
     import type { TaskOverview } from "./overview.js";
-    import { isFailureEndReason, type Run } from "@runwisp/common";
+    import type { Run } from "@runwisp/common";
     import {
         formatRunDurationLabel,
         formatStatusLabel,
@@ -96,7 +96,7 @@
                             class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-on-surface-muted"
                         >
                             <span>Next {formatTaskNextRunLabel(task, now)}</span>
-                            {#if isFailureEndReason(task.lastRun?.endReason)}
+                            {#if task.lastRun?.isFailure}
                                 <span class="font-mono text-danger-soft-text tabular-nums">
                                     Exit {task.lastRun?.exitCode}
                                 </span>

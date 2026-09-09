@@ -108,6 +108,9 @@ func fillSMTPSpec(spec *channel.NotifierSpec, n config.NotifierSpec) {
 
 func compileRoute(r config.NotificationRoute) notify.Rule {
 	preds := make([]notify.Predicate, 0, 3)
+	if r.MatchFailure {
+		preds = append(preds, notify.MatchFailure())
+	}
 	if len(r.Kinds) > 0 {
 		kinds := make([]notify.Kind, len(r.Kinds))
 		for i, k := range r.Kinds {

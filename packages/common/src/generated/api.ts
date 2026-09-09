@@ -1063,6 +1063,7 @@ export interface components {
             id: string;
             /** Format: int64 */
             instanceIndex: number;
+            isFailure: boolean;
             params?: {
                 [key: string]: string;
             };
@@ -1339,8 +1340,6 @@ export interface components {
             envBase?: string;
             /** @description Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env. */
             envFile?: string;
-            /** @description Process exit codes treated as success; defaults to [0] */
-            exitCodes?: number[] | null;
             /**
              * Format: int64
              * @description Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds

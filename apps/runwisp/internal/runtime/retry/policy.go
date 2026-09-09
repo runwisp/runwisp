@@ -8,6 +8,7 @@
 package retry
 
 import (
+	"slices"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/config"
@@ -20,17 +21,15 @@ const RestartBackoffCap = 60 * time.Second
 // retryDelayCap caps the retry delay regardless of backoff curve.
 const retryDelayCap = 5 * time.Minute
 
-// IsFailureReason reports whether the given EndReason represents a failure
-// (and therefore makes the run a candidate for retry). ReasonSkipped is
-// excluded by design — a skip is the concurrency policy working as intended,
-// not a failure to retry.
-func IsFailureReason(reason model.EndReason) bool {
-	switch reason {
-	case model.ReasonFailed, model.ReasonTimeout, model.ReasonCrashed, model.ReasonLogOverflow, model.ReasonStartFailed:
-		return true
-	default:
-		return false
-	}
+// IsFailedExecution reports whether the given EndReason represents a run that
+// actually executed (or attempted to start) and failed, which is what makes it a
+// candidate for auto retry / service restart. It is membership in the fixed
+// model.FailedExecutionReasons set — deliberately decoupled from the
+// user-configurable failure classification (Task.IsFailureReason): demoting a
+// reason from a task's `failures` list must not silently stop its retries, and
+// promoting one (e.g. `stopped`) must not make the daemon re-run it.
+func IsFailedExecution(reason model.EndReason) bool {
+	return slices.Contains(model.FailedExecutionReasons, reason)
 }
 
 // ShouldRestart reports whether a finished run should trigger a restart per
@@ -55,7 +54,7 @@ func ShouldRestart(task *model.Task, run *model.Run) bool {
 		}
 		return run.EndReason == nil || *run.EndReason != model.ReasonStopped
 	case model.RestartOnFailure:
-		return run.EndReason != nil && IsFailureReason(*run.EndReason)
+		return run.EndReason != nil && IsFailedExecution(*run.EndReason)
 	default:
 		return false
 	}
@@ -67,7 +66,7 @@ func ShouldRetry(task *model.Task, run *model.Run) bool {
 	if task.Restart != "" && task.Restart != model.RestartNever {
 		return false
 	}
-	if task.RetryAttempts <= 0 || run.EndReason == nil || !IsFailureReason(*run.EndReason) {
+	if task.RetryAttempts <= 0 || run.EndReason == nil || !IsFailedExecution(*run.EndReason) {
 		return false
 	}
 	return run.RetryAttempt < task.RetryAttempts

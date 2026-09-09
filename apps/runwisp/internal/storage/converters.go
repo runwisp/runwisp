@@ -33,6 +33,7 @@ func runFromRow(s sqlcdb.Run) model.Run {
 		RetryAttempt:  s.RetryAttempt,
 		RetryOfRunID:  s.RetryOfRunID,
 		InstanceIndex: s.InstanceIndex,
+		IsFailure:     s.IsFailure != 0,
 		Params:        decodeParams(s.ParamsJson, s.ID),
 	}
 }
@@ -76,6 +77,7 @@ func runToCreateParams(r *model.Run) sqlcdb.CreateRunParams {
 		RetryOfRunID:  r.RetryOfRunID,
 		InstanceIndex: r.InstanceIndex,
 		ParamsJson:    encodeParams(r.Params),
+		IsFailure:     boolToInt64(r.IsFailure),
 	}
 }
 
@@ -95,8 +97,18 @@ func runToUpdateParams(r *model.Run) sqlcdb.UpdateRunParams {
 		RetryOfRunID:  r.RetryOfRunID,
 		InstanceIndex: r.InstanceIndex,
 		ParamsJson:    encodeParams(r.Params),
+		IsFailure:     boolToInt64(r.IsFailure),
 		ID:            r.ID,
 	}
+}
+
+// boolToInt64 encodes the is_failure classification bit for its INTEGER column
+// (SQLite has no native boolean); runFromRow decodes it with `!= 0`.
+func boolToInt64(b bool) int64 {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // encodeParams serialises the resolved per-run parameter map for the

@@ -132,11 +132,6 @@ type Task struct {
 	RetryDelay    time.Duration `toml:"-"                        json:"retryDelay,omitempty" doc:"Base delay before each retry, in nanoseconds"`
 	RetryBackoff  BackoffCurve  `toml:"retry_backoff,omitempty"  json:"retryBackoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive retries"`
 
-	// ExitCodes lists the process exit codes treated as success. Defaults to
-	// [0]. Any code not in the list ends the run as failed (which then drives
-	// restart=on_failure, retry, and notifications).
-	ExitCodes []int `toml:"-" json:"exitCodes,omitempty" doc:"Process exit codes treated as success; defaults to [0]"`
-
 	LogMaxSize int64  `toml:"-"                     json:"logMaxSize,omitempty" doc:"Per-run log size cap in bytes"`
 	LogOnFull  string `toml:"log_on_full,omitempty" json:"logOnFull,omitempty" enum:"drop_new,drop_old,kill" doc:"What to do when log output exceeds log_max_size"`
 
@@ -209,12 +204,15 @@ type Task struct {
 	// account may not exist when the config is validated. Rejected on
 	// compose-backed tasks (the container runtime owns the container's user).
 	RunUser string `toml:"-" json:"user,omitempty" doc:"Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root."`
-	// TreatMissedAsFailure gates whether a missed-run alert (run.missed) reaches the
-	// failure subscribers for this task. A nil pointer means "not configured"
-	// during loading; ApplyDefaults resolves it to a concrete value (default
-	// true, or the [defaults] value). Config-internal like notify_on_failure —
-	// never serialized to API/UI/cloud. Read it via NotifiesOnMissed.
-	TreatMissedAsFailure *bool `toml:"-" json:"-"`
+	// FailureReasons and FailureExitRanges are the task's resolved failure
+	// classification, parsed from the `failures` TOML tokens by config's parse
+	// step (ParseFailures). Together they answer "does a terminal run count as a
+	// failure?" for stats, UI attention, and notifications — never for retry (see
+	// runtime/retry.IsFailedExecution). A nil FailureReasons map means "not configured"
+	// (a Task built outside the config loader); IsFailureReason then falls back to
+	// the built-in default set. Config-internal — never serialized to API/UI/cloud.
+	FailureReasons    map[EndReason]struct{} `toml:"-" json:"-"`
+	FailureExitRanges [][2]int               `toml:"-" json:"-"`
 
 	// Ephemeral marks a task the daemon registered at runtime for a single
 	// cloud-dispatched inline execution (never from TOML, never in the task
@@ -238,11 +236,36 @@ func (t *Task) Held() bool { return t.HeldBy != HeldByNothing }
 // while staying fully visible and manually triggerable.
 func (t *Task) Schedulable() bool { return t.Cron != "" && !t.Held() }
 
-// NotifiesOnMissed reports whether missed-run alerts are enabled for this task.
-// Defaults to true when unset so a Task literal built outside the config loader
-// (tests, ad-hoc dispatch) alerts by default.
-func (t *Task) NotifiesOnMissed() bool {
-	return t.TreatMissedAsFailure == nil || *t.TreatMissedAsFailure
+// IsFailureReason reports whether a terminal run ending with the given reason
+// and exit code counts as a failure under this task's `failures` policy. It is
+// the single source of truth for failure classification: stats, UI attention,
+// and notifications all resolve through it (and the persisted run.IsFailure bit
+// it produces). It never gates retry — that is runtime/retry.IsFailedExecution.
+//
+// A nil FailureReasons map (a Task literal built outside the config loader —
+// tests, ad-hoc dispatch) falls back to the built-in default set. Exit ranges
+// only apply to the `failed` reason (a run that actually exited); a non-`failed`
+// reason with an incidental exit code (a SIGTERM'd `stopped` run) is classified
+// purely by its reason.
+func (t *Task) IsFailureReason(reason EndReason, exitCode int) bool {
+	if reason == ReasonSuccess {
+		return false
+	}
+	reasons := t.FailureReasons
+	if reasons == nil {
+		reasons = defaultFailureReasons
+	}
+	if _, ok := reasons[reason]; ok {
+		return true
+	}
+	if reason == ReasonFailed {
+		for _, r := range t.FailureExitRanges {
+			if exitCode >= r[0] && exitCode <= r[1] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ResolvedExecutionDef returns the runtime execution definition for the task.

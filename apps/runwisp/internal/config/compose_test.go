@@ -110,7 +110,6 @@ func TestComposeExpansion_PerServiceOverrideServiceKnobs(t *testing.T) {
 
 [compose.myapp.web]
 stop_signal   = "SIGINT"
-exit_codes    = [0, 42]
 restart_attempts = 1
 priority      = 5
 autostart     = false
@@ -119,7 +118,6 @@ autostart     = false
 
 	web := findTask(t, cfg, "myapp.web")
 	assert.Equal(t, "SIGINT", web.StopSignal)
-	assert.Equal(t, []int{0, 42}, web.ExitCodes)
 	require.NotNil(t, web.RestartAttempts)
 	assert.Equal(t, 1, *web.RestartAttempts)
 	assert.Equal(t, 5, web.Priority)
@@ -188,7 +186,6 @@ func TestComposeExpansion_BlockDefaultsNonPolicyKnobs(t *testing.T) {
 
 [compose.myapp.defaults]
 restart_attempts = 3
-exit_codes       = [0, 2]
 `))
 	require.NoError(t, err)
 
@@ -196,7 +193,6 @@ exit_codes       = [0, 2]
 		task := findTask(t, cfg, name)
 		require.NotNil(t, task.RestartAttempts, "%s restart_attempts must resolve to non-nil", name)
 		assert.Equal(t, 3, *task.RestartAttempts, "%s inherits restart_attempts", name)
-		assert.Equal(t, []int{0, 2}, task.ExitCodes, "%s inherits exit_codes", name)
 	}
 }
 
@@ -503,11 +499,10 @@ notify_on_success = ["slack-ok"]
 	require.NoError(t, Validate(cfg))
 
 	failure := findRoute(t, cfg, "myapp.web", "run.failed")
-	// notify_on_failure fans out across all failure kinds plus the appended
-	// global default channel (inapp).
-	assert.ElementsMatch(t,
-		[]string{"run.failed", "run.timeout", "run.crashed", "run.missed", "service.fatal"},
-		failure.Kinds)
+	// notify_on_failure routes on the classified is_failure bit (any failure
+	// outcome) plus the appended global default channel (inapp).
+	assert.Empty(t, failure.Kinds, "the failure route matches is_failure, not a fixed Kind list")
+	assert.True(t, failure.MatchFailure)
 	assert.ElementsMatch(t, []string{"slack-prod", "inapp"}, failure.NotifierID)
 
 	success := findRoute(t, cfg, "myapp.web", "run.succeeded")
@@ -569,6 +564,12 @@ func findRoute(t *testing.T, cfg *Config, taskGlob, kind string) NotificationRou
 	for _, r := range cfg.Notify.Routes {
 		if r.TaskGlob != taskGlob {
 			continue
+		}
+		// The failure route no longer enumerates kinds — it matches the
+		// classified is_failure bit. Treat a lookup for "run.failed" (the
+		// representative failure kind) as a request for that route.
+		if r.MatchFailure && kind == "run.failed" {
+			return r
 		}
 		for _, k := range r.Kinds {
 			if k == kind {

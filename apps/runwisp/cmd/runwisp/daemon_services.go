@@ -108,7 +108,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 
 	debugSrv := startDebugServer()
 
-	notifyB := startNotify(ctx, cfg, db, eventBus, tasksMap, addWarning)
+	notifyB := startNotify(ctx, cfg, db, eventBus, addWarning)
 
 	if mode == modeStandalone {
 		// Run catch-up now that notify is subscribed, so a missed-run gap
@@ -216,8 +216,8 @@ func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storag
 // startNotify initializes the notify subsystem and starts its service, routing
 // both the init failure and the start failure to warnings (non-fatal: the
 // daemon must boot even when notify is misconfigured or unavailable).
-func startNotify(ctx context.Context, cfg *daemonConfig, db storage.Database, eventBus *events.Bus, tasksMap map[string]*model.Task, addWarning func(string, ...any)) notifyBundle {
-	notifyB, err := initNotify(cfg, db, eventBus, tasksMap, slog.Default())
+func startNotify(ctx context.Context, cfg *daemonConfig, db storage.Database, eventBus *events.Bus, addWarning func(string, ...any)) notifyBundle {
+	notifyB, err := initNotify(cfg, db, eventBus, slog.Default())
 	if err != nil {
 		addWarning("Failed to initialize notify subsystem: %v", err)
 	}

@@ -55,9 +55,9 @@ func TestRecordExitHealthyRunClearsStartFails(t *testing.T) {
 
 func TestRecordExitNonFailureNeverFatal(t *testing.T) {
 	// restart_attempts=0 would trip FATAL on the first *failure*; a clean exit must
-	// not — this is the exit_codes tie-in (a success-listed fast exit is healthy).
+	// not — exit 0 is always a successful run, so even a fast clean exit is healthy.
 	s := newFatalSupervisor(1)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		_, fatal := s.RecordExit(0, time.Millisecond, 0, false)
 		require.False(t, fatal)
 	}

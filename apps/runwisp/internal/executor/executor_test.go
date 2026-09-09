@@ -527,7 +527,7 @@ func TestRoutingExecutor_notifyRunUpdated_PublishesCopy(t *testing.T) {
 	// The execute goroutine keeps mutating the original after publish; that
 	// must not be observable through the already-published (copied) event.
 	reason := model.ReasonSuccess
-	original.End(reason, 0, time.Now())
+	original.End(nil, reason, 0, time.Now())
 	assert.Equal(t, model.PhaseRunning, got.Status,
 		"post-publish mutation of the original must not leak into the published copy")
 }

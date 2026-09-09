@@ -184,15 +184,6 @@ func tomlVerbatimString(s string) string {
 	return "\"\"\"\n" + body + "\"\"\""
 }
 
-// tomlIntArray formats ints as a TOML array, e.g. [0, 2].
-func tomlIntArray(vals []int) string {
-	parts := make([]string, len(vals))
-	for i, v := range vals {
-		parts[i] = strconv.Itoa(v)
-	}
-	return "[" + strings.Join(parts, ", ") + "]"
-}
-
 // envBlock builds a child table (e.g. "tasks.web.env") with keys sorted for
 // deterministic output. Returns false when env is empty.
 func envBlock(header string, env map[string]string) (block, bool) {

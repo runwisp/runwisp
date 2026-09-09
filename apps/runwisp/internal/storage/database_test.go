@@ -131,14 +131,15 @@ func TestRunSummaryGroupsLogOverflowAsFailed(t *testing.T) {
 	defer db.Close()
 
 	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "ok", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), TriggeredBy: model.TriggeredByAPI}))
-	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "bad", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonFailed), TriggeredBy: model.TriggeredByAPI}))
-	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "noisy", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonLogOverflow), TriggeredBy: model.TriggeredByAPI}))
-	// Regression (Bug A): start_failed is a failure reason (retry.IsFailureReason),
-	// but the summary query omitted it, undercounting the "Failed" metric/counter
-	// and dropping it from last_failure. Its end_at is the newest, so a correct
-	// query surfaces it as the last failure.
+	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "bad", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonFailed), IsFailure: true, TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "noisy", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonLogOverflow), IsFailure: true, TriggeredBy: model.TriggeredByAPI}))
+	// Regression (Bug A): start_failed is classified as a failure (is_failure=1,
+	// written once at termination), but the summary query used to omit it,
+	// undercounting the "Failed" metric/counter and dropping it from
+	// last_failure. Its end_at is the newest, so a correct query surfaces it as
+	// the last failure. GetRunSummary now sums the persisted is_failure bit.
 	startFailedAt := time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
-	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "wontstart", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonStartFailed), EndedAt: &startFailedAt, TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "wontstart", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonStartFailed), IsFailure: true, EndedAt: &startFailedAt, TriggeredBy: model.TriggeredByAPI}))
 	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "skipped", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSkipped), TriggeredBy: model.TriggeredByAPI}))
 
 	summary, err := db.GetRunSummary(ctx)

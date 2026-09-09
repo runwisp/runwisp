@@ -59,13 +59,15 @@ notify_on_failure = ["ops"]
 	assert.Equal(t, []string{"ops", "oncall", "inapp"}, explicit.NotifierID)
 
 	synth := cfg.Notify.Routes[1]
-	assert.Equal(t, []string{"run.failed", "run.timeout", "run.crashed", "run.missed", "service.fatal"}, synth.Kinds)
+	assert.Empty(t, synth.Kinds, "the failure route matches on the classified is_failure bit, not a fixed Kind list")
+	assert.True(t, synth.MatchFailure)
 	assert.Equal(t, "backup-db", synth.TaskGlob)
 	assert.Contains(t, synth.NotifierID, "ops")
 	assert.Contains(t, synth.NotifierID, "inapp", "per-task sugar must imply inapp by default")
 
 	defaultRoute := cfg.Notify.Routes[2]
-	assert.Equal(t, []string{"run.failed", "run.timeout", "run.crashed", "run.missed", "service.fatal"}, defaultRoute.Kinds)
+	assert.Empty(t, defaultRoute.Kinds, "the default catch-all matches on the classified is_failure bit")
+	assert.True(t, defaultRoute.MatchFailure)
 	assert.Empty(t, defaultRoute.TaskGlob, "default catch-all matches every task")
 	assert.Equal(t, []string{"inapp"}, defaultRoute.NotifierID)
 }
@@ -85,7 +87,8 @@ run         = "exit 1"
 	require.Len(t, cfg.Notify.Routes, 1,
 		"zero-config TOML must still produce the default in-app catch-all route")
 	r := cfg.Notify.Routes[0]
-	assert.Equal(t, []string{"run.failed", "run.timeout", "run.crashed", "run.missed", "service.fatal"}, r.Kinds)
+	assert.Empty(t, r.Kinds, "the default catch-all matches on the classified is_failure bit")
+	assert.True(t, r.MatchFailure)
 	assert.Empty(t, r.TaskGlob)
 	assert.Equal(t, []string{"inapp"}, r.NotifierID)
 }

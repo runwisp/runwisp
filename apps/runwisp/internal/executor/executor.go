@@ -37,11 +37,12 @@ type ExecuteResult struct {
 	TimedOut       bool
 	Stopped        bool
 	KilledByPolicy bool // log_on_full = "kill" tripped — recorded as failed, not stopped
-	// SuccessExitCodes lists the exit codes treated as success. Empty/nil
-	// preserves the default contract that only 0 succeeds.
-	SuccessExitCodes []int
 }
 
+// EndReason maps the raw process outcome to a terminal reason. Exit 0 is the sole
+// success code; any non-zero exit is ReasonFailed. Whether a ReasonFailed run
+// counts as a *failure* is a separate, per-task decision (Task.IsFailureReason,
+// driven by the `failures` config) applied later — not here.
 func (r *ExecuteResult) EndReason() model.EndReason {
 	switch {
 	case r.TimedOut:
@@ -50,25 +51,11 @@ func (r *ExecuteResult) EndReason() model.EndReason {
 		return model.ReasonLogOverflow
 	case r.Stopped:
 		return model.ReasonStopped
-	case isSuccessExitCode(r.ExitCode, r.SuccessExitCodes):
+	case r.ExitCode == 0:
 		return model.ReasonSuccess
 	default:
 		return model.ReasonFailed
 	}
-}
-
-// isSuccessExitCode reports whether code counts as success given the configured
-// success set. An empty/nil set means "only 0 succeeds" — the default.
-func isSuccessExitCode(code int, success []int) bool {
-	if len(success) == 0 {
-		return code == 0
-	}
-	for _, c := range success {
-		if c == code {
-			return true
-		}
-	}
-	return false
 }
 
 // RoutingExecutor dispatches task execution to the appropriate Backend
@@ -233,7 +220,7 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 		proc.Cleanup()
 	}
 
-	return classifyExecuteResult(cancelCtx, writer, exitCode, waitErr, task.ExitCodes)
+	return classifyExecuteResult(cancelCtx, writer, exitCode, waitErr)
 }
 
 // notifyRunUpdated fans the post-log-prep run state out to the persistence
@@ -315,7 +302,7 @@ func (r *RoutingExecutor) streamOne(wg *sync.WaitGroup, reader io.ReadCloser, wr
 // terminal ExecuteResult. Wait errors are only surfaced when no context-driven
 // cancellation explains them, since the OS error is expected after a
 // timeout / stop / log-disk kill.
-func classifyExecuteResult(cancelCtx context.Context, writer *LogWriter, exitCode int, waitErr error, successCodes []int) *ExecuteResult {
+func classifyExecuteResult(cancelCtx context.Context, writer *LogWriter, exitCode int, waitErr error) *ExecuteResult {
 	timedOut := errors.Is(cancelCtx.Err(), context.DeadlineExceeded)
 	killedByPolicy := writer.KilledByPolicy()
 	stopped := !timedOut && !killedByPolicy && errors.Is(cancelCtx.Err(), context.Canceled)
@@ -326,12 +313,11 @@ func classifyExecuteResult(cancelCtx context.Context, writer *LogWriter, exitCod
 	}
 
 	return &ExecuteResult{
-		ExitCode:         exitCode,
-		Error:            resultErr,
-		TimedOut:         timedOut,
-		Stopped:          stopped,
-		KilledByPolicy:   killedByPolicy,
-		SuccessExitCodes: successCodes,
+		ExitCode:       exitCode,
+		Error:          resultErr,
+		TimedOut:       timedOut,
+		Stopped:        stopped,
+		KilledByPolicy: killedByPolicy,
 	}
 }
 
