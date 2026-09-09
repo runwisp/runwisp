@@ -1121,6 +1121,8 @@ export interface components {
              * @description Only runs whose exit code is >= this (inclusive)
              */
             exitCodeMin?: number;
+            /** @description Also match runs classified as a failure (per-task failures policy) */
+            isFailure?: boolean;
             /** @description Only runs that are a retry (retry_attempt > 0) */
             retriesOnly?: boolean;
             /** @description Search query against task_name / id */

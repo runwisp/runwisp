@@ -29,7 +29,24 @@ type RunFilter struct {
 	ExitCodeMin *int `json:"exitCodeMin,omitempty" doc:"Only runs whose exit code is >= this (inclusive)"`
 	ExitCodeMax *int `json:"exitCodeMax,omitempty" doc:"Only runs whose exit code is <= this (inclusive)"`
 	RetriesOnly bool `json:"retriesOnly,omitempty"  doc:"Only runs that are a retry (retry_attempt > 0)"`
+	// IsFailure, when true, additionally matches runs the owning task classified
+	// as a failure (the persisted is_failure bit), OR-combined with Status — so a
+	// task that promoted `stopped` or demoted `missed` shows the same runs here as
+	// go red in the UI. The web UI drives this by putting FailureStatusToken in
+	// the Status list (so it OR-combines with the other status buckets end to
+	// end); the storage filter builder decodes that token into this flag, and an
+	// API client may also set it directly.
+	IsFailure bool `json:"isFailure,omitempty" doc:"Also match runs classified as a failure (per-task failures policy)"`
 }
+
+// FailureStatusToken is the reserved Status value that means "match runs
+// classified as a failure" (equivalent to IsFailure=true). It rides the comma-
+// separated Status list rather than a separate field so the web UI's "Failed"
+// browse bucket OR-combines with the other status buckets with no special
+// plumbing; buildRunFilterArgs decodes it. Not a real phase or end reason, so it
+// never collides with a status value. Must stay in sync with FAILURE_STATUS_TOKEN
+// in packages/ui/src/lib/components/dashboard/run-filters.ts.
+const FailureStatusToken = "failure"
 
 // RunSelector is the contract between UI and server for every bulk operation.
 // It has two modes:

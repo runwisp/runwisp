@@ -125,6 +125,40 @@ func TestCountRunsFiltered(t *testing.T) {
 	assert.Equal(t, int64(1), count)
 }
 
+func TestFilterByFailureClassification(t *testing.T) {
+	ctx := t.Context()
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// A promoted stopped (is_failure=1) and a demoted timeout (is_failure=0):
+	// the point of the filter is that classification, not end reason, decides.
+	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "prod", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonStopped), IsFailure: true, TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "prod", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonTimeout), IsFailure: false, TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "prod", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), IsFailure: false, TriggeredBy: model.TriggeredByAPI}))
+	require.NoError(t, db.CreateRun(ctx, &model.Run{ID: ulid.Make().String(), TaskName: "prod", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonFailed), IsFailure: true, TriggeredBy: model.TriggeredByAPI}))
+
+	// Explicit IsFailure flag matches only the two classified failures.
+	count, err := db.CountRunsFiltered(ctx, model.RunFilter{IsFailure: true})
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+
+	// The reserved status token decodes to the same thing (the web UI's path).
+	count, err = db.CountRunsFiltered(ctx, model.RunFilter{Status: model.FailureStatusToken})
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), count, "the failure sentinel filters by is_failure")
+
+	// It OR-combines with a plain status bucket: failures + succeeded = 3.
+	count, err = db.CountRunsFiltered(ctx, model.RunFilter{Status: model.FailureStatusToken + ",succeeded"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), count, "the sentinel OR-combines with other status buckets")
+
+	// A plain end-reason filter is unaffected by the classification: the demoted
+	// timeout still shows under a raw "timeout" filter.
+	count, err = db.CountRunsFiltered(ctx, model.RunFilter{Status: string(model.ReasonTimeout)})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+}
+
 func TestRunSummaryGroupsLogOverflowAsFailed(t *testing.T) {
 	ctx := t.Context()
 	db := setupTestDB(t)

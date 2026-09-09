@@ -306,8 +306,7 @@ in one of the ranges. So the two exit-code styles compose like this:
   non-zero exit stays neutral — recorded, visible, but not red and not
   paged.
 
-The list _replaces_ the default rather than extending it, so it works in
-both directions:
+A bare list _replaces_ the inherited set, so it works in both directions:
 
 ```toml
 [tasks.flaky-probe]
@@ -321,9 +320,27 @@ failures = ["timeout", "crashed", "23", "24"] # only exits 23 & 24 fail; every o
                                               # non-zero exit is neutral
 ```
 
-Because you're replacing the whole list, a task that sets `failures` opts
-out of any reasons RunWisp adds to the built-in default later — copy the
-default and tweak it if you only mean to add or drop one.
+### Adding or dropping just one
+
+Most of the time you don't want to restate the whole default — you want
+to page on one _more_ thing, or stop paging on one. Prefix every token
+with `+` (add) or `-` (drop) and RunWisp adjusts the inherited set
+instead of replacing it:
+
+```toml
+[tasks.web]
+failures = ["-missed"]     # stop paging on a missed tick; everything else stays
+
+[tasks.deploy]
+failures = ["+stopped"]    # also page when this one gets killed
+```
+
+A delta at `[defaults]` adjusts the built-in default daemon-wide; a delta
+on a task adjusts whatever it inherits from `[defaults]`. You can't mix
+the two styles in one list — a list is either all bare (replace) or all
+`+`/`-` (adjust), and mixing them is rejected at load. Reach for a bare
+list when you want to pin the exact set; reach for `+`/`-` when you just
+mean "the usual, but…".
 
 `failures` is purely an **observability** choice. It does **not** change
 retries or restarts: those always fire on `failed`, `timeout`, `crashed`,

@@ -96,7 +96,7 @@ timeout:             dur          — per-attempt wall-clock cap; unset = no tim
 jitter:              dur          — start-spread window inherited by cron tasks; off when unset (TASKS only)
 shell:               path =/bin/sh — interpreter for run scripts (absolute path); see FAIL-FAST
 stop_signal:         enum =SIGTERM — stop-ladder signal: SIGTERM|SIGINT|SIGQUIT|SIGHUP|SIGKILL|SIGUSR1|SIGUSR2
-failures:            []str        — outcomes classified as a failure (stats/UI/notify); tokens are reason names (failed,timeout,crashed,log_overflow,start_failed,missed,stopped,…) or exit codes ("42","1-23"; 1..255). Default [failed,timeout,crashed,log_overflow,start_failed,missed]. is_failure = reason∈tokens OR (reason==failed AND exit∈ranges). Full-list replace; exit 0 always success. Does NOT affect retry/restart
+failures:            []str        — outcomes classified as a failure (stats/UI/notify); tokens are reason names (failed,timeout,crashed,log_overflow,start_failed,missed,stopped,…) or exit codes ("42","1-23"; 1..255). Default [failed,timeout,crashed,log_overflow,start_failed,missed]. is_failure = reason∈tokens OR (reason==failed AND exit∈ranges). Bare list replaces; all-+/- tokens ("-missed","+stopped") adjust the inherited set (task adjusts [defaults], [defaults] adjusts built-in); mixing bare & +/- rejected. exit 0 always success. Does NOT affect retry/restart
 log_max_size:        size =100mb  — per-run log cap (effective task default)
 log_on_full:         enum =drop_old — drop_new | drop_old | kill
 keep_runs:           int          — row-count retention; 0..1000000 (0 = keep none)

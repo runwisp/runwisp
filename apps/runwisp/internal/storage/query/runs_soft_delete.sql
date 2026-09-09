@@ -19,9 +19,10 @@ RETURNING id, task_name, created_at;
 UPDATE runs SET deleted_at = sqlc.arg(deleted_at)
 WHERE deleted_at IS NULL
   AND status = sqlc.arg(status_phase)
-  AND (sqlc.arg(status_set) IS NULL
+  AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
+       OR (sqlc.arg(match_failure) = 1 AND is_failure = 1))
   AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
   AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
   AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
@@ -44,9 +45,10 @@ RETURNING id, execution_id, task_name, status, end_reason, exit_code,
 -- name: RestoreRunsByFilter :many
 UPDATE runs SET deleted_at = NULL
 WHERE deleted_at IS NOT NULL
-  AND (sqlc.arg(status_set) IS NULL
+  AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
+       OR (sqlc.arg(match_failure) = 1 AND is_failure = 1))
   AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
   AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
   AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
@@ -73,9 +75,10 @@ WHERE deleted_at IS NULL
 -- name: ResolveSelectorIDsByFilter :many
 SELECT id, task_name, created_at FROM runs
 WHERE deleted_at IS NULL
-  AND (sqlc.arg(status_set) IS NULL
+  AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
+       OR (sqlc.arg(match_failure) = 1 AND is_failure = 1))
   AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
   AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
   AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))

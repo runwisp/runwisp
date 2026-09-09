@@ -3,6 +3,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Run } from "@runwisp/common";
+import { FAILURE_STATUS_TOKEN } from "@runwisp/ui";
 
 vi.mock("$lib/api", () => ({
     runsApi: { getAll: vi.fn() },
@@ -250,6 +251,16 @@ describe("createRunsSource SSE filter parity (matchesFilters)", () => {
         src.upsert(makeRun("a", { status: "running" }));
         src.upsert(makeRun("b", { status: "ended", endReason: "succeeded" }));
         expect(src.items.map((r) => r.id)).toEqual(["a"]);
+    });
+
+    it("matches the failure sentinel by the run's isFailure bit, not its end reason", async () => {
+        // The "Failed" bucket sends FAILURE_STATUS_TOKEN; the SSE mirror resolves
+        // it to run.isFailure — so a promoted `stopped` matches and a demoted
+        // `timeout` does not, agreeing with the server's is_failure gate.
+        const src = await loadedWith({ statuses: [FAILURE_STATUS_TOKEN] });
+        src.upsert(makeRun("promoted", { status: "ended", endReason: "stopped", isFailure: true }));
+        src.upsert(makeRun("demoted", { status: "ended", endReason: "timeout", isFailure: false }));
+        expect(src.items.map((r) => r.id)).toEqual(["promoted"]);
     });
 
     it("gates on the createdAt time range, inclusive of the bounds", async () => {

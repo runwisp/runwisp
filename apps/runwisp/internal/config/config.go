@@ -1449,16 +1449,23 @@ func applyInheritedStopSignal(task *model.Task, d Defaults) {
 	}
 }
 
-// applyInheritedFailures resolves an unset per-task failure matcher by
-// inheriting the resolved [defaults] matcher. toDefaults always leaves the
-// defaults matcher non-nil (built-in set when the key is omitted), so a task
-// that never set failures ends up with a concrete matcher and downstream
-// readers never see nil.
+// applyInheritedFailures resolves the task's failure matcher. A task with no
+// `failures` key (nil spec) inherits the resolved [defaults] matcher wholesale;
+// one with a key resolves its spec — a bare list replaces the inherited set, a
+// +/- delta adjusts it — against that same [defaults] base. toDefaults always
+// leaves the defaults matcher non-nil, so downstream readers never see nil.
+// The nil-spec/nil-reasons guard leaves a Task built outside the loader (which
+// may set FailureReasons directly) untouched.
 func applyInheritedFailures(task *model.Task, d Defaults) {
-	if task.FailureReasons == nil {
-		task.FailureReasons = d.FailureReasons
-		task.FailureExitRanges = d.FailureExitRanges
+	if task.FailureSpec == nil {
+		if task.FailureReasons == nil {
+			task.FailureReasons = d.FailureReasons
+			task.FailureExitRanges = d.FailureExitRanges
+		}
+		return
 	}
+	task.FailureReasons, task.FailureExitRanges = task.FailureSpec.Resolve(d.FailureReasons, d.FailureExitRanges)
+	task.FailureSpec = nil
 }
 
 // mergeEnv returns a map containing every key in base then in overlay, with

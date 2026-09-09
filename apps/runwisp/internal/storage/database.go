@@ -201,6 +201,7 @@ func (db *SQLiteDatabase) CountRunsFiltered(ctx context.Context, filter model.Ru
 		ExitCodeMin:       args.ExitCodeMin,
 		ExitCodeMax:       args.ExitCodeMax,
 		RetriesOnly:       args.RetriesOnly,
+		MatchFailure:      args.MatchFailure,
 	})
 }
 
@@ -223,6 +224,7 @@ func (db *SQLiteDatabase) QueryRuns(ctx context.Context, q RunQuery) ([]model.Ru
 		ExitCodeMin:       filter.ExitCodeMin,
 		ExitCodeMax:       filter.ExitCodeMax,
 		RetriesOnly:       filter.RetriesOnly,
+		MatchFailure:      filter.MatchFailure,
 		RowsLimit:         int64(q.Limit),
 		RowsOffset:        int64(q.Offset),
 	}
@@ -288,6 +290,7 @@ func (db *SQLiteDatabase) SoftDeleteRuns(ctx context.Context, sel model.RunSelec
 			ExitCodeMin:       args.ExitCodeMin,
 			ExitCodeMax:       args.ExitCodeMax,
 			RetriesOnly:       args.RetriesOnly,
+			MatchFailure:      args.MatchFailure,
 			ExceptIds:         exceptIDsForSlice(sel.ExceptIDs),
 		})
 		if err != nil {
@@ -327,6 +330,7 @@ func (db *SQLiteDatabase) RestoreRuns(ctx context.Context, sel model.RunSelector
 			ExitCodeMin:       args.ExitCodeMin,
 			ExitCodeMax:       args.ExitCodeMax,
 			RetriesOnly:       args.RetriesOnly,
+			MatchFailure:      args.MatchFailure,
 			ExceptIds:         exceptIDsForSlice(sel.ExceptIDs),
 		})
 		if err != nil {
@@ -358,6 +362,7 @@ func (db *SQLiteDatabase) ResolveSelectorIDs(ctx context.Context, sel model.RunS
 			ExitCodeMin:       args.ExitCodeMin,
 			ExitCodeMax:       args.ExitCodeMax,
 			RetriesOnly:       args.RetriesOnly,
+			MatchFailure:      args.MatchFailure,
 			BulkStatusFilter:  nullable(statusFilter),
 			ExceptIds:         exceptIDsForSlice(sel.ExceptIDs),
 		})

@@ -16,23 +16,25 @@ import (
 const resolveSelectorIDsByFilter = `-- name: ResolveSelectorIDsByFilter :many
 SELECT id, task_name, created_at FROM runs
 WHERE deleted_at IS NULL
-  AND (?1 IS NULL
+  AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
-  AND (?2 IS NULL OR created_at >= ?2)
-  AND (?3 IS NULL OR created_at <= ?3)
-  AND (?4 IS NULL OR triggered_by = ?4)
-  AND (?5 IS NULL OR exit_code >= ?5)
-  AND (?6 IS NULL OR exit_code <= ?6)
-  AND (?7 IS NULL OR retry_attempt > 0)
-  AND (?8 IS NULL OR task_name = ?8)
-  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
-  AND (?11 IS NULL OR status = ?11)
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
+       OR (?2 = 1 AND is_failure = 1))
+  AND (?3 IS NULL OR created_at >= ?3)
+  AND (?4 IS NULL OR created_at <= ?4)
+  AND (?5 IS NULL OR triggered_by = ?5)
+  AND (?6 IS NULL OR exit_code >= ?6)
+  AND (?7 IS NULL OR exit_code <= ?7)
+  AND (?8 IS NULL OR retry_attempt > 0)
+  AND (?9 IS NULL OR task_name = ?9)
+  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+  AND (?12 IS NULL OR status = ?12)
   AND id NOT IN (/*SLICE:except_ids*/?)
 `
 
 type ResolveSelectorIDsByFilterParams struct {
 	StatusSet         interface{} `json:"status_set"`
+	MatchFailure      interface{} `json:"match_failure"`
 	CreatedAfter      interface{} `json:"created_after"`
 	CreatedBefore     interface{} `json:"created_before"`
 	TriggeredByFilter interface{} `json:"triggered_by_filter"`
@@ -56,6 +58,7 @@ func (q *Queries) ResolveSelectorIDsByFilter(ctx context.Context, arg ResolveSel
 	query := resolveSelectorIDsByFilter
 	var queryParams []interface{}
 	queryParams = append(queryParams, arg.StatusSet)
+	queryParams = append(queryParams, arg.MatchFailure)
 	queryParams = append(queryParams, arg.CreatedAfter)
 	queryParams = append(queryParams, arg.CreatedBefore)
 	queryParams = append(queryParams, arg.TriggeredByFilter)
@@ -155,17 +158,18 @@ func (q *Queries) ResolveSelectorIDsByIDs(ctx context.Context, arg ResolveSelect
 const restoreRunsByFilter = `-- name: RestoreRunsByFilter :many
 UPDATE runs SET deleted_at = NULL
 WHERE deleted_at IS NOT NULL
-  AND (?1 IS NULL
+  AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
-  AND (?2 IS NULL OR created_at >= ?2)
-  AND (?3 IS NULL OR created_at <= ?3)
-  AND (?4 IS NULL OR triggered_by = ?4)
-  AND (?5 IS NULL OR exit_code >= ?5)
-  AND (?6 IS NULL OR exit_code <= ?6)
-  AND (?7 IS NULL OR retry_attempt > 0)
-  AND (?8 IS NULL OR task_name = ?8)
-  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
+       OR (?2 = 1 AND is_failure = 1))
+  AND (?3 IS NULL OR created_at >= ?3)
+  AND (?4 IS NULL OR created_at <= ?4)
+  AND (?5 IS NULL OR triggered_by = ?5)
+  AND (?6 IS NULL OR exit_code >= ?6)
+  AND (?7 IS NULL OR exit_code <= ?7)
+  AND (?8 IS NULL OR retry_attempt > 0)
+  AND (?9 IS NULL OR task_name = ?9)
+  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
   AND id NOT IN (/*SLICE:except_ids*/?)
 RETURNING id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
@@ -174,6 +178,7 @@ RETURNING id, execution_id, task_name, status, end_reason, exit_code,
 
 type RestoreRunsByFilterParams struct {
 	StatusSet         interface{} `json:"status_set"`
+	MatchFailure      interface{} `json:"match_failure"`
 	CreatedAfter      interface{} `json:"created_after"`
 	CreatedBefore     interface{} `json:"created_before"`
 	TriggeredByFilter interface{} `json:"triggered_by_filter"`
@@ -190,6 +195,7 @@ func (q *Queries) RestoreRunsByFilter(ctx context.Context, arg RestoreRunsByFilt
 	query := restoreRunsByFilter
 	var queryParams []interface{}
 	queryParams = append(queryParams, arg.StatusSet)
+	queryParams = append(queryParams, arg.MatchFailure)
 	queryParams = append(queryParams, arg.CreatedAfter)
 	queryParams = append(queryParams, arg.CreatedBefore)
 	queryParams = append(queryParams, arg.TriggeredByFilter)
@@ -349,17 +355,18 @@ const softDeleteRunsByFilter = `-- name: SoftDeleteRunsByFilter :many
 UPDATE runs SET deleted_at = ?1
 WHERE deleted_at IS NULL
   AND status = ?2
-  AND (?3 IS NULL
+  AND ((?3 IS NULL AND ?4 = 0)
        OR instr(?3, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?3, '|' || end_reason || '|') > 0))
-  AND (?4 IS NULL OR created_at >= ?4)
-  AND (?5 IS NULL OR created_at <= ?5)
-  AND (?6 IS NULL OR triggered_by = ?6)
-  AND (?7 IS NULL OR exit_code >= ?7)
-  AND (?8 IS NULL OR exit_code <= ?8)
-  AND (?9 IS NULL OR retry_attempt > 0)
-  AND (?10 IS NULL OR task_name = ?10)
-  AND (?11 IS NULL OR (task_name LIKE ?12 OR id LIKE ?12))
+       OR (end_reason IS NOT NULL AND instr(?3, '|' || end_reason || '|') > 0)
+       OR (?4 = 1 AND is_failure = 1))
+  AND (?5 IS NULL OR created_at >= ?5)
+  AND (?6 IS NULL OR created_at <= ?6)
+  AND (?7 IS NULL OR triggered_by = ?7)
+  AND (?8 IS NULL OR exit_code >= ?8)
+  AND (?9 IS NULL OR exit_code <= ?9)
+  AND (?10 IS NULL OR retry_attempt > 0)
+  AND (?11 IS NULL OR task_name = ?11)
+  AND (?12 IS NULL OR (task_name LIKE ?13 OR id LIKE ?13))
   AND id NOT IN (/*SLICE:except_ids*/?)
 RETURNING id, task_name, created_at
 `
@@ -368,6 +375,7 @@ type SoftDeleteRunsByFilterParams struct {
 	DeletedAt         *time.Time     `json:"deleted_at"`
 	StatusPhase       model.RunPhase `json:"status_phase"`
 	StatusSet         interface{}    `json:"status_set"`
+	MatchFailure      interface{}    `json:"match_failure"`
 	CreatedAfter      interface{}    `json:"created_after"`
 	CreatedBefore     interface{}    `json:"created_before"`
 	TriggeredByFilter interface{}    `json:"triggered_by_filter"`
@@ -392,6 +400,7 @@ func (q *Queries) SoftDeleteRunsByFilter(ctx context.Context, arg SoftDeleteRuns
 	queryParams = append(queryParams, arg.DeletedAt)
 	queryParams = append(queryParams, arg.StatusPhase)
 	queryParams = append(queryParams, arg.StatusSet)
+	queryParams = append(queryParams, arg.MatchFailure)
 	queryParams = append(queryParams, arg.CreatedAfter)
 	queryParams = append(queryParams, arg.CreatedBefore)
 	queryParams = append(queryParams, arg.TriggeredByFilter)

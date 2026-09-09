@@ -661,6 +661,79 @@ failures = ["300"]
 		_, err := Load(path)
 		require.Error(t, err)
 	})
+
+	t.Run("delta -missed drops from the inherited default", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+run = "echo hi"
+failures = ["-missed"]
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		task := cfg.Tasks[0]
+		assert.False(t, task.IsFailureReason(model.ReasonMissed, 0),
+			"-missed drops just missed from the built-in default")
+		assert.True(t, task.IsFailureReason(model.ReasonFailed, 1),
+			"the rest of the default set is retained")
+		assert.True(t, task.IsFailureReason(model.ReasonTimeout, 0))
+	})
+
+	t.Run("delta +stopped adds to the inherited default", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+run = "echo hi"
+failures = ["+stopped"]
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		task := cfg.Tasks[0]
+		assert.True(t, task.IsFailureReason(model.ReasonStopped, 0), "+stopped adds stopped")
+		assert.True(t, task.IsFailureReason(model.ReasonMissed, 0), "default missed still present")
+	})
+
+	t.Run("task delta adjusts the resolved [defaults] set, not the built-in", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+failures = ["failed"]
+
+[tasks.t]
+run = "echo hi"
+failures = ["+stopped"]
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		task := cfg.Tasks[0]
+		assert.True(t, task.IsFailureReason(model.ReasonStopped, 0), "delta adds stopped")
+		assert.True(t, task.IsFailureReason(model.ReasonFailed, 1), "inherited [defaults] failed kept")
+		assert.False(t, task.IsFailureReason(model.ReasonMissed, 0),
+			"delta applies on top of [defaults] (which dropped missed), not the built-in default")
+	})
+
+	t.Run("[defaults] delta adjusts the built-in default", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+failures = ["-missed"]
+
+[tasks.t]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		task := cfg.Tasks[0]
+		assert.False(t, task.IsFailureReason(model.ReasonMissed, 0),
+			"[defaults] -missed drops missed daemon-wide")
+		assert.True(t, task.IsFailureReason(model.ReasonFailed, 1))
+	})
+
+	t.Run("rejects mixing bare and delta tokens", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+run = "echo hi"
+failures = ["failed", "-missed"]
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+	})
 }
 
 func TestJitterRules(t *testing.T) {

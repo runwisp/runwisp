@@ -1209,6 +1209,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "isFailure": {
+            "description": "Also match runs classified as a failure (per-task failures policy)",
+            "type": "boolean"
+          },
           "retriesOnly": {
             "description": "Only runs that are a retry (retry_attempt \u003e 0)",
             "type": "boolean"

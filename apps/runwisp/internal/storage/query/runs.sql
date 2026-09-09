@@ -22,9 +22,10 @@ SELECT * FROM runs WHERE execution_id = ? AND deleted_at IS NULL LIMIT 1;
 
 -- name: CountRunsFiltered :one
 SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL
-  AND (sqlc.arg(status_set) IS NULL
+  AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
+       OR (sqlc.arg(match_failure) = 1 AND is_failure = 1))
   AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
   AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
   AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
@@ -38,9 +39,10 @@ SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (sqlc.arg(status_set) IS NULL
+  AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
+       OR (sqlc.arg(match_failure) = 1 AND is_failure = 1))
   AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
   AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
   AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
@@ -55,9 +57,10 @@ ORDER BY created_at DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset)
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (sqlc.arg(status_set) IS NULL
+  AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
+       OR (sqlc.arg(match_failure) = 1 AND is_failure = 1))
   AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
   AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
   AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
@@ -72,9 +75,10 @@ ORDER BY created_at ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (sqlc.arg(status_set) IS NULL
+  AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
+       OR (sqlc.arg(match_failure) = 1 AND is_failure = 1))
   AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
   AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
   AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
@@ -89,9 +93,10 @@ ORDER BY COALESCE(started_at, created_at) DESC, created_at DESC LIMIT sqlc.arg(r
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (sqlc.arg(status_set) IS NULL
+  AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
+       OR (sqlc.arg(match_failure) = 1 AND is_failure = 1))
   AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
   AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
   AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
@@ -106,9 +111,10 @@ ORDER BY COALESCE(started_at, created_at) ASC, created_at ASC LIMIT sqlc.arg(row
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (sqlc.arg(status_set) IS NULL
+  AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
+       OR (sqlc.arg(match_failure) = 1 AND is_failure = 1))
   AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
   AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
   AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
@@ -123,9 +129,10 @@ ORDER BY task_name DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (sqlc.arg(status_set) IS NULL
+  AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
+       OR (sqlc.arg(match_failure) = 1 AND is_failure = 1))
   AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
   AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
   AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
@@ -140,9 +147,10 @@ ORDER BY task_name ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (sqlc.arg(status_set) IS NULL
+  AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
+       OR (sqlc.arg(match_failure) = 1 AND is_failure = 1))
   AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
   AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
   AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
@@ -157,9 +165,10 @@ ORDER BY status DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (sqlc.arg(status_set) IS NULL
+  AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
+       OR (sqlc.arg(match_failure) = 1 AND is_failure = 1))
   AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
   AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
   AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
@@ -174,9 +183,10 @@ ORDER BY status ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (sqlc.arg(status_set) IS NULL
+  AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
+       OR (sqlc.arg(match_failure) = 1 AND is_failure = 1))
   AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
   AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
   AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
@@ -191,9 +201,10 @@ ORDER BY exit_code DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (sqlc.arg(status_set) IS NULL
+  AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
+       OR (sqlc.arg(match_failure) = 1 AND is_failure = 1))
   AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
   AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
   AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
@@ -208,9 +219,10 @@ ORDER BY exit_code ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (sqlc.arg(status_set) IS NULL
+  AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
+       OR (sqlc.arg(match_failure) = 1 AND is_failure = 1))
   AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
   AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
   AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))
@@ -225,9 +237,10 @@ ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) DESC LIMIT s
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (sqlc.arg(status_set) IS NULL
+  AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0))
+       OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
+       OR (sqlc.arg(match_failure) = 1 AND is_failure = 1))
   AND (sqlc.arg(created_after) IS NULL OR created_at >= sqlc.arg(created_after))
   AND (sqlc.arg(created_before) IS NULL OR created_at <= sqlc.arg(created_before))
   AND (sqlc.arg(triggered_by_filter) IS NULL OR triggered_by = sqlc.arg(triggered_by_filter))

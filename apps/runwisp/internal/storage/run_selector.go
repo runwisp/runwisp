@@ -29,6 +29,11 @@ type runFilterArgs struct {
 	ExitCodeMin       interface{}
 	ExitCodeMax       interface{}
 	RetriesOnly       interface{}
+	// MatchFailure is 0 or 1 (never nil): the SQL OR-branch `match_failure = 1
+	// AND is_failure = 1` widens the status gate to the run's failure
+	// classification. Distinct from a nullable gate because it composes with an
+	// empty status set (Failed selected alone still filters).
+	MatchFailure int64
 }
 
 // nullable maps the empty-string "no filter" convention to a nil interface{}
@@ -69,19 +74,26 @@ func nullableBool(b bool) interface{} {
 
 // statusSet renders a comma-separated status list into the pipe-delimited
 // haystack the SQL set-membership gate matches against (e.g. |failed|crashed|).
-// Blank tokens are dropped; an all-blank/empty input returns nil so the gate
-// stays fully open. A single status is just a one-element set.
-func statusSet(csv string) interface{} {
+// Blank tokens and the reserved FailureStatusToken are dropped (the latter is
+// decoded into the separate match_failure gate); an all-blank/empty input
+// returns nil so the gate stays fully open. sawFailure reports whether the
+// failure token was present.
+func statusSet(csv string) (set interface{}, sawFailure bool) {
 	var tokens []string
 	for _, tok := range strings.Split(csv, ",") {
-		if tok = strings.TrimSpace(tok); tok != "" {
+		switch tok = strings.TrimSpace(tok); tok {
+		case "":
+			// skip blank
+		case model.FailureStatusToken:
+			sawFailure = true
+		default:
 			tokens = append(tokens, tok)
 		}
 	}
 	if len(tokens) == 0 {
-		return nil
+		return nil, sawFailure
 	}
-	return "|" + strings.Join(tokens, "|") + "|"
+	return "|" + strings.Join(tokens, "|") + "|", sawFailure
 }
 
 // buildRunFilterArgs decomposes a RunFilter into the values consumed by the
@@ -89,8 +101,13 @@ func statusSet(csv string) interface{} {
 // never branches per status. The search input is truncated and stripped of
 // LIKE wildcards before the pattern is built.
 func buildRunFilterArgs(f model.RunFilter) runFilterArgs {
+	statusSetArg, sawFailure := statusSet(f.Status)
+	var matchFailure int64
+	if f.IsFailure || sawFailure {
+		matchFailure = 1
+	}
 	args := runFilterArgs{
-		StatusSet:         statusSet(f.Status),
+		StatusSet:         statusSetArg,
 		TaskNameFilter:    nullable(f.TaskName),
 		SearchFilter:      nullable(f.Search),
 		CreatedAfter:      nullableTime(f.CreatedAfter),
@@ -99,6 +116,7 @@ func buildRunFilterArgs(f model.RunFilter) runFilterArgs {
 		ExitCodeMin:       nullableInt(f.ExitCodeMin),
 		ExitCodeMax:       nullableInt(f.ExitCodeMax),
 		RetriesOnly:       nullableBool(f.RetriesOnly),
+		MatchFailure:      matchFailure,
 	}
 	if f.Search != "" {
 		s := f.Search

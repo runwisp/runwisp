@@ -84,6 +84,7 @@ export { default as RunFilterPopover } from "./components/dashboard/RunFilterPop
 export type { RunOutputMatch } from "./components/dashboard/RunsList.svelte";
 export {
     emptyRunFilters,
+    FAILURE_STATUS_TOKEN,
     NEEDS_ATTENTION_STATUSES,
     isNeedsAttention,
     activeFilterCount,

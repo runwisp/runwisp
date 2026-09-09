@@ -42,21 +42,23 @@ export function emptyRunFilters(): RunsListFilters {
 }
 
 /**
- * The end-reason statuses grouped under the "Failed" browse filter — the
- * execution-failure reasons plus `missed` (a scheduled run the daemon was down
- * for). This is a server-side status filter (the runs query matches on
- * end_reason strings), distinct from a run's per-task `isFailure` classification
- * that drives attention badges. Backs the one-click preset that serves Prime
- * Directive #1 — nothing silently fails.
+ * Reserved `status` token the "Failed" browse filter sends instead of a fixed
+ * end-reason list. The server (splitFailureToken in api_types.go) strips it and
+ * matches on each run's persisted `isFailure` bit, so the browse filter agrees
+ * with the attention badges, the failed stat, and notifications — all of which
+ * follow the per-task `failures` policy. It is not a real status/end-reason, so
+ * it OR-combines with the other buckets. Must match `failureStatusToken` in the
+ * daemon.
  */
-export const NEEDS_ATTENTION_STATUSES: readonly string[] = [
-    "failed",
-    "crashed",
-    "timeout",
-    "log_overflow",
-    "start_failed",
-    "missed",
-];
+export const FAILURE_STATUS_TOKEN = "failure";
+
+/**
+ * The status set backing the "Failed" browse filter and the one-click preset
+ * that serves Prime Directive #1 — nothing silently fails. Just the failure
+ * sentinel: the server resolves it to the per-task `isFailure` classification
+ * rather than a fixed end-reason list.
+ */
+export const NEEDS_ATTENTION_STATUSES: readonly string[] = [FAILURE_STATUS_TOKEN];
 
 /** True when `statuses` is exactly the needs-attention set (order-insensitive). */
 export function isNeedsAttention(statuses: string[]): boolean {

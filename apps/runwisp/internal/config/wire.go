@@ -243,42 +243,41 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid env_base for %s %q: %w", label, name, err)
 	}
-	// A nil Failures leaves the matcher unset so ApplyDefaults inherits [defaults];
-	// a present list (even empty) is parsed now and overrides wholesale.
-	var failureReasons map[model.EndReason]struct{}
-	var failureRanges [][2]int
+	// A nil Failures leaves the spec unset so ApplyDefaults inherits [defaults];
+	// a present list is parsed now and resolved against the inherited matcher at
+	// ApplyDefaults time (a delta needs that base; an absolute list replaces it).
+	var failureSpec *model.FailureSpec
 	if w.Failures != nil {
-		failureReasons, failureRanges, err = model.ParseFailures(w.Failures)
+		failureSpec, err = model.ParseFailures(w.Failures)
 		if err != nil {
 			return model.Task{}, fmt.Errorf("invalid %s %q: %w", label, name, err)
 		}
 	}
 	task := model.Task{
-		Name:              name,
-		Kind:              kind,
-		Group:             w.Group,
-		Description:       w.Description,
-		ManualTrigger:     manualTrigger,
-		OnOverlap:         w.OnOverlap,
-		Timeout:           timeout,
-		GracefulStop:      gracefulStop,
-		StopSignal:        w.StopSignal,
-		LogMaxSize:        logMaxSize,
-		LogOnFull:         w.LogOnFull,
-		KeepRuns:          keepRuns,
-		KeepFor:           keepFor,
-		WorkingDir:        w.WorkingDir,
-		Shell:             w.Shell,
-		Umask:             umask,
-		EnvBase:           envBase,
-		RunUser:           w.User,
-		FailureReasons:    failureReasons,
-		FailureExitRanges: failureRanges,
-		Run:               w.Run,
-		Env:               w.Env,
-		EnvFile:           w.EnvFile,
-		Secrets:           w.Secrets,
-		SecretsFile:       w.SecretsFile,
+		Name:          name,
+		Kind:          kind,
+		Group:         w.Group,
+		Description:   w.Description,
+		ManualTrigger: manualTrigger,
+		OnOverlap:     w.OnOverlap,
+		Timeout:       timeout,
+		GracefulStop:  gracefulStop,
+		StopSignal:    w.StopSignal,
+		LogMaxSize:    logMaxSize,
+		LogOnFull:     w.LogOnFull,
+		KeepRuns:      keepRuns,
+		KeepFor:       keepFor,
+		WorkingDir:    w.WorkingDir,
+		Shell:         w.Shell,
+		Umask:         umask,
+		EnvBase:       envBase,
+		RunUser:       w.User,
+		FailureSpec:   failureSpec,
+		Run:           w.Run,
+		Env:           w.Env,
+		EnvFile:       w.EnvFile,
+		Secrets:       w.Secrets,
+		SecretsFile:   w.SecretsFile,
 	}
 	params, err := toTaskParams(w.Params, name)
 	if err != nil {
@@ -564,15 +563,15 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 		return Defaults{}, fmt.Errorf("invalid defaults.healthy_after: %w", err)
 	}
 	// [defaults] always resolves to a concrete failure classification: the
-	// operator's `failures` list, or the built-in default when the key is unset.
-	// Tasks that leave `failures` unset inherit this resolved matcher.
-	failureTokens := w.Failures
-	if failureTokens == nil {
-		failureTokens = model.DefaultFailureTokens
-	}
-	failureReasons, failureRanges, err := model.ParseFailures(failureTokens)
-	if err != nil {
-		return Defaults{}, fmt.Errorf("invalid defaults.%w", err)
+	// built-in default, replaced or delta-adjusted by the operator's `failures`
+	// list. Tasks that leave `failures` unset inherit this resolved matcher.
+	failureReasons, failureRanges := model.DefaultFailures()
+	if w.Failures != nil {
+		spec, perr := model.ParseFailures(w.Failures)
+		if perr != nil {
+			return Defaults{}, fmt.Errorf("invalid defaults.%w", perr)
+		}
+		failureReasons, failureRanges = spec.Resolve(failureReasons, failureRanges)
 	}
 	return Defaults{
 		Timeout:           timeout,

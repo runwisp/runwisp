@@ -15,21 +15,23 @@ import (
 
 const countRunsFiltered = `-- name: CountRunsFiltered :one
 SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL
+  AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
-  AND (?2 IS NULL OR created_at >= ?2)
-  AND (?3 IS NULL OR created_at <= ?3)
-  AND (?4 IS NULL OR triggered_by = ?4)
-  AND (?5 IS NULL OR exit_code >= ?5)
-  AND (?6 IS NULL OR exit_code <= ?6)
-  AND (?7 IS NULL OR retry_attempt > 0)
-  AND (?8 IS NULL OR task_name = ?8)
-  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
+       OR (?2 = 1 AND is_failure = 1))
+  AND (?3 IS NULL OR created_at >= ?3)
+  AND (?4 IS NULL OR created_at <= ?4)
+  AND (?5 IS NULL OR triggered_by = ?5)
+  AND (?6 IS NULL OR exit_code >= ?6)
+  AND (?7 IS NULL OR exit_code <= ?7)
+  AND (?8 IS NULL OR retry_attempt > 0)
+  AND (?9 IS NULL OR task_name = ?9)
+  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
 `
 
 type CountRunsFilteredParams struct {
 	StatusSet         interface{} `json:"status_set"`
+	MatchFailure      interface{} `json:"match_failure"`
 	CreatedAfter      interface{} `json:"created_after"`
 	CreatedBefore     interface{} `json:"created_before"`
 	TriggeredByFilter interface{} `json:"triggered_by_filter"`
@@ -44,6 +46,7 @@ type CountRunsFilteredParams struct {
 func (q *Queries) CountRunsFiltered(ctx context.Context, arg CountRunsFilteredParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countRunsFiltered,
 		arg.StatusSet,
+		arg.MatchFailure,
 		arg.CreatedAfter,
 		arg.CreatedBefore,
 		arg.TriggeredByFilter,
@@ -333,22 +336,24 @@ const queryRunsCreatedAtAsc = `-- name: QueryRunsCreatedAtAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL
+  AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
-  AND (?2 IS NULL OR created_at >= ?2)
-  AND (?3 IS NULL OR created_at <= ?3)
-  AND (?4 IS NULL OR triggered_by = ?4)
-  AND (?5 IS NULL OR exit_code >= ?5)
-  AND (?6 IS NULL OR exit_code <= ?6)
-  AND (?7 IS NULL OR retry_attempt > 0)
-  AND (?8 IS NULL OR task_name = ?8)
-  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
-ORDER BY created_at ASC LIMIT ?12 OFFSET ?11
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
+       OR (?2 = 1 AND is_failure = 1))
+  AND (?3 IS NULL OR created_at >= ?3)
+  AND (?4 IS NULL OR created_at <= ?4)
+  AND (?5 IS NULL OR triggered_by = ?5)
+  AND (?6 IS NULL OR exit_code >= ?6)
+  AND (?7 IS NULL OR exit_code <= ?7)
+  AND (?8 IS NULL OR retry_attempt > 0)
+  AND (?9 IS NULL OR task_name = ?9)
+  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+ORDER BY created_at ASC LIMIT ?13 OFFSET ?12
 `
 
 type QueryRunsCreatedAtAscParams struct {
 	StatusSet         interface{} `json:"status_set"`
+	MatchFailure      interface{} `json:"match_failure"`
 	CreatedAfter      interface{} `json:"created_after"`
 	CreatedBefore     interface{} `json:"created_before"`
 	TriggeredByFilter interface{} `json:"triggered_by_filter"`
@@ -383,6 +388,7 @@ type QueryRunsCreatedAtAscRow struct {
 func (q *Queries) QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreatedAtAscParams) ([]QueryRunsCreatedAtAscRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsCreatedAtAsc,
 		arg.StatusSet,
+		arg.MatchFailure,
 		arg.CreatedAfter,
 		arg.CreatedBefore,
 		arg.TriggeredByFilter,
@@ -436,22 +442,24 @@ const queryRunsCreatedAtDesc = `-- name: QueryRunsCreatedAtDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL
+  AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
-  AND (?2 IS NULL OR created_at >= ?2)
-  AND (?3 IS NULL OR created_at <= ?3)
-  AND (?4 IS NULL OR triggered_by = ?4)
-  AND (?5 IS NULL OR exit_code >= ?5)
-  AND (?6 IS NULL OR exit_code <= ?6)
-  AND (?7 IS NULL OR retry_attempt > 0)
-  AND (?8 IS NULL OR task_name = ?8)
-  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
-ORDER BY created_at DESC LIMIT ?12 OFFSET ?11
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
+       OR (?2 = 1 AND is_failure = 1))
+  AND (?3 IS NULL OR created_at >= ?3)
+  AND (?4 IS NULL OR created_at <= ?4)
+  AND (?5 IS NULL OR triggered_by = ?5)
+  AND (?6 IS NULL OR exit_code >= ?6)
+  AND (?7 IS NULL OR exit_code <= ?7)
+  AND (?8 IS NULL OR retry_attempt > 0)
+  AND (?9 IS NULL OR task_name = ?9)
+  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+ORDER BY created_at DESC LIMIT ?13 OFFSET ?12
 `
 
 type QueryRunsCreatedAtDescParams struct {
 	StatusSet         interface{} `json:"status_set"`
+	MatchFailure      interface{} `json:"match_failure"`
 	CreatedAfter      interface{} `json:"created_after"`
 	CreatedBefore     interface{} `json:"created_before"`
 	TriggeredByFilter interface{} `json:"triggered_by_filter"`
@@ -486,6 +494,7 @@ type QueryRunsCreatedAtDescRow struct {
 func (q *Queries) QueryRunsCreatedAtDesc(ctx context.Context, arg QueryRunsCreatedAtDescParams) ([]QueryRunsCreatedAtDescRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsCreatedAtDesc,
 		arg.StatusSet,
+		arg.MatchFailure,
 		arg.CreatedAfter,
 		arg.CreatedBefore,
 		arg.TriggeredByFilter,
@@ -539,22 +548,24 @@ const queryRunsDurationAsc = `-- name: QueryRunsDurationAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL
+  AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
-  AND (?2 IS NULL OR created_at >= ?2)
-  AND (?3 IS NULL OR created_at <= ?3)
-  AND (?4 IS NULL OR triggered_by = ?4)
-  AND (?5 IS NULL OR exit_code >= ?5)
-  AND (?6 IS NULL OR exit_code <= ?6)
-  AND (?7 IS NULL OR retry_attempt > 0)
-  AND (?8 IS NULL OR task_name = ?8)
-  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
-ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) ASC LIMIT ?12 OFFSET ?11
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
+       OR (?2 = 1 AND is_failure = 1))
+  AND (?3 IS NULL OR created_at >= ?3)
+  AND (?4 IS NULL OR created_at <= ?4)
+  AND (?5 IS NULL OR triggered_by = ?5)
+  AND (?6 IS NULL OR exit_code >= ?6)
+  AND (?7 IS NULL OR exit_code <= ?7)
+  AND (?8 IS NULL OR retry_attempt > 0)
+  AND (?9 IS NULL OR task_name = ?9)
+  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) ASC LIMIT ?13 OFFSET ?12
 `
 
 type QueryRunsDurationAscParams struct {
 	StatusSet         interface{} `json:"status_set"`
+	MatchFailure      interface{} `json:"match_failure"`
 	CreatedAfter      interface{} `json:"created_after"`
 	CreatedBefore     interface{} `json:"created_before"`
 	TriggeredByFilter interface{} `json:"triggered_by_filter"`
@@ -589,6 +600,7 @@ type QueryRunsDurationAscRow struct {
 func (q *Queries) QueryRunsDurationAsc(ctx context.Context, arg QueryRunsDurationAscParams) ([]QueryRunsDurationAscRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsDurationAsc,
 		arg.StatusSet,
+		arg.MatchFailure,
 		arg.CreatedAfter,
 		arg.CreatedBefore,
 		arg.TriggeredByFilter,
@@ -642,22 +654,24 @@ const queryRunsDurationDesc = `-- name: QueryRunsDurationDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL
+  AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
-  AND (?2 IS NULL OR created_at >= ?2)
-  AND (?3 IS NULL OR created_at <= ?3)
-  AND (?4 IS NULL OR triggered_by = ?4)
-  AND (?5 IS NULL OR exit_code >= ?5)
-  AND (?6 IS NULL OR exit_code <= ?6)
-  AND (?7 IS NULL OR retry_attempt > 0)
-  AND (?8 IS NULL OR task_name = ?8)
-  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
-ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) DESC LIMIT ?12 OFFSET ?11
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
+       OR (?2 = 1 AND is_failure = 1))
+  AND (?3 IS NULL OR created_at >= ?3)
+  AND (?4 IS NULL OR created_at <= ?4)
+  AND (?5 IS NULL OR triggered_by = ?5)
+  AND (?6 IS NULL OR exit_code >= ?6)
+  AND (?7 IS NULL OR exit_code <= ?7)
+  AND (?8 IS NULL OR retry_attempt > 0)
+  AND (?9 IS NULL OR task_name = ?9)
+  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) DESC LIMIT ?13 OFFSET ?12
 `
 
 type QueryRunsDurationDescParams struct {
 	StatusSet         interface{} `json:"status_set"`
+	MatchFailure      interface{} `json:"match_failure"`
 	CreatedAfter      interface{} `json:"created_after"`
 	CreatedBefore     interface{} `json:"created_before"`
 	TriggeredByFilter interface{} `json:"triggered_by_filter"`
@@ -692,6 +706,7 @@ type QueryRunsDurationDescRow struct {
 func (q *Queries) QueryRunsDurationDesc(ctx context.Context, arg QueryRunsDurationDescParams) ([]QueryRunsDurationDescRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsDurationDesc,
 		arg.StatusSet,
+		arg.MatchFailure,
 		arg.CreatedAfter,
 		arg.CreatedBefore,
 		arg.TriggeredByFilter,
@@ -745,22 +760,24 @@ const queryRunsExitCodeAsc = `-- name: QueryRunsExitCodeAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL
+  AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
-  AND (?2 IS NULL OR created_at >= ?2)
-  AND (?3 IS NULL OR created_at <= ?3)
-  AND (?4 IS NULL OR triggered_by = ?4)
-  AND (?5 IS NULL OR exit_code >= ?5)
-  AND (?6 IS NULL OR exit_code <= ?6)
-  AND (?7 IS NULL OR retry_attempt > 0)
-  AND (?8 IS NULL OR task_name = ?8)
-  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
-ORDER BY exit_code ASC LIMIT ?12 OFFSET ?11
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
+       OR (?2 = 1 AND is_failure = 1))
+  AND (?3 IS NULL OR created_at >= ?3)
+  AND (?4 IS NULL OR created_at <= ?4)
+  AND (?5 IS NULL OR triggered_by = ?5)
+  AND (?6 IS NULL OR exit_code >= ?6)
+  AND (?7 IS NULL OR exit_code <= ?7)
+  AND (?8 IS NULL OR retry_attempt > 0)
+  AND (?9 IS NULL OR task_name = ?9)
+  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+ORDER BY exit_code ASC LIMIT ?13 OFFSET ?12
 `
 
 type QueryRunsExitCodeAscParams struct {
 	StatusSet         interface{} `json:"status_set"`
+	MatchFailure      interface{} `json:"match_failure"`
 	CreatedAfter      interface{} `json:"created_after"`
 	CreatedBefore     interface{} `json:"created_before"`
 	TriggeredByFilter interface{} `json:"triggered_by_filter"`
@@ -795,6 +812,7 @@ type QueryRunsExitCodeAscRow struct {
 func (q *Queries) QueryRunsExitCodeAsc(ctx context.Context, arg QueryRunsExitCodeAscParams) ([]QueryRunsExitCodeAscRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsExitCodeAsc,
 		arg.StatusSet,
+		arg.MatchFailure,
 		arg.CreatedAfter,
 		arg.CreatedBefore,
 		arg.TriggeredByFilter,
@@ -848,22 +866,24 @@ const queryRunsExitCodeDesc = `-- name: QueryRunsExitCodeDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL
+  AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
-  AND (?2 IS NULL OR created_at >= ?2)
-  AND (?3 IS NULL OR created_at <= ?3)
-  AND (?4 IS NULL OR triggered_by = ?4)
-  AND (?5 IS NULL OR exit_code >= ?5)
-  AND (?6 IS NULL OR exit_code <= ?6)
-  AND (?7 IS NULL OR retry_attempt > 0)
-  AND (?8 IS NULL OR task_name = ?8)
-  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
-ORDER BY exit_code DESC LIMIT ?12 OFFSET ?11
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
+       OR (?2 = 1 AND is_failure = 1))
+  AND (?3 IS NULL OR created_at >= ?3)
+  AND (?4 IS NULL OR created_at <= ?4)
+  AND (?5 IS NULL OR triggered_by = ?5)
+  AND (?6 IS NULL OR exit_code >= ?6)
+  AND (?7 IS NULL OR exit_code <= ?7)
+  AND (?8 IS NULL OR retry_attempt > 0)
+  AND (?9 IS NULL OR task_name = ?9)
+  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+ORDER BY exit_code DESC LIMIT ?13 OFFSET ?12
 `
 
 type QueryRunsExitCodeDescParams struct {
 	StatusSet         interface{} `json:"status_set"`
+	MatchFailure      interface{} `json:"match_failure"`
 	CreatedAfter      interface{} `json:"created_after"`
 	CreatedBefore     interface{} `json:"created_before"`
 	TriggeredByFilter interface{} `json:"triggered_by_filter"`
@@ -898,6 +918,7 @@ type QueryRunsExitCodeDescRow struct {
 func (q *Queries) QueryRunsExitCodeDesc(ctx context.Context, arg QueryRunsExitCodeDescParams) ([]QueryRunsExitCodeDescRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsExitCodeDesc,
 		arg.StatusSet,
+		arg.MatchFailure,
 		arg.CreatedAfter,
 		arg.CreatedBefore,
 		arg.TriggeredByFilter,
@@ -951,22 +972,24 @@ const queryRunsStartAtAsc = `-- name: QueryRunsStartAtAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL
+  AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
-  AND (?2 IS NULL OR created_at >= ?2)
-  AND (?3 IS NULL OR created_at <= ?3)
-  AND (?4 IS NULL OR triggered_by = ?4)
-  AND (?5 IS NULL OR exit_code >= ?5)
-  AND (?6 IS NULL OR exit_code <= ?6)
-  AND (?7 IS NULL OR retry_attempt > 0)
-  AND (?8 IS NULL OR task_name = ?8)
-  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
-ORDER BY COALESCE(started_at, created_at) ASC, created_at ASC LIMIT ?12 OFFSET ?11
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
+       OR (?2 = 1 AND is_failure = 1))
+  AND (?3 IS NULL OR created_at >= ?3)
+  AND (?4 IS NULL OR created_at <= ?4)
+  AND (?5 IS NULL OR triggered_by = ?5)
+  AND (?6 IS NULL OR exit_code >= ?6)
+  AND (?7 IS NULL OR exit_code <= ?7)
+  AND (?8 IS NULL OR retry_attempt > 0)
+  AND (?9 IS NULL OR task_name = ?9)
+  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+ORDER BY COALESCE(started_at, created_at) ASC, created_at ASC LIMIT ?13 OFFSET ?12
 `
 
 type QueryRunsStartAtAscParams struct {
 	StatusSet         interface{} `json:"status_set"`
+	MatchFailure      interface{} `json:"match_failure"`
 	CreatedAfter      interface{} `json:"created_after"`
 	CreatedBefore     interface{} `json:"created_before"`
 	TriggeredByFilter interface{} `json:"triggered_by_filter"`
@@ -1001,6 +1024,7 @@ type QueryRunsStartAtAscRow struct {
 func (q *Queries) QueryRunsStartAtAsc(ctx context.Context, arg QueryRunsStartAtAscParams) ([]QueryRunsStartAtAscRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsStartAtAsc,
 		arg.StatusSet,
+		arg.MatchFailure,
 		arg.CreatedAfter,
 		arg.CreatedBefore,
 		arg.TriggeredByFilter,
@@ -1054,22 +1078,24 @@ const queryRunsStartAtDesc = `-- name: QueryRunsStartAtDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL
+  AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
-  AND (?2 IS NULL OR created_at >= ?2)
-  AND (?3 IS NULL OR created_at <= ?3)
-  AND (?4 IS NULL OR triggered_by = ?4)
-  AND (?5 IS NULL OR exit_code >= ?5)
-  AND (?6 IS NULL OR exit_code <= ?6)
-  AND (?7 IS NULL OR retry_attempt > 0)
-  AND (?8 IS NULL OR task_name = ?8)
-  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
-ORDER BY COALESCE(started_at, created_at) DESC, created_at DESC LIMIT ?12 OFFSET ?11
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
+       OR (?2 = 1 AND is_failure = 1))
+  AND (?3 IS NULL OR created_at >= ?3)
+  AND (?4 IS NULL OR created_at <= ?4)
+  AND (?5 IS NULL OR triggered_by = ?5)
+  AND (?6 IS NULL OR exit_code >= ?6)
+  AND (?7 IS NULL OR exit_code <= ?7)
+  AND (?8 IS NULL OR retry_attempt > 0)
+  AND (?9 IS NULL OR task_name = ?9)
+  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+ORDER BY COALESCE(started_at, created_at) DESC, created_at DESC LIMIT ?13 OFFSET ?12
 `
 
 type QueryRunsStartAtDescParams struct {
 	StatusSet         interface{} `json:"status_set"`
+	MatchFailure      interface{} `json:"match_failure"`
 	CreatedAfter      interface{} `json:"created_after"`
 	CreatedBefore     interface{} `json:"created_before"`
 	TriggeredByFilter interface{} `json:"triggered_by_filter"`
@@ -1104,6 +1130,7 @@ type QueryRunsStartAtDescRow struct {
 func (q *Queries) QueryRunsStartAtDesc(ctx context.Context, arg QueryRunsStartAtDescParams) ([]QueryRunsStartAtDescRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsStartAtDesc,
 		arg.StatusSet,
+		arg.MatchFailure,
 		arg.CreatedAfter,
 		arg.CreatedBefore,
 		arg.TriggeredByFilter,
@@ -1157,22 +1184,24 @@ const queryRunsStatusAsc = `-- name: QueryRunsStatusAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL
+  AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
-  AND (?2 IS NULL OR created_at >= ?2)
-  AND (?3 IS NULL OR created_at <= ?3)
-  AND (?4 IS NULL OR triggered_by = ?4)
-  AND (?5 IS NULL OR exit_code >= ?5)
-  AND (?6 IS NULL OR exit_code <= ?6)
-  AND (?7 IS NULL OR retry_attempt > 0)
-  AND (?8 IS NULL OR task_name = ?8)
-  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
-ORDER BY status ASC LIMIT ?12 OFFSET ?11
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
+       OR (?2 = 1 AND is_failure = 1))
+  AND (?3 IS NULL OR created_at >= ?3)
+  AND (?4 IS NULL OR created_at <= ?4)
+  AND (?5 IS NULL OR triggered_by = ?5)
+  AND (?6 IS NULL OR exit_code >= ?6)
+  AND (?7 IS NULL OR exit_code <= ?7)
+  AND (?8 IS NULL OR retry_attempt > 0)
+  AND (?9 IS NULL OR task_name = ?9)
+  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+ORDER BY status ASC LIMIT ?13 OFFSET ?12
 `
 
 type QueryRunsStatusAscParams struct {
 	StatusSet         interface{} `json:"status_set"`
+	MatchFailure      interface{} `json:"match_failure"`
 	CreatedAfter      interface{} `json:"created_after"`
 	CreatedBefore     interface{} `json:"created_before"`
 	TriggeredByFilter interface{} `json:"triggered_by_filter"`
@@ -1207,6 +1236,7 @@ type QueryRunsStatusAscRow struct {
 func (q *Queries) QueryRunsStatusAsc(ctx context.Context, arg QueryRunsStatusAscParams) ([]QueryRunsStatusAscRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsStatusAsc,
 		arg.StatusSet,
+		arg.MatchFailure,
 		arg.CreatedAfter,
 		arg.CreatedBefore,
 		arg.TriggeredByFilter,
@@ -1260,22 +1290,24 @@ const queryRunsStatusDesc = `-- name: QueryRunsStatusDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL
+  AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
-  AND (?2 IS NULL OR created_at >= ?2)
-  AND (?3 IS NULL OR created_at <= ?3)
-  AND (?4 IS NULL OR triggered_by = ?4)
-  AND (?5 IS NULL OR exit_code >= ?5)
-  AND (?6 IS NULL OR exit_code <= ?6)
-  AND (?7 IS NULL OR retry_attempt > 0)
-  AND (?8 IS NULL OR task_name = ?8)
-  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
-ORDER BY status DESC LIMIT ?12 OFFSET ?11
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
+       OR (?2 = 1 AND is_failure = 1))
+  AND (?3 IS NULL OR created_at >= ?3)
+  AND (?4 IS NULL OR created_at <= ?4)
+  AND (?5 IS NULL OR triggered_by = ?5)
+  AND (?6 IS NULL OR exit_code >= ?6)
+  AND (?7 IS NULL OR exit_code <= ?7)
+  AND (?8 IS NULL OR retry_attempt > 0)
+  AND (?9 IS NULL OR task_name = ?9)
+  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+ORDER BY status DESC LIMIT ?13 OFFSET ?12
 `
 
 type QueryRunsStatusDescParams struct {
 	StatusSet         interface{} `json:"status_set"`
+	MatchFailure      interface{} `json:"match_failure"`
 	CreatedAfter      interface{} `json:"created_after"`
 	CreatedBefore     interface{} `json:"created_before"`
 	TriggeredByFilter interface{} `json:"triggered_by_filter"`
@@ -1310,6 +1342,7 @@ type QueryRunsStatusDescRow struct {
 func (q *Queries) QueryRunsStatusDesc(ctx context.Context, arg QueryRunsStatusDescParams) ([]QueryRunsStatusDescRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsStatusDesc,
 		arg.StatusSet,
+		arg.MatchFailure,
 		arg.CreatedAfter,
 		arg.CreatedBefore,
 		arg.TriggeredByFilter,
@@ -1363,22 +1396,24 @@ const queryRunsTaskNameAsc = `-- name: QueryRunsTaskNameAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL
+  AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
-  AND (?2 IS NULL OR created_at >= ?2)
-  AND (?3 IS NULL OR created_at <= ?3)
-  AND (?4 IS NULL OR triggered_by = ?4)
-  AND (?5 IS NULL OR exit_code >= ?5)
-  AND (?6 IS NULL OR exit_code <= ?6)
-  AND (?7 IS NULL OR retry_attempt > 0)
-  AND (?8 IS NULL OR task_name = ?8)
-  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
-ORDER BY task_name ASC LIMIT ?12 OFFSET ?11
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
+       OR (?2 = 1 AND is_failure = 1))
+  AND (?3 IS NULL OR created_at >= ?3)
+  AND (?4 IS NULL OR created_at <= ?4)
+  AND (?5 IS NULL OR triggered_by = ?5)
+  AND (?6 IS NULL OR exit_code >= ?6)
+  AND (?7 IS NULL OR exit_code <= ?7)
+  AND (?8 IS NULL OR retry_attempt > 0)
+  AND (?9 IS NULL OR task_name = ?9)
+  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+ORDER BY task_name ASC LIMIT ?13 OFFSET ?12
 `
 
 type QueryRunsTaskNameAscParams struct {
 	StatusSet         interface{} `json:"status_set"`
+	MatchFailure      interface{} `json:"match_failure"`
 	CreatedAfter      interface{} `json:"created_after"`
 	CreatedBefore     interface{} `json:"created_before"`
 	TriggeredByFilter interface{} `json:"triggered_by_filter"`
@@ -1413,6 +1448,7 @@ type QueryRunsTaskNameAscRow struct {
 func (q *Queries) QueryRunsTaskNameAsc(ctx context.Context, arg QueryRunsTaskNameAscParams) ([]QueryRunsTaskNameAscRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsTaskNameAsc,
 		arg.StatusSet,
+		arg.MatchFailure,
 		arg.CreatedAfter,
 		arg.CreatedBefore,
 		arg.TriggeredByFilter,
@@ -1466,22 +1502,24 @@ const queryRunsTaskNameDesc = `-- name: QueryRunsTaskNameDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
   started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
 FROM runs WHERE deleted_at IS NULL
-  AND (?1 IS NULL
+  AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
-       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0))
-  AND (?2 IS NULL OR created_at >= ?2)
-  AND (?3 IS NULL OR created_at <= ?3)
-  AND (?4 IS NULL OR triggered_by = ?4)
-  AND (?5 IS NULL OR exit_code >= ?5)
-  AND (?6 IS NULL OR exit_code <= ?6)
-  AND (?7 IS NULL OR retry_attempt > 0)
-  AND (?8 IS NULL OR task_name = ?8)
-  AND (?9 IS NULL OR (task_name LIKE ?10 OR id LIKE ?10))
-ORDER BY task_name DESC LIMIT ?12 OFFSET ?11
+       OR (end_reason IS NOT NULL AND instr(?1, '|' || end_reason || '|') > 0)
+       OR (?2 = 1 AND is_failure = 1))
+  AND (?3 IS NULL OR created_at >= ?3)
+  AND (?4 IS NULL OR created_at <= ?4)
+  AND (?5 IS NULL OR triggered_by = ?5)
+  AND (?6 IS NULL OR exit_code >= ?6)
+  AND (?7 IS NULL OR exit_code <= ?7)
+  AND (?8 IS NULL OR retry_attempt > 0)
+  AND (?9 IS NULL OR task_name = ?9)
+  AND (?10 IS NULL OR (task_name LIKE ?11 OR id LIKE ?11))
+ORDER BY task_name DESC LIMIT ?13 OFFSET ?12
 `
 
 type QueryRunsTaskNameDescParams struct {
 	StatusSet         interface{} `json:"status_set"`
+	MatchFailure      interface{} `json:"match_failure"`
 	CreatedAfter      interface{} `json:"created_after"`
 	CreatedBefore     interface{} `json:"created_before"`
 	TriggeredByFilter interface{} `json:"triggered_by_filter"`
@@ -1516,6 +1554,7 @@ type QueryRunsTaskNameDescRow struct {
 func (q *Queries) QueryRunsTaskNameDesc(ctx context.Context, arg QueryRunsTaskNameDescParams) ([]QueryRunsTaskNameDescRow, error) {
 	rows, err := q.db.QueryContext(ctx, queryRunsTaskNameDesc,
 		arg.StatusSet,
+		arg.MatchFailure,
 		arg.CreatedAfter,
 		arg.CreatedBefore,
 		arg.TriggeredByFilter,

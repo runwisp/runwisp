@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { END_REASONS } from "@runwisp/common";
 import {
     emptyRunFilters,
+    FAILURE_STATUS_TOKEN,
     NEEDS_ATTENTION_STATUSES,
     isNeedsAttention,
     dimensionActive,
@@ -59,14 +60,11 @@ describe("isNeedsAttention", () => {
         expect(isNeedsAttention([...NEEDS_ATTENTION_STATUSES].reverse())).toBe(true);
     });
 
-    it("includes every execution-failure reason plus missed", () => {
-        for (const reason of ["failed", "crashed", "timeout", "log_overflow", "start_failed"]) {
-            expect(NEEDS_ATTENTION_STATUSES).toContain(reason);
-        }
-        expect(NEEDS_ATTENTION_STATUSES).toContain("missed");
+    it("is exactly the failure sentinel (server resolves it to is_failure)", () => {
+        expect(NEEDS_ATTENTION_STATUSES).toEqual([FAILURE_STATUS_TOKEN]);
     });
 
-    it("is false for a strict subset or a different set", () => {
+    it("is false for a raw end reason or a different set", () => {
         expect(isNeedsAttention(["failed"])).toBe(false);
         expect(isNeedsAttention(["succeeded"])).toBe(false);
         expect(isNeedsAttention([])).toBe(false);
@@ -172,32 +170,58 @@ describe("statusChipLabel", () => {
 });
 
 describe("STATUS_BUCKETS", () => {
-    it("covers every filterable status exactly once", () => {
+    // The Failed bucket is the failure sentinel (resolved server-side to the
+    // per-task is_failure classification), so the execution-failure reasons are
+    // not bucketed — they stay reachable via the popover's Advanced expander.
+    const FAILURE_REASONS = [
+        "failed",
+        "crashed",
+        "timeout",
+        "log_overflow",
+        "start_failed",
+        "missed",
+    ];
+
+    it("no status appears in two buckets", () => {
         const all = STATUS_BUCKETS.flatMap((b) => [...b.statuses]);
-        expect(new Set(all).size).toBe(all.length); // no status in two buckets
-        expect(new Set(all)).toEqual(new Set([...END_REASONS, "pending", "running"]));
+        expect(new Set(all).size).toBe(all.length);
     });
 
-    it("Failed bucket is the needs-attention set", () => {
-        expect(new Set(bucketByKey("failed").statuses)).toEqual(new Set(NEEDS_ATTENTION_STATUSES));
+    it("buckets cover every non-failure status plus the failure sentinel", () => {
+        const all = new Set(STATUS_BUCKETS.flatMap((b) => [...b.statuses]));
+        const nonFailureReasons = END_REASONS.filter((r) => !FAILURE_REASONS.includes(r));
+        expect(all).toEqual(
+            new Set([...nonFailureReasons, "pending", "running", FAILURE_STATUS_TOKEN]),
+        );
+    });
+
+    it("Failed bucket is the failure sentinel", () => {
+        expect(bucketByKey("failed").statuses).toEqual([FAILURE_STATUS_TOKEN]);
     });
 });
 
 describe("bucketState / toggleBucket", () => {
-    const failed = bucketByKey("failed");
+    const failed = bucketByKey("failed"); // single-token (the failure sentinel)
+    const running = bucketByKey("running"); // multi-member: pending + running
 
-    it("reads off / partial / on", () => {
+    it("reads off / on for the single-token Failed bucket", () => {
         expect(bucketState([], failed)).toBe("off");
-        expect(bucketState(["failed"], failed)).toBe("partial");
+        expect(bucketState(["failed"], failed)).toBe("off"); // a raw reason is not the sentinel
         expect(bucketState([...failed.statuses], failed)).toBe("on");
     });
 
-    it("selects all of an off or partial bucket", () => {
-        const fromOff = toggleBucket(base(), failed);
-        expect(new Set(fromOff.statuses)).toEqual(new Set(failed.statuses));
+    it("reads off / partial / on for a multi-member bucket", () => {
+        expect(bucketState([], running)).toBe("off");
+        expect(bucketState(["running"], running)).toBe("partial");
+        expect(bucketState([...running.statuses], running)).toBe("on");
+    });
 
-        const fromPartial = toggleBucket(base({ statuses: ["failed"] }), failed);
-        expect(new Set(fromPartial.statuses)).toEqual(new Set(failed.statuses));
+    it("selects all of an off or partial bucket", () => {
+        const fromOff = toggleBucket(base(), running);
+        expect(new Set(fromOff.statuses)).toEqual(new Set(running.statuses));
+
+        const fromPartial = toggleBucket(base({ statuses: ["running"] }), running);
+        expect(new Set(fromPartial.statuses)).toEqual(new Set(running.statuses));
     });
 
     it("clears a fully-selected bucket without touching other statuses", () => {

@@ -6,6 +6,7 @@ import { displayStatus, TRIGGERS } from "@runwisp/common";
 import {
     runPhaseOrder,
     exitCodeRange,
+    FAILURE_STATUS_TOKEN,
     type ExitCodeRange,
     type RunsListFilters,
 } from "@runwisp/ui";
@@ -87,9 +88,12 @@ function buildQuery(offset: number, f: RunsFilters): RunsQuery {
 
 // Match a run's phase OR its end reason against the set — mirrors the server
 // gate. (The old code compared only the phase, so a "failed" filter never
-// matched an ended run; this fixes that.)
+// matched an ended run; this fixes that.) The failure sentinel resolves to the
+// run's per-task `isFailure` classification, mirroring splitFailureToken +
+// the SQL is_failure OR-branch on the server.
 function matchesStatus(run: Run, statuses: string[]): boolean {
     if (statuses.length === 0) return true;
+    if (statuses.includes(FAILURE_STATUS_TOKEN) && run.isFailure) return true;
     const display = displayStatus(run.status, run.endReason);
     return statuses.includes(display) || statuses.includes(run.status);
 }

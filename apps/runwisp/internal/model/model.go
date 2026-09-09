@@ -214,6 +214,13 @@ type Task struct {
 	FailureReasons    map[EndReason]struct{} `toml:"-" json:"-"`
 	FailureExitRanges [][2]int               `toml:"-" json:"-"`
 
+	// FailureSpec is the task's parsed but not-yet-resolved `failures` list,
+	// carried from config's parse step to ApplyDefaults, which resolves it
+	// against the inherited [defaults] matcher into FailureReasons/FailureExitRanges
+	// and clears this back to nil. Config-load-only: nil on any task the loader
+	// has finished with (and on Tasks built outside the loader).
+	FailureSpec *FailureSpec `toml:"-" json:"-"`
+
 	// Ephemeral marks a task the daemon registered at runtime for a single
 	// cloud-dispatched inline execution (never from TOML, never in the task
 	// registry). The run manager reaps such a task — and its queue-drain
