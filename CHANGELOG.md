@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.4] - 2026-09-09
+
 ### Fixed
 
 - **A shell or compose task whose backgrounded child escapes the process group (e.g. via `setsid`) could hang a stopped or timed-out run forever**, holding its output pipes open past the tracked process's own exit. They're now force-closed after a bounded grace period.
@@ -677,7 +679,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.16.3...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.16.4...main
+[0.16.4]: https://github.com/runwisp/runwisp/compare/v0.16.3...v0.16.4
 [0.16.3]: https://github.com/runwisp/runwisp/compare/v0.16.2...v0.16.3
 [0.16.2]: https://github.com/runwisp/runwisp/compare/v0.16.1...v0.16.2
 [0.16.1]: https://github.com/runwisp/runwisp/compare/v0.16.0...v0.16.1
