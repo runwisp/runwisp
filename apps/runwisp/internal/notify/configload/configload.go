@@ -112,14 +112,7 @@ func compileRoute(r config.NotificationRoute) notify.Rule {
 		preds = append(preds, notify.MatchFailure())
 	}
 	if len(r.Kinds) > 0 {
-		kinds := make([]notify.Kind, len(r.Kinds))
-		for i, k := range r.Kinds {
-			kinds[i] = notify.Kind(k)
-		}
-		preds = append(preds, notify.MatchKind(kinds...))
-	}
-	if r.Severity != "" {
-		preds = append(preds, notify.MatchSeverity(notify.Severity(r.Severity)))
+		preds = append(preds, notify.MatchOutcomes(r.Kinds...))
 	}
 	if r.TaskGlob != "" {
 		preds = append(preds, notify.MatchTaskGlob(r.TaskGlob))

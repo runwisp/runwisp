@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/render"
 )
@@ -136,8 +137,7 @@ func TestResolve_CompiledRulePredicates(t *testing.T) {
 			WebhookURL: "https://hooks.slack.test/T/B/Z",
 		}},
 		Routes: []config.NotificationRoute{{
-			Kinds:      []string{"run.failed"},
-			Severity:   "warn",
+			Kinds:      []string{"failed"},
 			TaskGlob:   "backup-*",
 			NotifierID: []string{"ops"},
 		}},
@@ -150,15 +150,15 @@ func TestResolve_CompiledRulePredicates(t *testing.T) {
 	matches := got.Rules[0].Match
 	require.NotNil(t, matches)
 
-	yes := &notify.Event{Kind: notify.KindRunFailed, Severity: notify.SevError, TaskName: "backup-db"}
+	failed := model.ReasonFailed
+	succeeded := model.ReasonSuccess
+
+	yes := &notify.Event{Kind: notify.KindRunFailed, TaskName: "backup-db", Run: &model.Run{EndReason: &failed}}
 	assert.True(t, matches(yes))
 
-	wrongKind := &notify.Event{Kind: notify.KindRunSucceeded, Severity: notify.SevInfo, TaskName: "backup-db"}
+	wrongKind := &notify.Event{Kind: notify.KindRunSucceeded, TaskName: "backup-db", Run: &model.Run{EndReason: &succeeded}}
 	assert.False(t, matches(wrongKind))
 
-	wrongSev := &notify.Event{Kind: notify.KindRunFailed, Severity: notify.SevInfo, TaskName: "backup-db"}
-	assert.False(t, matches(wrongSev))
-
-	wrongTask := &notify.Event{Kind: notify.KindRunFailed, Severity: notify.SevError, TaskName: "etl-1"}
+	wrongTask := &notify.Event{Kind: notify.KindRunFailed, TaskName: "etl-1", Run: &model.Run{EndReason: &failed}}
 	assert.False(t, matches(wrongTask))
 }

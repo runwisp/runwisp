@@ -108,7 +108,7 @@ earns its keep — "v1.2.3 deployed at 14:32" is what a team channel wants
 
 ```toml
 [[route]]
-match     = { task = "deploy-app", kinds = ["run.succeeded"] }
+match     = { task = "deploy-app", kinds = ["succeeded"] }
 notifiers = ["slack-deploys"]
 ```
 

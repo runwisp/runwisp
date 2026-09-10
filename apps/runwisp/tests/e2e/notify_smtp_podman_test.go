@@ -80,7 +80,7 @@ tls_skip_verify = true
 to              = ["alerts@example.test"]
 
 [[route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["failed", "timeout", "crashed"] }
 notifiers = ["email-ops"]
 `, mp.smtpPort, tc.tlsMode, authBlock))
 
@@ -135,7 +135,7 @@ from            = "RunWisp <runwisp@example.test>"
 to              = ["alerts@example.test"]
 
 [[route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["failed", "timeout", "crashed"] }
 notifiers = ["email-ops", "inapp"]
 `, mp.smtpPort))
 

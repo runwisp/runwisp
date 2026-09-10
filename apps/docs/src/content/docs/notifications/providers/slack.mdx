@@ -134,7 +134,7 @@ options, including inline channel overrides and routing a success ping.
 
 ```toml
 [[route]]
-match     = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+match     = { kinds = ["failed", "timeout", "crashed"] }
 notifiers = ["slack-ops"]
 ```
 
@@ -144,7 +144,7 @@ pattern for finer control:
 ```toml
 # Backup failures also send to the on-call channel
 [[route]]
-match     = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+match     = { kinds = ["failed", "timeout", "crashed"], task = "backup-*" }
 notifiers = ["slack-ops", "tg-oncall"]
 ```
 

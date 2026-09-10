@@ -761,7 +761,7 @@ type routeWire struct {
 }
 
 type routeMatchWire struct {
-	Kinds    []string `toml:"kinds,omitempty"`
-	Severity string   `toml:"severity,omitempty"`
-	Task     string   `toml:"task,omitempty"`
+	Kinds   []string `toml:"kinds,omitempty"`
+	Failure bool     `toml:"failure,omitempty"`
+	Task    string   `toml:"task,omitempty"`
 }

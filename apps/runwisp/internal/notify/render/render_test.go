@@ -11,13 +11,28 @@ import (
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/kinds"
 )
 
+// renderableKinds is the SSE Kind vocabulary the renderer must cover — distinct
+// from the route-match token vocabulary (kinds.AllKindStrings), which speaks
+// end-reason outcomes.
+var renderableKinds = []notify.Kind{
+	notify.KindRunStarted,
+	notify.KindRunSucceeded,
+	notify.KindRunFailed,
+	notify.KindRunTimeout,
+	notify.KindRunStopped,
+	notify.KindRunCrashed,
+	notify.KindRunMissed,
+	notify.KindServiceFatal,
+	notify.KindLogDiskPressure,
+	notify.KindNotifyDeliveryFailed,
+}
+
 func TestStatusEmojiAndVerbCoverAllKinds(t *testing.T) {
-	for _, k := range kinds.AllKindStrings {
-		assert.NotEmpty(t, statusEmoji(notify.Kind(k)), "kind %s missing emoji", k)
-		assert.NotEmpty(t, statusVerb(notify.Kind(k)), "kind %s missing verb", k)
+	for _, k := range renderableKinds {
+		assert.NotEmpty(t, statusEmoji(k), "kind %s missing emoji", k)
+		assert.NotEmpty(t, statusVerb(k), "kind %s missing verb", k)
 	}
 }
 

@@ -55,7 +55,7 @@ notify = ["slack-ops", "tg-oncall"]   # any failure → two channels
 
 # A clean shutdown pings one channel.
 [[route]]
-match     = { task = "payments-api", kinds = ["run.succeeded"] }
+match     = { task = "payments-api", kinds = ["succeeded"] }
 notifiers = ["slack-ops"]
 ```
 
@@ -146,7 +146,7 @@ block](/notifications/routes/) is for one rule covering many tasks.
 Reach for a rule when you need a pattern across many tasks
 (`match.task = "backup-*"`), a custom set of event kinds (the
 per-task failure list covers `failed`, `timeout`, `crashed`,
-`log_overflow`, `start_failed`, `run.missed`, and `service.fatal`), or
+`log_overflow`, `start_failed`, `missed`, and `service.fatal`), or
 routing for kinds that have no task — for example
 `notify.delivery_failed`. Per-task fields and rules mix freely: the
 router collects every channel that matches and sends one message per
@@ -167,7 +167,7 @@ notify = ["slack-ops"]
 
 # Backups also send to the on-call channel, in addition to the per-task setting
 [[route]]
-match     = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "*-backup" }
+match     = { kinds = ["failed", "timeout", "crashed"], task = "*-backup" }
 notifiers = ["tg-oncall"]
 ```
 

@@ -58,7 +58,7 @@ type        = "slack"
 webhook_url = "%s"
 
 [[route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["failed", "timeout", "crashed"] }
 notifiers = ["ops", "inapp"]
 `, webhook.URL))
 
@@ -149,7 +149,7 @@ url     = "%s"
 headers = { Authorization = "Bearer e2e-test-token" }
 
 [[route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["failed", "timeout", "crashed"] }
 notifiers = ["hook"]
 `, hook.URL))
 
@@ -221,7 +221,7 @@ type        = "slack"
 webhook_url = "%s"
 
 [[route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["failed", "timeout", "crashed"] }
 notifiers = ["ops"]
 `, webhook.URL))
 
@@ -265,7 +265,7 @@ type        = "slack"
 webhook_url = "%s"
 
 [[route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["failed", "timeout", "crashed"] }
 notifiers = ["broken", "inapp"]
 `, webhook.URL))
 
@@ -358,7 +358,7 @@ from = "RunWisp <runwisp@example.test>"
 to   = ["alerts@example.test"]
 
 [[route]]
-match  = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+match  = { kinds = ["failed", "timeout", "crashed"] }
 notifiers = ["email-ops"]
 `, host, portStr))
 

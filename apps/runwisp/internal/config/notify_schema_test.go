@@ -29,7 +29,7 @@ bot_token = "tok"
 chat_id = "-1001"
 
 [[route]]
-match = { kinds = ["run.failed"], task = "backup-*" }
+match = { kinds = ["failed"], task = "backup-*" }
 notifiers = ["ops", "oncall", "inapp"]
 
 [notify]
@@ -54,7 +54,7 @@ notify = ["ops"]
 
 	require.Len(t, cfg.Notify.Routes, 3, "explicit route + per-task sugar + default inapp catch-all")
 	explicit := cfg.Notify.Routes[0]
-	assert.Equal(t, []string{"run.failed"}, explicit.Kinds)
+	assert.Equal(t, []string{"failed"}, explicit.Kinds)
 	assert.Equal(t, "backup-*", explicit.TaskGlob)
 	assert.Equal(t, []string{"ops", "oncall", "inapp"}, explicit.NotifierID)
 
@@ -150,7 +150,7 @@ webhook_url = "https://example/x"
 func TestValidate_RejectsRouteWithUnknownNotifier(t *testing.T) {
 	src := `
 [[route]]
-match = { kinds = ["run.failed"] }
+match = { kinds = ["failed"] }
 notifiers = ["does-not-exist"]
 `
 	cfg, err := decode([]byte(src), "")
@@ -272,7 +272,7 @@ run               = "deploy.sh"
 notify = ["tg:-2002"]
 
 [[route]]
-match     = { task = "deploy", kinds = ["run.succeeded"] }
+match     = { task = "deploy", kinds = ["succeeded"] }
 notifiers = ["tg:-3003"]
 `
 	cfg, err := decode([]byte(src), "")
@@ -335,7 +335,7 @@ type            = "slack"
 webhook_url     = "https://example/hook"
 
 [[route]]
-match  = { kinds = ["run.failed"], task = "backup-*" }
+match  = { kinds = ["failed"], task = "backup-*" }
 notifiers = ["slack:#ops"]
 `
 	cfg, err := decode([]byte(src), "")
@@ -662,34 +662,24 @@ notify = ["ops"]
 	assert.True(t, found, "service task with notify must produce a route")
 }
 
-func TestValidate_RouteWithEmptySeverity(t *testing.T) {
-	src := schedulerTZHeader + `
-[[route]]
-match = { kinds = ["run.failed"] }
-notifiers = ["inapp"]
-`
-	cfg, err := decode([]byte(src), "")
-	require.NoError(t, err)
-	require.NoError(t, Validate(cfg))
-}
-
-func TestValidate_RouteWithBadSeverity(t *testing.T) {
+// TestValidate_RouteSeverityRejected pins that the dropped match.severity axis
+// is no longer a recognized key: it must be rejected at strict decode, not
+// silently accepted as dead config.
+func TestValidate_RouteSeverityRejected(t *testing.T) {
 	src := `
 [[route]]
-match = { kinds = ["run.failed"], severity = "unknown-sev" }
+match = { kinds = ["failed"], severity = "error" }
 notifiers = ["inapp"]
 `
-	cfg, err := decode([]byte(src), "")
-	require.NoError(t, err)
-	err = Validate(cfg)
+	_, err := decode([]byte(src), "")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "match.severity")
+	assert.Contains(t, err.Error(), "unknown key")
 }
 
 func TestValidate_RouteWithInvalidGlob(t *testing.T) {
 	src := `
 [[route]]
-match = { kinds = ["run.failed"], task = "[invalid" }
+match = { kinds = ["failed"], task = "[invalid" }
 notifiers = ["inapp"]
 `
 	cfg, err := decode([]byte(src), "")
@@ -1044,7 +1034,7 @@ notify = ["discord-ops:override"]
 func TestValidate_RouteEmptyNotifyList(t *testing.T) {
 	src := `
 [[route]]
-match = { kinds = ["run.failed"] }
+match = { kinds = ["failed"] }
 notifiers = []
 `
 	cfg, err := decode([]byte(src), "")

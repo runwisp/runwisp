@@ -6,18 +6,25 @@ package notify_test
 import (
 	"testing"
 
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/notify"
 )
 
-func TestMatchSeverity_EventUnknownSeverity_ReturnsFalse(t *testing.T) {
-	pred := notify.MatchSeverity(notify.SevError)
-	ev := &notify.Event{
-		Kind:     notify.KindRunFailed,
-		TaskName: "my-task",
-		Severity: "unknown-sev",
+// TestMatchOutcomes matches on the fine-grained end reason, distinguishing
+// outcomes the SSE Kind collapses: a log_overflow run (Kind run.failed) matches
+// only "log_overflow", not "failed".
+func TestMatchOutcomes(t *testing.T) {
+	overflow := model.ReasonLogOverflow
+	ev := &notify.Event{Kind: notify.KindRunFailed, Run: &model.Run{EndReason: &overflow}}
+
+	if !notify.MatchOutcomes("log_overflow")(ev) {
+		t.Fatal("MatchOutcomes must match on the fine-grained end reason")
 	}
-	if pred(ev) {
-		t.Fatal("MatchSeverity(error) must return false when event has unknown severity")
+	if notify.MatchOutcomes("failed")(ev) {
+		t.Fatal("a log_overflow run must not match the bare failed token")
+	}
+	if !notify.MatchOutcomes("service.fatal")(&notify.Event{Kind: notify.KindServiceFatal}) {
+		t.Fatal("MatchOutcomes must match a non-run event by its kind token")
 	}
 }
 

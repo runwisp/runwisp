@@ -378,12 +378,13 @@
           "properties": {
             "kinds": {
               "type": "array",
+              "description": "Match on fine-grained outcomes — the same vocabulary as [tasks.*] failures.",
               "items": {
                 "type": "string",
-                "enum": ["run.started", "run.succeeded", "run.failed", "run.timeout", "run.stopped", "run.crashed", "run.missed", "service.fatal", "log.disk_pressure"]
+                "enum": ["started", "succeeded", "failed", "timeout", "crashed", "log_overflow", "queue_full", "stopped", "daemon_stopped", "missed", "service.fatal", "log.disk_pressure"]
               }
             },
-            "severity": { "type": "string", "enum": ["info", "warn", "error"] },
+            "failure": { "type": "boolean", "description": "Match any run classified as a failure (per [tasks.*] failures)." },
             "task": { "type": "string", "description": "Glob over task name." }
           }
         },

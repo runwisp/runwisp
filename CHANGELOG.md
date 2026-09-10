@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`[compose.*]` `include` and `exclude` are replaced by one `services` key.** Bare or `+name` entries keep only those services; `-name` entries drop them; the two polarities are mutually exclusive.
 - **`notify_on_failure` and `notify_on_success` are replaced by one `notify` key** on `[tasks.*]`, `[services.*]`, and compose overrides. It pages when the unit's `failures` policy classifies a run as failed; route any non-failure outcome (a success ping, a timeout-only escalation) with an explicit `[[route]]`. See [Per-task notifications](https://docs.runwisp.com/notifications/per-task/).
 - **`restart` and `restart_attempts` are no longer accepted on `[tasks.*]`** — both are now rejected at load. A task re-runs a failed run with `retry_attempts`/`retry_delay`/`retry_backoff`, which are fully tunable; `restart` stays on `[services.*]` for instance supervision.
+- **`[[route]]` `match.kinds` now speaks the same outcome vocabulary as `failures`** (`failed`, `timeout`, `crashed`, `log_overflow`, `stopped`, `missed`, … plus `service.fatal`, `log.disk_pressure`) instead of the `run.*` stream names, added a first-class `match.failure = true` that matches any run classified as a failure, and dropped the derived `match.severity` axis. See [Notification rules](https://docs.runwisp.com/notifications/routes/).
 - **Run history now distinguishes `ui` (Web UI / TUI "Run Now") and `cli` (`runwisp run`) from a raw `api` REST call**, instead of tagging all three the same way.
 
 ### Fixed

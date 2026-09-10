@@ -234,9 +234,9 @@ Secret-bearing values (`webhook_url`, `bot_token`, `password`, …) arrive final
 ### [[route]] (route events to channels; repeatable)
 
 ```
-match.kinds:     []string — run.started | run.succeeded | run.failed | run.timeout | run.stopped | run.crashed | run.missed | service.fatal | notify.delivery_failed
-match.severity: string   — info | warn | error (optional)
-match.task:     string   — glob over task name (optional)
+match.failure: bool     — match any run classified as a failure (same axis as [tasks.*] failures) (optional)
+match.kinds:   []string — outcomes (same vocab as failures): started | succeeded | failed | timeout | crashed | log_overflow | queue_full | stopped | daemon_stopped | missed | service.fatal | log.disk_pressure (notify.delivery_failed rejected)
+match.task:    string   — glob over task name (optional)
 notifiers:      []string (req, non-empty) — notifier ids (or "inapp"); "id:#override" inline target (slack #/@, telegram chat_id, smtp/sendmail email)
 ```
 

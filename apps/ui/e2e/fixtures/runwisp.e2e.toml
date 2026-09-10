@@ -53,5 +53,5 @@ echo progress-done
 # Surface failed runs as in-app notifications so the bell + popover have
 # something real to render. No outbound notifiers configured.
 [[route]]
-match     = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+match     = { kinds = ["failed", "timeout", "crashed"] }
 notifiers = ["inapp"]

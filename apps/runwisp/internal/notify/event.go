@@ -79,6 +79,29 @@ func (k Kind) Title(ev *Event) string {
 	}
 }
 
+// Outcome returns the route-matching token for this event — the vocabulary a
+// [[route]] match.kinds entry (and a task's `failures` list) uses. For a run
+// event it is the fine-grained end reason (`failed`, `timeout`, `log_overflow`,
+// `stopped`, `daemon_stopped`, `missed`, `succeeded`, …), which is strictly more
+// precise than the collapsed SSE Kind (run.failed lumps failed+log_overflow).
+// For the non-run events and the pre-terminal run.started it is the Kind string
+// (`service.fatal`, `log.disk_pressure`, `started`).
+func (ev *Event) Outcome() string {
+	if ev == nil {
+		return ""
+	}
+	switch ev.Kind {
+	case KindServiceFatal, KindLogDiskPressure:
+		return string(ev.Kind)
+	case KindRunStarted:
+		return "started"
+	}
+	if ev.Run != nil && ev.Run.EndReason != nil {
+		return string(*ev.Run.EndReason)
+	}
+	return string(ev.Kind)
+}
+
 // FingerprintKey is the coalescing identity of an event: kind + task name +
 // a discriminator (the run's end reason, or for delivery-failure events the
 // failed channel + original kind). Two events that should fold together share

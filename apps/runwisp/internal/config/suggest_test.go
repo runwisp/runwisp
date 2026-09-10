@@ -43,8 +43,8 @@ func TestDecodeUnknownKeySuggestions(t *testing.T) {
 		},
 		{
 			name: "route match key typo",
-			toml: "[[route]]\nnotifiers = [\"ops\"]\n[route.match]\nseverty = \"error\"\n[tasks.t]\nrun = \"echo hi\"\n",
-			want: []string{`unknown key "severty"`, `did you mean "severity"?`},
+			toml: "[[route]]\nnotifiers = [\"ops\"]\n[route.match]\nfailur = true\n[tasks.t]\nrun = \"echo hi\"\n",
+			want: []string{`unknown key "failur"`, `did you mean "failure"?`},
 		},
 		{
 			name: "uppercase typo still matches",

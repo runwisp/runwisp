@@ -128,7 +128,7 @@ of options, including routing a success ping with a `[[route]]`.
 
 ```toml
 [[route]]
-match     = { kinds = ["run.failed", "run.timeout", "run.crashed"] }
+match     = { kinds = ["failed", "timeout", "crashed"] }
 notifiers = ["discord-ops"]
 ```
 
@@ -138,7 +138,7 @@ pattern for finer control:
 ```toml
 # Backup failures also ping the on-call channel
 [[route]]
-match     = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+match     = { kinds = ["failed", "timeout", "crashed"], task = "backup-*" }
 notifiers = ["discord-ops", "discord-oncall"]
 ```
 

@@ -202,17 +202,16 @@ type NotifierSpec struct {
 }
 
 // NotificationRoute pairs a predicate description with target action IDs.
-// Match values are stored as strings (kinds, severity, glob); the consumer
+// Match values are stored as strings (outcome tokens + glob); the consumer
 // in internal/notify/configload compiles them into notify.Predicate.
 //
-// MatchFailure is set only on the internally-generated failure routes (the
-// zero-config catch-all and per-task notify sugar). It compiles to
-// notify.MatchFailure, so those routes fire on the classified failure bit
-// (per-task `failures` policy) rather than a fixed Kind list. User-authored
-// [[route]] blocks never set it — they match on kinds/severity/glob.
+// MatchFailure is the `match.failure = true` bit. It compiles to
+// notify.MatchFailure, so the route fires on the classified failure bit
+// (per-task `failures` policy) rather than a fixed token list — this is what
+// the zero-config catch-all and per-task `notify` sugar set, and hand-written
+// [[route]] blocks can set it too.
 type NotificationRoute struct {
 	Kinds        []string
-	Severity     string
 	TaskGlob     string
 	MatchFailure bool
 	NotifierID   []string

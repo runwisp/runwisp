@@ -7,18 +7,26 @@
 // source of truth without an import cycle.
 package kinds
 
-// AllKindStrings lists the event kinds a [[notify.routes]] rule may match on.
-// DeliveryFailedKind is deliberately excluded: it bypasses the route engine
-// entirely (see DeliveryFailedKind), so a rule matching on it would validate
-// but could never fire.
+// AllKindStrings lists the tokens a [[route]] match.kinds entry may use. They
+// are the outcome vocabulary shared with a task's `failures` list — bare
+// end-reason names — plus the non-run event tokens and the pre-terminal
+// `started`. It stays in sync with notify.Event.Outcome().
+//
+// Deliberately excluded, so a route can't be written that never fires:
+// `skipped`/`dst_skipped` (the scheduler doing its job, never notified),
+// `start_failed` (announced via `service.fatal` instead), and
+// DeliveryFailedKind (bypasses the route engine, straight to the bell).
 var AllKindStrings = []string{
-	"run.started",
-	"run.succeeded",
-	"run.failed",
-	"run.timeout",
-	"run.stopped",
-	"run.crashed",
-	"run.missed",
+	"started",
+	"succeeded",
+	"failed",
+	"timeout",
+	"crashed",
+	"log_overflow",
+	"queue_full",
+	"stopped",
+	"daemon_stopped",
+	"missed",
 	"service.fatal",
 	"log.disk_pressure",
 }
@@ -30,5 +38,3 @@ var AllKindStrings = []string{
 // rejects it in match.kinds with a message pointing at this instead of the
 // less clear "not a valid kind".
 const DeliveryFailedKind = "notify.delivery_failed"
-
-var AllSeverityStrings = []string{"info", "warn", "error"}

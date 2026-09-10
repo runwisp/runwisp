@@ -81,10 +81,10 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 
 	for _, r := range t.Routes {
 		out.Routes = append(out.Routes, NotificationRoute{
-			Kinds:      append([]string(nil), r.Match.Kinds...),
-			Severity:   strings.TrimSpace(r.Match.Severity),
-			TaskGlob:   strings.TrimSpace(r.Match.Task),
-			NotifierID: append([]string(nil), r.Notifiers...),
+			Kinds:        append([]string(nil), r.Match.Kinds...),
+			MatchFailure: r.Match.Failure,
+			TaskGlob:     strings.TrimSpace(r.Match.Task),
+			NotifierID:   append([]string(nil), r.Notifiers...),
 		})
 	}
 
@@ -615,9 +615,6 @@ func validateRoute(idx int, r NotificationRoute, known map[string]struct{}) erro
 		if err := requireOneOf(scope+" match.kinds", k, kinds.AllKindStrings, false); err != nil {
 			return err
 		}
-	}
-	if err := requireOneOf(scope+" match.severity", r.Severity, kinds.AllSeverityStrings, true); err != nil {
-		return err
 	}
 	if r.TaskGlob != "" {
 		if _, err := path.Match(r.TaskGlob, ""); err != nil {

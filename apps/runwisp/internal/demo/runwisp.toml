@@ -71,17 +71,17 @@ chat_id   = "-1001234567890"
 # Any backup-* failure pages ops and on-call; inline override sends Slack to
 # the dedicated #backups channel.
 [[route]]
-match     = { kinds = ["run.failed", "run.timeout", "run.crashed"], task = "backup-*" }
+match     = { kinds = ["failed", "timeout", "crashed"], task = "backup-*" }
 notifiers = ["slack-ops:#backups", "telegram-oncall"]
 
 # Surface successful deploys to the deploys channel.
 [[route]]
-match     = { kinds = ["run.succeeded"], task = "deploy-*" }
+match     = { kinds = ["succeeded"], task = "deploy-*" }
 notifiers = ["slack-deploys"]
 
 # The weekly billing rollup reports its success to a dedicated #finance channel.
 [[route]]
-match     = { kinds = ["run.succeeded"], task = "weekly-billing-rollup" }
+match     = { kinds = ["succeeded"], task = "weekly-billing-rollup" }
 notifiers = ["slack-deploys:#finance"]
 
 # A service that gave up restarting is down for good until someone looks —

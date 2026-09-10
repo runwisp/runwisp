@@ -114,7 +114,7 @@ shows up as a `# TODO` in the file and a note in the summary. The usual ones:
     RunWisp mails an event.** A job that printed a line and exited 0 used to
     generate mail and now doesn't. That's usually the improvement people wanted
     from cron mail, but it is a different rule — add a `[[route]]` on
-    `run.succeeded` if you really did want the chatty version.
+    `succeeded` if you really did want the chatty version.
 
     If the box has no MTA, or you'd rather point RunWisp straight at
     Gmail/SES/Postmark, [`type = "smtp"`](/notifications/providers/smtp/) is the
