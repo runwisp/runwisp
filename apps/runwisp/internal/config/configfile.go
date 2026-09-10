@@ -134,5 +134,5 @@ file = "./{{compose}}"
 # Per-service overrides go in their own sub-table:
 # [compose.{{alias}}.web]
 # restart           = "always"
-# notify_on_failure = ["slack-prod"]
+# notify = ["slack-prod"]
 `

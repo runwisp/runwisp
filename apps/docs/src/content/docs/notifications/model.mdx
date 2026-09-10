@@ -36,7 +36,7 @@ It's three steps, and the shape is the same for every provider:
 1. **Declare the channel** in a `[notifiers.<id>]` block. One per channel.
 2. **Wire it up** in one of two ways:
     - [Per-task notifications](/notifications/per-task/) —
-      `notify_on_failure` directly on the task. Best when one task has its
+      `notify` directly on the task. Best when one task has its
       own destination.
     - [Notification rules](/notifications/routes/) — a
       `[[route]]` block. Best when one rule covers many tasks.
@@ -50,7 +50,7 @@ webhook_url = "${RUNWISP_SLACK_OPS_URL}"
 [tasks.backup-postgres]
 cron              = "30 2 * * *"
 run               = "/usr/local/bin/backup.sh"
-notify_on_failure = ["slack-ops"]
+notify = ["slack-ops"]
 ```
 
 That's a working setup right there. The same shape carries over to every
@@ -119,7 +119,7 @@ TOML — neither is built on top of the other — and you can use them
 together.
 
 - **[Per-task notifications](/notifications/per-task/)** —
-  `notify_on_failure = ["slack-ops"]` right on a `[tasks.*]` or
+  `notify = ["slack-ops"]` right on a `[tasks.*]` or
   `[services.*]` block. Best when a task has its own destination and you
   want that setting to sit next to the task definition.
 - **[Notification rules](/notifications/routes/)** — a
@@ -127,7 +127,7 @@ together.
   and any mix of event kinds. Best when one rule should blanket a whole
   set of tasks.
 
-And they cooperate. A task with `notify_on_failure = ["slack-ops"]` that
+And they cooperate. A task with `notify = ["slack-ops"]` that
 _also_ gets matched by a rule routing to `slack-ops` still sends just one
 message — duplicate channels get collapsed.
 
@@ -149,7 +149,7 @@ global_notifiers = ["inapp"]                # default — bell on
 Every id in this list gets _added_ to whatever channels a task already
 names, duplicates removed — and it's also the catch-all for tasks that
 don't name any channel at all. So `global_notifiers = ["inapp"]` plus a
-task's `notify_on_failure = ["slack-ops"]` means the failure goes to
+task's `notify = ["slack-ops"]` means the failure goes to
 `slack-ops` **and** lands a row in the bell. It's "and," not "instead
 of."
 
@@ -238,7 +238,7 @@ entirely — they are delivered directly to the in-app channel. A
 `[[route]]` rule with `match.kinds = ["notify.delivery_failed"]`
 will never fire, no matter what `notifiers` list you point it at. If you
 need a backup path, add a second notifier ID to the original
-`notify_on_failure` list instead — that way both channels get the same
+`notify` list instead — that way both channels get the same
 event and if one goes down the other still sees it.
 
 ## Trust model
@@ -256,7 +256,7 @@ event and if one goes down the other still sees it.
     <LinkCard
         title="Per-task"
         href="/notifications/per-task/"
-        description="notify_on_failure and notify_on_success on one task."
+        description="per-task notify on one task."
     />
     <LinkCard
         title="Notification rules"

@@ -203,7 +203,7 @@ webhook_url = "https://example/hook"
 [compose.myapp]
 
 [compose.myapp.defaults]
-notify_on_failure = ["slack-prod"]
+notify = ["slack-prod"]
 `))
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
@@ -491,22 +491,17 @@ webhook_url = "https://example/ok"
 [compose.myapp]
 
 [compose.myapp.web]
-notify_on_failure = ["slack-prod"]
-notify_on_success = ["slack-ok"]
+notify = ["slack-prod"]
 `))
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
 
 	failure := findRoute(t, cfg, "myapp.web", "run.failed")
-	// notify_on_failure routes on the classified is_failure bit (any failure
+	// notify routes on the classified is_failure bit (any failure
 	// outcome) plus the appended global default channel (inapp).
 	assert.Empty(t, failure.Kinds, "the failure route matches is_failure, not a fixed Kind list")
 	assert.True(t, failure.MatchFailure)
 	assert.ElementsMatch(t, []string{"slack-prod", "inapp"}, failure.NotifierID)
-
-	success := findRoute(t, cfg, "myapp.web", "run.succeeded")
-	assert.ElementsMatch(t, []string{"run.succeeded"}, success.Kinds)
-	assert.ElementsMatch(t, []string{"slack-ok", "inapp"}, success.NotifierID)
 
 	// A service without notify overrides produces no task-scoped route.
 	for _, r := range cfg.Notify.Routes {
@@ -523,7 +518,7 @@ channel = "#default"
 [compose.myapp]
 
 [compose.myapp.web]
-notify_on_failure = ["slack-prod:#alerts"]
+notify = ["slack-prod:#alerts"]
 `))
 	require.NoError(t, err)
 	require.NoError(t, Validate(cfg))
@@ -548,7 +543,7 @@ func TestComposeExpansion_PerServiceNotifyUnknownNotifierRejected(t *testing.T) 
 	_, err := Load(writeConfig(t, `[compose.myapp]
 
 [compose.myapp.web]
-notify_on_failure = ["ghost"]
+notify = ["ghost"]
 `))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ghost")

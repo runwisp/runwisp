@@ -119,7 +119,7 @@ Notes:
         type = "sendmail"
         from = "runwisp@localhost"
         to   = ["ops@example.com"]
-    then put notify_on_failure = ["mta"] on the tasks you want mail from. Note
+    then put notify = ["mta"] on the tasks you want mail from. Note
     the difference: crond mailed any output at all, this mails failures.
 
 Review the TOML above, save it as runwisp.toml, then run `runwisp validate`.

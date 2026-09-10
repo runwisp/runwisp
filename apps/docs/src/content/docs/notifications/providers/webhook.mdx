@@ -98,7 +98,7 @@ Pick where the URL lives and reference it with
 ```toml
 [tasks.backup-postgres]
 cron              = "30 2 * * *"
-notify_on_failure = ["my-hook"]
+notify = ["my-hook"]
 run               = "..."
 ```
 

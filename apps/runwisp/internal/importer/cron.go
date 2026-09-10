@@ -335,7 +335,7 @@ func (cp *crontabParser) noteMailto(value string) {
 			"    type = \"sendmail\"\n"+
 			"    from = \"runwisp@localhost\"\n"+
 			"    to   = [\""+addr+"\"]\n"+
-			"then put notify_on_failure = [\"mta\"] on the tasks you want mail from. "+
+			"then put notify = [\"mta\"] on the tasks you want mail from. "+
 			"Note the difference: crond mailed any output at all, this mails failures.")
 }
 

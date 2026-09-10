@@ -72,19 +72,17 @@ hears about it once.
 
 ## Per-task notifications
 
-If you only need to alert on one task, you can put the channel names
-directly on the task itself with `notify_on_failure` /
-`notify_on_success`:
+If you only need to alert on one task's failures, you can put the channel
+names directly on the task itself with `notify`:
 
 ```toml
 [tasks.publish-feed]
-notify_on_failure = ["slack-ops"]
-notify_on_success = ["slack-ops"]
+notify = ["slack-ops"]
 ```
 
 See [Per-task notifications](/notifications/per-task/) for the full
-behaviour. Both forms can be used together; the router removes
-duplicate channels.
+behaviour. A per-task `notify` and a `[[route]]` can be used together; the
+router removes duplicate channels.
 
 ## Delivery failures
 

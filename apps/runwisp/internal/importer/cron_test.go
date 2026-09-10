@@ -321,7 +321,7 @@ func TestCronMailtoHandsOverTheNotifier(t *testing.T) {
 	for _, want := range []string{
 		`type = "sendmail"`,          // the type that reuses the MTA cron already used
 		`to   = ["ops@example.com"]`, // their address, not a placeholder
-		"notify_on_failure",          // the half that actually routes it
+		"notify",                     // the half that actually routes it
 	} {
 		if !strings.Contains(note.Message, want) {
 			t.Errorf("MAILTO note is missing %q:\n%s", want, note.Message)

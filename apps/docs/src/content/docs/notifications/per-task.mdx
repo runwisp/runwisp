@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Per-task notifications
-description: Use notify_on_failure and notify_on_success on a [tasks.*] or [services.*] block to send notifications when one task ends a certain way.
+description: Name the channels to page on a [tasks.*] or [services.*] block with notify, so a failure alerts without any routing rules.
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -12,15 +12,15 @@ the channels right on the task. The setting sits next to the task it
 belongs to, so a glance at the file tells you which task pages which
 channel.
 
-Every `[tasks.*]` and `[services.*]` block takes two fields:
-`notify_on_failure` (run ended as `failed`, `timeout`, `crashed`,
-`log_overflow`, or `start_failed`; also `run.missed` and
-`service.fatal`) and
-`notify_on_success` (run ended as `succeeded`). They work the same on
-tasks and services. The field tables in
-[`[tasks.*]`](/configuration/tasks/#notifications) and
-[`[services.*]`](/configuration/services/#notifications) list the event
-kinds that apply in each context.
+Every `[tasks.*]` and `[services.*]` block takes a `notify` field: the
+channels to page whenever the run counts as a **failure** (by default
+`failed`, `timeout`, `crashed`, `log_overflow`, `start_failed`, and a
+missed tick — whatever the task's
+[`failures`](/configuration/tasks/#what-counts-as-a-failure) list says).
+It works the same on tasks and services. Want to hear about a _success_,
+or some other specific outcome? That's a one-line
+[`[[route]]`](/notifications/routes/) — see
+[Beyond failures](#beyond-failures) below.
 
 ## Basic usage
 
@@ -28,7 +28,7 @@ kinds that apply in each context.
 [tasks.nightly-db-backup]
 cron              = "30 2 * * *"
 run               = "/usr/local/bin/backup.sh"
-notify_on_failure = ["slack-ops"]
+notify = ["slack-ops"]
 ```
 
 That's the whole setup. A failed backup lights up the `slack-ops`
@@ -40,25 +40,35 @@ want it? Set `global_notifiers = []` to silence it (see
 And if a notification rule happens to match the same event too, each
 channel still gets exactly one message — duplicates are dropped.
 
-## Both fields together
+## Beyond failures
+
+`notify` covers the failure case, which is the one you almost always
+want. For anything else — a success ping, an alert scoped to just
+timeouts — reach for a [`[[route]]`](/notifications/routes/), which
+matches on event kind and a task glob:
 
 ```toml
 [services.payments-api]
 instances         = 2
 run               = "/usr/local/bin/payments-api"
-notify_on_failure = ["slack-ops", "tg-oncall"]
-notify_on_success = ["slack-ops"]
+notify = ["slack-ops", "tg-oncall"]   # any failure → two channels
+
+# A clean shutdown pings one channel.
+[[route]]
+match     = { task = "payments-api", kinds = ["run.succeeded"] }
+notifiers = ["slack-ops"]
 ```
 
-A failure sends to two channels. A clean shutdown sends to one. The two
-lists are independent.
+The per-task `notify` and the rule are independent and mix freely — the
+router collects every channel that matches and sends one message per
+unique channel.
 
 ## Missed-run alerts
 
 There's no separate missed-run channel list, and that's deliberate. A
 [missed scheduled run](/concepts/scheduling/#alerting-on-missed-runs) —
 one the daemon was down for — counts as a failure by default, so it rides
-the **exact same channels you already named in `notify_on_failure`** (plus
+the **exact same channels you already named in `notify`** (plus
 the bell, via `global_notifiers`). You don't wire it up; it's just there.
 
 What you _can_ do is stop treating misses as failures for a task that's
@@ -70,7 +80,7 @@ desk, say — by dropping `missed` from its
 [tasks.daytime-sync]
 cron              = "*/30 9-17 * * 1-5"
 run               = "/usr/local/bin/sync"
-notify_on_failure = ["slack-ops"]
+notify = ["slack-ops"]
 failures          = ["failed", "timeout", "crashed"]   # real failures still page; missed ticks stay quiet
 ```
 
@@ -78,7 +88,7 @@ failures          = ["failed", "timeout", "crashed"]   # real failures still pag
 place — it only changes whether a missed tick counts as a failure, not
 whether it's recorded. The `missed` run row is still there and browsable,
 so nothing goes invisible. Reach for it instead of hollowing out
-`notify_on_failure`, which would also drop your real failure alerts.
+`notify`, which would also drop your real failure alerts.
 
 ## Inline target overrides
 
@@ -96,14 +106,13 @@ webhook_url = "${RUNWISP_SLACK_URL}"
 # no `channel` set — each task picks one inline
 
 [tasks.nightly-db-backup]
-notify_on_failure = ["slack:#ops"]
+notify = ["slack:#ops"]
 
 [tasks.weekly-deploy]
-notify_on_failure = ["slack:#deploys"]
-notify_on_success = ["slack:#deploys"]
+notify = ["slack:#deploys"]
 
 [services.audit-stream]
-notify_on_failure = ["slack:#audit-alerts"]
+notify = ["slack:#audit-alerts"]
 ```
 
 The form of `<target>` depends on the provider: for Slack it is a
@@ -116,7 +125,7 @@ bot_token = "${RUNWISP_TG_TOKEN}"
 chat_id   = "-1001"
 
 [tasks.payments-reconcile]
-notify_on_failure = ["tg:-1009998887"]
+notify = ["tg:-1009998887"]
 ```
 
 Notifier ids cannot contain `:` — the colon separates the id from the
@@ -143,39 +152,18 @@ routing for kinds that have no task — for example
 router collects every channel that matches and sends one message per
 unique channel.
 
-## Worked examples
-
-### Different settings per task
-
-```toml
-[notifiers.slack-ops]
-type        = "slack"
-webhook_url = "${RUNWISP_SLACK_OPS_URL}"
-
-[tasks.nightly-db-backup]
-cron              = "30 2 * * *"
-run               = "/usr/local/bin/backup.sh"
-notify_on_failure = ["slack-ops"]
-
-[tasks.weekly-deploy]
-cron              = "0 9 * * 1"
-run               = "/usr/local/bin/deploy.sh"
-notify_on_failure = ["slack-ops"]
-notify_on_success = ["slack-ops"]   # confirm Mondays went green
-```
-
-### Per-task field plus a wildcard rule
+## Worked example: per-task field plus a wildcard rule
 
 ```toml
 [tasks.audit-log]
 cron              = "0 0 * * *"
 run               = "/usr/local/bin/audit"
-notify_on_failure = ["slack-ops"]
+notify = ["slack-ops"]
 
 [tasks.process-event-queue]
 cron              = "*/10 * * * *"
 run               = "/usr/local/bin/process"
-notify_on_failure = ["slack-ops"]
+notify = ["slack-ops"]
 
 # Backups also send to the on-call channel, in addition to the per-task setting
 [[route]]
@@ -189,11 +177,11 @@ to `tg-oncall`, and adds one row to the bell.
 
 ## What the config loader rejects
 
-The loader rejects unknown notifier ids in `notify_on_failure` /
-`notify_on_success` (anything that isn't declared under `[notifiers.*]`
-and isn't `"inapp"`); inline overrides whose parent doesn't exist,
+The loader rejects unknown notifier ids in `notify` (anything that isn't
+declared under `[notifiers.*]` and isn't `"inapp"`); inline overrides
+whose parent doesn't exist,
 whose target is empty, or — for Slack — doesn't start with `#` or
-`@`; and `"inapp:something"`. An empty list (`notify_on_failure = []`)
+`@`; and `"inapp:something"`. An empty list (`notify = []`)
 is fine — it's equivalent to omitting the field, and
 `[notify] global_notifiers` still fires.
 

@@ -75,8 +75,11 @@ type taskServiceWireCore struct {
 	Secrets     map[string]string `toml:"secrets,omitempty"`
 	SecretsFile string            `toml:"secrets_file,omitempty"`
 
-	NotifyOnFailure []string `toml:"notify_on_failure,omitempty"`
-	NotifyOnSuccess []string `toml:"notify_on_success,omitempty"`
+	// Notify lists the notifier IDs to page when this unit's `failures` policy
+	// classifies a run as a failure. Each entry is a notifier id, optionally with
+	// an inline target override ("slack:#ops"). Non-failure outcomes (a success
+	// ping, a timeout-only escalation) are routed with an explicit [[route]].
+	Notify []string `toml:"notify,omitempty"`
 	// Failures declares which outcomes count as a failure for this task: a list of
 	// EndReason names and/or exit-code tokens ("42", "1-23"). nil means "unset"
 	// (inherit [defaults], then the built-in default) — distinct from an explicit

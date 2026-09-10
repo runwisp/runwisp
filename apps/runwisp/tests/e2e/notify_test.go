@@ -297,7 +297,7 @@ notifiers = ["broken", "inapp"]
 
 // TestNotificationsZeroConfigInappFires verifies the zero-setup default: a
 // TOML with no [notify] section, no [notifiers.*] blocks, no
-// [[route]] rules, and no per-task notify_on_failure still
+// [[route]] rules, and no per-task notify still
 // produces an in-app notification when a run fails. The bell in the Web UI
 // and the footer line in the TUI must light up out of the box.
 func TestNotificationsZeroConfigInappFires(t *testing.T) {

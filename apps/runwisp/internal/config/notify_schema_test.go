@@ -41,7 +41,7 @@ cron = "0 3 * * *"
 max_concurrent = 1
 on_overlap = "queue"
 run = "backup.sh"
-notify_on_failure = ["ops"]
+notify = ["ops"]
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -231,7 +231,7 @@ cron              = "0 4 * * *"
 max_concurrent    = 1
 on_overlap        = "queue"
 run               = "audit.sh"
-notify_on_failure = ["slack:#ops"]
+notify = ["slack:#ops"]
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -269,8 +269,11 @@ cron              = "0 9 * * 1"
 max_concurrent    = 1
 on_overlap        = "queue"
 run               = "deploy.sh"
-notify_on_failure = ["tg:-2002"]
-notify_on_success = ["tg:-3003"]
+notify = ["tg:-2002"]
+
+[[route]]
+match     = { task = "deploy", kinds = ["run.succeeded"] }
+notifiers = ["tg:-3003"]
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -296,21 +299,21 @@ cron              = "* * * * *"
 max_concurrent    = 1
 on_overlap        = "queue"
 run               = "x"
-notify_on_failure = ["slack:#ops"]
+notify = ["slack:#ops"]
 
 [tasks.b]
 cron              = "* * * * *"
 max_concurrent    = 1
 on_overlap        = "queue"
 run               = "y"
-notify_on_failure = ["slack:#ops"]
+notify = ["slack:#ops"]
 
 [tasks.c]
 cron              = "* * * * *"
 max_concurrent    = 1
 on_overlap        = "queue"
 run               = "z"
-notify_on_failure = ["slack:#ops", "slack:#fyi"]
+notify = ["slack:#ops", "slack:#fyi"]
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -356,7 +359,7 @@ cron              = "* * * * *"
 max_concurrent    = 1
 on_overlap        = "queue"
 run               = "x"
-notify_on_failure = ["slack:#ops"]
+notify = ["slack:#ops"]
 `
 	_, err := decode([]byte(src), "")
 	require.Error(t, err)
@@ -370,7 +373,7 @@ cron              = "* * * * *"
 max_concurrent    = 1
 on_overlap        = "queue"
 run               = "x"
-notify_on_failure = ["inapp:foo"]
+notify = ["inapp:foo"]
 `
 	_, err := decode([]byte(src), "")
 	require.Error(t, err)
@@ -388,7 +391,7 @@ cron              = "* * * * *"
 max_concurrent    = 1
 on_overlap        = "queue"
 run               = "x"
-notify_on_failure = ["slack:"]
+notify = ["slack:"]
 `
 	_, err := decode([]byte(src), "")
 	require.Error(t, err)
@@ -406,7 +409,7 @@ cron              = "* * * * *"
 max_concurrent    = 1
 on_overlap        = "queue"
 run               = "x"
-notify_on_failure = ["slack:ops"]
+notify = ["slack:ops"]
 `
 	_, err := decode([]byte(src), "")
 	require.Error(t, err)
@@ -438,7 +441,7 @@ cron = "0 3 * * *"
 max_concurrent = 1
 on_overlap = "queue"
 run = "backup.sh"
-notify_on_failure = ["ops"]
+notify = ["ops"]
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -643,7 +646,7 @@ webhook_url = "https://example/x"
 run = "svc-process"
 on_overlap = "queue"
 instances = 1
-notify_on_failure = ["ops"]
+notify = ["ops"]
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -656,7 +659,7 @@ notify_on_failure = ["ops"]
 			break
 		}
 	}
-	assert.True(t, found, "service task with notify_on_failure must produce a route")
+	assert.True(t, found, "service task with notify must produce a route")
 }
 
 func TestValidate_RouteWithEmptySeverity(t *testing.T) {
@@ -874,7 +877,7 @@ cron              = "0 3 * * *"
 max_concurrent    = 1
 on_overlap        = "queue"
 run               = "backup.sh"
-notify_on_failure = ["email-ops:alerts@example.com"]
+notify = ["email-ops:alerts@example.com"]
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
@@ -907,7 +910,7 @@ cron              = "* * * * *"
 max_concurrent    = 1
 on_overlap        = "queue"
 run               = "x"
-notify_on_failure = ["email-ops:bad@@@"]
+notify = ["email-ops:bad@@@"]
 `
 	_, err := decode([]byte(src), "")
 	require.Error(t, err)
@@ -977,7 +980,7 @@ url  = "https://example.com/hook"
 [tasks.foo]
 cron              = "* * * * *"
 run               = "true"
-notify_on_failure = ["my-hook:override"]
+notify = ["my-hook:override"]
 `
 	_, err := decode([]byte(src), "")
 	require.Error(t, err)
@@ -1031,7 +1034,7 @@ webhook_url = "https://discord.com/api/webhooks/123/token"
 [tasks.foo]
 cron              = "* * * * *"
 run               = "true"
-notify_on_failure = ["discord-ops:override"]
+notify = ["discord-ops:override"]
 `
 	_, err := decode([]byte(src), "")
 	require.Error(t, err)

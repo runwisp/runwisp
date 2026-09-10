@@ -28,7 +28,7 @@ retry_attempts = 2            # forgive 2 transient blips before escalating
 retry_delay    = "30s"
 retry_backoff  = "linear"     # 30s, 60s — total ~90s of probe-and-wait
 keep_runs   = 500             # several days of 5-minute checks for forensics
-notify_on_failure = ["slack-ops"]
+notify = ["slack-ops"]
 
 run = """
 curl --silent --show-error --fail-with-body \\
@@ -67,7 +67,7 @@ in flight — that just adds load.
 The rejected firing is recorded with `end_reason = "skipped"` and
 exit code `-1` — a distinct status from `failed`, so your health
 metrics don't get polluted by overlap-induced rows and
-`notify_on_failure` stays quiet on skips.
+`notify` stays quiet on skips.
 
 ### `timeout = "30s"` + `--max-time 25`
 
@@ -138,7 +138,7 @@ keep_runs  = 500
 
 run = "curl --silent --show-error --fail-with-body --max-time 25 https://api.example.com/health"
 
-# No notify_on_failure here — every failure goes only to in-app.
+# No notify here — every failure goes only to in-app.
 ```
 
 ```toml

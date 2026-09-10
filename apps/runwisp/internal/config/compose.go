@@ -127,13 +127,11 @@ func expandComposeBlocks(cfg *Config, dirs entrySources) error {
 	return appendComposeNotify(&cfg.Notify, notify)
 }
 
-// composeNotifySugar carries one imported service's notify_on_failure /
-// notify_on_success selections, keyed by the generated task name, from
-// expansion to the notify-route desugaring step.
+// composeNotifySugar carries one imported service's `notify` selections, keyed
+// by the generated task name, from expansion to the notify-route desugaring step.
 type composeNotifySugar struct {
-	taskName  string
-	onFailure []string
-	onSuccess []string
+	taskName string
+	notify   []string
 }
 
 // appendComposeNotify turns collected compose per-service notify sugar into
@@ -147,7 +145,7 @@ func appendComposeNotify(out *NotifyConfig, sugar []composeNotifySugar) error {
 	}
 	from := len(out.Routes)
 	for _, s := range sugar {
-		appendSynthRoutes(out, s.taskName, s.onFailure, s.onSuccess)
+		appendNotifyRoute(out, s.taskName, s.notify)
 	}
 	return expandInlineTokensFrom(out, from)
 }
@@ -229,8 +227,7 @@ type composeServiceOverrideWire struct {
 	Secrets     map[string]string `toml:"secrets,omitempty"`
 	SecretsFile string            `toml:"secrets_file,omitempty"`
 
-	NotifyOnFailure []string `toml:"notify_on_failure,omitempty"`
-	NotifyOnSuccess []string `toml:"notify_on_success,omitempty"`
+	Notify []string `toml:"notify,omitempty"`
 }
 
 func expandComposeAlias(alias string, raw map[string]any, baseDir string, existingNames map[string]struct{}) ([]model.Task, []composeNotifySugar, error) {
@@ -463,17 +460,16 @@ func expandComposeServices(block *composeBlock, project *composespec.Project, ex
 	return tasks, notify, nil
 }
 
-// composeServiceNotify extracts a service override's notify_on_* selections
-// into notify sugar keyed by the generated task name. Reports ok=false when the
-// override is absent or declares neither list, so the caller adds no route.
+// composeServiceNotify extracts a service override's `notify` selection into
+// notify sugar keyed by the generated task name. Reports ok=false when the
+// override is absent or declares no notifiers, so the caller adds no route.
 func composeServiceNotify(w *composeServiceOverrideWire, taskName string) (composeNotifySugar, bool) {
-	if w == nil || (len(w.NotifyOnFailure) == 0 && len(w.NotifyOnSuccess) == 0) {
+	if w == nil || len(w.Notify) == 0 {
 		return composeNotifySugar{}, false
 	}
 	return composeNotifySugar{
-		taskName:  taskName,
-		onFailure: w.NotifyOnFailure,
-		onSuccess: w.NotifyOnSuccess,
+		taskName: taskName,
+		notify:   w.Notify,
 	}, true
 }
 

@@ -24,8 +24,7 @@ description = "Pull the new image, run migrations, restart workers"
 # No `cron` — manual / API trigger only.
 on_overlap  = "kill"   # a fresh deploy preempts an in-flight one
 keep_for    = "180d"        # six months of deploy history
-notify_on_failure = ["slack-ops"]
-notify_on_success = ["slack-deploys"]
+notify = ["slack-ops"]      # failures page ops
 
 # timeout = "..."           # see below — size to your worst deploy
 
@@ -101,16 +100,21 @@ floor while the old one is still chugging.
 [`"kill"`](/concepts/concurrency/#kill) is
 exactly right for this scenario, and almost nothing else.
 
-### `notify_on_success = ["slack-deploys"]`
+### A success route to the team channel
 
-Deploys are the one place
-[success notifications](/notifications/per-task/) actually earn their
-keep. "v1.2.3 deployed at 14:32" is exactly the kind of update a
-team channel wants to see.
+`notify` covers failures. Deploys are the one place a _success_ ping
+earns its keep — "v1.2.3 deployed at 14:32" is what a team channel wants
+— so add a [`[[route]]`](/notifications/routes/) for it:
 
-For pretty much everything else, success notifications are noise.
-The [notifications model][notif] page goes into why per-task
-success notifications are opt-in.
+```toml
+[[route]]
+match     = { task = "deploy-app", kinds = ["run.succeeded"] }
+notifiers = ["slack-deploys"]
+```
+
+Everywhere else, success pings are noise — which is why they're a
+deliberate route, not on by default. The [notifications model][notif]
+page goes into why.
 
 [notif]: /notifications/model/
 
@@ -197,7 +201,7 @@ description = "Run pending schema migrations"
 # No cron. Triggered from the maintenance dashboard (a wrapper script).
 on_overlap  = "skip"   # never two migrations at once — even by accident
 keep_for    = "180d"
-notify_on_failure = ["slack-ops", "tg-oncall"]
+notify = ["slack-ops", "tg-oncall"]
 
 # timeout = "..."      # set above your longest migration if you want a
                        # hard ceiling. A killed migration mid-statement is

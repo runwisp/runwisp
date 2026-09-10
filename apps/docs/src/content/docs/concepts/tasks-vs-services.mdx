@@ -49,7 +49,7 @@ And if you catch yourself writing `while true; do ...; done` inside a
 
 Everything else behaves identically on both sides — `timeout`,
 `graceful_stop`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`,
-`notify_on_failure`, `notify_on_success`, `description`, `manual_trigger`.
+`notify`, `description`, `manual_trigger`.
 The only stragglers:
 [`max_concurrent` and `max_queued`](/configuration/tasks/#concurrency)
 are task-only, and
@@ -67,8 +67,8 @@ with:
 - An end reason — `succeeded`, `failed`, `stopped`, `timeout`,
   `crashed`, `skipped`, `log_overflow`, `missed`, `queue_full`,
   `dst_skipped`, `daemon_stopped`, or `start_failed`.
-- The same notification surface (per-task [`notify_on_failure` /
-  `notify_on_success`](/notifications/per-task/), plus full [`[[route]]`](/notifications/routes/) matching).
+- The same notification surface (per-task
+  [`notify`](/notifications/per-task/), plus full [`[[route]]`](/notifications/routes/) matching).
 
 That's really the whole idea: switching from task to service changes how
 the process gets _run_, not what you can see or how you operate it.

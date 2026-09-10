@@ -223,7 +223,7 @@ which driver is on the other end:
 ```toml
 # On one task:
 [tasks.backup-postgres]
-notify_on_failure = ["email-ops"]
+notify = ["email-ops"]
 # …
 
 # Or in a notification rule:
@@ -233,13 +233,13 @@ notifiers = ["email-ops"]
 ```
 
 Inline recipient overrides reuse one credential set across many
-destinations — `notify_on_failure = ["email-ops:db-team@example.com"]`
+destinations — `notify = ["email-ops:db-team@example.com"]`
 sends through the `email-ops` relay but to `db-team@example.com`
 instead of the parent notifier's `to` list:
 
 ```toml
 [tasks.backup-postgres]
-notify_on_failure = ["email-ops:db-team@example.com"]
+notify = ["email-ops:db-team@example.com"]
 ```
 
 You can fan out to multiple channels in the same array — the router
@@ -248,7 +248,7 @@ on the others:
 
 ```toml
 [tasks.critical-job]
-notify_on_failure = ["email-ops", "slack-ops", "tg-oncall"]
+notify = ["email-ops", "slack-ops", "tg-oncall"]
 ```
 
 ## 4. Test it
@@ -355,6 +355,6 @@ as your starting point. The helpers `statusEmoji`, `statusVerb`,
     <LinkCard
         title="Per-task notifications"
         href="/notifications/per-task/"
-        description="notify_on_failure and notify_on_success on one task."
+        description="per-task notify on one task."
     />
 </CardGrid>

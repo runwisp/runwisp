@@ -79,7 +79,7 @@ Compose, a one-line `[compose.<alias>.defaults] restart = "always"` restores tha
 behavior for the whole block.
 
 `defaults` accepts the same keys as a per-service override (below). Its
-`notify_on_failure` / `notify_on_success` lists add routes to _every_ service, on
+`notify` list adds routes to _every_ service, on
 top of any a service declares for itself. Because `defaults` is a reserved
 sub-table name, a compose service literally named `defaults` is rejected with a
 rename hint. Block defaults aren't available in `import = "stack"` (there's only one
@@ -97,7 +97,7 @@ file = "./docker-compose.yml"
 
 [compose.myapp.api]
 restart           = "always"
-notify_on_failure = ["slack-prod"]
+notify = ["slack-prod"]
 graceful_stop     = "30s"
 keep_runs         = 100
 env               = { LOG_LEVEL = "info" }  # layered on top of compose env at runtime
@@ -110,7 +110,7 @@ instances = 3                              # three identical worker instances
 Override sub-tables accept any subset of the
 [`[services.*]`](/configuration/services/) keys:
 `restart`, `env`, `env_file`, `secrets`, `secrets_file`,
-`notify_on_failure`, `notify_on_success`, `graceful_stop`, `stop_signal`,
+`notify`, `graceful_stop`, `stop_signal`,
 `failures`, `keep_runs`, `keep_for`, `instances`, `timeout`,
 `description`, `log_max_size`, `log_on_full`, `manual_trigger`, `on_overlap`,
 `restart_delay`, `restart_backoff`, `healthy_after`, `restart_attempts`,

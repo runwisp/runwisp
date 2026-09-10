@@ -52,7 +52,7 @@ restart = "always"
 
 Declare a channel (here, the
 [Slack provider](/notifications/providers/slack/)) and point the
-service's [`notify_on_failure`](/notifications/per-task/) at it:
+service's [`notify`](/notifications/per-task/) at it:
 
 ```toml
 [notifiers.slack-prod]
@@ -60,7 +60,7 @@ type        = "slack"
 webhook_url = "https://hooks.slack.com/services/..."
 
 [compose.myapp.api]
-notify_on_failure = ["slack-prod"]
+notify = ["slack-prod"]
 ```
 
 ### Scale a worker horizontally

@@ -27,7 +27,7 @@ description = "Nightly logical dump of the production database"
 cron        = "30 2 * * *"          # 02:30 every day, daemon-local time
 on_overlap  = "skip"                 # never two dumps at once
 keep_for    = "90d"                  # three months of forensic history
-notify_on_failure = ["slack-ops"]
+notify = ["slack-ops"]
 shell       = "/bin/bash"            # for pipefail — see below
 
 # timeout = "..."                    # see below — size to your DB, or omit
@@ -55,7 +55,7 @@ echo "Wrote $DEST/app_production-$TS.dump.gz ($(du -h "$DEST/app_production-$TS.
 The matching `[notifiers.<id>]` block — described on the
 [Slack provider page][slack] — receives `run.failed`, `run.timeout`, and
 `run.crashed`, because those are the run-end kinds that
-`notify_on_failure` covers.
+`notify` covers.
 
 [slack]: /notifications/providers/slack/
 
@@ -118,7 +118,7 @@ cadence. See [Logs & retention][logs].
 
 [logs]: /concepts/logs/#retention-keep_runs-and-keep_for
 
-### `notify_on_failure`
+### `notify`
 
 Sends a message on `run.failed`, `run.timeout`, and `run.crashed`. See
 [Per-task notifications][pertask] for the full behaviour. The bell is
@@ -172,7 +172,7 @@ group       = "Backups"
 description = "Restore last night's dump into a scratch DB and run a smoke query"
 cron        = "0 5 * * *"            # 02:30 dump → 05:00 restore-test
 on_overlap  = "skip"
-notify_on_failure = ["slack-ops"]
+notify = ["slack-ops"]
 shell       = "/bin/bash"            # pipelines again — same reason as above
 
 run = """

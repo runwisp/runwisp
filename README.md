@@ -157,7 +157,7 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 - Real-time stdout/stderr streaming over SSE, viewable in the web UI and TUI
 - Every run recorded in SQLite with exit code, duration, and timestamps
 - Built-in per-task log rotation with overflow policies (`drop_new` · `drop_old` · `kill`)
-- Failure alerting to Slack, Discord, Telegram, email (SMTP), generic webhooks, or the in-app inbox, routed per task with `notify_on_failure` · `notify_on_success`, with `failures` declaring which outcomes count
+- Failure alerting to Slack, Discord, Telegram, email (SMTP), generic webhooks, or the in-app inbox, routed per task with `notify` (or a `[[route]]` for non-failure outcomes), with `failures` declaring which outcomes count
 
 **Interfaces**
 

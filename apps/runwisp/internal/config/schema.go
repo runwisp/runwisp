@@ -206,7 +206,7 @@ type NotifierSpec struct {
 // in internal/notify/configload compiles them into notify.Predicate.
 //
 // MatchFailure is set only on the internally-generated failure routes (the
-// zero-config catch-all and per-task notify_on_failure sugar). It compiles to
+// zero-config catch-all and per-task notify sugar). It compiles to
 // notify.MatchFailure, so those routes fire on the classified failure bit
 // (per-task `failures` policy) rather than a fixed Kind list. User-authored
 // [[route]] blocks never set it — they match on kinds/severity/glob.

@@ -121,14 +121,14 @@ better in your file.
 ```toml
 [tasks.backup-postgres]
 cron              = "30 2 * * *"
-notify_on_failure = ["slack-ops"]
+notify = ["slack-ops"]
 run               = "..."
 ```
 
 That single line is enough. The bell receives the same event by default,
 so if the Slack request fails you still see the failure in the bell. See
 [Per-task notifications](/notifications/per-task/) for the full list of
-options, including `notify_on_success` and inline channel overrides.
+options, including inline channel overrides and routing a success ping.
 
 ### In a notification rule (one rule covering many tasks)
 
@@ -249,6 +249,6 @@ task name, run id, exit code, end reason, timestamp, captured tail.
     <LinkCard
         title="Per-task notifications"
         href="/notifications/per-task/"
-        description="notify_on_failure and notify_on_success on one task."
+        description="per-task notify on one task."
     />
 </CardGrid>

@@ -110,7 +110,7 @@ to   = ["not an address"]
 	assert.Contains(t, err.Error(), "not valid")
 }
 
-// TestValidate_Sendmail_SupportsInlineRecipientOverride: `notify_on_failure =
+// TestValidate_Sendmail_SupportsInlineRecipientOverride: `notify =
 // ["mta:oncall@example.com"]` is the sugar that makes one MTA notifier serve
 // every task, and it is the closest thing to a per-crontab MAILTO.
 func TestValidate_Sendmail_SupportsInlineRecipientOverride(t *testing.T) {
@@ -119,7 +119,7 @@ func TestValidate_Sendmail_SupportsInlineRecipientOverride(t *testing.T) {
 cron              = "@daily"
 run               = "/bin/backup"
 on_overlap        = "queue"
-notify_on_failure = ["mta:oncall@example.com"]
+notify = ["mta:oncall@example.com"]
 
 [notifiers.mta]
 type = "sendmail"
@@ -148,7 +148,7 @@ func TestValidate_Sendmail_RejectsAMalformedInlineOverride(t *testing.T) {
 cron              = "@daily"
 run               = "/bin/backup"
 on_overlap        = "queue"
-notify_on_failure = ["mta:not an address"]
+notify = ["mta:not an address"]
 
 [notifiers.mta]
 type = "sendmail"

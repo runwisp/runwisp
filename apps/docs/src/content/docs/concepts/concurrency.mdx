@@ -90,7 +90,7 @@ pattern instead of just silence.
 
 And to be clear, **`end_reason = "skipped"` is not a failure**:
 
-- `notify_on_failure` stays quiet on skips, so a `* * * * *` health
+- `notify` stays quiet on skips, so a `* * * * *` health
   probe that overlaps doesn't blow up your Slack.
 - Retries leave skips alone — the original run is still going, so a
   retry would just race it.

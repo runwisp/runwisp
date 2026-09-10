@@ -143,7 +143,7 @@ the other end:
 ```toml
 # On one task:
 [tasks.backup-postgres]
-notify_on_failure = ["tg-oncall"]
+notify = ["tg-oncall"]
 # …
 
 # Or in a notification rule:
@@ -157,7 +157,7 @@ and an outage of one channel does not stop delivery on the other:
 
 ```toml
 [tasks.critical-job]
-notify_on_failure = ["slack-ops", "tg-oncall"]
+notify = ["slack-ops", "tg-oncall"]
 ```
 
 ## 5. Test it
@@ -254,6 +254,6 @@ as your starting point. The helpers `statusEmoji`, `statusVerb`,
     <LinkCard
         title="Per-task notifications"
         href="/notifications/per-task/"
-        description="notify_on_failure and notify_on_success on one task."
+        description="per-task notify on one task."
     />
 </CardGrid>

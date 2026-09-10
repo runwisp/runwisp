@@ -69,7 +69,7 @@ cron        = "0 4 * * *"
 on_overlap  = "skip"
 timeout     = "2h"
 keep_runs   = 60
-notify_on_failure = ["slack-ops"]
+notify = ["slack-ops"]
 
 run = """
 docker run --rm --init \\
@@ -85,7 +85,7 @@ The RunWisp side of that — [`cron`](/concepts/scheduling/),
 [`on_overlap`](/concepts/concurrency/),
 [`timeout`](/concepts/retries/#timeout),
 [`keep_runs`](/concepts/logs/#retention-keep_runs-and-keep_for),
-[`notify_on_failure`](/notifications/per-task/) — has its own pages.
+[`notify`](/notifications/per-task/) — has its own pages.
 Here's why the Docker side looks like that.
 
 **`--memory` / `--cpus`.** RunWisp is frugal with RAM, but that won't
@@ -176,7 +176,7 @@ teams deploying several times a day; for everyone else, let the deploy
 itself do the pull. Pair it with the
 [deploy-hooks recipe](/recipes/deploy-hooks/).
 
-No `notify_on_failure` here, deliberately. A missed prefetch costs the
+No `notify` here, deliberately. A missed prefetch costs the
 next deploy a few seconds and nothing else, and an alert nobody needs
 to act on is how people learn to ignore alerts. You'll still see the
 red run in the Web UI if you go looking. And keep an eye on registry
@@ -194,7 +194,7 @@ group       = "Maintenance"
 description = "Reclaim disk: dangling images and stopped containers"
 cron        = "0 5 * * 0"      # Sunday 05:00
 on_overlap  = "skip"
-notify_on_failure = ["slack-ops"]
+notify = ["slack-ops"]
 
 run = """
 # Dangling images and stopped containers — always safe.

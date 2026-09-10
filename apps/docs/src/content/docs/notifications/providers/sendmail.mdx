@@ -84,7 +84,7 @@ is on the other end:
 [tasks.backup-postgres]
 cron              = "30 2 * * *"
 run               = "/usr/local/bin/backup.sh"
-notify_on_failure = ["mta"]
+notify = ["mta"]
 ```
 
 Or once, for everything:
@@ -100,7 +100,7 @@ per-crontab `MAILTO` — one notifier, a different recipient per task:
 
 ```toml
 [tasks.nightly-report]
-notify_on_failure = ["mta:reports@example.com"]
+notify = ["mta:reports@example.com"]
 ```
 
 ## What a message looks like
@@ -189,7 +189,7 @@ before you rely on it:
 
 **crond mailed any output at all. RunWisp mails an event.** A job
 that printed a line and exited 0 generated cron mail; here it
-doesn't, unless you ask for it with `notify_on_success`. What you
+doesn't, unless you ask for it with a `[[route]]` on `run.succeeded`. What you
 get by default is failures — which is usually what people actually
 wanted from cron mail, but it is not the same rule.
 

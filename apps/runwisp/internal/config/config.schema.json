@@ -213,8 +213,7 @@
         "env_file": { "type": "string" },
         "secrets": { "$ref": "#/$defs/secretsMap" },
         "secrets_file": { "type": "string" },
-        "notify_on_failure": { "type": "array", "items": { "type": "string" }, "description": "Route on any failure outcome (see failures); notifier ids, \"id:override\", or \"inapp\"." },
-        "notify_on_success": { "type": "array", "items": { "type": "string" }, "description": "Route on run.succeeded." },
+        "notify": { "type": "array", "items": { "type": "string" }, "description": "Notifier ids (or \"id:override\", or \"inapp\") to page when this unit's `failures` policy classifies a run as a failure. Non-failure outcomes (a success ping, a timeout-only escalation) use an explicit [[route]] instead." },
         "params": { "type": "array", "items": { "$ref": "#/$defs/param" }, "description": "Per-execution inputs ([tasks.*.params])." }
       }
     },
@@ -248,8 +247,7 @@
         "env_file": { "type": "string" },
         "secrets": { "$ref": "#/$defs/secretsMap" },
         "secrets_file": { "type": "string" },
-        "notify_on_failure": { "type": "array", "items": { "type": "string" } },
-        "notify_on_success": { "type": "array", "items": { "type": "string" } },
+        "notify": { "type": "array", "items": { "type": "string" } },
         "instances": { "type": "integer", "minimum": 1, "maximum": 64, "default": 1, "description": "Parallel instances." },
         "restart_delay": { "$ref": "#/$defs/duration", "description": "Delay before a restart. Default 1s." },
         "restart_backoff": { "$ref": "#/$defs/backoff", "default": "exponential" },
@@ -324,8 +322,7 @@
         "env_file": { "type": "string" },
         "secrets": { "$ref": "#/$defs/secretsMap" },
         "secrets_file": { "type": "string" },
-        "notify_on_failure": { "type": "array", "items": { "type": "string" } },
-        "notify_on_success": { "type": "array", "items": { "type": "string" } }
+        "notify": { "type": "array", "items": { "type": "string" } }
       }
     },
     "notify": {

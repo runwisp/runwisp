@@ -55,7 +55,7 @@ func parseNotifyToken(s string) (parentID, override string, hasOverride bool) {
 }
 
 // toNotifyConfig translates the raw [notifiers.<id>], [[route]],
-// [notify], and per-task notify_on_failure/notify_on_success blocks into a
+// [notify], and per-task `notify` shorthands into a
 // resolved-but-not-secret-substituted NotifyConfig.
 func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*taskWire, serviceNames []string, serviceWires map[string]*serviceWire) (NotifyConfig, error) {
 	out := NotifyConfig{
@@ -314,7 +314,7 @@ func resolveGlobalNotifiers(raw *[]string) []string {
 // ["inapp"], the bell in the Web UI and the footer in the TUI always light up.
 // With ["slack-ops"], every failure pages Slack. With [], no synthetic route is
 // added at all. The router deduplicates channel IDs across matching rules, so
-// this is harmless when the same task also has explicit notify_on_failure sugar.
+// this is harmless when the same task also has explicit notify sugar.
 // What counts as a failure is the per-task `failures` policy (MatchFailure on
 // the classified bit), so a task that demotes `missed` or promotes `stopped`
 // re-routes here automatically — no notify-side mute needed.
@@ -328,18 +328,17 @@ func appendCatchAllRoute(out *NotifyConfig) {
 	})
 }
 
-// desugarTaskNotify converts per-task notify_on_failure / notify_on_success
-// shorthands into synthetic routes appended to NotifyConfig.Routes.
-// GlobalNotifiers (typically ["inapp"]) are appended automatically so a
-// per-task slack route still lights up the in-app bell unless the operator
-// explicitly cleared the default.
+// desugarTaskNotify converts the per-task `notify` shorthand into synthetic
+// failure routes appended to NotifyConfig.Routes. GlobalNotifiers (typically
+// ["inapp"]) are appended automatically so a per-task slack route still lights
+// up the in-app bell unless the operator explicitly cleared the default.
 func desugarTaskNotify(taskNames []string, taskWires map[string]*taskWire, out *NotifyConfig) {
 	for _, name := range taskNames {
 		w := taskWires[name]
 		if w == nil {
 			continue
 		}
-		appendSynthRoutes(out, name, w.NotifyOnFailure, w.NotifyOnSuccess)
+		appendNotifyRoute(out, name, w.Notify)
 	}
 }
 
@@ -349,29 +348,24 @@ func desugarServiceNotify(names []string, wires map[string]*serviceWire, out *No
 		if w == nil {
 			continue
 		}
-		appendSynthRoutes(out, name, w.NotifyOnFailure, w.NotifyOnSuccess)
+		appendNotifyRoute(out, name, w.Notify)
 	}
 }
 
-func appendSynthRoutes(out *NotifyConfig, taskName string, onFailure, onSuccess []string) {
-	if len(onFailure) > 0 {
-		// notify_on_failure pages on whatever the task's `failures` policy
-		// classifies as a failure (MatchFailure), so a missed run reaches this
-		// route by default and demoting `missed` silences it — no hand-authored
-		// route rewrite, no notify-side mute.
-		out.Routes = append(out.Routes, NotificationRoute{
-			MatchFailure: true,
-			TaskGlob:     taskName,
-			NotifierID:   mergeWithAppended(onFailure, out.GlobalNotifiers),
-		})
+// appendNotifyRoute turns a unit's `notify` list into one synthetic route that
+// fires on the task's classified-failure bit (MatchFailure), so a missed run
+// reaches it by default and demoting `missed` silences it — no hand-authored
+// route rewrite, no notify-side mute. Non-failure outcomes are routed with an
+// explicit [[route]].
+func appendNotifyRoute(out *NotifyConfig, taskName string, notify []string) {
+	if len(notify) == 0 {
+		return
 	}
-	if len(onSuccess) > 0 {
-		out.Routes = append(out.Routes, NotificationRoute{
-			Kinds:      []string{"run.succeeded"},
-			TaskGlob:   taskName,
-			NotifierID: mergeWithAppended(onSuccess, out.GlobalNotifiers),
-		})
-	}
+	out.Routes = append(out.Routes, NotificationRoute{
+		MatchFailure: true,
+		TaskGlob:     taskName,
+		NotifierID:   mergeWithAppended(notify, out.GlobalNotifiers),
+	})
 }
 
 func mergeWithAppended(explicit, appended []string) []string {

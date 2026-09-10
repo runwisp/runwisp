@@ -75,7 +75,7 @@ it'll offer to write a minimal starter for you — the
 | `[notifiers.<id>]`  | Declares one outbound channel. One table per channel, keyed by id.                                                                                                                      | [Notifications model](/notifications/model/#notifiersid--declaring-a-channel) |
 | `[[route]]`         | Sends events (`run.failed`, `run.timeout`, …) to one or more channels. One rule, many tasks.                                                                                            | [Notification rules](/notifications/routes/)                                  |
 | `[notify]`          | Global notification settings — bell channels, retry budget, history retention, coalescing.                                                                                              | [Global settings](/notifications/global/)                                     |
-| `notify_on_failure` | Sets the channels to notify when one specific task ends `failed`, `timeout`, or `crashed`.                                                                                              | [Per-task notifications](/notifications/per-task/)                            |
+| `notify`            | Sets the channels to notify when one specific task ends `failed`, `timeout`, or `crashed`.                                                                                              | [Per-task notifications](/notifications/per-task/)                            |
 
 One rule cuts across every section: any string value can pull from an
 env var or a file with `${VAR}` / `${file:path}` —

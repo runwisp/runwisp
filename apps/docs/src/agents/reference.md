@@ -163,13 +163,12 @@ env:               map<str,str>     — inline env (merged over defaults.env)
 env_file:          path             — dotenv file
 secrets:           map<str,str>     — inline secrets (merged over defaults.secrets); never shown in API/UI
 secrets_file:      path             — dotenv file merged beneath secrets; only the path is visible
-notify_on_failure: []string         — sugar → route on any failure outcome (see failures); notifier ids, "id:override", or "inapp"
-notify_on_success: []string         — sugar → route on run.succeeded
+notify: []string         — sugar → route on any classified failure (see failures); notifier ids, "id:override", or "inapp". Non-failure outcomes use an explicit [[route]].
 ```
 
 ### [services.&lt;name&gt;] (long-running)
 
-`restart=always` is forced. Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `max_catch_up_runs`, `restart`, `max_concurrent`, `max_queued`, `retry_*`. Shares the core task keys (including `restart_attempts`, see above): `group` (default `Services`), `description`, `manual_trigger`, `on_overlap` (default `skip`), `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `env_base`, `user`, `failures`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify_on_failure`/`notify_on_success`. Service-only:
+`restart=always` is forced. Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `max_catch_up_runs`, `restart`, `max_concurrent`, `max_queued`, `retry_*`. Shares the core task keys (including `restart_attempts`, see above): `group` (default `Services`), `description`, `manual_trigger`, `on_overlap` (default `skip`), `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `env_base`, `user`, `failures`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify`. Service-only:
 
 ```
 instances:           int  =1           — parallel instances; 1..64
@@ -199,7 +198,7 @@ pull:         enum =missing        — missing | always | never
 name_format:  string ={alias}.{service} — generated task name; must contain {service} when import="services"
 ```
 
-Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `manual_trigger`, `timeout`, `graceful_stop`, `stop_signal`, `on_overlap`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `restart_attempts`, `priority`, `autostart`, `failures`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `env`, `env_file`, `secrets`, `secrets_file`, `notify_on_failure`, `notify_on_success`. Not allowed: `run`/`compose_file`/`compose_service` (the parent block owns the backend), and the host-process keys `shell`/`umask`/`env_base`/`user`. `import="stack"` forbids overrides and the `services` filter. Per-service `notify_on_failure`/`notify_on_success` desugar into notify routes keyed by the generated task name, exactly like `[services.*]`. The reserved sub-table `[compose.<alias>.defaults]` accepts the same keys and applies them to every imported service before the per-service override wins (precedence: compose-import default → `defaults` → `<svc>`); its `notify_on_*` add routes to all services. A compose service literally named `defaults` is rejected (rename hint); `import="stack"` forbids `defaults` too.
+Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `manual_trigger`, `timeout`, `graceful_stop`, `stop_signal`, `on_overlap`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `restart_attempts`, `priority`, `autostart`, `failures`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `env`, `env_file`, `secrets`, `secrets_file`, `notify`. Not allowed: `run`/`compose_file`/`compose_service` (the parent block owns the backend), and the host-process keys `shell`/`umask`/`env_base`/`user`. `import="stack"` forbids overrides and the `services` filter. Per-service `notify` desugars into notify routes keyed by the generated task name, exactly like `[services.*]`. The reserved sub-table `[compose.<alias>.defaults]` accepts the same keys and applies them to every imported service before the per-service override wins (precedence: compose-import default → `defaults` → `<svc>`); its `notify` adds routes to all services. A compose service literally named `defaults` is rejected (rename hint); `import="stack"` forbids `defaults` too.
 
 ### [notify] (global notification settings)
 

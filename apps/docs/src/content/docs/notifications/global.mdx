@@ -52,7 +52,7 @@ global_notifiers = []                # silence the bell entirely
 
 `global_notifiers = []` switches off the bell in both the Web UI and the
 TUI footer, and it also stops `"inapp"` from being slipped into your
-per-task fields. With it empty, `notify_on_failure = ["slack-ops"]` goes
+per-task fields. With it empty, `notify = ["slack-ops"]` goes
 to `slack-ops` and nowhere else.
 
 Reach for the empty form when the daemon runs unattended — a build
@@ -144,7 +144,7 @@ global_notifiers  = []          # nobody reads the bell
     <LinkCard
         title="Per-task"
         href="/notifications/per-task/"
-        description="notify_on_failure / notify_on_success on one task."
+        description="per-task notify on one task."
     />
     <LinkCard
         title="Slack provider"

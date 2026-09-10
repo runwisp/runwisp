@@ -79,6 +79,11 @@ notifiers = ["slack-ops:#backups", "telegram-oncall"]
 match     = { kinds = ["run.succeeded"], task = "deploy-*" }
 notifiers = ["slack-deploys"]
 
+# The weekly billing rollup reports its success to a dedicated #finance channel.
+[[route]]
+match     = { kinds = ["run.succeeded"], task = "weekly-billing-rollup" }
+notifiers = ["slack-deploys:#finance"]
+
 # A service that gave up restarting is down for good until someone looks —
 # page ops and on-call the same way a backup failure would.
 [[route]]
@@ -99,7 +104,7 @@ timeout           = "2h"
 on_overlap        = "skip"
 keep_runs         = 60
 keep_for          = "60d"
-notify_on_failure = ["slack-ops:#backups"]
+notify = ["slack-ops:#backups"]
 # A single-line `\r` progress bar: the daemon collapses every percentage frame
 # into one clean final line on disk, while live viewers watch the bar fill.
 run = '''
@@ -144,7 +149,7 @@ timeout           = "1h"
 retry_attempts    = 1
 retry_delay       = "5m"
 retry_backoff     = "exponential"
-notify_on_failure = ["slack-ops"]
+notify = ["slack-ops"]
 shell             = "/bin/bash" # $RANDOM below is a bash-ism
 run = '''
 echo "[restore-test] booting throwaway cluster on :15432"
@@ -167,7 +172,7 @@ cron              = "*/5 * * * *"
 timeout           = "30s"
 retry_attempts    = 2
 retry_delay       = "10s"
-notify_on_failure = ["slack-ops"]
+notify = ["slack-ops"]
 shell             = "/bin/bash" # $RANDOM below is a bash-ism
 run = '''
 if [ $((RANDOM % 12)) -eq 0 ]; then
@@ -183,7 +188,7 @@ group             = "Health"
 description       = "Reads the production TLS cert and asserts more than 14 days of life remain."
 cron              = "0 */6 * * *"
 timeout           = "1m"
-notify_on_failure = ["slack-ops:#certs"]
+notify = ["slack-ops:#certs"]
 run = '''
 host=github.com
 exp=$(date -u -d '+71 days' '+%b %e %H:%M:%S %Y GMT' 2>/dev/null || date -u -v+71d '+%b %e %H:%M:%S %Y GMT')
@@ -196,7 +201,7 @@ description = "Warms the edge cache and asserts it answers within the 2s SLA; a 
 cron        = "*/15 * * * *"
 timeout     = "2s"
 keep_runs   = 30
-notify_on_failure = ["slack-ops"]
+notify = ["slack-ops"]
 shell       = "/bin/bash" # $RANDOM below is a bash-ism
 run = '''
 echo "[prewarm] priming edge cache"
@@ -271,8 +276,9 @@ description       = "Database migrations. Triggered from the deploy pipeline via
 manual_trigger    = true
 timeout           = "10m"
 on_overlap        = "skip"
-notify_on_success = ["slack-deploys"]
-notify_on_failure = ["slack-ops", "telegram-oncall"]
+# Success pings are handled by the deploy-* succeeded route below; `notify`
+# here only lists who to page when a run fails.
+notify = ["slack-ops", "telegram-oncall"]
 # Partial-line output: each "applying … " is written without a trailing newline,
 # so live viewers see the in-flight step before its "ok" lands and the line is
 # committed whole.
@@ -377,7 +383,8 @@ group             = "Reports"
 description       = "Aggregates the previous week's usage events and emails the rollup to finance."
 cron              = "0 6 * * 1"
 timeout           = "30m"
-notify_on_success = ["slack-deploys:#finance"]
+# A success ping for this one report goes to a dedicated #finance channel —
+# expressed as a [[route]] up top, since `notify` only covers failures.
 run = '''
 since=$(date -u -d 'last monday' +%F 2>/dev/null || date -u -v -monday +%F)
 echo "[billing] window: ${since} → $(date -u +%F)"

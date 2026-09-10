@@ -115,14 +115,14 @@ better in your file.
 ```toml
 [tasks.backup-postgres]
 cron              = "30 2 * * *"
-notify_on_failure = ["discord-ops"]
+notify = ["discord-ops"]
 run               = "..."
 ```
 
 That single line is enough. The bell receives the same event by default,
 so if the Discord request fails you still see the failure in the bell.
 See [Per-task notifications](/notifications/per-task/) for the full list
-of options, including `notify_on_success`.
+of options, including routing a success ping with a `[[route]]`.
 
 ### In a notification rule (one rule covering many tasks)
 
