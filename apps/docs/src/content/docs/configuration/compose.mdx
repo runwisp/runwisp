@@ -40,8 +40,7 @@ itself uses — and imports every service in the first file it finds.
 ```toml
 [compose.myapp]
 file         = "./docker-compose.yml"   # default: auto-discovered next to runwisp.toml
-include      = ["api", "worker"]         # subset; omit to import all
-exclude      = ["db"]                    # mutually exclusive with include
+services     = ["api", "worker"]         # keep only these; "-db" drops one instead; omit to import all
 import       = "services"                # "services" (default) | "stack"
 group        = "myapp"                   # UI group; defaults to the alias
 project_name = "myapp"                   # docker compose -p; defaults to the alias
@@ -62,7 +61,7 @@ wins:
 
 ```toml
 [compose.stack]
-include = ["worker-a", "worker-b", "worker-c"]
+services = ["worker-a", "worker-b", "worker-c"]
 
 [compose.stack.defaults]
 restart          = "always"   # applies to all three workers
@@ -90,7 +89,7 @@ task there — set its knobs on the block).
 
 Per-service sub-tables apply RunWisp knobs to a single compose service.
 The sub-table key has to match a compose service name — and one that
-survived your `include` / `exclude` filters:
+survived your `services` filter:
 
 ```toml
 [compose.myapp]
@@ -125,7 +124,7 @@ daemon's environment either way.) (`working_dir` comes from
 the `[compose.<alias>]` block, not the per-service sub-table.)
 
 One sharp edge: a compose service that happens to share a name with one
-of the scalar keys above (`file`, `include`, `exclude`, `import`, `group`,
+of the scalar keys above (`file`, `services`, `import`, `group`,
 `project_name`, `profiles`, `env_file`, `working_dir`, `with_deps`,
 `pull`, `name_format`) can't get a sub-table — the loader rejects the
 config with an error asking you to rename the compose service.
@@ -141,10 +140,10 @@ would, so a profile-gated service is invisible until you activate its
 profile.
 
 You activate profiles with the `profiles` key, and that has to happen
-**before** `include`/`exclude` make sense. Think of it as two steps:
+**before** the `services` filter makes sense. Think of it as two steps:
 
 1. `profiles = [...]` decides which services exist at all.
-2. `include` / `exclude` then pick from that activated set.
+2. `services` then picks from that activated set.
 
 So this imports the `worker` service that lives behind the `workers`
 profile, and nothing else:
@@ -153,20 +152,20 @@ profile, and nothing else:
 [compose.myapp]
 file     = "./docker-compose.yml"
 profiles = ["workers"]      # turn the profile on first…
-include  = ["worker"]       # …then select from what it exposes
+services = ["worker"]       # …then select from what it exposes
 ```
 
 Two failure modes worth naming, because both look like "RunWisp ignored
 my service":
 
-- **`include`-ing a profiled service without activating its profile.**
-  The service isn't in the activated set, so the `include` reference
+- **Keeping a profiled service without activating its profile.**
+  The service isn't in the activated set, so the `services` reference
   doesn't resolve — `runwisp validate` flags it as an unknown service.
   Add the profile to `profiles`.
 - **Activating a profile but forgetting it widens the default set.**
-  With `profiles` set and no `include`, RunWisp imports _every_
-  now-visible service, profiled ones included. Use `include` (or
-  `exclude`) to narrow it back down if you only wanted a subset.
+  With `profiles` set and no `services` filter, RunWisp imports _every_
+  now-visible service, profiled ones included. Use `services` to narrow
+  it back down if you only wanted a subset.
 
 A quick way to see what a given `profiles` value exposes before wiring
 it into RunWisp is to ask Compose directly:
@@ -211,7 +210,7 @@ docker compose -f <file> -p <project> up --abort-on-container-exit --no-log-pref
 
 The whole stack runs together; logs from all containers stream into a
 single RunWisp run; the run exits when any container exits. Per-service
-sub-tables, `include`, `exclude`, and `instances` are all rejected under
+sub-tables, the `services` filter, and `instances` are all rejected under
 `import = "stack"` — use `import = "services"` if you want per-service knobs.
 
 ## Identity

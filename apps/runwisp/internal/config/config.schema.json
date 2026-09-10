@@ -282,8 +282,7 @@
       "description": "One [compose.<alias>] block: reserved scalar keys plus per-service override sub-tables. The reserved [compose.<alias>.defaults] sub-table applies its override keys to every imported service (per-service tables win).",
       "properties": {
         "file": { "type": "string", "description": "Compose file path; auto-discovered when omitted." },
-        "include": { "type": "array", "items": { "type": "string" }, "description": "Services to import; mutually exclusive with exclude." },
-        "exclude": { "type": "array", "items": { "type": "string" }, "description": "Services to skip." },
+        "services": { "type": "array", "items": { "type": "string" }, "description": "Filter which compose services are imported: bare or \"+name\" keeps only those; \"-name\" drops those. The two polarities are mutually exclusive. Omit to import every service." },
         "import": { "type": "string", "enum": ["services", "stack"], "default": "services", "description": "How to import the compose file: one RunWisp service per compose service, or one task managing the whole project." },
         "group": { "type": "string" },
         "project_name": { "type": "string" },

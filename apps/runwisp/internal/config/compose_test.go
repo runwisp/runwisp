@@ -50,34 +50,33 @@ func TestComposeExpansion_AutoDiscoveryImportsAllServices(t *testing.T) {
 	assert.Equal(t, model.ComposePullMissing, ce.Pull)
 }
 
-func TestComposeExpansion_IncludeFiltersDown(t *testing.T) {
+func TestComposeExpansion_ServicesAllowlistFiltersDown(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `[compose.myapp]
-include = ["web"]
+services = ["web"]
 `))
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"myapp.web"}, taskNames(cfg))
 }
 
-func TestComposeExpansion_ExcludeDropsService(t *testing.T) {
+func TestComposeExpansion_ServicesDenylistDropsService(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `[compose.myapp]
-exclude = ["db"]
+services = ["-db"]
 `))
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"myapp.web", "myapp.worker"}, taskNames(cfg))
 }
 
-func TestComposeExpansion_IncludeAndExcludeAreMutuallyExclusive(t *testing.T) {
+func TestComposeExpansion_ServicesPolaritiesAreMutuallyExclusive(t *testing.T) {
 	_, err := Load(writeConfig(t, `[compose.myapp]
-include = ["web"]
-exclude = ["db"]
+services = ["web", "-db"]
 `))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "mutually exclusive")
+	assert.Contains(t, err.Error(), "cannot mix")
 }
 
-func TestComposeExpansion_UnknownIncludeServiceReported(t *testing.T) {
+func TestComposeExpansion_UnknownServiceReported(t *testing.T) {
 	_, err := Load(writeConfig(t, `[compose.myapp]
-include = ["webb"]
+services = ["webb"]
 `))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "webb")

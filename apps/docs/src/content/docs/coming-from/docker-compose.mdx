@@ -79,14 +79,14 @@ covers the mechanics.
 
 ```toml
 [compose.myapp]
-include = ["api", "worker"]   # leaves `db` etc. unmanaged
+services = ["api", "worker"]   # leaves `db` etc. unmanaged
 ```
 
-…or:
+…or drop just the ones you don't want with a `-` prefix:
 
 ```toml
 [compose.myapp]
-exclude = ["db"]
+services = ["-db"]
 ```
 
 ### Trigger compose images as cron jobs
