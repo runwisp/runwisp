@@ -132,7 +132,6 @@ func TestSupervisordAutorestartFalseIsTask(t *testing.T) {
 	out := res.TOML()
 	mustContain(t, out, "[tasks.x]")
 	mustContain(t, out, "run_on_start = true")
-	mustContain(t, out, `restart = "never"`)
 	if tally := res.Tally(); tally.Tasks != 1 || tally.Services != 0 {
 		t.Fatalf("counts %+v, want 1 task / 0 services", tally)
 	}

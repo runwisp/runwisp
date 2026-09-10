@@ -331,10 +331,9 @@ func (sd *supervisordState) applyRunOnce(b *block, s *iniSection, ref itemRef) {
 	if runOnStart {
 		b.set("run_on_start", "true")
 	}
-	b.set("restart", tomlString(string(model.RestartNever)))
 	ref.note(NoteRunOnce,
-		"autorestart=false → imported as a run-once task (run_on_start, "+
-			"restart=never), since RunWisp services always restart.")
+		"autorestart=false → imported as a run-once task (run_on_start), "+
+			"since RunWisp services always restart.")
 }
 
 // supervisordCosmeticKey lists the keys RunWisp drops without a word. Each one

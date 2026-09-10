@@ -204,7 +204,7 @@ mattered. The ones to know about:
   they exit. `autorestart=true` (and supervisord's default, `unexpected`) map to
   a service directly. `autorestart=false` is different: that's a run-once
   process, so it's imported as a **task** with
-  [`run_on_start`](/configuration/tasks/) and `restart = "never"` instead of a
+  [`run_on_start`](/configuration/tasks/) instead of a
   service. RunWisp treats only exit `0` as success, so if your program signals
   "done, no restart" with a non-zero code, end its `run` with `|| true` so it
   exits `0`.

@@ -174,64 +174,24 @@ healthy_after = "5s"
 	require.Error(t, err, "healthy_after must be rejected on a task")
 }
 
-// TestTaskRestartAttempts_DefaultsToBuiltin mirrors TestStartRetries_* for
-// [tasks.*]: a restarting task now gives up after the same number of
-// consecutive failures a service would, instead of restarting forever.
-func TestTaskRestartAttempts_DefaultsToBuiltin(t *testing.T) {
+// restart and restart_attempts are service-only: a [tasks.*] re-runs a failed
+// run via retry_*, so both keys are rejected with a pointer to it.
+func TestTaskRestart_Rejected(t *testing.T) {
 	cfgPath, _ := writePlainConfig(t, `[tasks.job]
 run     = "echo hi"
 restart = "on_failure"
 `)
-	cfg, err := Load(cfgPath)
-	require.NoError(t, err)
-	require.NotNil(t, findTask(t, cfg, "job").RestartAttempts)
-	assert.Equal(t, DefaultStartRetries, *findTask(t, cfg, "job").RestartAttempts)
+	_, err := Load(cfgPath)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "restart is only valid on [services.*]")
 }
 
-func TestTaskRestartAttempts_ExplicitWins(t *testing.T) {
+func TestTaskRestartAttempts_Rejected(t *testing.T) {
 	cfgPath, _ := writePlainConfig(t, `[tasks.job]
-run               = "echo hi"
-restart           = "on_failure"
-restart_attempts  = 5
-`)
-	cfg, err := Load(cfgPath)
-	require.NoError(t, err)
-	require.NotNil(t, findTask(t, cfg, "job").RestartAttempts)
-	assert.Equal(t, 5, *findTask(t, cfg, "job").RestartAttempts)
-}
-
-// TestTaskRestartAttempts_ExplicitZeroPreserved mirrors
-// TestStartRetries_ExplicitZeroPreserved for [tasks.*]: an explicit
-// restart_attempts = 0 must be preserved, not defaulted.
-func TestTaskRestartAttempts_ExplicitZeroPreserved(t *testing.T) {
-	cfgPath, _ := writePlainConfig(t, `[tasks.job]
-run               = "echo hi"
-restart           = "on_failure"
-restart_attempts  = 0
-`)
-	cfg, err := Load(cfgPath)
-	require.NoError(t, err)
-	got := findTask(t, cfg, "job").RestartAttempts
-	require.NotNil(t, got)
-	assert.Equal(t, 0, *got, "explicit restart_attempts = 0 must be preserved, not defaulted")
-}
-
-func TestTaskRestartAttempts_RejectedAboveCap(t *testing.T) {
-	cfgPath, _ := writePlainConfig(t, `[tasks.job]
-run               = "echo hi"
-restart_attempts  = 101
+run              = "echo hi"
+restart_attempts = 5
 `)
 	_, err := Load(cfgPath)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cap")
-}
-
-func TestTaskRestartAttempts_RejectedNegative(t *testing.T) {
-	cfgPath, _ := writePlainConfig(t, `[tasks.job]
-run               = "echo hi"
-restart_attempts  = -1
-`)
-	_, err := Load(cfgPath)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "restart_attempts")
+	assert.Contains(t, err.Error(), "restart_attempts is only valid on [services.*]")
 }

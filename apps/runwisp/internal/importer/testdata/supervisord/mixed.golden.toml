@@ -10,4 +10,3 @@ working_dir = "/srv/api"
 group = "site"
 run = "/srv/api/bin/migrate"
 run_on_start = true
-restart = "never"

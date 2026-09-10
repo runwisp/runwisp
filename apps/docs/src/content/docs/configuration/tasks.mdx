@@ -138,7 +138,7 @@ A few more things worth knowing:
   `GET /api/tasks` show the cron tick (`03:00`) as the next run, not a
   guessed start.
 - **Needs a `cron`.** Jitter paces scheduled firings, so it's a harmless
-  no-op on a manual-only task. Manual triggers, retries, restarts, and
+  no-op on a manual-only task. Manual triggers, retries, and
   catch-up runs never wait on the gate — they fire right away.
 - **It's self-limiting.** RunWisp never delays a run past its own next
   tick: put `jitter = "30m"` on a `* * * * *` task and the window quietly
@@ -200,19 +200,17 @@ policy is the right call.
 
 ## Retries & timeout
 
-| Key                | Default                     | What it does                                                                                                                                                                          |
-| ------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `retry_attempts`   | `0`                         | Additional attempts after the initial failure. Non-negative integer; hard internal cap of 100.                                                                                        |
-| `retry_delay`      | `"5s"`                      | Base delay between attempts. Only consulted when `retry_attempts > 0`.                                                                                                                |
-| `retry_backoff`    | `"constant"`                | Curve applied to `retry_delay`: `constant`, `linear`, or `exponential`.                                                                                                               |
-| `restart`          | `"never"`                   | What to do after a run ends: `"never"` or `"on_failure"`. `"always"` is rejected on tasks — use [`[services.*]`](/configuration/services/) for an always-on process.                  |
-| `restart_attempts` | `3`                         | Consecutive failures a restart chain tolerates before giving up — the last run is recorded `start_failed` instead of restarting forever. Only relevant when `restart = "on_failure"`. |
-| `timeout`          | inherited from `[defaults]` | Per-attempt wall-clock cap. Unset means no timeout.                                                                                                                                   |
-| `graceful_stop`    | `"5s"`                      | Grace period after the stop signal, before SIGKILL — on `timeout`, `on_overlap = "kill"`, manual stop, and daemon shutdown. Set `"0s"` for insta-kill.                                |
-| `stop_signal`      | `"SIGTERM"`                 | Signal that opens the stop ladder. One of `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`, `SIGUSR2` (the `SIG` prefix is optional).                                   |
+| Key              | Default                     | What it does                                                                                                                                           |
+| ---------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `retry_attempts` | `0`                         | Additional attempts after the initial failure. Non-negative integer; hard internal cap of 100.                                                         |
+| `retry_delay`    | `"5s"`                      | Base delay between attempts. Only consulted when `retry_attempts > 0`.                                                                                 |
+| `retry_backoff`  | `"constant"`                | Curve applied to `retry_delay`: `constant`, `linear`, or `exponential`.                                                                                |
+| `timeout`        | inherited from `[defaults]` | Per-attempt wall-clock cap. Unset means no timeout.                                                                                                    |
+| `graceful_stop`  | `"5s"`                      | Grace period after the stop signal, before SIGKILL — on `timeout`, `on_overlap = "kill"`, manual stop, and daemon shutdown. Set `"0s"` for insta-kill. |
+| `stop_signal`    | `"SIGTERM"`                 | Signal that opens the stop ladder. One of `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`, `SIGUSR2` (the `SIG` prefix is optional).    |
 
 Exit `0` is always success; any non-zero exit ends the run as `failed`,
-which drives retries and `restart`. Whether that (or a `timeout`, a
+which drives retries. Whether that (or a `timeout`, a
 `missed` tick, …) counts as a **failure** for stats, the UI, and
 notifications is a separate, declarative choice — see
 [What counts as a failure](#what-counts-as-a-failure).
@@ -343,7 +341,7 @@ list when you want to pin the exact set; reach for `+`/`-` when you just
 mean "the usual, but…".
 
 `failures` is purely an **observability** choice. It does **not** change
-retries or restarts: those always fire on `failed`, `timeout`, `crashed`,
+retries: those always fire on `failed`, `timeout`, `crashed`,
 `log_overflow`, and `start_failed`, whatever you list here. Demoting
 `failed` won't quietly stop a task retrying, and promoting `stopped`
 won't make the daemon re-run something you stopped on purpose.
@@ -687,7 +685,7 @@ section just points back here.
 The config loader turns these away at startup, so they can't quietly
 bite you later:
 
-- `restart = "always"` — that's what `[services.*]` is for.
+- `restart` / `restart_attempts` — services-only; a task re-runs a failed run with `retry_attempts`/`retry_delay`/`retry_backoff`, not restart.
 - `instances = N` — a services-only field.
 - `priority` / `autostart` — services-only; they govern boot start order and whether a service comes up at boot.
 - `depends_on` — services-only; it gates a service's boot on other services being healthy.

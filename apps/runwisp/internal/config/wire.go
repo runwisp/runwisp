@@ -408,13 +408,15 @@ type taskWire struct {
 	MaxCatchUpRuns int                   `toml:"max_catch_up_runs,omitempty"`
 	RunOnStart     bool                  `toml:"run_on_start,omitempty"`
 
-	Restart       model.RestartPolicy `toml:"restart,omitempty"`
-	MaxConcurrent int                 `toml:"max_concurrent,omitempty"`
-	MaxQueued     int                 `toml:"max_queued,omitempty"`
+	MaxConcurrent int `toml:"max_concurrent,omitempty"`
+	MaxQueued     int `toml:"max_queued,omitempty"`
 
-	// RestartAttempts is a pointer so an explicit `restart_attempts = 0` (give
-	// up on the very first failure) is distinguishable from an omitted key.
-	RestartAttempts *int `toml:"restart_attempts,omitempty"`
+	// Restart and RestartAttempts are rejected on [tasks.*] (services-only:
+	// restart is ongoing supervision, a task re-runs via retry_*). They decode
+	// here only so collectTaskNames can reject them with a pointed message
+	// instead of an opaque undecoded-key error.
+	Restart         model.RestartPolicy `toml:"restart,omitempty"`
+	RestartAttempts *int                `toml:"restart_attempts,omitempty"`
 
 	// Instances is rejected on [tasks.*]; carried as a pointer so the validator
 	// can distinguish "unset" from "explicitly zero".
@@ -449,8 +451,6 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	task.CatchUp = w.CatchUp
 	task.MaxCatchUpRuns = w.MaxCatchUpRuns
 	task.RunOnStart = w.RunOnStart
-	task.Restart = w.Restart
-	task.RestartAttempts = w.RestartAttempts
 	task.MaxConcurrent = w.MaxConcurrent
 	task.MaxQueued = w.MaxQueued
 	task.RetryAttempts = w.RetryAttempts

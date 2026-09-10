@@ -250,7 +250,7 @@ run = "exec ./bin/web"
 		assert.Contains(t, err.Error(), "unknown key")
 	})
 
-	t.Run("task rejects restart=always", func(t *testing.T) {
+	t.Run("task rejects restart", func(t *testing.T) {
 		path := writeTOML(t, `
 [tasks.web]
 restart = "always"
@@ -258,7 +258,7 @@ run = "exec ./bin/web"
 `)
 		_, err := Load(path)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "[services.web]")
+		assert.Contains(t, err.Error(), "restart is only valid on [services.*]")
 	})
 
 	t.Run("task rejects instances", func(t *testing.T) {

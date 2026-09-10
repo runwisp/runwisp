@@ -142,8 +142,9 @@ two runs would fight over a single resource — switch to
 
 ## What you can't do
 
-- **A task with `restart = "always"`.** Rejected at startup — that's
-  what `[services.<name>]` is for.
+- **A task with `restart` or `restart_attempts`.** Rejected at startup —
+  restart is what `[services.<name>]` is for; a task re-runs a failed run
+  with [`retry_attempts`](/concepts/retries/) instead.
 - **A service with `cron`.** Services don't have that field; they're
   already running nonstop.
 - **The same name on both sides.** Tasks and services share one

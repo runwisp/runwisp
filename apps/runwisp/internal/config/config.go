@@ -392,8 +392,11 @@ func collectTaskNames(raw *tomlConfig) ([]string, error) {
 		if err := model.ValidateTaskName(name); err != nil {
 			return nil, err
 		}
-		if w.Restart == model.RestartAlways {
-			return nil, fmt.Errorf("task %q sets restart=\"always\"; use [services.%s] instead", name, name)
+		if w.Restart != "" {
+			return nil, fmt.Errorf("task %q sets restart; restart is only valid on [services.*] — to re-run a failed task use retry_attempts/retry_delay/retry_backoff", name)
+		}
+		if w.RestartAttempts != nil {
+			return nil, fmt.Errorf("task %q sets restart_attempts; restart_attempts is only valid on [services.*] — bound task re-runs with retry_attempts", name)
 		}
 		if w.Instances != nil {
 			return nil, fmt.Errorf("task %q sets instances; instances is only valid on [services.*]", name)
@@ -1011,14 +1014,8 @@ func validateTaskLimits(task *model.Task) error {
 	if err := validateRetryLimits(task); err != nil {
 		return err
 	}
-	// Services validate their own restart_attempts in validateServiceTask
-	// (scoped message, "service" not "task"); this covers restarting
-	// [tasks.*], which now get the same give-up cap.
-	if !task.Kind.IsService() {
-		if err := validateRestartAttempts(fmt.Sprintf("restart_attempts for task %s", task.Name), task.RestartAttempts); err != nil {
-			return err
-		}
-	}
+	// restart_attempts is service-only (validated in validateServiceTask); a
+	// [tasks.*] that sets it is already rejected in collectTaskNames.
 	return validateTaskDurations(task)
 }
 
@@ -1376,7 +1373,7 @@ func ApplyDefaults(cfg *Config) {
 		if task.Kind.IsService() {
 			applyServiceDefaults(task, cfg.Defaults)
 		} else {
-			applyTaskDefaults(task, cfg.Defaults)
+			applyTaskDefaults(task)
 		}
 		if task.CatchUp == "" {
 			task.CatchUp = model.MissedRunLatest
@@ -1514,7 +1511,7 @@ func resolveDurationDefault(task, fromDefaults *time.Duration, builtin time.Dura
 	return &v
 }
 
-func applyTaskDefaults(task *model.Task, d Defaults) {
+func applyTaskDefaults(task *model.Task) {
 	if task.Group == "" {
 		task.Group = "Tasks"
 	}
@@ -1527,10 +1524,6 @@ func applyTaskDefaults(task *model.Task, d Defaults) {
 	if task.MaxQueued == 0 {
 		task.MaxQueued = DefaultMaxQueued
 	}
-	// Mirrors applyServiceDefaults: a restarting task gives up after the same
-	// number of consecutive failures a service would, instead of restarting
-	// forever. Harmless when restart is never/unset — nothing reads it.
-	task.RestartAttempts = resolveIntDefault(task.RestartAttempts, d.RestartAttempts, DefaultStartRetries)
 }
 
 func applyServiceDefaults(task *model.Task, d Defaults) {

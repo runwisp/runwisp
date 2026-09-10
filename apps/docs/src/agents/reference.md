@@ -104,7 +104,7 @@ log_on_full:         enum =drop_old — drop_new | drop_old | kill
 keep_runs:           int          — row-count retention; 0..1000000 (0 = keep none)
 keep_for:            dur          — age retention; positive
 healthy_after:       dur  =60s    — service uptime that counts as healthy: resets the restart counter and clears the failed-start streak (SERVICES only); 0 = healthy immediately, kept literally if set
-restart_attempts:       int  =3      — consecutive failures before giving up: a service goes FATAL, a restarting task is recorded start_failed; 0 = give up after the first failure, kept literally if set
+restart_attempts:       int  =3      — consecutive fast failures before a service instance goes FATAL (SERVICES only); 0 = give up after the first failure, kept literally if set
 env:                 map<str,str> — inline env merged into every task; key ^[A-Za-z_][A-Za-z0-9_]*$, <=256 entries, value <=32KiB, no NUL
 env_file:            path         — dotenv file merged into every task; relative to runwisp.toml dir
 secrets:             map<str,str> — inline secrets merged into every task; never shown in API/UI
@@ -113,7 +113,7 @@ secrets_file:        path         — dotenv file merged beneath secrets; only t
 
 ### [tasks.&lt;name&gt;] (run-to-exit)
 
-Required: the table + `run` (unless `compose_file`, where `run` is optional and selects `compose_mode`). `restart="always"` and `instances` are rejected on tasks (use `[services.*]`).
+Required: the table + `run` (unless `compose_file`, where `run` is optional and selects `compose_mode`). `restart`, `restart_attempts`, and `instances` are rejected on tasks (use `[services.*]`); a task re-runs a failed run via `retry_*`.
 
 ```
 group:             string =Tasks   — UI grouping label
@@ -128,8 +128,6 @@ max_catch_up_runs: int  =100        — cap when catch_up=all; >=1
 timeout:           dur              — per-attempt cap (inherits [defaults])
 graceful_stop:     dur  =5s         — grace before SIGKILL on stop
 stop_signal:       enum =SIGTERM    — stop-ladder signal (inherits [defaults]); SIGTERM|SIGINT|SIGQUIT|SIGHUP|SIGKILL|SIGUSR1|SIGUSR2
-restart:           enum             — never | on_failure   (always => rejected on tasks)
-restart_attempts:  int  =3          — consecutive failures a restart chain tolerates before giving up (run recorded start_failed); 0..100, kept literally if set (0 = give up after the first failure); only meaningful with restart=on_failure
 max_concurrent:    int  =1          — concurrent run cap; 1..1024
 max_queued:        int  =100        — queued-run depth; 0..10000
 on_overlap:        enum =queue      — queue | skip | kill

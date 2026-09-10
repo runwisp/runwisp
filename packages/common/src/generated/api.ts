@@ -1425,13 +1425,13 @@ export interface components {
              */
             priority?: number;
             /**
-             * @description Whether and when a task is restarted after completion
+             * @description For services: whether and when an instance is restarted (services force always). Tasks re-run a failed run via retry_* instead.
              * @enum {string}
              */
             restart?: "never" | "always" | "on_failure";
             /**
              * Format: int64
-             * @description Consecutive failures tolerated before giving up on restarting — for services, marks the instance FATAL; for a restarting task, stops the restart chain; 0 means give up after the very first failure
+             * @description For services: consecutive fast failures tolerated before the instance is marked FATAL; 0 means give up after the very first failure
              */
             restartAttempts?: number;
             /**

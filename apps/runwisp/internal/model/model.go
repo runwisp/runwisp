@@ -86,7 +86,7 @@ type Task struct {
 	Timeout       time.Duration     `toml:"-"                       json:"timeout,omitempty" doc:"Per-run timeout in nanoseconds"`
 	GracefulStop  time.Duration     `toml:"-"                       json:"gracefulStop,omitempty" doc:"Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds"`
 	StopSignal    string            `toml:"-"                       json:"stopSignal,omitempty" enum:"SIGTERM,SIGINT,SIGQUIT,SIGHUP,SIGKILL,SIGUSR1,SIGUSR2" doc:"Signal sent to stop a run before SIGKILL; defaults to SIGTERM"`
-	Restart       RestartPolicy     `toml:"restart,omitempty"       json:"restart,omitempty" enum:"never,always,on_failure" doc:"Whether and when a task is restarted after completion"`
+	Restart       RestartPolicy     `toml:"restart,omitempty"       json:"restart,omitempty" enum:"never,always,on_failure" doc:"For services: whether and when an instance is restarted (services force always). Tasks re-run a failed run via retry_* instead."`
 	MaxConcurrent int               `toml:"max_concurrent,omitempty" json:"maxConcurrent,omitempty" doc:"Maximum overlapping runs allowed for this task"`
 	MaxQueued     int               `toml:"max_queued,omitempty"    json:"maxQueued,omitempty" doc:"Maximum runs that can wait when on_overlap = queue"`
 	OnOverlap     ConcurrencyPolicy `toml:"on_overlap,omitempty"    json:"onOverlap,omitempty" enum:"queue,skip,kill" doc:"How overlapping runs are handled"`
@@ -106,15 +106,13 @@ type Task struct {
 	// [defaults] then the built-in default). Always resolved to non-nil by the
 	// config loader's defaulting pass.
 	HealthyAfter *time.Duration `toml:"-" json:"healthyAfter,omitempty" doc:"For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start"`
-	// RestartAttempts is the number of consecutive fast failures tolerated
-	// before giving up: for a service, the supervisor marks the instance FATAL;
-	// for a task with restart = "always"/"on_failure", the restart chain simply
-	// stops and the last run is recorded as start_failed. A pointer so an
-	// explicit `restart_attempts = 0` (give up on the very first failure) is
-	// distinguishable from an omitted key (nil, inherits [defaults] then the
-	// built-in default). Always resolved to non-nil by the config loader's
-	// defaulting pass.
-	RestartAttempts *int `toml:"-" json:"restartAttempts,omitempty" doc:"Consecutive failures tolerated before giving up on restarting — for services, marks the instance FATAL; for a restarting task, stops the restart chain; 0 means give up after the very first failure"`
+	// RestartAttempts is the number of consecutive fast failures a service
+	// instance is allowed before the supervisor marks it FATAL. Service-only
+	// (tasks re-run via retry_*). A pointer so an explicit `restart_attempts = 0`
+	// (give up on the very first failure) is distinguishable from an omitted key
+	// (nil, inherits [defaults] then the built-in default). Resolved to non-nil
+	// for services by the config loader's defaulting pass.
+	RestartAttempts *int `toml:"-" json:"restartAttempts,omitempty" doc:"For services: consecutive fast failures tolerated before the instance is marked FATAL; 0 means give up after the very first failure"`
 	// Priority orders service start at boot only (lower starts first; ties break
 	// on name). It is not a dependency or readiness gate. Service-only.
 	Priority int `toml:"-" json:"priority,omitempty" doc:"For services: boot start order, lowest first (name breaks ties). Start order only — not a dependency."`

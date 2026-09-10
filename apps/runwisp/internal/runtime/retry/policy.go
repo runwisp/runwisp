@@ -60,12 +60,10 @@ func ShouldRestart(task *model.Task, run *model.Run) bool {
 	}
 }
 
-// ShouldRetry reports whether a finished run is eligible for a retry. Restart
-// policy takes precedence: if a task restarts, it never retries.
+// ShouldRetry reports whether a finished run is eligible for a retry. Retry is
+// a task-only re-run of a failed run; services re-run via ShouldRestart, and
+// scheduleFollowup consults that first, so a service never reaches here.
 func ShouldRetry(task *model.Task, run *model.Run) bool {
-	if task.Restart != "" && task.Restart != model.RestartNever {
-		return false
-	}
 	if task.RetryAttempts <= 0 || run.EndReason == nil || !IsFailedExecution(*run.EndReason) {
 		return false
 	}

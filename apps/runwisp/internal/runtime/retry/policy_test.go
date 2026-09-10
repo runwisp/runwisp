@@ -86,20 +86,9 @@ func TestShouldRetry(t *testing.T) {
 	success := model.ReasonSuccess
 	stopped := model.ReasonStopped
 
-	t.Run("retry disabled when restart policy active", func(t *testing.T) {
-		for _, policy := range []model.RestartPolicy{model.RestartAlways, model.RestartOnFailure} {
-			task := &model.Task{Restart: policy, RetryAttempts: 3}
-			assert.Falsef(t, ShouldRetry(task, &model.Run{EndReason: &failed}),
-				"restart=%s should disable retry", policy)
-		}
-	})
-
-	t.Run("retry allowed when restart never or empty", func(t *testing.T) {
-		for _, policy := range []model.RestartPolicy{"", model.RestartNever} {
-			task := &model.Task{Restart: policy, RetryAttempts: 3}
-			assert.Truef(t, ShouldRetry(task, &model.Run{EndReason: &failed}),
-				"restart=%q should allow retry", policy)
-		}
+	t.Run("retry allowed on a failed run with attempts left", func(t *testing.T) {
+		task := &model.Task{RetryAttempts: 3}
+		assert.True(t, ShouldRetry(task, &model.Run{EndReason: &failed}))
 	})
 
 	t.Run("zero retry attempts disables retry", func(t *testing.T) {
