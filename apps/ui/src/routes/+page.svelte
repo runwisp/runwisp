@@ -34,6 +34,7 @@
         tasks: Task[];
         recentRuns: Run[];
         runningRuns: Run[];
+        totalRuns: number;
         metricsHistory: MetricsSample[];
     }
 
@@ -41,6 +42,7 @@
         tasks: [],
         recentRuns: [],
         runningRuns: [],
+        totalRuns: 0,
         metricsHistory: [],
     });
 
@@ -63,6 +65,8 @@
             tasks: tasksData,
             recentRuns: recentRunsRes.runs,
             runningRuns: runningRunsRes.runs,
+            // Unfiltered total → every run ever recorded, for the "total runs" pane.
+            totalRuns: recentRunsRes.total,
         };
     });
 
@@ -107,6 +111,7 @@
             if (event.type === "run.deleted") {
                 dashState.recentRuns = removeRun(dashState.recentRuns, event.data.runId);
                 dashState.runningRuns = removeRun(dashState.runningRuns, event.data.runId);
+                dashState.totalRuns = Math.max(0, dashState.totalRuns - 1);
                 return;
             }
             const run = event.data.run;
@@ -118,8 +123,11 @@
             // refetch tasks so "Up next" and next-run columns stay current.
             // Pointless when the local scheduler is inactive (cloud mode):
             // nextRunAt is always empty and that UI is hidden anyway.
-            if (event.type === "run.created" && systemStore.schedulingActive) {
-                scheduleTasksRefresh();
+            if (event.type === "run.created") {
+                dashState.totalRuns += 1;
+                if (systemStore.schedulingActive) {
+                    scheduleTasksRefresh();
+                }
             }
         });
 
@@ -154,6 +162,7 @@
         const data = pageData.data;
         if (data) {
             dashState.tasks = data.tasks;
+            dashState.totalRuns = data.totalRuns;
             // Merge the snapshot through the same phase-order guard the SSE path
             // uses, so a fetch that resolves with an older view can't revert a
             // run the live stream already advanced (e.g. finished → running).
@@ -196,11 +205,11 @@
     }
 
     async function loadMetricsHistory() {
-        // Read status untracked: this runs synchronously inside the setup
-        // $effect, and connectionStore.status oscillates (connecting↔connected↔
-        // disconnected). Tracking it here would re-run the whole setup effect on
-        // every flip — re-subscribing and re-fetching in a runaway loop.
-        if (untrack(() => connectionStore.status) === "disconnected") return;
+        // No connection-status guard: this fires once at mount, and the status
+        // briefly reads "disconnected" before the SSE stream opens. Gating on it
+        // skipped the one-shot backfill entirely, so the chart only ever grew
+        // from live samples. The daemon serves this page, so it's reachable; a
+        // genuine failure is caught and swallowed below.
         try {
             dashState.metricsHistory = await systemApi.getMetricsHistory();
         } catch {
@@ -232,6 +241,7 @@
         {stats}
         recentRuns={dashState.recentRuns}
         runningRuns={dashState.runningRuns}
+        totalRuns={dashState.totalRuns}
         tasks={dashState.tasks.map((t) => ({ id: toTaskPageId(t.name), ...t }))}
         metricsHistory={dashState.metricsHistory}
         cloudMode={systemStore.cloudEnabled}

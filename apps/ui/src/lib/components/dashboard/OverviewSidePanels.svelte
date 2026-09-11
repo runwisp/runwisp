@@ -45,9 +45,20 @@
     function viewRun(run: Run): void {
         onRunClick?.(run.taskName, run.id);
     }
+
+    // Cap the "Up next" list so a long schedule can't run the column off the
+    // page; the badge still counts them all and a footer names the remainder.
+    const UPCOMING_LIMIT = 5;
+    let visibleUpcoming = $derived(upcomingTasks.slice(0, UPCOMING_LIMIT));
+    let upcomingOverflow = $derived(Math.max(0, upcomingTasks.length - UPCOMING_LIMIT));
 </script>
 
-<div class={["grid gap-4", showUpcoming ? "lg:grid-cols-3" : "lg:grid-cols-2"]}>
+<!-- flex-1 lets the panels fill the left column's leftover height; the lg:grid-rows-1
+     1fr track then stretches each card to the full height so their ends line up
+     with the taller Recent activity rail beside them. -->
+<div
+    class={["grid flex-1 gap-4 lg:grid-rows-1", showUpcoming ? "lg:grid-cols-3" : "lg:grid-cols-2"]}
+>
     <Card>
         <div class="flex items-center justify-between gap-3">
             <h3 class="text-sm font-semibold text-on-surface">Needs attention</h3>
@@ -183,10 +194,10 @@
                 </div>
             {:else}
                 <div class="mt-4 space-y-2">
-                    {#each upcomingTasks as task (task.task.id)}
+                    {#each visibleUpcoming as task (task.task.id)}
                         <TaskCard accent="aurora" onclick={() => viewTask(task.task.name)}>
                             <div class="flex items-start justify-between gap-2">
-                                <div class="min-w-0 flex-1">
+                                <div class="@container min-w-0 flex-1">
                                     <div class="flex flex-wrap items-center gap-1.5">
                                         <span
                                             class="truncate font-mono text-sm font-medium text-on-surface"
@@ -213,23 +224,37 @@
                                             />
                                         {/if}
                                     </div>
-                                    <p class="mt-1 text-xs text-on-surface-muted">
-                                        {formatTaskNextRunLabel(task, now)}
-                                    </p>
+                                    <!-- Time + cron share one line to keep the card short, but the
+                                         column gets tight on smaller screens: drop the cron (never
+                                         truncate it) once there's no room, keeping the next-run time. -->
+                                    <div
+                                        class="mt-1 flex items-baseline gap-x-2 text-xs text-on-surface-muted"
+                                    >
+                                        <span class="truncate">
+                                            {formatTaskNextRunLabel(task, now)}
+                                        </span>
+                                        {#if task.task.cron}
+                                            <span
+                                                class="hidden shrink-0 font-mono @min-[16rem]:inline"
+                                            >
+                                                {task.task.cron}
+                                            </span>
+                                        {/if}
+                                    </div>
                                 </div>
                                 <ArrowRight
                                     size={14}
                                     class="shrink-0 text-on-surface-faint group-hover:text-info"
                                 />
                             </div>
-
-                            {#if task.task.cron}
-                                <p class="mt-2 font-mono text-xs text-on-surface-muted">
-                                    {task.task.cron}
-                                </p>
-                            {/if}
                         </TaskCard>
                     {/each}
+
+                    {#if upcomingOverflow > 0}
+                        <p class="pt-1 text-center text-xs text-on-surface-muted">
+                            +{upcomingOverflow} more
+                        </p>
+                    {/if}
                 </div>
             {/if}
         </Card>

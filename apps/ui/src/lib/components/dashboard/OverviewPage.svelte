@@ -6,6 +6,7 @@
     import Card from "@runwisp/ui/components/Card.svelte";
     import type { MetricsSample } from "$lib/api";
     import OverviewHero from "./OverviewHero.svelte";
+    import SystemResourcesPanel from "./SystemResourcesPanel.svelte";
     import OverviewSidePanels from "./OverviewSidePanels.svelte";
     import RecentActivityPanel from "./RecentActivityPanel.svelte";
     import TaskOverviewList from "./TaskOverviewList.svelte";
@@ -19,7 +20,6 @@
         type OverviewTaskSortKey,
         type TaskOverview,
     } from "./overview.js";
-    import { pluralize } from "./overview-format.js";
     import { instanceCountResolver } from "./instance-count.js";
     import { TickingNow } from "@runwisp/ui";
     import type { DaemonState, DaemonStats } from "@runwisp/ui";
@@ -47,20 +47,14 @@
 
     const ATTENTION_LIMIT = 4;
     const RUNNING_LIMIT = 4;
-    const UPCOMING_LIMIT = 4;
     const RECENT_ACTIVITY_LIMIT = 6;
-
-    type SystemHealth = {
-        label: string;
-        variant: "default" | "primary" | "success" | "warning" | "danger" | "info";
-        detail: string;
-    };
 
     let {
         state: daemonState,
         stats,
         recentRuns = [],
         runningRuns = [],
+        totalRuns = 0,
         tasks = [],
         metricsHistory = [],
         cloudMode = false,
@@ -73,6 +67,7 @@
         stats: DaemonStats;
         recentRuns?: Run[];
         runningRuns?: Run[];
+        totalRuns?: number;
         tasks?: (Task & { id: string })[];
         metricsHistory?: MetricsSample[];
         cloudMode?: boolean;
@@ -123,91 +118,64 @@
     );
     let runningNow = $derived(sortRunsByStartDesc(runningRuns).slice(0, RUNNING_LIMIT));
     let upcomingTasks = $derived(
-        schedulingActive
-            ? filterTaskOverviews(taskOverviews, "", "scheduled", "next_run").slice(
-                  0,
-                  UPCOMING_LIMIT,
-              )
-            : [],
+        schedulingActive ? filterTaskOverviews(taskOverviews, "", "scheduled", "next_run") : [],
     );
-    let recentActivity = $derived(sortRunsByStartDesc(recentRuns).slice(0, RECENT_ACTIVITY_LIMIT));
+    // Exclude in-flight runs — they already have their own "Running now" pane;
+    // Recent activity is for finished work.
+    let recentActivity = $derived(
+        sortRunsByStartDesc(recentRuns.filter((run: Run) => run.status !== "running")).slice(
+            0,
+            RECENT_ACTIVITY_LIMIT,
+        ),
+    );
     let completedRunsCount = $derived(
         recentRuns.filter((run: Run) => run.status === "ended").length,
     );
     let healthyTasksCount = $derived(
         taskOverviews.filter((task: TaskOverview) => task.state !== "attention").length,
     );
-
-    let systemHealth = $derived.by<SystemHealth>(() => {
-        if (daemonState.status !== "connected") {
-            const endpoint =
-                daemonState.backendUrl.trim() === ""
-                    ? "this site's origin"
-                    : daemonState.backendUrl;
-            return {
-                label: "Daemon offline",
-                variant: "danger",
-                detail: `Unable to reach ${endpoint}.`,
-            };
-        }
-
-        if (summary.attentionTasks > 0) {
-            return {
-                label: `${summary.attentionTasks} task${pluralize(summary.attentionTasks)} need attention`,
-                variant: "warning",
-                detail: "Start with the attention column to inspect failures and interrupted work.",
-            };
-        }
-
-        if (runningNow.length > 0) {
-            return {
-                label: `${runningNow.length} live run${pluralize(runningNow.length)}`,
-                variant: "primary",
-                detail: "Active executions are updating in real time.",
-            };
-        }
-
-        return {
-            label: "All clear",
-            variant: "success",
-            detail: "No active failures and the daemon is reachable.",
-        };
-    });
 </script>
 
 <PageContainer variant="wide" class="space-y-5">
-    <OverviewHero
-        {daemonState}
-        {stats}
-        {summary}
-        {systemHealth}
-        {completedRunsCount}
-        {healthyTasksCount}
-        {metricsHistory}
-        {cloudMode}
-        {onViewAllRuns}
-    />
+    <!-- One grid so the left column (stat panes → attention/running/up-next)
+         flows straight into the panels with no gap under the short stat row,
+         while the 320px rail (resources → recent activity) tracks alongside. -->
+    <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div class="flex flex-col gap-5">
+            <OverviewHero
+                {stats}
+                {summary}
+                {totalRuns}
+                {completedRunsCount}
+                {healthyTasksCount}
+                uptime={daemonState.uptime}
+                {cloudMode}
+            />
 
-    <section class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <OverviewSidePanels
-            {attentionTasks}
-            {runningNow}
-            {upcomingTasks}
-            showUpcoming={schedulingActive}
-            now={ticker.now}
-            {onTaskClick}
-            {onRunClick}
-            {getInstanceCount}
-        />
+            <OverviewSidePanels
+                {attentionTasks}
+                {runningNow}
+                {upcomingTasks}
+                showUpcoming={schedulingActive}
+                now={ticker.now}
+                {onTaskClick}
+                {onRunClick}
+                {getInstanceCount}
+            />
+        </div>
 
-        <RecentActivityPanel
-            {recentActivity}
-            now={ticker.now}
-            {onRunClick}
-            {onViewAllRuns}
-            {getInstanceCount}
-        />
-    </section>
+        <div class="flex flex-col gap-5">
+            <SystemResourcesPanel {stats} {metricsHistory} />
+
+            <RecentActivityPanel
+                {recentActivity}
+                now={ticker.now}
+                {onRunClick}
+                {onViewAllRuns}
+                {getInstanceCount}
+            />
+        </div>
+    </div>
 
     <Card padding="lg">
         <TaskOverviewList

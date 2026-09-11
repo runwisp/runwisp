@@ -104,6 +104,14 @@
                 </span>
             {/if}
         </span>
+        {#if status === "connected" && systemStore.fingerprint}
+            <span
+                class="truncate font-mono text-2xs text-on-surface-faint"
+                title="Instance fingerprint"
+            >
+                {systemStore.fingerprint}
+            </span>
+        {/if}
     </div>
 {/snippet}
 

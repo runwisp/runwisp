@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { Run, Task } from "@runwisp/common";
 import type { TaskOverview, TaskWithId } from "./overview.js";
 import {
+    formatCompactCount,
     formatRunDurationLabel,
     formatTaskDescription,
     formatTaskLastResultLabel,
@@ -196,5 +197,27 @@ describe("formatTriggeredByLabel", () => {
 
     it("returns 'Startup' for 'startup'", () => {
         expect(formatTriggeredByLabel("startup")).toBe("Startup");
+    });
+});
+
+describe("formatCompactCount", () => {
+    it("leaves values under 1000 untouched", () => {
+        expect(formatCompactCount(0)).toBe("0");
+        expect(formatCompactCount(999)).toBe("999");
+    });
+
+    it("truncates to one decimal below 100 of a unit", () => {
+        expect(formatCompactCount(55653)).toBe("55.6k");
+        expect(formatCompactCount(1430092)).toBe("1.4m");
+    });
+
+    it("drops the decimal at or above 100 of a unit", () => {
+        expect(formatCompactCount(123456)).toBe("123k");
+    });
+
+    it("scales into millions and billions", () => {
+        expect(formatCompactCount(1000)).toBe("1k");
+        expect(formatCompactCount(2_500_000)).toBe("2.5m");
+        expect(formatCompactCount(3_000_000_000)).toBe("3b");
     });
 });

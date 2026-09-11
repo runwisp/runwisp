@@ -46,7 +46,7 @@ test.describe("dashboard", () => {
     test("displays system stats section", async ({ authenticatedPage: page }) => {
         await page.goto("/");
 
-        await expect(page.getByText("Online")).toBeVisible();
+        await expect(page.getByText("Connected")).toBeVisible();
         await expect(page.getByRole("heading", { name: "System resources" })).toBeVisible();
     });
 

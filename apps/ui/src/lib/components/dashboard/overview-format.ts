@@ -19,6 +19,25 @@ export function pluralize(count: number): string {
     return count === 1 ? "" : "s";
 }
 
+// Compact a run count so the stat card never grows wide: 55653 → "55.6k",
+// 123456 → "123k", 1430092 → "1.4m". One decimal below 100 of a unit, none at
+// or above it; truncated (not rounded) so the shown figure never overstates.
+export function formatCompactCount(count: number): string {
+    const units = [
+        { limit: 1e9, suffix: "b" },
+        { limit: 1e6, suffix: "m" },
+        { limit: 1e3, suffix: "k" },
+    ];
+    for (const { limit, suffix } of units) {
+        if (count >= limit) {
+            const scaled = count / limit;
+            const factor = scaled >= 100 ? 1 : 10;
+            return `${String(Math.floor(scaled * factor) / factor)}${suffix}`;
+        }
+    }
+    return String(count);
+}
+
 export function formatTaskDescription(task: Task): string {
     return task.description ?? "No description yet. Open the task to review its execution details.";
 }
