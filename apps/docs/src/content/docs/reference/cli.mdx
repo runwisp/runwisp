@@ -435,7 +435,6 @@ refusals, the ordering, and how to undo it.
 runwisp password     # print the daemon's ephemeral password (local socket only)
 runwisp openapi      # print the OpenAPI 3.1 spec (JSON) to stdout
 runwisp schema       # print the runwisp.toml JSON Schema (JSON) to stdout
-runwisp agent-guide  # print a paste-ready AGENTS.md snippet for AI agents
 ```
 
 `runwisp password` fetches the in-memory ephemeral password over the
@@ -454,10 +453,10 @@ code generators — the same schema a running daemon serves at
 `runwisp schema` prints the JSON Schema for `runwisp.toml` (draft 2020-12) —
 point an editor at it, or check a config before validating. It's also published
 at `https://docs.runwisp.com/config.schema.json`, which is what the `#:schema`
-line on a scaffolded config points to. `runwisp agent-guide` prints a short
-Markdown block you can append to your project's `AGENTS.md` so an AI coding
-agent knows how to drive RunWisp. Both are covered on the
-[Driving with an AI agent](/reference/agents/) page.
+line on a scaffolded config points to. For pointing an AI coding agent at
+RunWisp, see the [Driving with an AI agent](/reference/agents/) page — the short
+version is `https://docs.runwisp.com/llms.txt`, which `runwisp --help` also
+prints when its output isn't a terminal.
 
 ## Cloud and demo
 

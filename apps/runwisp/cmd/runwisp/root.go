@@ -6,6 +6,7 @@ package main
 import (
 	"cmp"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 
 	"log/slog"
 
+	"github.com/mattn/go-isatty"
 	"github.com/runwisp/runwisp/internal/clilog"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/datadir"
@@ -62,7 +64,7 @@ surfaces for scripts and AI agents:
   runwisp status --json    daemon + task snapshot as JSON
   runwisp openapi          the REST API's OpenAPI 3.1 spec
 On a box that already runs cron: sudo runwisp takeover retires cron and adopts its jobs.
-Dense agent reference: https://docs.runwisp.com/agents/reference.md`,
+Machine-readable reference for agents: https://docs.runwisp.com/llms.txt`,
 	Version: version.Version,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runDefault(flags)
@@ -114,10 +116,28 @@ func init() {
 	rootCmd.AddCommand(passwordCmd)
 	rootCmd.AddCommand(openapiCmd)
 	rootCmd.AddCommand(schemaCmd)
-	rootCmd.AddCommand(agentGuideCmd)
 	rootCmd.AddCommand(serviceCmd)
 	rootCmd.AddCommand(takeoverCmd)
 	rootCmd.AddCommand(demoCmd)
+
+	// When --help is piped (an AI agent or script, not a human at a terminal),
+	// append a pointer to the machine-readable docs. Cobra inherits this help
+	// func to every subcommand, so `runwisp <cmd> --help | cat` gets it too.
+	defaultHelp := rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		defaultHelp(cmd, args)
+		writeAgentHelpPointer(cmd.OutOrStdout(), isatty.IsTerminal(os.Stdout.Fd()))
+	})
+}
+
+// writeAgentHelpPointer appends a machine-readable docs pointer to --help output
+// when stdout is not a TTY — i.e. an AI agent or script piped `runwisp --help`,
+// not a human at a terminal. Humans get the normal help, unchanged.
+func writeAgentHelpPointer(w io.Writer, isTTY bool) {
+	if isTTY {
+		return
+	}
+	fmt.Fprintln(w, "\nAI agent? Machine-readable reference: https://docs.runwisp.com/llms.txt")
 }
 
 // resolveLogConfig folds the --log-level/--log-format flags together with their

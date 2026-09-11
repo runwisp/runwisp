@@ -29,17 +29,15 @@ func TestSchemaCmd_PrintsEmbeddedSchema(t *testing.T) {
 	assert.Contains(t, doc, "$defs")
 }
 
-// TestAgentGuideCmd_PrintsSnippet asserts `runwisp agent-guide` emits the
-// paste-ready block, including the schema URL it points agents at.
-func TestAgentGuideCmd_PrintsSnippet(t *testing.T) {
-	var buf bytes.Buffer
-	agentGuideCmd.SetOut(&buf)
-	t.Cleanup(func() { agentGuideCmd.SetOut(nil) })
+// TestWriteAgentHelpPointer asserts the non-interactive --help pointer: piped
+// (non-TTY) output points agents at the machine-readable docs, while an
+// interactive terminal gets nothing extra.
+func TestWriteAgentHelpPointer(t *testing.T) {
+	var piped bytes.Buffer
+	writeAgentHelpPointer(&piped, false)
+	assert.Contains(t, piped.String(), "https://docs.runwisp.com/llms.txt")
 
-	require.NoError(t, agentGuideCmd.RunE(agentGuideCmd, nil))
-
-	out := buf.String()
-	assert.Equal(t, agentGuideSnippet, out)
-	assert.Contains(t, out, "## RunWisp")
-	assert.Contains(t, out, config.SchemaURL)
+	var tty bytes.Buffer
+	writeAgentHelpPointer(&tty, true)
+	assert.Empty(t, tty.String())
 }

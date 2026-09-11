@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Driving RunWisp with an AI agent
-description: How an AI coding agent (Claude Code, Codex, and friends) configures, validates, runs, and inspects RunWisp — the JSON Schema for runwisp.toml, the validate/run --json loop, the socket-first local connection, and a paste-ready snippet for your project's AGENTS.md.
+description: How an AI coding agent (Claude Code, Codex, and friends) configures, validates, runs, and inspects RunWisp — the JSON Schema for runwisp.toml, the validate/run --json loop, the socket-first local connection, and the machine-readable llms.txt index.
 head:
     - tag: title
       content: "RunWisp for AI agents: config schema, validate --json, run --json"
@@ -16,17 +16,20 @@ or at a stable URL — no guessing at the config format, no scraping help text.
 
 Here's the short version you can hand to any agent.
 
-## Point your agent at the guide
+## Point your agent at the docs
 
-Run this and paste the output into your project's `AGENTS.md`, `CLAUDE.md`, or
-README:
+Drop one line into your project's `AGENTS.md`, `CLAUDE.md`, or README so any
+coding agent knows where to look:
 
-```bash
-runwisp agent-guide >> AGENTS.md
+```markdown
+This project uses RunWisp. Machine-readable reference: https://docs.runwisp.com/llms.txt
 ```
 
-It drops in a compact block that tells the agent RunWisp is here, that
-`runwisp.toml` is the source of truth, and which commands emit JSON.
+`llms.txt` is a token-optimized index of the whole documentation — the schema,
+the CLI, and the REST surface — meant to be fed straight to an agent. You don't
+even have to add it by hand: run `runwisp --help` in a non-interactive shell
+(anything that isn't a terminal, which is exactly how an agent shells out) and
+the same pointer is appended to the help output.
 
 ## The config file has a schema
 

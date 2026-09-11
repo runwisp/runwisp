@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The `agent-guide` subcommand is replaced by a machine-readable docs pointer.** Running `runwisp --help` in a non-interactive shell now appends a link to `https://docs.runwisp.com/llms.txt` for AI coding agents.
 - **`treat_missed_as_failure` and `exit_codes` are replaced by one `failures` key** on `[defaults]`, `[tasks.*]`, and `[services.*]`. List the outcomes that count as a failure — end-reason names (`failed`, `timeout`, `crashed`, `missed`, `stopped`, …) and exit codes or inclusive ranges (`"42"`, `"1-23"`) — to drive the failed stat, UI badges, the runs-browser **Failed** filter, and `notify_on_failure`. A bare list replaces the inherited set; prefix every token with `+`/`-` (`["-missed"]`, `["+stopped"]`) to add or drop a single outcome without restating the default. Exit `0` is always success and any non-zero exit is `failed`; there's no success-code allowlist anymore. See [What counts as a failure](https://docs.runwisp.com/configuration/tasks/#what-counts-as-a-failure).
 
 ## [0.16.4] - 2026-09-09

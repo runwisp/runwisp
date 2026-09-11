@@ -119,7 +119,7 @@ if [ -n "$help_only" ]; then
 else
 	case "$subcommand" in
 	validate | list | status | stop | reload | password | openapi | schema | \
-		agent-guide | import | run | tui | service | help | completion)
+		import | run | tui | service | help | completion)
 		starts_daemon=""
 		;;
 	esac

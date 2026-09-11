@@ -343,7 +343,6 @@ runwisp promote [TASK...]    — put a derived task's block in the root runwisp.
 runwisp password             — print the daemon's ephemeral password (local socket; exit 5 under RUNWISP_AUTH=off, refuses if RUNWISP_PASSWORD set)
 runwisp openapi              — print the OpenAPI 3.1 spec (JSON) to stdout
 runwisp schema               — print the runwisp.toml JSON Schema (draft 2020-12) to stdout; published at https://docs.runwisp.com/config.schema.json
-runwisp agent-guide          — print a paste-ready AGENTS.md/CLAUDE.md snippet for driving RunWisp from an agent
 runwisp cloud                — start in cloud mode; --token --url --env-file(=.env) --no-tui
 runwisp demo                 — boot a throwaway, fully-populated instance; --cloud --token --url --env-file
 runwisp service install      — install autostart; -y --print --dry-run --force --local --binary <path>
