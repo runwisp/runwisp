@@ -104,7 +104,7 @@ export const tasksApi = {
             offset?: number;
             status?: string;
             taskName?: string;
-            triggeredBy?: "cron" | "api" | "cloud" | "service" | "startup";
+            triggeredBy?: "cron" | "api" | "ui" | "cli" | "cloud" | "service" | "startup";
             createdAfter?: string;
             createdBefore?: string;
             exitCodeMin?: string;
@@ -125,7 +125,7 @@ export const tasksApi = {
 
     triggerRun: async (taskName: string, params?: Record<string, string | null>) => {
         const { data, error } = await apiClient.POST("/api/tasks/{taskName}/run", {
-            params: { path: { taskName } },
+            params: { path: { taskName }, query: { via: "ui" } },
             ...(params && Object.keys(params).length > 0 ? { body: { params } } : {}),
         });
         if (error) throw new Error("Failed to trigger run");
@@ -245,7 +245,7 @@ export const runsApi = {
         offset?: number;
         status?: string;
         taskName?: string;
-        triggeredBy?: "cron" | "api" | "cloud" | "service" | "startup";
+        triggeredBy?: "cron" | "api" | "ui" | "cli" | "cloud" | "service" | "startup";
         createdAfter?: string;
         createdBefore?: string;
         exitCodeMin?: string;

@@ -48,6 +48,12 @@ type TriggerRunInput struct {
 	TaskName    string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
 	Wait        bool   `query:"wait" doc:"Block until the run finishes and return the completed run (with exitCode and endReason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead."`
 	WaitTimeout int    `query:"waitTimeout" minimum:"1" maximum:"240" default:"120" doc:"With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout (with margin for request/dispatch overhead) since the response is a single write made after the full wait elapses. On timeout the run keeps running and the response returns it in its current (non-terminal) state."`
+	// Via lets a first-party caller (Web UI, TUI, CLI) declare its own
+	// provenance so the run history can tell "someone clicked Run Now" apart
+	// from a raw REST call. Purely a label — a scripted caller can set this
+	// too, so nothing is authorized off it. Empty (the default, and the only
+	// option for a plain REST caller) records `api`.
+	Via string `query:"via" enum:"ui,cli," doc:"Declares the caller for run provenance: 'ui' (Web UI / TUI Run Now) or 'cli' (runwisp run). Omit for a plain API call."`
 	// Body is a pointer so it is optional — a zero-param trigger can POST with
 	// no payload at all.
 	Body *struct {
@@ -68,7 +74,7 @@ type RunsQueryInput struct {
 	Offset        int       `query:"offset" minimum:"0" default:"0" doc:"Pagination offset"`
 	Status        string    `query:"status" doc:"Comma-separated run statuses (phase or end reason); a run matches any listed value"`
 	TaskName      string    `query:"taskName" doc:"Filter by task name"`
-	TriggeredBy   string    `query:"triggeredBy" enum:"cron,api,cloud,service,startup," doc:"Filter by what triggered the run"`
+	TriggeredBy   string    `query:"triggeredBy" enum:"cron,api,ui,cli,cloud,service,startup," doc:"Filter by what triggered the run"`
 	CreatedAfter  time.Time `query:"createdAfter" doc:"Only runs created at or after this RFC3339 time"`
 	CreatedBefore time.Time `query:"createdBefore" doc:"Only runs created at or before this RFC3339 time"`
 	ExitCodeMin   string    `query:"exitCodeMin" pattern:"^-?[0-9]+$" doc:"Only runs whose exit code is >= this (inclusive)"`

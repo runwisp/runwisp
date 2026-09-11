@@ -57,7 +57,7 @@ echo after
 	client := socketClient(t, daemon.dataDir)
 
 	t.Run("a failing line fails the run", func(t *testing.T) {
-		_, err := client.TriggerRun("failfast", nil)
+		_, err := client.TriggerRun("failfast", nil, "")
 		require.NoError(t, err)
 		waitForRunCount(t, client, "failfast", 1, 10*time.Second)
 
@@ -74,7 +74,7 @@ echo after
 	})
 
 	t.Run("set +e opts out", func(t *testing.T) {
-		_, err := client.TriggerRun("optout", nil)
+		_, err := client.TriggerRun("optout", nil, "")
 		require.NoError(t, err)
 		waitForRunCount(t, client, "optout", 1, 10*time.Second)
 

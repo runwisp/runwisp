@@ -225,8 +225,10 @@ export function humanizeStatus(status: string): string {
 
 /**
  * Descriptive label for a run's trigger source — fuller than the one-word row
- * badge (`formatTriggeredByLabel`), for the filter dropdown and chip where the
- * extra words disambiguate (e.g. "Manual (UI or API)" vs a bare "API").
+ * badge (`formatTriggeredByLabel`) for the "cron"/"cloud"/"service"/"startup"
+ * sources, where the extra words disambiguate (e.g. "REST API" vs a bare
+ * "API"). "ui" and "cli" already read fine as their bare badge word, so those
+ * two match `formatTriggeredByLabel` exactly.
  *
  * Note `cron` covers both on-time schedule firings and catch-up for missed
  * runs, and `startup` is specifically `run_on_start` (not catch-up).
@@ -236,7 +238,11 @@ export function triggerDescription(trigger: string): string {
         case "cron":
             return "Scheduled (cron)";
         case "api":
-            return "Manual (UI or API)";
+            return "REST API";
+        case "ui":
+            return "UI";
+        case "cli":
+            return "CLI";
         case "cloud":
             return "Control plane";
         case "service":

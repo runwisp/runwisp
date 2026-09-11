@@ -187,7 +187,7 @@ func runExecViaDaemon(taskName string, f Flags) (int, error) {
 		return 0, fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
 	}
 
-	run, err := client.TriggerRun(taskName, nil)
+	run, err := client.TriggerRun(taskName, nil, "cli")
 	if err != nil {
 		if apiclient.IsHTTPStatus(err, http.StatusNotFound) {
 			return 0, unknownTaskError(taskName, daemonTaskNames(client))
@@ -300,12 +300,12 @@ func authenticateRemote(client *apiclient.Client, baseURL, password string) erro
 // triggerRemote triggers the run, re-authenticating once if a cached token has
 // expired (401), and maps the daemon's error codes to user-facing messages.
 func triggerRemote(client *apiclient.Client, taskName, baseURL, password string) (*model.Run, error) {
-	run, err := client.TriggerRun(taskName, nil)
+	run, err := client.TriggerRun(taskName, nil, "cli")
 	if errors.Is(err, apiclient.ErrUnauthorized) {
 		if authErr := authenticateRemote(client, baseURL, password); authErr != nil {
 			return nil, authErr
 		}
-		run, err = client.TriggerRun(taskName, nil)
+		run, err = client.TriggerRun(taskName, nil, "cli")
 	}
 	if err != nil {
 		switch {
@@ -581,7 +581,7 @@ func runExecStandalone(taskName string, f Flags) (int, error) {
 	unsubFailed := eventBus.Subscribe(events.EventRunFailed, termHandler)
 	defer unsubFailed()
 
-	run, err := taskManager.TriggerRun(taskName, model.TriggeredByAPI)
+	run, err := taskManager.TriggerRun(taskName, model.TriggeredByCLI)
 	if err != nil {
 		return 0, fmt.Errorf("failed to trigger task %q: %w", taskName, err)
 	}

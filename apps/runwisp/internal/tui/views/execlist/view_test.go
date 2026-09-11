@@ -20,7 +20,7 @@ func newTestRun() *model.Run {
 		ID:          ulid.Make().String(),
 		TaskName:    "test-task",
 		Status:      model.PhaseRunning,
-		TriggeredBy: "manual",
+		TriggeredBy: "ui",
 		CreatedAt:   time.Now(),
 	}
 }

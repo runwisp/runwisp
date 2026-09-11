@@ -145,14 +145,14 @@ func TestSeed(t *testing.T) {
 		}
 	})
 
-	t.Run("manual task is api-triggered with a finalized log", func(t *testing.T) {
+	t.Run("manual task is ui-triggered with a finalized log", func(t *testing.T) {
 		runs := queryAll(t, db, "deploy-thing")
 		if len(runs) == 0 {
 			t.Fatal("no deploy-thing runs")
 		}
 		for _, r := range runs {
-			if r.TriggeredBy != model.TriggeredByAPI {
-				t.Errorf("manual run %s triggered_by = %q, want api", r.ID, r.TriggeredBy)
+			if r.TriggeredBy != model.TriggeredByUI {
+				t.Errorf("manual run %s triggered_by = %q, want ui", r.ID, r.TriggeredBy)
 			}
 			assertFinalizedLog(t, logDir, r, 1)
 		}

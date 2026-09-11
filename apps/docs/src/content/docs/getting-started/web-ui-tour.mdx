@@ -121,8 +121,9 @@ The filters, roughly in the order you'll reach for them:
   so a **To** of 10 July _includes_ everything that ran that day.
 - **Task** — narrow to a single task (only on `/runs`; a task's own page
   is already scoped to it).
-- **Triggered by** — scheduled (cron), manual (UI or API), a service
-  auto-start, or a run on daemon start.
+- **Triggered by** — scheduled (cron), the REST API, the Web UI or TUI's
+  **Run Now**, the `runwisp run` CLI, a service auto-start, or a run on
+  daemon start.
 - **Exit code** — a small expression: an exact code (`137`, handy for
   hunting an OOM), a comparison (`>100`, `<=2`), or a window built from
   both (`>100 <150`). It resolves to an inclusive range.

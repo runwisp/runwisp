@@ -61,7 +61,7 @@ params = [
 		"source":     &source,
 		"--region":   &region,
 		"--force":    &force,
-	})
+	}, "")
 	require.NoError(t, err)
 	require.NotEmpty(t, triggered.ID)
 
@@ -145,7 +145,7 @@ params = [
 
 	// Explicit omit (nil): the default must NOT be re-injected, so no --note
 	// token reaches the command at all.
-	omit, err := client.TriggerRun(taskName, map[string]*string{"--note": nil})
+	omit, err := client.TriggerRun(taskName, map[string]*string{"--note": nil}, "")
 	require.NoError(t, err)
 	require.Equal(t, "arg=[]\n", readCapture(t), "omitted option leaves no argv tokens (printf sees no args)")
 	omitRun, err := client.GetRun(omit.ID)
@@ -156,7 +156,7 @@ params = [
 
 	// Explicit empty string: --note is passed with an empty value.
 	empty := ""
-	emptyRun, err := client.TriggerRun(taskName, map[string]*string{"--note": &empty})
+	emptyRun, err := client.TriggerRun(taskName, map[string]*string{"--note": &empty}, "")
 	require.NoError(t, err)
 	require.Equal(t, "arg=[--note]\narg=[]\n", readCapture(t),
 		"empty string is passed as a real, empty option value")

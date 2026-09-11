@@ -21,7 +21,7 @@ type RunFilter struct {
 	Search        string     `json:"search,omitempty"            doc:"Search query against task_name / id"`
 	CreatedAfter  *time.Time `json:"createdAfter,omitempty"     doc:"Only runs created at or after this time"`
 	CreatedBefore *time.Time `json:"createdBefore,omitempty"    doc:"Only runs created at or before this time"`
-	TriggeredBy   string     `json:"triggeredBy,omitempty"   doc:"Filter by what triggered the run (cron/api/cloud/service/startup)"`
+	TriggeredBy   string     `json:"triggeredBy,omitempty"   doc:"Filter by what triggered the run (cron/api/ui/cli/cloud/service/startup)"`
 	// ExitCodeMin / ExitCodeMax bound the exit code to an inclusive integer
 	// range; either end may be set alone (open on the other side). The UI's
 	// friendly expression (e.g. ">100 <150") is normalized to these bounds

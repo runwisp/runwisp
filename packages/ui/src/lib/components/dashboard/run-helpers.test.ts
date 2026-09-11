@@ -107,6 +107,8 @@ describe("runStartDelay", () => {
 describe("formatTriggeredByLabel", () => {
     it("humanizes each trigger source", () => {
         expect(formatTriggeredByLabel("api")).toBe("API");
+        expect(formatTriggeredByLabel("ui")).toBe("UI");
+        expect(formatTriggeredByLabel("cli")).toBe("CLI");
         expect(formatTriggeredByLabel("cron")).toBe("Cron");
         expect(formatTriggeredByLabel("service")).toBe("Service");
         expect(formatTriggeredByLabel("startup")).toBe("Startup");

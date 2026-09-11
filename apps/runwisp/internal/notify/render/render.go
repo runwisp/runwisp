@@ -272,7 +272,11 @@ func triggerPhrase(t model.TriggeredBy) string {
 	case model.TriggeredByCron:
 		return "Scheduled run"
 	case model.TriggeredByAPI:
-		return "Manually triggered via API"
+		return "Triggered via the REST API"
+	case model.TriggeredByUI:
+		return "Triggered from the UI"
+	case model.TriggeredByCLI:
+		return "Triggered from the CLI"
 	case model.TriggeredByCloud:
 		return "Triggered from the control plane"
 	case model.TriggeredByService:

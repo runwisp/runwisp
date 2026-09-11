@@ -37,7 +37,7 @@ func TestProgressBarCommitsFinalFrameAndStreamsRegion(t *testing.T) {
 
 	client := socketClient(t, daemon.dataDir)
 
-	triggered, err := client.TriggerRun(taskName, nil)
+	triggered, err := client.TriggerRun(taskName, nil, "")
 	require.NoError(t, err, "TriggerRun should succeed")
 	require.NotEmpty(t, triggered.ID)
 
@@ -87,7 +87,7 @@ func TestProgressBarExposesFrameHistory(t *testing.T) {
 
 	client := socketClient(t, daemon.dataDir)
 
-	triggered, err := client.TriggerRun(taskName, nil)
+	triggered, err := client.TriggerRun(taskName, nil, "")
 	require.NoError(t, err, "TriggerRun should succeed")
 	run := waitForListedRun(t, client, taskName, triggered.ID, 5*time.Second)
 

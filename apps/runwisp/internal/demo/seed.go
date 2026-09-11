@@ -502,7 +502,7 @@ func triggeredBy(task *model.Task) model.TriggeredBy {
 	case task.Cron != "":
 		return model.TriggeredByCron
 	default:
-		return model.TriggeredByAPI
+		return model.TriggeredByUI
 	}
 }
 

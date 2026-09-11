@@ -126,6 +126,8 @@ type TriggeredBy string
 const (
 	TriggeredByCron    TriggeredBy = "cron"
 	TriggeredByAPI     TriggeredBy = "api"
+	TriggeredByUI      TriggeredBy = "ui"
+	TriggeredByCLI     TriggeredBy = "cli"
 	TriggeredByCloud   TriggeredBy = "cloud"
 	TriggeredByService TriggeredBy = "service"
 	TriggeredByStartup TriggeredBy = "startup"
@@ -149,7 +151,7 @@ type Run struct {
 	ExitCode      int         `json:"exitCode"`
 	StartedAt     *time.Time  `json:"startedAt,omitempty"`
 	EndedAt       *time.Time  `json:"endedAt,omitempty"`
-	TriggeredBy   TriggeredBy `json:"triggeredBy" enum:"cron,api,cloud,service,startup" doc:"How the run was triggered"`
+	TriggeredBy   TriggeredBy `json:"triggeredBy" enum:"cron,api,ui,cli,cloud,service,startup" doc:"How the run was triggered"`
 	CreatedAt     time.Time   `json:"createdAt"`
 	RetryAttempt  int         `json:"retryAttempt"`
 	RetryOfRunID  *string     `json:"retryOfRunId,omitempty"`

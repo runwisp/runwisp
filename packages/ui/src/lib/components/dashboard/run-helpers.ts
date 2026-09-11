@@ -85,6 +85,8 @@ export function instanceSuffix(instanceIndex: number, instanceCount: number): st
 /** Human label for why a run fired (the `triggeredBy` source). */
 export function formatTriggeredByLabel(triggeredBy: Run["triggeredBy"]): string {
     if (triggeredBy === "api") return "API";
+    if (triggeredBy === "ui") return "UI";
+    if (triggeredBy === "cli") return "CLI";
     if (triggeredBy === "cron") return "Cron";
     if (triggeredBy === "service") return "Service";
     if (triggeredBy === "startup") return "Startup";

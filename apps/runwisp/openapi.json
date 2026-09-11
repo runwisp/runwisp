@@ -1105,6 +1105,8 @@
             "enum": [
               "cron",
               "api",
+              "ui",
+              "cli",
               "cloud",
               "service",
               "startup"
@@ -1230,7 +1232,7 @@
             "type": "string"
           },
           "triggeredBy": {
-            "description": "Filter by what triggered the run (cron/api/cloud/service/startup)",
+            "description": "Filter by what triggered the run (cron/api/ui/cli/cloud/service/startup)",
             "type": "string"
           }
         },
@@ -2975,6 +2977,8 @@
               "enum": [
                 "cron",
                 "api",
+                "ui",
+                "cli",
                 "cloud",
                 "service",
                 "startup",
@@ -4162,6 +4166,21 @@
               "minimum": 1,
               "type": "integer"
             }
+          },
+          {
+            "description": "Declares the caller for run provenance: 'ui' (Web UI / TUI Run Now) or 'cli' (runwisp run). Omit for a plain API call.",
+            "explode": false,
+            "in": "query",
+            "name": "via",
+            "schema": {
+              "description": "Declares the caller for run provenance: 'ui' (Web UI / TUI Run Now) or 'cli' (runwisp run). Omit for a plain API call.",
+              "enum": [
+                "ui",
+                "cli",
+                ""
+              ],
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -4275,6 +4294,8 @@
               "enum": [
                 "cron",
                 "api",
+                "ui",
+                "cli",
                 "cloud",
                 "service",
                 "startup",

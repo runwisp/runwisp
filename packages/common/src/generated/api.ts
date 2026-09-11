@@ -1082,7 +1082,7 @@ export interface components {
              * @description How the run was triggered
              * @enum {string}
              */
-            triggeredBy: "cron" | "api" | "cloud" | "service" | "startup";
+            triggeredBy: "cron" | "api" | "ui" | "cli" | "cloud" | "service" | "startup";
         };
         RunCompletedEvent: {
             error?: string;
@@ -1131,7 +1131,7 @@ export interface components {
             status?: string;
             /** @description Filter by task name */
             taskName?: string;
-            /** @description Filter by what triggered the run (cron/api/cloud/service/startup) */
+            /** @description Filter by what triggered the run (cron/api/ui/cli/cloud/service/startup) */
             triggeredBy?: string;
         };
         RunSelector: {
@@ -2082,7 +2082,7 @@ export interface operations {
                 /** @description Filter by task name */
                 taskName?: string;
                 /** @description Filter by what triggered the run */
-                triggeredBy?: "cron" | "api" | "cloud" | "service" | "startup" | "";
+                triggeredBy?: "cron" | "api" | "ui" | "cli" | "cloud" | "service" | "startup" | "";
                 /** @description Only runs created at or after this RFC3339 time */
                 createdAfter?: string;
                 /** @description Only runs created at or before this RFC3339 time */
@@ -2779,6 +2779,8 @@ export interface operations {
                 wait?: boolean;
                 /** @description With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout (with margin for request/dispatch overhead) since the response is a single write made after the full wait elapses. On timeout the run keeps running and the response returns it in its current (non-terminal) state. */
                 waitTimeout?: number;
+                /** @description Declares the caller for run provenance: 'ui' (Web UI / TUI Run Now) or 'cli' (runwisp run). Omit for a plain API call. */
+                via?: "ui" | "cli" | "";
             };
             header?: never;
             path: {
@@ -2825,7 +2827,7 @@ export interface operations {
                 /** @description Filter by task name */
                 taskName?: string;
                 /** @description Filter by what triggered the run */
-                triggeredBy?: "cron" | "api" | "cloud" | "service" | "startup" | "";
+                triggeredBy?: "cron" | "api" | "ui" | "cli" | "cloud" | "service" | "startup" | "";
                 /** @description Only runs created at or after this RFC3339 time */
                 createdAfter?: string;
                 /** @description Only runs created at or before this RFC3339 time */

@@ -117,9 +117,11 @@ test.describe("task execution", () => {
 
         await expect(runVerdict(page, "succeeded")).toBeVisible({ timeout: 30_000 });
 
-        // The run detail panel surfaces how the run was triggered: a manually
-        // triggered run reads as an "API" trigger.
-        await expect(page.getByText("API").first()).toBeVisible();
+        // The run detail panel surfaces how the run was triggered: Run Now via
+        // the Web UI reads as a "ui" trigger ("via ui"). Match the fuller phrase
+        // rather than a bare "ui" substring, which is too short to be a safe
+        // locator on its own.
+        await expect(page.getByText("via ui").first()).toBeVisible();
     });
 
     test("dashboard activity feed updates after task run", async ({

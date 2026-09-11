@@ -69,7 +69,7 @@ export const RUN_STATUSES = [...RUN_PHASES, ...END_REASONS] as const;
 
 export type RunStatus = (typeof RUN_STATUSES)[number];
 
-export const TRIGGERS = ["cron", "api", "cloud", "service", "startup"] as const;
+export const TRIGGERS = ["cron", "api", "ui", "cli", "cloud", "service", "startup"] as const;
 
 export type Trigger = (typeof TRIGGERS)[number];
 

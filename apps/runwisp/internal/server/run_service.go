@@ -116,7 +116,22 @@ func (s *runService) GetRun(ctx context.Context, runID string) (*model.Run, erro
 	return run, nil
 }
 
-func (s *runService) TriggerRun(ctx context.Context, taskName string, params map[string]*string) (*model.Run, error) {
+// viaToTriggeredBy maps the TriggerRunInput.Via query param to a TriggeredBy
+// value. Empty (the plain-REST-caller default) is model.TriggeredByAPI; huma's
+// enum tag on Via already rejects anything else at the HTTP boundary, so an
+// unrecognized value here means a programming bug and falls back to API too.
+func viaToTriggeredBy(via string) model.TriggeredBy {
+	switch via {
+	case "ui":
+		return model.TriggeredByUI
+	case "cli":
+		return model.TriggeredByCLI
+	default:
+		return model.TriggeredByAPI
+	}
+}
+
+func (s *runService) TriggerRun(ctx context.Context, taskName string, params map[string]*string, triggeredBy model.TriggeredBy) (*model.Run, error) {
 	task, exists := s.tasks.Get(taskName)
 	if !exists {
 		return nil, ErrTaskNotFound
@@ -133,7 +148,7 @@ func (s *runService) TriggerRun(ctx context.Context, taskName string, params map
 		return nil, fmt.Errorf("%w: %s", ErrInvalidParams, err.Error())
 	}
 	return s.taskManager.TriggerRunWithOptions(taskName, runtime.TriggerRunOptions{
-		TriggeredBy: model.TriggeredByAPI,
+		TriggeredBy: triggeredBy,
 		Params:      params,
 	})
 }
@@ -151,7 +166,7 @@ const terminalWaitBackstop = 2 * time.Second
 // state; callers tell the two apart via the run's status. It exists so a remote
 // caller can fire a task and read its result in a single request instead of
 // trigger-then-poll.
-func (s *runService) TriggerRunAndWait(ctx context.Context, taskName string, params map[string]*string, timeout time.Duration) (*model.Run, error) {
+func (s *runService) TriggerRunAndWait(ctx context.Context, taskName string, params map[string]*string, triggeredBy model.TriggeredBy, timeout time.Duration) (*model.Run, error) {
 	// Subscribe before triggering: a fast task can finish and publish its
 	// terminal event before TriggerRun even returns, so we must already be
 	// listening. The handler forwards every terminal run; we filter by ID once
@@ -170,7 +185,7 @@ func (s *runService) TriggerRunAndWait(ctx context.Context, taskName string, par
 	unsubFailed := s.eventBus.Subscribe(events.EventRunFailed, forward)
 	defer unsubFailed()
 
-	run, err := s.TriggerRun(ctx, taskName, params)
+	run, err := s.TriggerRun(ctx, taskName, params, triggeredBy)
 	if err != nil {
 		return nil, err
 	}

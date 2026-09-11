@@ -176,7 +176,7 @@ func (m *Model) triggerRun() tea.Cmd {
 	if task := m.taskDisplayByName(taskName); task != nil && len(task.Parameters) > 0 {
 		m.dialogs.ShowParamForm(NewParamFormDialog(taskName, task.Parameters, func(params map[string]*string) tea.Cmd {
 			return func() tea.Msg {
-				run, err := client.TriggerRun(taskName, params)
+				run, err := client.TriggerRun(taskName, params, "ui")
 				return uikit.TriggerRunMsg{TaskName: taskName, Run: run, Err: err}
 			}
 		}))
@@ -186,7 +186,7 @@ func (m *Model) triggerRun() tea.Cmd {
 		"Run Task",
 		fmt.Sprintf("Run '%s' now?", taskName),
 		func() tea.Msg {
-			run, err := client.TriggerRun(taskName, nil)
+			run, err := client.TriggerRun(taskName, nil, "ui")
 			return uikit.TriggerRunMsg{TaskName: taskName, Run: run, Err: err}
 		},
 	)
@@ -285,7 +285,7 @@ func (m *Model) retryRun() tea.Cmd {
 		"Retry Run",
 		fmt.Sprintf("Retry '%s'?", taskName),
 		func() tea.Msg {
-			newRun, err := client.TriggerRun(taskName, params)
+			newRun, err := client.TriggerRun(taskName, params, "ui")
 			return uikit.TriggerRunMsg{TaskName: taskName, Run: newRun, Err: err, Retry: true}
 		},
 	)

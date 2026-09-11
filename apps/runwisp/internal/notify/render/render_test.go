@@ -56,7 +56,9 @@ func TestHumanTime(t *testing.T) {
 
 func TestTriggerPhrase(t *testing.T) {
 	assert.Equal(t, "Scheduled run", triggerPhrase(model.TriggeredByCron))
-	assert.Equal(t, "Manually triggered via API", triggerPhrase(model.TriggeredByAPI))
+	assert.Equal(t, "Triggered via the REST API", triggerPhrase(model.TriggeredByAPI))
+	assert.Equal(t, "Triggered from the UI", triggerPhrase(model.TriggeredByUI))
+	assert.Equal(t, "Triggered from the CLI", triggerPhrase(model.TriggeredByCLI))
 	assert.Equal(t, "Triggered from the control plane", triggerPhrase(model.TriggeredByCloud))
 	assert.Equal(t, "Service auto-started", triggerPhrase(model.TriggeredByService))
 	assert.Equal(t, "Run", triggerPhrase(""))
@@ -152,7 +154,7 @@ func TestEventSentenceCoalescedCount(t *testing.T) {
 func TestEventTrigger(t *testing.T) {
 	assert.Equal(t, "Event", eventTrigger(&notify.Event{}))
 	assert.Equal(t, "Scheduled run", eventTrigger(&notify.Event{Run: &model.Run{TriggeredBy: model.TriggeredByCron}}))
-	assert.Equal(t, "Manually triggered via API", eventTrigger(&notify.Event{Run: &model.Run{TriggeredBy: model.TriggeredByAPI}}))
+	assert.Equal(t, "Triggered via the REST API", eventTrigger(&notify.Event{Run: &model.Run{TriggeredBy: model.TriggeredByAPI}}))
 	assert.Equal(t, "Triggered from the control plane", eventTrigger(&notify.Event{Run: &model.Run{TriggeredBy: model.TriggeredByCloud}}))
 	assert.Equal(t, "Run", eventTrigger(&notify.Event{Run: &model.Run{}}))
 }

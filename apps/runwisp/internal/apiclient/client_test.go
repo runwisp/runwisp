@@ -118,7 +118,7 @@ func TestSetTokenSkipsHandshake(t *testing.T) {
 	assert.True(t, c.IsAuthenticated())
 	assert.Equal(t, "cached-jwt", c.Token())
 
-	run, err := c.TriggerRun("my-task", nil)
+	run, err := c.TriggerRun("my-task", nil, "")
 	require.NoError(t, err)
 	assert.Equal(t, "new-run", run.ID)
 	assert.False(t, sawAuth, "a seeded token must not trigger a CHAP handshake")
@@ -247,7 +247,7 @@ func TestTriggerRun(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	run, err := c.TriggerRun("my-task", nil)
+	run, err := c.TriggerRun("my-task", nil, "")
 	require.NoError(t, err)
 	assert.Equal(t, "new-run", run.ID)
 }

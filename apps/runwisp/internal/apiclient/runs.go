@@ -83,13 +83,21 @@ func (c *Client) ListRunsByTask(taskName string, params RunsParams) ([]model.Run
 // task's declared parameters. Pass nil params for a bare trigger. A per-key nil
 // pointer omits that parameter (overriding its default); an empty string passes
 // an empty value.
-func (c *Client) TriggerRun(taskName string, params map[string]*string) (*model.Run, error) {
+//
+// via declares this client's own provenance ("ui" for the TUI's Run Now, "cli"
+// for the runwisp CLI) so the run history can tell them apart from a raw REST
+// call; pass "" for none.
+func (c *Client) TriggerRun(taskName string, params map[string]*string, via string) (*model.Run, error) {
 	var body any
 	if len(params) > 0 {
 		body = map[string]any{"params": params}
 	}
+	path := fmt.Sprintf("/api/tasks/%s/run", taskName)
+	if via != "" {
+		path += "?via=" + url.QueryEscape(via)
+	}
 	var run model.Run
-	if err := c.doJSON("POST", fmt.Sprintf("/api/tasks/%s/run", taskName), body, &run); err != nil {
+	if err := c.doJSON("POST", path, body, &run); err != nil {
 		return nil, err
 	}
 	return &run, nil

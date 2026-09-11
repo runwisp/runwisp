@@ -96,7 +96,7 @@ func TestTelegram_RunFailed_WithURLAndTail(t *testing.T) {
 	expected := "❌ <b>telegram-test-fail</b> failed\n" +
 		"\n" +
 		"Exited with code 1 after 0.3s.\n" +
-		"Manually triggered via API · 14 May, 17:11.\n" +
+		"Triggered via the REST API · 14 May, 17:11.\n" +
 		"\n" +
 		"<blockquote>Error: connection refused\ndial tcp 127.0.0.1:5432: connect:\nconnection refused</blockquote>\n" +
 		"\n" +
@@ -285,7 +285,7 @@ func TestSlack_RunFailed_WithURLAndTail(t *testing.T) {
 
 	concatTexts := slackTexts(blocks)
 	assert.Contains(t, concatTexts, "❌ tg-fail failed")
-	assert.Contains(t, concatTexts, "Exited with code 1 after 0.3s.\nManually triggered via API · 14 May, 17:11.")
+	assert.Contains(t, concatTexts, "Exited with code 1 after 0.3s.\nTriggered via the REST API · 14 May, 17:11.")
 	assert.Contains(t, concatTexts, "```\nError: connection refused\ndial tcp 127.0.0.1:5432: connect:\nconnection refused\n```")
 	assert.Contains(t, concatTexts, "View full run")
 	assert.Contains(t, concatTexts, "from runwisp · bright-falcon")
@@ -382,7 +382,7 @@ func TestDiscord_RunFailed_WithURLAndTail(t *testing.T) {
 	embed := parsed.Embeds[0]
 	assert.Equal(t, "❌ dc-fail failed", embed.Title)
 	assert.Equal(t, "https://r.example.com/tasks/dc-fail/01KRK9", embed.URL)
-	assert.Contains(t, embed.Description, "Exited with code 1 after 0.3s.\nManually triggered via API · 14 May, 17:11.")
+	assert.Contains(t, embed.Description, "Exited with code 1 after 0.3s.\nTriggered via the REST API · 14 May, 17:11.")
 	assert.Contains(t, embed.Description, "```\nError: connection refused\ndial tcp 127.0.0.1:5432: connect:\nconnection refused\n```")
 	assert.Equal(t, 15548997, embed.Color, "error must render red")
 	assert.Equal(t, "from runwisp · bright-falcon", embed.Footer.Text)

@@ -261,7 +261,9 @@ describe("date helpers", () => {
 describe("triggerDescription", () => {
     it("gives a fuller label than the row badge", () => {
         expect(triggerDescription("cron")).toBe("Scheduled (cron)");
-        expect(triggerDescription("api")).toBe("Manual (UI or API)");
+        expect(triggerDescription("api")).toBe("REST API");
+        expect(triggerDescription("ui")).toBe("UI");
+        expect(triggerDescription("cli")).toBe("CLI");
         expect(triggerDescription("service")).toBe("Service auto-start");
         expect(triggerDescription("startup")).toBe("On daemon start");
     });
@@ -273,7 +275,7 @@ describe("triggerDescription", () => {
 
 describe("FILTERABLE_TRIGGERS", () => {
     it("offers every trigger except cloud", () => {
-        expect(FILTERABLE_TRIGGERS).toEqual(["cron", "api", "service", "startup"]);
+        expect(FILTERABLE_TRIGGERS).toEqual(["cron", "api", "ui", "cli", "service", "startup"]);
         expect(FILTERABLE_TRIGGERS).not.toContain("cloud");
     });
 });
