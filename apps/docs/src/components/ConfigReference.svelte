@@ -2,13 +2,15 @@
   SPDX-FileCopyrightText: PoppyCake, s.r.o.
   SPDX-License-Identifier: GPL-3.0-or-later
 
-  Interactive runwisp.toml reference, generated at build time from the daemon's
-  source-of-truth JSON Schema (apps/runwisp/internal/config/config.schema.json).
-  Nothing here is hand-maintained: every table, key, type, default, and accepted
-  value is walked out of the schema, so this page can never drift from the daemon.
+  Interactive runwisp.toml reference. Key STRUCTURE (types, defaults, enums,
+  ranges) is walked out of the daemon's source-of-truth JSON Schema
+  (apps/runwisp/internal/config/config.schema.json), so it can never drift.
+  Friendly per-key copy lives in config-copy.ts; cross-cutting prose and the
+  cluster layout live in config-topics.ts — a Topic renders as a first-class
+  row alongside the keys, never inside a key's body.
 
-  Iteration 1 renders only the [tasks.<name>] table; add more surfaces to the
-  `sections` array to switch the rest on — the renderer is generic.
+  Iteration 1 renders only the [tasks.<name>] table; add more buildSection(...)
+  surfaces and clusters to grow it.
 -->
 <script lang="ts">
     import { onMount } from "svelte";
@@ -16,6 +18,7 @@
     import { slide } from "svelte/transition";
     import schemaDoc from "../../../runwisp/internal/config/config.schema.json";
     import { configCopy, fieldOrder, type ValueExample } from "./config-copy";
+    import { clusters, type Cluster, type Prose, type Topic } from "./config-topics";
     // Cropped Web UI screenshots for the couple of keys a picture explains faster
     // than prose. Astro hands these to the island as ImageMetadata (not a bare
     // URL), so read .src when rendering (see imgSrc + SHOTS below).
@@ -250,7 +253,58 @@
     }
 
     // Iteration 1: [tasks.*] only. Append more buildSection(...) calls to grow.
-    const sections: Section[] = [buildSection("tasks", "[tasks.<name>]", "task")];
+    const taskSection: Section = buildSection("tasks", "[tasks.<name>]", "task");
+    const fieldByName = new Map<string, Field>(taskSection.fields.map((f) => [f.name, f]));
+
+    // A block in a cluster is either a schema key or an authored topic. Both
+    // render as collapsible, searchable, deep-linkable rows — topics never live
+    // inside a key's body.
+    type Block = { kind: "key"; field: Field } | { kind: "topic"; topic: Topic };
+    interface RenderCluster {
+        id: string;
+        title: string;
+        lead?: Topic;
+        blocks: Block[];
+    }
+
+    const topicElemId = (t: Topic): string => `tasks.${t.id}`;
+
+    // Resolve the authored clusters against the schema-built fields. Layout is
+    // driven here; types/defaults/enums still come straight from the schema.
+    function resolveClusters(list: Cluster[]): RenderCluster[] {
+        const used = new SvelteSet<string>();
+        const out: RenderCluster[] = list.map((c) => {
+            let lead: Topic | undefined;
+            const blocks: Block[] = [];
+            for (const entry of c.entries) {
+                if (typeof entry === "string") {
+                    const field = fieldByName.get(entry);
+                    if (field) {
+                        blocks.push({ kind: "key", field });
+                        used.add(entry);
+                    }
+                } else if (entry.lead) {
+                    lead = entry;
+                } else {
+                    blocks.push({ kind: "topic", topic: entry });
+                }
+            }
+            return { id: c.id, title: c.title, lead, blocks };
+        });
+        // Safety net: a schema key not placed in any cluster still shows, so a new
+        // key can never silently vanish from the reference.
+        const leftover = taskSection.fields.filter((f) => !used.has(f.name));
+        if (leftover.length > 0) {
+            out.push({
+                id: "other",
+                title: "Other",
+                blocks: leftover.map((field) => ({ kind: "key", field })),
+            });
+        }
+        return out;
+    }
+
+    const renderClusters = resolveClusters(clusters);
 
     let query = $state("");
     const openIds = new SvelteSet<string>();
@@ -266,13 +320,40 @@
         return false;
     }
 
-    const filteredSections = $derived(
-        sections.map((s) => ({ ...s, fields: s.fields.filter(fieldMatches) })),
+    function proseText(node: Prose): string {
+        return "p" in node ? node.p : node.ul.join(" ");
+    }
+
+    function topicMatches(t: Topic): boolean {
+        if (q === "") return true;
+        if (t.title.toLowerCase().includes(q)) return true;
+        if (t.summary.toLowerCase().includes(q)) return true;
+        if (t.body?.some((n) => proseText(n).toLowerCase().includes(q))) return true;
+        return false;
+    }
+
+    const filteredClusters = $derived(
+        renderClusters
+            .map((c) => ({
+                ...c,
+                lead: c.lead && (q === "" || topicMatches(c.lead)) ? c.lead : undefined,
+                blocks: c.blocks.filter((b) =>
+                    b.kind === "key" ? fieldMatches(b.field) : topicMatches(b.topic),
+                ),
+            }))
+            .filter((c) => c.blocks.length > 0 || c.lead),
     );
-    const matchCount = $derived(filteredSections.reduce((n, s) => n + s.fields.length, 0));
+    // The count tracks keys, not topics — "42 keys" stays a truthful key tally.
+    const matchCount = $derived(
+        filteredClusters.reduce((n, c) => n + c.blocks.filter((b) => b.kind === "key").length, 0),
+    );
+
+    function isOpen(id: string): boolean {
+        return q !== "" || openIds.has(id);
+    }
 
     function isExpanded(f: Field): boolean {
-        return q !== "" || openIds.has(f.id);
+        return isOpen(f.id);
     }
 
     function toggle(id: string): void {
@@ -281,7 +362,9 @@
     }
 
     function expandAll(): void {
-        for (const s of sections) for (const f of s.fields) openIds.add(f.id);
+        for (const c of renderClusters)
+            for (const b of c.blocks)
+                openIds.add(b.kind === "key" ? b.field.id : topicElemId(b.topic));
     }
 
     function collapseAll(): void {
@@ -368,22 +451,30 @@
         </div>
     </div>
 
-    {#each filteredSections as section (section.id)}
-        <section class="rw-cfg-section" id={section.id}>
-            <h2 class="rw-cfg-section-header"><code>{section.header}</code></h2>
-            {#if section.description}
-                <p class="rw-cfg-section-desc">{section.description}</p>
-            {/if}
-            {#if section.fields.length === 0}
-                <p class="rw-cfg-empty">No keys match “{query}”.</p>
-            {/if}
-            <div class="rw-cfg-fields">
-                {#each section.fields as field (field.id)}
-                    {@render fieldRow(field)}
-                {/each}
+    <section class="rw-cfg-section" id="tasks">
+        <h2 class="rw-cfg-section-header"><code>{taskSection.header}</code></h2>
+        {#if taskSection.description}
+            <p class="rw-cfg-section-desc">{taskSection.description}</p>
+        {/if}
+        {#if filteredClusters.length === 0}
+            <p class="rw-cfg-empty">Nothing matches “{query}”.</p>
+        {/if}
+        {#each filteredClusters as cluster (cluster.id)}
+            <div class="rw-cfg-cluster" id={cluster.id}>
+                <h3 class="rw-cfg-cluster-title">{cluster.title}</h3>
+                {#if cluster.lead}{@render leadBlock(cluster.lead)}{/if}
+                <div class="rw-cfg-fields">
+                    {#each cluster.blocks as block (block.kind === "key" ? block.field.id : block.topic.id)}
+                        {#if block.kind === "key"}
+                            {@render fieldRow(block.field)}
+                        {:else}
+                            {@render topicRow(block.topic)}
+                        {/if}
+                    {/each}
+                </div>
             </div>
-        </section>
-    {/each}
+        {/each}
+    </section>
 </div>
 
 {#snippet fieldRow(field: Field)}
@@ -501,6 +592,62 @@
     </div>
 {/snippet}
 
+{#snippet inline(text: string)}{#each inlineSegments(text) as seg, i (i)}{#if seg.href}<a
+                class="rw-cfg-link"
+                href={seg.href}>{seg.text}</a
+            >{:else if seg.code}<code class="rw-cfg-inline-code">{seg.text}</code
+            >{:else}{seg.text}{/if}{/each}{/snippet}
+
+{#snippet proseNodes(topic: Topic)}
+    {#if topic.body}
+        {#each topic.body as node, i (i)}
+            {#if "p" in node}
+                <p class="rw-cfg-desc">{@render inline(node.p)}</p>
+            {:else}
+                <ul class="rw-cfg-topic-list">
+                    {#each node.ul as item (item)}<li>{@render inline(item)}</li>{/each}
+                </ul>
+            {/if}
+        {/each}
+    {/if}
+    {#if topic.example}
+        <pre class="rw-cfg-example"><code>{topic.example}</code></pre>
+    {/if}
+{/snippet}
+
+<!-- Always-open intro under a cluster header (topic.lead). -->
+{#snippet leadBlock(topic: Topic)}
+    <div class="rw-cfg-lead" id={topicElemId(topic)}>
+        <p class="rw-cfg-desc"><strong>{topic.title}.</strong> {@render inline(topic.summary)}</p>
+        {@render proseNodes(topic)}
+    </div>
+{/snippet}
+
+<!-- A concept row: same interaction as a key row, visually distinct. -->
+{#snippet topicRow(topic: Topic)}
+    {@const id = topicElemId(topic)}
+    <div class="rw-cfg-field rw-cfg-topic" {id} class:open={isOpen(id)}>
+        <button
+            type="button"
+            class="rw-cfg-field-head"
+            aria-expanded={isOpen(id)}
+            onclick={() => toggle(id)}
+        >
+            <span class="rw-cfg-chevron" aria-hidden="true">▸</span>
+            <span class="rw-cfg-topic-icon" aria-hidden="true">i</span>
+            <span class="rw-cfg-topic-title">{topic.title}</span>
+            <span class="rw-cfg-inline-desc">{plainText(topic.summary)}</span>
+        </button>
+
+        {#if isOpen(id)}
+            <div class="rw-cfg-body" transition:slide={{ duration: 150 }}>
+                <p class="rw-cfg-desc">{@render inline(topic.summary)}</p>
+                {@render proseNodes(topic)}
+            </div>
+        {/if}
+    </div>
+{/snippet}
+
 <style>
     .rw-cfg {
         margin-top: 1.5rem;
@@ -579,6 +726,69 @@
     .rw-cfg-empty {
         color: var(--sl-color-gray-3);
         font-size: var(--sl-text-sm);
+    }
+
+    /* Cluster: a labelled group of keys + topics within the table. */
+    .rw-cfg-cluster {
+        margin-bottom: 1.75rem;
+    }
+    .rw-cfg-cluster-title {
+        margin: 0 0 0.5rem;
+        font-size: var(--sl-text-sm);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--sl-color-gray-2);
+    }
+
+    /* Always-open intro paragraph under a cluster header. */
+    .rw-cfg-lead {
+        margin: 0 0 0.625rem;
+        padding: 0.625rem 0.875rem;
+        background: var(--sl-color-gray-6);
+        border-left: 2px solid var(--sl-color-accent);
+        border-radius: 0 0.4rem 0.4rem 0;
+    }
+    .rw-cfg-lead .rw-cfg-desc:first-child {
+        margin-top: 0;
+    }
+    .rw-cfg-lead .rw-cfg-desc:last-child {
+        margin-bottom: 0;
+    }
+
+    /* Concept row: same box as a key, tinted so it reads as prose not config. */
+    .rw-cfg-topic {
+        background: var(--sl-color-gray-6);
+    }
+    .rw-cfg-topic-icon {
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.1rem;
+        height: 1.1rem;
+        align-self: center;
+        font-size: 0.7rem;
+        font-style: italic;
+        font-weight: 700;
+        font-family: Georgia, serif;
+        color: var(--sl-color-accent-high);
+        border: 1px solid var(--sl-color-accent);
+        border-radius: 50%;
+    }
+    .rw-cfg-topic-title {
+        flex: none;
+        font-weight: 600;
+        color: var(--sl-color-white);
+    }
+    .rw-cfg-topic-list {
+        margin: 0.4rem 0;
+        padding-left: 1.1rem;
+        font-size: var(--sl-text-sm);
+        color: var(--sl-color-gray-1);
+    }
+    .rw-cfg-topic-list li {
+        margin: 0.2rem 0;
     }
 
     .rw-cfg-fields {
