@@ -99,22 +99,23 @@ changed on disk since the daemon started.
 
 Add `--json` to `validate`, `list`, or `status` and you get a single JSON
 document on stdout instead of the human text — handy when an agent or script
-drives RunWisp headless. Every document carries a `schema_version` so you can
-trust its shape across releases (the shape only ever grows — fields are added,
-never removed or repurposed). A failure still exits non-zero **and** prints
-JSON describing what went wrong, so your script never has to grep stderr to
-learn something broke.
+drives RunWisp headless. Every document carries a `schemaVersion` so you can
+trust its shape across releases. Within one schema version the shape only grows:
+fields can be added, but removing or repurposing one requires a new
+`schemaVersion`. A failure still exits non-zero **and** prints JSON describing
+what went wrong, so your script never has to grep stderr to learn something
+broke.
 
 `runwisp validate --json` tells you whether the config is valid and hands back
 counts, the resolved timezone, and errors and warnings as arrays:
 
 ```json
 {
-    "schema_version": 1,
+    "schemaVersion": 1,
     "valid": true,
-    "config_path": "runwisp.toml",
+    "configPath": "runwisp.toml",
     "timezone": "UTC",
-    "timezone_source": "config",
+    "timezoneSource": "config",
     "tasks": 1,
     "services": 1,
     "warnings": [],
@@ -128,7 +129,12 @@ jump straight to the spot instead of parsing the message:
 
 ```json
 {
+    "schemaVersion": 1,
     "valid": false,
+    "configPath": "runwisp.toml",
+    "tasks": 0,
+    "services": 0,
+    "warnings": [],
     "errors": [
         {
             "message": "unknown key \"schedule\" at line 4:1",
@@ -142,20 +148,20 @@ jump straight to the spot instead of parsing the message:
 
 `runwisp list --json` mirrors the config table. Like the human view it's
 offline and reads only `runwisp.toml`, so there's no run history here. Services
-report their `instances` and omit `max_concurrent` — a service's copy count is
+report their `instances` and omit `maxConcurrent` — a service's copy count is
 `instances`, not an overlap cap, so there's no value to report:
 
 ```json
 {
-    "schema_version": 1,
+    "schemaVersion": 1,
     "tasks": [
         {
             "name": "backup",
             "kind": "task",
             "schedule": "0 3 * * *",
-            "max_concurrent": 1,
-            "on_overlap": "queue",
-            "manual_trigger": true,
+            "maxConcurrent": 1,
+            "onOverlap": "queue",
+            "manualTrigger": true,
             "description": "nightly backup"
         }
     ]
@@ -166,7 +172,7 @@ A task carries `"source"` when its definition doesn't live in your own TOML:
 `"staged"` for the machine-owned `runwisp.d/imported.toml` that
 [`import --write`](#migrate-an-existing-setup) manages, `"cron"` for a real
 crontab read via [`include_cron`](/configuration/daemon/#include_cron).
-`"source_file"` names the exact file. Both are derived from where the definition
+`"sourceFile"` names the exact file. Both are derived from where the definition
 was loaded, so they're absent for your own tasks and disappear on their own once
 you move one into your root config.
 
@@ -177,27 +183,40 @@ yourself:
 
 ```json
 {
-    "schema_version": 1,
+    "schemaVersion": 1,
     "healthy": true,
-    "version": "0.12.0",
-    "scheduling_active": true,
-    "config_stale": false,
-    "system": { "version": "0.12.0", "uptime": "1h2m3s", "cpu_cores": 8, "host": "my-vps" },
+    "version": "0.16.4",
+    "port": 9477,
+    "schedulingActive": true,
+    "configStale": false,
+    "resolvedTimezone": "UTC",
+    "timezoneSource": "config",
+    "system": {
+        "version": "0.16.4",
+        "uptime": "1h2m3s",
+        "cpuCores": 8,
+        "host": "my-vps",
+        "os": "linux",
+        "arch": "amd64",
+        "name": "runwisp",
+        "workDir": "/srv"
+    },
     "tasks": [
         {
             "name": "backup",
             "kind": "task",
             "cron": "0 3 * * *",
-            "manual_trigger": false,
-            "next_run_at": "2026-07-16 03:00:00",
-            "last_run": {
+            "manualTrigger": false,
+            "nextRunAt": "2026-07-16T03:00:00Z",
+            "lastRun": {
                 "id": "01JZZBACKUP0000000000000000",
                 "status": "ended",
-                "end_reason": "failed",
-                "exit_code": 1,
-                "start_at": "2026-07-15T03:00:00Z",
-                "end_at": "2026-07-15T03:00:42Z",
-                "duration_ms": 42000,
+                "endReason": "failed",
+                "exitCode": 1,
+                "triggeredBy": "cron",
+                "startedAt": "2026-07-15T03:00:00Z",
+                "endedAt": "2026-07-15T03:00:42Z",
+                "durationMs": 42000,
                 "failed": true,
                 "missed": false
             }
@@ -231,13 +250,16 @@ JSON value — ideal for an agent that needs the result, not the noise:
 
 ```json
 {
-    "schema_version": 1,
+    "schemaVersion": 1,
     "task": "backup",
-    "run_id": "01JZZBACKUP0000000000000000",
+    "runId": "01JZZBACKUP0000000000000000",
     "status": "ended",
-    "end_reason": "succeeded",
-    "exit_code": 0,
-    "duration_ms": 812,
+    "endReason": "succeeded",
+    "exitCode": 0,
+    "triggeredBy": "api",
+    "startedAt": "2026-07-15T03:00:00Z",
+    "endedAt": "2026-07-15T03:00:00.812Z",
+    "durationMs": 812,
     "failed": false
 }
 ```
@@ -249,9 +271,10 @@ silence:
 
 ```json
 {
-    "schema_version": 1,
+    "schemaVersion": 1,
     "task": "backup",
-    "error": "task \"backup\" not found"
+    "error": "task \"backup\" not found",
+    "failed": false
 }
 ```
 
