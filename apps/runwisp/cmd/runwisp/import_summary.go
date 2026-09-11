@@ -73,6 +73,13 @@ var (
 			"RunWisp, or each one runs twice.",
 		},
 	}
+	sourceSystemd = importSource{
+		label: "systemd unit",
+		stillRuns: []string{
+			"systemd still runs these units. Disable each one (`systemctl disable --now",
+			"<unit>`) before starting RunWisp, or each one runs twice.",
+		},
+	}
 )
 
 // importReport is everything the summary renders: the parsed result, what it was

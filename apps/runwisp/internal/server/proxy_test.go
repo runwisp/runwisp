@@ -5,7 +5,6 @@ package server
 
 import (
 	"context"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,67 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// --- normalizeTrustProxyCIDR ---
-
-func TestNormalizeTrustProxyCIDR_BlankInput(t *testing.T) {
-	cidr, err := normalizeTrustProxyCIDR("   ")
-	require.NoError(t, err)
-	assert.Equal(t, "", cidr)
-}
-
-func TestNormalizeTrustProxyCIDR_ExactIPv4AppendsHostMask(t *testing.T) {
-	cidr, err := normalizeTrustProxyCIDR("10.0.0.1")
-	require.NoError(t, err)
-	assert.Equal(t, "10.0.0.1/32", cidr)
-}
-
-func TestNormalizeTrustProxyCIDR_ExactIPv6AppendsHostMask(t *testing.T) {
-	cidr, err := normalizeTrustProxyCIDR("2001:db8::1")
-	require.NoError(t, err)
-	assert.Equal(t, "2001:db8::1/128", cidr)
-}
-
-func TestNormalizeTrustProxyCIDR_ValidCIDRPassesThrough(t *testing.T) {
-	cidr, err := normalizeTrustProxyCIDR("192.168.1.0/24")
-	require.NoError(t, err)
-	assert.Equal(t, "192.168.1.0/24", cidr)
-}
-
-func TestNormalizeTrustProxyCIDR_CatchAllIPv4Rejected(t *testing.T) {
-	_, err := normalizeTrustProxyCIDR("0.0.0.0/0")
-	assert.Error(t, err)
-}
-
-func TestNormalizeTrustProxyCIDR_CatchAllIPv6Rejected(t *testing.T) {
-	_, err := normalizeTrustProxyCIDR("::/0")
-	assert.Error(t, err)
-}
-
-func TestNormalizeTrustProxyCIDR_IPv4MappedCatchAllRejected(t *testing.T) {
-	// ::ffff:0:0/96 has ones=96 (not caught by the ones==0 check), but
-	// net.IPNet.Contains folds an IPv4-mapped network to its last 4 mask
-	// bytes before comparing, so this matches every IPv4 address.
-	_, err := normalizeTrustProxyCIDR("::ffff:0:0/96")
-	require.Error(t, err)
-
-	_, ipNet, parseErr := net.ParseCIDR("::ffff:0:0/96")
-	require.NoError(t, parseErr)
-	assert.True(t, ipNet.Contains(net.ParseIP("8.8.8.8")), "sanity check: this network really does fold to match any IPv4 address")
-}
-
-func TestNormalizeTrustProxyCIDR_IPv4MappedNarrowRangeAllowed(t *testing.T) {
-	// ::ffff:10.0.0.0/104 folds to the equivalent of 10.0.0.0/8 — a
-	// legitimately scoped range, not a catch-all — and must be allowed.
-	cidr, err := normalizeTrustProxyCIDR("::ffff:10.0.0.0/104")
-	require.NoError(t, err)
-	assert.Equal(t, "::ffff:10.0.0.0/104", cidr)
-}
-
-func TestNormalizeTrustProxyCIDR_BadCIDRReturnsError(t *testing.T) {
-	_, err := normalizeTrustProxyCIDR("not-an-ip/24")
-	assert.Error(t, err)
-}
 
 // --- parseTrustedProxies ---
 

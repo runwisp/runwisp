@@ -707,3 +707,35 @@ func TestSystemdStatus_SystemWide_NoLingerRowAndSudoJournalHint(t *testing.T) {
 	assert.False(t, st.Linger, "system-wide has no per-user session to linger")
 	assert.Zero(t, cmd.Remaining(), "checkLinger must not be called for a system-wide unit")
 }
+
+func TestSystemdEnsurePasswordDropIn_WritesOnceThenSkips(t *testing.T) {
+	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
+	opts := defaultInstallOpts(binary)
+	opts.System = true
+
+	// First call writes the drop-in and daemon-reloads (Euid 1000 → sudo).
+	cmd.Expect("sudo", []string{"systemctl", "daemon-reload"}, nil, nil, nil)
+	path, wrote, err := inst.EnsurePasswordDropIn(context.Background(), opts, "hunter2")
+	require.NoError(t, err)
+	assert.True(t, wrote)
+	assert.Equal(t, "/etc/systemd/system/runwisp.service.d/password.conf", path)
+
+	info, err := fs.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(), "secret must be 0600, not world-readable")
+	body, err := fs.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `Environment="RUNWISP_PASSWORD=hunter2"`)
+	assert.Contains(t, string(body), ManagedMarker)
+	assert.Zero(t, cmd.Remaining())
+
+	// Second call finds the drop-in and refuses to rotate — no write, no reload.
+	path2, wrote2, err := inst.EnsurePasswordDropIn(context.Background(), opts, "different")
+	require.NoError(t, err)
+	assert.False(t, wrote2)
+	assert.Equal(t, path, path2)
+	body2, err := fs.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, body, body2, "existing password must be left untouched")
+	assert.Zero(t, cmd.Remaining(), "skip path must not daemon-reload")
+}

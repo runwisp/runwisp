@@ -59,6 +59,19 @@ const (
 	NoteKeysUnsupported
 	NoteKeyUnreadable
 
+	// systemd-level.
+	NoteSystemdNoName
+	NoteSystemdNoExecStart
+	NoteSystemdMultiExec
+	NoteSystemdExecPrefix
+	NoteSystemdType
+	NoteSystemdTemplate
+	NoteSystemdSandbox
+	NoteSystemdSocketActivation
+	NoteSystemdRestartBehavior
+	NoteSystemdOneshot
+	NoteSystemdEnvFileMulti
+
 	// noteKindCount bounds the enum so TestNoteKindsAreTotal can walk it.
 	noteKindCount
 )
@@ -156,6 +169,57 @@ var noteKindInfo = map[NoteKind]noteSeverity{
 	NoteInstances:         {slug: "instances", blocking: false, unsafeLive: false},
 	NoteKeysUnsupported:   {slug: "keys-unsupported", blocking: false, unsafeLive: false},
 	NoteKeyUnreadable:     {slug: "key-unreadable", blocking: false, unsafeLive: false},
+	NoteSystemdNoName: {
+		// A stdin unit has no filename to name it after; the operator must set a
+		// real name before running it, but the mapping itself is intact.
+		slug: "systemd-no-name", blocking: false, unsafeLive: false,
+	},
+	NoteSystemdNoExecStart: {
+		// Nothing to run — the [Service] had no ExecStart RunWisp could import.
+		slug: "systemd-no-execstart", blocking: true, unsafeLive: true,
+	},
+	NoteSystemdMultiExec: {
+		// RunWisp runs one command; the extra ExecStart / ExecStartPre / ExecStop
+		// lines were left as a TODO, so the imported run line isn't the whole unit.
+		slug: "systemd-multi-exec", blocking: true, unsafeLive: true,
+	},
+	NoteSystemdExecPrefix: {
+		// A stripped @ / - / + / ! prefix changed argv[0] or privilege semantics
+		// RunWisp doesn't reproduce; the command still runs, just review it.
+		slug: "systemd-exec-prefix", blocking: false, unsafeLive: false,
+	},
+	NoteSystemdType: {
+		// Type=notify/forking rely on a readiness protocol or a forked main PID
+		// RunWisp doesn't track — it would treat the process as up too early or
+		// supervise the wrong PID.
+		slug: "systemd-type-unsupported", blocking: true, unsafeLive: true,
+	},
+	NoteSystemdTemplate: {
+		// A template unit's %i / %I / %n specifiers weren't filled in, so the run
+		// line isn't the concrete command any instance would run.
+		slug: "systemd-template", blocking: true, unsafeLive: true,
+	},
+	NoteSystemdSandbox: {
+		// Sandboxing directives (ProtectSystem, PrivateTmp, …) were dropped —
+		// RunWisp doesn't confine the process, so it runs with more access than
+		// the unit granted it.
+		slug: "systemd-sandbox-dropped", blocking: true, unsafeLive: true,
+	},
+	NoteSystemdSocketActivation: {
+		// The unit is socket-activated; RunWisp has no socket activation, so the
+		// imported service won't receive the listening socket systemd handed it.
+		slug: "systemd-socket-activation", blocking: true, unsafeLive: true,
+	},
+	NoteSystemdRestartBehavior: {
+		// The unit didn't auto-restart, but RunWisp services always do. A change
+		// worth knowing, not a blocker.
+		slug: "systemd-restart-behavior", blocking: false, unsafeLive: false,
+	},
+	NoteSystemdOneshot: {slug: "systemd-oneshot", blocking: false, unsafeLive: false},
+	NoteSystemdEnvFileMulti: {
+		// RunWisp takes one env_file; the extra EnvironmentFile paths were dropped.
+		slug: "systemd-env-file-multi", blocking: false, unsafeLive: false,
+	},
 }
 
 // Slug is the kind's stable identifier, for tests and structured dumps.

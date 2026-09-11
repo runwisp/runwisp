@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/proxycidr"
 )
 
 // tomlConfig is the over-the-wire config shape used only during TOML decoding.
@@ -633,6 +634,7 @@ type daemonWire struct {
 	TLS                string   `toml:"tls,omitempty"`
 	TLSCert            string   `toml:"tls_cert,omitempty"`
 	TLSKey             string   `toml:"tls_key,omitempty"`
+	TrustedProxies     []string `toml:"trusted_proxies,omitempty"`
 	Include            []string `toml:"include,omitempty"`
 	IncludeCron        []string `toml:"include_cron,omitempty"`
 }
@@ -657,6 +659,10 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 	if err != nil {
 		return Daemon{}, err
 	}
+	trustedProxies, err := parseTrustedProxies(w.TrustedProxies)
+	if err != nil {
+		return Daemon{}, err
+	}
 	return Daemon{
 		AllowCloudDispatch: w.AllowCloudDispatch,
 		ShutdownTimeout:    shutdown,
@@ -666,7 +672,29 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 		TLS:                tlsMode,
 		TLSCert:            strings.TrimSpace(w.TLSCert),
 		TLSKey:             strings.TrimSpace(w.TLSKey),
+		TrustedProxies:     trustedProxies,
 	}, nil
+}
+
+// parseTrustedProxies validates each [daemon] trusted_proxies entry and returns
+// the normalised CIDRs, dropping blanks. Catch-all ranges are rejected here so
+// `runwisp validate` catches them before a restart — the same rule the
+// RUNWISP_TRUSTED_PROXIES env var enforces at daemon start.
+func parseTrustedProxies(entries []string) ([]string, error) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(entries))
+	for _, raw := range entries {
+		cidr, err := proxycidr.Normalize(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid daemon.trusted_proxies: %w", err)
+		}
+		if cidr != "" {
+			out = append(out, cidr)
+		}
+	}
+	return out, nil
 }
 
 // schedulerWire mirrors [scheduler] before parsing.

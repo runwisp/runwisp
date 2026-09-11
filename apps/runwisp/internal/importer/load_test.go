@@ -32,6 +32,8 @@ import (
 var goldensThatMustNotLoad = map[string]string{
 	"testdata/cron/invalid.golden.toml": "an unparseable cron expression becomes a # TODO",
 	"testdata/cron/badtz.golden.toml":   "CRON_TZ names a zone RunWisp cannot load",
+	"testdata/systemd/messy.golden.toml": "references EnvironmentFile paths that exist only on the " +
+		"source host — the operator's own box has them, a sandbox doesn't",
 }
 
 // TestGoldenTOMLLoadBehaviour round-trips every committed golden through

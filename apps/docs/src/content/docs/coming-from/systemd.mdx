@@ -1,0 +1,206 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: From systemd
+description: Convert a systemd .service unit into runwisp.toml with one command — a long-running unit becomes a supervised RunWisp service, a Type=oneshot unit becomes a task, both with live logs and failure alerts.
+head:
+    - tag: title
+      content: "Migrate a systemd service to RunWisp: convert a .service unit in one command"
+---
+
+import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+
+systemd is the right tool for the OS. It's a heavier tool than you want for
+_your_ handful of app services: a units-and-drop-ins config language, logs that
+live in the journal behind `journalctl -u`, and no dashboard to see at a glance
+what's up, what's flapping, and what it last printed. RunWisp runs the same
+processes and gives you per-run history, streamed logs, and an alert when one
+keeps restarting.
+
+You don't have to translate the unit by hand. `runwisp import systemd` reads a
+`.service` file and writes the `runwisp.toml`.
+
+## The one-liner
+
+Point it at a unit, or pipe one in — both are first-class:
+
+```bash
+runwisp import systemd /etc/systemd/system/myapp.service -o runwisp.toml
+cat myapp.service | runwisp import systemd
+runwisp validate
+```
+
+A unit with `Restart=` becomes a RunWisp [service](/concepts/tasks-vs-services/);
+a `Type=oneshot` unit becomes a run-once [task](/configuration/tasks/). Given:
+
+```ini
+[Unit]
+Description=Tempo Ledger API
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/bun run start
+WorkingDirectory=/srv/tempoledger
+User=deploy
+Group=deploy
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Restart=always
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target
+```
+
+you get:
+
+```toml
+[services.tempoledger]
+description = "Tempo Ledger API"
+run = "/usr/local/bin/bun run start"
+working_dir = "/srv/tempoledger"
+graceful_stop = "30s"
+stop_signal = "SIGTERM"
+user = "deploy:deploy"
+
+[services.tempoledger.env]
+NODE_ENV = "production"
+PORT = "3000"
+```
+
+The service name comes from the filename (`tempoledger.service` → `tempoledger`).
+On stderr you get an account of every unit, so you know which ones came across
+untouched and which ones want a look. Save the TOML and run `runwisp validate`.
+
+:::note[Piping vs. a path]
+Piped in, a unit has no filename to name it after, so it lands under a
+placeholder name with a note telling you to rename it. Pass the file path and the
+name comes across for free.
+:::
+
+### If you already have a runwisp.toml
+
+`-o` writes one flat file, which is what you want when you're starting fresh. When
+you already have a `runwisp.toml` of your own, use `--write` instead — the same
+two-tier managed layout the [cron](/coming-from/crontabs/#keeping-your-own-config-separate)
+and [supervisord](/coming-from/supervisord/#if-you-already-have-a-runwisptoml)
+imports use:
+
+```bash
+runwisp import systemd /etc/systemd/system/myapp.service --write --dry-run
+runwisp import systemd /etc/systemd/system/myapp.service --write
+```
+
+`--dry-run` first shows the summary plus the exact files a real run would touch,
+and changes none of them.
+
+## Nothing has retired the unit yet
+
+An import **copies** the unit into `runwisp.toml`. It does not stop or disable
+anything — that's yours to do. So if you start the daemon while systemd is still
+running the same unit, you get two of every process, each with its own supervisor
+determined to restart it: two servers fighting over a port, two workers
+double-consuming a queue. Disable the unit first:
+
+```bash
+sudo systemctl disable --now myapp.service
+```
+
+`disable --now` both stops it now and stops it coming back on the next boot.
+Migrating a few units at a time works fine — just never leave one enabled in both
+places.
+
+Unlike `runwisp takeover` for cron, there's no `takeover systemd`: disabling one
+carefully-scoped cron unit is a safe thing to automate, but reaching into your
+arbitrary service units isn't, so RunWisp leaves the `systemctl disable` to you.
+
+## How the pieces map
+
+A unit's `[Service]` section is where the process lives. Most directives carry
+straight over:
+
+| systemd                      | runwisp.toml          | Notes                                                                                   |
+| ---------------------------- | --------------------- | --------------------------------------------------------------------------------------- |
+| `Restart=always\|on-failure` | `[services.NAME]`     | A long-running, restarted process → a service.                                          |
+| `Type=oneshot`               | `[tasks.NAME]`        | Run-once → a task with `run_on_start` and `restart = "never"`.                          |
+| `ExecStart`                  | `run`                 | A single command; leading `@ - + !` prefixes are stripped with a note.                  |
+| `WorkingDirectory`           | `working_dir`         | Relative paths resolve against the `runwisp.toml` location.                             |
+| `User` (+ `Group`)           | `user`                | Folded to `user:group`. Needs the daemon running as root to switch users.               |
+| `Environment`                | `[services.NAME.env]` | Every `Environment=` line is kept; quoted values are parsed.                            |
+| `EnvironmentFile`            | `env_file`            | One file; a leading `-` (optional) is dropped. Multiple files → the first, with a note. |
+| `TimeoutStopSec`             | `graceful_stop`       | Grace window before `SIGKILL`.                                                          |
+| `KillSignal`                 | `stop_signal`         | `SIGTERM` stays `SIGTERM`.                                                              |
+| `[Unit] Description`         | `description`         |                                                                                         |
+
+The `[Install]` section (`WantedBy`, `RequiredBy`) is how systemd decides when to
+start the unit; RunWisp starts services at boot by default, so it's not needed.
+Use [`autostart = false`](/configuration/services/) to boot a service stopped, and
+[`depends_on`](/configuration/services/) for start ordering.
+
+## What needs a human
+
+The importer flags everything it can't map cleanly with a `# TODO` in the TOML and
+a note on that unit's row — nothing is silently dropped. The ones to know about:
+
+- **More than one command.** RunWisp runs a single `run`. If the unit has multiple
+  `ExecStart=` lines, or any `ExecStartPre` / `ExecStartPost` / `ExecStop`, only
+  the first `ExecStart` is imported and the rest are flagged. Fold them into the
+  `run` script by hand — or, for setup steps, into a separate task.
+- **`Type=notify` / `Type=forking`.** These rely on a readiness protocol or a
+  forked main PID that RunWisp doesn't track — it supervises the process it
+  starts and treats it as up immediately. Confirm that's acceptable, or run the
+  process in the foreground (`Type=simple`-style).
+- **Restart behavior.** RunWisp services are _always-on_ — they restart whenever
+  they exit. A unit with `Restart=no` (or none) still imports as a service, with a
+  note: if it's really meant to run once, make it a `[tasks.*]` entry instead.
+- **Sandboxing.** `ProtectSystem`, `PrivateTmp`, `NoNewPrivileges`,
+  `CapabilityBoundingSet`, and the rest of systemd's confinement directives are
+  dropped — RunWisp doesn't sandbox the process, so it runs with more access than
+  the unit granted. If the confinement matters, keep it at a layer that still
+  applies (a container, a restricted user).
+- **Socket activation.** RunWisp has no socket activation, so a socket-activated
+  service won't receive the listening socket systemd handed it. Have the process
+  open its own port.
+- **Template units.** `%i`, `%I`, `%n` and friends aren't filled in — replace them
+  with concrete values in the `run` line.
+
+## What you get that systemd didn't
+
+- **A dashboard.** See every service, its state, and its recent runs at a glance —
+  instead of `systemctl status` one unit at a time.
+- **Logs you don't have to `journalctl`.** Per-run stdout/stderr, streamed live to
+  the Web UI and TUI and indexed for search.
+- **Restart visibility.** Every restart is recorded with timing, so a flapping
+  service is obvious. Healthy uptime ([`healthy_after`](/configuration/services/))
+  resets the backoff; too many fast failures mark it FATAL.
+- **Failure alerts.** [Notify](/notifications/model/) on failure through Slack,
+  Telegram, email, or a webhook.
+- **One config for jobs and services.** The scheduled half of your box (the
+  `.timer` units and cron jobs) lives in the same `runwisp.toml`. See
+  [coming from cron](/coming-from/cron/) for that half.
+
+---
+
+<CardGrid>
+    <LinkCard
+        title="Tasks vs Services"
+        href="/concepts/tasks-vs-services/"
+        description="Why Restart= becomes a service — and Type=oneshot becomes a task."
+    />
+    <LinkCard
+        title="[services.*] reference"
+        href="/configuration/services/"
+        description="autostart, healthy_after, depends_on, graceful_stop, stop_signal."
+    />
+    <LinkCard
+        title="Autostart & host integration"
+        href="/operations/autostart/"
+        description="Wire the RunWisp daemon itself into systemd with runwisp service install."
+    />
+    <LinkCard
+        title="Migrating from cron"
+        href="/coming-from/cron/"
+        description="For the scheduled half — crontabs and .timer units."
+    />
+</CardGrid>

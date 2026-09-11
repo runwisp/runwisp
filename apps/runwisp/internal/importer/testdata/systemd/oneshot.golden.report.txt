@@ -1,0 +1,2 @@
+changed	oneshot.service	oneshot	@reboot	/usr/local/bin/migrate up
+	systemd-oneshot

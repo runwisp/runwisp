@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Autostart
-description: Wire RunWisp into systemd (Linux, WSL) or launchd (macOS) with one command, so the daemon survives a reboot. Covers the system service, per-user installs with --local, retiring cron, status, uninstall, --purge, --print for Ansible/Nix, secrets-on-systemd patterns, and the WSL Task Scheduler recipe.
+description: Wire RunWisp into systemd (Linux, WSL) or launchd (macOS) with one command, so the daemon survives a reboot. Covers the system service, per-user installs with --local, retiring cron, status, uninstall, --purge, --print for Ansible/Nix, the auto-generated Web UI password, and the WSL Task Scheduler recipe.
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -84,6 +84,9 @@ The system install (the default, Linux and WSL, needs root):
    reading its crontabs. See
    [Take over from cron](/coming-from/cron/).
 4. `systemctl enable --now runwisp.service`.
+5. Generates a [stable Web UI password](#a-stable-web-ui-password) into a
+   `0600` drop-in and prints it once, unless you set `RUNWISP_PASSWORD`
+   yourself or one already exists.
 
 There's no fingerprint in the name: there's exactly one system daemon per
 host, so the unit name mustn't depend on which directory you happened to
@@ -246,43 +249,51 @@ Exit codes are part of the contract:
 | 1    | degraded (installed but disabled / stopped / drift) |
 | 2    | not installed                                       |
 
-## Secrets on systemd
+## A stable Web UI password
 
-`runwisp service install` never copies
-[`RUNWISP_PASSWORD`](/operations/auth/#the-password) into the
-unit — secrets stay off disk. The recommended pattern is a drop-in
-file alongside the managed unit:
+A daemon with no [`RUNWISP_PASSWORD`](/operations/auth/#the-password) set mints
+a new random password every boot — so on a long-lived service you could never
+stay logged in, and every restart would drop your sessions. `runwisp service
+install` fixes that for you, without any manual drop-in editing:
 
-```bash
-sudo mkdir -p /etc/systemd/system/runwisp.service.d
-sudo tee /etc/systemd/system/runwisp.service.d/password.conf > /dev/null <<'EOF'
-[Service]
-Environment=RUNWISP_PASSWORD=…
-EOF
-sudo chmod 600 /etc/systemd/system/runwisp.service.d/password.conf
-sudo systemctl daemon-reload
-sudo systemctl restart runwisp.service
-```
+- When auth is on and you haven't set `RUNWISP_PASSWORD`, the installer
+  **generates** a password, writes it into a `0600` drop-in beside the unit
+  (`/etc/systemd/system/runwisp.service.d/password.conf`), restarts to apply it,
+  and prints it once:
 
-For a `--local` install the same pattern applies under
-`~/.config/systemd/user/`, with `<fingerprint>` replaced by the slug
-`runwisp service status` reports for that instance (e.g. `bright-falcon`):
+    ```
+    Generated a Web UI password and saved it to
+    /etc/systemd/system/runwisp.service.d/password.conf (0600):
 
-```bash
-unit=runwisp-<fingerprint>.service
-mkdir -p ~/.config/systemd/user/$unit.d
-cat > ~/.config/systemd/user/$unit.d/password.conf <<'EOF'
-[Service]
-Environment=RUNWISP_PASSWORD=…
-EOF
-chmod 600 ~/.config/systemd/user/$unit.d/password.conf
-systemctl --user daemon-reload
-systemctl --user restart $unit
-```
+        curl-battery-staple-hinge
 
-Drop-ins live next to the managed unit but outside the unit file
-itself, so `service install` updates and re-installs do not touch
-them.
+    Store it now. It won't be shown again here, and 'runwisp password' won't
+    disclose it — it lives only in that root-owned drop-in. To rotate it, edit or
+    delete the file and restart.
+    ```
+
+    The secret goes in the drop-in, not the unit itself: the unit at
+    `/etc/systemd/system/runwisp.service` is world-readable, the drop-in is not.
+
+- **Re-installing never rotates it.** If the drop-in already exists, or you set
+  `RUNWISP_PASSWORD` yourself, the installer leaves the password alone — a
+  re-install won't log everyone out.
+
+- **`--print` / `--dry-run`** say the drop-in would be generated, and write
+  nothing.
+
+If you'd rather manage the secret yourself — a Docker secret, systemd
+`LoadCredential=`, a vault — set `RUNWISP_PASSWORD` in the environment before you
+install (or in your own drop-in) and RunWisp won't touch it. The drop-in lives
+next to the managed unit but outside the unit file, so `service install` updates
+and re-installs never overwrite it.
+
+:::note[launchd]
+macOS launchd has no drop-in mechanism, so a `--local` install on macOS doesn't
+generate a password — set `RUNWISP_PASSWORD` in the plist's
+`EnvironmentVariables`, or leave it and retrieve the ephemeral one with
+[`runwisp password`](/operations/auth/#retrieving-the-ephemeral-password).
+:::
 
 ## `--print` for Ansible / Nix
 

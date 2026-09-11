@@ -5,7 +5,7 @@ title: CLI reference
 description: Every runwisp subcommand and global flag — starting and attaching to the daemon, validating config, running tasks, reloading and restarting, importing crontabs and supervisord configs, autostart, and the environment variables that configure it all.
 head:
     - tag: title
-      content: "RunWisp CLI: status, validate, import cron/supervisord, reload, run"
+      content: "RunWisp CLI: status, validate, import cron/supervisord/systemd, reload, run"
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -258,9 +258,11 @@ silence:
 ## Apply config edits
 
 ```bash
-runwisp reload    # re-read runwisp.toml and reconcile the live task set
-runwisp restart   # stop and start fresh (restart-only settings, run_on_start, catch-up)
-runwisp stop      # shut the daemon down
+runwisp reload           # re-read runwisp.toml and reconcile the live task set
+runwisp restart          # stop and start fresh (restart-only settings, run_on_start, catch-up)
+runwisp stop             # shut the daemon down
+runwisp restart <name>   # restart one service (starts it if it's stopped)
+runwisp stop <name>      # stop one service, daemon keeps running
 ```
 
 For the everyday edits — adding, changing, or removing tasks and
@@ -283,14 +285,23 @@ sync. They find whichever unit is installed on their own; pass `--local`
 only when a system unit and a per-user unit both exist and you mean the
 per-user one.
 
+Give either one a service name and it acts on that single service instead of
+the whole daemon: `runwisp stop web` stops `web` and leaves everything else
+running, and `runwisp restart web` restarts it — or **starts** it, if it was
+stopped (a service that booted `autostart = false`, or one a `reload` left
+stopped). The daemon isn't touched, so this never delegates to systemd. It's
+the same start/stop you get from the dashboard, the TUI, and the REST API,
+from the command line.
+
 ## Migrate an existing setup
 
 ```bash
 runwisp import cron [FILE]               # convert a crontab to runwisp.toml
 runwisp import supervisord [FILE...]     # convert a supervisord config to runwisp.toml
+runwisp import systemd [UNIT...]         # convert systemd .service units to runwisp.toml
 ```
 
-Both read from a file or from stdin, print the generated TOML to stdout
+Each reads from a file or from stdin, prints the generated TOML to stdout
 so you can review it, and write a `# TODO` comment for anything that
 doesn't map cleanly — nothing is silently dropped. Shared flags:
 
@@ -331,8 +342,15 @@ Turn the old scheduler off for the jobs you imported before `runwisp daemon`.
 [Converting crontabs](/coming-from/crontabs/#retiring-the-crontab)
 has the commands, along with the two-tier layout, the user column in system
 crontabs, and the staging-to-promoted workflow;
-[Migrating from supervisord](/coming-from/supervisord/) covers the
-other source.
+[Migrating from supervisord](/coming-from/supervisord/) and
+[Migrating from systemd](/coming-from/systemd/) cover the other two sources.
+
+`import systemd` takes `.service` unit files: a unit with `Restart=` becomes a
+service, a `Type=oneshot` unit becomes a task, and the service name comes from
+the filename. There's no `takeover systemd` — disabling your own service units
+isn't something to automate — so run `sudo systemctl disable --now <unit>`
+yourself before starting the daemon. The [From systemd](/coming-from/systemd/)
+page has the full field mapping and what needs a human.
 
 ### Take ownership of a task with `promote`
 

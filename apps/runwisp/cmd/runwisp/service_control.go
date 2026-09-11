@@ -5,13 +5,43 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"os"
 	"time"
 
+	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/spf13/cobra"
 )
+
+// controlService dispatches a per-service lifecycle action (stop/restart) to the
+// running daemon over its local socket. It mirrors runExecViaDaemon's
+// reachability and unknown-task handling so `runwisp stop <svc>` fails the same
+// way `runwisp run <task>` does when the daemon is down or the name is wrong.
+// verb is the present-tense action word for error context ("stop"); done is the
+// past-tense word for the success line ("stopped").
+func controlService(cmd *cobra.Command, f Flags, name, verb, done string, action func(*apiclient.Client, string) error) error {
+	if !isDaemonRunning(f) {
+		return fmt.Errorf("no daemon is running on data dir %q — %s", f.DataDir, daemonNotRunningHint)
+	}
+	client := apiclient.NewUnix(localAPISocketPath(f))
+	if err := client.HealthCheck(); err != nil {
+		return fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
+	}
+	if err := action(client, name); err != nil {
+		switch {
+		case apiclient.IsHTTPStatus(err, http.StatusNotFound):
+			return unknownTaskError(name, daemonTaskNames(client))
+		case apiclient.IsHTTPStatus(err, http.StatusBadRequest):
+			return fmt.Errorf("%q is a task, not a service — only services can be stopped or restarted; use 'runwisp run %s' to trigger a task run", name, name)
+		}
+		return fmt.Errorf("%s service %q: %w", verb, name, err)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Service %q %s.\n", name, done)
+	return nil
+}
 
 // shouldDelegateStop reports whether `runwisp stop` should go through the
 // init system instead of signalling the PID directly. Only a managed unit

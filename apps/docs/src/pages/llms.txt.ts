@@ -41,6 +41,7 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
             "coming-from/crontabs",
             "coming-from/cron-mapping",
             "coming-from/supervisord",
+            "coming-from/systemd",
             "coming-from/docker-compose",
         ],
     },

@@ -1,0 +1,1 @@
+clean	full.service	full	service	/usr/local/bin/bun run start

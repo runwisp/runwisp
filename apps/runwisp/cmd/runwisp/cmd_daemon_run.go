@@ -4,6 +4,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -150,7 +151,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		PasswordEphemeral: cfg.PasswordEphemeral,
 		JWTSecret:         cfg.JWTSecret,
 		NoAuth:            cfg.NoAuth,
-		TrustedProxies:    os.Getenv("RUNWISP_TRUSTED_PROXIES"),
+		TrustedProxies:    cmp.Or(os.Getenv("RUNWISP_TRUSTED_PROXIES"), strings.Join(cfg.Config.Daemon.TrustedProxies, ",")),
 		DaemonInfo:        daemonInfo,
 		ConfigStale:       configSnap.Stale,
 		ConfigWarnings:    configWarningsFn(reconciler, cfg.Config),

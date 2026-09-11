@@ -7,9 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Per-service stop and restart from the CLI** — `runwisp stop <service>` stops one service and `runwisp restart <service>` restarts it (starting it if it was stopped), leaving the rest of the daemon running.
+- **`runwisp import systemd` converts systemd `.service` units into `runwisp.toml`** — a unit with `Restart=` becomes a service, a `Type=oneshot` unit a task — flagging anything it can't model (multiple `ExecStart`, `Type=notify`, sandboxing, socket activation) with inline `# TODO`s. See [From systemd](https://docs.runwisp.com/coming-from/systemd/).
+- **`[daemon] trusted_proxies`** sets the reverse-proxy CIDR allowlist in TOML; the `RUNWISP_TRUSTED_PROXIES` env var still works and overrides it. Catch-all ranges (`0.0.0.0/0`, `::/0`) are rejected at config load.
+- **`runwisp service install` now sets a stable Web UI password.** With auth on, it persists a password into a `0600` drop-in beside the unit — a freshly generated one (printed once), or your own `RUNWISP_PASSWORD` if you set it at install time — so a managed daemon no longer mints a new password — logging every session out — on each restart. Re-installing never rotates it.
+
 ### Changed
 
 - **The `agent-guide` subcommand is replaced by a machine-readable docs pointer.** Running `runwisp --help` in a non-interactive shell now appends a link to `https://docs.runwisp.com/llms.txt` for AI coding agents.
+- **`runwisp reload` now warns when it leaves a service stopped whose definition has `autostart = true`**, pointing you at `runwisp restart <service>` — a reload reconciles definitions but never starts a stopped service.
 - **`treat_missed_as_failure` and `exit_codes` are replaced by one `failures` key** on `[defaults]`, `[tasks.*]`, and `[services.*]`. List the outcomes that count as a failure — end-reason names (`failed`, `timeout`, `crashed`, `missed`, `stopped`, …) and exit codes or inclusive ranges (`"42"`, `"1-23"`) — to drive the failed stat, UI badges, the runs-browser **Failed** filter, and `notify_on_failure`. A bare list replaces the inherited set; prefix every token with `+`/`-` (`["-missed"]`, `["+stopped"]`) to add or drop a single outcome without restating the default. Exit `0` is always success and any non-zero exit is `failed`; there's no success-code allowlist anymore. See [What counts as a failure](https://docs.runwisp.com/configuration/tasks/#what-counts-as-a-failure).
 - **Run history now distinguishes `ui` (Web UI / TUI "Run Now") and `cli` (`runwisp run`) from a raw `api` REST call**, instead of tagging all three the same way.
 

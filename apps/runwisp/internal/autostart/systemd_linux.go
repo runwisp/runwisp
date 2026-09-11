@@ -467,6 +467,48 @@ func (s *systemdInstaller) Restart(ctx context.Context, opts InstallOptions) err
 	return s.runSystemctlVerb(ctx, opts.System, "restart")
 }
 
+// passwordDropInName is the drop-in file `service install` writes a generated
+// RUNWISP_PASSWORD into. A separate file (not the unit) so the secret gets 0600
+// while the unit stays world-readable, and so a re-install rewriting the unit
+// leaves it alone.
+const passwordDropInName = "password.conf"
+
+// passwordDropInPath is where the RUNWISP_PASSWORD drop-in lives: the standard
+// systemd `<unit>.d/` override directory.
+func (s *systemdInstaller) passwordDropInPath(systemWide bool) string {
+	return filepath.Join(s.unitPath(systemWide)+".d", passwordDropInName)
+}
+
+// SupportsPasswordDropIn implements Installer: systemd has a `<unit>.d/`
+// override directory to drop the password into.
+func (s *systemdInstaller) SupportsPasswordDropIn() bool {
+	return true
+}
+
+// EnsurePasswordDropIn implements Installer.
+func (s *systemdInstaller) EnsurePasswordDropIn(ctx context.Context, opts InstallOptions, password string) (string, bool, error) {
+	if err := s.requireFingerprint(opts.System); err != nil {
+		return "", false, err
+	}
+	path := s.passwordDropInPath(opts.System)
+	if _, err := s.deps.FS.Stat(path); err == nil {
+		return path, false, nil // already set — never rotate an existing password
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", false, err
+	}
+
+	content := fmt.Sprintf("%s\n[Service]\nEnvironment=\"RUNWISP_PASSWORD=%s\"\n", ManagedMarker, password)
+	if err := s.deps.FS.WriteFile(path, []byte(content), 0o600); err != nil {
+		return "", false, fmt.Errorf("write password drop-in %s: %w", path, err)
+	}
+	// systemd caches unit config; the running daemon only sees the drop-in after
+	// a daemon-reload followed by the caller's Restart.
+	if _, stderr, err := s.runSystemctl(ctx, opts.System, systemctlDaemonReload); err != nil {
+		return "", false, fmt.Errorf("daemon-reload after writing password drop-in: %w: %s", err, strings.TrimSpace(string(stderr)))
+	}
+	return path, true, nil
+}
+
 func (s *systemdInstaller) runSystemctlVerb(ctx context.Context, systemWide bool, verb string) error {
 	if err := s.requireFingerprint(systemWide); err != nil {
 		return err

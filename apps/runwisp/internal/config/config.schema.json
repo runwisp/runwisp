@@ -131,6 +131,11 @@
         "tls": { "type": "string", "default": "off", "description": "TLS mode for the HTTP server." },
         "tls_cert": { "type": "string", "description": "Path to the TLS certificate." },
         "tls_key": { "type": "string", "description": "Path to the TLS private key." },
+        "trusted_proxies": {
+          "type": "array",
+          "description": "CIDR allowlist of reverse proxies whose X-Forwarded-For is trusted. Catch-all ranges (0.0.0.0/0, ::/0) are rejected. RUNWISP_TRUSTED_PROXIES overrides this at daemon start.",
+          "items": { "type": "string" }
+        },
         "include": {
           "type": "array",
           "description": "Glob(s) of extra TOML files merged at load. Root config only, no nesting.",

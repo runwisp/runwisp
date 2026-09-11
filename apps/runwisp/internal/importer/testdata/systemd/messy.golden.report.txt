@@ -1,0 +1,10 @@
+blocked	messy.service	messy	service	/usr/bin/worker --config %i
+	systemd-template
+	systemd-multi-exec
+	relative-directory
+	systemd-env-file-multi
+	systemd-type-unsupported
+	systemd-restart-behavior
+	systemd-sandbox-dropped
+	systemd-socket-activation
+	keys-unsupported

@@ -1,0 +1,19 @@
+[Unit]
+Description=Tempo Ledger API
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/bun run start
+WorkingDirectory=/srv/tempoledger
+User=deploy
+Group=deploy
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

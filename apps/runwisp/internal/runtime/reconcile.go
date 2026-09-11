@@ -101,13 +101,13 @@ func (r *Reconciler) Reconcile() (model.ReloadResult, error) {
 	newTasks := tasksByName(newCfg)
 	diff := config.DiffTasks(oldTasks, newTasks)
 
-	r.apply(diff, oldTasks, newTasks)
+	applyWarnings := r.apply(diff, oldTasks, newTasks)
 
 	r.baseline = newCfg
 	r.snapshot.Refresh(r.configPath, newCfg, r.now())
 
 	result := diff.ToResult()
-	result.Warnings = config.Warnings(newCfg)
+	result.Warnings = append(config.Warnings(newCfg), applyWarnings...)
 	slog.Info("Configuration reloaded",
 		"added", len(result.Added), "removed", len(result.Removed), "changed", len(result.Changed))
 	return result, nil
@@ -191,16 +191,20 @@ func (r *Reconciler) Warnings() []string {
 
 // apply mutates the live set in an order that never leaves a half-state:
 // removals first, then additions, then in-place changes, then the provenance-only
-// restamps.
-func (r *Reconciler) apply(diff config.Diff, oldTasks, newTasks map[string]*model.Task) {
+// restamps. It returns any non-fatal notices the changes produced (chiefly an
+// autostart flip that reload deliberately doesn't act on) for the reload result.
+func (r *Reconciler) apply(diff config.Diff, oldTasks, newTasks map[string]*model.Task) []string {
 	for _, name := range diff.Removed {
 		r.applyRemoved(name, oldTasks[name])
 	}
 	for _, name := range diff.Added {
 		r.applyAdded(newTasks[name])
 	}
+	var warnings []string
 	for _, change := range diff.Changed {
-		r.applyChanged(change, oldTasks[change.Name], newTasks[change.Name])
+		if w := r.applyChanged(change, oldTasks[change.Name], newTasks[change.Name]); w != "" {
+			warnings = append(warnings, w)
+		}
 	}
 	for _, name := range diff.Restamped {
 		r.applyRestamped(newTasks[name])
@@ -213,6 +217,7 @@ func (r *Reconciler) apply(diff config.Diff, oldTasks, newTasks map[string]*mode
 	if r.scheduler != nil && (len(diff.Added) > 0 || len(diff.Removed) > 0 || len(diff.Changed) > 0) {
 		r.scheduler.RecomputeJitter(newTasks)
 	}
+	return warnings
 }
 
 // applyRemoved unschedules, stops, and forgets a task. Cron tasks keep their
@@ -262,7 +267,10 @@ func (r *Reconciler) applyAdded(task *model.Task) {
 // pointer they captured; new firings use the new one. A schedule/kind change
 // reschedules the cron entry; a changed service is recycled so the new command,
 // env, or instance count takes effect.
-func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *model.Task) {
+// applyChanged returns a non-fatal notice for the reload result when the change
+// deliberately does nothing an operator might have expected — currently only an
+// autostart false→true flip on a service that stays stopped.
+func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *model.Task) string {
 	r.registry.Set(newTask)
 
 	// A task that stopped being a service: cancel its old instances before the
@@ -285,6 +293,7 @@ func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *mo
 			// A genuine service-definition change: bounce the running instances so
 			// the new command, env, or instance count takes effect.
 			r.recycleChangedService(newTask)
+			return r.autostartFlipWarning(oldTask, newTask)
 		} else {
 			// A task→service kind flip: the run in flight under the old non-service
 			// definition must finish under it — reload never cancels an in-flight
@@ -296,6 +305,24 @@ func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *mo
 			r.startChangedService(newTask)
 		}
 	}
+	return ""
+}
+
+// autostartFlipWarning surfaces the one reload case that silently does nothing an
+// operator plausibly expected: a service whose definition just flipped
+// autostart=false→true but that stays stopped, because reload is not a restart.
+// It queries the live supervisor rather than inferring from the definitions, so a
+// service the operator started by hand (now running) never triggers the nudge.
+func (r *Reconciler) autostartFlipWarning(oldTask, newTask *model.Task) string {
+	if oldTask.Autostart || !newTask.Autostart {
+		return ""
+	}
+	snap, ok := r.manager.ServiceSnapshot(newTask.Name)
+	if !ok || snap.State != model.ServiceStopped {
+		return ""
+	}
+	return fmt.Sprintf("service %q has autostart=true but is stopped — reload never starts a stopped service; run 'runwisp restart %s' to start it now",
+		newTask.Name, newTask.Name)
 }
 
 // applyRestamped swaps in a definition that differs only in derived provenance —
@@ -376,7 +403,7 @@ func tasksByName(cfg *config.Config) map[string]*model.Task {
 // running process can't safely swap. These require a full `runwisp restart`.
 // Server bind host/port are CLI flags, not config, so they can't change here.
 func checkNonReloadable(old, updated *config.Config) error {
-	if old.Daemon != updated.Daemon {
+	if !reflect.DeepEqual(old.Daemon, updated.Daemon) {
 		return nonReloadableErr("[daemon]")
 	}
 	if old.Scheduler.Timezone != updated.Scheduler.Timezone {

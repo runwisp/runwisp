@@ -1,0 +1,19 @@
+[Unit]
+Description=Worker
+
+[Service]
+Type=notify
+ExecStartPre=/usr/bin/worker-setup
+ExecStart=/usr/bin/worker --config %i
+ExecStart=/usr/bin/worker --secondary
+ExecStop=/usr/bin/worker-cleanup
+WorkingDirectory=srv/worker
+User=app
+EnvironmentFile=-/etc/app/env.defaults
+EnvironmentFile=/etc/app/env
+ProtectSystem=strict
+PrivateTmp=true
+Sockets=worker.socket
+KillSignal=SIGKILL
+TimeoutStopSec=1min
+SomethingWeird=yes

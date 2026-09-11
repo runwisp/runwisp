@@ -40,7 +40,7 @@ Already running something? You don't have to rewrite it to get observability:
 
 - **Coming from crond**: `sudo runwisp takeover` finds your existing crontabs, imports every job, and takes over from cron in one command. Nothing to rewrite. See [Take over from cron](https://docs.runwisp.com/coming-from/cron/).
 - **Running Docker Compose**: point `[compose.myapp]` at your `docker-compose.yml` and every service gains logs, restart policies, notifications, and trigger/stop, without touching the compose file. See [`[compose.*]`](https://docs.runwisp.com/configuration/compose/).
-- **Replacing supervisord (or a crontab)**: `runwisp import supervisord` (or `import cron`) turns an existing config into an annotated `runwisp.toml`, with inline `# TODO`s for anything that needs a human. See [Converting configs](https://docs.runwisp.com/coming-from/crontabs/).
+- **Replacing supervisord, systemd, or a crontab**: `runwisp import supervisord` / `import systemd` / `import cron` turns an existing config into an annotated `runwisp.toml`, with inline `# TODO`s for anything that needs a human. See [Converting configs](https://docs.runwisp.com/coming-from/crontabs/).
 
 ### How RunWisp compares to crond, systemd timers & supervisord
 

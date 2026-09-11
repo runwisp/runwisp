@@ -21,13 +21,20 @@ var restartOpts struct {
 }
 
 var restartCmd = &cobra.Command{
-	Use:   "restart",
-	Short: "Restart the background daemon (applies runwisp.toml changes)",
-	Long: `Restart the RunWisp daemon that owns this data dir.
+	Use:   "restart [service]",
+	Short: "Restart the background daemon, or a single service",
+	Long: `Restart the RunWisp daemon that owns this data dir — or, given a service
+name, restart just that service without touching the daemon.
 
-A running daemon keeps the task set it loaded at boot — editing
-runwisp.toml has no effect until a restart. This command is how you
-apply config changes.
+With a service name ('runwisp restart web'), the daemon bounces every
+instance of that service, and starts one that was stopped (including a
+service that booted with autostart=false, or one you flipped to
+autostart=true and reloaded). Only services can be restarted this way; a
+scheduled task is triggered with 'runwisp run', not restarted.
+
+With no argument, the whole daemon restarts. A running daemon keeps the
+task set it loaded at boot — editing runwisp.toml has no effect until a
+restart. This command is how you apply config changes.
 
 When the daemon is managed by systemd or launchd (wired up via
 'runwisp service install'), the restart is delegated to the service
@@ -36,9 +43,9 @@ fresh one is spawned in the background.
 
 The delegation finds whichever unit is installed on its own. Pass --local to
 pin the per-user one when both a system and a user unit are present.`,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, _ []string) error {
-		return runRestart(cmd, flags)
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runRestart(cmd, args, flags)
 	},
 }
 
@@ -46,7 +53,11 @@ func init() {
 	restartCmd.Flags().BoolVar(&restartOpts.Local, "local", false, localFlagUsage)
 }
 
-func runRestart(cmd *cobra.Command, f Flags) error {
+func runRestart(cmd *cobra.Command, args []string, f Flags) error {
+	if len(args) == 1 {
+		return controlService(cmd, f, args[0], "restart", "restarted", (*apiclient.Client).RestartService)
+	}
+
 	out := cmd.OutOrStdout()
 
 	installer, opts, st, ok := serviceState(cmd, f, restartOpts.Local)

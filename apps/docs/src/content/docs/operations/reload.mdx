@@ -140,6 +140,18 @@ A couple of boot-only behaviors deliberately **don't** fire on reload:
   finishes, and only the next firing uses the new definition. Removed services
   are the exception: their instances are stopped, since the whole point is to
   take them down.
+- **Flipping a service to `autostart = true` does not start it.** A stopped
+  service stays stopped across a reload — reload reconciles definitions, it
+  doesn't decide a stopped process should now be running. When a reload leaves a
+  service stopped whose new definition says `autostart = true`, it says so on a
+  `!` line:
+
+    ```
+    ! service "web" has autostart=true but is stopped — reload never starts a
+      stopped service; run 'runwisp restart web' to start it now
+    ```
+
+    `runwisp restart web` starts it (see [per-service control](/reference/cli/#apply-config-edits)).
 
 If you want the full boot path — `run_on_start`, missed-run catch-up, a fresh
 read of the restart-only settings — use `runwisp restart` instead.

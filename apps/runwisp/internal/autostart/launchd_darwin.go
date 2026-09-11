@@ -276,6 +276,20 @@ func (l *launchdInstaller) Restart(ctx context.Context, _ InstallOptions) error 
 	return nil
 }
 
+// EnsurePasswordDropIn implements Installer. launchd has no unit drop-in
+// mechanism, and rewriting the plist's EnvironmentVariables to embed a secret is
+// out of scope, so this is a no-op: the caller tells the operator to set
+// RUNWISP_PASSWORD themselves.
+func (l *launchdInstaller) EnsurePasswordDropIn(_ context.Context, _ InstallOptions, _ string) (string, bool, error) {
+	return "", false, nil
+}
+
+// SupportsPasswordDropIn implements Installer: launchd has no drop-in
+// mechanism, see EnsurePasswordDropIn.
+func (l *launchdInstaller) SupportsPasswordDropIn() bool {
+	return false
+}
+
 func (l *launchdInstaller) Status(ctx context.Context, opts InstallOptions) (Status, error) {
 	plistPath := l.plistPath()
 	st := Status{

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/mattn/go-isatty"
 	"github.com/runwisp/runwisp/internal/autostart"
@@ -96,8 +97,32 @@ followed relative to each file):
 	},
 }
 
+var importSystemdCmd = &cobra.Command{
+	Use:   "systemd [UNIT...]",
+	Short: "Convert systemd service units into runwisp.toml",
+	Long: `Convert one or more systemd .service units into runwisp.toml. A unit with
+Restart= becomes a RunWisp service; a Type=oneshot unit becomes a run-once task.
+
+Pass unit files, or pipe one in:
+
+  runwisp import systemd /etc/systemd/system/myapp.service
+  cat myapp.service | runwisp import systemd
+  runwisp import systemd /etc/systemd/system/*.service -o runwisp.toml
+
+Anything RunWisp can't model — sandboxing, socket activation, Type=notify,
+multiple ExecStart lines — becomes an inline # TODO and a note, so nothing is
+silently dropped. It does not disable the units: run 'systemctl disable --now
+<unit>' yourself, or each job runs twice.`,
+	Args:          cobra.ArbitraryArgs,
+	SilenceErrors: true,
+	SilenceUsage:  true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runImportSystemd(cmd.OutOrStdout(), cmd.ErrOrStderr(), os.Stdin, args, flags, importFlags)
+	},
+}
+
 func init() {
-	for _, c := range []*cobra.Command{importCronCmd, importSupervisordCmd} {
+	for _, c := range []*cobra.Command{importCronCmd, importSupervisordCmd, importSystemdCmd} {
 		c.Flags().StringVarP(&importFlags.output, "output", "o", "", "write the generated TOML to this file instead of stdout")
 		c.Flags().BoolVar(&importFlags.write, "write", false, "write to the --config path (default runwisp.toml)")
 		c.Flags().BoolVar(&importFlags.force, "force", false, "overwrite the target file without prompting")
@@ -108,6 +133,7 @@ func init() {
 
 	importCmd.AddCommand(importCronCmd)
 	importCmd.AddCommand(importSupervisordCmd)
+	importCmd.AddCommand(importSystemdCmd)
 }
 
 func runImportCron(stdout, stderr io.Writer, stdin *os.File, source string, cronOpts importer.CronOptions, f Flags, opts importOpts) error {
@@ -149,10 +175,8 @@ func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []st
 	case len(sources) == 1 && sources[0] == "-":
 		res, err = importer.ParseSupervisordReader(stdin, svOpts)
 	default:
-		for _, s := range sources {
-			if s == "-" {
-				return &userFacingError{title: "can't mix - (stdin) with file paths for supervisord import"}
-			}
+		if slices.Contains(sources, "-") {
+			return &userFacingError{title: "can't mix - (stdin) with file paths for supervisord import"}
 		}
 		res, err = importer.ParseSupervisordFiles(sources, svOpts)
 	}
@@ -160,6 +184,36 @@ func runImportSupervisord(stdout, stderr io.Writer, stdin *os.File, sources []st
 		return &userFacingError{title: "failed to read supervisord config", details: err.Error()}
 	}
 	return emitImport(stdout, stderr, stdin, res, sourceSupervisord, f, opts)
+}
+
+func runImportSystemd(stdout, stderr io.Writer, stdin *os.File, sources []string, f Flags, opts importOpts) error {
+	if err := checkImportFlags(opts); err != nil {
+		return err
+	}
+	sdOpts := importer.SystemdOptions{Existing: ownedEntries(f, opts)}
+	var res *importer.Result
+	var err error
+	switch {
+	case len(sources) == 0:
+		if isatty.IsTerminal(stdin.Fd()) {
+			return &userFacingError{
+				title:   "no systemd unit given",
+				details: "Pass a .service file, or pipe one in — e.g. `cat myapp.service | runwisp import systemd`.",
+			}
+		}
+		res, err = importer.ParseSystemdReader(stdin, sdOpts)
+	case len(sources) == 1 && sources[0] == "-":
+		res, err = importer.ParseSystemdReader(stdin, sdOpts)
+	default:
+		if slices.Contains(sources, "-") {
+			return &userFacingError{title: "can't mix - (stdin) with file paths for systemd import"}
+		}
+		res, err = importer.ParseSystemdFiles(sources, sdOpts)
+	}
+	if err != nil {
+		return &userFacingError{title: "failed to read systemd unit", details: err.Error()}
+	}
+	return emitImport(stdout, stderr, stdin, res, sourceSystemd, f, opts)
 }
 
 // checkImportFlags rejects a combination that can't mean anything, before the

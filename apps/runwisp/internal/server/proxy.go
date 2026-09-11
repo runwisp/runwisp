@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/runwisp/runwisp/internal/proxycidr"
 	"github.com/sebest/xff"
 )
 
@@ -22,10 +23,10 @@ func parseTrustedProxies(env string) (*xff.Options, error) {
 		return nil, nil
 	}
 	var subnets []string
-	for _, raw := range strings.Split(env, ",") {
-		cidr, err := normalizeTrustProxyCIDR(raw)
+	for raw := range strings.SplitSeq(env, ",") {
+		cidr, err := proxycidr.Normalize(raw)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("RUNWISP_TRUSTED_PROXIES: %w", err)
 		}
 		if cidr != "" {
 			subnets = append(subnets, cidr)
@@ -39,41 +40,6 @@ func parseTrustedProxies(env string) (*xff.Options, error) {
 	return &xff.Options{
 		AllowedSubnets: subnets,
 	}, nil
-}
-
-// normalizeTrustProxyCIDR validates and normalises one raw entry from
-// RUNWISP_TRUSTED_PROXIES. Returns ("", nil) for blank entries, an error for
-// invalid or catch-all CIDRs, or the normalised CIDR string otherwise.
-func normalizeTrustProxyCIDR(raw string) (string, error) {
-	cidr := strings.TrimSpace(raw)
-	if cidr == "" {
-		return "", nil
-	}
-	if !strings.Contains(cidr, "/") {
-		// Append a host mask if an exact IP was given rather than a CIDR.
-		if strings.Contains(cidr, ":") {
-			cidr += "/128"
-		} else {
-			cidr += "/32"
-		}
-	}
-	_, ipNet, err := net.ParseCIDR(cidr)
-	if err != nil {
-		return "", fmt.Errorf("RUNWISP_TRUSTED_PROXIES: invalid CIDR %q: %w", cidr, err)
-	}
-	ones, bits := ipNet.Mask.Size()
-	if ones == 0 && bits != 0 {
-		return "", fmt.Errorf("RUNWISP_TRUSTED_PROXIES rejects %q: trusting the entire address space defeats spoofing protection", cidr)
-	}
-	// net.IPNet.Contains folds an IPv4-mapped IPv6 network (e.g. ::ffff:0:0/96)
-	// down to its last 4 mask bytes before comparing, so a /96-or-shorter prefix
-	// in that form covers every IPv4 address despite ones != 0 above.
-	if bits == 8*net.IPv6len {
-		if ipNet.IP.To4() != nil && ones <= 96 {
-			return "", fmt.Errorf("RUNWISP_TRUSTED_PROXIES rejects %q: trusting the entire address space defeats spoofing protection", cidr)
-		}
-	}
-	return cidr, nil
 }
 
 // isProxiedRequest reports whether the request looks relayed rather than

@@ -1,0 +1,11 @@
+[Unit]
+Description=Database migration
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/migrate up
+User=deploy
+Environment=DATABASE_URL=postgres://localhost/app
+
+[Install]
+WantedBy=multi-user.target

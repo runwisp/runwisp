@@ -254,6 +254,9 @@ type Daemon struct {
 	TLS                string
 	TLSCert            string
 	TLSKey             string
+	// TrustedProxies is the CIDR allowlist for X-Forwarded-For, mirroring the
+	// RUNWISP_TRUSTED_PROXIES env var (which overrides this at daemon start).
+	TrustedProxies []string
 }
 
 // Defaults provides fallback values applied to every task.

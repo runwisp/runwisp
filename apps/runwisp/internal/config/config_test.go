@@ -84,6 +84,34 @@ run = "echo hello"
 		assert.Equal(t, TimezoneSourceConfig, cfg.Scheduler.Source)
 	})
 
+	t.Run("trusted_proxies normalised and bare IP gains host mask", func(t *testing.T) {
+		path := writeTOML(t, `
+[daemon]
+trusted_proxies = ["10.0.0.0/8", "127.0.0.1"]
+
+[tasks.t]
+cron = "* * * * *"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"10.0.0.0/8", "127.0.0.1/32"}, cfg.Daemon.TrustedProxies)
+	})
+
+	t.Run("trusted_proxies catch-all rejected at load", func(t *testing.T) {
+		path := writeTOML(t, `
+[daemon]
+trusted_proxies = ["0.0.0.0/0"]
+
+[tasks.t]
+cron = "* * * * *"
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "daemon.trusted_proxies")
+	})
+
 	t.Run("colon in quoted task name", func(t *testing.T) {
 		path := writeTOML(t, `
 [tasks."db:backup"]

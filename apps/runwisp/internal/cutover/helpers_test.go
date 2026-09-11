@@ -79,6 +79,12 @@ func (f *fakeInstaller) Status(context.Context, autostart.InstallOptions) (autos
 func (f *fakeInstaller) Stop(context.Context, autostart.InstallOptions) error    { return nil }
 func (f *fakeInstaller) Restart(context.Context, autostart.InstallOptions) error { return nil }
 
+func (f *fakeInstaller) EnsurePasswordDropIn(context.Context, autostart.InstallOptions, string) (string, bool, error) {
+	return "", false, nil
+}
+
+func (f *fakeInstaller) SupportsPasswordDropIn() bool { return true }
+
 func (f *fakeInstaller) CronStatus(context.Context) (string, bool, error) {
 	return f.cronUnit, f.cronActive, f.cronErr
 }

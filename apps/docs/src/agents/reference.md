@@ -41,6 +41,8 @@ shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flig
 external_url:         string      — public Web UI base for notification deep-links; absolute http(s) w/ host
 metrics_enabled:      bool =false — master switch for /metrics
 metrics_listen:       host:port   — dedicated metrics listener; REQUIRES metrics_enabled=true
+trusted_proxies:      []string    — CIDR allowlist of reverse proxies whose X-Forwarded-For is trusted; catch-all
+                                    (0.0.0.0/0, ::/0) rejected at load; RUNWISP_TRUSTED_PROXIES env overrides
 include:              []string    — glob(s) of extra TOML files merged at load; root config only, no nesting
 include_cron:         []string    — glob(s) of REAL crontabs read as live task defs at every load/reload; root
                                     config only. Format is PATH-DERIVED, never flagged: /etc/crontab + **/cron.d/*
@@ -284,9 +286,15 @@ runwisp reload               — re-read runwisp.toml + reconcile live (== SIGHU
                                replace boot's. A crontab job include_cron skipped is NOT a task
                                change — it only appears here.
 runwisp restart              — stop + fresh start (applies restart-only settings, re-fires run_on_start/catch-up); delegates to systemd/launchd if service-installed; --local to pin the per-user unit
+runwisp restart <service>    — restart ONE service via the local socket (starts it if stopped); daemon untouched, never delegates to systemd. Unknown name → suggestions; a task name → error (use `run`)
 runwisp stop                 — shut the daemon down (delegates to systemd/launchd if service-installed); --local to pin the per-user unit
+runwisp stop <service>       — stop ONE service via the local socket; daemon keeps running, never delegates to systemd
 runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output --write --force --dry-run --quiet --system
 runwisp import supervisord [FILE...] — convert supervisord config to runwisp.toml; -o/--output --write --force --dry-run --quiet
+runwisp import systemd [UNIT...] — convert systemd .service units to runwisp.toml; -o/--output --write --force --dry-run --quiet
+                             — Restart= → [services.*], Type=oneshot → [tasks.*]; name from filename. Reject-as-note:
+                               multiple ExecStart/ExecStartPre/Post, Type=notify|forking, sandboxing, socket activation,
+                               %i templates. NO `takeover systemd` (disable units yourself: systemctl disable --now)
                              — -o writes one standalone file; --write installs the two-tier layout
                                (tasks → machine-owned runwisp.d/imported.toml, root runwisp.toml's
                                [daemon].include wired to load it; both written atomically or rolled back).
@@ -357,6 +365,10 @@ runwisp service install      — install autostart; -y --print --dry-run --force
                              — unit lifecycle ONLY: it never touches cron. When a `takeover` would do something,
                                a successful install prints a note naming the live cron unit, its job count, and
                                `sudo runwisp takeover`. There is no --take-over-cron flag.
+                             — Web UI password: when auth is on and RUNWISP_PASSWORD is unset, generates one into a
+                               0600 `<unit>.d/password.conf` drop-in (NOT the world-readable unit), restarts, prints
+                               it once. Idempotent: an existing drop-in or a set RUNWISP_PASSWORD is left untouched
+                               (re-install never rotates). launchd: no drop-in, skipped. Daemon is untouched.
 runwisp takeover             — retire cron in one step; --dry-run --force -y --allow-skipped-cron-jobs --binary
                              — works from NOTHING: no runwisp.toml needed. Computes one plan (internal/cutover),
                                prints it, asks once, executes. Steps: write runwisp.toml reading the crontabs it

@@ -253,6 +253,26 @@ type Installer interface {
 	// (systemctl --user restart / launchctl kickstart -k).
 	Restart(ctx context.Context, opts InstallOptions) error
 
+	// EnsurePasswordDropIn writes a 0600 drop-in next to the managed unit
+	// that sets RUNWISP_PASSWORD, so a service install has a stable Web UI
+	// password instead of one the daemon regenerates every boot. The secret
+	// goes in a drop-in, never the world-readable unit file. It is idempotent
+	// and never rotates an existing secret: if a password drop-in is already
+	// present it is left untouched and (path, false, nil) is returned; only a
+	// fresh write returns wrote=true. On a fresh write it reloads the unit
+	// definition (systemd daemon-reload) so a following Restart picks the
+	// password up. A platform with no drop-in mechanism (launchd) returns
+	// ("", false, nil) — the caller then tells the operator to set
+	// RUNWISP_PASSWORD themselves.
+	EnsurePasswordDropIn(ctx context.Context, opts InstallOptions, password string) (path string, wrote bool, err error)
+
+	// SupportsPasswordDropIn reports whether EnsurePasswordDropIn can actually
+	// write a drop-in on this OS. systemd can; launchd and an unsupported OS
+	// cannot and fall back to manualPasswordHint. Lets a caller (the --dry-run
+	// preview) describe what the real install will do instead of assuming
+	// every OS behaves like systemd.
+	SupportsPasswordDropIn() bool
+
 	// CronStatus reports the host's system cron unit and whether it is
 	// currently running. An empty unit name means there is nothing to take
 	// over — no cron unit on this host, or an OS where masking cron is not

@@ -102,6 +102,17 @@ To rotate, change `RUNWISP_PASSWORD` (or unset it to get a fresh
 random one) and restart. Everyone logged in over the network is
 out.
 
+:::tip[Installing as a service does this for you]
+A fresh daemon with no `RUNWISP_PASSWORD` mints a new random password
+every boot — fine for a throwaway dev daemon, but it means you can never
+stay logged in to a long-lived one. So
+[`runwisp service install`](/operations/autostart/#a-stable-web-ui-password)
+generates a stable password for you: it writes one into a `0600` drop-in
+beside the unit, restarts to apply it, and prints it once. Re-installing
+never rotates it. Set `RUNWISP_PASSWORD` yourself and the installer leaves
+it alone.
+:::
+
 ## Retrieving the ephemeral password
 
 When the daemon makes up its own password (because you didn't set
@@ -257,9 +268,14 @@ the originating IP, not the proxy's address — limit your trust proxy
 ranges carefully or an attacker could consume the rate budget from
 behind a trusted proxy.
 
-The daemon refuses `0.0.0.0/0` and `::/0`. Trusting the whole
-internet would let any random client lie about where it's coming
-from.
+Prefer to keep it in config rather than the environment? The same list
+lives in [`[daemon] trusted_proxies`](/configuration/daemon/#trusted_proxies)
+as a TOML array. The env var wins when both are set, so you can pin a
+default in `runwisp.toml` and still override it per-deployment.
+
+The daemon refuses `0.0.0.0/0` and `::/0`, whether set by the env var or
+the TOML key. Trusting the whole internet would let any random client lie
+about where it's coming from.
 
 ## Public endpoints
 

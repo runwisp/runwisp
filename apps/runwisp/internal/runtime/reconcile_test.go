@@ -86,6 +86,10 @@ type recordingManager struct {
 	started   []string
 	stopped   []string
 	removed   []string
+	// snapState is the State ServiceSnapshot reports for every service. Empty
+	// means "no snapshot" (ok=false); set it to model.ServiceStopped/Running to
+	// drive the autostart-flip reload warning.
+	snapState string
 }
 
 func (m *recordingManager) UpsertTask(task *model.Task) {
@@ -116,17 +120,30 @@ func (m *recordingManager) RemoveTask(name string) {
 	m.removed = append(m.removed, name)
 }
 
+func (m *recordingManager) ServiceSnapshot(name string) (model.ServiceSnapshot, bool) {
+	if m.snapState == "" {
+		return model.ServiceSnapshot{}, false
+	}
+	return model.ServiceSnapshot{TaskName: name, State: m.snapState}, true
+}
+
 // applyDiff runs one reconcile's apply step over the two task sets, with no
 // scheduler (the nil checks in apply cover that) and no DB — neither the Changed
-// nor the Restamped path touches storage.
-func applyDiff(old, updated map[string]*model.Task) (*recordingManager, *TaskRegistry, config.Diff) {
-	mgr := &recordingManager{}
+// nor the Restamped path touches storage. It returns the non-fatal notices apply
+// produced (e.g. an autostart flip reload deliberately doesn't act on).
+func applyDiff(old, updated map[string]*model.Task) (*recordingManager, *TaskRegistry, config.Diff, []string) {
+	return applyDiffWith(&recordingManager{}, old, updated)
+}
+
+// applyDiffWith is applyDiff with a caller-supplied manager, so a test can
+// pre-set the service snapshot state the reload warning keys off.
+func applyDiffWith(mgr *recordingManager, old, updated map[string]*model.Task) (*recordingManager, *TaskRegistry, config.Diff, []string) {
 	registry := NewTaskRegistry(old)
 	r := &Reconciler{registry: registry, manager: mgr}
 
 	diff := config.DiffTasks(old, updated)
-	r.apply(diff, old, updated)
-	return mgr, registry, diff
+	warnings := r.apply(diff, old, updated)
+	return mgr, registry, diff, warnings
 }
 
 // taskSet indexes tasks by name for the diff helpers.
@@ -148,7 +165,7 @@ func TestReconcile_PromotedServiceIsNotRestarted(t *testing.T) {
 	promoted := *staged
 	promoted.Source = model.SourceNative
 
-	mgr, registry, diff := applyDiff(taskSet(staged), taskSet(&promoted))
+	mgr, registry, diff, _ := applyDiff(taskSet(staged), taskSet(&promoted))
 
 	assert.Empty(t, diff.Changed, "provenance is not a task change")
 	assert.Equal(t, []string{"worker"}, diff.Restamped)
@@ -171,7 +188,7 @@ func TestReconcile_PromotedTaskIsNotRescheduled(t *testing.T) {
 	promoted := *staged
 	promoted.Source = model.SourceNative
 
-	mgr, registry, diff := applyDiff(taskSet(staged), taskSet(&promoted))
+	mgr, registry, diff, _ := applyDiff(taskSet(staged), taskSet(&promoted))
 
 	assert.True(t, diff.IsEmpty(), "a promote is not a task change the operator needs to see")
 	assert.Equal(t, []string{"backup"}, diff.Restamped)
@@ -190,7 +207,7 @@ func TestReconcile_ChangedServiceIsStillRecycled(t *testing.T) {
 	after.Run = "worker --loop --verbose"
 	after.Source = model.SourceNative
 
-	mgr, _, diff := applyDiff(taskSet(before), taskSet(&after))
+	mgr, _, diff, _ := applyDiff(taskSet(before), taskSet(&after))
 
 	require.Len(t, diff.Changed, 1)
 	assert.True(t, diff.Changed[0].Has(config.ReasonCommand))
@@ -210,7 +227,7 @@ func TestReconcile_TaskToServiceKindFlipStartsNotRecycles(t *testing.T) {
 	before := &model.Task{Name: "web", Cron: "*/5 * * * *", Run: "web --once"}
 	after := &model.Task{Name: "web", Kind: model.KindService, Run: "web --loop", Instances: 1, Autostart: true}
 
-	mgr, _, diff := applyDiff(taskSet(before), taskSet(after))
+	mgr, _, diff, _ := applyDiff(taskSet(before), taskSet(after))
 
 	require.Len(t, diff.Changed, 1)
 	assert.True(t, diff.Changed[0].Has(config.ReasonKind), "task→service is a kind change")
@@ -218,4 +235,38 @@ func TestReconcile_TaskToServiceKindFlipStartsNotRecycles(t *testing.T) {
 	assert.Empty(t, mgr.recycled, "recycling would cancel the in-flight non-service run")
 	assert.Empty(t, mgr.restarted)
 	assert.Empty(t, mgr.stopped)
+}
+
+// TestReconcile_AutostartFlipOnStoppedServiceWarns covers the cutover footgun the
+// deployment plan hit: flipping a service's autostart false→true and reloading
+// does NOT start it (reload is not a restart), and without a nudge the operator
+// is left with a down service and no error anywhere.
+func TestReconcile_AutostartFlipOnStoppedServiceWarns(t *testing.T) {
+	before := &model.Task{Name: "web", Kind: model.KindService, Run: "web --loop", Instances: 1, Autostart: false}
+	after := *before
+	after.Autostart = true
+
+	mgr := &recordingManager{snapState: model.ServiceStopped}
+	_, _, diff, warnings := applyDiffWith(mgr, taskSet(before), taskSet(&after))
+
+	require.Len(t, diff.Changed, 1, "an autostart flip is a settings change")
+	assert.Equal(t, []string{"web"}, mgr.recycled, "a changed service still goes through recycle")
+	require.Len(t, warnings, 1, "a stopped service whose autostart flipped on must be flagged")
+	assert.Contains(t, warnings[0], "runwisp restart web")
+	assert.Contains(t, warnings[0], "autostart=true")
+}
+
+// TestReconcile_AutostartFlipOnRunningServiceDoesNotWarn is the negative: a
+// service the operator already started by hand is running, so the same autostart
+// flip needs no nudge. The warning keys off the live supervisor, not the
+// definition delta, so this stays quiet.
+func TestReconcile_AutostartFlipOnRunningServiceDoesNotWarn(t *testing.T) {
+	before := &model.Task{Name: "web", Kind: model.KindService, Run: "web --loop", Instances: 1, Autostart: false}
+	after := *before
+	after.Autostart = true
+
+	mgr := &recordingManager{snapState: model.ServiceRunning}
+	_, _, _, warnings := applyDiffWith(mgr, taskSet(before), taskSet(&after))
+
+	assert.Empty(t, warnings, "a running service needs no restart nudge")
 }
