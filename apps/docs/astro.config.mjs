@@ -4,6 +4,7 @@
 
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import svelte from "@astrojs/svelte";
 import starlightOpenAPI, { openAPISidebarGroups } from "starlight-openapi";
 import { redirects } from "./src/redirects.mjs";
 
@@ -11,6 +12,7 @@ export default defineConfig({
     site: "https://docs.runwisp.com",
     redirects,
     integrations: [
+        svelte(),
         starlight({
             plugins: [
                 starlightOpenAPI([
@@ -111,6 +113,7 @@ export default defineConfig({
                     label: "Configuration Reference",
                     items: [
                         { label: "Overview", slug: "configuration/overview" },
+                        { label: "Full reference", slug: "configuration/reference" },
                         { label: "[storage]", slug: "configuration/storage" },
                         { label: "[daemon]", slug: "configuration/daemon" },
                         { label: "[defaults]", slug: "configuration/defaults" },

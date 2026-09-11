@@ -1,0 +1,18 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Full reference
+description: Every runwisp.toml key, type, default, and accepted value — searchable, expandable, and generated straight from the daemon's schema.
+---
+
+import ConfigReference from "../../../components/ConfigReference.svelte";
+
+Every key RunWisp understands, straight from the daemon's own schema — so it's
+always exactly what your version accepts. Search by key, type, or value, and
+click any key to see its full description, default, and accepted values.
+
+The narrative pages (like [tasks](/configuration/tasks/) or
+[defaults](/configuration/defaults/)) explain _why_ and _when_; this page is the
+exhaustive lookup for _what_.
+
+<ConfigReference client:load />
