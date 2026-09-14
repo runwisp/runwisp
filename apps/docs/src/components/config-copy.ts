@@ -200,27 +200,6 @@ retry_backoff  = "exponential"  # 2s, 4s, 8s, 16s`,
             { v: "exponential", hint: "double each time — 2s, 4s, 8s, 16s…" },
         ],
     },
-    "tasks.restart": {
-        summary:
-            "What to do when a run ends. `always` isn't allowed on tasks — for an always-on process, use a `[services.*]` unit instead.",
-        example: `[tasks.importer]
-restart          = "on_failure"
-restart_attempts = 5`,
-        values: [
-            { v: "never", hint: "one run, then done (the default)" },
-            {
-                v: "on_failure",
-                hint: "relaunch when the run failed, up to restart_attempts times",
-            },
-        ],
-    },
-    "tasks.restart_attempts": {
-        summary:
-            'How many consecutive failures a [restart](#tasks.restart) = "on_failure" chain tolerates before giving up; the final run is recorded `start_failed` rather than restarting forever. Only meaningful together with restart = "on_failure".',
-        example: `[tasks.importer]
-restart          = "on_failure"
-restart_attempts = 3`,
-    },
     "tasks.timeout": {
         summary:
             "A per-attempt wall-clock cap. When a run runs longer, RunWisp stops it through the [stop_signal](#tasks.stop_signal) → [graceful_stop](#tasks.graceful_stop) → SIGKILL ladder and records `timeout`. Unset here it inherits `[defaults]`, and unset there means no limit at all.",
@@ -245,7 +224,7 @@ graceful_stop = "10s"`,
     // ── What counts as a failure ──────────────────────────────────────────
     "tasks.failures": {
         summary:
-            'Which run outcomes count as a failure — the thing that turns a run red, bumps the "failed" stat, and fires [notify_on_failure](#tasks.notify_on_failure). Each token is a reason name (`failed`, `timeout`, `crashed`, `missed`, `stopped`, …) or an exit code / inclusive range (`"42"`, `"1-23"`). A bare list replaces the inherited set; prefix every token with `+`/`-` to adjust it instead (you can\'t mix the two styles). It\'s purely an observability choice — it never changes whether a task retries (see [retry_attempts](#tasks.retry_attempts)).',
+            'Which run outcomes count as a failure — the thing that turns a run red, bumps the "failed" stat, and fires [notify](#tasks.notify). Each token is a reason name (`failed`, `timeout`, `crashed`, `missed`, `stopped`, …) or an exit code / inclusive range (`"42"`, `"1-23"`). A bare list replaces the inherited set; prefix every token with `+`/`-` to adjust it instead (you can\'t mix the two styles). It\'s purely an observability choice — it never changes whether a task retries (see [retry_attempts](#tasks.retry_attempts)).',
         example: `[tasks.web]
 failures = ["-missed"]              # stop paging on a missed tick
 
@@ -396,17 +375,11 @@ secrets_file = "/etc/runwisp/backup-secrets.env"`,
     },
 
     // ── Notifications ─────────────────────────────────────────────────────
-    "tasks.notify_on_failure": {
+    "tasks.notify": {
         summary:
-            'Notifier ids to alert whenever a run ends in something [failures](#tasks.failures) classifies as a failure. Entries are ids from your `[notifiers.<id>]` blocks (or `inapp`), optionally `"id:override"` to retarget a channel. Whatever is listed in `[notify] global_notifiers` (default `["inapp"]`) is added automatically.',
+            'Notifier ids to page whenever a run ends in something [failures](#tasks.failures) classifies as a failure. Entries are ids from your `[notifiers.<id>]` blocks (or `inapp`), optionally `"id:override"` to retarget a channel. Whatever is listed in `[notify] global_notifiers` (default `["inapp"]`) is added automatically. To alert on a non-failure outcome instead — a success ping, a timeout-only escalation — add an explicit `[[route]]` matching that kind.',
         example: `[tasks.deploy]
-notify_on_failure = ["slack-ops"]`,
-    },
-    "tasks.notify_on_success": {
-        summary:
-            "Notifier ids to alert when a run succeeds (`run.succeeded`), with the same id format as [notify_on_failure](#tasks.notify_on_failure). Handy for jobs where a green run is the newsworthy event — a nightly backup that actually completed.",
-        example: `[tasks.nightly-backup]
-notify_on_success = ["slack-ops"]`,
+notify = ["slack-ops"]`,
     },
 
     // ── Parameters ────────────────────────────────────────────────────────
@@ -492,15 +465,12 @@ export const fieldOrder: Record<string, string[]> = {
         "retry_attempts",
         "retry_delay",
         "retry_backoff",
-        "restart",
-        "restart_attempts",
         "env",
         "secrets",
         "env_file",
         "secrets_file",
         "params",
-        "notify_on_failure",
-        "notify_on_success",
+        "notify",
         "failures",
         "working_dir",
         "shell",

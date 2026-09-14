@@ -96,7 +96,7 @@ const FAILURE_MODEL: Topic = {
             ],
         },
         {
-            p: "It's purely an observability choice — it never changes retries or restarts, which always fire on `failed`, `timeout`, `crashed`, `log_overflow`, and `start_failed`, whatever you list here.",
+            p: "It's purely an observability choice — it never changes retries, which always fire on `failed`, `timeout`, `crashed`, `log_overflow`, and `start_failed`, whatever you list here.",
         },
     ],
 };
@@ -150,7 +150,7 @@ const REJECTED: Topic = {
     body: [
         {
             ul: [
-                '[restart](#tasks.restart) = `"always"` — that\'s what `[services.*]` is for.',
+                "`restart` / `restart_attempts` — services-only; a task re-runs a failed run with [retry_attempts](#tasks.retry_attempts) / [retry_delay](#tasks.retry_delay) / [retry_backoff](#tasks.retry_backoff), not restart.",
                 "`instances`, `priority`, `autostart`, `depends_on` — services-only fields.",
                 "A task name that's also taken by a `[services.*]` — they share one namespace.",
                 "An empty or missing `run`.",
@@ -185,8 +185,6 @@ export const clusters: Cluster[] = [
             "retry_attempts",
             "retry_delay",
             "retry_backoff",
-            "restart",
-            "restart_attempts",
             "timeout",
             FAIL_FAST,
             "graceful_stop",
@@ -226,7 +224,7 @@ export const clusters: Cluster[] = [
     {
         id: "notifications",
         title: "Notifications",
-        entries: ["notify_on_failure", "notify_on_success"],
+        entries: ["notify"],
     },
     {
         id: "constraints",
