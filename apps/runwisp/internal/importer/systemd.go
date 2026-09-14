@@ -252,9 +252,8 @@ func importSystemdUnit(names *namer, sections []systemdSection, unitName, source
 	run := systemdApplyRun(&b, svc, ref, execStarts)
 	if kind == model.KindTask {
 		b.set("run_on_start", "true")
-		b.set("restart", tomlString(string(model.RestartNever)))
 		ref.note(NoteSystemdOneshot,
-			"Type=oneshot → imported as a run-once task (run_on_start, restart=never).")
+			"Type=oneshot → imported as a run-once task (run_on_start).")
 	}
 	env := systemdApplyServiceKeys(&b, svc, ref, kind)
 

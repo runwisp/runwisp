@@ -123,7 +123,7 @@ straight over:
 | systemd                      | runwisp.toml          | Notes                                                                                   |
 | ---------------------------- | --------------------- | --------------------------------------------------------------------------------------- |
 | `Restart=always\|on-failure` | `[services.NAME]`     | A long-running, restarted process → a service.                                          |
-| `Type=oneshot`               | `[tasks.NAME]`        | Run-once → a task with `run_on_start` and `restart = "never"`.                          |
+| `Type=oneshot`               | `[tasks.NAME]`        | Run-once → a task with `run_on_start`.                                                  |
 | `ExecStart`                  | `run`                 | A single command; leading `@ - + !` prefixes are stripped with a note.                  |
 | `WorkingDirectory`           | `working_dir`         | Relative paths resolve against the `runwisp.toml` location.                             |
 | `User` (+ `Group`)           | `user`                | Folded to `user:group`. Needs the daemon running as root to switch users.               |
