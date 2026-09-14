@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/pelletier/go-toml/v2"
+	"github.com/runwisp/runwisp/internal/notify/kinds"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 )
@@ -43,7 +44,7 @@ func TestSchemaCoversWireTags(t *testing.T) {
 	schemaKeys := collectSchemaPropertyNames(t)
 
 	wireKeys := map[string]struct{}{}
-	collectTOMLTags(reflect.TypeOf(tomlConfig{}), wireKeys, map[reflect.Type]bool{})
+	collectTOMLTags(reflect.TypeFor[tomlConfig](), wireKeys, map[reflect.Type]bool{})
 
 	var missing []string
 	for key := range wireKeys {
@@ -53,6 +54,35 @@ func TestSchemaCoversWireTags(t *testing.T) {
 	}
 	require.Empty(t, missing,
 		"config.schema.json is missing properties for TOML keys declared in wire.go: %v", missing)
+}
+
+// TestSchemaMatchKindsCoversAllKindStrings is the anti-drift guard for the
+// other hand-authored copy of the match.kinds vocabulary: config.schema.json
+// can't import kinds.AllKindStrings (it's JSON, not Go), so this test checks
+// the two stay in sync instead.
+func TestSchemaMatchKindsCoversAllKindStrings(t *testing.T) {
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal([]byte(SchemaJSON()), &doc))
+
+	defs, ok := doc["$defs"].(map[string]any)
+	require.True(t, ok, "schema is missing $defs")
+	route, ok := defs["notificationRoute"].(map[string]any)
+	require.True(t, ok, "schema is missing $defs.notificationRoute")
+	match := route["properties"].(map[string]any)["match"].(map[string]any)
+	kindsProp := match["properties"].(map[string]any)["kinds"].(map[string]any)
+	enum, ok := kindsProp["items"].(map[string]any)["enum"].([]any)
+	require.True(t, ok, "schema is missing notificationRoute.match.kinds.items.enum")
+
+	schemaKinds := map[string]struct{}{}
+	for _, v := range enum {
+		schemaKinds[v.(string)] = struct{}{}
+	}
+	goKinds := map[string]struct{}{}
+	for _, k := range kinds.AllKindStrings {
+		goKinds[k] = struct{}{}
+	}
+	require.Equal(t, goKinds, schemaKinds,
+		"config.schema.json's match.kinds enum must match kinds.AllKindStrings")
 }
 
 // TestSchemaAcceptsRealConfigs validates the fixtures RunWisp itself ships —
