@@ -8,6 +8,9 @@ import {
     TRIGGERS,
     type Run as CommonRun,
     type Task as CommonTask,
+    type AuthChallengeBody,
+    type AuthStatusBody,
+    type AuthLoginBody,
 } from "@runwisp/common";
 
 export type Task = CommonTask;
@@ -19,17 +22,26 @@ export interface AuthState {
     authenticated: boolean;
 }
 
-export const authChallengeResponseSchema = z.object({ nonce: z.string() });
-export type AuthChallengeResponse = z.infer<typeof authChallengeResponseSchema>;
+// The auth endpoints are called via raw fetch (see api.ts) rather than the
+// shared openapi-fetch client, so a wrong-password 401 doesn't trip the
+// client's global "auth required" interceptor. That means their responses
+// arrive untyped, so each is validated against its shape and piped to the
+// server-generated type (not a hand-maintained duplicate) as the source of
+// truth.
+export const authChallengeResponseSchema = z
+    .object({ nonce: z.string() })
+    .pipe(z.custom<AuthChallengeBody>());
+export type AuthChallengeResponse = AuthChallengeBody;
 
-export const authStatusResponseSchema = z.object({
-    authRequired: z.boolean(),
-    authenticated: z.boolean(),
-});
-export type AuthStatusResponse = z.infer<typeof authStatusResponseSchema>;
+export const authStatusResponseSchema = z
+    .object({ authRequired: z.boolean(), authenticated: z.boolean() })
+    .pipe(z.custom<AuthStatusBody>());
+export type AuthStatusResponse = AuthStatusBody;
 
-export const authLoginResponseSchema = z.object({ token: z.string() });
-export type AuthLoginResponse = z.infer<typeof authLoginResponseSchema>;
+export const authLoginResponseSchema = z
+    .object({ token: z.string() })
+    .pipe(z.custom<AuthLoginBody>());
+export type AuthLoginResponse = AuthLoginBody;
 
 const runPhaseSchema = z.enum(RUN_PHASES);
 const endReasonSchema = z.enum(END_REASONS);

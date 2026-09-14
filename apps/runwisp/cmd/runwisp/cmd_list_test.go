@@ -28,7 +28,6 @@ const minimalCfgServiceTask = `
 [services.worker]
 instances = 3
 run = "/usr/bin/worker"
-manual_trigger = true
 `
 
 const minimalCfgLongDescription = `
@@ -71,7 +70,6 @@ func TestRunList_ServiceTaskShowsInstances(t *testing.T) {
 	out := runListString(t, f)
 	assert.Contains(t, out, "worker")
 	assert.Contains(t, out, "(service x3)")
-	assert.Contains(t, out, "yes", "manual_trigger=true renders 'yes'")
 }
 
 func TestRunList_LongDescriptionTruncated(t *testing.T) {
@@ -109,13 +107,19 @@ func TestRunList_JSONServiceAndCron(t *testing.T) {
 	assert.Equal(t, "* * * * *", byName["hello"].Schedule)
 	assert.Equal(t, "service", byName["worker"].Kind)
 	assert.Equal(t, 3, byName["worker"].Instances)
-	assert.True(t, byName["worker"].ManualTrigger)
 
-	// max_concurrent is a real setting for tasks but not services — services'
-	// copy count is `instances`. It must be present for the task and omitted
-	// (nil) for the service, never fabricated as a stray `1`.
+	// max_concurrent and on_overlap are real settings for tasks but not
+	// services — a service's copy count is `instances`, and it never runs a
+	// second overlapping instance. They must be present for the task and
+	// omitted (nil) for the service, never fabricated. manual_trigger applies
+	// to both kinds (run-triggering vs. manual stop/restart/start), so it is
+	// always present and defaults true for both.
 	require.NotNil(t, byName["hello"].MaxConcurrent)
 	assert.Nil(t, byName["worker"].MaxConcurrent)
+	require.NotNil(t, byName["hello"].OnOverlap)
+	assert.Nil(t, byName["worker"].OnOverlap)
+	assert.True(t, byName["hello"].ManualTrigger)
+	assert.True(t, byName["worker"].ManualTrigger)
 }
 
 func TestRunList_JSONMissingConfigEmitsErrorDoc(t *testing.T) {

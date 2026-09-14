@@ -666,13 +666,33 @@ func TestHandleServiceApply_MergeRejectsInstanceCountAboveCap(t *testing.T) {
 // dropping its task from the runner, so a cloud-managed service no longer leaks a
 // taskState + supervisor goroutine once the control plane retires it.
 func TestHandleServiceRemove_DropsExistingService(t *testing.T) {
-	existing := &model.Task{Name: "heartbeat", Kind: model.KindService, ExecutionDef: &model.ShellExecution{Script: "heartbeat.sh"}}
+	existing := &model.Task{Name: "heartbeat", Kind: model.KindService, ExecutionDef: &model.ShellExecution{Script: "heartbeat.sh"}, CloudDeclared: true}
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
 	runner := h.taskManager.(*fakeTaskRunner)
 
 	err := h.HandleServiceRemove(protocol.ServiceRemoveMessage{TaskID: "heartbeat"})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"heartbeat"}, runner.removed)
+}
+
+// Regression: a TOML-defined [services.*] entry resolves through the same
+// bare-name lookup as a cloud-declared service (both are Kind == KindService
+// in the same registry), so resolveServiceTarget alone can't tell them apart.
+// service:remove must refuse to delete one anyway, or a control-plane peer
+// could desync the running task set from runwisp.toml with no reload path
+// back (the reconciler's diff baseline still has it, so a reload won't
+// restore it).
+func TestHandleServiceRemove_RejectsTOMLDefinedService(t *testing.T) {
+	existing := &model.Task{Name: "heartbeat", Kind: model.KindService, ExecutionDef: &model.ShellExecution{Script: "heartbeat.sh"}}
+	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceRemove(protocol.ServiceRemoveMessage{TaskID: "heartbeat"})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindConflict, ce.Kind)
+	assert.Empty(t, runner.removed, "a TOML-defined service must never be removed by the control plane")
 }
 
 // Regression (Bug 7 / Bug 1): service:remove must refuse to delete a non-service
@@ -708,7 +728,7 @@ func TestHandleServiceControl_ResolvesBareNameAndCloudID(t *testing.T) {
 	start := protocol.ActionStart
 
 	t.Run("bare name of a synced service", func(t *testing.T) {
-		existing := &model.Task{Name: "heartbeat", Kind: model.KindService}
+		existing := &model.Task{Name: "heartbeat", Kind: model.KindService, ManualTrigger: true}
 		h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
 		runner := h.taskManager.(*fakeTaskRunner)
 		err := h.HandleServiceControl(protocol.ServiceControlMessage{TaskID: "heartbeat", Action: &start})

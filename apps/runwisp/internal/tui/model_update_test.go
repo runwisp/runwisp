@@ -405,64 +405,58 @@ func TestScheduleLogReconnect_TickFiresWithRunID(t *testing.T) {
 	}
 }
 
-// ─── handleNotificationStreamConnected ────────────────────────────────────────
+// ─── handleSSEEvent notification.* dispatch ─────────────────────────────────
+// Notification events ride the unified stream (no dedicated
+// /api/notifications/stream anymore), so handleSSEEvent itself must switch
+// on the notification.* event types.
 
-func TestHandleNotificationStreamConnected_ReturnsListenerCmd(t *testing.T) {
-	m := newTestModel(nil)
-	ch := make(chan apiclient.NotificationStreamEvent, 1)
-	_, cmd := m.handleNotificationStreamConnected(uikit.NotificationStreamConnectedMsg{Ch: ch})
-	if cmd == nil {
-		t.Fatal("expected non-nil listen cmd")
-	}
-}
-
-// ─── handleNotificationEvent ────────────────────────────────────────────────
-
-func TestHandleNotificationEvent_CreatedAppendsToPanel(t *testing.T) {
+func TestHandleSSEEvent_NotificationCreatedUpdatesUnreadAndPanel(t *testing.T) {
 	m := newTestModel(nil)
 	payload := []byte(`{"notification":{"id":"n-1","severity":"info","title":"hi","count":1,"lastOccurredAt":"2026-01-01T00:00:00Z"},"unreadCount":1}`)
-	out, _ := m.handleNotificationEvent(uikit.NotificationEventMsg{
-		Event: apiclient.NotificationStreamEvent{Type: "notification.created", Data: payload},
-	})
-	got := out.(Model)
-	if got.notifications.Unread() == 0 {
-		t.Fatal("expected unread count to be set")
+	cmd := m.handleSSEEvent(apiclient.RunStreamEvent{Type: "notification.created", Data: payload})
+	if cmd != nil {
+		t.Fatal("expected nil cmd")
+	}
+	if m.notifications.Unread() != 1 {
+		t.Fatalf("expected unread=1, got %d", m.notifications.Unread())
 	}
 }
 
-func TestHandleNotificationEvent_CreatedInvalidJSON(t *testing.T) {
+func TestHandleSSEEvent_NotificationCreatedInvalidJSONAppendsDebugLine(t *testing.T) {
 	m := newTestModel(nil)
-	_, cmd := m.handleNotificationEvent(uikit.NotificationEventMsg{
-		Event: apiclient.NotificationStreamEvent{Type: "notification.created", Data: json.RawMessage("not json")},
-	})
-	// ContinueListeningNotifications returns nil with no channel wired.
-	_ = cmd
+	cmd := m.handleSSEEvent(apiclient.RunStreamEvent{Type: "notification.created", Data: json.RawMessage("not json")})
+	if cmd != nil {
+		t.Fatal("expected nil cmd for invalid JSON")
+	}
 }
 
-func TestHandleNotificationEvent_UnreadCountChanged(t *testing.T) {
+func TestHandleSSEEvent_NotificationUpdatedUpdatesUnread(t *testing.T) {
+	m := newTestModel(nil)
+	payload := []byte(`{"notification":{"id":"n-1","severity":"info","title":"hi","count":1,"lastOccurredAt":"2026-01-01T00:00:00Z"},"unreadCount":2}`)
+	_ = m.handleSSEEvent(apiclient.RunStreamEvent{Type: "notification.updated", Data: payload})
+	if m.notifications.Unread() != 2 {
+		t.Fatalf("expected unread=2, got %d", m.notifications.Unread())
+	}
+}
+
+func TestHandleSSEEvent_NotificationUnreadCountChanged(t *testing.T) {
 	m := newTestModel(nil)
 	payload := []byte(`{"unreadCount":7}`)
-	out, _ := m.handleNotificationEvent(uikit.NotificationEventMsg{
-		Event: apiclient.NotificationStreamEvent{Type: "notification.unreadCountChanged", Data: payload},
-	})
-	got := out.(Model)
-	if u := got.notifications.Unread(); u != 7 {
-		t.Fatalf("expected unread=7 after unreadCountChanged, got %d", u)
+	cmd := m.handleSSEEvent(apiclient.RunStreamEvent{Type: "notification.unreadCountChanged", Data: payload})
+	if cmd != nil {
+		t.Fatal("expected nil cmd")
+	}
+	if m.notifications.Unread() != 7 {
+		t.Fatalf("expected unread=7 after unreadCountChanged, got %d", m.notifications.Unread())
 	}
 }
 
-func TestHandleNotificationEvent_UnreadCountChangedInvalidJSON(t *testing.T) {
+func TestHandleSSEEvent_NotificationUnreadCountChangedInvalidJSON(t *testing.T) {
 	m := newTestModel(nil)
-	_, _ = m.handleNotificationEvent(uikit.NotificationEventMsg{
-		Event: apiclient.NotificationStreamEvent{Type: "notification.unreadCountChanged", Data: json.RawMessage("bad")},
-	})
-}
-
-func TestHandleNotificationEvent_UnknownTypeNoOp(t *testing.T) {
-	m := newTestModel(nil)
-	_, _ = m.handleNotificationEvent(uikit.NotificationEventMsg{
-		Event: apiclient.NotificationStreamEvent{Type: "ping", Data: json.RawMessage(`{}`)},
-	})
+	cmd := m.handleSSEEvent(apiclient.RunStreamEvent{Type: "notification.unreadCountChanged", Data: json.RawMessage("bad")})
+	if cmd != nil {
+		t.Fatal("expected nil cmd for invalid JSON")
+	}
 }
 
 // ─── handleDaemonLogConnected ────────────────────────────────────────────────
@@ -981,9 +975,9 @@ func TestHandleReloadResult_ErrorFlashes(t *testing.T) {
 }
 
 func TestHandleReloadResult_SuccessRebuildsSidebar(t *testing.T) {
-	m := newTestModel([]model.TaskBrief{{Name: "old"}})
+	m := newTestModel([]model.Task{{Name: "old"}})
 	m.client = newDummyClient()
-	info := &model.DaemonInfo{Tasks: []model.TaskBrief{{Name: "fresh"}}, ConfigStale: false}
+	info := &model.DaemonInfo{Tasks: []model.Task{{Name: "fresh"}}, ConfigStale: false}
 	updated, _ := m.handleReloadResult(uikit.ReloadResultMsg{
 		Result: &model.ReloadResult{Added: []string{"fresh"}, Removed: []string{"old"}},
 		Info:   info,

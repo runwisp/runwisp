@@ -27,11 +27,6 @@ type ActiveRun struct {
 	// coordinator to bound total shutdown time.
 	ForceKill func()
 	StartedAt time.Time
-	// RestartAttempt carries the non-service restart-chain depth from the
-	// triggering options so retireRun can escalate the restart backoff. Zero for
-	// original, cron, API, retry, and queued runs. Read only under the manager
-	// lock; not persisted.
-	RestartAttempt int
 	// cancelled latches once this run has been asked to stop (currently only the
 	// kill overlap policy). It stops a later trigger from re-cancelling an
 	// already-dying run — which would leave the live run count growing past
@@ -39,14 +34,10 @@ type ActiveRun struct {
 	cancelled bool
 }
 
-// queuedRun pairs a run sitting in ts.queue with the non-service
-// restart-chain depth it was triggered with. model.Run has no field for this
-// — it's runtime-only bookkeeping that lives on ActiveRun once a run starts —
-// so a queued restart needs somewhere to carry it until queueProcessLoop
-// finally calls startRun.
+// queuedRun is a run sitting in ts.queue, waiting for queueProcessLoop to
+// call startRun once a slot frees.
 type queuedRun struct {
-	run            *model.Run
-	restartAttempt int
+	run *model.Run
 }
 
 // taskState holds all per-task runtime state under the manager mutex.
@@ -103,10 +94,8 @@ const (
 )
 
 // evaluateConcurrency decides whether a run can start and mutates queue state
-// accordingly. restartAttempt is the non-service restart-chain depth to carry
-// onto the run if it ends up queued (see queuedRun). Must be called with m.mu
-// held.
-func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, concurrencyLimit, restartAttempt int) (concurrencyAction, error) {
+// accordingly. Must be called with m.mu held.
+func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, concurrencyLimit int) (concurrencyAction, error) {
 	// A free slot starts immediately — except under queue policy with runs
 	// already waiting: a fresh trigger must join the back of the queue rather
 	// than race ahead of runs the drain loop hasn't picked up yet. Without this,
@@ -125,7 +114,7 @@ func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, 
 		if maxQueued > 0 && len(ts.queue) >= maxQueued {
 			return actionQueueFull, fmt.Errorf("queue full (%d pending) for task %s", maxQueued, ts.task.Name)
 		}
-		ts.queue = append(ts.queue, queuedRun{run: run, restartAttempt: restartAttempt})
+		ts.queue = append(ts.queue, queuedRun{run: run})
 		ts.cond.Signal()
 		slog.Debug("Task queued", "name", ts.task.Name, "active", len(ts.active), "limit", concurrencyLimit, "queue", len(ts.queue))
 		return actionQueued, nil
@@ -192,7 +181,7 @@ func (m *defaultTaskManager) queueProcessLoop(taskName string) {
 		}
 		queued := ts.queue[0]
 		ts.queue = ts.queue[1:]
-		m.startRun(ts.task, queued.run, queued.restartAttempt)
+		m.startRun(ts.task, queued.run)
 	}
 }
 

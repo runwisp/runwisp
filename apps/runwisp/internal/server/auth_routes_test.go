@@ -356,7 +356,8 @@ func TestHandleLaunchTicket_MissingTicket(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	// huma rejects a missing required query param before the handler runs.
+	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
 }
 
 func TestHandleLaunchTicket_InvalidTicket(t *testing.T) {

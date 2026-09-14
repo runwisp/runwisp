@@ -113,7 +113,7 @@ func TestRunDetailDialog_Update_CloseKeys(t *testing.T) {
 }
 
 func TestHandleKeyI_ExecViewOpensRunDetail(t *testing.T) {
-	m := newTestModelWithClient([]model.TaskBrief{{Name: "backup-db"}})
+	m := newTestModelWithClient([]model.Task{{Name: "backup-db"}})
 	ev := execlist.NewExecView(endedRun())
 	m.execView = &ev
 
@@ -131,7 +131,7 @@ func TestHandleKeyI_ExecViewOpensRunDetail(t *testing.T) {
 }
 
 func TestInterceptRunDetail_EnterOpensParent(t *testing.T) {
-	m := newTestModelWithClient([]model.TaskBrief{{Name: "backup-db"}})
+	m := newTestModelWithClient([]model.Task{{Name: "backup-db"}})
 	m.dialogs.ShowRunDetail(endedRun(), false, 1)
 
 	updated, cmd, intercepted := m.interceptRunDetailDialog(tea.KeyPressMsg{Code: tea.KeyEnter})

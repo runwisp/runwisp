@@ -80,7 +80,7 @@ func TestHumaGetInfo_TasksComeFromTheLiveRegistry(t *testing.T) {
 	srv := &Server{
 		tasks: registry,
 		stats: newStatsProvider(&model.DaemonInfo{
-			Tasks: []model.TaskBrief{model.NewTaskBrief(held)},
+			Tasks: []model.Task{*held},
 		}, time.Now()),
 	}
 
@@ -106,7 +106,7 @@ func TestHumaGetInfo_TasksComeFromTheLiveRegistry(t *testing.T) {
 func TestHumaGetInfo_NoRegistryKeepsTheBootList(t *testing.T) {
 	srv := &Server{
 		stats: newStatsProvider(&model.DaemonInfo{
-			Tasks: []model.TaskBrief{{Name: "backup"}},
+			Tasks: []model.Task{{Name: "backup"}},
 		}, time.Now()),
 	}
 	out, err := srv.humaGetInfo(context.Background(), &struct{}{})

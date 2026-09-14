@@ -13,7 +13,7 @@ import (
 )
 
 func benchModel(nRuns int) Model {
-	tasks := []model.TaskBrief{{Name: "backup-postgres"}, {Name: "web"}, {Name: "cleanup"}}
+	tasks := []model.Task{{Name: "backup-postgres"}, {Name: "web"}, {Name: "cleanup"}}
 	m := newTestModel(tasks)
 	nm, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 45})
 	m = nm.(Model)

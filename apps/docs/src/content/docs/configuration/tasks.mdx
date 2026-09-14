@@ -355,11 +355,11 @@ won't make the daemon re-run something you stopped on purpose.
 | `keep_runs`    | inherited from `[defaults]` | Keep the N most recent completed runs for this task. Non-negative integer; hard internal cap of 1 000 000. Omit to inherit from `[defaults]`; `0` keeps no completed runs at all; negatives are rejected. |
 | `keep_for`     | inherited from `[defaults]` | Delete runs older than this. Omit to inherit; zero and negatives rejected, and absurdly large values (over ~100 years) are rejected as typos.                                                             |
 
-Most duration fields (`timeout`, `retry_delay`, `graceful_stop`,
-`jitter`, etc.) use Go's standard `h`/`m`/`s`/`ms` syntax. The only
-exception is `keep_for`, which adds `d` (days) and `w` (weeks) on top —
-so `"30d"` and `"2w"` work for `keep_for` but nowhere else. Mixed forms
-like `"1h30m"` work everywhere.
+Every duration field (`timeout`, `retry_delay`, `graceful_stop`,
+`jitter`, `keep_for`, etc.) accepts the same syntax: Go's standard
+`h`/`m`/`s`/`ms`/`us`/`ns`, plus `d` (days) and `w` (weeks) on top — so
+`"30d"` and `"2w"` work anywhere a duration is accepted. Mixed forms
+like `"1h30m"` work everywhere too.
 
 Set both `keep_runs` and `keep_for` and they both apply — whichever one
 trims more aggressively is the one you'll feel. See

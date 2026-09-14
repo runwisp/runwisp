@@ -5,13 +5,13 @@
 
 Dense reference for agents authoring/operating RunWisp. Human-readable prose lives at https://docs.runwisp.com (each page also at `<url>.md`). This file is the schema/CLI/REST surface only.
 
-Notation in schema blocks: `key: type =default — note`. `=default` omitted means no default (unset). `dur` = Go duration string (`300ms`,`5s`,`10m`,`1h`); retention also accepts `d`/`w`. `size` = byte size (`100mb`,`2gb`). `req` = required.
+Notation in schema blocks: `key: type =default — note`. `=default` omitted means no default (unset). `dur` = duration string (`300ms`,`5s`,`10m`,`1h`,`2d`,`1w` — every duration field accepts day/week suffixes). `size` = byte size (`100mb`,`2gb`). `req` = required.
 
 ## Model
 
 - `runwisp.toml` is the ONLY source of task definitions. REST/UI/TUI can read + trigger/stop/restart runs, never create or edit definitions.
 - Config reload is explicit: `runwisp reload` / `SIGHUP` / `POST /api/daemon/reload` re-read the whole TOML and reconcile the live task set (add/change/remove tasks, services, `[defaults]`). Validate-first/atomic — a parse/validation failure, or a change to a restart-only setting (`[daemon]`, `[scheduler] timezone`, `[storage]`, `[notify]`, bind host/port), is rejected and leaves the running set untouched. Reload is NOT a restart: added tasks get no `run_on_start`/catch-up, in-flight runs finish under their old definition. The daemon never auto-watches the file. Restart-only settings (and re-firing `run_on_start`/catch-up) need `runwisp restart`.
-- Two unit kinds: `[tasks.<name>]` run-to-exit (cron or manual); `[services.<name>]` long-running, `restart=always` forced. Names must be unique across both tables. `name` validated by RunWisp's task-name rules.
+- Two unit kinds: `[tasks.<name>]` run-to-exit (cron or manual); `[services.<name>]` long-running, `restart` defaults to `always`. Names must be unique across both tables. `name` validated by RunWisp's task-name rules.
 - `run =` is shell, executed from disk only — never from an HTTP/WS body.
 - Inheritance: `[defaults]` → each task/service → per-key override. `env` merges (task wins); `[compose.<alias>.<svc>]` overrides per imported service.
 - IDs are ULIDs. Logs are per-task files on disk; SQLite holds run metadata only.
@@ -166,9 +166,10 @@ notify: []string         — sugar → route on any classified failure (see fail
 
 ### [services.&lt;name&gt;] (long-running)
 
-`restart=always` is forced. Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `max_catch_up_runs`, `restart`, `max_concurrent`, `max_queued`, `retry_*`. Shares the core task keys (including `restart_attempts`, see above): `group` (default `Services`), `description`, `manual_trigger`, `on_overlap` (default `skip`), `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `env_base`, `user`, `failures`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify`. Service-only:
+Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `max_catch_up_runs`, `on_overlap`, `max_concurrent`, `max_queued`, `retry_*`. Shares the core task keys (including `restart_attempts`, see above): `group` (default `Services`), `description`, `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `env_base`, `user`, `failures`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify`, `manual_trigger` (bool =true; here it gates manual stop/restart/start from CLI/API/UI/TUI/cloud instead of run-triggering). Service-only:
 
 ```
+restart:             enum =always     — never | on_failure | always
 instances:           int  =1           — parallel instances; 1..64
 restart_delay:       dur  =1s          — delay before a restart; 0 = restart instantly, kept literally if set
 restart_backoff:     enum =exponential — constant | linear | exponential
@@ -196,7 +197,7 @@ pull:         enum =missing        — missing | always | never
 name_format:  string ={alias}.{service} — generated task name; must contain {service} when import="services"
 ```
 
-Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `manual_trigger`, `timeout`, `graceful_stop`, `stop_signal`, `on_overlap`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `restart_attempts`, `priority`, `autostart`, `failures`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `env`, `env_file`, `secrets`, `secrets_file`, `notify`. Not allowed: `run`/`compose_file`/`compose_service` (the parent block owns the backend), and the host-process keys `shell`/`umask`/`env_base`/`user`. `import="stack"` forbids overrides and the `services` filter. Per-service `notify` desugars into notify routes keyed by the generated task name, exactly like `[services.*]`. The reserved sub-table `[compose.<alias>.defaults]` accepts the same keys and applies them to every imported service before the per-service override wins (precedence: compose-import default → `defaults` → `<svc>`); its `notify` adds routes to all services. A compose service literally named `defaults` is rejected (rename hint); `import="stack"` forbids `defaults` too.
+Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `timeout`, `graceful_stop`, `stop_signal`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `restart_attempts`, `priority`, `autostart`, `failures`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `manual_trigger`, `env`, `env_file`, `secrets`, `secrets_file`, `notify`. Not allowed: `run`/`compose_file`/`compose_service` (the parent block owns the backend), `on_overlap` (task-only concept), and the host-process keys `shell`/`umask`/`env_base`/`user`. `import="stack"` forbids overrides and the `services` filter. Per-service `notify` desugars into notify routes keyed by the generated task name, exactly like `[services.*]`. The reserved sub-table `[compose.<alias>.defaults]` accepts the same keys and applies them to every imported service before the per-service override wins (precedence: compose-import default → `defaults` → `<svc>`); its `notify` adds routes to all services. A compose service literally named `defaults` is rejected (rename hint); `import="stack"` forbids `defaults` too.
 
 ### [notify] (global notification settings)
 
@@ -412,10 +413,9 @@ Read (GET):
 /api/tasks/{task}/log/search                     search log lines across runs
 /api/runs                                        list all runs
 /api/runs/summary                               aggregate run stats
-/api/events/stream                              run lifecycle + system + config-stale events (SSE)
+/api/events/stream                              run lifecycle + system + config-stale + notification events (SSE)
 /api/notifications                              in-app notifications
 /api/notifications/unreadCount                   unread count
-/api/notifications/stream                       notification events (SSE)
 /api/local/credentials                          ephemeral password (Unix socket only)
 ```
 

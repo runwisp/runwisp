@@ -52,7 +52,7 @@ type Sidebar struct {
 	filter    string
 }
 
-func NewSidebar(name, version, fingerprint string, tasks []model.TaskBrief) Sidebar {
+func NewSidebar(name, version, fingerprint string, tasks []model.Task) Sidebar {
 	all := buildItems(tasks)
 	return Sidebar{
 		name:        name,
@@ -67,7 +67,7 @@ func NewSidebar(name, version, fingerprint string, tasks []model.TaskBrief) Side
 
 // Rebuild replaces the entry list after a config reload, preserving the active
 // selection by name/page when it still exists and exiting any filter sub-mode.
-func (s *Sidebar) Rebuild(tasks []model.TaskBrief) {
+func (s *Sidebar) Rebuild(tasks []model.Task) {
 	prevPage := s.ActivePage()
 	prevTask := s.ActiveTask()
 	s.allItems = buildItems(tasks)
@@ -87,7 +87,7 @@ func (s *Sidebar) Rebuild(tasks []model.TaskBrief) {
 	s.ensureVisible()
 }
 
-func buildItems(tasks []model.TaskBrief) []sidebarItem {
+func buildItems(tasks []model.Task) []sidebarItem {
 	items := []sidebarItem{
 		{label: "Home", page: uikit.PageHome, kind: entryPage},
 	}
@@ -120,7 +120,7 @@ func buildItems(tasks []model.TaskBrief) []sidebarItem {
 	return items
 }
 
-func buildGroupItems(tasks []model.TaskBrief, groups []string) []sidebarItem {
+func buildGroupItems(tasks []model.Task, groups []string) []sidebarItem {
 	var items []sidebarItem
 	for _, group := range groups {
 		items = append(items, sidebarItem{label: group, kind: entryGroupHeader})
@@ -139,7 +139,7 @@ func buildGroupItems(tasks []model.TaskBrief, groups []string) []sidebarItem {
 	return items
 }
 
-func hasMultipleGroups(tasks []model.TaskBrief) bool {
+func hasMultipleGroups(tasks []model.Task) bool {
 	if len(tasks) == 0 {
 		return false
 	}

@@ -13,7 +13,7 @@ import (
 )
 
 func TestHeldTaskNames_OnlyHeldTasksInListOrder(t *testing.T) {
-	tasks := []model.TaskBrief{
+	tasks := []model.Task{
 		{Name: "native", Cron: "* * * * *"},
 		{Name: "backup", Cron: "0 3 * * *", HeldBy: model.HeldByCron},
 		{Name: "logrotate", Cron: "0 4 * * *"},
@@ -23,7 +23,7 @@ func TestHeldTaskNames_OnlyHeldTasksInListOrder(t *testing.T) {
 }
 
 func TestHeldTaskNames_NothingHeld(t *testing.T) {
-	assert.Empty(t, heldTaskNames([]model.TaskBrief{{Name: "native"}}))
+	assert.Empty(t, heldTaskNames([]model.Task{{Name: "native"}}))
 	assert.Empty(t, heldTaskNames(nil))
 }
 

@@ -43,7 +43,6 @@ func TestStreamManager_NilClientReturnsNilCommands(t *testing.T) {
 	assert.Nil(t, sm.FetchRunSummary())
 	assert.Nil(t, sm.FetchMetricsHistory())
 	assert.Nil(t, sm.SubscribeDaemonLogs())
-	assert.Nil(t, sm.SubscribeNotifications())
 	assert.Nil(t, sm.FetchUnreadCount())
 	assert.Nil(t, sm.FetchNotifications())
 	assert.Nil(t, sm.MarkNotificationRead(""))
@@ -179,17 +178,6 @@ func TestStreamManager_ContinueListeningDaemonLog(t *testing.T) {
 	assert.NotNil(t, sm.ContinueListeningDaemonLog())
 }
 
-func TestStreamManager_ContinueListeningNotifications(t *testing.T) {
-	sm := newNilClientSM()
-	t.Cleanup(sm.Shutdown)
-	assert.Nil(t, sm.ContinueListeningNotifications())
-
-	ch := make(chan apiclient.NotificationStreamEvent, 1)
-	cmd := sm.OnNotificationConnected(ch)
-	require.NotNil(t, cmd)
-	assert.NotNil(t, sm.ContinueListeningNotifications())
-}
-
 func TestListenChannel_DeliversValue(t *testing.T) {
 	ch := make(chan int, 1)
 	ch <- 42
@@ -294,23 +282,6 @@ func TestListenLogStream_ClosedChannelReturnsDone(t *testing.T) {
 	got, ok := msg.(uikit.LogDoneMsg)
 	require.True(t, ok)
 	assert.Equal(t, "rid", got.RunID)
-}
-
-func TestListenNotifications_DeliversEvent(t *testing.T) {
-	ch := make(chan apiclient.NotificationStreamEvent, 1)
-	ch <- apiclient.NotificationStreamEvent{Type: "created"}
-	msg := listenNotifications(ch)()
-	got, ok := msg.(uikit.NotificationEventMsg)
-	require.True(t, ok)
-	assert.Equal(t, "created", got.Event.Type)
-}
-
-func TestListenNotifications_ClosedSentinel(t *testing.T) {
-	ch := make(chan apiclient.NotificationStreamEvent)
-	close(ch)
-	msg := listenNotifications(ch)()
-	_, ok := msg.(uikit.NotificationStreamDisconnectedMsg)
-	assert.True(t, ok)
 }
 
 func TestListenDaemonLog_DeliversLine(t *testing.T) {
@@ -525,21 +496,6 @@ func TestStreamManager_SubscribeDaemonLogs_ConnectedReturnsChannel(t *testing.T)
 	msg := cmd()
 	_, ok := msg.(uikit.DaemonLogConnectedMsg)
 	assert.True(t, ok, "expected DaemonLogConnectedMsg, got %T", msg)
-}
-
-func TestStreamManager_SubscribeNotifications_ConnectedReturnsChannel(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-	}))
-	defer srv.Close()
-	sm := NewStreamManager(apiclient.New(srv.URL, ""))
-	t.Cleanup(sm.Shutdown)
-
-	cmd := sm.SubscribeNotifications()
-	require.NotNil(t, cmd)
-	msg := cmd()
-	_, ok := msg.(uikit.NotificationStreamConnectedMsg)
-	assert.True(t, ok, "expected NotificationStreamConnectedMsg, got %T", msg)
 }
 
 func TestStreamManager_StartLogStream_ConnectErrorReturnsDoneMsg(t *testing.T) {

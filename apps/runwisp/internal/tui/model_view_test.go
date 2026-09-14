@@ -85,7 +85,7 @@ func TestRenderBody_FullscreenExecViewTrimsTrailingNewline(t *testing.T) {
 }
 
 func TestRenderMainContent_PageInfoUsesInfoView(t *testing.T) {
-	m := newTestModel([]model.TaskBrief{{Name: "t1"}})
+	m := newTestModel([]model.Task{{Name: "t1"}})
 	m, _ = m.applyWindowSize(120, 30)
 	// Sidebar items: [Home(0), t1(1), Info(2), Debug(3)] — pick Info.
 	selectSidebarItem(&m, 2)
@@ -97,7 +97,7 @@ func TestRenderMainContent_PageInfoUsesInfoView(t *testing.T) {
 }
 
 func TestRenderMainContent_PageDebugUsesDebugView(t *testing.T) {
-	m := newTestModel([]model.TaskBrief{{Name: "t1"}})
+	m := newTestModel([]model.Task{{Name: "t1"}})
 	m, _ = m.applyWindowSize(120, 30)
 	// Item index 3 = Debug.
 	selectSidebarItem(&m, 3)
@@ -130,7 +130,7 @@ func TestBuildHelpText_ExecViewHintIncludesQuit(t *testing.T) {
 }
 
 func TestBuildSidebarHelpText_ServiceShowsRestart(t *testing.T) {
-	m := newTestModel([]model.TaskBrief{{Name: "svc", Kind: model.KindService}})
+	m := newTestModel([]model.Task{{Name: "svc", Kind: model.KindService}})
 	// Place the cursor on the service entry (item 1) without pressing Enter so
 	// CursorTaskName returns the service.
 	m.sidebar.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
@@ -171,7 +171,7 @@ func TestRenderHomeContent_NoActiveTaskRendersHomeHeader(t *testing.T) {
 // TestRenderHomeContent_ActiveTaskRendersTaskHeader covers the active-task
 // branch which calls home.RenderTaskHeader.
 func TestRenderHomeContent_ActiveTaskRendersTaskHeader(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "backup"}}
+	tasks := []model.Task{{Name: "backup"}}
 	m := newTestModel(tasks)
 	m, _ = m.applyWindowSize(120, 30)
 	selectSidebarItem(&m, 1)

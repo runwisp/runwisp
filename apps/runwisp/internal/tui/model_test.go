@@ -290,7 +290,7 @@ func TestServiceInstances_UnknownTaskReturns0(t *testing.T) {
 }
 
 func TestServiceInstances_ServiceWithZeroInstances(t *testing.T) {
-	tasks := []model.TaskBrief{
+	tasks := []model.Task{
 		{Name: "svc", Kind: model.KindService, Instances: 0},
 	}
 	m := newTestModel(tasks)
@@ -301,7 +301,7 @@ func TestServiceInstances_ServiceWithZeroInstances(t *testing.T) {
 }
 
 func TestServiceInstances_ServiceWithThreeInstances(t *testing.T) {
-	tasks := []model.TaskBrief{
+	tasks := []model.Task{
 		{Name: "svc", Kind: model.KindService, Instances: 3},
 	}
 	m := newTestModel(tasks)
@@ -311,7 +311,7 @@ func TestServiceInstances_ServiceWithThreeInstances(t *testing.T) {
 }
 
 func TestServiceInstances_NonServiceTask(t *testing.T) {
-	tasks := []model.TaskBrief{
+	tasks := []model.Task{
 		{Name: "job", Kind: model.KindTask},
 	}
 	m := newTestModel(tasks)
@@ -324,7 +324,7 @@ func TestServiceInstances_NonServiceTask(t *testing.T) {
 // ─── autoOpenService (negative branches) ─────────────────────────────────────
 
 func TestAutoOpenService_NonServiceTaskReturnsNil(t *testing.T) {
-	tasks := []model.TaskBrief{
+	tasks := []model.Task{
 		{Name: "job", Kind: model.KindTask},
 	}
 	m := newTestModel(tasks)
@@ -368,7 +368,7 @@ func TestMarkRunNotificationsRead_MarksLocallyRead(t *testing.T) {
 // ─── autoOpenService ─────────────────────────────────────────────────────────
 
 func TestAutoOpenService_SingleInstanceWithRunningExecOpensView(t *testing.T) {
-	tasks := []model.TaskBrief{{
+	tasks := []model.Task{{
 		Name:          "svc",
 		Kind:          model.KindService,
 		MaxConcurrent: 1,
@@ -414,7 +414,7 @@ func TestOpenRunByID_RunInWindowOpensExecView(t *testing.T) {
 // ─── resolveTaskName ─────────────────────────────────────────────────────────
 
 func TestResolveTaskName_PanelMainReturnsSidebarActive(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "backup-db"}}
+	tasks := []model.Task{{Name: "backup-db"}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
 	m.focusMainPanel()

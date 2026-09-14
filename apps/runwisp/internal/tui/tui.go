@@ -199,7 +199,7 @@ func printCapabilitiesSection(w io.Writer, capabilities []model.CapInfo) {
 	fmt.Fprintln(w)
 }
 
-func printTasksSection(w io.Writer, tasks []model.TaskBrief) {
+func printTasksSection(w io.Writer, tasks []model.Task) {
 	if len(tasks) == 0 {
 		return
 	}

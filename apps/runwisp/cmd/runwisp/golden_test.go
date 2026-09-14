@@ -88,7 +88,6 @@ description = "nightly backup"
 [services.web]
 run = "exec /usr/bin/web"
 instances = 2
-manual_trigger = true
 `)}
 	var buf bytes.Buffer
 	require.NoError(t, runList(&buf, f, true))

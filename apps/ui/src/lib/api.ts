@@ -21,6 +21,7 @@ import {
     authChallengeResponseSchema,
     authLoginResponseSchema,
     authStatusResponseSchema,
+    type AuthLoginResponse,
     type AuthStatusResponse,
 } from "./types";
 
@@ -64,7 +65,7 @@ const apiClient = createClient<APIPaths>({ baseUrl: API_BASE_URL });
 apiClient.use(authMiddleware);
 
 export const authApi = {
-    login: async (password: string): Promise<{ token: string }> => {
+    login: async (password: string): Promise<AuthLoginResponse> => {
         const challengeRes = await fetch(`${API_BASE_URL}/api/auth/challenge`);
         if (challengeRes.status === HTTP_STATUS.TOO_MANY_REQUESTS) throw new RateLimitedError();
         if (!challengeRes.ok) throw new Error("Failed to get auth challenge");

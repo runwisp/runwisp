@@ -24,6 +24,7 @@ import (
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
+	"github.com/runwisp/runwisp/internal/server"
 	"github.com/spf13/cobra"
 )
 
@@ -558,6 +559,16 @@ func runExecStandalone(taskName string, f Flags) (int, error) {
 	}
 	if target == nil {
 		return 0, unknownTaskError(taskName, names)
+	}
+	// Standalone talks to the run manager directly, bypassing the daemon/cloud
+	// guard in internal/server.runService.TriggerRun — so it must enforce the
+	// same two checks itself, or manual_trigger=false and services stop being
+	// cron/API-triggerable-only everywhere as documented.
+	if target.Kind.IsService() {
+		return 0, fmt.Errorf("task %q: %w", taskName, server.ErrServiceNotRunnable)
+	}
+	if !target.ManualTrigger {
+		return 0, standaloneManualTriggerDisabledError(taskName)
 	}
 
 	eventBus := events.NewEventBus()

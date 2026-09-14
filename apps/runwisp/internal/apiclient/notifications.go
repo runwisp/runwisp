@@ -4,7 +4,6 @@
 package apiclient
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -12,9 +11,6 @@ import (
 
 	"github.com/runwisp/runwisp/internal/server"
 )
-
-// NotificationStreamEvent is an SSEEvent from /api/notifications/stream.
-type NotificationStreamEvent = SSEEvent
 
 // ListNotifications fetches one page of notifications. Pass before="" for the
 // most recent page; subsequent pages use NextCursor from the previous response.
@@ -57,26 +53,11 @@ func (c *Client) MarkNotificationUnread(id string) error {
 // UnreadNotificationCount returns the number of notifications with read_at IS
 // NULL.
 func (c *Client) UnreadNotificationCount() (int64, error) {
-	var resp struct {
-		Count int64 `json:"count"`
-	}
+	var resp server.NotificationUnreadBody
 	if err := c.doJSON("GET", "/api/notifications/unreadCount", nil, &resp); err != nil {
 		return 0, err
 	}
 	return resp.Count, nil
-}
-
-// StreamNotifications opens an SSE connection to /api/notifications/stream and
-// delivers parsed events. The channel is closed when ctx is cancelled or the
-// underlying stream ends.
-func (c *Client) StreamNotifications(ctx context.Context) (<-chan NotificationStreamEvent, error) {
-	resp, err := c.doSSE(ctx, "/api/notifications/stream")
-	if err != nil {
-		return nil, err
-	}
-	ch := make(chan NotificationStreamEvent, 32)
-	go simpleSSELoop(ctx, resp.Body, ch)
-	return ch, nil
 }
 
 // DecodeNotificationEnvelope unwraps a notification.created or

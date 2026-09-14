@@ -216,6 +216,11 @@
     // Disabled only when the task forbids API triggering or a trigger is mid-flight.
     const runTriggerable = $derived(!taskIsService && (task.manualTrigger ?? true) && !triggering);
 
+    // manualTrigger means something different on a service: whether it can be
+    // stopped/restarted from here at all, rather than run-triggered. false
+    // locks it to its restart policy until a runwisp.toml edit + reload.
+    const serviceControllable = $derived(taskIsService && (task.manualTrigger ?? true));
+
     // In cloud mode the cloud owns scheduling/dispatch; triggering here is the
     // operator's "run it here, now" escape hatch against the local runner.
     // Frame the confirm honestly rather than implying it's the canonical trigger.
@@ -349,10 +354,10 @@
             onRunAgain={runTriggerable && hasParams ? openRunAgain : undefined}
             onRunTask={runTriggerable ? openRun : undefined}
             onStop={!taskIsService && onStop ? () => (stopConfirmOpen = true) : undefined}
-            onStopService={taskIsService && onStopService
+            onStopService={serviceControllable && onStopService
                 ? () => (stopServiceConfirmOpen = true)
                 : undefined}
-            onRestartService={taskIsService && onRestart
+            onRestartService={serviceControllable && onRestart
                 ? () => (restartConfirmOpen = true)
                 : undefined}
             {serviceStopped}

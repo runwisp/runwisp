@@ -34,6 +34,18 @@ const peerAddrContextKey contextKey = "peerAddr"
 // just a same-host reverse proxy relaying an internet client.
 const proxiedContextKey contextKey = "proxied"
 
+// secureContextKey stores whether savePeerAddr judged this request to have
+// arrived over a secure channel (direct TLS, or X-Forwarded-Proto: https from
+// a trusted proxy — see auth.Service.IsSecureRequest). Huma auth handlers
+// read it via isSecureCtx since they receive a context.Context, not a
+// *http.Request, and so cannot inspect r.TLS themselves.
+const secureContextKey contextKey = "secure"
+
+func isSecureCtx(ctx context.Context) bool {
+	v, _ := ctx.Value(secureContextKey).(bool)
+	return v
+}
+
 // forwardedHeaders are the hop headers whose presence means "someone relayed
 // this". Any one of them disqualifies a peer from counting as local.
 var forwardedHeaders = []string{"X-Forwarded-For", "X-Forwarded-Host", "X-Real-IP", "Forwarded", "CF-Connecting-IP"}
@@ -91,6 +103,7 @@ func (srv *Server) savePeerAddr(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), peerAddrContextKey, r.RemoteAddr)
 		ctx = context.WithValue(ctx, proxiedContextKey, isProxiedRequest(r, srv.trustedProxies))
+		ctx = context.WithValue(ctx, secureContextKey, srv.auth.IsSecureRequest(r))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -248,7 +261,9 @@ func (srv *Server) setupRoutes() error {
 		srv.router.Get("/metrics", srv.handleOpenMetrics)
 	}
 
-	// Public auth endpoints (huma — only authStatus; challenge is raw chi below)
+	// Public auth status endpoint. No rate limit (nothing to flood — it only
+	// reads a cookie) and outside the protected group (the UI calls it before
+	// it knows whether the caller is authenticated).
 	srv.registerAuthRoutes()
 
 	// Public identity endpoint. Outside the authOrLocalTrusted group so a
@@ -256,12 +271,12 @@ func (srv *Server) setupRoutes() error {
 	// loopback gate keeps its datadir/config/socket paths local-only.
 	srv.registerInstanceRoute()
 
-	// Rate-limited auth endpoints: both challenge and login share the same limit
-	// to prevent nonce-store flooding (DoS on the auth flow).
-	authLimiter := httprate.LimitByIP(auth.MaxAuthAttempts, auth.AuthRateWindow)
-	srv.router.With(authLimiter).Get("/api/auth/challenge", srv.handleAuthChallenge)
-	srv.router.With(authLimiter).Post("/api/auth/login", srv.auth.HandleLogin)
-	srv.router.With(authLimiter).Get("/api/auth/launch-ticket", srv.handleLaunchTicket)
+	// Rate-limited auth endpoints: challenge, login, and launch-ticket redeem
+	// share one limit to prevent nonce-store flooding (DoS on the auth flow).
+	srv.router.Group(func(r chi.Router) {
+		r.Use(httprate.LimitByIP(auth.MaxAuthAttempts, auth.AuthRateWindow))
+		srv.registerRateLimitedAuthRoutes(r)
+	})
 
 	// Protected routes. With RUNWISP_AUTH=off the JWT gate is skipped entirely
 	// — an explicit operator opt-in, warned about loudly at startup — but the
@@ -275,9 +290,6 @@ func (srv *Server) setupRoutes() error {
 
 		// Huma operations (registered on the chi sub-router group)
 		srv.registerProtectedHumaRoutes(r)
-
-		// Raw chi handlers for complex endpoints
-		r.Post("/api/auth/launch-ticket", srv.handleCreateLaunchTicket)
 	})
 	return ui.Mount(srv.router)
 }

@@ -19,7 +19,7 @@ const heldNamesShown = 8
 // heldTaskNames pulls the held tasks out of a task list, preserving its order.
 // The daemon derives HeldBy from the same markers the scheduler consults, so this
 // can never disagree with what is actually running.
-func heldTaskNames(tasks []model.TaskBrief) []string {
+func heldTaskNames(tasks []model.Task) []string {
 	var out []string
 	for _, t := range tasks {
 		if t.HeldBy != model.HeldByNothing {

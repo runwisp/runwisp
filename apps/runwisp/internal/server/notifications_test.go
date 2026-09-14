@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/stretchr/testify/assert"
@@ -431,124 +430,6 @@ func TestPublishUnreadCountChanged_PublishesCount(t *testing.T) {
 	s.publishUnreadCountChanged(7)
 
 	hub.AssertExpectations(t)
-}
-
-// --- sseNotificationsLoop (ping-only: nil notifyCh) ---
-
-func TestSseNotificationsLoop_PingOnly_ExitsOnContextCancel(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		sseNotificationsLoop(ctx, nil, func(sse.Message) error { return nil })
-	}()
-
-	select {
-	case <-done:
-		// good — returned because context was cancelled
-	case <-time.After(2 * time.Second):
-		t.Fatal("sseNotificationsLoop did not exit after context cancellation")
-	}
-}
-
-func TestSseNotificationsLoop_PingOnly_ExitsOnContextTimeout(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		// 30s ticker won't fire in 50ms; context timeout terminates the loop.
-		sseNotificationsLoop(ctx, nil, func(sse.Message) error { return nil })
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("sseNotificationsLoop did not exit")
-	}
-}
-
-// --- SSE stream with no hub (ping-only) ---
-
-func TestNotificationsStream_NoHub_SendsPing(t *testing.T) {
-	repo := new(mockNotificationRepository)
-	s := notificationServer(t, repo, nil) // no hub → ping-only path
-
-	ctx, cancel := context.WithCancel(context.Background())
-	req := httptest.NewRequest(http.MethodGet, "/api/notifications/stream", nil).WithContext(ctx)
-	w := httptest.NewRecorder()
-
-	go func() {
-		time.Sleep(60 * time.Millisecond)
-		cancel()
-	}()
-
-	addAuth(req, s)
-	s.router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "event: ping")
-}
-
-// --- sseNotificationsLoop (live: subscribed notifyCh) ---
-
-func TestSseNotificationsLoop_DeliversPublishedUpdate(t *testing.T) {
-	hub := inapp.NewHub(8)
-	sub, unsubscribe := hub.Subscribe()
-	t.Cleanup(unsubscribe)
-
-	received := make(chan sse.Message, 4)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		sseNotificationsLoop(ctx, sub.Channel(), func(m sse.Message) error {
-			received <- m
-			return nil
-		})
-	}()
-
-	require.Eventually(t, func() bool {
-		hub.Publish(inapp.Update{Type: inapp.UpdateTypeUnreadCountChanged, UnreadCount: 3})
-		select {
-		case <-received:
-			return true
-		default:
-			return false
-		}
-	}, 2*time.Second, 10*time.Millisecond, "expected at least one message to be sent")
-
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("sseNotificationsLoop did not exit after context cancellation")
-	}
-}
-
-func TestSseNotificationsLoop_ExitsOnContextCancel(t *testing.T) {
-	hub := inapp.NewHub(4)
-	sub, unsubscribe := hub.Subscribe()
-	t.Cleanup(unsubscribe)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		sseNotificationsLoop(ctx, sub.Channel(), func(sse.Message) error { return nil })
-	}()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("sseNotificationsLoop did not exit after context cancellation")
-	}
 }
 
 // --- List notifications ---

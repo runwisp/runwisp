@@ -13,16 +13,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func makeTasks(names ...string) []model.TaskBrief {
-	tasks := make([]model.TaskBrief, len(names))
+func makeTasks(names ...string) []model.Task {
+	tasks := make([]model.Task, len(names))
 	for i, n := range names {
-		tasks[i] = model.TaskBrief{Name: n}
+		tasks[i] = model.Task{Name: n}
 	}
 	return tasks
 }
 
-func makeGroupedTasks() []model.TaskBrief {
-	return []model.TaskBrief{
+func makeGroupedTasks() []model.Task {
+	return []model.Task{
 		{Name: "alpha", Group: "group-a"},
 		{Name: "bravo", Group: "group-a"},
 		{Name: "charlie", Group: "group-b"},

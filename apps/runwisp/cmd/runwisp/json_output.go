@@ -249,16 +249,19 @@ type listTaskJSON struct {
 	Kind      string `json:"kind"`
 	Schedule  string `json:"schedule"`
 	Instances int    `json:"instances,omitempty"`
-	// MaxConcurrent is a pointer so it can be omitted for services, which have no
-	// max_concurrent at all — their copy count is governed by `instances`, not an
-	// overlap cap. Emitting a fabricated `1` here would contradict the config docs.
-	MaxConcurrent *int   `json:"maxConcurrent,omitempty"`
-	OnOverlap     string `json:"onOverlap"`
-	ManualTrigger bool   `json:"manualTrigger"`
-	Source        string `json:"source,omitempty"`
-	SourceFile    string `json:"sourceFile,omitempty"`
-	HeldBy        string `json:"heldBy,omitempty"`
-	Description   string `json:"description,omitempty"`
+	// MaxConcurrent and OnOverlap are pointers so they can be omitted for
+	// services: neither applies there (concurrency is `instances`, not an
+	// overlap cap). Emitting a fabricated default for either would contradict
+	// the config docs, which reject both keys on [services.*] entirely.
+	// ManualTrigger applies to both kinds (it gates run-triggering on a task,
+	// manual stop/restart/start on a service), so it is always emitted.
+	MaxConcurrent *int    `json:"maxConcurrent,omitempty"`
+	OnOverlap     *string `json:"onOverlap,omitempty"`
+	ManualTrigger bool    `json:"manualTrigger"`
+	Source        string  `json:"source,omitempty"`
+	SourceFile    string  `json:"sourceFile,omitempty"`
+	HeldBy        string  `json:"heldBy,omitempty"`
+	Description   string  `json:"description,omitempty"`
 }
 
 func newListTaskJSON(t model.Task) listTaskJSON {
@@ -266,18 +269,19 @@ func newListTaskJSON(t model.Task) listTaskJSON {
 		Name:          t.Name,
 		Kind:          taskKindString(t.Kind),
 		Schedule:      t.Cron,
-		OnOverlap:     string(t.OnOverlap),
-		ManualTrigger: t.ManualTrigger,
 		Source:        string(t.Source),
 		SourceFile:    t.SourceFile,
 		HeldBy:        string(t.HeldBy),
 		Description:   t.Description,
+		ManualTrigger: t.ManualTrigger,
 	}
 	if t.Kind.IsService() {
 		lt.Instances = t.Instances
 	} else {
 		mc := t.MaxConcurrent
 		lt.MaxConcurrent = &mc
+		onOverlap := string(t.OnOverlap)
+		lt.OnOverlap = &onOverlap
 	}
 	return lt
 }

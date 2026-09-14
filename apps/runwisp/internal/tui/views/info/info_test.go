@@ -338,7 +338,7 @@ func TestInfoView_View_RenderBranches(t *testing.T) {
 		{
 			name: "with-tasks",
 			setup: func() *InfoView {
-				v := NewInfoView(uikit.StartupInfo{Tasks: []model.TaskBrief{
+				v := NewInfoView(uikit.StartupInfo{Tasks: []model.Task{
 					{Name: "backup", Cron: "0 2 * * *"},
 					{Name: "cleanup", Kind: model.KindTask},
 					{Name: "worker", Kind: model.KindService, Instances: 3},
@@ -441,7 +441,7 @@ func TestInfoView_View_RenderBranches(t *testing.T) {
 					Fingerprint:  "fp-xyz",
 					Port:         9090,
 					CloudEnabled: true,
-					Tasks: []model.TaskBrief{
+					Tasks: []model.Task{
 						{Name: "nightly-backup", Cron: "0 3 * * *"},
 						{Name: "api-worker", Kind: model.KindService, Instances: 2},
 						{Name: "manual-job", Kind: model.KindTask},

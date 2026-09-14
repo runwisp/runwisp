@@ -943,7 +943,7 @@ func TestDelegateKeyToFocusedView_ExecViewMainPanel(t *testing.T) {
 // TestDelegateKeyToFocusedView_SidebarBranch covers the panelFocus==Sidebar
 // branch which forwards through sidebar.Update + applySidebarSelectionChange.
 func TestDelegateKeyToFocusedView_SidebarBranch(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "backup"}}
+	tasks := []model.Task{{Name: "backup"}}
 	m := newTestModel(tasks)
 	// Default focus is Sidebar.
 	newM, _ := m.delegateKeyToFocusedView(keyMsg("j"))
@@ -954,7 +954,7 @@ func TestDelegateKeyToFocusedView_SidebarBranch(t *testing.T) {
 
 // TestDelegateKeyToFocusedView_InfoPage covers the info-page branch.
 func TestDelegateKeyToFocusedView_InfoPage(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "t1"}}
+	tasks := []model.Task{{Name: "t1"}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 2) // Info
 	m.focusMainPanel()
@@ -966,7 +966,7 @@ func TestDelegateKeyToFocusedView_InfoPage(t *testing.T) {
 
 // TestDelegateKeyToFocusedView_DebugPage covers the debug-page branch.
 func TestDelegateKeyToFocusedView_DebugPage(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "t1"}}
+	tasks := []model.Task{{Name: "t1"}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 3) // Debug
 	m.focusMainPanel()
@@ -1042,7 +1042,7 @@ func TestHandleKeyLeft_ExecViewNotAtLeftEdge(t *testing.T) {
 // TestHandleKeyLeftNoExecView_DebugWithHScroll covers the
 // debug-page-with-hscroll>0 branch which yields handled=false.
 func TestHandleKeyLeftNoExecView_DebugWithHScroll(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "t1"}}
+	tasks := []model.Task{{Name: "t1"}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 3) // Debug
 	m.focusMainPanel()
@@ -1142,7 +1142,7 @@ func TestHandleKeyEnterActionButton_ActionDelete(t *testing.T) {
 // ─── handleKeyR: cron task path (no execView) ────────────────────────────────
 
 func TestHandleKeyR_CronTaskTriggers(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "backup"}}
+	tasks := []model.Task{{Name: "backup"}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
 	m.client = newDummyClient()
@@ -1343,7 +1343,7 @@ func TestCanOpenLogSearch_ExecViewRun(t *testing.T) {
 }
 
 func TestCanOpenLogSearch_SidebarTask(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "alpha"}}
+	tasks := []model.Task{{Name: "alpha"}}
 	m := newTestModel(tasks)
 	m.client = newDummyClient()
 	selectSidebarItem(&m, 1)
@@ -1383,7 +1383,7 @@ func TestOpenLogSearch_FromExecView(t *testing.T) {
 }
 
 func TestOpenLogSearch_FromSidebar(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "alpha"}}
+	tasks := []model.Task{{Name: "alpha"}}
 	m := newTestModel(tasks)
 	m.client = newDummyClient()
 	selectSidebarItem(&m, 1)

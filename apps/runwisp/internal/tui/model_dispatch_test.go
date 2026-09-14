@@ -97,9 +97,6 @@ func TestDispatchLogMsg(t *testing.T) {
 func TestDispatchNotificationMsg(t *testing.T) {
 	m := newTestModel(nil)
 	cases := []tea.Msg{
-		uikit.NotificationStreamConnectedMsg{},
-		uikit.NotificationEventMsg{},
-		uikit.NotificationStreamDisconnectedMsg{},
 		uikit.NotificationUnreadCountMsg{},
 		uikit.NotificationsLoadedMsg{},
 		uikit.NotificationReadStateMsg{},

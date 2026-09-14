@@ -32,13 +32,21 @@ type tomlConfig struct {
 	Routes    []routeWire              `toml:"route,omitempty"`
 }
 
-// taskServiceWireCore holds the TOML keys shared by [tasks.*] and [services.*]
-// entries. It is embedded anonymously in taskWire and serviceWire so go-toml
-// decodes its fields as if they were declared on the outer struct.
-type taskServiceWireCore struct {
+// unitOverrideWire holds the "identity and lifecycle" TOML keys accepted on
+// every executable unit: [tasks.*], [services.*], and per-service compose
+// overrides. Embedded anonymously so go-toml decodes its fields as if they
+// were declared on the outer struct.
+type unitOverrideWire struct {
 	Group       string `toml:"group,omitempty"`
 	Description string `toml:"description,omitempty"`
 
+	// ManualTrigger is valid on every unit: it gates manual run-triggering on
+	// a task (model.Task.Triggerable) and manual stop/restart/start on a
+	// service (model.Task.ManuallyControllable). OnOverlap decodes here too,
+	// but purely so a service (or compose override) can reject it with a
+	// pointed message instead of an opaque undecoded-key error: it's a
+	// task-only concept (a service's copy count is `instances`, and it never
+	// runs a second overlapping instance).
 	ManualTrigger *bool                   `toml:"manual_trigger,omitempty"`
 	OnOverlap     model.ConcurrencyPolicy `toml:"on_overlap,omitempty"`
 
@@ -46,17 +54,37 @@ type taskServiceWireCore struct {
 	GracefulStop string `toml:"graceful_stop,omitempty"`
 	StopSignal   string `toml:"stop_signal,omitempty"`
 
-	WorkingDir string `toml:"working_dir,omitempty"`
-	Shell      string `toml:"shell,omitempty"`
-	Umask      string `toml:"umask,omitempty"`
-	EnvBase    string `toml:"env_base,omitempty"`
-	User       string `toml:"user,omitempty"`
-
 	LogMaxSize string `toml:"log_max_size,omitempty"`
 	LogOnFull  string `toml:"log_on_full,omitempty"`
 
 	KeepRuns *int   `toml:"keep_runs,omitempty"`
 	KeepFor  string `toml:"keep_for,omitempty"`
+
+	Env         map[string]string `toml:"env,omitempty"`
+	EnvFile     string            `toml:"env_file,omitempty"`
+	Secrets     map[string]string `toml:"secrets,omitempty"`
+	SecretsFile string            `toml:"secrets_file,omitempty"`
+
+	// Notify lists the notifier IDs to page when this unit's `failures` policy
+	// classifies a run as a failure. Each entry is a notifier id, optionally with
+	// an inline target override ("slack:#ops"). Non-failure outcomes (a success
+	// ping, a timeout-only escalation) are routed with an explicit [[route]].
+	Notify []string `toml:"notify,omitempty"`
+}
+
+// taskServiceWireCore holds the TOML keys shared by [tasks.*] and [services.*]
+// entries specifically — the process-execution surface a compose override
+// never gets, since its backend is fixed by the parent [compose.*] block. It
+// is embedded anonymously in taskWire and serviceWire so go-toml decodes its
+// fields as if they were declared on the outer struct.
+type taskServiceWireCore struct {
+	unitOverrideWire
+
+	WorkingDir string `toml:"working_dir,omitempty"`
+	Shell      string `toml:"shell,omitempty"`
+	Umask      string `toml:"umask,omitempty"`
+	EnvBase    string `toml:"env_base,omitempty"`
+	User       string `toml:"user,omitempty"`
 
 	// Run is exempt from ${...} substitution (expand:"-"): the shell expands
 	// $VAR / ${VAR} at runtime with the full process env, secrets included.
@@ -70,16 +98,6 @@ type taskServiceWireCore struct {
 	ComposeService string `toml:"compose_service,omitempty"`
 	ComposeMode    string `toml:"compose_mode,omitempty"`
 
-	Env         map[string]string `toml:"env,omitempty"`
-	EnvFile     string            `toml:"env_file,omitempty"`
-	Secrets     map[string]string `toml:"secrets,omitempty"`
-	SecretsFile string            `toml:"secrets_file,omitempty"`
-
-	// Notify lists the notifier IDs to page when this unit's `failures` policy
-	// classifies a run as a failure. Each entry is a notifier id, optionally with
-	// an inline target override ("slack:#ops"). Non-failure outcomes (a success
-	// ping, a timeout-only escalation) are routed with an explicit [[route]].
-	Notify []string `toml:"notify,omitempty"`
 	// Failures declares which outcomes count as a failure for this task: a list of
 	// EndReason names and/or exit-code tokens ("42", "1-23"). nil means "unset"
 	// (inherit [defaults], then the built-in default) — distinct from an explicit
@@ -91,6 +109,36 @@ type taskServiceWireCore struct {
 	// key decodes on [services.*] into a friendly rejection (services are never
 	// manually triggered) rather than an undecoded-key error.
 	Params []paramWire `toml:"params,omitempty"`
+
+	// DependsOn decodes here (not separately on taskWire and serviceWire) so
+	// [tasks.*] can reject it with a friendly message alongside
+	// manual_trigger/on_overlap instead of duplicating an identical field on
+	// both structs. Only [services.*] gives it meaning; a slice needs no
+	// pointer trick since nil already means "unset".
+	DependsOn []string `toml:"depends_on,omitempty"`
+}
+
+// serviceSupervisionWire holds the restart/instance-supervision TOML keys
+// shared by [services.*] entries and their per-service compose overrides.
+// Embedded anonymously so go-toml decodes its fields as if declared on the
+// outer struct.
+type serviceSupervisionWire struct {
+	// Restart defaults to "always" (a service that just exits should come back);
+	// an operator can narrow it to "on_failure"/"never", matching what a
+	// compose-imported service's per-service override already allows.
+	Restart        model.RestartPolicy `toml:"restart,omitempty"`
+	RestartDelay   string              `toml:"restart_delay,omitempty"`
+	RestartBackoff model.BackoffCurve  `toml:"restart_backoff,omitempty"`
+	HealthyAfter   string              `toml:"healthy_after,omitempty"`
+
+	// RestartAttempts is a pointer so an explicit `restart_attempts = 0` (give
+	// up on the very first failure) is distinguishable from an omitted key.
+	RestartAttempts *int `toml:"restart_attempts,omitempty"`
+
+	Priority int `toml:"priority,omitempty"`
+	// Autostart is a pointer so an omitted key (nil → default true) is
+	// distinguishable from an explicit `autostart = false`.
+	Autostart *bool `toml:"autostart,omitempty"`
 }
 
 // paramWire is one inline table in [tasks.*.params]. Exactly one identity
@@ -422,11 +470,6 @@ type taskWire struct {
 	// can distinguish "unset" from "explicitly zero".
 	Instances *int `toml:"instances,omitempty"`
 
-	// DependsOn is rejected on [tasks.*] (services-only). A slice needs no
-	// pointer trick — nil already means "unset". It exists here only so the
-	// key decodes into a friendly rejection instead of an undecoded-key error.
-	DependsOn []string `toml:"depends_on,omitempty"`
-
 	RetryAttempts int                `toml:"retry_attempts,omitempty"`
 	RetryDelay    string             `toml:"retry_delay,omitempty"`
 	RetryBackoff  model.BackoffCurve `toml:"retry_backoff,omitempty"`
@@ -465,23 +508,9 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 // and overlap behaviour by `on_overlap`.
 type serviceWire struct {
 	taskServiceWireCore
+	serviceSupervisionWire
 
 	Instances int `toml:"instances,omitempty"`
-
-	RestartDelay   string             `toml:"restart_delay,omitempty"`
-	RestartBackoff model.BackoffCurve `toml:"restart_backoff,omitempty"`
-	HealthyAfter   string             `toml:"healthy_after,omitempty"`
-
-	// RestartAttempts is a pointer so an explicit `restart_attempts = 0` (give
-	// up on the very first failure) is distinguishable from an omitted key.
-	RestartAttempts *int `toml:"restart_attempts,omitempty"`
-
-	Priority int `toml:"priority,omitempty"`
-	// Autostart is a pointer so an omitted key (nil → default true) is
-	// distinguishable from an explicit `autostart = false`.
-	Autostart *bool `toml:"autostart,omitempty"`
-
-	DependsOn []string `toml:"depends_on,omitempty"`
 }
 
 func (w *serviceWire) toTask(name string) (model.Task, error) {
@@ -504,7 +533,10 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 	if w.Autostart != nil {
 		autostart = *w.Autostart
 	}
-	task.Restart = model.RestartAlways
+	task.Restart = w.Restart
+	if task.Restart == "" {
+		task.Restart = model.RestartAlways
+	}
 	task.Instances = w.Instances
 	task.RestartDelay = restartDelay
 	task.RestartBackoff = w.RestartBackoff

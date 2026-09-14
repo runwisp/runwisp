@@ -4,6 +4,7 @@
 package server
 
 import (
+	"net/http"
 	"strconv"
 	"time"
 
@@ -69,6 +70,12 @@ type RunIDInput struct {
 	RunID string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
 }
 
+// RunsQueryInput cannot simply embed model.RunFilter: huma panics at startup
+// on a pointer-typed query/path/header field, but RunFilter's CreatedAfter/
+// CreatedBefore/ExitCodeMin/ExitCodeMax are pointers so the JSON body (used by
+// RunSelector) can omit them correctly. Every field here still names and
+// documents the same filter RunFilter does — TestRunsQueryInputCoversRunFilter
+// asserts the two can't silently drift.
 type RunsQueryInput struct {
 	Limit         int       `query:"limit" minimum:"1" maximum:"1000" default:"50" doc:"Max results per page"`
 	Offset        int       `query:"offset" minimum:"0" default:"0" doc:"Pagination offset"`
@@ -80,9 +87,13 @@ type RunsQueryInput struct {
 	ExitCodeMin   string    `query:"exitCodeMin" pattern:"^-?[0-9]+$" doc:"Only runs whose exit code is >= this (inclusive)"`
 	ExitCodeMax   string    `query:"exitCodeMax" pattern:"^-?[0-9]+$" doc:"Only runs whose exit code is <= this (inclusive)"`
 	RetriesOnly   bool      `query:"retriesOnly" doc:"Only runs that are a retry (retry_attempt > 0)"`
-	SortField     string    `query:"sortField" enum:"taskName,status,startedAt,exitCode,duration,createdAt," doc:"Field to sort by"`
-	SortDirection string    `query:"sortDirection" enum:"asc,desc," doc:"Sort direction"`
-	Search        string    `query:"search" doc:"Search query"`
+	// IsFailure mirrors model.RunFilter.IsFailure. Equivalent to putting
+	// model.FailureStatusToken in Status, spelled out as its own boolean so an
+	// API client doesn't need to know the token to ask for "failures only".
+	IsFailure     bool   `query:"isFailure" doc:"Also match runs classified as a failure (per-task failures policy)"`
+	SortField     string `query:"sortField" enum:"taskName,status,startedAt,exitCode,duration,createdAt," doc:"Field to sort by"`
+	SortDirection string `query:"sortDirection" enum:"asc,desc," doc:"Sort direction"`
+	Search        string `query:"search" doc:"Search query"`
 }
 
 // toPaginationParams parses the raw query strings into a typed RunFilter plus
@@ -100,6 +111,7 @@ func (q *RunsQueryInput) toPaginationParams() PaginationParams {
 		Search:      q.Search,
 		TriggeredBy: q.TriggeredBy,
 		RetriesOnly: q.RetriesOnly,
+		IsFailure:   q.IsFailure,
 	}
 	// time.Time query params parse as RFC3339; an absent param stays zero.
 	if !q.CreatedAfter.IsZero() {
@@ -238,6 +250,55 @@ type AuthChallengeOutput struct {
 
 type AuthChallengeBody struct {
 	Nonce string `json:"nonce" doc:"Challenge nonce (hex)"`
+}
+
+// AuthStatusInput reads the session cookie. The tag must match
+// auth.CookieName literally — huma param tags are compile-time string
+// literals and can't reference the constant.
+type AuthStatusInput struct {
+	Token string `cookie:"runwisp_jwt"`
+}
+
+type AuthLoginInput struct {
+	Body AuthLoginRequest
+}
+
+type AuthLoginRequest struct {
+	Nonce    string `json:"nonce" doc:"Challenge nonce returned by GET /api/auth/challenge"`
+	Response string `json:"response" doc:"chap.Response(password, nonce) — proves knowledge of the password without sending it"`
+}
+
+// AuthLoginOutput carries the session both ways: as a Set-Cookie header for
+// browser clients, and in the body for TCP API clients that hold their own
+// token and send it as a Bearer header instead of relying on cookies.
+type AuthLoginOutput struct {
+	SetCookie http.Cookie `header:"Set-Cookie"`
+	Body      AuthLoginBody
+}
+
+type AuthLoginBody struct {
+	Token string `json:"token" doc:"JWT session token, also set as the runwisp_jwt cookie"`
+}
+
+type LaunchTicketBody struct {
+	Ticket string `json:"ticket" doc:"Single-use, short-TTL ticket. Redeem via GET /api/auth/launch-ticket?ticket=..."`
+}
+
+type LaunchTicketMintOutput struct {
+	Body LaunchTicketBody
+}
+
+type LaunchTicketRedeemInput struct {
+	Ticket   string `query:"ticket" required:"true" doc:"Single-use ticket minted by POST /api/auth/launch-ticket"`
+	Redirect string `query:"redirect" doc:"Same-origin absolute path to land on after the session cookie is set; defaults to /"`
+}
+
+// LaunchTicketRedeemOutput has no Body: huma skips body-writing entirely when
+// no Body field is present, which is correct for a redirect response.
+type LaunchTicketRedeemOutput struct {
+	Status    int
+	Location  string      `header:"Location"`
+	SetCookie http.Cookie `header:"Set-Cookie"`
 }
 
 // ---------- SSE event wrapper types ----------

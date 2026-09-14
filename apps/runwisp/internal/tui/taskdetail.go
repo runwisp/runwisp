@@ -32,13 +32,13 @@ type taskHealth struct {
 // instead of polluting the header.
 type TaskDetailDialog struct {
 	taskName string
-	task     *model.TaskBrief
+	task     *model.Task
 	health   taskHealth
 }
 
 // NewTaskDetailDialog builds the inspector for a task. task may be nil when the
 // definition isn't in the local cache; the panel degrades to name + health.
-func NewTaskDetailDialog(taskName string, task *model.TaskBrief) TaskDetailDialog {
+func NewTaskDetailDialog(taskName string, task *model.Task) TaskDetailDialog {
 	return TaskDetailDialog{taskName: taskName, task: task}
 }
 
@@ -112,7 +112,7 @@ func (d *TaskDetailDialog) definitionRows(row func(label, value string, color co
 
 	d.kindRows(add)
 	add("Group", task.Group)
-	if task.ManualTrigger {
+	if task.Triggerable() {
 		add("Manual trigger", "enabled")
 	}
 	if len(task.DependsOn) > 0 {
@@ -149,6 +149,9 @@ func (d *TaskDetailDialog) kindRows(add func(label, value string)) {
 		add("Kind", "service")
 		add("Instances", strconv.Itoa(max(task.Instances, 1)))
 		add("Restart", string(task.Restart))
+		if !task.ManuallyControllable() {
+			add("Manual control", "locked (edit runwisp.toml + reload)")
+		}
 		return
 	}
 	add("Kind", "task")

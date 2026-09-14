@@ -83,14 +83,24 @@ func renderTaskTable(out io.Writer, tasks []model.Task) error {
 		switch {
 		case task.Kind.IsService():
 			schedule = fmt.Sprintf("(service x%d)", task.Instances)
+			if !task.ManuallyControllable() {
+				schedule += " [locked]"
+			}
 		case task.Cron != "":
 			schedule = task.Cron
 		default:
 			schedule = "(manual)"
 		}
 
+		// TRIGGER is specifically about manual run-triggering, a task-only
+		// concept: a service's manual_trigger locks stop/restart/start
+		// instead, called out via "[locked]" in SCHEDULE above.
 		trigger := "no"
-		if task.ManualTrigger {
+		policy := string(task.OnOverlap)
+		if task.Kind.IsService() {
+			trigger = "-"
+			policy = "-" // on_overlap doesn't apply; concurrency is `instances`
+		} else if task.Triggerable() {
 			trigger = "yes"
 		}
 
@@ -103,7 +113,7 @@ func renderTaskTable(out io.Writer, tasks []model.Task) error {
 			task.Name,
 			schedule,
 			task.MaxConcurrent,
-			task.OnOverlap,
+			policy,
 			trigger,
 			desc,
 		)

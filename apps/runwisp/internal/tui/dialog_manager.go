@@ -175,7 +175,7 @@ func (dm *DialogManager) HasTaskDetail() bool {
 
 // ShowTaskDetail opens the task inspector for the named task. Health figures
 // arrive asynchronously and are applied via ApplyTaskSummary.
-func (dm *DialogManager) ShowTaskDetail(taskName string, task *model.TaskBrief) {
+func (dm *DialogManager) ShowTaskDetail(taskName string, task *model.Task) {
 	d := NewTaskDetailDialog(taskName, task)
 	dm.taskDetail = &d
 }

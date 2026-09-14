@@ -161,7 +161,6 @@ func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		m.streams.FetchExecWindow(m.execWindow, m.execList.Scroll, m.execList.ViewportHeight()),
 		m.streams.SubscribeEvents(),
-		m.streams.SubscribeNotifications(),
 		m.streams.FetchUnreadCount(),
 		m.streams.FetchNotifications(),
 		m.tickCmd(),
@@ -336,7 +335,7 @@ func (m *Model) recalcExecListHeight() {
 }
 
 // taskDisplayByName looks up a task definition by name.
-func (m *Model) taskDisplayByName(name string) *model.TaskBrief {
+func (m *Model) taskDisplayByName(name string) *model.Task {
 	for i := range m.info.Tasks {
 		if m.info.Tasks[i].Name == name {
 			return &m.info.Tasks[i]

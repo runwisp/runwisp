@@ -82,7 +82,7 @@ func TestPrintStartupTo_WithTasks(t *testing.T) {
 	var buf bytes.Buffer
 	printStartupTo(&buf, uikit.StartupInfo{
 		Version: "0.0.0-test",
-		Tasks: []model.TaskBrief{
+		Tasks: []model.Task{
 			{Name: "backup", Cron: "0 3 * * *"},
 			{Name: "healthcheck"},
 		},
@@ -100,7 +100,7 @@ func TestPrintStartupTo_TaskKindService(t *testing.T) {
 	var buf bytes.Buffer
 	printStartupTo(&buf, uikit.StartupInfo{
 		Version: "0.0.0-test",
-		Tasks: []model.TaskBrief{
+		Tasks: []model.Task{
 			{Name: "worker", Kind: model.KindService, Instances: 3},
 		},
 	})
@@ -112,7 +112,7 @@ func TestPrintStartupTo_TaskManualTrigger(t *testing.T) {
 	var buf bytes.Buffer
 	printStartupTo(&buf, uikit.StartupInfo{
 		Version: "0.0.0-test",
-		Tasks: []model.TaskBrief{
+		Tasks: []model.Task{
 			{Name: "deploy", Kind: model.KindTask, Cron: ""},
 		},
 	})
@@ -306,7 +306,7 @@ func TestPrintTasksSection_Empty(t *testing.T) {
 
 func TestPrintTasksSection_SingleTask(t *testing.T) {
 	var buf bytes.Buffer
-	printTasksSection(&buf, []model.TaskBrief{
+	printTasksSection(&buf, []model.Task{
 		{Name: "only-task", Cron: "*/5 * * * *"},
 	})
 	out := buf.String()
@@ -318,7 +318,7 @@ func TestPrintTasksSection_SingleTask(t *testing.T) {
 
 func TestPrintTasksSection_MultipleTasks(t *testing.T) {
 	var buf bytes.Buffer
-	printTasksSection(&buf, []model.TaskBrief{
+	printTasksSection(&buf, []model.Task{
 		{Name: "first", Cron: "0 * * * *"},
 		{Name: "second"},
 		{Name: "third", Kind: model.KindService, Instances: 2},

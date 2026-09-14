@@ -220,7 +220,7 @@ func renderActionRow(b *strings.Builder, label string, labelColor color.Color, w
 // RenderTaskHeader renders the task info header with a Run Now button.
 // The runNowBtnY output is the screen-relative Y offset of the Run Now button row
 // within this header (0-based from header start).
-func RenderTaskHeader(taskName string, task *model.TaskBrief, w int, runNowHovered bool) (string, int) {
+func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered bool) (string, int) {
 	var b strings.Builder
 	lineCount := 0
 
@@ -337,7 +337,7 @@ func NextCronRun(schedule string) string {
 // scheduler stood down for. Exported because the header is not the only view that
 // needs the count, and deriving it from the task list rather than a separate field
 // means it can never disagree with the per-task badge.
-func HeldTaskCount(tasks []model.TaskBrief) int {
+func HeldTaskCount(tasks []model.Task) int {
 	n := 0
 	for _, t := range tasks {
 		if t.HeldBy != model.HeldByNothing {

@@ -206,6 +206,29 @@ run = "exec ./bin/web"
 		assert.True(t, s.ManualTrigger)
 	})
 
+	t.Run("service can narrow restart away from the always default", func(t *testing.T) {
+		path := writeTOML(t, `
+[services.web]
+run = "exec ./bin/web"
+restart = "on_failure"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.Len(t, cfg.Tasks, 1)
+		assert.Equal(t, model.RestartOnFailure, cfg.Tasks[0].Restart)
+	})
+
+	t.Run("service rejects invalid restart value", func(t *testing.T) {
+		path := writeTOML(t, `
+[services.web]
+run = "exec ./bin/web"
+restart = "sometimes"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "restart")
+	})
+
 	t.Run("service with multiple instances", func(t *testing.T) {
 		path := writeTOML(t, `
 [services.worker]
@@ -248,6 +271,42 @@ run = "exec ./bin/web"
 		_, err := Load(path)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unknown key")
+	})
+
+	t.Run("service rejects on_overlap (never consulted for service starts)", func(t *testing.T) {
+		path := writeTOML(t, `
+[services.web]
+on_overlap = "skip"
+run = "exec ./bin/web"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "on_overlap is only valid on [tasks.*]")
+	})
+
+	t.Run("service manual_trigger locks it against manual stop/restart/start", func(t *testing.T) {
+		path := writeTOML(t, `
+[services.web]
+manual_trigger = false
+run = "exec ./bin/web"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.Len(t, cfg.Tasks, 1)
+		assert.False(t, cfg.Tasks[0].ManualTrigger)
+		assert.False(t, cfg.Tasks[0].ManuallyControllable())
+	})
+
+	t.Run("service manual_trigger defaults to true when absent", func(t *testing.T) {
+		path := writeTOML(t, `
+[services.web]
+run = "exec ./bin/web"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.Len(t, cfg.Tasks, 1)
+		assert.True(t, cfg.Tasks[0].ManualTrigger)
+		assert.True(t, cfg.Tasks[0].ManuallyControllable())
 	})
 
 	t.Run("task rejects restart", func(t *testing.T) {
@@ -1651,18 +1710,6 @@ func TestLoad_ParseErrors(t *testing.T) {
 			assert.Contains(t, err.Error(), tt.wantErr)
 		})
 	}
-}
-
-func TestLoad_ServiceManualTriggerFalse(t *testing.T) {
-	path := writeTOML(t, `
-[services.svc]
-run = "exec ./bin/svc"
-manual_trigger = false
-`)
-	cfg, err := Load(path)
-	require.NoError(t, err)
-	require.Len(t, cfg.Tasks, 1)
-	assert.False(t, cfg.Tasks[0].ManualTrigger)
 }
 
 func TestNewSchemaFields(t *testing.T) {

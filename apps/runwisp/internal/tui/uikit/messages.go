@@ -296,19 +296,6 @@ type SpinnerTickMsg struct {
 	Inner tea.Msg
 }
 
-// NotificationStreamConnectedMsg signals the notifications SSE stream is established.
-type NotificationStreamConnectedMsg struct {
-	Ch <-chan apiclient.NotificationStreamEvent
-}
-
-// NotificationEventMsg wraps a parsed notification SSE event.
-type NotificationEventMsg struct {
-	Event apiclient.NotificationStreamEvent
-}
-
-// NotificationStreamDisconnectedMsg signals the notifications stream dropped.
-type NotificationStreamDisconnectedMsg struct{}
-
 // OpenRunMsg requests the model open an exec view for the given run. Used by
 // asynchronous run lookups (e.g., notification → exec view) where the run is
 // not in the local execWindow cache yet.

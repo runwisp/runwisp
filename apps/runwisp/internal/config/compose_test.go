@@ -112,6 +112,7 @@ stop_signal   = "SIGINT"
 restart_attempts = 1
 priority      = 5
 autostart     = false
+manual_trigger = false
 `))
 	require.NoError(t, err)
 
@@ -121,11 +122,13 @@ autostart     = false
 	assert.Equal(t, 1, *web.RestartAttempts)
 	assert.Equal(t, 5, web.Priority)
 	assert.False(t, web.Autostart)
+	assert.False(t, web.ManualTrigger)
 
 	// A non-overridden service keeps the compose-import defaults.
 	worker := findTask(t, cfg, "myapp.worker")
 	assert.True(t, worker.Autostart)
 	assert.Equal(t, 0, worker.Priority)
+	assert.True(t, worker.ManualTrigger)
 }
 
 func TestComposeExpansion_StackModeProducesSingleTask(t *testing.T) {

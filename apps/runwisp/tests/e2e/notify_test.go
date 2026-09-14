@@ -70,7 +70,7 @@ notifiers = ["ops", "inapp"]
 
 	streamCtx, cancelStream := context.WithCancel(context.Background())
 	t.Cleanup(cancelStream)
-	events, err := client.StreamNotifications(streamCtx)
+	events, err := client.StreamRunEvents(streamCtx, "")
 	require.NoError(t, err)
 	waitForFirstPing(t, events)
 
@@ -314,7 +314,7 @@ run = "exit 1"
 
 	streamCtx, cancelStream := context.WithCancel(context.Background())
 	t.Cleanup(cancelStream)
-	events, err := client.StreamNotifications(streamCtx)
+	events, err := client.StreamRunEvents(streamCtx, "")
 	require.NoError(t, err)
 	waitForFirstPing(t, events)
 
@@ -551,7 +551,7 @@ func writeNotifyConfig(t *testing.T, contents string) string {
 	return path
 }
 
-func waitForFirstPing(t *testing.T, events <-chan apiclient.NotificationStreamEvent) {
+func waitForFirstPing(t *testing.T, events <-chan apiclient.RunStreamEvent) {
 	t.Helper()
 	select {
 	case ev, ok := <-events:
@@ -575,7 +575,7 @@ func waitForWebhook(t *testing.T, received <-chan []byte, timeout time.Duration)
 
 func waitForNotificationEvent(
 	t *testing.T,
-	events <-chan apiclient.NotificationStreamEvent,
+	events <-chan apiclient.RunStreamEvent,
 	wanted string,
 	timeout time.Duration,
 ) server.NotificationDTO {
@@ -647,7 +647,7 @@ run = "exit 1"
 
 	streamCtx, cancelStream := context.WithCancel(context.Background())
 	t.Cleanup(cancelStream)
-	events, err := client.StreamNotifications(streamCtx)
+	events, err := client.StreamRunEvents(streamCtx, "")
 	require.NoError(t, err)
 	waitForFirstPing(t, events)
 
@@ -675,7 +675,7 @@ run = "exit 1"
 
 func waitForNotificationEnvelope(
 	t *testing.T,
-	events <-chan apiclient.NotificationStreamEvent,
+	events <-chan apiclient.RunStreamEvent,
 	wanted string,
 	timeout time.Duration,
 ) server.NotificationCreatedEvent {
@@ -702,7 +702,7 @@ func waitForNotificationEnvelope(
 
 func waitForUnreadCountEvent(
 	t *testing.T,
-	events <-chan apiclient.NotificationStreamEvent,
+	events <-chan apiclient.RunStreamEvent,
 	timeout time.Duration,
 ) int64 {
 	t.Helper()

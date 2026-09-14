@@ -1,4 +1,79 @@
 export interface paths {
+    "/api/auth/challenge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mint a single-use CHAP challenge nonce */
+        get: operations["getAuthChallenge"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/launch-ticket": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Redeem a single-use launch ticket and start a browser session
+         * @description Consumes the ticket, sets the session cookie, and redirects (303) to the `redirect` query parameter (a same-origin path; defaults to "/", and falls back to "/" if the value is unsafe).
+         */
+        get: operations["redeemLaunchTicket"];
+        put?: never;
+        /**
+         * Mint a single-use launch ticket
+         * @description The ticket can be redeemed via GET /api/auth/launch-ticket?ticket=<ticket>.
+         */
+        post: operations["createLaunchTicket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Exchange a signed CHAP challenge response for a session */
+        post: operations["login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Check whether the caller is authenticated */
+        get: operations["getAuthStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/daemon": {
         parameters: {
             query?: never;
@@ -144,26 +219,6 @@ export interface paths {
         put?: never;
         /** Mark every unread notification read */
         post: operations["markAllNotificationsRead"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/notifications/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Stream notification create/update events
-         * @description Server-Sent Events stream emitting notification.created and notification.updated as in-app rows are coalesced or marked read/unread.
-         */
-        get: operations["streamNotifications"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -607,6 +662,50 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AuthChallengeBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/AuthChallengeBody.json
+             */
+            readonly $schema?: string;
+            /** @description Challenge nonce (hex) */
+            nonce: string;
+        };
+        AuthLoginBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/AuthLoginBody.json
+             */
+            readonly $schema?: string;
+            /** @description JWT session token, also set as the runwisp_jwt cookie */
+            token: string;
+        };
+        AuthLoginRequest: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/AuthLoginRequest.json
+             */
+            readonly $schema?: string;
+            /** @description Challenge nonce returned by GET /api/auth/challenge */
+            nonce: string;
+            /** @description chap.Response(password, nonce) — proves knowledge of the password without sending it */
+            response: string;
+        };
+        AuthStatusBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/AuthStatusBody.json
+             */
+            readonly $schema?: string;
+            /** @description Whether authentication is required */
+            authRequired: boolean;
+            /** @description Whether the current request is already authenticated via cookie */
+            authenticated: boolean;
+        };
         BulkAffectedBody: {
             /**
              * Format: uri
@@ -660,7 +759,7 @@ export interface components {
             resolvedTimezone: string;
             schedulingActive: boolean;
             serviceManaged: boolean;
-            tasks: components["schemas"]["TaskBrief"][] | null;
+            tasks: components["schemas"]["Task"][] | null;
             /** @enum {string} */
             timezoneSource: "config" | "system";
             version: string;
@@ -737,6 +836,16 @@ export interface components {
             pid: number;
             socketPath: string;
             version: string;
+        };
+        LaunchTicketBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example http://localhost:9477/schemas/LaunchTicketBody.json
+             */
+            readonly $schema?: string;
+            /** @description Single-use, short-TTL ticket. Redeem via GET /api/auth/launch-ticket?ticket=... */
+            ticket: string;
         };
         LocalCredentialsBody: {
             /**
@@ -1259,31 +1368,171 @@ export interface components {
             /** @description Working directory of the daemon process */
             workDir: string;
         };
-        TaskBrief: {
-            catchUp?: string;
+        Task: {
+            /** @description For services: whether instances start at boot. False boots in the stopped state until started via API/UI. */
+            autostart: boolean;
+            /**
+             * @description What to do when cron ticks are missed during downtime
+             * @enum {string}
+             */
+            catchUp?: "latest" | "all" | "skip";
+            /** @description Provenance metadata for tasks imported from a docker compose file */
             compose?: components["schemas"]["TaskComposeRef"];
             cron?: string;
+            /** @description For services: service names that must be healthy before this one starts at boot — boot ordering only, not a workflow DAG */
             dependsOn?: string[] | null;
+            description?: string;
+            /** @description Environment variables overlaid on the task's process env. Values are visible to authenticated operators in the API/UI; env_file values merge in beneath the inline entries. */
+            env?: {
+                [key: string]: string;
+            };
+            /** @description What the run's environment starts from: 'inherit' (the daemon's, the default) or 'clean' (PATH, SHELL, HOME, USER/LOGNAME only, as crond gives a job) */
+            envBase?: string;
+            /** @description Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env. */
+            envFile?: string;
+            /**
+             * Format: int64
+             * @description Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds
+             */
+            gracefulStop?: number;
             group?: string;
             /**
-             * @description Set when something other than RunWisp owns this task's schedule, so it is listed but not fired on its cron. 'cron' means a live system cron daemon still reads its crontab. Manual triggers still work.
+             * Format: int64
+             * @description For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start
+             */
+            healthyAfter?: number;
+            /**
+             * @description Why this task is loaded but not on the scheduler: 'cron' means a live system cron daemon still reads the crontab it came from and is running it, so RunWisp stands down. Manual triggers still work. Empty means RunWisp owns the schedule.
              * @enum {string}
              */
             heldBy?: "cron";
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description For services: number of always-running instances
+             */
             instances?: number;
-            /** @enum {string} */
+            /**
+             * Format: int64
+             * @description Cap how far a cron task's start may slip so tasks sharing a fire time take turns through a daemon-wide one-at-a-time gate instead of stampeding; a run starts as soon as the gate frees and slips up to this window only under contention, in nanoseconds
+             */
+            jitter?: number;
+            /**
+             * Format: int64
+             * @description Retention window in nanoseconds; 0 means no cap was configured
+             */
+            keepFor?: number;
+            /**
+             * Format: int64
+             * @description Row-count retention cap; 0 keeps no completed runs, omitted inherits the [defaults] value (or no cap)
+             */
+            keepRuns?: number;
+            /**
+             * @description Whether this is a scheduled task or an always-on service
+             * @enum {string}
+             */
             kind?: "task" | "service";
+            /**
+             * Format: int64
+             * @description Per-run log size cap in bytes
+             */
+            logMaxSize?: number;
+            /**
+             * @description What to do when log output exceeds log_max_size
+             * @enum {string}
+             */
+            logOnFull?: "drop_new" | "drop_old" | "kill";
             manualTrigger: boolean;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Cap on catch-up runs triggered when catch_up = all
+             */
+            maxCatchUpRuns?: number;
+            /**
+             * Format: int64
+             * @description Maximum overlapping runs allowed for this task
+             */
             maxConcurrent?: number;
+            /**
+             * Format: int64
+             * @description Maximum runs that can wait when on_overlap = queue
+             */
+            maxQueued?: number;
             name: string;
-            onOverlap?: string;
+            /**
+             * @description How overlapping runs are handled
+             * @enum {string}
+             */
+            onOverlap?: "queue" | "skip" | "kill";
+            /** @description Per-execution parameters an operator may supply at manual trigger time; scheduled runs use the declared defaults */
             parameters?: components["schemas"]["TaskParam"][] | null;
-            restart?: string;
-            /** @enum {string} */
+            /**
+             * Format: int64
+             * @description For services: boot start order, lowest first (name breaks ties). Start order only — not a dependency.
+             */
+            priority?: number;
+            /**
+             * @description For services: whether and when an instance is restarted (defaults to always). Tasks re-run a failed run via retry_* instead.
+             * @enum {string}
+             */
+            restart?: "never" | "always" | "on_failure";
+            /**
+             * Format: int64
+             * @description For services: consecutive fast failures tolerated before the instance is marked FATAL; 0 means give up after the very first failure
+             */
+            restartAttempts?: number;
+            /**
+             * @description Backoff curve between consecutive restarts
+             * @enum {string}
+             */
+            restartBackoff?: "constant" | "linear" | "exponential";
+            /**
+             * Format: int64
+             * @description For services: base delay before each restart, in nanoseconds; 0 means restart instantly
+             */
+            restartDelay?: number;
+            /** Format: int64 */
+            retryAttempts?: number;
+            /**
+             * @description Backoff curve between consecutive retries
+             * @enum {string}
+             */
+            retryBackoff?: "constant" | "linear" | "exponential";
+            /**
+             * Format: int64
+             * @description Base delay before each retry, in nanoseconds
+             */
+            retryDelay?: number;
+            /** @description For tasks: fire once at daemon startup, in addition to any cron schedule */
+            runOnStart: boolean;
+            /** @description Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values never leave the daemon. */
+            secretsFile?: string;
+            /** @description Absolute path to the shell interpreter for run scripts; defaults to /bin/sh */
+            shell?: string;
+            /**
+             * @description Where this task's definition came from: native (hand-authored TOML), staged (imported, not yet promoted), or cron (read live from a crontab via daemon.include_cron)
+             * @enum {string}
+             */
             source?: "staged" | "cron";
+            /** @description Absolute path of the crontab or staging file this task's definition was read from; empty for hand-authored TOML */
             sourceFile?: string;
+            /**
+             * @description Signal sent to stop a run before SIGKILL; defaults to SIGTERM
+             * @enum {string}
+             */
+            stopSignal?: "SIGTERM" | "SIGINT" | "SIGQUIT" | "SIGHUP" | "SIGKILL" | "SIGUSR1" | "SIGUSR2";
+            /**
+             * Format: int64
+             * @description Per-run timeout in nanoseconds
+             */
+            timeout?: number;
+            /** @description IANA timezone for cron evaluation; falls back to scheduler.timezone, then the daemon's resolved system timezone */
+            timezone?: string;
+            /** @description Octal file-creation mask applied to the run's process; empty inherits the daemon's umask */
+            umask?: string;
+            /** @description Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root. */
+            user?: string;
+            /** @description Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal "~" means the run-as user's home, resolved at run time */
+            workingDir?: string;
         };
         TaskComposeRef: {
             file: string;
@@ -1425,7 +1674,7 @@ export interface components {
              */
             priority?: number;
             /**
-             * @description For services: whether and when an instance is restarted (services force always). Tasks re-run a failed run via retry_* instead.
+             * @description For services: whether and when an instance is restarted (defaults to always). Tasks re-run a failed run via retry_* instead.
              * @enum {string}
              */
             restart?: "never" | "always" | "on_failure";
@@ -1523,6 +1772,163 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getAuthChallenge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthChallengeBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    redeemLaunchTicket: {
+        parameters: {
+            query: {
+                /** @description Single-use ticket minted by POST /api/auth/launch-ticket */
+                ticket: string;
+                /** @description Same-origin absolute path to land on after the session cookie is set; defaults to / */
+                redirect?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    Location?: string;
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    createLaunchTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LaunchTicketBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthLoginBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    getAuthStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: {
+                runwisp_jwt?: string;
+            };
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatusBody"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     getDaemonInfo: {
         parameters: {
             query?: never;
@@ -1908,79 +2314,6 @@ export interface operations {
             };
         };
     };
-    streamNotifications: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": ({
-                        data: components["schemas"]["NotificationCreatedEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "notification.created";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["NotificationUnreadCountEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "notification.unreadCountChanged";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["NotificationUpdatedEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "notification.updated";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    } | {
-                        data: components["schemas"]["PingEvent"];
-                        /**
-                         * @description The event name.
-                         * @constant
-                         */
-                        event: "ping";
-                        /** @description The event ID. */
-                        id?: number;
-                        /** @description The retry time in milliseconds. */
-                        retry?: number;
-                    })[];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
     getUnreadNotificationCount: {
         parameters: {
             query?: never;
@@ -2093,6 +2426,8 @@ export interface operations {
                 exitCodeMax?: string;
                 /** @description Only runs that are a retry (retry_attempt > 0) */
                 retriesOnly?: boolean;
+                /** @description Also match runs classified as a failure (per-task failures policy) */
+                isFailure?: boolean;
                 /** @description Field to sort by */
                 sortField?: "taskName" | "status" | "startedAt" | "exitCode" | "duration" | "createdAt" | "";
                 /** @description Sort direction */
@@ -2838,6 +3173,8 @@ export interface operations {
                 exitCodeMax?: string;
                 /** @description Only runs that are a retry (retry_attempt > 0) */
                 retriesOnly?: boolean;
+                /** @description Also match runs classified as a failure (per-task failures policy) */
+                isFailure?: boolean;
                 /** @description Field to sort by */
                 sortField?: "taskName" | "status" | "startedAt" | "exitCode" | "duration" | "createdAt" | "";
                 /** @description Sort direction */

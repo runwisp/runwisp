@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/storage"
@@ -106,11 +104,4 @@ func TestMapDomainError_CancelledContext_Returns408(t *testing.T) {
 	result := mapDomainError(ctx, errors.New("interrupted (9)"), "Failed to get runs")
 	require.NotNil(t, result)
 	assert.Equal(t, http.StatusRequestTimeout, result.GetStatus())
-}
-
-func TestRespondError_SetsStatusAndBody(t *testing.T) {
-	w := httptest.NewRecorder()
-	respondError(w, http.StatusBadRequest, "bad input", nil)
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.True(t, strings.Contains(w.Body.String(), "bad input"))
 }

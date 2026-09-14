@@ -412,12 +412,15 @@ func collectTaskNames(raw *tomlConfig) ([]string, error) {
 
 func collectServiceNames(raw *tomlConfig) ([]string, error) {
 	names := make([]string, 0, len(raw.Services))
-	for name := range raw.Services {
+	for name, w := range raw.Services {
 		if err := model.ValidateTaskName(name); err != nil {
 			return nil, err
 		}
 		if _, dup := raw.Tasks[name]; dup {
 			return nil, fmt.Errorf("name %q used by both [tasks.*] and [services.*]", name)
+		}
+		if w.OnOverlap != "" {
+			return nil, fmt.Errorf("service %q sets on_overlap; on_overlap is only valid on [tasks.*] — a service never runs a second overlapping instance, instances controls parallelism", name)
 		}
 		names = append(names, name)
 	}

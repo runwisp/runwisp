@@ -36,6 +36,8 @@ func controlService(cmd *cobra.Command, f Flags, name, verb, done string, action
 			return unknownTaskError(name, daemonTaskNames(client))
 		case apiclient.IsHTTPStatus(err, http.StatusBadRequest):
 			return fmt.Errorf("%q is a task, not a service — only services can be stopped or restarted; use 'runwisp run %s' to trigger a task run", name, name)
+		case apiclient.IsHTTPStatus(err, http.StatusForbidden):
+			return fmt.Errorf("cannot %s service %q: manual_trigger = false in runwisp.toml locks it to its restart policy", verb, name)
 		}
 		return fmt.Errorf("%s service %q: %w", verb, name, err)
 	}

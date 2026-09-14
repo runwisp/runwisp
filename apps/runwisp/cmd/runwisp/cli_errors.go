@@ -268,6 +268,17 @@ func remoteManualTriggerDisabledError(taskName string) error {
 	}
 }
 
+// standaloneManualTriggerDisabledError is the --standalone (no daemon)
+// sibling of remoteManualTriggerDisabledError: manual_trigger = false means
+// cron/schedule-only everywhere, not just over a daemon's API.
+func standaloneManualTriggerDisabledError(taskName string) error {
+	return &userFacingError{
+		title: fmt.Sprintf("task %q cannot be run manually", taskName),
+		details: "This task has manual_trigger = false in runwisp.toml.\n" +
+			"  - Remove that line (manual_trigger defaults to true) to allow manual runs",
+	}
+}
+
 // noConfigError is returned when the daemon can't find runwisp.toml and isn't
 // running under `runwisp cloud` (which tolerates an absent config and relies
 // on ad-hoc dispatch instead). It never substitutes a fallback config — a

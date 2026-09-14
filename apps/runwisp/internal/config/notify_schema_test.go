@@ -644,12 +644,12 @@ webhook_url = "https://example/x"
 
 [services.svc]
 run = "svc-process"
-on_overlap = "queue"
 instances = 1
 notify = ["ops"]
 `
 	cfg, err := decode([]byte(src), "")
 	require.NoError(t, err)
+	ApplyDefaults(cfg)
 	require.NoError(t, Validate(cfg))
 	// Service task must still produce a route
 	found := false

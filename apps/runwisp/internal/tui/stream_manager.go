@@ -44,8 +44,7 @@ type StreamManager struct {
 	// missed instead of silently skipping it.
 	lastEventID string
 
-	daemonLogCh    <-chan string
-	notificationCh <-chan apiclient.NotificationStreamEvent
+	daemonLogCh <-chan string
 }
 
 func NewStreamManager(client *apiclient.Client) StreamManager {
@@ -489,36 +488,6 @@ func (sm *StreamManager) ContinueListeningDaemonLog() tea.Cmd {
 	return nil
 }
 
-// SubscribeNotifications connects to the SSE notifications stream.
-func (sm *StreamManager) SubscribeNotifications() tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
-	client := sm.client
-	ctx := sm.streamCtx
-	return func() tea.Msg {
-		ch, err := client.StreamNotifications(ctx)
-		if err != nil {
-			return uikit.DebugLogMsg{Message: "Notifications stream failed: " + err.Error()}
-		}
-		return uikit.NotificationStreamConnectedMsg{Ch: ch}
-	}
-}
-
-// OnNotificationConnected stores the channel and returns a command to listen.
-func (sm *StreamManager) OnNotificationConnected(ch <-chan apiclient.NotificationStreamEvent) tea.Cmd {
-	sm.notificationCh = ch
-	return listenNotifications(ch)
-}
-
-// ContinueListeningNotifications returns a command to wait for the next event.
-func (sm *StreamManager) ContinueListeningNotifications() tea.Cmd {
-	if sm.notificationCh != nil {
-		return listenNotifications(sm.notificationCh)
-	}
-	return nil
-}
-
 // FetchUnreadCount returns a command that loads the snapshot unread count.
 func (sm *StreamManager) FetchUnreadCount() tea.Cmd {
 	if sm.client == nil {
@@ -586,12 +555,6 @@ func (sm *StreamManager) MarkNotificationUnread(id string) tea.Cmd {
 		err := client.MarkNotificationUnread(id)
 		return uikit.NotificationReadStateMsg{ID: id, Read: false, Err: err}
 	}
-}
-
-func listenNotifications(ch <-chan apiclient.NotificationStreamEvent) tea.Cmd {
-	return listenChannel(ch, func(event apiclient.NotificationStreamEvent) tea.Msg {
-		return uikit.NotificationEventMsg{Event: event}
-	}, uikit.NotificationStreamDisconnectedMsg{})
 }
 
 func listenDaemonLog(ch <-chan string) tea.Cmd {

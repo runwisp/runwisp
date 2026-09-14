@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
 	"github.com/runwisp/runwisp/internal/storage"
 )
@@ -118,10 +117,10 @@ type NotificationUnreadCountEvent struct {
 
 // ---------- Registration ----------
 
-// registerNotificationsRoutes registers the REST + SSE shapes. The repository
-// is wired unconditionally so REST handlers always succeed; the SSE handler
-// degrades to a ping-only stream when the in-app Hub is absent (notify
-// disabled).
+// registerNotificationsRoutes registers the REST shapes. The repository is
+// wired unconditionally so the handlers always succeed. Live updates ride the
+// unified /api/events/stream (see pumpAppStream in runs.go) rather than a
+// dedicated stream here.
 func (srv *Server) registerNotificationsRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "listNotifications",
@@ -165,8 +164,6 @@ func (srv *Server) registerNotificationsRoutes(api huma.API) {
 		Summary:     "Count notifications with read_at IS NULL",
 		Tags:        []string{"Notifications"},
 	}, srv.humaUnreadNotificationCount)
-
-	srv.registerNotificationsSSE(api)
 }
 
 // ---------- Handlers ----------
@@ -257,50 +254,10 @@ func (srv *Server) publishUnreadCountChanged(count int64) {
 	srv.notifyHub.Publish(inapp.Update{Type: inapp.UpdateTypeUnreadCountChanged, UnreadCount: count})
 }
 
-// registerNotificationsSSE mirrors the runs SSE stream: bounded per-conn
-// buffer, drop-oldest on backpressure, 30s pings to keep the stream alive
-// through proxies. Hub publishes lightweight Updates that we re-shape into
-// the JSON DTO clients consume.
-func (srv *Server) registerNotificationsSSE(api huma.API) {
-	sse.Register(api, huma.Operation{
-		OperationID: "streamNotifications",
-		Method:      http.MethodGet,
-		Path:        "/api/notifications/stream",
-		Summary:     "Stream notification create/update events",
-		Description: "Server-Sent Events stream emitting notification.created and notification.updated as in-app rows are coalesced or marked read/unread.",
-		Tags:        []string{"Notifications"},
-	}, map[string]any{
-		inapp.UpdateTypeCreated:            NotificationCreatedEvent{},
-		inapp.UpdateTypeUpdated:            NotificationUpdatedEvent{},
-		inapp.UpdateTypeUnreadCountChanged: NotificationUnreadCountEvent{},
-		"ping":                             PingEvent{},
-	}, srv.sseNotificationsHandler)
-}
-
-func (srv *Server) sseNotificationsHandler(ctx context.Context, _ *struct{}, send sse.Sender) {
-	release, ok := srv.streams.acquire(ctx)
-	if !ok {
-		return
-	}
-	defer release()
-
-	if err := send(sse.Message{Data: PingEvent{}}); err != nil {
-		return
-	}
-
-	// notifyCh stays nil when notify is disabled — that select arm then simply
-	// never fires, so the loop degrades to ping-only and keeps the browser
-	// EventSource from error-looping.
-	var notifyCh <-chan inapp.Update
-	if srv.notifyHub != nil {
-		sub, unsubscribe := srv.notifyHub.Subscribe()
-		defer unsubscribe()
-		notifyCh = sub.Channel()
-	}
-
-	sseNotificationsLoop(ctx, notifyCh, send)
-}
-
+// notifyUpdateToPayload re-shapes a Hub Update into the JSON DTO clients
+// consume. Shared by the unified /api/events/stream (pumpAppStream in
+// runs.go) — the only stream Hub updates ride now that the dedicated
+// /api/notifications/stream has been retired.
 func notifyUpdateToPayload(u inapp.Update) any {
 	switch u.Type {
 	case inapp.UpdateTypeCreated:
@@ -311,29 +268,5 @@ func notifyUpdateToPayload(u inapp.Update) any {
 		return NotificationUnreadCountEvent{UnreadCount: u.UnreadCount}
 	default:
 		return NotificationUpdatedEvent{Notification: notificationToDTO(u.Notification), UnreadCount: u.UnreadCount}
-	}
-}
-
-func sseNotificationsLoop(ctx context.Context, notifyCh <-chan inapp.Update, send sse.Sender) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case u, ok := <-notifyCh:
-			if !ok {
-				notifyCh = nil
-				continue
-			}
-			if err := send(sse.Message{Data: notifyUpdateToPayload(u)}); err != nil {
-				return
-			}
-		case <-ticker.C:
-			if err := send(sse.Message{Data: PingEvent{}}); err != nil {
-				return
-			}
-		}
 	}
 }

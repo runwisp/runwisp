@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/chap"
+	"github.com/runwisp/runwisp/internal/server"
 )
 
 // Client communicates with the RunWisp daemon HTTP API.
@@ -118,9 +119,7 @@ func (c *Client) Authenticate() error {
 		return nil
 	}
 
-	var challenge struct {
-		Nonce string `json:"nonce"`
-	}
+	var challenge server.AuthChallengeBody
 	if err := c.doJSON("GET", "/api/auth/challenge", nil, &challenge); err != nil {
 		if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrRateLimited) {
 			return err
@@ -128,13 +127,11 @@ func (c *Client) Authenticate() error {
 		return fmt.Errorf("auth challenge: %w", err)
 	}
 
-	body := map[string]string{
-		"nonce":    challenge.Nonce,
-		"response": chap.Response(c.password, challenge.Nonce),
+	body := server.AuthLoginRequest{
+		Nonce:    challenge.Nonce,
+		Response: chap.Response(c.password, challenge.Nonce),
 	}
-	var authResult struct {
-		Token string `json:"token"`
-	}
+	var authResult server.AuthLoginBody
 	if err := c.doJSON("POST", "/api/auth/login", body, &authResult); err != nil {
 		if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrRateLimited) {
 			return err
@@ -263,9 +260,7 @@ func IsHTTPStatus(err error, code int) bool {
 // CreateLaunchTicket requests a single-use launch ticket from the daemon.
 // The ticket can be redeemed via GET /api/auth/launch-ticket?ticket=<ticket>.
 func (c *Client) CreateLaunchTicket() (string, error) {
-	var resp struct {
-		Ticket string `json:"ticket"`
-	}
+	var resp server.LaunchTicketBody
 	if err := c.doJSON("POST", "/api/auth/launch-ticket", nil, &resp); err != nil {
 		return "", err
 	}

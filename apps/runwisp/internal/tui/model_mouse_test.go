@@ -18,7 +18,7 @@ import (
 // nil execView.Run short-circuits.
 func TestMouseHandlers_Guards(t *testing.T) {
 	t.Run("handleMainPanelClick on non-home page returns nil cmd", func(t *testing.T) {
-		m := newTestModel([]model.TaskBrief{{Name: "t1"}})
+		m := newTestModel([]model.Task{{Name: "t1"}})
 		selectSidebarItem(&m, 2) // Info
 		if m.sidebar.ActivePage() == uikit.PageHome {
 			t.Fatalf("precondition: expected non-home page after selecting Info")
@@ -92,7 +92,7 @@ func TestScrollWheelDown_WithExecViewScrollsPaneDown(t *testing.T) {
 }
 
 func TestScrollWheelUp_OnInfoPageScrollsInfoView(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "t1"}}
+	tasks := []model.Task{{Name: "t1"}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 2) // Info page
 	if cmd := m.scrollWheelUp(uikit.SidebarWidth + 5); cmd != nil {
@@ -101,7 +101,7 @@ func TestScrollWheelUp_OnInfoPageScrollsInfoView(t *testing.T) {
 }
 
 func TestScrollWheelDown_OnInfoPageScrollsInfoView(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "t1"}}
+	tasks := []model.Task{{Name: "t1"}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 2) // Info
 	if cmd := m.scrollWheelDown(uikit.SidebarWidth + 5); cmd != nil {
@@ -110,7 +110,7 @@ func TestScrollWheelDown_OnInfoPageScrollsInfoView(t *testing.T) {
 }
 
 func TestScrollWheelUp_OnDebugPageScrollsDebugView(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "t1"}}
+	tasks := []model.Task{{Name: "t1"}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 3) // Debug
 	if cmd := m.scrollWheelUp(uikit.SidebarWidth + 5); cmd != nil {
@@ -119,7 +119,7 @@ func TestScrollWheelUp_OnDebugPageScrollsDebugView(t *testing.T) {
 }
 
 func TestScrollWheelDown_OnDebugPageScrollsDebugView(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "t1"}}
+	tasks := []model.Task{{Name: "t1"}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 3) // Debug
 	if cmd := m.scrollWheelDown(uikit.SidebarWidth + 5); cmd != nil {
@@ -142,7 +142,7 @@ func TestScrollWheelDown_OnHomePageScrollsExecList(t *testing.T) {
 // ─── handleHomePageClick ─────────────────────────────────────────────────────
 
 func TestHandleHomePageClick_ClickOnTaskButtonTriggers(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "backup"}}
+	tasks := []model.Task{{Name: "backup"}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
 	m.layout.taskBtnY = 7
@@ -240,7 +240,7 @@ func TestCoalesced_FirstEventRendersImmediately(t *testing.T) {
 // TestHandleMouse_LeftClickSidebarFocusesSidebar covers the sidebar-click
 // branch (x < SidebarWidth).
 func TestHandleMouse_LeftClickSidebarFocusesSidebar(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "backup"}}
+	tasks := []model.Task{{Name: "backup"}}
 	m := newTestModel(tasks)
 	m.focusMainPanel()
 	msg := tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: 1}
@@ -489,7 +489,7 @@ func TestUpdateHoverState_ExecViewSetsHoveredHeader(t *testing.T) {
 // TestUpdateHoverState_HomePageWithActiveTaskResetsHomeHover covers the
 // active-task branch where homeHover is forced to -1.
 func TestUpdateHoverState_HomePageWithActiveTaskResetsHomeHover(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "backup"}}
+	tasks := []model.Task{{Name: "backup"}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1) // active task
 
@@ -514,7 +514,7 @@ func TestUpdateHoverState_HomePageNoTaskHoversField(t *testing.T) {
 // TestUpdateHoverState_NonHomePageResetsHomeHover covers the non-home page
 // branch.
 func TestUpdateHoverState_NonHomePageResetsHomeHover(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "t1"}}
+	tasks := []model.Task{{Name: "t1"}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 2) // Info
 

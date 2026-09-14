@@ -54,14 +54,6 @@ func TestShouldRestart(t *testing.T) {
 		assert.False(t, ShouldRestart(task, &model.Run{EndReason: &failed}))
 	})
 
-	t.Run("always policy restarts unless stopped (non-service)", func(t *testing.T) {
-		task := &model.Task{Restart: model.RestartAlways}
-		assert.True(t, ShouldRestart(task, &model.Run{EndReason: &failed}))
-		assert.True(t, ShouldRestart(task, &model.Run{EndReason: &success}))
-		assert.True(t, ShouldRestart(task, &model.Run{EndReason: nil}))
-		assert.False(t, ShouldRestart(task, &model.Run{EndReason: &stopped}))
-	})
-
 	t.Run("always policy on service always restarts", func(t *testing.T) {
 		task := &model.Task{Restart: model.RestartAlways, Kind: model.KindService}
 		assert.True(t, ShouldRestart(task, &model.Run{EndReason: &stopped}),

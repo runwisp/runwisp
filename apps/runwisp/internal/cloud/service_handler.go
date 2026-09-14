@@ -84,7 +84,10 @@ func (h *InboundHandler) HandleServiceApply(message protocol.ServiceApplyMessage
 
 // HandleServiceControl starts, stops, or restarts an already-applied service.
 // The action enum is gated by the protocol; an unknown value is treated as a
-// validation error rather than silently ignored.
+// validation error rather than silently ignored. A service with
+// manual_trigger = false refuses every action here: it's locked to its
+// restart policy, changeable only by editing runwisp.toml and reloading, the
+// same gate resolveDispatchTask enforces for a manual_trigger = false task.
 func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControlMessage) error {
 	taskName, _, err := h.resolveServiceTarget(message.TaskID, "")
 	if err != nil {
@@ -95,6 +98,12 @@ func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControlMes
 	}
 	if message.Action == nil {
 		return &CloudError{Kind: CloudErrorKindValidation, Message: "action is required"}
+	}
+	if task, ok := h.taskManager.GetTask(taskName); ok && !task.ManuallyControllable() {
+		return &CloudError{
+			Kind:    CloudErrorKindConflict,
+			Message: fmt.Sprintf("service %q has manual_trigger disabled and cannot be controlled by the control plane", taskName),
+		}
 	}
 
 	action, _ := message.Action.Value().(string)
@@ -117,10 +126,15 @@ func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControlMes
 }
 
 // HandleServiceRemove tears down a previously declared service: it cancels the
-// service's instances and drops its task from the runner. Only an existing
-// service resolves here — resolveServiceTarget rejects a non-service name — so a
-// remove can never delete an ordinary TOML task. A taskId that matches nothing
-// is a no-op (the desired end state, service-gone, already holds).
+// service's instances and drops its task from the runner. resolveServiceTarget
+// rejects a non-service name, so a remove can never delete an ordinary TOML
+// task, but a bare-name hit there matches ANY service, TOML-defined or
+// cloud-declared, since both live in the same registry under the same name.
+// Removal itself is gated separately below on CloudDeclared: a TOML-defined
+// [services.*] entry is owned by disk (removing it here would desync the
+// running task set from runwisp.toml with no reload path back, since the
+// reconciler's diff baseline still has it). A taskId that matches nothing is a
+// no-op (the desired end state, service-gone, already holds).
 func (h *InboundHandler) HandleServiceRemove(message protocol.ServiceRemoveMessage) error {
 	name, existing, err := h.resolveServiceTarget(message.TaskID, "")
 	if err != nil {
@@ -128,6 +142,18 @@ func (h *InboundHandler) HandleServiceRemove(message protocol.ServiceRemoveMessa
 	}
 	if !existing {
 		return nil
+	}
+	task, ok := h.taskManager.GetTask(name)
+	if !ok {
+		// Removed concurrently between resolve and here; desired end state
+		// (service-gone) already holds.
+		return nil
+	}
+	if !task.CloudDeclared {
+		return &CloudError{
+			Kind:    CloudErrorKindConflict,
+			Message: fmt.Sprintf("service %q is defined in runwisp.toml; the control plane cannot remove it", name),
+		}
 	}
 	h.taskManager.RemoveTask(name)
 	slog.Info("service removed", "task", name)
@@ -182,6 +208,14 @@ func (h *InboundHandler) buildServiceTask(svc *protocol.Service) (*model.Task, e
 		Restart:       model.RestartAlways,
 		Instances:     instances,
 		MaxConcurrent: instances,
+		// Declared by the control plane, not TOML: only such a service may
+		// later be torn down by service:remove (see resolveServiceTarget /
+		// HandleServiceRemove).
+		CloudDeclared: true,
+		// The protocol has no manual_trigger-equivalent field, so this must be
+		// explicit: the zero value is false, which would lock the cloud out of
+		// controlling the very service it just declared.
+		ManualTrigger: true,
 	}
 
 	if svc.RestartDelay > 0 {

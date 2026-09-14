@@ -202,6 +202,25 @@ func TestResolveDispatchTask_ConfigTaskManualTriggerDisabled(t *testing.T) {
 	assert.Contains(t, ce.Message, "manual_trigger")
 }
 
+// TestResolveDispatchTask_ConfigTaskIsService: a [services.*] entry is never
+// manually triggered, regardless of ManualTrigger (which the config loader
+// forces true internally since services can't set the key at all) — without
+// this check the control plane could reserve it an extra instance.
+func TestResolveDispatchTask_ConfigTaskIsService(t *testing.T) {
+	avail := executor.Availability{
+		Config: executor.BackendStatus{Available: true},
+	}
+	tasks := map[string]*model.Task{"myservice": {Name: "myservice", Kind: model.KindService, ManualTrigger: true}}
+	h := newDispatchHandler(avail, tasks)
+
+	_, _, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "myservice")})
+	require.Error(t, err)
+	var ce *CloudError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, CloudErrorKindConflict, ce.Kind)
+	assert.Contains(t, ce.Message, "service")
+}
+
 func TestResolveDispatchTask_ConfigTaskNotFound(t *testing.T) {
 	avail := executor.Availability{
 		Config: executor.BackendStatus{Available: true},

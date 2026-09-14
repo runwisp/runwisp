@@ -164,13 +164,13 @@ with the same `end_reason = "skipped"` on record.
 And the queue doesn't care where a run came from. Cron firings and
 manual triggers line up together and drain in order, no favorites.
 
-## Services and `on_overlap`
+## Services don't have `on_overlap`
 
-Services default to `on_overlap = "skip"`, and that's almost always the
-right thing to leave alone. The supervisor keeps `instances` replicas
-alive, each in its own slot, so overlap basically never comes up —
-unless you manually trigger a service that's already running, which is
-exactly the case `skip` is there to refuse.
+`on_overlap` is a `[tasks.*]` knob and rejected on `[services.*]`. A
+service isn't triggered on demand the way a task is — its supervisor
+keeps `instances` replicas alive, each in its own slot, so there's no
+"a new run shows up while one is going" to arbitrate. Concurrency for a
+service is just `instances`.
 
 ---
 

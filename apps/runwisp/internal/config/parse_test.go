@@ -30,6 +30,21 @@ func TestParseDuration(t *testing.T) {
 		}
 	})
 
+	// Regression: the schema's shared $defs/duration advertises d/w suffixes for
+	// every duration field (timeout, retry_delay, jitter, ...), but until this
+	// fix only keep_for actually accepted them — timeout = "2d" validated
+	// against the published schema yet failed `runwisp validate`.
+	t.Run("day and week suffixes work outside keep_for too", func(t *testing.T) {
+		for raw, want := range map[string]time.Duration{
+			"2d": 2 * 24 * time.Hour,
+			"1w": 7 * 24 * time.Hour,
+		} {
+			d, err := parseDuration(raw)
+			require.NoError(t, err, raw)
+			assert.Equal(t, want, d, raw)
+		}
+	})
+
 	t.Run("invalid input gets a hint, not Go's raw error", func(t *testing.T) {
 		for _, raw := range []string{"5 minutes", "bad", "10"} {
 			_, err := parseDuration(raw)
@@ -45,8 +60,15 @@ func TestParseKeepForHint(t *testing.T) {
 	_, err := parseKeepFor("1 month")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "is not a valid duration")
-	// keep_for accepts the extended day/week suffixes, so the hint names them.
-	assert.Contains(t, err.Error(), `"30d"`)
-	assert.Contains(t, err.Error(), `"2w"`)
+	assert.Contains(t, err.Error(), `"2d"`)
+	assert.Contains(t, err.Error(), `"1w"`)
 	assert.NotContains(t, err.Error(), "time: ")
+}
+
+func TestParseKeepForRejectsNonPositive(t *testing.T) {
+	for _, raw := range []string{"0s", "-5m"} {
+		_, err := parseKeepFor(raw)
+		require.Error(t, err, raw)
+		assert.Contains(t, err.Error(), "non-positive duration", raw)
+	}
 }

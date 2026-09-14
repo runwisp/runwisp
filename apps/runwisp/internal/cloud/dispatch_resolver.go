@@ -41,10 +41,18 @@ func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (task
 		if !exists {
 			return "", false, &CloudError{Kind: CloudErrorKindConflict, Message: fmt.Sprintf("config task '%s' not found", cfg.TaskName)}
 		}
-		// manual_trigger governs whether a task may be fired outside the scheduler.
 		// The control plane is an out-of-scheduler trigger like the REST surface,
-		// so it honors the same gate: a task the operator marked manual_trigger=false
-		// is cron/schedule-only everywhere, not just over HTTP.
+		// so it honors the same gates. [services.*] is never manually triggered
+		// (checked first — without it, naming a service here would reserve it an
+		// extra instance outside its restart policy, bypassing the
+		// allow_cloud_dispatch gate meant for that). manual_trigger=false makes a
+		// task cron/schedule-only everywhere, not just over HTTP.
+		if task.Kind.IsService() {
+			return "", false, &CloudError{
+				Kind:    CloudErrorKindConflict,
+				Message: fmt.Sprintf("config task '%s' is a service and cannot be triggered by the control plane", cfg.TaskName),
+			}
+		}
 		if !task.ManualTrigger {
 			return "", false, &CloudError{
 				Kind:    CloudErrorKindConflict,

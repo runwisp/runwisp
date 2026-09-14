@@ -1,6 +1,104 @@
 {
   "components": {
     "schemas": {
+      "AuthChallengeBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/AuthChallengeBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "nonce": {
+            "description": "Challenge nonce (hex)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nonce"
+        ],
+        "type": "object"
+      },
+      "AuthLoginBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/AuthLoginBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "token": {
+            "description": "JWT session token, also set as the runwisp_jwt cookie",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "type": "object"
+      },
+      "AuthLoginRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/AuthLoginRequest.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "nonce": {
+            "description": "Challenge nonce returned by GET /api/auth/challenge",
+            "type": "string"
+          },
+          "response": {
+            "description": "chap.Response(password, nonce) — proves knowledge of the password without sending it",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nonce",
+          "response"
+        ],
+        "type": "object"
+      },
+      "AuthStatusBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/AuthStatusBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "authRequired": {
+            "description": "Whether authentication is required",
+            "type": "boolean"
+          },
+          "authenticated": {
+            "description": "Whether the current request is already authenticated via cookie",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "authRequired",
+          "authenticated"
+        ],
+        "type": "object"
+      },
       "BulkAffectedBody": {
         "additionalProperties": false,
         "properties": {
@@ -146,7 +244,7 @@
           },
           "tasks": {
             "items": {
-              "$ref": "#/components/schemas/TaskBrief"
+              "$ref": "#/components/schemas/Task"
             },
             "type": [
               "array",
@@ -338,6 +436,28 @@
           "dataDir",
           "configPath",
           "socketPath"
+        ],
+        "type": "object"
+      },
+      "LaunchTicketBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "http://localhost:9477/schemas/LaunchTicketBody.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "ticket": {
+            "description": "Single-use, short-TTL ticket. Redeem via GET /api/auth/launch-ticket?ticket=...",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket"
         ],
         "type": "object"
       },
@@ -1493,19 +1613,31 @@
         ],
         "type": "object"
       },
-      "TaskBrief": {
+      "Task": {
         "additionalProperties": false,
         "properties": {
+          "autostart": {
+            "description": "For services: whether instances start at boot. False boots in the stopped state until started via API/UI.",
+            "type": "boolean"
+          },
           "catchUp": {
+            "description": "What to do when cron ticks are missed during downtime",
+            "enum": [
+              "latest",
+              "all",
+              "skip"
+            ],
             "type": "string"
           },
           "compose": {
-            "$ref": "#/components/schemas/TaskComposeRef"
+            "$ref": "#/components/schemas/TaskComposeRef",
+            "description": "Provenance metadata for tasks imported from a docker compose file"
           },
           "cron": {
             "type": "string"
           },
           "dependsOn": {
+            "description": "For services: service names that must be healthy before this one starts at boot — boot ordering only, not a workflow DAG",
             "items": {
               "type": "string"
             },
@@ -1514,31 +1646,101 @@
               "null"
             ]
           },
+          "description": {
+            "type": "string"
+          },
+          "env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Environment variables overlaid on the task's process env. Values are visible to authenticated operators in the API/UI; env_file values merge in beneath the inline entries.",
+            "type": "object"
+          },
+          "envBase": {
+            "description": "What the run's environment starts from: 'inherit' (the daemon's, the default) or 'clean' (PATH, SHELL, HOME, USER/LOGNAME only, as crond gives a job)",
+            "type": "string"
+          },
+          "envFile": {
+            "description": "Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env.",
+            "type": "string"
+          },
+          "gracefulStop": {
+            "description": "Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds",
+            "format": "int64",
+            "type": "integer"
+          },
           "group": {
             "type": "string"
           },
+          "healthyAfter": {
+            "description": "For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start",
+            "format": "int64",
+            "type": "integer"
+          },
           "heldBy": {
-            "description": "Set when something other than RunWisp owns this task's schedule, so it is listed but not fired on its cron. 'cron' means a live system cron daemon still reads its crontab. Manual triggers still work.",
+            "description": "Why this task is loaded but not on the scheduler: 'cron' means a live system cron daemon still reads the crontab it came from and is running it, so RunWisp stands down. Manual triggers still work. Empty means RunWisp owns the schedule.",
             "enum": [
               "cron"
             ],
             "type": "string"
           },
           "instances": {
+            "description": "For services: number of always-running instances",
+            "format": "int64",
+            "type": "integer"
+          },
+          "jitter": {
+            "description": "Cap how far a cron task's start may slip so tasks sharing a fire time take turns through a daemon-wide one-at-a-time gate instead of stampeding; a run starts as soon as the gate frees and slips up to this window only under contention, in nanoseconds",
+            "format": "int64",
+            "type": "integer"
+          },
+          "keepFor": {
+            "description": "Retention window in nanoseconds; 0 means no cap was configured",
+            "format": "int64",
+            "type": "integer"
+          },
+          "keepRuns": {
+            "description": "Row-count retention cap; 0 keeps no completed runs, omitted inherits the [defaults] value (or no cap)",
             "format": "int64",
             "type": "integer"
           },
           "kind": {
+            "description": "Whether this is a scheduled task or an always-on service",
             "enum": [
               "task",
               "service"
             ],
             "type": "string"
           },
+          "logMaxSize": {
+            "description": "Per-run log size cap in bytes",
+            "format": "int64",
+            "type": "integer"
+          },
+          "logOnFull": {
+            "description": "What to do when log output exceeds log_max_size",
+            "enum": [
+              "drop_new",
+              "drop_old",
+              "kill"
+            ],
+            "type": "string"
+          },
           "manualTrigger": {
             "type": "boolean"
           },
+          "maxCatchUpRuns": {
+            "description": "Cap on catch-up runs triggered when catch_up = all",
+            "format": "int64",
+            "type": "integer"
+          },
           "maxConcurrent": {
+            "description": "Maximum overlapping runs allowed for this task",
+            "format": "int64",
+            "type": "integer"
+          },
+          "maxQueued": {
+            "description": "Maximum runs that can wait when on_overlap = queue",
             "format": "int64",
             "type": "integer"
           },
@@ -1546,9 +1748,16 @@
             "type": "string"
           },
           "onOverlap": {
+            "description": "How overlapping runs are handled",
+            "enum": [
+              "queue",
+              "skip",
+              "kill"
+            ],
             "type": "string"
           },
           "parameters": {
+            "description": "Per-execution parameters an operator may supply at manual trigger time; scheduled runs use the declared defaults",
             "items": {
               "$ref": "#/components/schemas/TaskParam"
             },
@@ -1557,10 +1766,71 @@
               "null"
             ]
           },
+          "priority": {
+            "description": "For services: boot start order, lowest first (name breaks ties). Start order only — not a dependency.",
+            "format": "int64",
+            "type": "integer"
+          },
           "restart": {
+            "description": "For services: whether and when an instance is restarted (defaults to always). Tasks re-run a failed run via retry_* instead.",
+            "enum": [
+              "never",
+              "always",
+              "on_failure"
+            ],
+            "type": "string"
+          },
+          "restartAttempts": {
+            "description": "For services: consecutive fast failures tolerated before the instance is marked FATAL; 0 means give up after the very first failure",
+            "format": "int64",
+            "type": "integer"
+          },
+          "restartBackoff": {
+            "description": "Backoff curve between consecutive restarts",
+            "enum": [
+              "constant",
+              "linear",
+              "exponential"
+            ],
+            "type": "string"
+          },
+          "restartDelay": {
+            "description": "For services: base delay before each restart, in nanoseconds; 0 means restart instantly",
+            "format": "int64",
+            "type": "integer"
+          },
+          "retryAttempts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "retryBackoff": {
+            "description": "Backoff curve between consecutive retries",
+            "enum": [
+              "constant",
+              "linear",
+              "exponential"
+            ],
+            "type": "string"
+          },
+          "retryDelay": {
+            "description": "Base delay before each retry, in nanoseconds",
+            "format": "int64",
+            "type": "integer"
+          },
+          "runOnStart": {
+            "description": "For tasks: fire once at daemon startup, in addition to any cron schedule",
+            "type": "boolean"
+          },
+          "secretsFile": {
+            "description": "Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values never leave the daemon.",
+            "type": "string"
+          },
+          "shell": {
+            "description": "Absolute path to the shell interpreter for run scripts; defaults to /bin/sh",
             "type": "string"
           },
           "source": {
+            "description": "Where this task's definition came from: native (hand-authored TOML), staged (imported, not yet promoted), or cron (read live from a crontab via daemon.include_cron)",
             "enum": [
               "staged",
               "cron"
@@ -1568,12 +1838,49 @@
             "type": "string"
           },
           "sourceFile": {
+            "description": "Absolute path of the crontab or staging file this task's definition was read from; empty for hand-authored TOML",
+            "type": "string"
+          },
+          "stopSignal": {
+            "description": "Signal sent to stop a run before SIGKILL; defaults to SIGTERM",
+            "enum": [
+              "SIGTERM",
+              "SIGINT",
+              "SIGQUIT",
+              "SIGHUP",
+              "SIGKILL",
+              "SIGUSR1",
+              "SIGUSR2"
+            ],
+            "type": "string"
+          },
+          "timeout": {
+            "description": "Per-run timeout in nanoseconds",
+            "format": "int64",
+            "type": "integer"
+          },
+          "timezone": {
+            "description": "IANA timezone for cron evaluation; falls back to scheduler.timezone, then the daemon's resolved system timezone",
+            "type": "string"
+          },
+          "umask": {
+            "description": "Octal file-creation mask applied to the run's process; empty inherits the daemon's umask",
+            "type": "string"
+          },
+          "user": {
+            "description": "Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root.",
+            "type": "string"
+          },
+          "workingDir": {
+            "description": "Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal \"~\" means the run-as user's home, resolved at run time",
             "type": "string"
           }
         },
         "required": [
           "name",
-          "manualTrigger"
+          "manualTrigger",
+          "runOnStart",
+          "autostart"
         ],
         "type": "object"
       },
@@ -1826,7 +2133,7 @@
             "type": "integer"
           },
           "restart": {
-            "description": "For services: whether and when an instance is restarted (services force always). Tasks re-run a failed run via retry_* instead.",
+            "description": "For services: whether and when an instance is restarted (defaults to always). Tasks re-run a failed run via retry_* instead.",
             "enum": [
               "never",
               "always",
@@ -2015,6 +2322,215 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/auth/challenge": {
+      "get": {
+        "operationId": "getAuthChallenge",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthChallengeBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Mint a single-use CHAP challenge nonce",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/launch-ticket": {
+      "get": {
+        "description": "Consumes the ticket, sets the session cookie, and redirects (303) to the `redirect` query parameter (a same-origin path; defaults to \"/\", and falls back to \"/\" if the value is unsafe).",
+        "operationId": "redeemLaunchTicket",
+        "parameters": [
+          {
+            "description": "Single-use ticket minted by POST /api/auth/launch-ticket",
+            "explode": false,
+            "in": "query",
+            "name": "ticket",
+            "required": true,
+            "schema": {
+              "description": "Single-use ticket minted by POST /api/auth/launch-ticket",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Same-origin absolute path to land on after the session cookie is set; defaults to /",
+            "explode": false,
+            "in": "query",
+            "name": "redirect",
+            "schema": {
+              "description": "Same-origin absolute path to land on after the session cookie is set; defaults to /",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Redeem a single-use launch ticket and start a browser session",
+        "tags": [
+          "Auth"
+        ]
+      },
+      "post": {
+        "description": "The ticket can be redeemed via GET /api/auth/launch-ticket?ticket=\u003cticket\u003e.",
+        "operationId": "createLaunchTicket",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LaunchTicketBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Mint a single-use launch ticket",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthLoginBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Exchange a signed CHAP challenge response for a session",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/status": {
+      "get": {
+        "operationId": "getAuthStatus",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "runwisp_jwt",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthStatusBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Check whether the caller is authenticated",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
     "/api/daemon": {
       "get": {
         "operationId": "getDaemonInfo",
@@ -2665,148 +3181,6 @@
         ]
       }
     },
-    "/api/notifications/stream": {
-      "get": {
-        "description": "Server-Sent Events stream emitting notification.created and notification.updated as in-app rows are coalesced or marked read/unread.",
-        "operationId": "streamNotifications",
-        "responses": {
-          "200": {
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "description": "Each oneOf object in the array represents one possible Server Sent Events (SSE) message, serialized as UTF-8 text according to the SSE specification.",
-                  "items": {
-                    "oneOf": [
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/NotificationCreatedEvent"
-                          },
-                          "event": {
-                            "const": "notification.created",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event notification.created",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/NotificationUnreadCountEvent"
-                          },
-                          "event": {
-                            "const": "notification.unreadCountChanged",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event notification.unreadCountChanged",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/NotificationUpdatedEvent"
-                          },
-                          "event": {
-                            "const": "notification.updated",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event notification.updated",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/PingEvent"
-                          },
-                          "event": {
-                            "const": "ping",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event ping",
-                        "type": "object"
-                      }
-                    ]
-                  },
-                  "title": "Server Sent Events",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Stream notification create/update events",
-        "tags": [
-          "Notifications"
-        ]
-      }
-    },
     "/api/notifications/unreadCount": {
       "get": {
         "operationId": "getUnreadNotificationCount",
@@ -3038,6 +3412,16 @@
             "name": "retriesOnly",
             "schema": {
               "description": "Only runs that are a retry (retry_attempt \u003e 0)",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Also match runs classified as a failure (per-task failures policy)",
+            "explode": false,
+            "in": "query",
+            "name": "isFailure",
+            "schema": {
+              "description": "Also match runs classified as a failure (per-task failures policy)",
               "type": "boolean"
             }
           },
@@ -4355,6 +4739,16 @@
             "name": "retriesOnly",
             "schema": {
               "description": "Only runs that are a retry (retry_attempt \u003e 0)",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Also match runs classified as a failure (per-task failures policy)",
+            "explode": false,
+            "in": "query",
+            "name": "isFailure",
+            "schema": {
+              "description": "Also match runs classified as a failure (per-task failures policy)",
               "type": "boolean"
             }
           },

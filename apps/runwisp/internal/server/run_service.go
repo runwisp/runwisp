@@ -18,7 +18,7 @@ import (
 
 var (
 	ErrTaskNotFound          = errors.New("task not found")
-	ErrManualTriggerDisabled = errors.New("manual triggering disabled for this task")
+	ErrManualTriggerDisabled = errors.New("manual_trigger is false: manual control is disabled for this task/service")
 	ErrRunNotFound           = errors.New("run not found")
 	ErrNotRunning            = errors.New("run is not currently running")
 	ErrServiceNotRunnable    = errors.New("services cannot be triggered; use the restart endpoint")
@@ -231,6 +231,9 @@ func (s *runService) RestartService(taskName string) error {
 	if !task.Kind.IsService() {
 		return ErrNotAService
 	}
+	if !task.ManuallyControllable() {
+		return ErrManualTriggerDisabled
+	}
 	return s.taskManager.RestartServiceInstances(taskName)
 }
 
@@ -241,6 +244,9 @@ func (s *runService) StopService(taskName string) error {
 	}
 	if !task.Kind.IsService() {
 		return ErrNotAService
+	}
+	if !task.ManuallyControllable() {
+		return ErrManualTriggerDisabled
 	}
 	return s.taskManager.StopService(taskName)
 }
@@ -339,7 +345,7 @@ func (s *runService) bulkRerun(ctx context.Context, sel model.RunSelector) ([]Tr
 	out := make([]TriggeredRunRef, 0, len(taskNames))
 	for _, name := range taskNames {
 		task, ok := s.tasks.Get(name)
-		if !ok || task.Kind.IsService() || !task.ManualTrigger {
+		if !ok || !task.Triggerable() {
 			continue
 		}
 		var params map[string]*string

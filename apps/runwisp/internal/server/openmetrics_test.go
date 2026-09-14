@@ -57,7 +57,7 @@ func assertMetricFamily(t *testing.T, body, name string) {
 func TestOpenMetrics_HappyPath(t *testing.T) {
 	lastFailure := time.Date(2026, 4, 1, 12, 30, 0, 0, time.UTC)
 	info := &model.DaemonInfo{
-		Tasks: []model.TaskBrief{
+		Tasks: []model.Task{
 			{Name: "nightly-backup", Kind: model.KindTask},
 			{Name: "api-server", Kind: model.KindService},
 		},
@@ -175,7 +175,7 @@ func TestOpenMetrics_LabelValueEscaping(t *testing.T) {
 	// future loosening of the name rule doesn't silently produce broken output.
 	tricky := "weird\"task\\name"
 	info := &model.DaemonInfo{
-		Tasks: []model.TaskBrief{{Name: tricky, Kind: model.KindTask}},
+		Tasks: []model.Task{{Name: tricky, Kind: model.KindTask}},
 	}
 	srv, repo, runner := buildOpenMetricsServer(t, info)
 	repo.On("GetRunSummary", mock.Anything).Return(&model.RunSummary{}, nil)

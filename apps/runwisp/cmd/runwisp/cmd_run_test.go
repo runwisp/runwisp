@@ -15,6 +15,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -218,6 +219,47 @@ run = "echo hi"
 	assert.Equal(t, 0, exitCode)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `task "missing" not found`)
+}
+
+// Regression: --standalone talks to the run manager directly, bypassing the
+// internal/server.runService.TriggerRun guard that the daemon/cloud paths
+// enforce — so it must reject manual_trigger = false itself, or the task
+// stops being cron/schedule-only-everywhere as documented.
+func TestRunExecStandalone_ManualTriggerDisabled(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	const cfg = `
+[scheduler]
+timezone = "UTC"
+
+[tasks.locked]
+cron = "* * * * *"
+run = "echo hi"
+manual_trigger = false
+`
+	require.NoError(t, os.WriteFile(cfgPath, []byte(cfg), 0o600))
+
+	exitCode, err := runExecStandalone("locked", Flags{CfgFile: cfgPath})
+	assert.Equal(t, 0, exitCode)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot be run manually")
+}
+
+// Regression: a [services.*] entry must not be runnable via `runwisp run
+// --standalone` either — services are supervisor-managed, not one-shot.
+func TestRunExecStandalone_ServiceRejected(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	const cfg = `
+[services.web]
+run = "exec ./bin/web"
+`
+	require.NoError(t, os.WriteFile(cfgPath, []byte(cfg), 0o600))
+
+	exitCode, err := runExecStandalone("web", Flags{CfgFile: cfgPath})
+	assert.Equal(t, 0, exitCode)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, server.ErrServiceNotRunnable)
 }
 
 func TestRunExecStandalone_BadConfigFile(t *testing.T) {

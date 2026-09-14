@@ -6,6 +6,8 @@ package apiclient
 import (
 	"errors"
 	"net/http"
+
+	"github.com/runwisp/runwisp/internal/server"
 )
 
 // LocalCredentials carries the daemon's ephemeral password as returned by
@@ -34,10 +36,7 @@ var ErrAuthDisabled = errors.New("daemon runs with authentication disabled")
 // the caller can distinguish "not on a socket" (403) from real transport
 // failures.
 func (c *Client) GetLocalCredentials() (*LocalCredentials, error) {
-	var body struct {
-		Password  string `json:"password"`
-		Ephemeral bool   `json:"ephemeral"`
-	}
+	var body server.LocalCredentialsBody
 	if err := c.doJSON("GET", "/api/local/credentials", nil, &body); err != nil {
 		if IsHTTPStatus(err, http.StatusNotFound) {
 			return nil, ErrLocalCredentialsUnavailable

@@ -164,15 +164,6 @@ func (m Model) dispatchLogMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 
 func (m Model) dispatchNotificationMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case uikit.NotificationStreamConnectedMsg:
-		model, cmd := m.handleNotificationStreamConnected(msg)
-		return model, cmd, true
-	case uikit.NotificationEventMsg:
-		model, cmd := m.handleNotificationEvent(msg)
-		return model, cmd, true
-	case uikit.NotificationStreamDisconnectedMsg:
-		model, cmd := m.handleNotificationStreamDisconnected()
-		return model, cmd, true
 	case uikit.NotificationUnreadCountMsg:
 		model, cmd := m.handleNotificationUnreadCount(msg)
 		return model, cmd, true
@@ -263,39 +254,6 @@ func (m Model) dispatchLifecycleMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return m, nil, true
 	}
 	return m, nil, false
-}
-
-func (m Model) handleNotificationStreamConnected(msg uikit.NotificationStreamConnectedMsg) (tea.Model, tea.Cmd) {
-	return m, m.streams.OnNotificationConnected(msg.Ch)
-}
-
-func (m Model) handleNotificationEvent(msg uikit.NotificationEventMsg) (tea.Model, tea.Cmd) {
-	switch msg.Event.Type {
-	case "notification.created", "notification.updated":
-		env, err := apiclient.DecodeNotificationEnvelope(msg.Event.Data)
-		if err != nil {
-			m.debugView.AppendLine("Failed to parse notification: " + err.Error())
-		} else {
-			m.notifications.SetUnread(int(env.UnreadCount))
-			if m.notifications.Upsert(env.Notification) {
-				m.updateLayout()
-			}
-		}
-	case "notification.unreadCountChanged":
-		count, err := apiclient.DecodeUnreadCountEnvelope(msg.Event.Data)
-		if err != nil {
-			m.debugView.AppendLine("Failed to parse unread count: " + err.Error())
-		} else {
-			m.notifications.SetUnread(int(count))
-			m.updateLayout()
-		}
-	}
-	return m, m.streams.ContinueListeningNotifications()
-}
-
-func (m Model) handleNotificationStreamDisconnected() (tea.Model, tea.Cmd) {
-	m.debugView.AppendLine("Notifications stream disconnected. Reconnecting...")
-	return m, m.streams.SubscribeNotifications()
 }
 
 func (m Model) handleNotificationUnreadCount(msg uikit.NotificationUnreadCountMsg) (tea.Model, tea.Cmd) {
@@ -990,8 +948,16 @@ func (m *Model) maybeLoadOlderLogs() tea.Cmd {
 	)
 }
 
-// handleSSEEvent processes a parsed SSE run event.
+// handleSSEEvent processes a parsed event off the unified stream: run
+// lifecycle events (the default, handled below) and notification events
+// (created/updated/unreadCountChanged) share this one connection — the
+// dedicated /api/notifications/stream was retired since the web UI already
+// consumed notifications from this stream exclusively.
 func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
+	if cmd, handled := m.handleNotificationSSEEvent(evt); handled {
+		return cmd
+	}
+
 	var runEvt struct {
 		Run      *model.Run     `json:"run"`
 		TaskName string         `json:"taskName"`
@@ -1023,6 +989,37 @@ func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 	}
 
 	return nil
+}
+
+// handleNotificationSSEEvent handles the notification.* event types that
+// ride the unified stream alongside run lifecycle events. handled is false
+// for any other event type, telling the caller to fall through to the run
+// lifecycle path.
+func (m *Model) handleNotificationSSEEvent(evt apiclient.RunStreamEvent) (cmd tea.Cmd, handled bool) {
+	switch evt.Type {
+	case "notification.created", "notification.updated":
+		env, err := apiclient.DecodeNotificationEnvelope(evt.Data)
+		if err != nil {
+			m.debugView.AppendLine("Failed to parse notification: " + err.Error())
+			return nil, true
+		}
+		m.notifications.SetUnread(int(env.UnreadCount))
+		if m.notifications.Upsert(env.Notification) {
+			m.updateLayout()
+		}
+		return nil, true
+	case "notification.unreadCountChanged":
+		count, err := apiclient.DecodeUnreadCountEnvelope(evt.Data)
+		if err != nil {
+			m.debugView.AppendLine("Failed to parse unread count: " + err.Error())
+			return nil, true
+		}
+		m.notifications.SetUnread(int(count))
+		m.updateLayout()
+		return nil, true
+	default:
+		return nil, false
+	}
 }
 
 const logReconnectDelay = 500 * time.Millisecond

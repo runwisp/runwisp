@@ -44,7 +44,7 @@ type StartupInfo struct {
 	TLSFingerprint string
 	UsingDemo      bool
 	Capabilities   []model.CapInfo
-	Tasks          []model.TaskBrief
+	Tasks          []model.Task
 	Timezone       string
 	TimezoneSource string
 

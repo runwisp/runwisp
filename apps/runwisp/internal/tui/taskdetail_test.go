@@ -54,7 +54,7 @@ func TestSummarizeTaskRuns_ClassifiesAndPicksLatestFailure(t *testing.T) {
 }
 
 func TestTaskDetailDialog_ApplySummary_IgnoresOtherTask(t *testing.T) {
-	d := NewTaskDetailDialog("alpha", &model.TaskBrief{Name: "alpha"})
+	d := NewTaskDetailDialog("alpha", &model.Task{Name: "alpha"})
 
 	d.ApplySummary(uikit.TaskSummaryMsg{TaskName: "beta", Total: 5})
 	if d.health.loaded {
@@ -71,7 +71,7 @@ func TestTaskDetailDialog_ApplySummary_IgnoresOtherTask(t *testing.T) {
 }
 
 func TestTaskDetailDialog_View_RendersDefinitionAndHealth(t *testing.T) {
-	d := NewTaskDetailDialog("backup-db", &model.TaskBrief{
+	d := NewTaskDetailDialog("backup-db", &model.Task{
 		Name:          "backup-db",
 		Kind:          model.KindTask,
 		Cron:          "0 3 * * *",
@@ -109,7 +109,7 @@ func TestTaskDetailDialog_View_RendersDefinitionAndHealth(t *testing.T) {
 }
 
 func TestTaskDetailDialog_View_ServiceWithAllFields(t *testing.T) {
-	d := NewTaskDetailDialog("web", &model.TaskBrief{
+	d := NewTaskDetailDialog("web", &model.Task{
 		Name:          "web",
 		Kind:          model.KindService,
 		Group:         "frontend",
@@ -122,15 +122,41 @@ func TestTaskDetailDialog_View_ServiceWithAllFields(t *testing.T) {
 	})
 
 	out := d.View(80, 40)
-	for _, want := range []string{"service", "Instances", "Restart", "frontend", "Manual trigger", "Depends on", "db, cache", "Compose", "docker-compose.yml", "PORT"} {
+	for _, want := range []string{"service", "Instances", "Restart", "frontend", "Depends on", "db, cache", "Compose", "docker-compose.yml", "PORT"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("service view should contain %q", want)
 		}
 	}
+	// "Manual trigger" is task-only vocabulary (Triggerable): a service is
+	// never ad-hoc runnable regardless of ManualTrigger, so that label must
+	// never surface here. A service's own use of the flag (locking manual
+	// stop/restart/start) gets its own "Manual control" row instead; see
+	// TestTaskDetailDialog_View_ServiceManualControlLocked.
+	if strings.Contains(out, "Manual trigger") {
+		t.Fatal("service view should not show Manual trigger: that label is task-only")
+	}
+	if strings.Contains(out, "Manual control") {
+		t.Fatal("a manually-controllable service (the default) should not show a Manual control row")
+	}
+}
+
+func TestTaskDetailDialog_View_ServiceManualControlLocked(t *testing.T) {
+	d := NewTaskDetailDialog("web", &model.Task{
+		Name:          "web",
+		Kind:          model.KindService,
+		Instances:     1,
+		Restart:       model.RestartAlways,
+		ManualTrigger: false,
+	})
+
+	out := d.View(80, 40)
+	if !strings.Contains(out, "Manual control") || !strings.Contains(out, "locked") {
+		t.Fatal("a manual_trigger=false service should show its manual control is locked")
+	}
 }
 
 func TestTaskDetailDialog_View_StagedTaskNamesItsFileAndThePromoteCommand(t *testing.T) {
-	d := NewTaskDetailDialog("backup", &model.TaskBrief{
+	d := NewTaskDetailDialog("backup", &model.Task{
 		Name:   "backup",
 		Kind:   model.KindTask,
 		Cron:   "0 3 * * *",
@@ -146,14 +172,14 @@ func TestTaskDetailDialog_View_StagedTaskNamesItsFileAndThePromoteCommand(t *tes
 		}
 	}
 
-	native := NewTaskDetailDialog("backup", &model.TaskBrief{Name: "backup", Kind: model.KindTask})
+	native := NewTaskDetailDialog("backup", &model.Task{Name: "backup", Kind: model.KindTask})
 	if strings.Contains(native.View(80, 40), "imported.toml") {
 		t.Fatal("a task defined in the root config should not report a staging source")
 	}
 }
 
 func TestTaskDetailDialog_View_HealthWithFailuresAndOther(t *testing.T) {
-	d := NewTaskDetailDialog("backup", &model.TaskBrief{Name: "backup", Kind: model.KindTask})
+	d := NewTaskDetailDialog("backup", &model.Task{Name: "backup", Kind: model.KindTask})
 	now := time.Now()
 	d.ApplySummary(uikit.TaskSummaryMsg{
 		TaskName:    "backup",
@@ -175,7 +201,7 @@ func TestTaskDetailDialog_View_HealthWithFailuresAndOther(t *testing.T) {
 }
 
 func TestTaskDetailDialog_View_HealthError(t *testing.T) {
-	d := NewTaskDetailDialog("x", &model.TaskBrief{Name: "x", Kind: model.KindTask})
+	d := NewTaskDetailDialog("x", &model.Task{Name: "x", Kind: model.KindTask})
 	d.ApplySummary(uikit.TaskSummaryMsg{TaskName: "x", Err: errBoom()})
 	out := d.View(60, 30)
 	if !strings.Contains(out, "unavailable") {
@@ -203,7 +229,7 @@ func TestTaskDetailDialog_Update_ClosesOnKeys(t *testing.T) {
 }
 
 func TestHandleKeyI_OpensInspectorForCursorTask(t *testing.T) {
-	m := newTestModelWithClient([]model.TaskBrief{{Name: "alpha"}})
+	m := newTestModelWithClient([]model.Task{{Name: "alpha"}})
 	// Sidebar items: [Home(0), alpha(1), Info(2), Debug(3)] — put the cursor on alpha.
 	selectSidebarItem(&m, 1)
 

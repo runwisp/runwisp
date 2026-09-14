@@ -64,7 +64,7 @@ func newDummyClient() *apiclient.Client {
 // newTestModel builds a minimal Model suitable for unit-testing helper methods
 // that don't touch the network or real storage. A nil client is fine for these
 // tests.
-func newTestModel(tasks []model.TaskBrief) Model {
+func newTestModel(tasks []model.Task) Model {
 	return NewModel(TUIConfig{
 		Info: uikit.StartupInfo{
 			Version: "0.0.0-test",
@@ -77,7 +77,7 @@ func newTestModel(tasks []model.TaskBrief) Model {
 // constructor so the stream manager's client (used by bulk/undo commands) is
 // non-nil. The client points at a dead address; tests only check that commands
 // are produced, not that they succeed over the wire.
-func newTestModelWithClient(tasks []model.TaskBrief) Model {
+func newTestModelWithClient(tasks []model.Task) Model {
 	return NewModel(TUIConfig{
 		Client: newDummyClient(),
 		Info: uikit.StartupInfo{
@@ -167,7 +167,7 @@ func TestMainHeaderHeight_HomeWithNotifications(t *testing.T) {
 // the base when a task is active. Notifications are still included because
 // task items live on PageHome.
 func TestMainHeaderHeight_ActiveTask(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "backup-db"}}
+	tasks := []model.Task{{Name: "backup-db"}}
 	m := newTestModel(tasks)
 	// Sidebar items: [Home(0), backup-db(1), Info(2), Debug(3)]
 	selectSidebarItem(&m, 1)
@@ -193,7 +193,7 @@ func TestMainHeaderHeight_ActiveTask(t *testing.T) {
 // TestMainHeaderHeight_NonHomePage verifies that notifications.PanelHeight()
 // is NOT added when the active page is not PageHome.
 func TestMainHeaderHeight_NonHomePage(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "backup-db"}}
+	tasks := []model.Task{{Name: "backup-db"}}
 	m := newTestModel(tasks)
 	// Sidebar items: [Home(0), backup-db(1), Info(2), Debug(3)]
 	selectSidebarItem(&m, 2)
@@ -316,7 +316,7 @@ func TestFocusHomeField_SetsHomeCursor(t *testing.T) {
 // helper (nil client / empty task / nil-or-non-running run) and the happy path
 // where a task name is resolved and showConfirmDialog returns a non-nil cmd.
 func TestConfirmHelpers_Guards(t *testing.T) {
-	svc := []model.TaskBrief{{Name: "svc", Kind: model.KindService}}
+	svc := []model.Task{{Name: "svc", Kind: model.KindService}}
 
 	t.Run("confirmAction with nil client returns nil", func(t *testing.T) {
 		m := newTestModel(nil)
@@ -387,7 +387,7 @@ func TestConfirmHelpers_Guards(t *testing.T) {
 // TestTriggerRun_ShowsConfirmDialog confirms the cron-task happy path gates the
 // run behind a confirm dialog rather than firing immediately.
 func TestTriggerRun_ShowsConfirmDialog(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "backup"}}
+	tasks := []model.Task{{Name: "backup"}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
 	m.client = newDummyClient()
@@ -401,7 +401,7 @@ func TestTriggerRun_ShowsConfirmDialog(t *testing.T) {
 // TestTriggerRun_ServiceDelegatesToRestart verifies that triggering a service
 // still routes through confirmRestartService (a restart is not undoable).
 func TestTriggerRun_ServiceDelegatesToRestart(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "svc", Kind: model.KindService}}
+	tasks := []model.Task{{Name: "svc", Kind: model.KindService}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
 	m.client = newDummyClient()
@@ -481,7 +481,7 @@ func TestDeleteCurrentRun_GuardsAgainstRunning(t *testing.T) {
 // (when its dispatcher's own guards fail). Verifies the action enum is wired
 // up for every value, plus the default branch via an invalid value.
 func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
-	tasks := []model.TaskBrief{
+	tasks := []model.Task{
 		{Name: "cronjob"},
 		{Name: "svc", Kind: model.KindService},
 	}
@@ -630,7 +630,7 @@ func TestRetryRun_HappyPath(t *testing.T) {
 // TestConfirmRestartService_MultipleInstancesUsesPluralPrompt exercises the
 // instance-count branch that picks the plural-version prompt string.
 func TestConfirmRestartService_MultipleInstancesUsesPluralPrompt(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "svc", Kind: model.KindService, Instances: 3}}
+	tasks := []model.Task{{Name: "svc", Kind: model.KindService, Instances: 3}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
 	m.client = newDummyClient()
@@ -660,7 +660,7 @@ func TestBuildMainHelpText(t *testing.T) {
 	})
 
 	t.Run("info page", func(t *testing.T) {
-		m := newTestModel([]model.TaskBrief{{Name: "t1"}})
+		m := newTestModel([]model.Task{{Name: "t1"}})
 		selectSidebarItem(&m, 2)
 		if m.buildMainHelpText() == "" {
 			t.Fatal("expected non-empty help text for PageInfo")
@@ -668,7 +668,7 @@ func TestBuildMainHelpText(t *testing.T) {
 	})
 
 	t.Run("active service task", func(t *testing.T) {
-		m := newTestModel([]model.TaskBrief{{Name: "svc", Kind: model.KindService}})
+		m := newTestModel([]model.Task{{Name: "svc", Kind: model.KindService}})
 		selectSidebarItem(&m, 1)
 		if m.buildMainHelpText() == "" {
 			t.Fatal("expected non-empty help text with active service task")
@@ -692,7 +692,7 @@ func TestApplySidebarSelectionChange_NoChangeReturnsNil(t *testing.T) {
 // TestApplySidebarSelectionChange_TaskChangedFiresFetchAndResetsCursor verifies
 // that switching to a task clears homeCursor and runs the side-effect batch.
 func TestApplySidebarSelectionChange_TaskChangedFiresFetchAndResetsCursor(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "backup"}}
+	tasks := []model.Task{{Name: "backup"}}
 	m := newTestModel(tasks)
 	m.homeCursor = 1 // non-default; the transition must reset to -1.
 
@@ -713,7 +713,7 @@ func TestApplySidebarSelectionChange_TaskChangedFiresFetchAndResetsCursor(t *tes
 // TestApplySidebarSelectionChange_WithExecViewClosesIt covers the branch that
 // invokes closeExecView when execView is set on transition.
 func TestApplySidebarSelectionChange_WithExecViewClosesIt(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "backup"}}
+	tasks := []model.Task{{Name: "backup"}}
 	m := newTestModel(tasks)
 	run := &model.Run{ID: "r1", TaskName: "t1"}
 	ev := execlist.NewExecView(run)
@@ -732,7 +732,7 @@ func TestApplySidebarSelectionChange_WithExecViewClosesIt(t *testing.T) {
 // TestApplySidebarSelectionChange_ToPageInfoQueuesMetricsFetch covers the
 // PageInfo entry branch that appends the three info-page fetch commands.
 func TestApplySidebarSelectionChange_ToPageInfoQueuesMetricsFetch(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "backup"}}
+	tasks := []model.Task{{Name: "backup"}}
 	m := newTestModel(tasks)
 	prevPage := m.sidebar.ActivePage()
 	prevTask := m.sidebar.ActiveTask()
@@ -752,7 +752,7 @@ func TestApplySidebarSelectionChange_ToPageInfoQueuesMetricsFetch(t *testing.T) 
 // autoOpenService branch returns nil for non-service tasks (no exec view
 // opened on selection change).
 func TestApplySidebarSelectionChange_NonServiceTaskNoAutoOpen(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "cronjob", Kind: model.KindTask}}
+	tasks := []model.Task{{Name: "cronjob", Kind: model.KindTask}}
 	m := newTestModel(tasks)
 
 	prevPage := m.sidebar.ActivePage()
@@ -770,7 +770,7 @@ func TestApplySidebarSelectionChange_NonServiceTaskNoAutoOpen(t *testing.T) {
 // TestConfirmStopService_HappyPath verifies the queued dialog includes Stop
 // language for a service task.
 func TestConfirmStopService_HappyPath(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "svc", Kind: model.KindService}}
+	tasks := []model.Task{{Name: "svc", Kind: model.KindService}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
 	m.client = newDummyClient()
@@ -854,7 +854,7 @@ func TestActivateHomeField_PasswordCopiesValue(t *testing.T) {
 // TestRecalcExecListHeight_WithActiveTask verifies the active-task branch
 // reduces the exec list height by the task header.
 func TestRecalcExecListHeight_WithActiveTask(t *testing.T) {
-	tasks := []model.TaskBrief{{Name: "backup"}}
+	tasks := []model.Task{{Name: "backup"}}
 	m := newTestModel(tasks)
 	m.width = 120
 	m.height = 30

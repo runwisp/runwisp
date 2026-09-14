@@ -89,12 +89,12 @@ type Server struct {
 	reload func() (model.ReloadResult, error)
 }
 
-// DaemonInfo, TaskBrief, and CapInfo live in the model package.
+// DaemonInfo and CapInfo live in the model package.
 
 type Options struct {
 	DB                storage.RunRepository
 	NotificationDB    storage.NotificationRepository // optional; nil disables /api/notifications
-	NotificationHub   NotificationHub                // optional; nil disables /api/notifications/stream
+	NotificationHub   NotificationHub                // optional; nil disables live notification events on /api/events/stream
 	TaskManager       runtime.TaskRunner
 	Tasks             *runtime.TaskRegistry
 	Scheduler         runtime.NextRunGetter

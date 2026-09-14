@@ -32,13 +32,19 @@ bounded exponential backoff.
 
 ## Identity & metadata
 
-| Key              | Default      | What it does                                                                               |
-| ---------------- | ------------ | ------------------------------------------------------------------------------------------ |
-| `[services.*]`   | required     | The service name (the TOML table key). Used in CLI, API, and log paths.                    |
-| `run`            | required     | Shell command. Multi-line OK with TOML triple-quotes.                                      |
-| `description`    | _(empty)_    | Human-readable description shown in the UI and TUI.                                        |
-| `group`          | `"Services"` | UI grouping label.                                                                         |
-| `manual_trigger` | `true`       | Allow manual trigger from CLI / API / UI. (Restart is the usual interaction for services.) |
+| Key              | Default      | What it does                                                                                                                                                                |
+| ---------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[services.*]`   | required     | The service name (the TOML table key). Used in CLI, API, and log paths.                                                                                                     |
+| `run`            | required     | Shell command. Multi-line OK with TOML triple-quotes.                                                                                                                       |
+| `description`    | _(empty)_    | Human-readable description shown in the UI and TUI.                                                                                                                         |
+| `group`          | `"Services"` | UI grouping label.                                                                                                                                                          |
+| `manual_trigger` | `true`       | Allow stop/restart/start from the CLI, API, Web UI, TUI, and cloud control plane. Set `false` to lock the service to its restart policy until you edit the TOML and reload. |
+
+Set `manual_trigger = false` if you don't want anyone stopping or
+restarting this service by hand, from any front door. The **Stop
+Service** button, TUI `s`/`r`, `runwisp service stop/restart`, the REST
+API, and the cloud control plane all refuse it; only a `runwisp.toml`
+edit plus `runwisp reload` changes its running state.
 
 ## Instances
 
@@ -64,6 +70,7 @@ just that one.
 
 | Key                | Default         | What it does                                                                                                                                                                                                                                                  |
 | ------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `restart`          | `"always"`      | When to restart an exited instance: `always`, `on_failure`, or `never`. Most services want the default.                                                                                                                                                       |
 | `restart_delay`    | `1s`            | Base delay between restarts. Go duration string.                                                                                                                                                                                                              |
 | `restart_backoff`  | `"exponential"` | Curve applied to `restart_delay`: `constant`, `linear`, or `exponential` (shared with task `retry_backoff`).                                                                                                                                                  |
 | `healthy_after`    | inherited       | Uptime an instance must reach to count as healthy — resets its restart counter **and** clears the failed-start streak. Exits faster than this count as failed starts. See [`[defaults]`](/configuration/defaults/) for the inherited value (default `"60s"`). |
@@ -86,9 +93,12 @@ own. When you hit **Restart** (or stop a single instance) by hand, the
 instance comes back immediately — the backoff only exists to keep a
 crash loop from hammering, not to slow down a deliberate action.
 
-`restart = "always"` is baked in and **can't be overridden** — that's
-the deal with a service. If what you want is "run once and exit," that's
-a [task](/concepts/tasks-vs-services/).
+The default, `restart = "always"`, is the deal with a service: it comes
+back no matter how it exited. Narrow it to `"on_failure"` if a clean exit
+should retire the instance instead of relaunching it, or `"never"` if you
+want the restart machinery (delay, backoff, FATAL) without the daemon
+ever respawning it on its own. If what you want is "run once and exit,"
+that's a [task](/concepts/tasks-vs-services/) instead.
 
 ### When a service can't start: FATAL
 
@@ -210,17 +220,11 @@ independently ready to go.
 
 ## Concurrency
 
-| Key          | Default  | What it does                                                             |
-| ------------ | -------- | ------------------------------------------------------------------------ |
-| `on_overlap` | `"skip"` | What happens when something tries to start a new run while one is going. |
-
-Services default to
-[`on_overlap = "skip"`](/concepts/concurrency/#services-and-on_overlap)
-because the supervisor already
-holds the instance count steady, so overlap almost never comes up. Try
-to manually trigger a service that's already running and it's cleanly
-turned away. There's no `max_concurrent` on services either — how many
-copies run is `instances`, not some in-flight overlap count.
+Services have no `on_overlap` — that's a `[tasks.*]` knob. A service's
+instance count is fixed by [`instances`](#instances), and the supervisor
+holds that count steady on its own, so there's nothing to configure:
+there's no "run" to overlap with, only instances to keep alive. There's
+no `max_concurrent` either, for the same reason.
 
 ## Graceful shutdown
 
@@ -338,9 +342,9 @@ An instance that catches `SIGTERM` and exits cleanly is recorded with
 ## What's rejected on services
 
 - `cron`, `catch_up` — services aren't cron-driven.
-- [`params`](/configuration/tasks/#parameters) — services don't take per-execution parameters; they aren't manually triggered.
+- [`params`](/configuration/tasks/#parameters) — services don't take per-execution parameters.
 - `retry_attempts`, `retry_delay`, `retry_backoff` — services restart instead of retry. Use `restart_delay` / `restart_backoff`.
-- `max_concurrent`, `max_queued` — instance count is `instances`; services don't queue.
+- `on_overlap`, `max_concurrent`, `max_queued` — instance count is `instances`; services don't queue or overlap.
 - A name shared with a `[tasks.*]` entry.
 - Empty or missing `run`.
 - `instances` outside `[1, 64]`.

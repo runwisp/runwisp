@@ -13,14 +13,11 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
-
-	"log/slog"
 
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/hashicorp/golang-lru/v2/expirable"
@@ -156,20 +153,19 @@ func (s *Service) DecodeCookieToken(token string) (valid bool) {
 	return time.Now().Before(exp)
 }
 
-// SetAuthCookie writes the session cookie. The Secure flag follows the
-// trusted-proxy policy in IsSecureRequest so a non-TLS daemon behind a
-// trusted reverse proxy still gets a Secure cookie, while a hostile
-// untrusted client cannot spoof one.
-func (s *Service) SetAuthCookie(w http.ResponseWriter, r *http.Request, token string, ttl time.Duration) {
-	http.SetCookie(w, &http.Cookie{
+// BuildAuthCookie builds the session cookie value. secure is decided by the
+// caller (see IsSecureRequest) rather than taken as a *http.Request here, so
+// it can be called from a huma handler that only has a context.Context.
+func (s *Service) BuildAuthCookie(token string, ttl time.Duration, secure bool) http.Cookie {
+	return http.Cookie{
 		Name:     CookieName,
 		Value:    token,
 		Path:     CookiePath,
 		MaxAge:   int(ttl.Seconds()),
 		HttpOnly: true,
-		Secure:   s.IsSecureRequest(r), // NOSONAR: intentionally dynamic — true when direct TLS or trusted-proxy TLS, false for plain HTTP dev setups
+		Secure:   secure, // NOSONAR: intentionally dynamic — true when direct TLS or trusted-proxy TLS, false for plain HTTP dev setups
 		SameSite: http.SameSiteStrictMode,
-	})
+	}
 }
 
 // IsSecureRequest reports whether the connection delivering r used TLS.
@@ -187,47 +183,29 @@ func (s *Service) IsSecureRequest(r *http.Request) bool {
 	return false
 }
 
-// HandleLogin is the CHAP login endpoint. It validates the nonce + signed
-// response, issues a JWT, and sets the session cookie. It is a raw chi
-// handler (not a huma operation) because it needs to set cookies directly
-// and sits behind the httprate limiter wired by the parent package.
-func (s *Service) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	var reqBody struct {
-		Nonce    string `json:"nonce"`
-		Response string `json:"response"`
+// ErrInvalidNonce is returned by Login when the nonce is unknown, expired, or
+// already consumed.
+var ErrInvalidNonce = errors.New("invalid or expired challenge")
+
+// ErrInvalidPassword is returned by Login when response does not match the
+// expected CHAP proof for nonce.
+var ErrInvalidPassword = errors.New("invalid password")
+
+// Login is the CHAP login flow: it consumes the single-use nonce, verifies
+// the signed response, and issues a fresh JWT on success. It has no
+// HTTP-layer concerns (cookies, status codes) so the caller — a huma handler
+// in the parent server package — can decide how to deliver the token.
+func (s *Service) Login(nonce, response string) (token string, err error) {
+	if !s.nonces.consume(nonce) {
+		return "", ErrInvalidNonce
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, MaxRequestBodySize)
-	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		slog.Warn("Failed to decode auth request", "err", err)
-		http.Error(w, "Invalid request", http.StatusBadRequest)
-		return
+	expected := chap.Response(s.password, nonce)
+	if subtle.ConstantTimeCompare([]byte(response), []byte(expected)) != 1 {
+		return "", ErrInvalidPassword
 	}
 
-	if !s.nonces.consume(reqBody.Nonce) {
-		http.Error(w, "Invalid or expired challenge", http.StatusUnauthorized)
-		return
-	}
-
-	expected := chap.Response(s.password, reqBody.Nonce)
-	if subtle.ConstantTimeCompare([]byte(reqBody.Response), []byte(expected)) != 1 {
-		http.Error(w, "Invalid password", http.StatusUnauthorized)
-		return
-	}
-
-	token, err := s.IssueToken(JWTTokenDuration)
-	if err != nil {
-		slog.Error("Failed to generate token", "err", err)
-		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
-		return
-	}
-
-	s.SetAuthCookie(w, r, token, JWTTokenDuration)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(map[string]string{"token": token}); err != nil {
-		slog.Error("Failed to encode auth response", "err", err)
-	}
+	return s.IssueToken(JWTTokenDuration)
 }
 
 // TokenFromCookie reads the session cookie value off r, returning "" when

@@ -38,18 +38,19 @@ And if you catch yourself writing `while true; do ...; done` inside a
 | [`cron`](/configuration/tasks/#scheduling)                          | ✅ schedule firings                                    | ❌ rejected (services aren't cron-driven)                       |
 | [`catch_up`](/concepts/scheduling/#missed-ticks-catchup)            | ✅ `latest` / `all` / `skip` for missed ticks          | ❌ N/A                                                          |
 | [`instances`](/configuration/services/#instances)                   | ❌ rejected                                            | ✅ N replicas, default `1`, max `64`                            |
-| [`restart`](/configuration/services/#restart-behaviour)             | ✅ `never` / `on_failure`; `always` is rejected        | Forced to `always` — that's the contract                        |
+| [`restart`](/configuration/services/#restart-behaviour)             | ❌ rejected — use `retry_attempts` instead             | ✅ `never` / `on_failure` / `always`, default `always`          |
 | [`restart_delay`](/configuration/services/#restart-behaviour)       | ❌ N/A                                                 | ✅ base delay before restart, default `1s`                      |
 | [`restart_backoff`](/configuration/services/#restart-behaviour)     | ❌ N/A                                                 | ✅ `constant` / `linear` / `exponential`, default `exponential` |
 | [`retry_attempts`](/concepts/retries/#retry_attempts)               | ✅ retry the failing run before recording final status | ❌ services restart instead of retry                            |
 | [`retry_delay`](/concepts/retries/#retry_delay-and-retry_backoff)   | ✅ base delay between retries                          | ❌ N/A                                                          |
 | [`retry_backoff`](/concepts/retries/#retry_delay-and-retry_backoff) | ✅ `constant` / `linear` / `exponential`               | ❌ N/A                                                          |
-| [`on_overlap`](/concepts/concurrency/)                              | ✅ default `queue`                                     | ✅ default `skip` (overlap is unusual for an always-on service) |
+| [`on_overlap`](/concepts/concurrency/)                              | ✅ default `queue`                                     | ❌ rejected — concurrency is `instances`, not overlap           |
+| `manual_trigger`                                                    | ✅ default `true`, gates manual **run**-triggering     | ✅ default `true`, gates manual **stop/restart/start**          |
 | `group`                                                             | ✅ default `"Tasks"`                                   | ✅ default `"Services"`                                         |
 
 Everything else behaves identically on both sides — `timeout`,
 `graceful_stop`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`,
-`notify`, `description`, `manual_trigger`.
+`notify`, `description`.
 The only stragglers:
 [`max_concurrent` and `max_queued`](/configuration/tasks/#concurrency)
 are task-only, and

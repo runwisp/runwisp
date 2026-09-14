@@ -185,49 +185,17 @@ type composeBlock struct {
 }
 
 // composeServiceOverrideWire is the per-service override surface inside a
-// [compose.<alias>.<svc>] sub-table. It deliberately *includes* Restart
-// (unlike [services.*], which always restarts) and *excludes* Run /
+// [compose.<alias>.<svc>] sub-table. Like [services.*] it *excludes* Run /
 // ComposeFile / ComposeService (an override never specifies its own
-// execution backend; that comes from the parent compose block).
+// execution backend; that comes from the parent compose block) and rejects
+// OnOverlap (a task-only concept, see applyComposeOverride). ManualTrigger is
+// accepted: it locks the service against manual stop/restart/start the same
+// way it does on [services.*].
 type composeServiceOverrideWire struct {
-	Group       string `toml:"group,omitempty"`
-	Description string `toml:"description,omitempty"`
+	unitOverrideWire
+	serviceSupervisionWire
 
-	ManualTrigger *bool `toml:"manual_trigger,omitempty"`
-
-	Timeout      string                  `toml:"timeout,omitempty"`
-	GracefulStop string                  `toml:"graceful_stop,omitempty"`
-	StopSignal   string                  `toml:"stop_signal,omitempty"`
-	OnOverlap    model.ConcurrencyPolicy `toml:"on_overlap,omitempty"`
-	Restart      model.RestartPolicy     `toml:"restart,omitempty"`
-	Instances    int                     `toml:"instances,omitempty"`
-
-	RestartDelay   string             `toml:"restart_delay,omitempty"`
-	RestartBackoff model.BackoffCurve `toml:"restart_backoff,omitempty"`
-	HealthyAfter   string             `toml:"healthy_after,omitempty"`
-	// RestartAttempts is a pointer so an explicit `restart_attempts = 0`
-	// override (give up on the very first failure) is distinguishable from an
-	// omitted key (nil, leaves the compose-import default untouched).
-	RestartAttempts *int `toml:"restart_attempts,omitempty"`
-
-	// Priority orders boot start; Autostart is a pointer so an omitted key
-	// (nil → keep the compose-import default of true) is distinguishable from
-	// an explicit autostart = false.
-	Priority  int   `toml:"priority,omitempty"`
-	Autostart *bool `toml:"autostart,omitempty"`
-
-	LogMaxSize string `toml:"log_max_size,omitempty"`
-	LogOnFull  string `toml:"log_on_full,omitempty"`
-
-	KeepRuns *int   `toml:"keep_runs,omitempty"`
-	KeepFor  string `toml:"keep_for,omitempty"`
-
-	Env         map[string]string `toml:"env,omitempty"`
-	EnvFile     string            `toml:"env_file,omitempty"`
-	Secrets     map[string]string `toml:"secrets,omitempty"`
-	SecretsFile string            `toml:"secrets_file,omitempty"`
-
-	Notify []string `toml:"notify,omitempty"`
+	Instances int `toml:"instances,omitempty"`
 }
 
 func expandComposeAlias(alias string, raw map[string]any, baseDir string, existingNames map[string]struct{}) ([]model.Task, []composeNotifySugar, error) {
@@ -624,11 +592,13 @@ func buildComposeServiceTask(block *composeBlock, svc *composespec.Service, svcN
 }
 
 // applyComposeOverride merges a per-service override into the task in place.
-// Empty/zero override fields leave the compose-import default intact. The
-// override's ManualTrigger pointer distinguishes "unset" from "explicitly false".
+// Empty/zero override fields leave the compose-import default intact.
 func applyComposeOverride(task *model.Task, w *composeServiceOverrideWire, svcName string) error {
 	if w == nil {
 		return nil
+	}
+	if w.OnOverlap != "" {
+		return fmt.Errorf("service %q override sets on_overlap; on_overlap is only valid on [tasks.*] — a service never runs a second overlapping instance, instances controls parallelism", svcName)
 	}
 	applyComposeOverrideSupervision(task, w)
 	applyComposeOverrideEnv(task, w)
@@ -636,21 +606,15 @@ func applyComposeOverride(task *model.Task, w *composeServiceOverrideWire, svcNa
 }
 
 // applyComposeOverrideSupervision copies the override's identity and
-// supervision-policy fields (group, description, trigger/overlap/restart,
-// instances, retries, priority, autostart, log-on-full, keep_runs) onto the
-// task, leaving unset values at their compose-import default.
+// supervision-policy fields (group, description, restart, instances, retries,
+// priority, autostart, log-on-full, keep_runs) onto the task, leaving unset
+// values at their compose-import default.
 func applyComposeOverrideSupervision(task *model.Task, w *composeServiceOverrideWire) {
 	if w.Group != "" {
 		task.Group = w.Group
 	}
 	if w.Description != "" {
 		task.Description = w.Description
-	}
-	if w.ManualTrigger != nil {
-		task.ManualTrigger = *w.ManualTrigger
-	}
-	if w.OnOverlap != "" {
-		task.OnOverlap = w.OnOverlap
 	}
 	if w.Restart != "" {
 		task.Restart = w.Restart
@@ -669,6 +633,9 @@ func applyComposeOverrideSupervision(task *model.Task, w *composeServiceOverride
 	}
 	if w.Autostart != nil {
 		task.Autostart = *w.Autostart
+	}
+	if w.ManualTrigger != nil {
+		task.ManualTrigger = *w.ManualTrigger
 	}
 	if w.LogOnFull != "" {
 		task.LogOnFull = w.LogOnFull

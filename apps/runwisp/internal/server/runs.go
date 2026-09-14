@@ -228,6 +228,7 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaSearchLogs)
 
 	srv.registerLocalCredentialsRoute(protectedAPI)
+	srv.registerCreateLaunchTicketRoute(protectedAPI)
 	srv.registerAppStreamSSE(protectedAPI)
 	srv.registerLogSSE(protectedAPI)
 	srv.registerDaemonLogSSE(protectedAPI)

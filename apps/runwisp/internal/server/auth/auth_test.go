@@ -5,10 +5,8 @@ package auth
 
 import (
 	"crypto/tls"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/chap"
@@ -69,68 +67,35 @@ func newServiceOrFail(t *testing.T, password string, trusted TrustedProxyChecker
 	return svc
 }
 
-func TestHandleLogin_Success(t *testing.T) {
+func TestLogin_Success(t *testing.T) {
 	svc := newServiceOrFail(t, "secret", nil)
 
 	nonce, err := svc.nonces.create()
 	require.NoError(t, err)
 
-	body := `{"nonce":"` + nonce + `","response":"` + computeChallenge("secret", nonce) + `"}`
-	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	svc.HandleLogin(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var resp map[string]string
-	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
-	assert.NotEmpty(t, resp["token"])
-
-	// Verify cookie is set
-	var found *http.Cookie
-	for _, c := range w.Result().Cookies() {
-		if c.Name == CookieName {
-			found = c
-			break
-		}
-	}
-	require.NotNil(t, found, "auth cookie should be set")
-	assert.Equal(t, CookiePath, found.Path)
-	assert.True(t, found.HttpOnly)
-	assert.Equal(t, http.SameSiteStrictMode, found.SameSite)
-	assert.Equal(t, int(JWTTokenDuration.Seconds()), found.MaxAge)
+	token, err := svc.Login(nonce, computeChallenge("secret", nonce))
+	require.NoError(t, err)
+	assert.NotEmpty(t, token)
 }
 
-func TestHandleLogin_WrongPassword(t *testing.T) {
+func TestLogin_WrongPassword(t *testing.T) {
 	svc := newServiceOrFail(t, "secret", nil)
 
 	nonce, err := svc.nonces.create()
 	require.NoError(t, err)
 
-	body := `{"nonce":"` + nonce + `","response":"` + computeChallenge("wrong-password", nonce) + `"}`
-	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(body))
-	w := httptest.NewRecorder()
-	svc.HandleLogin(w, req)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Body.String(), "Invalid password")
+	_, err = svc.Login(nonce, computeChallenge("wrong-password", nonce))
+	assert.ErrorIs(t, err, ErrInvalidPassword)
 }
 
-func TestHandleLogin_InvalidNonce(t *testing.T) {
+func TestLogin_InvalidNonce(t *testing.T) {
 	svc := newServiceOrFail(t, "secret", nil)
 
-	body := `{"nonce":"deadbeef","response":"anything"}`
-	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(body))
-	w := httptest.NewRecorder()
-	svc.HandleLogin(w, req)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Contains(t, w.Body.String(), "Invalid or expired challenge")
+	_, err := svc.Login("deadbeef", "anything")
+	assert.ErrorIs(t, err, ErrInvalidNonce)
 }
 
-func TestHandleLogin_NonceReplay(t *testing.T) {
+func TestLogin_NonceReplay(t *testing.T) {
 	svc := newServiceOrFail(t, "secret", nil)
 
 	nonce, err := svc.nonces.create()
@@ -138,57 +103,24 @@ func TestHandleLogin_NonceReplay(t *testing.T) {
 	response := computeChallenge("secret", nonce)
 
 	// First attempt should succeed
-	body := `{"nonce":"` + nonce + `","response":"` + response + `"}`
-	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(body))
-	w := httptest.NewRecorder()
-	svc.HandleLogin(w, req)
-	assert.Equal(t, http.StatusOK, w.Code)
+	_, err = svc.Login(nonce, response)
+	require.NoError(t, err)
 
 	// Replay the same nonce — should fail
-	req = httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(body))
-	w = httptest.NewRecorder()
-	svc.HandleLogin(w, req)
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	_, err = svc.Login(nonce, response)
+	assert.ErrorIs(t, err, ErrInvalidNonce)
 }
 
-func TestHandleLogin_MalformedBody(t *testing.T) {
-	svc := newServiceOrFail(t, "secret", nil)
-
-	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader("not-json"))
-	w := httptest.NewRecorder()
-	svc.HandleLogin(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-}
-
-func TestHandleLogin_OversizedBody(t *testing.T) {
-	svc := newServiceOrFail(t, "secret", nil)
-
-	// MaxRequestBodySize is 1024 bytes; send a body larger than that
-	bigBody := strings.Repeat("x", MaxRequestBodySize+100)
-	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(bigBody))
-	w := httptest.NewRecorder()
-	svc.HandleLogin(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-}
-
-func TestHandleLogin_JWTContainsExpAndIat(t *testing.T) {
+func TestLogin_JWTContainsExpAndIat(t *testing.T) {
 	svc := newServiceOrFail(t, "secret", nil)
 
 	nonce, err := svc.nonces.create()
 	require.NoError(t, err)
 
-	body := `{"nonce":"` + nonce + `","response":"` + computeChallenge("secret", nonce) + `"}`
-	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(body))
-	w := httptest.NewRecorder()
-	svc.HandleLogin(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
+	token, err := svc.Login(nonce, computeChallenge("secret", nonce))
+	require.NoError(t, err)
 
-	var resp map[string]string
-	require.NoError(t, json.NewDecoder(w.Body).Decode(&resp))
-
-	tok, err := svc.jwtAuth.Decode(resp["token"])
+	tok, err := svc.jwtAuth.Decode(token)
 	require.NoError(t, err)
 	exp, ok := tok.Expiration()
 	assert.True(t, ok, "token should have expiration")
@@ -198,66 +130,52 @@ func TestHandleLogin_JWTContainsExpAndIat(t *testing.T) {
 	assert.False(t, iat.IsZero())
 }
 
-func TestSetAuthCookie_HTTP(t *testing.T) {
+func TestBuildAuthCookie(t *testing.T) {
 	svc := newServiceOrFail(t, "pass", nil)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/api/auth/login", nil)
-	svc.SetAuthCookie(w, r, "test-token", JWTTokenDuration)
+	c := svc.BuildAuthCookie("test-token", JWTTokenDuration, false)
 
-	cookies := w.Result().Cookies()
-	require.Len(t, cookies, 1)
-
-	c := cookies[0]
 	assert.Equal(t, CookieName, c.Name)
 	assert.Equal(t, "test-token", c.Value)
 	assert.Equal(t, CookiePath, c.Path)
 	assert.True(t, c.HttpOnly)
-	assert.False(t, c.Secure, "Secure should be false for plain HTTP")
+	assert.False(t, c.Secure)
 	assert.Equal(t, http.SameSiteStrictMode, c.SameSite)
+	assert.Equal(t, int(JWTTokenDuration.Seconds()), c.MaxAge)
 }
 
-func TestSetAuthCookie_DirectTLSIsSecure(t *testing.T) {
-	// A request delivered over TLS (r.TLS != nil) sets Secure with no proxy
+func TestBuildAuthCookie_Secure(t *testing.T) {
+	svc := newServiceOrFail(t, "pass", nil)
+	c := svc.BuildAuthCookie("test-token", JWTTokenDuration, true)
+	assert.True(t, c.Secure)
+}
+
+func TestIsSecureRequest_DirectTLS(t *testing.T) {
+	// A request delivered over TLS (r.TLS != nil) is secure with no proxy
 	// involved — this is the free win once the daemon serves HTTPS directly.
 	svc := newServiceOrFail(t, "pass", nil)
-	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/api/auth/login", nil)
 	r.TLS = &tls.ConnectionState{}
-	svc.SetAuthCookie(w, r, "test-token", JWTTokenDuration)
-
-	cookies := w.Result().Cookies()
-	require.Len(t, cookies, 1)
-	assert.True(t, cookies[0].Secure, "Secure should be set when the request itself used TLS")
+	assert.True(t, svc.IsSecureRequest(r))
 }
 
-func TestSetAuthCookie_XForwardedProtoFromUntrustedClientIgnored(t *testing.T) {
+func TestIsSecureRequest_XForwardedProtoFromUntrustedClientIgnored(t *testing.T) {
 	// With no trusted-proxy checker, X-Forwarded-Proto must be ignored —
 	// otherwise any client could spoof "https" and trick us into setting
 	// the Secure flag on a cookie that travels in cleartext.
 	svc := newServiceOrFail(t, "pass", nil)
-	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/api/auth/login", nil)
 	r.RemoteAddr = "203.0.113.50:1234"
 	r.Header.Set("X-Forwarded-Proto", "https")
-	svc.SetAuthCookie(w, r, "test-token", JWTTokenDuration)
-
-	cookies := w.Result().Cookies()
-	require.Len(t, cookies, 1)
-	assert.False(t, cookies[0].Secure, "Secure must not be set based on a spoofable header")
+	assert.False(t, svc.IsSecureRequest(r), "must not be secure based on a spoofable header")
 }
 
-func TestSetAuthCookie_XForwardedProtoFromTrustedProxyHonored(t *testing.T) {
+func TestIsSecureRequest_XForwardedProtoFromTrustedProxyHonored(t *testing.T) {
 	svc := newServiceOrFail(t, "pass", func(_ *http.Request) bool { return true })
 
-	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/api/auth/login", nil)
 	r.RemoteAddr = "127.0.0.1:1234"
 	r.Header.Set("X-Forwarded-Proto", "https")
-	svc.SetAuthCookie(w, r, "test-token", JWTTokenDuration)
-
-	cookies := w.Result().Cookies()
-	require.Len(t, cookies, 1)
-	assert.True(t, cookies[0].Secure, "Secure should be set when XFP=https is forwarded by a trusted proxy")
+	assert.True(t, svc.IsSecureRequest(r), "should be secure when XFP=https is forwarded by a trusted proxy")
 }
 
 func TestLaunchTicketStore_CreateAndConsume(t *testing.T) {

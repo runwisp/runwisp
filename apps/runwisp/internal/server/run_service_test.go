@@ -473,7 +473,7 @@ func TestRestartService_Success(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
-		"svc": {Name: "svc", Kind: model.KindService},
+		"svc": {Name: "svc", Kind: model.KindService, ManualTrigger: true},
 	}
 	svc := makeRunService(tasks, repo, runner)
 
@@ -488,7 +488,7 @@ func TestRestartService_RunnerError(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
-		"svc": {Name: "svc", Kind: model.KindService},
+		"svc": {Name: "svc", Kind: model.KindService, ManualTrigger: true},
 	}
 	svc := makeRunService(tasks, repo, runner)
 
@@ -498,6 +498,22 @@ func TestRestartService_RunnerError(t *testing.T) {
 	err := svc.RestartService("svc")
 	assert.ErrorIs(t, err, restartErr)
 	runner.AssertExpectations(t)
+}
+
+// Regression: manual_trigger = false locks a service against a manual
+// restart from every front door — REST, UI, TUI, and CLI all route through
+// RestartService.
+func TestRestartService_ManualTriggerDisabled(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{
+		"svc": {Name: "svc", Kind: model.KindService, ManualTrigger: false},
+	}
+	svc := makeRunService(tasks, repo, runner)
+
+	err := svc.RestartService("svc")
+	assert.ErrorIs(t, err, ErrManualTriggerDisabled)
+	runner.AssertNotCalled(t, "RestartServiceInstances", "svc")
 }
 
 // ---- StopService ----
@@ -527,7 +543,7 @@ func TestStopService_Success(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
-		"svc": {Name: "svc", Kind: model.KindService},
+		"svc": {Name: "svc", Kind: model.KindService, ManualTrigger: true},
 	}
 	svc := makeRunService(tasks, repo, runner)
 
@@ -542,7 +558,7 @@ func TestStopService_RunnerError(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
-		"svc": {Name: "svc", Kind: model.KindService},
+		"svc": {Name: "svc", Kind: model.KindService, ManualTrigger: true},
 	}
 	svc := makeRunService(tasks, repo, runner)
 
@@ -552,6 +568,22 @@ func TestStopService_RunnerError(t *testing.T) {
 	err := svc.StopService("svc")
 	assert.ErrorIs(t, err, stopErr)
 	runner.AssertExpectations(t)
+}
+
+// Regression: manual_trigger = false locks a service against a manual stop
+// from every front door — REST, UI, TUI, and CLI all route through
+// StopService.
+func TestStopService_ManualTriggerDisabled(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{
+		"svc": {Name: "svc", Kind: model.KindService, ManualTrigger: false},
+	}
+	svc := makeRunService(tasks, repo, runner)
+
+	err := svc.StopService("svc")
+	assert.ErrorIs(t, err, ErrManualTriggerDisabled)
+	runner.AssertNotCalled(t, "StopService", "svc")
 }
 
 // ---- StopRun ----

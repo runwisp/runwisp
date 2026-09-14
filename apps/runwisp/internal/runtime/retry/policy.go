@@ -46,13 +46,11 @@ func ShouldRestart(task *model.Task, run *model.Run) bool {
 	}
 	switch task.Restart {
 	case model.RestartAlways:
-		// Services are supervisor-managed: every instance exit refills the slot,
-		// including manual stops and service-restart cancellations. The
-		// daemon-wide shutdown guard prevents restart loops during teardown.
-		if task.Kind.IsService() {
-			return true
-		}
-		return run.EndReason == nil || *run.EndReason != model.ReasonStopped
+		// restart is a service-only knob (config rejects it on [tasks.*]), so
+		// every instance exit refills the slot, including manual stops and
+		// service-restart cancellations. The daemon-wide shutdown guard
+		// prevents restart loops during teardown.
+		return true
 	case model.RestartOnFailure:
 		return run.EndReason != nil && IsFailedExecution(*run.EndReason)
 	default:

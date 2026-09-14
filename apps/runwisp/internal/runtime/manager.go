@@ -47,12 +47,6 @@ type TriggerRunOptions struct {
 	ExecutionID  string
 	RetryAttempt int
 	RetryOfRunID *string
-	// RestartAttempt is the number of consecutive restarts that precede this run
-	// in a non-service restart chain. It escalates the restart backoff the same
-	// way the supervisor's attempt counter does for services; without it every
-	// restart of a non-service task would wait only the flat base delay, hot-
-	// looping a task that fails immediately. In-memory only (not persisted).
-	RestartAttempt int
 	// InstanceIndex pins the run to a specific instance slot. Required for
 	// supervisor-driven restarts of services; nil for cron/API/retry runs.
 	InstanceIndex *int
@@ -534,9 +528,6 @@ func (m *defaultTaskManager) requeuePendingRun(ts *taskState, r *model.Run, resu
 		result.Failed++
 		return r
 	}
-	// Restart-chain depth can't survive a crash (ActiveRun.RestartAttempt is
-	// in-memory only, never persisted), so a boot-resumed queued run always
-	// restarts its backoff from zero.
 	ts.queue = append(ts.queue, queuedRun{run: r})
 	ts.cond.Signal()
 	result.Queued++
@@ -546,7 +537,7 @@ func (m *defaultTaskManager) requeuePendingRun(ts *taskState, r *model.Run, resu
 func (m *defaultTaskManager) restartOrFailPendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) *model.Run {
 	concurrencyLimit := m.getConcurrencyLimit(ts.task)
 	if len(ts.active) < concurrencyLimit {
-		m.startRun(ts.task, r, 0)
+		m.startRun(ts.task, r)
 		result.Resumed++
 		return nil
 	}
@@ -639,7 +630,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		// The caller must never read fields (Status, StartedAt, ...) that the run
 		// goroutine concurrently writes, so it gets an independent copy.
 		snapshot := run.Copy()
-		m.startRun(ts.task, run, options.RestartAttempt)
+		m.startRun(ts.task, run)
 		return snapshot, nil
 	}
 
@@ -667,7 +658,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	m.publishRun(events.EventRunCreated, run)
 
 	concurrencyLimit := m.getConcurrencyLimit(ts.task)
-	action, actionErr := m.evaluateConcurrency(ts, run, concurrencyLimit, options.RestartAttempt)
+	action, actionErr := m.evaluateConcurrency(ts, run, concurrencyLimit)
 
 	switch action {
 	case actionRejected:
@@ -693,7 +684,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 
 	// Snapshot before startRun spawns the execution goroutine (see service path).
 	snapshot := run.Copy()
-	m.startRun(ts.task, run, options.RestartAttempt)
+	m.startRun(ts.task, run)
 	return snapshot, nil
 }
 
@@ -1088,11 +1079,9 @@ func serviceRollupState(stopped bool, running, fatal, desired int) string {
 	}
 }
 
-// startRun registers the run and spawns the execution goroutine. restartAttempt
-// is the non-service restart-chain depth carried onto the ActiveRun so a later
-// failure escalates the restart backoff; it is zero for every path except a
-// non-service restart. Assumes m.mu is held.
-func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run, restartAttempt int) {
+// startRun registers the run and spawns the execution goroutine. Assumes m.mu
+// is held.
+func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run) {
 	ctx := context.Background()
 	var cancel context.CancelFunc
 
@@ -1103,10 +1092,9 @@ func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run, restartA
 	}
 
 	active := &ActiveRun{
-		Run:            run,
-		Cancel:         cancel,
-		StartedAt:      m.clock(),
-		RestartAttempt: restartAttempt,
+		Run:       run,
+		Cancel:    cancel,
+		StartedAt: m.clock(),
 	}
 
 	m.tasks[task.Name].active = append(m.tasks[task.Name].active, active)
@@ -1164,10 +1152,9 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 // publishes the terminal event, and retires the run from the task's active set
 // (refreshing supervisor bookkeeping for services). It returns the next
 // restart-attempt counter for the run's instance — meaningful only for a
-// restarting run, zero otherwise — and whether this run's restart chain has
-// given up: a service instance marked FATAL, or a restarting task ([tasks.*]
-// with restart = "always"/"on_failure") that hit its own restart_attempts
-// cap. Either way the caller must not schedule another restart.
+// restarting service, zero otherwise — and whether this run's restart chain
+// has given up: a service instance marked FATAL. Either way the caller must
+// not schedule another restart.
 func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, active *ActiveRun, result *executor.ExecuteResult) (int, bool) {
 	endTime := m.clock()
 	runDuration := endTime.Sub(active.StartedAt)
@@ -1191,10 +1178,9 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 	// Supervisor bookkeeping happens before run.End so a FATAL transition can
 	// rewrite the end reason: RecordExit needs runDuration, and whether the
 	// instance has exhausted its start-retry budget decides the audit row.
-	nextRestartAttempt, serviceFatal, fatalAttempts, taskGaveUp := m.retireRun(task, run, runDuration, outcome.endReason)
-	giveUp := serviceFatal || taskGaveUp
+	nextRestartAttempt, serviceFatal, fatalAttempts := m.retireRun(task, run, runDuration, outcome.endReason)
 
-	if giveUp {
+	if serviceFatal {
 		outcome.endReason = model.ReasonStartFailed
 		outcome.eventType = events.EventRunFailed
 	}
@@ -1203,27 +1189,23 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 	m.persistence.PersistExisting(run)
 	m.publishTerminal(outcome.eventType, run)
 
-	switch {
-	case serviceFatal:
+	if serviceFatal {
 		m.publishServiceFatal(task.Name, run.InstanceIndex, fatalAttempts, result.ExitCode)
 		slog.Error("Service instance gave up: marked FATAL",
 			"task", task.Name, "instance", run.InstanceIndex,
 			"attempts", fatalAttempts, "exit_code", result.ExitCode)
-	case taskGaveUp:
-		slog.Error("Task gave up restarting after repeated failures",
-			"task", task.Name, "attempts", nextRestartAttempt+1, "exit_code", result.ExitCode)
 	}
 
-	return nextRestartAttempt, giveUp
+	return nextRestartAttempt, serviceFatal
 }
 
 // retireRun removes the run from its task's active set and updates supervisor
 // bookkeeping under the manager lock. It returns the next restart-attempt
-// counter (meaningful only for a restarting run, zero otherwise), whether a
-// service instance is now FATAL, the recorded start-fail count when FATAL
-// (zero otherwise), and whether a restarting [tasks.*] run has exhausted its
-// own restart_attempts and must not be restarted again.
-func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDuration time.Duration, endReason model.EndReason) (nextRestartAttempt int, serviceFatal bool, fatalAttempts int, taskGaveUp bool) {
+// counter (meaningful only for a restarting service, zero otherwise), whether
+// a service instance is now FATAL, and the recorded start-fail count when
+// FATAL (zero otherwise). Non-service tasks re-run via retry_* (see
+// scheduleFollowup), which retireRun has no bookkeeping role in.
+func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDuration time.Duration, endReason model.EndReason) (nextRestartAttempt int, serviceFatal bool, fatalAttempts int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	// This run's presence in some taskState's active list means that state has
@@ -1232,12 +1214,10 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 	// defensive, not an expected path.
 	ts := m.taskStateFor(task.Name)
 	if ts == nil {
-		return nextRestartAttempt, serviceFatal, fatalAttempts, taskGaveUp
+		return nextRestartAttempt, serviceFatal, fatalAttempts
 	}
-	var retired *ActiveRun
 	for i, ar := range ts.active {
 		if ar.Run.ID == run.ID {
-			retired = ar
 			ts.active = append(ts.active[:i], ts.active[i+1:]...)
 			break
 		}
@@ -1250,29 +1230,12 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 		if serviceFatal {
 			fatalAttempts = ts.supervisor.StartFails(run.InstanceIndex)
 		}
-	} else if retry.IsFailedExecution(endReason) && retired != nil {
-		// Non-service restart backoff has no supervisor to count attempts, so we
-		// carry the chain depth on the ActiveRun. Return it as the attempt the
-		// next restart delay is computed from; scheduleRestart advances it for the
-		// respawned run so consecutive failures escalate instead of hot-looping.
-		nextRestartAttempt = retired.RestartAttempt
-		// Mirrors the service supervisor's FATAL check above: give up once this
-		// failure is the (RestartAttempts)-th consecutive one for the chain,
-		// same "at most RestartAttempts restarts" semantics as RecordExit's
-		// startFails > startRetries. A success resets the chain to zero (it
-		// never reaches this branch), so only a failure streak counts. A nil
-		// RestartAttempts (never went through config.Load) falls back to the
-		// same protective default the service path uses — never to "unlimited".
-		restartAttempts := config.IntOrDefault(task.RestartAttempts, config.DefaultStartRetries)
-		if nextRestartAttempt >= restartAttempts {
-			taskGaveUp = true
-		}
 	}
 	if ts.cond != nil {
 		ts.cond.Signal()
 	}
 	m.reapRetiredTaskState(task, ts)
-	return nextRestartAttempt, serviceFatal, fatalAttempts, taskGaveUp
+	return nextRestartAttempt, serviceFatal, fatalAttempts
 }
 
 // reapRetiredTaskState drops a taskState once its last run has retired, for

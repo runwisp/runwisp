@@ -410,7 +410,7 @@ func TestDialogManager_TaskDetailLifecycle(t *testing.T) {
 		t.Fatal("expected no task detail initially")
 	}
 
-	dm.ShowTaskDetail("alpha", &model.TaskBrief{Name: "alpha"})
+	dm.ShowTaskDetail("alpha", &model.Task{Name: "alpha"})
 	if !dm.HasTaskDetail() {
 		t.Fatal("expected task detail after ShowTaskDetail")
 	}

@@ -190,6 +190,30 @@ func TestGetAllRuns(t *testing.T) {
 	assert.Equal(t, int64(1), resp.Total)
 }
 
+// TestGetAllRuns_IsFailureQueryParam is the bug-first regression for the
+// isFailure query gap named in the RunFilter/RunsQueryInput unification: a
+// plain GET caller can now ask for failures directly instead of having to
+// know the model.FailureStatusToken magic status value.
+func TestGetAllRuns_IsFailureQueryParam(t *testing.T) {
+	s, repo, _, _ := setupServer(t)
+
+	runs := []model.Run{{ID: ulid.Make().String(), TaskName: "task1"}}
+	repo.On("QueryRuns", mock.Anything, storage.RunQuery{
+		Filter: model.RunFilter{IsFailure: true},
+		Limit:  50,
+	}).Return(runs, nil)
+	repo.On("CountRunsFiltered", mock.Anything, model.RunFilter{IsFailure: true}).Return(int64(len(runs)), nil)
+
+	req := httptest.NewRequest("GET", "/api/runs?isFailure=true", nil)
+	w := httptest.NewRecorder()
+
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	repo.AssertExpectations(t)
+}
+
 func TestGetTaskRuns(t *testing.T) {
 	s, repo, _, _ := setupServer(t)
 
@@ -562,6 +586,33 @@ func TestCHAPLogin_WrongPassword(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
+func TestCHAPLogin_MalformedBody(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader("not-json"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// TestCHAPLogin_OversizedBody guards the huma operation's MaxBodyBytes wiring:
+// a client sending a body past auth.MaxRequestBodySize must be rejected
+// before the JSON is even parsed, same DoS protection the raw chi handler
+// used to enforce with http.MaxBytesReader.
+func TestCHAPLogin_OversizedBody(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	bigBody := strings.Repeat("x", auth.MaxRequestBodySize+100)
+	req := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(bigBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+}
+
 func TestProtectedRoute_RejectedWithoutToken(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 
@@ -788,9 +839,10 @@ func setupServerWithService(t *testing.T) (*Server, string) {
 
 	svcName := "svc1"
 	svcTask := &model.Task{
-		Name: svcName,
-		Run:  "tail -f /dev/null",
-		Kind: model.KindService,
+		Name:          svcName,
+		Run:           "tail -f /dev/null",
+		Kind:          model.KindService,
+		ManualTrigger: true,
 	}
 	s.runService.tasks.Set(svcTask)
 	s.taskManager.UpsertTask(svcTask)
@@ -833,6 +885,23 @@ func TestRestartServiceHTTP_NotAService(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+// Regression: manual_trigger = false locks a service against a manual
+// restart over the REST API too, not just the run-service unit tests.
+func TestRestartServiceHTTP_ManualTriggerDisabled(t *testing.T) {
+	s, svcName := setupServerWithService(t)
+	locked, ok := s.runService.tasks.Get(svcName)
+	require.True(t, ok)
+	locked.ManualTrigger = false
+	s.runService.tasks.Set(locked)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks/"+svcName+"/restart", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
 // ---- humaStopService ----
 
 func TestStopServiceHTTP_Success(t *testing.T) {
@@ -844,6 +913,23 @@ func TestStopServiceHTTP_Success(t *testing.T) {
 	s.router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNoContent, w.Code)
+}
+
+// Regression: manual_trigger = false locks a service against a manual stop
+// over the REST API too, not just the run-service unit tests.
+func TestStopServiceHTTP_ManualTriggerDisabled(t *testing.T) {
+	s, svcName := setupServerWithService(t)
+	locked, ok := s.runService.tasks.Get(svcName)
+	require.True(t, ok)
+	locked.ManualTrigger = false
+	s.runService.tasks.Set(locked)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks/"+svcName+"/stop", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
 func TestStopServiceHTTP_TaskNotFound(t *testing.T) {

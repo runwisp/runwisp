@@ -464,9 +464,9 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time
 	}
 	sort.Strings(taskNames)
 
-	tasks := make([]model.TaskBrief, 0, len(taskNames))
+	tasks := make([]model.Task, 0, len(taskNames))
 	for _, name := range taskNames {
-		tasks = append(tasks, model.NewTaskBrief(snapshot[name]))
+		tasks = append(tasks, *snapshot[name])
 	}
 
 	capInfos := capInfosFromAvailability(svc.Executor.Availability())

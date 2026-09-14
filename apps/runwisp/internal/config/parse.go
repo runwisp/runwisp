@@ -62,17 +62,19 @@ func parseUmask(raw string) (string, error) {
 	return fmt.Sprintf("%04o", v), nil
 }
 
-// parseDuration parses a human-readable duration accepted by time.ParseDuration
-// (e.g. "30m", "2h45m"). An empty string yields zero with no error. Parse
-// failures are rewrapped into an operator-readable hint — Go's own
-// "time: invalid duration" message never reaches a config error.
+// parseDuration parses a human-readable duration using str2duration, a
+// superset of time.ParseDuration that also accepts day/week suffixes (e.g.
+// "30m", "2h45m", "2d", "1w") — matching what config.schema.json's shared
+// $defs/duration advertises for every duration field. An empty string yields
+// zero with no error. Parse failures are rewrapped into an operator-readable
+// hint — the library's own message never reaches a config error.
 func parseDuration(raw string) (time.Duration, error) {
 	if strings.TrimSpace(raw) == "" {
 		return 0, nil
 	}
-	d, err := time.ParseDuration(raw)
+	d, err := str2duration.ParseDuration(raw)
 	if err != nil {
-		return 0, fmt.Errorf("%q is not a valid duration; use a duration like \"30s\", \"5m\", \"2h30m\" (h/m/s)", raw)
+		return 0, fmt.Errorf("%q is not a valid duration; use a duration like \"30s\", \"5m\", \"2h30m\", \"2d\", \"1w\"", raw)
 	}
 	return d, nil
 }
@@ -85,24 +87,22 @@ func parseDurationPtr(raw string) (*time.Duration, error) {
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
 	}
-	d, err := time.ParseDuration(raw)
+	d, err := str2duration.ParseDuration(raw)
 	if err != nil {
-		return nil, fmt.Errorf("%q is not a valid duration; use a duration like \"30s\", \"5m\", \"2h30m\" (h/m/s)", raw)
+		return nil, fmt.Errorf("%q is not a valid duration; use a duration like \"30s\", \"5m\", \"2h30m\", \"2d\", \"1w\"", raw)
 	}
 	return &d, nil
 }
 
-// parseKeepFor parses a retention window using the extended syntax that also
-// accepts day/week suffixes (e.g. "30d", "2w"). An empty string means
-// "omitted, inherit the default". Zero and negative durations are rejected.
+// parseKeepFor parses a retention window. An empty string means "omitted,
+// inherit the default". Zero and negative durations are rejected.
 func parseKeepFor(raw string) (time.Duration, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
+	if strings.TrimSpace(raw) == "" {
 		return 0, nil
 	}
-	d, err := str2duration.ParseDuration(trimmed)
+	d, err := parseDuration(raw)
 	if err != nil {
-		return 0, fmt.Errorf("%q is not a valid duration; use a duration like \"30s\", \"5m\", \"2h30m\", \"30d\", \"2w\"", raw)
+		return 0, err
 	}
 	if d <= 0 {
 		return 0, fmt.Errorf("non-positive duration %q is not allowed; pick a positive duration or omit the field to inherit the default", raw)

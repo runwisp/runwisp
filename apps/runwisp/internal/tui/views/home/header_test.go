@@ -179,7 +179,7 @@ func TestFields_WithPasswordAndWebUI(t *testing.T) {
 }
 
 func TestRenderTaskHeader_ServiceTask(t *testing.T) {
-	task := &model.TaskBrief{
+	task := &model.Task{
 		Kind:      model.KindService,
 		Instances: 3,
 	}
@@ -189,7 +189,7 @@ func TestRenderTaskHeader_ServiceTask(t *testing.T) {
 }
 
 func TestRenderTaskHeader_CronTask(t *testing.T) {
-	task := &model.TaskBrief{
+	task := &model.Task{
 		Kind: model.KindTask,
 		Cron: "*/5 * * * *",
 	}
@@ -200,7 +200,7 @@ func TestRenderTaskHeader_CronTask(t *testing.T) {
 }
 
 func TestRenderTaskHeader_ManualTask(t *testing.T) {
-	task := &model.TaskBrief{
+	task := &model.Task{
 		Kind: model.KindTask,
 		Cron: "",
 	}
@@ -216,13 +216,13 @@ func TestRenderTaskHeader_NilTask(t *testing.T) {
 }
 
 func TestRenderTaskHeader_RunNowButtonLineY(t *testing.T) {
-	task := &model.TaskBrief{Kind: model.KindTask, Cron: "*/5 * * * *"}
+	task := &model.Task{Kind: model.KindTask, Cron: "*/5 * * * *"}
 	_, btnY := RenderTaskHeader("my-task", task, 80, false)
 	assert.Equal(t, 2, btnY)
 }
 
 func TestRenderTaskHeader_HoveredButton(t *testing.T) {
-	task := &model.TaskBrief{Kind: model.KindTask}
+	task := &model.Task{Kind: model.KindTask}
 	outHovered, _ := RenderTaskHeader("t", task, 80, true)
 	outNormal, _ := RenderTaskHeader("t", task, 80, false)
 	assert.NotEmpty(t, outHovered)
@@ -292,8 +292,8 @@ func TestRenderHeader_LaunchTicketHoveredOpenWebUI(t *testing.T) {
 
 func TestHeldTaskCount(t *testing.T) {
 	assert.Zero(t, HeldTaskCount(nil))
-	assert.Zero(t, HeldTaskCount([]model.TaskBrief{{Name: "native"}}))
-	assert.Equal(t, 2, HeldTaskCount([]model.TaskBrief{
+	assert.Zero(t, HeldTaskCount([]model.Task{{Name: "native"}}))
+	assert.Equal(t, 2, HeldTaskCount([]model.Task{
 		{Name: "backup", HeldBy: model.HeldByCron},
 		{Name: "native"},
 		{Name: "vacuum", HeldBy: model.HeldByCron},
@@ -305,7 +305,7 @@ func TestHeldTaskCount(t *testing.T) {
 func TestRenderHeader_ShowsHeldChip(t *testing.T) {
 	info := uikit.StartupInfo{
 		Port:  9477,
-		Tasks: []model.TaskBrief{{Name: "backup", Cron: "0 3 * * *", HeldBy: model.HeldByCron}},
+		Tasks: []model.Task{{Name: "backup", Cron: "0 3 * * *", HeldBy: model.HeldByCron}},
 	}
 	out, _ := RenderHeader(info, false, 100, -1, -1)
 	assert.Contains(t, out, "1 held by cron")
@@ -313,7 +313,7 @@ func TestRenderHeader_ShowsHeldChip(t *testing.T) {
 }
 
 func TestRenderHeader_NoHeldChipWhenNothingIsHeld(t *testing.T) {
-	info := uikit.StartupInfo{Port: 9477, Tasks: []model.TaskBrief{{Name: "backup", Cron: "0 3 * * *"}}}
+	info := uikit.StartupInfo{Port: 9477, Tasks: []model.Task{{Name: "backup", Cron: "0 3 * * *"}}}
 	out, _ := RenderHeader(info, false, 100, -1, -1)
 	assert.NotContains(t, out, "held by cron")
 }
@@ -321,7 +321,7 @@ func TestRenderHeader_NoHeldChipWhenNothingIsHeld(t *testing.T) {
 // A "Next:" time on a held task is a lie: that tick comes and goes without
 // RunWisp firing anything, because the scheduler stood down for cron.
 func TestRenderTaskHeader_HeldTaskReplacesNextRunWithTheReason(t *testing.T) {
-	task := &model.TaskBrief{Kind: model.KindTask, Cron: "*/5 * * * *", HeldBy: model.HeldByCron}
+	task := &model.Task{Kind: model.KindTask, Cron: "*/5 * * * *", HeldBy: model.HeldByCron}
 	out, _ := RenderTaskHeader("backup", task, 100, false)
 	assert.Contains(t, out, "*/5 * * * *", "the schedule is still real and still shown")
 	assert.Contains(t, out, "held")

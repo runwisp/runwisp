@@ -5,9 +5,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"net/http"
 
 	"log/slog"
 
@@ -57,28 +55,5 @@ func mapDomainError(ctx context.Context, err error, fallback500 string) huma.Sta
 		// generic, so the real error only survives if we log it here.
 		slog.Error(fallback500, "err", err)
 		return huma.Error500InternalServerError(fallback500)
-	}
-}
-
-func respondError(resp http.ResponseWriter, status int, publicMsg string, err error) {
-	if err != nil && status >= http.StatusInternalServerError {
-		slog.Error(publicMsg, "err", err)
-	}
-	http.Error(resp, publicMsg, status)
-}
-
-func respondBadRequest(resp http.ResponseWriter, publicMsg string) {
-	respondError(resp, http.StatusBadRequest, publicMsg, nil)
-}
-
-func respondUnauthorized(resp http.ResponseWriter, publicMsg string) {
-	respondError(resp, http.StatusUnauthorized, publicMsg, nil)
-}
-
-func respondJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(body); err != nil {
-		slog.Error("Failed to encode JSON response", "err", err)
 	}
 }

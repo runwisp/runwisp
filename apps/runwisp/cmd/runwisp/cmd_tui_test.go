@@ -224,7 +224,7 @@ func TestBuildStartupInfoFromDaemon_PopulatesAllFields(t *testing.T) {
 		CloudEnabled:     true,
 		ResolvedTimezone: "Europe/Berlin",
 		TimezoneSource:   "system",
-		Tasks: []model.TaskBrief{
+		Tasks: []model.Task{
 			{Name: "alpha"},
 			{Name: "beta"},
 		},

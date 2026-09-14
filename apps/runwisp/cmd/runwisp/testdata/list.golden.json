@@ -15,7 +15,6 @@
       "kind": "service",
       "schedule": "",
       "instances": 2,
-      "onOverlap": "skip",
       "manualTrigger": true
     }
   ]

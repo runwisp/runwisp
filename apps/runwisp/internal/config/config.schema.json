@@ -40,7 +40,7 @@
   "$defs": {
     "duration": {
       "type": "string",
-      "description": "Go duration string, e.g. 300ms, 5s, 10m, 1h30m. Retention durations also accept d/w.",
+      "description": "Duration string, e.g. 300ms, 5s, 10m, 1h30m, 2d, 1w.",
       "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h|d|w)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h|d|w))*$"
     },
     "byteSize": {
@@ -217,13 +217,13 @@
     },
     "service": {
       "type": "object",
-      "description": "A long-running service ([services.<name>]). restart=always is forced.",
+      "description": "A long-running service ([services.<name>]). restart defaults to always.",
       "additionalProperties": false,
       "properties": {
         "group": { "type": "string", "default": "Services", "description": "UI grouping label." },
         "description": { "type": "string" },
-        "manual_trigger": { "type": "boolean", "default": true },
-        "on_overlap": { "$ref": "#/$defs/onOverlap", "default": "skip" },
+        "manual_trigger": { "type": "boolean", "default": true, "description": "Allow stop/restart/start from CLI/API/UI/cloud; false locks it to its restart policy until a config reload." },
+        "restart": { "type": "string", "enum": ["never", "on_failure", "always"], "default": "always" },
         "timeout": { "$ref": "#/$defs/duration" },
         "graceful_stop": { "$ref": "#/$defs/duration" },
         "stop_signal": { "$ref": "#/$defs/stopSignal" },
@@ -298,11 +298,10 @@
       "properties": {
         "group": { "type": "string" },
         "description": { "type": "string" },
-        "manual_trigger": { "type": "boolean" },
+        "manual_trigger": { "type": "boolean", "description": "Allow stop/restart/start from CLI/API/UI/cloud; false locks it to its restart policy until a config reload." },
         "timeout": { "$ref": "#/$defs/duration" },
         "graceful_stop": { "$ref": "#/$defs/duration" },
         "stop_signal": { "$ref": "#/$defs/stopSignal" },
-        "on_overlap": { "$ref": "#/$defs/onOverlap" },
         "restart": { "type": "string", "enum": ["never", "on_failure", "always"] },
         "instances": { "type": "integer", "minimum": 1, "maximum": 64 },
         "restart_delay": { "$ref": "#/$defs/duration" },

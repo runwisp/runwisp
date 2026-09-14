@@ -74,7 +74,12 @@ type Task struct {
 	// yields the same slots — but actual start times depend on run durations,
 	// like the queue policy. Task-only (services start every instance at boot)
 	// and a no-op without a cron.
-	Jitter         time.Duration   `toml:"-" json:"jitter,omitempty" doc:"Cap how far a cron task's start may slip so tasks sharing a fire time take turns through a daemon-wide one-at-a-time gate instead of stampeding; a run starts as soon as the gate frees and slips up to this window only under contention, in nanoseconds"`
+	Jitter time.Duration `toml:"-" json:"jitter,omitempty" doc:"Cap how far a cron task's start may slip so tasks sharing a fire time take turns through a daemon-wide one-at-a-time gate instead of stampeding; a run starts as soon as the gate frees and slips up to this window only under contention, in nanoseconds"`
+	// ManualTrigger means different things by Kind: on a task, whether it can
+	// be run outside its cron schedule (see Triggerable). On a service,
+	// whether it can be stopped/restarted/started outside its restart policy
+	// (see ManuallyControllable): false locks it to the supervisor, changeable
+	// only by editing runwisp.toml and reloading. Defaults true either way.
 	ManualTrigger  bool            `toml:"manual_trigger,omitempty"        json:"manualTrigger"`
 	CatchUp        MissedRunPolicy `toml:"catch_up,omitempty"           json:"catchUp,omitempty" enum:"latest,all,skip" doc:"What to do when cron ticks are missed during downtime"`
 	MaxCatchUpRuns int             `toml:"max_catch_up_runs,omitempty"  json:"maxCatchUpRuns,omitempty" doc:"Cap on catch-up runs triggered when catch_up = all"`
@@ -86,7 +91,7 @@ type Task struct {
 	Timeout       time.Duration     `toml:"-"                       json:"timeout,omitempty" doc:"Per-run timeout in nanoseconds"`
 	GracefulStop  time.Duration     `toml:"-"                       json:"gracefulStop,omitempty" doc:"Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds"`
 	StopSignal    string            `toml:"-"                       json:"stopSignal,omitempty" enum:"SIGTERM,SIGINT,SIGQUIT,SIGHUP,SIGKILL,SIGUSR1,SIGUSR2" doc:"Signal sent to stop a run before SIGKILL; defaults to SIGTERM"`
-	Restart       RestartPolicy     `toml:"restart,omitempty"       json:"restart,omitempty" enum:"never,always,on_failure" doc:"For services: whether and when an instance is restarted (services force always). Tasks re-run a failed run via retry_* instead."`
+	Restart       RestartPolicy     `toml:"restart,omitempty"       json:"restart,omitempty" enum:"never,always,on_failure" doc:"For services: whether and when an instance is restarted (defaults to always). Tasks re-run a failed run via retry_* instead."`
 	MaxConcurrent int               `toml:"max_concurrent,omitempty" json:"maxConcurrent,omitempty" doc:"Maximum overlapping runs allowed for this task"`
 	MaxQueued     int               `toml:"max_queued,omitempty"    json:"maxQueued,omitempty" doc:"Maximum runs that can wait when on_overlap = queue"`
 	OnOverlap     ConcurrencyPolicy `toml:"on_overlap,omitempty"    json:"onOverlap,omitempty" enum:"queue,skip,kill" doc:"How overlapping runs are handled"`
@@ -226,6 +231,16 @@ type Task struct {
 	// (which only ever sees registry/TOML tasks) has no path to remove it.
 	// Runtime-only: never serialized to API/UI/cloud/TOML.
 	Ephemeral bool `toml:"-" json:"-"`
+
+	// CloudDeclared marks a service the control plane created at runtime via
+	// service:apply (never from TOML, never in the config registry). Only such
+	// a service may be torn down by service:remove: a TOML-defined
+	// [services.*] entry is owned by disk. Deliberately distinct from
+	// Ephemeral: that flag hooks the run-manager's one-shot reaper, which would
+	// wrongly delete a cloud service the moment it's idle (stopped) rather than
+	// only on an explicit remove. Runtime-only: never serialized to
+	// API/UI/cloud/TOML.
+	CloudDeclared bool `toml:"-" json:"-"`
 }
 
 // Held reports whether something other than RunWisp owns this task's firing.
@@ -240,6 +255,19 @@ func (t *Task) Held() bool { return t.HeldBy != HeldByNothing }
 // schedulable gets no cron entry, no jitter plan, and no missed-tick accounting —
 // while staying fully visible and manually triggerable.
 func (t *Task) Schedulable() bool { return t.Cron != "" && !t.Held() }
+
+// Triggerable reports whether this task can be started via the API/UI/CLI
+// trigger path. A service is never ad-hoc runnable this way regardless of
+// ManualTrigger; see ManuallyControllable for what ManualTrigger gates on a
+// service.
+func (t *Task) Triggerable() bool { return !t.Kind.IsService() && t.ManualTrigger }
+
+// ManuallyControllable reports whether a service can be stopped, restarted,
+// or started outside its restart policy, via the Web UI, TUI, CLI, REST API,
+// or the cloud control plane. false locks it to hands-off supervision: only a
+// runwisp.toml edit + reload can change its running state. Meaningless on a
+// task; use Triggerable there instead.
+func (t *Task) ManuallyControllable() bool { return t.ManualTrigger }
 
 // IsFailureReason reports whether a terminal run ending with the given reason
 // and exit code counts as a failure under this task's `failures` policy. It is
@@ -479,21 +507,21 @@ const (
 // distinct from CloudEnabled, which only reports that a cloud connection is
 // configured.
 type DaemonInfo struct {
-	Version          string      `json:"version"`
-	Fingerprint      string      `json:"fingerprint"`
-	Port             int         `json:"port"`
-	ExternalURL      string      `json:"externalUrl"`
-	CloudEnabled     bool        `json:"cloudEnabled"`
-	SchedulingActive bool        `json:"schedulingActive"`
-	ServiceManaged   bool        `json:"serviceManaged"`
-	AuthDisabled     bool        `json:"authDisabled"`
-	ConfigLoadedAt   time.Time   `json:"configLoadedAt"`
-	ConfigStale      bool        `json:"configStale"`
-	ConfigWarnings   []string    `json:"configWarnings,omitempty" doc:"Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads."`
-	ResolvedTimezone string      `json:"resolvedTimezone"`
-	TimezoneSource   string      `json:"timezoneSource" enum:"config,system"`
-	Tasks            []TaskBrief `json:"tasks"`
-	Capabilities     []CapInfo   `json:"capabilities"`
+	Version          string    `json:"version"`
+	Fingerprint      string    `json:"fingerprint"`
+	Port             int       `json:"port"`
+	ExternalURL      string    `json:"externalUrl"`
+	CloudEnabled     bool      `json:"cloudEnabled"`
+	SchedulingActive bool      `json:"schedulingActive"`
+	ServiceManaged   bool      `json:"serviceManaged"`
+	AuthDisabled     bool      `json:"authDisabled"`
+	ConfigLoadedAt   time.Time `json:"configLoadedAt"`
+	ConfigStale      bool      `json:"configStale"`
+	ConfigWarnings   []string  `json:"configWarnings,omitempty" doc:"Non-fatal findings in the live config, e.g. crontab jobs include_cron could not schedule. Re-derived per request, so it tracks reloads."`
+	ResolvedTimezone string    `json:"resolvedTimezone"`
+	TimezoneSource   string    `json:"timezoneSource" enum:"config,system"`
+	Tasks            []Task    `json:"tasks"`
+	Capabilities     []CapInfo `json:"capabilities"`
 }
 
 // InstanceInfo is the local-only identity of a running daemon, returned by
@@ -510,54 +538,6 @@ type InstanceInfo struct {
 	DataDir     string `json:"dataDir"`
 	ConfigPath  string `json:"configPath"`
 	SocketPath  string `json:"socketPath"`
-}
-
-// TaskBrief is a trimmed task descriptor exposed via the API.
-type TaskBrief struct {
-	Name          string            `json:"name"`
-	Kind          TaskKind          `json:"kind,omitempty" enum:"task,service"`
-	Group         string            `json:"group,omitempty"`
-	Cron          string            `json:"cron,omitempty"`
-	ManualTrigger bool              `json:"manualTrigger"`
-	CatchUp       MissedRunPolicy   `json:"catchUp,omitempty"`
-	Restart       RestartPolicy     `json:"restart,omitempty"`
-	MaxConcurrent int               `json:"maxConcurrent,omitempty"`
-	OnOverlap     ConcurrencyPolicy `json:"onOverlap,omitempty"`
-	Instances     int               `json:"instances,omitempty"`
-	DependsOn     []string          `json:"dependsOn,omitempty"`
-	Compose       *TaskComposeRef   `json:"compose,omitempty"`
-	Source        TaskSource        `json:"source,omitempty" enum:"staged,cron"`
-	SourceFile    string            `json:"sourceFile,omitempty"`
-	HeldBy        HoldReason        `json:"heldBy,omitempty" enum:"cron" doc:"Set when something other than RunWisp owns this task's schedule, so it is listed but not fired on its cron. 'cron' means a live system cron daemon still reads its crontab. Manual triggers still work."`
-	Parameters    []TaskParam       `json:"parameters,omitempty"`
-}
-
-// NewTaskBrief trims a task down to what /api/daemon exposes.
-//
-// One mapping, because two callers build this list at different times and a
-// field either of them forgot would be silently absent from the API: the boot
-// path builds it once for DaemonInfo, and the server rebuilds it per request so
-// derived state that changes while the daemon runs — HeldBy above all — is
-// reported as it is now rather than as it was at boot.
-func NewTaskBrief(task *Task) TaskBrief {
-	return TaskBrief{
-		Name:          task.Name,
-		Kind:          task.Kind,
-		Group:         task.Group,
-		Cron:          task.Cron,
-		ManualTrigger: task.ManualTrigger,
-		CatchUp:       task.CatchUp,
-		Restart:       task.Restart,
-		MaxConcurrent: task.MaxConcurrent,
-		OnOverlap:     task.OnOverlap,
-		Instances:     task.Instances,
-		DependsOn:     task.DependsOn,
-		Compose:       task.Compose,
-		Source:        task.Source,
-		SourceFile:    task.SourceFile,
-		HeldBy:        task.HeldBy,
-		Parameters:    task.Parameters,
-	}
 }
 
 // TaskComposeRef identifies the compose file and service backing a task.
