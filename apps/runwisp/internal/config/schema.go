@@ -159,8 +159,8 @@ type NotifyConfig struct {
 	// outbound coalescing) is distinguishable from an omitted key (nil, default 1h
 	// window). The in-app coalescer always applies a window regardless, treating
 	// nil/zero as its built-in default.
-	CoalesceWindow  *time.Duration
-	KeepOccurrences int
+	CoalesceWindow *time.Duration
+	CoalesceEvery  int
 }
 
 // NotifierSpec is one [notifiers.<id>] block, post-decode. Secret-bearing fields

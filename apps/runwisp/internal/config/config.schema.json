@@ -335,7 +335,11 @@
         "keep_notifications": { "type": "integer", "default": 1024, "description": "In-app bell row cap." },
         "keep_for": { "$ref": "#/$defs/duration", "description": "Max bell row age. Default 90d." },
         "coalesce_window": { "$ref": "#/$defs/duration", "description": "Collapse repeat (kind+task) into one bell row. Default 1h." },
-        "keep_occurrences": { "type": "integer", "default": 10, "description": "Recent timestamps kept per coalesced row." }
+        "coalesce_every": {
+          "type": "integer",
+          "default": 10,
+          "description": "Recent timestamps kept per coalesced bell row, and the count of suppressed events after which an outbound (Slack/Telegram/etc) delivery is force-forwarded instead of waiting for the coalescing window to close."
+        }
       }
     },
     "notifier": {

@@ -104,6 +104,11 @@ func TestDecodeMisplacedKeySectionHints(t *testing.T) {
 			toml: "[daemon]\nport = 9477\n[tasks.t]\nrun = \"echo hi\"\n",
 			want: []string{`unknown key "port"`, "--port"},
 		},
+		{
+			name: "keep_occurrences in notify points at coalesce_every",
+			toml: "[notify]\nkeep_occurrences = 5\n[tasks.t]\nrun = \"echo hi\"\n",
+			want: []string{`unknown key "keep_occurrences"`, "renamed to coalesce_every"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

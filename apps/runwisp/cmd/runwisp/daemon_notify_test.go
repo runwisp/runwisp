@@ -165,11 +165,11 @@ func TestBuildOutboundChannels_AppliesCoalesceWrapperWhenEnabled(t *testing.T) {
 	specs := []channel.NotifierSpec{
 		{ID: "ops", Type: "slack", WebhookURL: "https://hooks.example/abc"},
 	}
-	channelsNoCoalesce, err := buildOutboundChannels(specs, false, coalesce.Config{Window: time.Second, EveryN: 3}, slog.Default(), nil)
+	channelsNoCoalesce, err := buildOutboundChannels(specs, false, coalesce.Config{Window: time.Second, CoalesceEvery: 3}, slog.Default(), nil)
 	require.NoError(t, err)
 	require.Len(t, channelsNoCoalesce, 1)
 
-	channelsCoalesce, err := buildOutboundChannels(specs, true, coalesce.Config{Window: time.Second, EveryN: 3}, slog.Default(), nil)
+	channelsCoalesce, err := buildOutboundChannels(specs, true, coalesce.Config{Window: time.Second, CoalesceEvery: 3}, slog.Default(), nil)
 	require.NoError(t, err)
 	require.Len(t, channelsCoalesce, 1)
 
@@ -252,8 +252,8 @@ func TestInitNotify_InappRouteWiresHubAndService(t *testing.T) {
 				Routes: []config.NotificationRoute{
 					{Kinds: []string{"run.failed"}, NotifierID: []string{"inapp"}},
 				},
-				CoalesceWindow:  &window,
-				KeepOccurrences: 5,
+				CoalesceWindow: &window,
+				CoalesceEvery:  5,
 			},
 		},
 	}

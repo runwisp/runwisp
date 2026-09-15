@@ -539,13 +539,13 @@ keep_for = "720h"
 	assert.NotZero(t, cfg.Notify.KeepFor)
 }
 
-func TestDecode_NotifyKeepOccurrencesDefault(t *testing.T) {
-	// Omitted keep_occurrences must resolve to the documented default (10), not
-	// 0. The outbound coalescer treats 0 as "never check in", so a missing
-	// default silently disables the periodic check-in cadence.
+func TestDecode_NotifyCoalesceEveryDefault(t *testing.T) {
+	// Omitted coalesce_every must resolve to the documented default (10), not
+	// 0. The outbound coalescer treats 0 as "never force-forward", so a
+	// missing default silently disables the periodic check-in cadence.
 	cfg, err := decode([]byte(schedulerTZHeader+"\n[notify]\n"), "")
 	require.NoError(t, err)
-	assert.Equal(t, defaultKeepOccurrences, cfg.Notify.KeepOccurrences)
+	assert.Equal(t, defaultCoalesceEvery, cfg.Notify.CoalesceEvery)
 }
 
 func TestDecode_NotifyRetryBudget_Invalid(t *testing.T) {
