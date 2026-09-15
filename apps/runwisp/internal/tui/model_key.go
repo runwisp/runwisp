@@ -251,6 +251,10 @@ func handleKeyEnter(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.notifications.IsExpanded() {
 		return handleKeyEnterNotifications(m)
 	}
+	if m.panelFocus == uikit.PanelSidebar && m.sidebar.VersionFocused() {
+		m.dialogs.ShowNewRelease(m.info.Version, m.sidebar.LatestVersion())
+		return m, nil, true
+	}
 	if m.execView != nil && m.panelFocus == uikit.PanelMain && m.execView.HeaderFocus != execlist.HeaderFocusNone {
 		return handleKeyEnterHeader(m)
 	}

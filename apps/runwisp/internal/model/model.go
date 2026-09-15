@@ -522,6 +522,14 @@ type DaemonInfo struct {
 	TimezoneSource   string    `json:"timezoneSource" enum:"config,system"`
 	Tasks            []Task    `json:"tasks"`
 	Capabilities     []CapInfo `json:"capabilities"`
+	// UpdateAvailable is true when the background update check found a newer
+	// published release than this build. Re-derived per request from the live
+	// checker; false when the check is disabled, offline, or up to date.
+	UpdateAvailable bool `json:"updateAvailable"`
+	// LatestVersion is the newest release the update check has seen (e.g.
+	// "v0.3.0"), or empty before the first successful check, when the check is
+	// disabled, or when already up to date. Always present so the shape is stable.
+	LatestVersion string `json:"latestVersion"`
 }
 
 // InstanceInfo is the local-only identity of a running daemon, returned by

@@ -80,12 +80,14 @@ func TestDaemonInfo_JSONShapeIsLocked(t *testing.T) {
 		"configStale",
 		"externalUrl",
 		"fingerprint",
+		"latestVersion",
 		"port",
 		"resolvedTimezone",
 		"schedulingActive",
 		"serviceManaged",
 		"tasks",
 		"timezoneSource",
+		"updateAvailable",
 		"version",
 	}
 	got := make([]string, 0, len(decoded))

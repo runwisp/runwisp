@@ -2,8 +2,8 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import { Globe } from "@lucide/svelte";
-    import { formatDuration } from "@runwisp/ui";
+    import { Globe, TriangleAlert } from "@lucide/svelte";
+    import { formatDuration, Popover } from "@runwisp/ui";
     import { connectionStore, systemStore, type ConnectionStatus } from "$lib/stores";
     import { appEventStream } from "$lib/stores/app-stream.svelte";
     import { stalledCopy } from "$lib/utils/connection-copy";
@@ -91,6 +91,40 @@
         <span class="font-mono text-xs font-medium {theme.labelColor}">{theme.label}</span>
         <span class="flex items-center gap-1 font-mono text-2xs {theme.subtitleColor}">
             <span class="truncate">{subtitle}</span>
+            {#if status === "connected" && systemStore.updateAvailable}
+                <Popover placement="top" class="shrink-0 leading-none">
+                    {#snippet trigger()}
+                        <span
+                            class="flex cursor-pointer items-center text-warning-surface hover:text-warning-soft-text"
+                            title="A newer runwisp release is available"
+                        >
+                            <TriangleAlert size={12} />
+                            <span class="sr-only">Update available</span>
+                        </span>
+                    {/snippet}
+                    <div class="flex w-56 flex-col gap-1 font-sans text-xs">
+                        <span class="flex items-center gap-1.5 font-medium text-on-surface">
+                            <TriangleAlert size={14} class="shrink-0 text-warning-surface" />
+                            Update available
+                        </span>
+                        <span class="text-on-surface-muted">
+                            <span class="font-mono text-on-surface"
+                                >{systemStore.latestVersion}</span
+                            >
+                            is out, you're on
+                            <span class="font-mono">v{systemStore.version}</span>.
+                        </span>
+                        <a
+                            href="https://github.com/runwisp/runwisp/releases"
+                            target="_blank"
+                            rel="noreferrer"
+                            class="mt-1 text-primary hover:underline"
+                        >
+                            View release notes ↗
+                        </a>
+                    </div>
+                </Popover>
+            {/if}
             {#if status === "connected" && systemStore.timezone}
                 <span class="shrink-0 text-on-surface-faint">·</span>
                 <span

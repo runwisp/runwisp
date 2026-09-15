@@ -23,6 +23,7 @@ since in practice you tend to think about them together.
 [daemon]
 shutdown_timeout = "10s"
 external_url     = "https://runwisp.example.com"
+check_updates    = true
 tls              = "off"
 tls_cert         = ""
 tls_key          = ""
@@ -37,6 +38,7 @@ include          = ["conf.d/*.toml"]
 | ---------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `shutdown_timeout`     | `"10s"` | Whole-daemon shutdown budget. After `SIGTERM`, the daemon SIGKILLs any in-flight runs that haven't exited within this window so the process can actually exit.                                                                                              |
 | `external_url`         | _unset_ | Public base URL of this daemon's Web UI. When set, notification messages (Slack, Telegram) include a deep-link back to the run; when unset, the link line is omitted.                                                                                       |
+| `check_updates`        | `true`  | Check for a newer release (usually every 6 hours) and show an indicator next to the version in the Web UI and TUI. Never auto-updates. Set `false` to keep the daemon fully offline — see [`check_updates`](#check_updates) below.                          |
 | `tls`                  | `"off"` | `"off"` always serves plain HTTP; `"auto"` serves HTTPS whenever the bind address is non-loopback (self-signing a cert on first boot). Loopback binds stay HTTP either way. Ignored when `tls_cert`/`tls_key` are set.                                      |
 | `tls_cert`             | _unset_ | Path to a PEM certificate to serve instead of the self-signed one. Set together with `tls_key`. When set, HTTPS is served on every bind address, loopback included.                                                                                         |
 | `tls_key`              | _unset_ | Path to the PEM private key matching `tls_cert`. Both keys are set together or not at all.                                                                                                                                                                  |
@@ -78,6 +80,13 @@ that run's detail panel in the dashboard.
 Leaving `external_url` unset is perfectly fine and fully supported.
 Notifications still render in full — they just skip the link line rather
 than print a broken URL.
+
+### `check_updates`
+
+Checks for a newer release (usually every 6 hours) and shows an amber
+indicator next to the version in the Web UI and TUI. Never downloads or
+installs anything. Set `check_updates = false` to keep the daemon fully
+offline.
 
 ### `tls`, `tls_cert`, `tls_key`
 

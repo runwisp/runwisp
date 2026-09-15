@@ -29,6 +29,10 @@ function createSystemStore() {
     // hydration. Components read these getters reactively and self-correct.
     let cloudEnabled = $state(false);
     let schedulingActive = $state(true);
+    // Update availability lands from /api/daemon once the background checker has
+    // heard back from concierge; false/empty until then and when the check is off.
+    let updateAvailable = $state(false);
+    let latestVersion = $state("");
 
     let subscribed = false;
     let unsubscribes: (() => void)[] = [];
@@ -71,6 +75,8 @@ function createSystemStore() {
             configStale = info.configStale;
             cloudEnabled = info.cloudEnabled;
             schedulingActive = info.schedulingActive;
+            updateAvailable = info.updateAvailable;
+            latestVersion = info.latestVersion ?? "";
         } catch (err) {
             if (err instanceof AuthRequiredError) return;
             // silent — system stats are secondary
@@ -159,6 +165,12 @@ function createSystemStore() {
         },
         get schedulingActive() {
             return schedulingActive;
+        },
+        get updateAvailable() {
+            return updateAvailable;
+        },
+        get latestVersion() {
+            return latestVersion;
         },
         init,
         disconnect,

@@ -75,6 +75,11 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if x < uikit.SidebarWidth {
+		if m.sidebar.VersionRowAt(y) {
+			m.sidebar.FocusVersion()
+			m.dialogs.ShowNewRelease(m.info.Version, m.sidebar.LatestVersion())
+			return m, m.focusSidebar()
+		}
 		prevPage := m.sidebar.ActivePage()
 		prevTask := m.sidebar.ActiveTask()
 		m.sidebar.HandleClick(y)

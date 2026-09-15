@@ -680,17 +680,20 @@ func (w *storageWire) toStorage() (Storage, error) {
 // make adding a crontab require a restart. Only the root config may set them;
 // either key in an included file is a hard error.
 type daemonWire struct {
-	AllowCloudDispatch bool     `toml:"allow_cloud_dispatch,omitempty"`
-	ShutdownTimeout    string   `toml:"shutdown_timeout,omitempty"`
-	ExternalURL        string   `toml:"external_url,omitempty"`
-	MetricsEnabled     bool     `toml:"metrics_enabled,omitempty"`
-	MetricsListen      string   `toml:"metrics_listen,omitempty"`
-	TLS                string   `toml:"tls,omitempty"`
-	TLSCert            string   `toml:"tls_cert,omitempty"`
-	TLSKey             string   `toml:"tls_key,omitempty"`
-	TrustedProxies     []string `toml:"trusted_proxies,omitempty"`
-	Include            []string `toml:"include,omitempty"`
-	IncludeCron        []string `toml:"include_cron,omitempty"`
+	AllowCloudDispatch bool   `toml:"allow_cloud_dispatch,omitempty"`
+	ShutdownTimeout    string `toml:"shutdown_timeout,omitempty"`
+	ExternalURL        string `toml:"external_url,omitempty"`
+	// CheckUpdates is a pointer so an omitted key (nil → default true) is
+	// distinguishable from an explicit `check_updates = false`.
+	CheckUpdates   *bool    `toml:"check_updates,omitempty"`
+	MetricsEnabled bool     `toml:"metrics_enabled,omitempty"`
+	MetricsListen  string   `toml:"metrics_listen,omitempty"`
+	TLS            string   `toml:"tls,omitempty"`
+	TLSCert        string   `toml:"tls_cert,omitempty"`
+	TLSKey         string   `toml:"tls_key,omitempty"`
+	TrustedProxies []string `toml:"trusted_proxies,omitempty"`
+	Include        []string `toml:"include,omitempty"`
+	IncludeCron    []string `toml:"include_cron,omitempty"`
 }
 
 func (w *daemonWire) toDaemon() (Daemon, error) {
@@ -718,10 +721,15 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 	if err != nil {
 		return Daemon{}, err
 	}
+	checkUpdates := true
+	if w.CheckUpdates != nil {
+		checkUpdates = *w.CheckUpdates
+	}
 	return Daemon{
 		AllowCloudDispatch: w.AllowCloudDispatch,
 		ShutdownTimeout:    shutdown,
 		ExternalURL:        externalURL,
+		CheckUpdates:       checkUpdates,
 		MetricsEnabled:     metricsEnabled,
 		MetricsListen:      metricsListen,
 		TLS:                tlsMode,

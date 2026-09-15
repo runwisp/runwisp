@@ -737,6 +737,7 @@ export interface components {
             configWarnings?: string[] | null;
             externalUrl: string;
             fingerprint: string;
+            latestVersion: string;
             /** Format: int64 */
             port: number;
             resolvedTimezone: string;
@@ -745,6 +746,7 @@ export interface components {
             tasks: components["schemas"]["Task"][] | null;
             /** @enum {string} */
             timezoneSource: "config" | "system";
+            updateAvailable: boolean;
             version: string;
         };
         DaemonLogLineEvent: {

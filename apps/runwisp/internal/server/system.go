@@ -89,6 +89,11 @@ func (srv *Server) humaGetInfo(ctx context.Context, input *struct{}) (*DaemonInf
 	if tasks := srv.currentTasks(); tasks != nil {
 		info.Tasks = tasks
 	}
+	// Update availability is owned by the background checker, not the boot-time
+	// DaemonInfo — it flips the first time concierge answers, well after boot.
+	if srv.updateStatus != nil {
+		info.UpdateAvailable, info.LatestVersion = srv.updateStatus()
+	}
 	return &DaemonInfoOutput{Body: info}, nil
 }
 

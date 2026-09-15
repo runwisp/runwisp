@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Update check** — the daemon checks for a newer release and shows an amber indicator next to the version in the Web UI and TUI. Never auto-updates; opt out with `[daemon] check_updates = false`.
 - **Per-service stop and restart from the CLI** — `runwisp stop <service>` stops one service and `runwisp restart <service>` restarts it (starting it if it was stopped), leaving the rest of the daemon running.
 - **`[services.*]` can set `manual_trigger = false` to lock a service against manual stop, restart, and start**, from the CLI, REST API, Web UI, and TUI, until you edit `runwisp.toml` and reload.
 - **`runwisp import systemd` converts systemd `.service` units into `runwisp.toml`** — a unit with `Restart=` becomes a service, a `Type=oneshot` unit a task — flagging anything it can't model (multiple `ExecStart`, `Type=notify`, sandboxing, socket activation) with inline `# TODO`s. See [From systemd](https://docs.runwisp.com/coming-from/systemd/).

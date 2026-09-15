@@ -23,6 +23,7 @@ type DialogManager struct {
 	paramForm     *ParamFormDialog
 	runParams     *RunParamsDialog
 	logHistory    *LogHistoryDialog
+	newRelease    *NewReleaseDialog
 
 	flashMessage string
 	flashExpiry  time.Time
@@ -166,6 +167,32 @@ func (dm *DialogManager) UpdateHelp(msg tea.Msg) bool {
 		return true
 	}
 	return false
+}
+
+// HasNewRelease reports whether the update-details modal is active.
+func (dm *DialogManager) HasNewRelease() bool {
+	return dm.newRelease != nil
+}
+
+// ShowNewRelease opens the update-details modal for the given versions.
+func (dm *DialogManager) ShowNewRelease(current, latest string) {
+	d := NewNewReleaseDialog(current, latest)
+	dm.newRelease = &d
+}
+
+func (dm *DialogManager) DismissNewRelease() {
+	dm.newRelease = nil
+}
+
+// UpdateNewRelease dispatches input to the active update-details modal.
+// Returns a command to run (e.g. opening the release-notes link) and whether
+// the dialog closed.
+func (dm *DialogManager) UpdateNewRelease(msg tea.Msg) (tea.Cmd, bool) {
+	cmd, closed := dm.newRelease.Update(msg)
+	if closed {
+		dm.newRelease = nil
+	}
+	return cmd, closed
 }
 
 // HasTaskDetail reports whether the on-demand task inspector is active.
@@ -382,6 +409,9 @@ func (dm *DialogManager) RenderOverlays(base string, width, height int) string {
 	}
 	if dm.logHistory != nil {
 		return dm.logHistory.View(width, height)
+	}
+	if dm.newRelease != nil {
+		return dm.newRelease.View(width, height)
 	}
 	if dm.taskDetail != nil {
 		return dm.taskDetail.View(width, height)

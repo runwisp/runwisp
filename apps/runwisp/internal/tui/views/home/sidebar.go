@@ -50,7 +50,20 @@ type Sidebar struct {
 	focused   bool
 	filtering bool
 	filter    string
+
+	// updateAvailable lights the amber indicator on the version line; latestVersion
+	// is the newer release it points at. versionFocused is true when keyboard focus
+	// has moved off the item list onto that indicator (only meaningful when
+	// updateAvailable). Fed by SetUpdate from the /api/daemon poll.
+	updateAvailable bool
+	latestVersion   string
+	versionFocused  bool
 }
+
+// versionRow is the fixed screen row of the version line inside the brand block
+// (blank, brand mark, version). The brand block is never scrolled, so a mouse
+// hit-test against this constant is exact.
+const versionRow = 2
 
 func NewSidebar(name, version, fingerprint string, tasks []model.Task) Sidebar {
 	all := buildItems(tasks)
@@ -170,6 +183,41 @@ func (s *Sidebar) SetHovered(idx int) {
 	s.hovered = idx
 }
 
+// SetUpdate records the background update-check result. Losing availability
+// (e.g. the operator upgraded and reloaded) also drops focus off the now-absent
+// indicator so keyboard focus can't get stranded on it.
+func (s *Sidebar) SetUpdate(available bool, latest string) {
+	s.updateAvailable = available
+	s.latestVersion = latest
+	if !available {
+		s.versionFocused = false
+	}
+}
+
+// VersionFocused reports whether the update indicator currently holds keyboard
+// focus (so the caller can open the details dialog on Enter).
+func (s *Sidebar) VersionFocused() bool {
+	return s.updateAvailable && s.versionFocused
+}
+
+// LatestVersion is the newer release the indicator points at, for the details dialog.
+func (s *Sidebar) LatestVersion() string {
+	return s.latestVersion
+}
+
+// FocusVersion moves focus onto the update indicator; a no-op when no update is
+// available. Used when the indicator row is clicked.
+func (s *Sidebar) FocusVersion() {
+	if s.updateAvailable {
+		s.versionFocused = true
+	}
+}
+
+// VersionRowAt reports whether screen row y is the clickable update indicator.
+func (s *Sidebar) VersionRowAt(y int) bool {
+	return s.updateAvailable && y == versionRow
+}
+
 func (s *Sidebar) ActivePage() uikit.Page {
 	if s.selected >= 0 && s.selected < len(s.allItems) {
 		return s.allItems[s.selected].page
@@ -203,18 +251,37 @@ func (s *Sidebar) Update(msg tea.Msg) tea.Cmd {
 
 	switch keyMsg.String() {
 	case "up", "k":
+		if s.versionFocused {
+			return nil // already at the very top
+		}
+		// Stepping up off the first item lands on the update indicator, when present.
+		if s.updateAvailable && s.cursor == 0 {
+			s.versionFocused = true
+			return nil
+		}
 		s.MoveCursor(-1)
 	case "down", "j":
+		if s.versionFocused {
+			s.versionFocused = false // back down into the item list
+			return nil
+		}
 		s.MoveCursor(1)
 	case "pgup":
+		s.versionFocused = false
 		s.PageCursor(-1)
 	case "pgdown":
+		s.versionFocused = false
 		s.PageCursor(1)
 	case "home", "g":
+		s.versionFocused = false
 		s.CursorToEdge(-1)
 	case "end", "G":
+		s.versionFocused = false
 		s.CursorToEdge(1)
 	case "enter", "space":
+		if s.versionFocused {
+			return nil // Enter is handled by the model (it owns the dialog)
+		}
 		s.selectCursor()
 	default:
 		return nil
@@ -283,6 +350,7 @@ func (s *Sidebar) HandleClick(y int) {
 	if index < 0 || s.items[index].kind == entryGroupHeader {
 		return
 	}
+	s.versionFocused = false
 	s.cursor = index
 	s.selectCursor()
 	if s.filtering {
@@ -387,6 +455,30 @@ func (s *Sidebar) skipGroupHeaders(dir int) {
 	}
 }
 
+// renderVersionLine draws the "   vX.Y.Z" line, appending an amber update
+// indicator when a newer release is known. Focused, the indicator inverts and
+// spells out the newer version as an affordance that it's an actionable control.
+func (s *Sidebar) renderVersionLine() string {
+	base := uikit.SidebarVersionStyle.Render("   v" + s.version)
+	if !s.updateAvailable {
+		return base
+	}
+	if s.focused && s.versionFocused {
+		sep := uikit.SidebarVersionStyle.Render(" ")
+		marker := lipgloss.NewStyle().
+			Background(uikit.ColorWarning).
+			Foreground(uikit.ColorSidebarBg).
+			Bold(true).
+			Render(" ⚠ " + s.latestVersion + " ")
+		return base + sep + marker
+	}
+	marker := lipgloss.NewStyle().
+		Background(uikit.ColorSidebarBg).
+		Foreground(uikit.ColorWarning).
+		Render(" ⚠")
+	return base + marker
+}
+
 func (s *Sidebar) brandHeight() int {
 	if s.fingerprint != "" {
 		return 5
@@ -403,7 +495,7 @@ func (s *Sidebar) View() string {
 	rendered++
 	writeSidebarLine(&b, uikit.SidebarMarkStyle.Render(" ⟡ ")+uikit.SidebarBrandStyle.Render(s.name), w)
 	rendered++
-	writeSidebarLine(&b, uikit.SidebarVersionStyle.Render("   v"+s.version), w)
+	writeSidebarLine(&b, s.renderVersionLine(), w)
 	rendered++
 
 	if s.fingerprint != "" {
@@ -465,11 +557,13 @@ func (s *Sidebar) renderItem(index int) string {
 		text += strings.Repeat(" ", s.width-width)
 	}
 
+	cursorHere := index == s.cursor && !s.versionFocused
+
 	style := uikit.SidebarItemNoneStyle
 	switch {
-	case s.focused && index == s.cursor && selected:
+	case s.focused && cursorHere && selected:
 		style = uikit.SidebarItemFocusedCursorSelectedStyle
-	case s.focused && index == s.cursor:
+	case s.focused && cursorHere:
 		style = uikit.SidebarItemFocusedCursorStyle
 	case s.focused && selected:
 		style = uikit.SidebarItemFocusedSelectedStyle

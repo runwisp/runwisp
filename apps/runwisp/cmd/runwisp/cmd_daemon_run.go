@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	stdruntime "runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -31,6 +32,7 @@ import (
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/internal/update"
 	"github.com/runwisp/runwisp/internal/version"
 )
 
@@ -130,6 +132,14 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 
 	daemonInfo := buildDaemonInfo(cfg, svc, configSnap.LoadedAt(), f.Port)
 
+	// Background update check: best-effort, opt-out via [daemon] check_updates,
+	// and a no-op on dev builds. Constructed before the server so its Status
+	// hook can back /api/daemon; the goroutine is started (and stopped) below.
+	updateChecker := update.NewChecker(version.Version, stdruntime.GOOS, stdruntime.GOARCH, cfg.Config.Daemon.CheckUpdates)
+	updateCtx, cancelUpdate := context.WithCancel(context.Background())
+	defer cancelUpdate()
+	go updateChecker.Run(updateCtx)
+
 	reconciler, reloadFn := newReconciler(mode, cfg, svc, f, configSnap)
 	defer startCronHoldWatcher(reconciler, cfg.Config)()
 
@@ -155,6 +165,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		DaemonInfo:        daemonInfo,
 		ConfigStale:       configSnap.Stale,
 		ConfigWarnings:    configWarningsFn(reconciler, cfg.Config),
+		UpdateStatus:      updateChecker.Status,
 		DaemonLogBuffer:   logBuffer,
 		MetricsEnabled:    cfg.Config.Daemon.MetricsEnabled,
 		MetricsListen:     cfg.Config.Daemon.MetricsListen,

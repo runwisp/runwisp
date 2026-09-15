@@ -248,11 +248,15 @@ type Daemon struct {
 	AllowCloudDispatch bool
 	ShutdownTimeout    time.Duration
 	ExternalURL        string
-	MetricsEnabled     bool
-	MetricsListen      string
-	TLS                string
-	TLSCert            string
-	TLSKey             string
+	// CheckUpdates gates the daemon's outbound poll of concierge.runwisp.com for
+	// a newer release (surfaced as a Web UI / TUI indicator, never auto-applied).
+	// Default true; set false to keep the daemon fully offline.
+	CheckUpdates   bool
+	MetricsEnabled bool
+	MetricsListen  string
+	TLS            string
+	TLSCert        string
+	TLSKey         string
 	// TrustedProxies is the CIDR allowlist for X-Forwarded-For, mirroring the
 	// RUNWISP_TRUSTED_PROXIES env var (which overrides this at daemon start).
 	TrustedProxies []string

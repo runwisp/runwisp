@@ -59,6 +59,9 @@ type Server struct {
 	stats             *statsProvider
 	configStale       func() bool
 	configWarnings    func() []string
+	// updateStatus reports (available, latestVersion) from the background update
+	// checker. nil (cloud mode, or check disabled) reports never-available.
+	updateStatus func() (bool, string)
 	// configStaleLast tracks the last staleness value broadcast over the event
 	// bus so the collector goroutine only emits an EventConfigStale when it
 	// flips. Touched solely by the metrics onSample callback (single goroutine).
@@ -113,6 +116,7 @@ type Options struct {
 	DaemonInfo        *model.DaemonInfo                  // Static identity/config info for /api/daemon
 	ConfigStale       func() bool                        // Per-request staleness probe for /api/daemon (optional; nil reports never-stale)
 	ConfigWarnings    func() []string                    // Per-request live-config warnings for /api/daemon (optional; nil reports none)
+	UpdateStatus      func() (bool, string)              // Per-request update-availability probe for /api/daemon (optional; nil reports never-available)
 	DaemonLogBuffer   *DaemonLogBuffer                   // Ring buffer for daemon log streaming (optional)
 	MetricsEnabled    bool                               // When false, /metrics is not mounted anywhere
 	MetricsListen     string                             // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
@@ -186,6 +190,7 @@ func New(opts Options) (*Server, error) {
 	s.stats = newStatsProvider(opts.DaemonInfo, time.Now())
 	s.configStale = opts.ConfigStale
 	s.configWarnings = opts.ConfigWarnings
+	s.updateStatus = opts.UpdateStatus
 	s.metrics = NewMetricsCollector(32) // ~2.5 min at 5s intervals; sampling starts in Start()
 	s.daemonLogBuffer = opts.DaemonLogBuffer
 	s.streams = newStreamLimiter(maxConcurrentStreams, maxStreamsPerIP)

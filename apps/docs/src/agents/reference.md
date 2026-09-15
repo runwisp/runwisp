@@ -39,6 +39,7 @@ min_free_space: size =0(no check) — stop accepting log lines when partition fr
 allow_cloud_dispatch: bool =false — accept peer-dispatched ad-hoc shell/container/compose runs (opt-in; one-shot, never edits TOML; HTTP & existing-task triggers always allowed)
 shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flight runs on shutdown
 external_url:         string      — public Web UI base for notification deep-links; absolute http(s) w/ host
+check_updates:        bool =true  — poll concierge.runwisp.com for a newer release; shows an indicator, never auto-updates; false = fully offline
 metrics_enabled:      bool =false — master switch for /metrics
 metrics_listen:       host:port   — dedicated metrics listener; setting it enables metrics on its own
 trusted_proxies:      []string    — CIDR allowlist of reverse proxies whose X-Forwarded-For is trusted; catch-all

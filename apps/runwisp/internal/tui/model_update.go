@@ -66,6 +66,7 @@ func (m Model) interceptActiveDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		{m.dialogs.HasRunParams(), m.interceptRunParamsDialog},
 		{m.dialogs.HasCopy(), m.interceptCopyDialog},
 		{m.dialogs.HasLogHistory(), m.interceptLogHistoryDialog},
+		{m.dialogs.HasNewRelease(), m.interceptNewReleaseDialog},
 		{m.dialogs.HasTaskDetail(), m.interceptTaskDetailDialog},
 		{m.dialogs.HasRunDetail(), m.interceptRunDetailDialog},
 		{m.dialogs.HasHelp(), m.interceptHelpDialog},
@@ -445,6 +446,27 @@ func (m Model) interceptLogHistoryDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool)
 	case tea.MouseMsg:
 		m.dialogs.UpdateLogHistory(msg)
 		return m, nil, true
+	}
+	return m, nil, false
+}
+
+// interceptNewReleaseDialog handles input while the update-details modal is
+// visible: tab/click focuses the release-notes link, enter/click on it opens
+// the browser, any other key or click dismisses the dialog; ctrl+c escalates
+// to the quit confirm.
+func (m Model) interceptNewReleaseDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		if msg.String() == keyCtrlC {
+			m.dialogs.DismissNewRelease()
+			m.showQuitConfirm()
+			return m, nil, true
+		}
+		cmd, _ := m.dialogs.UpdateNewRelease(msg)
+		return m, cmd, true
+	case tea.MouseMsg:
+		cmd, _ := m.dialogs.UpdateNewRelease(msg)
+		return m, cmd, true
 	}
 	return m, nil, false
 }
@@ -857,6 +879,7 @@ func (m Model) handleDaemonInfo(msg uikit.DaemonInfoMsg) (tea.Model, tea.Cmd) {
 		m.info.ConfigStale = msg.Info.ConfigStale
 		m.info.ConfigWarnings = msg.Info.ConfigWarnings
 		m.info.ServiceManaged = msg.Info.ServiceManaged
+		m.sidebar.SetUpdate(msg.Info.UpdateAvailable, msg.Info.LatestVersion)
 	}
 	return m, nil
 }

@@ -229,6 +229,9 @@
           "fingerprint": {
             "type": "string"
           },
+          "latestVersion": {
+            "type": "string"
+          },
           "port": {
             "format": "int64",
             "type": "integer"
@@ -258,6 +261,9 @@
             ],
             "type": "string"
           },
+          "updateAvailable": {
+            "type": "boolean"
+          },
           "version": {
             "type": "string"
           }
@@ -276,7 +282,9 @@
           "resolvedTimezone",
           "timezoneSource",
           "tasks",
-          "capabilities"
+          "capabilities",
+          "updateAvailable",
+          "latestVersion"
         ],
         "type": "object"
       },
