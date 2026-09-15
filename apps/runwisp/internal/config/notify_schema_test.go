@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// schedulerTZHeader prefixes a `[scheduler] timezone = "UTC"` block so cron
+// schedulerTZHeader prefixes a `[daemon] timezone = "UTC"` block so cron
 // tasks in test fixtures satisfy the post-#4 fail-closed timezone validation.
 const schedulerTZHeader = `
-[scheduler]
+[daemon]
 timezone = "UTC"
 `
 

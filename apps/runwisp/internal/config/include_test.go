@@ -220,11 +220,10 @@ run = "echo root"
 
 func TestInclude_SingletonInIncludedFileIsError(t *testing.T) {
 	cases := map[string]string{
-		"defaults":  "[defaults]\nshell = \"/bin/bash\"\n",
-		"scheduler": "[scheduler]\ntimezone = \"UTC\"\n",
-		"storage":   "[storage]\nmax_size = \"1gb\"\n",
-		"notify":    "[notify]\nkeep_notifications = 5\n",
-		"daemon":    "[daemon]\nexternal_url = \"https://example.com\"\n",
+		"defaults": "[defaults]\nshell = \"/bin/bash\"\n",
+		"storage":  "[storage]\nmax_size = \"1gb\"\n",
+		"notify":   "[notify]\nkeep_notifications = 5\n",
+		"daemon":   "[daemon]\nexternal_url = \"https://example.com\"\n",
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {

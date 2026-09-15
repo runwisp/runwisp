@@ -123,7 +123,7 @@ func (c *Config) OriginFile(name string) string {
 
 // Scheduler holds scheduler-wide settings. Timezone is the IANA name used to
 // evaluate cron expressions for any task that doesn't pin its own. When the
-// operator omits [scheduler] timezone, ApplyDefaults fills it in from the
+// operator omits [daemon] timezone, ApplyDefaults fills it in from the
 // host's system timezone (Source = "system"); when the operator sets it
 // explicitly, Source = "config".
 type Scheduler struct {

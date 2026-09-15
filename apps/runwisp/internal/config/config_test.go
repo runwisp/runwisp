@@ -39,8 +39,6 @@ func TestLoad(t *testing.T) {
 		path := writeTOML(t, `
 [daemon]
 allow_cloud_dispatch = true
-
-[scheduler]
 timezone = "UTC"
 
 [defaults]
@@ -126,7 +124,7 @@ run = "echo hi"
 
 	t.Run("manual_trigger explicit false is preserved", func(t *testing.T) {
 		path := writeTOML(t, `
-[scheduler]
+[daemon]
 timezone = "UTC"
 
 [tasks.silent]
@@ -1171,7 +1169,7 @@ run = "echo hi"
 func TestSchedulerTimezoneFallback(t *testing.T) {
 	t.Run("explicit timezone flagged as config-sourced", func(t *testing.T) {
 		path := writeTOML(t, `
-[scheduler]
+[daemon]
 timezone = "UTC"
 
 [tasks.nightly]
@@ -1198,7 +1196,7 @@ run  = "echo hi"
 
 	t.Run("invalid timezone is rejected", func(t *testing.T) {
 		path := writeTOML(t, `
-[scheduler]
+[daemon]
 timezone = "Not/A/Zone"
 
 [tasks.t]
@@ -1212,7 +1210,7 @@ run = "echo hi"
 
 	t.Run("per-task timezone overrides scheduler default", func(t *testing.T) {
 		path := writeTOML(t, `
-[scheduler]
+[daemon]
 timezone = "UTC"
 
 [tasks.nightly]
@@ -1229,7 +1227,7 @@ run      = "echo hi"
 func TestCatchUpRules(t *testing.T) {
 	t.Run("omitted defaults to 1 (most recent)", func(t *testing.T) {
 		path := writeTOML(t, `
-[scheduler]
+[daemon]
 timezone = "UTC"
 
 [tasks.t]
@@ -1243,7 +1241,7 @@ run = "echo hi"
 
 	t.Run("explicit 0 (skip) is a non-nil zero", func(t *testing.T) {
 		path := writeTOML(t, `
-[scheduler]
+[daemon]
 timezone = "UTC"
 
 [tasks.t]
@@ -1259,7 +1257,7 @@ run      = "echo hi"
 
 	t.Run("positive value is preserved", func(t *testing.T) {
 		path := writeTOML(t, `
-[scheduler]
+[daemon]
 timezone = "UTC"
 
 [tasks.t]
@@ -1275,7 +1273,7 @@ run        = "echo hi"
 
 	t.Run("negative is rejected", func(t *testing.T) {
 		path := writeTOML(t, `
-[scheduler]
+[daemon]
 timezone = "UTC"
 
 [tasks.t]
@@ -1290,7 +1288,7 @@ run      = "echo hi"
 
 	t.Run("value at the cap is accepted", func(t *testing.T) {
 		path := writeTOML(t, fmt.Sprintf(`
-[scheduler]
+[daemon]
 timezone = "UTC"
 
 [tasks.t]
@@ -1306,7 +1304,7 @@ run        = "echo hi"
 
 	t.Run("value above the cap is rejected", func(t *testing.T) {
 		path := writeTOML(t, `
-[scheduler]
+[daemon]
 timezone = "UTC"
 
 [tasks.t]

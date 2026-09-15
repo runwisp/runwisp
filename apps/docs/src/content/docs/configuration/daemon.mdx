@@ -255,10 +255,9 @@ A few rules keep "what wins" obvious:
   service, or `[compose.*]` alias with the same name is a hard error
   that names both files. No silent "last one wins".
 - **The big singleton tables stay in the root.** `[daemon]`,
-  `[scheduler]`, `[defaults]`, `[storage]`, and `[notify]` may only
-  appear in the root config — setting one in an included file is an
-  error. This keeps daemon-wide settings and `[defaults]` inheritance in
-  exactly one place.
+  `[defaults]`, `[storage]`, and `[notify]` may only appear in the root
+  config — setting one in an included file is an error. This keeps
+  daemon-wide settings and `[defaults]` inheritance in exactly one place.
 - **Includes don't nest.** An included file can't have its own
   `[daemon].include`. One level, root-out.
 

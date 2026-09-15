@@ -24,7 +24,6 @@ type tomlConfig struct {
 	Daemon    daemonWire                   `toml:"daemon,omitempty"`
 	Storage   storageWire                  `toml:"storage,omitempty"`
 	Defaults  defaultsWire                 `toml:"defaults,omitempty"`
-	Scheduler schedulerWire                `toml:"scheduler,omitempty"`
 	Tasks     map[string]*taskWire         `toml:"tasks,omitempty"`
 	Services  map[string]*serviceWire      `toml:"services,omitempty"`
 	Compose   map[string]*composeBlockWire `toml:"compose,omitempty"`
@@ -75,6 +74,12 @@ type composeServiceOverrideWire struct {
 	unitOverrideWire
 	serviceSupervisionWire
 
+	// OnOverlap decodes here (rather than being left undecoded) purely so
+	// applyComposeOverride can reject it with a pointed message instead of an
+	// opaque undecoded-key error: a compose-imported service is always
+	// model.KindService, and on_overlap is a task-only concept.
+	OnOverlap model.ConcurrencyPolicy `toml:"on_overlap,omitempty"`
+
 	Instances int `toml:"instances,omitempty"`
 
 	// Failures overrides the failure classification for this compose service,
@@ -93,13 +98,8 @@ type unitOverrideWire struct {
 
 	// ManualTrigger is valid on every unit: it gates manual run-triggering on
 	// a task (model.Task.Triggerable) and manual stop/restart/start on a
-	// service (model.Task.ManuallyControllable). OnOverlap decodes here too,
-	// but purely so a service (or compose override) can reject it with a
-	// pointed message instead of an opaque undecoded-key error: it's a
-	// task-only concept (a service's copy count is `instances`, and it never
-	// runs a second overlapping instance).
-	ManualTrigger *bool                   `toml:"manual_trigger,omitempty"`
-	OnOverlap     model.ConcurrencyPolicy `toml:"on_overlap,omitempty"`
+	// service (model.Task.ManuallyControllable).
+	ManualTrigger *bool `toml:"manual_trigger,omitempty"`
 
 	Timeout      string `toml:"timeout,omitempty"`
 	GracefulStop string `toml:"graceful_stop,omitempty"`
@@ -155,18 +155,6 @@ type taskServiceWireCore struct {
 	// empty list, which means "nothing is a failure". Parsed and validated by
 	// ApplyDefaults into model.Task.FailureReasons / FailureExitRanges.
 	Failures []string `toml:"failures,omitempty"`
-
-	// Params declares per-execution inputs. Carried on the shared core so the
-	// key decodes on [services.*] into a friendly rejection (services are never
-	// manually triggered) rather than an undecoded-key error.
-	Params []paramWire `toml:"params,omitempty"`
-
-	// DependsOn decodes here (not separately on taskWire and serviceWire) so
-	// [tasks.*] can reject it with a friendly message alongside
-	// manual_trigger/on_overlap instead of duplicating an identical field on
-	// both structs. Only [services.*] gives it meaning; a slice needs no
-	// pointer trick since nil already means "unset".
-	DependsOn []string `toml:"depends_on,omitempty"`
 }
 
 // serviceSupervisionWire holds the restart/instance-supervision TOML keys
@@ -362,7 +350,6 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 		Group:         w.Group,
 		Description:   w.Description,
 		ManualTrigger: manualTrigger,
-		OnOverlap:     w.OnOverlap,
 		Timeout:       timeout,
 		GracefulStop:  gracefulStop,
 		StopSignal:    w.StopSignal,
@@ -382,11 +369,6 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 		Secrets:       w.Secrets,
 		SecretsFile:   w.SecretsFile,
 	}
-	params, err := toTaskParams(w.Params, name)
-	if err != nil {
-		return model.Task{}, err
-	}
-	task.Parameters = params
 	if err := w.applyComposeBackend(&task, name, label); err != nil {
 		return model.Task{}, err
 	}
@@ -500,6 +482,15 @@ func (w *taskServiceWireCore) resolveComposeMode(name, label string) (string, er
 type taskWire struct {
 	taskServiceWireCore
 
+	// OnOverlap decodes on [tasks.*] only: a service's copy count is
+	// `instances`, and it never runs a second overlapping instance (its
+	// resolved OnOverlap is always PolicySkip — see applyServiceDefaults).
+	OnOverlap model.ConcurrencyPolicy `toml:"on_overlap,omitempty"`
+
+	// Params declares per-execution inputs, valid only on [tasks.*] — services
+	// are never manually triggered.
+	Params []paramWire `toml:"params,omitempty"`
+
 	Cron     string `toml:"cron,omitempty"`
 	Timezone string `toml:"timezone,omitempty"`
 	Jitter   string `toml:"jitter,omitempty"`
@@ -510,17 +501,6 @@ type taskWire struct {
 
 	MaxConcurrent int `toml:"max_concurrent,omitempty"`
 	MaxQueued     int `toml:"max_queued,omitempty"`
-
-	// Restart and RestartAttempts are rejected on [tasks.*] (services-only:
-	// restart is ongoing supervision, a task re-runs via retry_*). They decode
-	// here only so collectTaskNames can reject them with a pointed message
-	// instead of an opaque undecoded-key error.
-	Restart         model.RestartPolicy `toml:"restart,omitempty"`
-	RestartAttempts *int                `toml:"restart_attempts,omitempty"`
-
-	// Instances is rejected on [tasks.*]; carried as a pointer so the validator
-	// can distinguish "unset" from "explicitly zero".
-	Instances *int `toml:"instances,omitempty"`
 
 	RetryAttempts int                `toml:"retry_attempts,omitempty"`
 	RetryDelay    string             `toml:"retry_delay,omitempty"`
@@ -540,6 +520,12 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid jitter for task %q: %w", name, err)
 	}
+	params, err := toTaskParams(w.Params, name)
+	if err != nil {
+		return model.Task{}, err
+	}
+	task.OnOverlap = w.OnOverlap
+	task.Parameters = params
 	task.Cron = w.Cron
 	task.Timezone = w.Timezone
 	task.Jitter = jitter
@@ -562,12 +548,13 @@ type serviceWire struct {
 	serviceSupervisionWire
 
 	Instances int `toml:"instances,omitempty"`
+
+	// DependsOn names other services that must become healthy before this one
+	// starts at boot. Valid only on [services.*] — a task has no boot ordering.
+	DependsOn []string `toml:"depends_on,omitempty"`
 }
 
 func (w *serviceWire) toTask(name string) (model.Task, error) {
-	if len(w.Params) > 0 {
-		return model.Task{}, fmt.Errorf("service %q sets params; params is only valid on [tasks.*] (services are not manually triggered)", name)
-	}
 	task, err := w.toTaskCore(name, "service", model.KindService)
 	if err != nil {
 		return model.Task{}, err
@@ -743,6 +730,11 @@ type daemonWire struct {
 	TrustedProxies []string `toml:"trusted_proxies,omitempty"`
 	Include        []string `toml:"include,omitempty"`
 	IncludeCron    []string `toml:"include_cron,omitempty"`
+	// Timezone is the daemon-wide IANA zone used to evaluate cron expressions
+	// for any task that doesn't pin its own — formerly [scheduler] timezone.
+	// Non-reloadable, like every other [daemon] key, so it belongs here rather
+	// than in a single-key table of its own.
+	Timezone string `toml:"timezone,omitempty"`
 }
 
 func (w *daemonWire) toDaemon() (Daemon, error) {
@@ -807,11 +799,6 @@ func parseTrustedProxies(entries []string) ([]string, error) {
 		}
 	}
 	return out, nil
-}
-
-// schedulerWire mirrors [scheduler] before parsing.
-type schedulerWire struct {
-	Timezone string `toml:"timezone,omitempty"`
 }
 
 // notifyWire mirrors the [notify] block before parsing. GlobalNotifiers is a

@@ -70,7 +70,7 @@ where it lands on the wall clock.
 
 ## Timezone
 
-Cron expressions get evaluated in whatever zone [`[scheduler] timezone`](/configuration/overview/#section-by-section)
+Cron expressions get evaluated in whatever zone [`[daemon] timezone`](/configuration/daemon/)
 says. Leave it unset and the daemon just uses the host's system
 timezone.
 
@@ -80,7 +80,7 @@ in the [TUI](/getting-started/tui-tour/) startup banner and shown in the [Web UI
 
 ```toml
 # Daemon-wide default for every task without its own timezone.
-[scheduler]
+[daemon]
 timezone = "Europe/Bratislava"
 
 # Per-task override — any standard IANA timezone name works.
@@ -89,10 +89,10 @@ cron     = "30 2 * * *"
 timezone = "Atlantic/Faroe"
 ```
 
-| Setting                   | Default         | What it controls                                                                |
-| ------------------------- | --------------- | ------------------------------------------------------------------------------- |
-| `[scheduler] timezone`    | _(system zone)_ | Fallback for every task without its own `timezone`.                             |
-| `[tasks.<name>] timezone` | _(inherits)_    | Timezone for this task's cron evaluation. Overrides the scheduler-wide default. |
+| Setting                   | Default         | What it controls                                                              |
+| ------------------------- | --------------- | ------------------------------------------------------------------------------ |
+| `[daemon] timezone`       | _(system zone)_ | Fallback for every task without its own `timezone`.                            |
+| `[tasks.<name>] timezone` | _(inherits)_    | Timezone for this task's cron evaluation. Overrides the daemon-wide default.   |
 
 If the daemon doesn't recognize the name you gave it — a typo, or a host
 with no IANA timezone data, like a stripped-down container image

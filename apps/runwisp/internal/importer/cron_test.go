@@ -171,8 +171,8 @@ func TestCronRelativeShellNoted(t *testing.T) {
 func TestCronTimezone(t *testing.T) {
 	res := parseCron(t, "CRON_TZ=Europe/Bratislava\n0 4 * * * /bin/job\n", CronOptions{})
 	out := res.TOML()
-	// CRON_TZ/TZ folds onto each task's timezone, not the [scheduler] singleton.
-	mustNotContain(t, out, "[scheduler]")
+	// CRON_TZ/TZ folds onto each task's timezone, not the [daemon] singleton.
+	mustNotContain(t, out, "[daemon]")
 	mustContain(t, out, "[tasks.job]")
 	mustContain(t, out, `timezone = "Europe/Bratislava"`)
 }

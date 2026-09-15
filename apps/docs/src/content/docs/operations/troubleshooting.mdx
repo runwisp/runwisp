@@ -52,7 +52,7 @@ Work down this list — it's ordered by how often each one is the answer.
    CLI, API, and UI will all refuse to trigger it by hand. Intentional, but easy
    to forget you set it.
 4. **The timezone isn't what you think.** Cron is evaluated in the task's
-   `timezone`, falling back to `[scheduler] timezone`, falling back to the
+   `timezone`, falling back to `[daemon] timezone`, falling back to the
    host's zone. A task written for local time on a UTC server fires at the
    wrong hour. [How scheduling works](/concepts/scheduling/#timezone) covers
    this, including what happens across DST.
@@ -75,7 +75,7 @@ running task set is left exactly as it was. In-flight runs finish under the
 definition they started with.
 
 Some settings **can't** be reloaded and need a full `runwisp restart`:
-`[daemon]`, `[scheduler] timezone`, `[storage]`, `[notify]`, and the bind
+`[daemon]` (including `timezone`), `[storage]`, `[notify]`, and the bind
 host/port. Try to reload a change to one of those and the whole reload is
 rejected, so nothing changes at all. That's not a bug — [Reload](/operations/reload/)
 explains where the line is and why.

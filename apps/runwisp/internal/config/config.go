@@ -381,28 +381,19 @@ func buildConfig(raw *tomlConfig) (*Config, error) {
 		Storage:              storage,
 		Daemon:               daemon,
 		Notify:               notifyCfg,
-		Scheduler:            Scheduler{Timezone: raw.Scheduler.Timezone},
+		Scheduler:            Scheduler{Timezone: raw.Daemon.Timezone},
 		pendingComposeBlocks: raw.Compose,
 	}, nil
 }
 
+// collectTaskNames validates every [tasks.*] name. A task/service key valid
+// only on the other kind never reaches here: it fails strict decode first,
+// with a pointed message from crossKindKeyHints (see suggest.go).
 func collectTaskNames(raw *tomlConfig) ([]string, error) {
 	names := make([]string, 0, len(raw.Tasks))
-	for name, w := range raw.Tasks {
+	for name := range raw.Tasks {
 		if err := model.ValidateTaskName(name); err != nil {
 			return nil, err
-		}
-		if w.Restart != "" {
-			return nil, fmt.Errorf("task %q sets restart; restart is only valid on [services.*] — to re-run a failed task use retry_attempts/retry_delay/retry_backoff", name)
-		}
-		if w.RestartAttempts != nil {
-			return nil, fmt.Errorf("task %q sets restart_attempts; restart_attempts is only valid on [services.*] — bound task re-runs with retry_attempts", name)
-		}
-		if w.Instances != nil {
-			return nil, fmt.Errorf("task %q sets instances; instances is only valid on [services.*]", name)
-		}
-		if len(w.DependsOn) > 0 {
-			return nil, fmt.Errorf("task %q sets depends_on; depends_on is only valid on [services.*]", name)
 		}
 		names = append(names, name)
 	}
@@ -412,15 +403,12 @@ func collectTaskNames(raw *tomlConfig) ([]string, error) {
 
 func collectServiceNames(raw *tomlConfig) ([]string, error) {
 	names := make([]string, 0, len(raw.Services))
-	for name, w := range raw.Services {
+	for name := range raw.Services {
 		if err := model.ValidateTaskName(name); err != nil {
 			return nil, err
 		}
 		if _, dup := raw.Tasks[name]; dup {
 			return nil, fmt.Errorf("name %q used by both [tasks.*] and [services.*]", name)
-		}
-		if w.OnOverlap != "" {
-			return nil, fmt.Errorf("service %q sets on_overlap; on_overlap is only valid on [tasks.*] — a service never runs a second overlapping instance, instances controls parallelism", name)
 		}
 		names = append(names, name)
 	}
@@ -529,7 +517,7 @@ func Validate(cfg *Config) error {
 	if err := validateTLS(&cfg.Daemon); err != nil {
 		errs = append(errs, err)
 	}
-	if _, err := ResolveTimezone("scheduler.timezone", cfg.Scheduler.Timezone); err != nil {
+	if _, err := ResolveTimezone("daemon.timezone", cfg.Scheduler.Timezone); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -1363,7 +1351,7 @@ func OrDefault[T any](p *T, fallback T) T {
 
 // ApplyDefaults fills in zero-valued fields with sensible defaults. The
 // scheduler timezone, in particular, falls back to the host's system zone
-// when the operator left [scheduler] timezone unset — so a fresh install
+// when the operator left [daemon] timezone unset — so a fresh install
 // just works without an explicit choice, while the resolved zone is still
 // surfaced in the TUI banner and Web UI header.
 func ApplyDefaults(cfg *Config) {

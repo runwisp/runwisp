@@ -10,7 +10,7 @@ Notation in schema blocks: `key: type =default — note`. `=default` omitted mea
 ## Model
 
 - `runwisp.toml` is the ONLY source of task definitions. REST/UI/TUI can read + trigger/stop/restart runs, never create or edit definitions.
-- Config reload is explicit: `runwisp reload` / `SIGHUP` / `POST /api/daemon/reload` re-read the whole TOML and reconcile the live task set (add/change/remove tasks, services, `[defaults]`). Validate-first/atomic — a parse/validation failure, or a change to a restart-only setting (`[daemon]`, `[scheduler] timezone`, `[storage]`, `[notify]`, bind host/port), is rejected and leaves the running set untouched. Reload is NOT a restart: added tasks get no `run_on_start`/catch-up, in-flight runs finish under their old definition. The daemon never auto-watches the file. Restart-only settings (and re-firing `run_on_start`/catch-up) need `runwisp restart`.
+- Config reload is explicit: `runwisp reload` / `SIGHUP` / `POST /api/daemon/reload` re-read the whole TOML and reconcile the live task set (add/change/remove tasks, services, `[defaults]`). Validate-first/atomic — a parse/validation failure, or a change to a restart-only setting (`[daemon]` including `timezone`, `[storage]`, `[notify]`, bind host/port), is rejected and leaves the running set untouched. Reload is NOT a restart: added tasks get no `run_on_start`/catch-up, in-flight runs finish under their old definition. The daemon never auto-watches the file. Restart-only settings (and re-firing `run_on_start`/catch-up) need `runwisp restart`.
 - Two unit kinds: `[tasks.<name>]` run-to-exit (cron or manual); `[services.<name>]` long-running, `restart` defaults to `always`. Names must be unique across both tables. `name` validated by RunWisp's task-name rules.
 - `run =` is shell, executed from disk only — never from an HTTP/WS body.
 - Inheritance: `[defaults]` → each task/service → per-key override. `env` merges (task wins); `[compose.<alias>.override.<svc>]` overrides per imported service.
@@ -19,12 +19,6 @@ Notation in schema blocks: `key: type =default — note`. `=default` omitted mea
 ## runwisp.toml
 
 Machine-readable JSON Schema (draft 2020-12): `runwisp schema` (offline) or https://docs.runwisp.com/config.schema.json. Scaffolded/imported configs carry a `#:schema` directive so editors validate them. After editing, `runwisp validate --json` reports errors with structured `key`/`line`/`column`.
-
-### [scheduler]
-
-```
-timezone: IANA string =host system zone — TZ for cron eval when a task pins none
-```
 
 ### [storage] (daemon-wide log disk safeguards)
 
@@ -38,6 +32,7 @@ min_free_space: size =0(no check) — stop accepting log lines when partition fr
 ```
 allow_cloud_dispatch: bool =false — accept peer-dispatched ad-hoc shell/container/compose runs (opt-in; one-shot, never edits TOML; HTTP & existing-task triggers always allowed)
 shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flight runs on shutdown
+timezone:             IANA string =host system zone — TZ for cron eval when a task pins none
 external_url:         string      — public Web UI base for notification deep-links; absolute http(s) w/ host
 check_updates:        bool =true  — poll concierge.runwisp.com for a newer release; shows an indicator, never auto-updates; false = fully offline
 metrics_enabled:      bool =false — master switch for /metrics
@@ -124,7 +119,7 @@ Required: the table + `run` (unless `compose_file`, where `run` is optional and 
 group:             string =Tasks   — UI grouping label
 description:        string          — human description
 cron:              string          — 5- or 6-field cron (optional leading seconds); also @hourly, @every 1h30m; omit => manual-only
-timezone:          IANA string      — per-task TZ override (else [scheduler] timezone)
+timezone:          IANA string      — per-task TZ override (else [daemon] timezone)
 jitter:            dur              — cap how far this cron task's start may slip; needs cron (inherits [defaults])
 run_on_start:      bool =false      — fire once at daemon start, on top of any cron (the @reboot equivalent)
 manual_trigger:    bool =true       — allow CLI/API/UI trigger; false = cron-only

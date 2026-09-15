@@ -21,8 +21,8 @@ adding, changing, and removing tasks without a full restart.
 
 Reload is validate-first: the whole config is loaded and validated before
 anything live is touched. If it fails to parse/validate, or changes a
-restart-only setting ([daemon], [scheduler] timezone, [storage], [notify]),
-the reload is rejected and the running task set is left exactly as it was.
+restart-only setting ([daemon], [storage], [notify]), the reload is rejected
+and the running task set is left exactly as it was.
 
 Added tasks do not fire run_on_start and are not caught up for ticks they
 "missed" before existing — reload is not a restart. In-flight cron runs finish

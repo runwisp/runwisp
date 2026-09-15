@@ -34,7 +34,7 @@ func TestCheckNonReloadable_RejectsEachSection(t *testing.T) {
 		want   string
 	}{
 		{"daemon", func(c *config.Config) { c.Daemon.ExternalURL = "https://x" }, "[daemon]"},
-		{"timezone", func(c *config.Config) { c.Scheduler.Timezone = "America/New_York" }, "[scheduler] timezone"},
+		{"timezone", func(c *config.Config) { c.Scheduler.Timezone = "America/New_York" }, "[daemon] timezone"},
 		{"storage", func(c *config.Config) { c.Storage.MaxSize = 1 << 20 }, "[storage]"},
 		{"notify", func(c *config.Config) { c.Notify.GlobalNotifiers = []string{"slack"} }, "[notify]"},
 	}

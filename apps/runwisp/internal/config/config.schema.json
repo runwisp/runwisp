@@ -6,7 +6,6 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
-    "scheduler": { "$ref": "#/$defs/scheduler" },
     "storage": { "$ref": "#/$defs/storage" },
     "daemon": { "$ref": "#/$defs/daemon" },
     "defaults": { "$ref": "#/$defs/defaults" },
@@ -99,16 +98,6 @@
       "description": "Secret values merged into the task env; never shown in API/UI.",
       "additionalProperties": { "type": "string" }
     },
-    "scheduler": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "timezone": {
-          "type": "string",
-          "description": "IANA timezone for cron evaluation when a task pins none. Default: host system zone."
-        }
-      }
-    },
     "storage": {
       "type": "object",
       "description": "Daemon-wide log disk safeguards.",
@@ -145,7 +134,8 @@
           "type": "array",
           "description": "Glob(s) of real crontabs read as live task sources at every load and reload. Root config only. A job RunWisp can't reproduce is skipped and reported; the rest of the file still runs.",
           "items": { "type": "string" }
-        }
+        },
+        "timezone": { "type": "string", "description": "IANA timezone for cron evaluation when a task pins none. Default: host system zone." }
       }
     },
     "defaults": {

@@ -359,7 +359,7 @@ already terminating TLS in front of a container anyway. You either:
 ## Timezone
 
 The IANA timezone database is embedded in the binary, so
-`[scheduler] timezone = "Europe/Copenhagen"` resolves on either base with
+`[daemon] timezone = "Europe/Copenhagen"` resolves on either base with
 no extra package — RunWisp's own scheduling never depends on the image.
 The image also installs the `tzdata` package for your **tasks**: anything
 shelling out to `date`, PHP, Python, or similar that reads

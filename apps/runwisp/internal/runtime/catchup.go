@@ -74,7 +74,7 @@ func SnapshotCatchupAnchors(ctx context.Context, db storage.RunRepository, tasks
 // RunMissedTickCatchUp triggers catch-up runs for cron ticks that were missed
 // while the daemon was down, for every task with an entry in anchors (from a
 // prior SnapshotCatchupAnchors call — a task with no entry is skipped).
-// defaultLoc is the scheduler's resolved timezone ([scheduler] timezone); a
+// defaultLoc is the scheduler's resolved timezone ([daemon] timezone); a
 // task's own timezone overrides it, exactly as the live scheduler resolves it.
 // snapshotErrors seeds the result so registration/lookup failures from the
 // snapshot phase are still reflected in the total.

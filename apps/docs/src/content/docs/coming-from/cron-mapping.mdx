@@ -56,7 +56,7 @@ A crontab's `SHELL`, `CRON_TZ`/`TZ`, and top-of-file `VAR=val` lines are copied
 onto each task the importer emits from that file, so importing a second crontab
 with different values can't silently reach back and change the first one's
 tasks — and nothing an import writes touches your global `[defaults]` or
-`[scheduler]`.
+`[daemon]`.
 
 ## Environment and shell
 

@@ -66,8 +66,7 @@ it'll offer to write a minimal starter for you — the
 | Section             | Purpose                                                                                                                                                                                 | Reference                                                                     |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `[storage]`         | Disk-usage limits — caps total bytes used and reserves headroom on the data partition.                                                                                                  | [`[storage]`](/configuration/storage/)                                        |
-| `[daemon]`          | Daemon-wide settings — shutdown budget, public URL for notification links, the metrics endpoint, extra config files (`include`), and real crontabs read as live tasks (`include_cron`). | [`[daemon]`](/configuration/daemon/)                                          |
-| `[scheduler]`       | Scheduler-wide settings — the default timezone every cron expression is evaluated in.                                                                                                   | [Timezone](/concepts/scheduling/#timezone)                                    |
+| `[daemon]`          | Daemon-wide settings — shutdown budget, public URL for notification links, the metrics endpoint, extra config files (`include`), the default cron timezone (`timezone`), and real crontabs read as live tasks (`include_cron`). | [`[daemon]`](/configuration/daemon/)                                          |
 | `[defaults]`        | Defaults inherited by every task and service unless explicitly overridden.                                                                                                              | [`[defaults]`](/configuration/defaults/)                                      |
 | `[tasks.<name>]`    | Scheduled or manually-triggered units of work. Cron expression, concurrency, retries, timeout, retention, per-execution parameters.                                                     | [`[tasks.*]`](/configuration/tasks/)                                          |
 | `[services.<name>]` | Always-on processes. One or more `instances`, exponential restart backoff, graceful shutdown.                                                                                           | [`[services.*]`](/configuration/services/)                                    |
@@ -91,8 +90,7 @@ Most of this file reloads live: tasks and services get added, changed, and
 removed, and `[defaults]` re-applies. A handful of daemon-wide settings don't,
 and need a full `runwisp restart` instead:
 
-- `[daemon]`
-- `[scheduler] timezone`
+- `[daemon]` (including `timezone`)
 - `[storage]`
 - `[notify]`
 - the bind host/port

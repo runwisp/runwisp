@@ -129,8 +129,8 @@
                 <span class="shrink-0 text-on-surface-faint">·</span>
                 <span
                     title={systemStore.timezoneSource === "system"
-                        ? "Detected from the host system; pin [scheduler] timezone in runwisp.toml to make it explicit."
-                        : "Set in runwisp.toml under [scheduler] timezone."}
+                        ? "Detected from the host system; pin [daemon] timezone in runwisp.toml to make it explicit."
+                        : "Set in runwisp.toml under [daemon] timezone."}
                     class="flex min-w-0 shrink items-center gap-0.5 truncate"
                 >
                     <Globe size={10} class="shrink-0 text-on-surface-faint" />

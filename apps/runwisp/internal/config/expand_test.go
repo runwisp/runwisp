@@ -222,7 +222,7 @@ func TestLoad_SubstitutionEndToEnd(t *testing.T) {
 	t.Setenv("RUNWISP_TEST_E2E_TOKEN", "tg-token")
 	dir := writeFilesInDir(t, map[string]string{
 		"runwisp.toml": `
-[scheduler]
+[daemon]
 timezone = "UTC"
 
 [tasks.backup]

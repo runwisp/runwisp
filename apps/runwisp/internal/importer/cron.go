@@ -317,7 +317,7 @@ func (cp *crontabParser) handleJob(line string) {
 //
 // The importer stops at telling: writing [notifiers.mta] would mean an import
 // reaching into daemon-wide settings, which is the line Phase A drew when it
-// stopped emitting [defaults] and [scheduler]. It is also the operator's
+// stopped emitting [defaults] and [daemon]. It is also the operator's
 // identity to choose, not a machine-owned staging file's.
 func (cp *crontabParser) noteMailto(value string) {
 	addr := strings.TrimSpace(value)
@@ -357,7 +357,7 @@ func (cp *crontabParser) bannerIfAmbiguous() {
 //
 // There is no daemon-wide counterpart: a crontab's SHELL, CRON_TZ/TZ, and
 // top-of-file env vars are folded onto the individual tasks here rather than
-// becoming [defaults] / [scheduler] singletons. That keeps every imported task
+// becoming [defaults] / [daemon] singletons. That keeps every imported task
 // self-contained — and safe to live in an included staging file, which the config
 // loader forbids from setting those singletons at all.
 //

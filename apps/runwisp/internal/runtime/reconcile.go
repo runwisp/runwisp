@@ -407,7 +407,7 @@ func checkNonReloadable(old, updated *config.Config) error {
 		return nonReloadableErr("[daemon]")
 	}
 	if old.Scheduler.Timezone != updated.Scheduler.Timezone {
-		return nonReloadableErr("[scheduler] timezone")
+		return nonReloadableErr("[daemon] timezone")
 	}
 	if old.Storage != updated.Storage {
 		return nonReloadableErr("[storage]")

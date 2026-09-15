@@ -11,7 +11,7 @@ import (
 
 // ResolveSystemTimezone returns the host's IANA timezone name, falling back to
 // "UTC" when nothing reliable can be detected. Used by ApplyDefaults to fill
-// [scheduler] timezone when the operator omitted it.
+// [daemon] timezone when the operator omitted it.
 //
 // Detection order:
 //  1. The TZ environment variable, when it names a zoneinfo entry.

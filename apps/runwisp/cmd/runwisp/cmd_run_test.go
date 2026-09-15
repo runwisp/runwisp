@@ -206,7 +206,7 @@ func TestRunExecStandalone_UnknownTaskName(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "runwisp.toml")
 	const minimalCfg = `
-[scheduler]
+[daemon]
 timezone = "UTC"
 
 [tasks.exists]
@@ -229,7 +229,7 @@ func TestRunExecStandalone_ManualTriggerDisabled(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "runwisp.toml")
 	const cfg = `
-[scheduler]
+[daemon]
 timezone = "UTC"
 
 [tasks.locked]
@@ -285,7 +285,7 @@ func TestRunExecStandalone_HappyPath_EchoTaskExitsZero(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "runwisp.toml")
 	cfg := `
-[scheduler]
+[daemon]
 timezone = "UTC"
 
 [tasks.greet]

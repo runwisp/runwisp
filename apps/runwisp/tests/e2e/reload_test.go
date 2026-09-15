@@ -18,13 +18,11 @@ import (
 )
 
 // reloadBaseConfig is the task set the daemon boots with: two cron tasks under
-// an explicit UTC scheduler so changing [scheduler] timezone is a meaningful
+// an explicit UTC daemon timezone so changing [daemon] timezone is a meaningful
 // non-reloadable edit.
 const reloadBaseConfig = `
 [daemon]
 shutdown_timeout = "500ms"
-
-[scheduler]
 timezone = "UTC"
 
 [tasks.keep]
@@ -41,8 +39,6 @@ run = "echo drop"
 const reloadEditedConfig = `
 [daemon]
 shutdown_timeout = "500ms"
-
-[scheduler]
 timezone = "UTC"
 
 [tasks.keep]
@@ -167,7 +163,7 @@ func TestReloadRejectsInvalidConfig(t *testing.T) {
 }
 
 // TestReloadRejectsNonReloadableKey confirms a change to a restart-only setting
-// ([scheduler] timezone here) is rejected with guidance, and nothing changes.
+// ([daemon] timezone here) is rejected with guidance, and nothing changes.
 func TestReloadRejectsNonReloadableKey(t *testing.T) {
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
@@ -179,12 +175,10 @@ func TestReloadRejectsNonReloadableKey(t *testing.T) {
 	daemon := startDaemon(t, projectDir, binaryPath, configPath)
 	client := socketClient(t, daemon.dataDir)
 
-	// Same tasks, but flip the scheduler timezone — a non-reloadable change.
+	// Same tasks, but flip the daemon timezone — a non-reloadable change.
 	tzChanged := `
 [daemon]
 shutdown_timeout = "500ms"
-
-[scheduler]
 timezone = "America/New_York"
 
 [tasks.keep]

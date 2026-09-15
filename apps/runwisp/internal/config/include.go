@@ -26,9 +26,8 @@ import (
 //     naming both files, same as a duplicate task/service/compose-alias name;
 //   - a task / service / compose-alias name defined in two files is a hard
 //     error naming both files;
-//   - singleton tables ([daemon], [storage], [defaults], [scheduler],
-//     [notify]) may appear only in the root — setting one in an included file
-//     is a hard error;
+//   - singleton tables ([daemon], [storage], [defaults], [notify]) may appear
+//     only in the root — setting one in an included file is a hard error;
 //   - included files may not themselves include (flat-only).
 func loadWithIncludes(path string) (*Config, entrySources, error) {
 	rootDir := filepath.Dir(path)
@@ -283,7 +282,6 @@ func assertNoSingletons(inc *tomlConfig, file string) error {
 		{"[daemon]", inc.Daemon},
 		{"[storage]", inc.Storage},
 		{"[defaults]", inc.Defaults},
-		{"[scheduler]", inc.Scheduler},
 		{"[notify]", inc.Notify},
 	}
 	for _, s := range sections {

@@ -21,7 +21,7 @@ type PendingRunsSummary struct {
 // StartupInfo gathers everything needed for the startup display.
 //
 // Timezone and TimezoneSource render the resolved scheduler zone in the
-// banner. TimezoneSource is "config" when the operator pinned [scheduler]
+// banner. TimezoneSource is "config" when the operator pinned [daemon]
 // timezone explicitly, "system" when it was detected from the host. Empty
 // values omit the line so the trim-down `runwisp tui` invocation still
 // renders cleanly.

@@ -80,19 +80,9 @@ func TestDecodeMisplacedKeySectionHints(t *testing.T) {
 			want: []string{`unknown key "on_overlap"`, "per-task", "[tasks.<name>]"},
 		},
 		{
-			name: "on_overlap in scheduler is per-task",
-			toml: "[scheduler]\non_overlap = \"skip\"\n[tasks.t]\nrun = \"echo hi\"\n",
-			want: []string{`unknown key "on_overlap"`, "per-task"},
-		},
-		{
-			name: "timezone in defaults points at scheduler",
+			name: "timezone in defaults points at daemon",
 			toml: "[defaults]\ntimezone = \"Europe/Bratislava\"\n[tasks.t]\nrun = \"echo hi\"\n",
-			want: []string{`unknown key "timezone"`, "[scheduler] timezone"},
-		},
-		{
-			name: "timezone in daemon points at scheduler",
-			toml: "[daemon]\ntimezone = \"Europe/Bratislava\"\n[tasks.t]\nrun = \"echo hi\"\n",
-			want: []string{`unknown key "timezone"`, "[scheduler] timezone"},
+			want: []string{`unknown key "timezone"`, "[daemon] timezone"},
 		},
 		{
 			name: "host in daemon points at flag",
@@ -108,6 +98,46 @@ func TestDecodeMisplacedKeySectionHints(t *testing.T) {
 			name: "keep_occurrences in notify points at coalesce_every",
 			toml: "[notify]\nkeep_occurrences = 5\n[tasks.t]\nrun = \"echo hi\"\n",
 			want: []string{`unknown key "keep_occurrences"`, "renamed to coalesce_every"},
+		},
+		{
+			name: "removed scheduler table points at daemon",
+			toml: "[scheduler]\ntimezone = \"UTC\"\n[tasks.t]\nrun = \"echo hi\"\n",
+			want: []string{`unknown key "scheduler"`, "[daemon]"},
+		},
+		{
+			name: "restart under tasks points at services",
+			toml: "[tasks.t]\nrun = \"echo hi\"\nrestart = \"always\"\n",
+			want: []string{`unknown key "restart"`, "only valid on [services.*]"},
+		},
+		{
+			name: "restart_delay under tasks points at services",
+			toml: "[tasks.t]\nrun = \"echo hi\"\nrestart_delay = \"5s\"\n",
+			want: []string{`unknown key "restart_delay"`, "only valid on [services.*]"},
+		},
+		{
+			name: "instances under tasks points at services",
+			toml: "[tasks.t]\nrun = \"echo hi\"\ninstances = 2\n",
+			want: []string{`unknown key "instances"`, "only valid on [services.*]"},
+		},
+		{
+			name: "depends_on under tasks points at services",
+			toml: "[tasks.t]\nrun = \"echo hi\"\ndepends_on = [\"other\"]\n",
+			want: []string{`unknown key "depends_on"`, "only valid on [services.*]"},
+		},
+		{
+			name: "cron under services points at tasks",
+			toml: "[services.s]\nrun = \"echo hi\"\ncron = \"* * * * *\"\n",
+			want: []string{`unknown key "cron"`, "only valid on [tasks.*]"},
+		},
+		{
+			name: "on_overlap under services points at tasks",
+			toml: "[services.s]\nrun = \"echo hi\"\non_overlap = \"skip\"\n",
+			want: []string{`unknown key "on_overlap"`, "only valid on [tasks.*]"},
+		},
+		{
+			name: "params under services points at tasks",
+			toml: "[services.s]\nrun = \"echo hi\"\nparams = [{env = \"X\"}]\n",
+			want: []string{`unknown key "params"`, "only valid on [tasks.*]"},
 		},
 	}
 	for _, tt := range tests {

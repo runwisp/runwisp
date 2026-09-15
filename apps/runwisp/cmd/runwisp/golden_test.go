@@ -44,7 +44,7 @@ func checkGolden(t *testing.T, path string, got []byte) {
 
 func TestValidateJSONGolden(t *testing.T) {
 	f := writeValidateConfig(t, `
-[scheduler]
+[daemon]
 timezone = "UTC"
 
 [tasks.backup]

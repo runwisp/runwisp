@@ -48,7 +48,7 @@ func loadConfigTOML(t *testing.T, toml string) *config.Config {
 // on a loaded CI runner, shell spawn alone can take tens of ms, and a window
 // shorter than that kills the worker before it logs its first line.
 const syntheticConfig = `
-[scheduler]
+[daemon]
 timezone = "UTC"
 
 [defaults]
