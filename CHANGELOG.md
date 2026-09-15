@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **An ad-hoc dispatch request can no longer trigger a `[services.*]` entry**, which could have reserved it an extra instance outside its restart policy — it only checked `manual_trigger` (always true internally for services), the same gate the REST/UI/CLI trigger paths already close with a service-kind check.
 - **A remote `service:remove` request could delete a TOML-defined `[services.*]` entry**, desyncing the running task set from `runwisp.toml` with no way back short of a daemon restart. It now only removes services that were remotely declared in the first place.
 - **`runwisp run --standalone` now honors `manual_trigger = false` and refuses to run a `[services.*]` entry**, matching the guard the daemon already enforces.
+- **`tls = "off"` is now rejected when `tls_cert`/`tls_key` are also set**, instead of being silently overridden into HTTPS.
 
 ## [0.16.4] - 2026-09-09
 

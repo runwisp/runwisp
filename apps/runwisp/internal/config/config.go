@@ -496,6 +496,14 @@ func validateTLS(d *Daemon) error {
 	case d.TLSCert == "" || d.TLSKey == "":
 		return fmt.Errorf("invalid [daemon]: tls_cert and tls_key must be set together")
 	}
+	// tls = "off" explicitly disables TLS; a cert/key pair explicitly enables
+	// it. Both set at once is a contradiction the operator needs to resolve,
+	// not a silent "cert wins" fallback (an unset tls alongside a cert/key
+	// pair is fine, and stays ApplyDefaults'd to "" rather than "off"; see
+	// there).
+	if d.TLS == TLSModeOff {
+		return fmt.Errorf("invalid [daemon]: tls = \"off\" cannot be combined with tls_cert/tls_key; remove tls_cert and tls_key, or set tls to \"auto\" or leave it unset")
+	}
 	if _, err := tls.LoadX509KeyPair(d.TLSCert, d.TLSKey); err != nil {
 		return fmt.Errorf("invalid [daemon] tls_cert/tls_key: %w", err)
 	}
@@ -1369,7 +1377,11 @@ func ApplyDefaults(cfg *Config) {
 	if cfg.Daemon.ShutdownTimeout == 0 {
 		cfg.Daemon.ShutdownTimeout = DefaultDaemonShutdown
 	}
-	if cfg.Daemon.TLS == "" {
+	// An unset tls defaults to "off", unless the operator already supplied a
+	// cert/key pair: leave it as "" there so validateTLS can still tell "never
+	// wrote tls" apart from an explicit tls = "off", which contradicts the
+	// cert override and is rejected.
+	if cfg.Daemon.TLS == "" && (cfg.Daemon.TLSCert == "" || cfg.Daemon.TLSKey == "") {
 		cfg.Daemon.TLS = TLSModeOff
 	}
 	if cfg.Defaults.HealthyAfter == nil {

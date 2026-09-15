@@ -371,7 +371,7 @@ trims more aggressively is the one you'll feel. See
 | -------------- | -------- | --------------------------------------------------------------------------------------------------- |
 | `env`          | _(none)_ | Inline KEY/VALUE map overlaid on the task's process env. **Visible** in the API, UI, and CLI.       |
 | `env_file`     | _(none)_ | Path to a dotenv file merged beneath `env`. Its values are **visible** too.                         |
-| `secrets`      | _(none)_ | Inline KEY/VALUE map, same mechanics as `env` — but its keys and values **never leave the daemon**. |
+| `secrets`      | _(none)_ | Inline KEY/VALUE map, same mechanics as `env`, but its keys and values **never appear in the config API or web UI**. |
 | `secrets_file` | _(none)_ | Path to a dotenv file merged beneath `secrets`. Only the **path** is visible; contents are not.     |
 
 The split is about **visibility**, not mechanics. Everything under
@@ -381,6 +381,11 @@ anyone logged into the daemon can read it. Everything under
 `secrets` / `secrets_file` reaches the spawned process exactly the same
 way, but the API and UI never show the keys or values — at most you'll
 see the `secrets_file` path, so you can tell where values come from.
+
+A secret is still part of the process environment, though: if the
+command itself prints its environment (`env`, a verbose tool, a crash
+dump), that value can end up in the run's captured output like anything
+else the process prints.
 
 When the task starts, all four layers merge on top of the daemon's own
 environment. On a key collision, later wins:

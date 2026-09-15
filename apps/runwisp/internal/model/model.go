@@ -161,7 +161,7 @@ type Task struct {
 	// Secrets holds [tasks.*.secrets] plus secrets_file-derived pairs. Hidden
 	// from JSON/TOML so values never leak to API/UI/cloud serialization.
 	Secrets     map[string]string `toml:"-" json:"-"`
-	SecretsFile string            `toml:"secrets_file,omitempty" json:"secretsFile,omitempty" doc:"Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values never leave the daemon."`
+	SecretsFile string            `toml:"secrets_file,omitempty" json:"secretsFile,omitempty" doc:"Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values are not."`
 
 	// Parameters declares per-execution inputs an operator may supply at manual
 	// trigger time (env vars, positional args, options, flags). Scheduled
