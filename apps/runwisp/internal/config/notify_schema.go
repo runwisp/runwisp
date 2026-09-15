@@ -62,7 +62,6 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 		GlobalNotifiers:   resolveGlobalNotifiers(t.Notify.GlobalNotifiers),
 		KeepNotifications: t.Notify.KeepNotifications,
 		KeepOccurrences:   t.Notify.KeepOccurrences,
-		CoalesceOutbound:  t.Notify.CoalesceOutbound == nil || *t.Notify.CoalesceOutbound,
 	}
 	if out.KeepNotifications == 0 {
 		out.KeepNotifications = defaultKeepNotifications
@@ -119,13 +118,11 @@ func (t *tomlConfig) applyNotifyDurations(out *NotifyConfig) error {
 	if out.KeepFor == 0 {
 		out.KeepFor = defaultKeepFor
 	}
-	if t.Notify.CoalesceWindow != "" {
-		d, err := parseDuration(t.Notify.CoalesceWindow)
-		if err != nil {
-			return fmt.Errorf("invalid notify.coalesce_window: %w", err)
-		}
-		out.CoalesceWindow = d
+	coalesceWindow, err := parseDurationPtr(t.Notify.CoalesceWindow)
+	if err != nil {
+		return fmt.Errorf("invalid notify.coalesce_window: %w", err)
 	}
+	out.CoalesceWindow = coalesceWindow
 	return nil
 }
 

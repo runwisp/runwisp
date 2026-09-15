@@ -21,7 +21,7 @@ default lives in [`[tasks.*]` → Scheduling](/configuration/tasks/#scheduling).
 Everything on this page applies to a task read live from a real crontab
 through [`include_cron`](/configuration/daemon/#include_cron) too, once RunWisp
 owns its schedule — with one difference: those tasks keep cron's firing
-semantics, so a missed tick is recorded but never re-fired (`catch_up = "skip"`).
+semantics, so a missed tick is recorded but never re-fired (`catch_up = 0`).
 
 While a system cron daemon still owns the file, though, the task isn't scheduled
 at all, and RunWisp isn't tracking its ticks either — so nothing is recorded
@@ -146,47 +146,43 @@ what to use.
 ## Missed ticks: catchup
 
 While the daemon was down — a reboot, a deploy, a hard crash — some
-scheduled firings just didn't happen. `catch_up` decides what to do
-about those the next time it starts up:
+scheduled firings just didn't happen. `catch_up` is a number: **how many
+of those missed ticks to re-fire** the next time the daemon starts up.
 
 ```toml
 [tasks.metrics-rollup]
 cron     = "*/15 * * * *"
-catch_up = "latest"      # default
+catch_up = 1      # default
 ```
 
-| Policy   | Behaviour on startup                                                                                                                                         |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `latest` | If any ticks were missed, fire **one** catch-up run. Default. Right for jobs where running twice is harmless.                                                |
-| `all`    | Fire **one run per missed tick**, capped by [`max_catch_up_runs`](#capping-the-backfill-max_catch_up_runs). Right when each tick processes a discrete slice. |
-| `skip`   | Don't **re-run** the missed ticks. Right for monitors and probes that just want fresh data — the gap is still recorded and alerted (see below).              |
+| Value   | Behaviour on startup                                                                                                                        |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `1`     | If any ticks were missed, fire **one** catch-up run. Default. Right for jobs where running twice is harmless.                               |
+| `N > 1` | Fire **one run per missed tick**, up to `N`. Right when each tick processes a discrete slice; requires `on_overlap = "queue"` (see below).  |
+| `0`     | Don't **re-run** any missed ticks. Right for monitors and probes that just want fresh data — the gap is still recorded and alerted (below). |
 
 "Missed" is measured from the timestamp of the task's last recorded
 run. On the very first boot, that anchor is set the moment RunWisp first
 sees the task — so a fresh install won't suddenly queue up a mountain of
 "catch-up" runs for ticks from before the daemon ever existed.
 
-### Capping the backfill: `max_catch_up_runs`
+### Capping the backfill
 
-Picture `catch_up = "all"` on a `* * * * *` task with a daemon that was
-down for a day — that's a huge backlog waiting to fire at startup. The
-cap is there so one long outage can't bury the scheduler.
+`catch_up` is itself the cap. Picture a `* * * * *` task with a daemon
+that was down for a day — that's a huge backlog waiting to fire at
+startup. Setting `catch_up = 200` fires at most 200 of the missed ticks,
+so one long outage can't bury the scheduler.
 
 ```toml
 [tasks.metrics-rollup]
-cron              = "*/15 * * * *"
-catch_up          = "all"
-max_catch_up_runs = 200    # at most 200 missed ticks fire on startup
+cron     = "*/15 * * * *"
+catch_up = 200    # replay up to 200 missed ticks on startup
 ```
 
-| Value     | Meaning                                                                                       |
-| --------- | --------------------------------------------------------------------------------------------- |
-| _omitted_ | Inherit the built-in default of **100**. Tune up explicitly if each missed tick is real work. |
-| `N > 0`   | Cap the backfill at `N` runs; older missed ticks are dropped.                                 |
-
-Negative values are rejected. Zero means "use the default" — leave the
-key off for the same effect. The cap only matters for `catch_up = "all"` — `latest` fires
-exactly one run no matter what, and `skip` fires none.
+Firing more than one catch-up run back-to-back requires
+`on_overlap = "queue"` — anything higher than `1` is rejected otherwise,
+because `skip`/`kill` would only let the first replay through. The value
+must be between `0` and `10000`.
 
 And when the cap does kick in, the daemon logs a warning naming the
 task, how many ticks were `missed`, the cap, and how many got dropped.
@@ -203,10 +199,10 @@ with `end_reason = "missed"` and raises a **failure-level** alert (kind
 `run.missed`) naming the task and how many scheduled runs were missed.
 It reaches the bell — and any channel that already gets your failures —
 with no extra configuration. Detection is independent of `catch_up`:
-`latest`, `all`, and `skip` all detect, record, and alert. The policy
-only decides whether anything **re-runs**. Even when
-`max_catch_up_runs` caps the backfill, the alert reports the full
-detected count, not the smaller number that re-ran.
+any value — `0`, `1`, or higher — detects, records, and alerts. The value
+only decides whether anything **re-runs**. Even when `catch_up` caps the
+backfill, the alert reports the full detected count, not the smaller
+number that re-ran.
 
 Some tasks miss ticks by design — a laptop that's only on during the
 day, a task you only ever trigger by hand. For those, drop `missed` from

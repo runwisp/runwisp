@@ -551,7 +551,7 @@ func TestStartGracefulStopUsesSignalAndTimeout(t *testing.T) {
 	b := NewContainerBackendFromClient(mock)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	task := &model.Task{StopSignal: "SIGTERM", GracefulStop: 3 * time.Second}
+	task := &model.Task{StopSignal: "SIGTERM", GracefulStop: durPtr(3 * time.Second)}
 	proc, err := b.Start(ctx, task, nil, &model.ContainerExecution{Script: "sleep 100", BaseImage: "alpine"})
 	require.NoError(t, err)
 
@@ -609,7 +609,7 @@ func TestStartWatcherDoesNotGracefulStopAfterCleanSuccess(t *testing.T) {
 		b := NewContainerBackendFromClient(mock)
 		ctx, cancel := context.WithCancel(context.Background())
 
-		task := &model.Task{StopSignal: "SIGTERM", GracefulStop: time.Second}
+		task := &model.Task{StopSignal: "SIGTERM", GracefulStop: durPtr(time.Second)}
 		proc, err := b.Start(ctx, task, nil, &model.ContainerExecution{Script: "echo hi", BaseImage: "alpine"})
 		require.NoError(t, err)
 
@@ -1004,7 +1004,7 @@ func TestGracefulStopContainerHonoursGracePeriod(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		b.gracefulStopContainer("ctr", &model.Task{GracefulStop: graceful}, containerCleanupTimeout)
+		b.gracefulStopContainer("ctr", &model.Task{GracefulStop: durPtr(graceful)}, containerCleanupTimeout)
 		close(done)
 	}()
 

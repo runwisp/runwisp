@@ -6,7 +6,7 @@ description = "Broken nightly job"
 cron = "99 99 * * *"  # TODO: RunWisp couldn't parse this cron expression — fix it.
 env_base = "clean"
 working_dir = "~"
-catch_up = "skip"  # cron never re-fires a missed tick
+catch_up = 0  # cron never re-fires a missed tick
 on_overlap = "queue"  # cron would overlap instead of queueing
 run = "/bin/bad"
 

@@ -71,8 +71,7 @@ stop_signal = "SIGNOPE"
 func TestDefaults_InheritSupervisionAndCatchupKeys(t *testing.T) {
 	cfgPath, _ := writePlainConfig(t, `[defaults]
 graceful_stop = "12s"
-catch_up = "all"
-max_catch_up_runs = 7
+catch_up = 7
 restart_delay = "3s"
 restart_backoff = "linear"
 
@@ -88,12 +87,11 @@ run = "exec ./web"
 	require.NoError(t, err)
 
 	cron := findTask(t, cfg, "cronjob")
-	assert.Equal(t, 12*time.Second, cron.GracefulStop)
-	assert.Equal(t, model.MissedRunAll, cron.CatchUp)
-	assert.Equal(t, 7, cron.MaxCatchUpRuns)
+	assert.Equal(t, 12*time.Second, cron.GracefulStopValue())
+	assert.Equal(t, 7, cron.CatchUpValue())
 
 	web := findTask(t, cfg, "web")
-	assert.Equal(t, 12*time.Second, web.GracefulStop)
+	assert.Equal(t, 12*time.Second, web.GracefulStopValue())
 	require.NotNil(t, web.RestartDelay)
 	assert.Equal(t, 3*time.Second, *web.RestartDelay)
 	assert.Equal(t, model.BackoffLinear, web.RestartBackoff)

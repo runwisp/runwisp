@@ -271,7 +271,7 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid timeout for task %q: %w", name, err)
 	}
-	gracefulStop, err := parseDuration(w.GracefulStop)
+	gracefulStop, err := parseDurationPtr(w.GracefulStop)
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid graceful_stop for task %q: %w", name, err)
 	}
@@ -449,12 +449,13 @@ func (w *taskServiceWireCore) resolveComposeMode(name, label string) (string, er
 type taskWire struct {
 	taskServiceWireCore
 
-	Cron           string                `toml:"cron,omitempty"`
-	Timezone       string                `toml:"timezone,omitempty"`
-	Jitter         string                `toml:"jitter,omitempty"`
-	CatchUp        model.MissedRunPolicy `toml:"catch_up,omitempty"`
-	MaxCatchUpRuns int                   `toml:"max_catch_up_runs,omitempty"`
-	RunOnStart     bool                  `toml:"run_on_start,omitempty"`
+	Cron     string `toml:"cron,omitempty"`
+	Timezone string `toml:"timezone,omitempty"`
+	Jitter   string `toml:"jitter,omitempty"`
+	// CatchUp is *int so an explicit `catch_up = 0` (skip) is distinguishable from
+	// an omitted key (nil, inherits the default).
+	CatchUp    *int `toml:"catch_up,omitempty"`
+	RunOnStart bool `toml:"run_on_start,omitempty"`
 
 	MaxConcurrent int `toml:"max_concurrent,omitempty"`
 	MaxQueued     int `toml:"max_queued,omitempty"`
@@ -480,7 +481,7 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	if err != nil {
 		return model.Task{}, err
 	}
-	retryDelay, err := parseDuration(w.RetryDelay)
+	retryDelay, err := parseDurationPtr(w.RetryDelay)
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid retry_delay for task %q: %w", name, err)
 	}
@@ -492,7 +493,6 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	task.Timezone = w.Timezone
 	task.Jitter = jitter
 	task.CatchUp = w.CatchUp
-	task.MaxCatchUpRuns = w.MaxCatchUpRuns
 	task.RunOnStart = w.RunOnStart
 	task.MaxConcurrent = w.MaxConcurrent
 	task.MaxQueued = w.MaxQueued
@@ -565,9 +565,8 @@ type defaultsWire struct {
 	RestartDelay    string `toml:"restart_delay,omitempty"`
 	RestartBackoff  string `toml:"restart_backoff,omitempty"`
 
-	CatchUp        string `toml:"catch_up,omitempty"`
-	MaxCatchUpRuns int    `toml:"max_catch_up_runs,omitempty"`
-	GracefulStop   string `toml:"graceful_stop,omitempty"`
+	CatchUp      *int   `toml:"catch_up,omitempty"`
+	GracefulStop string `toml:"graceful_stop,omitempty"`
 
 	// Failures is the global default failure classification; a task may override
 	// it. nil leaves the built-in default set (see model.DefaultFailureTokens).
@@ -608,7 +607,7 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 	if err != nil {
 		return Defaults{}, fmt.Errorf("invalid defaults.restart_delay: %w", err)
 	}
-	gracefulStop, err := parseDuration(w.GracefulStop)
+	gracefulStop, err := parseDurationPtr(w.GracefulStop)
 	if err != nil {
 		return Defaults{}, fmt.Errorf("invalid defaults.graceful_stop: %w", err)
 	}
@@ -636,8 +635,7 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 		RestartAttempts:   w.RestartAttempts,
 		RestartDelay:      restartDelay,
 		RestartBackoff:    model.BackoffCurve(w.RestartBackoff),
-		CatchUp:           model.MissedRunPolicy(w.CatchUp),
-		MaxCatchUpRuns:    w.MaxCatchUpRuns,
+		CatchUp:           w.CatchUp,
 		GracefulStop:      gracefulStop,
 		FailureReasons:    failureReasons,
 		FailureExitRanges: failureRanges,
@@ -768,9 +766,6 @@ type notifyWire struct {
 	KeepFor           string    `toml:"keep_for,omitempty"`
 	CoalesceWindow    string    `toml:"coalesce_window,omitempty"`
 	KeepOccurrences   int       `toml:"keep_occurrences,omitempty"`
-	// CoalesceOutbound is *bool so we can distinguish "unset" (default-on)
-	// from explicit `coalesce_outbound = false` (the rare opt-out).
-	CoalesceOutbound *bool `toml:"coalesce_outbound,omitempty"`
 }
 
 // notifierWire is one [notifiers.<id>] block, keyed by its id. Secret-bearing

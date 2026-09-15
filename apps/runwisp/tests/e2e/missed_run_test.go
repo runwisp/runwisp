@@ -37,12 +37,12 @@ func TestMissedRunDetectedAndAlertedOnRestart(t *testing.T) {
 	// Zero-config notifications: with no [notify] block the daemon wires the
 	// default in-app catch-all, which now includes run.missed. This is the
 	// product promise — a missed scheduled run reaches whoever already gets
-	// failure alerts, with no extra configuration. catch_up = "skip" proves
+	// failure alerts, with no extra configuration. catch_up = 0 proves
 	// detection is independent of the re-run policy.
 	configPath := writeNotifyConfig(t, `
 [tasks.tick]
 cron = "* * * * *"
-catch_up = "skip"
+catch_up = 0
 run = "true"
 `)
 

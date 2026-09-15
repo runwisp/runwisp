@@ -1621,13 +1621,9 @@
             "type": "boolean"
           },
           "catchUp": {
-            "description": "What to do when cron ticks are missed during downtime",
-            "enum": [
-              "latest",
-              "all",
-              "skip"
-            ],
-            "type": "string"
+            "description": "Max missed cron ticks to re-run at startup after downtime: 0 skips, 1 re-runs only the most recent, N re-runs up to the N most recent",
+            "format": "int64",
+            "type": "integer"
           },
           "compose": {
             "$ref": "#/components/schemas/TaskComposeRef",
@@ -1665,7 +1661,7 @@
             "type": "string"
           },
           "gracefulStop": {
-            "description": "Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds",
+            "description": "Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds; 0 means kill immediately",
             "format": "int64",
             "type": "integer"
           },
@@ -1728,11 +1724,6 @@
           },
           "manualTrigger": {
             "type": "boolean"
-          },
-          "maxCatchUpRuns": {
-            "description": "Cap on catch-up runs triggered when catch_up = all",
-            "format": "int64",
-            "type": "integer"
           },
           "maxConcurrent": {
             "description": "Maximum overlapping runs allowed for this task",
@@ -1813,7 +1804,7 @@
             "type": "string"
           },
           "retryDelay": {
-            "description": "Base delay before each retry, in nanoseconds",
+            "description": "Base delay before each retry, in nanoseconds; 0 retries with no delay",
             "format": "int64",
             "type": "integer"
           },
@@ -1978,13 +1969,9 @@
             "type": "boolean"
           },
           "catchUp": {
-            "description": "What to do when cron ticks are missed during downtime",
-            "enum": [
-              "latest",
-              "all",
-              "skip"
-            ],
-            "type": "string"
+            "description": "Max missed cron ticks to re-run at startup after downtime: 0 skips, 1 re-runs only the most recent, N re-runs up to the N most recent",
+            "format": "int64",
+            "type": "integer"
           },
           "compose": {
             "$ref": "#/components/schemas/TaskComposeRef",
@@ -2022,7 +2009,7 @@
             "type": "string"
           },
           "gracefulStop": {
-            "description": "Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds",
+            "description": "Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds; 0 means kill immediately",
             "format": "int64",
             "type": "integer"
           },
@@ -2085,11 +2072,6 @@
           },
           "manualTrigger": {
             "type": "boolean"
-          },
-          "maxCatchUpRuns": {
-            "description": "Cap on catch-up runs triggered when catch_up = all",
-            "format": "int64",
-            "type": "integer"
           },
           "maxConcurrent": {
             "description": "Maximum overlapping runs allowed for this task",
@@ -2174,7 +2156,7 @@
             "type": "string"
           },
           "retryDelay": {
-            "description": "Base delay before each retry, in nanoseconds",
+            "description": "Base delay before each retry, in nanoseconds; 0 retries with no delay",
             "format": "int64",
             "type": "integer"
           },

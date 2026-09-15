@@ -48,15 +48,11 @@ type LogPageInput struct {
 	Limit int64  `query:"limit" minimum:"1" maximum:"10000" doc:"Max lines returned (default 1000)"`
 }
 
-// LogLineEntry mirrors the line-event payload used on the SSE wire.
-type LogLineEntry struct {
-	N          int64  `json:"n" doc:"Absolute line number"`
-	Ts         int64  `json:"ts" doc:"Unix milliseconds timestamp; 0 if unavailable"`
-	Stream     string `json:"stream" doc:"Stream identifier (stdout/stderr/system)"`
-	Text       string `json:"text" doc:"Line content without trailing newline"`
-	Continued  bool   `json:"continued,omitempty" doc:"True if this segment continues an oversized split line"`
-	FrameCount int    `json:"frameCount,omitempty" doc:"Number of recorded prior frames if this line is a settled progress bar / redraw anchor; 0 otherwise"`
-}
+// LogLineEntry is the line payload shared by the line-page REST response and the
+// SSE `line` event. It is a named type over logstream.LineEvent so the two wire
+// surfaces can never drift; the SSE stream wraps it again as LogLineSSEEvent for
+// huma/sse's event-name dispatch.
+type LogLineEntry logstream.LineEvent
 
 // LogPageBody is the response shape for the line-page endpoint.
 type LogPageBody struct {

@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/server"
 	"github.com/spf13/cobra"
 )
 
@@ -57,7 +58,7 @@ never disclosed via this command.`,
 // credentialsFetcher is the slice of apiclient.Client that cmd_password
 // exercises. Splitting it out keeps the unit test isolated from a real socket.
 type credentialsFetcher interface {
-	GetLocalCredentials() (*apiclient.LocalCredentials, error)
+	GetLocalCredentials() (*server.LocalCredentialsBody, error)
 }
 
 func runPassword(stdout, stderr io.Writer, client credentialsFetcher, socketPath string) int {

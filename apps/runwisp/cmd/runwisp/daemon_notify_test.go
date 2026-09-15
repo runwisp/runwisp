@@ -244,6 +244,7 @@ func TestInitNotify_InappRouteWiresHubAndService(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
+	window := time.Minute
 	cfg := &daemonConfig{
 		Fingerprint: "fp",
 		Config: &config.Config{
@@ -251,7 +252,7 @@ func TestInitNotify_InappRouteWiresHubAndService(t *testing.T) {
 				Routes: []config.NotificationRoute{
 					{Kinds: []string{"run.failed"}, NotifierID: []string{"inapp"}},
 				},
-				CoalesceWindow:  time.Minute,
+				CoalesceWindow:  &window,
 				KeepOccurrences: 5,
 			},
 		},

@@ -11,21 +11,22 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/server"
 	"github.com/stretchr/testify/assert"
 )
 
 type fakeCredentialsClient struct {
-	creds *apiclient.LocalCredentials
+	creds *server.LocalCredentialsBody
 	err   error
 }
 
-func (f *fakeCredentialsClient) GetLocalCredentials() (*apiclient.LocalCredentials, error) {
+func (f *fakeCredentialsClient) GetLocalCredentials() (*server.LocalCredentialsBody, error) {
 	return f.creds, f.err
 }
 
 func TestRunPassword_PrintsPasswordToStdout(t *testing.T) {
 	client := &fakeCredentialsClient{
-		creds: &apiclient.LocalCredentials{Password: "Kj2x9pQ7mN4vL8rT5wYz1c", Ephemeral: true},
+		creds: &server.LocalCredentialsBody{Password: "Kj2x9pQ7mN4vL8rT5wYz1c", Ephemeral: true},
 	}
 	var stdout, stderr bytes.Buffer
 

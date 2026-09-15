@@ -518,8 +518,8 @@ func manualCount(task *model.Task) int {
 }
 
 func retryGap(task *model.Task) time.Duration {
-	if task.RetryDelay > 0 {
-		return task.RetryDelay
+	if task.RetryDelayValue() > 0 {
+		return task.RetryDelayValue()
 	}
 	return 30 * time.Second
 }

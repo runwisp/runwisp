@@ -107,7 +107,7 @@ func TestShouldRetry(t *testing.T) {
 
 func TestComputeRetryDelay(t *testing.T) {
 	t.Run("default backoff returns base delay", func(t *testing.T) {
-		task := &model.Task{RetryDelay: 2 * time.Second, RetryBackoff: ""}
+		task := &model.Task{RetryDelay: durPtr(2 * time.Second), RetryBackoff: ""}
 		for attempt := 0; attempt < 5; attempt++ {
 			assert.Equalf(t, 2*time.Second, ComputeRetryDelay(task, attempt),
 				"empty backoff should stay constant (attempt %d)", attempt)
@@ -115,17 +115,23 @@ func TestComputeRetryDelay(t *testing.T) {
 	})
 
 	t.Run("unknown backoff treated as default", func(t *testing.T) {
-		task := &model.Task{RetryDelay: time.Second, RetryBackoff: "fibonacci"}
+		task := &model.Task{RetryDelay: durPtr(time.Second), RetryBackoff: "fibonacci"}
 		assert.Equal(t, time.Second, ComputeRetryDelay(task, 5))
 	})
 
-	t.Run("zero base delay falls back to five seconds", func(t *testing.T) {
-		task := &model.Task{RetryDelay: 0, RetryBackoff: "exponential"}
-		assert.Equal(t, 5*time.Second, ComputeRetryDelay(task, 0))
+	t.Run("nil retry_delay falls back to the default", func(t *testing.T) {
+		task := &model.Task{RetryDelay: nil, RetryBackoff: "exponential"}
+		assert.Equal(t, config.DefaultRetryDelay, ComputeRetryDelay(task, 0))
+	})
+
+	t.Run("explicit zero retry_delay is honored (no delay)", func(t *testing.T) {
+		task := &model.Task{RetryDelay: durPtr(0), RetryBackoff: "exponential"}
+		assert.Equal(t, time.Duration(0), ComputeRetryDelay(task, 0))
+		assert.Equal(t, time.Duration(0), ComputeRetryDelay(task, 5))
 	})
 
 	t.Run("exponential doubles each attempt", func(t *testing.T) {
-		task := &model.Task{RetryDelay: time.Second, RetryBackoff: "exponential"}
+		task := &model.Task{RetryDelay: durPtr(time.Second), RetryBackoff: "exponential"}
 		assert.Equal(t, time.Second, ComputeRetryDelay(task, 0))
 		assert.Equal(t, 2*time.Second, ComputeRetryDelay(task, 1))
 		assert.Equal(t, 4*time.Second, ComputeRetryDelay(task, 2))
@@ -133,20 +139,20 @@ func TestComputeRetryDelay(t *testing.T) {
 	})
 
 	t.Run("exponential clamps to five-minute max", func(t *testing.T) {
-		task := &model.Task{RetryDelay: time.Second, RetryBackoff: "exponential"}
+		task := &model.Task{RetryDelay: durPtr(time.Second), RetryBackoff: "exponential"}
 		assert.Equal(t, 5*time.Minute, ComputeRetryDelay(task, 30))
 		assert.Equal(t, 5*time.Minute, ComputeRetryDelay(task, 100))
 	})
 
 	t.Run("linear scales with attempt+1", func(t *testing.T) {
-		task := &model.Task{RetryDelay: 2 * time.Second, RetryBackoff: "linear"}
+		task := &model.Task{RetryDelay: durPtr(2 * time.Second), RetryBackoff: "linear"}
 		assert.Equal(t, 2*time.Second, ComputeRetryDelay(task, 0))
 		assert.Equal(t, 4*time.Second, ComputeRetryDelay(task, 1))
 		assert.Equal(t, 6*time.Second, ComputeRetryDelay(task, 2))
 	})
 
 	t.Run("linear clamps to five-minute max", func(t *testing.T) {
-		task := &model.Task{RetryDelay: time.Minute, RetryBackoff: "linear"}
+		task := &model.Task{RetryDelay: durPtr(time.Minute), RetryBackoff: "linear"}
 		assert.Equal(t, 5*time.Minute, ComputeRetryDelay(task, 10))
 	})
 }

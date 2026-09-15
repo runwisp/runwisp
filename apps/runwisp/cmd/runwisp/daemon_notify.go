@@ -94,7 +94,9 @@ func initNotify(
 		hub = inapp.NewHub(32)
 
 		coalescerCfg := inapp.CoalescerConfig{
-			Window:      notifyCfg.CoalesceWindow,
+			// The in-app coalescer always applies a window: nil/zero falls back to
+			// its built-in default. coalesce_window = "0s" only disables outbound.
+			Window:      config.OrDefault(notifyCfg.CoalesceWindow, 0),
 			OccurrenceN: notifyCfg.KeepOccurrences,
 		}
 		coalescer := inapp.NewCoalescer(db, hub, notify.RealClock(), coalescerCfg, logger)
@@ -108,9 +110,12 @@ func initNotify(
 		channels = append(channels, inappCh)
 	}
 
-	outboundCoalesce := notifyCfg.CoalesceOutbound
+	// Outbound coalescing is on unless the operator sets coalesce_window = "0s".
+	// An omitted window (nil) or a positive value both keep it on; coalesce.New
+	// applies its own 1h default when the window is zero.
+	outboundCoalesce := notifyCfg.CoalesceWindow == nil || *notifyCfg.CoalesceWindow > 0
 	coalesceCfg := coalesce.Config{
-		Window: notifyCfg.CoalesceWindow,
+		Window: config.OrDefault(notifyCfg.CoalesceWindow, 0),
 		EveryN: notifyCfg.KeepOccurrences,
 	}
 

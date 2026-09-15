@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`runwisp import systemd` converts systemd `.service` units into `runwisp.toml`** — a unit with `Restart=` becomes a service, a `Type=oneshot` unit a task — flagging anything it can't model (multiple `ExecStart`, `Type=notify`, sandboxing, socket activation) with inline `# TODO`s. See [From systemd](https://docs.runwisp.com/coming-from/systemd/).
 - **`[daemon] trusted_proxies`** sets the reverse-proxy CIDR allowlist in TOML; the `RUNWISP_TRUSTED_PROXIES` env var still works and overrides it. Catch-all ranges (`0.0.0.0/0`, `::/0`) are rejected at config load.
 - **`runwisp service install` now sets a stable Web UI password.** With auth on, it persists a password into a `0600` drop-in beside the unit — a freshly generated one (printed once), or your own `RUNWISP_PASSWORD` if you set it at install time — so a managed daemon no longer mints a new password — logging every session out — on each restart. Re-installing never rotates it.
-- **`[defaults]` now accepts `restart_delay`, `restart_backoff`, `catch_up`, `max_catch_up_runs`, and `graceful_stop`**, so you can set these fleet-wide once instead of repeating them on every unit.
+- **`[defaults]` now accepts `restart_delay`, `restart_backoff`, `catch_up`, and `graceful_stop`**, so you can set these fleet-wide once instead of repeating them on every unit.
 - **Compose per-service overrides (`[compose.<alias>.<svc>]`) can now set `failures`**, matching what `[services.*]` already allows.
 
 ### Changed
@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`GET /api/runs` gained an `isFailure` query parameter**, matching the `isFailure` field already accepted in bulk-operation request bodies.
 - **The auth endpoints (`/api/auth/status`, `/api/auth/challenge`, `/api/auth/login`, `/api/auth/launch-ticket`) are now documented in the OpenAPI spec** (`runwisp openapi`), so API clients get generated request/response types instead of guessing the shape.
 - **`GET /api/notifications/stream` has been removed.** Notification events already ride the unified `GET /api/events/stream`.
+- **`catch_up` is now an integer and `max_catch_up_runs` is gone.** The value is how many missed cron ticks to re-fire on startup: `0` (was `"skip"`), `1` (was `"latest"`, the default), or `N` to replay up to `N` (replacing `"all"` + its separate cap). Anything above `1` still requires `on_overlap = "queue"`. See [Missed ticks](https://docs.runwisp.com/concepts/scheduling/#missed-ticks-catchup).
+- **`notify.coalesce_outbound` is gone; `coalesce_window = "0s"` now disables outbound coalescing** (one message per event). The bell still coalesces on its default window.
+- **`graceful_stop = "0s"` and `retry_delay = "0s"` are now honored literally** instead of silently falling back to the defaults — so `graceful_stop = "0s"` means kill immediately and `retry_delay = "0s"` means retry with no delay.
 - **`stop_signal` now takes only the canonical `SIGxxx` spelling**; bare names like `TERM` are rejected. Use `SIGTERM`, `SIGINT`, etc.
 - **Setting `[daemon] metrics_listen` now enables metrics on its own** — you no longer also need `metrics_enabled = true`.
 - **`[notifiers.*]` now rejects fields that don't belong to the notifier's `type`** (e.g. `host`/`port` on a `type = "slack"` block) instead of silently ignoring them.

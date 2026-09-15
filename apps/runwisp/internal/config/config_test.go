@@ -433,33 +433,33 @@ func TestValidate(t *testing.T) {
 					Run:           "echo hello",
 					MaxConcurrent: 1,
 					OnOverlap:     model.PolicyQueue,
-					CatchUp:       "none",
+					CatchUp:       intPtr(-1),
 				}},
 			},
 			wantErr: "invalid catch_up",
 		},
 		{
-			name: "catch_up all with on_overlap skip",
+			name: "multi-run catch_up with on_overlap skip",
 			cfg: &Config{
 				Tasks: []model.Task{{
 					Name:          "task1",
 					Run:           "echo hello",
 					MaxConcurrent: 1,
 					OnOverlap:     model.PolicySkip,
-					CatchUp:       model.MissedRunAll,
+					CatchUp:       intPtr(5),
 				}},
 			},
 			wantErr: "invalid catch_up for task task1",
 		},
 		{
-			name: "catch_up all with on_overlap kill",
+			name: "multi-run catch_up with on_overlap kill",
 			cfg: &Config{
 				Tasks: []model.Task{{
 					Name:          "task1",
 					Run:           "echo hello",
 					MaxConcurrent: 1,
 					OnOverlap:     model.PolicyKill,
-					CatchUp:       model.MissedRunAll,
+					CatchUp:       intPtr(5),
 				}},
 			},
 			wantErr: "invalid catch_up for task task1",
@@ -523,7 +523,7 @@ func TestValidate(t *testing.T) {
 					Run:           "echo hello",
 					MaxConcurrent: 1,
 					OnOverlap:     model.PolicyQueue,
-					GracefulStop:  -time.Second,
+					GracefulStop:  durPtr(-time.Second),
 				}},
 			},
 			wantErr: "graceful_stop",
@@ -549,7 +549,7 @@ func TestValidate(t *testing.T) {
 					Run:           "echo hello",
 					MaxConcurrent: 1,
 					OnOverlap:     model.PolicyQueue,
-					RetryDelay:    -time.Second,
+					RetryDelay:    durPtr(-time.Second),
 				}},
 			},
 			wantErr: "retry_delay",
@@ -619,14 +619,13 @@ func TestApplyDefaults(t *testing.T) {
 	defaulted := cfg.Tasks[0]
 	assert.Equal(t, 1, defaulted.MaxConcurrent)
 	assert.Equal(t, model.PolicyQueue, defaulted.OnOverlap)
-	assert.Equal(t, model.MissedRunLatest, defaulted.CatchUp)
+	assert.Equal(t, model.DefaultCatchUp, defaulted.CatchUpValue())
 	assert.Equal(t, 45*time.Minute, defaulted.Timeout)
 	assert.Equal(t, int64(200*1024*1024), defaulted.LogMaxSize)
 	assert.Equal(t, "drop_old", defaulted.LogOnFull)
 	assert.Equal(t, 25, *defaulted.KeepRuns)
 	assert.Equal(t, 14*24*time.Hour, defaulted.KeepFor)
-	assert.Equal(t, DefaultGracefulStop, defaulted.GracefulStop)
-	assert.Equal(t, DefaultMaxCatchUpRuns, defaulted.MaxCatchUpRuns)
+	assert.Equal(t, DefaultGracefulStop, defaulted.GracefulStopValue())
 	assert.Equal(t, DefaultMaxQueued, defaulted.MaxQueued)
 
 	overridden := cfg.Tasks[1]
@@ -1119,9 +1118,9 @@ run = "echo hi"
 	})
 }
 
-// graceful_stop is validated with a `< 0` check, so an explicit "0s" is not an
-// error. Zero is also the omitted-sentinel, so ApplyDefaults fills it with
-// DefaultGracefulStop rather than leaving a zero grace period. Locking that.
+// An explicit graceful_stop = "0s" means "kill immediately, no grace window"
+// and must survive defaulting as a real zero (the pointer distinguishes it from
+// an omitted key, which would inherit DefaultGracefulStop). Locking that.
 func TestGracefulStopZeroAccepted(t *testing.T) {
 	path := writeTOML(t, `
 [tasks.t]
@@ -1130,7 +1129,19 @@ run = "echo hi"
 `)
 	cfg, err := Load(path)
 	require.NoError(t, err)
-	assert.Equal(t, DefaultGracefulStop, cfg.Tasks[0].GracefulStop)
+	require.NotNil(t, cfg.Tasks[0].GracefulStop)
+	assert.Equal(t, time.Duration(0), *cfg.Tasks[0].GracefulStop)
+}
+
+// An omitted graceful_stop inherits the built-in default.
+func TestGracefulStopOmittedDefaults(t *testing.T) {
+	path := writeTOML(t, `
+[tasks.t]
+run = "echo hi"
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, DefaultGracefulStop, cfg.Tasks[0].GracefulStopValue())
 }
 
 func TestLogMaxSizeRules(t *testing.T) {
@@ -1215,20 +1226,35 @@ run      = "echo hi"
 	})
 }
 
-func TestMaxCatchUpRunsRules(t *testing.T) {
-	t.Run("omitted defaults to DefaultMaxCatchUpRuns", func(t *testing.T) {
+func TestCatchUpRules(t *testing.T) {
+	t.Run("omitted defaults to 1 (most recent)", func(t *testing.T) {
 		path := writeTOML(t, `
 [scheduler]
 timezone = "UTC"
 
 [tasks.t]
 cron = "* * * * *"
-catch_up = "all"
 run = "echo hi"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		assert.Equal(t, DefaultMaxCatchUpRuns, cfg.Tasks[0].MaxCatchUpRuns)
+		assert.Equal(t, 1, cfg.Tasks[0].CatchUpValue())
+	})
+
+	t.Run("explicit 0 (skip) is a non-nil zero", func(t *testing.T) {
+		path := writeTOML(t, `
+[scheduler]
+timezone = "UTC"
+
+[tasks.t]
+cron     = "* * * * *"
+catch_up = 0
+run      = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.Tasks[0].CatchUp)
+		assert.Equal(t, 0, *cfg.Tasks[0].CatchUp)
 	})
 
 	t.Run("positive value is preserved", func(t *testing.T) {
@@ -1237,13 +1263,14 @@ run = "echo hi"
 timezone = "UTC"
 
 [tasks.t]
-cron              = "* * * * *"
-max_catch_up_runs = 50
-run               = "echo hi"
+cron       = "* * * * *"
+catch_up   = 50
+on_overlap = "queue"
+run        = "echo hi"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		assert.Equal(t, 50, cfg.Tasks[0].MaxCatchUpRuns)
+		assert.Equal(t, 50, cfg.Tasks[0].CatchUpValue())
 	})
 
 	t.Run("negative is rejected", func(t *testing.T) {
@@ -1252,13 +1279,13 @@ run               = "echo hi"
 timezone = "UTC"
 
 [tasks.t]
-cron              = "* * * * *"
-max_catch_up_runs = -1
-run               = "echo hi"
+cron     = "* * * * *"
+catch_up = -1
+run      = "echo hi"
 `)
 		_, err := Load(path)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "max_catch_up_runs")
+		assert.Contains(t, err.Error(), "catch_up")
 	})
 
 	t.Run("value at the cap is accepted", func(t *testing.T) {
@@ -1267,13 +1294,14 @@ run               = "echo hi"
 timezone = "UTC"
 
 [tasks.t]
-cron              = "* * * * *"
-max_catch_up_runs = %d
-run               = "echo hi"
-`, MaxCatchUpRunsCap))
+cron       = "* * * * *"
+catch_up   = %d
+on_overlap = "queue"
+run        = "echo hi"
+`, CatchUpCap))
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		assert.Equal(t, MaxCatchUpRunsCap, cfg.Tasks[0].MaxCatchUpRuns)
+		assert.Equal(t, CatchUpCap, cfg.Tasks[0].CatchUpValue())
 	})
 
 	t.Run("value above the cap is rejected", func(t *testing.T) {
@@ -1282,13 +1310,14 @@ run               = "echo hi"
 timezone = "UTC"
 
 [tasks.t]
-cron              = "* * * * *"
-max_catch_up_runs = 100000
-run               = "echo hi"
+cron       = "* * * * *"
+catch_up   = 100000
+on_overlap = "queue"
+run        = "echo hi"
 `)
 		_, err := Load(path)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "max_catch_up_runs")
+		assert.Contains(t, err.Error(), "catch_up")
 		assert.Contains(t, err.Error(), "cap")
 	})
 }
@@ -1496,7 +1525,7 @@ func TestGracefulStopWarnings(t *testing.T) {
 			Daemon: Daemon{ShutdownTimeout: 0},
 			Tasks:  []model.Task{testTask("t1")},
 		}
-		cfg.Tasks[0].GracefulStop = 30 * time.Second
+		cfg.Tasks[0].GracefulStop = durPtr(30 * time.Second)
 		warnings := gracefulStopWarnings(cfg)
 		assert.Nil(t, warnings)
 	})
@@ -1506,7 +1535,7 @@ func TestGracefulStopWarnings(t *testing.T) {
 			Daemon: Daemon{ShutdownTimeout: -time.Second},
 			Tasks:  []model.Task{testTask("t1")},
 		}
-		cfg.Tasks[0].GracefulStop = 30 * time.Second
+		cfg.Tasks[0].GracefulStop = durPtr(30 * time.Second)
 		warnings := gracefulStopWarnings(cfg)
 		assert.Nil(t, warnings)
 	})
@@ -1516,7 +1545,7 @@ func TestGracefulStopWarnings(t *testing.T) {
 			Daemon: Daemon{ShutdownTimeout: 10 * time.Second},
 			Tasks:  []model.Task{testTask("t1")},
 		}
-		cfg.Tasks[0].GracefulStop = 30 * time.Second
+		cfg.Tasks[0].GracefulStop = durPtr(30 * time.Second)
 		warnings := gracefulStopWarnings(cfg)
 		require.Len(t, warnings, 1)
 		assert.Contains(t, warnings[0], "t1")
@@ -1529,7 +1558,7 @@ func TestGracefulStopWarnings(t *testing.T) {
 			Daemon: Daemon{ShutdownTimeout: 30 * time.Second},
 			Tasks:  []model.Task{testTask("t1")},
 		}
-		cfg.Tasks[0].GracefulStop = 10 * time.Second
+		cfg.Tasks[0].GracefulStop = durPtr(10 * time.Second)
 		warnings := gracefulStopWarnings(cfg)
 		assert.Empty(t, warnings)
 	})
@@ -1724,7 +1753,7 @@ run            = "echo hi"
 		cfg, err := Load(path)
 		require.NoError(t, err)
 		task := cfg.Tasks[0]
-		assert.Equal(t, 8*time.Second, task.GracefulStop)
+		assert.Equal(t, 8*time.Second, task.GracefulStopValue())
 		assert.Equal(t, 4, task.MaxConcurrent)
 		assert.Equal(t, 50, task.MaxQueued)
 	})

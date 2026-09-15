@@ -497,7 +497,7 @@ func TestComposeBackend_ProcessGroupSIGTERMReapsChildren(t *testing.T) {
 		"wait\n"
 	installDockerShimScript(t, dir, body)
 
-	task := &model.Task{GracefulStop: 200 * time.Millisecond}
+	task := &model.Task{GracefulStop: durPtr(200 * time.Millisecond)}
 	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeRun}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -533,7 +533,7 @@ func TestComposeBackend_ImmediateKillWhenGracefulStopZero(t *testing.T) {
 	dir := t.TempDir()
 	installDockerShimScript(t, dir, "#!/bin/sh\ntrap '' TERM\nsleep 30\n")
 
-	task := &model.Task{GracefulStop: 0}
+	task := &model.Task{GracefulStop: durPtr(0)}
 	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeRun}
 
 	ctx, cancel := context.WithCancel(context.Background())

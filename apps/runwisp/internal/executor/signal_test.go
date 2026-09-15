@@ -49,7 +49,7 @@ trap 'exit 42' INT
 echo ready
 while true; do sleep 0.05; done
 `
-	task := &model.Task{Name: "sig", GracefulStop: 5 * time.Second, StopSignal: "SIGINT"}
+	task := &model.Task{Name: "sig", GracefulStop: durPtr(5 * time.Second), StopSignal: "SIGINT"}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

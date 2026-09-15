@@ -158,7 +158,7 @@ func TestBuildOneSyncTask(t *testing.T) {
 			Run:           "echo hi",
 			Restart:       model.RestartOnFailure,
 			RetryAttempts: retryAttempts,
-			RetryDelay:    2 * time.Second,
+			RetryDelay:    durPtr(2 * time.Second),
 			RetryBackoff:  model.BackoffExponential,
 			MaxConcurrent: 2,
 			OnOverlap:     model.PolicySkip,
@@ -185,7 +185,7 @@ func TestBuildOneSyncTask(t *testing.T) {
 		task := &model.Task{
 			Name:       "no-delay",
 			Run:        "echo hi",
-			RetryDelay: 0,
+			RetryDelay: durPtr(0),
 		}
 		st, ok := buildOneSyncTask(task)
 		require.True(t, ok)

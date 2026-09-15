@@ -155,9 +155,12 @@ type NotifyConfig struct {
 	RetryBudget       time.Duration
 	KeepNotifications int
 	KeepFor           time.Duration
-	CoalesceWindow    time.Duration
-	KeepOccurrences   int
-	CoalesceOutbound  bool
+	// CoalesceWindow is a pointer so an explicit `coalesce_window = "0s"` (disable
+	// outbound coalescing) is distinguishable from an omitted key (nil, default 1h
+	// window). The in-app coalescer always applies a window regardless, treating
+	// nil/zero as its built-in default.
+	CoalesceWindow  *time.Duration
+	KeepOccurrences int
 }
 
 // NotifierSpec is one [notifiers.<id>] block, post-decode. Secret-bearing fields
@@ -298,13 +301,13 @@ type Defaults struct {
 	// falls back to BackoffExponential).
 	RestartBackoff model.BackoffCurve
 
-	// CatchUp / MaxCatchUpRuns / GracefulStop are the [defaults] values for the
-	// per-task keys of the same name (empty/zero falls back to the built-in
-	// default). GracefulStop applies to both tasks and services; CatchUp and
-	// MaxCatchUpRuns are meaningful only for cron tasks.
-	CatchUp        model.MissedRunPolicy
-	MaxCatchUpRuns int
-	GracefulStop   time.Duration
+	// CatchUp / GracefulStop are the [defaults] values for the per-task keys of the
+	// same name. GracefulStop applies to both tasks and services; CatchUp is
+	// meaningful only for cron tasks. Both are pointers so an explicit zero
+	// (`catch_up = 0` skip, `graceful_stop = "0s"` kill immediately) is
+	// distinguishable from an omitted key (nil, falls back to the built-in default).
+	CatchUp      *int
+	GracefulStop *time.Duration
 
 	// FailureReasons and FailureExitRanges are the [defaults] failure
 	// classification, always resolved (to the operator's `failures` list or the

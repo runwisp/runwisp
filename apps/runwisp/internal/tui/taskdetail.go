@@ -164,7 +164,19 @@ func (d *TaskDetailDialog) kindRows(add func(label, value string)) {
 	if task.MaxConcurrent > 0 {
 		add("Concurrency", fmt.Sprintf("max %d · %s", task.MaxConcurrent, overlapLabel(task.OnOverlap)))
 	}
-	add("Catch-up", string(task.CatchUp))
+	add("Catch-up", catchUpLabel(task.CatchUpValue()))
+}
+
+// catchUpLabel renders the integer catch_up value as an operator-facing phrase.
+func catchUpLabel(n int) string {
+	switch {
+	case n <= 0:
+		return "skip"
+	case n == 1:
+		return "most recent"
+	default:
+		return fmt.Sprintf("up to %d", n)
+	}
 }
 
 // healthRows renders the recent-run breakdown delivered by FetchTaskSummary.

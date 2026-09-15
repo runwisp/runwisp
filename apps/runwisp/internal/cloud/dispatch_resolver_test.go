@@ -438,7 +438,7 @@ func TestBuildDynamicCloudTask_AppliesTaskConfig(t *testing.T) {
 	}, def)
 
 	assert.Equal(t, "val", task.Env["KEY"])
-	assert.Equal(t, 3*time.Second, task.GracefulStop)
+	assert.Equal(t, 3*time.Second, task.GracefulStopValue())
 	assert.Equal(t, int64(2048), task.LogMaxSize)
 	assert.Equal(t, "drop_old", task.LogOnFull)
 }
@@ -447,7 +447,7 @@ func TestBuildDynamicCloudTask_NilTaskConfigLeavesDefaults(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
 	task := buildDynamicCloudTask(&protocol.Execution{TaskID: "t", TaskConfig: nil}, def)
 	assert.Empty(t, task.Env)
-	assert.Zero(t, task.GracefulStop)
+	assert.Zero(t, task.GracefulStopValue())
 	assert.Zero(t, task.LogMaxSize)
 	assert.Empty(t, task.LogOnFull)
 }

@@ -184,14 +184,13 @@ separate pings.
 
 ```toml
 [notify]
-# coalesce_outbound = false   # send one message per event
+# coalesce_window = "0s"   # send one outbound message per event
 ```
 
 ### Worked timeline
 
 A `*/1 * * * *` task that starts failing at `T+0`, with defaults
-(`coalesce_window = 1h`, `keep_occurrences = 10`,
-`coalesce_outbound = true`):
+(`coalesce_window = 1h`, `keep_occurrences = 10`):
 
 | When          | Failure #          | Bell row                       | Outbound delivery                                                                 |
 | ------------- | ------------------ | ------------------------------ | --------------------------------------------------------------------------------- |
@@ -216,9 +215,9 @@ Raise `keep_occurrences`. Want the recovery summary sooner? Lower
 `coalesce_window`.
 
 If every single failure genuinely matters on its own — a CI build agent,
-say — set `coalesce_outbound = false`. The bell keeps coalescing
-regardless (otherwise its row count would just grow forever); only the
-outbound deliveries change.
+say — set `coalesce_window = "0s"`. The bell keeps coalescing regardless
+(otherwise its row count would just grow forever); only the outbound
+deliveries change.
 
 ## Delivery failures
 

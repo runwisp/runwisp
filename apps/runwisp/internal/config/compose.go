@@ -569,7 +569,8 @@ func buildComposeServiceTask(block *composeBlock, svc *composespec.Service, svcN
 		Instances:     1,
 	}
 	if svc != nil && svc.StopGracePeriod > 0 {
-		task.GracefulStop = svc.StopGracePeriod
+		g := svc.StopGracePeriod
+		task.GracefulStop = &g
 	}
 	if err := applyComposeOverride(&task, block.Defaults, svcName); err != nil {
 		return model.Task{}, err
@@ -680,7 +681,7 @@ func applyComposeOverrideParsed(task *model.Task, w *composeServiceOverrideWire,
 	if err := parseOverrideDuration(w.Timeout, svcName, "timeout", &task.Timeout); err != nil {
 		return err
 	}
-	if err := parseOverrideDuration(w.GracefulStop, svcName, "graceful_stop", &task.GracefulStop); err != nil {
+	if err := parseOverrideDurationPtr(w.GracefulStop, svcName, "graceful_stop", &task.GracefulStop); err != nil {
 		return err
 	}
 	if err := parseOverrideDurationPtr(w.RestartDelay, svcName, "restart_delay", &task.RestartDelay); err != nil {

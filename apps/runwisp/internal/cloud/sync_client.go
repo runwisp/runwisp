@@ -207,7 +207,7 @@ func buildOneSyncTask(t *model.Task) (syncTask, bool) {
 		retries := t.RetryAttempts
 		task.MaxRetries = &retries
 	}
-	if delayMs := durationToMillis(t.RetryDelay); delayMs > 0 {
+	if delayMs := durationToMillis(t.RetryDelayValue()); delayMs > 0 {
 		task.RetryDelay = &delayMs
 	}
 	if t.RetryBackoff != "" {
@@ -226,7 +226,7 @@ func buildOneSyncTask(t *model.Task) (syncTask, bool) {
 	if len(t.Env) > 0 {
 		task.Env = t.Env
 	}
-	if gsMs := durationToMillis(t.GracefulStop); gsMs > 0 {
+	if gsMs := durationToMillis(t.GracefulStopValue()); gsMs > 0 {
 		task.GracefulStop = &gsMs
 	}
 	if t.LogMaxSize > 0 {

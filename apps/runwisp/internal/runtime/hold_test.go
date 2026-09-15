@@ -253,7 +253,7 @@ func TestReconcileAddedHeldTaskIsNotAnchored(t *testing.T) {
 }
 
 // TestCatchUpSkipsHeldTaskAndLeavesNoAnchor is the alert-storm guard. Catch-up
-// detection ignores the re-run policy, so even catch_up = "skip" records a missed
+// detection ignores the re-run policy, so even catch_up = 0 records a missed
 // run and alerts on it. If a held task were anchored while cron was running it
 // perfectly, retiring cron would page the operator once for every tick cron had
 // already handled.

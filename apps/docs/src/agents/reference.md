@@ -67,7 +67,7 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
                                     reported too. File-level notes are reported the same way: MAILTO= (suppressed
                                     once a sendmail/smtp notifier exists) and a non-absolute SHELL=.
                                     Emitted per job for crond parity: env_base="clean", working_dir="~",
-                                    catch_up="skip" (crond never re-fires a missed tick; the missed row is still
+                                    catch_up=0 (crond never re-fires a missed tick; the missed row is still
                                     recorded), on_overlap="queue" (deliberately NOT crond's unbounded overlap).
                                     No ${...} expansion on cron text. /etc/anacrontab is not read.
                                     Tasks report "source": "cron" + "source_file" in list/status --json;
@@ -107,9 +107,8 @@ healthy_after:       dur  =60s    — service uptime that counts as healthy: res
 restart_attempts:       int  =3      — consecutive fast failures before a service instance goes FATAL (SERVICES only); 0 = give up after the first failure, kept literally if set
 restart_delay:       dur  =1s     — base delay before a service restart (SERVICES only)
 restart_backoff:     enum =exponential — restart backoff curve (SERVICES only): constant|linear|exponential
-catch_up:            enum =latest  — default missed-firing policy for cron tasks (TASKS only)
-max_catch_up_runs:   int  =100     — default cap when catch_up=all (TASKS only)
-graceful_stop:       dur  =5s      — grace before SIGKILL on stop
+catch_up:            int  =1       — default missed-tick replay count for cron tasks (TASKS only); 0..10000
+graceful_stop:       dur  =5s      — grace before SIGKILL on stop; 0s = immediate SIGKILL, kept literally if set
 env:                 map<str,str> — inline env merged into every task; key ^[A-Za-z_][A-Za-z0-9_]*$, <=256 entries, value <=32KiB, no NUL
 env_file:            path         — dotenv file merged into every task; relative to runwisp.toml dir
 secrets:             map<str,str> — inline secrets merged into every task; never shown in API/UI
@@ -128,16 +127,15 @@ timezone:          IANA string      — per-task TZ override (else [scheduler] t
 jitter:            dur              — cap how far this cron task's start may slip; needs cron (inherits [defaults])
 run_on_start:      bool =false      — fire once at daemon start, on top of any cron (the @reboot equivalent)
 manual_trigger:    bool =true       — allow CLI/API/UI trigger; false = cron-only
-catch_up:          enum =latest     — missed-firing policy: latest | all | skip; all requires on_overlap=queue (rejected otherwise)
-max_catch_up_runs: int  =100        — cap when catch_up=all; >=1
+catch_up:          int  =1          — missed-tick replay count: 0 none | 1 latest | N up to N; >1 requires on_overlap=queue (rejected otherwise); 0..10000
 timeout:           dur              — per-attempt cap (inherits [defaults])
-graceful_stop:     dur  =5s         — grace before SIGKILL on stop
+graceful_stop:     dur  =5s         — grace before SIGKILL on stop; 0s = immediate SIGKILL, kept literally if set
 stop_signal:       enum =SIGTERM    — stop-ladder signal (inherits [defaults]); SIGTERM|SIGINT|SIGQUIT|SIGHUP|SIGKILL|SIGUSR1|SIGUSR2
 max_concurrent:    int  =1          — concurrent run cap; 1..1024
 max_queued:        int  =100        — queued-run depth; 0..10000
 on_overlap:        enum =queue      — queue | skip | kill
 retry_attempts:    int  =0          — retries after a failed attempt; 0..100
-retry_delay:       dur  =5s         — delay between retries (<=0 floors to 5s)
+retry_delay:       dur  =5s         — delay between retries; 0s = no delay, kept literally if set
 retry_backoff:     enum             — constant | linear | exponential
 failures:          []str           — outcomes classified as a failure (inherits [defaults]); see [defaults].failures
 working_dir:       path             — process cwd; relative to runwisp.toml dir; ~ = home of whoever the
@@ -171,7 +169,7 @@ notify: []string         — sugar → route on any classified failure (see fail
 
 ### [services.&lt;name&gt;] (long-running)
 
-Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `max_catch_up_runs`, `on_overlap`, `max_concurrent`, `max_queued`, `retry_*`. Shares the core task keys (including `restart_attempts`, see above): `group` (default `Services`), `description`, `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `env_base`, `user`, `failures`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify`, `manual_trigger` (bool =true; here it gates manual stop/restart/start from CLI/API/UI/TUI/cloud instead of run-triggering). Service-only:
+Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `on_overlap`, `max_concurrent`, `max_queued`, `retry_*`. Shares the core task keys (including `restart_attempts`, see above): `group` (default `Services`), `description`, `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `env_base`, `user`, `failures`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify`, `manual_trigger` (bool =true; here it gates manual stop/restart/start from CLI/API/UI/TUI/cloud instead of run-triggering). Service-only:
 
 ```
 restart:             enum =always     — never | on_failure | always
@@ -211,9 +209,8 @@ global_notifiers:  []string =["inapp"] — channels added to every notify list +
 retry_budget:   dur                  — total retry budget per delivery
 keep_notifications:      int  =1024           — in-app bell row cap
 keep_for:  dur  =90d            — max bell row age
-coalesce_window:   dur  =1h             — collapse repeat (kind+task) into one bell row
+coalesce_window:   dur  =1h             — collapse repeat (kind+task) into one bell row; also coalesces outbound bursts. "0s" = one outbound message per event (bell still coalesces on its default window)
 keep_occurrences:   int  =10             — recent timestamps kept per coalesced row
-coalesce_outbound: bool =true           — coalesce outbound bursts too
 ```
 
 ### [notifiers.&lt;id&gt;] (outbound channel; map keyed by id)

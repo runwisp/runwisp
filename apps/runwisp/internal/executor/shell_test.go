@@ -50,7 +50,7 @@ func TestShellBackend_ProcessGroupSIGTERMKillsChildren(t *testing.T) {
 
 	task := &model.Task{
 		Name:         "pg-test",
-		GracefulStop: 200 * time.Millisecond,
+		GracefulStop: durPtr(200 * time.Millisecond),
 	}
 
 	// The script writes the spawned sleep's PID to disk and waits for it.
@@ -117,7 +117,7 @@ wait
 func TestShellBackend_ImmediateKillWhenGracefulStopZero(t *testing.T) {
 	task := &model.Task{
 		Name:         "insta-kill",
-		GracefulStop: 0,
+		GracefulStop: durPtr(0),
 	}
 	// trap SIGTERM '' makes the shell ignore SIGTERM forever; the only way
 	// out is SIGKILL.

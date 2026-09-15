@@ -10,14 +10,6 @@ import (
 	"github.com/runwisp/runwisp/internal/server"
 )
 
-// LocalCredentials carries the daemon's ephemeral password as returned by
-// GET /api/local/credentials. The endpoint is only available on the Unix
-// socket — callers using a TCP client will always receive 403.
-type LocalCredentials struct {
-	Password  string
-	Ephemeral bool
-}
-
 // ErrLocalCredentialsUnavailable signals the daemon is configured with
 // RUNWISP_PASSWORD and refuses to disclose it. Distinct from ErrUnauthorized
 // so callers can render a useful "ask the operator" message instead of
@@ -35,7 +27,7 @@ var ErrAuthDisabled = errors.New("daemon runs with authentication disabled")
 // RUNWISP_AUTH=off. Any other non-2xx surfaces as the underlying HTTP error so
 // the caller can distinguish "not on a socket" (403) from real transport
 // failures.
-func (c *Client) GetLocalCredentials() (*LocalCredentials, error) {
+func (c *Client) GetLocalCredentials() (*server.LocalCredentialsBody, error) {
 	var body server.LocalCredentialsBody
 	if err := c.doJSON("GET", "/api/local/credentials", nil, &body); err != nil {
 		if IsHTTPStatus(err, http.StatusNotFound) {
@@ -46,5 +38,5 @@ func (c *Client) GetLocalCredentials() (*LocalCredentials, error) {
 		}
 		return nil, err
 	}
-	return &LocalCredentials{Password: body.Password, Ephemeral: body.Ephemeral}, nil
+	return &body, nil
 }

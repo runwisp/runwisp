@@ -19,6 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func durPtr(d time.Duration) *time.Duration { return &d }
+
 // captureLogPath returns a function that, after Execute completes, yields the
 // log path published on the run.updated event envelope. The executor no
 // longer stamps LogPath on the Run row; tests read it off the event payload.

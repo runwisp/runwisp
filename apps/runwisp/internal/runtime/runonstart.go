@@ -19,7 +19,7 @@ type RunOnStartResult struct {
 
 // RunStartupTasks fires every task with run_on_start=true exactly once, at
 // daemon boot. It is the @reboot equivalent: independent of cron and catch-up,
-// and not subject to max_catch_up_runs. A run_on_start task with no cron still
+// and not subject to the catch_up cap. A run_on_start task with no cron still
 // fires here; one with a cron fires here in addition to its schedule.
 //
 // Services are skipped — they already start every instance at boot. Held tasks

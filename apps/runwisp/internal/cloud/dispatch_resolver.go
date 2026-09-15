@@ -138,7 +138,8 @@ func applyTaskConfigKnobs(task *model.Task, env map[string]string, gracefulStop,
 		task.Env = env
 	}
 	if gracefulStop > 0 {
-		task.GracefulStop = time.Duration(gracefulStop) * time.Millisecond
+		g := time.Duration(gracefulStop) * time.Millisecond
+		task.GracefulStop = &g
 	}
 	if logMaxSize > 0 {
 		task.LogMaxSize = int64(logMaxSize)

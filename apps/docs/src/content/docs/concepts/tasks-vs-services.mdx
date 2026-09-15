@@ -36,7 +36,7 @@ And if you catch yourself writing `while true; do ...; done` inside a
 | Field                                                               | `[tasks.*]`                                            | `[services.*]`                                                  |
 | ------------------------------------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------- |
 | [`cron`](/configuration/tasks/#scheduling)                          | ✅ schedule firings                                    | ❌ rejected (services aren't cron-driven)                       |
-| [`catch_up`](/concepts/scheduling/#missed-ticks-catchup)            | ✅ `latest` / `all` / `skip` for missed ticks          | ❌ N/A                                                          |
+| [`catch_up`](/concepts/scheduling/#missed-ticks-catchup)            | ✅ integer: how many missed ticks to re-fire           | ❌ N/A                                                          |
 | [`instances`](/configuration/services/#instances)                   | ❌ rejected                                            | ✅ N replicas, default `1`, max `64`                            |
 | [`restart`](/configuration/services/#restart-behaviour)             | ❌ rejected — use `retry_attempts` instead             | ✅ `never` / `on_failure` / `always`, default `always`          |
 | [`restart_delay`](/configuration/services/#restart-behaviour)       | ❌ N/A                                                 | ✅ base delay before restart, default `1s`                      |

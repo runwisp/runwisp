@@ -302,10 +302,10 @@ func gracefulStopWarnings(cfg *Config) []string {
 	var warnings []string
 	for i := range cfg.Tasks {
 		task := &cfg.Tasks[i]
-		if task.GracefulStop > limit {
+		if task.GracefulStopValue() > limit {
 			warnings = append(warnings, fmt.Sprintf(
 				"task %q has graceful_stop=%s but [daemon] shutdown_timeout=%s; the daemon will SIGKILL this task before its grace window completes during shutdown",
-				task.Name, task.GracefulStop, limit,
+				task.Name, task.GracefulStopValue(), limit,
 			))
 		}
 	}
@@ -1066,11 +1066,13 @@ func validateRetryLimits(task *model.Task) error {
 	if task.RetryAttempts > RetryAttemptsCap {
 		return fmt.Errorf("invalid retry_attempts for task %s: %d exceeds the cap of %d", task.Name, task.RetryAttempts, RetryAttemptsCap)
 	}
-	if task.MaxCatchUpRuns < 0 {
-		return fmt.Errorf("invalid max_catch_up_runs for task %s: must be a positive integer", task.Name)
-	}
-	if task.MaxCatchUpRuns > MaxCatchUpRunsCap {
-		return fmt.Errorf("invalid max_catch_up_runs for task %s: %d exceeds the cap of %d", task.Name, task.MaxCatchUpRuns, MaxCatchUpRunsCap)
+	if task.CatchUp != nil {
+		if *task.CatchUp < 0 {
+			return fmt.Errorf("invalid catch_up for task %s: must be a non-negative integer (0 skips, 1 re-runs the most recent, N re-runs up to the N most recent)", task.Name)
+		}
+		if *task.CatchUp > CatchUpCap {
+			return fmt.Errorf("invalid catch_up for task %s: %d exceeds the cap of %d", task.Name, *task.CatchUp, CatchUpCap)
+		}
 	}
 	return nil
 }
@@ -1079,13 +1081,13 @@ func validateRetryLimits(task *model.Task) error {
 // parse but then be silently ignored (e.g. the run manager only arms the
 // timeout timer when > 0), dropping the operator's intent without a word.
 func validateTaskDurations(task *model.Task) error {
-	if task.GracefulStop < 0 {
+	if task.GracefulStop != nil && *task.GracefulStop < 0 {
 		return fmt.Errorf("invalid graceful_stop for task %s: must be zero or a positive duration", task.Name)
 	}
 	if task.Timeout < 0 {
 		return fmt.Errorf("invalid timeout for task %s: must be zero or a positive duration", task.Name)
 	}
-	if task.RetryDelay < 0 {
+	if task.RetryDelay != nil && *task.RetryDelay < 0 {
 		return fmt.Errorf("invalid retry_delay for task %s: must be zero or a positive duration", task.Name)
 	}
 	if task.RestartDelay != nil && *task.RestartDelay < 0 {
@@ -1105,7 +1107,6 @@ func validateTaskEnums(task *model.Task) error {
 		{"restart for " + unitKind(task) + " " + task.Name, string(task.Restart), validRestart, true},
 		{"retry_backoff for " + unitKind(task) + " " + task.Name, string(task.RetryBackoff), validBackoff, true},
 		{"log_on_full for " + unitKind(task) + " " + task.Name, task.LogOnFull, validLogOnFull, true},
-		{"catch_up for " + unitKind(task) + " " + task.Name, string(task.CatchUp), validCatchUp, true},
 	}
 	for _, e := range enums {
 		if err := requireOneOf(e.scope, e.value, e.allowed, e.emptyOK); err != nil {
@@ -1115,22 +1116,23 @@ func validateTaskEnums(task *model.Task) error {
 	return nil
 }
 
-// validateCatchUpOverlap rejects a combination that silently defeats
-// catch_up = "all": the runtime replays every missed tick by firing
-// TriggerRun back-to-back, which only lands every replay when on_overlap =
-// "queue" serializes them. Under "skip" all but the first replay is
-// immediately rejected as an overlap (recorded, but not what the operator
-// asked for), and under "kill" each replay cancels the previous one
-// mid-run, wasting the work already done. Runs after defaults are applied,
-// so both fields already hold their effective values.
+// validateCatchUpOverlap rejects a combination that silently defeats a
+// multi-run catch_up: the runtime replays missed ticks by firing TriggerRun
+// back-to-back, which only lands every replay when on_overlap = "queue"
+// serializes them. Under "skip" all but the first replay is immediately
+// rejected as an overlap (recorded, but not what the operator asked for), and
+// under "kill" each replay cancels the previous one mid-run, wasting the work
+// already done. Only bites when catch_up > 1 (a single re-run has nothing to
+// serialize). Runs after defaults are applied, so both fields hold their
+// effective values.
 func validateCatchUpOverlap(task *model.Task) error {
-	if task.CatchUp != model.MissedRunAll {
+	if task.CatchUpValue() <= 1 {
 		return nil
 	}
 	if task.OnOverlap == model.PolicySkip || task.OnOverlap == model.PolicyKill {
 		return fmt.Errorf(
-			"invalid catch_up for task %s: catch_up = \"all\" replays missed ticks back-to-back, but on_overlap = %q lets only one through at a time — use on_overlap = \"queue\", or catch_up = \"latest\"/\"skip\" instead",
-			task.Name, task.OnOverlap)
+			"invalid catch_up for task %s: catch_up = %d replays missed ticks back-to-back, but on_overlap = %q lets only one through at a time — use on_overlap = \"queue\", or lower catch_up to 1 (most recent only) or 0 (skip)",
+			task.Name, task.CatchUpValue(), task.OnOverlap)
 	}
 	return nil
 }
@@ -1260,7 +1262,6 @@ var (
 	}
 	validBackoff          = []string{string(model.BackoffConstant), string(model.BackoffLinear), string(model.BackoffExponential)}
 	validLogOnFull        = []string{model.LogOverflowDropNew, model.LogOverflowDropOld, model.LogOverflowKill}
-	validCatchUp          = []string{string(model.MissedRunLatest), string(model.MissedRunAll), string(model.MissedRunSkip)}
 	defaultTaskLogMaxSize = int64(100 * 1024 * 1024)
 	// DefaultRestartDelay is the delay before a service instance's first
 	// restart when neither the service nor a caller supplies one. Exported so
@@ -1282,11 +1283,11 @@ const (
 	// StartRetriesCap bounds restart_attempts. A service that fast-fails this many
 	// times in a row is broken; allowing more just delays the FATAL signal.
 	StartRetriesCap = 100
-	// MaxCatchUpRunsCap bounds max_catch_up_runs. Unlike the typo-protection caps
-	// above, each catch-up run is a real process spawned in a tight loop at boot —
-	// this exists to stop a misconfigured value from trying to fire tens of
-	// thousands of processes back-to-back after a long outage.
-	MaxCatchUpRunsCap = 10_000
+	// CatchUpCap bounds catch_up. Unlike the typo-protection caps above, each
+	// catch-up run is a real process spawned in a tight loop at boot — this exists
+	// to stop a misconfigured value from trying to fire tens of thousands of
+	// processes back-to-back after a long outage.
+	CatchUpCap = 10_000
 	// JitterCap bounds the jitter window at a full day. The runtime clamps each
 	// fire to the gap before the next tick, so this is pure typo protection
 	// (e.g. "30h" meant "30m") rather than a correctness limit.
@@ -1317,9 +1318,9 @@ const (
 
 // Built-in defaults applied by ApplyDefaults when a field is omitted entirely.
 const (
-	DefaultMaxCatchUpRuns = 100
 	DefaultMaxQueued      = 100
 	DefaultGracefulStop   = 5 * time.Second
+	DefaultRetryDelay     = 5 * time.Second
 	DefaultDaemonShutdown = 10 * time.Second
 	DefaultHealthyAfter   = 60 * time.Second
 	// DefaultStartRetries is the number of consecutive fast failures a service
@@ -1409,16 +1410,15 @@ func applyInheritedDefaults(task *model.Task, d Defaults) {
 		task.KeepRuns = d.KeepRuns
 	}
 	task.KeepFor = firstSet(task.KeepFor, d.KeepFor)
-	// catch_up / max_catch_up_runs are cron-task concepts; a service must not
-	// inherit a [defaults] catch_up (its on_overlap = skip would then reject
-	// catch_up = "all"). Services still resolve to the builtin so the field is set.
-	catchUpDefault, maxCatchUpDefault := d.CatchUp, d.MaxCatchUpRuns
+	// catch_up is a cron-task concept; a service must not inherit a [defaults]
+	// catch_up (a multi-run value against its on_overlap = skip would then be
+	// rejected). Services still resolve to the builtin so the field is always set.
+	catchUpDefault := d.CatchUp
 	if task.Kind.IsService() {
-		catchUpDefault, maxCatchUpDefault = "", 0
+		catchUpDefault = nil
 	}
-	task.CatchUp = firstSet(task.CatchUp, catchUpDefault, model.MissedRunLatest)
-	task.MaxCatchUpRuns = firstSet(task.MaxCatchUpRuns, maxCatchUpDefault, DefaultMaxCatchUpRuns)
-	task.GracefulStop = firstSet(task.GracefulStop, d.GracefulStop, DefaultGracefulStop)
+	task.CatchUp = resolveDefault(task.CatchUp, catchUpDefault, model.DefaultCatchUp)
+	task.GracefulStop = resolveDefault(task.GracefulStop, d.GracefulStop, DefaultGracefulStop)
 	applyInheritedFailures(task, d)
 	task.Env = mergeEnv(d.Env, task.Env)
 	task.Secrets = mergeEnv(d.Secrets, task.Secrets)

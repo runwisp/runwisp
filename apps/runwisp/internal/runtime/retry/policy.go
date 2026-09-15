@@ -68,12 +68,12 @@ func ShouldRetry(task *model.Task, run *model.Run) bool {
 	return run.RetryAttempt < task.RetryAttempts
 }
 
-// ComputeRetryDelay calculates the delay before the next retry attempt.
+// ComputeRetryDelay calculates the delay before the next retry attempt. A nil
+// task.RetryDelay (omitted key, or a *model.Task built outside config.Load) falls
+// back to config.DefaultRetryDelay; an explicit zero (retry_delay = "0s") is
+// honored literally so a retry fires with no delay.
 func ComputeRetryDelay(task *model.Task, attempt int) time.Duration {
-	base := task.RetryDelay
-	if base <= 0 {
-		base = 5 * time.Second
-	}
+	base := config.OrDefault(task.RetryDelay, config.DefaultRetryDelay)
 	return computeBackoff(task.RetryBackoff, base, attempt, retryDelayCap)
 }
 

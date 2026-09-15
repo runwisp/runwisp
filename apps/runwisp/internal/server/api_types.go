@@ -10,6 +10,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server/logstream"
 	"github.com/runwisp/runwisp/internal/storage"
 )
 
@@ -334,28 +335,14 @@ type ConfigStaleSSEEvent struct {
 // to the `line` event name.
 type LogLineSSEEvent LogLineEntry
 
-// LogRegionSSEEvent is the live-region snapshot payload for the run-log stream.
-// Identical shape to logstream.RegionEvent; aliased so huma/sse's reverse-type
-// lookup can map it to the `region` event name.
-type LogRegionSSEEvent struct {
-	Stream string   `json:"stream" doc:"Stream identifier (stdout/stderr)"`
-	Epoch  int      `json:"epoch" doc:"Region generation; bumps on screen reset so stale frames can be discarded"`
-	Rows   []string `json:"rows" doc:"Current frame of the region, one entry per row; empty clears the overlay"`
-}
-
-type LogRotatedEvent struct {
-	FirstAvailable int64 `json:"firstAvailable" doc:"Lowest line number still on disk after rotation"`
-}
-
-type LogDroppedEvent struct {
-	After int64 `json:"after" doc:"Highest line number observed before drops occurred"`
-	Count int64 `json:"count" doc:"Number of line events dropped due to overflow"`
-}
-
-type LogDoneEvent struct {
-	FinalLine int64  `json:"finalLine" doc:"Last line number emitted before the run terminated"`
-	Status    string `json:"status" doc:"Reason the stream is closing (e.g. 'ended')"`
-}
+// The run-log stream events are named types over their logstream source types so
+// huma/sse's reverse-type lookup can map each to its event name (`region`,
+// `rotated`, `dropped`, `done`) while the wire shape (json + doc tags) stays
+// defined in exactly one place and can never drift.
+type LogRegionSSEEvent logstream.RegionEvent
+type LogRotatedEvent logstream.RotatedEvent
+type LogDroppedEvent logstream.DroppedEvent
+type LogDoneEvent logstream.DoneEvent
 
 type DaemonLogLineEvent struct {
 	Line string `json:"line" doc:"One captured daemon log line"`

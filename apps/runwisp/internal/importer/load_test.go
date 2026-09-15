@@ -236,7 +236,7 @@ func TestLiveTOMLAlwaysLoads(t *testing.T) {
 // Asserted post-load rather than against the emitted text on purpose: what matters
 // is the policy the scheduler ends up with, and that is a function of both what the
 // importer writes and what applyDefaults fills in. A test that only grepped the
-// TOML would keep passing if `catch_up = "skip"` stopped surviving the round trip,
+// TOML would keep passing if `catch_up = 0` stopped surviving the round trip,
 // and would say nothing if RunWisp's own default changed underneath it.
 func TestImportedJobsKeepCrondFiringSemantics(t *testing.T) {
 	for path, opts := range cronFixtures(t) {
@@ -262,9 +262,9 @@ func TestImportedJobsKeepCrondFiringSemantics(t *testing.T) {
 				//
 				// Scheduled tasks only: a @reboot job has no ticks to miss, so the key
 				// is deliberately not emitted for one and it keeps RunWisp's default.
-				if task.Cron != "" && task.CatchUp != model.MissedRunSkip {
-					t.Errorf("task %q: catch_up = %q, want %q — a daemon restart would re-fire missed ticks crond dropped",
-						task.Name, task.CatchUp, model.MissedRunSkip)
+				if task.Cron != "" && task.CatchUpValue() != 0 {
+					t.Errorf("task %q: catch_up = %d, want 0 (skip) — a daemon restart would re-fire missed ticks crond dropped",
+						task.Name, task.CatchUpValue())
 				}
 				// Deliberately queue rather than crond's unbounded overlap, but it
 				// has to be the policy we chose and not one inherited by accident.

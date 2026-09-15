@@ -93,7 +93,7 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.R
 	}
 	cmd.Dir = dir
 
-	return startCmd(cmd, task.GracefulStop, signalFromName(task.StopSignal), cred, "start command")
+	return startCmd(cmd, task.GracefulStopValue(), signalFromName(task.StopSignal), cred, "start command")
 }
 
 // resolveWorkingDir expands a leading `~` against the run-as user's home.

@@ -602,13 +602,13 @@ func (cp *crontabParser) applyOwner(j cronJobLine) string {
 // migration must not change quietly.
 //
 // catch_up: crond has no concept of a missed tick. A tick that arrives while
-// nothing is listening is simply gone. RunWisp defaults to `latest`, so a daemon
-// started at 15:00 re-fires the 02:00 backup — an extra run that looks entirely
-// legitimate in the history and is impossible to distinguish from a scheduled
-// one. `skip` restores crond's rule and costs nothing in visibility: the missed
-// row is recorded either way (catch-up detection is policy-independent — see
-// runtime.computeCatchupTriggers), so RunWisp still shows the gap crond dropped
-// in silence.
+// nothing is listening is simply gone. RunWisp defaults to 1 (re-run the most
+// recent missed tick), so a daemon started at 15:00 re-fires the 02:00 backup —
+// an extra run that looks entirely legitimate in the history and is impossible to
+// distinguish from a scheduled one. catch_up = 0 restores crond's rule and costs
+// nothing in visibility: the missed row is recorded either way (catch-up
+// detection is cap-independent — see runtime.computeCatchupTriggers), so RunWisp
+// still shows the gap crond dropped in silence.
 //
 // on_overlap: this one is emitted at its default value on purpose. crond runs
 // overlapping copies of a job that outlives its own interval; RunWisp queues
@@ -621,7 +621,7 @@ func (cp *crontabParser) applyFiringPolicies(b *block, scheduled bool) {
 	if scheduled {
 		// Gated on having a schedule: a @reboot job has no ticks to miss, and a key
 		// that cannot affect anything is noise in a file the operator has to read.
-		b.setComment("catch_up", tomlString(string(model.MissedRunSkip)),
+		b.setComment("catch_up", "0",
 			"cron never re-fires a missed tick")
 	}
 	b.setComment("on_overlap", tomlString(string(model.PolicyQueue)),

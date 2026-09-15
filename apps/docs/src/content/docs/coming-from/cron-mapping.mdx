@@ -48,7 +48,7 @@ moved job keeps behaving that way:
 | ---------------------------- | ---------------------- | -------------------------------------------------- |
 | a nearly empty environment   | `env_base = "clean"`   | Set on every imported task — see below.            |
 | jobs run in `$HOME`          | `working_dir = "~"`    | The home of whoever the job runs as.               |
-| a missed tick is simply gone | `catch_up = "skip"`    | Cron never re-fires one. Still recorded as missed. |
+| a missed tick is simply gone | `catch_up = 0`         | Cron never re-fires one. Still recorded as missed. |
 | overlapping copies of a job  | `on_overlap = "queue"` | Deliberately not cron's pile-up — see below.       |
 
 Crontab-wide settings become **per-task** values rather than daemon-wide ones.
@@ -80,12 +80,12 @@ These two are about **when** a job fires — the one thing a migration mustn't c
 quietly — so both are written out explicitly, each one line to change if you'd
 rather have RunWisp's behaviour:
 
-- **`catch_up = "skip"`.** Cron has no concept of a missed tick; one that arrives
+- **`catch_up = 0`.** Cron has no concept of a missed tick; one that arrives
   while nothing is listening is just gone. RunWisp normally
   [catches up](/concepts/scheduling/#missed-ticks-catchup) — starting the daemon at
-  15:00 would run last night's 02:00 backup as a normal run. `skip` keeps cron's
-  behaviour, while still recording the gap as a missed run you can see. Delete the
-  line for catch-up.
+  15:00 would run last night's 02:00 backup as a normal run. `catch_up = 0` keeps
+  cron's behaviour, while still recording the gap as a missed run you can see.
+  Delete the line for catch-up.
 - **`on_overlap = "queue"`.** When a job outruns its own schedule, cron starts
   another copy; RunWisp queues the next instead — the unbounded pile-up is why cron
   jobs end up wrapped in `flock`. If yours genuinely relied on running in parallel,

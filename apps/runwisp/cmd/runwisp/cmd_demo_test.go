@@ -9,13 +9,14 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestReportDemoNoTUI_PasswordToStdoutGuidanceToStderr(t *testing.T) {
 	client := &fakeCredentialsClient{
-		creds: &apiclient.LocalCredentials{Password: "Kj2x9pQ7mN4vL8rT5wYz1c", Ephemeral: true},
+		creds: &server.LocalCredentialsBody{Password: "Kj2x9pQ7mN4vL8rT5wYz1c", Ephemeral: true},
 	}
 	f := Flags{Host: "127.0.0.1", Port: 9477, DataDir: "/tmp/runwisp-demo-xyz/data"}
 	var stdout, stderr bytes.Buffer
@@ -33,7 +34,7 @@ func TestReportDemoNoTUI_PasswordToStdoutGuidanceToStderr(t *testing.T) {
 
 func TestReportDemoNoTUI_WildcardBindReportsLocalhost(t *testing.T) {
 	client := &fakeCredentialsClient{
-		creds: &apiclient.LocalCredentials{Password: "pw", Ephemeral: true},
+		creds: &server.LocalCredentialsBody{Password: "pw", Ephemeral: true},
 	}
 	f := Flags{Host: "0.0.0.0", Port: 8080, DataDir: "/tmp/demo/data"}
 	var stdout, stderr bytes.Buffer

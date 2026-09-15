@@ -310,7 +310,7 @@ func (b *ContainerBackend) gracefulStopContainer(containerID string, task *model
 	if sig, ok := model.NormalizeSignalName(task.StopSignal); ok {
 		opts.Signal = sig
 	}
-	secs := gracefulStopSeconds(task.GracefulStop)
+	secs := gracefulStopSeconds(task.GracefulStopValue())
 	opts.Timeout = &secs
 	// Docker's own wait (opts.Timeout) is the graceful window the operator
 	// configured via graceful_stop; the call is expected to block that long

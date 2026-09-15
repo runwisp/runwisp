@@ -85,7 +85,7 @@ func TestShellBackend_NoEnvKeepsInheritedEnv(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "env.out")
 
-	task := &model.Task{Name: "inherit", GracefulStop: time.Second}
+	task := &model.Task{Name: "inherit", GracefulStop: durPtr(time.Second)}
 	script := `echo "$RW_TEST_INHERIT" > ` + out
 
 	ctx := context.Background()
@@ -114,7 +114,7 @@ func TestShellBackend_TaskEnvOverlay(t *testing.T) {
 
 	task := &model.Task{
 		Name:         "overlay",
-		GracefulStop: time.Second,
+		GracefulStop: durPtr(time.Second),
 		Env: map[string]string{
 			"INLINE":                "from-task",
 			"RUNWISP_TEST_OVERRIDE": "from-task",

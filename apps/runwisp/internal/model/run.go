@@ -65,7 +65,7 @@ const (
 	// detected at restart from persisted history, not at the time of the miss —
 	// a stopped process cannot observe its own absence. The row is a browsable
 	// audit record of the gap, recorded independently of the catch_up re-run
-	// policy (even catch_up = "skip" records it). Exit code is conventionally
+	// policy (even catch_up = 0 records it). Exit code is conventionally
 	// -1, like other never-executed reasons.
 	ReasonMissed EndReason = "missed"
 	// ReasonStartFailed marks the final, FATAL instance run of a service that

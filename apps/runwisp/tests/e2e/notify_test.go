@@ -33,7 +33,7 @@ import (
 // folds into the same in-app row (count==2) AND must NOT fire a second
 // outbound webhook — outbound coalescing protects the paging surface from
 // flapping-task storms. A separate test below verifies the
-// `coalesce_outbound = false` opt-out.
+// `coalesce_window = "0s"` opt-out.
 func TestNotificationsOutboundFiresAndCoalesces(t *testing.T) {
 	received := make(chan []byte, 8)
 	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -193,7 +193,7 @@ notifiers = ["hook"]
 }
 
 // TestNotificationsOutboundCoalesceOptOut verifies the rare opt-out path:
-// `coalesce_outbound = false` restores per-event delivery for users who
+// `coalesce_window = "0s"` restores per-event delivery for users who
 // genuinely want a webhook hit per failure (e.g., piping into their own
 // aggregator).
 func TestNotificationsOutboundCoalesceOptOut(t *testing.T) {
@@ -210,8 +210,7 @@ func TestNotificationsOutboundCoalesceOptOut(t *testing.T) {
 
 	configPath := writeNotifyConfig(t, fmt.Sprintf(`
 [notify]
-coalesce_window   = "1m"
-coalesce_outbound = false
+coalesce_window = "0s"
 
 [tasks.fail-task]
 run = "exit 1"

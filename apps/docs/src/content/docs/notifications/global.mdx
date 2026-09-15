@@ -26,18 +26,16 @@ keep_notifications      = 1024        # default
 keep_for  = "90d"       # default
 coalesce_window   = "1h"        # default
 keep_occurrences   = 10          # default
-coalesce_outbound = true        # default
 ```
 
-| Key                  | Default     | What it does                                                                                                                    |
-| -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `global_notifiers`   | `["inapp"]` | Channels added to every per-task notify list (deduplicated), and catch-all for tasks without one. Set `[]` to silence the bell. |
-| `retry_budget`       | _(unset)_   | Caps the total retry budget for one outbound delivery. Unset = 5 minutes.                                                       |
-| `keep_notifications` | `1024`      | Cap on bell rows kept in SQLite. Older rows are pruned in one pass.                                                             |
-| `keep_for`           | `90d`       | Maximum age of bell rows. Accepts `d` and `w` units.                                                                            |
-| `coalesce_window`    | `1h`        | Window during which repeats with the same kind for the same task update one row instead of writing a new one.                   |
-| `keep_occurrences`   | `10`        | Recent timestamps kept on each coalesced row.                                                                                   |
-| `coalesce_outbound`  | `true`      | Coalesce outbound deliveries too, not just bell rows. Set `false` to send one message per event.                                |
+| Key                  | Default     | What it does                                                                                                                                                                                |
+| -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `global_notifiers`   | `["inapp"]` | Channels added to every per-task notify list (deduplicated), and catch-all for tasks without one. Set `[]` to silence the bell.                                                             |
+| `retry_budget`       | _(unset)_   | Caps the total retry budget for one outbound delivery. Unset = 5 minutes.                                                                                                                   |
+| `keep_notifications` | `1024`      | Cap on bell rows kept in SQLite. Older rows are pruned in one pass.                                                                                                                         |
+| `keep_for`           | `90d`       | Maximum age of bell rows. Accepts `d` and `w` units.                                                                                                                                        |
+| `coalesce_window`    | `1h`        | Window during which repeats with the same kind for the same task update one row instead of writing a new one. Set `"0s"` to send one outbound message per event (the bell still coalesces). |
+| `keep_occurrences`   | `10`        | Recent timestamps kept on each coalesced row.                                                                                                                                               |
 
 Set both `keep_notifications` and `keep_for` and they both apply at
 once — whichever trims harder is the one that bites.
@@ -97,14 +95,14 @@ minute leaves you one bell row that ticks upward, not 60 separate ones.
 - `keep_occurrences` — how many recent timestamps to keep on the row. The
   UI uses these to draw a sparkline.
 
-Outbound channels coalesce on the same key by default too
-(`coalesce_outbound`) — the
+Outbound channels coalesce on the same key by default too — the
 [Coalescing section of the model page](/notifications/model/#coalescing)
 has the full timeline and the check-in/summary cadence.
 
-There is currently no way to turn coalescing off — setting
-`coalesce_window = "0s"` falls back to the default of `1h`.
-To minimise grouping, set a very short window like `"1s"`.
+Set `coalesce_window = "0s"` to send one outbound message per event. The
+bell keeps coalescing on its built-in window regardless — it always wants
+one row per kind. To keep outbound grouping but make it tighter, set a
+short window like `"1s"`.
 
 ## Worked examples
 

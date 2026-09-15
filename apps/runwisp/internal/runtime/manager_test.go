@@ -909,7 +909,7 @@ func TestRetryFiresOnFailure(t *testing.T) {
 		MaxConcurrent: 1,
 		OnOverlap:     model.PolicySkip,
 		RetryAttempts: 2,
-		RetryDelay:    5 * time.Millisecond,
+		RetryDelay:    durPtr(5 * time.Millisecond),
 	}
 	jm.UpsertTask(task)
 
@@ -972,7 +972,7 @@ func TestRetrySkippedForCloudRun(t *testing.T) {
 		MaxConcurrent: 1,
 		OnOverlap:     model.PolicySkip,
 		RetryAttempts: 3,
-		RetryDelay:    5 * time.Millisecond,
+		RetryDelay:    durPtr(5 * time.Millisecond),
 	}
 	jm.UpsertTask(task)
 

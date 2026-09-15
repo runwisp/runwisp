@@ -47,9 +47,9 @@ func TestRunMissedTickCatchUp_RecordedRowAnchorsNextRestart(t *testing.T) {
 		require.NoError(t, db.UpdateRun(ctx, run.Copy()))
 	})
 
-	// catch_up = "skip": detection is independent of the re-run policy, so the
+	// catch_up = 0: detection is independent of the re-run policy, so the
 	// only DB write the catch-up makes is the single missed row — no executor.
-	task := catchupTask(model.MissedRunSkip)
+	task := catchupTask(0)
 	jm.UpsertTask(task)
 	tasks := map[string]*model.Task{task.Name: task}
 
@@ -115,7 +115,7 @@ func TestSnapshotCatchupAnchors_FreezesBeforeContaminatingWrites(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	ctx := context.Background()
-	task := catchupTask(model.MissedRunAll) // */5 * * * *, MaxCatchUpRuns: 100
+	task := catchupTask(100) // */5 * * * *, MaxCatchUpRuns: 100
 	task.RunOnStart = true
 	tasks := map[string]*model.Task{task.Name: task}
 

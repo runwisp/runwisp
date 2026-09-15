@@ -45,14 +45,13 @@ stdout/stderr to a log file, and writes a row for every run to SQLite.
 
 ## Scheduling
 
-| Key                 | Default    | What it does                                                                                                                                                                                                       |
-| ------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `cron`              | _(none)_   | 5- or 6-field cron expression (the optional 6th field is leading seconds). Supports `@hourly`, `@every 1h30m`.                                                                                                     |
-| `timezone`          | inherited  | IANA timezone for this task's cron evaluation (e.g. `"Europe/Bratislava"`). Falls back to [`[scheduler] timezone`](/concepts/scheduling/#timezone), which itself falls back to the host's system zone if unset.    |
-| `jitter`            | inherited  | Cap how far this cron task's start may slip (up to this window) so tasks sharing a fire time take turns instead of stampeding. Needs a `cron` (no-op without one). [Details below](#jitter).                       |
-| `catch_up`          | `"latest"` | What to do for missed firings on startup: `latest`, `all`, or `skip`. `"all"` requires `on_overlap = "queue"` — it replays every missed tick back-to-back, and `skip`/`kill` would only let the first one through. |
-| `max_catch_up_runs` | `100`      | Cap on catch-up runs when `catch_up = "all"`. Positive integer. Zero means "use the default" (100); negatives are rejected at config load.                                                                         |
-| `run_on_start`      | `false`    | Fire the task once every time the daemon starts, on top of any `cron`. The `@reboot` equivalent.                                                                                                                   |
+| Key            | Default   | What it does                                                                                                                                                                                                                                                                                        |
+| -------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cron`         | _(none)_  | 5- or 6-field cron expression (the optional 6th field is leading seconds). Supports `@hourly`, `@every 1h30m`.                                                                                                                                                                                      |
+| `timezone`     | inherited | IANA timezone for this task's cron evaluation (e.g. `"Europe/Bratislava"`). Falls back to [`[scheduler] timezone`](/concepts/scheduling/#timezone), which itself falls back to the host's system zone if unset.                                                                                     |
+| `jitter`       | inherited | Cap how far this cron task's start may slip (up to this window) so tasks sharing a fire time take turns instead of stampeding. Needs a `cron` (no-op without one). [Details below](#jitter).                                                                                                        |
+| `catch_up`     | `1`       | How many missed firings to re-fire on startup. `0` re-runs nothing, `1` re-runs only the most recent missed tick, `N` re-runs up to `N`. Anything above `1` requires `on_overlap = "queue"` (it replays ticks back-to-back, and `skip`/`kill` would only let the first through). Range `0`–`10000`. |
+| `run_on_start` | `false`   | Fire the task once every time the daemon starts, on top of any `cron`. The `@reboot` equivalent.                                                                                                                                                                                                    |
 
 Leave `cron` off and the task becomes **manual-only** — it runs only
 when something explicitly triggers it. That's a perfectly good pattern
@@ -76,7 +75,7 @@ run  = "curl -fsS http://localhost:8080/healthz"
 equivalent of `@reboot`. It's orthogonal to `cron`: a task can fire at
 boot _and_ on a schedule, or at boot only (leave `cron` off). The boot
 firing is independent of `catch_up` and isn't counted against
-`max_catch_up_runs`; it's tagged `triggered_by = startup` in the run
+it; it's tagged `triggered_by = startup` in the run
 history so you can tell it apart from a scheduled or manual run. Use it to
 warm a cache, reconcile state, or send a "daemon is up" heartbeat.
 

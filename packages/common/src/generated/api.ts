@@ -1355,10 +1355,10 @@ export interface components {
             /** @description For services: whether instances start at boot. False boots in the stopped state until started via API/UI. */
             autostart: boolean;
             /**
-             * @description What to do when cron ticks are missed during downtime
-             * @enum {string}
+             * Format: int64
+             * @description Max missed cron ticks to re-run at startup after downtime: 0 skips, 1 re-runs only the most recent, N re-runs up to the N most recent
              */
-            catchUp?: "latest" | "all" | "skip";
+            catchUp?: number;
             /** @description Provenance metadata for tasks imported from a docker compose file */
             compose?: components["schemas"]["TaskComposeRef"];
             cron?: string;
@@ -1375,7 +1375,7 @@ export interface components {
             envFile?: string;
             /**
              * Format: int64
-             * @description Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds
+             * @description Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds; 0 means kill immediately
              */
             gracefulStop?: number;
             group?: string;
@@ -1425,11 +1425,6 @@ export interface components {
              */
             logOnFull?: "drop_new" | "drop_old" | "kill";
             manualTrigger: boolean;
-            /**
-             * Format: int64
-             * @description Cap on catch-up runs triggered when catch_up = all
-             */
-            maxCatchUpRuns?: number;
             /**
              * Format: int64
              * @description Maximum overlapping runs allowed for this task
@@ -1482,7 +1477,7 @@ export interface components {
             retryBackoff?: "constant" | "linear" | "exponential";
             /**
              * Format: int64
-             * @description Base delay before each retry, in nanoseconds
+             * @description Base delay before each retry, in nanoseconds; 0 retries with no delay
              */
             retryDelay?: number;
             /** @description For tasks: fire once at daemon startup, in addition to any cron schedule */
@@ -1556,10 +1551,10 @@ export interface components {
             /** @description For services: whether instances start at boot. False boots in the stopped state until started via API/UI. */
             autostart: boolean;
             /**
-             * @description What to do when cron ticks are missed during downtime
-             * @enum {string}
+             * Format: int64
+             * @description Max missed cron ticks to re-run at startup after downtime: 0 skips, 1 re-runs only the most recent, N re-runs up to the N most recent
              */
-            catchUp?: "latest" | "all" | "skip";
+            catchUp?: number;
             /** @description Provenance metadata for tasks imported from a docker compose file */
             compose?: components["schemas"]["TaskComposeRef"];
             cron?: string;
@@ -1576,7 +1571,7 @@ export interface components {
             envFile?: string;
             /**
              * Format: int64
-             * @description Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds
+             * @description Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds; 0 means kill immediately
              */
             gracefulStop?: number;
             group?: string;
@@ -1626,11 +1621,6 @@ export interface components {
              */
             logOnFull?: "drop_new" | "drop_old" | "kill";
             manualTrigger: boolean;
-            /**
-             * Format: int64
-             * @description Cap on catch-up runs triggered when catch_up = all
-             */
-            maxCatchUpRuns?: number;
             /**
              * Format: int64
              * @description Maximum overlapping runs allowed for this task
@@ -1685,7 +1675,7 @@ export interface components {
             retryBackoff?: "constant" | "linear" | "exponential";
             /**
              * Format: int64
-             * @description Base delay before each retry, in nanoseconds
+             * @description Base delay before each retry, in nanoseconds; 0 retries with no delay
              */
             retryDelay?: number;
             /** @description For tasks: fire once at daemon startup, in addition to any cron schedule */

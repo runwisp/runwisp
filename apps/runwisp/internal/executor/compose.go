@@ -127,7 +127,7 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 		cmd.Env = append(cmd.Env, composeEnv(task, run, instanceIndex)...)
 	}
 
-	proc, err := startCmd(cmd, task.GracefulStop, signalFromName(task.StopSignal), nil, "start docker compose")
+	proc, err := startCmd(cmd, task.GracefulStopValue(), signalFromName(task.StopSignal), nil, "start docker compose")
 	if err != nil {
 		return nil, err
 	}

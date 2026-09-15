@@ -40,7 +40,7 @@ func TestComposeExpansion_AutoDiscoveryImportsAllServices(t *testing.T) {
 	assert.Equal(t, model.KindService, web.Kind)
 	assert.Equal(t, model.RestartOnFailure, web.Restart)
 	assert.Equal(t, "myapp", web.Group)
-	assert.Equal(t, 12*time.Second, web.GracefulStop, "compose stop_grace_period propagates")
+	assert.Equal(t, 12*time.Second, web.GracefulStopValue(), "compose stop_grace_period propagates")
 
 	ce, ok := web.ExecutionDef.(*model.ComposeExecution)
 	require.True(t, ok)

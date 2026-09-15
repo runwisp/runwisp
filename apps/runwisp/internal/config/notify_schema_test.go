@@ -5,6 +5,7 @@ package config
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,6 +17,29 @@ const schedulerTZHeader = `
 [scheduler]
 timezone = "UTC"
 `
+
+// coalesce_window is a pointer so an explicit "0s" (disable outbound coalescing)
+// is distinguishable from an omitted key (nil, default 1h window applied by the
+// coalescers). Replaces the removed coalesce_outbound bool.
+func TestDecode_CoalesceWindowPointer(t *testing.T) {
+	t.Run("omitted stays nil", func(t *testing.T) {
+		cfg, err := decode([]byte(schedulerTZHeader+"\n[notify]\nglobal_notifiers = [\"inapp\"]\n"), "")
+		require.NoError(t, err)
+		assert.Nil(t, cfg.Notify.CoalesceWindow)
+	})
+	t.Run("explicit 0s is a non-nil zero", func(t *testing.T) {
+		cfg, err := decode([]byte(schedulerTZHeader+"\n[notify]\ncoalesce_window = \"0s\"\n"), "")
+		require.NoError(t, err)
+		require.NotNil(t, cfg.Notify.CoalesceWindow)
+		assert.Equal(t, time.Duration(0), *cfg.Notify.CoalesceWindow)
+	})
+	t.Run("explicit value is preserved", func(t *testing.T) {
+		cfg, err := decode([]byte(schedulerTZHeader+"\n[notify]\ncoalesce_window = \"30m\"\n"), "")
+		require.NoError(t, err)
+		require.NotNil(t, cfg.Notify.CoalesceWindow)
+		assert.Equal(t, 30*time.Minute, *cfg.Notify.CoalesceWindow)
+	})
+}
 
 func TestDecode_NotifierRejectsWrongTypeField(t *testing.T) {
 	src := schedulerTZHeader + `
