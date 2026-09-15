@@ -53,8 +53,8 @@ echo "Wrote $DEST/app_production-$TS.dump.gz ($(du -h "$DEST/app_production-$TS.
 ```
 
 The matching `[notifiers.<id>]` block — described on the
-[Slack provider page][slack] — receives `run.failed`, `run.timeout`, and
-`run.crashed`, because those are the run-end kinds that
+[Slack provider page][slack] — receives `failed`, `timeout`, and
+`crashed`, because those are the run-end outcomes that
 `notify` covers.
 
 [slack]: /notifications/providers/slack/
@@ -120,7 +120,7 @@ cadence. See [Logs & retention][logs].
 
 ### `notify`
 
-Sends a message on `run.failed`, `run.timeout`, and `run.crashed`. See
+Sends a message on `failed`, `timeout`, and `crashed`. See
 [Per-task notifications][pertask] for the full behaviour. The bell is
 added by default, so even without Slack you still see the failure in
 the Web UI.
