@@ -176,8 +176,8 @@ Full configuration reference, REST API docs, and operational guides live at **[d
 - Live config reload via `runwisp reload` or `SIGHUP`: pick up `runwisp.toml` edits without a restart; validate-first, so a bad edit leaves the running task set untouched
 
 <div align="center">
-<img alt="RunWisp terminal UI screenshot: task sidebar, live log output, and execution controls over SSH" src="apps/docs/src/assets/screenshots/tui-home.png" width="780">
-<p><em>Terminal UI: full task management from your terminal, over SSH, without leaving the session.</em></p>
+<img alt="RunWisp terminal UI in action: browsing recent runs on the homepage, opening one to scroll its log, then triggering a scheduled backup from the sidebar and watching its progress bars stream to completion, all over SSH" src="apps/docs/src/assets/screenshots/tui-demo.webp" width="780">
+<p><em>The terminal UI, live: browse recent runs, scroll a log, and trigger a task, without leaving the session.</em></p>
 </div>
 
 ---

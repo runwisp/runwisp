@@ -204,6 +204,23 @@ type tuiSession struct {
 
 	repliedBackground bool
 	repliedCursor     bool
+
+	// sessionStart and castEntries record every chunk of raw PTY output with a
+	// timestamp relative to session start, for TestCaptureTUIDemo's animated
+	// replay (apps/ui/e2e/screenshots/tui.demo.ts). Always on: a session's
+	// total output is at most a few hundred KB, so recording unconditionally
+	// is simpler than an opt-in toggle and avoids missing the initial paint
+	// (see castSnapshot).
+	sessionStart time.Time
+	castMu       sync.Mutex
+	castEntries  []tuiCastEntry
+}
+
+// tuiCastEntry is one timestamped chunk of raw PTY output. D is
+// base64-encoded automatically by encoding/json ([]byte).
+type tuiCastEntry struct {
+	T float64 `json:"t"`
+	D []byte  `json:"d"`
 }
 
 type daemonProcess struct {
@@ -393,11 +410,12 @@ func launchTUISession(t *testing.T, cmd *exec.Cmd) *tuiSession {
 	require.NoError(t, err)
 
 	session := &tuiSession{
-		cmd:      cmd,
-		ptyFile:  ptyFile,
-		term:     vt10x.New(vt10x.WithSize(screenCols, screenRows)),
-		output:   &lockedBuffer{},
-		waitDone: make(chan struct{}),
+		cmd:          cmd,
+		ptyFile:      ptyFile,
+		term:         vt10x.New(vt10x.WithSize(screenCols, screenRows)),
+		output:       &lockedBuffer{},
+		waitDone:     make(chan struct{}),
+		sessionStart: time.Now(),
 	}
 
 	go func() {
@@ -423,11 +441,38 @@ func (s *tuiSession) readOutput() {
 			_, _ = s.output.Write(chunk)
 			_, _ = s.term.Write(chunk)
 			s.replyToTerminalQueries(chunk)
+			s.recordCast(chunk)
 		}
 		if err != nil {
 			return
 		}
 	}
+}
+
+func (s *tuiSession) recordCast(chunk []byte) {
+	s.castMu.Lock()
+	defer s.castMu.Unlock()
+
+	s.castEntries = append(s.castEntries, tuiCastEntry{
+		T: time.Since(s.sessionStart).Seconds(),
+		D: append([]byte(nil), chunk...),
+	})
+}
+
+// elapsed returns how long the session has been running. TestCaptureTUIDemo
+// uses this to mark the boundary between the "fast-forward" prefix (daemon
+// connect, initial paint) and the "real-time" portion of a recorded cast.
+func (s *tuiSession) elapsed() time.Duration {
+	return time.Since(s.sessionStart)
+}
+
+// castSnapshot returns a copy of every chunk captured so far, timestamped
+// relative to session start (see the tuiSession.castEntries doc comment).
+func (s *tuiSession) castSnapshot() []tuiCastEntry {
+	s.castMu.Lock()
+	defer s.castMu.Unlock()
+
+	return append([]tuiCastEntry(nil), s.castEntries...)
 }
 
 func (s *tuiSession) press(t testing.TB, keys ...string) {
@@ -686,6 +731,9 @@ func (b *lockedBuffer) Bytes() []byte {
 
 const (
 	keyEnter = "\r"
+	keyEsc   = "\x1b"
+	keyUp    = "\x1b[A"
 	keyDown  = "\x1b[B"
 	keyRight = "\x1b[C"
+	keyLeft  = "\x1b[D"
 )

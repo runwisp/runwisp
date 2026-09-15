@@ -2,19 +2,25 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Encodes the two committed docs assets from the lossless PNG frames captured by
-# the demo-video tour (screencast.ts writes them + a frames.txt concat list):
-#   - runwisp-demo.webp : animated WebP (full color, autoplays + loops inline in
-#                         an <img> on GitHub) — the README hero.
-#   - runwisp-demo.mp4  : H.264 (faststart) — docs site <video> + social.
+# Encodes the committed docs assets from the lossless PNG frames captured by a
+# demo-video-style tour (screencast.ts writes them + a frames.txt concat list):
+#   - <basename>.webp : animated WebP (full color, autoplays + loops inline in
+#                       an <img> on GitHub), the README hero.
+#   - <basename>.mp4  : H.264 (faststart), docs site <video> + social. Skipped
+#                       when DEMO_SKIP_MP4 is set (e.g. the TUI clip, webp-only).
 #
 # The frames are lossless and captured at 2× device pixels, so this is a single
 # lossy generation (PNG -> WebP/MP4) with a sharp downscale — no VP8 mush.
 #
-# Run after `playwright test --config playwright.demo-video.config.ts` (or via
-# `bun run demo-video`, which chains both). Prefers `ffmpeg` on PATH; falls back
-# to the host's ffmpeg through `flatpak-spawn --host` (this dev box is Silverblue,
-# where ffmpeg lives on the host, not in the toolbox).
+# Shared by both showcase clips:
+#   - Web UI (`bun run demo-video`): playwright.demo-video.config.ts +
+#     web-ui.demo-video.ts -> runwisp-demo.webp/.mp4.
+#   - TUI (`bun run demo-tui`): playwright.tui-demo.config.ts + tui.demo.ts ->
+#     tui-demo.webp (DEMO_REC_SUBDIR/DEMO_OUT_BASENAME/DEMO_SKIP_MP4 below).
+#
+# Prefers `ffmpeg` on PATH; falls back to the host's ffmpeg through
+# `flatpak-spawn --host` (this dev box is Silverblue, where ffmpeg lives on the
+# host, not in the toolbox).
 #
 # The stock Homebrew `ffmpeg` formula on macOS ships without libwebp at all
 # (no `libwebp_anim` encoder). When that's the case, the WebP step falls back
@@ -27,14 +33,18 @@
 #   DEMO_VIDEO_WEBP_Q     WebP quality 0-100, higher=big  (default 82)
 #   DEMO_VIDEO_MP4_WIDTH  MP4 width in px                 (default 1280)
 #   DEMO_VIDEO_MP4_CRF    H.264 CRF, lower=better/bigger  (default 20)
+#   DEMO_REC_SUBDIR       test-results/<subdir> to read   (default demo-video)
+#   DEMO_OUT_BASENAME     output file basename            (default runwisp-demo)
+#   DEMO_SKIP_MP4         set (any value) to skip the MP4 encode
 
 set -euo pipefail
 
 ui_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 repo_root="$(cd "$ui_dir/../.." && pwd)"
-rec_dir="$ui_dir/test-results/demo-video"
+rec_dir="$ui_dir/test-results/${DEMO_REC_SUBDIR:-demo-video}"
 frames_list="$rec_dir/frames/frames.txt"
 out_dir="$repo_root/apps/docs/src/assets/screenshots"
+out_basename="${DEMO_OUT_BASENAME:-runwisp-demo}"
 
 fps="${DEMO_VIDEO_FPS:-24}"
 webp_width="${DEMO_VIDEO_WEBP_WIDTH:-1120}"
@@ -61,8 +71,8 @@ fi
 echo "[encode] source: $frames_list ($(grep -c '^file ' "$frames_list") frames)"
 mkdir -p "$out_dir"
 
-webp="$out_dir/runwisp-demo.webp"
-mp4="$out_dir/runwisp-demo.mp4"
+webp="$out_dir/${out_basename}.webp"
+mp4="$out_dir/${out_basename}.mp4"
 
 # The concat demuxer replays each PNG for its recorded duration (variable fps);
 # the fps filter resamples to a constant rate. -safe 0 allows absolute paths.
@@ -91,11 +101,17 @@ else
 fi
 
 # --- MP4 (docs site + social) ------------------------------------------------
-echo "[encode] -> $mp4 (width ${mp4_width}, crf ${mp4_crf})"
-ffmpeg -y -f concat -safe 0 -i "$frames_list" \
-    -vf "fps=${fps},scale=${mp4_width}:-2:flags=lanczos" \
-    -c:v libx264 -pix_fmt yuv420p -crf "$mp4_crf" -preset slow -movflags +faststart -an \
-    "$mp4"
+if [[ -n "${DEMO_SKIP_MP4:-}" ]]; then
+    echo "[encode] skipping MP4 (DEMO_SKIP_MP4 set)"
+    echo "[encode] done:"
+    ls -lh "$webp"
+else
+    echo "[encode] -> $mp4 (width ${mp4_width}, crf ${mp4_crf})"
+    ffmpeg -y -f concat -safe 0 -i "$frames_list" \
+        -vf "fps=${fps},scale=${mp4_width}:-2:flags=lanczos" \
+        -c:v libx264 -pix_fmt yuv420p -crf "$mp4_crf" -preset slow -movflags +faststart -an \
+        "$mp4"
 
-echo "[encode] done:"
-ls -lh "$webp" "$mp4"
+    echo "[encode] done:"
+    ls -lh "$webp" "$mp4"
+fi

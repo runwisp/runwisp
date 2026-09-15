@@ -32,6 +32,9 @@ internal/ui/dist/
 # Transient TUI screenshot frames (captured by `bun screenshots`)
 .tui-frames/
 
+# Transient TUI demo cast (captured by `bun demo-tui`)
+.tui-cast.json
+
 # IDE
 .vscode/
 .idea/
