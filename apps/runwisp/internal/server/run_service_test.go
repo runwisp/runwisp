@@ -695,6 +695,7 @@ func TestDeleteRun_EndedRun_Succeeds(t *testing.T) {
 
 	run := &model.Run{ID: "run-3", TaskName: "t", Status: model.PhaseEnded}
 	repo.On("GetRun", mock.Anything, "run-3").Return(run, nil)
+	repo.On("ResolveSelectorIDs", mock.Anything, mock.Anything, mock.Anything).Return([]storage.RunRef{}, nil)
 	repo.On("SoftDeleteRuns", mock.Anything, mock.MatchedBy(func(sel model.RunSelector) bool {
 		return !sel.MatchAll && len(sel.IDs) == 1 && sel.IDs[0] == "run-3"
 	}), mock.Anything).Return([]storage.RunRef{{ID: "run-3", TaskName: "t"}}, nil)
@@ -906,4 +907,35 @@ func TestHumaBulkRerunRuns_InvalidSelectorReturnsError(t *testing.T) {
 	_, err := srv.humaBulkRerunRuns(context.Background(),
 		&BulkRunSelectorInput{Body: model.RunSelector{}})
 	assert.Error(t, err)
+}
+
+// TestDeleteRuns_ActiveRunsRejectedConsistently pins the single/bulk delete
+// contract: an active run is never deleted, and the caller is always told —
+// bulk deletes the terminal rows and reports the active IDs as skipped, while
+// single-delete returns a hard rejection. Uses real storage so the actual
+// PhaseEnded soft-delete filter and the pending+running resolve are exercised.
+func TestDeleteRuns_ActiveRunsRejectedConsistently(t *testing.T) {
+	ctx := t.Context()
+	db, err := storage.New(":memory:")
+	require.NoError(t, err)
+	defer db.Close()
+
+	now := time.Now()
+	ended := &model.Run{ID: "run-ended", TaskName: "t", Status: model.PhaseEnded, EndReason: model.EndReasonPtr(model.ReasonSuccess), TriggeredBy: model.TriggeredByAPI, CreatedAt: now}
+	running := &model.Run{ID: "run-running", TaskName: "t", Status: model.PhaseRunning, TriggeredBy: model.TriggeredByAPI, CreatedAt: now}
+	pending := &model.Run{ID: "run-pending", TaskName: "t", Status: model.PhasePending, TriggeredBy: model.TriggeredByAPI, CreatedAt: now}
+	for _, r := range []*model.Run{ended, running, pending} {
+		require.NoError(t, db.CreateRun(ctx, r))
+	}
+
+	svc := newRunService(db, nil, runtime.NewTaskRegistry(nil), nil, "", nil)
+
+	affected, skipped, err := svc.bulkSoftDelete(ctx,
+		model.RunSelector{IDs: []string{ended.ID, running.ID, pending.ID}})
+	require.NoError(t, err)
+	assert.Equal(t, 1, affected, "only the terminal run is deleted")
+	assert.ElementsMatch(t, []string{running.ID, pending.ID}, skipped)
+
+	// Single-delete of an active run stays a hard rejection.
+	assert.ErrorIs(t, svc.DeleteRun(ctx, running.ID), ErrCannotDeleteActiveRun)
 }

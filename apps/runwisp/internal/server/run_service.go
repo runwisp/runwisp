@@ -255,25 +255,51 @@ func (s *runService) DeleteRun(ctx context.Context, runID string) error {
 	if run.Status == model.PhaseRunning || run.Status == model.PhasePending {
 		return ErrCannotDeleteActiveRun
 	}
-	// Single-row delete is just a one-ID soft-delete — no duplicated logic.
-	_, err = s.bulkSoftDelete(ctx, model.RunSelector{IDs: []string{runID}})
+	// Single-row delete is just a one-ID soft-delete — no duplicated logic. The
+	// run is already known terminal (guarded above), so skipped is always empty.
+	_, _, err = s.bulkSoftDelete(ctx, model.RunSelector{IDs: []string{runID}})
 	return err
 }
 
-// bulkSoftDelete applies a selector against the soft-delete storage method
-// and publishes run.deleted for every affected row.
-func (s *runService) bulkSoftDelete(ctx context.Context, sel model.RunSelector) (int, error) {
+// bulkSoftDelete applies a selector against the soft-delete storage method and
+// publishes run.deleted for every affected row. SoftDeleteRuns only touches
+// terminal rows, so any pending/running run in the selector is left in place;
+// their IDs are returned as skipped so the caller can report the skip instead
+// of silently dropping them.
+func (s *runService) bulkSoftDelete(ctx context.Context, sel model.RunSelector) (int, []string, error) {
 	if err := sel.Validate(); err != nil {
-		return 0, wrapSelectorErr(err)
+		return 0, nil, wrapSelectorErr(err)
+	}
+	skipped, err := s.resolveActiveIDs(ctx, sel)
+	if err != nil {
+		return 0, nil, err
 	}
 	refs, err := s.db.SoftDeleteRuns(ctx, sel, time.Now())
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	for _, ref := range refs {
 		s.publishDeleted(ref)
 	}
-	return len(refs), nil
+	return len(refs), skipped, nil
+}
+
+// resolveActiveIDs returns the IDs of selector-matched runs that are still
+// pending or running — exactly the rows a soft-delete leaves untouched. The
+// storage status filter matches one phase at a time, so the two active phases
+// are resolved separately and unioned.
+func (s *runService) resolveActiveIDs(ctx context.Context, sel model.RunSelector) ([]string, error) {
+	var ids []string
+	for _, phase := range []model.RunPhase{model.PhasePending, model.PhaseRunning} {
+		refs, err := s.db.ResolveSelectorIDs(ctx, sel, string(phase))
+		if err != nil {
+			return nil, err
+		}
+		for _, ref := range refs {
+			ids = append(ids, ref.ID)
+		}
+	}
+	return ids, nil
 }
 
 // bulkRestore reverses a soft-delete and re-emits run.updated for each

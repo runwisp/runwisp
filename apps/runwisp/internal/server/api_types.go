@@ -173,10 +173,6 @@ type RunOutput struct {
 	Body model.Run
 }
 
-type TriggerRunOutput struct {
-	Body model.Run
-}
-
 // BulkRunSelectorInput is the shared request body for every /api/runs/bulk/*
 // endpoint. The selector is the same object the UI builds locally and any
 // other client could reuse — one shape, four operations.
@@ -189,7 +185,8 @@ type BulkAffectedOutput struct {
 }
 
 type BulkAffectedBody struct {
-	Affected int `json:"affected" doc:"Number of rows the operation touched"`
+	Affected int      `json:"affected" doc:"Number of rows the operation touched"`
+	Skipped  []string `json:"skipped,omitempty" doc:"Run IDs left untouched because they are still active (delete only)"`
 }
 
 type BulkRerunOutput struct {

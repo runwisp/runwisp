@@ -115,6 +115,16 @@
             "description": "Number of rows the operation touched",
             "format": "int64",
             "type": "integer"
+          },
+          "skipped": {
+            "description": "Run IDs left untouched because they are still active (delete only)",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           }
         },
         "required": [

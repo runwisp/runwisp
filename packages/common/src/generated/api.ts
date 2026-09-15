@@ -701,6 +701,8 @@ export interface components {
              * @description Number of rows the operation touched
              */
             affected: number;
+            /** @description Run IDs left untouched because they are still active (delete only) */
+            skipped?: string[] | null;
         };
         BulkRerunBody: {
             /**
