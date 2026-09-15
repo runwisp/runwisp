@@ -33,7 +33,6 @@ docker/context/
 
 # AI
 .claude
-.kilo
 
 # Debug
 npm-debug.log*
@@ -43,10 +42,8 @@ npm-debug.log*
 *.pem
 
 # Worktrees
-.wbaum/
-.worktrees/
+paseo.json
 
 .scannerwork
 
-# graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/

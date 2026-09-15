@@ -62,6 +62,7 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
 4. **TypeScript-only rules** (apply in `apps/ui` and `packages/*/src`):
    - NO `any`. NO `as` casts. NO `!` non-null assertions. Use type guards.
    - Use `if (!x)` for falsy checks. NEVER write `x === null || x === undefined`.
+5. **Formatting**: both `.editorconfig` and Prettier are in play, and they agree — don't hand-align against either. `.editorconfig` sets editor defaults for every file type (Go/Makefile = tabs, TS/Svelte/CSS = 4-space, `charset`/`eol`/final-newline); Prettier (`prettier.base.cjs`, per-workspace configs) is the enforced formatter for the JS/TS/Svelte/CSS/MD/Astro tree, run via `bun run format` (part of `bun run ci`). Go is formatted by `gofmt`, not Prettier.
 
 ## 🏗 ARCHITECTURE & BOUNDARIES
 
@@ -143,4 +144,3 @@ The daemon can optionally connect outbound to a control-plane peer that speaks t
 5. **Docs voice (`apps/docs/`)**: write conversationally — talk to the operator like a colleague, not a spec. Short paragraphs, contractions OK, second person ("you"), examples before exhaustive tables. The reference details belong in docs, not the changelog.
 6. **Stop and ask** when Prime Directives / Non-Goals / Invariants don't resolve a judgment call. Do not silently pick a direction that might violate the vision.
 7. **Pre-1.0, no back-compat hedges.** No deprecation shims, no "tolerate old shape", no migration warnings — reject wrong shapes with errors and move on. (There are no users yet.)
-8. **Commits**: Do not add `Co-Authored-By: Claude` trailers. Plain commit messages only.

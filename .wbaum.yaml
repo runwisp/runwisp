@@ -1,5 +1,0 @@
-# https://www.npmjs.com/package/wbaum
-
-setup:
-  - bun i
-  - bun run build
