@@ -131,8 +131,8 @@ const composeStarterConfig = SchemaDirective + `# runwisp.toml
 [compose.{{alias}}]
 file = "./{{compose}}"
 
-# Per-service overrides go in their own sub-table:
-# [compose.{{alias}}.web]
+# Per-service overrides go under their own "override" sub-table:
+# [compose.{{alias}}.override.web]
 # restart           = "always"
 # notify = ["slack-prod"]
 `

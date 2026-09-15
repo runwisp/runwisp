@@ -127,10 +127,12 @@ func TestDecodeUnknownKeyNoSuggestionForGibberish(t *testing.T) {
 	assert.NotContains(t, err.Error(), "did you mean")
 }
 
-// Free-form [compose.*] blocks decode into maps, so they never produce
-// strict-mode errors — this guards that the suggestion walker doesn't panic
-// on paths through them either way.
-func TestComposeBlockKeysDecodeWithoutError(t *testing.T) {
+// [compose.*] blocks decode via a normal strict struct (reserved scalars plus
+// a single "override" sub-table), so an unrecognised key is a parse-time
+// strict-mode error with the same did-you-mean support as [tasks.*] /
+// [services.*], with no more silent free-form acceptance.
+func TestComposeBlockKeysDecodeStrictly(t *testing.T) {
 	_, err := decode([]byte("[compose.app]\nfile = \"docker-compose.yml\"\nanything_goes = 1\n"), "")
-	require.NoError(t, err)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown key "anything_goes"`)
 }

@@ -278,7 +278,8 @@
     },
     "composeAlias": {
       "type": "object",
-      "description": "One [compose.<alias>] block: reserved scalar keys plus per-service override sub-tables. The reserved [compose.<alias>.defaults] sub-table applies its override keys to every imported service (per-service tables win).",
+      "description": "One [compose.<alias>] block: reserved scalar keys plus the reserved \"override\" sub-table for per-service overrides. The reserved [compose.<alias>.override.defaults] entry applies its override keys to every imported service (per-service entries win).",
+      "additionalProperties": false,
       "properties": {
         "file": { "type": "string", "description": "Compose file path; auto-discovered when omitted." },
         "services": { "type": "array", "items": { "type": "string" }, "description": "Filter which compose services are imported: bare or \"+name\" keeps only those; \"-name\" drops those. The two polarities are mutually exclusive. Omit to import every service." },
@@ -290,13 +291,17 @@
         "working_dir": { "type": "string" },
         "with_deps": { "type": "boolean", "default": false },
         "pull": { "type": "string", "enum": ["missing", "always", "never"], "default": "missing" },
-        "name_format": { "type": "string", "default": "{alias}.{service}", "description": "Generated task name; must contain {service} in services mode." }
-      },
-      "additionalProperties": { "$ref": "#/$defs/composeOverride" }
+        "name_format": { "type": "string", "default": "{alias}.{service}", "description": "Generated task name; must contain {service} in services mode." },
+        "override": {
+          "type": "object",
+          "description": "Per-service overrides, keyed by compose service name ([compose.<alias>.override.<svc>]). The reserved key \"defaults\" ([compose.<alias>.override.defaults]) applies to every imported service instead of naming one.",
+          "additionalProperties": { "$ref": "#/$defs/composeOverride" }
+        }
+      }
     },
     "composeOverride": {
       "type": "object",
-      "description": "Per-service override sub-table [compose.<alias>.<svc>].",
+      "description": "Per-service override [compose.<alias>.override.<svc>] (also used for the block-level [compose.<alias>.override.defaults]).",
       "additionalProperties": false,
       "properties": {
         "group": { "type": "string" },

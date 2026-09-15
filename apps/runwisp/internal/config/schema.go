@@ -19,12 +19,12 @@ type Config struct {
 	Notify    NotifyConfig
 	Scheduler Scheduler
 
-	// pendingComposeBlocks holds raw [compose.<alias>] tables captured by
+	// pendingComposeBlocks holds decoded [compose.<alias>] blocks captured by
 	// decode(), to be consumed by expandComposeBlocks() during Load. Once
 	// expansion has run this field is set to nil so it never leaks into
 	// downstream consumers. Tests that call decode() directly will see the
 	// raw blocks here.
-	pendingComposeBlocks map[string]map[string]any
+	pendingComposeBlocks map[string]*composeBlockWire
 
 	// includeFiles are the absolute paths of the TOML files merged in via
 	// [daemon].include at this load. includeGlobs are those patterns resolved

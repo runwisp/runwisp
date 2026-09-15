@@ -44,7 +44,7 @@ Compose-imported services
 default. To make critical ones restart unconditionally:
 
 ```toml
-[compose.myapp.api]
+[compose.myapp.override.api]
 restart = "always"
 ```
 
@@ -59,14 +59,14 @@ service's [`notify`](/notifications/per-task/) at it:
 type        = "slack"
 webhook_url = "https://hooks.slack.com/services/..."
 
-[compose.myapp.api]
+[compose.myapp.override.api]
 notify = ["slack-prod"]
 ```
 
 ### Scale a worker horizontally
 
 ```toml
-[compose.myapp.worker]
+[compose.myapp.override.worker]
 instances = 4
 ```
 

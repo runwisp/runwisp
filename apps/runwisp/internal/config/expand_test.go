@@ -160,7 +160,7 @@ func TestExpandConfig_ComposeBlockStrings(t *testing.T) {
 file = "${COMPOSE_FILE}"
 profiles = ["${PROFILE}"]
 
-[compose.app.web]
+[compose.app.override.web]
 description = "web ${REGION}"
 env = { MODE = "${MODE}" }
 `
@@ -176,14 +176,13 @@ env = { MODE = "${MODE}" }
 	require.NoError(t, expandConfig(&raw, t.TempDir(), env))
 
 	block := raw.Compose["app"]
-	assert.Equal(t, "stack.yaml", block["file"])
-	assert.Equal(t, []any{"prod"}, block["profiles"])
-	web, ok := block["web"].(map[string]any)
+	require.NotNil(t, block)
+	assert.Equal(t, "stack.yaml", block.File)
+	assert.Equal(t, []string{"prod"}, block.Profiles)
+	web, ok := block.Override["web"]
 	require.True(t, ok)
-	assert.Equal(t, "web eu-1", web["description"])
-	envMap, ok := web["env"].(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, "fast", envMap["MODE"])
+	assert.Equal(t, "web eu-1", web.Description)
+	assert.Equal(t, "fast", web.Env["MODE"])
 }
 
 func TestExpandConfig_ErrorNamesNotifierPath(t *testing.T) {

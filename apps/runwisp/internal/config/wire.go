@@ -14,22 +14,73 @@ import (
 
 // tomlConfig is the over-the-wire config shape used only during TOML decoding.
 //
-// Compose is decoded as a free-form map: each [compose.<alias>] block mixes
-// reserved scalar keys (file, mode, include, …) with per-service override
-// sub-tables, so we destructure the alias map in internal/config/compose.go
-// rather than via direct struct binding. See parseComposeBlock there.
+// Compose binds directly to composeBlockWire: every [compose.<alias>] key is
+// either a reserved scalar (a struct field) or the reserved "override"
+// sub-table (per-service overrides, keyed by compose service name), so the
+// whole block decodes strictly in the same pass as tasks/services, no
+// manual map-splitting needed. See parseComposeBlock in compose.go for how
+// override entries are split into per-service overrides vs. block defaults.
 type tomlConfig struct {
-	Daemon    daemonWire                `toml:"daemon,omitempty"`
-	Storage   storageWire               `toml:"storage,omitempty"`
-	Defaults  defaultsWire              `toml:"defaults,omitempty"`
-	Scheduler schedulerWire             `toml:"scheduler,omitempty"`
-	Tasks     map[string]*taskWire      `toml:"tasks,omitempty"`
-	Services  map[string]*serviceWire   `toml:"services,omitempty"`
-	Compose   map[string]map[string]any `toml:"compose,omitempty"`
-	Notify    notifyWire                `toml:"notify,omitempty"`
+	Daemon    daemonWire                   `toml:"daemon,omitempty"`
+	Storage   storageWire                  `toml:"storage,omitempty"`
+	Defaults  defaultsWire                 `toml:"defaults,omitempty"`
+	Scheduler schedulerWire                `toml:"scheduler,omitempty"`
+	Tasks     map[string]*taskWire         `toml:"tasks,omitempty"`
+	Services  map[string]*serviceWire      `toml:"services,omitempty"`
+	Compose   map[string]*composeBlockWire `toml:"compose,omitempty"`
+	Notify    notifyWire                   `toml:"notify,omitempty"`
 
 	Notifiers map[string]*notifierWire `toml:"notifiers,omitempty"`
 	Routes    []routeWire              `toml:"route,omitempty"`
+}
+
+// composeBlockWire is the TOML-decodable form of a [compose.<alias>] block:
+// reserved scalar keys plus the "override" sub-table. Override holds
+// per-service overrides ([compose.<alias>.override.<service>]), keyed by
+// compose service name; the reserved key "defaults"
+// ([compose.<alias>.override.defaults]) applies to every imported service
+// instead of naming one (see composeDefaultsKey in compose.go); a compose
+// service actually named "defaults" can't get an individual override through
+// this key, but still imports normally and inherits the block defaults like
+// any other service.
+type composeBlockWire struct {
+	File string `toml:"file,omitempty"`
+	// Services filters which compose services are imported. A bare (or "+"-prefixed)
+	// name is an allowlist entry ("import only these"); a "-"-prefixed name is a
+	// denylist entry ("import everything but these"). The two polarities are
+	// mutually exclusive within one block. Empty means "import every service".
+	Services    []string `toml:"services,omitempty"`
+	Import      string   `toml:"import,omitempty"`
+	Group       string   `toml:"group,omitempty"`
+	ProjectName string   `toml:"project_name,omitempty"`
+	Profiles    []string `toml:"profiles,omitempty"`
+	EnvFile     []string `toml:"env_file,omitempty"`
+	WorkingDir  string   `toml:"working_dir,omitempty"`
+	WithDeps    bool     `toml:"with_deps,omitempty"`
+	Pull        string   `toml:"pull,omitempty"`
+	NameFormat  string   `toml:"name_format,omitempty"`
+
+	Override map[string]*composeServiceOverrideWire `toml:"override,omitempty"`
+}
+
+// composeServiceOverrideWire is the per-service override surface inside a
+// [compose.<alias>.override.<svc>] sub-table (also reused for the block-level
+// [compose.<alias>.override.defaults]). Like [services.*] it *excludes* Run /
+// ComposeFile / ComposeService (an override never specifies its own
+// execution backend; that comes from the parent compose block) and rejects
+// OnOverlap (a task-only concept, see applyComposeOverride). ManualTrigger is
+// accepted: it locks the service against manual stop/restart/start the same
+// way it does on [services.*].
+type composeServiceOverrideWire struct {
+	unitOverrideWire
+	serviceSupervisionWire
+
+	Instances int `toml:"instances,omitempty"`
+
+	// Failures overrides the failure classification for this compose service,
+	// same syntax and semantics as [services.*] failures. nil leaves the
+	// inherited [defaults] classification in place.
+	Failures []string `toml:"failures,omitempty"`
 }
 
 // unitOverrideWire holds the "identity and lifecycle" TOML keys accepted on

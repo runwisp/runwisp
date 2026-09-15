@@ -50,12 +50,13 @@ working_dir  = "/opt/myapp"              # cwd for compose invocation; defaults 
 with_deps    = false                     # default: --no-deps; true starts compose deps too
 pull         = "missing"                 # "missing" (default) | "always" | "never"
 name_format  = "{alias}.{service}"       # RunWisp task naming; default shown
+# Per-service overrides and block defaults live under [compose.<alias>.override.*] (see below).
 ```
 
 ## Block defaults
 
 Got a stack of near-identical workers that all want the same policy? Instead of
-repeating a sub-table per service, set them once in `[compose.<alias>.defaults]`.
+repeating a sub-table per service, set them once in `[compose.<alias>.override.defaults]`.
 Every imported service inherits those keys, and any per-service sub-table still
 wins:
 
@@ -63,11 +64,11 @@ wins:
 [compose.stack]
 services = ["worker-a", "worker-b", "worker-c"]
 
-[compose.stack.defaults]
+[compose.stack.override.defaults]
 restart          = "always"   # applies to all three workers
 restart_attempts = 5
 
-[compose.stack.worker-a]
+[compose.stack.override.worker-a]
 restart = "on_failure"     # worker-a opts out; the other two stay "always"
 ```
 
@@ -75,34 +76,36 @@ This is worth knowing about because the compose-import default is
 `restart = "on_failure"` — a worker that exits **0** (batch-then-quit,
 memory-guard restart, idle timeout) counts as "done" and won't be relaunched.
 If you're migrating workers that carried `restart: unless-stopped` under plain
-Compose, a one-line `[compose.<alias>.defaults] restart = "always"` restores that
-behavior for the whole block.
+Compose, a one-line `[compose.<alias>.override.defaults] restart = "always"` restores
+that behavior for the whole block.
 
 `defaults` accepts the same keys as a per-service override (below). Its
 `notify` list adds routes to _every_ service, on
 top of any a service declares for itself. Because `defaults` is a reserved
-sub-table name, a compose service literally named `defaults` is rejected with a
-rename hint. Block defaults aren't available in `import = "stack"` (there's only one
-task there — set its knobs on the block).
+key inside `override`, a compose service literally named `defaults` can't
+get an individual override through `[compose.<alias>.override.defaults]`
+(that key always means the block default), though the service still imports
+normally like any other. Block defaults aren't available in `import = "stack"`
+(there's only one task there; set its knobs on the block).
 
 ## Per-service overrides
 
-Per-service sub-tables apply RunWisp knobs to a single compose service.
-The sub-table key has to match a compose service name — and one that
-survived your `services` filter:
+Per-service overrides live under `[compose.<alias>.override.<svc>]`, one
+sub-table per compose service. The sub-table key has to match a compose
+service name, and one that survived your `services` filter:
 
 ```toml
 [compose.myapp]
 file = "./docker-compose.yml"
 
-[compose.myapp.api]
+[compose.myapp.override.api]
 restart           = "always"
 notify = ["slack-prod"]
 graceful_stop     = "30s"
 keep_runs         = 100
 env               = { LOG_LEVEL = "info" }  # layered on top of compose env at runtime
 
-[compose.myapp.worker]
+[compose.myapp.override.worker]
 restart   = "on_failure"
 instances = 3                              # three identical worker instances
 ```
@@ -123,11 +126,10 @@ particular has nothing to choose between — a container never inherits the
 daemon's environment either way.) (`working_dir` comes from
 the `[compose.<alias>]` block, not the per-service sub-table.)
 
-One sharp edge: a compose service that happens to share a name with one
-of the scalar keys above (`file`, `services`, `import`, `group`,
-`project_name`, `profiles`, `env_file`, `working_dir`, `with_deps`,
-`pull`, `name_format`) can't get a sub-table — the loader rejects the
-config with an error asking you to rename the compose service.
+Because overrides live in their own `override` sub-table, a compose service
+can be named anything, including `file`, `import`, or any other reserved
+scalar key on the block itself. Those only collide with keys directly on
+`[compose.<alias>]`, a different namespace from `[compose.<alias>.override.*]`.
 
 ## Profiles
 
@@ -228,7 +230,7 @@ baseline because compose users carry strong existing expectations:
 | Container name                                                | `{project}_{service}_{index}`                             | Matches `docker compose ps` output; `docker logs` keeps working.      |
 | Task name                                                     | `{alias}.{service}`                                       | Override with `name_format`; must contain `{service}` (else collide). |
 
-User overrides win over every default via `[compose.<alias>.<svc>]`.
+User overrides win over every default via `[compose.<alias>.override.<svc>]`.
 
 ## Instances (identical only)
 

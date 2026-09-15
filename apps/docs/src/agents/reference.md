@@ -13,7 +13,7 @@ Notation in schema blocks: `key: type =default — note`. `=default` omitted mea
 - Config reload is explicit: `runwisp reload` / `SIGHUP` / `POST /api/daemon/reload` re-read the whole TOML and reconcile the live task set (add/change/remove tasks, services, `[defaults]`). Validate-first/atomic — a parse/validation failure, or a change to a restart-only setting (`[daemon]`, `[scheduler] timezone`, `[storage]`, `[notify]`, bind host/port), is rejected and leaves the running set untouched. Reload is NOT a restart: added tasks get no `run_on_start`/catch-up, in-flight runs finish under their old definition. The daemon never auto-watches the file. Restart-only settings (and re-firing `run_on_start`/catch-up) need `runwisp restart`.
 - Two unit kinds: `[tasks.<name>]` run-to-exit (cron or manual); `[services.<name>]` long-running, `restart` defaults to `always`. Names must be unique across both tables. `name` validated by RunWisp's task-name rules.
 - `run =` is shell, executed from disk only — never from an HTTP/WS body.
-- Inheritance: `[defaults]` → each task/service → per-key override. `env` merges (task wins); `[compose.<alias>.<svc>]` overrides per imported service.
+- Inheritance: `[defaults]` → each task/service → per-key override. `env` merges (task wins); `[compose.<alias>.override.<svc>]` overrides per imported service.
 - IDs are ULIDs. Logs are per-task files on disk; SQLite holds run metadata only.
 
 ## runwisp.toml
@@ -185,7 +185,7 @@ depends_on:          []string          — services that must be healthy before 
 
 ### [compose.&lt;alias&gt;] (import docker-compose services)
 
-Expands to one observable service-task per imported compose service (or one task for the whole stack). Imported tasks default `restart=on_failure`, `instances=1`. Reserved scalar keys (any other key = a per-service override sub-table `[compose.<alias>.<svc>]`):
+Expands to one observable service-task per imported compose service (or one task for the whole stack). Imported tasks default `restart=on_failure`, `instances=1`. Reserved scalar keys, plus one reserved sub-table `override` holding per-service overrides (`[compose.<alias>.override.<svc>]`):
 
 ```
 file:         path =auto-discover  — compose.yaml/.yml/docker-compose.yaml/.yml
@@ -201,7 +201,7 @@ pull:         enum =missing        — missing | always | never
 name_format:  string ={alias}.{service} — generated task name; must contain {service} when import="services"
 ```
 
-Per-service override `[compose.<alias>.<svc>]` accepts: `group`, `description`, `timeout`, `graceful_stop`, `stop_signal`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `restart_attempts`, `priority`, `autostart`, `failures`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `manual_trigger`, `env`, `env_file`, `secrets`, `secrets_file`, `notify`. Not allowed: `run`/`compose_file`/`compose_service` (the parent block owns the backend), `on_overlap` (task-only concept), and the host-process keys `shell`/`umask`/`env_base`/`user`. `import="stack"` forbids overrides and the `services` filter. Per-service `notify` desugars into notify routes keyed by the generated task name, exactly like `[services.*]`. The reserved sub-table `[compose.<alias>.defaults]` accepts the same keys and applies them to every imported service before the per-service override wins (precedence: compose-import default → `defaults` → `<svc>`); its `notify` adds routes to all services. A compose service literally named `defaults` is rejected (rename hint); `import="stack"` forbids `defaults` too.
+Per-service override `[compose.<alias>.override.<svc>]` accepts: `group`, `description`, `timeout`, `graceful_stop`, `stop_signal`, `restart`, `instances`, `restart_delay`, `restart_backoff`, `healthy_after`, `restart_attempts`, `priority`, `autostart`, `failures`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `manual_trigger`, `env`, `env_file`, `secrets`, `secrets_file`, `notify`. Not allowed: `run`/`compose_file`/`compose_service` (the parent block owns the backend), `on_overlap` (task-only concept), and the host-process keys `shell`/`umask`/`env_base`/`user`. `import="stack"` forbids overrides and the `services` filter. Per-service `notify` desugars into notify routes keyed by the generated task name, exactly like `[services.*]`. The reserved key `[compose.<alias>.override.defaults]` accepts the same keys and applies them to every imported service before the per-service override wins (precedence: compose-import default → `defaults` → `<svc>`); its `notify` adds routes to all services. `import="stack"` forbids `defaults` too. Since overrides live under `override`, a separate namespace from the block's scalar keys, a compose service can be named anything, including literally `defaults`, though it then can't get an individual override (`override.defaults` always means the block default).
 
 ### [notify] (global notification settings)
 

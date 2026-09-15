@@ -4,9 +4,7 @@
 package config
 
 import (
-	"bytes"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pelletier/go-toml/v2"
 	"github.com/runwisp/runwisp/internal/composespec"
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -30,27 +27,10 @@ var ComposeAutoDiscoveryFilenames = []string{
 	"docker-compose.yml",
 }
 
-// composeReservedKeys is the set of [compose.<alias>] scalar/array keys that
-// are NOT per-service override sub-tables. A compose file with a service
-// named identically to one of these reserved keys is rejected at expansion
-// time with a helpful rename hint.
-var composeReservedKeys = map[string]struct{}{
-	"file":         {},
-	"services":     {},
-	"import":       {},
-	"group":        {},
-	"project_name": {},
-	"profiles":     {},
-	"env_file":     {},
-	"working_dir":  {},
-	"with_deps":    {},
-	"pull":         {},
-	"name_format":  {},
-}
-
-// composeDefaultsKey is the reserved [compose.<alias>.<key>] sub-table name that
-// applies its override surface to every imported service (per-service tables win).
-// A compose service named identically is rejected with a rename hint.
+// composeDefaultsKey is the reserved [compose.<alias>.override.<key>] entry that
+// applies its override surface to every imported service (per-service entries
+// win). A compose service actually named "defaults" can't get an individual
+// override through this key (see composeBlockWire.Override in wire.go).
 const composeDefaultsKey = "defaults"
 
 // Compose block import strategy — the [compose.*] `import` key. This is a
@@ -150,61 +130,25 @@ func appendComposeNotify(out *NotifyConfig, sugar []composeNotifySugar) error {
 	return expandInlineTokensFrom(out, from)
 }
 
-// composeBlockWire is the TOML-decodable form of the scalar/array keys in a
-// [compose.<alias>] table. Sub-tables (per-service overrides) are separated
-// before decoding.
-type composeBlockWire struct {
-	File string `toml:"file,omitempty"`
-	// Services filters which compose services are imported. A bare (or "+"-prefixed)
-	// name is an allowlist entry ("import only these"); a "-"-prefixed name is a
-	// denylist entry ("import everything but these"). The two polarities are
-	// mutually exclusive within one block. Empty means "import every service".
-	Services    []string `toml:"services,omitempty"`
-	Import      string   `toml:"import,omitempty"`
-	Group       string   `toml:"group,omitempty"`
-	ProjectName string   `toml:"project_name,omitempty"`
-	Profiles    []string `toml:"profiles,omitempty"`
-	EnvFile     []string `toml:"env_file,omitempty"`
-	WorkingDir  string   `toml:"working_dir,omitempty"`
-	WithDeps    bool     `toml:"with_deps,omitempty"`
-	Pull        string   `toml:"pull,omitempty"`
-	NameFormat  string   `toml:"name_format,omitempty"`
-}
-
-// composeBlock is the destructured form of one [compose.<alias>] table.
+// composeBlock is the expanded form of one decoded [compose.<alias>] block:
+// composeBlockWire's scalars, plus its Override map split into per-service
+// overrides and the block-level defaults.
 type composeBlock struct {
 	composeBlockWire
 	Alias string
 
 	// Overrides keyed by compose-service name (post-`services` filtering).
+	// Derived from composeBlockWire.Override, minus the "defaults" entry.
 	Overrides map[string]*composeServiceOverrideWire
 
-	// Defaults is the [compose.<alias>.defaults] sub-table applied to every
-	// imported service before its per-service override (nil when absent).
+	// Defaults is the [compose.<alias>.override.defaults] entry applied to
+	// every imported service before its per-service override (nil when
+	// absent).
 	Defaults *composeServiceOverrideWire
 }
 
-// composeServiceOverrideWire is the per-service override surface inside a
-// [compose.<alias>.<svc>] sub-table. Like [services.*] it *excludes* Run /
-// ComposeFile / ComposeService (an override never specifies its own
-// execution backend; that comes from the parent compose block) and rejects
-// OnOverlap (a task-only concept, see applyComposeOverride). ManualTrigger is
-// accepted: it locks the service against manual stop/restart/start the same
-// way it does on [services.*].
-type composeServiceOverrideWire struct {
-	unitOverrideWire
-	serviceSupervisionWire
-
-	Instances int `toml:"instances,omitempty"`
-
-	// Failures overrides the failure classification for this compose service,
-	// same syntax and semantics as [services.*] failures. nil leaves the
-	// inherited [defaults] classification in place.
-	Failures []string `toml:"failures,omitempty"`
-}
-
-func expandComposeAlias(alias string, raw map[string]any, baseDir string, existingNames map[string]struct{}) ([]model.Task, []composeNotifySugar, error) {
-	block, err := parseComposeBlock(alias, raw)
+func expandComposeAlias(alias string, wire *composeBlockWire, baseDir string, existingNames map[string]struct{}) ([]model.Task, []composeNotifySugar, error) {
+	block, err := parseComposeBlock(alias, wire)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -262,37 +206,18 @@ func resolveComposeBlockPaths(block *composeBlock, baseDir, resolvedFile string)
 	return nil
 }
 
-// parseComposeBlock destructures the raw map into scalar fields + per-service
-// override sub-tables. Returns clean error messages naming the offending key.
-func parseComposeBlock(alias string, raw map[string]any) (*composeBlock, error) {
-	scalars := make(map[string]any, len(composeReservedKeys))
-	overrides := make(map[string]*composeServiceOverrideWire)
+// parseComposeBlock splits an already-decoded [compose.<alias>] block's
+// Override map into per-service overrides and the block-level defaults
+// (the reserved "defaults" entry), then defaults and validates the result.
+func parseComposeBlock(alias string, wire *composeBlockWire) (*composeBlock, error) {
+	overrides := make(map[string]*composeServiceOverrideWire, len(wire.Override))
 	var defaults *composeServiceOverrideWire
-
-	for key, value := range raw {
-		if _, reserved := composeReservedKeys[key]; reserved {
-			scalars[key] = value
-			continue
-		}
-		subTable, ok := value.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("unknown key %q (not a per-service override table; reserved keys: %s)",
-				key, strings.Join(slices.Sorted(maps.Keys(composeReservedKeys)), ", "))
-		}
-		override, err := decodeServiceOverride(key, subTable)
-		if err != nil {
-			return nil, err
-		}
-		if key == composeDefaultsKey {
+	for name, override := range wire.Override {
+		if name == composeDefaultsKey {
 			defaults = override
 			continue
 		}
-		overrides[key] = override
-	}
-
-	wire, err := decodeComposeBlockWire(scalars)
-	if err != nil {
-		return nil, err
+		overrides[name] = override
 	}
 
 	block := &composeBlock{
@@ -350,39 +275,6 @@ func validateComposeBlock(block *composeBlock) error {
 		}
 	}
 	return nil
-}
-
-func decodeComposeBlockWire(scalars map[string]any) (*composeBlockWire, error) {
-	buf, err := toml.Marshal(scalars)
-	if err != nil {
-		return nil, fmt.Errorf("compose block: %w", err)
-	}
-	var w composeBlockWire
-	dec := toml.NewDecoder(bytes.NewReader(buf))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&w); err != nil {
-		return nil, fmt.Errorf("compose block: %w", err)
-	}
-	return &w, nil
-}
-
-// decodeServiceOverride re-marshals the raw sub-table to TOML and decodes it
-// into a composeServiceOverrideWire. This buys us full type validation for
-// the override without re-implementing every duration/byte-size parser by
-// hand. Strict decode catches typos and disallowed keys (run, compose_file)
-// with the standard go-toml error shape.
-func decodeServiceOverride(svcName string, raw map[string]any) (*composeServiceOverrideWire, error) {
-	buf, err := toml.Marshal(raw)
-	if err != nil {
-		return nil, fmt.Errorf("service %q override: %w", svcName, err)
-	}
-	var w composeServiceOverrideWire
-	dec := toml.NewDecoder(bytes.NewReader(buf))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&w); err != nil {
-		return nil, fmt.Errorf("service %q override: %w", svcName, err)
-	}
-	return &w, nil
 }
 
 func expandComposeServices(block *composeBlock, project *composespec.Project, existingNames map[string]struct{}) ([]model.Task, []composeNotifySugar, error) {
@@ -446,18 +338,10 @@ func composeServiceNotify(w *composeServiceOverrideWire, taskName string) (compo
 	}, true
 }
 
-// selectImportedComposeServices rejects service names colliding with a reserved
-// compose-block key, validates the `services` filter names against the
-// available services, and returns the post-filter set of services to import.
+// selectImportedComposeServices validates the `services` filter names against
+// the available services, and returns the post-filter set of services to
+// import.
 func selectImportedComposeServices(block *composeBlock, available []string, availableSet map[string]struct{}) ([]string, error) {
-	for _, n := range available {
-		if _, reserved := composeReservedKeys[n]; reserved {
-			return nil, fmt.Errorf("compose service %q collides with a reserved key in [compose.%s]; rename the compose service", n, block.Alias)
-		}
-	}
-	if _, ok := availableSet[composeDefaultsKey]; ok {
-		return nil, fmt.Errorf("compose service %q collides with the reserved defaults table in [compose.%s]; rename the compose service", composeDefaultsKey, block.Alias)
-	}
 	include, exclude, err := parseComposeServices(block.Services)
 	if err != nil {
 		return nil, err
@@ -556,8 +440,8 @@ func expandComposeStack(block *composeBlock, _ *composespec.Project, existingNam
 // overrides to produce a single supervisable service task. Compose-import
 // defaults: kind=service, restart=on_failure, instances=1, group=alias,
 // graceful_stop=compose stop_grace_period (when set). Precedence, low to high:
-// compose-import default → the block's [compose.<alias>.defaults] table →
-// the per-service [compose.<alias>.<svc>] override.
+// compose-import default → the block's [compose.<alias>.override.defaults] →
+// the per-service [compose.<alias>.override.<svc>] override.
 func buildComposeServiceTask(block *composeBlock, svc *composespec.Service, svcName, taskName string) (model.Task, error) {
 	task := model.Task{
 		Name:          taskName,
