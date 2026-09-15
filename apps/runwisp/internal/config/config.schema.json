@@ -335,8 +335,7 @@
         "keep_notifications": { "type": "integer", "default": 1024, "description": "In-app bell row cap." },
         "keep_for": { "$ref": "#/$defs/duration", "description": "Max bell row age. Default 90d." },
         "coalesce_window": { "$ref": "#/$defs/duration", "description": "Collapse repeat (kind+task) into one bell row. Default 1h." },
-        "keep_occurrences": { "type": "integer", "default": 10, "description": "Recent timestamps kept per coalesced row." },
-        "coalesce_outbound": { "type": "boolean", "default": true, "description": "Coalesce outbound bursts too." }
+        "keep_occurrences": { "type": "integer", "default": 10, "description": "Recent timestamps kept per coalesced row." }
       }
     },
     "notifier": {

@@ -39,7 +39,7 @@ func TestBuild_SlackPropagatesTransport(t *testing.T) {
 func TestBuild_SlackEmptyWebhookReturnsError(t *testing.T) {
 	_, err := Build(NotifierSpec{ID: "ops", Type: "slack"})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "webhook URL is required")
+	assert.Contains(t, err.Error(), "slack channel \"ops\": url is required")
 }
 
 func TestBuild_DiscordPropagatesTransport(t *testing.T) {

@@ -56,6 +56,37 @@ func TestSchemaCoversWireTags(t *testing.T) {
 		"config.schema.json is missing properties for TOML keys declared in wire.go: %v", missing)
 }
 
+// TestWireTagsCoverSchema is the reverse anti-drift guard: every property the
+// JSON Schema declares must map to a real `toml:"..."` wire tag. A schema key
+// with no backing wire field is worse than dead code — the decoder is strict
+// (DisallowUnknownFields), so an operator who copies the key from schema
+// autocomplete gets a hard parse failure at load. (coalesce_outbound was
+// exactly this stale key until round 4.) TestSchemaCoversWireTags only checks
+// the wire→schema direction; this one closes the loop.
+func TestWireTagsCoverSchema(t *testing.T) {
+	schemaKeys := collectSchemaPropertyNames(t)
+
+	wireKeys := map[string]struct{}{}
+	collectTOMLTags(reflect.TypeFor[tomlConfig](), wireKeys, map[reflect.Type]bool{})
+	// [compose.<alias>] blocks are decoded from a free-form map (see
+	// wire.go Compose + parseComposeBlock), so their reserved keys carry no
+	// struct tag for collectTOMLTags to find. Seed them from the authoritative
+	// set compose.go parses against.
+	for key := range composeReservedKeys {
+		wireKeys[key] = struct{}{}
+	}
+
+	var orphan []string
+	for key := range schemaKeys {
+		if _, ok := wireKeys[key]; !ok {
+			orphan = append(orphan, key)
+		}
+	}
+	require.Empty(t, orphan,
+		"config.schema.json declares properties with no backing toml wire tag "+
+			"(strict decode would reject them at load): %v", orphan)
+}
+
 // TestSchemaMatchKindsCoversAllKindStrings is the anti-drift guard for the
 // other hand-authored copy of the match.kinds vocabulary: config.schema.json
 // can't import kinds.AllKindStrings (it's JSON, not Go), so this test checks

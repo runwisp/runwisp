@@ -296,6 +296,7 @@ func TestDeleteRun(t *testing.T) {
 	id := ulid.Make().String()
 	run := &model.Run{ID: id, TaskName: "task1", Status: model.PhaseEnded}
 	repo.On("GetRun", mock.Anything, id).Return(run, nil)
+	repo.On("ResolveSelectorIDs", mock.Anything, mock.Anything, mock.Anything).Return([]storage.RunRef{}, nil)
 	repo.On("SoftDeleteRuns", mock.Anything, mock.MatchedBy(func(sel model.RunSelector) bool {
 		return !sel.MatchAll && len(sel.IDs) == 1 && sel.IDs[0] == id
 	}), mock.Anything).Return([]storage.RunRef{{ID: id, TaskName: "task1"}}, nil)
@@ -314,6 +315,7 @@ func TestBulkDeleteRuns(t *testing.T) {
 
 	id1 := ulid.Make().String()
 	id2 := ulid.Make().String()
+	repo.On("ResolveSelectorIDs", mock.Anything, mock.Anything, mock.Anything).Return([]storage.RunRef{}, nil)
 	repo.On("SoftDeleteRuns", mock.Anything, mock.MatchedBy(func(sel model.RunSelector) bool {
 		return !sel.MatchAll && len(sel.IDs) == 2
 	}), mock.Anything).Return([]storage.RunRef{

@@ -23,6 +23,7 @@ type Channel struct {
 	headers   http.Header
 	transport *notify.HTTPProvider
 	renderer  render.Renderer
+	transform func([]byte) ([]byte, error)
 }
 
 // Config is the inputs the factory needs to build a webhook Channel.
@@ -35,6 +36,10 @@ type Config struct {
 	Headers   map[string]string // optional; merged into every request
 	Renderer  render.Renderer
 	Transport *notify.HTTPProvider // optional; default constructed when nil
+	// Transform optionally rewrites the rendered JSON body before it is
+	// POSTed (e.g. Slack injecting a target channel). Nil means send as
+	// rendered.
+	Transform func([]byte) ([]byte, error)
 }
 
 // New constructs a webhook channel.
@@ -67,6 +72,7 @@ func New(cfg Config) (*Channel, error) {
 		headers:   h,
 		transport: transport,
 		renderer:  cfg.Renderer,
+		transform: cfg.Transform,
 	}, nil
 }
 
@@ -81,7 +87,14 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 	if err != nil {
 		return fmt.Errorf("%s: render: %w", c, err)
 	}
-	if err := c.transport.PostJSONWithHeaders(ctx, c.url, "application/json", rendered.Body, c.headers); err != nil {
+	body := rendered.Body
+	if c.transform != nil {
+		body, err = c.transform(body)
+		if err != nil {
+			return fmt.Errorf("%s: transform body: %w", c, err)
+		}
+	}
+	if err := c.transport.PostJSONWithHeaders(ctx, c.url, "application/json", body, c.headers); err != nil {
 		return fmt.Errorf("%s: %w", c, notify.RedactError(err, c.url))
 	}
 	return nil

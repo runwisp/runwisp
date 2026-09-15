@@ -245,7 +245,7 @@ func (srv *Server) humaListRuns(ctx context.Context, input *RunsQueryInput) (*Ru
 	if err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to get runs")
 	}
-	return &RunsOutput{Body: RunsResponseBody{Items: result.Items, Total: result.Total}}, nil
+	return &RunsOutput{Body: *result}, nil
 }
 
 func (srv *Server) humaGetRunSummary(ctx context.Context, input *struct{}) (*RunSummaryOutput, error) {
@@ -256,7 +256,7 @@ func (srv *Server) humaGetRunSummary(ctx context.Context, input *struct{}) (*Run
 	return &RunSummaryOutput{Body: *summary}, nil
 }
 
-func (srv *Server) humaTriggerRun(ctx context.Context, input *TriggerRunInput) (*TriggerRunOutput, error) {
+func (srv *Server) humaTriggerRun(ctx context.Context, input *TriggerRunInput) (*RunOutput, error) {
 	var params map[string]*string
 	if input.Body != nil {
 		params = input.Body.Params
@@ -267,13 +267,13 @@ func (srv *Server) humaTriggerRun(ctx context.Context, input *TriggerRunInput) (
 		if err != nil {
 			return nil, mapDomainError(ctx, err, "Failed to trigger run")
 		}
-		return &TriggerRunOutput{Body: *run}, nil
+		return &RunOutput{Body: *run}, nil
 	}
 	run, err := srv.runService.TriggerRun(ctx, input.TaskName, params, triggeredBy)
 	if err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to trigger run")
 	}
-	return &TriggerRunOutput{Body: *run}, nil
+	return &RunOutput{Body: *run}, nil
 }
 
 func (srv *Server) humaRestartTask(ctx context.Context, input *TaskNameInput) (*struct{}, error) {
@@ -313,11 +313,11 @@ func (srv *Server) humaStopRun(ctx context.Context, input *RunIDInput) (*struct{
 }
 
 func (srv *Server) humaBulkDeleteRuns(ctx context.Context, input *BulkRunSelectorInput) (*BulkAffectedOutput, error) {
-	n, err := srv.runService.bulkSoftDelete(ctx, input.Body)
+	n, skipped, err := srv.runService.bulkSoftDelete(ctx, input.Body)
 	if err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to delete runs")
 	}
-	return &BulkAffectedOutput{Body: BulkAffectedBody{Affected: n}}, nil
+	return &BulkAffectedOutput{Body: BulkAffectedBody{Affected: n, Skipped: skipped}}, nil
 }
 
 func (srv *Server) humaBulkRestoreRuns(ctx context.Context, input *BulkRunSelectorInput) (*BulkAffectedOutput, error) {
