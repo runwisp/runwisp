@@ -1800,6 +1800,29 @@ run = "echo hi"
 		assert.Equal(t, "", cfg.Daemon.ExternalURL)
 	})
 
+	t.Run("daemon check_updates defaults to true", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.True(t, cfg.Daemon.CheckUpdates)
+	})
+
+	t.Run("daemon check_updates false is honored", func(t *testing.T) {
+		path := writeTOML(t, `
+[daemon]
+check_updates = false
+
+[tasks.t]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.False(t, cfg.Daemon.CheckUpdates)
+	})
+
 	t.Run("daemon metrics_enabled defaults to false", func(t *testing.T) {
 		path := writeTOML(t, `
 [tasks.t]

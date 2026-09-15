@@ -481,6 +481,39 @@ func TestDialogManager_LogHistoryLifecycle(t *testing.T) {
 	}
 }
 
+func TestDialogManager_NewReleaseLifecycle(t *testing.T) {
+	var dm DialogManager
+	if dm.HasNewRelease() {
+		t.Fatal("expected no new-release dialog initially")
+	}
+
+	dm.ShowNewRelease("1.0.0", "v2.0.0")
+	if !dm.HasNewRelease() {
+		t.Fatal("expected new-release dialog after ShowNewRelease")
+	}
+
+	if out := dm.RenderOverlays("base", 80, 24); out == "base" {
+		t.Fatal("expected RenderOverlays to render the new-release modal, not fall through")
+	}
+
+	cmd, closed := dm.UpdateNewRelease(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	if !closed {
+		t.Fatal("expected an unrecognized key to close the dialog")
+	}
+	if cmd != nil {
+		t.Fatal("expected no command from a plain dismiss")
+	}
+	if dm.HasNewRelease() {
+		t.Fatal("expected new-release dialog nil after close")
+	}
+
+	dm.ShowNewRelease("1.0.0", "v2.0.0")
+	dm.DismissNewRelease()
+	if dm.HasNewRelease() {
+		t.Fatal("expected new-release dialog nil after DismissNewRelease")
+	}
+}
+
 func TestDialogManager_HelpLifecycle(t *testing.T) {
 	var dm DialogManager
 

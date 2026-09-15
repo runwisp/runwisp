@@ -31,6 +31,24 @@ func TestHandleDaemonInfo_UpdatesConfigStale(t *testing.T) {
 	}
 }
 
+func TestHandleDaemonInfo_UpdatesSidebarUpdateIndicator(t *testing.T) {
+	m := newTestModel(nil)
+	updated, _ := m.handleDaemonInfo(uikit.DaemonInfoMsg{
+		Info: &model.DaemonInfo{UpdateAvailable: true, LatestVersion: "v9.9.9"},
+	})
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatal("expected Model")
+	}
+	if got.sidebar.LatestVersion() != "v9.9.9" {
+		t.Fatalf("LatestVersion = %q, want v9.9.9", got.sidebar.LatestVersion())
+	}
+	got.sidebar.FocusVersion()
+	if !got.sidebar.VersionFocused() {
+		t.Fatal("expected the sidebar to have picked up UpdateAvailable from daemon info")
+	}
+}
+
 func TestHandleDaemonInfo_ErrorKeepsLastKnownState(t *testing.T) {
 	m := newTestModel(nil)
 	m.info.ConfigStale = true

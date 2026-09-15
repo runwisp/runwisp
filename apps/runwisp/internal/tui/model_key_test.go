@@ -323,6 +323,24 @@ func TestHandleKeyEnter_MainPanelNoExecViewHomeCursorGte0(t *testing.T) {
 	}
 }
 
+// TestHandleKeyEnter_SidebarVersionFocused_ShowsNewReleaseDialog covers the
+// branch that opens the update-details modal when the sidebar's version
+// indicator holds keyboard focus.
+func TestHandleKeyEnter_SidebarVersionFocused_ShowsNewReleaseDialog(t *testing.T) {
+	m := newTestModel(nil)
+	m.info.Version = "1.0.0"
+	m.sidebar.SetUpdate(true, "v2.0.0")
+	m.sidebar.FocusVersion()
+
+	newM, _, handled := handleKeyEnter(m, keyMsgSpecial(tea.KeyEnter))
+	if !handled {
+		t.Fatal("expected handled=true when the version indicator is focused")
+	}
+	if !newM.dialogs.HasNewRelease() {
+		t.Fatal("expected the new-release dialog to open")
+	}
+}
+
 func TestHandleKeyEnter_SidebarWithExecView(t *testing.T) {
 	m := newTestModel(nil)
 	// panelFocus = PanelSidebar by default

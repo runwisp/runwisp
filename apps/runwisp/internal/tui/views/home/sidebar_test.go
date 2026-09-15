@@ -474,3 +474,115 @@ func TestSidebar_EnsureVisible_ScrollClampAndCursorBounds(t *testing.T) {
 	s.SetSize(20, 6)
 	assert.Equal(t, len(s.items)-1, s.cursor)
 }
+
+func TestSidebar_SetUpdate_TracksAvailabilityAndLatest(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("a"))
+	assert.False(t, s.VersionFocused())
+
+	s.SetUpdate(true, "v0.2.0")
+	assert.Equal(t, "v0.2.0", s.LatestVersion())
+	assert.False(t, s.VersionFocused(), "SetUpdate alone does not move focus")
+
+	s.FocusVersion()
+	assert.True(t, s.VersionFocused())
+}
+
+// TestSidebar_SetUpdate_LosingAvailabilityDropsFocus covers the branch where a
+// reload clears updateAvailable while the indicator held keyboard focus.
+func TestSidebar_SetUpdate_LosingAvailabilityDropsFocus(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("a"))
+	s.SetUpdate(true, "v0.2.0")
+	s.FocusVersion()
+	require.True(t, s.VersionFocused())
+
+	s.SetUpdate(false, "")
+	assert.False(t, s.VersionFocused())
+}
+
+// TestSidebar_FocusVersion_NoopWhenUnavailable covers FocusVersion's no-op
+// branch when there is nothing to focus.
+func TestSidebar_FocusVersion_NoopWhenUnavailable(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("a"))
+	s.FocusVersion()
+	assert.False(t, s.VersionFocused())
+}
+
+func TestSidebar_VersionRowAt(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("a"))
+	assert.False(t, s.VersionRowAt(versionRow), "no update available → never hittable")
+
+	s.SetUpdate(true, "v0.2.0")
+	assert.True(t, s.VersionRowAt(versionRow))
+	assert.False(t, s.VersionRowAt(versionRow+1))
+}
+
+// TestSidebar_Update_VersionFocused_Navigation walks every key branch that
+// touches versionFocused: stepping up off the first item onto the indicator,
+// stepping back down into the list, staying put at the very top, and every
+// other navigation key dropping focus back to the list.
+func TestSidebar_Update_VersionFocused_Navigation(t *testing.T) {
+	tasks := makeTasks("alpha", "bravo")
+	s := NewSidebar("RunWisp", "0.1.0", "", tasks)
+	s.SetSize(20, 20)
+	s.SetUpdate(true, "v0.2.0")
+	s.cursor = 0
+
+	// "up" from the first item lands on the indicator.
+	s.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	assert.True(t, s.VersionFocused())
+
+	// Already focused: "up" again is a no-op (stays at the very top).
+	got := s.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
+	assert.Nil(t, got)
+	assert.True(t, s.VersionFocused())
+
+	// "enter"/"space" while focused is swallowed here — the model owns the dialog.
+	got = s.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	assert.Nil(t, got)
+	assert.Equal(t, 0, s.selected)
+
+	// "down" steps back off the indicator into the list.
+	s.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
+	assert.False(t, s.VersionFocused())
+
+	// pgdown/pgup/home/end all drop focus off the indicator too.
+	for _, drop := range []tea.KeyPressMsg{
+		{Code: tea.KeyPgDown}, {Code: tea.KeyPgUp}, {Code: tea.KeyHome}, {Code: tea.KeyEnd},
+	} {
+		s.cursor = 0
+		s.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
+		require.True(t, s.VersionFocused())
+		s.Update(drop)
+		assert.False(t, s.VersionFocused())
+	}
+}
+
+// TestSidebar_HandleClick_ClearsVersionFocused covers HandleClick's new
+// versionFocused=false reset ahead of the existing selection logic.
+func TestSidebar_HandleClick_ClearsVersionFocused(t *testing.T) {
+	tasks := makeTasks("a", "b")
+	s := NewSidebar("RunWisp", "0.1.0", "", tasks)
+	s.SetSize(20, 30)
+	s.SetUpdate(true, "v0.2.0")
+	s.FocusVersion()
+	require.True(t, s.VersionFocused())
+
+	s.HandleClick(s.brandHeight())
+	assert.False(t, s.VersionFocused())
+}
+
+// TestSidebar_View_RendersUpdateIndicator exercises renderVersionLine's three
+// branches: no update, update unfocused, and update focused.
+func TestSidebar_View_RendersUpdateIndicator(t *testing.T) {
+	s := NewSidebar("RunWisp", "0.1.0", "", makeTasks("a"))
+	s.SetSize(30, 15)
+	assert.NotContains(t, s.View(), "⚠")
+
+	s.SetUpdate(true, "v0.2.0")
+	assert.Contains(t, s.View(), "⚠")
+
+	s.FocusVersion()
+	out := s.View()
+	assert.Contains(t, out, "⚠")
+	assert.Contains(t, out, "v0.2.0")
+}

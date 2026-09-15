@@ -224,6 +224,65 @@ func TestInterceptConfirmDialog_RoutesToShuttingDown(t *testing.T) {
 	}
 }
 
+// ─── interceptNewReleaseDialog ───────────────────────────────────────────────
+
+func TestInterceptNewReleaseDialog_CtrlCEscalatesToQuitConfirm(t *testing.T) {
+	m := newTestModel(nil)
+	m.dialogs.ShowNewRelease("1.0.0", "v2.0.0")
+
+	updated, _, intercepted := m.interceptNewReleaseDialog(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if !intercepted {
+		t.Fatal("expected intercepted=true for ctrl+c")
+	}
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatal("expected Model")
+	}
+	if got.dialogs.HasNewRelease() {
+		t.Fatal("expected new-release dialog dismissed on ctrl+c")
+	}
+	if !got.dialogs.HasConfirm() {
+		t.Fatal("expected ctrl+c to escalate to the quit-confirm dialog")
+	}
+}
+
+func TestInterceptNewReleaseDialog_KeyMsgRoutesToDialog(t *testing.T) {
+	m := newTestModel(nil)
+	m.dialogs.ShowNewRelease("1.0.0", "v2.0.0")
+
+	updated, _, intercepted := m.interceptNewReleaseDialog(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	if !intercepted {
+		t.Fatal("expected intercepted=true for a key while the dialog is open")
+	}
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatal("expected Model")
+	}
+	if got.dialogs.HasNewRelease() {
+		t.Fatal("expected an unrecognized key to close the dialog")
+	}
+}
+
+func TestInterceptNewReleaseDialog_MouseMsgRoutesToDialog(t *testing.T) {
+	m := newTestModel(nil)
+	m.dialogs.ShowNewRelease("1.0.0", "v2.0.0")
+
+	_, _, intercepted := m.interceptNewReleaseDialog(tea.MouseClickMsg{})
+	if !intercepted {
+		t.Fatal("expected intercepted=true for mouse msg with new-release dialog open")
+	}
+}
+
+func TestInterceptNewReleaseDialog_OtherMsgNotIntercepted(t *testing.T) {
+	m := newTestModel(nil)
+	m.dialogs.ShowNewRelease("1.0.0", "v2.0.0")
+
+	_, _, intercepted := m.interceptNewReleaseDialog(uikit.TickMsg{})
+	if intercepted {
+		t.Fatal("expected intercepted=false for non-key/mouse msg")
+	}
+}
+
 // ─── interceptShuttingDownDialog ─────────────────────────────────────────────
 
 func TestInterceptShuttingDownDialog_CtrlC(t *testing.T) {

@@ -254,6 +254,31 @@ func TestHandleMouse_LeftClickSidebarFocusesSidebar(t *testing.T) {
 	}
 }
 
+// TestHandleMouse_ClickVersionIndicator_ShowsNewReleaseDialog covers the
+// version-indicator branch: clicking the amber update marker in the sidebar
+// focuses it and opens the update-details modal instead of routing through
+// the normal item-click path.
+func TestHandleMouse_ClickVersionIndicator_ShowsNewReleaseDialog(t *testing.T) {
+	m := newTestModel(nil)
+	m.info.Version = "1.0.0"
+	m.sidebar.SetUpdate(true, "v2.0.0")
+
+	// Row 2 of the brand block (blank, brand mark, version) is the fixed
+	// version-line row the sidebar hit-tests against.
+	msg := tea.MouseClickMsg{Button: tea.MouseLeft, X: 1, Y: 2}
+	newM, _ := m.handleMouse(msg)
+	got, ok := newM.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", newM)
+	}
+	if !got.sidebar.VersionFocused() {
+		t.Fatal("expected the version indicator to be focused after the click")
+	}
+	if !got.dialogs.HasNewRelease() {
+		t.Fatal("expected the new-release dialog to open")
+	}
+}
+
 // TestHandleMouse_LeftClickMainPanelRoutes covers the click-in-main-panel path.
 func TestHandleMouse_LeftClickMainPanelRoutes(t *testing.T) {
 	m := newTestModel(nil)
