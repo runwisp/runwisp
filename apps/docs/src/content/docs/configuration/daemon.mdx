@@ -41,7 +41,7 @@ include          = ["conf.d/*.toml"]
 | `tls_cert`             | _unset_ | Path to a PEM certificate to serve instead of the self-signed one. Set together with `tls_key`. When set, HTTPS is served on every bind address, loopback included.                                                                                         |
 | `tls_key`              | _unset_ | Path to the PEM private key matching `tls_cert`. Both keys are set together or not at all.                                                                                                                                                                  |
 | `metrics_enabled`      | `false` | Master switch for the Prometheus-compatible `/metrics` endpoint. Off by default — task names and the daemon version label are visible to anyone who can reach the endpoint, so it stays closed until you turn it on.                                        |
-| `metrics_listen`       | _unset_ | Optional `host:port` for a dedicated metrics listener (e.g. `"127.0.0.1:9478"`). When set, `/metrics` is **only** reachable on this address — never on the main UI/REST listener. Only consulted when `metrics_enabled = true`.                             |
+| `metrics_listen`       | _unset_ | Optional `host:port` for a dedicated metrics listener (e.g. `"127.0.0.1:9478"`). When set, `/metrics` is **only** reachable on this address — never on the main UI/REST listener, and setting it enables metrics on its own.                                |
 | `allow_cloud_dispatch` | `false` | Opt in to ad-hoc runs requested by a connected control-plane peer. Off by default. Dispatched runs are one-shot and never modify your task set — see [the control-plane section](#allow_cloud_dispatch) below.                                              |
 | `trusted_proxies`      | _unset_ | CIDR allowlist of reverse proxies whose `X-Forwarded-For` header is trusted for the client IP. Catch-all ranges (`0.0.0.0/0`, `::/0`) are rejected. The `RUNWISP_TRUSTED_PROXIES` env var overrides this — see [`trusted_proxies`](#trusted_proxies) below. |
 | `include`              | _unset_ | Glob patterns for extra TOML files to merge into this config at load. Lets you split tasks across `conf.d/*.toml` instead of one giant file. Only valid in the root config.                                                                                 |
@@ -157,8 +157,8 @@ The dedicated metrics listener is always plain HTTP — auto-HTTPS (see
 private interface like a Tailscale address) and let your scraper reach it
 locally or through a proxy; don't expose it on a public interface.
 
-And if you set `metrics_listen` but never turned `metrics_enabled` on,
-the daemon rejects it at boot instead of quietly ignoring it.
+Setting `metrics_listen` enables metrics on its own — you don't also need
+`metrics_enabled = true`.
 
 ### `trusted_proxies`
 

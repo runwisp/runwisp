@@ -120,18 +120,22 @@ func TestStatusJSONGolden(t *testing.T) {
 			{Task: model.Task{Name: "web", Kind: model.KindService, ManualTrigger: true}},
 		}})
 	})
-	mux.HandleFunc("/api/tasks/backup/runs", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(server.RunsResponseBody{Total: 1, Items: []model.Run{{
-			ID: "01JZZBACKUP0000000000000000", TaskName: "backup", Status: model.PhaseEnded,
-			EndReason: &failed, ExitCode: 1, IsFailure: true, TriggeredBy: model.TriggeredByCron,
-			StartedAt: &start, EndedAt: &end,
-		}}})
-	})
-	mux.HandleFunc("/api/tasks/web/runs", func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(server.RunsResponseBody{Total: 1, Items: []model.Run{{
-			ID: "01JZZWEB00000000000000000000", TaskName: "web", Status: model.PhaseRunning,
-			TriggeredBy: model.TriggeredByService, StartedAt: &start,
-		}}})
+	mux.HandleFunc("/api/runs", func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("taskName") {
+		case "backup":
+			_ = json.NewEncoder(w).Encode(server.RunsResponseBody{Total: 1, Items: []model.Run{{
+				ID: "01JZZBACKUP0000000000000000", TaskName: "backup", Status: model.PhaseEnded,
+				EndReason: &failed, ExitCode: 1, IsFailure: true, TriggeredBy: model.TriggeredByCron,
+				StartedAt: &start, EndedAt: &end,
+			}}})
+		case "web":
+			_ = json.NewEncoder(w).Encode(server.RunsResponseBody{Total: 1, Items: []model.Run{{
+				ID: "01JZZWEB00000000000000000000", TaskName: "web", Status: model.PhaseRunning,
+				TriggeredBy: model.TriggeredByService, StartedAt: &start,
+			}}})
+		default:
+			_ = json.NewEncoder(w).Encode(server.RunsResponseBody{})
+		}
 	})
 	f := serveStatusSocket(t, mux)
 

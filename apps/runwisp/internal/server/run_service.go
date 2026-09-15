@@ -83,12 +83,8 @@ func mapNotFound(err error) error {
 	return err
 }
 
-func (s *runService) ListRuns(ctx context.Context, taskName string, p PaginationParams) (*RunsResponseBody, error) {
-	// A path task name (single-task view) overrides any task_name query param.
+func (s *runService) ListRuns(ctx context.Context, p PaginationParams) (*RunsResponseBody, error) {
 	filter := p.Filter
-	if taskName != "" {
-		filter.TaskName = taskName
-	}
 	runs, err := s.db.QueryRuns(ctx, storage.RunQuery{
 		Filter:        filter,
 		Limit:         p.Limit,

@@ -561,7 +561,13 @@ type defaultsWire struct {
 	HealthyAfter string `toml:"healthy_after,omitempty"`
 	// RestartAttempts is a pointer so an explicit `restart_attempts = 0` in
 	// [defaults] is distinguishable from an omitted key.
-	RestartAttempts *int `toml:"restart_attempts,omitempty"`
+	RestartAttempts *int   `toml:"restart_attempts,omitempty"`
+	RestartDelay    string `toml:"restart_delay,omitempty"`
+	RestartBackoff  string `toml:"restart_backoff,omitempty"`
+
+	CatchUp        string `toml:"catch_up,omitempty"`
+	MaxCatchUpRuns int    `toml:"max_catch_up_runs,omitempty"`
+	GracefulStop   string `toml:"graceful_stop,omitempty"`
 
 	// Failures is the global default failure classification; a task may override
 	// it. nil leaves the built-in default set (see model.DefaultFailureTokens).
@@ -598,6 +604,14 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 	if err != nil {
 		return Defaults{}, fmt.Errorf("invalid defaults.healthy_after: %w", err)
 	}
+	restartDelay, err := parseDurationPtr(w.RestartDelay)
+	if err != nil {
+		return Defaults{}, fmt.Errorf("invalid defaults.restart_delay: %w", err)
+	}
+	gracefulStop, err := parseDuration(w.GracefulStop)
+	if err != nil {
+		return Defaults{}, fmt.Errorf("invalid defaults.graceful_stop: %w", err)
+	}
 	// [defaults] always resolves to a concrete failure classification: the
 	// built-in default, replaced or delta-adjusted by the operator's `failures`
 	// list. Tasks that leave `failures` unset inherit this resolved matcher.
@@ -620,6 +634,11 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 		KeepFor:           keepFor,
 		HealthyAfter:      healthyAfter,
 		RestartAttempts:   w.RestartAttempts,
+		RestartDelay:      restartDelay,
+		RestartBackoff:    model.BackoffCurve(w.RestartBackoff),
+		CatchUp:           model.MissedRunPolicy(w.CatchUp),
+		MaxCatchUpRuns:    w.MaxCatchUpRuns,
+		GracefulStop:      gracefulStop,
 		FailureReasons:    failureReasons,
 		FailureExitRanges: failureRanges,
 		Env:               w.Env,
@@ -687,9 +706,10 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 	if err != nil {
 		return Daemon{}, err
 	}
-	if metricsListen != "" && !w.MetricsEnabled {
-		return Daemon{}, fmt.Errorf("invalid daemon.metrics_listen: set without daemon.metrics_enabled = true")
-	}
+	// A dedicated metrics_listen implies metrics are enabled — the endpoint has
+	// no other purpose, so there's no reason to make the operator also flip
+	// metrics_enabled.
+	metricsEnabled := w.MetricsEnabled || metricsListen != ""
 	tlsMode, err := parseTLSMode(w.TLS)
 	if err != nil {
 		return Daemon{}, err
@@ -702,7 +722,7 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 		AllowCloudDispatch: w.AllowCloudDispatch,
 		ShutdownTimeout:    shutdown,
 		ExternalURL:        externalURL,
-		MetricsEnabled:     w.MetricsEnabled,
+		MetricsEnabled:     metricsEnabled,
 		MetricsListen:      metricsListen,
 		TLS:                tlsMode,
 		TLSCert:            strings.TrimSpace(w.TLSCert),

@@ -177,6 +177,9 @@ func buildNotifierSpecs(notifiers map[string]*notifierWire, out *NotifyConfig) e
 		if strings.Contains(spec.ID, notifyTokenSeparator) {
 			return fmt.Errorf("notifier id %q must not contain %q (reserved for inline target overrides like %q)", spec.ID, notifyTokenSeparator, "slack:#ops")
 		}
+		if err := validateNotifierFieldsForType(spec.ID, spec.Type, n); err != nil {
+			return err
+		}
 		out.Notifiers = append(out.Notifiers, spec)
 	}
 	return nil
@@ -427,6 +430,49 @@ func validateNotifierSpecs(specs []NotifierSpec) (map[string]struct{}, error) {
 		}
 	}
 	return seenID, nil
+}
+
+// validateNotifierFieldsForType rejects a type-specific field set on a notifier
+// whose declared type does not use it. The flat notifierWire unions every
+// provider's fields, so DisallowUnknownFields can't catch a field carried over
+// from another type (e.g. an SMTP block retyped to slack with host/port left
+// behind); this restores that strictness. Skipped for an unknown type, which
+// requireOneOf reports on its own. template_path is common to all types.
+func validateNotifierFieldsForType(id, typ string, n *notifierWire) error {
+	if !slices.Contains(allowedNotifierTypes, typ) {
+		return nil
+	}
+	fields := []struct {
+		key    string
+		owners []string
+		set    bool
+	}{
+		{"webhook_url", []string{"slack", "discord"}, n.WebhookURL != ""},
+		{"channel", []string{"slack"}, n.Channel != ""},
+		{"bot_token", []string{"telegram"}, n.BotToken != ""},
+		{"chat_id", []string{"telegram"}, n.ChatID != ""},
+		{"parse_mode", []string{"telegram"}, n.ParseMode != ""},
+		{"host", []string{"smtp"}, n.Host != ""},
+		{"port", []string{"smtp"}, n.Port != 0},
+		{"tls_mode", []string{"smtp"}, n.TLSMode != ""},
+		{"tls_skip_verify", []string{"smtp"}, n.TLSSkipVerify},
+		{"username", []string{"smtp"}, n.Username != ""},
+		{"password", []string{"smtp"}, n.Password != ""},
+		{"from", []string{"smtp", "sendmail"}, n.From != ""},
+		{"reply_to", []string{"smtp", "sendmail"}, n.ReplyTo != ""},
+		{"to", []string{"smtp", "sendmail"}, len(n.To) > 0},
+		{"cc", []string{"smtp", "sendmail"}, len(n.CC) > 0},
+		{"bcc", []string{"smtp", "sendmail"}, len(n.BCC) > 0},
+		{"sendmail_path", []string{"sendmail"}, n.SendmailPath != ""},
+		{"url", []string{"webhook"}, n.URL != ""},
+		{"headers", []string{"webhook"}, len(n.Headers) > 0},
+	}
+	for _, f := range fields {
+		if f.set && !slices.Contains(f.owners, typ) {
+			return fmt.Errorf("notifier %q: %s is not valid for type=%s", id, f.key, typ)
+		}
+	}
+	return nil
 }
 
 func validateNotifierByType(spec *NotifierSpec) error {

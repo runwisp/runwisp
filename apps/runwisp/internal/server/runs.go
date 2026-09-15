@@ -104,14 +104,6 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaGetRun)
 
 	huma.Register(protectedAPI, huma.Operation{
-		OperationID: "listTaskRuns",
-		Method:      http.MethodGet,
-		Path:        "/api/tasks/{taskName}/runs",
-		Summary:     "List runs for a task",
-		Tags:        []string{"Runs"},
-	}, srv.humaListTaskRuns)
-
-	huma.Register(protectedAPI, huma.Operation{
 		OperationID:   "runTask",
 		Method:        http.MethodPost,
 		Path:          "/api/tasks/{taskName}/run",
@@ -249,7 +241,7 @@ func (srv *Server) humaGetTask(ctx context.Context, input *TaskNameInput) (*Task
 
 func (srv *Server) humaListRuns(ctx context.Context, input *RunsQueryInput) (*RunsOutput, error) {
 	p := input.toPaginationParams()
-	result, err := srv.runService.ListRuns(ctx, "", p)
+	result, err := srv.runService.ListRuns(ctx, p)
 	if err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to get runs")
 	}
@@ -262,15 +254,6 @@ func (srv *Server) humaGetRunSummary(ctx context.Context, input *struct{}) (*Run
 		return nil, huma.Error500InternalServerError("Failed to get run summary")
 	}
 	return &RunSummaryOutput{Body: *summary}, nil
-}
-
-func (srv *Server) humaListTaskRuns(ctx context.Context, input *TaskRunsQueryInput) (*RunsOutput, error) {
-	p := input.toPaginationParams()
-	result, err := srv.runService.ListRuns(ctx, input.TaskName, p)
-	if err != nil {
-		return nil, mapDomainError(ctx, err, "Failed to get runs")
-	}
-	return &RunsOutput{Body: RunsResponseBody{Items: result.Items, Total: result.Total}}, nil
 }
 
 func (srv *Server) humaTriggerRun(ctx context.Context, input *TriggerRunInput) (*TriggerRunOutput, error) {

@@ -621,23 +621,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/tasks/{taskName}/runs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List runs for a task */
-        get: operations["listTaskRuns"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/tasks/{taskName}/stop": {
         parameters: {
             query?: never;
@@ -3137,67 +3120,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Run"];
-                };
-            };
-            /** @description Error */
-            default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    listTaskRuns: {
-        parameters: {
-            query?: {
-                /** @description Max results per page */
-                limit?: number;
-                /** @description Pagination offset */
-                offset?: number;
-                /** @description Comma-separated run statuses (phase or end reason); a run matches any listed value */
-                status?: string;
-                /** @description Filter by task name */
-                taskName?: string;
-                /** @description Filter by what triggered the run */
-                triggeredBy?: "cron" | "api" | "ui" | "cli" | "cloud" | "service" | "startup" | "";
-                /** @description Only runs created at or after this RFC3339 time */
-                createdAfter?: string;
-                /** @description Only runs created at or before this RFC3339 time */
-                createdBefore?: string;
-                /** @description Only runs whose exit code is >= this (inclusive) */
-                exitCodeMin?: string;
-                /** @description Only runs whose exit code is <= this (inclusive) */
-                exitCodeMax?: string;
-                /** @description Only runs that are a retry (retry_attempt > 0) */
-                retriesOnly?: boolean;
-                /** @description Also match runs classified as a failure (per-task failures policy) */
-                isFailure?: boolean;
-                /** @description Field to sort by */
-                sortField?: "taskName" | "status" | "startedAt" | "exitCode" | "duration" | "createdAt" | "";
-                /** @description Sort direction */
-                sortDirection?: "asc" | "desc" | "";
-                /** @description Search query */
-                search?: string;
-            };
-            header?: never;
-            path: {
-                /** @description Task name */
-                taskName: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RunsResponseBody"];
                 };
             };
             /** @description Error */

@@ -645,6 +645,15 @@ func cycleFrom(stack []string, start string) []string {
 	return stack
 }
 
+// unitKind returns "service" or "task" so validation messages emitted from the
+// shared validateTask path name the unit correctly for both kinds.
+func unitKind(task *model.Task) string {
+	if task.Kind.IsService() {
+		return "service"
+	}
+	return "task"
+}
+
 func validateTask(task *model.Task, seen map[string]struct{}) error {
 	if err := validateTaskIdentity(task, seen); err != nil {
 		return err
@@ -713,7 +722,7 @@ var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 // the merged process env can safely be turned into KEY=VALUE strings without
 // producing malformed entries.
 func validateTaskEnv(task *model.Task) error {
-	scope := fmt.Sprintf("env for task %s", task.Name)
+	scope := fmt.Sprintf("env for %s %s", unitKind(task), task.Name)
 	if err := validateEnvMap(scope, task.Env); err != nil {
 		return err
 	}
@@ -952,10 +961,10 @@ func validateTaskCommand(task *model.Task) error {
 	}
 	execDef := task.ResolvedExecutionDef()
 	if execDef == nil {
-		return fmt.Errorf("task run command is required for task: %s", task.Name)
+		return fmt.Errorf("run command is required for %s %s", unitKind(task), task.Name)
 	}
 	if shellDef, ok := execDef.(*model.ShellExecution); ok && strings.TrimSpace(shellDef.Script) == "" {
-		return fmt.Errorf("task run command is required for task: %s", task.Name)
+		return fmt.Errorf("run command is required for %s %s", unitKind(task), task.Name)
 	}
 	return nil
 }
@@ -973,10 +982,10 @@ func validateTaskShell(task *model.Task) error {
 		return nil
 	}
 	if strings.ContainsRune(task.Shell, 0) {
-		return fmt.Errorf("invalid shell for task %s: contains a NUL byte", task.Name)
+		return fmt.Errorf("invalid shell for %s %s: contains a NUL byte", unitKind(task), task.Name)
 	}
 	if !filepath.IsAbs(task.Shell) {
-		return fmt.Errorf("invalid shell for task %s: %q must be an absolute path (e.g. /bin/bash)", task.Name, task.Shell)
+		return fmt.Errorf("invalid shell for %s %s: %q must be an absolute path (e.g. /bin/bash)", unitKind(task), task.Name, task.Shell)
 	}
 	return nil
 }
@@ -985,15 +994,21 @@ func validateTaskShell(task *model.Task) error {
 // An empty value is accepted — the executor falls back to SIGTERM, matching the
 // post-defaults resolution. Accepts both "TERM" and "SIGTERM" spellings.
 func validateTaskStopSignal(task *model.Task) error {
-	return validateStopSignal(fmt.Sprintf("stop_signal for task %s", task.Name), task.StopSignal)
+	return validateStopSignal(fmt.Sprintf("stop_signal for %s %s", unitKind(task), task.Name), task.StopSignal)
 }
 
 // validateStopSignal is the shared check for per-task and defaults.stop_signal.
+// Only the canonical "SIGxxx" spelling is accepted (case-insensitively); a bare
+// name like "TERM" is rejected. The importer still converts foreign bare names
+// to canonical form via NormalizeSignalName before writing them.
 func validateStopSignal(scope, signal string) error {
 	if signal == "" {
 		return nil
 	}
-	if _, ok := model.NormalizeSignalName(signal); !ok {
+	up := strings.ToUpper(strings.TrimSpace(signal))
+	canonical, ok := model.NormalizeSignalName(signal)
+	if !ok || up != canonical {
+		// up != canonical means the operator omitted the SIG prefix (bare form).
 		return fmt.Errorf("invalid %s: %q (must be one of %s)", scope, signal, strings.Join(model.StopSignals, ", "))
 	}
 	return nil
@@ -1005,7 +1020,7 @@ func validateStopSignal(scope, signal string) error {
 // and reload is restart-only).
 func validateTaskRunUser(task *model.Task) error {
 	if _, _, err := model.ParseRunUserSpec(task.RunUser); err != nil {
-		return fmt.Errorf("invalid user for task %s: %w", task.Name, err)
+		return fmt.Errorf("invalid user for %s %s: %w", unitKind(task), task.Name, err)
 	}
 	return nil
 }
@@ -1086,11 +1101,11 @@ func validateTaskEnums(task *model.Task) error {
 		allowed []string
 		emptyOK bool
 	}{
-		{"on_overlap for task " + task.Name, string(task.OnOverlap), validOnOverlap, false},
-		{"restart for task " + task.Name, string(task.Restart), validRestart, true},
-		{"retry_backoff for task " + task.Name, string(task.RetryBackoff), validBackoff, true},
-		{"log_on_full for task " + task.Name, task.LogOnFull, validLogOnFull, true},
-		{"catch_up for task " + task.Name, string(task.CatchUp), validCatchUp, true},
+		{"on_overlap for " + unitKind(task) + " " + task.Name, string(task.OnOverlap), validOnOverlap, false},
+		{"restart for " + unitKind(task) + " " + task.Name, string(task.Restart), validRestart, true},
+		{"retry_backoff for " + unitKind(task) + " " + task.Name, string(task.RetryBackoff), validBackoff, true},
+		{"log_on_full for " + unitKind(task) + " " + task.Name, task.LogOnFull, validLogOnFull, true},
+		{"catch_up for " + unitKind(task) + " " + task.Name, string(task.CatchUp), validCatchUp, true},
 	}
 	for _, e := range enums {
 		if err := requireOneOf(e.scope, e.value, e.allowed, e.emptyOK); err != nil {
@@ -1121,13 +1136,13 @@ func validateCatchUpOverlap(task *model.Task) error {
 }
 
 func validateTaskRetention(task *model.Task) error {
-	if err := validateKeepRuns(fmt.Sprintf("keep_runs for task %s", task.Name), task.KeepRuns); err != nil {
+	if err := validateKeepRuns(fmt.Sprintf("keep_runs for %s %s", unitKind(task), task.Name), task.KeepRuns); err != nil {
 		return err
 	}
-	if err := validateKeepFor(fmt.Sprintf("keep_for for task %s", task.Name), task.KeepFor); err != nil {
+	if err := validateKeepFor(fmt.Sprintf("keep_for for %s %s", unitKind(task), task.Name), task.KeepFor); err != nil {
 		return err
 	}
-	if _, err := ResolveTimezone(fmt.Sprintf("timezone for task %s", task.Name), task.Timezone); err != nil {
+	if _, err := ResolveTimezone(fmt.Sprintf("timezone for %s %s", unitKind(task), task.Name), task.Timezone); err != nil {
 		return err
 	}
 	return nil
@@ -1323,23 +1338,14 @@ const (
 	DefaultStopSignal = "SIGTERM"
 )
 
-// IntOrDefault returns *p, or fallback when p is nil. For RestartAttempts,
-// nil only reaches a runtime consumer for a *model.Task built without going
+// OrDefault returns *p, or fallback when p is nil. For RestartAttempts, nil
+// only reaches a runtime consumer for a *model.Task built without going
 // through Load (a test literal, a cloud ephemeral dispatch task) — never for
 // one that loaded from TOML, which Load's defaulting pass always resolves to
 // a concrete pointer. A missing value must fall back to the protective
 // built-in default, not to 0 ("give up on the first failure") or any other
 // literal — 0 is meaningful only when the operator wrote it.
-func IntOrDefault(p *int, fallback int) int {
-	if p == nil {
-		return fallback
-	}
-	return *p
-}
-
-// DurationOrDefault is IntOrDefault's duration-typed sibling, used by runtime
-// consumers of RestartDelay/HealthyAfter.
-func DurationOrDefault(p *time.Duration, fallback time.Duration) time.Duration {
+func OrDefault[T any](p *T, fallback T) T {
 	if p == nil {
 		return fallback
 	}
@@ -1378,73 +1384,54 @@ func ApplyDefaults(cfg *Config) {
 		} else {
 			applyTaskDefaults(task)
 		}
-		if task.CatchUp == "" {
-			task.CatchUp = model.MissedRunLatest
-		}
-		if task.MaxCatchUpRuns == 0 {
-			task.MaxCatchUpRuns = DefaultMaxCatchUpRuns
-		}
-		if task.GracefulStop == 0 {
-			task.GracefulStop = DefaultGracefulStop
-		}
-
 		applyInheritedDefaults(task, cfg.Defaults)
 	}
 }
 
-// applyInheritedDefaults copies defaults-section values into task fields that
-// were not explicitly set in TOML, then fills in absolute built-in fallbacks.
+// applyInheritedDefaults copies [defaults] values into unit fields that were
+// not explicitly set in TOML, then fills in absolute built-in fallbacks. Each
+// scalar cascade is one firstSet call (unit value, else [defaults], else
+// builtin); the pointer field (KeepRuns) and the two special cases (stop_signal
+// canonicalization, failures delta-resolution) keep their own helpers.
 func applyInheritedDefaults(task *model.Task, d Defaults) {
-	if task.Timeout == 0 {
-		task.Timeout = d.Timeout
-	}
+	task.Timeout = firstSet(task.Timeout, d.Timeout)
 	// Jitter is task-only: a service never inherits [defaults] jitter (it starts
 	// every instance at boot, so there's no fire time to spread). An explicit
 	// [services.x] jitter is rejected earlier by DisallowUnknownFields.
-	if !task.Kind.IsService() && task.Jitter == 0 {
-		task.Jitter = d.Jitter
+	if !task.Kind.IsService() {
+		task.Jitter = firstSet(task.Jitter, d.Jitter)
 	}
-	if task.Shell == "" {
-		task.Shell = d.Shell
-	}
-	if task.Shell == "" {
-		task.Shell = DefaultShell
-	}
+	task.Shell = firstSet(task.Shell, d.Shell, DefaultShell)
 	applyInheritedStopSignal(task, d)
-	if task.LogMaxSize == 0 {
-		task.LogMaxSize = d.LogMaxSize
-	}
-	if task.LogOnFull == "" && d.LogOnFull != "" {
-		task.LogOnFull = d.LogOnFull
-	}
-	if task.KeepRuns == nil && d.KeepRuns != nil {
+	task.LogMaxSize = firstSet(task.LogMaxSize, d.LogMaxSize, defaultTaskLogMaxSize)
+	task.LogOnFull = firstSet(task.LogOnFull, d.LogOnFull, model.LogOverflowDropOld)
+	if task.KeepRuns == nil {
 		task.KeepRuns = d.KeepRuns
 	}
-	if task.KeepFor == 0 && d.KeepFor != 0 {
-		task.KeepFor = d.KeepFor
+	task.KeepFor = firstSet(task.KeepFor, d.KeepFor)
+	// catch_up / max_catch_up_runs are cron-task concepts; a service must not
+	// inherit a [defaults] catch_up (its on_overlap = skip would then reject
+	// catch_up = "all"). Services still resolve to the builtin so the field is set.
+	catchUpDefault, maxCatchUpDefault := d.CatchUp, d.MaxCatchUpRuns
+	if task.Kind.IsService() {
+		catchUpDefault, maxCatchUpDefault = "", 0
 	}
-	if task.LogMaxSize == 0 {
-		task.LogMaxSize = defaultTaskLogMaxSize
-	}
-	if task.LogOnFull == "" {
-		task.LogOnFull = model.LogOverflowDropOld
-	}
+	task.CatchUp = firstSet(task.CatchUp, catchUpDefault, model.MissedRunLatest)
+	task.MaxCatchUpRuns = firstSet(task.MaxCatchUpRuns, maxCatchUpDefault, DefaultMaxCatchUpRuns)
+	task.GracefulStop = firstSet(task.GracefulStop, d.GracefulStop, DefaultGracefulStop)
 	applyInheritedFailures(task, d)
 	task.Env = mergeEnv(d.Env, task.Env)
 	task.Secrets = mergeEnv(d.Secrets, task.Secrets)
 }
 
 // applyInheritedStopSignal inherits stop_signal from defaults, then falls back
-// to SIGTERM, then canonicalizes to "SIGxxx" form. An unrecognised value
-// survives unchanged so Validate can reject it with a clear error.
+// to SIGTERM. An already-SIG-prefixed name is upper-cased so "sigterm" stores
+// as "SIGTERM"; a bare or unrecognised value survives unchanged so Validate can
+// reject it with a clear error.
 func applyInheritedStopSignal(task *model.Task, d Defaults) {
-	if task.StopSignal == "" {
-		task.StopSignal = d.StopSignal
-	}
-	if task.StopSignal == "" {
-		task.StopSignal = DefaultStopSignal
-	}
-	if canonical, ok := model.NormalizeSignalName(task.StopSignal); ok {
+	task.StopSignal = firstSet(task.StopSignal, d.StopSignal, DefaultStopSignal)
+	up := strings.ToUpper(strings.TrimSpace(task.StopSignal))
+	if canonical, ok := model.NormalizeSignalName(task.StopSignal); ok && up == canonical {
 		task.StopSignal = canonical
 	}
 }
@@ -1486,13 +1473,13 @@ func mergeEnv(base, overlay map[string]string) map[string]string {
 	return out
 }
 
-// resolveIntDefault fills an unset (nil) task-level pointer from [defaults],
-// then from a built-in fallback, without ever colliding an explicit zero at
-// either level with "unset" — the whole point of RestartAttempts being a
-// pointer. Always returns non-nil.
-func resolveIntDefault(task, fromDefaults *int, builtin int) *int {
-	if task != nil {
-		return task
+// resolveDefault fills an unset (nil) unit-level pointer from [defaults], then
+// from a built-in fallback, without ever colliding an explicit zero at either
+// level with "unset" — the whole point of pointer fields like RestartAttempts.
+// Always returns non-nil.
+func resolveDefault[T any](unit, fromDefaults *T, builtin T) *T {
+	if unit != nil {
+		return unit
 	}
 	if fromDefaults != nil {
 		return fromDefaults
@@ -1501,17 +1488,17 @@ func resolveIntDefault(task, fromDefaults *int, builtin int) *int {
 	return &v
 }
 
-// resolveDurationDefault is resolveIntDefault's duration-typed sibling, used
-// for RestartDelay/HealthyAfter.
-func resolveDurationDefault(task, fromDefaults *time.Duration, builtin time.Duration) *time.Duration {
-	if task != nil {
-		return task
+// firstSet returns the first argument that is not the zero value of T, or the
+// zero value if all are zero. It expresses the "unit value, else [defaults],
+// else builtin" cascade used when applying defaults to non-pointer fields.
+func firstSet[T comparable](vals ...T) T {
+	var zero T
+	for _, v := range vals {
+		if v != zero {
+			return v
+		}
 	}
-	if fromDefaults != nil {
-		return fromDefaults
-	}
-	v := builtin
-	return &v
+	return zero
 }
 
 func applyTaskDefaults(task *model.Task) {
@@ -1542,12 +1529,10 @@ func applyServiceDefaults(task *model.Task, d Defaults) {
 	if task.Instances == 0 {
 		task.Instances = 1
 	}
-	task.RestartDelay = resolveDurationDefault(task.RestartDelay, nil, DefaultRestartDelay)
-	if task.RestartBackoff == "" {
-		task.RestartBackoff = model.BackoffExponential
-	}
-	task.HealthyAfter = resolveDurationDefault(task.HealthyAfter, d.HealthyAfter, DefaultHealthyAfter)
+	task.RestartDelay = resolveDefault(task.RestartDelay, d.RestartDelay, DefaultRestartDelay)
+	task.RestartBackoff = firstSet(task.RestartBackoff, d.RestartBackoff, model.BackoffExponential)
+	task.HealthyAfter = resolveDefault(task.HealthyAfter, d.HealthyAfter, DefaultHealthyAfter)
 	// restart_attempts: explicit on the service wins; else [defaults]; else the
 	// built-in default.
-	task.RestartAttempts = resolveIntDefault(task.RestartAttempts, d.RestartAttempts, DefaultStartRetries)
+	task.RestartAttempts = resolveDefault(task.RestartAttempts, d.RestartAttempts, DefaultStartRetries)
 }

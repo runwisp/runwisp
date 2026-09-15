@@ -50,10 +50,9 @@
     },
     "stopSignal": {
       "type": "string",
-      "description": "Signal used to stop a process. The SIG prefix is optional.",
+      "description": "Signal used to stop a process, in canonical SIGxxx form.",
       "enum": [
-        "SIGTERM", "SIGINT", "SIGQUIT", "SIGHUP", "SIGKILL", "SIGUSR1", "SIGUSR2",
-        "TERM", "INT", "QUIT", "HUP", "KILL", "USR1", "USR2"
+        "SIGTERM", "SIGINT", "SIGQUIT", "SIGHUP", "SIGKILL", "SIGUSR1", "SIGUSR2"
       ]
     },
     "composeUnitMode": {
@@ -127,7 +126,7 @@
         "shutdown_timeout": { "$ref": "#/$defs/duration", "description": "SIGTERM→SIGKILL drain budget for in-flight runs on shutdown. Default 10s." },
         "external_url": { "type": "string", "description": "Public Web UI base for notification deep-links; absolute http(s) with host." },
         "metrics_enabled": { "type": "boolean", "default": false, "description": "Master switch for /metrics." },
-        "metrics_listen": { "type": "string", "description": "Dedicated metrics listener host:port; requires metrics_enabled=true." },
+        "metrics_listen": { "type": "string", "description": "Dedicated metrics listener host:port; setting it enables metrics." },
         "tls": { "type": "string", "default": "off", "description": "TLS mode for the HTTP server." },
         "tls_cert": { "type": "string", "description": "Path to the TLS certificate." },
         "tls_key": { "type": "string", "description": "Path to the TLS private key." },
@@ -164,6 +163,11 @@
         "keep_for": { "$ref": "#/$defs/duration", "description": "Age retention; positive." },
         "healthy_after": { "$ref": "#/$defs/duration", "description": "Service uptime counted as healthy (services only). Default 60s." },
         "restart_attempts": { "type": "integer", "minimum": 0, "maximum": 100, "description": "Consecutive fast failures before a service instance goes FATAL. Default 3. Service-only." },
+        "restart_delay": { "$ref": "#/$defs/duration", "description": "Delay before a service restart (services only). Default 1s." },
+        "restart_backoff": { "$ref": "#/$defs/backoff", "description": "Restart backoff curve (services only). Default exponential." },
+        "catch_up": { "type": "string", "enum": ["latest", "all", "skip"], "description": "Missed-firing policy inherited by cron tasks. Default latest." },
+        "max_catch_up_runs": { "type": "integer", "minimum": 1, "maximum": 10000, "description": "Cap when catch_up=all (tasks only). Default 100." },
+        "graceful_stop": { "$ref": "#/$defs/duration", "description": "Grace before SIGKILL on stop. Default 5s." },
         "env": { "$ref": "#/$defs/envMap" },
         "env_file": { "type": "string", "description": "Dotenv file merged into every task; relative to runwisp.toml dir." },
         "secrets": { "$ref": "#/$defs/secretsMap" },

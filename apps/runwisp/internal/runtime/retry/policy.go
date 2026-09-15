@@ -99,7 +99,7 @@ func RestartDelay(task *model.Task, attempt int, reason *model.EndReason) time.D
 // honored literally, including through backoff — see computeBackoff's
 // overflow guard, which must not treat a legitimate zero delay as overflow.
 func ComputeRestartDelay(task *model.Task, attempt int) time.Duration {
-	base := config.DurationOrDefault(task.RestartDelay, config.DefaultRestartDelay)
+	base := config.OrDefault(task.RestartDelay, config.DefaultRestartDelay)
 	if attempt <= 0 {
 		return base
 	}

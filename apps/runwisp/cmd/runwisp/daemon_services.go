@@ -344,7 +344,7 @@ func launchServiceWhenReady(ctx context.Context, taskManager runtime.TaskManager
 	for _, dep := range task.DependsOn {
 		window := graceWindow
 		if d, ok := tasksMap[dep]; ok {
-			window += config.DurationOrDefault(d.HealthyAfter, config.DefaultHealthyAfter)
+			window += config.OrDefault(d.HealthyAfter, config.DefaultHealthyAfter)
 		}
 		depCtx, cancel := context.WithTimeout(ctx, window)
 		err := taskManager.WaitServiceHealthy(depCtx, dep)

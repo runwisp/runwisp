@@ -17,6 +17,19 @@ const schedulerTZHeader = `
 timezone = "UTC"
 `
 
+func TestDecode_NotifierRejectsWrongTypeField(t *testing.T) {
+	src := schedulerTZHeader + `
+[notifiers.ops]
+type = "slack"
+webhook_url = "https://hooks.slack.test/ops"
+host = "smtp.example.com"
+port = 587
+`
+	_, err := decode([]byte(src), "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "host is not valid for type=slack")
+}
+
 func TestDecode_NotifierAndRoutes(t *testing.T) {
 	src := schedulerTZHeader + `
 [notifiers.ops]

@@ -145,11 +145,6 @@ func (q *RunsQueryInput) toPaginationParams() PaginationParams {
 	}
 }
 
-type TaskRunsQueryInput struct {
-	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
-	RunsQueryInput
-}
-
 // ---------- Response outputs ----------
 
 type TasksOutput struct {

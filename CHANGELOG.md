@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`runwisp import systemd` converts systemd `.service` units into `runwisp.toml`** — a unit with `Restart=` becomes a service, a `Type=oneshot` unit a task — flagging anything it can't model (multiple `ExecStart`, `Type=notify`, sandboxing, socket activation) with inline `# TODO`s. See [From systemd](https://docs.runwisp.com/coming-from/systemd/).
 - **`[daemon] trusted_proxies`** sets the reverse-proxy CIDR allowlist in TOML; the `RUNWISP_TRUSTED_PROXIES` env var still works and overrides it. Catch-all ranges (`0.0.0.0/0`, `::/0`) are rejected at config load.
 - **`runwisp service install` now sets a stable Web UI password.** With auth on, it persists a password into a `0600` drop-in beside the unit — a freshly generated one (printed once), or your own `RUNWISP_PASSWORD` if you set it at install time — so a managed daemon no longer mints a new password — logging every session out — on each restart. Re-installing never rotates it.
+- **`[defaults]` now accepts `restart_delay`, `restart_backoff`, `catch_up`, `max_catch_up_runs`, and `graceful_stop`**, so you can set these fleet-wide once instead of repeating them on every unit.
+- **Compose per-service overrides (`[compose.<alias>.<svc>]`) can now set `failures`**, matching what `[services.*]` already allows.
 
 ### Changed
 
@@ -31,12 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`[services.*]` can now set `restart`** (`never` / `on_failure` / `always`, default `always`), matching what a compose-imported service's per-service override already allowed.
 - **Every duration field (`timeout`, `retry_delay`, `graceful_stop`, `jitter`, etc.) now accepts `d` (days) and `w` (weeks)**, not just `keep_for` — matching what the schema already advertised.
 - **`GET /api/daemon`'s `tasks` list now returns the same full task shape as `GET /api/tasks`** (description, timeout, retry/restart settings, and more), instead of a separately-trimmed subset.
-- **`GET /api/runs` (and `/api/tasks/{taskName}/runs`) gained an `isFailure` query parameter**, matching the `isFailure` field already accepted in bulk-operation request bodies.
+- **`GET /api/runs` gained an `isFailure` query parameter**, matching the `isFailure` field already accepted in bulk-operation request bodies.
 - **The auth endpoints (`/api/auth/status`, `/api/auth/challenge`, `/api/auth/login`, `/api/auth/launch-ticket`) are now documented in the OpenAPI spec** (`runwisp openapi`), so API clients get generated request/response types instead of guessing the shape.
 - **`GET /api/notifications/stream` has been removed.** Notification events already ride the unified `GET /api/events/stream`.
+- **`stop_signal` now takes only the canonical `SIGxxx` spelling**; bare names like `TERM` are rejected. Use `SIGTERM`, `SIGINT`, etc.
+- **Setting `[daemon] metrics_listen` now enables metrics on its own** — you no longer also need `metrics_enabled = true`.
+- **`[notifiers.*]` now rejects fields that don't belong to the notifier's `type`** (e.g. `host`/`port` on a `type = "slack"` block) instead of silently ignoring them.
+- **`GET /api/tasks/{taskName}/runs` has been removed.** Use `GET /api/runs?taskName=<name>`, which returns the same result.
 
 ### Fixed
 
+- **Config validation errors for `[services.*]` entries now say "service"** instead of mislabeling the entry as a "task".
 - **The dashboard System resources chart now backfills its history on load** instead of only drawing new samples as they stream in.
 - **An ad-hoc dispatch request can no longer trigger a `[services.*]` entry**, which could have reserved it an extra instance outside its restart policy — it only checked `manual_trigger` (always true internally for services), the same gate the REST/UI/CLI trigger paths already close with a service-kind check.
 - **A remote `service:remove` request could delete a TOML-defined `[services.*]` entry**, desyncing the running task set from `runwisp.toml` with no way back short of a daemon restart. It now only removes services that were remotely declared in the first place.

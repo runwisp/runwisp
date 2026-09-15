@@ -315,7 +315,7 @@ func (m *defaultTaskManager) upsertTaskLocked(task *model.Task) []*model.Run {
 // upsertSupervisor creates or updates ts's service supervisor for task.
 // Caller holds m.mu.
 func (m *defaultTaskManager) upsertSupervisor(ts *taskState, task *model.Task) {
-	healthyAfter := config.DurationOrDefault(task.HealthyAfter, config.DefaultHealthyAfter)
+	healthyAfter := config.OrDefault(task.HealthyAfter, config.DefaultHealthyAfter)
 	if ts.supervisor == nil {
 		ts.supervisor = services.NewSupervisor(task.Name, task.Instances, healthyAfter, !task.Autostart, m.clock)
 		return
@@ -1224,7 +1224,7 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 	}
 	if task.Kind.IsService() {
 		wasFailure := retry.IsFailedExecution(endReason)
-		startRetries := config.IntOrDefault(task.RestartAttempts, config.DefaultStartRetries)
+		startRetries := config.OrDefault(task.RestartAttempts, config.DefaultStartRetries)
 		nextRestartAttempt, serviceFatal = ts.supervisor.RecordExit(
 			run.InstanceIndex, runDuration, startRetries, wasFailure)
 		if serviceFatal {

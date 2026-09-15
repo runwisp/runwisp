@@ -117,8 +117,8 @@ export const tasksApi = {
             search?: string;
         },
     ) => {
-        const { data, error } = await apiClient.GET("/api/tasks/{taskName}/runs", {
-            params: { path: { taskName }, ...(params ? { query: params } : {}) },
+        const { data, error } = await apiClient.GET("/api/runs", {
+            params: { query: { taskName, ...(params ?? {}) } },
         });
         if (error) throw new Error("Failed to fetch task runs");
         return { runs: data.items ?? [], total: data.total };

@@ -290,6 +290,21 @@ type Defaults struct {
 	// is distinguishable from an omitted key (nil, falls back to
 	// DefaultStartRetries).
 	RestartAttempts *int
+	// RestartDelay is the default base delay before a service restart. A pointer
+	// so an explicit `restart_delay = "0s"` (restart instantly) is
+	// distinguishable from an omitted key (nil, falls back to DefaultRestartDelay).
+	RestartDelay *time.Duration
+	// RestartBackoff is the default restart backoff curve for services (empty
+	// falls back to BackoffExponential).
+	RestartBackoff model.BackoffCurve
+
+	// CatchUp / MaxCatchUpRuns / GracefulStop are the [defaults] values for the
+	// per-task keys of the same name (empty/zero falls back to the built-in
+	// default). GracefulStop applies to both tasks and services; CatchUp and
+	// MaxCatchUpRuns are meaningful only for cron tasks.
+	CatchUp        model.MissedRunPolicy
+	MaxCatchUpRuns int
+	GracefulStop   time.Duration
 
 	// FailureReasons and FailureExitRanges are the [defaults] failure
 	// classification, always resolved (to the operator's `failures` list or the

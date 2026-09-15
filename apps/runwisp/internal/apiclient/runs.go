@@ -66,17 +66,11 @@ func (c *Client) ListRuns(params RunsParams) ([]model.Run, int64, error) {
 	return resp.Items, resp.Total, nil
 }
 
+// ListRunsByTask is a convenience wrapper over ListRuns that scopes the query
+// to a single task via the taskName filter.
 func (c *Client) ListRunsByTask(taskName string, params RunsParams) ([]model.Run, int64, error) {
-	path := fmt.Sprintf("/api/tasks/%s/runs", taskName)
-	if qs := encodeRunsParams(params).Encode(); qs != "" {
-		path += "?" + qs
-	}
-
-	var resp server.RunsResponseBody
-	if err := c.doJSON("GET", path, nil, &resp); err != nil {
-		return nil, 0, err
-	}
-	return resp.Items, resp.Total, nil
+	params.TaskName = taskName
+	return c.ListRuns(params)
 }
 
 // TriggerRun starts a new run of a task, optionally supplying values for the

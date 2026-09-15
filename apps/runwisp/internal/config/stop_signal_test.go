@@ -5,7 +5,9 @@ package config
 
 import (
 	"testing"
+	"time"
 
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,14 +21,24 @@ run = "echo hi"
 	assert.Equal(t, DefaultStopSignal, findTask(t, cfg, "job").StopSignal)
 }
 
-func TestStopSignal_CanonicalizesShortForm(t *testing.T) {
+func TestStopSignal_CanonicalizesCase(t *testing.T) {
 	cfgPath, _ := writePlainConfig(t, `[tasks.job]
 run = "echo hi"
-stop_signal = "int"
+stop_signal = "sigint"
 `)
 	cfg, err := Load(cfgPath)
 	require.NoError(t, err)
 	assert.Equal(t, "SIGINT", findTask(t, cfg, "job").StopSignal)
+}
+
+func TestStopSignal_BareFormRejected(t *testing.T) {
+	cfgPath, _ := writePlainConfig(t, `[tasks.job]
+run = "echo hi"
+stop_signal = "INT"
+`)
+	_, err := Load(cfgPath)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "stop_signal for task job")
 }
 
 func TestStopSignal_InheritedAndOverridden(t *testing.T) {
@@ -54,6 +66,37 @@ stop_signal = "SIGNOPE"
 	_, err := Load(cfgPath)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "stop_signal for task job")
+}
+
+func TestDefaults_InheritSupervisionAndCatchupKeys(t *testing.T) {
+	cfgPath, _ := writePlainConfig(t, `[defaults]
+graceful_stop = "12s"
+catch_up = "all"
+max_catch_up_runs = 7
+restart_delay = "3s"
+restart_backoff = "linear"
+
+[tasks.cronjob]
+cron = "* * * * *"
+on_overlap = "queue"
+run = "echo hi"
+
+[services.web]
+run = "exec ./web"
+`)
+	cfg, err := Load(cfgPath)
+	require.NoError(t, err)
+
+	cron := findTask(t, cfg, "cronjob")
+	assert.Equal(t, 12*time.Second, cron.GracefulStop)
+	assert.Equal(t, model.MissedRunAll, cron.CatchUp)
+	assert.Equal(t, 7, cron.MaxCatchUpRuns)
+
+	web := findTask(t, cfg, "web")
+	assert.Equal(t, 12*time.Second, web.GracefulStop)
+	require.NotNil(t, web.RestartDelay)
+	assert.Equal(t, 3*time.Second, *web.RestartDelay)
+	assert.Equal(t, model.BackoffLinear, web.RestartBackoff)
 }
 
 func TestStopSignal_DefaultsBogusIsRejected(t *testing.T) {

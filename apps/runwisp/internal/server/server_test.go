@@ -226,7 +226,7 @@ func TestGetTaskRuns(t *testing.T) {
 	}).Return(runs, nil)
 	repo.On("CountRunsFiltered", mock.Anything, model.RunFilter{TaskName: "task1"}).Return(int64(len(runs)), nil)
 
-	req := httptest.NewRequest("GET", "/api/tasks/task1/runs", nil)
+	req := httptest.NewRequest("GET", "/api/runs?taskName=task1", nil)
 	w := httptest.NewRecorder()
 
 	addAuth(req, s)
@@ -420,7 +420,7 @@ func TestGetTaskRuns_RepoError(t *testing.T) {
 	s, repo, _, _ := setupServer(t)
 	repo.On("QueryRuns", mock.Anything, mock.Anything).Return([]model.Run(nil), errors.New("db down"))
 
-	req := httptest.NewRequest("GET", "/api/tasks/task1/runs", nil)
+	req := httptest.NewRequest("GET", "/api/runs?taskName=task1", nil)
 	w := httptest.NewRecorder()
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)

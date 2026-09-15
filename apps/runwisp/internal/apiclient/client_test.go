@@ -226,7 +226,8 @@ func TestListRunsByTask(t *testing.T) {
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/tasks/my-task/runs", r.URL.Path)
+		assert.Equal(t, "/api/runs", r.URL.Path)
+		assert.Equal(t, "my-task", r.URL.Query().Get("taskName"))
 		json.NewEncoder(w).Encode(resp)
 	}))
 	defer srv.Close()

@@ -89,7 +89,7 @@ export async function getLatestRun(
     taskName: string,
     token: string,
 ): Promise<Run | undefined> {
-    const response = await page.request.get(`/api/tasks/${taskName}/runs?limit=1`, {
+    const response = await page.request.get(`/api/runs?taskName=${taskName}&limit=1`, {
         headers: authHeaders(token),
     });
     expect(response.status(), `list runs for ${taskName}`).toBe(200);

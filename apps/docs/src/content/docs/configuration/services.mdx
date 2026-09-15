@@ -228,10 +228,10 @@ no `max_concurrent` either, for the same reason.
 
 ## Graceful shutdown
 
-| Key             | Default     | What it does                                                                                                                                        |
-| --------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `graceful_stop` | `"5s"`      | Grace period per instance after the stop signal, before SIGKILL — for manual stop, `Restart Service`, daemon shutdown.                              |
-| `stop_signal`   | `"SIGTERM"` | Signal that opens the stop ladder. One of `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`, `SIGUSR2` (the `SIG` prefix is optional). |
+| Key             | Default     | What it does                                                                                                           |
+| --------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `graceful_stop` | `"5s"`      | Grace period per instance after the stop signal, before SIGKILL — for manual stop, `Restart Service`, daemon shutdown. |
+| `stop_signal`   | `"SIGTERM"` | Signal that opens the stop ladder. One of `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`, `SIGUSR2`    |
 
 `graceful_stop` covers the whole process group: the stop signal goes to the
 instance's process group, every descendant gets the same grace window,

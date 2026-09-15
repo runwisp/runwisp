@@ -378,7 +378,7 @@ func TestValidate(t *testing.T) {
 			cfg: &Config{
 				Tasks: []model.Task{{Name: "task1", MaxConcurrent: 1, OnOverlap: model.PolicyQueue}},
 			},
-			wantErr: "task run command is required",
+			wantErr: "run command is required",
 		},
 		{
 			name: "duplicate name",
@@ -1363,7 +1363,7 @@ func TestValidate_MoreCases(t *testing.T) {
 					OnOverlap:     model.PolicyQueue,
 				}},
 			},
-			wantErr: "task run command is required",
+			wantErr: "run command is required",
 		},
 		{
 			name: "negative max_concurrent",
@@ -1825,7 +1825,7 @@ run = "echo hi"
 		assert.Equal(t, "", cfg.Daemon.MetricsListen)
 	})
 
-	t.Run("daemon metrics_listen requires metrics_enabled", func(t *testing.T) {
+	t.Run("daemon metrics_listen implies metrics_enabled", func(t *testing.T) {
 		path := writeTOML(t, `
 [daemon]
 metrics_listen = "127.0.0.1:9478"
@@ -1833,10 +1833,10 @@ metrics_listen = "127.0.0.1:9478"
 [tasks.t]
 run = "echo hi"
 `)
-		_, err := Load(path)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "daemon.metrics_listen")
-		assert.Contains(t, err.Error(), "metrics_enabled = true")
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.True(t, cfg.Daemon.MetricsEnabled)
+		assert.Equal(t, "127.0.0.1:9478", cfg.Daemon.MetricsListen)
 	})
 
 	t.Run("daemon metrics_listen parses host:port", func(t *testing.T) {

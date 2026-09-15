@@ -40,7 +40,7 @@ allow_cloud_dispatch: bool =false — accept peer-dispatched ad-hoc shell/contai
 shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flight runs on shutdown
 external_url:         string      — public Web UI base for notification deep-links; absolute http(s) w/ host
 metrics_enabled:      bool =false — master switch for /metrics
-metrics_listen:       host:port   — dedicated metrics listener; REQUIRES metrics_enabled=true
+metrics_listen:       host:port   — dedicated metrics listener; setting it enables metrics on its own
 trusted_proxies:      []string    — CIDR allowlist of reverse proxies whose X-Forwarded-For is trusted; catch-all
                                     (0.0.0.0/0, ::/0) rejected at load; RUNWISP_TRUSTED_PROXIES env overrides
 include:              []string    — glob(s) of extra TOML files merged at load; root config only, no nesting
@@ -105,6 +105,11 @@ keep_runs:           int          — row-count retention; 0..1000000 (0 = keep 
 keep_for:            dur          — age retention; positive
 healthy_after:       dur  =60s    — service uptime that counts as healthy: resets the restart counter and clears the failed-start streak (SERVICES only); 0 = healthy immediately, kept literally if set
 restart_attempts:       int  =3      — consecutive fast failures before a service instance goes FATAL (SERVICES only); 0 = give up after the first failure, kept literally if set
+restart_delay:       dur  =1s     — base delay before a service restart (SERVICES only)
+restart_backoff:     enum =exponential — restart backoff curve (SERVICES only): constant|linear|exponential
+catch_up:            enum =latest  — default missed-firing policy for cron tasks (TASKS only)
+max_catch_up_runs:   int  =100     — default cap when catch_up=all (TASKS only)
+graceful_stop:       dur  =5s      — grace before SIGKILL on stop
 env:                 map<str,str> — inline env merged into every task; key ^[A-Za-z_][A-Za-z0-9_]*$, <=256 entries, value <=32KiB, no NUL
 env_file:            path         — dotenv file merged into every task; relative to runwisp.toml dir
 secrets:             map<str,str> — inline secrets merged into every task; never shown in API/UI

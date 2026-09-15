@@ -196,6 +196,11 @@ type composeServiceOverrideWire struct {
 	serviceSupervisionWire
 
 	Instances int `toml:"instances,omitempty"`
+
+	// Failures overrides the failure classification for this compose service,
+	// same syntax and semantics as [services.*] failures. nil leaves the
+	// inherited [defaults] classification in place.
+	Failures []string `toml:"failures,omitempty"`
 }
 
 func expandComposeAlias(alias string, raw map[string]any, baseDir string, existingNames map[string]struct{}) ([]model.Task, []composeNotifySugar, error) {
@@ -697,6 +702,13 @@ func applyComposeOverrideParsed(task *model.Task, w *composeServiceOverrideWire,
 			return fmt.Errorf("service %q override: invalid log_max_size: %w", svcName, err)
 		}
 		task.LogMaxSize = n
+	}
+	if w.Failures != nil {
+		spec, err := model.ParseFailures(w.Failures)
+		if err != nil {
+			return fmt.Errorf("service %q override: invalid failures: %w", svcName, err)
+		}
+		task.FailureSpec = spec
 	}
 	return nil
 }

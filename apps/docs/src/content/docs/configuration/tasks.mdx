@@ -207,7 +207,7 @@ policy is the right call.
 | `retry_backoff`  | `"constant"`                | Curve applied to `retry_delay`: `constant`, `linear`, or `exponential`.                                                                                |
 | `timeout`        | inherited from `[defaults]` | Per-attempt wall-clock cap. Unset means no timeout.                                                                                                    |
 | `graceful_stop`  | `"5s"`                      | Grace period after the stop signal, before SIGKILL — on `timeout`, `on_overlap = "kill"`, manual stop, and daemon shutdown. Set `"0s"` for insta-kill. |
-| `stop_signal`    | `"SIGTERM"`                 | Signal that opens the stop ladder. One of `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`, `SIGUSR2` (the `SIG` prefix is optional).    |
+| `stop_signal`    | `"SIGTERM"`                 | Signal that opens the stop ladder. One of `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`, `SIGUSR2`                                    |
 
 Exit `0` is always success; any non-zero exit ends the run as `failed`,
 which drives retries. Whether that (or a `timeout`, a
