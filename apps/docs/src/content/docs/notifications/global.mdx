@@ -28,13 +28,13 @@ coalesce_window   = "1h"        # default
 coalesce_every   = 10          # default
 ```
 
-| Key                  | Default     | What it does                                                                                                                                                                                |
-| -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `global_notifiers`   | `["inapp"]` | Channels added to every per-task notify list (deduplicated), and catch-all for tasks without one. Set `[]` to silence the bell.                                                             |
-| `retry_budget`       | _(unset)_   | Caps the total retry budget for one outbound delivery. Unset = 5 minutes.                                                                                                                   |
-| `keep_notifications` | `1024`      | Cap on bell rows kept in SQLite. Older rows are pruned in one pass.                                                                                                                         |
-| `keep_for`           | `90d`       | Maximum age of bell rows. Accepts `d` and `w` units.                                                                                                                                        |
-| `coalesce_window`    | `1h`        | Window during which repeats with the same kind for the same task update one row instead of writing a new one. Set `"0s"` to send one outbound message per event (the bell still coalesces). |
+| Key                  | Default     | What it does                                                                                                                                                                                                  |
+| -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `global_notifiers`   | `["inapp"]` | Channels added to every per-task notify list (deduplicated), and catch-all for tasks without one. Set `[]` to silence the bell.                                                                               |
+| `retry_budget`       | _(unset)_   | Caps the total retry budget for one outbound delivery. Unset = 5 minutes.                                                                                                                                     |
+| `keep_notifications` | `1024`      | Cap on bell rows kept in SQLite. Older rows are pruned in one pass.                                                                                                                                           |
+| `keep_for`           | `90d`       | Maximum age of bell rows. Accepts `d` and `w` units.                                                                                                                                                          |
+| `coalesce_window`    | `1h`        | Window during which repeats with the same kind for the same task update one row instead of writing a new one. Set `"0s"` to send one outbound message per event (the bell still coalesces).                   |
 | `coalesce_every`     | `10`        | Recent timestamps kept on each coalesced bell row, and how many suppressed events it takes before an outbound delivery (Slack, Telegram, etc.) is force-forwarded instead of waiting for the window to close. |
 
 Set both `keep_notifications` and `keep_for` and they both apply at

@@ -89,10 +89,10 @@ cron     = "30 2 * * *"
 timezone = "Atlantic/Faroe"
 ```
 
-| Setting                   | Default         | What it controls                                                              |
-| ------------------------- | --------------- | ------------------------------------------------------------------------------ |
-| `[daemon] timezone`       | _(system zone)_ | Fallback for every task without its own `timezone`.                            |
-| `[tasks.<name>] timezone` | _(inherits)_    | Timezone for this task's cron evaluation. Overrides the daemon-wide default.   |
+| Setting                   | Default         | What it controls                                                             |
+| ------------------------- | --------------- | ---------------------------------------------------------------------------- |
+| `[daemon] timezone`       | _(system zone)_ | Fallback for every task without its own `timezone`.                          |
+| `[tasks.<name>] timezone` | _(inherits)_    | Timezone for this task's cron evaluation. Overrides the daemon-wide default. |
 
 If the daemon doesn't recognize the name you gave it — a typo, or a host
 with no IANA timezone data, like a stripped-down container image

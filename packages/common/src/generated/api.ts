@@ -1486,7 +1486,7 @@ export interface components {
             retryDelay?: number;
             /** @description For tasks: fire once at daemon startup, in addition to any cron schedule */
             runOnStart: boolean;
-            /** @description Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values never leave the daemon. */
+            /** @description Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values are not. */
             secretsFile?: string;
             /** @description Absolute path to the shell interpreter for run scripts; defaults to /bin/sh */
             shell?: string;
@@ -1684,7 +1684,7 @@ export interface components {
             retryDelay?: number;
             /** @description For tasks: fire once at daemon startup, in addition to any cron schedule */
             runOnStart: boolean;
-            /** @description Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values never leave the daemon. */
+            /** @description Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values are not. */
             secretsFile?: string;
             /** @description Absolute path to the shell interpreter for run scripts; defaults to /bin/sh */
             shell?: string;

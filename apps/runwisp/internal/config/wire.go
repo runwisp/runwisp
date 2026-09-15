@@ -21,13 +21,13 @@ import (
 // manual map-splitting needed. See parseComposeBlock in compose.go for how
 // override entries are split into per-service overrides vs. block defaults.
 type tomlConfig struct {
-	Daemon    daemonWire                   `toml:"daemon,omitempty"`
-	Storage   storageWire                  `toml:"storage,omitempty"`
-	Defaults  defaultsWire                 `toml:"defaults,omitempty"`
-	Tasks     map[string]*taskWire         `toml:"tasks,omitempty"`
-	Services  map[string]*serviceWire      `toml:"services,omitempty"`
-	Compose   map[string]*composeBlockWire `toml:"compose,omitempty"`
-	Notify    notifyWire                   `toml:"notify,omitempty"`
+	Daemon   daemonWire                   `toml:"daemon,omitempty"`
+	Storage  storageWire                  `toml:"storage,omitempty"`
+	Defaults defaultsWire                 `toml:"defaults,omitempty"`
+	Tasks    map[string]*taskWire         `toml:"tasks,omitempty"`
+	Services map[string]*serviceWire      `toml:"services,omitempty"`
+	Compose  map[string]*composeBlockWire `toml:"compose,omitempty"`
+	Notify   notifyWire                   `toml:"notify,omitempty"`
 
 	Notifiers map[string]*notifierWire `toml:"notifiers,omitempty"`
 	Routes    []routeWire              `toml:"route,omitempty"`
