@@ -18,6 +18,7 @@ import (
 	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/clilog"
 	"github.com/runwisp/runwisp/internal/cloud"
+	"github.com/runwisp/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runlog"
 	"github.com/runwisp/runwisp/internal/server"
@@ -63,6 +64,7 @@ func startCloudClient(
 	if cloudClient != nil {
 		cloudWG.Add(1)
 		go func() {
+			defer crashguard.Guard()
 			defer cloudWG.Done()
 			// Backlog recovery does real HTTP PUTs (up to 90s each) against the
 			// cloud peer; running it here (not before srv.Start) means a slow or

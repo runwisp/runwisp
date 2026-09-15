@@ -11,6 +11,7 @@ import (
 	"log/slog"
 
 	"github.com/robfig/cron/v3"
+	"github.com/runwisp/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime/jitter"
@@ -338,6 +339,11 @@ func (scheduler *Scheduler) addTask(task *model.Task) error {
 // the task's effective TZ; a duplicate is recorded as ReasonDSTSkipped and
 // never reaches the executor.
 func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location) {
+	// Runs in robfig/cron's own goroutine, which has no panic recovery: an
+	// unguarded panic here would crash the process and (with a TUI attached)
+	// leave the terminal in raw mode. Route it through the daemon's shutdown.
+	defer crashguard.Guard()
+
 	now := scheduler.now()
 	nowLocal := now.In(loc)
 	wm := newWallSecond(nowLocal)

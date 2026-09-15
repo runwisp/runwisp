@@ -6,8 +6,13 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"time"
+
+	"log/slog"
 
 	"github.com/joho/godotenv"
+	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/spf13/cobra"
 )
 
@@ -27,8 +32,37 @@ The local scheduler is not started — task scheduling is managed by the cloud.`
 		if err := resolveCloudEnv(cloudFlags.EnvFile, cmd.Flags().Changed("env-file"), cloudFlags.Token, cloudFlags.URL); err != nil {
 			return err
 		}
-		return runDaemon(modeCloud, flags, noTUI)
+		if noTUI || !isInteractiveTerminal() {
+			return runDaemon(modeCloud, flags, noTUI)
+		}
+		return runCloudInteractive(flags)
 	},
+}
+
+// runCloudInteractive boots cloud mode the same way the bare `runwisp` command
+// boots standalone mode: spawn the daemon as a detached background process and
+// attach the TUI to it over the local socket. Keeping the daemon in its own
+// process is what protects the operator's terminal — a daemon crash can never
+// leave the attached TUI's terminal in raw/alt-screen mode, because the TUI
+// process (which owns the terminal) is not the one that died.
+func runCloudInteractive(f Flags) error {
+	client := apiclient.NewUnix(localAPISocketPath(f))
+
+	// A cloud daemon is already running on this data dir — just attach.
+	if client.HealthCheck() == nil {
+		return runTUIConnect(client, f)
+	}
+
+	if err := spawnDaemonProcess(daemonSpawnArgs([]string{"cloud", "--no-tui"}, f), f.DataDir); err != nil {
+		slog.Warn("Failed to spawn background cloud daemon, running inline", "err", err)
+		return runDaemon(modeCloud, f, false)
+	}
+
+	logPath := filepath.Join(f.DataDir, "daemon.log")
+	if err := waitForDaemon(client, logPath, 10*time.Second, f); err != nil {
+		return err
+	}
+	return runTUIConnect(client, f)
 }
 
 // resolveCloudEnv loads the .env file (if present) and applies the --token /

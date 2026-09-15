@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A daemon crash no longer leaves an attached TUI's terminal filled with garbled escape sequences.** A panic in a daemon goroutine is now turned into a clean shutdown that restores the terminal, and `runwisp cloud` runs its daemon as a separate process so a crash can never corrupt the terminal the TUI owns.
 - **Config validation errors for `[services.*]` entries now say "service"** instead of mislabeling the entry as a "task".
 - **The dashboard System resources chart now backfills its history on load** instead of only drawing new samples as they stream in.
 - **An ad-hoc dispatch request can no longer trigger a `[services.*]` entry**, which could have reserved it an extra instance outside its restart policy — it only checked `manual_trigger` (always true internally for services), the same gate the REST/UI/CLI trigger paths already close with a service-kind check.

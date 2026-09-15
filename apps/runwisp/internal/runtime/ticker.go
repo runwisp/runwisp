@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"log/slog"
+
+	"github.com/runwisp/runwisp/internal/crashguard"
 )
 
 // startTicker launches a goroutine that calls onTick every interval until ctx
@@ -15,6 +17,7 @@ import (
 // the goroutine; the caller owns ctx's cancellation (and therefore Stop()).
 func startTicker(ctx context.Context, interval time.Duration, stopMsg string, onTick func(context.Context)) {
 	go func() {
+		defer crashguard.Guard()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {

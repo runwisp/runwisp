@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/runwisp/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime/services"
 )
@@ -145,6 +146,7 @@ func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, 
 // queueProcessLoop drains the per-task queue, starting runs as slots open.
 // Holds m.mu for its entire lifetime, releasing it only via cond.Wait.
 func (m *defaultTaskManager) queueProcessLoop(taskName string) {
+	defer crashguard.Guard()
 	defer m.wg.Done()
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/runwisp/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/internal/events"
 )
 
@@ -240,6 +241,7 @@ func (s *Service) onBusEvent(e events.Event) {
 // runDispatch pulls events from ingressCh and hands them to the dispatcher.
 // Exits when ingressCh is closed (Stop) or ctx is cancelled.
 func (s *Service) runDispatch(ctx context.Context) {
+	defer crashguard.Guard()
 	defer s.wg.Done()
 	for {
 		select {
@@ -258,6 +260,7 @@ func (s *Service) runDispatch(ctx context.Context) {
 // ctx is cancelled. The function itself is constructed at wiring time (the
 // builder closes over the storage repo + retention limits).
 func (s *Service) runRetention(ctx context.Context) {
+	defer crashguard.Guard()
 	defer s.wg.Done()
 	t := time.NewTicker(s.retentionEvery)
 	defer t.Stop()

@@ -9,6 +9,7 @@ import (
 
 	"log/slog"
 
+	"github.com/runwisp/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/logutil"
@@ -59,6 +60,7 @@ func (b *EventBridge) Start(ctx context.Context) {
 // resendServiceStatusLoop periodically re-pushes every service's supervisor
 // snapshot until ctx is cancelled (daemon shutdown).
 func (b *EventBridge) resendServiceStatusLoop(ctx context.Context) {
+	defer crashguard.Guard()
 	ticker := time.NewTicker(serviceStatusResendInterval)
 	defer ticker.Stop()
 	for {
@@ -131,6 +133,7 @@ func (b *EventBridge) handleRunEvent(ctx context.Context, event events.Event) {
 // cloud's guarded terminal race by design; the statewriter late-attaches
 // its archive coordinates to the already-terminal row.
 func (b *EventBridge) finalizeRun(ctx context.Context, run *model.Run, update protocol.ExecutionUpdateMessage, executionID string) {
+	defer crashguard.Guard()
 	b.tracker.QueueUpdate(update, b.sendReady)
 
 	uploader := b.handler.Uploader()

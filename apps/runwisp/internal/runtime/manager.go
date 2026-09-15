@@ -14,6 +14,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
@@ -1101,6 +1102,7 @@ func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run) {
 
 	m.wg.Add(1)
 	go func() {
+		defer crashguard.Guard()
 		defer m.wg.Done()
 		m.execute(ctx, task, run, active)
 	}()
@@ -1274,12 +1276,14 @@ func (m *defaultTaskManager) scheduleFollowup(task *model.Task, run *model.Run, 
 	case retry.ShouldRestart(task, run):
 		m.wg.Add(1)
 		go func() {
+			defer crashguard.Guard()
 			defer m.wg.Done()
 			m.scheduleRestart(task, copiedRun, nextRestartAttempt)
 		}()
 	case retry.ShouldRetry(task, run):
 		m.wg.Add(1)
 		go func() {
+			defer crashguard.Guard()
 			defer m.wg.Done()
 			m.scheduleRetry(task, copiedRun)
 		}()
