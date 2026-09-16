@@ -32,12 +32,12 @@ const (
 	// defaultKeepFor is the age limit applied when
 	// notify.keep_for is omitted from TOML.
 	defaultKeepFor = 90 * 24 * time.Hour
-	// defaultCoalesceEvery is the coalescing ring size applied when
-	// notify.coalesce_every is omitted. It drives both the in-app occurrence
+	// defaultCoalesceLimit is the coalescing ring size applied when
+	// notify.coalesce_limit is omitted. It drives both the in-app occurrence
 	// ring and the outbound "force-forward every N suppressed events" cadence,
 	// so it must be resolved here rather than left 0 (outbound treats 0 as
 	// "never force-forward").
-	defaultCoalesceEvery = 10
+	defaultCoalesceLimit = 10
 )
 
 // parseNotifyToken splits a notify destination token into its parent notifier
@@ -62,13 +62,13 @@ func (t *tomlConfig) toNotifyConfig(taskNames []string, taskWires map[string]*ta
 	out := NotifyConfig{
 		GlobalNotifiers:   resolveGlobalNotifiers(t.Notify.GlobalNotifiers),
 		KeepNotifications: t.Notify.KeepNotifications,
-		CoalesceEvery:     t.Notify.CoalesceEvery,
+		CoalesceLimit:     t.Notify.CoalesceLimit,
 	}
 	if out.KeepNotifications == 0 {
 		out.KeepNotifications = defaultKeepNotifications
 	}
-	if out.CoalesceEvery == 0 {
-		out.CoalesceEvery = defaultCoalesceEvery
+	if out.CoalesceLimit == 0 {
+		out.CoalesceLimit = defaultCoalesceLimit
 	}
 
 	if err := t.applyNotifyDurations(&out); err != nil {

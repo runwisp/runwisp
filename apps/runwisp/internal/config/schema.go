@@ -160,7 +160,7 @@ type NotifyConfig struct {
 	// window). The in-app coalescer always applies a window regardless, treating
 	// nil/zero as its built-in default.
 	CoalesceWindow *time.Duration
-	CoalesceEvery  int
+	CoalesceLimit  int
 }
 
 // NotifierSpec is one [notifiers.<id>] block, post-decode. Secret-bearing fields

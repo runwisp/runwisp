@@ -37,7 +37,7 @@ func TestCoalescer_FoldsRepeatsWithinWindow(t *testing.T) {
 	db := newDB(t)
 	hub := NewHub(8)
 	clk := testutil.NewFakeClock(time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC))
-	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, CoalesceEvery: 5}, nil)
+	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, CoalesceLimit: 5}, nil)
 
 	c.Receive(context.Background(), "title", "first body", makeEvent("backup-db"))
 	clk.Advance(5 * time.Minute)
@@ -56,7 +56,7 @@ func TestCoalescer_InsertsNewRowAfterWindow(t *testing.T) {
 	db := newDB(t)
 	hub := NewHub(8)
 	clk := testutil.NewFakeClock(time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC))
-	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, CoalesceEvery: 5}, nil)
+	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, CoalesceLimit: 5}, nil)
 
 	c.Receive(context.Background(), "t", "b", makeEvent("backup-db"))
 	clk.Advance(2 * time.Hour)
@@ -71,7 +71,7 @@ func TestCoalescer_SeparatesByFingerprint(t *testing.T) {
 	db := newDB(t)
 	hub := NewHub(8)
 	clk := testutil.NewFakeClock(time.Now().UTC())
-	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, CoalesceEvery: 5}, nil)
+	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, CoalesceLimit: 5}, nil)
 
 	c.Receive(context.Background(), "t", "b", makeEvent("alpha"))
 	c.Receive(context.Background(), "t", "b", makeEvent("beta"))
@@ -87,7 +87,7 @@ func TestCoalescer_OccurrenceRingTrimmed(t *testing.T) {
 	hub := NewHub(8)
 	clk := testutil.NewFakeClock(time.Now().UTC())
 	const ringSize = 4
-	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, CoalesceEvery: ringSize}, nil)
+	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, CoalesceLimit: ringSize}, nil)
 
 	for i := 0; i < 20; i++ {
 		c.Receive(context.Background(), "t", "b", makeEvent("backup-db"))
@@ -107,7 +107,7 @@ func TestCoalescer_PublishesCreatedThenUpdated(t *testing.T) {
 	defer unsub()
 
 	clk := testutil.NewFakeClock(time.Now().UTC())
-	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, CoalesceEvery: 5}, nil)
+	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, CoalesceLimit: 5}, nil)
 
 	c.Receive(context.Background(), "t", "b", makeEvent("backup-db"))
 	clk.Advance(time.Minute)
@@ -139,7 +139,7 @@ func TestCoalescer_DistinctFingerprintsAllPersist(t *testing.T) {
 	db := newDB(t)
 	hub := NewHub(8)
 	clk := testutil.NewFakeClock(time.Now().UTC())
-	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, CoalesceEvery: 5}, nil)
+	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, CoalesceLimit: 5}, nil)
 
 	for _, name := range []string{"a", "b", "c", "d", "e"} {
 		c.Receive(context.Background(), "t", "b", makeEvent(name))
@@ -154,7 +154,7 @@ func TestIngestSynthetic_NoPanic(t *testing.T) {
 	db := newDB(t)
 	hub := NewHub(8)
 	clk := testutil.NewFakeClock(time.Now().UTC())
-	coalescer := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, CoalesceEvery: 5}, nil)
+	coalescer := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, CoalesceLimit: 5}, nil)
 	ch := New("inapp", &fakeRenderer{}, coalescer)
 	ev := makeEvent("task1")
 	ch.IngestSynthetic(ev) // must not panic
@@ -170,7 +170,7 @@ func TestCoalescer_Receive_NilEvent(t *testing.T) {
 	db := newDB(t)
 	hub := NewHub(8)
 	clk := testutil.NewFakeClock(time.Now().UTC())
-	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, CoalesceEvery: 5}, nil)
+	c := NewCoalescer(db, hub, clk, CoalescerConfig{Window: time.Hour, CoalesceLimit: 5}, nil)
 	c.Receive(context.Background(), "t", "b", nil) // must not panic
 	rows, err := db.ListNotifications(context.Background(), 50, "")
 	require.NoError(t, err)

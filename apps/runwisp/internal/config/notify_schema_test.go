@@ -539,13 +539,13 @@ keep_for = "720h"
 	assert.NotZero(t, cfg.Notify.KeepFor)
 }
 
-func TestDecode_NotifyCoalesceEveryDefault(t *testing.T) {
-	// Omitted coalesce_every must resolve to the documented default (10), not
+func TestDecode_NotifyCoalesceLimitDefault(t *testing.T) {
+	// Omitted coalesce_limit must resolve to the documented default (10), not
 	// 0. The outbound coalescer treats 0 as "never force-forward", so a
 	// missing default silently disables the periodic check-in cadence.
 	cfg, err := decode([]byte(schedulerTZHeader+"\n[notify]\n"), "")
 	require.NoError(t, err)
-	assert.Equal(t, defaultCoalesceEvery, cfg.Notify.CoalesceEvery)
+	assert.Equal(t, defaultCoalesceLimit, cfg.Notify.CoalesceLimit)
 }
 
 func TestDecode_NotifyRetryBudget_Invalid(t *testing.T) {

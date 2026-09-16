@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`GET /api/notifications/stream` has been removed.** Notification events already ride the unified `GET /api/events/stream`.
 - **`catch_up` is now an integer and `max_catch_up_runs` is gone.** The value is how many missed cron ticks to re-fire on startup: `0` (was `"skip"`), `1` (was `"latest"`, the default), or `N` to replay up to `N` (replacing `"all"` + its separate cap). Anything above `1` still requires `on_overlap = "queue"`. See [Missed ticks](https://docs.runwisp.com/concepts/scheduling/#missed-ticks-catchup).
 - **`notify.coalesce_outbound` is gone; `coalesce_window = "0s"` now disables outbound coalescing** (one message per event). The bell still coalesces on its default window.
-- **`[notify] keep_occurrences` is renamed to `coalesce_every`.** It also controls how often a suppressed event is force-forwarded to outbound channels, which is now documented.
+- **`[notify] keep_occurrences` is renamed to `coalesce_limit`.** It also controls how often a suppressed event is force-forwarded to outbound channels, which is now documented.
 - **`graceful_stop = "0s"` and `retry_delay = "0s"` are now honored literally** instead of silently falling back to the defaults — so `graceful_stop = "0s"` means kill immediately and `retry_delay = "0s"` means retry with no delay.
 - **`stop_signal` now takes only the canonical `SIGxxx` spelling**; bare names like `TERM` are rejected. Use `SIGTERM`, `SIGINT`, etc.
 - **Setting `[daemon] metrics_listen` now enables metrics on its own** — you no longer also need `metrics_enabled = true`.

@@ -19,7 +19,8 @@ var misplacedKeyHints = map[string]string{
 	"defaults.timezone":       "set the daemon-wide timezone in [daemon] timezone, or a per-task timezone under [tasks.<name>]",
 	"daemon.host":             "host is set with the --host flag (or RUNWISP_HOST), not in [daemon]",
 	"daemon.port":             "port is set with the --port flag (or RUNWISP_PORT), not in [daemon]",
-	"notify.keep_occurrences": "keep_occurrences was renamed to coalesce_every",
+	"notify.keep_occurrences": "keep_occurrences was renamed to coalesce_limit",
+	"notify.coalesce_every":   "coalesce_every was renamed to coalesce_limit",
 }
 
 // removedTableHints maps a whole removed top-level table name to guidance on

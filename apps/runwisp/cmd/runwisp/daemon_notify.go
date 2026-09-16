@@ -97,7 +97,7 @@ func initNotify(
 			// The in-app coalescer always applies a window: nil/zero falls back to
 			// its built-in default. coalesce_window = "0s" only disables outbound.
 			Window:        config.OrDefault(notifyCfg.CoalesceWindow, 0),
-			CoalesceEvery: notifyCfg.CoalesceEvery,
+			CoalesceLimit: notifyCfg.CoalesceLimit,
 		}
 		coalescer := inapp.NewCoalescer(db, hub, notify.RealClock(), coalescerCfg, logger)
 
@@ -116,7 +116,7 @@ func initNotify(
 	outboundCoalesce := notifyCfg.CoalesceWindow == nil || *notifyCfg.CoalesceWindow > 0
 	coalesceCfg := coalesce.Config{
 		Window:        config.OrDefault(notifyCfg.CoalesceWindow, 0),
-		CoalesceEvery: notifyCfg.CoalesceEvery,
+		CoalesceLimit: notifyCfg.CoalesceLimit,
 	}
 
 	// The in-app channel is the failure sink for permanently-failed outbound

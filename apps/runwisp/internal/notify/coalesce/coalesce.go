@@ -34,10 +34,10 @@ import (
 type Config struct {
 	// Window matches repeats whose lastSent is within this span.
 	Window time.Duration
-	// CoalesceEvery is the count at which the wrapper forwards a coalesced
+	// CoalesceLimit is the count at which the wrapper forwards a coalesced
 	// event without waiting for the window to close. 0/1 disables this
 	// short-cut and only the window-close summary fires.
-	CoalesceEvery int
+	CoalesceLimit int
 }
 
 // DefaultWindow is the default Config.Window value.
@@ -96,8 +96,8 @@ func New(inner notify.Channel, cfg Config, clock notify.Clocker, logger *slog.Lo
 	if cfg.Window <= 0 {
 		cfg.Window = DefaultWindow
 	}
-	if cfg.CoalesceEvery < 0 {
-		cfg.CoalesceEvery = 0
+	if cfg.CoalesceLimit < 0 {
+		cfg.CoalesceLimit = 0
 	}
 	if clock == nil {
 		clock = notify.RealClock()
@@ -210,7 +210,7 @@ func (c *Channel) decide(ev *notify.Event) decision {
 	st.pending++
 	st.lastEvent = ev
 
-	if c.cfg.CoalesceEvery > 1 && st.pending >= c.cfg.CoalesceEvery {
+	if c.cfg.CoalesceLimit > 1 && st.pending >= c.cfg.CoalesceLimit {
 		// pending was incremented above so it counts the current event as
 		// well as all suppressed-since-last-delivery events. The summary's
 		// coalesced_count is exactly that — events folded into this single

@@ -95,9 +95,14 @@ func TestDecodeMisplacedKeySectionHints(t *testing.T) {
 			want: []string{`unknown key "port"`, "--port"},
 		},
 		{
-			name: "keep_occurrences in notify points at coalesce_every",
+			name: "keep_occurrences in notify points at coalesce_limit",
 			toml: "[notify]\nkeep_occurrences = 5\n[tasks.t]\nrun = \"echo hi\"\n",
-			want: []string{`unknown key "keep_occurrences"`, "renamed to coalesce_every"},
+			want: []string{`unknown key "keep_occurrences"`, "renamed to coalesce_limit"},
+		},
+		{
+			name: "coalesce_every in notify points at coalesce_limit",
+			toml: "[notify]\ncoalesce_every = 5\n[tasks.t]\nrun = \"echo hi\"\n",
+			want: []string{`unknown key "coalesce_every"`, "renamed to coalesce_limit"},
 		},
 		{
 			name: "removed scheduler table points at daemon",

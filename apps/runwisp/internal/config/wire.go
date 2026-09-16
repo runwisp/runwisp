@@ -811,7 +811,7 @@ type notifyWire struct {
 	KeepNotifications int       `toml:"keep_notifications,omitempty"`
 	KeepFor           string    `toml:"keep_for,omitempty"`
 	CoalesceWindow    string    `toml:"coalesce_window,omitempty"`
-	CoalesceEvery     int       `toml:"coalesce_every,omitempty"`
+	CoalesceLimit     int       `toml:"coalesce_limit,omitempty"`
 }
 
 // notifierWire is one [notifiers.<id>] block, keyed by its id. Secret-bearing

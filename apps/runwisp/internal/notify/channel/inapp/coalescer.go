@@ -19,13 +19,13 @@ import (
 // CoalescerConfig parameterizes the dedupe behavior.
 type CoalescerConfig struct {
 	Window        time.Duration // matches existing rows whose last_occurred_at falls within this span
-	CoalesceEvery int           // ring size of recorded occurrence timestamps
+	CoalesceLimit int           // ring size of recorded occurrence timestamps
 }
 
 // Default values for CoalescerConfig.
 const (
 	DefaultWindow        = time.Hour
-	DefaultCoalesceEvery = 10
+	DefaultCoalesceLimit = 10
 )
 
 // Coalescer folds repeats into a single persistent row. SQLite is the
@@ -44,8 +44,8 @@ func NewCoalescer(repo storage.NotificationRepository, hub *Hub, clock notify.Cl
 	if cfg.Window == 0 {
 		cfg.Window = DefaultWindow
 	}
-	if cfg.CoalesceEvery == 0 {
-		cfg.CoalesceEvery = DefaultCoalesceEvery
+	if cfg.CoalesceLimit == 0 {
+		cfg.CoalesceLimit = DefaultCoalesceLimit
 	}
 	if log == nil {
 		log = slog.Default()
@@ -84,7 +84,7 @@ func (c *Coalescer) Receive(ctx context.Context, title, body string, ev *notify.
 		CreatedAt:      now,
 		LastOccurredAt: now,
 	}
-	created, err := c.repo.UpsertByFingerprint(ctx, n, c.cfg.Window, c.cfg.CoalesceEvery)
+	created, err := c.repo.UpsertByFingerprint(ctx, n, c.cfg.Window, c.cfg.CoalesceLimit)
 	if err != nil {
 		c.log.Error("notify coalescer: upsert failed", "fingerprint", n.Fingerprint, "error", err)
 		return

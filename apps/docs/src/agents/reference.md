@@ -206,7 +206,7 @@ retry_budget:   dur                  — total retry budget per delivery
 keep_notifications:      int  =1024           — in-app bell row cap
 keep_for:  dur  =90d            — max bell row age
 coalesce_window:   dur  =1h             — collapse repeat (kind+task) into one bell row; also coalesces outbound bursts. "0s" = one outbound message per event (bell still coalesces on its default window)
-coalesce_every:   int  =10             — recent timestamps kept per coalesced bell row; also the count of suppressed events after which an outbound delivery (Slack/Telegram/etc) is force-forwarded instead of waiting for coalesce_window to close
+coalesce_limit:   int  =10             — recent timestamps kept per coalesced bell row; also the count of suppressed events after which an outbound delivery (Slack/Telegram/etc) is force-forwarded instead of waiting for coalesce_window to close
 ```
 
 ### [notifiers.&lt;id&gt;] (outbound channel; map keyed by id)
