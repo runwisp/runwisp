@@ -382,10 +382,13 @@ anyone logged into the daemon can read it. Everything under
 way, but the API and UI never show the keys or values — at most you'll
 see the `secrets_file` path, so you can tell where values come from.
 
-A secret is still part of the process environment, though: if the
-command itself prints its environment (`env`, a verbose tool, a crash
-dump), that value can end up in the run's captured output like anything
-else the process prints.
+A secret is still part of the process environment, though, so a command
+can print it (`env`, a verbose tool, a crash dump). When that happens the
+daemon scrubs the value out of the captured output before it's stored,
+streamed over the API, or pushed anywhere, swapping it for `[redacted]`.
+That's a best-effort match on the literal value: a secret the program
+transforms first (base64, URL-encoding) or splits across lines can still
+slip through, so treat it as a safety net, not a licence to print secrets.
 
 When the task starts, all four layers merge on top of the daemon's own
 environment. On a key collision, later wins:

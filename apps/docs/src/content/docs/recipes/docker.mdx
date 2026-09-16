@@ -129,8 +129,11 @@ docker run --rm --init \\
 environment," so the value never appears on the command line, in `ps`,
 or in `runwisp.toml`. The config API and web UI never show `secrets`
 values either, only the `secrets_file` path does. It's still part of
-the process environment though: if the container itself prints its env,
-or crashes and dumps it, that output still lands in the run log.
+the process environment though: if the container prints its env or
+crashes and dumps it, the daemon scrubs the known secret value out of
+the captured output first (swapping it for `[redacted]`) before it hits
+the run log or the API. That's a literal-value match, so a secret the
+container base64s or reshapes before printing can still slip through.
 
 ### About that timeout
 

@@ -382,12 +382,21 @@ func commitGroup(
 	stream string,
 	lines []committedLine,
 	frames [][]string,
+	redact *secretRedactor,
 	publish func(text string, lineNum int64, continued bool, frameCount int),
 ) {
+	// Scrub secret values once, before the text reaches either sink (disk file
+	// and the frame sidecar below, the event bus in publish). Redacting here
+	// covers SSE, the REST log endpoints, and the cloud push in one place.
+	texts := make([]string, len(lines))
+	for i, line := range lines {
+		texts[i] = redact.text(line.text)
+	}
+
 	ns := make([]int64, len(lines))
 	anchor := int64(-1)
-	for i, line := range lines {
-		n, err := writer.WriteLineEvent(line.text, stream)
+	for i := range lines {
+		n, err := writer.WriteLineEvent(texts[i], stream)
 		if err != nil {
 			slog.Warn("Failed to write log line to file", "stream", stream, "err", err)
 			ns[i] = -1
@@ -401,7 +410,7 @@ func commitGroup(
 
 	frameCount := 0
 	if len(frames) > 0 && anchor >= 0 {
-		if err := writer.WriteFrameHistory(anchor, frames); err != nil {
+		if err := writer.WriteFrameHistory(anchor, redact.frames(frames)); err != nil {
 			slog.Warn("Failed to write frame history", "stream", stream, "err", err)
 		} else {
 			frameCount = len(frames)
@@ -416,7 +425,7 @@ func commitGroup(
 		if ns[i] == anchor {
 			fc = frameCount
 		}
-		publish(line.text, ns[i], line.continued, fc)
+		publish(texts[i], ns[i], line.continued, fc)
 	}
 }
 
@@ -460,11 +469,15 @@ func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task
 		})
 	}
 
+	redact := newSecretRedactor(task.Secrets)
+
 	renderer := NewTerminalRenderer(
 		func(lines []committedLine, frames [][]string) {
-			commitGroup(writer, stream, lines, frames, publishCommitted)
+			commitGroup(writer, stream, lines, frames, redact, publishCommitted)
 		},
-		publishRegion,
+		func(epoch int, rows []string) {
+			publishRegion(epoch, redact.rows(rows))
+		},
 		nowMs,
 	)
 

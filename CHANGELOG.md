@@ -59,6 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`runwisp run --standalone` now honors `manual_trigger = false` and refuses to run a `[services.*]` entry**, matching the guard the daemon already enforces.
 - **`tls = "off"` is now rejected when `tls_cert`/`tls_key` are also set**, instead of being silently overridden into HTTPS.
 
+### Security
+
+- **Secret values (`secrets` / `secrets_file`) are now redacted from a run's captured output** before it's persisted, streamed over the API, or pushed to the control plane, swapping the literal value for `[redacted]`. Best-effort: a secret the process transforms or splits across lines before printing can still slip through.
+
 ## [0.16.4] - 2026-09-09
 
 ### Fixed
