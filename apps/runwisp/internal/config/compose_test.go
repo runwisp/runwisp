@@ -86,7 +86,7 @@ services = ["webb"]
 func TestComposeExpansion_PerServiceOverrideApplies(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `[compose.myapp]
 
-[compose.myapp.override.web]
+[compose.myapp.web]
 restart   = "always"
 instances = 2
 env       = { LOG_LEVEL = "info" }
@@ -107,7 +107,7 @@ env       = { LOG_LEVEL = "info" }
 func TestComposeExpansion_PerServiceOverrideFailures(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `[compose.myapp]
 
-[compose.myapp.override.web]
+[compose.myapp.web]
 failures = ["+stopped"]
 `))
 	require.NoError(t, err)
@@ -123,7 +123,7 @@ failures = ["+stopped"]
 func TestComposeExpansion_PerServiceOverrideServiceKnobs(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `[compose.myapp]
 
-[compose.myapp.override.web]
+[compose.myapp.web]
 stop_signal   = "SIGINT"
 restart_attempts = 1
 priority      = 5
@@ -164,7 +164,7 @@ func TestComposeExpansion_StackRejectsPerServiceOverride(t *testing.T) {
 	_, err := Load(writeConfig(t, `[compose.myapp]
 import = "stack"
 
-[compose.myapp.override.web]
+[compose.myapp.web]
 restart = "always"
 `))
 	require.Error(t, err)
@@ -174,7 +174,7 @@ restart = "always"
 func TestComposeExpansion_BlockDefaultsApplyToAllServices(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `[compose.myapp]
 
-[compose.myapp.override.defaults]
+[compose.myapp.defaults]
 restart = "always"
 `))
 	require.NoError(t, err)
@@ -187,10 +187,10 @@ restart = "always"
 func TestComposeExpansion_PerServiceOverrideBeatsBlockDefaults(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `[compose.myapp]
 
-[compose.myapp.override.defaults]
+[compose.myapp.defaults]
 restart = "always"
 
-[compose.myapp.override.web]
+[compose.myapp.web]
 restart = "on_failure"
 `))
 	require.NoError(t, err)
@@ -202,7 +202,7 @@ restart = "on_failure"
 func TestComposeExpansion_BlockDefaultsNonPolicyKnobs(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `[compose.myapp]
 
-[compose.myapp.override.defaults]
+[compose.myapp.defaults]
 restart_attempts = 3
 `))
 	require.NoError(t, err)
@@ -221,7 +221,7 @@ webhook_url = "https://example/hook"
 
 [compose.myapp]
 
-[compose.myapp.override.defaults]
+[compose.myapp.defaults]
 notify = ["slack-prod"]
 `))
 	require.NoError(t, err)
@@ -233,14 +233,7 @@ notify = ["slack-prod"]
 	}
 }
 
-// A compose service literally named "defaults" no longer collides with
-// anything: per-service overrides live under the reserved "override"
-// sub-table, a separate namespace from the block's own scalar keys, so the
-// service just imports like any other. It only loses the ability to get an
-// individual override through [compose.myapp.override.defaults] (that key
-// is always the block-level defaults, never a targeted override for a
-// service that happens to share its name).
-func TestComposeExpansion_ServiceNamedDefaultsImportsNormally(t *testing.T) {
+func TestComposeExpansion_ServiceNamedDefaultsRejected(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte(`services:
   defaults:
@@ -250,16 +243,17 @@ func TestComposeExpansion_ServiceNamedDefaultsImportsNormally(t *testing.T) {
 	require.NoError(t, os.WriteFile(cfgPath, []byte(`[compose.myapp]
 `), 0644))
 
-	cfg, err := Load(cfgPath)
-	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"myapp.defaults"}, taskNames(cfg))
+	_, err := Load(cfgPath)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "defaults")
+	assert.Contains(t, err.Error(), "rename")
 }
 
 func TestComposeExpansion_StackRejectsBlockDefaults(t *testing.T) {
 	_, err := Load(writeConfig(t, `[compose.myapp]
 import = "stack"
 
-[compose.myapp.override.defaults]
+[compose.myapp.defaults]
 restart = "always"
 `))
 	require.Error(t, err)
@@ -277,7 +271,7 @@ name_format = "static"
 func TestComposeExpansion_OverrideForUnknownServiceRejected(t *testing.T) {
 	_, err := Load(writeConfig(t, `[compose.myapp]
 
-[compose.myapp.override.webb]
+[compose.myapp.webb]
 restart = "always"
 `))
 	require.Error(t, err)
@@ -515,7 +509,7 @@ webhook_url = "https://example/ok"
 
 [compose.myapp]
 
-[compose.myapp.override.web]
+[compose.myapp.web]
 notify = ["slack-prod"]
 `))
 	require.NoError(t, err)
@@ -542,7 +536,7 @@ channel = "#default"
 
 [compose.myapp]
 
-[compose.myapp.override.web]
+[compose.myapp.web]
 notify = ["slack-prod:#alerts"]
 `))
 	require.NoError(t, err)
@@ -567,7 +561,7 @@ notify = ["slack-prod:#alerts"]
 func TestComposeExpansion_PerServiceNotifyUnknownNotifierRejected(t *testing.T) {
 	_, err := Load(writeConfig(t, `[compose.myapp]
 
-[compose.myapp.override.web]
+[compose.myapp.web]
 notify = ["ghost"]
 `))
 	require.Error(t, err)

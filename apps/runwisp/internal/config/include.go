@@ -366,7 +366,7 @@ func mergeEntryTables(root, inc *tomlConfig) {
 	}
 	if len(inc.Compose) > 0 {
 		if root.Compose == nil {
-			root.Compose = make(map[string]*composeBlockWire, len(inc.Compose))
+			root.Compose = make(map[string]map[string]any, len(inc.Compose))
 		}
 		for k, v := range inc.Compose {
 			root.Compose[k] = v

@@ -68,6 +68,13 @@ func TestWireTagsCoverSchema(t *testing.T) {
 
 	wireKeys := map[string]struct{}{}
 	collectTOMLTags(reflect.TypeFor[tomlConfig](), wireKeys, map[reflect.Type]bool{})
+	// [compose.<alias>] blocks are decoded from a free-form map (see
+	// wire.go Compose + parseComposeBlock), so their reserved keys carry no
+	// struct tag for collectTOMLTags to find. Seed them from the authoritative
+	// set compose.go parses against.
+	for key := range composeReservedKeys {
+		wireKeys[key] = struct{}{}
+	}
 
 	var orphan []string
 	for key := range schemaKeys {

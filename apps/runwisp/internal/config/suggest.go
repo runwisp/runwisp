@@ -96,8 +96,8 @@ func sectionHint(key toml.Key) string {
 // path and pinpoints the segment that failed to match, plus the valid keys at
 // that level. Candidates come from reflecting `toml:` tags, so they can never
 // drift from the actual decode surface. ok is false when the path runs
-// through free-form territory (env/secrets maps, a param's `any`-typed
-// default) or matches fully: no suggestion is possible there.
+// through free-form territory (env maps, [compose.*] blocks) or matches
+// fully — no suggestion is possible there.
 func unknownKeyInfo(key toml.Key) (segment string, candidates []string, ok bool) {
 	current := reflect.TypeFor[tomlConfig]()
 	for _, seg := range key {
@@ -114,8 +114,8 @@ func unknownKeyInfo(key toml.Key) (segment string, candidates []string, ok bool)
 			// segment matches; descend into the element type.
 			current = current.Elem()
 		default:
-			// Interface (e.g. a param's `any`-typed default) or scalar with
-			// leftover path segments: nothing to suggest.
+			// Interface (free-form compose blocks) or scalar with leftover
+			// path segments — nothing to suggest.
 			return "", nil, false
 		}
 	}
