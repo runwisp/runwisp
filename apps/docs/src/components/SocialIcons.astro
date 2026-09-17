@@ -1,0 +1,61 @@
+---
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// Starlight's built-in icon set has no "globe" (only the square-arrow
+// "external" icon), so the website link gets its own stroke-based SVG
+// (lucide's globe path) instead of Icon.astro's fill-based icons.
+import config from "virtual:starlight/user-config";
+import { Icon } from "@astrojs/starlight/components";
+
+const links = config.social || [];
+---
+
+{
+    links.length > 0 && (
+        <>
+            {links.map(({ label, href, icon }) => (
+                <a {href} rel="me" class="sl-flex">
+                    <span class="sr-only">{label}</span>
+                    {icon === "external" ? (
+                        <svg
+                            aria-hidden="true"
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <circle cx="12" cy="12" r="10" />
+                            <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+                            <path d="M2 12h20" />
+                        </svg>
+                    ) : (
+                        <Icon name={icon} />
+                    )}
+                </a>
+            ))}
+        </>
+    )
+}
+
+<style>
+    @layer starlight.core {
+        a {
+            color: var(--sl-color-text-accent);
+            padding: 0.5em;
+            margin: -0.5em;
+        }
+        a:hover {
+            color: var(--sl-color-white);
+        }
+        svg {
+            font-size: 1em;
+            width: 1em;
+            height: 1em;
+        }
+    }
+</style>

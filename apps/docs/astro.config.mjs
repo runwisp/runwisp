@@ -8,6 +8,49 @@ import svelte from "@astrojs/svelte";
 import starlightOpenAPI, { openAPISidebarGroups } from "starlight-openapi";
 import { redirects } from "./src/redirects.mjs";
 
+// Code blocks render as the marketing site's always-dark operator terminal in
+// both light and dark mode. Surface + syntax colours are lifted verbatim from
+// runwisp.com's --term / --syn-* tokens (src/styles/app.css) so a code sample
+// looks the same on docs.runwisp.com as it does on the landing page.
+const terminalTheme = {
+    name: "runwisp-terminal",
+    type: "dark",
+    colors: {
+        "editor.background": "#0a1116",
+        "editor.foreground": "#dbe6ec",
+    },
+    tokenColors: [
+        {
+            scope: ["comment", "punctuation.definition.comment"],
+            settings: { foreground: "#5b6b75", fontStyle: "italic" },
+        },
+        {
+            scope: ["keyword", "storage", "storage.type", "keyword.control", "keyword.operator"],
+            settings: { foreground: "#79c7ff" },
+        },
+        {
+            scope: ["string", "string.quoted", "punctuation.definition.string"],
+            settings: { foreground: "#7fd6a0" },
+        },
+        {
+            scope: ["constant.numeric", "constant.language", "constant"],
+            settings: { foreground: "#e0a52e" },
+        },
+        {
+            scope: ["entity.name.function", "support.function", "meta.function-call"],
+            settings: { foreground: "#2fd4dd" },
+        },
+        {
+            scope: ["punctuation", "meta.brace", "punctuation.separator", "punctuation.terminator"],
+            settings: { foreground: "#9aa7b0" },
+        },
+        {
+            scope: ["variable", "meta.definition.variable"],
+            settings: { foreground: "#dbe6ec" },
+        },
+    ],
+};
+
 export default defineConfig({
     site: "https://docs.runwisp.com",
     redirects,
@@ -23,6 +66,20 @@ export default defineConfig({
                     },
                 ]),
             ],
+            // One fixed dark terminal theme for both colour modes. Frame radius +
+            // hairline match the flat 3px chrome; the frame's drop shadow is
+            // suppressed here because theme-bridge.css casts the deeper --lift-3.
+            expressiveCode: {
+                themes: [terminalTheme],
+                useStarlightDarkModeSwitch: false,
+                styleOverrides: {
+                    borderRadius: "3px",
+                    borderColor: "var(--rw-outline)",
+                    frames: {
+                        frameBoxShadowCssValue: "none",
+                    },
+                },
+            },
             title: "RunWisp",
             logo: {
                 src: "@runwisp/ui/assets/runwisp-logo.svg",
@@ -48,7 +105,19 @@ export default defineConfig({
                 },
                 {
                     tag: "meta",
-                    attrs: { name: "theme-color", content: "#15a0a8" },
+                    attrs: {
+                        name: "theme-color",
+                        media: "(prefers-color-scheme: light)",
+                        content: "#f5f8f9",
+                    },
+                },
+                {
+                    tag: "meta",
+                    attrs: {
+                        name: "theme-color",
+                        media: "(prefers-color-scheme: dark)",
+                        content: "#0c1719",
+                    },
                 },
             ],
             social: [
@@ -65,6 +134,9 @@ export default defineConfig({
             ],
             editLink: {
                 baseUrl: "https://github.com/runwisp/runwisp/edit/main/apps/docs/",
+            },
+            components: {
+                SocialIcons: "./src/components/SocialIcons.astro",
             },
             // theme-tokens.css @imports the webfonts it names, so the font
             // stack is declared in exactly one place for every consumer.
