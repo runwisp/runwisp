@@ -90,6 +90,11 @@ describe("formatTaskLastResultLabel", () => {
         const overview = makeOverview({ lastStatus: "failed" });
         expect(formatTaskLastResultLabel(overview)).toBe("Failed");
     });
+
+    it("humanizes an underscore-separated end reason", () => {
+        const overview = makeOverview({ lastStatus: "log_overflow" });
+        expect(formatTaskLastResultLabel(overview)).toBe("Log overflow");
+    });
 });
 
 describe("formatTaskNextRunLabel", () => {
