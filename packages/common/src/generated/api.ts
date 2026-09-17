@@ -225,7 +225,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/notifications/unreadCount": {
+    "/api/notifications/unread-count": {
         parameters: {
             query?: never;
             header?: never;

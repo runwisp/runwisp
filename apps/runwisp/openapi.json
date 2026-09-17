@@ -3181,7 +3181,7 @@
         ]
       }
     },
-    "/api/notifications/unreadCount": {
+    "/api/notifications/unread-count": {
       "get": {
         "operationId": "getUnreadNotificationCount",
         "responses": {

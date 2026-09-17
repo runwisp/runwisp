@@ -413,7 +413,7 @@ Read (GET):
 /api/runs/summary                               aggregate run stats
 /api/events/stream                              run lifecycle + system + config-stale + notification events (SSE)
 /api/notifications                              in-app notifications
-/api/notifications/unreadCount                   unread count
+/api/notifications/unread-count                 unread count
 /api/local/credentials                          ephemeral password (Unix socket only)
 ```
 

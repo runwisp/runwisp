@@ -326,7 +326,7 @@ func newFakeDaemonServer(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"items":[]}`))
 	})
-	mux.HandleFunc("/api/notifications/unreadCount", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/api/notifications/unread-count", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"unread_count":0}`))
 	})

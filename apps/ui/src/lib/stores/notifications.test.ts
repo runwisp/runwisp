@@ -93,7 +93,7 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
         const method =
             init?.method ?? (typeof input !== "string" && "method" in input ? input.method : "GET");
         requests.push({ url, method });
-        if (url.includes("/api/notifications/unreadCount")) {
+        if (url.includes("/api/notifications/unread-count")) {
             return Promise.resolve(
                 new Response(JSON.stringify({ count: unread }), {
                     status: 200,

@@ -112,7 +112,7 @@ func TestHumaUnreadNotificationCount_Success(t *testing.T) {
 
 	s := notificationServer(t, repo, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/notifications/unreadCount", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/notifications/unread-count", nil)
 	w := httptest.NewRecorder()
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
@@ -132,7 +132,7 @@ func TestHumaUnreadNotificationCount_RepoError(t *testing.T) {
 
 	s := notificationServer(t, repo, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/notifications/unreadCount", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/notifications/unread-count", nil)
 	w := httptest.NewRecorder()
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)

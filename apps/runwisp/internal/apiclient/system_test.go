@@ -142,7 +142,7 @@ func TestStreamDaemonLogs_DeliversLines(t *testing.T) {
 
 func TestUnreadNotificationCount(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/api/notifications/unreadCount", r.URL.Path)
+		assert.Equal(t, "/api/notifications/unread-count", r.URL.Path)
 		_ = json.NewEncoder(w).Encode(map[string]int{"count": 7})
 	}))
 	defer srv.Close()

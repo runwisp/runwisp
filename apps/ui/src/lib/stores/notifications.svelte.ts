@@ -353,7 +353,7 @@ class NotificationStore {
     }
 
     async #fetchUnread(): Promise<number> {
-        const res = await this.#fetch(`${this.#getApiUrl()}/api/notifications/unreadCount`, {
+        const res = await this.#fetch(`${this.#getApiUrl()}/api/notifications/unread-count`, {
             credentials: "include",
         });
         if (!res.ok) throw new Error(`Unread returned ${res.status.toString()}`);

@@ -52,7 +52,7 @@ function shoot(page: Page, name: string): Promise<Buffer> {
 }
 
 async function unreadCount(page: Page, token: string): Promise<number> {
-    const res = await page.request.get("/api/notifications/unreadCount", {
+    const res = await page.request.get("/api/notifications/unread-count", {
         headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok()) return 0;

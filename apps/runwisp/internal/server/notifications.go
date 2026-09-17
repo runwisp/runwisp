@@ -160,7 +160,7 @@ func (srv *Server) registerNotificationsRoutes(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "getUnreadNotificationCount",
 		Method:      http.MethodGet,
-		Path:        "/api/notifications/unreadCount",
+		Path:        "/api/notifications/unread-count",
 		Summary:     "Count notifications with read_at IS NULL",
 		Tags:        []string{"Notifications"},
 	}, srv.humaUnreadNotificationCount)

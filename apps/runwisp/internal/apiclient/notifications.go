@@ -54,7 +54,7 @@ func (c *Client) MarkNotificationUnread(id string) error {
 // NULL.
 func (c *Client) UnreadNotificationCount() (int64, error) {
 	var resp server.NotificationUnreadBody
-	if err := c.doJSON("GET", "/api/notifications/unreadCount", nil, &resp); err != nil {
+	if err := c.doJSON("GET", "/api/notifications/unread-count", nil, &resp); err != nil {
 		return 0, err
 	}
 	return resp.Count, nil
