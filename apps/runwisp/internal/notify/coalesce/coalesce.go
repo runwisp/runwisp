@@ -5,7 +5,7 @@
 // with fingerprint-based coalescing so a flapping task doesn't translate
 // to one outbound delivery per failure.
 //
-// Strategy, matching the pre-1.0 design call in /concepts/concurrency:
+// Strategy, matching the design call in /concepts/concurrency:
 //
 //   - The first event seen in a window for a given fingerprint is forwarded
 //     immediately.

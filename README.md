@@ -96,7 +96,7 @@ docker run -d --name runwisp -p 9477:9477 \
 
 See [Docker](https://docs.runwisp.com/getting-started/docker/) for image variants, required env vars, and volumes.
 
-> **Status: pre-1.0, moving fast.** The single-machine essentials are here: scheduling, supervision, live logs, and persistent run history. Pin a version and skim [CHANGELOG.md](CHANGELOG.md) before upgrading (pre-1.0 bumps can include breaking changes). Kick the tyres and tell us what breaks.
+> **1.0 and stable.** Scheduling, supervision, live logs, and persistent run history all ship in the one binary. RunWisp follows semver: breaking changes only land on a major bump, so upgrades within a major line are safe. Skim [CHANGELOG.md](CHANGELOG.md) before you do. Found a rough edge? Tell us.
 
 ---
 

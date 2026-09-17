@@ -106,11 +106,12 @@ its port. Run `runwisp validate` against the file before you deploy it.
 
 ## What the schema considers a breaking change
 
-This is pre-1.0, so any release might change the TOML schema, the REST
-API, or the on-disk layout — and an upgrade may wipe run history.
-Anything like that gets flagged in the
-[CHANGELOG](https://github.com/runwisp/runwisp/blob/main/CHANGELOG.md);
-the semver guarantees kick in at 1.0.
+Changing the TOML schema, the REST API, or the on-disk layout in a way that
+breaks existing configs or history is a breaking change, and it only ships on
+a major version bump. Anything like that gets flagged in the
+[CHANGELOG](https://github.com/runwisp/runwisp/blob/main/CHANGELOG.md)
+with a migration note. Upgrades within a major line keep your config and run
+history working.
 
 ---
 

@@ -2,7 +2,7 @@
 
 Thanks for taking the time to look at the code. The daemon and web UI (`apps/`) are GPL-3.0-or-later; the shared libraries under `packages/` are Apache-2.0. There is no CLA — your contribution stays yours, licensed under the terms of whichever tree it lands in.
 
-> RunWisp is **pre-1.0**. Breaking changes are permitted; back-compat shims are not. Read [AGENTS.md](AGENTS.md) for the project's design principles, prime directives, and non-goals before proposing significant changes.
+> RunWisp follows semver. Breaking changes require a major version bump; back-compat shims within a major line are not used. Read [AGENTS.md](AGENTS.md) for the project's design principles, prime directives, and non-goals before proposing significant changes.
 
 ## Prerequisites
 
@@ -128,7 +128,7 @@ The dashboard is embedded into the binary at build time. REST in `src/lib/api.ts
 
 - Write commit messages that explain **why** the change is needed. The reviewer reads `git log`, not your inner monologue.
 - Plain commit messages — no `Co-Authored-By: Claude` (or other tool) trailers.
-- Pre-1.0 means no deprecation shims, no "tolerate the old shape" branches, no migration warnings. Reject wrong shapes with errors and move on.
+- No deprecation shims, no "tolerate the old shape" branches, no silent migration warnings. Reject wrong shapes with errors; land breaking changes on a major version bump.
 - PR description should call out anything user-visible (TOML schema, REST API, CLI flags) so it lands correctly in [CHANGELOG.md](CHANGELOG.md).
 
 ## Reporting bugs

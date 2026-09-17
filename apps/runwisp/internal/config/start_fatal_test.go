@@ -79,7 +79,7 @@ run = "sleep 1"
 
 // TestHealthyAfter_RejectsCollapsedKeys is the bug-first guard for the
 // start_period + backoff_reset_after → healthy_after collapse: both old keys
-// are now unknown and rejected outright (pre-1.0, no shims).
+// are now unknown and rejected outright (no shims).
 func TestHealthyAfter_RejectsCollapsedKeys(t *testing.T) {
 	for _, key := range []string{`start_period = "5s"`, `backoff_reset_after = "30s"`} {
 		cfgPath, _ := writePlainConfig(t, `[services.worker]

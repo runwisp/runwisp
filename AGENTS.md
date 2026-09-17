@@ -1,6 +1,6 @@
 # RunWisp — Agent Directives
 
-**License**: GPL-3.0-or-later (`apps/`) · Apache-2.0 (`packages/`) · **Status**: Pre-1.0 (breaking changes permitted)
+**License**: GPL-3.0-or-later (`apps/`) · Apache-2.0 (`packages/`) · **Status**: 1.0 · semver (breaking changes require a major bump)
 **Stack**: Go 1.25 daemon, Svelte 5 (runes) + Tailwind UI, Bun workspaces + moon (`bunx moon`), embedded SQLite (`database/sql` + `modernc.org/sqlite`), AsyncAPI-defined optional control-plane protocol.
 
 ## 🎯 PRODUCT VISION (read this first — it outranks everything below)
@@ -11,7 +11,7 @@ RunWisp replaces **crond + supervisord** with one small Go binary that a single 
 
 1. **Failures stay visible.** Every run has an exit code, duration, timestamps, and captured output — persisted, browsable, and streamable. Prefer changes that make failures easier to see.
 2. **One binary, zero runtime deps.** No Python, Node, external DB, systemd, or sidecars required to run RunWisp. SQLite and the web UI are *embedded*. Do not add runtime deps; prefer a vendored Go lib over a service.
-3. **TOML is the sole source of truth.** `runwisp.toml` defines every task. The REST API and Web UI are **read-only + trigger** — they never mutate task definitions. Schema changes are user-visible breaking changes; treat the TOML surface as an API even pre-1.0. Never add a feature that *requires* the UI or API to configure.
+3. **TOML is the sole source of truth.** `runwisp.toml` defines every task. The REST API and Web UI are **read-only + trigger** — they never mutate task definitions. Schema changes are user-visible breaking changes; treat the TOML surface as an API. Never add a feature that *requires* the UI or API to configure.
 4. **Local-first, offline-complete.** The daemon must work fully offline. Any network integration (`internal/cloud/`) is strictly optional — no feature may degrade when it's disabled or unreachable.
 5. **Built for the individual and the small team.** Every core capability ships in the binary: scheduling, supervision, observability, web UI, TUI, REST. No artificial limits, no feature flags gating basics.
 6. **Boring in prod.** Predictable resource use, graceful shutdown, recoverable state after crash or kill -9. Prefer a simple mechanism that's easy to reason about over a clever one that saves 5%.
@@ -143,4 +143,4 @@ The daemon can optionally connect outbound to a control-plane peer that speaks t
 4. **User-facing changes** require a `CHANGELOG.md` entry. Keep entries short — one or two sentences naming what changed. Add a docs link only when the entry doesn't stand on its own (a rename that needs the migration path, a config key whose full behavior lives elsewhere) — not as a default reflex on every bullet; most entries need no link at all. The changelog is for **product-visible changes only** — never log docs edits, README/site copy, internal refactors, test or CI changes, or other work the user can't observe in the product.
 5. **Docs voice (`apps/docs/`)**: write conversationally — talk to the operator like a colleague, not a spec. Short paragraphs, contractions OK, second person ("you"), examples before exhaustive tables. The reference details belong in docs, not the changelog.
 6. **Stop and ask** when Prime Directives / Non-Goals / Invariants don't resolve a judgment call. Do not silently pick a direction that might violate the vision.
-7. **Pre-1.0, no back-compat hedges.** No deprecation shims, no "tolerate old shape", no migration warnings — reject wrong shapes with errors and move on. (There are no users yet.)
+7. **Semver from 1.0.** Breaking the TOML schema, REST API, or on-disk layout requires a major version bump plus a CHANGELOG migration note. Within a major line, keep rejecting wrong shapes with clear errors — no silent back-compat shims, no "tolerate old shape" — but don't break gratuitously.

@@ -47,8 +47,8 @@ type Config struct {
 // mode, horizontal scroll, and prepend/evict support for paged history.
 //
 // Fields are exported so the owning view (ExecView, DebugView, the root
-// Model) can read/write scroll state across package boundaries. Pre-1.0
-// the wider TUI keeps these accesses; encapsulation can tighten later.
+// Model) can read/write scroll state across package boundaries. The wider
+// TUI keeps these accesses for now; encapsulation can tighten later.
 type Pane struct {
 	Cfg             Config
 	Lines           []Line

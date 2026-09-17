@@ -27,7 +27,7 @@ We do not run a bug bounty program. We do gratefully accept reports.
 
 ## Supported versions
 
-RunWisp is **pre-1.0**. Security fixes ship only on the latest release — there are no patch backports for older pre-1.0 versions. Stay current to stay patched.
+Security fixes ship only on the latest release — there are no patch backports for older releases. Stay current to stay patched.
 
 | Version        | Supported |
 | -------------- | --------- |
@@ -88,7 +88,7 @@ If you're running RunWisp in production, here's the short list:
 4. **Set `RUNWISP_TRUSTED_PROXIES` to your proxy's CIDR** (e.g. `127.0.0.1/32`). The daemon will then honour `X-Forwarded-Proto: https` for secure cookie issuance and `X-Forwarded-For` for rate-limit accounting. Catch-all ranges (`0.0.0.0/0`, `::/0`) are rejected — trusting the entire internet would let any client spoof their IP.
 5. **Don't ignore the non-loopback warning banner.** The daemon prints it to stderr when it starts on a non-loopback address serving plain HTTP (`tls = "off"`). It exists for a reason.
 6. **Run as an unprivileged user** wherever possible. The daemon needs only the permissions required to execute its tasks and own its data dir.
-7. **Stay on the latest release.** Watch [GitHub Releases](https://github.com/runwisp/runwisp/releases) — pre-1.0, security fixes ship on the moving train.
+7. **Stay on the latest release.** Watch [GitHub Releases](https://github.com/runwisp/runwisp/releases) — security fixes ship on the latest version.
 
 ## Network exposure
 

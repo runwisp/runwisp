@@ -233,9 +233,9 @@ don't, so it's opt-in rather than baked into the default tags. A prerelease
 only ever gets its exact pinned tag, so `latest` never lands on an rc.
 
 `X.Y.Z` is the only immutable tag — `X.Y`, `X`, and `latest` move as new
-releases land. While RunWisp is pre-1.0, `0` floats across every `0.x`
-release, and those may carry breaking changes; pin `X.Y` or `X.Y.Z` if that
-matters to you.
+releases land. That's safe to float on: breaking changes only ship in a new
+major version, so `1` only ever picks up `1.x` releases, never one that breaks
+your setup. Pin `X.Y` or `X.Y.Z` instead if you want an exact version.
 
 ## Quick start
 
