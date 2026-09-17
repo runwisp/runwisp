@@ -6,6 +6,7 @@ package notifications
 import (
 	"fmt"
 	"image/color"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -111,9 +112,7 @@ func (p *Panel) Upsert(n server.NotificationDTO) bool {
 // row down by one, so the cursor must move with it or actions (open, toggle
 // read) would land on the neighbour that slid under the highlight.
 func (p *Panel) insertOrdered(idx int, id string) {
-	p.ordered = append(p.ordered, "")
-	copy(p.ordered[idx+1:], p.ordered[idx:])
-	p.ordered[idx] = id
+	p.ordered = slices.Insert(p.ordered, idx, id)
 	// Only meaningful while expanded — a collapsed panel has no positioned
 	// cursor (Toggle snaps it into range on expand).
 	if p.expanded && idx <= p.cursor {

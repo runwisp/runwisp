@@ -380,10 +380,7 @@ func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location) {
 	// submitted to the gate, which starts it at min(when it frees, the slot).
 	if hasJitter {
 		gapLive := plan.schedule.Next(now).Sub(now)
-		limit := gapLive - time.Second
-		if limit < 0 {
-			limit = 0
-		}
+		limit := max(gapLive-time.Second, 0)
 		offset := min(plan.offset, limit)
 		window := min(plan.window, limit)
 		slot := now.Add(offset)

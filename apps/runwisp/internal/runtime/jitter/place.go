@@ -27,7 +27,8 @@
 package jitter
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"time"
 )
 
@@ -53,19 +54,16 @@ func Place(windows []Window) map[string]time.Duration {
 		return out
 	}
 
-	ws := make([]Window, len(windows))
-	copy(ws, windows)
+	ws := slices.Clone(windows)
 	// Earliest-deadline-first ordering: phase, then the tighter window, then
 	// name. The greedy left-pack below honours this order, so the tightest
 	// window takes the earliest slot.
-	sort.Slice(ws, func(i, j int) bool {
-		if ws[i].Phase != ws[j].Phase {
-			return ws[i].Phase < ws[j].Phase
-		}
-		if ws[i].Length != ws[j].Length {
-			return ws[i].Length < ws[j].Length
-		}
-		return ws[i].Name < ws[j].Name
+	slices.SortFunc(ws, func(a, b Window) int {
+		return cmp.Or(
+			cmp.Compare(a.Phase, b.Phase),
+			cmp.Compare(a.Length, b.Length),
+			cmp.Compare(a.Name, b.Name),
+		)
 	})
 
 	for _, cluster := range clusters(ws) {

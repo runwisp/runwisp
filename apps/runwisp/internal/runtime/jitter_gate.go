@@ -4,7 +4,8 @@
 package runtime
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"sync"
 	"time"
 )
@@ -81,28 +82,22 @@ func (g *jitterGate) submit(taskName string, tick, slot time.Time, window time.D
 	// earlier-slot peer) forward, it stops the timer; if not, the timer
 	// releases h at its deadline. A delay of 0 (offset-0 task that can't be
 	// pulled forward) breaches almost immediately — its deadline is the tick.
-	delay := slot.Sub(g.now())
-	if delay < 0 {
-		delay = 0
-	}
+	delay := max(slot.Sub(g.now()), 0)
 	h.timer = g.after(delay, func() { g.breach(taskName) })
 
 	g.advance()
 }
 
+// cmpHeld orders held runs by slot deadline, then name — the EDF release order.
+func cmpHeld(a, b *heldRun) int {
+	return cmp.Or(a.slot.Compare(b.slot), cmp.Compare(a.taskName, b.taskName))
+}
+
 // insert places h into pending keeping the slot-then-name order. Assumes the
 // lock is held.
 func (g *jitterGate) insert(h *heldRun) {
-	i := sort.Search(len(g.pending), func(i int) bool {
-		p := g.pending[i]
-		if !p.slot.Equal(h.slot) {
-			return p.slot.After(h.slot)
-		}
-		return p.taskName >= h.taskName
-	})
-	g.pending = append(g.pending, nil)
-	copy(g.pending[i+1:], g.pending[i:])
-	g.pending[i] = h
+	i, _ := slices.BinarySearchFunc(g.pending, h, cmpHeld)
+	g.pending = slices.Insert(g.pending, i, h)
 }
 
 // advance pulls forward every pending fire the gate is currently free for,
@@ -172,7 +167,7 @@ func (g *jitterGate) freeFor(horizon time.Duration) bool {
 func (g *jitterGate) remove(taskName string) (*heldRun, bool) {
 	for i, h := range g.pending {
 		if h.taskName == taskName {
-			g.pending = append(g.pending[:i], g.pending[i+1:]...)
+			g.pending = slices.Delete(g.pending, i, i+1)
 			if h.timer != nil {
 				h.timer.Stop()
 			}
