@@ -14,6 +14,7 @@ import (
 	"log/slog"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
@@ -27,12 +28,15 @@ type RetentionCleaner struct {
 	cancel       context.CancelFunc
 	logDir       string
 	maxTotalSize int64
+	eventBus     *events.Bus
 }
 
 // NewRetentionCleaner builds a cleaner with the given cadence. tasks is the
 // live registry: the cleaner's background ticker ranges it under the read lock,
 // so a reload that adds or removes tasks is picked up on the next pass.
-func NewRetentionCleaner(db storage.RunRepository, tasks *TaskRegistry, interval time.Duration, logDir string, maxTotalSize int64) *RetentionCleaner {
+// eventBus may be nil (tests that don't care about the resulting SSE fan-out);
+// a nil bus just means no run.deleted event is published.
+func NewRetentionCleaner(db storage.RunRepository, tasks *TaskRegistry, interval time.Duration, logDir string, maxTotalSize int64, eventBus *events.Bus) *RetentionCleaner {
 	if interval == 0 {
 		interval = time.Hour
 	}
@@ -43,6 +47,34 @@ func NewRetentionCleaner(db storage.RunRepository, tasks *TaskRegistry, interval
 		interval:     interval,
 		logDir:       logDir,
 		maxTotalSize: maxTotalSize,
+		eventBus:     eventBus,
+	}
+}
+
+// publishDeleted emits run.deleted for a run this cleaner just removed, so
+// clients tracking a live total-runs count (the dashboard) stay in sync
+// instead of only learning about it on their next full refetch. Mirrors
+// runService.publishDeleted in internal/server.
+func (cleaner *RetentionCleaner) publishDeleted(runID, taskName string) {
+	if cleaner.eventBus == nil {
+		return
+	}
+	cleaner.eventBus.Publish(events.EventRunDeleted, events.RunDeletedEvent{
+		RunID:    runID,
+		TaskName: taskName,
+	})
+}
+
+// deleteAndPublish removes the given run rows and, only once that succeeds,
+// fans out run.deleted for each — kept separate from cleanOldRuns to avoid
+// nesting the publish loop inside the delete's error branch.
+func (cleaner *RetentionCleaner) deleteAndPublish(ctx context.Context, ids []string, refs []storage.RunRef) {
+	if err := cleaner.db.DeleteRunsByIDs(ctx, ids); err != nil {
+		slog.Error("Failed to delete old run rows", "count", len(ids), "err", err)
+		return
+	}
+	for _, ref := range refs {
+		cleaner.publishDeleted(ref.ID, ref.TaskName)
 	}
 }
 
@@ -65,6 +97,7 @@ func (cleaner *RetentionCleaner) cleanOldRuns(ctx context.Context) {
 
 	totalDeleted := 0
 	var allIDs []string
+	var deletedRefs []storage.RunRef
 	cleaner.tasks.Range(func(_ string, task *model.Task) bool {
 		// KeepRuns: nil = no cap; 0 = keep no completed runs; >0 = cap.
 		// KeepFor:  0 = no cap; >0 = cap. Either a set KeepRuns or a positive
@@ -87,6 +120,7 @@ func (cleaner *RetentionCleaner) cleanOldRuns(ctx context.Context) {
 			logutil.RemoveLogFiles(logPath)
 			logutil.RemoveEmptyParents(logPath, cleaner.logDir)
 			allIDs = append(allIDs, run.ID)
+			deletedRefs = append(deletedRefs, storage.RunRef{ID: run.ID, TaskName: run.TaskName})
 		}
 
 		if len(oldRuns) > 0 {
@@ -97,9 +131,7 @@ func (cleaner *RetentionCleaner) cleanOldRuns(ctx context.Context) {
 	})
 
 	if len(allIDs) > 0 {
-		if err := cleaner.db.DeleteRunsByIDs(ctx, allIDs); err != nil {
-			slog.Error("Failed to delete old run rows", "count", len(allIDs), "err", err)
-		}
+		cleaner.deleteAndPublish(ctx, allIDs, deletedRefs)
 	}
 
 	if totalDeleted > 0 {
@@ -187,6 +219,7 @@ func (cleaner *RetentionCleaner) deleteRunBatch(ctx context.Context, runs []mode
 			slog.Warn("Failed to delete run during size enforcement", "id", run.ID, "err", err)
 			continue
 		}
+		cleaner.publishDeleted(run.ID, run.TaskName)
 		deleted++
 		if *totalSize <= cleaner.maxTotalSize {
 			break

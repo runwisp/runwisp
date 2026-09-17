@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage"
@@ -61,7 +62,13 @@ func TestRetentionCleaner(t *testing.T) {
 	repo.On("SelectOldRuns", mock.Anything, task).Return(oldRuns, nil)
 	repo.On("DeleteRunsByIDs", mock.Anything, []string{runID}).Return(nil)
 
-	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(tasks), 10*time.Millisecond, logDir, 0)
+	bus := events.NewEventBus()
+	var published []events.RunDeletedEvent
+	bus.Subscribe(events.EventRunDeleted, func(e events.Event) {
+		published = append(published, e.Data.(events.RunDeletedEvent))
+	})
+
+	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(tasks), 10*time.Millisecond, logDir, 0, bus)
 	// Start runs the first cleanup pass synchronously, so the deletion is
 	// observable as soon as Start returns — no sleep needed.
 	cleaner.Start()
@@ -71,13 +78,19 @@ func TestRetentionCleaner(t *testing.T) {
 
 	_, err := os.Stat(logPath)
 	assert.True(t, os.IsNotExist(err))
+
+	// A dashboard tracking totalRuns via run.deleted must hear about a run
+	// retention pruned, or the counter only drifts back into sync on reload.
+	require.Len(t, published, 1)
+	assert.Equal(t, runID, published[0].RunID)
+	assert.Equal(t, "task1", published[0].TaskName)
 }
 
 func TestEnforceMaxTotalSize_NoLimit(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	logDir := t.TempDir()
 	// maxTotalSize=0 means no limit; enforceMaxTotalSize should be a no-op
-	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 0)
+	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 0, nil)
 	cleaner.enforceMaxTotalSize(context.Background()) // must not call QueryRuns
 	repo.AssertNotCalled(t, "QueryRuns")
 }
@@ -87,7 +100,7 @@ func TestEnforceMaxTotalSize_UnderLimit(t *testing.T) {
 	logDir := t.TempDir()
 	// Write a tiny file; maxTotalSize is huge → no pruning
 	require.NoError(t, os.WriteFile(filepath.Join(logDir, "small.log"), []byte("x"), 0644))
-	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 1<<30) // 1 GiB
+	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 1<<30, nil) // 1 GiB
 	cleaner.enforceMaxTotalSize(context.Background())
 	repo.AssertNotCalled(t, "QueryRuns")
 }
@@ -124,7 +137,7 @@ func TestEnforceMaxTotalSize_SubtractsPrevSegment(t *testing.T) {
 	repo.On("QueryRuns", mock.Anything, enforceQuery).Return([]model.Run{oldest, newest}, nil)
 	repo.On("DeleteRun", mock.Anything, oldest.ID).Return(nil)
 
-	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 250)
+	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 250, nil)
 	cleaner.enforceMaxTotalSize(context.Background())
 
 	repo.AssertCalled(t, "DeleteRun", mock.Anything, oldest.ID)
@@ -164,7 +177,7 @@ func TestEnforceMaxTotalSize_DeletesLogFileBeforeDBRow(t *testing.T) {
 		assert.True(t, os.IsNotExist(err), "log file must already be removed when DeleteRun is called")
 	}).Return(nil)
 
-	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 100)
+	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 100, nil)
 	cleaner.enforceMaxTotalSize(context.Background())
 
 	repo.AssertCalled(t, "DeleteRun", mock.Anything, runID)
@@ -194,7 +207,7 @@ func TestEnforceMaxTotalSize_PrunesOldestTerminalRun(t *testing.T) {
 	repo.On("QueryRuns", mock.Anything, enforceQuery).Return([]model.Run{}, nil)
 	repo.On("DeleteRun", mock.Anything, runID).Return(nil)
 
-	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 100)
+	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(nil), time.Hour, logDir, 100, nil)
 	cleaner.enforceMaxTotalSize(context.Background())
 
 	repo.AssertCalled(t, "DeleteRun", mock.Anything, runID)
@@ -227,7 +240,7 @@ func TestCleanOldRuns_LogFileRemovedBeforeRowOnDeleteFailure(t *testing.T) {
 
 	repo := &failingDeleteRepo{RunRepository: realDB, deleteErr: errors.New("delete boom")}
 	task := &model.Task{Name: "task1", KeepFor: 24 * time.Hour}
-	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(map[string]*model.Task{"task1": task}), time.Hour, logDir, 0)
+	cleaner := NewRetentionCleaner(repo, NewTaskRegistry(map[string]*model.Task{"task1": task}), time.Hour, logDir, 0, nil)
 
 	cleaner.cleanOldRuns(ctx)
 

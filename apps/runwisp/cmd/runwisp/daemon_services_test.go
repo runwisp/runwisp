@@ -109,7 +109,7 @@ func TestInitRetentionCleaner_StartsAndStops(t *testing.T) {
 	config.ApplyDefaults(cfg)
 	dc := &daemonConfig{Config: cfg}
 
-	cleaner := initRetentionCleaner(dc, db, runtime.NewTaskRegistry(nil), f.LogDir())
+	cleaner := initRetentionCleaner(dc, db, runtime.NewTaskRegistry(nil), f.LogDir(), nil)
 	require.NotNil(t, cleaner)
 	t.Cleanup(cleaner.Stop)
 }
