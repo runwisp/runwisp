@@ -21,7 +21,7 @@ function makeNotification(overrides: Partial<Notification> = {}): Notification {
         occurrences: ["2026-05-05T12:00:00.000Z"],
         createdAt: "2026-05-05T12:00:00.000Z",
         lastOccurredAt: "2026-05-05T12:00:00.000Z",
-        readAt: null,
+        readAt: undefined,
     };
     return { ...base, ...overrides };
 }
@@ -205,7 +205,7 @@ describe("NotificationStore", () => {
             notification: makeNotification({
                 id: "01H000000000000000000OFF01",
                 count: 4,
-                readAt: null,
+                readAt: undefined,
             }),
             unreadCount: 9,
         });
@@ -244,11 +244,11 @@ describe("NotificationStore", () => {
         await store.init();
         expect(store.unread).toBe(0);
         es.fire("notification.updated", {
-            notification: makeNotification({ id, count: 2, readAt: null }),
+            notification: makeNotification({ id, count: 2, readAt: undefined }),
             unreadCount: 1,
         });
         expect(store.unread).toBe(1);
-        expect(store.items[0]?.readAt).toBeNull();
+        expect(store.items[0]?.readAt).toBeUndefined();
     });
 
     it("clears unread on markAllRead() and stamps loaded items", async () => {
@@ -261,7 +261,7 @@ describe("NotificationStore", () => {
         expect(store.unread).toBe(5);
         await store.markAllRead();
         expect(store.unread).toBe(0);
-        expect(store.items[0]?.readAt).not.toBeNull();
+        expect(store.items[0]?.readAt).not.toBeUndefined();
         const markCall = requests.find(
             (r) => r.url.endsWith("/api/notifications/read") && r.method === "POST",
         );
@@ -276,7 +276,7 @@ describe("NotificationStore", () => {
         });
         await store.init();
         await store.markRead(id);
-        expect(store.items[0]?.readAt).not.toBeNull();
+        expect(store.items[0]?.readAt).not.toBeUndefined();
         expect(store.unread).toBe(0);
         const call = requests.find((r) => r.url.endsWith(`/api/notifications/${id}/read`));
         expect(call?.method).toBe("POST");
@@ -290,7 +290,7 @@ describe("NotificationStore", () => {
         });
         await store.init();
         await store.markUnread(id);
-        expect(store.items[0]?.readAt).toBeNull();
+        expect(store.items[0]?.readAt).toBeUndefined();
         expect(store.unread).toBe(1);
         const call = requests.find((r) => r.url.endsWith(`/api/notifications/${id}/unread`));
         expect(call?.method).toBe("POST");
@@ -328,8 +328,8 @@ describe("NotificationStore", () => {
         releaseGate();
         await markAllReadPromise;
 
-        expect(store.items.find((n) => n.id === existingId)?.readAt).not.toBeNull();
-        expect(store.items.find((n) => n.id === newId)?.readAt).toBeNull();
+        expect(store.items.find((n) => n.id === existingId)?.readAt).not.toBeUndefined();
+        expect(store.items.find((n) => n.id === newId)?.readAt).toBeUndefined();
         expect(store.unread).toBe(1);
     });
 
@@ -347,7 +347,7 @@ describe("NotificationStore", () => {
         // The row is coalesced again (bumped count) while the failing POST is
         // still in flight.
         es.fire("notification.updated", {
-            notification: makeNotification({ id, count: 5, readAt: null }),
+            notification: makeNotification({ id, count: 5, readAt: undefined }),
             unreadCount: 1,
         });
         expect(store.items[0]?.count).toBe(5);
@@ -357,7 +357,7 @@ describe("NotificationStore", () => {
         // Rolled back to unread, but the SSE-delivered count bump survives —
         // the old rollback restored the whole stale `previous` snapshot,
         // which would have reverted count back to 1 here.
-        expect(store.items[0]?.readAt).toBeNull();
+        expect(store.items[0]?.readAt).toBeUndefined();
         expect(store.items[0]?.count).toBe(5);
         // The SSE update already set unread to its authoritative value (1)
         // before the POST failed. The rollback must not layer another delta

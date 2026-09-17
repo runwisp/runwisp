@@ -31,7 +31,6 @@ export interface AuthState {
 export const authChallengeResponseSchema = z
     .object({ nonce: z.string() })
     .pipe(z.custom<AuthChallengeBody>());
-export type AuthChallengeResponse = AuthChallengeBody;
 
 export const authStatusResponseSchema = z
     .object({ authRequired: z.boolean(), authenticated: z.boolean() })
@@ -61,6 +60,8 @@ const runSchema = z
         retryAttempt: z.number(),
         retryOfRunId: z.string().optional(),
         params: z.record(z.string(), z.string()).optional(),
+        isFailure: z.boolean(),
+        instanceIndex: z.number().int(),
     })
     .pipe(z.custom<Run>());
 

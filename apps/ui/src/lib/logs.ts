@@ -24,8 +24,6 @@ export const logLineHistorySchema = z.object({
     frames: z.array(z.array(z.string())),
 });
 
-export type LogLineHistory = z.infer<typeof logLineHistorySchema>;
-
 export const logPageSchema = z.object({
     lines: z.array(logPageLineSchema),
     firstAvailable: z.number().int().nonnegative(),
@@ -68,7 +66,6 @@ export const logSearchResponseSchema = z.object({
     scannedRuns: z.number().int().nonnegative(),
 });
 
-export type LogSearchHit = z.infer<typeof logSearchHitSchema>;
 export type LogSearchResponse = z.infer<typeof logSearchResponseSchema>;
 
 /** Convert a daemon LogPage into the LogEvent shape consumed by LogConsole. */

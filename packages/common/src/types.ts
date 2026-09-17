@@ -8,6 +8,7 @@ export type {
   SystemStats,
   paths as APIPaths,
   components as APIComponents,
+  operations as APIOperations,
 } from "./generated/api.js";
 
 import type { components } from "./generated/api.js";

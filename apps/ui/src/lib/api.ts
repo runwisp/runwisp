@@ -3,7 +3,7 @@
 
 import createClient, { type Middleware } from "openapi-fetch";
 import { z } from "zod";
-import type { APIPaths, RunSelector } from "@runwisp/common";
+import type { APIPaths, APIOperations, RunSelector } from "@runwisp/common";
 import { browser } from "$app/environment";
 import { getApiUrl } from "./utils/env";
 import { chapResponse } from "./chap";
@@ -64,6 +64,12 @@ const authMiddleware: Middleware = {
 const apiClient = createClient<APIPaths>({ baseUrl: API_BASE_URL });
 apiClient.use(authMiddleware);
 
+// The one params shape shared by /api/runs and /api/tasks/{taskName}/runs —
+// sourced from the generated client so it can never drift from what the
+// server actually accepts (it used to be two hand-written copies, missing
+// the server's `isFailure` filter).
+type RunsQueryParams = NonNullable<APIOperations["listRuns"]["parameters"]["query"]>;
+
 export const authApi = {
     login: async (password: string): Promise<AuthLoginResponse> => {
         const challengeRes = await fetch(`${API_BASE_URL}/api/auth/challenge`);
@@ -98,25 +104,7 @@ export const tasksApi = {
         return data.items ?? [];
     },
 
-    getRuns: async (
-        taskName: string,
-        params?: {
-            limit?: number;
-            offset?: number;
-            status?: string;
-            taskName?: string;
-            triggeredBy?: "cron" | "api" | "ui" | "cli" | "cloud" | "service" | "startup";
-            createdAfter?: string;
-            createdBefore?: string;
-            exitCodeMin?: string;
-            exitCodeMax?: string;
-            retriesOnly?: boolean;
-            sortField?:
-                "taskName" | "status" | "startedAt" | "exitCode" | "duration" | "createdAt" | "";
-            sortDirection?: "asc" | "desc" | "";
-            search?: string;
-        },
-    ) => {
+    getRuns: async (taskName: string, params?: RunsQueryParams) => {
         const { data, error } = await apiClient.GET("/api/runs", {
             params: { query: { taskName, ...(params ?? {}) } },
         });
@@ -241,22 +229,7 @@ export const tasksApi = {
 };
 
 export const runsApi = {
-    getAll: async (params?: {
-        limit?: number;
-        offset?: number;
-        status?: string;
-        taskName?: string;
-        triggeredBy?: "cron" | "api" | "ui" | "cli" | "cloud" | "service" | "startup";
-        createdAfter?: string;
-        createdBefore?: string;
-        exitCodeMin?: string;
-        exitCodeMax?: string;
-        retriesOnly?: boolean;
-        sortField?:
-            "taskName" | "status" | "startedAt" | "exitCode" | "duration" | "createdAt" | "";
-        sortDirection?: "asc" | "desc" | "";
-        search?: string;
-    }) => {
+    getAll: async (params?: RunsQueryParams) => {
         const { data, error } = await apiClient.GET("/api/runs", {
             ...(params ? { params: { query: params } } : {}),
         });
@@ -324,9 +297,9 @@ export const systemApi = {
     },
 
     getMetricsHistory: async (): Promise<MetricsSample[]> => {
-        const response = await fetch(`${API_BASE_URL}/api/system/metrics`);
-        if (!response.ok) throw new Error("Failed to fetch metrics history");
-        return metricsHistoryResponseSchema.parse(await response.json()).items;
+        const { data, error } = await apiClient.GET("/api/system/metrics");
+        if (error) throw new Error("Failed to fetch metrics history");
+        return data.items ?? [];
     },
 };
 
@@ -337,7 +310,6 @@ export const metricsSampleSchema = z.object({
     memUsed: z.number(),
     memTotal: z.number(),
 });
-const metricsHistoryResponseSchema = z.object({ items: z.array(metricsSampleSchema) });
 
 export type MetricsSample = z.infer<typeof metricsSampleSchema>;
 
@@ -348,7 +320,6 @@ export const systemEventSchema = z.object({
     sample: metricsSampleSchema,
     uptime: z.string(),
 });
-export type SystemEvent = z.infer<typeof systemEventSchema>;
 
 export const configStaleEventSchema = z.object({
     stale: z.boolean(),

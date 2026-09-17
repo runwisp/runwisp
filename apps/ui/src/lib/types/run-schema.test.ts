@@ -19,6 +19,8 @@ describe("runUpdateEventSchema", () => {
                     createdAt: "2026-05-05T12:00:00.000Z",
                     retryAttempt: 0,
                     params: { TARGET: "prod", DRY_RUN: "false" },
+                    isFailure: false,
+                    instanceIndex: 0,
                 },
             },
         };

@@ -19,7 +19,7 @@ function notification(overrides: Partial<Notification> = {}): Notification {
         occurrences: [],
         createdAt: "2026-01-01T00:00:00Z",
         lastOccurredAt: "2026-01-01T00:00:00Z",
-        readAt: null,
+        readAt: undefined,
         ...overrides,
     };
 }
@@ -33,8 +33,8 @@ describe("hasUnreadError", () => {
         // Regression: several unread info-level notifications must not trigger
         // the bell's error treatment.
         const items = [
-            notification({ id: "1", severity: "info", readAt: null }),
-            notification({ id: "2", severity: "warn", readAt: null }),
+            notification({ id: "1", severity: "info", readAt: undefined }),
+            notification({ id: "2", severity: "warn", readAt: undefined }),
         ];
         expect(hasUnreadError(items)).toBe(false);
     });
@@ -44,16 +44,16 @@ describe("hasUnreadError", () => {
         // info-level ones must not turn the bell red.
         const items = [
             notification({ id: "1", severity: "error", readAt: "2026-01-01T00:00:01Z" }),
-            notification({ id: "2", severity: "info", readAt: null }),
-            notification({ id: "3", severity: "info", readAt: null }),
+            notification({ id: "2", severity: "info", readAt: undefined }),
+            notification({ id: "3", severity: "info", readAt: undefined }),
         ];
         expect(hasUnreadError(items)).toBe(false);
     });
 
     it("is true when an unread error notification exists", () => {
         const items = [
-            notification({ id: "1", severity: "info", readAt: null }),
-            notification({ id: "2", severity: "error", readAt: null }),
+            notification({ id: "1", severity: "info", readAt: undefined }),
+            notification({ id: "2", severity: "error", readAt: undefined }),
         ];
         expect(hasUnreadError(items)).toBe(true);
     });

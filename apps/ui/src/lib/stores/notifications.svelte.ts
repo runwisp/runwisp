@@ -21,7 +21,9 @@ const notificationSchema = z.object({
     occurrences: z.array(z.string()).default([]),
     createdAt: z.string(),
     lastOccurredAt: z.string(),
-    readAt: z.string().nullable().optional(),
+    // The server's ReadAt is a `*time.Time` with `omitempty`: absent when
+    // unread, never JSON null (matches the generated NotificationDTO).
+    readAt: z.string().optional(),
 });
 
 export type Notification = z.infer<typeof notificationSchema>;
@@ -201,7 +203,7 @@ class NotificationStore {
 
         const optimistic: Notification = {
             ...previous,
-            readAt: read ? new Date().toISOString() : null,
+            readAt: read ? new Date().toISOString() : undefined,
         };
         const next = this.#items.slice();
         next[idx] = optimistic;
