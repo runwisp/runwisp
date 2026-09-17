@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Autostart
-description: Wire RunWisp into systemd (Linux, WSL) or launchd (macOS) with one command, so the daemon survives a reboot. Covers the system service, per-user installs with --local, retiring cron, status, uninstall, --purge, --print for Ansible/Nix, the auto-generated Web UI password, and the WSL Task Scheduler recipe.
+description: Wire RunWisp into systemd (Linux, WSL) or launchd (macOS) with one command, so the daemon survives a reboot. Covers the system service, per-user installs with --local, retiring cron, status, uninstall, --purge, --print for Ansible/Nix, the auto-generated Web UI password, carrying your RUNWISP_* environment into the unit, and the WSL Task Scheduler recipe.
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -84,8 +84,10 @@ The system install (the default, Linux and WSL, needs root):
    reading its crontabs. See
    [Take over from cron](/coming-from/cron/).
 4. `systemctl enable --now runwisp.service`.
-5. Generates a [stable Web UI password](#a-stable-web-ui-password) into a
-   `0600` drop-in and prints it once, unless you set `RUNWISP_PASSWORD`
+5. Captures your [`RUNWISP_*` environment](#carrying-your-environment) into
+   a `0600` drop-in, refreshed on every re-install.
+6. Generates a [stable Web UI password](#a-stable-web-ui-password) into its
+   own `0600` drop-in and prints it once, unless you set `RUNWISP_PASSWORD`
    yourself or one already exists.
 
 There's no fingerprint in the name: there's exactly one system daemon per
@@ -113,6 +115,8 @@ at all, and root already has the privilege.
 3. `sudo loginctl enable-linger <user>` — only when linger isn't already
    on. This is the single privileged step.
 4. `systemctl --user enable --now runwisp-<fingerprint>.service`.
+5. Captures your [`RUNWISP_*` environment](#carrying-your-environment) and,
+   if auth is on, a stable Web UI password — same as the system install.
 
 `--local` on macOS:
 
@@ -293,6 +297,34 @@ macOS launchd has no drop-in mechanism, so a `--local` install on macOS doesn't
 generate a password — set `RUNWISP_PASSWORD` in the plist's
 `EnvironmentVariables`, or leave it and retrieve the ephemeral one with
 [`runwisp password`](/operations/auth/#retrieving-the-ephemeral-password).
+:::
+
+## Carrying your environment
+
+A systemd unit (or launchd plist) never inherits the shell you ran the
+install from. So `RUNWISP_AUTH=off sudo runwisp service install` used to
+quietly install a service that ran with auth **on** anyway — the variable
+never reached the unit at all.
+
+`service install` now captures every `RUNWISP_*` variable set in your shell —
+`RUNWISP_AUTH`, `RUNWISP_TLS`, `RUNWISP_TRUSTED_PROXIES`, `RUNWISP_CLOUD_TOKEN`,
+an operator-supplied `RUNWISP_PASSWORD`, and so on — into a `0600` drop-in
+beside the unit (`/etc/systemd/system/runwisp.service.d/runwisp-env.conf`),
+then restarts the daemon so it takes effect:
+
+```bash
+RUNWISP_AUTH=off sudo runwisp service install
+```
+
+Unlike the password drop-in, this one is refreshed on every install — so if
+you change a value or drop one from your shell, just re-run the install and
+it catches up. The file itself is `0600`, same as the password drop-in, since
+it can carry a secret too.
+
+:::note[launchd]
+macOS launchd has no drop-in mechanism, so a `--local` install there doesn't
+capture your environment either — set the vars yourself in the plist's
+`EnvironmentVariables`.
 :::
 
 ## `--print` for Ansible / Nix

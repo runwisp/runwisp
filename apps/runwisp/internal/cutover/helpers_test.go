@@ -85,6 +85,10 @@ func (f *fakeInstaller) EnsurePasswordDropIn(context.Context, autostart.InstallO
 
 func (f *fakeInstaller) SupportsPasswordDropIn() bool { return true }
 
+func (f *fakeInstaller) WriteEnvDropIn(context.Context, autostart.InstallOptions, string, map[string]string) (string, bool, error) {
+	return "", false, nil
+}
+
 func (f *fakeInstaller) CronStatus(context.Context) (string, bool, error) {
 	return f.cronUnit, f.cronActive, f.cronErr
 }

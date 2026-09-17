@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/config"
@@ -147,7 +148,7 @@ func installService(cmd *cobra.Command, f Flags, req installRequest) (installed 
 	if settingsStale {
 		fmt.Fprintln(cmd.OutOrStdout(), staleSettingsNote)
 	}
-	ensureServicePassword(cmd, installer, opts)
+	ensureServiceEnv(cmd, installer, opts)
 	printCronStillOwnsNote(cmd, f, deps, installer, opts)
 	return true, nil
 }
@@ -157,51 +158,91 @@ func installService(cmd *cobra.Command, f Flags, req installRequest) (installed 
 const manualPasswordHint = "Set a stable Web UI password with RUNWISP_PASSWORD; without it the daemon\n" +
 	"generates a new one every boot. See https://docs.runwisp.com/operations/auth/#the-password"
 
-// ensureServicePassword gives a fresh service install a stable Web UI password.
-// Without RUNWISP_PASSWORD set the daemon mints a new random one every boot, so
-// the operator could never log in and every restart would drop sessions. When
-// auth is on, this persists a password (an operator-supplied RUNWISP_PASSWORD,
-// or a freshly generated one) into a 0600 drop-in beside the unit (never the
-// world-readable unit itself), restarts the daemon to pick it up, and reports it.
-//
-// The install shell's env does not propagate to the unit on its own — an
-// operator-supplied RUNWISP_PASSWORD has to be written down the same way a
-// generated one does, or the systemd-managed daemon boots with no password env
-// and mints a fresh random one every boot.
-//
-// It is best-effort and idempotent: an existing password drop-in is left
-// untouched, and any failure here leaves a working install with an ephemeral
-// password rather than aborting the command.
-func ensureServicePassword(cmd *cobra.Command, installer autostart.Installer, opts autostart.InstallOptions) {
-	out := cmd.OutOrStdout()
+// capturedServiceEnv scans the install shell's environment for the RUNWISP_*
+// vars to carry into the managed service (RUNWISP_AUTH, RUNWISP_TLS, an
+// operator-supplied RUNWISP_PASSWORD, RUNWISP_CLOUD_TOKEN, …) — a systemd
+// unit or launchd plist never inherits the invoking shell's environment, so
+// without this every one of them would silently vanish on install.
+// RUNWISP_SERVICE_MANAGED is excluded: it's the marker the generated unit
+// sets on the daemon's own behalf, never legitimate operator input.
+func capturedServiceEnv() map[string]string {
+	const prefix = "RUNWISP_"
+	vars := map[string]string{}
+	for _, kv := range os.Environ() {
+		key, value, ok := strings.Cut(kv, "=")
+		if !ok || !strings.HasPrefix(key, prefix) || key == autostart.ServiceManagedEnv {
+			continue
+		}
+		vars[key] = value
+	}
+	return vars
+}
 
+// ensureServiceEnv gives a fresh service install the operator's RUNWISP_*
+// environment and a stable Web UI password — neither survives on its own,
+// since a systemd unit / launchd plist never inherits the install shell's
+// environment.
+//
+// Every RUNWISP_* var present at install time (an operator-supplied
+// RUNWISP_PASSWORD included) is refreshed into a 0600 drop-in beside the
+// unit on every install, so changing RUNWISP_AUTH/RUNWISP_TLS and
+// reinstalling actually takes effect. When auth is on and the operator did
+// not set RUNWISP_PASSWORD, a password is generated and persisted the same
+// way into its own 0600 drop-in, so a managed daemon does not mint a fresh
+// one — logging every session out — on every restart.
+//
+// Best-effort and idempotent: any failure here leaves a working install
+// rather than aborting the command. The daemon is restarted once at the end
+// if either drop-in actually changed, so the new environment takes effect.
+func ensureServiceEnv(cmd *cobra.Command, installer autostart.Installer, opts autostart.InstallOptions) {
+	out := cmd.OutOrStdout()
+	restartNeeded := false
+
+	envPath, envChanged, err := installer.WriteEnvDropIn(context.Background(), opts, autostart.EnvDropInName, capturedServiceEnv())
+	switch {
+	case err != nil:
+		fmt.Fprintf(out, "\nNote: could not carry your RUNWISP_* environment into the service (%v).\n", err)
+	case envChanged && envPath != "":
+		fmt.Fprintf(out, "\nSaved your RUNWISP_* environment to %s (0600).\n", envPath)
+		restartNeeded = true
+	}
+
+	if ensureServicePasswordFallback(out, installer, opts) {
+		restartNeeded = true
+	}
+
+	if restartNeeded {
+		if err := installer.Restart(context.Background(), opts); err != nil {
+			fmt.Fprintf(out, "\nWrote service environment changes, but restarting to apply them failed (%v).\n"+
+				"Run 'runwisp restart' and it takes effect.\n", err)
+		}
+	}
+}
+
+// ensureServicePasswordFallback generates and persists a Web UI password when
+// auth is on and the operator did not supply RUNWISP_PASSWORD — an
+// operator-supplied one already rides into the service via the env drop-in
+// above. Reports whether it wrote a fresh password, so the caller knows a
+// restart is needed to pick it up.
+func ensureServicePasswordFallback(out io.Writer, installer autostart.Installer, opts autostart.InstallOptions) bool {
 	noAuth, err := resolveAuthMode()
 	if err != nil {
-		return // misconfigured; reported at daemon start
+		return false // misconfigured; reported at daemon start
 	}
-	if noAuth {
-		// RUNWISP_AUTH=off reads the install shell, not the unit: the service
-		// still boots with auth on unless the operator sets this themselves in
-		// a place the unit actually reads.
-		fmt.Fprintln(out, "\nNote: RUNWISP_AUTH=off does not carry into the managed service; set it in a\n"+
-			"systemd drop-in / EnvironmentFile if you want the service to run without auth.")
-		return
+	if noAuth || os.Getenv("RUNWISP_PASSWORD") != "" {
+		return false
 	}
 
-	pw := os.Getenv("RUNWISP_PASSWORD")
-	generated := pw == ""
-	if generated {
-		pw, err = datadir.GeneratePassword()
-		if err != nil {
-			fmt.Fprintf(out, "\nNote: could not generate a Web UI password (%v).\n%s\n", err, manualPasswordHint)
-			return
-		}
+	pw, err := datadir.GeneratePassword()
+	if err != nil {
+		fmt.Fprintf(out, "\nNote: could not generate a Web UI password (%v).\n%s\n", err, manualPasswordHint)
+		return false
 	}
 
 	path, wrote, err := installer.EnsurePasswordDropIn(context.Background(), opts, pw)
 	if err != nil {
 		fmt.Fprintf(out, "\nNote: could not set a Web UI password automatically (%v).\n%s\n", err, manualPasswordHint)
-		return
+		return false
 	}
 	if !wrote {
 		// path == "" means the OS has no drop-in mechanism (launchd); a non-empty
@@ -209,20 +250,13 @@ func ensureServicePassword(cmd *cobra.Command, installer autostart.Installer, op
 		if path == "" {
 			fmt.Fprintf(out, "\n%s\n", manualPasswordHint)
 		}
-		return
+		return false
 	}
 
-	if err := installer.Restart(context.Background(), opts); err != nil {
-		fmt.Fprintf(out, "\nWrote a Web UI password to %s, but restarting to apply it failed (%v).\n"+
-			"Run 'runwisp restart' and it takes effect.\n", path, err)
-	}
-	if generated {
-		fmt.Fprintf(out, "\nGenerated a Web UI password and saved it to %s (0600):\n\n    %s\n\n"+
-			"Store it now. It won't be shown again here, and 'runwisp password' won't disclose it —\n"+
-			"it lives only in that root-owned drop-in. To rotate it, edit or delete the file and restart.\n", path, pw)
-		return
-	}
-	fmt.Fprintf(out, "\nSaved your RUNWISP_PASSWORD to %s (0600) so the service keeps it across boots.\n", path)
+	fmt.Fprintf(out, "\nGenerated a Web UI password and saved it to %s (0600):\n\n    %s\n\n"+
+		"Store it now. It won't be shown again here, and 'runwisp password' won't disclose it —\n"+
+		"it lives only in that root-owned drop-in. To rotate it, edit or delete the file and restart.\n", path, pw)
+	return true
 }
 
 // printCronStillOwnsNote is what an install says about cron: nothing, unless a
@@ -279,6 +313,10 @@ func inspectServiceInstall(cmd *cobra.Command, installer autostart.Installer, op
 		} else {
 			fmt.Fprintf(cmd.OutOrStdout(), "\n%s\n", manualPasswordHint)
 		}
+	}
+	if installer.SupportsPasswordDropIn() && len(capturedServiceEnv()) > 0 {
+		fmt.Fprintln(cmd.OutOrStdout(),
+			"  - Save your RUNWISP_* environment into a 0600 drop-in beside the unit (refreshed every install)")
 	}
 
 	settingsStale, err := preflightDaemon(context.Background(), installer, opts, f)

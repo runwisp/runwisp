@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -738,4 +739,84 @@ func TestSystemdEnsurePasswordDropIn_WritesOnceThenSkips(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, body, body2, "existing password must be left untouched")
 	assert.Zero(t, cmd.Remaining(), "skip path must not daemon-reload")
+}
+
+// TestSystemdWriteEnvDropIn_WritesRefreshesAndRemoves is the #251 regression at
+// the installer layer: unlike EnsurePasswordDropIn, the env drop-in must
+// refresh on every install so a changed or removed RUNWISP_* value actually
+// takes effect, and it must go away entirely once nothing is captured.
+func TestSystemdWriteEnvDropIn_WritesRefreshesAndRemoves(t *testing.T) {
+	inst, fakeFS, cmd, _, binary := newFakeInstaller(t, false)
+	opts := defaultInstallOpts(binary)
+	opts.System = true
+	path := "/etc/systemd/system/runwisp.service.d/" + EnvDropInName
+
+	// First write: sorted Environment lines, 0600 (this drop-in can carry a
+	// secret like RUNWISP_PASSWORD), daemon-reload fired.
+	cmd.Expect("sudo", []string{"systemctl", "daemon-reload"}, nil, nil, nil)
+	got, changed, err := inst.WriteEnvDropIn(context.Background(), opts, EnvDropInName,
+		map[string]string{"RUNWISP_LOG_LEVEL": "debug", "RUNWISP_AUTH": "off"})
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.Equal(t, path, got)
+
+	info, err := fakeFS.Stat(path)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(), "env drop-in must be 0600 — it can carry a secret")
+	body, err := fakeFS.ReadFile(path)
+	require.NoError(t, err)
+	assert.Regexp(t, `(?s)Environment="RUNWISP_AUTH=off".*Environment="RUNWISP_LOG_LEVEL=debug"`,
+		string(body), "sorted by key for deterministic output")
+	assert.Contains(t, string(body), ManagedMarker)
+	assert.Zero(t, cmd.Remaining())
+
+	// Re-running with identical vars is a no-op: no write, no daemon-reload —
+	// so a caller knows no restart is needed either.
+	_, changed, err = inst.WriteEnvDropIn(context.Background(), opts, EnvDropInName,
+		map[string]string{"RUNWISP_LOG_LEVEL": "debug", "RUNWISP_AUTH": "off"})
+	require.NoError(t, err)
+	assert.False(t, changed, "identical content must not rewrite or reload")
+	assert.Zero(t, cmd.Remaining())
+
+	// A changed value refreshes the file (unlike the password drop-in, which
+	// never rotates) and reloads again.
+	cmd.Expect("sudo", []string{"systemctl", "daemon-reload"}, nil, nil, nil)
+	_, changed, err = inst.WriteEnvDropIn(context.Background(), opts, EnvDropInName,
+		map[string]string{"RUNWISP_AUTH": "on"})
+	require.NoError(t, err)
+	assert.True(t, changed)
+	body2, err := fakeFS.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(body2), `Environment="RUNWISP_AUTH=on"`)
+	assert.NotContains(t, string(body2), "RUNWISP_LOG_LEVEL", "a var dropped from vars must not linger from the previous write")
+	assert.Zero(t, cmd.Remaining())
+
+	// Empty vars removes the file and reloads.
+	cmd.Expect("sudo", []string{"systemctl", "daemon-reload"}, nil, nil, nil)
+	_, changed, err = inst.WriteEnvDropIn(context.Background(), opts, EnvDropInName, nil)
+	require.NoError(t, err)
+	assert.True(t, changed)
+	_, err = fakeFS.Stat(path)
+	assert.ErrorIs(t, err, fs.ErrNotExist)
+	assert.Zero(t, cmd.Remaining())
+
+	// Empty vars with nothing on disk is a true no-op — no remove attempt, no reload.
+	_, changed, err = inst.WriteEnvDropIn(context.Background(), opts, EnvDropInName, nil)
+	require.NoError(t, err)
+	assert.False(t, changed)
+	assert.Zero(t, cmd.Remaining())
+}
+
+// A control character in a captured value could otherwise break out of its
+// Environment="..." line and inject a new [Service] directive into a
+// root-owned drop-in — the same injection this package already guards
+// against in the unit template itself.
+func TestSystemdWriteEnvDropIn_RejectsControlCharacterInValue(t *testing.T) {
+	inst, _, _, _, binary := newFakeInstaller(t, false)
+	opts := defaultInstallOpts(binary)
+	opts.System = true
+
+	_, _, err := inst.WriteEnvDropIn(context.Background(), opts, EnvDropInName,
+		map[string]string{"RUNWISP_AUTH": "off\n[Service]\nExecStart=evil"})
+	require.Error(t, err)
 }

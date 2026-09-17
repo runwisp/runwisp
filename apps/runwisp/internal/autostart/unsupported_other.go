@@ -55,6 +55,10 @@ func (u *unsupportedInstaller) SupportsPasswordDropIn() bool {
 	return false
 }
 
+func (u *unsupportedInstaller) WriteEnvDropIn(_ context.Context, _ InstallOptions, _ string, _ map[string]string) (string, bool, error) {
+	return "", false, ErrUnsupported
+}
+
 // Render is the --print contract; on unsupported OSes it just errors.
 func (u *unsupportedInstaller) Render(_ InstallOptions) ([]byte, error) {
 	return nil, ErrUnsupported

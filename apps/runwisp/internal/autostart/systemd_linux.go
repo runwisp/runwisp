@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -473,10 +474,11 @@ func (s *systemdInstaller) Restart(ctx context.Context, opts InstallOptions) err
 // leaves it alone.
 const passwordDropInName = "password.conf"
 
-// passwordDropInPath is where the RUNWISP_PASSWORD drop-in lives: the standard
-// systemd `<unit>.d/` override directory.
-func (s *systemdInstaller) passwordDropInPath(systemWide bool) string {
-	return filepath.Join(s.unitPath(systemWide)+".d", passwordDropInName)
+// dropInPath is where a "<unit>.d/<name>" override lives: the standard
+// systemd drop-in directory, shared by the password drop-in and the
+// operator-environment drop-in.
+func (s *systemdInstaller) dropInPath(systemWide bool, name string) string {
+	return filepath.Join(s.unitPath(systemWide)+".d", name)
 }
 
 // SupportsPasswordDropIn implements Installer: systemd has a `<unit>.d/`
@@ -490,7 +492,7 @@ func (s *systemdInstaller) EnsurePasswordDropIn(ctx context.Context, opts Instal
 	if err := s.requireFingerprint(opts.System); err != nil {
 		return "", false, err
 	}
-	path := s.passwordDropInPath(opts.System)
+	path := s.dropInPath(opts.System, passwordDropInName)
 	if _, err := s.deps.FS.Stat(path); err == nil {
 		return path, false, nil // already set — never rotate an existing password
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -507,6 +509,97 @@ func (s *systemdInstaller) EnsurePasswordDropIn(ctx context.Context, opts Instal
 		return "", false, fmt.Errorf("daemon-reload after writing password drop-in: %w: %s", err, strings.TrimSpace(string(stderr)))
 	}
 	return path, true, nil
+}
+
+// envDropInContent renders the body of a RUNWISP_* env drop-in: the managed
+// marker, then one systemd-escaped Environment="KEY=VALUE" line per entry in
+// vars, sorted by key for deterministic output (stable diffs, testable).
+func envDropInContent(vars map[string]string) (string, error) {
+	fields := make(map[string]string, len(vars)*2)
+	keys := make([]string, 0, len(vars))
+	for k, v := range vars {
+		keys = append(keys, k)
+		fields["key "+k] = k
+		fields["value of "+k] = v
+	}
+	if err := rejectControlChars(fields); err != nil {
+		return "", err
+	}
+	sort.Strings(keys)
+
+	var b strings.Builder
+	b.WriteString(ManagedMarker + "\n[Service]\n")
+	for _, k := range keys {
+		fmt.Fprintf(&b, "Environment=\"%s=%s\"\n", k, systemdEscape(vars[k]))
+	}
+	return b.String(), nil
+}
+
+// WriteEnvDropIn implements Installer.
+func (s *systemdInstaller) WriteEnvDropIn(ctx context.Context, opts InstallOptions, name string, vars map[string]string) (string, bool, error) {
+	if err := s.requireFingerprint(opts.System); err != nil {
+		return "", false, err
+	}
+	path := s.dropInPath(opts.System, name)
+
+	if len(vars) == 0 {
+		return s.removeEnvDropIn(ctx, opts.System, path)
+	}
+	return s.rewriteEnvDropIn(ctx, opts.System, path, vars)
+}
+
+// removeEnvDropIn deletes an env drop-in that should no longer exist (the
+// caller captured no RUNWISP_* vars this time). Returns changed=false with no
+// filesystem or systemctl call when the file is already absent.
+func (s *systemdInstaller) removeEnvDropIn(ctx context.Context, systemWide bool, path string) (string, bool, error) {
+	if _, err := s.deps.FS.Stat(path); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return path, false, nil
+		}
+		return "", false, err
+	}
+	if err := s.deps.FS.Remove(path); err != nil {
+		return "", false, fmt.Errorf("remove env drop-in %s: %w", path, err)
+	}
+	if err := s.reloadAfterDropInChange(ctx, systemWide, "removing"); err != nil {
+		return "", false, err
+	}
+	return path, true, nil
+}
+
+// rewriteEnvDropIn refreshes an env drop-in's content, skipping the write
+// (and reload) entirely when it already matches what's on disk — so a
+// re-install with an unchanged environment needs no restart either.
+func (s *systemdInstaller) rewriteEnvDropIn(ctx context.Context, systemWide bool, path string, vars map[string]string) (string, bool, error) {
+	content, err := envDropInContent(vars)
+	if err != nil {
+		return "", false, err
+	}
+	if existing, readErr := s.deps.FS.ReadFile(path); readErr == nil {
+		if string(existing) == content {
+			return path, false, nil
+		}
+	} else if !errors.Is(readErr, fs.ErrNotExist) {
+		return "", false, readErr
+	}
+
+	if err := s.deps.FS.WriteFile(path, []byte(content), 0o600); err != nil {
+		return "", false, fmt.Errorf("write env drop-in %s: %w", path, err)
+	}
+	if err := s.reloadAfterDropInChange(ctx, systemWide, "writing"); err != nil {
+		return "", false, err
+	}
+	return path, true, nil
+}
+
+// reloadAfterDropInChange implements the daemon-reload systemd requires
+// after any drop-in write or removal — it caches unit config, so the running
+// daemon only sees the change after this, followed by the caller's Restart.
+func (s *systemdInstaller) reloadAfterDropInChange(ctx context.Context, systemWide bool, action string) error {
+	if _, stderr, err := s.runSystemctl(ctx, systemWide, systemctlDaemonReload); err != nil {
+		return fmt.Errorf("daemon-reload after %s env drop-in: %w: %s", action, err, strings.TrimSpace(string(stderr)))
+	}
+	return nil
 }
 
 func (s *systemdInstaller) runSystemctlVerb(ctx context.Context, systemWide bool, verb string) error {

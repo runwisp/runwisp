@@ -773,17 +773,25 @@ func TestResolveDataDirInteractive_UnknownActionFallsThrough(t *testing.T) {
 	assert.Equal(t, "/fallthrough", path)
 }
 
-// pwInstaller is a minimal Installer that records EnsurePasswordDropIn/Restart
-// so ensureServicePassword's env-gating and print behavior can be asserted
-// without touching a real init system.
+// pwInstaller is a minimal Installer that records EnsurePasswordDropIn/
+// WriteEnvDropIn/Restart so ensureServiceEnv's env-gating and print behavior
+// can be asserted without touching a real init system.
 type pwInstaller struct {
-	autostart.Installer // nil embed: only the two methods below are exercised
-	path                string
-	wrote               bool
-	ensureErr           error
-	ensureCalled        bool
-	ensurePassword      string
-	restarts            int
+	autostart.Installer // nil embed: only the methods below are exercised
+
+	path           string
+	wrote          bool
+	ensureErr      error
+	ensureCalled   bool
+	ensurePassword string
+
+	envPath    string
+	envChanged bool
+	envErr     error
+	envCalled  bool
+	envVars    map[string]string
+
+	restarts int
 }
 
 func (p *pwInstaller) EnsurePasswordDropIn(_ context.Context, _ autostart.InstallOptions, password string) (string, bool, error) {
@@ -792,47 +800,82 @@ func (p *pwInstaller) EnsurePasswordDropIn(_ context.Context, _ autostart.Instal
 	return p.path, p.wrote, p.ensureErr
 }
 
+func (p *pwInstaller) WriteEnvDropIn(_ context.Context, _ autostart.InstallOptions, _ string, vars map[string]string) (string, bool, error) {
+	p.envCalled = true
+	p.envVars = vars
+	return p.envPath, p.envChanged, p.envErr
+}
+
 func (p *pwInstaller) Restart(context.Context, autostart.InstallOptions) error {
 	p.restarts++
 	return nil
 }
 
+// #251 regression: RUNWISP_AUTH (and any other RUNWISP_*) used to be silently
+// dropped on install — a systemd unit / launchd plist never inherits the
+// install shell's environment. capturedServiceEnv is what ensureServiceEnv
+// feeds into WriteEnvDropIn to carry it into the service instead.
+func TestCapturedServiceEnv_CapturesRunwispVarsExcludesMarkerAndOthers(t *testing.T) {
+	t.Setenv("RUNWISP_AUTH", "off")
+	t.Setenv("RUNWISP_LOG_LEVEL", "debug")
+	t.Setenv(autostart.ServiceManagedEnv, "1")
+	t.Setenv("OTHER_VAR", "keep-out")
+
+	got := capturedServiceEnv()
+
+	assert.Equal(t, "off", got["RUNWISP_AUTH"])
+	assert.Equal(t, "debug", got["RUNWISP_LOG_LEVEL"])
+	_, hasMarker := got[autostart.ServiceManagedEnv]
+	assert.False(t, hasMarker, "the service-managed marker is set by the unit itself, not operator input")
+	_, hasOther := got["OTHER_VAR"]
+	assert.False(t, hasOther, "only RUNWISP_* is captured")
+}
+
 // An operator-supplied RUNWISP_PASSWORD at install time used to make
 // ensureServicePassword skip entirely — but the install shell's env doesn't
 // propagate to the systemd unit, so the service would boot with no password env
-// and mint a fresh random one every boot. The fix persists the operator's value
-// into the same drop-in the generated-password path uses.
-func TestEnsureServicePassword_PersistsOperatorSuppliedPassword(t *testing.T) {
+// and mint a fresh random one every boot. The fix carries the operator's value
+// into the service via the same env drop-in every other RUNWISP_* var rides in
+// on, never the generated-password fallback's own drop-in.
+func TestEnsureServiceEnv_PersistsOperatorSuppliedPasswordViaEnvDropIn(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "hunter2")
 	t.Setenv("RUNWISP_AUTH", "")
-	inst := &pwInstaller{path: "/etc/systemd/system/runwisp.service.d/password.conf", wrote: true}
+	inst := &pwInstaller{envPath: "/etc/systemd/system/runwisp.service.d/runwisp-env.conf", envChanged: true}
 	var out bytes.Buffer
-	ensureServicePassword(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
+	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
 
-	require.True(t, inst.ensureCalled, "an operator-supplied password must still be persisted into the drop-in")
-	assert.Equal(t, "hunter2", inst.ensurePassword)
-	assert.Equal(t, 1, inst.restarts, "must restart so the daemon picks up the drop-in")
+	require.True(t, inst.envCalled)
+	assert.Equal(t, "hunter2", inst.envVars["RUNWISP_PASSWORD"])
+	assert.False(t, inst.ensureCalled, "an operator-supplied password rides the env drop-in, not the generated-password fallback")
+	assert.Equal(t, 1, inst.restarts, "must restart so the daemon picks up the new environment")
 	assert.NotContains(t, out.String(), "hunter2", "must not echo the operator's secret back")
-	assert.Contains(t, out.String(), inst.path)
+	assert.Contains(t, out.String(), inst.envPath)
 }
 
-func TestEnsureServicePassword_SkipsWhenAuthOff(t *testing.T) {
+// #251: RUNWISP_AUTH=off used to only get a "does not carry" warning. It now
+// rides the env drop-in like every other RUNWISP_* var, so the warning (and
+// the password fallback, since there's no password boundary to manage) both
+// disappear.
+func TestEnsureServiceEnv_AuthOffStillCapturedNoPasswordFallback(t *testing.T) {
 	t.Setenv("RUNWISP_AUTH", "off")
+	t.Setenv("RUNWISP_PASSWORD", "")
 	inst := &pwInstaller{}
 	var out bytes.Buffer
-	ensureServicePassword(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
+	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
 
+	require.True(t, inst.envCalled)
+	assert.Equal(t, "off", inst.envVars["RUNWISP_AUTH"])
 	assert.False(t, inst.ensureCalled, "no password boundary means no password to set")
-	assert.Contains(t, out.String(), "RUNWISP_AUTH=off does not carry into the managed service",
-		"the operator needs to know the service is not actually running auth-off")
+	assert.NotContains(t, out.String(), "does not carry into the managed service",
+		"RUNWISP_AUTH now rides the env drop-in, so the old warning is stale")
 }
 
-func TestEnsureServicePassword_WritesPrintsAndRestarts(t *testing.T) {
+func TestEnsureServiceEnv_GeneratesPasswordPrintsAndRestarts(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "")
 	t.Setenv("RUNWISP_AUTH", "")
 	inst := &pwInstaller{path: "/etc/systemd/system/runwisp.service.d/password.conf", wrote: true}
 	var out bytes.Buffer
-	ensureServicePassword(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
+	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
 
 	require.True(t, inst.ensureCalled)
 	assert.NotEmpty(t, inst.ensurePassword, "a fresh password must be generated")
@@ -841,14 +884,16 @@ func TestEnsureServicePassword_WritesPrintsAndRestarts(t *testing.T) {
 	assert.Contains(t, out.String(), inst.path)
 }
 
-func TestEnsureServicePassword_SkipsRestartWhenDropInExists(t *testing.T) {
+func TestEnsureServiceEnv_SkipsRestartWhenNothingChanged(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "")
 	t.Setenv("RUNWISP_AUTH", "")
-	// wrote=false with a non-empty path means an existing drop-in was left alone.
+	// wrote=false with a non-empty path means an existing password drop-in was
+	// left alone; envChanged=false (default) means the env drop-in already
+	// matched — neither needs a restart.
 	inst := &pwInstaller{path: "/etc/systemd/system/runwisp.service.d/password.conf", wrote: false}
 	var out bytes.Buffer
-	ensureServicePassword(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
+	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
 
-	assert.Zero(t, inst.restarts, "an existing password must not trigger a restart")
+	assert.Zero(t, inst.restarts, "nothing changed — no restart needed")
 	assert.NotContains(t, out.String(), manualPasswordHint, "a working drop-in needs no manual hint")
 }

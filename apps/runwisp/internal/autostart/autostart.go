@@ -273,6 +273,22 @@ type Installer interface {
 	// every OS behaves like systemd.
 	SupportsPasswordDropIn() bool
 
+	// WriteEnvDropIn refreshes a 0600 drop-in next to the managed unit holding
+	// one Environment="KEY=VALUE" line per entry in vars (sorted for
+	// deterministic output), so `service install` carries the operator's
+	// RUNWISP_* environment (RUNWISP_AUTH, RUNWISP_TLS, an operator-supplied
+	// RUNWISP_PASSWORD, …) into the service — the install shell's env never
+	// reaches the unit on its own. Unlike EnsurePasswordDropIn this is not
+	// write-once: every call replaces the file's content with exactly what
+	// vars says, so re-running `service install` with a changed or removed
+	// RUNWISP_* value actually takes effect. An empty vars removes the file.
+	// It reloads the unit definition (systemd daemon-reload) whenever the
+	// content changes, so a following Restart picks it up; changed is false
+	// when the file already matched (including "already absent"), so a
+	// caller can tell when a Restart is actually needed. A platform with no
+	// drop-in mechanism (launchd) returns ("", false, nil) and does nothing.
+	WriteEnvDropIn(ctx context.Context, opts InstallOptions, name string, vars map[string]string) (path string, changed bool, err error)
+
 	// CronStatus reports the host's system cron unit and whether it is
 	// currently running. An empty unit name means there is nothing to take
 	// over — no cron unit on this host, or an OS where masking cron is not
@@ -288,6 +304,15 @@ type Installer interface {
 // steer the operator toward `runwisp stop` / `systemctl --user stop`.
 // A hand-written unit must set this itself to be recognized as service-managed.
 const ServiceManagedEnv = "RUNWISP_SERVICE_MANAGED"
+
+// EnvDropInName is the "<unit>.d/<name>" drop-in `service install` writes the
+// operator's captured RUNWISP_* environment into via WriteEnvDropIn. Named to
+// sort lexicographically after the password drop-in's filename
+// ("password.conf" < "runwisp-env.conf"), so a systemd drop-in directory's
+// last-wins merge lets an operator-supplied RUNWISP_PASSWORD captured in here
+// override a previously generated fallback in password.conf, with no
+// separate remove-on-change logic needed.
+const EnvDropInName = "runwisp-env.conf"
 
 // serviceEnvVars mark a process as init-system-managed. A daemon that runwisp
 // spawns itself must not inherit these, or it self-reports as service-managed
