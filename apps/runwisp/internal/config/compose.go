@@ -138,16 +138,17 @@ type composeNotifySugar struct {
 // synthetic routes on an already-built NotifyConfig, then resolves any inline
 // "<id>:<override>" tokens the new routes introduced. This mirrors what
 // desugarServiceNotify + expandInlineTokens do for [services.*], but runs late
-// because compose expansion happens after toNotifyConfig.
+// because compose expansion happens after toNotifyConfig. expandInlineTokens
+// is idempotent, so re-running it over the full route set only resolves the
+// tokens compose just added.
 func appendComposeNotify(out *NotifyConfig, sugar []composeNotifySugar) error {
 	if len(sugar) == 0 {
 		return nil
 	}
-	from := len(out.Routes)
 	for _, s := range sugar {
 		appendNotifyRoute(out, s.taskName, s.notify)
 	}
-	return expandInlineTokensFrom(out, from)
+	return expandInlineTokens(out)
 }
 
 // composeBlockWire is the TOML-decodable form of the scalar/array keys in a

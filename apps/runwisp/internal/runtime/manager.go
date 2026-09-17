@@ -742,14 +742,44 @@ func (m *defaultTaskManager) triggerJittered(taskName string, tick time.Time) (s
 	return run.ID, true
 }
 
+// recordPhantomRun builds a synthetic run that never executes — no process
+// started, no log file, no streams open — persists it, and immediately ends
+// it at the same instant it was created, for callers that need an audit row
+// documenting a run that was suppressed or never fired. errText, when
+// non-empty, rides the terminal event as its RunEvent.Error (the notification
+// body); otherwise the plain terminal event is published. Caller holds m.mu
+// and is responsible for invoking the returned closure after releasing it
+// (see TriggerRunWithOptions: publishing under the lock risks a deadlock if a
+// subscriber re-enters).
+func (m *defaultTaskManager) recordPhantomRun(taskName string, at time.Time, reason model.EndReason, triggeredBy model.TriggeredBy, errText string) (func(), error) {
+	ts, exists := m.tasks[taskName]
+	if !exists {
+		return nil, fmt.Errorf(errTaskNotFoundFmt, taskName)
+	}
+
+	run := &model.Run{
+		ID:          ulid.Make().String(),
+		TaskName:    taskName,
+		Status:      model.PhasePending,
+		TriggeredBy: triggeredBy,
+		CreatedAt:   at,
+	}
+	m.persistence.PersistNew(run)
+	m.publishRun(events.EventRunCreated, run)
+	run.End(ts.task, reason, -1, at)
+	m.persistence.PersistExisting(run)
+
+	if errText != "" {
+		return func() { m.publishTerminalErr(events.EventRunFailed, run, errText) }, nil
+	}
+	return func() { m.publishTerminal(events.EventRunFailed, run) }, nil
+}
+
 // RecordSkippedFiring persists a run that the runtime suppressed before any
 // executor work (e.g. a DST wall-clock duplicate). The run lives only as an
-// audit row — no process is started, no streams open. The run is created and
-// then immediately ended with the supplied reason.
+// audit row, created and immediately ended "now" with the supplied reason.
 func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.EndReason, triggeredBy model.TriggeredBy) error {
 	m.mu.Lock()
-	// See TriggerRunWithOptions: the terminal event is published after the lock
-	// is released so a re-entrant EventRunFailed subscriber cannot deadlock us.
 	var publishTerminal func()
 	defer func() {
 		if publishTerminal != nil {
@@ -758,40 +788,23 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.E
 	}()
 	defer m.mu.Unlock()
 
-	ts, exists := m.tasks[taskName]
-	if !exists {
-		return fmt.Errorf(errTaskNotFoundFmt, taskName)
+	fn, err := m.recordPhantomRun(taskName, m.clock(), reason, triggeredBy, "")
+	if err != nil {
+		return err
 	}
-
-	now := m.clock()
-	run := &model.Run{
-		ID:          ulid.Make().String(),
-		TaskName:    taskName,
-		Status:      model.PhasePending,
-		TriggeredBy: triggeredBy,
-		CreatedAt:   now,
-	}
-	m.persistence.PersistNew(run)
-	m.publishRun(events.EventRunCreated, run)
-	run.End(ts.task, reason, -1, now)
-	m.persistence.PersistExisting(run)
-	publishTerminal = func() { m.publishTerminal(events.EventRunFailed, run) }
+	publishTerminal = fn
 	return nil
 }
 
 // RecordMissedRun persists a terminal end_reason = "missed" run that documents
 // a cron downtime gap, then publishes a failure-level event whose RunEvent.Error
 // carries the human sentence built by the catch-up detector. Modeled on
-// RecordSkippedFiring, with two deliberate differences: CreatedAt is the latest
-// missed tick (scheduledAt) rather than now — so resolveCatchupAnchor reads it
-// back as the last-alerted point and the next restart counts only ticks after
-// it, never re-alerting — and the event carries the reason string verbatim so
-// it renders as the notification body. No process is started, no log file
-// exists; the run is created and immediately ended.
+// RecordSkippedFiring, with one deliberate difference: the run's instant is the
+// latest missed tick (scheduledAt) rather than now — so resolveCatchupAnchor
+// reads it back as the last-alerted point and the next restart counts only
+// ticks after it, never re-alerting.
 func (m *defaultTaskManager) RecordMissedRun(taskName string, scheduledAt time.Time, reason string) error {
 	m.mu.Lock()
-	// See TriggerRunWithOptions: the terminal event is published after the lock
-	// is released so a re-entrant EventRunFailed subscriber cannot deadlock us.
 	var publishTerminal func()
 	defer func() {
 		if publishTerminal != nil {
@@ -800,23 +813,11 @@ func (m *defaultTaskManager) RecordMissedRun(taskName string, scheduledAt time.T
 	}()
 	defer m.mu.Unlock()
 
-	ts, exists := m.tasks[taskName]
-	if !exists {
-		return fmt.Errorf(errTaskNotFoundFmt, taskName)
+	fn, err := m.recordPhantomRun(taskName, scheduledAt, model.ReasonMissed, model.TriggeredByCron, reason)
+	if err != nil {
+		return err
 	}
-
-	run := &model.Run{
-		ID:          ulid.Make().String(),
-		TaskName:    taskName,
-		Status:      model.PhasePending,
-		TriggeredBy: model.TriggeredByCron,
-		CreatedAt:   scheduledAt,
-	}
-	m.persistence.PersistNew(run)
-	m.publishRun(events.EventRunCreated, run)
-	run.End(ts.task, model.ReasonMissed, -1, scheduledAt)
-	m.persistence.PersistExisting(run)
-	publishTerminal = func() { m.publishTerminalErr(events.EventRunFailed, run, reason) }
+	publishTerminal = fn
 	return nil
 }
 

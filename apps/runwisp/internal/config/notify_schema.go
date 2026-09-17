@@ -191,18 +191,12 @@ func buildNotifierSpecs(notifiers map[string]*notifierWire, out *NotifyConfig) e
 //
 // User-declared notifier IDs cannot contain ":" (enforced earlier), so synthetic
 // IDs cannot collide with user IDs. Tokens are deduped: "slack:#ops" referenced
-// from three tasks produces one synthetic spec.
+// from three tasks produces one synthetic spec. Seeding the seen-set from the
+// existing notifier IDs makes this idempotent — calling it again after more
+// routes were appended (compose per-service notify sugar rides this) only
+// resolves the new tokens, since an earlier pass's synthetic specs are already
+// in out.Notifiers and get skipped.
 func expandInlineTokens(out *NotifyConfig) error {
-	return expandInlineTokensFrom(out, 0)
-}
-
-// expandInlineTokensFrom resolves inline "<id>:<override>" tokens for the
-// routes at index >= fromRoute, appending one synthetic NotifierSpec per unique
-// token. Seeding the seen-set from the existing notifier IDs (which can never
-// contain ":", enforced in buildNotifierSpecs) makes this safe to call a second
-// time after new routes are appended — compose per-service notify sugar rides
-// this path — without re-materialising tokens an earlier pass already resolved.
-func expandInlineTokensFrom(out *NotifyConfig, fromRoute int) error {
 	parentByID := make(map[string]*NotifierSpec, len(out.Notifiers))
 	seen := make(map[string]struct{}, len(out.Notifiers))
 	for i := range out.Notifiers {
@@ -210,7 +204,7 @@ func expandInlineTokensFrom(out *NotifyConfig, fromRoute int) error {
 		seen[out.Notifiers[i].ID] = struct{}{}
 	}
 
-	for _, route := range out.Routes[fromRoute:] {
+	for _, route := range out.Routes {
 		for _, tok := range route.NotifierID {
 			spec, ok, err := resolveInlineToken(tok, parentByID, seen)
 			if err != nil {
