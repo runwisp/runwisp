@@ -785,11 +785,11 @@ type pwInstaller struct {
 	ensureCalled   bool
 	ensurePassword string
 
-	envPath    string
-	envChanged bool
-	envErr     error
-	envCalled  bool
-	envVars    map[string]string
+	envPath   string
+	envChange autostart.DropInChange
+	envErr    error
+	envCalled bool
+	envVars   map[string]string
 
 	restarts int
 }
@@ -800,10 +800,10 @@ func (p *pwInstaller) EnsurePasswordDropIn(_ context.Context, _ autostart.Instal
 	return p.path, p.wrote, p.ensureErr
 }
 
-func (p *pwInstaller) WriteEnvDropIn(_ context.Context, _ autostart.InstallOptions, _ string, vars map[string]string) (string, bool, error) {
+func (p *pwInstaller) WriteEnvDropIn(_ context.Context, _ autostart.InstallOptions, _ string, vars map[string]string) (string, autostart.DropInChange, error) {
 	p.envCalled = true
 	p.envVars = vars
-	return p.envPath, p.envChanged, p.envErr
+	return p.envPath, p.envChange, p.envErr
 }
 
 func (p *pwInstaller) Restart(context.Context, autostart.InstallOptions) error {
@@ -840,7 +840,7 @@ func TestCapturedServiceEnv_CapturesRunwispVarsExcludesMarkerAndOthers(t *testin
 func TestEnsureServiceEnv_PersistsOperatorSuppliedPasswordViaEnvDropIn(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "hunter2")
 	t.Setenv("RUNWISP_AUTH", "")
-	inst := &pwInstaller{envPath: "/etc/systemd/system/runwisp.service.d/runwisp-env.conf", envChanged: true}
+	inst := &pwInstaller{envPath: "/etc/systemd/system/runwisp.service.d/runwisp-env.conf", envChange: autostart.DropInWritten}
 	var out bytes.Buffer
 	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
 
@@ -870,6 +870,28 @@ func TestEnsureServiceEnv_AuthOffStillCapturedNoPasswordFallback(t *testing.T) {
 		"RUNWISP_AUTH now rides the env drop-in, so the old warning is stale")
 }
 
+// A reinstall run from a shell that no longer exports the operator's
+// RUNWISP_* vars (fresh terminal, CI, upgrade script) makes WriteEnvDropIn
+// remove a previous install's captured environment. This must never be
+// reported as "Saved" — the environment was deleted, not written — and it
+// must warn loudly, since a removed RUNWISP_AUTH=off silently re-enables auth.
+func TestEnsureServiceEnv_WarnsLoudlyWhenEnvRemoved(t *testing.T) {
+	t.Setenv("RUNWISP_PASSWORD", "")
+	t.Setenv("RUNWISP_AUTH", "")
+	inst := &pwInstaller{
+		envPath:   "/etc/systemd/system/runwisp.service.d/runwisp-env.conf",
+		envChange: autostart.DropInRemoved,
+	}
+	var out bytes.Buffer
+	ensureServiceEnv(newInstallTestCmd(&out, &bytes.Buffer{}), inst, autostart.InstallOptions{})
+
+	assert.Contains(t, out.String(), "WARNING")
+	assert.Contains(t, out.String(), inst.envPath)
+	assert.NotContains(t, out.String(), "Saved your RUNWISP_* environment",
+		"a removed drop-in must never be reported as saved")
+	assert.Equal(t, 1, inst.restarts, "the daemon must restart to pick up the reverted environment")
+}
+
 func TestEnsureServiceEnv_GeneratesPasswordPrintsAndRestarts(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "")
 	t.Setenv("RUNWISP_AUTH", "")
@@ -888,7 +910,7 @@ func TestEnsureServiceEnv_SkipsRestartWhenNothingChanged(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "")
 	t.Setenv("RUNWISP_AUTH", "")
 	// wrote=false with a non-empty path means an existing password drop-in was
-	// left alone; envChanged=false (default) means the env drop-in already
+	// left alone; envChange=DropInUnchanged (default) means the env drop-in already
 	// matched — neither needs a restart.
 	inst := &pwInstaller{path: "/etc/systemd/system/runwisp.service.d/password.conf", wrote: false}
 	var out bytes.Buffer

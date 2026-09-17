@@ -88,8 +88,8 @@ func (f *fakeTakeoverInstaller) EnsurePasswordDropIn(context.Context, autostart.
 
 func (f *fakeTakeoverInstaller) SupportsPasswordDropIn() bool { return true }
 
-func (f *fakeTakeoverInstaller) WriteEnvDropIn(context.Context, autostart.InstallOptions, string, map[string]string) (string, bool, error) {
-	return "", false, nil
+func (f *fakeTakeoverInstaller) WriteEnvDropIn(context.Context, autostart.InstallOptions, string, map[string]string) (string, autostart.DropInChange, error) {
+	return "", autostart.DropInUnchanged, nil
 }
 
 func (f *fakeTakeoverInstaller) CronStatus(context.Context) (string, bool, error) {

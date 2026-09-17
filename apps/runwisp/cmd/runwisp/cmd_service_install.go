@@ -198,12 +198,15 @@ func ensureServiceEnv(cmd *cobra.Command, installer autostart.Installer, opts au
 	out := cmd.OutOrStdout()
 	restartNeeded := false
 
-	envPath, envChanged, err := installer.WriteEnvDropIn(context.Background(), opts, autostart.EnvDropInName, capturedServiceEnv())
+	envPath, change, err := installer.WriteEnvDropIn(context.Background(), opts, autostart.EnvDropInName, capturedServiceEnv())
 	switch {
 	case err != nil:
 		fmt.Fprintf(out, "\nNote: could not carry your RUNWISP_* environment into the service (%v).\n", err)
-	case envChanged && envPath != "":
+	case change == autostart.DropInWritten:
 		fmt.Fprintf(out, "\nSaved your RUNWISP_* environment to %s (0600).\n", envPath)
+		restartNeeded = true
+	case change == autostart.DropInRemoved:
+		printEnvDropInRemovedWarning(out, envPath)
 		restartNeeded = true
 	}
 
@@ -217,6 +220,26 @@ func ensureServiceEnv(cmd *cobra.Command, installer autostart.Installer, opts au
 				"Run 'runwisp restart' and it takes effect.\n", err)
 		}
 	}
+}
+
+// printEnvDropInRemovedWarning fires when this install's shell had no RUNWISP_*
+// vars set, so WriteEnvDropIn just deleted a previous install's captured
+// environment instead of refreshing it — silently reverting whatever it
+// carried (RUNWISP_AUTH=off included) back to its default. A plain "removed a
+// file" note is not enough for a change this consequential: it can flip auth
+// back on and mint a brand-new password in the same breath, so it gets the
+// same unmissable banner treatment as printNoAuthBanner.
+func printEnvDropInRemovedWarning(out io.Writer, path string) {
+	var b strings.Builder
+	b.WriteString("\n================================================================================\n")
+	b.WriteString("  WARNING: no RUNWISP_* variables were found in this shell, so the\n")
+	fmt.Fprintf(&b, "  environment a previous install saved to %s\n", path)
+	b.WriteString("  was just removed. Any setting it carried (RUNWISP_AUTH, RUNWISP_TLS,\n")
+	b.WriteString("  RUNWISP_CLOUD_TOKEN, ...) has reverted to its default — including auth,\n")
+	b.WriteString("  which may come back on with a freshly generated password below.\n")
+	b.WriteString("  If you rely on one of these, re-export it and re-run this command.\n")
+	b.WriteString("================================================================================\n")
+	fmt.Fprint(out, b.String())
 }
 
 // ensureServicePasswordFallback generates and persists a Web UI password when

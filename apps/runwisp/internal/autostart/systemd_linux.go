@@ -536,9 +536,9 @@ func envDropInContent(vars map[string]string) (string, error) {
 }
 
 // WriteEnvDropIn implements Installer.
-func (s *systemdInstaller) WriteEnvDropIn(ctx context.Context, opts InstallOptions, name string, vars map[string]string) (string, bool, error) {
+func (s *systemdInstaller) WriteEnvDropIn(ctx context.Context, opts InstallOptions, name string, vars map[string]string) (string, DropInChange, error) {
 	if err := s.requireFingerprint(opts.System); err != nil {
-		return "", false, err
+		return "", DropInUnchanged, err
 	}
 	path := s.dropInPath(opts.System, name)
 
@@ -549,47 +549,47 @@ func (s *systemdInstaller) WriteEnvDropIn(ctx context.Context, opts InstallOptio
 }
 
 // removeEnvDropIn deletes an env drop-in that should no longer exist (the
-// caller captured no RUNWISP_* vars this time). Returns changed=false with no
+// caller captured no RUNWISP_* vars this time). Returns DropInUnchanged with no
 // filesystem or systemctl call when the file is already absent.
-func (s *systemdInstaller) removeEnvDropIn(ctx context.Context, systemWide bool, path string) (string, bool, error) {
+func (s *systemdInstaller) removeEnvDropIn(ctx context.Context, systemWide bool, path string) (string, DropInChange, error) {
 	if _, err := s.deps.FS.Stat(path); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return path, false, nil
+			return path, DropInUnchanged, nil
 		}
-		return "", false, err
+		return "", DropInUnchanged, err
 	}
 	if err := s.deps.FS.Remove(path); err != nil {
-		return "", false, fmt.Errorf("remove env drop-in %s: %w", path, err)
+		return "", DropInUnchanged, fmt.Errorf("remove env drop-in %s: %w", path, err)
 	}
 	if err := s.reloadAfterDropInChange(ctx, systemWide, "removing"); err != nil {
-		return "", false, err
+		return "", DropInUnchanged, err
 	}
-	return path, true, nil
+	return path, DropInRemoved, nil
 }
 
 // rewriteEnvDropIn refreshes an env drop-in's content, skipping the write
 // (and reload) entirely when it already matches what's on disk — so a
 // re-install with an unchanged environment needs no restart either.
-func (s *systemdInstaller) rewriteEnvDropIn(ctx context.Context, systemWide bool, path string, vars map[string]string) (string, bool, error) {
+func (s *systemdInstaller) rewriteEnvDropIn(ctx context.Context, systemWide bool, path string, vars map[string]string) (string, DropInChange, error) {
 	content, err := envDropInContent(vars)
 	if err != nil {
-		return "", false, err
+		return "", DropInUnchanged, err
 	}
 	if existing, readErr := s.deps.FS.ReadFile(path); readErr == nil {
 		if string(existing) == content {
-			return path, false, nil
+			return path, DropInUnchanged, nil
 		}
 	} else if !errors.Is(readErr, fs.ErrNotExist) {
-		return "", false, readErr
+		return "", DropInUnchanged, readErr
 	}
 
 	if err := s.deps.FS.WriteFile(path, []byte(content), 0o600); err != nil {
-		return "", false, fmt.Errorf("write env drop-in %s: %w", path, err)
+		return "", DropInUnchanged, fmt.Errorf("write env drop-in %s: %w", path, err)
 	}
 	if err := s.reloadAfterDropInChange(ctx, systemWide, "writing"); err != nil {
-		return "", false, err
+		return "", DropInUnchanged, err
 	}
-	return path, true, nil
+	return path, DropInWritten, nil
 }
 
 // reloadAfterDropInChange implements the daemon-reload systemd requires
