@@ -477,7 +477,7 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 	t.Run("per-second backlog is bounded by cap and reported as 'at least'", func(t *testing.T) {
 		// A per-second schedule over a 2h outage is 7200 ticks. countMissedTicks
 		// stops at the display floor instead of walking all of them, the re-run
-		// caps at MaxCatchUpRuns, and the recorded gap is reported honestly as
+		// caps at catch_up, and the recorded gap is reported honestly as
 		// "at least N+" rather than understated.
 		db := new(testutil.MockRunRepository)
 		runner := new(mockTaskRunner)

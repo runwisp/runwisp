@@ -5,8 +5,7 @@
 // lifecycle events from the daemon's event bus, routes them through
 // configurable predicates, renders provider-specific messages (Slack,
 // Telegram, in-app), and surfaces outbound delivery failures back as in-app
-// notifications. See plan: /apps/runwisp/internal/notify/notify.go for
-// service-level lifecycle.
+// notifications. See notify.go's Service type for service-level lifecycle.
 package notify
 
 import (

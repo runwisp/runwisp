@@ -115,7 +115,7 @@ func TestSnapshotCatchupAnchors_FreezesBeforeContaminatingWrites(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	ctx := context.Background()
-	task := catchupTask(100) // */5 * * * *, MaxCatchUpRuns: 100
+	task := catchupTask(100) // */5 * * * *, catch_up: 100
 	task.RunOnStart = true
 	tasks := map[string]*model.Task{task.Name: task}
 

@@ -72,7 +72,7 @@ type DoneEvent struct {
 	Status    string `json:"status" doc:"Reason the stream is closing (e.g. 'ended')"`
 }
 
-// EventEnvelope tells the caller how to wrap one of our event payloads in
+// Sender tells the caller how to wrap one of our event payloads in
 // the parent package's huma/sse-typed events. The parent passes a Sender
 // that knows the concrete named types; we keep the wire format plain.
 //

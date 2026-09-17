@@ -34,7 +34,7 @@ func (f *fakeMessenger) snapshot() []tea.Msg {
 	return out
 }
 
-// receivedMessages returns the messages buffered by w that have not yet been
+// bufferedMessages returns the messages buffered by w that have not yet been
 // drained to a messenger. It is a behavioural probe (does writing buffer or
 // forward?) — not a structural check.
 func bufferedMessages(w *DebugLogWriter) []uikit.DebugLogMsg {

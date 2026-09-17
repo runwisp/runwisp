@@ -75,10 +75,6 @@ type parsedUnit struct {
 // comment form the file format requires.
 const managedMarkerBare = "Managed by runwisp service install — DO NOT EDIT"
 
-// extractMarkers reads the marker comments at the top of a unit file
-// and reports whether it is a managed unit and what hashes it carries.
-// It tolerates both the systemd "#" comment form and the launchd
-// "<!-- … -->" comment form.
 // markerFields lists every "# key: value" / "<!-- key: value -->" marker
 // extractMarkers looks for, in both the systemd-comment and launchd-XML
 // spellings, so adding a new marker never grows extractMarkers itself.
@@ -101,6 +97,10 @@ func markerFields(out *parsedUnit) []struct {
 	}
 }
 
+// extractMarkers reads the marker comments at the top of a unit file
+// and reports whether it is a managed unit and what hashes it carries.
+// It tolerates both the systemd "#" comment form and the launchd
+// "<!-- … -->" comment form.
 func extractMarkers(body []byte) parsedUnit {
 	out := parsedUnit{}
 	fields := markerFields(&out)

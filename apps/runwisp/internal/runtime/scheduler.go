@@ -335,9 +335,9 @@ func (scheduler *Scheduler) addTask(task *model.Task) error {
 }
 
 // fireOnce is the cron callback for a scheduled task. It dedupes wall-clock
-// duplicates (DST fall-back) by tracking the task's last firing minute in
-// the task's effective TZ; a duplicate is recorded as ReasonDSTSkipped and
-// never reaches the executor.
+// duplicates (DST fall-back) by tracking every wall-clock second already
+// fired within the task's current wall hour (see firedHour); a duplicate is
+// recorded as ReasonDSTSkipped and never reaches the executor.
 func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location) {
 	// Runs in robfig/cron's own goroutine, which has no panic recovery: an
 	// unguarded panic here would crash the process and (with a TUI attached)

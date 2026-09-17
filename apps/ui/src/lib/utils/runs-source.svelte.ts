@@ -217,7 +217,7 @@ export function createRunsSource(): RunsSource {
     function replaceExisting(idx: number, run: Run, f: RunsFilters): void {
         const existing = items[idx];
         // Never regress a run's status (e.g. the pending HTTP response from
-        // trigger arriving after SSE already advanced the row to success).
+        // trigger arriving after SSE already advanced the row to succeeded).
         if (existing && runPhaseOrder(run.status) < runPhaseOrder(existing.status)) {
             return;
         }

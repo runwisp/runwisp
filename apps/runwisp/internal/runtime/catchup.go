@@ -162,7 +162,7 @@ func catchupOneTask(parser cron.ScheduleParser, task *model.Task, runner TaskRun
 	// Record one browsable terminal "missed" row per task per downtime gap and
 	// raise a failure-level alert. This happens regardless of the re-run policy
 	// (including skip, which triggers nothing) — the detected total is reported
-	// even when MaxCatchUpRuns drops older ticks from the re-run. firstTick is
+	// even when catch_up drops older ticks from the re-run. firstTick is
 	// the first tick after the anchor; lastTick anchors the next restart.
 	firstTick := schedule.Next(anchor)
 	// lastTick anchors the next restart's catch-up counting. When counting was
@@ -284,7 +284,7 @@ func countMissedTicks(schedule cron.Schedule, lastRunTime, now time.Time, maxCou
 
 // missedRunReason builds the human sentence recorded on the missed run and
 // surfaced as the notification body. since is the first missed tick; the count
-// is the detected total even when MaxCatchUpRuns capped the re-run, so the
+// is the detected total even when catch_up capped the re-run, so the
 // operator sees the true size of the gap. When counting was truncated (a huge
 // sub-minute backlog), the count is reported as "at least N+" rather than
 // understated. When capped, it notes how many of the backlog were re-fired.

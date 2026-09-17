@@ -85,7 +85,7 @@ func (srv *Server) registerRateLimitedAuthRoutes(r chi.Router) {
 	}, srv.humaRedeemLaunchTicket)
 }
 
-// handleAuthChallenge mints a single-use nonce. It sits behind the same
+// humaAuthChallenge mints a single-use nonce. It sits behind the same
 // httprate limiter as login, preventing nonce-store flooding.
 func (srv *Server) humaAuthChallenge(_ context.Context, _ *struct{}) (*AuthChallengeOutput, error) {
 	nonce, err := srv.auth.IssueChallenge()

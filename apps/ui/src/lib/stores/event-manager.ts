@@ -45,7 +45,7 @@ export interface AppEventStream {
 }
 
 export interface EventManagerOptions {
-    /** SSE path relative to the API root, e.g. `/api/runs/stream`. */
+    /** SSE path relative to the API root, e.g. `/api/events/stream`. */
     path: string;
     /**
      * Factory for the underlying EventSource. Defaults to the auth-aware factory
