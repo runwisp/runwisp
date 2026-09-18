@@ -988,7 +988,8 @@ func validateTaskShell(task *model.Task) error {
 
 // validateTaskStopSignal rejects a stop_signal outside the curated allowlist.
 // An empty value is accepted — the executor falls back to SIGTERM, matching the
-// post-defaults resolution. Accepts both "TERM" and "SIGTERM" spellings.
+// post-defaults resolution. Only the canonical "SIGxxx" spelling is accepted;
+// see validateStopSignal.
 func validateTaskStopSignal(task *model.Task) error {
 	return validateStopSignal(fmt.Sprintf("stop_signal for %s %s", unitKind(task), task.Name), task.StopSignal)
 }
