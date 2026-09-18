@@ -7,12 +7,11 @@
     import Card from "@runwisp/ui/components/Card.svelte";
     import ComposeBadge from "../ComposeBadge.svelte";
     import TaskSourceBadge from "../TaskSourceBadge.svelte";
-    import { getRunStatusConfig, TaskCard, instanceSuffix } from "@runwisp/ui";
+    import { getRunStatusConfig, TaskCard, instanceSuffix, humanizeStatus } from "@runwisp/ui";
     import type { TaskOverview } from "./overview.js";
     import type { Run } from "@runwisp/common";
     import {
         formatRunDurationLabel,
-        formatStatusLabel,
         formatTaskLastRunLabel,
         formatTaskNextRunLabel,
         formatTriggeredByLabel,
@@ -92,7 +91,7 @@
                                         <span
                                             class="rounded-[3px] px-1.5 py-0.5 font-mono text-2xs font-semibold uppercase {statusConfig.badge}"
                                         >
-                                            {formatStatusLabel(task.lastStatus ?? "")}
+                                            {humanizeStatus(task.lastStatus ?? "")}
                                         </span>
                                     {/if}
                                 </div>

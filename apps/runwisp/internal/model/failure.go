@@ -164,8 +164,11 @@ func (s *FailureSpec) addToken(tok, raw string, drop bool) error {
 
 // Resolve turns the spec into a concrete failure matcher. An absolute spec
 // returns its own set (copied, so callers may mutate); a delta returns base
-// unioned with the "+" tokens and minus the "-" tokens. An exit-range drop
-// removes only a base range exactly equal to it — no interval splitting.
+// unioned with the "+" tokens and minus the "-" tokens — the drop applies to
+// both the base ranges and this same delta's own added ranges, so "+30-35",
+// "-30-35" in one list correctly cancels out, matching reason tokens. An
+// exit-range drop removes only a range exactly equal to it — no interval
+// splitting.
 func (s *FailureSpec) Resolve(baseReasons map[EndReason]struct{}, baseRanges [][2]int) (map[EndReason]struct{}, [][2]int) {
 	if !s.Delta {
 		reasons := make(map[EndReason]struct{}, len(s.AddReasons))
@@ -184,7 +187,12 @@ func (s *FailureSpec) Resolve(baseReasons map[EndReason]struct{}, baseRanges [][
 			ranges = append(ranges, r)
 		}
 	}
-	return reasons, append(ranges, s.AddRanges...)
+	for _, r := range s.AddRanges {
+		if !slices.Contains(s.DropRanges, r) {
+			ranges = append(ranges, r)
+		}
+	}
+	return reasons, ranges
 }
 
 // parseExitToken reports whether tok is an exit-code token and, if so, its

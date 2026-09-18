@@ -23,7 +23,7 @@ import (
 
 // DefaultBaseURL is the concierge stats endpoint. Overridable in tests via the
 // Checker.baseURL field (same package).
-const DefaultBaseURL = "http://127.0.0.1:8765"
+const DefaultBaseURL = "https://concierge.runwisp.com"
 
 const (
 	// fallbackInterval is used when the response carries no usable ttl or the

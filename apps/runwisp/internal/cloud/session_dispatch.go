@@ -15,6 +15,7 @@ import (
 	"log/slog"
 
 	"github.com/coder/websocket"
+	"github.com/runwisp/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 )
 
@@ -47,6 +48,7 @@ func (sr *sessionRunner) run(ctx context.Context, session *wsSession) error {
 	runLoop := func(loop func(context.Context, *wsSession) error) {
 		waitGroup.Add(1)
 		go func() {
+			defer crashguard.Guard()
 			defer waitGroup.Done()
 			if err := loop(sessionCtx, session); err != nil {
 				select {

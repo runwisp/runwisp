@@ -295,8 +295,8 @@ func (l *launchdInstaller) SupportsPasswordDropIn() bool {
 // plist would mean rewriting its EnvironmentVariables dict, which is out of
 // scope (and would put any captured secret at the plist's 0644, not 0600).
 // No-op: the caller falls back to telling the operator to set them itself.
-func (l *launchdInstaller) WriteEnvDropIn(_ context.Context, _ InstallOptions, _ string, _ map[string]string) (string, bool, error) {
-	return "", false, nil
+func (l *launchdInstaller) WriteEnvDropIn(_ context.Context, _ InstallOptions, _ string, _ map[string]string) (string, DropInChange, error) {
+	return "", DropInUnchanged, nil
 }
 
 func (l *launchdInstaller) Status(ctx context.Context, opts InstallOptions) (Status, error) {

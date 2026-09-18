@@ -100,11 +100,14 @@ var templateFuncs = template.FuncMap{
 	"xml":    xmlEscape,
 }
 
-// systemdEscape escapes the two characters that are special inside a
-// systemd double-quoted string: backslash and double-quote. Control characters
-// are rejected before render, so they need no handling here.
+// systemdEscape escapes the characters that are special inside a systemd
+// unit value: backslash and double-quote (special inside a double-quoted
+// string) and "%" (systemd's specifier-expansion prefix — "%%" is required for
+// a literal percent, or a value like RUNWISP_PASSWORD containing "%h" would
+// silently expand to the user's home directory). Control characters are
+// rejected before render, so they need no handling here.
 func systemdEscape(s string) string {
-	return strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s)
+	return strings.NewReplacer(`\`, `\\`, `"`, `\"`, `%`, `%%`).Replace(s)
 }
 
 func xmlEscape(s string) string {

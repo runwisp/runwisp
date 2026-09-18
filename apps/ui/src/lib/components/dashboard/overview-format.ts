@@ -5,6 +5,7 @@ import {
     formatRelativeTime,
     formatRelativeTimeWithAbsolute,
     humanizeCron,
+    humanizeStatus,
     runDuration,
 } from "@runwisp/ui";
 import type { TaskOverview } from "./overview.js";
@@ -55,7 +56,7 @@ export function formatTaskLastResultLabel(task: TaskOverview): string {
         return "No runs yet";
     }
 
-    return formatStatusLabel(task.lastStatus);
+    return humanizeStatus(task.lastStatus);
 }
 
 export function formatTaskNextRunLabel(task: TaskOverview, now: Date = new Date()): string {
@@ -98,11 +99,4 @@ export function formatRunStartedLabel(run: Run, now: Date = new Date()): string 
 
 export function formatRunDurationLabel(run: Run): string {
     return runDuration(run) ?? "Starting";
-}
-
-export function formatStatusLabel(status: string): string {
-    return status
-        .split("-")
-        .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-        .join(" ");
 }

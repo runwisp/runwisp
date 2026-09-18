@@ -664,8 +664,12 @@ type daemonWire struct {
 	ExternalURL        string `toml:"external_url,omitempty"`
 	// CheckUpdates is a pointer so an omitted key (nil → default true) is
 	// distinguishable from an explicit `check_updates = false`.
-	CheckUpdates   *bool    `toml:"check_updates,omitempty"`
-	MetricsEnabled bool     `toml:"metrics_enabled,omitempty"`
+	CheckUpdates *bool `toml:"check_updates,omitempty"`
+	// MetricsEnabled is a pointer for the same reason as CheckUpdates: an
+	// omitted key (nil → implied by metrics_listen) must be distinguishable
+	// from an explicit `metrics_enabled = false`, which is a conflicting
+	// intent once metrics_listen is also set (see toDaemon).
+	MetricsEnabled *bool    `toml:"metrics_enabled,omitempty"`
 	MetricsListen  string   `toml:"metrics_listen,omitempty"`
 	TLS            string   `toml:"tls,omitempty"`
 	TLSCert        string   `toml:"tls_cert,omitempty"`
@@ -695,8 +699,15 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 	}
 	// A dedicated metrics_listen implies metrics are enabled — the endpoint has
 	// no other purpose, so there's no reason to make the operator also flip
-	// metrics_enabled.
-	metricsEnabled := w.MetricsEnabled || metricsListen != ""
+	// metrics_enabled. An explicit metrics_enabled = false alongside it is a
+	// contradiction the operator needs to resolve, not a silent "listen wins".
+	if w.MetricsEnabled != nil && !*w.MetricsEnabled && metricsListen != "" {
+		return Daemon{}, fmt.Errorf("invalid [daemon]: metrics_enabled = false cannot be combined with metrics_listen; remove metrics_listen, or drop metrics_enabled to let it stay implied")
+	}
+	metricsEnabled := metricsListen != ""
+	if w.MetricsEnabled != nil {
+		metricsEnabled = *w.MetricsEnabled
+	}
 	tlsMode, err := parseTLSMode(w.TLS)
 	if err != nil {
 		return Daemon{}, err

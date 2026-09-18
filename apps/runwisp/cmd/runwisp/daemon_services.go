@@ -98,7 +98,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	launchCtx, serviceLaunchCancel := context.WithCancel(ctx)
 	startServiceInstances(launchCtx, taskManager, tasksMap)
 
-	retentionCleaner := initRetentionCleaner(cfg, db, tasks, f.LogDir())
+	retentionCleaner := initRetentionCleaner(cfg, db, tasks, f.LogDir(), eventBus)
 
 	softDeletePurger := runtime.NewSoftDeletePurger(db, f.LogDir())
 	softDeletePurger.Start()
@@ -309,9 +309,9 @@ func sqliteShrinkHook(db storage.Database) func(context.Context) error {
 	return nil
 }
 
-func initRetentionCleaner(cfg *daemonConfig, db storage.RunRepository, tasks *runtime.TaskRegistry, logDir string) *runtime.RetentionCleaner {
+func initRetentionCleaner(cfg *daemonConfig, db storage.RunRepository, tasks *runtime.TaskRegistry, logDir string, eventBus *events.Bus) *runtime.RetentionCleaner {
 	maxTotalSize := cfg.Config.Storage.MaxSize
-	cleaner := runtime.NewRetentionCleaner(db, tasks, time.Hour, logDir, maxTotalSize)
+	cleaner := runtime.NewRetentionCleaner(db, tasks, time.Hour, logDir, maxTotalSize, eventBus)
 	cleaner.Start()
 	return cleaner
 }

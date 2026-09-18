@@ -131,7 +131,7 @@ func minimalServices(t *testing.T) *daemonServices {
 	tm, tasksMap := initTaskManager(dc, db, exec, bus)
 	tasks := runtime.NewTaskRegistry(tasksMap)
 
-	cleaner := initRetentionCleaner(dc, db, tasks, f.LogDir())
+	cleaner := initRetentionCleaner(dc, db, tasks, f.LogDir(), bus)
 	purger := runtime.NewSoftDeletePurger(db, f.LogDir())
 	purger.Start()
 
@@ -205,7 +205,7 @@ func TestGracefulShutdown_WithScheduler(t *testing.T) {
 		TaskManager:         tm,
 		Tasks:               tasks,
 		Scheduler:           scheduler,
-		RetentionCleaner:    initRetentionCleaner(dc, db, tasks, f.LogDir()),
+		RetentionCleaner:    initRetentionCleaner(dc, db, tasks, f.LogDir(), bus),
 		TaskShutdownTimeout: 100 * time.Millisecond,
 	}
 

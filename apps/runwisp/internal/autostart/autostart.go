@@ -283,11 +283,14 @@ type Installer interface {
 	// vars says, so re-running `service install` with a changed or removed
 	// RUNWISP_* value actually takes effect. An empty vars removes the file.
 	// It reloads the unit definition (systemd daemon-reload) whenever the
-	// content changes, so a following Restart picks it up; changed is false
-	// when the file already matched (including "already absent"), so a
-	// caller can tell when a Restart is actually needed. A platform with no
-	// drop-in mechanism (launchd) returns ("", false, nil) and does nothing.
-	WriteEnvDropIn(ctx context.Context, opts InstallOptions, name string, vars map[string]string) (path string, changed bool, err error)
+	// content changes, so a following Restart picks it up; the returned
+	// DropInChange tells the caller whether it wrote/refreshed content or
+	// removed a file that was there from a previous install (versus
+	// DropInUnchanged, including "already absent") — removal is
+	// security-relevant (it can silently flip auth back on) and must be
+	// reported differently than a normal write. A platform with no drop-in
+	// mechanism (launchd) returns ("", DropInUnchanged, nil) and does nothing.
+	WriteEnvDropIn(ctx context.Context, opts InstallOptions, name string, vars map[string]string) (path string, change DropInChange, err error)
 
 	// CronStatus reports the host's system cron unit and whether it is
 	// currently running. An empty unit name means there is nothing to take
@@ -304,6 +307,24 @@ type Installer interface {
 // steer the operator toward `runwisp stop` / `systemctl --user stop`.
 // A hand-written unit must set this itself to be recognized as service-managed.
 const ServiceManagedEnv = "RUNWISP_SERVICE_MANAGED"
+
+// DropInChange reports what WriteEnvDropIn did to the on-disk drop-in, so a
+// caller can tell a normal write apart from a removal — the latter can
+// silently revert a previously-captured RUNWISP_AUTH=off (or other setting)
+// back to its default and deserves a much louder message than "saved".
+type DropInChange int
+
+const (
+	// DropInUnchanged means the file already matched vars (or was already
+	// absent) — no write, no removal, no reload, no restart needed.
+	DropInUnchanged DropInChange = iota
+	// DropInWritten means the drop-in was created or its content refreshed.
+	DropInWritten
+	// DropInRemoved means an existing drop-in was deleted because this call
+	// captured no RUNWISP_* vars — any setting it carried (RUNWISP_AUTH=off
+	// included) has now reverted to its default.
+	DropInRemoved
+)
 
 // EnvDropInName is the "<unit>.d/<name>" drop-in `service install` writes the
 // operator's captured RUNWISP_* environment into via WriteEnvDropIn. Named to

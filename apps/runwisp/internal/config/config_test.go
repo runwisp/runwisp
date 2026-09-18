@@ -1904,6 +1904,20 @@ run = "echo hi"
 		assert.Equal(t, "127.0.0.1:9478", cfg.Daemon.MetricsListen)
 	})
 
+	t.Run("daemon metrics_enabled false rejects metrics_listen", func(t *testing.T) {
+		path := writeTOML(t, `
+[daemon]
+metrics_enabled = false
+metrics_listen = "127.0.0.1:9478"
+
+[tasks.t]
+run = "echo hi"
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "metrics_enabled = false cannot be combined with metrics_listen")
+	})
+
 	t.Run("daemon metrics_listen rejects non-numeric port", func(t *testing.T) {
 		path := writeTOML(t, `
 [daemon]

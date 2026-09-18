@@ -791,7 +791,10 @@ func (m Model) handleBulkDeleteResult(msg uikit.BulkDeleteResultMsg) (tea.Model,
 
 func (m Model) handleRestartService(msg uikit.RestartServiceMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Restarted service", msg.TaskName, msg.Err)
-	if msg.Err == nil && m.execView != nil && m.execView.Run != nil && m.execView.Run.TaskName == msg.TaskName {
+	if msg.Err != nil {
+		return m, m.dialogs.Flash("Restart failed: "+msg.Err.Error(), 6*time.Second)
+	}
+	if m.execView != nil && m.execView.Run != nil && m.execView.Run.TaskName == msg.TaskName {
 		m.execView.SetServiceStopped(false)
 	}
 	return m, nil
@@ -799,7 +802,10 @@ func (m Model) handleRestartService(msg uikit.RestartServiceMsg) (tea.Model, tea
 
 func (m Model) handleStopService(msg uikit.StopServiceMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Stopped service", msg.TaskName, msg.Err)
-	if msg.Err == nil && m.execView != nil && m.execView.Run != nil && m.execView.Run.TaskName == msg.TaskName {
+	if msg.Err != nil {
+		return m, m.dialogs.Flash("Stop failed: "+msg.Err.Error(), 6*time.Second)
+	}
+	if m.execView != nil && m.execView.Run != nil && m.execView.Run.TaskName == msg.TaskName {
 		m.execView.SetServiceStopped(true)
 	}
 	return m, nil

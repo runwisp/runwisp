@@ -86,6 +86,17 @@ func TestCheckOnceKeepsStateOnError(t *testing.T) {
 	}
 }
 
+// A regression guard for the base URL itself: NewChecker (as used by the real
+// daemon, with no test override) must point at the real concierge service,
+// not a placeholder — a local address here means the shipped feature never
+// reaches concierge.runwisp.com in production.
+func TestNewChecker_DefaultsToRealConciergeURL(t *testing.T) {
+	c := NewChecker("0.3.0", "linux", "amd64", true)
+	if c.baseURL != "https://concierge.runwisp.com" {
+		t.Fatalf("baseURL = %q, want https://concierge.runwisp.com", c.baseURL)
+	}
+}
+
 func TestIsRelease(t *testing.T) {
 	cases := map[string]bool{
 		"0.0.0-dev": false,

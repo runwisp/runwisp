@@ -166,6 +166,16 @@ func TestRenderLaunchdPlist_Golden(t *testing.T) {
 	assert.Equal(t, "abcdef012345", parsed.binarySHA)
 }
 
+// A literal "%" in an Environment= value undergoes systemd specifier
+// expansion (e.g. "%h" -> the unit's home directory) unless escaped as "%%" —
+// this guards an operator-supplied RUNWISP_PASSWORD/RUNWISP_* value from being
+// silently corrupted.
+func TestSystemdEscape_EscapesPercent(t *testing.T) {
+	assert.Equal(t, "p%%hword", systemdEscape("p%hword"))
+	assert.Equal(t, `\\`, systemdEscape(`\`))
+	assert.Equal(t, `\"`, systemdEscape(`"`))
+}
+
 func TestRenderSystemdUnit_RoundTripsManagedMarker(t *testing.T) {
 	body, err := RenderSystemdUnit(SystemdParams{
 		Binary:     "/usr/bin/runwisp",

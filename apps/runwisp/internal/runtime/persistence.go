@@ -7,6 +7,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/runwisp/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -113,6 +114,7 @@ func (pc *PersistenceCoordinator) enqueue(task persistTask) {
 }
 
 func (pc *PersistenceCoordinator) worker(ctx context.Context) {
+	defer crashguard.Guard()
 	defer pc.wg.Done()
 	// drainCtx is what a task applies under once ctx is already cancelled —
 	// whether because we're in the drain loop below, or because the select

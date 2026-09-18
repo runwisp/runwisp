@@ -189,8 +189,8 @@ before you rely on it:
 
 **crond mailed any output at all. RunWisp mails an event.** A job
 that printed a line and exited 0 generated cron mail; here it
-doesn't, unless you ask for it with a `[[route]]` on `run.succeeded`. What you
-get by default is failures — which is usually what people actually
+doesn't, unless you ask for it with a `[[route]]` on `match.kinds = ["succeeded"]`.
+What you get by default is failures — which is usually what people actually
 wanted from cron mail, but it is not the same rule.
 
 See [How cron maps to TOML](/coming-from/cron-mapping/) for the
