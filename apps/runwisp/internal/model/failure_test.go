@@ -49,6 +49,13 @@ func TestParseFailures_DeltaExitRanges(t *testing.T) {
 	assert.Equal(t, [][2]int{{90, 99}, {42, 42}}, ranges)
 }
 
+func TestParseFailures_DeltaExitRangeSelfCancels(t *testing.T) {
+	spec, err := ParseFailures([]string{"+30-35", "-30-35"})
+	require.NoError(t, err)
+	_, ranges := spec.Resolve(nil, nil)
+	assert.Empty(t, ranges, "a range added and dropped in the same list must not survive, matching +/-reason self-cancel")
+}
+
 func TestParseFailures_ResolveCopiesBase(t *testing.T) {
 	spec, err := ParseFailures([]string{"+stopped"})
 	require.NoError(t, err)
