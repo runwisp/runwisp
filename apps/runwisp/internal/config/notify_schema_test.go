@@ -232,6 +232,28 @@ notifiers = ["inapp"]
 	assert.Contains(t, err.Error(), "notify.delivery_failed")
 }
 
+// TestValidate_RejectsFailureWithNeverFailureKind is the bug-first regression
+// for match.failure = true combined with a match.kinds token whose event can
+// never carry the classified-failure bit ("succeeded", "started"): the AND
+// of the two predicates can never be true, so the route validates but can
+// never fire — the same class of dead-route bug as
+// TestValidate_RejectsDeliveryFailedInRouteKinds, just reached through the
+// cross-field combination rather than a single token.
+func TestValidate_RejectsFailureWithNeverFailureKind(t *testing.T) {
+	for _, kind := range []string{"succeeded", "started"} {
+		src := `
+[[route]]
+match = { kinds = ["` + kind + `"], failure = true }
+notifiers = ["inapp"]
+`
+		cfg, err := decode([]byte(src), "")
+		require.NoError(t, err)
+		err = Validate(cfg)
+		require.Error(t, err, "kind %q", kind)
+		assert.Contains(t, err.Error(), "match.failure")
+	}
+}
+
 func TestParseNotifyToken(t *testing.T) {
 	cases := []struct {
 		in              string

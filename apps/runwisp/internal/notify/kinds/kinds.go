@@ -45,3 +45,12 @@ var AllKindStrings = func() []string {
 // rejects it in match.kinds with a message pointing at this instead of the
 // less clear "not a valid kind".
 const DeliveryFailedKind = "notify.delivery_failed"
+
+// NeverFailureKinds are the match.kinds tokens whose event can never carry
+// the classified-failure bit, no matter how a task's `failures` policy is
+// configured: "started" fires before a run has an outcome, and "succeeded"
+// is unconditionally excluded from failure classification (model.Task's
+// IsFailureReason short-circuits ReasonSuccess). Combined with
+// match.failure = true, either one ANDs down to a route that can never fire
+// — see validateRoute.
+var NeverFailureKinds = []string{"started", string(model.ReasonSuccess)}

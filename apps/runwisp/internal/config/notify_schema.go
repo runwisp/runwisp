@@ -653,6 +653,9 @@ func validateRoute(idx int, r NotificationRoute, known map[string]struct{}) erro
 		if err := requireOneOf(scope+" match.kinds", k, kinds.AllKindStrings, false); err != nil {
 			return err
 		}
+		if r.MatchFailure && slices.Contains(kinds.NeverFailureKinds, k) {
+			return fmt.Errorf("%s: match.failure = true can never be true for match.kinds = %q; drop match.failure or remove %q from match.kinds", scope, k, k)
+		}
 	}
 	if r.TaskGlob != "" {
 		if _, err := path.Match(r.TaskGlob, ""); err != nil {
