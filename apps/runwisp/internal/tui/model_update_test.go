@@ -1069,7 +1069,34 @@ func TestHandleRestartService_ResetsServiceStopped(t *testing.T) {
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
 	m.execView.SetServiceStopped(true)
-	_, _ = m.handleRestartService(uikit.RestartServiceMsg{TaskName: "svc"})
+	_, cmd := m.handleRestartService(uikit.RestartServiceMsg{TaskName: "svc"})
+	if cmd != nil {
+		t.Fatal("expected no flash cmd on a successful restart")
+	}
+}
+
+// TestHandleRestartService_ErrorFlashesInsteadOfSilentlyDropping is the
+// bug-first regression for a manual_trigger=false rejection (or any other
+// restart error) reaching the TUI and vanishing into the hidden debug log —
+// the operator pressing "r" on a locked service saw nothing happen at all.
+// Every other action handler (run, delete, bulk) flashes its error visibly;
+// this one must too.
+func TestHandleRestartService_ErrorFlashesInsteadOfSilentlyDropping(t *testing.T) {
+	m := newTestModel(nil)
+	run := &model.Run{ID: "r-svc", TaskName: "svc"}
+	ev := execlist.NewExecView(run)
+	ev.TaskIsService = true
+	m.execView = &ev
+	m.execView.SetServiceStopped(true)
+	_, cmd := m.handleRestartService(uikit.RestartServiceMsg{TaskName: "svc", Err: errors.New("manual_trigger is disabled for this service")})
+	if cmd == nil {
+		t.Fatal("expected an error flash cmd on a failed restart")
+	}
+	// The failed restart must not optimistically flip the service's displayed
+	// running state either.
+	if m.execView.Action() != execlist.ActionRestartService {
+		t.Fatal("a failed restart must not clear the stopped indicator")
+	}
 }
 
 func TestHandleStopService_SetsServiceStopped(t *testing.T) {
@@ -1077,7 +1104,25 @@ func TestHandleStopService_SetsServiceStopped(t *testing.T) {
 	run := &model.Run{ID: "r-svc", TaskName: "svc"}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
-	_, _ = m.handleStopService(uikit.StopServiceMsg{TaskName: "svc"})
+	_, cmd := m.handleStopService(uikit.StopServiceMsg{TaskName: "svc"})
+	if cmd != nil {
+		t.Fatal("expected no flash cmd on a successful stop")
+	}
+}
+
+func TestHandleStopService_ErrorFlashesInsteadOfSilentlyDropping(t *testing.T) {
+	m := newTestModel(nil)
+	run := &model.Run{ID: "r-svc", TaskName: "svc"}
+	ev := execlist.NewExecView(run)
+	ev.TaskIsService = true
+	m.execView = &ev
+	_, cmd := m.handleStopService(uikit.StopServiceMsg{TaskName: "svc", Err: errors.New("manual_trigger is disabled for this service")})
+	if cmd == nil {
+		t.Fatal("expected an error flash cmd on a failed stop")
+	}
+	if m.execView.Action() != execlist.ActionStopService {
+		t.Fatal("a failed stop must not set the stopped indicator")
+	}
 }
 
 // ─── handleDeleteRun ─────────────────────────────────────────────────────────
