@@ -13,7 +13,7 @@
 // committed animated WebP. Run via `bun run demo-tui`; not part of
 // `bun run ci`.
 
-import { test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -151,6 +151,8 @@ test.describe("tui demo", () => {
 
         // Hold the final frame before the clip ends.
         await screencast.stop(900);
+        // A silently empty capture would still "succeed" without this — catch it here.
+        expect(screencast.frameCount).toBeGreaterThan(0);
         console.log(`[tui-demo] captured ${screencast.frameCount} frames -> ${FRAMES_DIR}`);
     });
 });

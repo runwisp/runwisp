@@ -554,15 +554,15 @@ func relativeTime(t time.Time) string {
 // columns. It slices by visible column via uikit.SliceLineColumns — never by
 // raw bytes — so a cut never lands mid escape-sequence or mid-rune and garbles
 // the styled collapsed summary.
-func truncateLine(s string, max int) string {
-	if max <= 1 || lipgloss.Width(s) <= max {
+func truncateLine(s string, maxWidth int) string {
+	if maxWidth <= 1 || lipgloss.Width(s) <= maxWidth {
 		return s
 	}
-	if max <= 3 {
-		sliced, _ := uikit.SliceLineColumns(s, 0, max)
+	if maxWidth <= 3 {
+		sliced, _ := uikit.SliceLineColumns(s, 0, maxWidth)
 		return sliced
 	}
-	sliced, _ := uikit.SliceLineColumns(s, 0, max-1)
+	sliced, _ := uikit.SliceLineColumns(s, 0, maxWidth-1)
 	return sliced + "…"
 }
 

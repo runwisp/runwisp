@@ -39,7 +39,7 @@ func probeRunwispInstance(host string, port int) *model.InstanceInfo {
 	if host == "" {
 		host = "127.0.0.1"
 	}
-	client := apiclient.NewProbe(fmt.Sprintf("http://%s:%d", host, port))
+	client := apiclient.NewProbe(fmt.Sprintf("http://%s:%d", host, port)) //NOSONAR: go:S5332 — plain HTTP is this daemon's own loopback default (see resolveTLS); the identity endpoint is server-gated to loopback callers regardless of scheme
 	info, err := client.GetInstanceInfo(context.Background())
 	if err != nil || info == nil || info.App != server.AppName {
 		return nil

@@ -37,7 +37,7 @@ export function resolveTrapFocusTarget<T>(
 ): T | null {
     if (event.key !== "Tab" || focusable.length === 0) return null;
     const first = focusable[0];
-    const last = focusable[focusable.length - 1];
+    const last = focusable.at(-1);
     if (first === undefined || last === undefined) return null;
 
     if (event.shiftKey && active === first) return last;

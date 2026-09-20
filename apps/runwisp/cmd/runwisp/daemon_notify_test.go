@@ -49,43 +49,43 @@ func TestBackoffOverride(t *testing.T) {
 		assert.Nil(t, backoffOverride(-time.Second, slog.Default()))
 	})
 	t.Run("caps MaxElapsedTime at supplied duration", func(t *testing.T) {
-		cap := 5 * time.Second
-		fn := backoffOverride(cap, slog.Default())
+		capDuration := 5 * time.Second
+		fn := backoffOverride(capDuration, slog.Default())
 		require.NotNil(t, fn)
 		provider := fn()
 		require.NotNil(t, provider)
-		assert.LessOrEqual(t, provider.Backoff.MaxElapsedTime, cap)
+		assert.LessOrEqual(t, provider.Backoff.MaxElapsedTime, capDuration)
 	})
 	// Duration shorter than the HTTPProvider's default InitialInterval
 	// (500ms) forces the InitialInterval > d branch to fire.
 	t.Run("shrinks intervals when cap is smaller than defaults", func(t *testing.T) {
-		cap := 100 * time.Millisecond
-		fn := backoffOverride(cap, slog.Default())
+		capDuration := 100 * time.Millisecond
+		fn := backoffOverride(capDuration, slog.Default())
 		require.NotNil(t, fn)
 		provider := fn()
 		require.NotNil(t, provider)
-		assert.LessOrEqual(t, provider.Backoff.MaxElapsedTime, cap)
-		assert.LessOrEqual(t, provider.Backoff.InitialInterval, cap)
-		assert.LessOrEqual(t, provider.Backoff.MaxInterval, cap)
+		assert.LessOrEqual(t, provider.Backoff.MaxElapsedTime, capDuration)
+		assert.LessOrEqual(t, provider.Backoff.InitialInterval, capDuration)
+		assert.LessOrEqual(t, provider.Backoff.MaxInterval, capDuration)
 	})
 	// Regression: retry_budget used to only rewrite the backoff schedule, never
 	// the HTTP client's own fixed 15s request timeout. A single hanging request
 	// could then block far longer than the operator's configured budget before
 	// MaxElapsedTime (checked only between attempts) ever got a chance to fire.
 	t.Run("shrinks the client timeout when smaller than the default", func(t *testing.T) {
-		cap := 2 * time.Second
-		fn := backoffOverride(cap, slog.Default())
+		capDuration := 2 * time.Second
+		fn := backoffOverride(capDuration, slog.Default())
 		require.NotNil(t, fn)
 		provider := fn()
 		require.NotNil(t, provider)
 		client, ok := provider.Client.(*http.Client)
 		require.True(t, ok)
-		assert.LessOrEqual(t, client.Timeout, cap,
+		assert.LessOrEqual(t, client.Timeout, capDuration,
 			"a single request must not be able to outlive retry_budget")
 	})
 	t.Run("leaves the client timeout alone when the budget is larger", func(t *testing.T) {
-		cap := time.Minute
-		fn := backoffOverride(cap, slog.Default())
+		capDuration := time.Minute
+		fn := backoffOverride(capDuration, slog.Default())
 		require.NotNil(t, fn)
 		provider := fn()
 		require.NotNil(t, provider)

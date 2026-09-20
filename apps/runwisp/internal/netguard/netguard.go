@@ -26,20 +26,20 @@ import (
 var deniedCIDRs = mustParseCIDRs(
 	// --- IPv4 ---
 	"0.0.0.0/8",       // "this host on this network" (RFC 1122)
-	"10.0.0.0/8",      // private (RFC 1918)
-	"100.64.0.0/10",   // CGNAT / shared address space (RFC 6598) — incl. Alibaba metadata 100.100.100.200
+	"10.0.0.0/8",      // private (RFC 1918) //NOSONAR: go:S1313 — deniedCIDRs is a deliberate SSRF denylist, see doc above
+	"100.64.0.0/10",   // CGNAT / shared address space (RFC 6598) — incl. Alibaba metadata 100.100.100.200 //NOSONAR: go:S1313 — deniedCIDRs is a deliberate SSRF denylist, see doc above
 	"127.0.0.0/8",     // loopback
-	"169.254.0.0/16",  // link-local — incl. cloud metadata 169.254.169.254
-	"172.16.0.0/12",   // private (RFC 1918)
-	"192.0.0.0/24",    // IETF protocol assignments — incl. OCI metadata 192.0.0.192
+	"169.254.0.0/16",  // link-local — incl. cloud metadata 169.254.169.254 //NOSONAR: go:S1313 — deniedCIDRs is a deliberate SSRF denylist, see doc above
+	"172.16.0.0/12",   // private (RFC 1918) //NOSONAR: go:S1313 — deniedCIDRs is a deliberate SSRF denylist, see doc above
+	"192.0.0.0/24",    // IETF protocol assignments — incl. OCI metadata 192.0.0.192 //NOSONAR: go:S1313 — deniedCIDRs is a deliberate SSRF denylist, see doc above
 	"192.0.2.0/24",    // documentation TEST-NET-1
-	"192.88.99.0/24",  // 6to4 relay anycast (deprecated)
-	"192.168.0.0/16",  // private (RFC 1918)
-	"198.18.0.0/15",   // benchmarking (RFC 2544)
+	"192.88.99.0/24",  // 6to4 relay anycast (deprecated) //NOSONAR: go:S1313 — deniedCIDRs is a deliberate SSRF denylist, see doc above
+	"192.168.0.0/16",  // private (RFC 1918) //NOSONAR: go:S1313 — deniedCIDRs is a deliberate SSRF denylist, see doc above
+	"198.18.0.0/15",   // benchmarking (RFC 2544) //NOSONAR: go:S1313 — deniedCIDRs is a deliberate SSRF denylist, see doc above
 	"198.51.100.0/24", // documentation TEST-NET-2
 	"203.0.113.0/24",  // documentation TEST-NET-3
-	"224.0.0.0/4",     // multicast
-	"240.0.0.0/4",     // reserved for future use (incl. 255.255.255.255 broadcast)
+	"224.0.0.0/4",     // multicast //NOSONAR: go:S1313 — deniedCIDRs is a deliberate SSRF denylist, see doc above
+	"240.0.0.0/4",     // reserved for future use (incl. 255.255.255.255 broadcast) //NOSONAR: go:S1313 — deniedCIDRs is a deliberate SSRF denylist, see doc above
 	// --- IPv6 ---
 	"::/128",         // unspecified
 	"::1/128",        // loopback

@@ -668,10 +668,10 @@ func TestCronTrust_GroupWritableFileRefusedEvenIfSticky(t *testing.T) {
 // than follow it to a (currently) trusted target.
 func TestCronTrust_SymlinkRefused(t *testing.T) {
 	dir := t.TempDir()
-	real := filepath.Join(dir, "real")
-	require.NoError(t, os.WriteFile(real, []byte("0 3 * * * /bin/true\n"), 0o600))
+	realPath := filepath.Join(dir, "real")
+	require.NoError(t, os.WriteFile(realPath, []byte("0 3 * * * /bin/true\n"), 0o600))
 	link := filepath.Join(dir, "link")
-	require.NoError(t, os.Symlink(real, link))
+	require.NoError(t, os.Symlink(realPath, link))
 
 	err := assertCronFileTrusted(link, "")
 	require.Error(t, err)
@@ -708,10 +708,10 @@ func TestAssertPrivilegedConfigTrust_NonContainerRefusesSymlinkedConfig(t *testi
 	t.Cleanup(func() { runningInContainer = prev })
 
 	dir := t.TempDir()
-	real := filepath.Join(dir, "real.toml")
-	require.NoError(t, os.WriteFile(real, []byte("[tasks.hello]\nrun = \"true\"\n"), 0o600))
+	realPath := filepath.Join(dir, "real.toml")
+	require.NoError(t, os.WriteFile(realPath, []byte("[tasks.hello]\nrun = \"true\"\n"), 0o600))
 	link := filepath.Join(dir, "runwisp.toml")
-	require.NoError(t, os.Symlink(real, link))
+	require.NoError(t, os.Symlink(realPath, link))
 
 	loaded, err := Load(link)
 	require.NoError(t, err)
@@ -733,10 +733,10 @@ func TestAssertPrivilegedConfigTrust_ContainerSkipsTrustCheck(t *testing.T) {
 	t.Cleanup(func() { runningInContainer = prev })
 
 	dir := t.TempDir()
-	real := filepath.Join(dir, "real.toml")
-	require.NoError(t, os.WriteFile(real, []byte("[tasks.hello]\nrun = \"true\"\n"), 0o600))
+	realPath := filepath.Join(dir, "real.toml")
+	require.NoError(t, os.WriteFile(realPath, []byte("[tasks.hello]\nrun = \"true\"\n"), 0o600))
 	link := filepath.Join(dir, "runwisp.toml")
-	require.NoError(t, os.Symlink(real, link))
+	require.NoError(t, os.Symlink(realPath, link))
 
 	loaded, err := Load(link)
 	require.NoError(t, err)

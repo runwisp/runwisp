@@ -106,7 +106,7 @@ export const tasksApi = {
 
     getRuns: async (taskName: string, params?: RunsQueryParams) => {
         const { data, error } = await apiClient.GET("/api/runs", {
-            params: { query: { taskName, ...(params ?? {}) } },
+            params: { query: { taskName, ...params } },
         });
         if (error) throw new Error("Failed to fetch task runs");
         return { runs: data.items ?? [], total: data.total };

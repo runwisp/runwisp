@@ -222,9 +222,9 @@ func resolveCatchupAnchor(ctx context.Context, db storage.RunRepository, task *m
 // when the backlog exceeded a nonzero cap (so some ticks were re-fired and older
 // ones dropped) — it drives the warning log and the reason suffix.
 func computeCatchupTriggers(task *model.Task, missedCount int) (triggers int, capped bool) {
-	cap := task.CatchUpValue()
-	if missedCount > cap {
-		return cap, cap > 0
+	catchUpCap := task.CatchUpValue()
+	if missedCount > catchUpCap {
+		return catchUpCap, catchUpCap > 0
 	}
 	return missedCount, false
 }

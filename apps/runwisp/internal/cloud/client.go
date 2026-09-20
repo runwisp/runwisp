@@ -40,7 +40,7 @@ type Dependencies struct {
 	RunRepo           ExternalRunGetter
 	PendingUploadRepo PendingLogUploadRepository
 	EventBus          EventSubscriber
-	LocalTasks        LocalTaskSource
+	LocalTasks        TaskSnapshotter
 	LogDir            string
 	Availability      executor.Availability
 	OnConnected       func()
@@ -65,7 +65,7 @@ type Client struct {
 
 	syncClient   *TaskSyncClient
 	taskManager  TaskRunner
-	localTasks   LocalTaskSource
+	localTasks   TaskSnapshotter
 	availability executor.Availability
 	onConnected  func()
 	handler      *InboundHandler

@@ -132,10 +132,10 @@ func TestLogWriter_DiskPressure_DropNew_FiresCallback(t *testing.T) {
 	hits := 0
 	var seenFree, seenMin int64
 	var seenKilled bool
-	opts.OnDiskPressure = func(free, min int64, killedTask bool) {
+	opts.OnDiskPressure = func(free, minFree int64, killedTask bool) {
 		hits++
 		seenFree = free
-		seenMin = min
+		seenMin = minFree
 		seenKilled = killedTask
 	}
 
@@ -178,7 +178,7 @@ func TestLogWriter_DiskPressure_Kill_CancelsContext(t *testing.T) {
 	cancelled := false
 	opts.CancelFunc = func() { cancelled = true }
 	var seenKilled bool
-	opts.OnDiskPressure = func(free, min int64, killedTask bool) {
+	opts.OnDiskPressure = func(free, minFree int64, killedTask bool) {
 		seenKilled = killedTask
 	}
 
@@ -214,7 +214,7 @@ func TestLogWriter_DiskPressure_SurvivesRotation(t *testing.T) {
 	opts.Overflow = "drop_old"
 	opts.MinFreeDisk = 1000
 	hits := 0
-	opts.OnDiskPressure = func(free, min int64, killedTask bool) { hits++ }
+	opts.OnDiskPressure = func(free, minFree int64, killedTask bool) { hits++ }
 
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)

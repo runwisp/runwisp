@@ -106,7 +106,7 @@ func ComputeRestartDelay(task *model.Task, attempt int) time.Duration {
 	return computeBackoff(task.RestartBackoff, base, attempt, RestartBackoffCap)
 }
 
-func computeBackoff(strategy model.BackoffCurve, base time.Duration, attempt int, cap time.Duration) time.Duration {
+func computeBackoff(strategy model.BackoffCurve, base time.Duration, attempt int, capDuration time.Duration) time.Duration {
 	var delay time.Duration
 	switch strategy {
 	case model.BackoffExponential:
@@ -120,8 +120,8 @@ func computeBackoff(strategy model.BackoffCurve, base time.Duration, attempt int
 	// meaning "always instant, at any backoff step" — is not clamped up to the
 	// cap; only genuine overflow (a huge base times a huge multiplier
 	// wrapping negative) hits this branch.
-	if delay > cap || delay < 0 {
-		return cap
+	if delay > capDuration || delay < 0 {
+		return capDuration
 	}
 	return delay
 }

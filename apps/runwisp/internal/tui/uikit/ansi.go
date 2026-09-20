@@ -33,16 +33,11 @@ func VisibleWidth(s string) int {
 		case c >= 0x80:
 			return ansi.StringWidth(s)
 		case c == 0x1b:
-			if i+1 >= n || s[i+1] != '[' {
+			next, ok := skipCSI(s, i)
+			if !ok {
 				return ansi.StringWidth(s)
 			}
-			i += 2
-			for i < n && (s[i] < 0x40 || s[i] > 0x7e) {
-				i++
-			}
-			if i < n {
-				i++ // step past the CSI final byte
-			}
+			i = next
 		case c >= 0x20 && c != 0x7f:
 			w++
 			i++
@@ -51,6 +46,25 @@ func VisibleWidth(s string) int {
 		}
 	}
 	return w
+}
+
+// skipCSI advances past the CSI escape sequence starting at s[i] (which must
+// be ESC), returning the index just past its final byte. ok is false when
+// s[i] doesn't start a CSI sequence, in which case the caller falls back to
+// the accurate ansi.StringWidth path.
+func skipCSI(s string, i int) (int, bool) {
+	n := len(s)
+	if i+1 >= n || s[i+1] != '[' {
+		return 0, false
+	}
+	i += 2
+	for i < n && (s[i] < 0x40 || s[i] > 0x7e) {
+		i++
+	}
+	if i < n {
+		i++ // step past the CSI final byte
+	}
+	return i, true
 }
 
 // SanitizeControls strips terminal control sequences from captured process
@@ -75,13 +89,10 @@ func SanitizeControls(s string) string {
 		switch {
 		case c == 0x1b:
 			i = copyOrDropEscape(&b, s, i)
-		case c == '\t':
-			b.WriteByte(c)
-			i++
-		case c < 0x20 || c == 0x7f:
-			i++ // stray C0 / DEL — drop
+		case c != '\t' && (c < 0x20 || c == 0x7f):
+			i++ // stray C0 / DEL — drop (tab is preserved below)
 		default:
-			b.WriteByte(c) // printable ASCII or a UTF-8 continuation byte
+			b.WriteByte(c) // printable ASCII, tab, or a UTF-8 continuation byte
 			i++
 		}
 	}

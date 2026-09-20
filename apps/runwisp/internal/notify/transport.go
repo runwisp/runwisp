@@ -105,9 +105,9 @@ func (p *HTTPProvider) handleRateLimit(ctx context.Context, statusCode int, head
 }
 
 func truncateBody(b []byte) string {
-	const max = 200
-	if len(b) <= max {
+	const maxLen = 200
+	if len(b) <= maxLen {
 		return string(b)
 	}
-	return string(b[:max]) + "…"
+	return string(b[:maxLen]) + "…"
 }

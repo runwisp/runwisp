@@ -155,17 +155,17 @@ func TestAppEventLogConcurrentSubscribeIsGapAndDupFree(t *testing.T) {
 	<-drained
 
 	require.Equal(t, -1, dup, "duplicate id delivered across the replay/live boundary")
-	max := 0
+	maxID := 0
 	for id := range seen {
-		if id > max {
-			max = id
+		if id > maxID {
+			maxID = id
 		}
 	}
-	require.Greater(t, max, cursor)
-	for id := cursor + 1; id <= max; id++ {
-		require.True(t, seen[id], "hole at id %d below max %d (mid-stream gap)", id, max)
+	require.Greater(t, maxID, cursor)
+	for id := cursor + 1; id <= maxID; id++ {
+		require.True(t, seen[id], "hole at id %d below max %d (mid-stream gap)", id, maxID)
 	}
-	require.Len(t, seen, max-cursor, "delivered ids must be a contiguous run cursor+1..max")
+	require.Len(t, seen, maxID-cursor, "delivered ids must be a contiguous run cursor+1..max")
 }
 
 // (c) A stale-higher-id (daemon restarted, seq reset, client holds a larger id)

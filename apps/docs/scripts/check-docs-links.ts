@@ -389,7 +389,7 @@ function reasonFor(
 // trimmed so `"https://docs.runwisp.com/operations/cli/".` yields a clean path.
 // The path group is required, so a bare `https://docs.runwisp.com` with no path
 // simply doesn't match — there is nothing to validate about the site root.
-const outboundRe = new RegExp(String.raw`https://docs\.runwisp\.com(/[^\s"'\`)\]<>]*)`, "g");
+const outboundRe = /https:\/\/docs\.runwisp\.com(\/[^\s"'`)\]<>]*)/g;
 
 // Expand the configured roots into the concrete files to scan.
 function outboundFiles(): string[] {

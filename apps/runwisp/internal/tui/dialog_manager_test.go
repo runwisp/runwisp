@@ -492,7 +492,7 @@ func TestDialogManager_NewReleaseLifecycle(t *testing.T) {
 		t.Fatal("expected new-release dialog after ShowNewRelease")
 	}
 
-	if out := dm.RenderOverlays("base", 80, 24); out == "base" {
+	if dm.RenderOverlays("base", 80, 24) == "base" {
 		t.Fatal("expected RenderOverlays to render the new-release modal, not fall through")
 	}
 

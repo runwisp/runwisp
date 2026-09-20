@@ -63,11 +63,11 @@ func scanLineStrings(line string, inMulti bool, delim string) (bool, string) {
 	i := 0
 	for i < len(line) {
 		if inMulti {
-			close := strings.Index(line[i:], delim)
-			if close < 0 {
+			closeIdx := strings.Index(line[i:], delim)
+			if closeIdx < 0 {
 				return true, delim
 			}
-			i += close + len(delim)
+			i += closeIdx + len(delim)
 			inMulti, delim = false, ""
 			continue
 		}
@@ -121,12 +121,12 @@ func tableHeader(line string) (name string, array, ok bool) {
 		return "", false, false
 	}
 	array = strings.HasPrefix(t, "[[")
-	open, close := "[", "]"
+	open, closeDelim := "[", "]"
 	if array {
-		open, close = "[[", "]]"
+		open, closeDelim = "[[", "]]"
 	}
 	rest := t[len(open):]
-	end := strings.Index(rest, close)
+	end := strings.Index(rest, closeDelim)
 	if end < 0 {
 		return "", false, false
 	}
@@ -134,7 +134,7 @@ func tableHeader(line string) (name string, array, ok bool) {
 	if name == "" {
 		return "", false, false
 	}
-	after := strings.TrimSpace(rest[end+len(close):])
+	after := strings.TrimSpace(rest[end+len(closeDelim):])
 	if after != "" && !strings.HasPrefix(after, "#") {
 		return "", false, false
 	}

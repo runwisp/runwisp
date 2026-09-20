@@ -108,10 +108,10 @@ func checkSecretFileTarget(path string) error {
 // Each character contributes ~5.954 bits of entropy.
 func RandBase62(n int) (string, error) {
 	const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-	max := big.NewInt(int64(len(alphabet)))
+	bound := big.NewInt(int64(len(alphabet)))
 	b := make([]byte, n)
 	for i := range b {
-		v, err := rand.Int(rand.Reader, max)
+		v, err := rand.Int(rand.Reader, bound)
 		if err != nil {
 			return "", fmt.Errorf("failed to generate random base62 string: %w", err)
 		}

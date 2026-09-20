@@ -633,10 +633,10 @@ func TestTruncateLine_ShortLineUnchanged(t *testing.T) {
 // shortened and terminated with the ellipsis rune "…".
 func TestTruncateLine_LongLineGetsTruncated(t *testing.T) {
 	s := "this is a rather long notification title"
-	max := 15
-	got := truncateLine(s, max)
-	if len([]rune(got)) > max {
-		t.Fatalf("truncateLine: result length %d exceeds max %d; got %q", len([]rune(got)), max, got)
+	maxWidth := 15
+	got := truncateLine(s, maxWidth)
+	if len([]rune(got)) > maxWidth {
+		t.Fatalf("truncateLine: result length %d exceeds max %d; got %q", len([]rune(got)), maxWidth, got)
 	}
 	if !strings.HasSuffix(got, "…") {
 		t.Fatalf("truncateLine: long line must end with '…'; got %q", got)

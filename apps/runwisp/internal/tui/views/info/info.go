@@ -158,11 +158,11 @@ func (v *InfoView) View() string {
 }
 
 func (v *InfoView) maxScroll() int {
-	max := v.contentHeight - v.height
-	if max < 0 {
+	maxOffset := v.contentHeight - v.height
+	if maxOffset < 0 {
 		return 0
 	}
-	return max
+	return maxOffset
 }
 
 func (v *InfoView) renderHealthSection(w int) []string {
@@ -354,11 +354,11 @@ func (v *InfoView) renderCapabilitiesLines(caps []model.CapInfo, w int) []string
 	var lines []string
 	lines = append(lines, uikit.PadLine("", w, uikit.ColorBg))
 	var capStrs []string
-	for _, cap := range caps {
-		if cap.Available {
-			capStrs = append(capStrs, uikit.InfoCapsAvailableStyle.Render("✓ "+cap.Name))
+	for _, capInfo := range caps {
+		if capInfo.Available {
+			capStrs = append(capStrs, uikit.InfoCapsAvailableStyle.Render("✓ "+capInfo.Name))
 		} else {
-			capStrs = append(capStrs, uikit.InfoCapsUnavailableStyle.Render("✗ "+cap.Name))
+			capStrs = append(capStrs, uikit.InfoCapsUnavailableStyle.Render("✗ "+capInfo.Name))
 		}
 	}
 	capLine := bgSpace(2) + strings.Join(capStrs, bgSpace(2))
@@ -450,10 +450,10 @@ func bgSpace(n int) string {
 	return lipgloss.NewStyle().Background(uikit.ColorBg).Render(strings.Repeat(" ", n))
 }
 
-func appendCapped(s []float64, val float64, max int) []float64 {
+func appendCapped(s []float64, val float64, maxLen int) []float64 {
 	s = append(s, val)
-	if len(s) > max {
-		s = s[len(s)-max:]
+	if len(s) > maxLen {
+		s = s[len(s)-maxLen:]
 	}
 	return s
 }

@@ -342,8 +342,20 @@ const (
 // caller can render --json without re-fetching. final may be nil only alongside
 // a non-nil error (or an interrupt), never on a clean terminal outcome.
 func followRun(client *apiclient.Client, taskName, runID string, lineOut io.Writer) (int, *model.Run, error) {
-	ctx, cancel := newSignalCancelContext()
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Forward an interrupt/SIGTERM into ctx cancellation so Ctrl+C stops the stream.
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sig)
+	go func() {
+		select {
+		case <-sig:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 
 	// Line numbers are zero-indexed; the server reads from=0 as the default
 	// tail window and clamps to anchor 0 on a fresh run, so we see every line.
@@ -450,27 +462,6 @@ func fetchTerminalRun(ctx context.Context, client *apiclient.Client, taskName, r
 	slog.Warn("Run reported done but its state still reads non-terminal; exit code may be wrong",
 		"task", taskName, "run", runID, "status", run.Status)
 	return run, nil
-}
-
-// newSignalCancelContext returns a context cancelled either by its own cancel
-// func or by an interrupt/SIGTERM, so a CLI run forwards Ctrl+C to the stream.
-func newSignalCancelContext() (context.Context, context.CancelFunc) {
-	ctx, cancel := context.WithCancel(context.Background())
-
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		select {
-		case <-sig:
-			cancel()
-		case <-ctx.Done():
-		}
-	}()
-
-	return ctx, func() {
-		signal.Stop(sig)
-		cancel()
-	}
 }
 
 // streamRunLogs prints each streamed log line to stdout/stderr until the stream reports the run is done or errors.

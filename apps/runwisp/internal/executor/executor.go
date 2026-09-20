@@ -339,7 +339,7 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 		MinFreeDisk: r.minFreeDisk,
 		LogDir:      r.logDir,
 		Now:         r.now,
-		OnDiskPressure: func(free, min int64, killed bool) {
+		OnDiskPressure: func(free, minFree int64, killed bool) {
 			if bus == nil {
 				return
 			}
@@ -347,7 +347,7 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 				TaskName:     taskName,
 				RunID:        runID,
 				FreeBytes:    free,
-				MinFreeBytes: min,
+				MinFreeBytes: minFree,
 				KilledTask:   killed,
 			})
 		},
