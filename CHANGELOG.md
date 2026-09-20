@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-20
+
 ### Added
 
 - **Update check** — the daemon checks for a newer release and shows an amber indicator next to the version in the Web UI and TUI. Never auto-updates; opt out with `[daemon] check_updates = false`.
@@ -749,7 +751,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v0.16.4...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.0.0...main
+[1.0.0]: https://github.com/runwisp/runwisp/compare/v0.16.4...v1.0.0
 [0.16.4]: https://github.com/runwisp/runwisp/compare/v0.16.3...v0.16.4
 [0.16.3]: https://github.com/runwisp/runwisp/compare/v0.16.2...v0.16.3
 [0.16.2]: https://github.com/runwisp/runwisp/compare/v0.16.1...v0.16.2
