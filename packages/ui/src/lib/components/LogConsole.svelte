@@ -168,28 +168,56 @@
         return Math.max(1, Math.ceil(visibleColumns(text) / cols));
     }
 
-    // Line-text white-space model: wrapped lines break anywhere (so a long
-    // token wraps mid-word the way a terminal would), unwrapped lines stay on
-    // one horizontal-scrolling row.
-    let lineTextClass = $derived(wrap ? "break-anywhere whitespace-pre-wrap" : "whitespace-pre");
-
-    // Recompute row counts for every loaded line whenever wrapping is on and
-    // either the cache or the available column width moves. Pruned lines keep
-    // their last-computed count so scroll geometry stays stable.
-    $effect(() => {
-        if (!wrap) return;
-        const lines = cache.lines;
-        void availableColumns;
+    // Measures wrapped row counts for exactly the lines in [min, max] and bumps
+    // rowCountVersion if anything changed. Called directly wherever new line
+    // text lands in the cache (streamed append, on-demand backfill), each of
+    // which already knows the touched range from LogCache's merge result — so
+    // a single appended line costs O(1) here instead of re-walking the whole
+    // (up to 50k-line) cache. Plain function, not an $effect: reads/writes
+    // rowCounts and cache.lines by key, never by iterating the map.
+    function measureRange(min: number, max: number) {
+        if (!wrap || min > max) return;
         let changed = false;
-        for (const [num, text] of lines) {
-            const r = wrappedRowsFor(text);
-            const prev = rowCounts.get(num);
-            if (prev !== r) {
+        for (let num = min; num <= max; num++) {
+            const r = wrappedRowsFor(cache.lines.get(num));
+            if (rowCounts.get(num) !== r) {
                 rowCounts.set(num, r);
                 changed = true;
             }
         }
         if (changed) rowCountVersion++;
+    }
+
+    // Line-text white-space model: wrapped lines break anywhere (so a long
+    // token wraps mid-word the way a terminal would), unwrapped lines stay on
+    // one horizontal-scrolling row.
+    let lineTextClass = $derived(wrap ? "break-anywhere whitespace-pre-wrap" : "whitespace-pre");
+
+    // Full remeasure of every loaded line, needed only when wrapping turns on
+    // or the available column width changes (wrap width affects every line's
+    // row count, so there's no way to scope that to a range). Line
+    // appends/backfills are measured incrementally at their call sites via
+    // measureRange instead — reading `cache.lines` in this effect's tracked
+    // scope would resubscribe it to the SvelteMap's shared version signal and
+    // re-run this full O(n) walk on every single appended line. `untrack`
+    // (same pattern as the fetch/prune effects below) keeps that read out of
+    // the dependency set, so only `wrap`/`availableColumns` retrigger this.
+    // Pruned lines keep their last-computed count so scroll geometry stays
+    // stable.
+    $effect(() => {
+        if (!wrap) return;
+        void availableColumns;
+        untrack(() => {
+            let changed = false;
+            for (const [num, text] of cache.lines) {
+                const r = wrappedRowsFor(text);
+                if (rowCounts.get(num) !== r) {
+                    rowCounts.set(num, r);
+                    changed = true;
+                }
+            }
+            if (changed) rowCountVersion++;
+        });
     });
 
     // Rebuild the prefix-sum table when wrap is on and any geometry input
@@ -378,7 +406,8 @@
     $effect(() => {
         const fn = fetchLogs;
         const cs = chunkSize;
-        fetcher = new LogFetcher(cache, fn, cs, () => {
+        fetcher = new LogFetcher(cache, fn, cs, (min, max) => {
+            measureRange(min, max);
             if (isAutoScroll && !userScrolledUp) {
                 requestAnimationFrame(() => scrollToBottom());
             }
@@ -484,7 +513,8 @@
 
     export function onStream(event: LogEvent) {
         const prevTotal = cache.totalLines;
-        cache.applyEvent(event);
+        const merged = cache.applyEvent(event);
+        if (merged.touched) measureRange(merged.min, merged.max);
 
         if (cache.totalLines > prevTotal && isAutoScroll && !userScrolledUp) {
             requestAnimationFrame(() => scrollToBottom());

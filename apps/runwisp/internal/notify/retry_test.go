@@ -71,6 +71,21 @@ func TestParseRetryAfterHeader_LargeSeconds(t *testing.T) {
 	assert.Equal(t, time.Hour, ParseRetryAfterHeader(h))
 }
 
+// TestNewExponential_ZeroMaxElapsedTimeUsesLibraryDefault is a regression
+// test for NewExponential applying MaxElapsedTime unconditionally, unlike
+// InitialInterval/MaxInterval/Multiplier which are only applied when > 0. The
+// zero value is documented (see BackoffConfig's other fields, and
+// cenkalti/backoff's own "0 means never stop" semantics for
+// ExponentialBackOff.MaxElapsedTime) to mean "use the library default"
+// everywhere else in this struct, but an unset MaxElapsedTime instead wipes
+// out backoff.NewExponentialBackOff's 15-minute default with 0 — turning an
+// omitted config knob into unbounded retry.
+func TestNewExponential_ZeroMaxElapsedTimeUsesLibraryDefault(t *testing.T) {
+	cfg := BackoffConfig{InitialInterval: time.Second}
+	b := cfg.NewExponential()
+	assert.NotZero(t, b.MaxElapsedTime, "omitted MaxElapsedTime should fall back to the library default, not 0 (unbounded)")
+}
+
 func TestClampRetryAfter(t *testing.T) {
 	cfg := BackoffConfig{MaxInterval: time.Minute, MaxElapsedTime: 5 * time.Minute}
 

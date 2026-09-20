@@ -2744,14 +2744,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
+            /** @description The full log as plain text. */
             200: {
                 headers: {
-                    "Content-Type"?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": string;
+                    "text/plain; charset=utf-8": string;
                 };
             };
             /** @description Error */

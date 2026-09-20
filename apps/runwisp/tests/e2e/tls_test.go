@@ -172,7 +172,7 @@ func TestTLS_PinMismatchFailsLoudly(t *testing.T) {
 	poisoned.Store(key, "00deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbe")
 	client := apiclient.NewPinned(d.baseURL, "", poisoned)
 
-	err := client.HealthCheck()
+	err := client.HealthCheck(t.Context())
 	require.Error(t, err, "a changed cert must fail the handshake")
 	require.Contains(t, err.Error(), "changed", "error should read like a known-hosts mismatch")
 }

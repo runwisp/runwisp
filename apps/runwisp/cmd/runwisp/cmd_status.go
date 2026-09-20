@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -23,7 +24,7 @@ changed on disk since the daemon started (config changes apply on restart).`,
 	Example: `  runwisp status
   runwisp status --json   # daemon + per-task snapshot as JSON`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runStatus(cmd.OutOrStdout(), flags, statusJSON)
+		return runStatus(cmd.Context(), cmd.OutOrStdout(), flags, statusJSON)
 	},
 }
 
@@ -31,12 +32,12 @@ func init() {
 	statusCmd.Flags().BoolVar(&statusJSON, "json", false, "emit a machine-readable JSON document to stdout instead of the human summary")
 }
 
-func runStatus(out io.Writer, f Flags, asJSON bool) error {
+func runStatus(ctx context.Context, out io.Writer, f Flags, asJSON bool) error {
 	// The Unix socket is the local-trusted transport (same as exec/tui):
 	// no password needed, and unlike a TCP probe it cannot hit a different
 	// process that happens to squat on the port.
 	client := apiclient.NewUnix(localAPISocketPath(f))
-	if err := client.HealthCheck(); err != nil {
+	if err := client.HealthCheck(ctx); err != nil {
 		if asJSON {
 			// Emit an unhealthy document so an agent learns of the failure from
 			// the JSON, not from stderr text; the returned error still drives
@@ -54,17 +55,17 @@ func runStatus(out io.Writer, f Flags, asJSON bool) error {
 	}
 
 	if asJSON {
-		return writeJSON(out, buildStatusDoc(client))
+		return writeJSON(out, buildStatusDoc(ctx, client))
 	}
 
-	info, infoErr := client.GetDaemonInfo()
+	info, infoErr := client.GetDaemonInfo(ctx)
 	if infoErr == nil {
 		fmt.Fprintf(out, "RunWisp is healthy at :%d\n", info.Port)
 	} else {
 		fmt.Fprintln(out, "RunWisp is healthy")
 	}
 
-	if stats, err := client.GetSystemStats(); err == nil {
+	if stats, err := client.GetSystemStats(ctx); err == nil {
 		printSystemStats(out, stats)
 	}
 
@@ -90,14 +91,14 @@ func runStatus(out io.Writer, f Flags, asJSON bool) error {
 // already confirmed by the caller; the remaining probes are soft — a failed
 // info/system/tasks fetch leaves its fields at their zero value rather than
 // failing the whole document, mirroring the human path's graceful degradation.
-func buildStatusDoc(client *apiclient.Client) statusJSONDoc {
+func buildStatusDoc(ctx context.Context, client *apiclient.Client) statusJSONDoc {
 	doc := statusJSONDoc{
 		SchemaVersion: jsonSchemaVersion,
 		Healthy:       true,
 		Tasks:         []statusTaskJSON{},
 	}
 
-	if info, err := client.GetDaemonInfo(); err == nil {
+	if info, err := client.GetDaemonInfo(ctx); err == nil {
 		doc.Version = info.Version
 		doc.Port = info.Port
 		doc.ExternalURL = info.ExternalURL
@@ -108,13 +109,13 @@ func buildStatusDoc(client *apiclient.Client) statusJSONDoc {
 		doc.TimezoneSource = info.TimezoneSource
 	}
 
-	if stats, err := client.GetSystemStats(); err == nil {
+	if stats, err := client.GetSystemStats(ctx); err == nil {
 		doc.System = newStatusSystem(stats)
 	}
 
-	if tasks, err := client.ListTasks(); err == nil {
+	if tasks, err := client.ListTasks(ctx); err == nil {
 		for _, tr := range tasks {
-			doc.Tasks = append(doc.Tasks, newStatusTaskJSON(tr, lastRunOf(client, tr.Name)))
+			doc.Tasks = append(doc.Tasks, newStatusTaskJSON(tr, lastRunOf(ctx, client, tr.Name)))
 		}
 	}
 
@@ -123,8 +124,8 @@ func buildStatusDoc(client *apiclient.Client) statusJSONDoc {
 
 // lastRunOf fetches a task's most recent run (default sort is created_at desc),
 // or nil when the task has never run or the fetch fails.
-func lastRunOf(client *apiclient.Client, taskName string) *model.Run {
-	runs, _, err := client.ListRunsByTask(taskName, apiclient.RunsParams{Limit: 1})
+func lastRunOf(ctx context.Context, client *apiclient.Client, taskName string) *model.Run {
+	runs, _, err := client.ListRunsByTask(ctx, taskName, apiclient.RunsParams{Limit: 1})
 	if err != nil || len(runs) == 0 {
 		return nil
 	}

@@ -19,6 +19,10 @@ var excludedEndReasons = map[model.EndReason]struct{}{
 	model.ReasonStartFailed: {},
 }
 
+// logDiskPressureKind is the log.disk_pressure token, named once here so
+// NeverFailureKinds below doesn't duplicate the literal by hand.
+const logDiskPressureKind = "log.disk_pressure"
+
 // AllKindStrings lists the tokens a [[route]] match.kinds entry may use. They
 // are the outcome vocabulary shared with a task's `failures` list — every
 // model.EndReason except excludedEndReasons — plus the non-run event tokens
@@ -35,7 +39,7 @@ var AllKindStrings = func() []string {
 			out = append(out, string(r))
 		}
 	}
-	return append(out, "service.fatal", "log.disk_pressure")
+	return append(out, "service.fatal", logDiskPressureKind)
 }()
 
 // DeliveryFailedKind is the synthetic event a permanently-failed delivery
@@ -48,9 +52,10 @@ const DeliveryFailedKind = "notify.delivery_failed"
 
 // NeverFailureKinds are the match.kinds tokens whose event can never carry
 // the classified-failure bit, no matter how a task's `failures` policy is
-// configured: "started" fires before a run has an outcome, and "succeeded"
+// configured: "started" fires before a run has an outcome, "succeeded"
 // is unconditionally excluded from failure classification (model.Task's
-// IsFailureReason short-circuits ReasonSuccess). Combined with
-// match.failure = true, either one ANDs down to a route that can never fire
-// — see validateRoute.
-var NeverFailureKinds = []string{"started", string(model.ReasonSuccess)}
+// IsFailureReason short-circuits ReasonSuccess), and "log.disk_pressure"
+// events are hardcoded to IsFailure: false in bridge.go's MapEvent. Combined
+// with match.failure = true, any one of these ANDs down to a route that can
+// never fire — see validateRoute.
+var NeverFailureKinds = []string{"started", string(model.ReasonSuccess), logDiskPressureKind}

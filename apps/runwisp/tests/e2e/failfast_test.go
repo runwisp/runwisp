@@ -57,7 +57,7 @@ echo after
 	client := socketClient(t, daemon.dataDir)
 
 	t.Run("a failing line fails the run", func(t *testing.T) {
-		_, err := client.TriggerRun("failfast", nil, "")
+		_, err := client.TriggerRun(t.Context(), "failfast", nil, "")
 		require.NoError(t, err)
 		waitForRunCount(t, client, "failfast", 1, 10*time.Second)
 
@@ -66,7 +66,7 @@ echo after
 		require.NotNil(t, run.EndReason)
 		assert.Equal(t, model.ReasonFailed, *run.EndReason)
 
-		logBody, err := client.GetLogPage(run.ID, 0, 100)
+		logBody, err := client.GetLogPage(t.Context(), run.ID, 0, 100)
 		require.NoError(t, err)
 		joined := joinLogLines(logBody.Lines)
 		assert.Contains(t, joined, "before", "output before the failure is still captured")
@@ -74,14 +74,14 @@ echo after
 	})
 
 	t.Run("set +e opts out", func(t *testing.T) {
-		_, err := client.TriggerRun("optout", nil, "")
+		_, err := client.TriggerRun(t.Context(), "optout", nil, "")
 		require.NoError(t, err)
 		waitForRunCount(t, client, "optout", 1, 10*time.Second)
 
 		run := waitForEndedRun(t, client, "optout")
 		assert.Equal(t, 0, run.ExitCode, "set +e restores continue-on-error")
 
-		logBody, err := client.GetLogPage(run.ID, 0, 100)
+		logBody, err := client.GetLogPage(t.Context(), run.ID, 0, 100)
 		require.NoError(t, err)
 		assert.Contains(t, joinLogLines(logBody.Lines), "after")
 	})
@@ -104,7 +104,7 @@ func waitForEndedRun(t testing.TB, client *apiclient.Client, taskName string) mo
 
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		runs, _, err := client.ListRunsByTask(taskName, apiclient.RunsParams{Limit: 1})
+		runs, _, err := client.ListRunsByTask(t.Context(), taskName, apiclient.RunsParams{Limit: 1})
 		require.NoError(t, err)
 		if len(runs) > 0 && runs[0].Status == model.PhaseEnded {
 			return runs[0]

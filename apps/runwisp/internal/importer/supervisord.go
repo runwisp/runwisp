@@ -372,7 +372,11 @@ func (sd *supervisordState) applyProgramKeys(b *block, s *iniSection, ref itemRe
 		case "umask":
 			b.set("umask", tomlString(value))
 		case "stopsignal":
-			b.set("stop_signal", tomlString(normalizeSignal(value)))
+			if canonical, ok := normalizeSignal(value); ok {
+				b.set("stop_signal", tomlString(canonical))
+			} else {
+				sd.noteUnreadable(ref, key, value)
+			}
 		case "stopwaitsecs":
 			if d, ok := secondsValue(value); ok {
 				b.set("graceful_stop", tomlString(d))
@@ -528,10 +532,10 @@ func secondsValue(value string) (string, bool) {
 	return strconv.Itoa(n) + "s", true
 }
 
-// normalizeSignal turns supervisord's "TERM" into RunWisp's "SIGTERM" form.
-func normalizeSignal(value string) string {
-	canonical, _ := model.NormalizeSignalName(value)
-	return canonical
+// normalizeSignal turns supervisord's "TERM" into RunWisp's "SIGTERM" form,
+// reporting whether the signal is in RunWisp's stop_signal allowlist.
+func normalizeSignal(value string) (string, bool) {
+	return model.NormalizeSignalName(value)
 }
 
 // expandSupervisordTokens resolves the %(program_name)s expansion and reports

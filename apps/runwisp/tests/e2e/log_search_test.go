@@ -41,7 +41,7 @@ func TestLogSearchEndpointFindsLine(t *testing.T) {
 	require.NoError(t, err)
 	waitForRunStreamPing(t, stream, 5*time.Second)
 
-	triggered, err := client.TriggerRun(taskName, nil, "")
+	triggered, err := client.TriggerRun(t.Context(), taskName, nil, "")
 	require.NoError(t, err)
 	require.NotEmpty(t, triggered.ID)
 
@@ -49,7 +49,7 @@ func TestLogSearchEndpointFindsLine(t *testing.T) {
 	waitForRunCompleted(t, stream, triggered.ID, 10*time.Second)
 
 	// Substring search across all runs of the task.
-	body, err := client.SearchLogs(taskName, apiclient.SearchLogsOptions{Query: marker})
+	body, err := client.SearchLogs(t.Context(), taskName, apiclient.SearchLogsOptions{Query: marker})
 	require.NoError(t, err)
 	require.NotEmpty(t, body.Items, "expected at least one hit for the marker")
 	hit := body.Items[0]
@@ -59,7 +59,7 @@ func TestLogSearchEndpointFindsLine(t *testing.T) {
 	require.Empty(t, body.NextCursor)
 
 	// Same query scoped to the specific run id — should match identically.
-	scoped, err := client.SearchLogs(taskName, apiclient.SearchLogsOptions{
+	scoped, err := client.SearchLogs(t.Context(), taskName, apiclient.SearchLogsOptions{
 		Query: marker,
 		RunID: triggered.ID,
 	})
@@ -68,7 +68,7 @@ func TestLogSearchEndpointFindsLine(t *testing.T) {
 	require.Equal(t, triggered.ID, scoped.Items[0].RunID)
 
 	// A query that cannot match returns an empty page, not a 5xx.
-	empty, err := client.SearchLogs(taskName, apiclient.SearchLogsOptions{Query: "absolutely-no-match"})
+	empty, err := client.SearchLogs(t.Context(), taskName, apiclient.SearchLogsOptions{Query: "absolutely-no-match"})
 	require.NoError(t, err)
 	require.Empty(t, empty.Items)
 	require.True(t, empty.Exhausted)

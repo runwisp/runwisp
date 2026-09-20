@@ -292,7 +292,7 @@
                         </td>
                     </tr>
                 {:else}
-                    {#each pagedData as row, idx (idx)}
+                    {#each pagedData as row, idx (row[rowKey])}
                         <tr
                             class="
 							    border-b border-outline last:border-b-0

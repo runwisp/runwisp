@@ -78,6 +78,22 @@ Environment="NODE_OPTS=--max-old-space 512"
 	mustContain(t, out, `NODE_OPTS = "--max-old-space 512"`)
 }
 
+// TestSystemdKillSignalOutOfAllowlistIsNoted proves that a KillSignal= naming
+// a signal outside model.StopSignals (RunWisp's 7-signal allowlist) either
+// gets flagged with a note or isn't written as an unvalidated stop_signal
+// value — never both silent and invalid, since config.Load's
+// validateStopSignal would reject it anyway.
+func TestSystemdKillSignalOutOfAllowlistIsNoted(t *testing.T) {
+	res := parseUnit(t, `[Service]
+ExecStart=/bin/app
+KillSignal=SIGCONT
+`)
+	out := res.TOML()
+	if strings.Contains(out, `stop_signal = "SIGCONT"`) && !hasNoteKind(res, NoteKeyUnreadable) {
+		t.Fatalf("KillSignal=SIGCONT written as %q with no note, got notes %+v", "SIGCONT", allNotes(res))
+	}
+}
+
 // TestSystemdMultiExecIsBlocking proves that a unit running more than one command
 // keeps only the first ExecStart and flags the rest rather than silently dropping
 // them.

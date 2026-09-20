@@ -4,6 +4,7 @@
 package apiclient
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,14 +16,14 @@ import (
 // GetLogPage fetches a JSON page of log lines. A negative `from` counts from
 // the end (e.g. -1000 returns the tail). A positive `from` is interpreted as
 // an absolute line anchor. limit <= 0 lets the server pick its default.
-func (c *Client) GetLogPage(runID string, from, limit int64) (server.LogPageBody, error) {
+func (c *Client) GetLogPage(ctx context.Context, runID string, from, limit int64) (server.LogPageBody, error) {
 	q := url.Values{}
 	q.Set("from", fmt.Sprintf("%d", from))
 	if limit > 0 {
 		q.Set("limit", fmt.Sprintf("%d", limit))
 	}
 	path := fmt.Sprintf("/api/runs/%s/log?%s", runID, q.Encode())
-	resp, err := c.doRaw(path)
+	resp, err := c.doRaw(ctx, path)
 	if err != nil {
 		return server.LogPageBody{}, err
 	}
@@ -38,9 +39,9 @@ func (c *Client) GetLogPage(runID string, from, limit int64) (server.LogPageBody
 // GetLogRaw streams the raw concatenated log file. The caller MUST close the
 // returned reader. Use this for export / `cat` ergonomics — never as a
 // streaming primitive.
-func (c *Client) GetLogRaw(runID string) (io.ReadCloser, error) {
+func (c *Client) GetLogRaw(ctx context.Context, runID string) (io.ReadCloser, error) {
 	path := fmt.Sprintf("/api/runs/%s/log/raw", runID)
-	resp, err := c.doRaw(path)
+	resp, err := c.doRaw(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -50,9 +51,9 @@ func (c *Client) GetLogRaw(runID string) (io.ReadCloser, error) {
 // GetLogLineHistory fetches the prior whole-region frames a settled progress
 // bar or multi-line redraw passed through before committing line n. Returns an
 // empty slice when the line has no recorded history.
-func (c *Client) GetLogLineHistory(runID string, n int64) ([][]string, error) {
+func (c *Client) GetLogLineHistory(ctx context.Context, runID string, n int64) ([][]string, error) {
 	path := fmt.Sprintf("/api/runs/%s/log/line/%d/history", runID, n)
-	resp, err := c.doRaw(path)
+	resp, err := c.doRaw(ctx, path)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +79,7 @@ type SearchLogsOptions struct {
 
 // SearchLogs runs an on-demand log search and returns the parsed body. The
 // returned cursor is empty when the scan reached the end of available runs.
-func (c *Client) SearchLogs(taskName string, opts SearchLogsOptions) (server.LogSearchBody, error) {
+func (c *Client) SearchLogs(ctx context.Context, taskName string, opts SearchLogsOptions) (server.LogSearchBody, error) {
 	q := url.Values{}
 	q.Set("q", opts.Query)
 	if opts.Regex {
@@ -97,7 +98,7 @@ func (c *Client) SearchLogs(taskName string, opts SearchLogsOptions) (server.Log
 		q.Set("cursor", opts.Cursor)
 	}
 	path := fmt.Sprintf("/api/tasks/%s/log/search?%s", taskName, q.Encode())
-	resp, err := c.doRaw(path)
+	resp, err := c.doRaw(ctx, path)
 	if err != nil {
 		return server.LogSearchBody{}, err
 	}

@@ -254,6 +254,47 @@ notifiers = ["inapp"]
 	}
 }
 
+// TestValidate_RejectsFailureWithLogDiskPressureKind is a regression test for
+// a route matching on match.kinds = ["log.disk_pressure"] with match.failure =
+// true: bridge.go's MapEvent hardcodes IsFailure: false for every
+// events.LogDiskPressureEvent (no task `failures` policy can override it,
+// unlike a run outcome), so the AND of MatchFailure() and
+// MatchOutcomes("log.disk_pressure") can never be true — the same class of
+// dead-route bug as TestValidate_RejectsFailureWithNeverFailureKind, just for
+// a kind that isn't listed in kinds.NeverFailureKinds.
+func TestValidate_RejectsFailureWithLogDiskPressureKind(t *testing.T) {
+	src := `
+[[route]]
+match = { kinds = ["log.disk_pressure"], failure = true }
+notifiers = ["inapp"]
+`
+	cfg, err := decode([]byte(src), "")
+	require.NoError(t, err)
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "match.failure")
+}
+
+// TestValidate_KeepsRouteAliveWhenOnlyOneKindIsNeverFailure is a regression
+// test for validateRoute over-rejecting an entire route the moment ANY ONE
+// match.kinds token is a never-failure kind. compileRoute ANDs MatchFailure()
+// with MatchOutcomes(kind1, kind2, ...), and MatchOutcomes matches when the
+// event's outcome is any one of the listed kinds (OR semantics across kinds).
+// So kinds = ["succeeded", "failed"] with failure = true is still a live
+// route: it just never fires on the "succeeded" branch, exactly like it never
+// fires on "failed" events that a task's `failures` policy demoted. Only a
+// route whose kinds are *all* never-failure kinds is truly dead.
+func TestValidate_KeepsRouteAliveWhenOnlyOneKindIsNeverFailure(t *testing.T) {
+	src := `
+[[route]]
+match = { kinds = ["succeeded", "failed"], failure = true }
+notifiers = ["inapp"]
+`
+	cfg, err := decode([]byte(src), "")
+	require.NoError(t, err)
+	assert.NoError(t, Validate(cfg), "route can still fire on the failed branch")
+}
+
 func TestParseNotifyToken(t *testing.T) {
 	cases := []struct {
 		in              string

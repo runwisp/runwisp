@@ -4,6 +4,7 @@
 package execlist
 
 import (
+	"context"
 	"sync"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
@@ -226,7 +227,7 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() ([]uikit.ExecListIte
 		var runs []model.Run
 		var total int64
 		var err error
-		runs, total, err = w.client.ListRuns(params)
+		runs, total, err = w.client.ListRuns(context.Background(), params)
 		if err != nil {
 			w.mu.Lock()
 			w.loading = false

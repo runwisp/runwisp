@@ -646,6 +646,7 @@ func buildKnownNotifierSet(seenID map[string]struct{}) map[string]struct{} {
 
 func validateRoute(idx int, r NotificationRoute, known map[string]struct{}) error {
 	scope := fmt.Sprintf("route #%d", idx)
+	allNeverFailure := len(r.Kinds) > 0
 	for _, k := range r.Kinds {
 		if k == kinds.DeliveryFailedKind {
 			return fmt.Errorf("%s match.kinds: %q bypasses the route engine and is delivered to the bell only; a route matching on it can never fire", scope, kinds.DeliveryFailedKind)
@@ -653,9 +654,16 @@ func validateRoute(idx int, r NotificationRoute, known map[string]struct{}) erro
 		if err := requireOneOf(scope+" match.kinds", k, kinds.AllKindStrings, false); err != nil {
 			return err
 		}
-		if r.MatchFailure && slices.Contains(kinds.NeverFailureKinds, k) {
-			return fmt.Errorf("%s: match.failure = true can never be true for match.kinds = %q; drop match.failure or remove %q from match.kinds", scope, k, k)
+		if !slices.Contains(kinds.NeverFailureKinds, k) {
+			allNeverFailure = false
 		}
+	}
+	// MatchOutcomes ORs across match.kinds, so match.failure = true only
+	// dead-ends the whole route when every listed kind can never carry the
+	// classified-failure bit; a mix (e.g. "succeeded", "failed") still fires
+	// on its live branch.
+	if r.MatchFailure && allNeverFailure {
+		return fmt.Errorf("%s: match.failure = true can never be true for match.kinds = %q; drop match.failure or remove those kinds from match.kinds", scope, r.Kinds)
 	}
 	if r.TaskGlob != "" {
 		if _, err := path.Match(r.TaskGlob, ""); err != nil {

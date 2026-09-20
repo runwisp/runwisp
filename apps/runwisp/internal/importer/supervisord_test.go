@@ -161,6 +161,19 @@ stopsignal=INT
 	mustContain(t, out, `stop_signal = "SIGINT"`)
 }
 
+// TestSupervisordStopSignalOutOfAllowlistIsNoted proves that a stopsignal=
+// naming a signal outside model.StopSignals (RunWisp's 7-signal allowlist)
+// either gets flagged with a note or isn't written as an unvalidated
+// stop_signal value — never both silent and invalid, since config.Load's
+// validateStopSignal would reject it anyway.
+func TestSupervisordStopSignalOutOfAllowlistIsNoted(t *testing.T) {
+	res := parseSup(t, "[program:x]\ncommand=/bin/x\nstopsignal=CONT\n")
+	out := res.TOML()
+	if strings.Contains(out, `stop_signal = "SIGCONT"`) && !hasNoteKind(res, NoteKeyUnreadable) {
+		t.Fatalf("stopsignal=CONT written as %q with no note, got notes %+v", "SIGCONT", allNotes(res))
+	}
+}
+
 // TestSupervisordExitCodesDropped pins that supervisord's exitcodes= has no
 // RunWisp equivalent: RunWisp maps exit 0 → success and any non-zero → failed,
 // so a success-code allowlist is dropped with a note rather than translated.

@@ -184,7 +184,13 @@ func (scheduler *Scheduler) Start() (ScheduleResult, error) {
 // Schedules that don't align to 24h (e.g. @every 7h) still spread within their
 // own window but coordinate only approximately.
 func (scheduler *Scheduler) computeJitterPlans() {
-	now := scheduler.now()
+	// Reproject into the configured daemon timezone before calling Next: a
+	// task with no per-task timezone parses to a bare schedule whose Location
+	// is time.Local, and robfig/cron's SpecSchedule.Next falls back to the
+	// input time's own Location() whenever it matches time.Local — silently
+	// evaluating against the host OS zone instead of scheduler.location if we
+	// pass the raw clock reading through. Mirrors catchup.go's now.In(loc).
+	now := scheduler.now().In(scheduler.location)
 	var windows []jitter.Window
 	schedules := make(map[string]cron.Schedule)
 	lengths := make(map[string]time.Duration)
@@ -378,8 +384,15 @@ func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location) {
 	// since the cron loop has already advanced entry.Next — so a misconfigured
 	// window can never push a slot onto or past the next tick. The fire is
 	// submitted to the gate, which starts it at min(when it frees, the slot).
+	// nowLocal (not now) feeds Next: a task with no per-task timezone parses to
+	// a bare schedule whose Location is time.Local, and robfig/cron's
+	// SpecSchedule.Next falls back to the input time's own Location() whenever
+	// it matches time.Local — the raw now carries the host OS zone, not the
+	// configured one, so passing it through would silently clamp against the
+	// wrong timezone. .Sub() is unaffected either way since both operands are
+	// the same absolute instant.
 	if hasJitter {
-		gapLive := plan.schedule.Next(now).Sub(now)
+		gapLive := plan.schedule.Next(nowLocal).Sub(nowLocal)
 		limit := max(gapLive-time.Second, 0)
 		offset := min(plan.offset, limit)
 		window := min(plan.window, limit)

@@ -4,6 +4,7 @@
 package apiclient
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -22,9 +23,9 @@ type RunsParams struct {
 	SortDirection string
 }
 
-func (c *Client) ListTasks() ([]model.TaskResponse, error) {
+func (c *Client) ListTasks(ctx context.Context) ([]model.TaskResponse, error) {
 	var resp server.TasksResponseBody
-	if err := c.doJSON("GET", "/api/tasks", nil, &resp); err != nil {
+	if err := c.doJSON(ctx, "GET", "/api/tasks", nil, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Items, nil
@@ -53,14 +54,14 @@ func encodeRunsParams(params RunsParams) url.Values {
 	return q
 }
 
-func (c *Client) ListRuns(params RunsParams) ([]model.Run, int64, error) {
+func (c *Client) ListRuns(ctx context.Context, params RunsParams) ([]model.Run, int64, error) {
 	path := "/api/runs"
 	if qs := encodeRunsParams(params).Encode(); qs != "" {
 		path += "?" + qs
 	}
 
 	var resp server.RunsResponseBody
-	if err := c.doJSON("GET", path, nil, &resp); err != nil {
+	if err := c.doJSON(ctx, "GET", path, nil, &resp); err != nil {
 		return nil, 0, err
 	}
 	return resp.Items, resp.Total, nil
@@ -68,9 +69,9 @@ func (c *Client) ListRuns(params RunsParams) ([]model.Run, int64, error) {
 
 // ListRunsByTask is a convenience wrapper over ListRuns that scopes the query
 // to a single task via the taskName filter.
-func (c *Client) ListRunsByTask(taskName string, params RunsParams) ([]model.Run, int64, error) {
+func (c *Client) ListRunsByTask(ctx context.Context, taskName string, params RunsParams) ([]model.Run, int64, error) {
 	params.TaskName = taskName
-	return c.ListRuns(params)
+	return c.ListRuns(ctx, params)
 }
 
 // TriggerRun starts a new run of a task, optionally supplying values for the
@@ -81,7 +82,7 @@ func (c *Client) ListRunsByTask(taskName string, params RunsParams) ([]model.Run
 // via declares this client's own provenance ("ui" for the TUI's Run Now, "cli"
 // for the runwisp CLI) so the run history can tell them apart from a raw REST
 // call; pass "" for none.
-func (c *Client) TriggerRun(taskName string, params map[string]*string, via string) (*model.Run, error) {
+func (c *Client) TriggerRun(ctx context.Context, taskName string, params map[string]*string, via string) (*model.Run, error) {
 	var body any
 	if len(params) > 0 {
 		body = map[string]any{"params": params}
@@ -91,63 +92,63 @@ func (c *Client) TriggerRun(taskName string, params map[string]*string, via stri
 		path += "?via=" + url.QueryEscape(via)
 	}
 	var run model.Run
-	if err := c.doJSON("POST", path, body, &run); err != nil {
+	if err := c.doJSON(ctx, "POST", path, body, &run); err != nil {
 		return nil, err
 	}
 	return &run, nil
 }
 
 // RestartService restarts every instance of a service task.
-func (c *Client) RestartService(taskName string) error {
-	return c.doJSON("POST", fmt.Sprintf("/api/tasks/%s/restart", taskName), nil, nil)
+func (c *Client) RestartService(ctx context.Context, taskName string) error {
+	return c.doJSON(ctx, "POST", fmt.Sprintf("/api/tasks/%s/restart", taskName), nil, nil)
 }
 
 // StopService stops a service for the lifetime of the daemon.
-func (c *Client) StopService(taskName string) error {
-	return c.doJSON("POST", fmt.Sprintf("/api/tasks/%s/stop", taskName), nil, nil)
+func (c *Client) StopService(ctx context.Context, taskName string) error {
+	return c.doJSON(ctx, "POST", fmt.Sprintf("/api/tasks/%s/stop", taskName), nil, nil)
 }
 
 // StopRun sends a stop signal to a running execution.
-func (c *Client) StopRun(runID string) error {
-	return c.doJSON("POST", fmt.Sprintf("/api/runs/%s/stop", runID), nil, nil)
+func (c *Client) StopRun(ctx context.Context, runID string) error {
+	return c.doJSON(ctx, "POST", fmt.Sprintf("/api/runs/%s/stop", runID), nil, nil)
 }
 
 // GetRun fetches a run by its (globally unique) ULID — the endpoint is
 // task-scope-free.
-func (c *Client) GetRun(runID string) (*model.Run, error) {
+func (c *Client) GetRun(ctx context.Context, runID string) (*model.Run, error) {
 	var run model.Run
-	if err := c.doJSON("GET", fmt.Sprintf("/api/runs/%s", runID), nil, &run); err != nil {
+	if err := c.doJSON(ctx, "GET", fmt.Sprintf("/api/runs/%s", runID), nil, &run); err != nil {
 		return nil, err
 	}
 	return &run, nil
 }
 
-func (c *Client) DeleteRun(runID string) error {
-	return c.doJSON("DELETE", fmt.Sprintf("/api/runs/%s", runID), nil, nil)
+func (c *Client) DeleteRun(ctx context.Context, runID string) error {
+	return c.doJSON(ctx, "DELETE", fmt.Sprintf("/api/runs/%s", runID), nil, nil)
 }
 
 // BulkDeleteRuns soft-deletes every run matched by sel and returns how many rows
 // were affected. The deletion is reversible with BulkRestoreRuns.
-func (c *Client) BulkDeleteRuns(sel model.RunSelector) (int, error) {
-	return c.bulkAffected("/api/runs/bulk/delete", sel)
+func (c *Client) BulkDeleteRuns(ctx context.Context, sel model.RunSelector) (int, error) {
+	return c.bulkAffected(ctx, "/api/runs/bulk/delete", sel)
 }
 
 // BulkRestoreRuns clears the soft-delete marker on every run matched by sel —
 // the inverse of BulkDeleteRuns. Returns how many rows were affected.
-func (c *Client) BulkRestoreRuns(sel model.RunSelector) (int, error) {
-	return c.bulkAffected("/api/runs/bulk/restore", sel)
+func (c *Client) BulkRestoreRuns(ctx context.Context, sel model.RunSelector) (int, error) {
+	return c.bulkAffected(ctx, "/api/runs/bulk/restore", sel)
 }
 
 // BulkCancelRuns signals a stop to every running execution matched by sel and
 // returns how many were signalled.
-func (c *Client) BulkCancelRuns(sel model.RunSelector) (int, error) {
-	return c.bulkAffected("/api/runs/bulk/stop", sel)
+func (c *Client) BulkCancelRuns(ctx context.Context, sel model.RunSelector) (int, error) {
+	return c.bulkAffected(ctx, "/api/runs/bulk/stop", sel)
 }
 
 // bulkAffected posts a selector to a bulk endpoint that reports an affected count.
-func (c *Client) bulkAffected(path string, sel model.RunSelector) (int, error) {
+func (c *Client) bulkAffected(ctx context.Context, path string, sel model.RunSelector) (int, error) {
 	var resp server.BulkAffectedBody
-	if err := c.doJSON("POST", path, sel, &resp); err != nil {
+	if err := c.doJSON(ctx, "POST", path, sel, &resp); err != nil {
 		return 0, err
 	}
 	return resp.Affected, nil
@@ -155,9 +156,9 @@ func (c *Client) bulkAffected(path string, sel model.RunSelector) (int, error) {
 
 // BulkRerunRuns triggers a fresh run for each run matched by sel and returns
 // references to the runs it spawned.
-func (c *Client) BulkRerunRuns(sel model.RunSelector) ([]server.TriggeredRunRef, error) {
+func (c *Client) BulkRerunRuns(ctx context.Context, sel model.RunSelector) ([]server.TriggeredRunRef, error) {
 	var resp server.BulkRerunBody
-	if err := c.doJSON("POST", "/api/runs/bulk/rerun", sel, &resp); err != nil {
+	if err := c.doJSON(ctx, "POST", "/api/runs/bulk/rerun", sel, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Triggered, nil

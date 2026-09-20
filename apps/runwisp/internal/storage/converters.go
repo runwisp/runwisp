@@ -6,6 +6,7 @@ package storage
 import (
 	"encoding/json"
 	"log/slog"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
@@ -69,10 +70,10 @@ func runToCreateParams(r *model.Run) sqlcdb.CreateRunParams {
 		Status:        r.Status,
 		EndReason:     r.EndReason,
 		ExitCode:      r.ExitCode,
-		StartedAt:     r.StartedAt,
-		EndedAt:       r.EndedAt,
+		StartedAt:     utcPtr(r.StartedAt),
+		EndedAt:       utcPtr(r.EndedAt),
 		TriggeredBy:   r.TriggeredBy,
-		CreatedAt:     r.CreatedAt,
+		CreatedAt:     r.CreatedAt.UTC(),
 		RetryAttempt:  r.RetryAttempt,
 		RetryOfRunID:  r.RetryOfRunID,
 		InstanceIndex: r.InstanceIndex,
@@ -89,10 +90,10 @@ func runToUpdateParams(r *model.Run) sqlcdb.UpdateRunParams {
 		Status:        r.Status,
 		EndReason:     r.EndReason,
 		ExitCode:      r.ExitCode,
-		StartedAt:     r.StartedAt,
-		EndedAt:       r.EndedAt,
+		StartedAt:     utcPtr(r.StartedAt),
+		EndedAt:       utcPtr(r.EndedAt),
 		TriggeredBy:   r.TriggeredBy,
-		CreatedAt:     r.CreatedAt,
+		CreatedAt:     r.CreatedAt.UTC(),
 		RetryAttempt:  r.RetryAttempt,
 		RetryOfRunID:  r.RetryOfRunID,
 		InstanceIndex: r.InstanceIndex,
@@ -100,6 +101,21 @@ func runToUpdateParams(r *model.Run) sqlcdb.UpdateRunParams {
 		IsFailure:     boolToInt64(r.IsFailure),
 		ID:            r.ID,
 	}
+}
+
+// utcPtr normalizes a nullable time.Time to UTC before it reaches the SQL
+// layer, mirroring nullableTime's nil-passthrough on the write side. Without
+// this, CreatedAt/StartedAt/EndedAt would persist with whatever offset the
+// caller's clock happened to use, and modernc.org/sqlite's _time_format=sqlite
+// writes that offset verbatim instead of normalizing it — so plain TEXT
+// comparisons (created_at >= ?) sort inconsistently across offsets even when
+// the underlying instants are correctly ordered.
+func utcPtr(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	u := t.UTC()
+	return &u
 }
 
 // boolToInt64 encodes the is_failure classification bit for its INTEGER column

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -19,11 +20,11 @@ import (
 )
 
 // runDefault detects a running daemon or spawns one, then opens the TUI.
-func runDefault(f Flags) error {
+func runDefault(ctx context.Context, f Flags) error {
 	client := apiclient.NewUnix(localAPISocketPath(f))
 
-	if client.HealthCheck() == nil {
-		err := runTUIConnect(client, f)
+	if client.HealthCheck(ctx) == nil {
+		err := runTUIConnect(ctx, client, f)
 		if err == nil {
 			return nil
 		}
@@ -48,10 +49,10 @@ func runDefault(f Flags) error {
 		if err := waitForDaemon(client, logPath, 30*time.Second, f); err != nil {
 			return err
 		}
-		return runTUIConnect(client, f)
+		return runTUIConnect(ctx, client, f)
 	}
 
-	spawn, portErr := ensurePortFreeOrHandle(f)
+	spawn, portErr := ensurePortFreeOrHandle(ctx, f)
 	if portErr != nil || !spawn {
 		return portErr
 	}
@@ -65,12 +66,12 @@ func runDefault(f Flags) error {
 		return err
 	}
 
-	return runTUIConnect(client, f)
+	return runTUIConnect(ctx, client, f)
 }
 
 // ensurePortFreeOrHandle probes the bind port before a spawn.
 // Returns spawn=true when the caller should launch its own daemon.
-func ensurePortFreeOrHandle(f Flags) (spawn bool, err error) {
+func ensurePortFreeOrHandle(ctx context.Context, f Flags) (spawn bool, err error) {
 	bindErr := probePortAvailable(f.Host, f.Port)
 	if bindErr == nil {
 		return true, nil
@@ -84,7 +85,7 @@ func ensurePortFreeOrHandle(f Flags) (spawn bool, err error) {
 	}
 	switch choice {
 	case conflictConnect:
-		return false, runTUIConnect(apiclient.NewUnix(info.SocketPath), f)
+		return false, runTUIConnect(ctx, apiclient.NewUnix(info.SocketPath), f)
 	case conflictStopAndLaunch:
 		if stopErr := stopDaemonByInstance(f, info); stopErr != nil {
 			return false, stopErr
@@ -96,9 +97,9 @@ func ensurePortFreeOrHandle(f Flags) (spawn bool, err error) {
 }
 
 // runTUIConnect launches the TUI against a local daemon via Unix socket.
-func runTUIConnect(client *apiclient.Client, f Flags) error {
-	return launchConnectedTUI(client, tuiConnectMode{
-		shutdownFunc: func() error { return shutdownConnectedDaemon(client, f) },
+func runTUIConnect(ctx context.Context, client *apiclient.Client, f Flags) error {
+	return launchConnectedTUI(ctx, client, tuiConnectMode{
+		shutdownFunc: func() error { return shutdownConnectedDaemon(ctx, client, f) },
 	})
 }
 
@@ -107,8 +108,8 @@ func runTUIConnect(client *apiclient.Client, f Flags) error {
 // trusting the local --data flag: `runwisp tui --socket <path>` connects by
 // socket alone, so f.DataDir may name a different daemon (or none), and
 // signalling it would leave the connected daemon running.
-func shutdownConnectedDaemon(client *apiclient.Client, f Flags) error {
-	info, err := client.GetInstanceInfo()
+func shutdownConnectedDaemon(ctx context.Context, client *apiclient.Client, f Flags) error {
+	info, err := client.GetInstanceInfo(ctx)
 	if err != nil {
 		return fmt.Errorf("locate the connected daemon to stop it: %w", err)
 	}
@@ -132,14 +133,14 @@ type tuiConnectMode struct {
 
 // launchConnectedTUI is the shared tail for local socket and remote HTTP paths.
 // Pulls daemon info, resolves Web UI base URL, fills in transport-specific bits, and runs TUI.
-func launchConnectedTUI(client *apiclient.Client, mode tuiConnectMode) error {
+func launchConnectedTUI(ctx context.Context, client *apiclient.Client, mode tuiConnectMode) error {
 	// The TUI needs a real terminal; without one it would hang on stdin. Decline
 	// clearly instead. Any spawned background daemon keeps running headless.
 	if !isInteractiveTerminal() {
 		return errors.New("no interactive terminal; the daemon runs headless here — use 'runwisp cloud' / 'runwisp daemon', or run 'runwisp tui' from a real terminal")
 	}
 
-	info, err := client.GetDaemonInfo()
+	info, err := client.GetDaemonInfo(ctx)
 	if err != nil {
 		slog.Warn("Could not fetch daemon info", "err", err)
 	}
@@ -155,7 +156,7 @@ func launchConnectedTUI(client *apiclient.Client, mode tuiConnectMode) error {
 		// the field based on the daemon info it already fetched. A remote
 		// operator already entered the password and the endpoint is local-only,
 		// so we skip it there.
-		if creds, credErr := client.GetLocalCredentials(); credErr == nil && creds != nil {
+		if creds, credErr := client.GetLocalCredentials(ctx); credErr == nil && creds != nil {
 			startupInfo.Password = creds.Password
 			startupInfo.PasswordEphemeral = creds.Ephemeral
 		} else if credErr != nil &&
@@ -165,7 +166,9 @@ func launchConnectedTUI(client *apiclient.Client, mode tuiConnectMode) error {
 		}
 	}
 
-	_, tuiErr := tui.StartTUI(startupInfo, client, nil, mode.shutdownFunc, client.CreateLaunchTicket)
+	_, tuiErr := tui.StartTUI(startupInfo, client, nil, mode.shutdownFunc, func() (string, error) {
+		return client.CreateLaunchTicket(ctx)
+	})
 	return tuiErr
 }
 

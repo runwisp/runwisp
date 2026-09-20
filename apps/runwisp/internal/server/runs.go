@@ -199,6 +199,25 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 		Summary:     "Download the run's full log as text/plain",
 		Description: "Concatenates the rotated-away segment (`.log.prev`) and current segment so a single download captures the operator-visible byte stream.",
 		Tags:        []string{"Logs"},
+		// humaGetLogRaw returns a huma.StreamResponse (see logs.go) so it can
+		// copy the log straight to the response writer instead of buffering it;
+		// huma has no field to reflect a schema/content-type from in that case,
+		// so both are declared explicitly here, the same way sse.Register
+		// documents its own streamed responses. `format: binary` is the
+		// standard OpenAPI way to describe an opaque byte stream body.
+		Responses: map[string]*huma.Response{
+			"200": {
+				Description: "The full log as plain text.",
+				Content: map[string]*huma.MediaType{
+					"text/plain; charset=utf-8": {
+						Schema: &huma.Schema{
+							Type:   huma.TypeString,
+							Format: "binary",
+						},
+					},
+				},
+			},
+		},
 	}, srv.humaGetLogRaw)
 
 	huma.Register(protectedAPI, huma.Operation{
@@ -399,6 +418,9 @@ func (srv *Server) registerAppStreamSSE(api huma.API) {
 // connection until the client disconnects. Folding these onto a single stream
 // is what keeps a browser tab to one EventSource instead of three.
 func (srv *Server) appStreamHandler(ctx context.Context, input *AppStreamInput, send sse.Sender) {
+	ctx, cancelShutdown := srv.withShutdown(ctx)
+	defer cancelShutdown()
+
 	release, ok := srv.streams.acquire(ctx)
 	if !ok {
 		// huma owns the response writer here, so we communicate refusal via

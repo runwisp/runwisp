@@ -170,7 +170,7 @@ func (fx fixture) build(t *testing.T) (*Cutover, *fakeInstaller, string) {
 		},
 		Trusted:       func(string) error { return nil },
 		DaemonRunning: func() bool { return fx.daemonRunning },
-		Reload:        func() error { inst.calls = append(inst.calls, "reload"); return nil },
+		Reload:        func(context.Context) error { inst.calls = append(inst.calls, "reload"); return nil },
 		WriteConfig: func(path string, patterns []string) error {
 			inst.calls = append(inst.calls, "write-config")
 			return os.WriteFile(path, []byte(config.CronStarterConfig(patterns)), 0o644)

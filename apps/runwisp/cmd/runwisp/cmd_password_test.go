@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -20,7 +21,7 @@ type fakeCredentialsClient struct {
 	err   error
 }
 
-func (f *fakeCredentialsClient) GetLocalCredentials() (*server.LocalCredentialsBody, error) {
+func (f *fakeCredentialsClient) GetLocalCredentials(context.Context) (*server.LocalCredentialsBody, error) {
 	return f.creds, f.err
 }
 
@@ -30,7 +31,7 @@ func TestRunPassword_PrintsPasswordToStdout(t *testing.T) {
 	}
 	var stdout, stderr bytes.Buffer
 
-	code := runPassword(&stdout, &stderr, client, "/tmp/runwisp.sock")
+	code := runPassword(t.Context(), &stdout, &stderr, client, "/tmp/runwisp.sock")
 	assert.Equal(t, passwordExitOK, code)
 	assert.Equal(t, "Kj2x9pQ7mN4vL8rT5wYz1c\n", stdout.String())
 	assert.Empty(t, stderr.String())
@@ -40,7 +41,7 @@ func TestRunPassword_EnvVarRefusal(t *testing.T) {
 	client := &fakeCredentialsClient{err: apiclient.ErrLocalCredentialsUnavailable}
 	var stdout, stderr bytes.Buffer
 
-	code := runPassword(&stdout, &stderr, client, "/tmp/runwisp.sock")
+	code := runPassword(t.Context(), &stdout, &stderr, client, "/tmp/runwisp.sock")
 	assert.Equal(t, passwordExitRefused, code)
 	assert.Empty(t, stdout.String(),
 		"refusal path must never write the password (or anything) to stdout")
@@ -52,7 +53,7 @@ func TestRunPassword_AuthDisabled(t *testing.T) {
 	client := &fakeCredentialsClient{err: apiclient.ErrAuthDisabled}
 	var stdout, stderr bytes.Buffer
 
-	code := runPassword(&stdout, &stderr, client, "/tmp/runwisp.sock")
+	code := runPassword(t.Context(), &stdout, &stderr, client, "/tmp/runwisp.sock")
 	assert.Equal(t, passwordExitNoAuth, code,
 		"no-auth must exit with its own code, never the env-var refusal code")
 	assert.Empty(t, stdout.String(),
@@ -65,7 +66,7 @@ func TestRunPassword_DaemonUnreachable(t *testing.T) {
 	client := &fakeCredentialsClient{err: errors.New("request failed: dial unix: no such file")}
 	var stdout, stderr bytes.Buffer
 
-	code := runPassword(&stdout, &stderr, client, "/tmp/runwisp.sock")
+	code := runPassword(t.Context(), &stdout, &stderr, client, "/tmp/runwisp.sock")
 	assert.Equal(t, passwordExitUnreachable, code)
 	assert.Empty(t, stdout.String())
 	assert.Contains(t, stderr.String(), "daemon not running at /tmp/runwisp.sock")
@@ -77,7 +78,7 @@ func TestRunPassword_Internal403(t *testing.T) {
 	}
 	var stdout, stderr bytes.Buffer
 
-	code := runPassword(&stdout, &stderr, client, "/tmp/runwisp.sock")
+	code := runPassword(t.Context(), &stdout, &stderr, client, "/tmp/runwisp.sock")
 	assert.Equal(t, passwordExitInternalGate, code)
 	assert.Empty(t, stdout.String())
 	assert.Contains(t, stderr.String(), "not local-trusted")
@@ -89,7 +90,7 @@ func TestRunPassword_UnexpectedHTTPStatusFallsThrough(t *testing.T) {
 	}
 	var stdout, stderr bytes.Buffer
 
-	code := runPassword(&stdout, &stderr, client, "/tmp/runwisp.sock")
+	code := runPassword(t.Context(), &stdout, &stderr, client, "/tmp/runwisp.sock")
 	assert.Equal(t, passwordExitUnexpectedErr, code)
 	assert.Empty(t, stdout.String())
 	assert.True(t, strings.Contains(stderr.String(), "unexpected error"),

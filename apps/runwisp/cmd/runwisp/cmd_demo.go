@@ -151,21 +151,21 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 	}
 
 	if demoFlags.NoTUI {
-		if code := reportDemoNoTUI(os.Stdout, os.Stderr, client, f); code != passwordExitOK {
+		if code := reportDemoNoTUI(cmd.Context(), os.Stdout, os.Stderr, client, f); code != passwordExitOK {
 			os.Exit(code)
 		}
 		return nil
 	}
-	return runTUIConnect(client, f)
+	return runTUIConnect(cmd.Context(), client, f)
 }
 
 // reportDemoNoTUI leaves the background daemon running and prints its Web UI password to stdout.
 // This is the --no-tui path that mirrors the TUI's "Keep Running" quit. Returns a passwordExit* code.
-func reportDemoNoTUI(stdout, stderr io.Writer, client credentialsFetcher, f Flags) int {
+func reportDemoNoTUI(ctx context.Context, stdout, stderr io.Writer, client credentialsFetcher, f Flags) int {
 	fmt.Fprintf(stderr, "RunWisp demo is running at %s\n", localBindURL(tlsScheme(config.Daemon{TLS: config.TLSModeOff}, f.Host), f.Host, f.Port))
 	fmt.Fprintf(stderr, "Stop it with: runwisp stop --data %s\n", f.DataDir)
 	fmt.Fprintln(stderr, "Web UI password:")
-	return runPassword(stdout, stderr, client, localAPISocketPath(f))
+	return runPassword(ctx, stdout, stderr, client, localAPISocketPath(f))
 }
 
 // setupDemoDir writes the embedded config, creates the data/log dirs, and either

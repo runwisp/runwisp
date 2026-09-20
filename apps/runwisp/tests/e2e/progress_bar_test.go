@@ -37,7 +37,7 @@ func TestProgressBarCommitsFinalFrameAndStreamsRegion(t *testing.T) {
 
 	client := socketClient(t, daemon.dataDir)
 
-	triggered, err := client.TriggerRun(taskName, nil, "")
+	triggered, err := client.TriggerRun(t.Context(), taskName, nil, "")
 	require.NoError(t, err, "TriggerRun should succeed")
 	require.NotEmpty(t, triggered.ID)
 
@@ -87,7 +87,7 @@ func TestProgressBarExposesFrameHistory(t *testing.T) {
 
 	client := socketClient(t, daemon.dataDir)
 
-	triggered, err := client.TriggerRun(taskName, nil, "")
+	triggered, err := client.TriggerRun(t.Context(), taskName, nil, "")
 	require.NoError(t, err, "TriggerRun should succeed")
 	run := waitForListedRun(t, client, taskName, triggered.ID, 5*time.Second)
 
@@ -98,7 +98,7 @@ func TestProgressBarExposesFrameHistory(t *testing.T) {
 	anchor := waitForAnchorLine(t, client, run.ID, "progress:", 10*time.Second)
 	require.Greater(t, anchor.FrameCount, 0, "the committed bar line should advertise frame history")
 
-	frames, err := client.GetLogLineHistory(run.ID, anchor.N)
+	frames, err := client.GetLogLineHistory(t.Context(), run.ID, anchor.N)
 	require.NoError(t, err, "history endpoint should succeed")
 	require.NotEmpty(t, frames, "expected prior frames for the settled bar")
 
@@ -131,7 +131,7 @@ func TestProgressBarExposesFrameHistory(t *testing.T) {
 	// Deleting the run removes the container along with the rest of the log
 	// files. Deletion is soft: the purger reclaims on-disk files after its
 	// TTL + sweep (≈9s), so allow generous slack here.
-	require.NoError(t, client.DeleteRun(run.ID))
+	require.NoError(t, client.DeleteRun(t.Context(), run.ID))
 	require.Eventually(t, func() bool {
 		_, err := os.Stat(containerPath)
 		return os.IsNotExist(err)
@@ -144,7 +144,7 @@ func waitForAnchorLine(t *testing.T, client *apiclient.Client, runID, substr str
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		page, err := client.GetLogPage(runID, 0, 0)
+		page, err := client.GetLogPage(t.Context(), runID, 0, 0)
 		if err == nil {
 			for _, l := range page.Lines {
 				if strings.Contains(l.Text, substr) && l.FrameCount > 0 {
@@ -164,7 +164,7 @@ func waitForRunEnded(t *testing.T, client *apiclient.Client, runID string, timeo
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		run, err := client.GetRun(runID)
+		run, err := client.GetRun(t.Context(), runID)
 		if err == nil && run.Status == model.PhaseEnded {
 			return
 		}
@@ -223,7 +223,7 @@ func waitForLogContains(t *testing.T, client *apiclient.Client, runID, want stri
 	deadline := time.Now().Add(timeout)
 	var last string
 	for time.Now().Before(deadline) {
-		rc, err := client.GetLogRaw(runID)
+		rc, err := client.GetLogRaw(t.Context(), runID)
 		if err == nil {
 			b, readErr := io.ReadAll(rc)
 			rc.Close()

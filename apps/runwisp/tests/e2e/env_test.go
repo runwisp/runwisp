@@ -65,7 +65,7 @@ INLINE_SECRET = "%s"
 
 	client := socketClient(t, daemon.dataDir)
 
-	triggered, err := client.TriggerRun(taskName, nil, "")
+	triggered, err := client.TriggerRun(t.Context(), taskName, nil, "")
 	require.NoError(t, err)
 	require.NotEmpty(t, triggered.ID)
 
@@ -95,7 +95,7 @@ INLINE_SECRET = "%s"
 	// file paths, but never secrets keys or values. Reach for the typed
 	// response *and* the raw JSON so a future `json:"-"` regression on
 	// Task.Secrets is caught at the wire level.
-	tasks, err := client.ListTasks()
+	tasks, err := client.ListTasks(t.Context())
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
 	assert.Equal(t, "from-task", tasks[0].Env["TASK"], "inline env wins over env_file")

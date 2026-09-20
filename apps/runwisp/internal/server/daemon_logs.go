@@ -25,6 +25,9 @@ func (srv *Server) registerDaemonLogSSE(api huma.API) {
 }
 
 func (srv *Server) sseDaemonLogHandler(ctx context.Context, _ *struct{}, send sse.Sender) {
+	ctx, cancelShutdown := srv.withShutdown(ctx)
+	defer cancelShutdown()
+
 	release, ok := srv.streams.acquire(ctx)
 	if !ok {
 		return

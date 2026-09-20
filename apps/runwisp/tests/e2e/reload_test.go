@@ -57,7 +57,7 @@ func writeReloadConfig(t *testing.T, path, body string) {
 
 func taskNames(t *testing.T, client *apiclient.Client) []string {
 	t.Helper()
-	tasks, err := client.ListTasks()
+	tasks, err := client.ListTasks(t.Context())
 	require.NoError(t, err)
 	names := make([]string, 0, len(tasks))
 	for _, task := range tasks {
@@ -136,7 +136,7 @@ func TestReloadViaSIGHUP(t *testing.T) {
 	waitForTaskNames(t, client, []string{"fresh", "keep"})
 
 	// SIGHUP is a reload, not a shutdown: the daemon must still be serving.
-	assert.NoError(t, client.HealthCheck(), "SIGHUP must not stop the daemon")
+	assert.NoError(t, client.HealthCheck(t.Context()), "SIGHUP must not stop the daemon")
 }
 
 // TestReloadRejectsInvalidConfig confirms validate-first atomicity: a config

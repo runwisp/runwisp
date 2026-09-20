@@ -31,6 +31,7 @@ func serveServiceSocket(t *testing.T, mux http.Handler) (Flags, *bytes.Buffer, *
 	t.Cleanup(func() { lookupProcessName = prev })
 
 	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
 	buf := &bytes.Buffer{}
 	cmd.SetOut(buf)
 	return f, buf, cmd
@@ -39,6 +40,7 @@ func serveServiceSocket(t *testing.T, mux http.Handler) (Flags, *bytes.Buffer, *
 func TestControlService_NoDaemonRunning(t *testing.T) {
 	t.Parallel()
 	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
 	cmd.SetOut(&bytes.Buffer{})
 	f := Flags{DataDir: testutil.ShortTempDir(t)}
 

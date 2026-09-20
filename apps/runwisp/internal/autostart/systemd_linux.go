@@ -499,7 +499,10 @@ func (s *systemdInstaller) EnsurePasswordDropIn(ctx context.Context, opts Instal
 		return "", false, err
 	}
 
-	content := fmt.Sprintf("%s\n[Service]\nEnvironment=\"RUNWISP_PASSWORD=%s\"\n", ManagedMarker, password)
+	content, err := envDropInContent(map[string]string{"RUNWISP_PASSWORD": password})
+	if err != nil {
+		return "", false, err
+	}
 	if err := s.deps.FS.WriteFile(path, []byte(content), 0o600); err != nil {
 		return "", false, fmt.Errorf("write password drop-in %s: %w", path, err)
 	}

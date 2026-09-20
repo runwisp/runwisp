@@ -150,7 +150,7 @@ func TestRunExec_DaemonFlagRequiresDaemon(t *testing.T) {
 	runFlags.Daemon = true
 	t.Cleanup(func() { runFlags.Daemon = origFlag })
 
-	exitCode, err := runExec("anything", Flags{DataDir: t.TempDir()})
+	exitCode, err := runExec(t.Context(), "anything", Flags{DataDir: t.TempDir()})
 	assert.Equal(t, 0, exitCode)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--daemon was set")
@@ -166,7 +166,7 @@ func TestRunExec_StandaloneFlagForbidsDaemon(t *testing.T) {
 	runFlags.Standalone = true
 	t.Cleanup(func() { runFlags.Standalone = origFlag })
 
-	exitCode, err := runExec("anything", Flags{DataDir: dir})
+	exitCode, err := runExec(t.Context(), "anything", Flags{DataDir: dir})
 	assert.Equal(t, 0, exitCode)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--standalone was set")
@@ -178,7 +178,7 @@ func TestRunExecCLI_MutuallyExclusiveFlags(t *testing.T) {
 	t.Cleanup(func() { runFlags.Daemon, runFlags.Standalone = origDaemon, origStandalone })
 
 	var buf bytes.Buffer
-	exitCode, err := runTaskCLI(&buf, "anything", Flags{DataDir: t.TempDir()})
+	exitCode, err := runTaskCLI(t.Context(), &buf, "anything", Flags{DataDir: t.TempDir()})
 	assert.Equal(t, 0, exitCode)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mutually exclusive")
@@ -191,7 +191,7 @@ func TestRunExecCLI_JSONFlagEmitsErrorDocOnFailure(t *testing.T) {
 	t.Cleanup(func() { runFlags.JSON = origJSON })
 
 	var buf bytes.Buffer
-	_, err := runTaskCLI(&buf, "missing", Flags{CfgFile: "/does/not/exist/runwisp.toml", DataDir: t.TempDir()})
+	_, err := runTaskCLI(t.Context(), &buf, "missing", Flags{CfgFile: "/does/not/exist/runwisp.toml", DataDir: t.TempDir()})
 	require.Error(t, err)
 
 	var doc runJSONDoc
@@ -271,7 +271,7 @@ func TestRunExecStandalone_BadConfigFile(t *testing.T) {
 func TestRunExecViaDaemon_DaemonUnreachable(t *testing.T) {
 	t.Parallel()
 	// No socket created — apiclient.NewUnix will fail HealthCheck.
-	exitCode, err := runExecViaDaemon("anything", Flags{DataDir: t.TempDir()})
+	exitCode, err := runExecViaDaemon(t.Context(), "anything", Flags{DataDir: t.TempDir()})
 	assert.Equal(t, 0, exitCode)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "daemon is not reachable")

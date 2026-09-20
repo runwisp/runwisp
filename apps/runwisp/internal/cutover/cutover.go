@@ -97,7 +97,7 @@ type Deps struct {
 	// started and reload into a socket that is not accepting connections yet.
 	DaemonRunning func() bool
 	// Reload hands the held jobs to a daemon that was already running.
-	Reload func() error
+	Reload func(ctx context.Context) error
 }
 
 // Options are the operator's answers that aren't part of the unit description.

@@ -357,7 +357,7 @@ func systemdApplyServiceKeys(b *block, svc *systemdSection, ref itemRef, kind mo
 		case "EnvironmentFile":
 			// Emitted once, below, so multiple files can be reported together.
 		case "KillSignal":
-			b.set("stop_signal", tomlString(normalizeSignal(kv.value)))
+			systemdApplyKillSignal(b, ref, kv.key, kv.value)
 		case "TimeoutStopSec", "TimeoutSec":
 			if d, ok := systemdSeconds(kv.value); ok {
 				b.set("graceful_stop", tomlString(d))
@@ -407,6 +407,17 @@ func systemdNoteDropped(ref itemRef, dropped []string, sawSandbox, sawSocket boo
 			"these systemd directives have no RunWisp equivalent and were dropped: "+
 				strings.Join(dropped, ", ")+".")
 	}
+}
+
+// systemdApplyKillSignal maps KillSignal= to stop_signal, noting anything
+// outside RunWisp's allowlist instead of writing an invalid value.
+func systemdApplyKillSignal(b *block, ref itemRef, key, value string) {
+	canonical, ok := normalizeSignal(value)
+	if !ok {
+		ref.note(NoteKeyUnreadable, key+"="+value+" isn't a signal RunWisp can read, so it was dropped.")
+		return
+	}
+	b.set("stop_signal", tomlString(canonical))
 }
 
 func systemdApplyUser(b *block, svc *systemdSection) {

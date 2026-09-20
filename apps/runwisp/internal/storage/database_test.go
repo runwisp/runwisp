@@ -660,6 +660,51 @@ func TestQueryRunsNewGates(t *testing.T) {
 	}))
 }
 
+// TestListRuns_CreatedAfterFilterAcrossTimezoneOffsets exercises the
+// created_at range gate (shared by QueryRuns/CountRunsFiltered via
+// buildRunFilterArgs) with a non-UTC offset on the stored row, which is how a
+// real daemon persists CreatedAt (converters.go never normalizes to UTC
+// before insert, and nullableTime in run_selector.go never normalizes the
+// filter bound either). SQLite's created_at >= ? is a plain TEXT comparison
+// (see runs.sql: no julianday()/strftime() wrapping, unlike the duration
+// sort), so two timestamps naming the same or a later absolute instant can
+// still compare as "less than" if one carries a numerically smaller offset
+// digit sequence.
+func TestListRuns_CreatedAfterFilterAcrossTimezoneOffsets(t *testing.T) {
+	ctx := t.Context()
+	db := setupTestDB(t)
+	defer db.Close()
+
+	est := time.FixedZone("EST", -4*60*60)
+	// Wall clock 2026-09-18 20:00:00-04:00 == 2026-09-19T00:00:00Z.
+	createdAt := time.Date(2026, 9, 18, 20, 0, 0, 0, est)
+
+	run := &model.Run{
+		ID:          ulid.Make().String(),
+		TaskName:    "tz-task",
+		Status:      model.PhaseEnded,
+		EndReason:   model.EndReasonPtr(model.ReasonSuccess),
+		TriggeredBy: model.TriggeredByAPI,
+		CreatedAt:   createdAt,
+	}
+	require.NoError(t, db.CreateRun(ctx, run))
+
+	// 30 minutes before the run's absolute instant, expressed in UTC.
+	createdAfter := time.Date(2026, 9, 18, 23, 30, 0, 0, time.UTC)
+	require.True(t, createdAt.After(createdAfter), "test setup: run must be chronologically after the bound")
+
+	filter := model.RunFilter{CreatedAfter: &createdAfter}
+
+	count, err := db.CountRunsFiltered(ctx, filter)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count, "run's absolute instant is after createdAfter, so it must be counted")
+
+	runs, err := db.QueryRuns(ctx, RunQuery{Filter: filter, Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, runs, 1, "run's absolute instant is after createdAfter, so it must be returned")
+	assert.Equal(t, run.ID, runs[0].ID)
+}
+
 func intPtr(n int) *int { return &n }
 
 // setupFullTestDB returns the full Database interface (includes PendingLogUploadRepository).

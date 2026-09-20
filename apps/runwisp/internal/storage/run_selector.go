@@ -47,12 +47,17 @@ func nullable(v string) interface{} {
 }
 
 // nullableTime / nullableInt map the unset pointer to a nil gate; a present
-// value boxes through unchanged so the comparison predicate applies.
+// value boxes through unchanged so the comparison predicate applies. Time
+// bounds are normalized to UTC so the SQL gate's plain TEXT comparison
+// (created_at >= ?) lines up with the UTC-normalized values written by
+// converters.go's utcPtr — otherwise a filter bound built with a different
+// offset than the stored row could compare incorrectly even when the two
+// instants are correctly ordered.
 func nullableTime(t *time.Time) interface{} {
 	if t == nil {
 		return nil
 	}
-	return *t
+	return t.UTC()
 }
 
 func nullableInt(n *int) interface{} {

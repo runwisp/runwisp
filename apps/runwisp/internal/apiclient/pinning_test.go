@@ -27,7 +27,7 @@ func TestNewPinned_RecordsPinOnFirstUse(t *testing.T) {
 
 	store := newFakeStore()
 	c := NewPinned(srv.URL, "", store)
-	if err := c.HealthCheck(); err != nil {
+	if err := c.HealthCheck(t.Context()); err != nil {
 		t.Fatalf("first connect should succeed (TOFU): %v", err)
 	}
 
@@ -37,7 +37,7 @@ func TestNewPinned_RecordsPinOnFirstUse(t *testing.T) {
 	}
 
 	// A second connection with the same cert still succeeds.
-	if err := c.HealthCheck(); err != nil {
+	if err := c.HealthCheck(t.Context()); err != nil {
 		t.Fatalf("matching pin should still connect: %v", err)
 	}
 }
@@ -53,7 +53,7 @@ func TestNewPinned_RejectsChangedCert(t *testing.T) {
 	store := &fakeStore{m: map[string]string{NormalizeBaseURL(srv.URL): "00deadbeef"}}
 	c := NewPinned(srv.URL, "", store)
 
-	err := c.HealthCheck()
+	err := c.HealthCheck(t.Context())
 	if err == nil {
 		t.Fatal("expected a pin mismatch error, got nil")
 	}

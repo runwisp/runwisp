@@ -56,7 +56,7 @@ params = [
 	client := socketClient(t, daemon.dataDir)
 
 	projectID, source, region, force := "acme", "/tmp/some dir; rm -rf /", "eu", "true"
-	triggered, err := client.TriggerRun(taskName, map[string]*string{
+	triggered, err := client.TriggerRun(t.Context(), taskName, map[string]*string{
 		"PROJECT_ID": &projectID,
 		"source":     &source,
 		"--region":   &region,
@@ -88,7 +88,7 @@ params = [
 	)
 
 	// The resolved parameter set is persisted on the run and visible via the API.
-	run, err := client.GetRun(triggered.ID)
+	run, err := client.GetRun(t.Context(), triggered.ID)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{
 		"PROJECT_ID": "acme",
@@ -145,10 +145,10 @@ params = [
 
 	// Explicit omit (nil): the default must NOT be re-injected, so no --note
 	// token reaches the command at all.
-	omit, err := client.TriggerRun(taskName, map[string]*string{"--note": nil}, "")
+	omit, err := client.TriggerRun(t.Context(), taskName, map[string]*string{"--note": nil}, "")
 	require.NoError(t, err)
 	require.Equal(t, "arg=[]\n", readCapture(t), "omitted option leaves no argv tokens (printf sees no args)")
-	omitRun, err := client.GetRun(omit.ID)
+	omitRun, err := client.GetRun(t.Context(), omit.ID)
 	require.NoError(t, err)
 	assert.NotContains(t, omitRun.Params, "--note", "omitted param is absent from run history")
 
@@ -156,11 +156,11 @@ params = [
 
 	// Explicit empty string: --note is passed with an empty value.
 	empty := ""
-	emptyRun, err := client.TriggerRun(taskName, map[string]*string{"--note": &empty}, "")
+	emptyRun, err := client.TriggerRun(t.Context(), taskName, map[string]*string{"--note": &empty}, "")
 	require.NoError(t, err)
 	require.Equal(t, "arg=[--note]\narg=[]\n", readCapture(t),
 		"empty string is passed as a real, empty option value")
-	emptyDetail, err := client.GetRun(emptyRun.ID)
+	emptyDetail, err := client.GetRun(t.Context(), emptyRun.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "", emptyDetail.Params["--note"], "empty string is recorded on the run")
 }

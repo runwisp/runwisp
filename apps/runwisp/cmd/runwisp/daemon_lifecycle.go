@@ -391,7 +391,9 @@ func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo, f Flags) error {
 
 	var launchTicketFunc func() (string, error)
 	if rt.srv != nil {
-		launchTicketFunc = client.CreateLaunchTicket
+		launchTicketFunc = func() (string, error) {
+			return client.CreateLaunchTicket(context.Background())
+		}
 	}
 
 	quitAction, tuiErr := tui.StartTUI(info, client, rt.debugWriter, shutdownFunc, launchTicketFunc)

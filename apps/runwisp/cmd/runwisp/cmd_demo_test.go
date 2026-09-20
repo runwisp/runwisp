@@ -21,7 +21,7 @@ func TestReportDemoNoTUI_PasswordToStdoutGuidanceToStderr(t *testing.T) {
 	f := Flags{Host: "127.0.0.1", Port: 9477, DataDir: "/tmp/runwisp-demo-xyz/data"}
 	var stdout, stderr bytes.Buffer
 
-	code := reportDemoNoTUI(&stdout, &stderr, client, f)
+	code := reportDemoNoTUI(t.Context(), &stdout, &stderr, client, f)
 
 	assert.Equal(t, passwordExitOK, code)
 	assert.Equal(t, "Kj2x9pQ7mN4vL8rT5wYz1c\n", stdout.String(),
@@ -39,7 +39,7 @@ func TestReportDemoNoTUI_WildcardBindReportsLocalhost(t *testing.T) {
 	f := Flags{Host: "0.0.0.0", Port: 8080, DataDir: "/tmp/demo/data"}
 	var stdout, stderr bytes.Buffer
 
-	reportDemoNoTUI(&stdout, &stderr, client, f)
+	reportDemoNoTUI(t.Context(), &stdout, &stderr, client, f)
 
 	assert.Contains(t, stderr.String(), "http://localhost:8080",
 		"a 0.0.0.0 bind is not connectable (report localhost); TLS defaults to off")
@@ -50,7 +50,7 @@ func TestReportDemoNoTUI_NoPasswordExitsNonZeroWithoutLeaking(t *testing.T) {
 	f := Flags{Host: "127.0.0.1", Port: 9477, DataDir: "/tmp/demo/data"}
 	var stdout, stderr bytes.Buffer
 
-	code := reportDemoNoTUI(&stdout, &stderr, client, f)
+	code := reportDemoNoTUI(t.Context(), &stdout, &stderr, client, f)
 
 	assert.Equal(t, passwordExitNoAuth, code)
 	assert.Empty(t, stdout.String(), "stdout must stay empty when there is no password to print")

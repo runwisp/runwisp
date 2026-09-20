@@ -25,7 +25,7 @@ func TestGetLocalCredentials_Success(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	creds, err := c.GetLocalCredentials()
+	creds, err := c.GetLocalCredentials(t.Context())
 	require.NoError(t, err)
 	require.NotNil(t, creds)
 	assert.Equal(t, "Kj2x9pQ7mN4vL8rT5wYz1c", creds.Password)
@@ -39,7 +39,7 @@ func TestGetLocalCredentials_404MapsToUnavailable(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	creds, err := c.GetLocalCredentials()
+	creds, err := c.GetLocalCredentials(t.Context())
 	assert.Nil(t, creds)
 	assert.ErrorIs(t, err, ErrLocalCredentialsUnavailable)
 }
@@ -51,7 +51,7 @@ func TestGetLocalCredentials_403PropagatesAsHTTPStatus(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	creds, err := c.GetLocalCredentials()
+	creds, err := c.GetLocalCredentials(t.Context())
 	assert.Nil(t, creds)
 	require.Error(t, err)
 	assert.True(t, IsHTTPStatus(err, http.StatusForbidden),

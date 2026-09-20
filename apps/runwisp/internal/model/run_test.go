@@ -27,6 +27,32 @@ func TestRun_DisplayStatus_EndedNilReason(t *testing.T) {
 	assert.Equal(t, "stopped", r.DisplayStatus())
 }
 
+// TestRun_IsRetryable_NeverExecutedReasonsAreExcluded checks that every
+// end-reason meaning "the run never actually executed" is excluded from
+// retry, not just ReasonSkipped and ReasonMissed. ReasonQueueFull belongs to
+// the same class: the queue overflow policy rejected the firing before it
+// ever ran, so there is no failed attempt to retry.
+func TestRun_IsRetryable_NeverExecutedReasonsAreExcluded(t *testing.T) {
+	tests := []struct {
+		name   string
+		reason EndReason
+		want   bool
+	}{
+		{"success is not retryable", ReasonSuccess, false},
+		{"skipped is not retryable", ReasonSkipped, false},
+		{"missed is not retryable", ReasonMissed, false},
+		{"queue_full is not retryable", ReasonQueueFull, false},
+		{"failed is retryable", ReasonFailed, true},
+		{"crashed is retryable", ReasonCrashed, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &Run{Status: PhaseEnded, EndReason: &tt.reason}
+			assert.Equal(t, tt.want, r.IsRetryable())
+		})
+	}
+}
+
 func TestRun_Copy_PointerFieldsAreIndependent(t *testing.T) {
 	extID := "ext-123"
 	reason := ReasonFailed

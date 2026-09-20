@@ -90,6 +90,15 @@ type Server struct {
 	// outside standalone mode (cloud mode has no local scheduler to reconcile),
 	// in which case POST /api/daemon/reload reports the operation is unavailable.
 	reload func() (model.ReloadResult, error)
+	// shutdownCtx/shutdownCancel let Shutdown interrupt long-lived SSE handler
+	// goroutines directly: http.Server.Shutdown only stops accepting new
+	// connections and waits for in-flight ones to finish on their own, it
+	// never cancels a handler's request context, so an open SSE stream would
+	// otherwise keep running until the client disconnects or Shutdown's
+	// deadline expires. SSE handlers derive their working context from this
+	// via withShutdown instead of using the raw request context directly.
+	shutdownCtx    context.Context
+	shutdownCancel context.CancelFunc
 }
 
 // DaemonInfo and CapInfo live in the model package.
@@ -144,8 +153,12 @@ func New(opts Options) (*Server, error) {
 
 	router := chi.NewRouter()
 
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+
 	s := &Server{
 		router:            router,
+		shutdownCtx:       shutdownCtx,
+		shutdownCancel:    shutdownCancel,
 		db:                opts.DB,
 		notifyRepo:        opts.NotificationDB,
 		notifyHub:         opts.NotificationHub,
@@ -426,11 +439,37 @@ func removeStaleSocket(path string) error {
 	return os.Remove(path)
 }
 
+// withShutdown returns a context derived from ctx that is also cancelled the
+// moment the server starts shutting down, plus a cancel func the caller must
+// defer to release resources. SSE handlers use this instead of the raw
+// request context so Shutdown can end a long-lived stream immediately rather
+// than waiting for the client to disconnect.
+func (srv *Server) withShutdown(ctx context.Context) (context.Context, context.CancelFunc) {
+	if srv.shutdownCtx == nil {
+		// A Server built directly as a struct literal (as many unit tests do,
+		// exercising a single handler without New()) has no shutdown signal to
+		// wire up; behave like a plain derived context in that case.
+		return context.WithCancel(ctx)
+	}
+	merged, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(srv.shutdownCtx, cancel)
+	return merged, func() {
+		stop()
+		cancel()
+	}
+}
+
 // Shutdown gracefully stops the HTTP server and metrics collector.
 func (srv *Server) Shutdown(ctx context.Context) error {
 	if srv.metrics != nil {
 		srv.metrics.Stop()
 	}
+
+	// Cancel every context handed out by withShutdown first, so active SSE
+	// handler goroutines (see appStreamHandler, sseDaemonLogHandler,
+	// registerLogSSE) start exiting immediately instead of only reacting to
+	// http.Server.Shutdown below, which by itself never interrupts them.
+	srv.shutdownCancel()
 
 	var wg sync.WaitGroup
 	var tcpErr, unixErr, metricsErr error

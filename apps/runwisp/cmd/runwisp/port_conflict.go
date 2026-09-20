@@ -5,6 +5,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -39,7 +40,7 @@ func probeRunwispInstance(host string, port int) *model.InstanceInfo {
 		host = "127.0.0.1"
 	}
 	client := apiclient.NewProbe(fmt.Sprintf("http://%s:%d", host, port))
-	info, err := client.GetInstanceInfo()
+	info, err := client.GetInstanceInfo(context.Background())
 	if err != nil || info == nil || info.App != server.AppName {
 		return nil
 	}

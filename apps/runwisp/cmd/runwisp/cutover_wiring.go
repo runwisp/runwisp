@@ -42,7 +42,7 @@ func newCutover(f Flags, deps autostart.Deps, installer autostart.Installer, opt
 			return preflightDaemon(ctx, installer, opts, f)
 		},
 		DaemonRunning: func() bool { return isDaemonRunning(f) },
-		Reload:        func() error { return reloadRunningDaemon(f, deps.Stdout) },
+		Reload:        func(ctx context.Context) error { return reloadRunningDaemon(ctx, f, deps.Stdout) },
 	}
 	for _, tweak := range tweaks {
 		tweak(&cd)

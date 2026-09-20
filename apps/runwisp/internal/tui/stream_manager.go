@@ -137,8 +137,9 @@ func (sm *StreamManager) FetchLogTail(run *model.Run, tail int64) tea.Cmd {
 	}
 	client := sm.client
 	runID := run.ID
+	ctx := sm.streamCtx
 	return func() tea.Msg {
-		page, err := client.GetLogPage(runID, -tail, tail)
+		page, err := client.GetLogPage(ctx, runID, -tail, tail)
 		if err != nil {
 			// Degrade gracefully: an empty tail makes the handler open the live
 			// stream at the tail anchor, i.e. the old line-by-line backfill.
@@ -168,9 +169,10 @@ func (sm *StreamManager) FetchOlderLogs(runID string, beforeLine, count int64) t
 	if limit <= 0 {
 		return nil
 	}
+	ctx := sm.streamCtx
 
 	return func() tea.Msg {
-		page, err := client.GetLogPage(runID, startLine, limit)
+		page, err := client.GetLogPage(ctx, runID, startLine, limit)
 		if err != nil {
 			return uikit.DebugLogMsg{Message: "Failed to load older logs: " + err.Error()}
 		}
@@ -195,8 +197,9 @@ func (sm *StreamManager) FetchLineHistory(runID string, lineNum int64, committed
 		return nil
 	}
 	client := sm.client
+	ctx := sm.streamCtx
 	return func() tea.Msg {
-		frames, err := client.GetLogLineHistory(runID, lineNum)
+		frames, err := client.GetLogLineHistory(ctx, runID, lineNum)
 		return uikit.LogLineHistoryMsg{
 			RunID:     runID,
 			Line:      lineNum,
@@ -256,8 +259,9 @@ func (sm *StreamManager) FetchSystemStats() tea.Cmd {
 		return nil
 	}
 	client := sm.client
+	ctx := sm.streamCtx
 	return func() tea.Msg {
-		stats, err := client.GetSystemStats()
+		stats, err := client.GetSystemStats(ctx)
 		return uikit.SystemStatsMsg{Stats: stats, Err: err}
 	}
 }
@@ -270,8 +274,9 @@ func (sm *StreamManager) FetchDaemonInfo() tea.Cmd {
 		return nil
 	}
 	client := sm.client
+	ctx := sm.streamCtx
 	return func() tea.Msg {
-		info, err := client.GetDaemonInfo()
+		info, err := client.GetDaemonInfo(ctx)
 		return uikit.DaemonInfoMsg{Info: info, Err: err}
 	}
 }
@@ -286,14 +291,15 @@ func (sm *StreamManager) Reload() tea.Cmd {
 		return nil
 	}
 	client := sm.client
+	ctx := sm.streamCtx
 	return func() tea.Msg {
-		result, err := client.Reload()
+		result, err := client.Reload(ctx)
 		if err != nil {
 			return uikit.ReloadResultMsg{Err: err}
 		}
 		// The reload applied; refresh the task list. If this read fails the
 		// reload still stands — report it without fresh tasks.
-		info, infoErr := client.GetDaemonInfo()
+		info, infoErr := client.GetDaemonInfo(ctx)
 		if infoErr != nil {
 			return uikit.ReloadResultMsg{Result: result}
 		}
@@ -303,22 +309,25 @@ func (sm *StreamManager) Reload() tea.Cmd {
 
 // RestoreRuns un-deletes every run matched by sel (the inverse of a delete).
 func (sm *StreamManager) RestoreRuns(sel model.RunSelector) tea.Cmd {
+	ctx := sm.streamCtx
 	return sm.bulkAction("Restored", func(c *apiclient.Client) (int, error) {
-		return c.BulkRestoreRuns(sel)
+		return c.BulkRestoreRuns(ctx, sel)
 	})
 }
 
 // CancelRuns cancels every running/queued run matched by sel.
 func (sm *StreamManager) CancelRuns(sel model.RunSelector) tea.Cmd {
+	ctx := sm.streamCtx
 	return sm.bulkAction("Cancelled", func(c *apiclient.Client) (int, error) {
-		return c.BulkCancelRuns(sel)
+		return c.BulkCancelRuns(ctx, sel)
 	})
 }
 
 // RerunRuns triggers a fresh run for every run matched by sel.
 func (sm *StreamManager) RerunRuns(sel model.RunSelector) tea.Cmd {
+	ctx := sm.streamCtx
 	return sm.bulkAction("Reran", func(c *apiclient.Client) (int, error) {
-		refs, err := c.BulkRerunRuns(sel)
+		refs, err := c.BulkRerunRuns(ctx, sel)
 		return len(refs), err
 	})
 }
@@ -332,8 +341,9 @@ func (sm *StreamManager) DeleteRunsUndoable(sel model.RunSelector) tea.Cmd {
 		return nil
 	}
 	client := sm.client
+	ctx := sm.streamCtx
 	return func() tea.Msg {
-		n, err := client.BulkDeleteRuns(sel)
+		n, err := client.BulkDeleteRuns(ctx, sel)
 		return uikit.BulkDeleteResultMsg{Affected: n, Restore: sel, Err: err}
 	}
 }
@@ -356,8 +366,9 @@ func (sm *StreamManager) FetchRunSummary() tea.Cmd {
 		return nil
 	}
 	client := sm.client
+	ctx := sm.streamCtx
 	return func() tea.Msg {
-		summary, err := client.GetRunSummary()
+		summary, err := client.GetRunSummary(ctx)
 		return uikit.RunSummaryMsg{Summary: summary, Err: err}
 	}
 }
@@ -379,8 +390,9 @@ func (sm *StreamManager) FetchTaskSummary(taskName string) tea.Cmd {
 		return nil
 	}
 	client := sm.client
+	ctx := sm.streamCtx
 	return func() tea.Msg {
-		runs, total, err := client.ListRunsByTask(taskName, apiclient.RunsParams{
+		runs, total, err := client.ListRunsByTask(ctx, taskName, apiclient.RunsParams{
 			Limit:         taskSummaryWindow,
 			SortField:     "createdAt",
 			SortDirection: "desc",
@@ -423,8 +435,9 @@ func (sm *StreamManager) FetchMetricsHistory() tea.Cmd {
 		return nil
 	}
 	client := sm.client
+	ctx := sm.streamCtx
 	return func() tea.Msg {
-		samples, err := client.GetMetricsHistory()
+		samples, err := client.GetMetricsHistory(ctx)
 		return uikit.MetricsHistoryMsg{Samples: samples, Err: err}
 	}
 }
@@ -494,8 +507,9 @@ func (sm *StreamManager) FetchUnreadCount() tea.Cmd {
 		return nil
 	}
 	client := sm.client
+	ctx := sm.streamCtx
 	return func() tea.Msg {
-		count, err := client.UnreadNotificationCount()
+		count, err := client.UnreadNotificationCount(ctx)
 		return uikit.NotificationUnreadCountMsg{Count: count, Err: err}
 	}
 }
@@ -508,8 +522,9 @@ func (sm *StreamManager) FetchNotifications() tea.Cmd {
 		return nil
 	}
 	client := sm.client
+	ctx := sm.streamCtx
 	return func() tea.Msg {
-		page, err := client.ListNotifications(notifications.InitialPageSize, "")
+		page, err := client.ListNotifications(ctx, notifications.InitialPageSize, "")
 		if err != nil {
 			return uikit.NotificationsLoadedMsg{Err: err}
 		}
@@ -523,8 +538,9 @@ func (sm *StreamManager) MarkNotificationRead(id string) tea.Cmd {
 		return nil
 	}
 	client := sm.client
+	ctx := sm.streamCtx
 	return func() tea.Msg {
-		err := client.MarkNotificationRead(id)
+		err := client.MarkNotificationRead(ctx, id)
 		return uikit.NotificationReadStateMsg{ID: id, Read: true, Err: err}
 	}
 }
@@ -537,8 +553,9 @@ func (sm *StreamManager) MarkAllNotificationsRead() tea.Cmd {
 		return nil
 	}
 	client := sm.client
+	ctx := sm.streamCtx
 	return func() tea.Msg {
-		if err := client.MarkAllNotificationsRead(); err != nil {
+		if err := client.MarkAllNotificationsRead(ctx); err != nil {
 			return uikit.DebugLogMsg{Message: "Failed to mark all notifications read: " + err.Error()}
 		}
 		return nil
@@ -551,8 +568,9 @@ func (sm *StreamManager) MarkNotificationUnread(id string) tea.Cmd {
 		return nil
 	}
 	client := sm.client
+	ctx := sm.streamCtx
 	return func() tea.Msg {
-		err := client.MarkNotificationUnread(id)
+		err := client.MarkNotificationUnread(ctx, id)
 		return uikit.NotificationReadStateMsg{ID: id, Read: false, Err: err}
 	}
 }

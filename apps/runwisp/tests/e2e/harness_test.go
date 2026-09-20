@@ -331,7 +331,7 @@ func (d *daemonProcess) waitForReady(t testing.TB, client *apiclient.Client, tim
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if client.HealthCheck() == nil {
+		if client.HealthCheck(t.Context()) == nil {
 			return
 		}
 		if d.exited() {
@@ -612,7 +612,7 @@ func waitForRunCount(t testing.TB, client *apiclient.Client, taskName string, ex
 	var lastTotal int64
 
 	for time.Now().Before(deadline) {
-		_, total, err := client.ListRunsByTask(taskName, apiclient.RunsParams{Limit: 20})
+		_, total, err := client.ListRunsByTask(t.Context(), taskName, apiclient.RunsParams{Limit: 20})
 		require.NoError(t, err)
 		lastTotal = total
 		if total >= expectedTotal {

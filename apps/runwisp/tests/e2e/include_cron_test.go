@@ -54,7 +54,7 @@ include_cron = ["crontabs/*"]
 
 	// PD#1: the task exists *and* runs. Trigger it rather than waiting out a
 	// minute of wall clock — the schedule is proven by the task set above.
-	run, err := client.TriggerRun("echo", nil, "")
+	run, err := client.TriggerRun(t.Context(), "echo", nil, "")
 	require.NoError(t, err)
 	require.NotEmpty(t, run.ID)
 	waitForRunCount(t, client, "echo", 1, 15*time.Second)

@@ -37,7 +37,7 @@ func TestFinishExecJSON_ReusesFetchedRunWithoutRefetch(t *testing.T) {
 	final := &model.Run{ID: "run-1", TaskName: "alpha", Status: model.PhaseEnded, EndReason: &reason, ExitCode: 0}
 
 	var buf bytes.Buffer
-	err := finishExecJSON(&buf, client, "alpha", "run-1", final)
+	err := finishExecJSON(t.Context(), &buf, client, "alpha", "run-1", final)
 	require.NoError(t, err, "a terminal run already in hand must be reused, never re-fetched")
 
 	var doc runJSONDoc

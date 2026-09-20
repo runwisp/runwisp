@@ -89,7 +89,7 @@ func TestRunExecViaRemote_StreamsAndPropagatesExitCode(t *testing.T) {
 	srv := httptest.NewServer(stub.handler(t))
 	defer srv.Close()
 
-	code, err := runExecViaRemote("backup", srv.URL, "pw", false)
+	code, err := runExecViaRemote(t.Context(), "backup", srv.URL, "pw", false)
 	require.NoError(t, err)
 	assert.Equal(t, 7, code, "exit code must propagate from the failed run")
 	assert.Equal(t, int32(1), stub.streamHits.Load(), "the log stream must be followed")
@@ -105,7 +105,7 @@ func TestRunExecViaRemote_SuccessReturnsZero(t *testing.T) {
 	srv := httptest.NewServer(stub.handler(t))
 	defer srv.Close()
 
-	code, err := runExecViaRemote("backup", srv.URL, "pw", false)
+	code, err := runExecViaRemote(t.Context(), "backup", srv.URL, "pw", false)
 	require.NoError(t, err)
 	assert.Equal(t, 0, code)
 }
@@ -119,7 +119,7 @@ func TestRunExecViaRemote_ReauthOnExpiredToken(t *testing.T) {
 	// Seed a cached (stale) token; the first trigger 401s and we re-handshake.
 	storeCachedToken(srv.URL, "stale-jwt")
 
-	code, err := runExecViaRemote("backup", srv.URL, "pw", false)
+	code, err := runExecViaRemote(t.Context(), "backup", srv.URL, "pw", false)
 	require.NoError(t, err)
 	assert.Equal(t, 0, code)
 	assert.True(t, stub.staleRejected.Load(), "the stale token must have been rejected once")
@@ -132,7 +132,7 @@ func TestRunExecViaRemote_Detach(t *testing.T) {
 	srv := httptest.NewServer(stub.handler(t))
 	defer srv.Close()
 
-	code, err := runExecViaRemote("backup", srv.URL, "pw", true)
+	code, err := runExecViaRemote(t.Context(), "backup", srv.URL, "pw", true)
 	require.NoError(t, err)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, int32(0), stub.streamHits.Load(), "--detach must not follow the log stream")
@@ -144,7 +144,7 @@ func TestRunExecViaRemote_MissingPassword(t *testing.T) {
 	srv := httptest.NewServer(stub.handler(t))
 	defer srv.Close()
 
-	_, err := runExecViaRemote("backup", srv.URL, "", false)
+	_, err := runExecViaRemote(t.Context(), "backup", srv.URL, "", false)
 	require.Error(t, err)
 	ufe, ok := isUserFacing(err)
 	require.True(t, ok, "missing password must be a user-facing error")
@@ -158,7 +158,7 @@ func TestRunExecViaRemote_Unreachable(t *testing.T) {
 	url := srv.URL
 	srv.Close()
 
-	_, err := runExecViaRemote("backup", url, "pw", false)
+	_, err := runExecViaRemote(t.Context(), "backup", url, "pw", false)
 	require.Error(t, err)
 	ufe, ok := isUserFacing(err)
 	require.True(t, ok)

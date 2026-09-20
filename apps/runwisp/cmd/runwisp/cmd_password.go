@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -47,7 +48,7 @@ never disclosed via this command.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		socketPath := localAPISocketPath(flags)
 		client := apiclient.NewUnix(socketPath)
-		code := runPassword(os.Stdout, os.Stderr, client, socketPath)
+		code := runPassword(cmd.Context(), os.Stdout, os.Stderr, client, socketPath)
 		if code != passwordExitOK {
 			os.Exit(code)
 		}
@@ -58,11 +59,11 @@ never disclosed via this command.`,
 // credentialsFetcher is the slice of apiclient.Client that cmd_password
 // exercises. Splitting it out keeps the unit test isolated from a real socket.
 type credentialsFetcher interface {
-	GetLocalCredentials() (*server.LocalCredentialsBody, error)
+	GetLocalCredentials(ctx context.Context) (*server.LocalCredentialsBody, error)
 }
 
-func runPassword(stdout, stderr io.Writer, client credentialsFetcher, socketPath string) int {
-	creds, err := client.GetLocalCredentials()
+func runPassword(ctx context.Context, stdout, stderr io.Writer, client credentialsFetcher, socketPath string) int {
+	creds, err := client.GetLocalCredentials(ctx)
 	if err == nil {
 		fmt.Fprintln(stdout, creds.Password)
 		return passwordExitOK

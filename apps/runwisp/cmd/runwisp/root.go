@@ -67,7 +67,7 @@ On a box that already runs cron: sudo runwisp takeover retires cron and adopts i
 Machine-readable reference for agents: https://docs.runwisp.com/llms.txt`,
 	Version: version.Version,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runDefault(flags)
+		return runDefault(cmd.Context(), flags)
 	},
 	SilenceUsage:  true,
 	SilenceErrors: true,

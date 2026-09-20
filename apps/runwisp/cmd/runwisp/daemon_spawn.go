@@ -5,6 +5,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -37,7 +38,7 @@ func pollUntil(deadline time.Time, check func() bool) bool {
 func pollHealth(client *apiclient.Client, timeout time.Duration) error {
 	var lastErr error
 	ok := pollUntil(time.Now().Add(timeout), func() bool {
-		lastErr = client.HealthCheck()
+		lastErr = client.HealthCheck(context.Background())
 		return lastErr == nil
 	})
 	if ok {
@@ -305,7 +306,7 @@ func waitForDaemonLoop(client *apiclient.Client, drainer *daemonLogDrainer, pidP
 			return fmt.Errorf("daemon failed to start: %s", msg), false
 		}
 
-		if err := client.HealthCheck(); err == nil {
+		if err := client.HealthCheck(context.Background()); err == nil {
 			return nil, false
 		}
 

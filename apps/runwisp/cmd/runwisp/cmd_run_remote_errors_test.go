@@ -37,7 +37,7 @@ func authStatusServer(t *testing.T, challengeStatus int) *httptest.Server {
 
 func TestAuthenticateRemote_MissingPassword(t *testing.T) {
 	client := apiclient.New("https://example.com", "")
-	err := authenticateRemote(client, "https://example.com", "")
+	err := authenticateRemote(t.Context(), client, "https://example.com", "")
 	ufe, ok := isUserFacing(err)
 	require.True(t, ok)
 	assert.Contains(t, ufe.Error(), "password is required")
@@ -47,7 +47,7 @@ func TestAuthenticateRemote_Unauthorized(t *testing.T) {
 	srv := authStatusServer(t, http.StatusUnauthorized)
 	defer srv.Close()
 
-	err := authenticateRemote(apiclient.New(srv.URL, "pw"), srv.URL, "pw")
+	err := authenticateRemote(t.Context(), apiclient.New(srv.URL, "pw"), srv.URL, "pw")
 	ufe, ok := isUserFacing(err)
 	require.True(t, ok)
 	assert.Contains(t, ufe.Error(), "authentication")
@@ -58,7 +58,7 @@ func TestAuthenticateRemote_RateLimited(t *testing.T) {
 	srv := authStatusServer(t, http.StatusTooManyRequests)
 	defer srv.Close()
 
-	err := authenticateRemote(apiclient.New(srv.URL, "pw"), srv.URL, "pw")
+	err := authenticateRemote(t.Context(), apiclient.New(srv.URL, "pw"), srv.URL, "pw")
 	ufe, ok := isUserFacing(err)
 	require.True(t, ok)
 	assert.Contains(t, ufe.Error(), "too many authentication attempts")
@@ -68,7 +68,7 @@ func TestAuthenticateRemote_OtherError(t *testing.T) {
 	srv := authStatusServer(t, http.StatusInternalServerError)
 	defer srv.Close()
 
-	err := authenticateRemote(apiclient.New(srv.URL, "pw"), srv.URL, "pw")
+	err := authenticateRemote(t.Context(), apiclient.New(srv.URL, "pw"), srv.URL, "pw")
 	require.Error(t, err)
 	_, ok := isUserFacing(err)
 	assert.False(t, ok, "a transport/5xx failure is a plain wrapped error, not user-facing")
@@ -97,7 +97,7 @@ func TestTriggerRemote_NotFound(t *testing.T) {
 
 	client := apiclient.New(srv.URL, "pw")
 	client.SetToken("tok")
-	_, err := triggerRemote(client, "backup", srv.URL, "pw")
+	_, err := triggerRemote(t.Context(), client, "backup", srv.URL, "pw")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `task "backup" not found`)
 }
@@ -108,7 +108,7 @@ func TestTriggerRemote_Forbidden(t *testing.T) {
 
 	client := apiclient.New(srv.URL, "pw")
 	client.SetToken("tok")
-	_, err := triggerRemote(client, "backup", srv.URL, "pw")
+	_, err := triggerRemote(t.Context(), client, "backup", srv.URL, "pw")
 	ufe, ok := isUserFacing(err)
 	require.True(t, ok)
 	assert.Contains(t, ufe.Error(), "cannot be triggered over the API")
@@ -120,7 +120,7 @@ func TestTriggerRemote_RateLimited(t *testing.T) {
 
 	client := apiclient.New(srv.URL, "pw")
 	client.SetToken("tok")
-	_, err := triggerRemote(client, "backup", srv.URL, "pw")
+	_, err := triggerRemote(t.Context(), client, "backup", srv.URL, "pw")
 	ufe, ok := isUserFacing(err)
 	require.True(t, ok)
 	assert.Contains(t, ufe.Error(), "too many authentication attempts")
@@ -132,7 +132,7 @@ func TestTriggerRemote_OtherError(t *testing.T) {
 
 	client := apiclient.New(srv.URL, "pw")
 	client.SetToken("tok")
-	_, err := triggerRemote(client, "backup", srv.URL, "pw")
+	_, err := triggerRemote(t.Context(), client, "backup", srv.URL, "pw")
 	require.Error(t, err)
 	_, ok := isUserFacing(err)
 	assert.False(t, ok)
@@ -147,7 +147,7 @@ func TestTriggerRemote_ReauthFailsWithoutPassword(t *testing.T) {
 
 	client := apiclient.New(srv.URL, "")
 	client.SetToken("stale")
-	_, err := triggerRemote(client, "backup", srv.URL, "")
+	_, err := triggerRemote(t.Context(), client, "backup", srv.URL, "")
 	ufe, ok := isUserFacing(err)
 	require.True(t, ok)
 	assert.Contains(t, ufe.Error(), "password is required")
@@ -249,7 +249,7 @@ func TestRunExec_URLWithDaemonFlagRejected(t *testing.T) {
 	runFlags.Daemon = true
 	t.Cleanup(func() { runFlags.URL = ""; runFlags.Daemon = false })
 
-	_, err := runExec("backup", Flags{})
+	_, err := runExec(t.Context(), "backup", Flags{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--url cannot be combined")
 }
@@ -266,7 +266,7 @@ func TestRunExec_RoutesToRemoteWithEnvPassword(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "pw")
 	t.Cleanup(func() { runFlags.URL = "" })
 
-	code, err := runExec("backup", Flags{})
+	code, err := runExec(t.Context(), "backup", Flags{})
 	require.NoError(t, err)
 	assert.Equal(t, 0, code)
 	assert.Equal(t, int32(1), stub.authCount.Load(), "env password drove one CHAP handshake")

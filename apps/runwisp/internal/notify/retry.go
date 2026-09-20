@@ -48,7 +48,9 @@ func (c BackoffConfig) NewExponential() *backoff.ExponentialBackOff {
 	if c.MaxInterval > 0 {
 		b.MaxInterval = c.MaxInterval
 	}
-	b.MaxElapsedTime = c.MaxElapsedTime
+	if c.MaxElapsedTime > 0 {
+		b.MaxElapsedTime = c.MaxElapsedTime
+	}
 	if c.Multiplier > 0 {
 		b.Multiplier = c.Multiplier
 	}

@@ -55,7 +55,7 @@ run = "true"
 
 	// Exactly one browsable missed row is recorded for the downtime gap.
 	require.Eventually(t, func() bool {
-		s, err := client.GetRunSummary()
+		s, err := client.GetRunSummary(t.Context())
 		return err == nil && s.Missed == 1
 	}, 10*time.Second, 100*time.Millisecond,
 		"the daemon must record exactly one missed run row for the gap")
@@ -74,16 +74,16 @@ run = "true"
 
 	daemon2 := startDaemonOn(t, projectDir, binaryPath, configPath, dataDir, port)
 	client2 := socketClient(t, daemon2.dataDir)
-	require.Eventually(t, func() bool { return client2.HealthCheck() == nil },
+	require.Eventually(t, func() bool { return client2.HealthCheck(t.Context()) == nil },
 		10*time.Second, 100*time.Millisecond, "restarted daemon should pass health checks")
 
 	require.Never(t, func() bool {
-		s, err := client2.GetRunSummary()
+		s, err := client2.GetRunSummary(t.Context())
 		return err == nil && s.Missed != 1
 	}, 3*time.Second, 200*time.Millisecond,
 		"a restart with no new gap must not record a second missed row")
 
-	page, err := client2.ListNotifications(50, "")
+	page, err := client2.ListNotifications(t.Context(), 50, "")
 	require.NoError(t, err)
 	require.Equal(t, 1, countMissedNotifications(page.Items),
 		"the missed-run alert must not be raised again on a clean restart")
@@ -116,7 +116,7 @@ func waitForMissedNotification(t *testing.T, client *apiclient.Client, timeout t
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		page, err := client.ListNotifications(50, "")
+		page, err := client.ListNotifications(t.Context(), 50, "")
 		require.NoError(t, err)
 		for _, n := range page.Items {
 			if n.Kind == "run.missed" {

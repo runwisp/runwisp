@@ -503,8 +503,9 @@ func (m *Model) openRunByID(taskName, runID string) tea.Cmd {
 		return nil
 	}
 	client := m.client
+	ctx := m.streams.streamCtx
 	return func() tea.Msg {
-		run, err := client.GetRun(runID)
+		run, err := client.GetRun(ctx, runID)
 		if err != nil {
 			return uikit.DebugLogMsg{Message: fmt.Sprintf("Failed to load run %s: %s", runID, err.Error())}
 		}

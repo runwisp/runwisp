@@ -4,6 +4,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -675,6 +676,76 @@ func TestAppStream(t *testing.T) {
 	assert.Contains(t, body, "event: run.created")
 	assert.Contains(t, body, "event: system")
 	assert.Contains(t, body, "event: config.stale")
+}
+
+// TestShutdown_InterruptsActiveSSEConnections guards against Server.Shutdown
+// leaving open SSE connections running past it. Per the stdlib
+// http.Server.Shutdown docs, Shutdown alone only stops accepting new
+// connections and closes idle ones: an active long-lived connection (like
+// /api/events/stream) would otherwise keep its handler goroutine running
+// until the client disconnects or the deadline passed to Shutdown expires.
+// Server.Shutdown additionally cancels a server-owned shutdown context that
+// every SSE handler derives its working context from (see withShutdown), so
+// the handler goroutine exits and the connection closes immediately. This
+// uses a real network listener (not httptest.NewRecorder) because that
+// distinction only exists at the net/http.Server connection-state level.
+func TestShutdown_InterruptsActiveSSEConnections(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+	ts := httptest.NewServer(s.router)
+	defer ts.Close()
+	s.httpServer = ts.Config
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/api/events/stream", nil)
+	require.NoError(t, err)
+	addAuth(req, s)
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	reader := bufio.NewReader(resp.Body)
+	line, err := reader.ReadString('\n')
+	require.NoError(t, err)
+	require.Contains(t, line, "event: ping", "initial ping proves the handler is up before we shut down")
+
+	// A generous deadline that Shutdown must not need: if the SSE handler is
+	// actually interrupted, Shutdown returns as soon as the connection closes,
+	// well before this deadline would ever fire.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	shutdownErr := s.Shutdown(shutdownCtx)
+	assert.NoError(t, shutdownErr, "Shutdown should not need to wait out its deadline once SSE handlers are interrupted")
+
+	// Prove the handler goroutine actually exited (and so the connection is
+	// closed) by publishing a fresh bus event: a still-running handler would
+	// forward it, but the read should instead hit EOF/closed-connection.
+	s.eventBus.Publish(events.EventRunCreated, events.RunEvent{Run: &model.Run{ID: ulid.Make().String()}})
+
+	lineCh := make(chan string, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		for {
+			l, rerr := reader.ReadString('\n')
+			if rerr != nil {
+				errCh <- rerr
+				return
+			}
+			if strings.Contains(l, "event: run.created") {
+				lineCh <- l
+				return
+			}
+		}
+	}()
+
+	select {
+	case l := <-lineCh:
+		t.Fatalf("SSE connection was still being serviced after Shutdown returned: got %q", l)
+	case <-errCh:
+		// Expected: the handler goroutine exited and the connection closed.
+	case <-time.After(2 * time.Second):
+		t.Fatal("SSE connection was not closed within 2s of Shutdown returning")
+	}
 }
 
 func TestLogStream(t *testing.T) {

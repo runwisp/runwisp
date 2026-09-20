@@ -9,6 +9,8 @@
 package logsearch
 
 import (
+	"context"
+
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/apiclient"
@@ -190,7 +192,7 @@ func (m Model) startSearch() (Model, tea.Cmd) {
 		CaseSensitive: m.caseSensitive,
 	}
 	return m, func() tea.Msg {
-		body, err := client.SearchLogs(taskName, opts)
+		body, err := client.SearchLogs(context.Background(), taskName, opts)
 		if err != nil {
 			return resultsMsg{err: err}
 		}

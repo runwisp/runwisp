@@ -140,6 +140,6 @@ func TestStatusJSONGolden(t *testing.T) {
 	f := serveStatusSocket(t, mux)
 
 	var buf bytes.Buffer
-	require.NoError(t, runStatus(&buf, f, true))
+	require.NoError(t, runStatus(t.Context(), &buf, f, true))
 	checkGolden(t, "testdata/status.golden.json", buf.Bytes())
 }

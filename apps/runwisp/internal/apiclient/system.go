@@ -11,34 +11,34 @@ import (
 	"github.com/runwisp/runwisp/internal/server"
 )
 
-func (c *Client) GetSystemStats() (*model.SystemStats, error) {
+func (c *Client) GetSystemStats(ctx context.Context) (*model.SystemStats, error) {
 	var stats model.SystemStats
-	if err := c.doJSON("GET", "/api/system", nil, &stats); err != nil {
+	if err := c.doJSON(ctx, "GET", "/api/system", nil, &stats); err != nil {
 		return nil, err
 	}
 	return &stats, nil
 }
 
 // GetMetricsHistory fetches historical system metrics from the ring buffer.
-func (c *Client) GetMetricsHistory() ([]model.MetricsSample, error) {
+func (c *Client) GetMetricsHistory(ctx context.Context) ([]model.MetricsSample, error) {
 	var resp server.MetricsHistoryBody
-	if err := c.doJSON("GET", "/api/system/metrics", nil, &resp); err != nil {
+	if err := c.doJSON(ctx, "GET", "/api/system/metrics", nil, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Items, nil
 }
 
-func (c *Client) GetRunSummary() (*model.RunSummary, error) {
+func (c *Client) GetRunSummary(ctx context.Context) (*model.RunSummary, error) {
 	var summary model.RunSummary
-	if err := c.doJSON("GET", "/api/runs/summary", nil, &summary); err != nil {
+	if err := c.doJSON(ctx, "GET", "/api/runs/summary", nil, &summary); err != nil {
 		return nil, err
 	}
 	return &summary, nil
 }
 
-func (c *Client) GetDaemonInfo() (*model.DaemonInfo, error) {
+func (c *Client) GetDaemonInfo(ctx context.Context) (*model.DaemonInfo, error) {
 	var info model.DaemonInfo
-	if err := c.doJSON("GET", "/api/daemon", nil, &info); err != nil {
+	if err := c.doJSON(ctx, "GET", "/api/daemon", nil, &info); err != nil {
 		return nil, err
 	}
 	return &info, nil
@@ -50,9 +50,9 @@ func (c *Client) GetDaemonInfo() (*model.DaemonInfo, error) {
 // it lives. The endpoint is public but local-gated, so a no-password TCP client
 // reaches it over loopback; a non-RunWisp port-holder yields a transport or
 // decode error, which the caller treats as "not a discoverable daemon".
-func (c *Client) GetInstanceInfo() (*model.InstanceInfo, error) {
+func (c *Client) GetInstanceInfo(ctx context.Context) (*model.InstanceInfo, error) {
 	var info model.InstanceInfo
-	if err := c.doJSON("GET", "/api/daemon/identity", nil, &info); err != nil {
+	if err := c.doJSON(ctx, "GET", "/api/daemon/identity", nil, &info); err != nil {
 		return nil, err
 	}
 	return &info, nil
@@ -61,9 +61,9 @@ func (c *Client) GetInstanceInfo() (*model.InstanceInfo, error) {
 // Reload asks the daemon to re-read runwisp.toml and reconcile its live task
 // set, returning the applied diff. A rejected reload (bad config or a
 // restart-only change) comes back as an error from the daemon.
-func (c *Client) Reload() (*model.ReloadResult, error) {
+func (c *Client) Reload(ctx context.Context) (*model.ReloadResult, error) {
 	var result model.ReloadResult
-	if err := c.doJSON("POST", "/api/daemon/reload", nil, &result); err != nil {
+	if err := c.doJSON(ctx, "POST", "/api/daemon/reload", nil, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -72,16 +72,16 @@ func (c *Client) Reload() (*model.ReloadResult, error) {
 // AuthStatus reports whether the daemon requires authentication, via the public
 // GET /api/auth/status endpoint. A remote client probes it before prompting for
 // a password so a RUNWISP_AUTH=off daemon connects without one.
-func (c *Client) AuthStatus() (server.AuthStatusBody, error) {
+func (c *Client) AuthStatus(ctx context.Context) (server.AuthStatusBody, error) {
 	var body server.AuthStatusBody
-	if err := c.doJSON("GET", "/api/auth/status", nil, &body); err != nil {
+	if err := c.doJSON(ctx, "GET", "/api/auth/status", nil, &body); err != nil {
 		return server.AuthStatusBody{}, err
 	}
 	return body, nil
 }
 
-func (c *Client) HealthCheck() error {
-	resp, err := c.doRaw("/health")
+func (c *Client) HealthCheck(ctx context.Context) error {
+	resp, err := c.doRaw(ctx, "/health")
 	if err != nil {
 		return err
 	}

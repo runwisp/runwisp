@@ -275,6 +275,7 @@ func runRefsFrom[T any](rows []T, ref func(T) RunRef) []RunRef {
 // the affected rows as lightweight refs so callers can publish run.deleted
 // events without a follow-up query.
 func (db *SQLiteDatabase) SoftDeleteRuns(ctx context.Context, sel model.RunSelector, deletedAt time.Time) ([]RunRef, error) {
+	deletedAt = deletedAt.UTC()
 	if sel.MatchAll {
 		args := buildRunFilterArgs(sel.Filter)
 		rows, err := db.q.SoftDeleteRunsByFilter(ctx, sqlcdb.SoftDeleteRunsByFilterParams{
@@ -391,7 +392,7 @@ func (db *SQLiteDatabase) ResolveSelectorIDs(ctx context.Context, sel model.RunS
 // must remove the referenced log files before hard-deleting the rows via
 // DeleteRunsByIDs — see the SQL query's comment for why the order matters.
 func (db *SQLiteDatabase) SelectExpiredSoftDeletes(ctx context.Context, ttl time.Duration) ([]RunRef, error) {
-	cutoff := time.Now().Add(-ttl)
+	cutoff := time.Now().UTC().Add(-ttl)
 	rows, err := db.q.SelectExpiredSoftDeletes(ctx, &cutoff)
 	if err != nil {
 		return nil, err
@@ -409,7 +410,7 @@ func (db *SQLiteDatabase) SelectOldRuns(ctx context.Context, task *model.Task) (
 	uniqueRuns := make(map[string]model.Run)
 
 	if task.KeepFor > 0 {
-		cutoff := time.Now().Add(-task.KeepFor)
+		cutoff := time.Now().UTC().Add(-task.KeepFor)
 		rows, err := db.q.SelectOldRunsByAge(ctx, sqlcdb.SelectOldRunsByAgeParams{
 			TaskName:  task.Name,
 			CreatedAt: cutoff,
@@ -448,7 +449,7 @@ func (db *SQLiteDatabase) SelectOldRuns(ctx context.Context, task *model.Task) (
 
 // MarkCrashedRuns flags runs that never completed (e.g., after a crash).
 func (db *SQLiteDatabase) MarkCrashedRuns(ctx context.Context) (int64, error) {
-	now := time.Now()
+	now := time.Now().UTC()
 	return db.q.MarkCrashedRuns(ctx, &now)
 }
 

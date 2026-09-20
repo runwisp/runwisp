@@ -216,12 +216,14 @@ func (r *Run) End(task *Task, reason EndReason, exitCode int, endedAt time.Time)
 // the firing was redundant; another retry just races the original again.
 // Missed runs are excluded too — they never executed, so there is no failed
 // attempt to retry; catch_up already governs whether the tick is re-fired.
+// Queue-full runs are excluded for the same reason as skipped: the queue
+// overflow policy rejected the firing before it ever ran.
 func (r *Run) IsRetryable() bool {
 	if r.Status != PhaseEnded || r.EndReason == nil {
 		return false
 	}
 	switch *r.EndReason {
-	case ReasonSuccess, ReasonSkipped, ReasonMissed:
+	case ReasonSuccess, ReasonSkipped, ReasonMissed, ReasonQueueFull:
 		return false
 	default:
 		return true

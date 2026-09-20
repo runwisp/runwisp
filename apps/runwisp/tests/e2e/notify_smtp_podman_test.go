@@ -89,7 +89,7 @@ notifiers = ["email-ops"]
 			daemon := startDaemon(t, projectDir, binaryPath, configPath)
 
 			client := socketClient(t, daemon.dataDir)
-			_, err := client.TriggerRun("fail-task", nil, "")
+			_, err := client.TriggerRun(t.Context(), "fail-task", nil, "")
 			require.NoError(t, err)
 
 			msgs := mp.WaitForMessages(t, 1, 15*time.Second)
@@ -144,12 +144,12 @@ notifiers = ["email-ops", "inapp"]
 	daemon := startDaemon(t, projectDir, binaryPath, configPath)
 
 	client := socketClient(t, daemon.dataDir)
-	_, err := client.TriggerRun("fail-task", nil, "")
+	_, err := client.TriggerRun(t.Context(), "fail-task", nil, "")
 	require.NoError(t, err)
 
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		page, err := client.ListNotifications(50, "")
+		page, err := client.ListNotifications(t.Context(), 50, "")
 		require.NoError(t, err)
 		if hasDeliveryFailure(page.Items) {
 			require.Empty(t, mp.Messages(t),
@@ -159,7 +159,7 @@ notifiers = ["email-ops", "inapp"]
 		time.Sleep(150 * time.Millisecond)
 	}
 
-	page, _ := client.ListNotifications(50, "")
+	page, _ := client.ListNotifications(t.Context(), 50, "")
 	t.Fatalf("notify.delivery_failed never appeared. mailpit messages=%d, items=%+v",
 		len(mp.Messages(t)), page.Items)
 }

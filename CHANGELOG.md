@@ -61,6 +61,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`runwisp run --standalone` now honors `manual_trigger = false` and refuses to run a `[services.*]` entry**, matching the guard the daemon already enforces.
 - **`tls = "off"` is now rejected when `tls_cert`/`tls_key` are also set**, instead of being silently overridden into HTTPS.
 - **The failure badge and "Failed" filter could go stale for a run updated live over SSE**, since the push validation was silently dropping the run's failure classification. Fixed by validating the full run shape.
+- **A daemon booted with `runwisp cloud` never resolved a run left `pending` by a prior crash.** Only standalone boot reconciled crash-orphaned pending runs; a cloud-mode restart now marks them interrupted like every other boot path.
+- **A transient database error while marking crashed runs at boot is now retried** a few times before giving up, instead of silently skipping crash recovery for that boot.
+- **Cron jitter for a task without its own `timezone` was placed using the host OS's timezone instead of `[daemon] timezone`.** The two now agree, so jittered tasks land on the intended point of the schedule.
+- **Run filters and retention cutoffs compared timestamps as text instead of as time.** A run created in a timezone other than the daemon's own could sort or filter incorrectly around a `createdAfter`/`createdBefore` boundary, or near the host's own DST transition. Timestamps are now normalized to UTC before being stored or compared.
+- **Retention pruning a run now publishes `run.deleted`**, so an open dashboard reflects the deletion live instead of only after a refresh.
+- **`GET /api/runs/{runId}/log/raw` no longer buffers the whole log in memory before responding**, closing off a memory-exhaustion risk on very large logs.
+- **Daemon shutdown now closes open SSE connections** (`/api/events/stream` and the log streams) instead of leaving their handlers running past the shutdown deadline while other subsystems tear down.
+- **`runwisp import supervisord` could write an invalid `stop_signal`** (e.g. from `stopsignal=CONT`) with no warning, instead of flagging it like every other field it can't map.
+- **A run rejected for a full queue (`queue_full`) no longer offers a "Rerun" action in the TUI.** Like a skipped or missed run, it was never actually executed.
+- **The TUI now shows an error when a service stop or restart is rejected**, instead of silently dropping it into the debug log.
+- **Status labels for underscore end reasons (e.g. `log_overflow`) rendered as one unbroken word.** They're now humanized the same as every other status.
 
 ### Security
 

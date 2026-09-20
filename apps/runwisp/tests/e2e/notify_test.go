@@ -74,7 +74,7 @@ notifiers = ["ops", "inapp"]
 	require.NoError(t, err)
 	waitForFirstPing(t, events)
 
-	_, err = client.TriggerRun("fail-task", nil, "")
+	_, err = client.TriggerRun(t.Context(), "fail-task", nil, "")
 	require.NoError(t, err)
 
 	body := waitForWebhook(t, received, 10*time.Second)
@@ -95,7 +95,7 @@ notifiers = ["ops", "inapp"]
 	//   - the in-app row must coalesce (notification.updated, count >= 2);
 	//   - the outbound webhook must NOT fire — that's the whole point of
 	//     outbound coalescing.
-	_, err = client.TriggerRun("fail-task", nil, "")
+	_, err = client.TriggerRun(t.Context(), "fail-task", nil, "")
 	require.NoError(t, err)
 
 	updated := waitForNotificationEvent(t, events, "notification.updated", 10*time.Second)
@@ -159,7 +159,7 @@ notifiers = ["hook"]
 
 	client := socketClient(t, daemon.dataDir)
 
-	_, err := client.TriggerRun("fail-task", nil, "")
+	_, err := client.TriggerRun(t.Context(), "fail-task", nil, "")
 	require.NoError(t, err)
 
 	var req capturedRequest
@@ -230,11 +230,11 @@ notifiers = ["ops"]
 
 	client := socketClient(t, daemon.dataDir)
 
-	_, err := client.TriggerRun("fail-task", nil, "")
+	_, err := client.TriggerRun(t.Context(), "fail-task", nil, "")
 	require.NoError(t, err)
 	waitForWebhook(t, received, 10*time.Second)
 
-	_, err = client.TriggerRun("fail-task", nil, "")
+	_, err = client.TriggerRun(t.Context(), "fail-task", nil, "")
 	require.NoError(t, err)
 	waitForWebhook(t, received, 10*time.Second)
 }
@@ -274,12 +274,12 @@ notifiers = ["broken", "inapp"]
 
 	client := socketClient(t, daemon.dataDir)
 
-	_, err := client.TriggerRun("fail-task", nil, "")
+	_, err := client.TriggerRun(t.Context(), "fail-task", nil, "")
 	require.NoError(t, err)
 
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
-		page, err := client.ListNotifications(50, "")
+		page, err := client.ListNotifications(t.Context(), 50, "")
 		require.NoError(t, err)
 		if hasDeliveryFailure(page.Items) && len(page.Items) >= 2 {
 			require.GreaterOrEqual(t, hits.Load(), int64(1),
@@ -289,7 +289,7 @@ notifiers = ["broken", "inapp"]
 		time.Sleep(150 * time.Millisecond)
 	}
 
-	page, _ := client.ListNotifications(50, "")
+	page, _ := client.ListNotifications(t.Context(), 50, "")
 	t.Fatalf("notify.delivery_failed never appeared. webhook hits=%d, items=%+v",
 		hits.Load(), page.Items)
 }
@@ -317,7 +317,7 @@ run = "exit 1"
 	require.NoError(t, err)
 	waitForFirstPing(t, events)
 
-	_, err = client.TriggerRun("fail-task", nil, "")
+	_, err = client.TriggerRun(t.Context(), "fail-task", nil, "")
 	require.NoError(t, err)
 
 	created := waitForNotificationEvent(t, events, "notification.created", 10*time.Second)
@@ -367,7 +367,7 @@ notifiers = ["email-ops"]
 
 	client := socketClient(t, daemon.dataDir)
 
-	_, err = client.TriggerRun("fail-task", nil, "")
+	_, err = client.TriggerRun(t.Context(), "fail-task", nil, "")
 	require.NoError(t, err)
 
 	body := srv.WaitForMessage(t, 15*time.Second)
@@ -377,7 +377,7 @@ notifiers = ["email-ops"]
 	require.Contains(t, body, "multipart/alternative", "must be multipart/alternative")
 
 	// Second failure within the coalesce window: no further SMTP transaction.
-	_, err = client.TriggerRun("fail-task", nil, "")
+	_, err = client.TriggerRun(t.Context(), "fail-task", nil, "")
 	require.NoError(t, err)
 
 	srv.ExpectNoMessage(t, 2*time.Second)
@@ -607,7 +607,7 @@ func waitForListedNotifications(
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		page, err := client.ListNotifications(50, "")
+		page, err := client.ListNotifications(t.Context(), 50, "")
 		require.NoError(t, err)
 		if len(page.Items) >= atLeast {
 			return page
@@ -650,23 +650,23 @@ run = "exit 1"
 	require.NoError(t, err)
 	waitForFirstPing(t, events)
 
-	_, err = client.TriggerRun("fail-task", nil, "")
+	_, err = client.TriggerRun(t.Context(), "fail-task", nil, "")
 	require.NoError(t, err)
 
 	createdEnv := waitForNotificationEnvelope(t, events, "notification.created", 10*time.Second)
 	require.EqualValues(t, 1, createdEnv.UnreadCount,
 		"notification.created must ship the post-mutation unread count")
 
-	require.NoError(t, client.MarkNotificationRead(createdEnv.Notification.ID))
+	require.NoError(t, client.MarkNotificationRead(t.Context(), createdEnv.Notification.ID))
 	updatedEnv := waitForNotificationEnvelope(t, events, "notification.updated", 5*time.Second)
 	require.EqualValues(t, 0, updatedEnv.UnreadCount,
 		"mark-read emits notification.updated with the fresh unread count")
 
-	require.NoError(t, client.MarkNotificationUnread(createdEnv.Notification.ID))
+	require.NoError(t, client.MarkNotificationUnread(t.Context(), createdEnv.Notification.ID))
 	unreadEnv := waitForNotificationEnvelope(t, events, "notification.updated", 5*time.Second)
 	require.EqualValues(t, 1, unreadEnv.UnreadCount)
 
-	require.NoError(t, client.MarkAllNotificationsRead())
+	require.NoError(t, client.MarkAllNotificationsRead(t.Context()))
 	count := waitForUnreadCountEvent(t, events, 5*time.Second)
 	require.EqualValues(t, 0, count,
 		"mark-all-read must emit notification.unreadCountChanged with 0")

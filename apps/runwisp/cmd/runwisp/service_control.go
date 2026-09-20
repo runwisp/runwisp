@@ -22,18 +22,19 @@ import (
 // way `runwisp run <task>` does when the daemon is down or the name is wrong.
 // verb is the present-tense action word for error context ("stop"); done is the
 // past-tense word for the success line ("stopped").
-func controlService(cmd *cobra.Command, f Flags, name, verb, done string, action func(*apiclient.Client, string) error) error {
+func controlService(cmd *cobra.Command, f Flags, name, verb, done string, action func(*apiclient.Client, context.Context, string) error) error {
 	if !isDaemonRunning(f) {
 		return fmt.Errorf("no daemon is running on data dir %q — %s", f.DataDir, daemonNotRunningHint)
 	}
+	ctx := cmd.Context()
 	client := apiclient.NewUnix(localAPISocketPath(f))
-	if err := client.HealthCheck(); err != nil {
+	if err := client.HealthCheck(ctx); err != nil {
 		return fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
 	}
-	if err := action(client, name); err != nil {
+	if err := action(client, ctx, name); err != nil {
 		switch {
 		case apiclient.IsHTTPStatus(err, http.StatusNotFound):
-			return unknownTaskError(name, daemonTaskNames(client))
+			return unknownTaskError(name, daemonTaskNames(ctx, client))
 		case apiclient.IsHTTPStatus(err, http.StatusBadRequest):
 			return fmt.Errorf("%q is a task, not a service — only services can be stopped or restarted; use 'runwisp run %s' to trigger a task run", name, name)
 		case apiclient.IsHTTPStatus(err, http.StatusForbidden):

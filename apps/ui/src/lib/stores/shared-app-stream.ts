@@ -314,7 +314,7 @@ export class SharedAppStream implements AppEventStream {
         this.#leaderTypes.add(eventType);
         mgr.subscribe(eventType, (data, id) => {
             if (id) this.#lastEventId = id;
-            this.#dispatch(eventType, data);
+            this.#dispatch(eventType, data, id);
             this.#post({ t: "event", type: eventType, data, ...(id && { id }) });
         });
     }
@@ -345,7 +345,7 @@ export class SharedAppStream implements AppEventStream {
         switch (msg.t) {
             case "event":
                 if (msg.id) this.#lastEventId = msg.id;
-                this.#dispatch(msg.type, msg.data);
+                this.#dispatch(msg.type, msg.data, msg.id);
                 return;
             case "open":
                 this.#emitOpen();
@@ -382,12 +382,12 @@ export class SharedAppStream implements AppEventStream {
         }
     }
 
-    #dispatch(eventType: string, data: string): void {
+    #dispatch(eventType: string, data: string, id?: string): void {
         const set = this.#handlers.get(eventType);
         if (!set) return;
         for (const handler of set) {
             try {
-                handler(data);
+                handler(data, id);
             } catch (err) {
                 logger.error(`handler for ${eventType} threw`, err);
             }

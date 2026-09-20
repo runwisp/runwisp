@@ -473,6 +473,43 @@ describe("SharedAppStream", () => {
         expect(second).not.toBe(first);
     });
 
+    it("forwards the SSE event id to subscribed handlers (leader path)", () => {
+        const { makeTab } = makeWorld();
+        const a = makeTab();
+        const received: Array<[string, string | undefined]> = [];
+
+        a.stream.subscribe("run.created", (data, id) => received.push([data, id]));
+        const es = a.leaderES();
+        es?.open();
+        es?.fireWithId("run.created", { run: { id: "r1" } }, "42");
+
+        expect(received).toHaveLength(1);
+        // EventHandler is (data, id?) => void and EventManager itself passes the
+        // Last-Event-ID through — SharedAppStream's leader path reads `id` (to
+        // update #lastEventId) but drops it when it calls #dispatch, so
+        // subscribers never see it directly.
+        expect(received[0]?.[1]).toBe("42");
+    });
+
+    it("forwards the SSE event id to subscribed handlers (follower path)", () => {
+        const { makeTab } = makeWorld();
+        const leaderTab = makeTab();
+        const followerTab = makeTab();
+        const received: Array<[string, string | undefined]> = [];
+
+        leaderTab.stream.subscribe("run.created", () => {});
+        followerTab.stream.subscribe("run.created", (data, id) => received.push([data, id]));
+
+        leaderTab.leaderES()?.open();
+        leaderTab.leaderES()?.fireWithId("run.created", { run: { id: "r1" } }, "42");
+
+        expect(received).toHaveLength(1);
+        // The follower receives the rebroadcast "event" message (which DOES carry
+        // `id` over the bus), but #handleAsFollower also drops it before calling
+        // #dispatch.
+        expect(received[0]?.[1]).toBe("42");
+    });
+
     it("ignores malformed bus messages", () => {
         const { makeTab, bus } = makeWorld();
         const leaderTab = makeTab();

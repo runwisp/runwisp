@@ -46,7 +46,7 @@ func TestCLIStopRestart(t *testing.T) {
 
 	// ...and a fresh one must answer on the same port.
 	client := apiclient.New(daemon.baseURL, "")
-	require.Eventually(t, func() bool { return client.HealthCheck() == nil },
+	require.Eventually(t, func() bool { return client.HealthCheck(t.Context()) == nil },
 		10*time.Second, 100*time.Millisecond, "restarted daemon should pass health checks")
 
 	out, err = runCLI(t, projectDir, binaryPath,
@@ -54,7 +54,7 @@ func TestCLIStopRestart(t *testing.T) {
 	require.NoError(t, err, "stop should succeed: %s", out)
 	require.Contains(t, out, "Daemon stopped")
 
-	require.Eventually(t, func() bool { return client.HealthCheck() != nil },
+	require.Eventually(t, func() bool { return client.HealthCheck(t.Context()) != nil },
 		10*time.Second, 100*time.Millisecond, "stopped daemon should stop answering")
 
 	// Stopping again is not an error — just a friendly message.

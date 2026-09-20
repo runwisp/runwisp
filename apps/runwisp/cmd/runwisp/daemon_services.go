@@ -66,10 +66,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		initWarnings = append(initWarnings, fmt.Sprintf(format, args...))
 	}
 
-	crashed, err := db.MarkCrashedRuns(ctx)
-	if err != nil {
-		addWarning("Failed to mark crashed runs: %v", err)
-	}
+	crashed := markCrashedRunsWithRetry(ctx, db, addWarning)
 
 	eventBus := events.NewEventBus()
 
@@ -82,8 +79,15 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	// registry so a later `runwisp reload` mutation is race-free.
 	tasks := runtime.NewTaskRegistry(tasksMap)
 
+	// Resolving a prior crash's stale run state (marking crashed runs terminal,
+	// then resuming/queuing/skipping whatever was left pending) is a boot
+	// invariant in every mode, not just standalone — cloud mode still owns the
+	// same local run rows and must not leave them stuck at 'pending' forever.
+	pendingSummary := resumePendingRuns(ctx, db, taskManager)
+
 	var boot standaloneBoot
 	if mode == modeStandalone {
+		var err error
 		boot, err = startStandaloneScheduling(ctx, cfg, db, taskManager, tasksMap, &initWarnings)
 		if err != nil {
 			return nil, err
@@ -132,7 +136,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		Notify:              notifyB,
 		ScheduleResult:      boot.schedResult,
 		CrashedRuns:         crashed,
-		PendingSummary:      boot.pendingSummary,
+		PendingSummary:      pendingSummary,
 		CatchUpResult:       boot.catchUpResult,
 		RunOnStartResult:    boot.runOnStartResult,
 		TaskShutdownTimeout: cfg.Config.Daemon.ShutdownTimeout,
@@ -148,7 +152,6 @@ type standaloneBoot struct {
 	scheduler        *runtime.Scheduler
 	schedLoc         *time.Location
 	schedResult      runtime.ScheduleResult
-	pendingSummary   uikit.PendingRunsSummary
 	runOnStartResult runtime.RunOnStartResult
 	catchUpResult    runtime.CatchUpResult
 	// catchUpNow and catchUpAnchors/catchUpSnapshotErrors are captured by
@@ -160,9 +163,10 @@ type standaloneBoot struct {
 	catchUpSnapshotErrors int
 }
 
-// startStandaloneScheduling brings up the scheduler, resumes pending runs, and
-// fires run_on_start tasks — the standalone-only boot steps that run before
-// notify subscribes. It returns the collected results and a hard error (timezone
+// startStandaloneScheduling brings up the scheduler and fires run_on_start
+// tasks — the standalone-only boot steps that run before notify subscribes.
+// Pending-run resume happens earlier in initDaemonServices, in every mode, not
+// here. It returns the collected results and a hard error (timezone
 // resolution) that must abort daemon startup. Non-fatal hiccups are appended to
 // warnings. Service instances are launched separately by initDaemonServices in
 // both modes.
@@ -195,8 +199,6 @@ func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storag
 		*warnings = append(*warnings, fmt.Sprintf("Failed to start scheduler: %v", err))
 	}
 	boot.schedResult = schedResult
-
-	boot.pendingSummary = resumePendingRuns(ctx, db, taskManager)
 
 	// Fire run_on_start tasks once at boot, before notify so a boot-triggered
 	// run doesn't page. Catch-up (which pages on missed runs) is deferred to
@@ -431,6 +433,29 @@ func topoStartOrder(tasksMap map[string]*model.Task) []*model.Task {
 		visit(s)
 	}
 	return ordered
+}
+
+// markCrashedRunsWithRetry marks crash-orphaned runs terminal, retrying a
+// small bounded number of times: this runs once, synchronously, at boot, so a
+// transient DB error (e.g. SQLite busy) shouldn't permanently skip crash
+// recovery for the whole boot. Only the final failure is surfaced as a warning.
+func markCrashedRunsWithRetry(ctx context.Context, db storage.RunRepository, addWarning func(string, ...any)) int64 {
+	const maxAttempts = 3
+	const retryDelay = 100 * time.Millisecond
+
+	var crashed int64
+	var err error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		crashed, err = db.MarkCrashedRuns(ctx)
+		if err == nil {
+			return crashed
+		}
+		if attempt < maxAttempts {
+			time.Sleep(retryDelay)
+		}
+	}
+	addWarning("Failed to mark crashed runs: %v", err)
+	return crashed
 }
 
 func resumePendingRuns(ctx context.Context, db storage.RunRepository, taskManager runtime.TaskManager) uikit.PendingRunsSummary {

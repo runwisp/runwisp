@@ -479,6 +479,57 @@ func TestSchedulerJitterClampsSlotToLiveGap(t *testing.T) {
 		"the window horizon clamps to the live gap too")
 }
 
+// TestSchedulerJitterLiveGapClampUsesConfiguredTimezone proves the live-gap
+// clamp in fireOnce evaluates a task's schedule in the configured daemon
+// timezone (scheduler.location), not the host OS's time.Local — the same
+// reprojection catchup.go does explicitly via now.In(loc) before calling
+// Schedule.Next. A task with no per-task timezone parses to a bare schedule
+// whose Location defaults to time.Local; robfig/cron's SpecSchedule.Next then
+// evaluates directly off the clock reading's own Location() whenever it
+// matches time.Local, silently falling back to the host's zone instead of the
+// operator's configured one.
+func TestSchedulerJitterLiveGapClampUsesConfiguredTimezone(t *testing.T) {
+	origLocal := time.Local
+	t.Cleanup(func() { time.Local = origLocal })
+	tokyo, err := time.LoadLocation("Asia/Tokyo")
+	require.NoError(t, err)
+	time.Local = tokyo // stands in for a host OS zone that differs from the configured daemon timezone
+
+	nyLoc, err := time.LoadLocation("America/New_York")
+	require.NoError(t, err)
+
+	// now is what a real, uninjected clock.Now() returns in production: its
+	// Location() is exactly time.Local (the host's zone), never the configured
+	// scheduler location.
+	now := time.Date(2024, 1, 15, 1, 0, 0, 0, time.Local)
+
+	runner := &fakeTaskRunner{}
+	task := &model.Task{Name: "nightly", Cron: "0 3 * * *", Jitter: 10 * time.Hour, Run: "echo"}
+	sched := NewScheduler(runner, map[string]*model.Task{"nightly": task}, nyLoc, func() time.Time { return now })
+	_, err = sched.Start()
+	require.NoError(t, err)
+	defer sched.Stop()
+
+	plan, ok := sched.jitterPlans["nightly"]
+	require.True(t, ok)
+
+	// Anchoring sanity: reprojecting now into the configured timezone (the
+	// correct behavior) puts the next 03:00 tick 16h away — comfortably wider
+	// than the 10h window, so a correct clamp leaves the window untouched.
+	// Reading now's Tokyo wall-clock directly (the bug) puts 03:00 only 2h
+	// away, which WOULD clamp the window down from 10h.
+	correctGap := plan.schedule.Next(now.In(nyLoc)).Sub(now)
+	require.Greater(t, correctGap-time.Second, task.Jitter,
+		"anchoring sanity: the configured-timezone gap must be wider than the window so an incorrect (host-zone) gap would visibly clamp it")
+
+	sched.fireOnce("nightly", nyLoc)
+
+	calls := runner.jitteredCalls()
+	require.Len(t, calls, 1)
+	assert.Equal(t, task.Jitter, calls[0].window,
+		"the live-gap clamp must evaluate the schedule against the configured daemon timezone, not the host OS's time.Local")
+}
+
 // TestSchedulerJitterSkipsDSTDuplicate proves a DST wall-clock duplicate is
 // recorded as dst_skipped and never jittered, even for a task that carries an
 // offset — jitter applies only to genuine firings.

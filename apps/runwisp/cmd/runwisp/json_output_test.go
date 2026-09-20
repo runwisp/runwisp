@@ -116,7 +116,7 @@ func TestRunStatus_JSONUnreachableEmitsUnhealthyDoc(t *testing.T) {
 	f := Flags{DataDir: testutil.ShortTempDir(t)}
 
 	var buf bytes.Buffer
-	err := runStatus(&buf, f, true)
+	err := runStatus(t.Context(), &buf, f, true)
 	require.Error(t, err, "an unreachable daemon must still exit non-zero")
 
 	var doc statusJSONDoc

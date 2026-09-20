@@ -4,6 +4,7 @@
 package apiclient
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -27,9 +28,9 @@ var ErrAuthDisabled = errors.New("daemon runs with authentication disabled")
 // RUNWISP_AUTH=off. Any other non-2xx surfaces as the underlying HTTP error so
 // the caller can distinguish "not on a socket" (403) from real transport
 // failures.
-func (c *Client) GetLocalCredentials() (*server.LocalCredentialsBody, error) {
+func (c *Client) GetLocalCredentials(ctx context.Context) (*server.LocalCredentialsBody, error) {
 	var body server.LocalCredentialsBody
-	if err := c.doJSON("GET", "/api/local/credentials", nil, &body); err != nil {
+	if err := c.doJSON(ctx, "GET", "/api/local/credentials", nil, &body); err != nil {
 		if IsHTTPStatus(err, http.StatusNotFound) {
 			return nil, ErrLocalCredentialsUnavailable
 		}

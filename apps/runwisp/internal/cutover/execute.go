@@ -89,7 +89,7 @@ func (c *Cutover) Execute(ctx context.Context, p Plan, out io.Writer) (Result, e
 
 	if p.pending(StepReloadRunningDaemon) {
 		fmt.Fprintln(out, "Reloading the running daemon so the held jobs become RunWisp's...")
-		if err := c.deps.Reload(); err != nil {
+		if err := c.deps.Reload(ctx); err != nil {
 			return res, err
 		}
 		res.Reloaded = true

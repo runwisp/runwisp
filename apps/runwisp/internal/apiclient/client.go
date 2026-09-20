@@ -114,13 +114,13 @@ func NewUnix(socketPath string) *Client {
 // Authenticate performs CHAP authentication and stores the JWT token.
 // On Unix-socket clients this is a no-op — the daemon does not require a
 // JWT for socket-delivered requests.
-func (c *Client) Authenticate() error {
+func (c *Client) Authenticate(ctx context.Context) error {
 	if c.local {
 		return nil
 	}
 
 	var challenge server.AuthChallengeBody
-	if err := c.doJSON("GET", "/api/auth/challenge", nil, &challenge); err != nil {
+	if err := c.doJSON(ctx, "GET", "/api/auth/challenge", nil, &challenge); err != nil {
 		if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrRateLimited) {
 			return err
 		}
@@ -132,7 +132,7 @@ func (c *Client) Authenticate() error {
 		Response: chap.Response(c.password, challenge.Nonce),
 	}
 	var authResult server.AuthLoginBody
-	if err := c.doJSON("POST", "/api/auth/login", body, &authResult); err != nil {
+	if err := c.doJSON(ctx, "POST", "/api/auth/login", body, &authResult); err != nil {
 		if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrRateLimited) {
 			return err
 		}
@@ -163,7 +163,7 @@ func (c *Client) Token() string {
 
 // doJSON performs a JSON request. reqBody is marshalled if non-nil.
 // respBody is unmarshalled from the response if non-nil.
-func (c *Client) doJSON(method, path string, reqBody, respBody any) error {
+func (c *Client) doJSON(ctx context.Context, method, path string, reqBody, respBody any) error {
 	var bodyReader io.Reader
 	if reqBody != nil {
 		data, err := json.Marshal(reqBody)
@@ -173,7 +173,7 @@ func (c *Client) doJSON(method, path string, reqBody, respBody any) error {
 		bodyReader = bytes.NewReader(data)
 	}
 
-	resp, err := c.doRequest(method, path, bodyReader)
+	resp, err := c.doRequest(ctx, method, path, bodyReader)
 	if err != nil {
 		return err
 	}
@@ -189,13 +189,13 @@ func (c *Client) doJSON(method, path string, reqBody, respBody any) error {
 }
 
 // doRaw performs a GET request and returns the raw response. Caller must close the body.
-func (c *Client) doRaw(path string) (*http.Response, error) {
-	return c.doRequest(http.MethodGet, path, nil)
+func (c *Client) doRaw(ctx context.Context, path string) (*http.Response, error) {
+	return c.doRequest(ctx, http.MethodGet, path, nil)
 }
 
 // doRequest is the shared transport helper for all HTTP calls.
-func (c *Client) doRequest(method, path string, body io.Reader) (*http.Response, error) {
-	req, err := http.NewRequest(method, c.baseURL+path, body)
+func (c *Client) doRequest(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -259,9 +259,9 @@ func IsHTTPStatus(err error, code int) bool {
 
 // CreateLaunchTicket requests a single-use launch ticket from the daemon.
 // The ticket can be redeemed via GET /api/auth/launch-ticket?ticket=<ticket>.
-func (c *Client) CreateLaunchTicket() (string, error) {
+func (c *Client) CreateLaunchTicket(ctx context.Context) (string, error) {
 	var resp server.LaunchTicketBody
-	if err := c.doJSON("POST", "/api/auth/launch-ticket", nil, &resp); err != nil {
+	if err := c.doJSON(ctx, "POST", "/api/auth/launch-ticket", nil, &resp); err != nil {
 		return "", err
 	}
 	return resp.Ticket, nil

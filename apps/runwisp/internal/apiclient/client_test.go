@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
@@ -92,7 +93,7 @@ func TestAuthenticate(t *testing.T) {
 	c := New(srv.URL, "my-password")
 	assert.False(t, c.IsAuthenticated())
 
-	err := c.Authenticate()
+	err := c.Authenticate(t.Context())
 	require.NoError(t, err)
 	assert.True(t, c.IsAuthenticated())
 }
@@ -118,7 +119,7 @@ func TestSetTokenSkipsHandshake(t *testing.T) {
 	assert.True(t, c.IsAuthenticated())
 	assert.Equal(t, "cached-jwt", c.Token())
 
-	run, err := c.TriggerRun("my-task", nil, "")
+	run, err := c.TriggerRun(t.Context(), "my-task", nil, "")
 	require.NoError(t, err)
 	assert.Equal(t, "new-run", run.ID)
 	assert.False(t, sawAuth, "a seeded token must not trigger a CHAP handshake")
@@ -136,7 +137,7 @@ func TestTokenReturnsMintedValue(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "pw")
-	require.NoError(t, c.Authenticate())
+	require.NoError(t, c.Authenticate(t.Context()))
 	assert.Equal(t, "fresh-jwt", c.Token())
 }
 
@@ -147,7 +148,7 @@ func TestAuthenticate_ChallengeError(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "pw")
-	err := c.Authenticate()
+	err := c.Authenticate(t.Context())
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "auth challenge")
 }
@@ -164,7 +165,7 @@ func TestAuthenticate_AuthError(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "pw")
-	err := c.Authenticate()
+	err := c.Authenticate(t.Context())
 	assert.ErrorIs(t, err, ErrUnauthorized)
 }
 
@@ -175,7 +176,7 @@ func TestAuthenticate_RateLimited(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "pw")
-	err := c.Authenticate()
+	err := c.Authenticate(t.Context())
 	assert.ErrorIs(t, err, ErrRateLimited)
 }
 
@@ -192,7 +193,7 @@ func TestListTasks(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	got, err := c.ListTasks()
+	got, err := c.ListTasks(t.Context())
 	require.NoError(t, err)
 	require.Len(t, got, 2)
 	assert.Equal(t, "task-1", got[0].Name)
@@ -213,7 +214,7 @@ func TestListRuns(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	runs, total, err := c.ListRuns(RunsParams{Limit: 10})
+	runs, total, err := c.ListRuns(t.Context(), RunsParams{Limit: 10})
 	require.NoError(t, err)
 	assert.Len(t, runs, 2)
 	assert.Equal(t, int64(42), total)
@@ -233,7 +234,7 @@ func TestListRunsByTask(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	runs, total, err := c.ListRunsByTask("my-task", RunsParams{})
+	runs, total, err := c.ListRunsByTask(t.Context(), "my-task", RunsParams{})
 	require.NoError(t, err)
 	assert.Len(t, runs, 1)
 	assert.Equal(t, int64(1), total)
@@ -248,7 +249,7 @@ func TestTriggerRun(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	run, err := c.TriggerRun("my-task", nil, "")
+	run, err := c.TriggerRun(t.Context(), "my-task", nil, "")
 	require.NoError(t, err)
 	assert.Equal(t, "new-run", run.ID)
 }
@@ -262,7 +263,7 @@ func TestStopRun(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.StopRun("run-1")
+	err := c.StopRun(t.Context(), "run-1")
 	assert.NoError(t, err)
 }
 
@@ -274,7 +275,7 @@ func TestGetRun(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	run, err := c.GetRun("run-1")
+	run, err := c.GetRun(t.Context(), "run-1")
 	require.NoError(t, err)
 	assert.Equal(t, "run-1", run.ID)
 }
@@ -287,7 +288,7 @@ func TestGetSystemStats(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	stats, err := c.GetSystemStats()
+	stats, err := c.GetSystemStats(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, 42.5, stats.CPUUsage)
 	assert.Equal(t, "1.0", stats.Version)
@@ -301,7 +302,7 @@ func TestHealthCheck(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.HealthCheck()
+	err := c.HealthCheck(t.Context())
 	assert.NoError(t, err)
 }
 
@@ -312,7 +313,7 @@ func TestDoJSON_Unauthorized(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.doJSON("GET", "/api/tasks", nil, nil)
+	err := c.doJSON(t.Context(), "GET", "/api/tasks", nil, nil)
 	assert.ErrorIs(t, err, ErrUnauthorized)
 }
 
@@ -323,7 +324,7 @@ func TestDoJSON_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.doJSON("GET", "/api/tasks", nil, nil)
+	err := c.doJSON(t.Context(), "GET", "/api/tasks", nil, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "500")
 }
@@ -337,7 +338,7 @@ func TestDoJSON_AuthHeaderSent(t *testing.T) {
 
 	c := New(srv.URL, "")
 	c.token = "my-token"
-	err := c.doJSON("GET", "/api/test", nil, nil)
+	err := c.doJSON(t.Context(), "GET", "/api/test", nil, nil)
 	assert.NoError(t, err)
 }
 
@@ -350,7 +351,7 @@ func TestGetLogRaw(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	body, err := c.GetLogRaw("run-1")
+	body, err := c.GetLogRaw(t.Context(), "run-1")
 	require.NoError(t, err)
 	defer body.Close()
 	data, err := io.ReadAll(body)
@@ -414,7 +415,7 @@ func TestNewUnix_LocalShortCircuitsAuth(t *testing.T) {
 	assert.True(t, c.IsAuthenticated(), "local client must report authenticated before any call")
 	// Authenticate is a no-op on the local path; it must not error even
 	// without a daemon at the socket path.
-	require.NoError(t, c.Authenticate())
+	require.NoError(t, c.Authenticate(t.Context()))
 }
 
 // TestNewUnix_DialsSocket exercises the Unix-socket transport against a real
@@ -438,7 +439,7 @@ func TestNewUnix_DialsSocket(t *testing.T) {
 	t.Cleanup(func() { _ = srv.Close() })
 
 	c := NewUnix(socketPath)
-	stats, err := c.GetSystemStats()
+	stats, err := c.GetSystemStats(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "test", stats.Version)
 	assert.Equal(t, 7.0, stats.CPUUsage)
@@ -453,7 +454,7 @@ func TestRestartService(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.RestartService("my-task")
+	err := c.RestartService(t.Context(), "my-task")
 	assert.NoError(t, err)
 }
 
@@ -464,7 +465,7 @@ func TestRestartService_Error(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.RestartService("missing-task")
+	err := c.RestartService(t.Context(), "missing-task")
 	assert.Error(t, err)
 }
 
@@ -477,7 +478,7 @@ func TestStopService(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.StopService("my-task")
+	err := c.StopService(t.Context(), "my-task")
 	assert.NoError(t, err)
 }
 
@@ -488,7 +489,7 @@ func TestStopService_Unauthorized(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.StopService("my-task")
+	err := c.StopService(t.Context(), "my-task")
 	assert.ErrorIs(t, err, ErrUnauthorized)
 }
 
@@ -501,7 +502,7 @@ func TestDeleteRun(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.DeleteRun("run-1")
+	err := c.DeleteRun(t.Context(), "run-1")
 	assert.NoError(t, err)
 }
 
@@ -512,7 +513,7 @@ func TestDeleteRun_Error(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.DeleteRun("run-1")
+	err := c.DeleteRun(t.Context(), "run-1")
 	assert.Error(t, err)
 }
 
@@ -526,7 +527,7 @@ func TestCreateLaunchTicket(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	ticket, err := c.CreateLaunchTicket()
+	ticket, err := c.CreateLaunchTicket(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "my-ticket-abc", ticket)
 }
@@ -538,7 +539,7 @@ func TestCreateLaunchTicket_Error(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	ticket, err := c.CreateLaunchTicket()
+	ticket, err := c.CreateLaunchTicket(t.Context())
 	assert.Error(t, err)
 	assert.Empty(t, ticket)
 }
@@ -561,7 +562,7 @@ func TestGetLogPage(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	page, err := c.GetLogPage("run-1", -100, 50)
+	page, err := c.GetLogPage(t.Context(), "run-1", -100, 50)
 	require.NoError(t, err)
 	assert.Equal(t, int64(5), page.TotalLines)
 	assert.True(t, page.Finalized)
@@ -578,7 +579,7 @@ func TestGetLogPage_NoLimit(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	page, err := c.GetLogPage("run-1", 0, 0)
+	page, err := c.GetLogPage(t.Context(), "run-1", 0, 0)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), page.TotalLines)
 }
@@ -590,6 +591,45 @@ func TestGetLogPage_Error(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	_, err := c.GetLogPage("run-1", -100, 50)
+	_, err := c.GetLogPage(t.Context(), "run-1", -100, 50)
 	assert.Error(t, err)
+}
+
+// TestHealthCheck_CancelledByContext proves doRequest (the shared helper
+// behind doJSON/doRaw) actually honors a caller's context, matching the
+// SSE-backed methods (doSSE takes a ctx and threads it through via
+// http.NewRequestWithContext). A call against a server that never responds
+// must return promptly once its context is cancelled, instead of blocking
+// for the fixed 30s httpClient.Timeout set in New.
+func TestHealthCheck_CancelledByContext(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release // held open until the test explicitly lets it go
+	}))
+	defer func() {
+		close(release)
+		srv.Close()
+	}()
+
+	c := New(srv.URL, "")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		done <- c.HealthCheck(ctx)
+	}()
+
+	// Give the request time to actually reach the (stalled) handler before
+	// cancelling, so this exercises real in-flight cancellation rather than a
+	// pre-cancelled context that never dials out.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("HealthCheck did not return promptly after its context was cancelled")
+	}
 }

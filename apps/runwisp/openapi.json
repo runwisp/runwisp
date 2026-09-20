@@ -3930,21 +3930,15 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
+              "text/plain; charset=utf-8": {
                 "schema": {
-                  "contentEncoding": "base64",
+                  "contentMediaType": "application/octet-stream",
+                  "format": "binary",
                   "type": "string"
                 }
               }
             },
-            "description": "OK",
-            "headers": {
-              "Content-Type": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
+            "description": "The full log as plain text."
           },
           "default": {
             "content": {

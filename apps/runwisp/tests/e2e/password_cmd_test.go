@@ -31,7 +31,7 @@ func TestPasswordCmd_PrintsEphemeralValue(t *testing.T) {
 	configPath := writeE2EConfig(t, configDir)
 	daemon := startDaemon(t, projectDir, binaryPath, configPath)
 
-	creds, err := socketClient(t, daemon.dataDir).GetLocalCredentials()
+	creds, err := socketClient(t, daemon.dataDir).GetLocalCredentials(t.Context())
 	require.NoError(t, err)
 	require.NotEmpty(t, creds.Password)
 	require.True(t, creds.Ephemeral)

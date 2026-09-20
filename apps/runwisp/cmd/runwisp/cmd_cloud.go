@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,7 +36,7 @@ The local scheduler is not started — task scheduling is managed by the cloud.`
 		if noTUI || !isInteractiveTerminal() {
 			return runDaemon(modeCloud, flags, noTUI)
 		}
-		return runCloudInteractive(flags)
+		return runCloudInteractive(cmd.Context(), flags)
 	},
 }
 
@@ -45,12 +46,12 @@ The local scheduler is not started — task scheduling is managed by the cloud.`
 // process is what protects the operator's terminal — a daemon crash can never
 // leave the attached TUI's terminal in raw/alt-screen mode, because the TUI
 // process (which owns the terminal) is not the one that died.
-func runCloudInteractive(f Flags) error {
+func runCloudInteractive(ctx context.Context, f Flags) error {
 	client := apiclient.NewUnix(localAPISocketPath(f))
 
 	// A cloud daemon is already running on this data dir — just attach.
-	if client.HealthCheck() == nil {
-		return runTUIConnect(client, f)
+	if client.HealthCheck(ctx) == nil {
+		return runTUIConnect(ctx, client, f)
 	}
 
 	if err := spawnDaemonProcess(daemonSpawnArgs([]string{"cloud", "--no-tui"}, f), f.DataDir); err != nil {
@@ -62,7 +63,7 @@ func runCloudInteractive(f Flags) error {
 	if err := waitForDaemon(client, logPath, 10*time.Second, f); err != nil {
 		return err
 	}
-	return runTUIConnect(client, f)
+	return runTUIConnect(ctx, client, f)
 }
 
 // resolveCloudEnv loads the .env file (if present) and applies the --token /

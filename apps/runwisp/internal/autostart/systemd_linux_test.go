@@ -741,6 +741,26 @@ func TestSystemdEnsurePasswordDropIn_WritesOnceThenSkips(t *testing.T) {
 	assert.Zero(t, cmd.Remaining(), "skip path must not daemon-reload")
 }
 
+// TestSystemdEnsurePasswordDropIn_EscapesPercentSpecifier proves that a
+// password containing a systemd '%' specifier can't break out of its
+// Environment="..." line — the same escaping envDropInContent already
+// applies to every other RUNWISP_* value via systemdEscape.
+func TestSystemdEnsurePasswordDropIn_EscapesPercentSpecifier(t *testing.T) {
+	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
+	opts := defaultInstallOpts(binary)
+	opts.System = true
+
+	cmd.Expect("sudo", []string{"systemctl", "daemon-reload"}, nil, nil, nil)
+	path, wrote, err := inst.EnsurePasswordDropIn(context.Background(), opts, "%h%%pw")
+	require.NoError(t, err)
+	assert.True(t, wrote)
+
+	body, err := fs.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `Environment="RUNWISP_PASSWORD=%%h%%%%pw"`,
+		"systemd '%' specifiers must be doubled like systemdEscape does for every other value")
+}
+
 // TestSystemdWriteEnvDropIn_WritesRefreshesAndRemoves is the #251 regression at
 // the installer layer: unlike EnsurePasswordDropIn, the env drop-in must
 // refresh on every install so a changed or removed RUNWISP_* value actually

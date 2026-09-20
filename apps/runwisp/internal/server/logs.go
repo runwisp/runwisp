@@ -6,6 +6,7 @@ package server
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -70,13 +71,6 @@ type LogPageOutput struct {
 // LogRawInput drives GET /api/runs/{runId}/log/raw.
 type LogRawInput struct {
 	RunID string `path:"runId" minLength:"26" maxLength:"26" pattern:"^[0-9A-HJKMNP-TV-Z]{26}$" doc:"Run ULID"`
-}
-
-// LogRawOutput streams the rotated-away segment (.log.prev) followed by the
-// current segment, concatenated into one text/plain body.
-type LogRawOutput struct {
-	ContentType string `header:"Content-Type"`
-	Body        []byte
 }
 
 // errInvalidRunID is getRunByID's sentinel for a malformed ULID, distinguished
@@ -190,39 +184,55 @@ func (srv *Server) humaGetLogLineHistory(ctx context.Context, input *LogLineHist
 	return &LogLineHistoryOutput{Body: LogLineHistoryBody{Frames: frames}}, nil
 }
 
-func (srv *Server) humaGetLogRaw(ctx context.Context, input *LogRawInput) (*LogRawOutput, error) {
+// humaGetLogRaw streams rather than buffers: a full-log download can be many
+// times larger than the JSON page / SSE replay caps, so holding it in a
+// single []byte (the previous approach) risked unbounded memory use. The
+// huma.StreamResponse body callback is the same mechanism sse.Register uses
+// for /log/stream: it hands us the response writer directly once headers
+// are ready, instead of requiring the whole body up front.
+func (srv *Server) humaGetLogRaw(ctx context.Context, input *LogRawInput) (*huma.StreamResponse, error) {
 	logPath, _, err := srv.resolveLogPath(ctx, input.RunID)
 	if err != nil {
 		return nil, err
 	}
 
-	body, readErr := readRawLog(logPath)
-	if readErr != nil {
-		slog.Error("Failed to read raw log", "path", logPath, "err", readErr)
-		return nil, huma.Error500InternalServerError("Failed to read log")
-	}
-
-	return &LogRawOutput{
-		ContentType: "text/plain; charset=utf-8",
-		Body:        body,
+	return &huma.StreamResponse{
+		Body: func(sctx huma.Context) {
+			sctx.SetHeader("Content-Type", "text/plain; charset=utf-8")
+			sctx.SetStatus(http.StatusOK)
+			if err := streamRawLog(sctx.BodyWriter(), logPath); err != nil {
+				// Headers/status are already committed by the time a mid-stream
+				// read fails, so all we can do is log it: there's no way to turn
+				// this into a 500 for the client at this point.
+				slog.Error("Failed to stream raw log", "path", logPath, "err", err)
+			}
+		},
 	}, nil
 }
 
-// readRawLog concatenates the rotated-away segment (if any) and the current
-// segment so a single download contains the operator-visible byte stream.
-func readRawLog(logPath string) ([]byte, error) {
-	var body []byte
-	if prev, err := os.ReadFile(logutil.PrevPath(logPath)); err == nil {
-		body = append(body, prev...)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
+// streamRawLog copies the rotated-away segment (.log.prev), if any, followed
+// by the current segment straight to w, so a full-log download never holds
+// more than one io.Copy buffer of the file in memory at a time.
+func streamRawLog(w io.Writer, logPath string) error {
+	if err := copyLogSegment(w, logutil.PrevPath(logPath)); err != nil {
+		return err
 	}
-	if cur, err := os.ReadFile(logPath); err == nil {
-		body = append(body, cur...)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
+	return copyLogSegment(w, logPath)
+}
+
+// copyLogSegment streams path's contents to w if it exists; a missing
+// segment (no rotation yet, or no output yet) is not an error.
+func copyLogSegment(w io.Writer, path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
 	}
-	return body, nil
+	defer f.Close()
+	_, err = io.Copy(w, f)
+	return err
 }
 
 // LogStreamInput drives the SSE log endpoint. Huma performs path/query/header
@@ -249,6 +259,9 @@ func (srv *Server) registerLogSSE(api huma.API) {
 		"dropped": LogDroppedEvent{},
 		"done":    LogDoneEvent{},
 	}, func(ctx context.Context, input *LogStreamInput, send sse.Sender) {
+		ctx, cancelShutdown := srv.withShutdown(ctx)
+		defer cancelShutdown()
+
 		release, ok := srv.streams.acquire(ctx)
 		if !ok {
 			return

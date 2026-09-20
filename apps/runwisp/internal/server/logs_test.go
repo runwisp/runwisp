@@ -4,14 +4,18 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
@@ -185,6 +189,18 @@ func TestHumaGetLogPage_RespectsClampedLimit(t *testing.T) {
 	assert.LessOrEqual(t, len(out.Body.Lines), 4)
 }
 
+// invokeStreamResponse drives a *huma.StreamResponse's Body callback against a
+// real httptest.ResponseRecorder wrapped in a minimal huma.Context (the same
+// humachi adapter the live router uses), so tests can assert on headers/body
+// without spinning up the full server + router + auth stack.
+func invokeStreamResponse(t *testing.T, resp *huma.StreamResponse) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	resp.Body(humachi.NewContext(&huma.Operation{}, req, w))
+	return w
+}
+
 func TestHumaGetLogRaw_PrependsPrevSegment(t *testing.T) {
 	srv, db, _ := logsTestServer(t)
 	run := seedTerminalRun(t, db, "task")
@@ -195,8 +211,9 @@ func TestHumaGetLogRaw_PrependsPrevSegment(t *testing.T) {
 		RunID: run.ID,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "text/plain; charset=utf-8", out.ContentType)
-	assert.Equal(t, "rotated-line\ncurrent-line\n", string(out.Body))
+	w := invokeStreamResponse(t, out)
+	assert.Equal(t, "text/plain; charset=utf-8", w.Header().Get("Content-Type"))
+	assert.Equal(t, "rotated-line\ncurrent-line\n", w.Body.String())
 }
 
 func TestHumaGetLogRaw_MissingBothFilesIsEmpty(t *testing.T) {
@@ -206,7 +223,31 @@ func TestHumaGetLogRaw_MissingBothFilesIsEmpty(t *testing.T) {
 		RunID: run.ID,
 	})
 	require.NoError(t, err)
-	assert.Empty(t, out.Body)
+	w := invokeStreamResponse(t, out)
+	assert.Empty(t, w.Body.String())
+}
+
+// TestHumaGetLogRaw_StreamsFullContent guards against the raw log endpoint
+// silently regressing to unbounded memory use: unlike the JSON page
+// (LogPageMaxLimit), the SSE replay (LogStreamReplayMax), or search
+// (LogSearchMaxLimit), /log/raw has no size cap and must return the entire
+// file untruncated no matter how large it is. The handler now streams the
+// file straight to the response writer via io.Copy instead of buffering it
+// into a single []byte first (see streamRawLog), so this only asserts the
+// externally observable behavior is unchanged: full, untruncated content.
+func TestHumaGetLogRaw_StreamsFullContent(t *testing.T) {
+	srv, db, _ := logsTestServer(t)
+	run := seedTerminalRun(t, db, "task")
+	logPath := logutil.ResolveRunLogPath(srv.logDir, run.TaskName, run.ID, run.CreatedAt)
+	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0o755))
+
+	big := strings.Repeat("x", 5*1024*1024) // 5 MiB, far past any line-count cap in bytes.
+	require.NoError(t, os.WriteFile(logPath, []byte(big), 0o600))
+
+	out, err := srv.humaGetLogRaw(context.Background(), &LogRawInput{RunID: run.ID})
+	require.NoError(t, err)
+	w := invokeStreamResponse(t, out)
+	assert.Equal(t, big, w.Body.String(), "raw log handler must return the full log with no size cap or truncation")
 }
 
 func TestHumaGetLogRaw_PropagatesResolveError(t *testing.T) {
@@ -220,46 +261,46 @@ func TestHumaGetLogRaw_PropagatesResolveError(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, statusErr.GetStatus())
 }
 
-func TestReadRawLog_OnlyCurrent(t *testing.T) {
+func TestStreamRawLog_OnlyCurrent(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "x.log")
 	require.NoError(t, os.WriteFile(p, []byte("hello"), 0o600))
-	body, err := readRawLog(p)
-	require.NoError(t, err)
-	assert.Equal(t, "hello", string(body))
+	var buf bytes.Buffer
+	require.NoError(t, streamRawLog(&buf, p))
+	assert.Equal(t, "hello", buf.String())
 }
 
-func TestReadRawLog_OnlyPrev(t *testing.T) {
+func TestStreamRawLog_OnlyPrev(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "x.log")
 	require.NoError(t, os.WriteFile(logutil.PrevPath(p), []byte("rotated"), 0o600))
-	body, err := readRawLog(p)
-	require.NoError(t, err)
-	assert.Equal(t, "rotated", string(body))
+	var buf bytes.Buffer
+	require.NoError(t, streamRawLog(&buf, p))
+	assert.Equal(t, "rotated", buf.String())
 }
 
-func TestReadRawLog_NeitherFileReturnsEmpty(t *testing.T) {
+func TestStreamRawLog_NeitherFileReturnsEmpty(t *testing.T) {
 	dir := t.TempDir()
-	body, err := readRawLog(filepath.Join(dir, "missing.log"))
-	require.NoError(t, err)
-	assert.Empty(t, body)
+	var buf bytes.Buffer
+	require.NoError(t, streamRawLog(&buf, filepath.Join(dir, "missing.log")))
+	assert.Empty(t, buf.String())
 }
 
-func TestReadRawLog_PrevReadErrorIsPropagated(t *testing.T) {
-	// Create a directory at the rotated-segment path so os.ReadFile returns an
+func TestStreamRawLog_PrevReadErrorIsPropagated(t *testing.T) {
+	// Create a directory at the rotated-segment path so os.Open returns an
 	// error that is not os.ErrNotExist.
 	dir := t.TempDir()
 	p := filepath.Join(dir, "x.log")
 	require.NoError(t, os.Mkdir(logutil.PrevPath(p), 0o755))
-	_, err := readRawLog(p)
-	require.Error(t, err)
+	var buf bytes.Buffer
+	require.Error(t, streamRawLog(&buf, p))
 }
 
-func TestReadRawLog_CurrentReadErrorIsPropagated(t *testing.T) {
+func TestStreamRawLog_CurrentReadErrorIsPropagated(t *testing.T) {
 	// Directory at logPath itself causes a non-ENOENT read error.
 	dir := t.TempDir()
 	p := filepath.Join(dir, "x.log")
 	require.NoError(t, os.Mkdir(p, 0o755))
-	_, err := readRawLog(p)
-	require.Error(t, err)
+	var buf bytes.Buffer
+	require.Error(t, streamRawLog(&buf, p))
 }

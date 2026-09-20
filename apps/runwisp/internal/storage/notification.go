@@ -224,7 +224,7 @@ func (db *SQLiteDatabase) PruneNotificationsByAge(ctx context.Context, olderThan
 	if olderThan <= 0 {
 		return 0, nil
 	}
-	cutoff := time.Now().Add(-olderThan)
+	cutoff := time.Now().UTC().Add(-olderThan)
 	return db.q.PruneNotificationsByAge(ctx, cutoff)
 }
 

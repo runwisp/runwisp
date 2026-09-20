@@ -4,17 +4,22 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -112,6 +117,46 @@ func TestInitRetentionCleaner_StartsAndStops(t *testing.T) {
 	cleaner := initRetentionCleaner(dc, db, runtime.NewTaskRegistry(nil), f.LogDir(), nil)
 	require.NotNil(t, cleaner)
 	t.Cleanup(cleaner.Stop)
+}
+
+// TestMarkCrashedRunsWithRetry_RetriesTransientFailure locks in the boot-time
+// retry: a transient DB error (e.g. SQLite busy) must not permanently skip
+// crash recovery for the whole boot — it succeeds once the underlying error
+// clears within the bounded retry budget, and no warning is raised.
+func TestMarkCrashedRunsWithRetry_RetriesTransientFailure(t *testing.T) {
+	db := new(testutil.MockRunRepository)
+	db.On("MarkCrashedRuns", mock.Anything).Return(int64(0), errors.New("database is locked")).Twice()
+	db.On("MarkCrashedRuns", mock.Anything).Return(int64(3), nil).Once()
+
+	var warnings []string
+	addWarning := func(format string, args ...any) {
+		warnings = append(warnings, fmt.Sprintf(format, args...))
+	}
+
+	crashed := markCrashedRunsWithRetry(t.Context(), db, addWarning)
+
+	assert.Equal(t, int64(3), crashed)
+	assert.Empty(t, warnings, "a transient failure that clears within the retry budget must not surface a warning")
+	db.AssertExpectations(t)
+}
+
+// TestMarkCrashedRunsWithRetry_WarnsAfterExhaustingRetries locks in that a
+// warning is only raised once every attempt in the bounded budget has failed.
+func TestMarkCrashedRunsWithRetry_WarnsAfterExhaustingRetries(t *testing.T) {
+	db := new(testutil.MockRunRepository)
+	db.On("MarkCrashedRuns", mock.Anything).Return(int64(0), errors.New("database is locked"))
+
+	var warnings []string
+	addWarning := func(format string, args ...any) {
+		warnings = append(warnings, fmt.Sprintf(format, args...))
+	}
+
+	crashed := markCrashedRunsWithRetry(t.Context(), db, addWarning)
+
+	assert.Equal(t, int64(0), crashed)
+	require.Len(t, warnings, 1)
+	assert.Contains(t, warnings[0], "Failed to mark crashed runs")
+	db.AssertNumberOfCalls(t, "MarkCrashedRuns", 3)
 }
 
 func TestResumePendingRuns_EmptyDBReturnsEmptySummary(t *testing.T) {
@@ -229,6 +274,37 @@ func TestOrderServicesForStop_DependentsFirst(t *testing.T) {
 	assert.Less(t, pos["a"], pos["c"], "a depends on c → a stops first")
 	assert.Less(t, pos["b"], pos["d"], "b depends on d → b stops first")
 	assert.Less(t, pos["c"], pos["d"], "c depends on d → c stops first")
+}
+
+// TestInitDaemonServices_CloudModeResolvesPendingRuns locks the crash-safety
+// invariant ("any run that was in-flight is marked interrupted with a terminal
+// status — it is not resumed") across every boot mode, not just standalone.
+// resumePendingRuns is only called from startStandaloneScheduling, which
+// initDaemonServices gates on mode == modeStandalone, so a run a prior crash
+// left at status='pending' must still be resolved when the daemon boots into
+// cloud mode instead.
+func TestInitDaemonServices_CloudModeResolvesPendingRuns(t *testing.T) {
+	f, db := daemonServicesTestEnv(t)
+	cfg := &config.Config{}
+	config.ApplyDefaults(cfg)
+	dc := &daemonConfig{Config: cfg}
+
+	pending := &model.Run{ID: ulid.Make().String(), TaskName: "ghost", Status: model.PhasePending, TriggeredBy: model.TriggeredByCron}
+	require.NoError(t, db.CreateRun(t.Context(), pending))
+
+	svc, err := initDaemonServices(t.Context(), dc, db, modeCloud, f)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		svc.RetentionCleaner.Stop()
+		svc.SoftDeletePurger.Stop()
+		svc.MemoryReclaimer.Stop()
+		svc.ServiceLaunchCancel()
+	})
+
+	got, err := db.GetRun(t.Context(), pending.ID)
+	require.NoError(t, err)
+	assert.NotEqual(t, model.PhasePending, got.Status,
+		"a run left pending by a prior crash must be resolved to a terminal status on boot, even in cloud mode")
 }
 
 // TestBuildDaemonInfo_SchedulingActiveReflectsScheduler locks the wiring that

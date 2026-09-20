@@ -31,7 +31,7 @@ func TestGetMetricsHistory(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	got, err := c.GetMetricsHistory()
+	got, err := c.GetMetricsHistory(t.Context())
 	require.NoError(t, err)
 	assert.Len(t, got, 2)
 }
@@ -43,7 +43,7 @@ func TestGetMetricsHistory_Error(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	_, err := c.GetMetricsHistory()
+	_, err := c.GetMetricsHistory(t.Context())
 	assert.Error(t, err)
 }
 
@@ -55,7 +55,7 @@ func TestGetRunSummary(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	got, err := c.GetRunSummary()
+	got, err := c.GetRunSummary(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, int64(102), got.Total)
 	assert.Equal(t, int64(100), got.Success)
@@ -70,7 +70,7 @@ func TestGetDaemonInfo(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	got, err := c.GetDaemonInfo()
+	got, err := c.GetDaemonInfo(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "fp-test", got.Fingerprint)
 }
@@ -83,7 +83,7 @@ func TestAuthStatus(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	got, err := c.AuthStatus()
+	got, err := c.AuthStatus(t.Context())
 	require.NoError(t, err)
 	assert.True(t, got.AuthRequired)
 }
@@ -95,7 +95,7 @@ func TestAuthStatus_Error(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	_, err := c.AuthStatus()
+	_, err := c.AuthStatus(t.Context())
 	assert.Error(t, err)
 }
 
@@ -148,7 +148,7 @@ func TestUnreadNotificationCount(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	n, err := c.UnreadNotificationCount()
+	n, err := c.UnreadNotificationCount(t.Context())
 	require.NoError(t, err)
 	assert.EqualValues(t, 7, n)
 }

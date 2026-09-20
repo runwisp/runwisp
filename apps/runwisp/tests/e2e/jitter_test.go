@@ -79,7 +79,7 @@ func waitForCronRun(t *testing.T, client *apiclient.Client, taskName string, tim
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		runs, _, err := client.ListRuns(apiclient.RunsParams{Limit: 50})
+		runs, _, err := client.ListRuns(t.Context(), apiclient.RunsParams{Limit: 50})
 		require.NoError(t, err)
 		for _, run := range runs {
 			if run.TaskName == taskName &&

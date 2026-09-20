@@ -4,6 +4,7 @@
 package apiclient
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -14,7 +15,7 @@ import (
 
 // ListNotifications fetches one page of notifications. Pass before="" for the
 // most recent page; subsequent pages use NextCursor from the previous response.
-func (c *Client) ListNotifications(limit int, before string) (server.NotificationsListBody, error) {
+func (c *Client) ListNotifications(ctx context.Context, limit int, before string) (server.NotificationsListBody, error) {
 	q := url.Values{}
 	if limit > 0 {
 		q.Set("limit", strconv.Itoa(limit))
@@ -27,7 +28,7 @@ func (c *Client) ListNotifications(limit int, before string) (server.Notificatio
 		path = path + "?" + encoded
 	}
 	var page server.NotificationsListBody
-	if err := c.doJSON("GET", path, nil, &page); err != nil {
+	if err := c.doJSON(ctx, "GET", path, nil, &page); err != nil {
 		return server.NotificationsListBody{}, err
 	}
 	return page, nil
@@ -35,26 +36,26 @@ func (c *Client) ListNotifications(limit int, before string) (server.Notificatio
 
 // MarkAllNotificationsRead stamps every currently-unread row as read using the
 // server's clock.
-func (c *Client) MarkAllNotificationsRead() error {
-	return c.doJSON("POST", "/api/notifications/read", nil, nil)
+func (c *Client) MarkAllNotificationsRead(ctx context.Context) error {
+	return c.doJSON(ctx, "POST", "/api/notifications/read", nil, nil)
 }
 
 // MarkNotificationRead stamps a single notification as read.
-func (c *Client) MarkNotificationRead(id string) error {
-	return c.doJSON("POST", "/api/notifications/"+url.PathEscape(id)+"/read", nil, nil)
+func (c *Client) MarkNotificationRead(ctx context.Context, id string) error {
+	return c.doJSON(ctx, "POST", "/api/notifications/"+url.PathEscape(id)+"/read", nil, nil)
 }
 
 // MarkNotificationUnread clears the read marker on a single notification so it
 // re-enters the unread set.
-func (c *Client) MarkNotificationUnread(id string) error {
-	return c.doJSON("POST", "/api/notifications/"+url.PathEscape(id)+"/unread", nil, nil)
+func (c *Client) MarkNotificationUnread(ctx context.Context, id string) error {
+	return c.doJSON(ctx, "POST", "/api/notifications/"+url.PathEscape(id)+"/unread", nil, nil)
 }
 
 // UnreadNotificationCount returns the number of notifications with read_at IS
 // NULL.
-func (c *Client) UnreadNotificationCount() (int64, error) {
+func (c *Client) UnreadNotificationCount(ctx context.Context) (int64, error) {
 	var resp server.NotificationUnreadBody
-	if err := c.doJSON("GET", "/api/notifications/unread-count", nil, &resp); err != nil {
+	if err := c.doJSON(ctx, "GET", "/api/notifications/unread-count", nil, &resp); err != nil {
 		return 0, err
 	}
 	return resp.Count, nil

@@ -82,7 +82,7 @@ are diverted to stderr so stdout stays machine-readable.`,
   runwisp run build --url https://ci.example.com --password "$RUNWISP_PASSWORD"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		exitCode, err := runTaskCLI(os.Stdout, args[0], flags)
+		exitCode, err := runTaskCLI(cmd.Context(), os.Stdout, args[0], flags)
 		if err != nil {
 			return err
 		}
@@ -98,13 +98,13 @@ are diverted to stderr so stdout stays machine-readable.`,
 // task, and on failure writes the --json error document to w (the run never
 // produced its own document, so stdout stays a single valid JSON document even
 // on failure) before propagating the error.
-func runTaskCLI(w io.Writer, taskName string, f Flags) (int, error) {
+func runTaskCLI(ctx context.Context, w io.Writer, taskName string, f Flags) (int, error) {
 	var exitCode int
 	var err error
 	if runFlags.Daemon && runFlags.Standalone {
 		err = errors.New("--daemon and --standalone are mutually exclusive")
 	} else {
-		exitCode, err = runExec(taskName, f)
+		exitCode, err = runExec(ctx, taskName, f)
 	}
 	if err != nil {
 		if runFlags.JSON {
@@ -124,13 +124,13 @@ func init() {
 	runCmd.Flags().BoolVar(&runFlags.JSON, "json", false, "print the run outcome as a JSON document to stdout (log lines go to stderr)")
 }
 
-func runExec(taskName string, f Flags) (int, error) {
+func runExec(ctx context.Context, taskName string, f Flags) (int, error) {
 	if remoteURL := cmp.Or(runFlags.URL, os.Getenv("RUNWISP_URL")); remoteURL != "" {
 		if runFlags.Daemon || runFlags.Standalone {
 			return 0, errors.New("--url cannot be combined with --daemon or --standalone")
 		}
 		password := cmp.Or(runFlags.Password, os.Getenv("RUNWISP_PASSWORD"))
-		return runExecViaRemote(taskName, remoteURL, password, runFlags.Detach)
+		return runExecViaRemote(ctx, taskName, remoteURL, password, runFlags.Detach)
 	}
 
 	daemonUp := isDaemonRunning(f)
@@ -143,7 +143,7 @@ func runExec(taskName string, f Flags) (int, error) {
 	}
 
 	if daemonUp {
-		return runExecViaDaemon(taskName, f)
+		return runExecViaDaemon(ctx, taskName, f)
 	}
 	return runExecStandalone(taskName, f)
 }
@@ -182,16 +182,16 @@ func ensureNoRunningDaemon(f Flags) error {
 // runExecViaDaemon dispatches the run through the running daemon's REST API
 // (via its local Unix socket) and follows its SSE log stream until the run
 // reaches a terminal state.
-func runExecViaDaemon(taskName string, f Flags) (int, error) {
+func runExecViaDaemon(ctx context.Context, taskName string, f Flags) (int, error) {
 	client := apiclient.NewUnix(localAPISocketPath(f))
-	if err := client.HealthCheck(); err != nil {
+	if err := client.HealthCheck(ctx); err != nil {
 		return 0, fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
 	}
 
-	run, err := client.TriggerRun(taskName, nil, "cli")
+	run, err := client.TriggerRun(ctx, taskName, nil, "cli")
 	if err != nil {
 		if apiclient.IsHTTPStatus(err, http.StatusNotFound) {
-			return 0, unknownTaskError(taskName, daemonTaskNames(client))
+			return 0, unknownTaskError(taskName, daemonTaskNames(ctx, client))
 		}
 		return 0, fmt.Errorf("trigger %q: %w", taskName, err)
 	}
@@ -202,7 +202,7 @@ func runExecViaDaemon(taskName string, f Flags) (int, error) {
 		return exitCode, err
 	}
 	if runFlags.JSON {
-		return exitCode, finishExecJSON(os.Stdout, client, taskName, run.ID, final)
+		return exitCode, finishExecJSON(ctx, os.Stdout, client, taskName, run.ID, final)
 	}
 	return exitCode, nil
 }
@@ -214,10 +214,10 @@ func runExecViaDaemon(taskName string, f Flags) (int, error) {
 // in hand (see runTaskCLI), turning a known success into a spurious failure.
 // final is nil only on an interrupted follow that produced no terminal state,
 // where a fetch is the only way to report an outcome at all.
-func finishExecJSON(w io.Writer, client *apiclient.Client, taskName, runID string, final *model.Run) error {
+func finishExecJSON(ctx context.Context, w io.Writer, client *apiclient.Client, taskName, runID string, final *model.Run) error {
 	if final == nil {
 		var err error
-		final, err = client.GetRun(runID)
+		final, err = client.GetRun(ctx, runID)
 		if err != nil {
 			return fmt.Errorf("fetch final run state: %w", err)
 		}
@@ -228,14 +228,14 @@ func finishExecJSON(w io.Writer, client *apiclient.Client, taskName, runID strin
 // runExecViaRemote dispatches the run to a remote daemon over the network. It
 // reuses a cached JWT when one is valid, falling back to a CHAP handshake, and
 // (unless detached) follows the SSE log stream to propagate the exit code.
-func runExecViaRemote(taskName, baseURL, password string, detach bool) (int, error) {
+func runExecViaRemote(ctx context.Context, taskName, baseURL, password string, detach bool) (int, error) {
 	client := apiclient.NewPinned(baseURL, password, certPinStore{})
 
 	// Health is a public endpoint — probe it before auth so an unreachable
 	// daemon reports as such rather than as a login failure. A pinned-cert
 	// mismatch also surfaces here (it fails the TLS handshake), so translate it
 	// into known-hosts-style guidance instead of a generic "unreachable".
-	if err := client.HealthCheck(); err != nil {
+	if err := client.HealthCheck(ctx); err != nil {
 		var mismatch *apiclient.CertPinMismatchError
 		if errors.As(err, &mismatch) {
 			return 0, certPinMismatchError(baseURL, mismatch)
@@ -249,12 +249,12 @@ func runExecViaRemote(taskName, baseURL, password string, detach bool) (int, err
 		client.SetToken(cached)
 	}
 	if !client.IsAuthenticated() {
-		if err := authenticateRemote(client, baseURL, password); err != nil {
+		if err := authenticateRemote(ctx, client, baseURL, password); err != nil {
 			return 0, err
 		}
 	}
 
-	run, err := triggerRemote(client, taskName, baseURL, password)
+	run, err := triggerRemote(ctx, client, taskName, baseURL, password)
 	if err != nil {
 		return 0, err
 	}
@@ -273,18 +273,18 @@ func runExecViaRemote(taskName, baseURL, password string, detach bool) (int, err
 		return exitCode, err
 	}
 	if runFlags.JSON {
-		return exitCode, finishExecJSON(os.Stdout, client, taskName, run.ID, final)
+		return exitCode, finishExecJSON(ctx, os.Stdout, client, taskName, run.ID, final)
 	}
 	return exitCode, nil
 }
 
 // authenticateRemote runs the CHAP handshake and caches the resulting session
 // token. It maps auth failures to user-facing errors.
-func authenticateRemote(client *apiclient.Client, baseURL, password string) error {
+func authenticateRemote(ctx context.Context, client *apiclient.Client, baseURL, password string) error {
 	if password == "" {
 		return remoteAuthRequiredError(baseURL)
 	}
-	if err := client.Authenticate(); err != nil {
+	if err := client.Authenticate(ctx); err != nil {
 		switch {
 		case errors.Is(err, apiclient.ErrUnauthorized):
 			return remoteAuthFailedError(baseURL)
@@ -300,18 +300,18 @@ func authenticateRemote(client *apiclient.Client, baseURL, password string) erro
 
 // triggerRemote triggers the run, re-authenticating once if a cached token has
 // expired (401), and maps the daemon's error codes to user-facing messages.
-func triggerRemote(client *apiclient.Client, taskName, baseURL, password string) (*model.Run, error) {
-	run, err := client.TriggerRun(taskName, nil, "cli")
+func triggerRemote(ctx context.Context, client *apiclient.Client, taskName, baseURL, password string) (*model.Run, error) {
+	run, err := client.TriggerRun(ctx, taskName, nil, "cli")
 	if errors.Is(err, apiclient.ErrUnauthorized) {
-		if authErr := authenticateRemote(client, baseURL, password); authErr != nil {
+		if authErr := authenticateRemote(ctx, client, baseURL, password); authErr != nil {
 			return nil, authErr
 		}
-		run, err = client.TriggerRun(taskName, nil, "cli")
+		run, err = client.TriggerRun(ctx, taskName, nil, "cli")
 	}
 	if err != nil {
 		switch {
 		case apiclient.IsHTTPStatus(err, http.StatusNotFound):
-			return nil, unknownTaskError(taskName, daemonTaskNames(client))
+			return nil, unknownTaskError(taskName, daemonTaskNames(ctx, client))
 		case apiclient.IsHTTPStatus(err, http.StatusForbidden):
 			return nil, remoteManualTriggerDisabledError(taskName)
 		case errors.Is(err, apiclient.ErrUnauthorized):
@@ -356,7 +356,7 @@ func followRun(client *apiclient.Client, taskName, runID string, lineOut io.Writ
 			return 0, nil, fmt.Errorf("open log stream: %w", err)
 		}
 
-		exitCode, final, highest, done, err := streamRunLogs(ch, client, taskName, runID, from, lineOut)
+		exitCode, final, highest, done, err := streamRunLogs(context.Background(), ch, client, taskName, runID, from, lineOut)
 		if done {
 			return exitCode, final, err
 		}
@@ -389,21 +389,24 @@ func followRun(client *apiclient.Client, taskName, runID string, lineOut io.Writ
 		}
 		select {
 		case <-ctx.Done():
-			return exitCodeFromRunState(client, runID)
+			// Use a fresh, uncancelled context for this fallback fetch: ctx is
+			// the interrupt-cancelled one, and the whole point here is to still
+			// report an accurate exit code after Ctrl+C rather than fail fast.
+			return exitCodeFromRunState(context.Background(), client, runID)
 		case <-time.After(followStallBackoff):
 		}
 	}
 
 	// Stream never delivered a Done event (interrupted, or the run never became
 	// streamable); fall back to the persisted terminal state for the exit code.
-	return exitCodeFromRunState(client, runID)
+	return exitCodeFromRunState(context.Background(), client, runID)
 }
 
 // exitCodeFromRunState fetches the run's persisted state and derives its exit
 // code, used as followRun's fallback when the log stream ends without a Done.
 // It returns the fetched run alongside the code so callers can reuse it.
-func exitCodeFromRunState(client *apiclient.Client, runID string) (int, *model.Run, error) {
-	final, err := client.GetRun(runID)
+func exitCodeFromRunState(ctx context.Context, client *apiclient.Client, runID string) (int, *model.Run, error) {
+	final, err := client.GetRun(ctx, runID)
 	if err != nil {
 		return 0, nil, fmt.Errorf("fetch final run state: %w", err)
 	}
@@ -427,14 +430,14 @@ const (
 // on `runwisp run` would sail past the failure. The daemon flushes persistence
 // before publishing a terminal event, so this normally succeeds on the first
 // read; it stays as a belt against any path that publishes without the barrier.
-func fetchTerminalRun(client *apiclient.Client, taskName, runID string) (*model.Run, error) {
+func fetchTerminalRun(ctx context.Context, client *apiclient.Client, taskName, runID string) (*model.Run, error) {
 	var run *model.Run
 	var err error
 	for attempt := range terminalFetchAttempts {
 		if attempt > 0 {
 			time.Sleep(terminalFetchBackoff)
 		}
-		run, err = client.GetRun(runID)
+		run, err = client.GetRun(ctx, runID)
 		if err == nil && run.Status == model.PhaseEnded {
 			return run, nil
 		}
@@ -475,14 +478,14 @@ func newSignalCancelContext() (context.Context, context.CancelFunc) {
 // On Done it returns the fetched terminal run so callers can reuse it (e.g. for
 // the --json document) without a second GetRun that could fail and mask the
 // already-known exit code.
-func streamRunLogs(ch <-chan apiclient.LogStreamMsg, client *apiclient.Client, taskName, runID string, from int64, lineOut io.Writer) (exitCode int, final *model.Run, highest int64, done bool, err error) {
+func streamRunLogs(ctx context.Context, ch <-chan apiclient.LogStreamMsg, client *apiclient.Client, taskName, runID string, from int64, lineOut io.Writer) (exitCode int, final *model.Run, highest int64, done bool, err error) {
 	highest = from - 1
 	for msg := range ch {
 		switch msg.Kind {
 		case apiclient.LogStreamMsgKindLine:
 			highest = printStreamedLogLine(msg, from, highest, lineOut)
 		case apiclient.LogStreamMsgKindDone:
-			run, getErr := fetchTerminalRun(client, taskName, runID)
+			run, getErr := fetchTerminalRun(ctx, client, taskName, runID)
 			if getErr != nil {
 				return 0, nil, highest, true, fmt.Errorf("fetch final run state: %w", getErr)
 			}
@@ -515,8 +518,8 @@ func printStreamedLogLine(msg apiclient.LogStreamMsg, from, highest int64, lineO
 
 // daemonTaskNames fetches the daemon's task list for the unknown-task
 // suggestion. Best-effort: a failed fetch just means no list in the error.
-func daemonTaskNames(client *apiclient.Client) []string {
-	tasks, err := client.ListTasks()
+func daemonTaskNames(ctx context.Context, client *apiclient.Client) []string {
+	tasks, err := client.ListTasks(ctx)
 	if err != nil {
 		return nil
 	}
