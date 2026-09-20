@@ -393,20 +393,7 @@ func commitGroup(
 		texts[i] = redact.text(line.text)
 	}
 
-	ns := make([]int64, len(lines))
-	anchor := int64(-1)
-	for i := range lines {
-		n, err := writer.WriteLineEvent(texts[i], stream)
-		if err != nil {
-			slog.Warn("Failed to write log line to file", "stream", stream, "err", err)
-			ns[i] = -1
-			continue
-		}
-		ns[i] = n
-		if anchor < 0 {
-			anchor = n
-		}
-	}
+	ns, anchor := writeCommittedLines(writer, stream, texts)
 
 	frameCount := 0
 	if len(frames) > 0 && anchor >= 0 {
@@ -427,6 +414,27 @@ func commitGroup(
 		}
 		publish(texts[i], ns[i], line.continued, fc)
 	}
+}
+
+// writeCommittedLines writes each text to the log file, returning per-line
+// file offsets (-1 for a line that failed to write) and the anchor offset:
+// the first successfully written line's offset, used to key frame history.
+func writeCommittedLines(writer *LogWriter, stream string, texts []string) ([]int64, int64) {
+	ns := make([]int64, len(texts))
+	anchor := int64(-1)
+	for i, text := range texts {
+		n, err := writer.WriteLineEvent(text, stream)
+		if err != nil {
+			slog.Warn("Failed to write log line to file", "stream", stream, "err", err)
+			ns[i] = -1
+			continue
+		}
+		ns[i] = n
+		if anchor < 0 {
+			anchor = n
+		}
+	}
+	return ns, anchor
 }
 
 func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task *model.Task, run *model.Run, stream string) {
