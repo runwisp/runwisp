@@ -132,10 +132,10 @@ func (s *runService) TriggerRun(ctx context.Context, taskName string, params map
 	if !exists {
 		return nil, ErrTaskNotFound
 	}
-	if task.Kind.IsService() {
+	switch task.CheckTrigger() {
+	case model.TriggerBlockedService:
 		return nil, ErrServiceNotRunnable
-	}
-	if !task.ManualTrigger {
+	case model.TriggerBlockedManualDisabled:
 		return nil, ErrManualTriggerDisabled
 	}
 	// Validate supplied values at the boundary so a bad value surfaces as a 400
@@ -219,30 +219,32 @@ func (s *runService) awaitTerminal(ctx context.Context, run *model.Run, terminal
 	}
 }
 
-func (s *runService) RestartService(taskName string) error {
+// resolveServiceTask looks up a service task and checks the two preconditions
+// RestartService and StopService both require, so the pair can't drift apart.
+func (s *runService) resolveServiceTask(taskName string) (*model.Task, error) {
 	task, exists := s.tasks.Get(taskName)
 	if !exists {
-		return ErrTaskNotFound
+		return nil, ErrTaskNotFound
 	}
 	if !task.Kind.IsService() {
-		return ErrNotAService
+		return nil, ErrNotAService
 	}
 	if !task.ManuallyControllable() {
-		return ErrManualTriggerDisabled
+		return nil, ErrManualTriggerDisabled
+	}
+	return task, nil
+}
+
+func (s *runService) RestartService(taskName string) error {
+	if _, err := s.resolveServiceTask(taskName); err != nil {
+		return err
 	}
 	return s.taskManager.RestartServiceInstances(taskName)
 }
 
 func (s *runService) StopService(taskName string) error {
-	task, exists := s.tasks.Get(taskName)
-	if !exists {
-		return ErrTaskNotFound
-	}
-	if !task.Kind.IsService() {
-		return ErrNotAService
-	}
-	if !task.ManuallyControllable() {
-		return ErrManualTriggerDisabled
+	if _, err := s.resolveServiceTask(taskName); err != nil {
+		return err
 	}
 	return s.taskManager.StopService(taskName)
 }

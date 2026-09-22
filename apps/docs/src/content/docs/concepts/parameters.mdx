@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Parameters
-description: Declare per-run inputs on a task with params, then fill them in when you trigger from the Web UI, TUI, or REST API — env vars, positional args, options, and flags, passed safely.
+description: Declare per-run inputs on a task with params, then fill them in when you trigger from the Web UI, TUI, CLI, or REST API — env vars, positional args, options, and flags, passed safely.
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -14,8 +14,8 @@ to export, what date to back-fill from, whether this is a `--dry-run`.
 You could hard-code one task per tenant, or you could declare the bits
 that change as **parameters** and fill them in when you trigger.
 
-Declare `params` on a task and the dashboard, TUI, and REST API all grow
-a little form for it. You pick the values, RunWisp feeds them to your
+Declare `params` on a task and the dashboard, TUI, CLI, and REST API all
+grow a little form for it. You pick the values, RunWisp feeds them to your
 command, and the run history records exactly what each execution was
 handed.
 
@@ -64,13 +64,15 @@ distinction spelled out.
 
 ## Supplying values
 
-You've got three surfaces, and they're the same form in three skins:
+You've got four surfaces, and they're the same form in four skins:
 
 - **Web UI** — the task's detail page has a **Run Task** button. If the
   task declares params, clicking it opens the form above; fill in what you
   need and submit. See the [Web UI tour](/getting-started/web-ui-tour/#task-detail-tasksid).
 - **TUI** — select the task, press **Run Now**, and the same fields show
   up in the terminal.
+- **CLI** — `runwisp run <task> --param key=value`, repeated once per
+  parameter. See the [CLI reference](/reference/cli/#run-a-task-now).
 - **REST API** — the trigger call takes a `params` object. That's the one
   to reach for from a deploy script or CI; the
   [remote-trigger recipe](/recipes/remote-trigger/) has the full example.

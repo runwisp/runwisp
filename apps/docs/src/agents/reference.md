@@ -274,6 +274,7 @@ runwisp validate             — validate runwisp.toml without starting anything
 runwisp list                 — list configured tasks and schedules
 runwisp status               — is the daemon alive?
 runwisp run <task>          — run a task and stream output;  --daemon (via running daemon) | --standalone (in-process), mutually exclusive
+                             — --param key=value (repeatable) supplies task parameter values; a param not mentioned uses its declared default
 runwisp reload               — re-read runwisp.toml + reconcile live (== SIGHUP); validate-first, no run_on_start/catch-up
                              — prints the diff, then the newly-live config's warnings on `!` lines
                                (ReloadResult.warnings). Same set as boot / `validate` / status /
