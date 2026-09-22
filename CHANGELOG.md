@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`runwisp import systemd` converts systemd `.service` units into `runwisp.toml`** — a unit with `Restart=` becomes a service, a `Type=oneshot` unit a task — flagging anything it can't model (multiple `ExecStart`, `Type=notify`, sandboxing, socket activation) with inline `# TODO`s. See [From systemd](https://docs.runwisp.com/coming-from/systemd/).
 - **`[daemon] trusted_proxies`** sets the reverse-proxy CIDR allowlist in TOML; the `RUNWISP_TRUSTED_PROXIES` env var still works and overrides it. Catch-all ranges (`0.0.0.0/0`, `::/0`) are rejected at config load.
 - **`runwisp service install` now sets a stable Web UI password.** With auth on, it persists a password into a `0600` drop-in beside the unit — a freshly generated one (printed once), or your own `RUNWISP_PASSWORD` if you set it at install time — so a managed daemon no longer mints a new password — logging every session out — on each restart. Re-installing never rotates it.
-- **`runwisp service install` now carries your `RUNWISP_*` environment into the service** — `RUNWISP_AUTH`, `RUNWISP_TLS`, `RUNWISP_CLOUD_TOKEN`, and the rest, into a `0600` drop-in beside the unit, refreshed on every re-install. A systemd unit or launchd plist never inherited these before, so they were silently dropped.
+- **`runwisp service install` now carries your `RUNWISP_*` environment into the service** — `RUNWISP_AUTH`, `RUNWISP_TLS`, `RUNWISP_PASSWORD`, and the rest, into a `0600` drop-in beside the unit, refreshed on every re-install. A systemd unit or launchd plist never inherited these before, so they were silently dropped.
 - **`[defaults]` now accepts `restart_delay`, `restart_backoff`, `catch_up`, and `graceful_stop`**, so you can set these fleet-wide once instead of repeating them on every unit.
 - **Compose per-service overrides (`[compose.<alias>.<svc>]`) can now set `failures`**, matching what `[services.*]` already allows.
 
@@ -72,7 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **A daemon crash no longer leaves an attached TUI's terminal filled with garbled escape sequences.** A panic in a daemon goroutine is now turned into a clean shutdown that restores the terminal, and `runwisp cloud` runs its daemon as a separate process so a crash can never corrupt the terminal the TUI owns.
+- **A daemon crash no longer leaves an attached TUI's terminal filled with garbled escape sequences.** A panic in a daemon goroutine is now turned into a clean shutdown that restores the terminal instead of corrupting it.
 - **Config validation errors for `[services.*]` entries now say "service"** instead of mislabeling the entry as a "task".
 - **The dashboard System resources chart now backfills its history on load** instead of only drawing new samples as they stream in.
 - **An ad-hoc dispatch request can no longer trigger a `[services.*]` entry**, which could have reserved it an extra instance outside its restart policy — it only checked `manual_trigger` (always true internally for services), the same gate the REST/UI/CLI trigger paths already close with a service-kind check.
@@ -80,7 +80,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`runwisp run --standalone` now honors `manual_trigger = false` and refuses to run a `[services.*]` entry**, matching the guard the daemon already enforces.
 - **`tls = "off"` is now rejected when `tls_cert`/`tls_key` are also set**, instead of being silently overridden into HTTPS.
 - **The failure badge and "Failed" filter could go stale for a run updated live over SSE**, since the push validation was silently dropping the run's failure classification. Fixed by validating the full run shape.
-- **A daemon booted with `runwisp cloud` never resolved a run left `pending` by a prior crash.** Only standalone boot reconciled crash-orphaned pending runs; a cloud-mode restart now marks them interrupted like every other boot path.
 - **A transient database error while marking crashed runs at boot is now retried** a few times before giving up, instead of silently skipping crash recovery for that boot.
 - **Cron jitter for a task without its own `timezone` was placed using the host OS's timezone instead of `[daemon] timezone`.** The two now agree, so jittered tasks land on the intended point of the schedule.
 - **Run filters and retention cutoffs compared timestamps as text instead of as time.** A run created in a timezone other than the daemon's own could sort or filter incorrectly around a `createdAfter`/`createdBefore` boundary, or near the host's own DST transition. Timestamps are now normalized to UTC before being stored or compared.
@@ -94,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- **Secret values (`secrets` / `secrets_file`) are now redacted from a run's captured output** before it's persisted, streamed over the API, or pushed to the control plane, swapping the literal value for `[redacted]`. Best-effort: a secret the process transforms or splits across lines before printing can still slip through.
+- **Secret values (`secrets` / `secrets_file`) are now redacted from a run's captured output** before it's persisted or streamed over the API, swapping the literal value for `[redacted]`. Best-effort: a secret the process transforms or splits across lines before printing can still slip through.
 
 ## [0.16.4] - 2026-09-09
 
@@ -113,7 +112,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`import supervisord` now explains an omitted `autorestart` the same way it already explained an explicit `autorestart=unexpected`** — both default to an always-on RunWisp service that restarts on any exit, not just unexpected ones, and previously only the explicit form got a note.
 - **Secret files (PID file, JWT secrets, self-signed TLS cert/key) are now written atomically**, so a crash mid-write can no longer leave a corrupted secret on disk; a mismatched TLS cert/key pair from an interrupted regeneration is now detected and regenerated automatically.
 - **`keep_for`/`keep_runs` retention and soft-delete purging now remove a run's log file before deleting its database row**, matching the existing storage-cap cleanup path. A crash between the two steps can no longer leak an orphaned log file that nothing will ever clean up.
-- **A remote restart request could restart the daemon even with `[daemon] allow_cloud_dispatch = false`.** `agent:restart` now requires the same opt-in as every other dispatched action.
 - **`runwisp service install` on systemd now warns instead of claiming success when the daemon crash-loops immediately after start.** `enable --now` returns as soon as the process forks, so a config that fails only at runtime used to print a plain "Installed and started." either way; it now polls `is-active` first and points you at `journalctl` when the unit isn't actually up.
 - **A run's log file failing to fsync on close is now logged instead of discarded**, and `POST /api/notifications/{notificationId}/{read,unread}` now rejects a malformed ID with `422` instead of forwarding it to storage, matching every other ID path parameter.
 - **A run status update racing a deleted row (e.g. a manual delete mid-run) now surfaces as a logged persistence failure** instead of silently no-oping, so the in-memory and on-disk state can no longer diverge without a trace.
@@ -162,7 +160,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`reload` and `SIGHUP` now apply a task's `treat_missed_as_failure` change immediately**, instead of requiring a full daemon restart.
 - **Fixed line numbering on `.log.prev` after 2+ log rotations**, once the run had finished.
 - **`import cron`/`import supervisord` no longer drop or corrupt data on plausible input.** A supervisord `environment=` value containing an apostrophe or stray quote (an English contraction, `O'Brien`) no longer swallows every subsequent `KEY=value` pair; a system crontab's user column now accepts uppercase account names (`Deploy`, not just `deploy`).
-- **The optional cloud integration's task list now reflects `reload`/`SIGHUP` on the next reconnect**, instead of staying frozen at whatever the daemon's task set looked like at startup.
 - **A jittered task with `on_overlap = "queue"` no longer leaks a stale in-flight slot when its queued run is orphaned by a `reload`** that removes or reconfigures the task.
 - **Fixed the runs list occasionally showing a duplicate or skipping a row** when a run started, finished, or was deleted live while the list was loading its next page.
 
@@ -189,7 +186,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Hard-kill is spelled `kill` in both policies** — `on_overlap = "kill"` (was `terminate`) and `log_on_full = "kill"` (was `kill_task`).
 - **Auth endpoints use one noun per concept** — login is `POST /api/auth/login` (was `POST /api/auth`), and a launch ticket is both minted (`POST`) and redeemed (`GET`) at `/api/auth/launch-ticket` (redeem was `GET /api/auth/launch`).
 - **Daemon-identity endpoints are grouped under `/api/daemon`** — the daemon overview is `GET /api/daemon` (was `/api/info`) and the local identity probe is `GET /api/daemon/identity` (was `/api/instance`); host resource stats stay at `/api/system`.
-- **A run's control-plane execution ID is `executionId`** (was `externalExecutionId`) on the REST API, matching the control-plane protocol.
 - **A run's end reason is `succeeded`** (was `success`), matching the past-tense form of every other end reason.
 - **The concurrency queue cap is `max_queued`** (was `queue_max`).
 - **The manual-trigger gate is `manual_trigger`** (was `api_trigger`), since it also gates the CLI and web UI, not just the REST API.
@@ -200,7 +196,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The system metrics endpoint is `GET /api/system/metrics`** (was `/api/system/history`), matching its `MetricsSample` payload.
 - **The unread-notification-count endpoint is `/api/notifications/unreadCount`** (was `/unread-count`), matching the API's camelCase convention.
 - **`runOnStart` is always present on the tasks API** (previously omitted when `false`), matching `manualTrigger` and `autostart`.
-- **A run that never started (skipped, missed, or interrupted by a DST fold) reports as `skipped`, not `failed`, on the control-plane connection.**
 
 ### Fixed
 
@@ -234,7 +229,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A run's output capture that stops due to a real I/O error is now logged and noted in the run's own log** instead of looking like the process simply exited.
 - **A container-execution task's own `RUNWISP_`-prefixed environment variables are no longer silently dropped** when the task also had other env vars or secrets configured.
 - **A notification delivery that timed out is no longer silently dropped without a retry or failure record** — only a real daemon shutdown is now treated as a shutdown.
-- **A run's status update to the cloud control plane is no longer silently lost** if the connection dropped at the exact moment it was being sent.
 - **The TUI no longer freezes while confirming an action** (restart/stop/trigger/retry a run) if the daemon is slow to respond.
 - **Switching between runs' logs in the TUI no longer occasionally drops or misattributes lines** from the run you just left.
 - **Jumping to a log search result in the TUI no longer highlights the wrong run's line** if you navigated away before it finished opening.
@@ -249,8 +243,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Hardened `service install` unit generation, task-process environment isolation, config-file trust checks, privilege dropping, and outbound-request address filtering.** Internal safeguards with no configuration changes.
 - **HTTP-task run logs redact request/response credentials** — `Authorization`, `Cookie`, API-key headers, and URL passwords are shown as `[redacted]` instead of being persisted to disk.
-- **Control-plane dispatch is validated and bounded at the boundary** — peer-supplied shell `umask`/interpreter are re-validated, log-search size and the ephemeral dispatch queue are capped, and running the control-plane connection over plaintext (`RUNWISP_CLOUD_ALLOW_INSECURE`) now warns loudly at startup.
-- **`allow_cloud_dispatch` now also gates HTTP-type ad-hoc dispatch and cloud-created services**, not just shell/container/compose, since HTTP dispatch makes a peer-directed network call too.
 - **Log search runs under a request deadline.** Internal safeguard with no configuration changes.
 - **A shutdown race and a panic risk in the notification retry/coalescing path are fixed.** Internal safeguard with no configuration changes.
 - **`RUNWISP_TRUSTED_PROXIES` rejects an IPv4-mapped IPv6 range that would cover every IPv4 address** (e.g. `::ffff:0:0/96`), closing a gap that let a peer spoof `X-Forwarded-For`/`X-Forwarded-Proto` past the trusted-proxy check.
@@ -302,8 +294,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fixed a race where a task's live run state could be read while still being mutated**, surfacing torn or stale values in `GetActiveRuns` callers.
 - **Fixed a race that let a single-use login token or launch ticket be redeemed twice** when two requests presented it at the same moment.
 - **Coalesced notifications now keep the first occurrence's timestamp and run ID** instead of overwriting them with the latest occurrence's.
-- **A dropped control-plane heartbeat no longer tears down an otherwise healthy session.** Liveness is already governed by the watchdog; a single failed send now logs and continues instead of forcing a reconnect.
-- **A 401/403 from the control-plane sync endpoint is no longer treated as a hard authentication failure.** The WebSocket handshake is the actual auth boundary, so these now retry with backoff like any other transient error.
 - **`runwisp promote` on a live cron-sourced task now comments out the crontab line it came from**, instead of leaving it live. Previously a promoted task lost its "held" status the moment it became native, so if a system cron daemon was still running unmasked, both it and RunWisp would fire the job. The line is commented, not deleted — it stays visible with a note pointing at your `runwisp.toml`. Promote refuses, writing nothing, if that line has changed or gone missing since the config was loaded. See [CLI](https://docs.runwisp.com/operations/cli/#take-ownership-of-a-task-with-promote).
 
 ## [0.14.0] - 2026-08-04
@@ -361,7 +351,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - **Compose task secrets are now passed via environment variables, never on the command line.** See [Compose](https://docs.runwisp.com/configuration/compose/).
-- **A control-plane peer can no longer override a task's environment** unless `[daemon] allow_cloud_dispatch` is on, and can't overwrite a task defined in `runwisp.toml`.
 - **`/api/instance` no longer responds to requests via a reverse proxy**, keeping local paths private. See [Reverse proxies](https://docs.runwisp.com/operations/auth/#reverse-proxies).
 
 ## [0.13.2] - 2026-07-26
@@ -403,10 +392,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A malformed Docker build response stream now fails the build** rather than spinning on the undecodable bytes.
 - **A container start cancelled mid-flight no longer leaks its container or image** — cleanup runs on a context detached from the cancelled run.
 - **Terminal events for runs that never execute are published off the runtime lock**, removing a re-entrancy deadlock reachable on skip-overlap, queue-full, catch-up, and DST-fallback paths.
-- **Assorted concurrency fixes** in run event publishing, the notification ingress path and outbound coalescer shutdown, and the cloud execution-update buffer and reconnect backoff.
+- **Assorted concurrency fixes** in run event publishing, the notification ingress path, and outbound coalescer shutdown.
 - **Log search now handles non-ASCII task output correctly**, and the cursor-based result window advances past the first 50 runs.
 - **Shell tasks no longer receive the daemon's own internal environment variables** (`RUNWISP_*`), matching the container and compose backends.
-- **Cloud log-archive uploads now validate the destination URL** before connecting.
 - **An unrecognized system timezone now falls back to UTC** instead of failing daemon startup.
 - **Byte-size parsing now rejects non-finite and overflowing values.**
 - **Rate-limited notification channels now clamp their `Retry-After` wait to the backoff budget.**
@@ -438,9 +426,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`runwisp demo` rejects `--config`/`--data` it can't honor** instead of silently discarding them; use `--seed-only` to seed your own paths. See [CLI](https://docs.runwisp.com/operations/cli/).
 - **Task run-parameter form labels are wired to their inputs**, so clicking a label focuses its field and screen readers associate the two. See [Parameters](https://docs.runwisp.com/configuration/tasks/#parameters).
 - **`runwisp exec` no longer exits before a just-triggered run's output appears.** A freshly triggered run is handed back before its record is durably persisted, so the log stream could momentarily find no run and close empty; `exec` treated that as "the run produced nothing" and exited without printing its output. It now retries until the run becomes streamable.
-- **A plain `runwisp daemon` is no longer misreported as service-managed.** Detection dropped the unreliable systemd `INVOCATION_ID` heuristic (inherited by every process in a desktop terminal) and keys solely on the marker our generated units set, so the TUI quit dialog and cloud self-restart no longer treat a hand-launched daemon as init-managed. See [Autostart](https://docs.runwisp.com/operations/autostart/).
-- **A cloud `service:apply` can no longer overwrite a non-service task's command**, and its instance count is capped like a TOML service — the control plane can't rewrite what a cron or one-shot task runs, nor start an unbounded fleet.
-- **Cloud-dispatched runs and services are cleaned up once they finish.** Ad-hoc executions are reaped after they retire, and a new `service:remove` tears down a cloud-declared service, instead of stranding a supervisor goroutine per dispatched name.
+- **A plain `runwisp daemon` is no longer misreported as service-managed.** Detection dropped the unreliable systemd `INVOCATION_ID` heuristic (inherited by every process in a desktop terminal) and keys solely on the marker our generated units set, so the TUI quit dialog no longer treats a hand-launched daemon as init-managed. See [Autostart](https://docs.runwisp.com/operations/autostart/).
 - **Container tasks honor `graceful_stop` and `stop_signal` on stop.** A stopping container is sent its configured signal and given the grace window before being force-killed, matching shell and compose tasks. See [Tasks](https://docs.runwisp.com/configuration/tasks/).
 - **Reloading to drop then re-add a task while a run is still draining no longer deletes the revived task or stalls its queue.** See [Reload](https://docs.runwisp.com/operations/reload/).
 - **Untrusted values in the daemon log can't inject terminal escape sequences** — control bytes in a logged field (e.g. a task name from an HTTP body) render as visible escapes rather than raw bytes. See [Logging](https://docs.runwisp.com/operations/logging/).
@@ -479,7 +465,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Reload `runwisp.toml` from the TUI (`R`).** The same validate-first reload as `runwisp reload`, without leaving the TUI. See [Reload](https://docs.runwisp.com/operations/reload/).
 - **Progress bars and live redraws render cleanly.** Carriage-return progress bars and multi-line ANSI redraws are now interpreted as a terminal would: the log keeps the finished frame instead of raw `\r`/escape soup, and live viewers (Web UI and TUI) watch the active region update in place. See [Logs](https://docs.runwisp.com/concepts/logs/#progress-bars--live-redraws).
 - **Rewind a settled redraw's frames.** A finished progress bar or redraw keeps a sampled, best-effort history you can scrub back to — click the line in the Web UI, use `[`/`]` then `enter` in the TUI, or `GET …/log/line/{n}/history`. See [Logs](https://docs.runwisp.com/concepts/logs/#rewinding-the-frames).
-- **`runwisp demo --no-tui`.** Leaves the demo daemon running in the background and prints its Web UI password to stdout instead of opening the TUI — usable over SSH or in scripts. See [CLI](https://docs.runwisp.com/operations/cli/#cloud-and-demo).
+- **`runwisp demo --no-tui`.** Leaves the demo daemon running in the background and prints its Web UI password to stdout instead of opening the TUI — usable over SSH or in scripts. See [CLI](https://docs.runwisp.com/operations/cli/#station-and-demo).
 - **Linkable executions.** Picking a run in the Web UI now puts its ID in the URL path (`/tasks/<name>/<id>` and `/runs/<id>`) — on a task's page and the All Runs page — so an individual execution can be bookmarked or shared; a new task-agnostic `GET /api/runs/{runId}` restores a shared link to any run.
 - **Filter runs in the Web UI.** A filter popover on the run list narrows by status (five outcome buckets — Running, Succeeded, Failed, Skipped, Stopped — with an Advanced expander for exact statuses), a From/To date range, task, trigger, an exit-code expression (`137`, `>100`, `>100 <150`), and retries — all applied server-side and mirrored as `GET /api/runs` query parameters. It opens over the run detail (a bottom sheet on phones), leaving the list visible. See [Web UI tour](https://docs.runwisp.com/getting-started/web-ui-tour/#filtering).
 
