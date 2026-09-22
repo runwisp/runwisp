@@ -6,6 +6,8 @@ package main
 import (
 	"bytes"
 	"net/http"
+	"os"
+	"strconv"
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
@@ -24,7 +26,7 @@ import (
 func serveServiceSocket(t *testing.T, mux http.Handler) (Flags, *bytes.Buffer, *cobra.Command) {
 	t.Helper()
 	f := serveStatusSocket(t, mux)
-	require.NoError(t, datadir.WritePidFile(f.DataDir))
+	require.NoError(t, os.WriteFile(datadir.PidFilePath(f.DataDir), []byte(strconv.Itoa(os.Getpid())), 0o600))
 
 	prev := lookupProcessName
 	lookupProcessName = func(int) (string, bool) { return "runwisp", true }

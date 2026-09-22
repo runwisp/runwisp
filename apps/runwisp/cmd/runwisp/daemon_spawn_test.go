@@ -118,6 +118,35 @@ func TestProcessAlive_PresentButDead(t *testing.T) {
 	assert.False(t, processAlive(0, pidPath))
 }
 
+// TestProcessAlive_RejectsForeignProcess: a stale PID recycled by an unrelated
+// process must not be reported alive, so stop/restart never signal a bystander.
+func TestProcessAlive_RejectsForeignProcess(t *testing.T) {
+	dir := t.TempDir()
+	pidPath := filepath.Join(dir, "pid")
+	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := lookupProcessName
+	t.Cleanup(func() { lookupProcessName = orig })
+
+	lookupProcessName = func(int) (string, bool) { return "sshd", true }
+	if processAlive(os.Getpid(), pidPath) {
+		t.Fatal("a live process not named runwisp must be treated as not-alive")
+	}
+
+	lookupProcessName = func(int) (string, bool) { return "runwisp", true }
+	if !processAlive(os.Getpid(), pidPath) {
+		t.Fatal("a live runwisp process must be treated as alive")
+	}
+
+	// Unknown name (e.g. macOS, no procfs) falls back to trusting liveness.
+	lookupProcessName = func(int) (string, bool) { return "", false }
+	if !processAlive(os.Getpid(), pidPath) {
+		t.Fatal("unresolvable process name must fall back to alive")
+	}
+}
+
 func TestDaemonLogDrainer_NoFileNoFatal(t *testing.T) {
 	dir := t.TempDir()
 	d := &daemonLogDrainer{path: filepath.Join(dir, "missing")}

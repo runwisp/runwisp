@@ -196,6 +196,32 @@ func TestMarshalExecutionDef_Container(t *testing.T) {
 	assert.Contains(t, s, `"baseImage":"alpine"`)
 }
 
+// TestMarshalExecutionDef_RoundTrips guards against the regression where the
+// discriminator was spliced in by string surgery on the marshaled bytes
+// instead of a real JSON encode: every def must marshal to a real JSON object
+// and parse back via ParseExecutionDef into an equal value.
+func TestMarshalExecutionDef_RoundTrips(t *testing.T) {
+	defs := []ExecutionDef{
+		&ShellExecution{Script: "echo hi"},
+		&HTTPExecution{URL: "https://example.com"},
+		&ConfigExecution{TaskName: "mytask"},
+		&ContainerExecution{BaseImage: "alpine", Script: "echo"},
+	}
+	for _, def := range defs {
+		t.Run(def.ExecType(), func(t *testing.T) {
+			raw, err := MarshalExecutionDef(def)
+			require.NoError(t, err)
+
+			var probe map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(raw, &probe), "must marshal to a JSON object")
+
+			got, err := ParseExecutionDef(raw)
+			require.NoError(t, err)
+			assert.Equal(t, def, got)
+		})
+	}
+}
+
 func TestExecType_AllVariants(t *testing.T) {
 	assert.Equal(t, "shell", (&ShellExecution{}).ExecType())
 	assert.Equal(t, "container", (&ContainerExecution{}).ExecType())

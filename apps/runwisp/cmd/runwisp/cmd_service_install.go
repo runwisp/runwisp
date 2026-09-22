@@ -599,8 +599,8 @@ func fileExists(path string) bool {
 // block the command a cron migration ends with.
 //
 // The data dir is what tells the two apart. It is what makes two daemons collide
-// — one PID file, one SQLite database — and what ensureNoRunningDaemon refuses
-// on, so it is also what identifies "the daemon this unit is for".
+// — one PID file, one SQLite database — and what AcquireDaemonLock refuses on,
+// so it is also what identifies "the daemon this unit is for".
 //
 // settingsStale reports that our own service holds the port and the settings
 // baked into its unit are about to change: systemd keeps a running unit on the
