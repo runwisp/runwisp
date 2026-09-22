@@ -21,7 +21,6 @@
     "demo": "moon run runwisp:demo",
     "build": "moon run runwisp:build",
     "build:all": "moon run runwisp:build-all",
-    "sync-ui-dist": "moon run runwisp:sync-ui-dist",
     "generate": "moon run root:generate",
     "check": "moon run root:check",
     "format": "moon run root:format",
