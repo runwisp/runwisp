@@ -10,8 +10,19 @@ test.describe("authentication", () => {
 
         await page.goto("/");
         await expect(page.getByRole("dialog", { name: "RunWisp" })).toBeVisible();
-        await expect(page.getByLabel("Password")).toBeVisible();
+        const passwordField = page.getByLabel("Password");
+        await expect(passwordField).toBeVisible();
         await expect(page.getByRole("button", { name: "Login" })).toBeVisible();
+
+        // Password-manager save/autofill hooks: a hidden username field paired
+        // with autocomplete hints so Firefox, Chrome, Bitwarden, and 1Password
+        // recognize this as a login form (see AuthModal.svelte).
+        await expect(passwordField).toHaveAttribute("name", "password");
+        await expect(passwordField).toHaveAttribute("autocomplete", "current-password");
+        await expect(page.locator('input[autocomplete="username"]')).toHaveAttribute(
+            "name",
+            "username",
+        );
 
         await context.close();
     });
