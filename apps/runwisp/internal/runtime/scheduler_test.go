@@ -76,6 +76,7 @@ func TestSchedulerDSTWallClockDedup(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
 	jm := NewTaskManager(exec, eb, time.Now)
+	t.Cleanup(jm.Shutdown)
 
 	task := &model.Task{
 		Name:     "eu-2am",
@@ -118,6 +119,7 @@ func TestSchedulerDSTDifferentMinuteFires(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
 	jm := NewTaskManager(exec, eb, time.Now)
+	t.Cleanup(jm.Shutdown)
 
 	task := &model.Task{
 		Name:     "eu-mins",
