@@ -63,7 +63,6 @@ const SECTIONS: ReadonlyArray<{ label: string; slugs: ReadonlyArray<string> }> =
         label: "Configuration",
         slugs: [
             "configuration/overview",
-            "configuration/reference",
             "configuration/storage",
             "configuration/daemon",
             "configuration/defaults",

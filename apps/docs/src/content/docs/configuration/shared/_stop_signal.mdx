@@ -1,0 +1,14 @@
+**type**: `enum` **default**: `"SIGTERM"`
+
+The signal that opens the stop ladder (the `SIG` prefix is optional). Use `SIGINT`
+for tools that treat it like Ctrl-C, or `SIGKILL` to skip the grace window.
+Anything still alive after [graceful_stop](/configuration/tasks/#graceful_stop) is SIGKILLed regardless.
+
+```toml
+[tasks.queue-drain]
+stop_signal   = "SIGINT"
+graceful_stop = "10s"
+```
+
+Possible values: `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`,
+`SIGUSR2` (or the same names without the `SIG` prefix).

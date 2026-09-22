@@ -22,20 +22,16 @@ worked walkthrough, see
 [Migrating from docker-compose](/coming-from/docker-compose/) —
 this page is the key-by-key reference.
 
-## Minimum example
+## Full surface
 
-Drop one line next to your `docker-compose.yml`:
+Drop one line next to your `docker-compose.yml` and RunWisp imports every
+service in it:
 
 ```toml
 [compose.myapp]
 ```
 
-That's it. RunWisp searches the directory of `runwisp.toml` for
-`compose.yaml`, `compose.yml`, `docker-compose.yaml`,
-`docker-compose.yml` in that order — the same fallback `docker compose`
-itself uses — and imports every service in the first file it finds.
-
-## Full surface
+Every key it accepts, together:
 
 ```toml
 [compose.myapp]
@@ -50,6 +46,138 @@ working_dir  = "/opt/myapp"              # cwd for compose invocation; defaults 
 with_deps    = false                     # default: --no-deps; true starts compose deps too
 pull         = "missing"                 # "missing" (default) | "always" | "never"
 name_format  = "{alias}.{service}"       # RunWisp task naming; default shown
+```
+
+### file
+
+**type**: `string` **default**: auto-discovered next to `runwisp.toml`
+
+RunWisp searches the directory of `runwisp.toml` for `compose.yaml`,
+`compose.yml`, `docker-compose.yaml`, `docker-compose.yml` in that order —
+the same fallback `docker compose` itself uses.
+
+```toml
+[compose.myapp]
+file = "./docker-compose.yml"
+```
+
+### services
+
+**type**: `string[]`
+
+Filter which compose services are imported. Bare names (or `"+name"`) keep
+only those listed; `"-name"` drops those instead — the two polarities are
+mutually exclusive. Omit to import every service.
+
+```toml
+[compose.myapp]
+services = ["api", "worker"]
+```
+
+### import
+
+**type**: `enum` **default**: `"services"`
+
+How to import the compose file: one RunWisp service per compose service, or
+one task managing the whole project. See
+[Import strategies](#import-strategies) below.
+
+```toml
+[compose.myapp]
+import = "stack"
+```
+
+### group
+
+**type**: `string` **default**: the compose alias
+
+UI group every imported service is filed under.
+
+```toml
+[compose.myapp]
+group = "myapp"
+```
+
+### project_name
+
+**type**: `string` **default**: the compose alias
+
+`docker compose -p` project name.
+
+```toml
+[compose.myapp]
+project_name = "myapp"
+```
+
+### profiles
+
+**type**: `string[]`
+
+`docker compose --profile` — activates profile-gated services before the
+`services` filter is applied. See [Profiles](#profiles) below.
+
+```toml
+[compose.myapp]
+profiles = ["production"]
+```
+
+### env_file
+
+**type**: `string[]`
+
+`docker compose --env-file`.
+
+```toml
+[compose.myapp]
+env_file = ["./.env.prod"]
+```
+
+### working_dir
+
+**type**: `string` **default**: the directory of [file](#file)
+
+Working directory for the compose invocation itself, not the container.
+
+```toml
+[compose.myapp]
+working_dir = "/opt/myapp"
+```
+
+### with_deps
+
+**type**: `boolean` **default**: `false`
+
+Whether starting one service also starts its compose-declared dependencies
+(`--no-deps` by default).
+
+```toml
+[compose.myapp]
+with_deps = true
+```
+
+### pull
+
+**type**: `enum` **default**: `"missing"`
+
+Image pull policy.
+
+```toml
+[compose.myapp]
+pull = "always"
+```
+
+Possible values: `missing`, `always`, `never`.
+
+### name_format
+
+**type**: `string` **default**: `"{alias}.{service}"`
+
+RunWisp task naming for imported services. Must contain `{service}` in
+`import = "services"` mode.
+
+```toml
+[compose.myapp]
+name_format = "{alias}-{service}"
 ```
 
 ## Block defaults
@@ -77,6 +205,12 @@ memory-guard restart, idle timeout) counts as "done" and won't be relaunched.
 If you're migrating workers that carried `restart: unless-stopped` under plain
 Compose, a one-line `[compose.<alias>.defaults] restart = "always"` restores that
 behavior for the whole block.
+
+Possible values:
+
+- `never`: never relaunch; one exit is terminal
+- `on_failure`: relaunch only on a non-zero exit or crash
+- `always`: relaunch on any exit, matching `docker compose up`
 
 `defaults` accepts the same keys as a per-service override (below). Its
 `notify` list adds routes to _every_ service, on

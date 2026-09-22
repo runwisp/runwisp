@@ -384,11 +384,12 @@ nav.sidebar .sidebar-content .group-label .large {
     color: var(--rw-primary);
 }
 
-/* ─── Task reference (configuration/reference.mdx): a flat key list that needs
- * clear per-key boundaries. Global lives here, but scoped to that one page: it
- * marks itself with an empty `.rw-config-ref` div, and `:has()` gates every rule
- * on it so no other docs page's headings get the treatment. Starlight wraps each
- * heading in `.sl-heading-wrapper.level-hN`, so each key is a level-h3 and its
+/* ─── Config key reference (configuration/{tasks,services,compose}.mdx): a
+ * flat key list that needs clear per-key boundaries. Global lives here, but
+ * scoped to those pages: each marks itself with an empty `.rw-config-ref`
+ * div, and `:has()` gates every rule on it so no other docs page's headings
+ * get the treatment. Starlight wraps each heading in
+ * `.sl-heading-wrapper.level-hN`, so each key is a level-h3 and its
  * type/default line is the paragraph right after that wrapper. */
 
 .rw-config-ref {
@@ -403,13 +404,17 @@ nav.sidebar .sidebar-content .group-label .large {
 }
 
 /* Key (### name): a top rule + air closes the previous entry, opens this one. */
+/* font-size lives on the wrapper, not the h3: Starlight's anchor-links.css
+ * sizes and vertically centers the chain icon off the wrapper's font-size,
+ * so shrinking only the h3 left the icon drawn for a bigger line than the
+ * text it sat next to. */
 .sl-markdown-content:has(> .rw-config-ref) .sl-heading-wrapper.level-h3 {
     margin-top: 2.75rem;
     padding-top: 1.35rem;
     border-top: 1px solid var(--sl-color-hairline);
+    font-size: 1.15rem;
 }
 .sl-markdown-content:has(> .rw-config-ref) .sl-heading-wrapper.level-h3 h3 {
-    font-size: 1.15rem;
     color: var(--sl-color-white);
 }
 

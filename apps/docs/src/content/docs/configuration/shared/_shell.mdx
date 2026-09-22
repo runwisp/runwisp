@@ -1,0 +1,12 @@
+**type**: `string` **default**: `/bin/sh`
+
+The interpreter for `run`, as an absolute path. Set `/bin/bash` for arrays,
+`[[ ]]`, or `set -o pipefail`. It's invoked as `<shell> -e -c <script>`, so
+fail-fast is armed for POSIX shells (RunWisp warns at boot when it can't arm it).
+Can be set once in `[defaults]`.
+
+```toml
+[tasks.nightly-report]
+shell = "/bin/bash"
+run   = "set -o pipefail; make report | tee out.log"
+```

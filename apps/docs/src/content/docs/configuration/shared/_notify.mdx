@@ -1,0 +1,21 @@
+**type**: `string[]`
+
+Notifier ids to alert on any [failure outcome](/configuration/tasks/#what-counts-as-a-failure).
+Fires on whatever `failures` classifies as a failure — so silencing a missed-run
+page, or promoting a stopped one, is a `failures` edit, not a separate toggle. A
+demoted outcome still records its run row; it just doesn't go red or page. To
+alert on a non-failure outcome (a success, a timeout on its own), add a
+[`[[route]]`](/notifications/routes/) matching that kind.
+
+```toml
+[tasks.backup-db]
+notify = ["slack-ops"]
+```
+
+Each entry is a notifier id declared in a
+[`[notifiers.<id>]`](/notifications/model/#notifiersid--declaring-a-channel)
+block. Whatever's listed in `[notify] global_notifiers` (default `["inapp"]`)
+gets tacked on automatically — set `global_notifiers = []` to opt out, or
+`["slack-ops"]` to route every failure there instead.
+[Per-task notifications](/notifications/per-task/) covers the field's full
+behaviour, and applies identically here.

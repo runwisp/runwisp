@@ -1,0 +1,15 @@
+**type**: `enum` **default**: `"exec"` when `run` is set, else `"run"`
+
+How a [compose_file](/configuration/tasks/#compose_file)-backed unit runs.
+
+```toml
+[tasks.nightly-backup]
+compose_file = "./docker-compose.yml"
+compose_mode = "exec"
+run          = "rails db:migrate"
+```
+
+Possible values:
+
+- `run`: start a fresh container each run (`docker compose run --rm`)
+- `exec`: run your command inside the running container (`docker compose exec`)

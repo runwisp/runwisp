@@ -1,0 +1,17 @@
+**type**: `duration` **default**: `5s`
+
+How long a stopping run gets to exit cleanly after the [stop_signal](/configuration/tasks/#stop_signal),
+before RunWisp SIGKILLs it. Applies on timeout, an `on_overlap = "kill"`, a manual
+stop, and shutdown. Set `"0s"` to kill immediately.
+
+```toml
+[tasks.queue-drain]
+graceful_stop = "30s"
+```
+
+It covers the whole process group: the stop signal goes to the process group,
+every descendant gets the same grace window, and anything still alive afterward
+is `SIGKILL`'d together. If `graceful_stop` is longer than
+[`[daemon] shutdown_timeout`](/configuration/daemon/#shutdown_timeout), the
+daemon warns you at boot and names it — because at shutdown it'll SIGKILL the
+straggler before the per-entry window is even up.

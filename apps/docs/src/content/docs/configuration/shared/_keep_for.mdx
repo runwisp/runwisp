@@ -1,0 +1,16 @@
+**type**: `duration`
+
+Delete runs older than this age. Inherits `[defaults]` when unset; combine with
+[keep_runs](/configuration/tasks/#keep_runs) and the stricter limit wins.
+
+```toml
+[tasks.backup-db]
+keep_for = "90d"
+```
+
+Possible values:
+
+- `48h`: 2 days
+- `14d`: 14 days
+- `2w`: 2 weeks
+- `90d`: about 3 months

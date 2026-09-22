@@ -48,7 +48,7 @@ Work down this list — it's ordered by how often each one is the answer.
 2. **The daemon hasn't picked up your edit.** RunWisp never watches files. See
    [the next section](#i-edited-runwisptoml-and-nothing-changed).
 3. **`manual_trigger = false`.** That makes the task
-   [cron-only](/configuration/tasks/#manual_trigger--false--cron-only-tasks) — the
+   [cron-only](/configuration/tasks/#manual_trigger) — the
    CLI, API, and UI will all refuse to trigger it by hand. Intentional, but easy
    to forget you set it.
 4. **The timezone isn't what you think.** Cron is evaluated in the task's
