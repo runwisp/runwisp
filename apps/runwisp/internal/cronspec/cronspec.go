@@ -191,10 +191,10 @@ func sundayAliased(spec string) string {
 }
 
 // dowField rewrites one day-of-week field, term by comma-separated term.
+// Every term is inspected: a bare "N/step" reaches vixie's implicit field max
+// of 7 (Sunday) without the field text ever containing a literal "7", so a
+// "contains 7" shortcut here would silently drop that Sunday occurrence.
 func dowField(field string) string {
-	if !strings.Contains(field, "7") {
-		return field
-	}
 	terms := strings.Split(field, ",")
 	for i, term := range terms {
 		terms[i] = dowTerm(term)
@@ -218,6 +218,16 @@ func dowTerm(term string) string {
 		// A range starting at 7: the value is Sunday, so 0 says the same thing in
 		// robfig's bounds.
 		return "0" + term[1:]
+	}
+	if !isRange && hasStep {
+		// A bare "N/step" (no explicit high). vixie defaults the implicit upper
+		// bound to the field max — 7 for day-of-week — so "1/2" is 1,3,5,7(=Sun).
+		// robfig would cap at its own max of 6 and drop the Sunday occurrence, so
+		// expand against 7 the same way an explicit "N-7/step" range is handled.
+		// "*" and named days don't parse as an int and fall through unchanged.
+		if _, err := strconv.Atoi(base); err == nil {
+			return expandDowRangeTo7(term, base, step, true)
+		}
 	}
 	if !isRange || hi != "7" {
 		// A named day, a 7 that is only a step (*/7), or no 7 in a value position.

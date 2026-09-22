@@ -263,10 +263,12 @@ func (c *Channel) timerFlush(fp string) {
 
 	count := st.pending // suppressed events folded into the window-close summary
 	ev := st.lastEvent
-	st.pending = 0
-	st.lastSent = c.clock.Now()
-	st.lastEvent = nil
-	st.timer = nil
+	// The window has expired and its summary is about to fire, so this window is
+	// over. Forget the fingerprint rather than resetting lastSent to now: the
+	// next event must be treated as the first of a fresh window and forwarded
+	// immediately (the documented contract), not suppressed into yet another
+	// window-close summary because "now" is still within Window of the reset.
+	delete(c.state, fp)
 	// Registered under c.mu, before Close can take the lock and start wg.Wait.
 	c.wg.Add(1)
 	c.mu.Unlock()

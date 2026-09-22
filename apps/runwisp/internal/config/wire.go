@@ -249,7 +249,7 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 	if w.ManualTrigger != nil {
 		manualTrigger = *w.ManualTrigger
 	}
-	timeout, err := parseDuration(w.Timeout)
+	timeout, err := parseDurationPtr(w.Timeout)
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid timeout for task %q: %w", name, err)
 	}
@@ -459,7 +459,7 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid retry_delay for task %q: %w", name, err)
 	}
-	jitter, err := parseDuration(w.Jitter)
+	jitter, err := parseDurationPtr(w.Jitter)
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid jitter for task %q: %w", name, err)
 	}

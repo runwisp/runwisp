@@ -66,7 +66,10 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		initWarnings = append(initWarnings, fmt.Sprintf(format, args...))
 	}
 
-	crashed := markCrashedRunsWithRetry(ctx, db, addWarning)
+	crashed, err := markCrashedRunsWithRetry(ctx, db)
+	if err != nil {
+		return nil, fmt.Errorf("crash recovery failed; refusing to start with unresolved in-flight runs: %w", err)
+	}
 
 	eventBus := events.NewEventBus()
 
@@ -438,8 +441,15 @@ func topoStartOrder(tasksMap map[string]*model.Task) []*model.Task {
 // markCrashedRunsWithRetry marks crash-orphaned runs terminal, retrying a
 // small bounded number of times: this runs once, synchronously, at boot, so a
 // transient DB error (e.g. SQLite busy) shouldn't permanently skip crash
-// recovery for the whole boot. Only the final failure is surfaced as a warning.
-func markCrashedRunsWithRetry(ctx context.Context, db storage.RunRepository, addWarning func(string, ...any)) int64 {
+// recovery for the whole boot.
+//
+// If every attempt fails it returns an error rather than swallowing it: crash
+// recovery is a boot precondition (invariant — a run in flight at crash time
+// must be marked interrupted). Proceeding would leave those rows stuck at
+// 'running' forever, and once the scheduler starts new runs a later sweep can
+// no longer tell a genuine live run from a crash orphan — so the caller aborts
+// boot, which surfaces the failure loudly instead of hiding a phantom run.
+func markCrashedRunsWithRetry(ctx context.Context, db storage.RunRepository) (int64, error) {
 	const maxAttempts = 3
 	const retryDelay = 100 * time.Millisecond
 
@@ -448,14 +458,13 @@ func markCrashedRunsWithRetry(ctx context.Context, db storage.RunRepository, add
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		crashed, err = db.MarkCrashedRuns(ctx)
 		if err == nil {
-			return crashed
+			return crashed, nil
 		}
 		if attempt < maxAttempts {
 			time.Sleep(retryDelay)
 		}
 	}
-	addWarning("Failed to mark crashed runs: %v", err)
-	return crashed
+	return 0, fmt.Errorf("mark crashed runs after %d attempts: %w", maxAttempts, err)
 }
 
 func resumePendingRuns(ctx context.Context, db storage.RunRepository, taskManager runtime.TaskManager) uikit.PendingRunsSummary {

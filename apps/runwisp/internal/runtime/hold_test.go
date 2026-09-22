@@ -133,8 +133,8 @@ func TestAddTaskRefusesHeldTask(t *testing.T) {
 func TestHeldTaskGetsNoJitterPlan(t *testing.T) {
 	runner := &fakeTaskRunner{}
 	held := heldCronTask("held", "0 3 * * *")
-	held.Jitter = 30 * time.Minute
-	ours := &model.Task{Name: "ours", Cron: "0 3 * * *", Run: "echo hi", Jitter: 30 * time.Minute}
+	held.Jitter = durPtr(30 * time.Minute)
+	ours := &model.Task{Name: "ours", Cron: "0 3 * * *", Run: "echo hi", Jitter: durPtr(30 * time.Minute)}
 
 	now := time.Date(2026, 7, 30, 1, 0, 0, 0, time.UTC)
 	sched := NewScheduler(runner, map[string]*model.Task{"held": held, "ours": ours}, time.UTC,

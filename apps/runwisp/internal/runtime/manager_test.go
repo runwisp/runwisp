@@ -270,6 +270,32 @@ func TestEvaluateConcurrency_TerminateSkipsAlreadyCancelled(t *testing.T) {
 	assert.True(t, r2.cancelled, "the terminated run must be latched so a later trigger skips it")
 }
 
+// TestEvaluateConcurrency_TerminateOnlyExcessAboveLimit pins that with
+// max_concurrent > 1, a kill-policy trigger cancels only enough live runs to
+// bring the live set back to the limit — it must NOT count already-cancelled
+// (still-draining) runs toward the cancel budget, or a slow-draining victim
+// inflates the budget and over-kills healthy live runs.
+func TestEvaluateConcurrency_TerminateOnlyExcessAboveLimit(t *testing.T) {
+	m := &defaultTaskManager{}
+	var r2cancels, r3cancels int
+	// r1 was cancelled by a previous trigger and is still draining.
+	r1 := &ActiveRun{Run: &model.Run{ID: "r1"}, Cancel: func() {}, cancelled: true}
+	r2 := &ActiveRun{Run: &model.Run{ID: "r2"}, Cancel: func() { r2cancels++ }}
+	r3 := &ActiveRun{Run: &model.Run{ID: "r3"}, Cancel: func() { r3cancels++ }}
+	ts := &taskState{
+		task:   testTask("t", model.PolicyKill, 2),
+		active: []*ActiveRun{r1, r2, r3},
+	}
+
+	// Live set is {r2, r3} = 2 (at the limit). Adding r4 needs exactly one
+	// live victim cancelled so the live set stays at 2 ({r3, r4}).
+	action, err := m.evaluateConcurrency(ts, &model.Run{ID: "r4"}, 2)
+	require.NoError(t, err)
+	assert.Equal(t, actionStart, action)
+	assert.Equal(t, 1, r2cancels+r3cancels,
+		"only one live run must be cancelled to stay at max_concurrent=2; the draining r1 must not inflate the cancel budget")
+}
+
 // TestGetActiveRunsReturnsRunSnapshot pins that GetActiveRuns hands out a copy of
 // each Run, not the live pointer the execute goroutine concurrently mutates.
 func TestGetActiveRunsReturnsRunSnapshot(t *testing.T) {

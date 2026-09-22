@@ -422,8 +422,8 @@ func (s *seeder) runContext(ctx context.Context, task *model.Task) (context.Cont
 		timer := time.AfterFunc(s.opts.serviceWindow, cancel)
 		return runCtx, func() { timer.Stop(); cancel() }
 	}
-	if task.Timeout > 0 {
-		return context.WithTimeout(ctx, task.Timeout)
+	if timeout := task.TimeoutValue(); timeout > 0 {
+		return context.WithTimeout(ctx, timeout)
 	}
 	return context.WithCancel(ctx)
 }

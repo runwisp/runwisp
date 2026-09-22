@@ -179,6 +179,32 @@ func TestCoalesce_WindowCloseSummary(t *testing.T) {
 	assert.Equal(t, 3, count, "summary count must include all suppressed events")
 }
 
+// TestCoalesce_EventAfterWindowCloseForwardsImmediately pins the documented
+// contract that the first event of a new window pages immediately: a fresh
+// failure arriving right after a window-close summary must be forwarded, not
+// folded into yet another window-close summary because the window was reset.
+func TestCoalesce_EventAfterWindowCloseForwardsImmediately(t *testing.T) {
+	inner := testutil.NewFakeChannel("slack-ops")
+	clock := testutil.NewFakeClock(time.Unix(0, 0))
+	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, clock, nil, nil)
+	defer c.Close(context.Background())
+	mt := withManualTimers(c)
+
+	// First event forwards; three more suppress into a window-close summary.
+	for i := 0; i < 4; i++ {
+		require.NoError(t, c.Execute(context.Background(), failEvent("health")))
+	}
+	mt.FireAll()
+	c.wg.Wait()
+	require.Len(t, inner.Received(), 2, "first delivery + window-close summary")
+
+	// A new failure moments later opens a fresh window and must page immediately.
+	require.NoError(t, c.Execute(context.Background(), failEvent("health")))
+	got := inner.Received()
+	require.Len(t, got, 3, "the first event after a window-close summary must forward immediately")
+	assert.Nil(t, got[len(got)-1].Extra, "the fresh forward is a plain event, not a summary")
+}
+
 // TestCoalesce_CloseStopsTimers verifies Close cancels pending timers without
 // leaking goroutines or causing further deliveries after shutdown.
 func TestCoalesce_CloseStopsTimers(t *testing.T) {

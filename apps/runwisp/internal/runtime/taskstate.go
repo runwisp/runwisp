@@ -120,26 +120,42 @@ func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, 
 		slog.Debug("Task queued", "name", ts.task.Name, "active", len(ts.active), "limit", concurrencyLimit, "queue", len(ts.queue))
 		return actionQueued, nil
 	case model.PolicyKill:
-		// Cancel the oldest not-yet-cancelled runs until enough are draining that
-		// active returns to the limit once they exit. Skipping already-cancelled
-		// runs is what bounds the live set: re-cancelling the same dying run while
-		// spamming triggers used to let active grow without limit.
-		needed := len(ts.active) - concurrencyLimit + 1
-		for _, ar := range ts.active {
-			if needed <= 0 {
-				break
-			}
-			if ar.cancelled {
-				continue
-			}
-			ar.cancelled = true
-			slog.Info("Terminating run to make room", "run", ar.Run.ID, "task", ts.task.Name)
-			ar.Cancel()
-			needed--
-		}
+		m.cancelExcessRuns(ts, concurrencyLimit)
 		return actionStart, nil
 	default:
 		return actionStart, nil
+	}
+}
+
+// cancelExcessRuns cancels the oldest not-yet-cancelled runs of ts until
+// enough are draining that active returns to concurrencyLimit once they exit.
+// Skipping already-cancelled runs is what bounds the live set: re-cancelling
+// the same dying run while spamming triggers used to let active grow without
+// limit.
+//
+// The cancel budget counts only live (not-yet-cancelled) runs. Basing it on
+// len(ts.active) would count still-draining victims from earlier triggers
+// too, inflating the budget and over-killing healthy runs when
+// max_concurrent > 1 and triggers arrive faster than victims drain.
+func (m *defaultTaskManager) cancelExcessRuns(ts *taskState, concurrencyLimit int) {
+	live := 0
+	for _, ar := range ts.active {
+		if !ar.cancelled {
+			live++
+		}
+	}
+	needed := live - concurrencyLimit + 1
+	for _, ar := range ts.active {
+		if needed <= 0 {
+			break
+		}
+		if ar.cancelled {
+			continue
+		}
+		ar.cancelled = true
+		slog.Info("Terminating run to make room", "run", ar.Run.ID, "task", ts.task.Name)
+		ar.Cancel()
+		needed--
 	}
 }
 

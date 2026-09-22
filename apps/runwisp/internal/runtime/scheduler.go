@@ -196,7 +196,8 @@ func (scheduler *Scheduler) computeJitterPlans() {
 	lengths := make(map[string]time.Duration)
 
 	for _, task := range scheduler.tasks {
-		if task.Jitter <= 0 || !task.Schedulable() {
+		jitterWindow := task.JitterValue()
+		if jitterWindow <= 0 || !task.Schedulable() {
 			continue
 		}
 		spec, _ := scheduler.effectiveSpec(task)
@@ -207,7 +208,7 @@ func (scheduler *Scheduler) computeJitterPlans() {
 		}
 		base := sched.Next(now)
 		gap := sched.Next(base).Sub(base)
-		length := min(task.Jitter, gap-time.Second)
+		length := min(jitterWindow, gap-time.Second)
 		if length <= 0 {
 			// Gap too small to spread in (e.g. a sub-minute cadence); the task
 			// just fires immediately.

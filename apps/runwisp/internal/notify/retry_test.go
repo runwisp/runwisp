@@ -4,13 +4,44 @@
 package notify
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+// TestRetryWithBackoff_RateLimitOverrideHonorsMaxElapsedTime pins that a server
+// that returns a Retry-After delay on every attempt (simulated by op always
+// calling SetNextRetryInterval) still gives up after MaxElapsedTime. The
+// override path used to skip the library's own elapsed-time check entirely, so
+// the loop retried forever until the ctx deadline instead of the budget.
+func TestRetryWithBackoff_RateLimitOverrideHonorsMaxElapsedTime(t *testing.T) {
+	cfg := BackoffConfig{
+		InitialInterval: time.Millisecond,
+		MaxInterval:     time.Millisecond,
+		MaxElapsedTime:  50 * time.Millisecond,
+		Multiplier:      2.0,
+	}
+	// A generous deadline: if the budget is honored the op error returns well
+	// before this fires; if it's bypassed the loop only stops when this cancels.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	sentinel := errors.New("rate-limited")
+	start := time.Now()
+	err := RetryWithBackoff(ctx, cfg, func(ctx context.Context) error {
+		SetNextRetryInterval(ctx, time.Millisecond) // always-honored Retry-After
+		return sentinel
+	})
+
+	require.ErrorIs(t, err, sentinel, "must give up with the op error, not the ctx deadline")
+	assert.Less(t, time.Since(start), time.Second, "must stop near MaxElapsedTime, not run until ctx cancels")
+}
 
 func TestParseRetryAfterHeader_Empty(t *testing.T) {
 	h := http.Header{}

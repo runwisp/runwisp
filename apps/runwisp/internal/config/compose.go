@@ -685,7 +685,7 @@ func applyComposeOverrideEnv(task *model.Task, w *composeServiceOverrideWire) {
 // fields with the same parsers as the regular service path (so error messages
 // match) and writes them onto the task. Empty strings are left untouched.
 func applyComposeOverrideParsed(task *model.Task, w *composeServiceOverrideWire, svcName string) error {
-	if err := parseOverrideDuration(w.Timeout, svcName, "timeout", &task.Timeout); err != nil {
+	if err := parseOverrideDurationPtr(w.Timeout, svcName, "timeout", &task.Timeout); err != nil {
 		return err
 	}
 	if err := parseOverrideDurationPtr(w.GracefulStop, svcName, "graceful_stop", &task.GracefulStop); err != nil {
@@ -721,27 +721,12 @@ func applyComposeOverrideParsed(task *model.Task, w *composeServiceOverrideWire,
 	return nil
 }
 
-// parseOverrideDuration parses one duration-valued override field into dst,
-// leaving dst untouched when raw is empty. field names the key in the error so
-// the message matches the regular service path.
-func parseOverrideDuration(raw, svcName, field string, dst *time.Duration) error {
-	if raw == "" {
-		return nil
-	}
-	d, err := parseDuration(raw)
-	if err != nil {
-		return fmt.Errorf("service %q override: invalid %s: %w", svcName, field, err)
-	}
-	*dst = d
-	return nil
-}
-
 // parseOverrideDurationPtr parses one duration-valued override field for a
-// pointer-typed task field (RestartDelay, HealthyAfter), leaving dst
-// untouched when raw is empty. Unlike parseOverrideDuration, an explicit
-// "0s" override is preserved literally rather than colliding with the
-// "not overridden" zero value — a fresh pointer is written on any non-empty
-// raw, including one that parses to zero.
+// pointer-typed task field (Timeout, RestartDelay, HealthyAfter), leaving dst
+// untouched when raw is empty. An explicit "0s" override is preserved literally
+// rather than colliding with the "not overridden" zero value — a fresh pointer
+// is written on any non-empty raw, including one that parses to zero. field
+// names the key in the error so the message matches the regular service path.
 func parseOverrideDurationPtr(raw, svcName, field string, dst **time.Duration) error {
 	if raw == "" {
 		return nil

@@ -109,7 +109,7 @@ func IsPermanentHTTPStatus(code int) bool {
 // instead of letting the library additionally compute and wait out its usual
 // exponential interval on top of a delay the caller already honored once.
 type rateLimitAwareBackOff struct {
-	backoff.BackOff
+	*backoff.ExponentialBackOff
 	override time.Duration
 }
 
@@ -117,9 +117,18 @@ func (b *rateLimitAwareBackOff) NextBackOff() time.Duration {
 	if b.override > 0 {
 		d := b.override
 		b.override = 0
+		// Honor the server-supplied delay, but still enforce the overall
+		// MaxElapsedTime budget the exponential backoff would have applied.
+		// The library only checks that budget inside its own NextBackOff, which
+		// this branch skips — so without this an endpoint returning 429 +
+		// Retry-After on every call would retry forever instead of giving up
+		// after MaxElapsedTime.
+		if b.MaxElapsedTime > 0 && b.GetElapsedTime()+d > b.MaxElapsedTime {
+			return backoff.Stop
+		}
 		return d
 	}
-	return b.BackOff.NextBackOff()
+	return b.ExponentialBackOff.NextBackOff()
 }
 
 // retryOverrideKey is the context.Value key RetryWithBackoff uses to expose
@@ -148,7 +157,7 @@ func SetNextRetryInterval(ctx context.Context, d time.Duration) {
 // context derived from ctx that carries the retry loop's backoff instance —
 // see SetNextRetryInterval.
 func RetryWithBackoff(ctx context.Context, cfg BackoffConfig, op func(ctx context.Context) error) error {
-	bo := &rateLimitAwareBackOff{BackOff: cfg.NewExponential()}
+	bo := &rateLimitAwareBackOff{ExponentialBackOff: cfg.NewExponential()}
 	bo.Reset()
 	rctx := context.WithValue(ctx, retryOverrideKey{}, bo)
 	if err := backoff.Retry(func() error { return op(rctx) }, backoff.WithContext(bo, rctx)); err != nil {

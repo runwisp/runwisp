@@ -1051,11 +1051,13 @@ func validateConcurrencyLimits(task *model.Task) error {
 }
 
 func validateRetryLimits(task *model.Task) error {
-	if task.Jitter < 0 {
-		return fmt.Errorf("invalid jitter for task %s: must be zero or a positive duration", task.Name)
-	}
-	if task.Jitter > JitterCap {
-		return fmt.Errorf("invalid jitter for task %s: %s exceeds the cap of %s", task.Name, task.Jitter, JitterCap)
+	if task.Jitter != nil {
+		if *task.Jitter < 0 {
+			return fmt.Errorf("invalid jitter for task %s: must be zero or a positive duration", task.Name)
+		}
+		if *task.Jitter > JitterCap {
+			return fmt.Errorf("invalid jitter for task %s: %s exceeds the cap of %s", task.Name, *task.Jitter, JitterCap)
+		}
 	}
 	if task.RetryAttempts < 0 {
 		return fmt.Errorf("invalid retry_attempts for task %s: must be non-negative", task.Name)
@@ -1081,7 +1083,7 @@ func validateTaskDurations(task *model.Task) error {
 	if task.GracefulStop != nil && *task.GracefulStop < 0 {
 		return fmt.Errorf("invalid graceful_stop for task %s: must be zero or a positive duration", task.Name)
 	}
-	if task.Timeout < 0 {
+	if task.Timeout != nil && *task.Timeout < 0 {
 		return fmt.Errorf("invalid timeout for task %s: must be zero or a positive duration", task.Name)
 	}
 	if task.RetryDelay != nil && *task.RetryDelay < 0 {
@@ -1396,12 +1398,17 @@ func ApplyDefaults(cfg *Config) {
 // builtin); the pointer field (KeepRuns) and the two special cases (stop_signal
 // canonicalization, failures delta-resolution) keep their own helpers.
 func applyInheritedDefaults(task *model.Task, d Defaults) {
-	task.Timeout = firstSet(task.Timeout, d.Timeout)
+	// Timeout/Jitter are pointers so an explicit `= "0s"` (opt out — no timeout /
+	// no jitter) is distinguishable from an omitted key. Only a nil (omitted)
+	// unit value inherits the [defaults]; an explicit value, including 0, wins.
+	if task.Timeout == nil && d.Timeout > 0 {
+		task.Timeout = durationPtr(d.Timeout)
+	}
 	// Jitter is task-only: a service never inherits [defaults] jitter (it starts
 	// every instance at boot, so there's no fire time to spread). An explicit
 	// [services.x] jitter is rejected earlier by DisallowUnknownFields.
-	if !task.Kind.IsService() {
-		task.Jitter = firstSet(task.Jitter, d.Jitter)
+	if !task.Kind.IsService() && task.Jitter == nil && d.Jitter > 0 {
+		task.Jitter = durationPtr(d.Jitter)
 	}
 	task.Shell = firstSet(task.Shell, d.Shell, DefaultShell)
 	applyInheritedStopSignal(task, d)
@@ -1478,6 +1485,10 @@ func mergeEnv(base, overlay map[string]string) map[string]string {
 // from a built-in fallback, without ever colliding an explicit zero at either
 // level with "unset" — the whole point of pointer fields like RestartAttempts.
 // Always returns non-nil.
+// durationPtr returns a pointer to d. Used when promoting a [defaults] scalar
+// into a pointer-typed unit field so an explicit unit-level zero stays distinct.
+func durationPtr(d time.Duration) *time.Duration { return &d }
+
 func resolveDefault[T any](unit, fromDefaults *T, builtin T) *T {
 	if unit != nil {
 		return unit

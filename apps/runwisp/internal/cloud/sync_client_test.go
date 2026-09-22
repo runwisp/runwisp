@@ -162,7 +162,7 @@ func TestBuildOneSyncTask(t *testing.T) {
 			RetryBackoff:  model.BackoffExponential,
 			MaxConcurrent: 2,
 			OnOverlap:     model.PolicySkip,
-			Timeout:       30 * time.Second,
+			Timeout:       durPtr(30 * time.Second),
 		}
 
 		st, ok := buildOneSyncTask(task)
