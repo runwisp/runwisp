@@ -1,0 +1,16 @@
+---
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// Starlight's `head` config option only accepts tags, not raw comments, so
+// this overrides the default Head to append one. Every HTML page tells an
+// agent that ended up here anyway (Accept: */* or an unrecognized UA) how to
+// get the Markdown version next time — see cloudflare-rules.md for the edge
+// rewrite that serves Markdown directly when the header/UA already say so.
+import Default from "@astrojs/starlight/components/Head.astro";
+---
+
+<Default><slot /></Default>
+<Fragment
+    set:html={`<!-- AI agents: send "Accept: text/markdown" (or append .md to the URL) to get this page as Markdown instead of HTML. Full index: https://docs.runwisp.com/llms.txt -->`}
+/>

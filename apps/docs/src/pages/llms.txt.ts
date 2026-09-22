@@ -3,8 +3,11 @@
 
 // Curated llms.txt index (https://llmstxt.org). Section order is hand-defined
 // here; per-page titles/descriptions are pulled from frontmatter so the index
-// never drifts as pages change. Every link points at the raw `.md` form served
-// by `[...slug].md.ts`, so an agent can fetch any page as plain text.
+// never drifts as pages change. Every link points at the normal page URL: the
+// site content-negotiates and serves Markdown to a request that sends
+// `Accept: text/markdown` or a known agent User-Agent (see
+// cloudflare-rules.md), and every page also has a `.md` twin served by
+// `[...slug].md.ts` for a client that can't set headers.
 
 import type { APIRoute } from "astro";
 import { getCollection } from "astro:content";
@@ -128,6 +131,12 @@ export const GET: APIRoute = async () => {
     const lines: string[] = ["# RunWisp", "", `> ${SUMMARY}`, ""];
 
     lines.push(
+        "Every page below is served as Markdown if you send `Accept: text/markdown`, " +
+            "or if you append `.md` to the URL.",
+        "",
+    );
+
+    lines.push(
         "## Agent reference",
         "",
         `- [RunWisp agent reference](${SITE}/agents/reference.md): Dense, ` +
@@ -144,7 +153,8 @@ export const GET: APIRoute = async () => {
                 throw new Error(`llms.txt references unknown docs page: ${slug}`);
             }
             const description = entry.data.description ?? "";
-            lines.push(`- [${entry.data.title}](${SITE}/${slug}.md): ${description}`);
+            const path = slug === "index" ? "" : `${slug}/`;
+            lines.push(`- [${entry.data.title}](${SITE}/${path}): ${description}`);
         }
         lines.push("");
     }
