@@ -22,6 +22,14 @@ type Service struct {
 	// StopGracePeriod is the compose-declared grace window. Zero means the
 	// compose file did not set one — RunWisp will fall back to its own default.
 	StopGracePeriod time.Duration
+	// Image is the compose-declared `image:`, tag/digest included. Empty for a
+	// service built from `build:` with no `image:` fallback.
+	Image string
+	// BindSources holds the absolute host-side path of every bind-mounted
+	// volume (`type: bind`), already resolved against the compose file's
+	// working directory. Named volumes and tmpfs mounts are excluded — only a
+	// bind mount can point at a path that doesn't exist from RunWisp's side.
+	BindSources []string
 }
 
 // ServiceNames returns just the service names, in loader order. Convenience

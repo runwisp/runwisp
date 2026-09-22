@@ -12,6 +12,7 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/cli"
 	"github.com/compose-spec/compose-go/v2/loader"
+	"github.com/compose-spec/compose-go/v2/types"
 )
 
 // Load parses a docker compose file and returns a minimal Project. profiles
@@ -73,8 +74,23 @@ func Load(file string, profiles, envFiles []string, workingDir string) (*Project
 		services = append(services, Service{
 			Name:            name,
 			StopGracePeriod: grace,
+			Image:           svc.Image,
+			BindSources:     bindMountSources(svc.Volumes),
 		})
 	}
 
 	return &Project{Services: services}, nil
+}
+
+// bindMountSources extracts the resolved host-side source path of every
+// bind-mounted volume. compose-go has already made Source absolute against
+// the compose file's working directory by the time LoadProject returns.
+func bindMountSources(volumes []types.ServiceVolumeConfig) []string {
+	var sources []string
+	for _, v := range volumes {
+		if v.Type == types.VolumeTypeBind && v.Source != "" {
+			sources = append(sources, v.Source)
+		}
+	}
+	return sources
 }

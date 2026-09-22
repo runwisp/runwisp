@@ -2,9 +2,15 @@ services:
   web:
     image: nginx:alpine
     stop_grace_period: 30s
+    volumes:
+      - ./data:/usr/share/nginx/html
+      - named-vol:/var/cache
   worker:
     image: alpine
     command: sleep 60
   db:
     image: postgres:16
     profiles: [heavy]
+
+volumes:
+  named-vol:
