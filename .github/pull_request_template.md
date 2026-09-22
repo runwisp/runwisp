@@ -16,3 +16,4 @@
 - [ ] Validation passes locally (`bun run build`, `bun run test`, and `bun run check`)
 - [ ] I have added tests for new functionality (if applicable)
 - [ ] I have updated documentation (if applicable)
+- [ ] I have added a changelog entry in `CHANGELOG.md` under `[Unreleased]` (if user-facing)
