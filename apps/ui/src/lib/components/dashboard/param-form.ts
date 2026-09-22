@@ -43,7 +43,7 @@ export function paramSupportsInclude(p: TaskParam, inCustomMode: boolean): boole
 // values valid that the daemon then 400s; this regex rejects them so client and
 // server agree.
 const NUMBER_RE = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
-export function isNumberValue(s: string): boolean {
+function isNumberValue(s: string): boolean {
     return NUMBER_RE.test(s.trim());
 }
 

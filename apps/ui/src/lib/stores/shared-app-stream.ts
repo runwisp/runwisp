@@ -3,14 +3,15 @@
 
 import type { SSEErrorInfo } from "$lib/utils/event-source";
 import { createLogger } from "$lib/utils/logger";
+import { EventManager, type AppEventStream } from "./event-manager";
 import {
-    EventManager,
-    type AppEventStream,
+    HandlerRegistry,
+    Signal,
     type EventHandler,
     type ErrorHandler,
     type OpenHandler,
     type StallHandler,
-} from "./event-manager";
+} from "./event-fanout";
 
 // Why this exists: a browser caps concurrent connections to one origin at ~6
 // over HTTP/1.1, and that pool is shared across every tab in the whole browser.
@@ -86,10 +87,10 @@ export class SharedAppStream implements AppEventStream {
 
     // Local fan-out to this tab's subscribers. Plain (non-reactive) collections:
     // this is connection plumbing, never a reactive UI source.
-    readonly #handlers = new Map<string, Set<EventHandler>>();
-    readonly #openHandlers = new Set<OpenHandler>();
-    readonly #errorHandlers = new Set<ErrorHandler>();
-    readonly #stallHandlers = new Set<StallHandler>();
+    readonly #handlers = new HandlerRegistry();
+    readonly #open = new Signal<[]>(logger, "onOpen");
+    readonly #error = new Signal<[SSEErrorInfo]>(logger, "onError");
+    readonly #stall = new Signal<[]>(logger, "onStall");
 
     #started = false;
     #bus: SharedBus | null = null;
@@ -136,12 +137,7 @@ export class SharedAppStream implements AppEventStream {
     }
 
     subscribe(eventType: string, handler: EventHandler): () => void {
-        let set = this.#handlers.get(eventType);
-        if (!set) {
-            set = new Set();
-            this.#handlers.set(eventType, set);
-        }
-        set.add(handler);
+        this.#handlers.add(eventType, handler);
 
         this.#ensureStarted();
         // Tell whichever tab is currently the leader that we want this type, and
@@ -155,38 +151,20 @@ export class SharedAppStream implements AppEventStream {
     }
 
     onOpen(handler: OpenHandler): () => void {
-        this.#openHandlers.add(handler);
-        return () => {
-            this.#openHandlers.delete(handler);
-        };
+        return this.#open.add(handler);
     }
 
     onError(handler: ErrorHandler): () => void {
-        this.#errorHandlers.add(handler);
-        return () => {
-            this.#errorHandlers.delete(handler);
-        };
+        return this.#error.add(handler);
     }
 
     onStall(handler: StallHandler): () => void {
-        this.#stallHandlers.add(handler);
-        return () => {
-            this.#stallHandlers.delete(handler);
-        };
+        return this.#stall.add(handler);
     }
 
     #unsubscribe(eventType: string, handler: EventHandler): void {
-        const set = this.#handlers.get(eventType);
-        if (!set) return;
-        set.delete(handler);
-        if (set.size === 0) this.#handlers.delete(eventType);
-        if (this.#totalSubscribers() === 0) this.#stop();
-    }
-
-    #totalSubscribers(): number {
-        let count = 0;
-        for (const set of this.#handlers.values()) count += set.size;
-        return count;
+        this.#handlers.remove(eventType, handler);
+        if (this.#handlers.totalSize() === 0) this.#stop();
     }
 
     #ensureStarted(): void {
@@ -286,18 +264,18 @@ export class SharedAppStream implements AppEventStream {
         mgr.onOpen(() => {
             this.#lastLifecycle = "open";
             this.#lastErrorInfo = null;
-            this.#emitOpen();
+            this.#open.emit();
             this.#post({ t: "open" });
         });
         mgr.onError((info) => {
             this.#lastLifecycle = "error";
             this.#lastErrorInfo = info;
-            this.#emitError(info);
+            this.#error.emit(info);
             this.#post({ t: "error", info });
         });
         mgr.onStall(() => {
             this.#lastLifecycle = "stall";
-            this.#emitStall();
+            this.#stall.emit();
             this.#post({ t: "stall" });
         });
 
@@ -314,7 +292,7 @@ export class SharedAppStream implements AppEventStream {
         this.#leaderTypes.add(eventType);
         mgr.subscribe(eventType, (data, id) => {
             if (id) this.#lastEventId = id;
-            this.#dispatch(eventType, data, id);
+            this.#handlers.dispatch(eventType, data, id, logger);
             this.#post({ t: "event", type: eventType, data, ...(id && { id }) });
         });
     }
@@ -345,16 +323,16 @@ export class SharedAppStream implements AppEventStream {
         switch (msg.t) {
             case "event":
                 if (msg.id) this.#lastEventId = msg.id;
-                this.#dispatch(msg.type, msg.data, msg.id);
+                this.#handlers.dispatch(msg.type, msg.data, msg.id, logger);
                 return;
             case "open":
-                this.#emitOpen();
+                this.#open.emit();
                 return;
             case "error":
-                this.#emitError(msg.info);
+                this.#error.emit(msg.info);
                 return;
             case "stall":
-                this.#emitStall();
+                this.#stall.emit();
                 return;
             case "who":
                 // A new leader is gathering interests: re-announce ours.
@@ -379,48 +357,6 @@ export class SharedAppStream implements AppEventStream {
                 return;
             case null:
                 return;
-        }
-    }
-
-    #dispatch(eventType: string, data: string, id?: string): void {
-        const set = this.#handlers.get(eventType);
-        if (!set) return;
-        for (const handler of set) {
-            try {
-                handler(data, id);
-            } catch (err) {
-                logger.error(`handler for ${eventType} threw`, err);
-            }
-        }
-    }
-
-    #emitOpen(): void {
-        for (const handler of this.#openHandlers) {
-            try {
-                handler();
-            } catch (err) {
-                logger.warn("onOpen handler threw", err);
-            }
-        }
-    }
-
-    #emitError(info: SSEErrorInfo): void {
-        for (const handler of this.#errorHandlers) {
-            try {
-                handler(info);
-            } catch (err) {
-                logger.warn("onError handler threw", err);
-            }
-        }
-    }
-
-    #emitStall(): void {
-        for (const handler of this.#stallHandlers) {
-            try {
-                handler();
-            } catch (err) {
-                logger.warn("onStall handler threw", err);
-            }
         }
     }
 

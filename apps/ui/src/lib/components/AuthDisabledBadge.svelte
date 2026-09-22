@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import { ShieldOff } from "@lucide/svelte";
-    import { Badge } from "@runwisp/ui";
+    import TooltipBadge from "$lib/components/TooltipBadge.svelte";
     import { authStore } from "$lib/stores/auth.svelte";
 
     // Persistent (no dismiss) on purpose: a daemon running with
@@ -12,12 +12,12 @@
 </script>
 
 {#if visible}
-    <span
-        title="RUNWISP_AUTH=off is set — the API and Web UI are reachable without a password. Local/dev use only."
+    <TooltipBadge
+        variant="warning"
+        class="shrink-0"
+        tooltip="RUNWISP_AUTH=off is set — the API and Web UI are reachable without a password. Local/dev use only."
     >
-        <Badge variant="warning" class="shrink-0">
-            <ShieldOff size={12} class="shrink-0" />
-            <span class="hidden sm:inline">Auth disabled</span>
-        </Badge>
-    </span>
+        <ShieldOff size={12} class="shrink-0" />
+        <span class="hidden sm:inline">Auth disabled</span>
+    </TooltipBadge>
 {/if}

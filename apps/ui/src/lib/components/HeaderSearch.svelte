@@ -12,12 +12,11 @@
 
     let inputEl = $state<HTMLInputElement | null>(null);
 
-    // ⌘ on Apple, Ctrl elsewhere — show the shortcut the operator actually presses.
-    let isMac = $state(false);
-    $effect(() => {
-        if (browser) isMac = /mac|iphone|ipad|ipod/i.test(navigator.userAgent);
-    });
-    let shortcut = $derived(isMac ? "⌘K" : "Ctrl K");
+    // ⌘ on Apple, Ctrl elsewhere — show the shortcut the operator actually
+    // presses. navigator.userAgent never changes, so this is a one-time read,
+    // not a reactive effect.
+    const isMac = browser && /mac|iphone|ipad|ipod/i.test(navigator.userAgent);
+    const shortcut = isMac ? "⌘K" : "Ctrl K";
 
     // Debounced dispatch to the registered page. Re-runs on every keystroke;
     // the cleanup cancels the pending fire, so only a settled query lands.
