@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
+    import { tick } from "svelte";
     import { browser } from "$app/environment";
     import { Button, Input, Logo, Popover } from "@runwisp/ui";
     import { KeyRound, Lock } from "@lucide/svelte";
@@ -78,8 +79,12 @@
             await authApi.login(password);
             authStore.markAuthenticated();
             isOpen = false;
-            password = "";
             logger.info("Authentication successful");
+            // Keep the password in the (now-removed) form until after it leaves
+            // the DOM: password managers detect a successful login by the form
+            // disappearing with its value intact, and offer to save it.
+            await tick();
+            password = "";
             // markAuthenticated() above flips authStore.current, which the root
             // layout's auth effect reacts to (connect streams, seed system, load
             // tasks/notifications). No separate success event needed.
@@ -132,13 +137,29 @@
             </div>
 
             <form onsubmit={handleSubmit} class="mt-6 space-y-4">
+                <!-- Password managers key saved credentials to a username field.
+                     There isn't one, so give them a stable, hidden one (per
+                     Chromium's documented pattern) rather than none: without it,
+                     managers either skip the save prompt or save duplicate
+                     entries each time the daemon's random per-boot password
+                     rotates. -->
+                <input
+                    type="text"
+                    name="username"
+                    autocomplete="username"
+                    value="runwisp"
+                    readonly
+                    hidden
+                />
                 <Input
                     type="password"
+                    name="password"
+                    autocomplete="current-password"
                     aria-label="Password"
                     placeholder="Enter password"
                     bind:value={password}
                     error={error || undefined}
-                    disabled={loading}
+                    readonly={loading}
                     autofocus
                 >
                     {#snippet leadingIcon()}

@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The in-app notification stream now drops its oldest buffered update under backpressure, keeping a busy client's unread count current.
 - Age-based retention now evicts the oldest runs first when a task's expired backlog exceeds one cleanup batch.
 - The daemon now refuses to start if it cannot mark crash-orphaned runs interrupted, instead of leaving them stuck as "running" forever.
+- The Web UI login form now offers proper autofill/save hooks, so password managers (Firefox, Chrome, Bitwarden, 1Password) prompt to save and can autofill the password.
 
 ## [1.0.0] - 2026-09-20
 
