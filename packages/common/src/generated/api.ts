@@ -731,7 +731,6 @@ export interface components {
             readonly $schema?: string;
             authDisabled: boolean;
             capabilities: components["schemas"]["CapInfo"][] | null;
-            cloudEnabled: boolean;
             /** Format: date-time */
             configLoadedAt: string;
             configStale: boolean;
@@ -745,6 +744,7 @@ export interface components {
             resolvedTimezone: string;
             schedulingActive: boolean;
             serviceManaged: boolean;
+            stationEnabled: boolean;
             tasks: components["schemas"]["Task"][] | null;
             /** @enum {string} */
             timezoneSource: "config" | "system";
@@ -1178,7 +1178,7 @@ export interface components {
              * @description How the run was triggered
              * @enum {string}
              */
-            triggeredBy: "cron" | "api" | "ui" | "cli" | "cloud" | "service" | "startup";
+            triggeredBy: "cron" | "api" | "ui" | "cli" | "station" | "service" | "startup";
         };
         RunCompletedEvent: {
             error?: string;
@@ -1227,7 +1227,7 @@ export interface components {
             status?: string;
             /** @description Filter by task name */
             taskName?: string;
-            /** @description Filter by what triggered the run (cron/api/ui/cli/cloud/service/startup) */
+            /** @description Filter by what triggered the run (cron/api/ui/cli/station/service/startup) */
             triggeredBy?: string;
         };
         RunSelector: {
@@ -2392,7 +2392,7 @@ export interface operations {
                 /** @description Filter by task name */
                 taskName?: string;
                 /** @description Filter by what triggered the run */
-                triggeredBy?: "cron" | "api" | "ui" | "cli" | "cloud" | "service" | "startup" | "";
+                triggeredBy?: "cron" | "api" | "ui" | "cli" | "station" | "service" | "startup" | "";
                 /** @description Only runs created at or after this RFC3339 time */
                 createdAfter?: string;
                 /** @description Only runs created at or before this RFC3339 time */

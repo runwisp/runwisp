@@ -96,7 +96,7 @@ wait_for_log() {
 mount_cfg=(-v "$work/runwisp.toml:/etc/runwisp/runwisp.toml:ro")
 
 echo "== the auth gate refuses every daemon-starting form =="
-for argv in "" "daemon" "runwisp daemon" "runwisp cloud" "runwisp restart" "runwisp demo" "runwisp"; do
+for argv in "" "daemon" "runwisp daemon" "runwisp station" "runwisp restart" "runwisp demo" "runwisp"; do
 	# shellcheck disable=SC2086 # argv is a deliberate word-split list
 	run_image 1 "explicit auth setting" "no auth: '${argv:-<no args>}'" \
 		-- "${mount_cfg[@]}" "$image" $argv

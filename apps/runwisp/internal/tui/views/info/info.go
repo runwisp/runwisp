@@ -330,8 +330,8 @@ func (v *InfoView) renderQuickInfoSection(w int) []string {
 	if v.info.Port > 0 {
 		fields = append(fields, kv{"Web UI", fmt.Sprintf("http://localhost:%d", v.info.Port)})
 	}
-	if v.info.CloudEnabled {
-		fields = append(fields, kv{"Cloud", "Connected"})
+	if v.info.StationEnabled {
+		fields = append(fields, kv{"Station", "Connected"})
 	}
 
 	for _, f := range fields {

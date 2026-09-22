@@ -195,7 +195,7 @@ func TestMapRunEventType_RunFailed_ReasonDaemonStopped(t *testing.T) {
 // TestMapRunEventType_RunFailed_ReasonDSTSkipped guards against the annual
 // DST fall-back dedup posing as a task failure. It's produced by the same
 // RecordSkippedFiring path as ReasonSkipped (the policy doing its job, never
-// routed through notifications) and the cloud tracker maps it to
+// routed through notifications) and the station tracker maps it to
 // ExecutionStatusSkipped, not Failed — the bridge must mute it the same way
 // it mutes ReasonSkipped instead of falling through to its default.
 func TestMapRunEventType_RunFailed_ReasonDSTSkipped(t *testing.T) {

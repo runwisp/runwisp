@@ -183,7 +183,7 @@
         {:else}
             <TaskPage
                 {task}
-                cloudMode={systemStore.cloudEnabled}
+                stationMode={systemStore.stationEnabled}
                 items={source.items}
                 total={source.total}
                 loading={source.loading}

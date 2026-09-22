@@ -376,9 +376,9 @@ func TestInfoView_View_RenderBranches(t *testing.T) {
 			contains: []string{"slack"},
 		},
 		{
-			name: "cloud-enabled",
+			name: "station-enabled",
 			setup: func() *InfoView {
-				v := NewInfoView(uikit.StartupInfo{CloudEnabled: true, Version: "1.0.0"})
+				v := NewInfoView(uikit.StartupInfo{StationEnabled: true, Version: "1.0.0"})
 				v.SetSize(80, 40)
 				return &v
 			},
@@ -433,14 +433,14 @@ func TestInfoView_View_RenderBranches(t *testing.T) {
 			name: "full-data",
 			setup: func() *InfoView {
 				v := NewInfoView(uikit.StartupInfo{
-					Version:      "1.5.0",
-					ConfigPath:   "/etc/runwisp.toml",
-					DataDir:      "/var/lib/runwisp",
-					DBPath:       "/var/lib/runwisp/runwisp.db",
-					LogDir:       "/var/log/runwisp",
-					Fingerprint:  "fp-xyz",
-					Port:         9090,
-					CloudEnabled: true,
+					Version:        "1.5.0",
+					ConfigPath:     "/etc/runwisp.toml",
+					DataDir:        "/var/lib/runwisp",
+					DBPath:         "/var/lib/runwisp/runwisp.db",
+					LogDir:         "/var/log/runwisp",
+					Fingerprint:    "fp-xyz",
+					Port:           9090,
+					StationEnabled: true,
 					Tasks: []model.Task{
 						{Name: "nightly-backup", Cron: "0 3 * * *"},
 						{Name: "api-worker", Kind: model.KindService, Instances: 2},

@@ -175,7 +175,7 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 	}
 
 	if info.WebUIDisabled {
-		fmt.Fprintf(w, "  %s\n", dimStyle.Render("Web UI disabled (no password in cloud-only mode)"))
+		fmt.Fprintf(w, "  %s\n", dimStyle.Render("Web UI disabled (no password in station-only mode)"))
 	} else if info.ListenURL != "" {
 		fmt.Fprintf(w, "  Listening on %s\n", cyanBold.Render(info.ListenURL))
 	}

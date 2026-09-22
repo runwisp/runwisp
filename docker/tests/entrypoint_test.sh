@@ -112,7 +112,7 @@ data="RUNWISP_DATA=$work/data"
 for argv in \
 	"runwisp daemon" \
 	"daemon" \
-	"runwisp cloud" \
+	"runwisp station" \
 	"runwisp restart" \
 	"runwisp demo" \
 	"runwisp"; do

@@ -72,7 +72,7 @@ const (
 	// fast-failed more than `restart_attempts` times in a row without ever
 	// reaching `healthy_after` of uptime. The supervisor stops restarting it;
 	// this run row is the durable record of the give-up. Treated as a failure
-	// for retry/notify/cloud classification.
+	// for retry/notify/station classification.
 	ReasonStartFailed EndReason = "start_failed"
 )
 
@@ -128,7 +128,7 @@ const (
 	TriggeredByAPI     TriggeredBy = "api"
 	TriggeredByUI      TriggeredBy = "ui"
 	TriggeredByCLI     TriggeredBy = "cli"
-	TriggeredByCloud   TriggeredBy = "cloud"
+	TriggeredByStation TriggeredBy = "station"
 	TriggeredByService TriggeredBy = "service"
 	TriggeredByStartup TriggeredBy = "startup"
 )
@@ -151,7 +151,7 @@ type Run struct {
 	ExitCode      int         `json:"exitCode"`
 	StartedAt     *time.Time  `json:"startedAt,omitempty"`
 	EndedAt       *time.Time  `json:"endedAt,omitempty"`
-	TriggeredBy   TriggeredBy `json:"triggeredBy" enum:"cron,api,ui,cli,cloud,service,startup" doc:"How the run was triggered"`
+	TriggeredBy   TriggeredBy `json:"triggeredBy" enum:"cron,api,ui,cli,station,service,startup" doc:"How the run was triggered"`
 	CreatedAt     time.Time   `json:"createdAt"`
 	RetryAttempt  int         `json:"retryAttempt"`
 	RetryOfRunID  *string     `json:"retryOfRunId,omitempty"`

@@ -13,7 +13,7 @@ go vet ./...
 
 # Focused golangci-lint pass (pinned, installed on demand) mirroring the
 # SonarCloud rules we enforce — see .golangci.yml. Runs here so it gates
-# `bun run ci` / `moon run runwisp:check`, not just the cloud scan.
+# `bun run ci` / `moon run runwisp:check`, not just the SonarCloud scan.
 "${script_dir}/lint-go.sh" ./...
 
 unformatted_files=$(gofmt -l .)

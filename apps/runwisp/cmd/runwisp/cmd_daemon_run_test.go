@@ -19,9 +19,9 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/clilog"
-	"github.com/runwisp/runwisp/internal/cloud"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/server"
+	"github.com/runwisp/runwisp/internal/station"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/stretchr/testify/assert"
@@ -71,13 +71,13 @@ func TestPrintNonLoopbackBanner_MentionsHost(t *testing.T) {
 	assert.Contains(t, out, "SECURITY")
 }
 
-func TestLogSecurityWarnings_EmitsCloudDispatchWarning(t *testing.T) {
+func TestLogSecurityWarnings_EmitsStationDispatchWarning(t *testing.T) {
 	out := captureSlog(t, func() {
 		cfg := &daemonConfig{Config: &config.Config{}}
-		cfg.Config.Daemon.AllowCloudDispatch = true
+		cfg.Config.Daemon.AllowStationDispatch = true
 		logSecurityWarnings(cfg, Flags{Host: "127.0.0.1"}, tlsSetup{Scheme: "http"})
 	})
-	assert.Contains(t, out, "Cloud dispatch enabled")
+	assert.Contains(t, out, "Station dispatch enabled")
 }
 
 func TestLogSecurityWarnings_PrintsBannerForNonLoopbackCleartext(t *testing.T) {
@@ -277,18 +277,18 @@ func TestConfigureBootLogRouting_TUIReturnsNonNilWriter(t *testing.T) {
 	assert.NotNil(t, dw)
 }
 
-func TestStartCloudIfEnabled_StandaloneReturnsNoOps(t *testing.T) {
+func TestStartStationIfEnabled_StandaloneReturnsNoOps(t *testing.T) {
 	t.Parallel()
-	cancel, wg := startCloudIfEnabled(modeStandalone, nil, nil, nil)
+	cancel, wg := startStationIfEnabled(modeStandalone, nil, nil, nil)
 	require.NotNil(t, cancel)
 	require.NotNil(t, wg)
 	cancel() // must not panic
 }
 
-func TestStartCloudIfEnabled_CloudWithDisabledConfigShortCircuits(t *testing.T) {
+func TestStartStationIfEnabled_StationWithDisabledConfigShortCircuits(t *testing.T) {
 	t.Parallel()
-	cfg := &daemonConfig{CloudConfig: cloud.Config{Enabled: false}}
-	cancel, wg := startCloudIfEnabled(modeCloud, cfg, nil, nil)
+	cfg := &daemonConfig{StationConfig: station.Config{Enabled: false}}
+	cancel, wg := startStationIfEnabled(modeStation, cfg, nil, nil)
 	require.NotNil(t, cancel)
 	require.NotNil(t, wg)
 	cancel()

@@ -254,9 +254,9 @@ type NotificationRoute struct {
 // set, supply an operator-provided certificate and key that take precedence
 // over auto self-signing on any bind.
 type Daemon struct {
-	AllowCloudDispatch bool
-	ShutdownTimeout    time.Duration
-	ExternalURL        string
+	AllowStationDispatch bool
+	ShutdownTimeout      time.Duration
+	ExternalURL          string
 	// CheckUpdates gates the daemon's outbound poll of concierge.runwisp.com for
 	// a newer release (surfaced as a Web UI / TUI indicator, never auto-applied).
 	// Default true; set false to keep the daemon fully offline.
@@ -347,10 +347,10 @@ type Storage struct {
 	MinFreeSpace int64
 }
 
-// IsCloudDispatchEnabled reports whether the daemon accepts peer-dispatched
+// IsStationDispatchEnabled reports whether the daemon accepts peer-dispatched
 // ad-hoc shell, container, or compose runs.
-func (cfg *Config) IsCloudDispatchEnabled() bool {
-	return cfg.Daemon.AllowCloudDispatch
+func (cfg *Config) IsStationDispatchEnabled() bool {
+	return cfg.Daemon.AllowStationDispatch
 }
 
 // MaxServiceInstances caps the number of instances a single service can request.

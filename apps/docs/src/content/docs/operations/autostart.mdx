@@ -307,7 +307,7 @@ quietly install a service that ran with auth **on** anyway — the variable
 never reached the unit at all.
 
 `service install` now captures every `RUNWISP_*` variable set in your shell —
-`RUNWISP_AUTH`, `RUNWISP_TLS`, `RUNWISP_TRUSTED_PROXIES`, `RUNWISP_CLOUD_TOKEN`,
+`RUNWISP_AUTH`, `RUNWISP_TLS`, `RUNWISP_TRUSTED_PROXIES`, `RUNWISP_STATION_TOKEN`,
 an operator-supplied `RUNWISP_PASSWORD`, and so on — into a `0600` drop-in
 beside the unit (`/etc/systemd/system/runwisp.service.d/runwisp-env.conf`),
 then restarts the daemon so it takes effect:

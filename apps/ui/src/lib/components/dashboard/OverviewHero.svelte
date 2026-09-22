@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import { Cloud } from "@lucide/svelte";
+    import { RadioTower } from "@lucide/svelte";
     import { formatCompactCount, pluralize } from "./overview-format.js";
     import type { OverviewSummary } from "./overview.js";
     import type { DaemonStats } from "@runwisp/ui";
@@ -27,7 +27,7 @@
         completedRunsCount,
         healthyTasksCount,
         uptime,
-        cloudMode = false,
+        stationMode = false,
     } = $props<{
         stats: DaemonStats;
         summary: OverviewSummary;
@@ -35,7 +35,7 @@
         completedRunsCount: number;
         healthyTasksCount: number;
         uptime: string;
-        cloudMode?: boolean;
+        stationMode?: boolean;
     }>();
 
     let summaryCards = $derived(
@@ -135,10 +135,10 @@
 </script>
 
 <div class="flex flex-col gap-5">
-    {#if cloudMode}
+    {#if stationMode}
         <p class="flex items-center gap-1.5 text-xs text-on-surface-muted">
-            <Cloud size={12} class="shrink-0 text-info" />
-            Managed by RunWisp Cloud · scheduling handled in the cloud.
+            <RadioTower size={12} class="shrink-0 text-info" />
+            Managed by RunWisp Station · scheduling handled in the station.
         </p>
     {/if}
 

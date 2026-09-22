@@ -94,7 +94,7 @@ func RestartDelay(task *model.Task, attempt int, reason *model.EndReason) time.D
 // configured healthy_after).
 //
 // A nil task.RestartDelay (a *model.Task built without going through
-// config.Load — a test literal, a cloud ephemeral dispatch task) falls back
+// config.Load — a test literal, a station ephemeral dispatch task) falls back
 // to config.DefaultRestartDelay; an explicit zero (restart_delay = "0s") is
 // honored literally, including through backoff — see computeBackoff's
 // overflow guard, which must not treat a legitimate zero delay as overflow.

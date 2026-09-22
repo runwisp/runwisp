@@ -34,20 +34,20 @@ include          = ["conf.d/*.toml"]
 # include_cron   = ["/etc/crontab", "/etc/cron.d/*"]
 ```
 
-| Key                    | Default | What it does                                                                                                                                                                                                                                                |
-| ---------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shutdown_timeout`     | `"10s"` | Whole-daemon shutdown budget. After `SIGTERM`, the daemon SIGKILLs any in-flight runs that haven't exited within this window so the process can actually exit.                                                                                              |
-| `external_url`         | _unset_ | Public base URL of this daemon's Web UI. When set, notification messages (Slack, Telegram) include a deep-link back to the run; when unset, the link line is omitted.                                                                                       |
-| `check_updates`        | `true`  | Check for a newer release (usually every 6 hours) and show an indicator next to the version in the Web UI and TUI. Never auto-updates. Set `false` to keep the daemon fully offline — see [`check_updates`](#check_updates) below.                          |
-| `tls`                  | `"off"` | `"off"` always serves plain HTTP; `"auto"` serves HTTPS whenever the bind address is non-loopback (self-signing a cert on first boot). Loopback binds stay HTTP either way. Ignored when `tls_cert`/`tls_key` are set.                                      |
-| `tls_cert`             | _unset_ | Path to a PEM certificate to serve instead of the self-signed one. Set together with `tls_key`. When set, HTTPS is served on every bind address, loopback included.                                                                                         |
-| `tls_key`              | _unset_ | Path to the PEM private key matching `tls_cert`. Both keys are set together or not at all.                                                                                                                                                                  |
-| `metrics_enabled`      | `false` | Master switch for the Prometheus-compatible `/metrics` endpoint. Off by default — task names and the daemon version label are visible to anyone who can reach the endpoint, so it stays closed until you turn it on.                                        |
-| `metrics_listen`       | _unset_ | Optional `host:port` for a dedicated metrics listener (e.g. `"127.0.0.1:9478"`). When set, `/metrics` is **only** reachable on this address — never on the main UI/REST listener, and setting it enables metrics on its own.                                |
-| `allow_cloud_dispatch` | `false` | Opt in to ad-hoc runs requested by a connected control-plane peer. Off by default. Dispatched runs are one-shot and never modify your task set — see [the control-plane section](#allow_cloud_dispatch) below.                                              |
-| `trusted_proxies`      | _unset_ | CIDR allowlist of reverse proxies whose `X-Forwarded-For` header is trusted for the client IP. Catch-all ranges (`0.0.0.0/0`, `::/0`) are rejected. The `RUNWISP_TRUSTED_PROXIES` env var overrides this — see [`trusted_proxies`](#trusted_proxies) below. |
-| `include`              | _unset_ | Glob patterns for extra TOML files to merge into this config at load. Lets you split tasks across `conf.d/*.toml` instead of one giant file. Only valid in the root config.                                                                                 |
-| `include_cron`         | _unset_ | Glob patterns for real crontabs (system, `cron.d`, or per-user spool) to read as live task definitions at every load and reload. Point RunWisp at what cron already reads instead of converting everything up front. Only valid in the root config.         |
+| Key                      | Default | What it does                                                                                                                                                                                                                                                |
+| ------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shutdown_timeout`       | `"10s"` | Whole-daemon shutdown budget. After `SIGTERM`, the daemon SIGKILLs any in-flight runs that haven't exited within this window so the process can actually exit.                                                                                              |
+| `external_url`           | _unset_ | Public base URL of this daemon's Web UI. When set, notification messages (Slack, Telegram) include a deep-link back to the run; when unset, the link line is omitted.                                                                                       |
+| `check_updates`          | `true`  | Check for a newer release (usually every 6 hours) and show an indicator next to the version in the Web UI and TUI. Never auto-updates. Set `false` to keep the daemon fully offline — see [`check_updates`](#check_updates) below.                          |
+| `tls`                    | `"off"` | `"off"` always serves plain HTTP; `"auto"` serves HTTPS whenever the bind address is non-loopback (self-signing a cert on first boot). Loopback binds stay HTTP either way. Ignored when `tls_cert`/`tls_key` are set.                                      |
+| `tls_cert`               | _unset_ | Path to a PEM certificate to serve instead of the self-signed one. Set together with `tls_key`. When set, HTTPS is served on every bind address, loopback included.                                                                                         |
+| `tls_key`                | _unset_ | Path to the PEM private key matching `tls_cert`. Both keys are set together or not at all.                                                                                                                                                                  |
+| `metrics_enabled`        | `false` | Master switch for the Prometheus-compatible `/metrics` endpoint. Off by default — task names and the daemon version label are visible to anyone who can reach the endpoint, so it stays closed until you turn it on.                                        |
+| `metrics_listen`         | _unset_ | Optional `host:port` for a dedicated metrics listener (e.g. `"127.0.0.1:9478"`). When set, `/metrics` is **only** reachable on this address — never on the main UI/REST listener, and setting it enables metrics on its own.                                |
+| `allow_station_dispatch` | `false` | Opt in to ad-hoc runs requested by a connected control-plane peer. Off by default. Dispatched runs are one-shot and never modify your task set — see [the control-plane section](#allow_station_dispatch) below.                                            |
+| `trusted_proxies`        | _unset_ | CIDR allowlist of reverse proxies whose `X-Forwarded-For` header is trusted for the client IP. Catch-all ranges (`0.0.0.0/0`, `::/0`) are rejected. The `RUNWISP_TRUSTED_PROXIES` env var overrides this — see [`trusted_proxies`](#trusted_proxies) below. |
+| `include`                | _unset_ | Glob patterns for extra TOML files to merge into this config at load. Lets you split tasks across `conf.d/*.toml` instead of one giant file. Only valid in the root config.                                                                                 |
+| `include_cron`           | _unset_ | Glob patterns for real crontabs (system, `cron.d`, or per-user spool) to read as live task definitions at every load and reload. Point RunWisp at what cron already reads instead of converting everything up front. Only valid in the root config.         |
 
 ### `shutdown_timeout`
 
@@ -195,7 +195,7 @@ list) **overrides** this key when set — handy for a container or a systemd
 drop-in where the value is environment, not config. Like the rest of
 `[daemon]`, a change here needs a `runwisp restart`, not a reload.
 
-### `allow_cloud_dispatch`
+### `allow_station_dispatch`
 
 RunWisp can optionally connect **outbound** to a control-plane peer. Even when
 it does, that peer can only observe runs and trigger tasks that already exist in
@@ -203,7 +203,7 @@ your `runwisp.toml` — unless you set this:
 
 ```toml
 [daemon]
-allow_cloud_dispatch = true
+allow_station_dispatch = true
 ```
 
 That lets the peer request an **ad-hoc** run: a one-shot command that isn't in
@@ -485,7 +485,7 @@ story.
 | `RUNWISP_PASSWORD`        | Sets the daemon password in memory. When unset, a fresh ephemeral password is minted every boot (and every session rotates with it).                                                                                         |
 | `RUNWISP_AUTH`            | `off` disables authentication entirely — local dev / trusted networks only. Defaults to on; `on` restates the default. Mutually exclusive with `RUNWISP_PASSWORD`. See [Auth](/operations/auth/#running-without-a-password). |
 | `RUNWISP_TRUSTED_PROXIES` | Comma-separated CIDR list of reverse proxies whose `X-Forwarded-*` headers the daemon may honor. Overrides the [`[daemon] trusted_proxies`](#trusted_proxies) key when set; catch-all ranges are rejected.                   |
-| `RUNWISP_CLOUD_TOKEN`     | Used by `runwisp cloud` to connect to a control plane. Ignored in standalone mode.                                                                                                                                           |
+| `RUNWISP_STATION_TOKEN`   | Used by `runwisp station` to connect to a control plane. Ignored in standalone mode.                                                                                                                                         |
 | `RUNWISP_SOCKET`          | Control socket path. Same effect as `--socket`; the flag wins when both are set.                                                                                                                                             |
 | `RUNWISP_CONFIG`          | Config file path. Same effect as `--config`; the flag wins when both are set.                                                                                                                                                |
 | `RUNWISP_DATA`            | Data directory. Same effect as `--data`; the flag wins when both are set.                                                                                                                                                    |

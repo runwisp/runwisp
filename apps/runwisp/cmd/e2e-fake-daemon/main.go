@@ -1,5 +1,5 @@
 // Command e2e-fake-daemon impersonates the daemon for a single execution
-// against a live cloud stack. It connects to Hub, waits for one
+// against a live station stack. It connects to Hub, waits for one
 // `execution:dispatch`, performs the gzip+PUT archival to the supplied
 // `logUploadUrl`, then sends the terminal `execution:update` with the
 // returned `logPath`+`logSize`.
@@ -18,7 +18,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/runwisp/runwisp/internal/cloud/logarchive"
+	"github.com/runwisp/runwisp/internal/station/logarchive"
 )
 
 func main() {
@@ -151,7 +151,7 @@ func handleDispatch(ctx context.Context, conn *websocket.Conn, raw []byte, logBo
 	return sendTerminalUpdate(ctx, conn, disp.Execution.ExecutionID, startedAtStr, logPath, logSize)
 }
 
-func archiveExecutionLog(ctx context.Context, uploadURL, cloudLogPath, localLogPath string) (string, int64, error) {
+func archiveExecutionLog(ctx context.Context, uploadURL, stationLogPath, localLogPath string) (string, int64, error) {
 	if uploadURL == "" {
 		slog.Warn("dispatch has empty logUploadUrl; skipping archive")
 		return "", 0, nil
@@ -160,8 +160,8 @@ func archiveExecutionLog(ctx context.Context, uploadURL, cloudLogPath, localLogP
 	if err != nil {
 		return "", 0, fmt.Errorf("archive: %w", err)
 	}
-	slog.Info("archive uploaded", "logPath", cloudLogPath, "logSize", size)
-	return cloudLogPath, size, nil
+	slog.Info("archive uploaded", "logPath", stationLogPath, "logSize", size)
+	return stationLogPath, size, nil
 }
 
 func sendTerminalUpdate(ctx context.Context, conn *websocket.Conn, executionID, startedAtStr, logPath string, logSize int64) error {

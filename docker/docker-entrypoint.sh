@@ -105,7 +105,7 @@ for arg in "$@"; do
 done
 
 # --- does this invocation bring a daemon up? --------------------------------
-# Daemon-starting: `daemon`, `cloud`, `restart`, `demo`, and *no subcommand at
+# Daemon-starting: `daemon`, `station`, `restart`, `demo`, and *no subcommand at
 # all* — bare `runwisp` spawns a background daemon before opening the TUI.
 #
 # So the list below is an EXEMPTION list of one-shot and client-only

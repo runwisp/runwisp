@@ -182,7 +182,7 @@ func buildStartupInfoFromDaemon(info *model.DaemonInfo) uikit.StartupInfo {
 	si.Version = info.Version
 	si.Fingerprint = info.Fingerprint
 	si.Port = info.Port
-	si.CloudEnabled = info.CloudEnabled
+	si.StationEnabled = info.StationEnabled
 	si.ServiceManaged = info.ServiceManaged
 	si.AuthDisabled = info.AuthDisabled
 	si.ConfigStale = info.ConfigStale

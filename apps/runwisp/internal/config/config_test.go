@@ -38,7 +38,7 @@ func TestLoad(t *testing.T) {
 	t.Run("valid config", func(t *testing.T) {
 		path := writeTOML(t, `
 [daemon]
-allow_cloud_dispatch = true
+allow_station_dispatch = true
 timezone = "UTC"
 
 [defaults]
@@ -76,8 +76,8 @@ run = "echo hello"
 		assert.Equal(t, 14*24*time.Hour, task.KeepFor)
 		assert.Equal(t, int64(5*1024*1024*1024), cfg.Storage.MaxSize)
 		assert.Equal(t, int64(500*1024*1024), cfg.Storage.MinFreeSpace)
-		assert.True(t, cfg.Daemon.AllowCloudDispatch)
-		assert.True(t, cfg.IsCloudDispatchEnabled())
+		assert.True(t, cfg.Daemon.AllowStationDispatch)
+		assert.True(t, cfg.IsStationDispatchEnabled())
 		assert.Equal(t, "UTC", cfg.Scheduler.Timezone)
 		assert.Equal(t, TimezoneSourceConfig, cfg.Scheduler.Source)
 	})

@@ -463,7 +463,7 @@ func TestLogWriter_IndexAppearsAtThreshold(t *testing.T) {
 // occupies a real line number on disk, so consecutive WriteLineEvent calls can
 // have a gap of one across a rotation boundary. The invariant is
 // strict-monotonicity, not consecutive numbering. A regression here corrupts
-// every downstream cursor (TUI, web UI, cloud replay).
+// every downstream cursor (TUI, web UI, station replay).
 func TestLogWriter_WriteLineEvent_MonotonicAcrossRotations(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	opts.MaxSize = 200

@@ -11,7 +11,7 @@ import (
 )
 
 // daemonEnvPrefix marks daemon-internal environment variables (the admin
-// password, cloud token, and any future RUNWISP_* secret). They live in the
+// password, station token, and any future RUNWISP_* secret). They live in the
 // daemon's own process env but must never be inherited by a task child —
 // especially not by a run_user privilege drop. buildProcessEnv strips them
 // from the parent base so shell tasks match the container/compose backends,

@@ -17,32 +17,32 @@ import (
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/clilog"
-	"github.com/runwisp/runwisp/internal/cloud"
 	"github.com/runwisp/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runlog"
 	"github.com/runwisp/runwisp/internal/server"
+	"github.com/runwisp/runwisp/internal/station"
 	"github.com/runwisp/runwisp/internal/tui"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
-// startCloudClient creates and runs the cloud client in a background goroutine.
-// Only called in cloud mode — the scheduler is nil, so no local scheduler teardown.
-func startCloudClient(
+// startStationClient creates and runs the station client in a background goroutine.
+// Only called in station mode — the scheduler is nil, so no local scheduler teardown.
+func startStationClient(
 	ctx context.Context,
 	cfg *daemonConfig,
 	svc *daemonServices,
 	srv *server.Server,
 ) (context.CancelFunc, *sync.WaitGroup) {
-	cloudCtx, cancelCloud := context.WithCancel(ctx)
-	var cloudWG sync.WaitGroup
+	stationCtx, cancelStation := context.WithCancel(ctx)
+	var stationWG sync.WaitGroup
 
-	if !cfg.CloudConfig.Enabled {
-		return cancelCloud, &cloudWG
+	if !cfg.StationConfig.Enabled {
+		return cancelStation, &stationWG
 	}
 
-	cloudClient, clientErr := cloud.NewClient(cfg.CloudConfig, cloud.Dependencies{
-		TaskManager:       &cloudTaskRunner{cloudRuntime: svc.TaskManager},
+	stationClient, clientErr := station.NewClient(cfg.StationConfig, station.Dependencies{
+		TaskManager:       &stationTaskRunner{stationRuntime: svc.TaskManager},
 		RunRepo:           svc.DB,
 		PendingUploadRepo: svc.DB,
 		EventBus:          svc.EventBus,
@@ -51,46 +51,46 @@ func startCloudClient(
 		Availability:      svc.Executor.Availability(),
 		Now:               time.Now,
 		OnConnected: func() {
-			slog.Info("Cloud connected")
+			slog.Info("Station connected")
 		},
-		RequestRestart: func() error { return requestSelfRestart(cfg.Config.Daemon.AllowCloudDispatch) },
+		RequestRestart: func() error { return requestSelfRestart(cfg.Config.Daemon.AllowStationDispatch) },
 		SystemStats:    srv.SystemStats,
 	})
 	if clientErr != nil {
-		slog.Error("Failed to create cloud client", "err", clientErr)
-		return cancelCloud, &cloudWG
+		slog.Error("Failed to create station client", "err", clientErr)
+		return cancelStation, &stationWG
 	}
 
-	if cloudClient != nil {
-		cloudWG.Add(1)
+	if stationClient != nil {
+		stationWG.Add(1)
 		go func() {
 			defer crashguard.Guard()
-			defer cloudWG.Done()
+			defer stationWG.Done()
 			// Backlog recovery does real HTTP PUTs (up to 90s each) against the
-			// cloud peer; running it here (not before srv.Start) means a slow or
+			// Station peer; running it here (not before srv.Start) means a slow or
 			// unreachable peer can never delay the UI/API from becoming
-			// available. cloudCtx cancellation (on shutdown) unblocks it the same
+			// available. stationCtx cancellation (on shutdown) unblocks it the same
 			// way it unblocks Run below.
-			cloudClient.RecoverArchiveBacklog(cloudCtx)
-			if runErr := cloudClient.Run(cloudCtx); runErr != nil {
-				slog.Error("Cloud integration stopped", "err", runErr)
+			stationClient.RecoverArchiveBacklog(stationCtx)
+			if runErr := stationClient.Run(stationCtx); runErr != nil {
+				slog.Error("Station integration stopped", "err", runErr)
 			}
 		}()
 	}
 
-	return cancelCloud, &cloudWG
+	return cancelStation, &stationWG
 }
 
-// requestSelfRestart honours a cloud agent:restart by delivering SIGTERM to
+// requestSelfRestart honours a Station agent:restart by delivering SIGTERM to
 // this process, which the signal handler turns into the same graceful shutdown
 // a `runwisp stop` would — and the service manager then brings the daemon back.
 // It is refused when the daemon is not service-managed, since exiting would
 // then stop the agent for good rather than restart it, and when the operator
-// hasn't opted into cloud dispatch — restarting the daemon process is at least
+// hasn't opted into station dispatch — restarting the daemon process is at least
 // as sensitive as the ad-hoc task execution that flag already gates.
-func requestSelfRestart(allowCloudDispatch bool) error {
-	if !allowCloudDispatch {
-		return fmt.Errorf("cloud dispatch disabled (set [daemon] allow_cloud_dispatch = true to enable)")
+func requestSelfRestart(allowStationDispatch bool) error {
+	if !allowStationDispatch {
+		return fmt.Errorf("station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)")
 	}
 	if !autostart.RunningUnderServiceManager() {
 		return fmt.Errorf("daemon is not managed by a service manager; restart it manually")
@@ -99,7 +99,7 @@ func requestSelfRestart(allowCloudDispatch bool) error {
 	if err != nil {
 		return fmt.Errorf("locate own process: %w", err)
 	}
-	slog.Info("restarting agent on cloud request; service manager will bring it back")
+	slog.Info("restarting agent on station request; service manager will bring it back")
 	if err := p.Signal(syscall.SIGTERM); err != nil {
 		return fmt.Errorf("signal self for restart: %w", err)
 	}
@@ -107,13 +107,13 @@ func requestSelfRestart(allowCloudDispatch bool) error {
 }
 
 // gracefulShutdown tears down all daemon subsystems in two layers. The input
-// layer (HTTP server, cloud connection) drains under a short fixed deadline
+// layer (HTTP server, station connection) drains under a short fixed deadline
 // so no new requests can enter; the worker layer (scheduler, notifications,
 // task manager) drains under [daemon] shutdown_timeout so per-task graceful
 // stop windows can complete. Both runHeadless and runWithTUI funnel through
 // here.
-func gracefulShutdown(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, svc *daemonServices, srv *server.Server) {
-	cancelCloud()
+func gracefulShutdown(cancelStation context.CancelFunc, stationWG *sync.WaitGroup, svc *daemonServices, srv *server.Server) {
+	cancelStation()
 	// Abort any depends_on launcher still waiting on a dependency so it can't
 	// start a service mid-teardown.
 	if svc.ServiceLaunchCancel != nil {
@@ -133,7 +133,7 @@ func gracefulShutdown(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, s
 
 	inputCtx, cancelInput := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancelInput()
-	waitInput(inputCtx, cloudWG, srv)
+	waitInput(inputCtx, stationWG, srv)
 
 	taskTimeout := svc.TaskShutdownTimeout
 	if taskTimeout <= 0 {
@@ -147,17 +147,17 @@ func gracefulShutdown(cancelCloud context.CancelFunc, cloudWG *sync.WaitGroup, s
 }
 
 // waitInput waits for the request-accepting layer to quiesce: HTTP server
-// drains in-flight handlers; cloud client returns from Run after cloudCtx is
+// drains in-flight handlers; station client returns from Run after stationCtx is
 // cancelled. Once both return, downstream subsystems are no longer being
 // called into and can be torn down without racing.
-func waitInput(ctx context.Context, cloudWG *sync.WaitGroup, srv *server.Server) {
-	slog.Info("draining HTTP requests and closing cloud connection")
+func waitInput(ctx context.Context, stationWG *sync.WaitGroup, srv *server.Server) {
+	slog.Info("draining HTTP requests and closing station connection")
 	var wg sync.WaitGroup
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		cloudWG.Wait()
+		stationWG.Wait()
 	}()
 
 	if srv != nil {
@@ -275,19 +275,19 @@ func awaitOrLog(ctx context.Context, wg *sync.WaitGroup, label string) {
 
 // daemonRuntime carries the long-lived daemon state that the headless and TUI
 // shutdown paths both need: the pre-armed signal channel, the services bundle,
-// the HTTP server, log routing handles, and the cloud cancel/wait pair.
+// the HTTP server, log routing handles, and the station cancel/wait pair.
 // Bundling them keeps runHeadless / runWithTUI signatures narrow while leaving
 // each field individually named.
 type daemonRuntime struct {
-	sigCh       <-chan os.Signal
-	svc         *daemonServices
-	srv         *server.Server
-	fatalCh     chan error
-	reload      func() (model.ReloadResult, error)
-	debugWriter *tui.DebugLogWriter
-	logBuffer   *server.DaemonLogBuffer
-	cancelCloud context.CancelFunc
-	cloudWG     *sync.WaitGroup
+	sigCh         <-chan os.Signal
+	svc           *daemonServices
+	srv           *server.Server
+	fatalCh       chan error
+	reload        func() (model.ReloadResult, error)
+	debugWriter   *tui.DebugLogWriter
+	logBuffer     *server.DaemonLogBuffer
+	cancelStation context.CancelFunc
+	stationWG     *sync.WaitGroup
 }
 
 // runHeadless blocks until SIGINT/SIGTERM, then gracefully shuts down. The
@@ -312,7 +312,7 @@ func runHeadless(rt *daemonRuntime) error {
 		} else {
 			slog.Info("received signal, shutting down", "signal", sig.String())
 		}
-		gracefulShutdown(rt.cancelCloud, rt.cloudWG, rt.svc, rt.srv)
+		gracefulShutdown(rt.cancelStation, rt.stationWG, rt.svc, rt.srv)
 		slog.Info("shutdown complete", "elapsed", time.Since(start).Round(time.Millisecond))
 		return nil
 	}
@@ -337,7 +337,7 @@ func readFatal(ch <-chan error) error {
 // handleReloadSignal services a SIGHUP by reconciling runwisp.toml against the
 // live task set. A reload failure (bad config or a restart-only change) is
 // logged and the daemon keeps running on its current set — SIGHUP never tears
-// the process down. nil reconciler (cloud mode) makes this a logged no-op.
+// the process down. nil reconciler (station mode) makes this a logged no-op.
 func handleReloadSignal(rt *daemonRuntime) {
 	if rt.reload == nil {
 		slog.Warn("received SIGHUP but reload is not available in this mode")
@@ -385,7 +385,7 @@ func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo, f Flags) error {
 	}
 
 	shutdownFunc := func() error {
-		gracefulShutdown(rt.cancelCloud, rt.cloudWG, rt.svc, rt.srv)
+		gracefulShutdown(rt.cancelStation, rt.stationWG, rt.svc, rt.srv)
 		return nil
 	}
 

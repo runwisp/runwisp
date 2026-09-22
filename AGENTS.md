@@ -12,7 +12,7 @@ RunWisp replaces **crond + supervisord** with one small Go binary that a single 
 1. **Failures stay visible.** Every run has an exit code, duration, timestamps, and captured output — persisted, browsable, and streamable. Prefer changes that make failures easier to see.
 2. **One binary, zero runtime deps.** No Python, Node, external DB, systemd, or sidecars required to run RunWisp. SQLite and the web UI are *embedded*. Do not add runtime deps; prefer a vendored Go lib over a service.
 3. **TOML is the sole source of truth.** `runwisp.toml` defines every task. The REST API and Web UI are **read-only + trigger** — they never mutate task definitions. Schema changes are user-visible breaking changes; treat the TOML surface as an API. Never add a feature that *requires* the UI or API to configure.
-4. **Local-first, offline-complete.** The daemon must work fully offline. Any network integration (`internal/cloud/`) is strictly optional — no feature may degrade when it's disabled or unreachable.
+4. **Local-first, offline-complete.** The daemon must work fully offline. Any network integration (`internal/station/`) is strictly optional — no feature may degrade when it's disabled or unreachable.
 5. **Built for the individual and the small team.** Every core capability ships in the binary: scheduling, supervision, observability, web UI, TUI, REST. No artificial limits, no feature flags gating basics.
 6. **Boring in prod.** Predictable resource use, graceful shutdown, recoverable state after crash or kill -9. Prefer a simple mechanism that's easy to reason about over a clever one that saves 5%.
 
@@ -69,16 +69,16 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
 - `packages/common`: Shared types, constants (Apache-2.0). _No duplicating these in apps._
 - `packages/asyncapi`: `asyncapi.yaml` is the **single source of truth** for the optional control-plane WebSocket protocol. Generates Go types into `apps/runwisp/internal/generated/protocol/`. **Never hand-write message types.**
 - `packages/{ui, eslint-config, typescript-config}`: Shared Svelte component library and tooling configs.
-- **License boundary**: `packages/*` stays Apache-2.0 because it's also consumed by the separate, unpublished `runwisp/cloud` repo, which cannot take a GPL dependency. `apps/*` (the daemon and UI you actually ship) is GPL-3.0-or-later. This is one-way: `apps/*` may depend on `packages/*`, but nothing in `packages/*` may import from `apps/*`.
-- `apps/runwisp`: Go standalone cron daemon binary. Single binary with embedded SQLite, REST API, SSE log streaming, and optional outbound control-plane integration (`internal/cloud/`).
-  - `cmd/runwisp/`: CLI entry point. Root command boots the TUI; subcommands group into: **lifecycle** (`daemon`, `reload`, `restart`, `stop`), **inspection** (`status`, `list`, `run`, `validate`, `schema`, `openapi`, `tui`), **crond/supervisord migration** (`import`, `takeover`, `promote`, `cron`), **host integration** (`service install|uninstall|status`), plus `cloud`, `password`, `demo`. Also: first-run setup, password handling, port checks, daemon spawn/lifecycle.
-  - `cmd/e2e-fake-daemon/`: Test-only binary that impersonates a daemon for cloud E2E tests. Not shipped.
+- **License boundary**: `packages/*` stays Apache-2.0 because it's also consumed by the separate, unpublished `runwisp/station` repo, which cannot take a GPL dependency. `apps/*` (the daemon and UI you actually ship) is GPL-3.0-or-later. This is one-way: `apps/*` may depend on `packages/*`, but nothing in `packages/*` may import from `apps/*`.
+- `apps/runwisp`: Go standalone cron daemon binary. Single binary with embedded SQLite, REST API, SSE log streaming, and optional outbound control-plane integration (`internal/station/`).
+  - `cmd/runwisp/`: CLI entry point. Root command boots the TUI; subcommands group into: **lifecycle** (`daemon`, `reload`, `restart`, `stop`), **inspection** (`status`, `list`, `run`, `validate`, `schema`, `openapi`, `tui`), **crond/supervisord migration** (`import`, `takeover`, `promote`, `cron`), **host integration** (`service install|uninstall|status`), plus `station`, `password`, `demo`. Also: first-run setup, password handling, port checks, daemon spawn/lifecycle.
+  - `cmd/e2e-fake-daemon/`: Test-only binary that impersonates a daemon for station E2E tests. Not shipped.
   - `internal/model/`: Core domain types (`Task`, `Run`, enums, concurrency/restart/missed-run policies).
   - `internal/server/`: HTTP server (huma), REST routes, CHAP auth, SSE log streaming.
   - `internal/runtime/`: Task scheduler, run manager (concurrency policies, queuing), catchup, retention, retry.
   - `internal/executor/`: Low-level process execution engine (spawn, stdio capture, signal, exit reaping).
   - `internal/notify/`: Notification subsystem. Subscribes to the event bus, evaluates routing rules against per-event predicates, dispatches to channels (in-app, Slack, Telegram) via per-action workers, retries with backoff, coalesces in-app bursts, and emits a `notify_delivery_failed` synthetic event on permanent failure (in-app only — cycle guard). See `channel/`, `coalesce/`, `kinds/`, `render/`, `configload/`.
-  - `internal/cloud/`: Optional outbound control-plane client (see section below).
+  - `internal/station/`: Optional outbound control-plane client (see section below).
   - `internal/chap/`: Challenge-response auth computation shared by daemon and client — the one place the CHAP secret is turned into a proof.
   - `internal/config/`
   - `internal/configedit/`: The only writer of RunWisp config files, used by `import`/`takeover`/first-run. Operator-driven on disk — never the REST API or UI (TOML stays the source of truth).
@@ -111,7 +111,7 @@ When in doubt, ask: *"Does this help **one** operator run **their** tasks on **o
 - **Clock & time**: use injected clock interfaces in `internal/runtime/`. Cron expressions respect the daemon's local TZ unless explicitly scoped (document any TZ change as user-facing).
 - **Events**: `internal/events/` is in-memory, best-effort, per-process. It is **not** a durability mechanism — if something must survive restart, it lives in SQLite or on disk.
 
-## 🛰 OPTIONAL CONTROL-PLANE INTEGRATION (`internal/cloud/`)
+## 🛰 OPTIONAL CONTROL-PLANE INTEGRATION (`internal/station/`)
 
 The daemon can optionally connect outbound to a control-plane peer that speaks the protocol in `packages/asyncapi/asyncapi.yaml`. Rules:
 
@@ -120,7 +120,7 @@ The daemon can optionally connect outbound to a control-plane peer that speaks t
 - **Allowed inbound surface on the daemon:**
   1. **Observability push** — run status, logs, history, health snapshots sent outbound.
   2. **Trigger/stop commands** against tasks defined in `runwisp.toml`.
-  3. **Ad-hoc task execution** — the peer may request an ephemeral task run, **only** when explicitly opted-in via TOML (`daemon.allow_cloud_dispatch`). Default is off. Ad-hoc runs never modify the TOML task set — they are one-shot executions, logged like any other run.
+  3. **Ad-hoc task execution** — the peer may request an ephemeral task run, **only** when explicitly opted-in via TOML (`daemon.allow_station_dispatch`). Default is off. Ad-hoc runs never modify the TOML task set — they are one-shot executions, logged like any other run.
 - **Backpressure.** If the peer is slow or disconnected, bound the buffer and drop — never block task execution or local event delivery.
 
 ## ⚙️ FUNCTION & STATE DESIGN
@@ -140,7 +140,7 @@ The daemon can optionally connect outbound to a control-plane peer that speaks t
 1. **Validation**: `bun run ci` is the **only** validation command you must run — it chains generate → format → check → test → test-e2e (build is covered via `test-e2e`'s binary dependency). Run it from repo root before wrapping up any session that touched code. Don't bother with `bun run build` / `bun run test` / `bun run check` / `bun run generate` individually unless you're iterating on a single stage — `bun run ci` supersedes them. Tasks are moon targets (`moon run <project>:<task>`); moon caches each task by input hash, so re-runs are cheap.
 2. **TOML schema changes require**: docs (`apps/docs/src/content/docs/configuration/`), the JSON Schema (`apps/runwisp/internal/config/config.schema.json` — `TestSchemaCoversWireTags` fails until every new `toml` tag is covered), the agent reference (`apps/docs/src/agents/reference.md`), OpenAPI (`apps/runwisp/openapi.json` via `bun run generate`), `CHANGELOG.md`, and the README config reference if user-visible.
 3. **AsyncAPI changes**: edit `packages/asyncapi/asyncapi.yaml` first, then `bun run generate`, then consume the regenerated types in `internal/generated/protocol/`. Never the other way round.
-4. **User-facing changes** require a `CHANGELOG.md` entry. Keep entries short — one or two sentences naming what changed. Add a docs link only when the entry doesn't stand on its own (a rename that needs the migration path, a config key whose full behavior lives elsewhere) — not as a default reflex on every bullet; most entries need no link at all. The changelog is for **product-visible changes only** — never log docs edits, README/site copy, internal refactors, test or CI changes, or other work the user can't observe in the product. This includes fixes scoped to `internal/cloud/` or the control-plane protocol: the control plane isn't publicly accessible yet, so a changelog entry describing it would only confuse operators reading the daemon's own release notes.
+4. **User-facing changes** require a `CHANGELOG.md` entry. Keep entries short — one or two sentences naming what changed. Add a docs link only when the entry doesn't stand on its own (a rename that needs the migration path, a config key whose full behavior lives elsewhere) — not as a default reflex on every bullet; most entries need no link at all. The changelog is for **product-visible changes only** — never log docs edits, README/site copy, internal refactors, test or CI changes, or other work the user can't observe in the product. This includes fixes scoped to `internal/station/` or the control-plane protocol: the control plane isn't publicly accessible yet, so a changelog entry describing it would only confuse operators reading the daemon's own release notes.
 5. **Docs voice (`apps/docs/`)**: write conversationally — talk to the operator like a colleague, not a spec. Short paragraphs, contractions OK, second person ("you"), examples before exhaustive tables. The reference details belong in docs, not the changelog.
 6. **Stop and ask** when Prime Directives / Non-Goals / Invariants don't resolve a judgment call. Do not silently pick a direction that might violate the vision.
 7. **Semver from 1.0.** Breaking the TOML schema, REST API, or on-disk layout requires a major version bump plus a CHANGELOG migration note. Within a major line, keep rejecting wrong shapes with clear errors — no silent back-compat shims, no "tolerate old shape" — but don't break gratuitously.

@@ -51,7 +51,7 @@ func TestExecuteSuccess(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, StationDispatchEnabled: true, HasLocalTasks: true})
 	getLogPath := captureLogPath(eb)
 
 	task := &model.Task{
@@ -79,7 +79,7 @@ func TestExecuteFailure(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, StationDispatchEnabled: true, HasLocalTasks: true})
 
 	task := &model.Task{
 		Name: "fail-task",
@@ -100,7 +100,7 @@ func TestExecuteTimeout(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, StationDispatchEnabled: true, HasLocalTasks: true})
 
 	task := &model.Task{
 		Name: "sleep-task",
@@ -141,7 +141,7 @@ func TestExecuteReturnsWhenBackgroundedChildEscapesProcessGroup(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	eb := events.NewEventBus()
-	e := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
+	e := New(Options{LogDir: tmpDir, EventBus: eb, StationDispatchEnabled: true, HasLocalTasks: true})
 
 	// setsid detaches `sleep 30` into a new session/process group, still
 	// inheriting the shell's stdout/stderr fds, then the shell itself exits.
@@ -175,7 +175,7 @@ func TestExecuteStderr(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, StationDispatchEnabled: true, HasLocalTasks: true})
 	getLogPath := captureLogPath(eb)
 
 	task := &model.Task{
@@ -202,7 +202,7 @@ func TestExecuteEvents(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, StationDispatchEnabled: true, HasLocalTasks: true})
 
 	var receivedLogs strings.Builder
 	var mu sync.Mutex
@@ -246,10 +246,10 @@ func TestRunUpdateCallback(t *testing.T) {
 	eb := events.NewEventBus()
 	called := false
 	exec := newTestExecutor(t, Options{
-		LogDir:               tmpDir,
-		EventBus:             eb,
-		CloudDispatchEnabled: true,
-		HasLocalTasks:        true,
+		LogDir:                 tmpDir,
+		EventBus:               eb,
+		StationDispatchEnabled: true,
+		HasLocalTasks:          true,
 	})
 	exec.SetRunUpdateCallback(func(r *model.Run) {
 		called = true
@@ -278,7 +278,7 @@ func TestLogDirCreationFailure(t *testing.T) {
 	tmpFile.Close()
 
 	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpFile.Name(), EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
+	exec := New(Options{LogDir: tmpFile.Name(), EventBus: eb, StationDispatchEnabled: true, HasLocalTasks: true})
 
 	task := &model.Task{Name: "fail", Run: "echo hi"}
 	run := &model.Run{ID: ulid.Make().String()}
@@ -298,7 +298,7 @@ func TestLogFileCreationFailure(t *testing.T) {
 	os.Chmod(tmpDir, 0500)
 
 	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, StationDispatchEnabled: true, HasLocalTasks: true})
 
 	task := &model.Task{Name: "fail", Run: "echo hi"}
 	run := &model.Run{ID: ulid.Make().String()}
@@ -320,7 +320,7 @@ func TestExecuteCommandStartFailure(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	eb := events.NewEventBus()
-	exec := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
+	exec := New(Options{LogDir: tmpDir, EventBus: eb, StationDispatchEnabled: true, HasLocalTasks: true})
 
 	// A bare name that PATH lookup misses reports 127 ("command not found") on
 	// every shell we arm errexit for. An absolute path that does not exist is
@@ -399,10 +399,10 @@ func TestAvailabilityReflectsComposeOption(t *testing.T) {
 	eb := events.NewEventBus()
 
 	// Backend presence only governs compose availability once dispatch is enabled.
-	withCompose := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, Compose: &recordingBackend{}, HasLocalTasks: true})
+	withCompose := New(Options{LogDir: tmpDir, EventBus: eb, StationDispatchEnabled: true, Compose: &recordingBackend{}, HasLocalTasks: true})
 	assert.True(t, withCompose.Availability().Compose.Available)
 
-	withoutCompose := New(Options{LogDir: tmpDir, EventBus: eb, CloudDispatchEnabled: true, HasLocalTasks: true})
+	withoutCompose := New(Options{LogDir: tmpDir, EventBus: eb, StationDispatchEnabled: true, HasLocalTasks: true})
 	status := withoutCompose.Availability().Compose
 	assert.False(t, status.Available)
 	assert.Contains(t, status.Reason, "docker compose CLI unavailable")
@@ -443,15 +443,15 @@ func TestRoutingExecutor_Availability_DefaultsConfigOnly(t *testing.T) {
 
 	assert.False(t, avail.HTTP.Available, "HTTP dispatch requires the opt-in")
 	assert.NotEmpty(t, avail.HTTP.Reason)
-	assert.False(t, avail.Shell.Available, "shell defaults to unavailable when cloud dispatch is disabled")
+	assert.False(t, avail.Shell.Available, "shell defaults to unavailable when station dispatch is disabled")
 	assert.NotEmpty(t, avail.Shell.Reason)
-	assert.False(t, avail.Container.Available, "container defaults to unavailable when cloud dispatch is disabled")
-	assert.False(t, avail.Compose.Available, "compose defaults to unavailable when cloud dispatch is disabled")
+	assert.False(t, avail.Container.Available, "container defaults to unavailable when station dispatch is disabled")
+	assert.False(t, avail.Compose.Available, "compose defaults to unavailable when station dispatch is disabled")
 	assert.False(t, avail.Config.Available, "no local tasks declared")
 }
 
-func TestRoutingExecutor_Availability_CloudDispatchEnabled(t *testing.T) {
-	e := newTestExecutor(t, Options{CloudDispatchEnabled: true})
+func TestRoutingExecutor_Availability_StationDispatchEnabled(t *testing.T) {
+	e := newTestExecutor(t, Options{StationDispatchEnabled: true})
 	avail := e.Availability()
 	assert.True(t, avail.HTTP.Available)
 	assert.True(t, avail.Shell.Available)
@@ -459,14 +459,14 @@ func TestRoutingExecutor_Availability_CloudDispatchEnabled(t *testing.T) {
 
 // TestRoutingExecutor_Availability_ContainerGatedOnDispatch proves the opt-in,
 // not merely backend presence, governs container dispatch: a backend is present
-// in both cases, yet container is unavailable until cloud dispatch is enabled.
+// in both cases, yet container is unavailable until station dispatch is enabled.
 func TestRoutingExecutor_Availability_ContainerGatedOnDispatch(t *testing.T) {
 	disabled := newTestExecutor(t, Options{Docker: &recordingBackend{}})
 	status := disabled.Availability().Container
 	assert.False(t, status.Available, "container must require the dispatch opt-in even with a backend present")
-	assert.Contains(t, status.Reason, "allow_cloud_dispatch")
+	assert.Contains(t, status.Reason, "allow_station_dispatch")
 
-	enabled := newTestExecutor(t, Options{CloudDispatchEnabled: true, Docker: &recordingBackend{}})
+	enabled := newTestExecutor(t, Options{StationDispatchEnabled: true, Docker: &recordingBackend{}})
 	assert.True(t, enabled.Availability().Container.Available)
 }
 
@@ -491,7 +491,7 @@ func TestRoutingExecutor_SetRunUpdateCallback_ReceivesUpdates(t *testing.T) {
 
 // TestRoutingExecutor_notifyRunUpdated_PublishesCopy pins the H3 fix: the run
 // pointer handed to notifyRunUpdated is still being mutated by the execute
-// goroutine (recordRunOutcome → run.End()) while SSE/cloud subscribers marshal
+// goroutine (recordRunOutcome → run.End()) while SSE/station subscribers marshal
 // the event on their own goroutines. notifyRunUpdated must publish a copy, not
 // the shared pointer, so a subscriber never races the mutation. We assert the
 // published Run is a distinct pointer and that a later mutation of the original
@@ -550,7 +550,7 @@ func TestRoutingExecutor_SetOnProcessStarted_ReceivesCall(t *testing.T) {
 }
 
 func TestRoutingExecutor_Execute_MissingExecutionDefinition(t *testing.T) {
-	e := newTestExecutor(t, Options{CloudDispatchEnabled: true})
+	e := newTestExecutor(t, Options{StationDispatchEnabled: true})
 	// Task with no run and no resolved execution definition → resolveBackend
 	// returns the "missing execution definition" error.
 	task := &model.Task{Name: "nodef"}

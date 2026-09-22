@@ -274,9 +274,9 @@ describe("triggerDescription", () => {
 });
 
 describe("FILTERABLE_TRIGGERS", () => {
-    it("offers every trigger except cloud", () => {
+    it("offers every trigger except station", () => {
         expect(FILTERABLE_TRIGGERS).toEqual(["cron", "api", "ui", "cli", "service", "startup"]);
-        expect(FILTERABLE_TRIGGERS).not.toContain("cloud");
+        expect(FILTERABLE_TRIGGERS).not.toContain("station");
     });
 });
 

@@ -62,13 +62,13 @@ func TestCLIValidateCmd(t *testing.T) {
 	require.Error(t, err, "validate should fail on malformed TOML")
 }
 
-// TestCloudCmdBootErrorVisible guards against silent boot crashes in TUI mode.
-// `runwisp cloud` (without --no-tui) reroutes slog into the TUI debug buffer
+// TestStationCmdBootErrorVisible guards against silent boot crashes in TUI mode.
+// `runwisp station` (without --no-tui) reroutes slog into the TUI debug buffer
 // before opening the config; that buffer only drains once the TUI attaches, so
 // a boot failure used to exit 1 with no output at all. The fatal error must
-// reach stderr. The cloud URL points at a closed port — boot fails at config
+// reach stderr. The station URL points at a closed port — boot fails at config
 // parse, before any connection attempt, so the test stays offline.
-func TestCloudCmdBootErrorVisible(t *testing.T) {
+func TestStationCmdBootErrorVisible(t *testing.T) {
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
@@ -80,17 +80,17 @@ func TestCloudCmdBootErrorVisible(t *testing.T) {
 		binaryPath,
 		"--config", badPath,
 		"--data", testutil.ShortTempDir(t),
-		"cloud",
+		"station",
 	)
 	// configDir as cwd keeps the command away from any developer .env file
-	// (the cloud subcommand loads ./.env by default).
+	// (the station subcommand loads ./.env by default).
 	cmd.Dir = configDir
 	cmd.Env = subprocEnv(
-		"RUNWISP_CLOUD_TOKEN=rt_e2e_dummy_token",
-		"RUNWISP_CLOUD_URL=https://127.0.0.1:1",
+		"RUNWISP_STATION_TOKEN=rt_e2e_dummy_token",
+		"RUNWISP_STATION_URL=https://127.0.0.1:1",
 	)
 	out, err := cmd.CombinedOutput()
-	require.Error(t, err, "cloud mode with a malformed config must exit non-zero: %s", out)
+	require.Error(t, err, "station mode with a malformed config must exit non-zero: %s", out)
 	// Case-insensitive: the fatal error is rendered by fang's styled handler,
 	// which capitalizes the first letter ("Failed to parse config file…"). What
 	// matters is that the boot failure is visible, not its exact casing.

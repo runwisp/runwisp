@@ -606,10 +606,10 @@ func TestQueryRunsNewGates(t *testing.T) {
 		}
 	}
 	runs := []*model.Run{
-		mk("cron-zero", model.TriggeredByCron, 0, 0, 0),    // t+0
-		mk("api-137", model.TriggeredByAPI, 137, 0, 10),    // t+10
-		mk("api-retry", model.TriggeredByAPI, 1, 2, 20),    // t+20, retried
-		mk("cloud-neg", model.TriggeredByCloud, -2, 0, 30), // t+30
+		mk("cron-zero", model.TriggeredByCron, 0, 0, 0),        // t+0
+		mk("api-137", model.TriggeredByAPI, 137, 0, 10),        // t+10
+		mk("api-retry", model.TriggeredByAPI, 1, 2, 20),        // t+20, retried
+		mk("station-neg", model.TriggeredByStation, -2, 0, 30), // t+30
 	}
 	for _, r := range runs {
 		require.NoError(t, db.CreateRun(ctx, r))
@@ -636,9 +636,9 @@ func TestQueryRunsNewGates(t *testing.T) {
 	assert.Equal(t, int64(1), count(model.RunFilter{CreatedAfter: &mid, CreatedBefore: &upper}), "t+20 only")
 
 	assert.Equal(t, int64(2), count(model.RunFilter{TriggeredBy: string(model.TriggeredByAPI)}))
-	assert.Equal(t, int64(1), count(model.RunFilter{TriggeredBy: string(model.TriggeredByCloud)}))
+	assert.Equal(t, int64(1), count(model.RunFilter{TriggeredBy: string(model.TriggeredByStation)}))
 
-	// Exit codes present: 0 (cron-zero), 137 (api-137), 1 (api-retry), -2 (cloud-neg).
+	// Exit codes present: 0 (cron-zero), 137 (api-137), 1 (api-retry), -2 (station-neg).
 	// Exact code = an inclusive [n, n] range.
 	assert.Equal(t, int64(1), count(model.RunFilter{ExitCodeMin: intPtr(137), ExitCodeMax: intPtr(137)}))
 	assert.Equal(t, int64(1), count(model.RunFilter{ExitCodeMin: intPtr(-2), ExitCodeMax: intPtr(-2)}), "negative exit codes round-trip")
@@ -656,7 +656,7 @@ func TestQueryRunsNewGates(t *testing.T) {
 	}))
 	// A composite that no single row satisfies.
 	assert.Equal(t, int64(0), count(model.RunFilter{
-		TriggeredBy: string(model.TriggeredByCloud),
+		TriggeredBy: string(model.TriggeredByStation),
 		RetriesOnly: true,
 	}))
 }
@@ -1129,7 +1129,7 @@ func TestSelectOldRunsByAgeOrdersOldestFirst(t *testing.T) {
 
 // TestCreateRun_RejectsDuplicateLiveExecutionID pins the partial UNIQUE index
 // on execution_id: two live runs must never share one execution_id (the key
-// every cloud lookup resolves by), but the id may be reused once the prior run
+// every station lookup resolves by), but the id may be reused once the prior run
 // is soft-deleted, since the index — like every execution_id query — is scoped
 // to deleted_at IS NULL.
 func TestCreateRun_RejectsDuplicateLiveExecutionID(t *testing.T) {

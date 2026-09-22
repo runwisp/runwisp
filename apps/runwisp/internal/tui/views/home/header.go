@@ -80,8 +80,8 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 	if info.WebUIDisabled {
 		parts = append(parts, muted.Render("Web UI disabled"))
 	}
-	if info.CloudEnabled {
-		parts = append(parts, muted.Render("Cloud connected"))
+	if info.StationEnabled {
+		parts = append(parts, muted.Render("Station connected"))
 	}
 	if info.ConfigStale {
 		// Warning color, not muted \u2014 a pending config change is actionable.

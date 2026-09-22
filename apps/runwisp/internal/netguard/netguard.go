@@ -3,7 +3,7 @@
 
 // Package netguard is the single SSRF gate shared by every outbound request
 // the daemon makes on behalf of an untrusted peer: HTTP task execution
-// (internal/executor) and control-plane log uploads (internal/cloud/logarchive).
+// (internal/executor) and control-plane log uploads (internal/station/logarchive).
 //
 // It answers exactly one question — "is this IP a publicly routable unicast
 // address?" — and rejects everything else: loopback, private, link-local,

@@ -82,7 +82,7 @@ type RunsQueryInput struct {
 	Offset        int       `query:"offset" minimum:"0" default:"0" doc:"Pagination offset"`
 	Status        string    `query:"status" doc:"Comma-separated run statuses (phase or end reason); a run matches any listed value"`
 	TaskName      string    `query:"taskName" doc:"Filter by task name"`
-	TriggeredBy   string    `query:"triggeredBy" enum:"cron,api,ui,cli,cloud,service,startup," doc:"Filter by what triggered the run"`
+	TriggeredBy   string    `query:"triggeredBy" enum:"cron,api,ui,cli,station,service,startup," doc:"Filter by what triggered the run"`
 	CreatedAfter  time.Time `query:"createdAfter" doc:"Only runs created at or after this RFC3339 time"`
 	CreatedBefore time.Time `query:"createdBefore" doc:"Only runs created at or before this RFC3339 time"`
 	ExitCodeMin   string    `query:"exitCodeMin" pattern:"^-?[0-9]+$" doc:"Only runs whose exit code is >= this (inclusive)"`

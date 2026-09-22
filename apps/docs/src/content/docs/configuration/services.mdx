@@ -32,18 +32,18 @@ bounded exponential backoff.
 
 ## Identity & metadata
 
-| Key              | Default      | What it does                                                                                                                                                                |
-| ---------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `[services.*]`   | required     | The service name (the TOML table key). Used in CLI, API, and log paths.                                                                                                     |
-| `run`            | required     | Shell command. Multi-line OK with TOML triple-quotes.                                                                                                                       |
-| `description`    | _(empty)_    | Human-readable description shown in the UI and TUI.                                                                                                                         |
-| `group`          | `"Services"` | UI grouping label.                                                                                                                                                          |
-| `manual_trigger` | `true`       | Allow stop/restart/start from the CLI, API, Web UI, TUI, and cloud control plane. Set `false` to lock the service to its restart policy until you edit the TOML and reload. |
+| Key              | Default      | What it does                                                                                                                                                                  |
+| ---------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[services.*]`   | required     | The service name (the TOML table key). Used in CLI, API, and log paths.                                                                                                       |
+| `run`            | required     | Shell command. Multi-line OK with TOML triple-quotes.                                                                                                                         |
+| `description`    | _(empty)_    | Human-readable description shown in the UI and TUI.                                                                                                                           |
+| `group`          | `"Services"` | UI grouping label.                                                                                                                                                            |
+| `manual_trigger` | `true`       | Allow stop/restart/start from the CLI, API, Web UI, TUI, and station control plane. Set `false` to lock the service to its restart policy until you edit the TOML and reload. |
 
 Set `manual_trigger = false` if you don't want anyone stopping or
 restarting this service by hand, from any front door. The **Stop
 Service** button, TUI `s`/`r`, `runwisp service stop/restart`, the REST
-API, and the cloud control plane all refuse it; only a `runwisp.toml`
+API, and the station control plane all refuse it; only a `runwisp.toml`
 edit plus `runwisp reload` changes its running state.
 
 ## Instances

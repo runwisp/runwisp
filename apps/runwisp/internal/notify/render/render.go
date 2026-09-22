@@ -277,7 +277,7 @@ func triggerPhrase(t model.TriggeredBy) string {
 		return "Triggered from the UI"
 	case model.TriggeredByCLI:
 		return "Triggered from the CLI"
-	case model.TriggeredByCloud:
+	case model.TriggeredByStation:
 		return "Triggered from the control plane"
 	case model.TriggeredByService:
 		return "Service auto-started"

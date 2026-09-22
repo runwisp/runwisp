@@ -60,7 +60,7 @@ type Server struct {
 	configStale       func() bool
 	configWarnings    func() []string
 	// updateStatus reports (available, latestVersion) from the background update
-	// checker. nil (cloud mode, or check disabled) reports never-available.
+	// checker. nil (station mode, or check disabled) reports never-available.
 	updateStatus func() (bool, string)
 	// configStaleLast tracks the last staleness value broadcast over the event
 	// bus so the collector goroutine only emits an EventConfigStale when it
@@ -87,7 +87,7 @@ type Server struct {
 	metricsEnabled bool
 	metricsListen  string
 	// reload re-reads runwisp.toml and reconciles the live task set. nil
-	// outside standalone mode (cloud mode has no local scheduler to reconcile),
+	// outside standalone mode (station mode has no local scheduler to reconcile),
 	// in which case POST /api/daemon/reload reports the operation is unavailable.
 	reload func() (model.ReloadResult, error)
 	// shutdownCtx/shutdownCancel let Shutdown interrupt long-lived SSE handler

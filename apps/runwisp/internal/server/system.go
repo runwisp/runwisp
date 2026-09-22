@@ -148,7 +148,7 @@ func (srv *Server) broadcastSample(sample model.MetricsSample) {
 }
 
 // humaReload reconciles the live task set against runwisp.toml. A nil reload
-// hook means the daemon was started in a mode that can't reload (cloud mode has
+// hook means the daemon was started in a mode that can't reload (station mode has
 // no local scheduler); a rejected reload (bad config or a restart-only change)
 // surfaces as a 400 so the operator sees exactly why nothing was applied.
 func (srv *Server) humaReload(ctx context.Context, input *struct{}) (*ReloadOutput, error) {
@@ -163,7 +163,7 @@ func (srv *Server) humaReload(ctx context.Context, input *struct{}) (*ReloadOutp
 }
 
 // SystemStats returns a live host snapshot, identical to what the local
-// /api/system endpoint serves. Exposed so the cloud client can piggyback the
+// /api/system endpoint serves. Exposed so the station client can piggyback the
 // snapshot on its heartbeat without standing up the HTTP surface separately.
 func (srv *Server) SystemStats() model.SystemStats {
 	return srv.stats.GetSystemStats()

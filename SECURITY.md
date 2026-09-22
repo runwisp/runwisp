@@ -46,7 +46,7 @@ Before reporting, understand the boundaries RunWisp commits to:
   - **Network clients (Web UI, remote REST)** log in with a password using a challenge-response handshake, so the password never travels in plaintext even over HTTP. A successful login issues a session in a secure cookie.
   - The TUI's "Open in browser" action mints a single-use launch ticket over the local socket; the browser redeems it on `127.0.0.1` to receive a session cookie. The password never leaves the host.
 - **No secrets on disk.** The daemon password is either supplied via `RUNWISP_PASSWORD` (in-memory only) or freshly generated each boot (ephemeral). The JWT signing key is **derived** from the password and the per-install fingerprint via HKDF-SHA-256; it is never written. Setting a fresh `RUNWISP_PASSWORD` and restarting invalidates every existing session.
-- **No required network.** The daemon must work fully offline; outbound integrations (`internal/cloud/`, notification channels, TLS cert lookups) are strictly opt-in.
+- **No required network.** The daemon must work fully offline; outbound integrations (`internal/station/`, notification channels, TLS cert lookups) are strictly opt-in.
 
 This is single-tenant by design. RunWisp does not ship SSO, directory integration, or fine-grained RBAC — those are stated non-goals.
 

@@ -337,8 +337,8 @@ func TestServiceFatalAfterStartRetries(t *testing.T) {
 	djm.mu.RUnlock()
 	assert.Equal(t, 0, active, "a FATAL service holds no live instances")
 
-	// The FATAL state must surface in the cloud snapshot, not masquerade as
-	// "degraded" (which would tell the cloud the daemon is still retrying).
+	// The FATAL state must surface in the station snapshot, not masquerade as
+	// "degraded" (which would tell the station the daemon is still retrying).
 	snap, ok := djm.ServiceSnapshot("flapper")
 	require.True(t, ok)
 	assert.Equal(t, model.ServiceFatal, snap.State)
@@ -467,7 +467,7 @@ func TestStopServiceHaltsRestarts(t *testing.T) {
 // TestRecycleServiceInstances_LeavesStoppedServiceStopped is the regression
 // test for a reload recycling a service the operator stopped: reload adds/
 // changes/removes tasks live, it is never a restart, so it must not revive a
-// service the operator explicitly stopped. Only an operator/cloud-initiated
+// service the operator explicitly stopped. Only an operator/station-initiated
 // RestartServiceInstances may clear that flag.
 func TestRecycleServiceInstances_LeavesStoppedServiceStopped(t *testing.T) {
 	djm, _, eb := newGatedManager(t)

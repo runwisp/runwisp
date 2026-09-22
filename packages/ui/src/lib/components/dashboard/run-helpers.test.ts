@@ -112,7 +112,7 @@ describe("formatTriggeredByLabel", () => {
         expect(formatTriggeredByLabel("cron")).toBe("Cron");
         expect(formatTriggeredByLabel("service")).toBe("Service");
         expect(formatTriggeredByLabel("startup")).toBe("Startup");
-        expect(formatTriggeredByLabel("cloud")).toBe("Cloud");
+        expect(formatTriggeredByLabel("station")).toBe("Station");
     });
 });
 

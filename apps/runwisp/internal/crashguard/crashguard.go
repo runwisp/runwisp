@@ -5,7 +5,7 @@
 // daemon's ordinary fatal-shutdown path instead of an unrecovered runtime
 // crash.
 //
-// Why this exists: when a TUI is attached in-process (`runwisp cloud`, the
+// Why this exists: when a TUI is attached in-process (`runwisp station`, the
 // inline fallback), Bubble Tea owns the terminal in alt-screen + raw mode.
 // Bubble Tea's own panic recovery only covers its own goroutines — a panic in
 // a daemon goroutine crashes the process without restoring the terminal, so the

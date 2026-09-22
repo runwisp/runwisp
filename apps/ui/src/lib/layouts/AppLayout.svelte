@@ -8,7 +8,7 @@
     import { resolve } from "$app/paths";
     import { page } from "$app/stores";
     import AuthDisabledBadge from "$lib/components/AuthDisabledBadge.svelte";
-    import CloudModeBadge from "$lib/components/CloudModeBadge.svelte";
+    import StationModeBadge from "$lib/components/StationModeBadge.svelte";
     import ConnectionStatusIndicator from "$lib/components/ConnectionStatusIndicator.svelte";
     import HeaderSearch from "$lib/components/HeaderSearch.svelte";
     import NotificationBell from "$lib/components/NotificationBell.svelte";
@@ -250,7 +250,7 @@
             </div>
 
             <div class="flex shrink-0 items-center gap-2 sm:gap-3">
-                <CloudModeBadge />
+                <StationModeBadge />
                 <AuthDisabledBadge />
                 <ThemeToggle />
                 <NotificationBell />

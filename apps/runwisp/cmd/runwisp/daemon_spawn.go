@@ -54,7 +54,7 @@ func spawnDaemon(f Flags) error {
 }
 
 // daemonSpawnArgs builds the argument list for a spawned daemon, prefixed by
-// the given subcommand ("daemon", or "cloud --no-tui"). It carries the full
+// the given subcommand ("daemon", or "station --no-tui"). It carries the full
 // effective config — including --host and --socket — so the child binds exactly
 // where the launcher probed instead of silently re-defaulting to loopback / the
 // default socket path.
@@ -75,7 +75,7 @@ func daemonSpawnArgs(subcommand []string, f Flags) []string {
 // spawnDaemonProcess execs `runwisp <args...>` as a detached background process
 // (new session, stdio redirected to the data dir's daemon.log) so it outlives
 // the foreground process that launched it. The leading arg selects the
-// subcommand — "daemon" for standalone, "cloud --no-tui" for cloud mode.
+// subcommand — "daemon" for standalone, "station --no-tui" for station mode.
 func spawnDaemonProcess(args []string, dataDir string) error {
 	exe, err := os.Executable()
 	if err != nil {

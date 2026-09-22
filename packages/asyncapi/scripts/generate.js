@@ -242,11 +242,11 @@ function typeToZod(schema, isDate = false) {
 
 async function generateZod(resolved) {
   const inboundMessages =
-    resolved.channels.daemonToCloud.subscribe.message.oneOf.map(
+    resolved.channels.daemonToStation.subscribe.message.oneOf.map(
       (msg) => msg.payload,
     );
   const outboundMessages =
-    resolved.channels.cloudToDaemon.publish.message.oneOf.map(
+    resolved.channels.stationToDaemon.publish.message.oneOf.map(
       (msg) => msg.payload,
     );
 

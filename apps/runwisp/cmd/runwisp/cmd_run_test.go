@@ -222,7 +222,7 @@ run = "echo hi"
 }
 
 // Regression: --standalone talks to the run manager directly, bypassing the
-// internal/server.runService.TriggerRun guard that the daemon/cloud paths
+// internal/server.runService.TriggerRun guard that the daemon/station paths
 // enforce — so it must reject manual_trigger = false itself, or the task
 // stops being cron/schedule-only-everywhere as documented.
 func TestRunExecStandalone_ManualTriggerDisabled(t *testing.T) {

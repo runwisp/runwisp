@@ -1,6 +1,6 @@
 # @runwisp/asyncapi
 
-AsyncAPI specification and code generation for the RunWisp daemon-to-cloud WebSocket protocol.
+AsyncAPI specification and code generation for the RunWisp daemon-to-station WebSocket protocol.
 
 ## Overview
 

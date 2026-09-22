@@ -117,7 +117,7 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 
 	// Compose CLI inherits the daemon's env (minus RUNWISP_* daemon secrets,
 	// which buildProcessEnv strips) so users' DOCKER_HOST etc. work without
-	// leaking the admin password / cloud token into every container's build
+	// leaking the admin password / station token into every container's build
 	// environment. Task env/secrets/params are then appended so the value-less
 	// `-e KEY` flags (see buildComposeArgs) resolve their values from the CLI's
 	// own environment — keeping secret values off argv (and out of `ps` output).

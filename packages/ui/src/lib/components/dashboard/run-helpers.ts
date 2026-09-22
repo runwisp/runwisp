@@ -90,7 +90,7 @@ export function formatTriggeredByLabel(triggeredBy: Run["triggeredBy"]): string 
     if (triggeredBy === "cron") return "Cron";
     if (triggeredBy === "service") return "Service";
     if (triggeredBy === "startup") return "Startup";
-    return "Cloud";
+    return "Station";
 }
 
 /**

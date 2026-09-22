@@ -59,7 +59,7 @@ The AsyncAPI YAML is the single source of truth:
 
 1. Edit `packages/asyncapi/asyncapi.yaml`.
 2. Run `bun run generate` (or `ci`) to regenerate Go types into `apps/runwisp/internal/generated/protocol/`.
-3. Implement the new messages on the consumer side (`apps/runwisp/internal/cloud/`).
+3. Implement the new messages on the consumer side (`apps/runwisp/internal/station/`).
 
 Never hand-edit anything under `internal/generated/protocol/` — it's regenerated.
 

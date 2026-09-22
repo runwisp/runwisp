@@ -45,7 +45,7 @@ func activeCount(tm runtime.TaskManager, name string) int {
 // TestStartServiceInstances_HonorsAutostart proves the boot launcher starts an
 // autostart service but leaves a non-autostart one stopped. This is the
 // invariant that lets initDaemonServices run the launcher unconditionally (in
-// cloud mode too): a non-autostart service boots stopped because its supervisor
+// station mode too): a non-autostart service boots stopped because its supervisor
 // is created stopped and StartServiceInstances no-ops on a stopped supervisor.
 func TestStartServiceInstances_HonorsAutostart(t *testing.T) {
 	exec := testutil.NewGateExecutor()

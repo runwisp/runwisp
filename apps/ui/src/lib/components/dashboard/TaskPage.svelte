@@ -18,7 +18,7 @@
 
     let {
         task,
-        cloudMode = false,
+        stationMode = false,
         items,
         total,
         loading = false,
@@ -45,7 +45,7 @@
         onSelectRun,
     } = $props<{
         task: Task;
-        cloudMode?: boolean;
+        stationMode?: boolean;
         items: Run[];
         total: number;
         loading?: boolean;
@@ -222,14 +222,14 @@
     // locks it to its restart policy until a runwisp.toml edit + reload.
     const serviceControllable = $derived(taskIsService && (task.manualTrigger ?? true));
 
-    // In cloud mode the cloud owns scheduling/dispatch; triggering here is the
+    // In station mode the station owns scheduling/dispatch; triggering here is the
     // operator's "run it here, now" escape hatch against the local runner.
     // Frame the confirm honestly rather than implying it's the canonical trigger.
-    const runConfirmLabel = $derived(cloudMode ? "Run Here" : "Run Now");
-    const runModalTitle = $derived(cloudMode ? "Run on this runner" : "Run Task");
+    const runConfirmLabel = $derived(stationMode ? "Run Here" : "Run Now");
+    const runModalTitle = $derived(stationMode ? "Run on this runner" : "Run Task");
     const runModalDescription = $derived(
-        cloudMode
-            ? `Run ${task.name} on this runner now? This triggers an immediate local run; scheduling stays with the cloud.`
+        stationMode
+            ? `Run ${task.name} on this runner now? This triggers an immediate local run; scheduling stays with the station.`
             : `Trigger a new run of ${task.name}?`,
     );
 
