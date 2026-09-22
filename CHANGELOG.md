@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Web UI login now works over plain HTTP on non-localhost addresses (e.g. a LAN IP), where browsers hide WebCrypto.
+- The Web UI login screen no longer clears the password field when you're rate limited.
+- The Web UI no longer flashes offline every few seconds when served over unsigned HTTPS.
 - **Long group and service names in the TUI sidebar no longer overflow the panel** — they're truncated to fit. (@hash-bang)
 - `on_overlap = "kill"` with `max_concurrent > 1` now cancels only the excess runs instead of killing every live run when triggers arrive faster than runs stop.
 - A day-of-week cron step like `1/2` now includes Sunday (matching vixie cron) instead of silently dropping it, so imported crontabs keep their full schedule.

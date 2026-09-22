@@ -29,7 +29,9 @@
         // double the /api/auth/status hit and re-trigger the layout's auth
         // effect, re-seeding /api/system + /api/daemon a second time.
         const disposeAuthRequired = browserAuthEventBus.onAuthRequired(() => {
-            if (!authRequired) {
+            // Already showing: any further 401 must not wipe what the operator
+            // is typing.
+            if (!authRequired || isOpen) {
                 return;
             }
             logger.info("Authentication required");

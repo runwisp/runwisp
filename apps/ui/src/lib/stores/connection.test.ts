@@ -180,3 +180,13 @@ describe("connectionStore.reportSourceStalled", () => {
         drain("a", "b");
     });
 });
+
+describe("connectionStore.releaseSource", () => {
+    it("does not report a disconnect or schedule a ping when the last source is released", () => {
+        connectionStore.markConnected();
+        connectionStore.reportSourceUp("release-test");
+        connectionStore.releaseSource("release-test");
+        expect(connectionStore.status).toBe("connected");
+        expect(connectionStore.nextRetryAt).toBeNull();
+    });
+});

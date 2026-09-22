@@ -249,7 +249,7 @@ class NotificationStore {
         this.#unsubscribes = [];
         this.#subscribed = false;
         this.#connected = false;
-        connectionStore.reportSourceDown(SOURCE_ID);
+        connectionStore.releaseSource(SOURCE_ID);
     }
 
     #connect(): void {

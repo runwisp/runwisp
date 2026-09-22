@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { chapResponse } from "./chap";
 
 // These vectors are the cross-language contract with the Go side
@@ -25,6 +25,10 @@ const vectors = [
 ];
 
 describe("chapResponse", () => {
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
     for (const v of vectors) {
         it(`matches the Go vector: ${v.name}`, async () => {
             expect(await chapResponse(v.password, v.nonce)).toBe(v.want);
@@ -35,5 +39,14 @@ describe("chapResponse", () => {
         const a = await chapResponse("pw", "nonce-a");
         const b = await chapResponse("pw", "nonce-b");
         expect(a).not.toBe(b);
+    });
+
+    // Plain HTTP on a non-localhost address hides crypto.subtle; the pure-JS
+    // fallback must still produce the Go-compatible response.
+    it("matches the Go vector without crypto.subtle", { timeout: 60_000 }, async () => {
+        vi.stubGlobal("crypto", {});
+        expect(await chapResponse("password", "nonce")).toBe(
+            "736b9e46edb32dbde0382c376f35dd8cf79b8338cff806a9cc2fccf588b08c44",
+        );
     });
 });

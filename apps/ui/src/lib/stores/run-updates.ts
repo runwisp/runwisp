@@ -99,7 +99,7 @@ class RunUpdateManager {
         for (const off of this.unsubscribes) off();
         this.unsubscribes.length = 0;
         this.connected = false;
-        connectionStore.reportSourceDown(SOURCE_ID);
+        connectionStore.releaseSource(SOURCE_ID);
     }
 
     subscribeToUpdates(handler: RunUpdateHandler): () => void {
