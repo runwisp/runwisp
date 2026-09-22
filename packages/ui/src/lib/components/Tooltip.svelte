@@ -38,7 +38,10 @@
     };
 </script>
 
-<div class="group relative inline-block {className}">
+<!-- Named group: an unnamed `group` would also fire on any ancestor's own
+     `group-hover` (e.g. a hoverable card row this tooltip sits inside),
+     popping every tooltip in that row open at once. -->
+<div class="group/tooltip relative inline-block {className}">
     {@render children()}
 
     <!-- Hover intent: 100ms before it appears, so sweeping the pointer across a
@@ -52,7 +55,7 @@
 			text-xs
 			{wide ? 'w-max max-w-xs whitespace-normal' : 'whitespace-nowrap'}
 			text-on-surface opacity-0 transition-[opacity,visibility]
-			delay-100 duration-0 group-hover:visible group-hover:opacity-100
+			delay-100 duration-0 group-hover/tooltip:visible group-hover/tooltip:opacity-100
 		"
         role="tooltip"
     >
