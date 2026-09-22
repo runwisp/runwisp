@@ -31,7 +31,7 @@ tasks:
 
     build:
         description: "Vite build of the embedded dashboard."
-        script: "{ [ -L .svelte-kit ] && rm -f .svelte-kit || true; } && bun x vite build"
+        script: "{ [ -L .svelte-kit ] && rm -f .svelte-kit || true; } && vite build"
         deps:
             - "common:generate-api"
             - "asyncapi:generate"

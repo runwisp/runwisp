@@ -1,5 +1,0 @@
-# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: GPL-3.0-or-later
-$schema: 'https://moonrepo.dev/schemas/toolchain.json'
-
-# No version pin: moon uses the bun binary already on PATH.
-bun: {}

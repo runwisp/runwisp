@@ -1,0 +1,9 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: GPL-3.0-or-later
+$schema: 'https://moonrepo.dev/schemas/toolchain.json'
+
+# The javascript toolchain locates node_modules and prepends node_modules/.bin
+# to each task's PATH (command and script alike), so `moon run` resolves vite,
+# eslint, prettier, etc. without a bun-seeded shell. bun is the runtime.
+# No version pin: moon uses the bun binary already on PATH.
+javascript: {}
+bun: {}
