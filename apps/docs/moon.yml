@@ -66,6 +66,7 @@ tasks:
             - "src/content/docs/**/*"
             - "scripts/check-docs-links.ts"
             - "astro.config.mjs"
+            - "src/redirects.mjs"
             - "/apps/runwisp/openapi.json"
             - "/apps/runwisp/**/*.go"
             - "/apps/runwisp/internal/config/config.schema.json"

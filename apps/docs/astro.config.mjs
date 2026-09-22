@@ -5,30 +5,11 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import starlightOpenAPI, { openAPISidebarGroups } from "starlight-openapi";
+import { redirects } from "./src/redirects.mjs";
 
 export default defineConfig({
     site: "https://docs.runwisp.com",
-    // Docs URLs are shipped inside released binaries, printed by the daemon,
-    // embedded in scaffolded runwisp.toml files, and quoted in released
-    // CHANGELOG entries — so a moved page keeps its old URL resolving forever.
-    // The migration guides (cron, supervisord, docker-compose) were scattered
-    // across two top-level sections and are now one "Coming from…" group; the
-    // CLI and agent references moved into "Reference". `/configuration/scheduling`
-    // never existed — a released CHANGELOG entry links it by mistake.
-    // Every entry points at its final target: no redirect chains.
-    redirects: {
-        "/recipes/migrating-from-cron": "/coming-from/cron/",
-        "/replacing-cron": "/coming-from/cron/",
-        "/replacing-cron/take-over-from-cron": "/coming-from/cron/",
-        "/replacing-cron/held-jobs": "/coming-from/cron/",
-        "/replacing-cron/converting-crontabs": "/coming-from/crontabs/",
-        "/replacing-cron/cron-mapping": "/coming-from/cron-mapping/",
-        "/recipes/migrating-from-supervisord": "/coming-from/supervisord/",
-        "/recipes/migrating-from-docker-compose": "/coming-from/docker-compose/",
-        "/operations/cli": "/reference/cli/",
-        "/operations/agents": "/reference/agents/",
-        "/configuration/scheduling": "/concepts/scheduling/",
-    },
+    redirects,
     integrations: [
         starlight({
             plugins: [
@@ -45,6 +26,11 @@ export default defineConfig({
                 src: "@runwisp/ui/assets/runwisp-logo.svg",
             },
             favicon: "/favicon.svg",
+            components: {
+                // Adds a one-line HTML comment pointing AI agents at the
+                // Markdown twin of the page they just fetched as HTML.
+                Head: "./src/components/Head.astro",
+            },
             head: [
                 {
                     tag: "link",

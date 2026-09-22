@@ -1,0 +1,7 @@
+# Advisory for shared/downstream caches: a request with a different Accept
+# or User-Agent can resolve to a different body at the same URL (see the
+# markdown-for-agents rewrite rule in ../cloudflare-rules.md). Cloudflare's
+# own edge cache is unaffected — the rewrite changes the URI before cache
+# lookup, so the HTML and Markdown variants are already distinct cache keys.
+/*
+  Vary: Accept, User-Agent

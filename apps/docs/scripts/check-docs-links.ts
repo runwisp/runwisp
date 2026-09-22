@@ -19,7 +19,7 @@
 // `/api/<operationId>` links are checked against openapi.json so the
 // starlight-openapi generated routes are covered too.
 //
-// Redirects declared in astro.config.mjs are resolved, but a link that only
+// Redirects declared in src/redirects.mjs are resolved, but a link that only
 // works *via* a redirect is an error: redirects exist for URLs already shipped
 // in released binaries and CHANGELOG entries, which this script does not scan.
 // Anything in a file we control should point at the live URL.
@@ -28,11 +28,11 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import GithubSlugger from "github-slugger";
+import { redirects as redirectMap } from "../src/redirects.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const docsRoot = resolve(here, "../src/content/docs");
 const repoRoot = resolve(here, "../../..");
-const astroConfigPath = resolve(here, "../astro.config.mjs");
 const openapiCandidates = [
     resolve(here, "../public/openapi.json"),
     resolve(repoRoot, "apps/runwisp/openapi.json"),
@@ -220,20 +220,12 @@ function resolveDocTarget(target: string, fromFile: string): string | undefined 
     return findDocFile(rel);
 }
 
-// Parse the `redirects` map out of astro.config.mjs. Only string-valued entries
-// are used, which is the shape the config uses.
+// The redirect map astro.config.mjs and [...slug].md.ts both import — see
+// src/redirects.mjs for why moved pages need it.
 function loadRedirects(): Map<string, string> {
     const out = new Map<string, string>();
-    if (!existsSync(astroConfigPath)) return out;
-    const src = readFileSync(astroConfigPath, "utf8");
-    const start = src.indexOf("redirects:");
-    if (start < 0) return out;
-    const open = src.indexOf("{", start);
-    const close = src.indexOf("}", open);
-    if (open < 0 || close < 0) return out;
-    const block = src.slice(open + 1, close);
-    for (const m of block.matchAll(/["']([^"']+)["']\s*:\s*["']([^"']+)["']/g)) {
-        out.set(normalizePath(m[1]), m[2]);
+    for (const [source, target] of Object.entries(redirectMap)) {
+        out.set(normalizePath(source), target);
     }
     return out;
 }

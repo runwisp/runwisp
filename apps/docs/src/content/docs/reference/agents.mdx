@@ -31,6 +31,10 @@ even have to add it by hand: run `runwisp --help` in a non-interactive shell
 (anything that isn't a terminal, which is exactly how an agent shells out) and
 the same pointer is appended to the help output.
 
+Every page on this site is also readable as plain Markdown. Send
+`Accept: text/markdown` (most agent HTTP clients already do), or just append
+`.md` to any page's URL — no nav chrome, no scripts, just the content.
+
 ## The config file has a schema
 
 `runwisp.toml` has a JSON Schema (draft 2020-12) describing every table, key,
