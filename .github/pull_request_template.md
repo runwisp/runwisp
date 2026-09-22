@@ -1,7 +1,3 @@
-## Description
-
-<!-- What does this PR do? Why is it needed? -->
-
 ## Type of Change
 
 - [ ] Bug fix
@@ -10,10 +6,15 @@
 - [ ] Documentation
 - [ ] Refactor / cleanup
 
+## Description
+
+<!-- What does this PR do? Why is it needed? -->
+
 ## Checklist
 
+- [ ] I have added a changelog entry in `CHANGELOG.md` under `[Unreleased]` (if user-facing)
+- [ ] Validation passes locally (`bun run ci`)
 - [ ] I have read the [Contributing Guide](../CONTRIBUTING.md)
-- [ ] Validation passes locally (`bun run build`, `bun run test`, and `bun run check`)
 - [ ] I have added tests for new functionality (if applicable)
 - [ ] I have updated documentation (if applicable)
-- [ ] I have added a changelog entry in `CHANGELOG.md` under `[Unreleased]` (if user-facing)
+

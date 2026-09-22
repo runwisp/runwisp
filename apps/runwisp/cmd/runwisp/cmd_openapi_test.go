@@ -61,7 +61,7 @@ func TestOpenAPISpecMatchesCommitted(t *testing.T) {
 	normalizeInfoVersion(want)
 
 	assert.Equal(t, want, got,
-		"openapi.json is stale — run `bun run generate` (or `bunx moon run runwisp:openapi`) and commit the result")
+		"openapi.json is stale — run `bun run generate` (or `moon run runwisp:openapi`) and commit the result")
 }
 
 // normalizeInfoVersion blanks info.version so the comparison ignores the
