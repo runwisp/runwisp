@@ -237,7 +237,7 @@ jobs:
         run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Build web UI and sync into Go embed directory
-        run: ./node_modules/.bin/moon run runwisp:sync-ui-dist
+        run: bun run sync-ui-dist
 
       # Build the binary once and feed it to both bases via --dist. Letting each
       # build-local.sh invocation compile from source cross-compiles the same

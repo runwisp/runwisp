@@ -64,7 +64,7 @@ jobs:
         run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Build web UI and sync into Go embed directory
-        run: ./node_modules/.bin/moon run runwisp:sync-ui-dist
+        run: bun run sync-ui-dist
 
       - name: Extract version from tag
         id: version
