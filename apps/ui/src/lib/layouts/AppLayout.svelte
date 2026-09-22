@@ -82,9 +82,38 @@
             closeDrawer();
         }
     }
+
+    // The drawer's open-focus target is the first sidebar link, whichever nav
+    // link that happens to be (Overview, unless a sidebar without the static
+    // nav is ever composed). An action rather than a special-cased snippet
+    // call keeps every link rendered through the same markup.
+    function registerFirstLink(node: HTMLElement, isFirst: boolean) {
+        if (isFirst) firstLink = node;
+    }
 </script>
 
 <svelte:window onkeydown={handleKey} />
+
+{#snippet navLink(href: string, active: boolean, Icon: Component, label: string, first = false)}
+    <!-- href is always resolve()d by the caller; the lint rule can't trace that through a parameter -->
+    <!-- eslint-disable svelte/no-navigation-without-resolve -->
+    <a
+        {href}
+        use:registerFirstLink={first}
+        class="group flex items-center gap-3 rounded-[3px] px-3 py-2 font-mono text-sm font-medium {active
+            ? 'bg-primary-soft text-primary-soft-text'
+            : 'text-on-surface-muted hover:bg-surface-sunken hover:text-primary'}"
+    >
+        <!-- eslint-enable svelte/no-navigation-without-resolve -->
+        <Icon
+            size={18}
+            class={active
+                ? "text-primary"
+                : "text-on-surface-faint group-hover:text-on-surface-muted"}
+        />
+        {label}
+    </a>
+{/snippet}
 
 <div
     class="flex h-screen w-full bg-surface-sunken font-sans text-on-surface selection:bg-primary-soft selection:text-primary-soft-text"
@@ -129,37 +158,19 @@
 
         <div class="flex-1 overflow-y-auto px-3 py-6">
             <nav class="mb-6 space-y-0.5">
-                <a
-                    bind:this={firstLink}
-                    href={resolve(urls.overview)}
-                    class="group flex items-center gap-3 rounded-[3px] px-3 py-2 font-mono text-sm font-medium {activePage ===
-                    'overview'
-                        ? 'bg-primary-soft text-primary-soft-text'
-                        : 'text-on-surface-muted hover:bg-surface-sunken hover:text-primary'}"
-                >
-                    <Activity
-                        size={18}
-                        class={activePage === "overview"
-                            ? "text-primary"
-                            : "text-on-surface-faint group-hover:text-on-surface-muted"}
-                    />
-                    Overview
-                </a>
-                <a
-                    href={resolve(urls.runs)}
-                    class="group flex items-center gap-3 rounded-[3px] px-3 py-2 font-mono text-sm font-medium {activePage ===
-                    'runs'
-                        ? 'bg-primary-soft text-primary-soft-text'
-                        : 'text-on-surface-muted hover:bg-surface-sunken hover:text-primary'}"
-                >
-                    <RotateCcwClock
-                        size={18}
-                        class={activePage === "runs"
-                            ? "text-primary"
-                            : "text-on-surface-faint group-hover:text-on-surface-muted"}
-                    />
-                    All Runs
-                </a>
+                {@render navLink(
+                    resolve(urls.overview),
+                    activePage === "overview",
+                    Activity,
+                    "Overview",
+                    true,
+                )}
+                {@render navLink(
+                    resolve(urls.runs),
+                    activePage === "runs",
+                    RotateCcwClock,
+                    "All Runs",
+                )}
             </nav>
 
             {#if showGroupHeaders}
@@ -171,22 +182,12 @@
                     </div>
                     <nav class="mb-2 space-y-0.5">
                         {#each group.tasks as task (task.id)}
-                            {@const TaskIcon = task.icon}
-                            <a
-                                href={resolve(task.href || "#")}
-                                class="group flex items-center gap-3 rounded-[3px] px-3 py-2 font-mono text-sm font-medium {activePage ===
-                                task.id
-                                    ? 'bg-primary-soft text-primary-soft-text'
-                                    : 'text-on-surface-muted hover:bg-surface-sunken hover:text-primary'}"
-                            >
-                                <TaskIcon
-                                    size={18}
-                                    class={activePage === task.id
-                                        ? "text-primary"
-                                        : "text-on-surface-faint group-hover:text-on-surface-muted"}
-                                />
-                                {task.name}
-                            </a>
+                            {@render navLink(
+                                resolve(task.href || "#"),
+                                activePage === task.id,
+                                task.icon,
+                                task.name,
+                            )}
                         {/each}
                     </nav>
                 {/each}
@@ -198,22 +199,12 @@
                 </div>
                 <nav class="mb-8 space-y-0.5">
                     {#each tasks as task (task.id)}
-                        {@const TaskIcon = task.icon}
-                        <a
-                            href={resolve(task.href || "#")}
-                            class="group flex items-center gap-3 rounded-[3px] px-3 py-2 font-mono text-sm font-medium {activePage ===
-                            task.id
-                                ? 'bg-primary-soft text-primary-soft-text'
-                                : 'text-on-surface-muted hover:bg-surface-sunken hover:text-primary'}"
-                        >
-                            <TaskIcon
-                                size={18}
-                                class={activePage === task.id
-                                    ? "text-primary"
-                                    : "text-on-surface-faint group-hover:text-on-surface-muted"}
-                            />
-                            {task.name}
-                        </a>
+                        {@render navLink(
+                            resolve(task.href || "#"),
+                            activePage === task.id,
+                            task.icon,
+                            task.name,
+                        )}
                     {/each}
                 </nav>
             {/if}

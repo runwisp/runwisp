@@ -48,21 +48,34 @@ export class RateLimitedError extends Error {
 
 // The browser session is authenticated by the HttpOnly cookie, which the
 // browser attaches automatically to same-origin requests — there is no
-// JS-readable token to set as a Bearer header. This middleware only reacts to a
-// 401 by driving the login modal.
-const authMiddleware: Middleware = {
+// JS-readable token to set as a Bearer header. This middleware reacts to a 401
+// by driving the login modal, and throws on any other non-ok response so every
+// generated-client call rejects on failure instead of resolving with `{error}`
+// — callers never have to check `error` themselves.
+const errorMiddleware: Middleware = {
     onResponse({ response }) {
+        if (response.ok) return response;
         if (response.status === HTTP_STATUS.UNAUTHORIZED && browser) {
             authStore.markUnauthenticated();
             browserAuthEventBus.emitAuthRequired();
             throw new AuthRequiredError();
         }
-        return response;
+        throw new Error(`Request failed: ${String(response.status)} ${response.statusText}`);
     },
 };
 
 const apiClient = createClient<APIPaths>({ baseUrl: API_BASE_URL });
-apiClient.use(authMiddleware);
+apiClient.use(errorMiddleware);
+
+// Narrows a generated-client response's `data` (typed possibly-undefined
+// because the schema allows empty bodies, e.g. 204) now that errorMiddleware
+// guarantees any resolved call already succeeded. Response bodies here are
+// always objects, never a meaningful falsy value, so `!data` is a safe presence
+// check.
+function unwrap<T extends object>(data: T | undefined): T {
+    if (!data) throw new Error("Empty API response");
+    return data;
+}
 
 // The one params shape shared by /api/runs and /api/tasks/{taskName}/runs —
 // sourced from the generated client so it can never drift from what the
@@ -99,62 +112,55 @@ export const authApi = {
 
 export const tasksApi = {
     getAll: async () => {
-        const { data, error } = await apiClient.GET("/api/tasks");
-        if (error) throw new Error("Failed to fetch tasks");
-        return data.items ?? [];
+        const { data } = await apiClient.GET("/api/tasks");
+        return unwrap(data).items ?? [];
     },
 
     getRuns: async (taskName: string, params?: RunsQueryParams) => {
-        const { data, error } = await apiClient.GET("/api/runs", {
+        const { data } = await apiClient.GET("/api/runs", {
             params: { query: { taskName, ...params } },
         });
-        if (error) throw new Error("Failed to fetch task runs");
-        return { runs: data.items ?? [], total: data.total };
+        const runs = unwrap(data);
+        return { runs: runs.items ?? [], total: runs.total };
     },
 
     triggerRun: async (taskName: string, params?: Record<string, string | null>) => {
-        const { data, error } = await apiClient.POST("/api/tasks/{taskName}/run", {
+        const { data } = await apiClient.POST("/api/tasks/{taskName}/run", {
             params: { path: { taskName }, query: { via: "ui" } },
             ...(params && Object.keys(params).length > 0 ? { body: { params } } : {}),
         });
-        if (error) throw new Error("Failed to trigger run");
-        return data;
+        return unwrap(data);
     },
 
     restartService: async (taskName: string): Promise<void> => {
-        const { error } = await apiClient.POST("/api/tasks/{taskName}/restart", {
+        await apiClient.POST("/api/tasks/{taskName}/restart", {
             params: { path: { taskName } },
         });
-        if (error) throw new Error("Failed to restart service");
     },
 
     stopService: async (taskName: string): Promise<void> => {
-        const { error } = await apiClient.POST("/api/tasks/{taskName}/stop", {
+        await apiClient.POST("/api/tasks/{taskName}/stop", {
             params: { path: { taskName } },
         });
-        if (error) throw new Error("Failed to stop service");
     },
 
     getRun: async (_taskName: string, runId: string) => {
-        const { data, error } = await apiClient.GET("/api/runs/{runId}", {
+        const { data } = await apiClient.GET("/api/runs/{runId}", {
             params: { path: { runId } },
         });
-        if (error) throw new Error("Failed to fetch run");
-        return data;
+        return unwrap(data);
     },
 
     deleteRun: async (runId: string): Promise<void> => {
-        const { error } = await apiClient.DELETE("/api/runs/{runId}", {
+        await apiClient.DELETE("/api/runs/{runId}", {
             params: { path: { runId } },
         });
-        if (error) throw new Error("Failed to delete run");
     },
 
     stopRun: async (runId: string): Promise<void> => {
-        const { error } = await apiClient.POST("/api/runs/{runId}/stop", {
+        await apiClient.POST("/api/runs/{runId}/stop", {
             params: { path: { runId } },
         });
-        if (error) throw new Error("Failed to stop run");
     },
 
     getLogPage: async (
@@ -230,80 +236,72 @@ export const tasksApi = {
 
 export const runsApi = {
     getAll: async (params?: RunsQueryParams) => {
-        const { data, error } = await apiClient.GET("/api/runs", {
+        const { data } = await apiClient.GET("/api/runs", {
             ...(params ? { params: { query: params } } : {}),
         });
-        if (error) throw new Error("Failed to fetch runs");
-        return { runs: data.items ?? [], total: data.total };
+        const runs = unwrap(data);
+        return { runs: runs.items ?? [], total: runs.total };
     },
 
     // Fetch one run by its (globally unique) ULID — no task name needed. Lets
     // the cross-task /runs view restore a deep-linked run that isn't on the
     // currently loaded page.
     getById: async (runId: string) => {
-        const { data, error } = await apiClient.GET("/api/runs/{runId}", {
+        const { data } = await apiClient.GET("/api/runs/{runId}", {
             params: { path: { runId } },
         });
-        if (error) throw new Error("Failed to fetch run");
-        return data;
+        return unwrap(data);
     },
 
     bulkDelete: async (selector: RunSelector): Promise<number> => {
-        const { data, error } = await apiClient.POST("/api/runs/bulk/delete", {
+        const { data } = await apiClient.POST("/api/runs/bulk/delete", {
             body: selector,
         });
-        if (error) throw new Error("Failed to delete runs");
-        return data.affected;
+        return unwrap(data).affected;
     },
 
     bulkRestore: async (selector: RunSelector): Promise<number> => {
-        const { data, error } = await apiClient.POST("/api/runs/bulk/restore", {
+        const { data } = await apiClient.POST("/api/runs/bulk/restore", {
             body: selector,
         });
-        if (error) throw new Error("Failed to restore runs");
-        return data.affected;
+        return unwrap(data).affected;
     },
 
     bulkCancel: async (selector: RunSelector): Promise<number> => {
-        const { data, error } = await apiClient.POST("/api/runs/bulk/stop", {
+        const { data } = await apiClient.POST("/api/runs/bulk/stop", {
             body: selector,
         });
-        if (error) throw new Error("Failed to cancel runs");
-        return data.affected;
+        return unwrap(data).affected;
     },
 
     bulkRerun: async (
         selector: RunSelector,
     ): Promise<{ triggered: { taskName: string; runId: string }[] }> => {
-        const { data, error } = await apiClient.POST("/api/runs/bulk/rerun", {
+        const { data } = await apiClient.POST("/api/runs/bulk/rerun", {
             body: selector,
         });
-        if (error) throw new Error("Failed to re-run tasks");
-        return { triggered: data.triggered ?? [] };
+        return { triggered: unwrap(data).triggered ?? [] };
     },
 };
 
 export const systemApi = {
     getInfo: async () => {
-        const { data, error } = await apiClient.GET("/api/daemon");
-        if (error) throw new Error("Failed to fetch daemon info");
-        return data;
+        const { data } = await apiClient.GET("/api/daemon");
+        return unwrap(data);
     },
 
     getStats: async () => {
-        const { data, error } = await apiClient.GET("/api/system");
-        if (error) throw new Error("Failed to fetch system stats");
-        return data;
+        const { data } = await apiClient.GET("/api/system");
+        return unwrap(data);
     },
 
     getMetricsHistory: async (): Promise<MetricsSample[]> => {
-        const { data, error } = await apiClient.GET("/api/system/metrics");
-        if (error) throw new Error("Failed to fetch metrics history");
-        return data.items ?? [];
+        const { data } = await apiClient.GET("/api/system/metrics");
+        return unwrap(data).items ?? [];
     },
 };
 
-export const metricsSampleSchema = z.object({
+const metricsSampleSchema = z.object({
     timestamp: z.number(),
     cpuUsage: z.number(),
     memUsage: z.number(),

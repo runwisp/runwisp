@@ -31,6 +31,4 @@
     );
 </script>
 
-<span title={tooltip}>
-    <Badge size="sm" outline>{source}</Badge>
-</span>
+<Badge size="sm" outline {tooltip}>{source}</Badge>

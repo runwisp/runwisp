@@ -13,12 +13,13 @@
 </script>
 
 {#if visible}
-    <span
-        title="This runner is managed by RunWisp Cloud — scheduling and dispatch happen in the cloud; this page shows what runs on this machine."
+    <Badge
+        variant="info"
+        class="shrink-0"
+        tooltip="This runner is managed by RunWisp Cloud — scheduling and dispatch happen in the cloud; this page shows what runs on this machine."
+        tooltipPosition="bottom"
     >
-        <Badge variant="info" class="shrink-0">
-            <Cloud size={12} class="shrink-0" />
-            <span class="hidden sm:inline">RunWisp Cloud</span>
-        </Badge>
-    </span>
+        <Cloud size={12} class="shrink-0" />
+        <span class="hidden sm:inline">RunWisp Cloud</span>
+    </Badge>
 {/if}

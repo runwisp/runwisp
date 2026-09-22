@@ -26,6 +26,4 @@
     );
 </script>
 
-<span title={tooltip}>
-    <Badge variant="warning" size="sm">held</Badge>
-</span>
+<Badge variant="warning" size="sm" {tooltip}>held</Badge>

@@ -27,7 +27,10 @@ export interface AuthState {
 // client's global "auth required" interceptor. That means their responses
 // arrive untyped, so each is validated against its shape and piped to the
 // server-generated type (not a hand-maintained duplicate) as the source of
-// truth.
+// truth. (Typing the schema itself as z.ZodType<T> instead would be the more
+// direct check, but Zod's `.optional()` types a field as `T | undefined`,
+// which this project's `exactOptionalPropertyTypes` then rejects against `T`'s
+// `field?: T` — run-schema.test.ts guards drift instead, see its comment.)
 export const authChallengeResponseSchema = z
     .object({ nonce: z.string() })
     .pipe(z.custom<AuthChallengeBody>());

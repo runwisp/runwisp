@@ -14,16 +14,16 @@ import {
     createReconnectingConnection,
     type ReconnectingConnection,
 } from "$lib/utils/sse-reconnect";
+import {
+    HandlerRegistry,
+    Signal,
+    type EventHandler,
+    type OpenHandler,
+    type ErrorHandler,
+    type StallHandler,
+} from "./event-fanout";
 
 export type EventManagerErrorInfo = SSEErrorInfo;
-
-// The optional `id` is the SSE event's Last-Event-ID (the server's monotonic
-// sequence). SharedAppStream tracks it to seed a freshly-opened EventSource's
-// resume cursor; most consumers ignore it.
-export type EventHandler = (data: string, id?: string) => void;
-export type OpenHandler = () => void;
-export type ErrorHandler = (info: EventManagerErrorInfo) => void;
-export type StallHandler = () => void;
 
 /**
  * The surface every app-event-stream source exposes to its consumers, whether
@@ -81,10 +81,10 @@ export class EventManager implements AppEventStream {
     // subscribe() inside an $effect self-invalidated the effect into an
     // infinite subscribe/teardown loop that tore the EventSource down on every
     // tick. Nothing reactively reads who is subscribed — keep these plain.
-    readonly #handlers = new Map<string, Set<EventHandler>>();
-    readonly #openHandlers = new Set<OpenHandler>();
-    readonly #errorHandlers = new Set<ErrorHandler>();
-    readonly #stallHandlers = new Set<StallHandler>();
+    readonly #handlers = new HandlerRegistry();
+    readonly #open = new Signal<[]>(this.#logger, "onOpen");
+    readonly #error = new Signal<[EventManagerErrorInfo]>(this.#logger, "onError");
+    readonly #stall = new Signal<[]>(this.#logger, "onStall");
 
     #openTimer: ReturnType<typeof setTimeout> | null = null;
     #closed = false;
@@ -112,28 +112,20 @@ export class EventManager implements AppEventStream {
             },
             onOpen: () => {
                 this.#clearOpenTimer();
-                for (const handler of this.#openHandlers) {
-                    try {
-                        handler();
-                    } catch (err) {
-                        this.#logger.warn("onOpen handler threw", err);
-                    }
-                }
+                this.#open.emit();
             },
             onError: (info) => {
                 this.#clearOpenTimer();
-                this.#notifyError(info);
+                this.#error.emit(info);
             },
-            shouldReconnect: () => this.#totalSubscribers() > 0,
+            shouldReconnect: () => this.#handlers.totalSize() > 0,
         });
     }
 
     /** Subscribe to a named SSE event type. Returns an unsubscribe function. */
     subscribe(eventType: string, handler: EventHandler): () => void {
-        let set = this.#handlers.get(eventType);
-        if (!set) {
-            set = new Set();
-            this.#handlers.set(eventType, set);
+        const isFirst = this.#handlers.add(eventType, handler);
+        if (isFirst) {
             // Bind the listener if the connection is already open; otherwise it
             // will be bound when connect() runs.
             const stream = this.#connection.getStream();
@@ -141,7 +133,6 @@ export class EventManager implements AppEventStream {
                 this.#bindEventType(stream, eventType);
             }
         }
-        set.add(handler);
 
         this.#ensureConnected();
 
@@ -152,13 +143,8 @@ export class EventManager implements AppEventStream {
 
     /** Remove a previously registered handler. */
     unsubscribe(eventType: string, handler: EventHandler): void {
-        const set = this.#handlers.get(eventType);
-        if (!set) return;
-        set.delete(handler);
-        if (set.size === 0) {
-            this.#handlers.delete(eventType);
-        }
-        if (this.#totalSubscribers() === 0) {
+        this.#handlers.remove(eventType, handler);
+        if (this.#handlers.totalSize() === 0) {
             this.#clearOpenTimer();
             this.#connection.stop();
         }
@@ -166,45 +152,28 @@ export class EventManager implements AppEventStream {
 
     /** Subscribe to lifecycle "open" callbacks (fires on each successful (re)connect). */
     onOpen(handler: OpenHandler): () => void {
-        this.#openHandlers.add(handler);
-        return () => {
-            this.#openHandlers.delete(handler);
-        };
+        return this.#open.add(handler);
     }
 
     /** Subscribe to error notifications (fires before each reconnect attempt). */
     onError(handler: ErrorHandler): () => void {
-        this.#errorHandlers.add(handler);
-        return () => {
-            this.#errorHandlers.delete(handler);
-        };
+        return this.#error.add(handler);
     }
 
     /** Subscribe to stall notifications (fires when a connect attempt hangs open). */
     onStall(handler: StallHandler): () => void {
-        this.#stallHandlers.add(handler);
-        return () => {
-            this.#stallHandlers.delete(handler);
-        };
+        return this.#stall.add(handler);
     }
 
     /** Tear down the connection and clear all subscribers. */
     close(): void {
         this.#closed = true;
         this.#handlers.clear();
-        this.#openHandlers.clear();
-        this.#errorHandlers.clear();
-        this.#stallHandlers.clear();
+        this.#open.clear();
+        this.#error.clear();
+        this.#stall.clear();
         this.#clearOpenTimer();
         this.#connection.dispose();
-    }
-
-    #totalSubscribers(): number {
-        let count = 0;
-        for (const set of this.#handlers.values()) {
-            count += set.size;
-        }
-        return count;
     }
 
     #ensureConnected(): void {
@@ -222,7 +191,8 @@ export class EventManager implements AppEventStream {
         this.#clearOpenTimer();
         this.#openTimer = setTimeout(() => {
             this.#openTimer = null;
-            this.#notifyStall();
+            this.#logger.warn(`SSE connect to ${this.#path} stalled (no open within timeout)`);
+            this.#stall.emit();
         }, SSE_CONFIG.OPEN_TIMEOUT);
     }
 
@@ -238,36 +208,7 @@ export class EventManager implements AppEventStream {
             const data = getMessageEventData(event);
             if (data === undefined) return;
             const id = event.lastEventId || undefined;
-            const set = this.#handlers.get(eventType);
-            if (!set) return;
-            for (const handler of set) {
-                try {
-                    handler(data, id);
-                } catch (err) {
-                    this.#logger.error(`handler for ${eventType} threw`, err);
-                }
-            }
+            this.#handlers.dispatch(eventType, data, id, this.#logger);
         });
-    }
-
-    #notifyError(info: EventManagerErrorInfo): void {
-        for (const handler of this.#errorHandlers) {
-            try {
-                handler(info);
-            } catch (err) {
-                this.#logger.warn("onError handler threw", err);
-            }
-        }
-    }
-
-    #notifyStall(): void {
-        this.#logger.warn(`SSE connect to ${this.#path} stalled (no open within timeout)`);
-        for (const handler of this.#stallHandlers) {
-            try {
-                handler();
-            } catch (err) {
-                this.#logger.warn("onStall handler threw", err);
-            }
-        }
     }
 }

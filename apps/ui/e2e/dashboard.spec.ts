@@ -35,7 +35,8 @@ test.describe("dashboard", () => {
 
         // The badge is a nudge toward the CLI, and only the CLI: the UI never
         // writes TOML, so there is no promote control here.
-        await expect(card.getByTitle(/runwisp promote staged-task/)).toBeVisible();
+        await card.getByText("staged", { exact: true }).hover();
+        await expect(card.getByRole("tooltip")).toContainText(/runwisp promote staged-task/);
 
         // Tasks from the root config are not badged.
         await expect(

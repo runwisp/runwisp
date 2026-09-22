@@ -12,12 +12,13 @@
 </script>
 
 {#if visible}
-    <span
-        title="RUNWISP_AUTH=off is set — the API and Web UI are reachable without a password. Local/dev use only."
+    <Badge
+        variant="warning"
+        class="shrink-0"
+        tooltip="RUNWISP_AUTH=off is set — the API and Web UI are reachable without a password. Local/dev use only."
+        tooltipPosition="bottom"
     >
-        <Badge variant="warning" class="shrink-0">
-            <ShieldOff size={12} class="shrink-0" />
-            <span class="hidden sm:inline">Auth disabled</span>
-        </Badge>
-    </span>
+        <ShieldOff size={12} class="shrink-0" />
+        <span class="hidden sm:inline">Auth disabled</span>
+    </Badge>
 {/if}

@@ -13,6 +13,7 @@
     import { tasksApi } from "$lib/api";
     import { headerSearchStore } from "$lib/stores";
     import { createRunActions } from "$lib/utils/run-actions";
+    import ConfirmActionModal from "./ConfirmActionModal.svelte";
     import ParamForm from "./ParamForm.svelte";
 
     let {
@@ -399,27 +400,19 @@
     {/snippet}
 </Modal>
 
-<Modal
+<ConfirmActionModal
     bind:open={stopConfirmOpen}
     title="Stop Run"
     description="Stop the current run of {task.name}?"
-    size="sm"
->
-    {#snippet footer()}
-        {@render confirmFooter(
-            () => (stopConfirmOpen = false),
-            () => {
-                stopConfirmOpen = false;
-                if (onStop && selectedRun) onStop(selectedRun.id);
-            },
-            "Stop Now",
-            "danger",
-            Square,
-        )}
-    {/snippet}
-</Modal>
+    confirmLabel="Stop Now"
+    variant="danger"
+    icon={Square}
+    onConfirm={() => {
+        if (onStop && selectedRun) onStop(selectedRun.id);
+    }}
+/>
 
-<Modal
+<ConfirmActionModal
     bind:open={restartConfirmOpen}
     title={serviceStopped ? "Start Service" : "Restart Service"}
     description={serviceStopped
@@ -427,41 +420,21 @@
         : instanceCount > 1
           ? `Cancel and restart all ${instanceCount} instances of ${task.name}?`
           : `Cancel and restart ${task.name}?`}
-    size="sm"
->
-    {#snippet footer()}
-        {@render confirmFooter(
-            () => (restartConfirmOpen = false),
-            () => {
-                restartConfirmOpen = false;
-                onRestart?.();
-            },
-            serviceStopped ? "Start Now" : "Restart Now",
-            "primary",
-            serviceStopped ? Play : RefreshCcw,
-        )}
-    {/snippet}
-</Modal>
+    confirmLabel={serviceStopped ? "Start Now" : "Restart Now"}
+    variant="primary"
+    icon={serviceStopped ? Play : RefreshCcw}
+    onConfirm={() => onRestart?.()}
+/>
 
-<Modal
+<ConfirmActionModal
     bind:open={stopServiceConfirmOpen}
     title="Stop Service"
     description={`Stop ${task.name}? The daemon will not restart it until you click Restart or the daemon itself restarts.`}
-    size="sm"
->
-    {#snippet footer()}
-        {@render confirmFooter(
-            () => (stopServiceConfirmOpen = false),
-            () => {
-                stopServiceConfirmOpen = false;
-                onStopService?.();
-            },
-            "Stop Now",
-            "danger",
-            Square,
-        )}
-    {/snippet}
-</Modal>
+    confirmLabel="Stop Now"
+    variant="danger"
+    icon={Square}
+    onConfirm={() => onStopService?.()}
+/>
 
 {#snippet runModalBody()}
     {#if concurrencyReached}
@@ -497,20 +470,4 @@
             >queued</strong
         > and will start automatically once a slot becomes available.
     </Alert>
-{/snippet}
-
-{#snippet confirmFooter(
-    cancel: () => void,
-    confirm: () => void,
-    label: string,
-    variant: "primary" | "danger",
-    Icon: typeof Play,
-)}
-    <div class="flex justify-end gap-2">
-        <Button variant="secondary" size="sm" onclick={cancel}>Cancel</Button>
-        <Button {variant} size="sm" onclick={confirm}>
-            {#snippet icon()}<Icon size={16} />{/snippet}
-            {label}
-        </Button>
-    </div>
 {/snippet}

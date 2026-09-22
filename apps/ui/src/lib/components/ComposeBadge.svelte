@@ -24,6 +24,4 @@
     });
 </script>
 
-<span title={tooltip}>
-    <Badge variant="info" size="sm" outline>compose</Badge>
-</span>
+<Badge variant="info" size="sm" outline {tooltip}>compose</Badge>
