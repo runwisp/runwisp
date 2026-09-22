@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Long group and service names in the TUI sidebar no longer overflow the panel** — they're truncated to fit. (@hash-bang)
+
 ## [1.0.0] - 2026-09-20
 
 ### Added
