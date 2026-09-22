@@ -222,6 +222,20 @@ func TestMarshalExecutionDef_RoundTrips(t *testing.T) {
 	}
 }
 
+// nonObjectExecution is a test-only ExecutionDef implementer that marshals to
+// a JSON array, to exercise MarshalExecutionDef's guard against implementers
+// that don't produce a JSON object.
+type nonObjectExecution struct{}
+
+func (nonObjectExecution) ExecType() string             { return "bogus" }
+func (nonObjectExecution) MarshalJSON() ([]byte, error) { return []byte(`[1,2,3]`), nil }
+
+func TestMarshalExecutionDef_RejectsNonObjectDef(t *testing.T) {
+	_, err := MarshalExecutionDef(nonObjectExecution{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "did not marshal to a JSON object")
+}
+
 func TestExecType_AllVariants(t *testing.T) {
 	assert.Equal(t, "shell", (&ShellExecution{}).ExecType())
 	assert.Equal(t, "container", (&ContainerExecution{}).ExecType())

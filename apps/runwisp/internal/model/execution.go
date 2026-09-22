@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -258,10 +259,6 @@ func MarshalExecutionDef(def ExecutionDef) (json.RawMessage, error) {
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return nil, fmt.Errorf("execution def did not marshal to a JSON object: %w", err)
 	}
-	typeJSON, err := json.Marshal(def.ExecType())
-	if err != nil {
-		return nil, err
-	}
-	obj["type"] = typeJSON
+	obj["type"] = json.RawMessage(strconv.Quote(def.ExecType()))
 	return json.Marshal(obj)
 }
