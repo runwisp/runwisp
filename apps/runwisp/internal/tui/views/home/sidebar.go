@@ -534,7 +534,7 @@ func (s *Sidebar) renderItem(index int) string {
 	item := s.items[index]
 
 	if item.kind == entryGroupHeader {
-		text := " " + item.label
+		text := " " + truncateToWidth(item.label, max(1, s.width-1))
 		if width := lipgloss.Width(text); width < s.width {
 			text += strings.Repeat(" ", s.width-width)
 		}
