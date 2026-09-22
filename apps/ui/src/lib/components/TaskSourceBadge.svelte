@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import TooltipBadge from "$lib/components/TooltipBadge.svelte";
+    import { Badge } from "@runwisp/ui";
 
     interface Props {
         name: string;
@@ -31,4 +31,4 @@
     );
 </script>
 
-<TooltipBadge size="sm" outline {tooltip}>{source}</TooltipBadge>
+<Badge size="sm" outline {tooltip}>{source}</Badge>

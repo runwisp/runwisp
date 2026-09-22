@@ -3,9 +3,11 @@
 
 <script lang="ts">
     import type { Snippet } from "svelte";
+    import Tooltip from "./Tooltip.svelte";
 
     type BadgeVariant = "default" | "primary" | "success" | "warning" | "danger" | "info";
     type BadgeSize = "sm" | "md" | "lg";
+    type TooltipPosition = "top" | "bottom" | "left" | "right";
 
     interface Props {
         variant?: BadgeVariant;
@@ -13,6 +15,10 @@
         dot?: boolean;
         loading?: boolean;
         outline?: boolean;
+        /** Shown in the styled hover tooltip (see {@link Tooltip}). */
+        tooltip?: string;
+        /** Side the tooltip opens on — pick one that has room, e.g. "bottom" near the top of the viewport. */
+        tooltipPosition?: TooltipPosition;
         children?: Snippet;
         class?: string;
     }
@@ -23,6 +29,8 @@
         dot = false,
         loading = false,
         outline = false,
+        tooltip,
+        tooltipPosition = "top",
         children,
         class: className = "",
     }: Props = $props();
@@ -91,37 +99,47 @@
     };
 </script>
 
-<span
-    class="{baseClasses} {outline
-        ? variantClasses[variant].outline
-        : variantClasses[variant].solid} {sizeClasses[size]} {className}"
->
-    {#if dot}
-        {#if loading}
-            <svg
-                class="{spinnerSizeClasses[size]} animate-spin {indicatorTextColors[variant]}"
-                viewBox="0 0 24 24"
-                fill="none"
-            >
-                <circle
-                    class="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    stroke-width="4"
-                ></circle>
-                <path
-                    class="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                ></path>
-            </svg>
-        {:else}
-            <span class="h-1.5 w-1.5 rounded-full {dotColors[variant]}"></span>
+{#snippet chip(extraClass: string)}
+    <span
+        class="{baseClasses} {outline
+            ? variantClasses[variant].outline
+            : variantClasses[variant].solid} {sizeClasses[size]} {extraClass}"
+    >
+        {#if dot}
+            {#if loading}
+                <svg
+                    class="{spinnerSizeClasses[size]} animate-spin {indicatorTextColors[variant]}"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                >
+                    <circle
+                        class="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        stroke-width="4"
+                    ></circle>
+                    <path
+                        class="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                </svg>
+            {:else}
+                <span class="h-1.5 w-1.5 rounded-full {dotColors[variant]}"></span>
+            {/if}
         {/if}
-    {/if}
-    {#if children}
-        {@render children()}
-    {/if}
-</span>
+        {#if children}
+            {@render children()}
+        {/if}
+    </span>
+{/snippet}
+
+{#if tooltip}
+    <Tooltip content={tooltip} position={tooltipPosition} class={className} wide>
+        {@render chip("")}
+    </Tooltip>
+{:else}
+    {@render chip(className)}
+{/if}

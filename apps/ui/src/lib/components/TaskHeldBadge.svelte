@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import TooltipBadge from "$lib/components/TooltipBadge.svelte";
+    import { Badge } from "@runwisp/ui";
 
     interface Props {
         /** Why the task is held. Only "cron" exists today. */
@@ -26,4 +26,4 @@
     );
 </script>
 
-<TooltipBadge variant="warning" size="sm" {tooltip}>held</TooltipBadge>
+<Badge variant="warning" size="sm" {tooltip}>held</Badge>
