@@ -1265,7 +1265,7 @@ var (
 	// DefaultRestartDelay is the delay before a service instance's first
 	// restart when neither the service nor a caller supplies one. Exported so
 	// runtime consumers of a *model.Task built without going through Load
-	// (test literals, cloud ephemeral dispatch) can fall back to the same
+	// (test literals, station ephemeral dispatch) can fall back to the same
 	// protective default Load would have applied — see DurationOrDefault.
 	DefaultRestartDelay = time.Second
 )
@@ -1340,7 +1340,7 @@ const (
 
 // OrDefault returns *p, or fallback when p is nil. For RestartAttempts, nil
 // only reaches a runtime consumer for a *model.Task built without going
-// through Load (a test literal, a cloud ephemeral dispatch task) — never for
+// through Load (a test literal, a station ephemeral dispatch task) — never for
 // one that loaded from TOML, which Load's defaulting pass always resolves to
 // a concrete pointer. A missing value must fall back to the protective
 // built-in default, not to 0 ("give up on the first failure") or any other

@@ -63,43 +63,43 @@ func TestAwaitOrLog_ReturnsOnContextDeadline(t *testing.T) {
 }
 
 // TestWaitInput_ImmediateReturnWhenNothingPending asserts waitInput returns
-// without contention when cloudWG is already done and srv is nil.
+// without contention when stationWG is already done and srv is nil.
 func TestWaitInput_ImmediateReturnWhenNothingPending(t *testing.T) {
-	var cloudWG sync.WaitGroup // already at zero
+	var stationWG sync.WaitGroup // already at zero
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
 	start := time.Now()
-	waitInput(ctx, &cloudWG, nil)
+	waitInput(ctx, &stationWG, nil)
 	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
 		t.Fatalf("waitInput took too long with no work: %v", elapsed)
 	}
 }
 
-// TestRequestSelfRestart_RejectsWithoutCloudDispatchOptIn is the bug-first
-// regression for agent:restart bypassing allow_cloud_dispatch: restarting the
+// TestRequestSelfRestart_RejectsWithoutStationDispatchOptIn is the bug-first
+// regression for agent:restart bypassing allow_station_dispatch: restarting the
 // daemon process is at least as sensitive as the ad-hoc dispatch that flag
-// already gates (see internal/cloud/dispatch_resolver.go), so it must be
+// already gates (see internal/station/dispatch_resolver.go), so it must be
 // refused the same way — regardless of whether the daemon happens to be
 // service-managed. The dispatch check runs before the service-manager check,
 // so this is exercised without depending on the test host's environment.
-func TestRequestSelfRestart_RejectsWithoutCloudDispatchOptIn(t *testing.T) {
+func TestRequestSelfRestart_RejectsWithoutStationDispatchOptIn(t *testing.T) {
 	err := requestSelfRestart(false)
 	if err == nil {
 		t.Fatal("expected requestSelfRestart(false) to be rejected")
 	}
-	const want = "cloud dispatch disabled (set [daemon] allow_cloud_dispatch = true to enable)"
+	const want = "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)"
 	if err.Error() != want {
 		t.Fatalf("err = %q, want %q", err.Error(), want)
 	}
 }
 
-func TestStartCloudClient_DisabledReturnsZeroWG(t *testing.T) {
+func TestStartStationClient_DisabledReturnsZeroWG(t *testing.T) {
 	cfg := &daemonConfig{}
-	cfg.CloudConfig.Enabled = false
+	cfg.StationConfig.Enabled = false
 
-	cancelCloud, wg := startCloudClient(context.Background(), cfg, &daemonServices{}, nil)
-	if cancelCloud == nil {
+	cancelStation, wg := startStationClient(context.Background(), cfg, &daemonServices{}, nil)
+	if cancelStation == nil {
 		t.Fatal("expected non-nil cancel func")
 	}
 	if wg == nil {
@@ -111,9 +111,9 @@ func TestStartCloudClient_DisabledReturnsZeroWG(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(100 * time.Millisecond):
-		t.Fatal("expected wg.Wait() to return immediately with disabled cloud")
+		t.Fatal("expected wg.Wait() to return immediately with disabled station")
 	}
-	cancelCloud()
+	cancelStation()
 }
 
 // minimalServices wires up a daemonServices with only the bits required by
@@ -160,14 +160,14 @@ func TestWaitDrain_NilSchedulerAndNotifyReturnsPromptly(t *testing.T) {
 	}
 }
 
-func TestGracefulShutdown_NoSrvNoCloud(t *testing.T) {
+func TestGracefulShutdown_NoSrvNoStation(t *testing.T) {
 	svc := minimalServices(t)
 
-	cancelCloud := func() {}
-	var cloudWG sync.WaitGroup // already zero
+	cancelStation := func() {}
+	var stationWG sync.WaitGroup // already zero
 
 	start := time.Now()
-	gracefulShutdown(cancelCloud, &cloudWG, svc, nil)
+	gracefulShutdown(cancelStation, &stationWG, svc, nil)
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Fatalf("gracefulShutdown took too long with idle services: %v", elapsed)
 	}
@@ -178,10 +178,10 @@ func TestGracefulShutdown_AppliesFallbackTimeoutWhenUnset(t *testing.T) {
 	// 0 forces the helper down the fallback-timeout branch.
 	svc.TaskShutdownTimeout = 0
 
-	cancelCloud := func() {}
-	var cloudWG sync.WaitGroup
+	cancelStation := func() {}
+	var stationWG sync.WaitGroup
 
-	gracefulShutdown(cancelCloud, &cloudWG, svc, nil)
+	gracefulShutdown(cancelStation, &stationWG, svc, nil)
 }
 
 func TestGracefulShutdown_WithScheduler(t *testing.T) {
@@ -209,10 +209,10 @@ func TestGracefulShutdown_WithScheduler(t *testing.T) {
 		TaskShutdownTimeout: 100 * time.Millisecond,
 	}
 
-	cancelCloud := func() {}
-	var cloudWG sync.WaitGroup
+	cancelStation := func() {}
+	var stationWG sync.WaitGroup
 
-	gracefulShutdown(cancelCloud, &cloudWG, svc, nil)
+	gracefulShutdown(cancelStation, &stationWG, svc, nil)
 }
 
 func TestRunHeadless_ExitsOnSignal(t *testing.T) {
@@ -225,10 +225,10 @@ func TestRunHeadless_ExitsOnSignal(t *testing.T) {
 	defer signal.Stop(sigCh)
 
 	rt := &daemonRuntime{
-		sigCh:       sigCh,
-		svc:         svc,
-		cancelCloud: func() {},
-		cloudWG:     &sync.WaitGroup{},
+		sigCh:         sigCh,
+		svc:           svc,
+		cancelStation: func() {},
+		stationWG:     &sync.WaitGroup{},
 	}
 
 	done := make(chan error, 1)

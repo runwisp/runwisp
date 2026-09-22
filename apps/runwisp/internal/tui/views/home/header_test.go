@@ -229,13 +229,13 @@ func TestRenderTaskHeader_HoveredButton(t *testing.T) {
 	assert.NotEmpty(t, outNormal)
 }
 
-func TestRenderHeader_CloudConnected(t *testing.T) {
+func TestRenderHeader_StationConnected(t *testing.T) {
 	info := uikit.StartupInfo{
-		Port:         9477,
-		CloudEnabled: true,
+		Port:           9477,
+		StationEnabled: true,
 	}
 	header, _ := RenderHeader(info, false, 80, -1, -1)
-	assert.Contains(t, header, "Cloud connected")
+	assert.Contains(t, header, "Station connected")
 }
 
 func TestRenderHeader_WebUIDisabled(t *testing.T) {

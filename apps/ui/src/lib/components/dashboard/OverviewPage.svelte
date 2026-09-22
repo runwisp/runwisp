@@ -34,7 +34,7 @@
     ];
 
     // Scheduling-owned filters (scheduled/manual) only make sense when the
-    // local scheduler computes next-run times. In cloud mode the cloud owns
+    // local scheduler computes next-run times. In station mode the station owns
     // scheduling, so those are cleanly omitted rather than shown empty.
     const SCHEDULING_FILTERS = new Set<OverviewTaskFilter>(["scheduled", "manual"]);
 
@@ -57,7 +57,7 @@
         totalRuns = 0,
         tasks = [],
         metricsHistory = [],
-        cloudMode = false,
+        stationMode = false,
         schedulingActive = true,
         onViewAllRuns,
         onTaskClick,
@@ -70,7 +70,7 @@
         totalRuns?: number;
         tasks?: (Task & { id: string })[];
         metricsHistory?: MetricsSample[];
-        cloudMode?: boolean;
+        stationMode?: boolean;
         schedulingActive?: boolean;
         onViewAllRuns?: () => void;
         onTaskClick?: (taskName: string) => void;
@@ -149,7 +149,7 @@
                 {completedRunsCount}
                 {healthyTasksCount}
                 uptime={daemonState.uptime}
-                {cloudMode}
+                {stationMode}
             />
 
             <OverviewSidePanels

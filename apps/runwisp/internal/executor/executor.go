@@ -72,13 +72,13 @@ type RoutingExecutor struct {
 }
 
 type Options struct {
-	LogDir               string
-	EventBus             *events.Bus
-	CloudDispatchEnabled bool
-	HasLocalTasks        bool
-	Docker               Backend // container backend; nil when Docker is unavailable
-	Compose              Backend // compose backend; nil when docker compose is unavailable
-	MinFreeDisk          int64   // minimum free disk space in bytes; 0 = disabled
+	LogDir                 string
+	EventBus               *events.Bus
+	StationDispatchEnabled bool
+	HasLocalTasks          bool
+	Docker                 Backend // container backend; nil when Docker is unavailable
+	Compose                Backend // compose backend; nil when docker compose is unavailable
+	MinFreeDisk            int64   // minimum free disk space in bytes; 0 = disabled
 	// Clock is the wall-clock source for captured-output timestamps (system
 	// lines and the per-line timestamp index). nil defaults to time.Now;
 	// the demo seeder injects a backdated clock so historical runs carry
@@ -88,22 +88,23 @@ type Options struct {
 
 // New creates a routing executor with available backends.
 //
-// Availability is the authorization surface for the cloud control plane: the
+// Availability is the authorization surface for the Station control plane: the
 // dispatch path rejects any type whose BackendStatus is unavailable. It does
 // not gate local runwisp.toml tasks, which resolve backends directly and always
 // have full access.
 //
-// CloudDispatchEnabled is the operator opt-in (daemon.allow_cloud_dispatch). The
-// policy is a whitelist: only config-backed dispatch (triggering an existing
-// TOML task) is permitted without it, since that's the sole type that doesn't
-// run peer-supplied code or make a peer-directed network call. HTTP, shell,
-// container, compose — and any future dispatchable type — require the opt-in.
+// StationDispatchEnabled is the operator opt-in (daemon.allow_station_dispatch).
+// The policy is a whitelist: only config-backed
+// dispatch (triggering an existing TOML task) is permitted without it, since
+// that's the sole type that doesn't run peer-supplied code or make a
+// peer-directed network call. HTTP, shell, container, compose — and any future
+// dispatchable type — require the opt-in.
 func New(opts Options) Executor {
 	backends := make(map[string]Backend)
 	avail := Availability{}
 
 	// Backends are registered unconditionally so local TOML tasks can use them;
-	// Availability separately governs what the cloud peer may dispatch.
+	// Availability separately governs what the Station peer may dispatch.
 	backends["http"] = &HTTPBackend{}
 	backends["shell"] = &ShellBackend{}
 	if opts.Docker != nil {
@@ -121,8 +122,8 @@ func New(opts Options) Executor {
 	}
 
 	// HTTP and the code-executing types require the dispatch opt-in.
-	if !opts.CloudDispatchEnabled {
-		const reason = "cloud dispatch disabled (set [daemon] allow_cloud_dispatch = true to enable)"
+	if !opts.StationDispatchEnabled {
+		const reason = "station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)"
 		avail.HTTP = BackendStatus{Available: false, Reason: reason}
 		avail.Shell = BackendStatus{Available: false, Reason: reason}
 		avail.Container = BackendStatus{Available: false, Reason: reason}
@@ -226,7 +227,7 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 // notifyRunUpdated fans the post-log-prep run state out to the persistence
 // callback and event bus when each is wired. logPath is the freshly resolved
 // on-disk log file; the executor carries it on the event envelope (not the
-// Run row, which is never persisted with a log path) so cloud and notify
+// Run row, which is never persisted with a log path) so station and notify
 // subscribers can locate the captured output.
 func (r *RoutingExecutor) notifyRunUpdated(run *model.Run, logPath string) {
 	if r.onUpdate != nil {
@@ -234,7 +235,7 @@ func (r *RoutingExecutor) notifyRunUpdated(run *model.Run, logPath string) {
 	}
 	if r.eventBus != nil {
 		// Copy before publishing: the execute goroutine keeps mutating this
-		// *Run (recordRunOutcome → run.End()) while SSE/cloud subscribers
+		// *Run (recordRunOutcome → run.End()) while SSE/station subscribers
 		// marshal the event on their own goroutines. Sharing the pointer is a
 		// data race, matching every other publish site.
 		r.eventBus.Publish(events.EventRunUpdated, events.RunEvent{
@@ -387,7 +388,7 @@ func commitGroup(
 ) {
 	// Scrub secret values once, before the text reaches either sink (disk file
 	// and the frame sidecar below, the event bus in publish). Redacting here
-	// covers SSE, the REST log endpoints, and the cloud push in one place.
+	// covers SSE, the REST log endpoints, and the station push in one place.
 	texts := make([]string, len(lines))
 	for i, line := range lines {
 		texts[i] = redact.text(line.text)

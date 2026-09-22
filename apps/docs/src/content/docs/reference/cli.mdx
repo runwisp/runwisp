@@ -505,20 +505,20 @@ RunWisp, see the [Driving with an AI agent](/reference/agents/) page — the sho
 version is `https://docs.runwisp.com/llms.txt`, which `runwisp --help` also
 prints when its output isn't a terminal.
 
-## Cloud and demo
+## Station and demo
 
 ```bash
-runwisp cloud   # connect to the optional control plane instead of scheduling locally
+runwisp station   # connect to the optional control plane instead of scheduling locally
 runwisp demo    # boot a throwaway, fully-populated instance to explore
 ```
 
-`runwisp cloud` starts the daemon connected to the optional control plane;
-it needs `RUNWISP_CLOUD_TOKEN` (via env, `.env`, or `--token`) and takes
+`runwisp station` starts the daemon connected to the optional control plane;
+it needs `RUNWISP_STATION_TOKEN` (via env, `.env`, or `--token`) and takes
 `--url` and `--env-file` (default `.env`), plus `--no-tui` for headless.
 `runwisp demo` boots RunWisp against a temporary config and data dir
 pre-seeded with hundreds of historical runs, so you can poke around the
 TUI and Web UI without writing a config — everything lives in a temp
-directory that's deleted when the daemon stops. It takes `--cloud` (and
+directory that's deleted when the daemon stops. It takes `--station` (and
 the same `--token` / `--url` / `--env-file`) to point at the control plane
 instead of seeding local history. Pass `--no-tui` to leave the daemon
 running in the background and print its Web UI password to stdout instead
@@ -533,8 +533,8 @@ open the Web UI in a browser; stop it later with `runwisp stop --data <dir>`
 | `RUNWISP_PASSWORD`        | Sets the daemon password in memory. Unset, a fresh ephemeral one is minted every boot. See [Auth](/operations/auth/#the-password).                                                                                           |
 | `RUNWISP_AUTH`            | `off` disables authentication entirely — local dev / trusted networks only. Defaults to on; `on` restates the default. Mutually exclusive with `RUNWISP_PASSWORD`. See [Auth](/operations/auth/#running-without-a-password). |
 | `RUNWISP_TRUSTED_PROXIES` | Comma-separated CIDR list of reverse proxies whose `X-Forwarded-*` headers the daemon may honor.                                                                                                                             |
-| `RUNWISP_CLOUD_TOKEN`     | Token for `runwisp cloud`. Ignored in standalone mode.                                                                                                                                                                       |
-| `RUNWISP_CLOUD_URL`       | Control-plane URL for `runwisp cloud` (overrides the built-in default).                                                                                                                                                      |
+| `RUNWISP_STATION_TOKEN`   | Token for `runwisp station`. Ignored in standalone mode.                                                                                                                                                                     |
+| `RUNWISP_STATION_URL`     | Control-plane URL for `runwisp station` (overrides the built-in default).                                                                                                                                                    |
 | `RUNWISP_LOG_LEVEL`       | Fallback for `--log-level` (`debug`/`info`/`warn`/`error`). The flag wins when both are set.                                                                                                                                 |
 | `RUNWISP_LOG_FORMAT`      | Fallback for `--log-format` (`auto`/`text`/`json`). The flag wins when both are set.                                                                                                                                         |
 

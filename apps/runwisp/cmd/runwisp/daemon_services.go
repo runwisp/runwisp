@@ -45,7 +45,7 @@ type daemonServices struct {
 	// ServiceLaunchCancel aborts the background depends_on launcher goroutines.
 	// Called at the start of graceful shutdown so a dependent still waiting on a
 	// dependency doesn't start mid-teardown. Services are supervised in both
-	// standalone and cloud mode, so this is always a real cancel.
+	// standalone and station mode, so this is always a real cancel.
 	ServiceLaunchCancel context.CancelFunc
 	// InitWarnings holds non-fatal warnings collected during service init
 	// (notify subsystem failures, scheduler start hiccups, etc.) so the
@@ -78,13 +78,13 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	taskManager, tasksMap := initTaskManager(cfg, db, exec, eventBus)
 	// Single guarded owner of the live task set. Boot-only helpers below still
 	// read the bare tasksMap (no reload can race them yet); long-lived readers
-	// (retention, server, cloud snapshot) and the reconciler go through the
+	// (retention, server, station snapshot) and the reconciler go through the
 	// registry so a later `runwisp reload` mutation is race-free.
 	tasks := runtime.NewTaskRegistry(tasksMap)
 
 	// Resolving a prior crash's stale run state (marking crashed runs terminal,
 	// then resuming/queuing/skipping whatever was left pending) is a boot
-	// invariant in every mode, not just standalone — cloud mode still owns the
+	// invariant in every mode, not just standalone — station mode still owns the
 	// same local run rows and must not leave them stuck at 'pending' forever.
 	pendingSummary := resumePendingRuns(ctx, db, taskManager)
 
@@ -258,13 +258,13 @@ func initExecutor(cfg *config.Config, eventBus *events.Bus, logDir, fingerprint 
 	minFreeDisk := cfg.Storage.MinFreeSpace
 
 	return executor.New(executor.Options{
-		LogDir:               logDir,
-		EventBus:             eventBus,
-		CloudDispatchEnabled: cfg.IsCloudDispatchEnabled(),
-		HasLocalTasks:        len(cfg.Tasks) > 0,
-		Docker:               dockerBackend,
-		Compose:              composeBackend,
-		MinFreeDisk:          minFreeDisk,
+		LogDir:                 logDir,
+		EventBus:               eventBus,
+		StationDispatchEnabled: cfg.IsStationDispatchEnabled(),
+		HasLocalTasks:          len(cfg.Tasks) > 0,
+		Docker:                 dockerBackend,
+		Compose:                composeBackend,
+		MinFreeDisk:            minFreeDisk,
 	})
 }
 
@@ -510,7 +510,7 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time
 		Fingerprint:      cfg.Fingerprint,
 		Port:             port,
 		ExternalURL:      cfg.Config.Daemon.ExternalURL,
-		CloudEnabled:     cfg.CloudConfig.Enabled,
+		StationEnabled:   cfg.StationConfig.Enabled,
 		SchedulingActive: svc.Scheduler != nil,
 		ServiceManaged:   autostart.RunningUnderServiceManager(),
 		AuthDisabled:     cfg.NoAuth,

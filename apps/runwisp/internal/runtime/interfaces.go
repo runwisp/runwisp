@@ -10,7 +10,7 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// TaskRunner is the subset of TaskManager consumed by the cloud and server packages.
+// TaskRunner is the subset of TaskManager consumed by the station and server packages.
 // Using this interface instead of the concrete implementation makes those packages
 // testable without a real executor, event bus, or database.
 type TaskRunner interface {
@@ -46,13 +46,13 @@ type TaskRunner interface {
 	// in flight. Unknown tasks return 0.
 	GetActiveRunCount(taskName string) int
 
-	// --- service supervision (driven at daemon boot and by cloud) ---
+	// --- service supervision (driven at daemon boot and by station) ---
 
 	// ListServiceTasks returns copies of every registered service task, so the
-	// cloud integration can fold daemon-supervised services into tasks.sync.
+	// station integration can fold daemon-supervised services into tasks.sync.
 	ListServiceTasks() []*model.Task
 	// StartServiceInstances brings a service up to its desired instance count.
-	// Driven both at daemon boot and by a cloud service:apply/control message.
+	// Driven both at daemon boot and by a station service:apply/control message.
 	StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error
 	// StopService marks a service as operator-stopped (in-memory only, cleared
 	// on daemon restart) and cancels every live instance. The supervisor will

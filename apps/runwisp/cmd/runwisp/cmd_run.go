@@ -565,7 +565,7 @@ func runExecStandalone(taskName string, f Flags, params map[string]*string) (int
 	if target == nil {
 		return 0, unknownTaskError(taskName, names)
 	}
-	// Standalone talks to the run manager directly, bypassing the daemon/cloud
+	// Standalone talks to the run manager directly, bypassing the daemon/station
 	// guard in internal/server.runService.TriggerRun — so it must enforce the
 	// same rule itself (model.Task.CheckTrigger), or manual_trigger=false and
 	// services stop being cron/API-triggerable-only everywhere as documented.

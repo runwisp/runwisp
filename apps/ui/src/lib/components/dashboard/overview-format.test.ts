@@ -192,8 +192,8 @@ describe("formatTriggeredByLabel", () => {
         expect(formatTriggeredByLabel("cron")).toBe("Cron");
     });
 
-    it("returns 'Cloud' for 'cloud'", () => {
-        expect(formatTriggeredByLabel("cloud")).toBe("Cloud");
+    it("returns 'Station' for 'station'", () => {
+        expect(formatTriggeredByLabel("station")).toBe("Station");
     });
 
     it("returns 'Service' for 'service'", () => {

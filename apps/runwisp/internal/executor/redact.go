@@ -9,7 +9,7 @@ import "strings"
 const redactMask = "[redacted]"
 
 // secretRedactor scrubs known secret values out of a run's captured output
-// before it reaches disk, the event bus (SSE / REST), or the cloud push. It is
+// before it reaches disk, the event bus (SSE / REST), or the station push. It is
 // built once per run from the task's resolved [tasks.*.secrets] values, so the
 // promise that secret values never leave the daemon holds at the one point
 // every downstream consumer reads from.

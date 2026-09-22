@@ -225,7 +225,7 @@ export function humanizeStatus(status: string): string {
 
 /**
  * Descriptive label for a run's trigger source — fuller than the one-word row
- * badge (`formatTriggeredByLabel`) for the "cron"/"cloud"/"service"/"startup"
+ * badge (`formatTriggeredByLabel`) for the "cron"/"station"/"service"/"startup"
  * sources, where the extra words disambiguate (e.g. "REST API" vs a bare
  * "API"). "ui" and "cli" already read fine as their bare badge word, so those
  * two match `formatTriggeredByLabel` exactly.
@@ -243,7 +243,7 @@ export function triggerDescription(trigger: string): string {
             return "UI";
         case "cli":
             return "CLI";
-        case "cloud":
+        case "station":
             return "Control plane";
         case "service":
             return "Service auto-start";
@@ -255,11 +255,11 @@ export function triggerDescription(trigger: string): string {
 }
 
 /**
- * The triggers offered in the filter dropdown. `cloud` is intentionally
- * excluded for now — control-plane runs still carry the `cloud` trigger, but
+ * The triggers offered in the filter dropdown. `station` is intentionally
+ * excluded for now — control-plane runs still carry the `station` trigger, but
  * it isn't a selectable filter dimension.
  */
-export const FILTERABLE_TRIGGERS: readonly Trigger[] = TRIGGERS.filter((t) => t !== "cloud");
+export const FILTERABLE_TRIGGERS: readonly Trigger[] = TRIGGERS.filter((t) => t !== "station");
 
 /** Chip label for the status dimension — names a whole bucket when it matches. */
 export function statusChipLabel(statuses: string[]): string {

@@ -128,7 +128,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "allow_cloud_dispatch": { "type": "boolean", "default": false, "description": "Accept peer-dispatched ad-hoc runs (opt-in; one-shot, never edits TOML)." },
+        "allow_station_dispatch": { "type": "boolean", "default": false, "description": "Accept peer-dispatched ad-hoc runs (opt-in; one-shot, never edits TOML)." },
         "shutdown_timeout": { "$ref": "#/$defs/duration", "description": "SIGTERM→SIGKILL drain budget for in-flight runs on shutdown. Default 10s." },
         "external_url": { "type": "string", "description": "Public Web UI base for notification deep-links; absolute http(s) with host." },
         "check_updates": { "type": "boolean", "default": true, "description": "Poll concierge.runwisp.com for a newer release and show an indicator; set false to keep the daemon fully offline. Never auto-applies." },
@@ -222,7 +222,7 @@
       "unevaluatedProperties": false,
       "properties": {
         "group": { "type": "string", "default": "Services", "description": "UI grouping label." },
-        "manual_trigger": { "type": "boolean", "default": true, "description": "Allow stop/restart/start from CLI/API/UI/cloud; false locks it to its restart policy until a config reload." },
+        "manual_trigger": { "type": "boolean", "default": true, "description": "Allow stop/restart/start from CLI/API/UI/station; false locks it to its restart policy until a config reload." },
         "restart": { "type": "string", "enum": ["never", "on_failure", "always"], "default": "always" },
         "timeout": { "$ref": "#/$defs/duration" },
         "graceful_stop": { "$ref": "#/$defs/duration" },
@@ -288,7 +288,7 @@
       "unevaluatedProperties": false,
       "properties": {
         "group": { "type": "string" },
-        "manual_trigger": { "type": "boolean", "description": "Allow stop/restart/start from CLI/API/UI/cloud; false locks it to its restart policy until a config reload." },
+        "manual_trigger": { "type": "boolean", "description": "Allow stop/restart/start from CLI/API/UI/station; false locks it to its restart policy until a config reload." },
         "timeout": { "$ref": "#/$defs/duration" },
         "graceful_stop": { "$ref": "#/$defs/duration" },
         "restart": { "type": "string", "enum": ["never", "on_failure", "always"] },

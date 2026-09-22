@@ -221,7 +221,7 @@ func TestBuildStartupInfoFromDaemon_PopulatesAllFields(t *testing.T) {
 		Version:          "1.2.3",
 		Fingerprint:      "fp-xyz",
 		Port:             9477,
-		CloudEnabled:     true,
+		StationEnabled:   true,
 		ResolvedTimezone: "Europe/Berlin",
 		TimezoneSource:   "system",
 		Tasks: []model.Task{
@@ -233,7 +233,7 @@ func TestBuildStartupInfoFromDaemon_PopulatesAllFields(t *testing.T) {
 	assert.Equal(t, "1.2.3", si.Version)
 	assert.Equal(t, "fp-xyz", si.Fingerprint)
 	assert.Equal(t, 9477, si.Port)
-	assert.True(t, si.CloudEnabled)
+	assert.True(t, si.StationEnabled)
 	assert.Equal(t, "Europe/Berlin", si.Timezone)
 	assert.Equal(t, "system", si.TimezoneSource)
 	assert.Len(t, si.Tasks, 2)

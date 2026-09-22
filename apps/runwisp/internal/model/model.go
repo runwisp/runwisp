@@ -106,7 +106,7 @@ type Task struct {
 	// immediately, no grace window) is distinguishable from an omitted key (nil,
 	// inherits [defaults] then the built-in default). Applies to tasks and
 	// services. Config-loaded tasks always have it resolved to non-nil; nil only
-	// occurs for tasks built outside config.Load (cloud dispatch, tests) and is
+	// occurs for tasks built outside config.Load (station dispatch, tests) and is
 	// read as 0 (immediate SIGKILL) via GracefulStopValue.
 	GracefulStop  *time.Duration    `toml:"-"                       json:"gracefulStop,omitempty" doc:"Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds; 0 means kill immediately"`
 	StopSignal    string            `toml:"-"                       json:"stopSignal,omitempty" enum:"SIGTERM,SIGINT,SIGQUIT,SIGHUP,SIGKILL,SIGUSR1,SIGUSR2" doc:"Signal sent to stop a run before SIGKILL; defaults to SIGTERM"`
@@ -166,7 +166,7 @@ type Task struct {
 	Env     map[string]string `toml:"env,omitempty"      json:"env,omitempty"      doc:"Environment variables overlaid on the task's process env. Values are visible to authenticated operators in the API/UI; env_file values merge in beneath the inline entries."`
 	EnvFile string            `toml:"env_file,omitempty" json:"envFile,omitempty" doc:"Path to a dotenv file whose KEY=VALUE pairs merge into env (inline entries win). Values are visible in the API/UI like inline env."`
 	// Secrets holds [tasks.*.secrets] plus secrets_file-derived pairs. Hidden
-	// from JSON/TOML so values never leak to API/UI/cloud serialization.
+	// from JSON/TOML so values never leak to API/UI/station serialization.
 	Secrets     map[string]string `toml:"-" json:"-"`
 	SecretsFile string            `toml:"secrets_file,omitempty" json:"secretsFile,omitempty" doc:"Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values are not."`
 
@@ -235,7 +235,7 @@ type Task struct {
 	// failure?" for stats, UI attention, and notifications — never for retry (see
 	// runtime/retry.IsFailedExecution). A nil FailureReasons map means "not configured"
 	// (a Task built outside the config loader); IsFailureReason then falls back to
-	// the built-in default set. Config-internal — never serialized to API/UI/cloud.
+	// the built-in default set. Config-internal — never serialized to API/UI/station.
 	FailureReasons    map[EndReason]struct{} `toml:"-" json:"-"`
 	FailureExitRanges [][2]int               `toml:"-" json:"-"`
 
@@ -247,22 +247,22 @@ type Task struct {
 	FailureSpec *FailureSpec `toml:"-" json:"-"`
 
 	// Ephemeral marks a task the daemon registered at runtime for a single
-	// cloud-dispatched inline execution (never from TOML, never in the task
+	// station-dispatched inline execution (never from TOML, never in the task
 	// registry). The run manager reaps such a task — and its queue-drain
 	// goroutine — once its last run retires with nothing queued, since reconcile
 	// (which only ever sees registry/TOML tasks) has no path to remove it.
-	// Runtime-only: never serialized to API/UI/cloud/TOML.
+	// Runtime-only: never serialized to API/UI/station/TOML.
 	Ephemeral bool `toml:"-" json:"-"`
 
-	// CloudDeclared marks a service the control plane created at runtime via
+	// StationDeclared marks a service the control plane created at runtime via
 	// service:apply (never from TOML, never in the config registry). Only such
 	// a service may be torn down by service:remove: a TOML-defined
 	// [services.*] entry is owned by disk. Deliberately distinct from
 	// Ephemeral: that flag hooks the run-manager's one-shot reaper, which would
-	// wrongly delete a cloud service the moment it's idle (stopped) rather than
+	// wrongly delete a station service the moment it's idle (stopped) rather than
 	// only on an explicit remove. Runtime-only: never serialized to
-	// API/UI/cloud/TOML.
-	CloudDeclared bool `toml:"-" json:"-"`
+	// API/UI/station/TOML.
+	StationDeclared bool `toml:"-" json:"-"`
 }
 
 // Held reports whether something other than RunWisp owns this task's firing.
@@ -339,7 +339,7 @@ func (t *Task) Triggerable() bool { return !t.Kind.IsService() && t.ManualTrigge
 
 // ManuallyControllable reports whether a service can be stopped, restarted,
 // or started outside its restart policy, via the Web UI, TUI, CLI, REST API,
-// or the cloud control plane. false locks it to hands-off supervision: only a
+// or the station control plane. false locks it to hands-off supervision: only a
 // runwisp.toml edit + reload can change its running state. Meaningless on a
 // task; use Triggerable there instead.
 func (t *Task) ManuallyControllable() bool { return t.ManualTrigger }
@@ -456,7 +456,7 @@ const (
 
 // TaskKind distinguishes scheduled/manual tasks from always-on services. The
 // value is always explicit ("task" or "service"): it is emitted verbatim on the
-// sync wire and stored verbatim by cloud, so neither side infers a missing kind.
+// sync wire and stored verbatim by station, so neither side infers a missing kind.
 type TaskKind string
 
 const (
@@ -517,8 +517,8 @@ const (
 	HeldByCron HoldReason = "cron"
 )
 
-// Service instance/roll-up state strings reported to cloud. They mirror the
-// asyncapi ServiceInstanceState / ServiceState enums so the cloud bridge maps
+// Service instance/roll-up state strings reported to station. They mirror the
+// asyncapi ServiceInstanceState / ServiceState enums so the station bridge maps
 // them without translation.
 const (
 	ServiceInstanceRunning    = "running"
@@ -545,7 +545,7 @@ type ServiceInstanceStatus struct {
 }
 
 // ServiceSnapshot is the supervisor + live-run view of one service, built by
-// the runtime manager and forwarded to cloud as a service:status message.
+// the runtime manager and forwarded to station as a service:status message.
 type ServiceSnapshot struct {
 	TaskName         string
 	State            string
@@ -591,16 +591,16 @@ const (
 // so this is one of the few places it can be seen at all.
 //
 // SchedulingActive is false when the local scheduler is inactive — e.g.
-// `runwisp cloud`, where the cloud owns scheduling — so UIs hide next-run
+// `runwisp station`, where the Station owns scheduling — so UIs hide next-run
 // affordances rather than mislabel scheduled tasks as unscheduled. It is
-// distinct from CloudEnabled, which only reports that a cloud connection is
+// distinct from StationEnabled, which only reports that a station connection is
 // configured.
 type DaemonInfo struct {
 	Version          string    `json:"version"`
 	Fingerprint      string    `json:"fingerprint"`
 	Port             int       `json:"port"`
 	ExternalURL      string    `json:"externalUrl"`
-	CloudEnabled     bool      `json:"cloudEnabled"`
+	StationEnabled   bool      `json:"stationEnabled"`
 	SchedulingActive bool      `json:"schedulingActive"`
 	ServiceManaged   bool      `json:"serviceManaged"`
 	AuthDisabled     bool      `json:"authDisabled"`

@@ -25,9 +25,9 @@ function createSystemStore() {
     let timezoneSource = $state("");
     let configStale = $state(false);
     // Standalone assumptions until the first /api/daemon lands: a standalone
-    // daemon must never flash a cloud chip or hide its scheduling UI during
+    // daemon must never flash a station chip or hide its scheduling UI during
     // hydration. Components read these getters reactively and self-correct.
-    let cloudEnabled = $state(false);
+    let stationEnabled = $state(false);
     let schedulingActive = $state(true);
     // Update availability lands from /api/daemon once the background checker has
     // heard back from concierge; false/empty until then and when the check is off.
@@ -47,7 +47,7 @@ function createSystemStore() {
     }
 
     // seed pulls the one-shot snapshot: static identity (host, os, fingerprint,
-    // timezone, cloud/scheduling mode) that never changes for the daemon's
+    // timezone, station/scheduling mode) that never changes for the daemon's
     // lifetime, plus the initial cpu/mem/uptime so gauges aren't blank before
     // the first pushed sample lands.
     async function seed() {
@@ -73,7 +73,7 @@ function createSystemStore() {
             timezone = info.resolvedTimezone;
             timezoneSource = info.timezoneSource;
             configStale = info.configStale;
-            cloudEnabled = info.cloudEnabled;
+            stationEnabled = info.stationEnabled;
             schedulingActive = info.schedulingActive;
             updateAvailable = info.updateAvailable;
             latestVersion = info.latestVersion ?? "";
@@ -160,8 +160,8 @@ function createSystemStore() {
         get configStale() {
             return configStale;
         },
-        get cloudEnabled() {
-            return cloudEnabled;
+        get stationEnabled() {
+            return stationEnabled;
         },
         get schedulingActive() {
             return schedulingActive;

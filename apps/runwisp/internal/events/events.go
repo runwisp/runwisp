@@ -89,7 +89,7 @@ type ConfigStaleEvent struct {
 // RunEvent tracks lifecycle updates for a run.
 //
 // LogPath is the on-disk log file resolved by the executor when the run
-// starts. It is not persisted on the runs row — subscribers (cloud, notify)
+// starts. It is not persisted on the runs row — subscribers (station, notify)
 // that need the path read it from the event envelope rather than the Run
 // itself. Empty for events fired before the executor has resolved the path.
 type RunEvent struct {

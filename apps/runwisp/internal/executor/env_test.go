@@ -63,7 +63,7 @@ func TestBuildProcessEnv(t *testing.T) {
 		got := buildProcessEnv([]string{
 			"PATH=/usr/bin",
 			"RUNWISP_PASSWORD=hunter2",
-			"RUNWISP_CLOUD_TOKEN=abc123",
+			"RUNWISP_STATION_TOKEN=abc123",
 			"HOME=/root",
 		})
 		assert.Equal(t, []string{"HOME=/root", "PATH=/usr/bin"}, got)

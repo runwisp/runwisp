@@ -80,7 +80,7 @@ func TestInitExecutor_BuildsExecutorWithEventBus(t *testing.T) {
 	exec := initExecutor(cfg, bus, f.LogDir(), "")
 	require.NotNil(t, exec)
 	avail := exec.Availability()
-	// HTTP requires the allow_cloud_dispatch opt-in (not set here); Config flips
+	// HTTP requires the allow_station_dispatch opt-in (not set here); Config flips
 	// on with at least one local task regardless of the opt-in.
 	assert.False(t, avail.HTTP.Available)
 	assert.True(t, avail.Config.Available)
@@ -267,14 +267,14 @@ func TestOrderServicesForStop_DependentsFirst(t *testing.T) {
 	assert.Less(t, pos["c"], pos["d"], "c depends on d → c stops first")
 }
 
-// TestInitDaemonServices_CloudModeResolvesPendingRuns locks the crash-safety
+// TestInitDaemonServices_StationModeResolvesPendingRuns locks the crash-safety
 // invariant ("any run that was in-flight is marked interrupted with a terminal
 // status — it is not resumed") across every boot mode, not just standalone.
 // resumePendingRuns is only called from startStandaloneScheduling, which
 // initDaemonServices gates on mode == modeStandalone, so a run a prior crash
 // left at status='pending' must still be resolved when the daemon boots into
-// cloud mode instead.
-func TestInitDaemonServices_CloudModeResolvesPendingRuns(t *testing.T) {
+// station mode instead.
+func TestInitDaemonServices_StationModeResolvesPendingRuns(t *testing.T) {
 	f, db := daemonServicesTestEnv(t)
 	cfg := &config.Config{}
 	config.ApplyDefaults(cfg)
@@ -283,7 +283,7 @@ func TestInitDaemonServices_CloudModeResolvesPendingRuns(t *testing.T) {
 	pending := &model.Run{ID: ulid.Make().String(), TaskName: "ghost", Status: model.PhasePending, TriggeredBy: model.TriggeredByCron}
 	require.NoError(t, db.CreateRun(t.Context(), pending))
 
-	svc, err := initDaemonServices(t.Context(), dc, db, modeCloud, f)
+	svc, err := initDaemonServices(t.Context(), dc, db, modeStation, f)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		svc.RetentionCleaner.Stop()
@@ -295,12 +295,12 @@ func TestInitDaemonServices_CloudModeResolvesPendingRuns(t *testing.T) {
 	got, err := db.GetRun(t.Context(), pending.ID)
 	require.NoError(t, err)
 	assert.NotEqual(t, model.PhasePending, got.Status,
-		"a run left pending by a prior crash must be resolved to a terminal status on boot, even in cloud mode")
+		"a run left pending by a prior crash must be resolved to a terminal status on boot, even in station mode")
 }
 
 // TestBuildDaemonInfo_SchedulingActiveReflectsScheduler locks the wiring that
-// drives the Web UI's cloud-mode reframe: scheduling_active must be false when
-// the local scheduler is absent (e.g. `runwisp cloud`, where the cloud owns
+// drives the Web UI's station-mode reframe: scheduling_active must be false when
+// the local scheduler is absent (e.g. `runwisp station`, where the station owns
 // scheduling) and true when it is present. Drift here makes a scheduled task
 // look unscheduled — a Prime-Directive-#1 ("nothing silently fails") violation.
 func TestBuildDaemonInfo_SchedulingActiveReflectsScheduler(t *testing.T) {
@@ -318,7 +318,7 @@ func TestBuildDaemonInfo_SchedulingActiveReflectsScheduler(t *testing.T) {
 
 	svc := &daemonServices{Executor: exec, TaskManager: tm, Tasks: runtime.NewTaskRegistry(tasksMap)}
 
-	// Cloud mode: no local scheduler.
+	// Station mode: no local scheduler.
 	assert.False(t, buildDaemonInfo(dc, svc, time.Time{}, f.Port).SchedulingActive)
 
 	// Standalone mode: scheduler present.

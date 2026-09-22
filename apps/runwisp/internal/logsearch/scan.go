@@ -72,7 +72,7 @@ type Cursor struct {
 // the previous page already returned. more=true means the run still has
 // unscanned bytes — the caller can resume from hits[last].N+1.
 func ScanRun(ctx context.Context, run RunRef, m Matcher, maxHits int, startAfterN int64) (hits []Hit, more bool, err error) {
-	// Clamp here (not only in ScanTask) so direct callers — the cloud
+	// Clamp here (not only in ScanTask) so direct callers — the station
 	// log-search path reaches ScanRun without going through ScanTask — cannot
 	// ask for an unbounded in-memory result set.
 	maxHits = clampMaxHits(maxHits)

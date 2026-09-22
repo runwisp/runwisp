@@ -211,7 +211,7 @@ func SuppliedFromResolved(params []TaskParam, resolved map[string]string) map[st
 
 // PointerValues lifts a plain identity→value map into the supplied-map shape
 // ResolveParamValues expects, with every value present (non-nil). It is for
-// surfaces whose wire type can't carry the explicit-omit (nil) state — the cloud
+// surfaces whose wire type can't carry the explicit-omit (nil) state — the station
 // control-plane protocol — where an absent key still means "use the default".
 func PointerValues(m map[string]string) map[string]*string {
 	if m == nil {

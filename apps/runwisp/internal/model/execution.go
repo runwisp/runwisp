@@ -13,7 +13,7 @@ import (
 )
 
 // shellUmaskPattern mirrors config.umaskPattern. The TOML path validates umask
-// at config load; this is the matching guard for the cloud-dispatch JSON
+// at config load; this is the matching guard for the station-dispatch JSON
 // boundary, which deserializes peer-supplied bytes straight into ShellExecution
 // and whose Umask/Shell values reach a shell wrapper unquoted (executor.wrapScriptUmask).
 var shellUmaskPattern = regexp.MustCompile(`^[0-7]{3,4}$`)

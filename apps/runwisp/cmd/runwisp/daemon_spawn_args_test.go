@@ -30,7 +30,7 @@ func TestDaemonSpawnArgs_CarriesHostAndSocket(t *testing.T) {
 }
 
 func TestDaemonSpawnArgs_OmitsEmptySocket(t *testing.T) {
-	args := daemonSpawnArgs([]string{"cloud", "--no-tui"}, Flags{Host: "127.0.0.1"})
+	args := daemonSpawnArgs([]string{"station", "--no-tui"}, Flags{Host: "127.0.0.1"})
 	if slices.Contains(args, "--socket") {
 		t.Fatalf("empty socket should not be passed, got %v", args)
 	}

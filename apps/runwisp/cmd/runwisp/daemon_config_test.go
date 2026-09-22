@@ -29,13 +29,13 @@ run = "echo hi"
 	return path
 }
 
-func TestLoadConfigFile_MissingWithCloudReturnsDefaults(t *testing.T) {
+func TestLoadConfigFile_MissingWithStationReturnsDefaults(t *testing.T) {
 	cfg, _, err := loadConfigFile("/this/does/not/exist/runwisp.toml", true)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 }
 
-func TestLoadConfigFile_MissingWithoutCloudErrors(t *testing.T) {
+func TestLoadConfigFile_MissingWithoutStationErrors(t *testing.T) {
 	_, _, err := loadConfigFile("/this/does/not/exist/runwisp.toml", false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no runwisp.toml")
@@ -71,7 +71,7 @@ func TestLoadDaemonConfig_StandaloneWithStablePassword(t *testing.T) {
 	assert.NotEmpty(t, cfg.JWTSecret)
 	require.Len(t, cfg.Config.Tasks, 1)
 	assert.Equal(t, "example", cfg.Config.Tasks[0].Name)
-	assert.False(t, cfg.CloudConfig.Enabled)
+	assert.False(t, cfg.StationConfig.Enabled)
 }
 
 func TestLoadDaemonConfig_StandaloneEphemeralPassword(t *testing.T) {

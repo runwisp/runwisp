@@ -280,7 +280,7 @@ func standaloneManualTriggerDisabledError(taskName string) error {
 }
 
 // noConfigError is returned when the daemon can't find runwisp.toml and isn't
-// running under `runwisp cloud` (which tolerates an absent config and relies
+// running under `runwisp station` (which tolerates an absent config and relies
 // on ad-hoc dispatch instead). It never substitutes a fallback config — a
 // missing file that silently ran something else would hide the operator's
 // actual mistake, so the daemon fails loudly and points at the two ways

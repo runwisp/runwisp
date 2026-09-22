@@ -160,7 +160,7 @@ const manualPasswordHint = "Set a stable Web UI password with RUNWISP_PASSWORD; 
 
 // capturedServiceEnv scans the install shell's environment for the RUNWISP_*
 // vars to carry into the managed service (RUNWISP_AUTH, RUNWISP_TLS, an
-// operator-supplied RUNWISP_PASSWORD, RUNWISP_CLOUD_TOKEN, …) — a systemd
+// operator-supplied RUNWISP_PASSWORD, RUNWISP_STATION_TOKEN, …) — a systemd
 // unit or launchd plist never inherits the invoking shell's environment, so
 // without this every one of them would silently vanish on install.
 // RUNWISP_SERVICE_MANAGED is excluded: it's the marker the generated unit
@@ -235,7 +235,7 @@ func printEnvDropInRemovedWarning(out io.Writer, path string) {
 	b.WriteString("  WARNING: no RUNWISP_* variables were found in this shell, so the\n")
 	fmt.Fprintf(&b, "  environment a previous install saved to %s\n", path)
 	b.WriteString("  was just removed. Any setting it carried (RUNWISP_AUTH, RUNWISP_TLS,\n")
-	b.WriteString("  RUNWISP_CLOUD_TOKEN, ...) has reverted to its default — including auth,\n")
+	b.WriteString("  RUNWISP_STATION_TOKEN, ...) has reverted to its default — including auth,\n")
 	b.WriteString("  which may come back on with a freshly generated password below.\n")
 	b.WriteString("  If you rely on one of these, re-export it and re-run this command.\n")
 	b.WriteString("================================================================================\n")

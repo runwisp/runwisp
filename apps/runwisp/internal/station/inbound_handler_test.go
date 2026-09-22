@@ -1,0 +1,469 @@
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+package station
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/runwisp/runwisp/internal/executor"
+	"github.com/runwisp/runwisp/internal/generated/protocol"
+	"github.com/runwisp/runwisp/internal/model"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func newTestInboundHandler() *InboundHandler {
+	return NewInboundHandler(InboundHandlerDeps{
+		LogDir:          "/tmp/logs",
+		QueueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
+	})
+}
+
+// stubRunRepo implements ExternalRunGetter for inbound handler tests.
+type stubRunRepo struct {
+	run    *model.Run
+	getErr error
+}
+
+func (f *stubRunRepo) GetRunByExecutionID(_ context.Context, _ string) (*model.Run, error) {
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
+	if f.run == nil {
+		return nil, ErrNotFound
+	}
+	return f.run, nil
+}
+
+func newDispatchInboundHandler(runner TaskRunner, repo ExternalRunGetter, avail executor.Availability) *InboundHandler {
+	return &InboundHandler{
+		taskManager:     runner,
+		runRepo:         repo,
+		logDir:          "/tmp/logs",
+		availability:    avail,
+		queueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
+		logListeners:    make(map[string]struct{}),
+	}
+}
+
+// --- HandleExecutionDispatch ---
+
+func TestHandleExecutionDispatch_EmptyExecutionID(t *testing.T) {
+	h := newTestInboundHandler()
+	acked := false
+	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
+		Execution: &protocol.Execution{ExecutionID: ""},
+	}, func() { acked = true })
+	require.Error(t, err)
+	var ce *StationError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+	assert.False(t, acked, "invalid dispatch must not be acked")
+}
+
+func TestHandleExecutionDispatch_InvalidScript(t *testing.T) {
+	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
+	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
+	h := newDispatchInboundHandler(runner, nil, avail)
+
+	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
+		Execution: &protocol.Execution{
+			ExecutionID: "exec-1",
+			Script:      []byte(`{bad json`),
+		},
+	}, nil)
+	require.Error(t, err)
+}
+
+func TestHandleExecutionDispatch_Success(t *testing.T) {
+	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
+	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
+	h := newDispatchInboundHandler(runner, nil, avail)
+
+	script := shellScript(t, "echo hello")
+	acked := 0
+	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
+		Execution: &protocol.Execution{
+			ExecutionID: "exec-abc",
+			TaskID:      "my-task",
+			Script:      script,
+		},
+	}, func() { acked++ })
+	require.NoError(t, err)
+	assert.Equal(t, 1, acked, "valid dispatch must be acked exactly once")
+}
+
+// TestHandleExecutionDispatch_AdHocInputValuesForwarded guards against a
+// regression where inline (non-TOML) dispatches had their inputValues
+// silently dropped because they declared no params for ResolveParamValues to
+// resolve against. buildDynamicStationTask must synthesize an env-kind param
+// per supplied key so the values still reach TriggerStationRun.
+func TestHandleExecutionDispatch_AdHocInputValuesForwarded(t *testing.T) {
+	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
+	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
+	h := newDispatchInboundHandler(runner, nil, avail)
+
+	script := shellScript(t, "echo hello")
+	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
+		Execution: &protocol.Execution{
+			ExecutionID: "exec-adhoc",
+			TaskID:      "my-task",
+			Script:      script,
+			InputValues: map[string]string{"GREETING": "hi"},
+		},
+	}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{"GREETING": "hi"}, runner.trigParams)
+
+	require.Len(t, runner.upserted, 1)
+	require.Len(t, runner.upserted[0].Parameters, 1)
+	assert.Equal(t, model.TaskParam{Kind: model.ParamEnv, Key: "GREETING"}, runner.upserted[0].Parameters[0])
+}
+
+func TestHandleExecutionDispatch_TriggerError_NilRun(t *testing.T) {
+	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
+	runner := &fakeTaskRunner{
+		tasks:   make(map[string]*model.Task),
+		trigErr: errors.New("queue full"),
+		trigRun: nil,
+	}
+	h := newDispatchInboundHandler(runner, nil, avail)
+
+	script := shellScript(t, "echo hi")
+	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
+		Execution: &protocol.Execution{
+			ExecutionID: "exec-fail",
+			TaskID:      "some-task",
+			Script:      script,
+		},
+	}, nil)
+	require.Error(t, err)
+	var ce *StationError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+}
+
+func TestHandleExecutionDispatch_TriggerError_WithRun(t *testing.T) {
+	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
+	run := &model.Run{ID: "r1", Status: model.PhaseEnded}
+	runner := &fakeTaskRunner{
+		tasks:   make(map[string]*model.Task),
+		trigErr: errors.New("conflict"),
+		trigRun: run,
+	}
+	h := newDispatchInboundHandler(runner, nil, avail)
+
+	script := shellScript(t, "echo hi")
+	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
+		Execution: &protocol.Execution{
+			ExecutionID: "exec-conflict",
+			TaskID:      "task",
+			Script:      script,
+		},
+	}, nil)
+	require.Error(t, err)
+}
+
+func TestHandleExecutionDispatch_DuplicateActive_ReAcksWithoutTrigger(t *testing.T) {
+	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
+	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
+	tracker := NewExecutionTracker()
+	tracker.TrackRunning("exec-dup", nil)
+	h := newDispatchInboundHandler(runner, nil, avail)
+	h.tracker = tracker
+
+	script := shellScript(t, "echo hi")
+	acked := 0
+	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
+		Execution: &protocol.Execution{
+			ExecutionID: "exec-dup",
+			TaskID:      "task",
+			Script:      script,
+		},
+	}, func() { acked++ })
+	require.NoError(t, err)
+	assert.Equal(t, 1, acked, "duplicate dispatch must be re-acked")
+	assert.Empty(t, runner.triggered, "duplicate dispatch must not trigger a second run")
+}
+
+func TestHandleExecutionDispatch_DuplicateTerminal_ReQueuesTerminalUpdate(t *testing.T) {
+	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
+	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
+	reason := model.ReasonSuccess
+	execID := "exec-done"
+	repo := &stubRunRepo{run: &model.Run{
+		ID:          "r1",
+		Status:      model.PhaseEnded,
+		EndReason:   &reason,
+		ExecutionID: &execID,
+	}}
+	h := newDispatchInboundHandler(runner, repo, avail)
+
+	var updates []protocol.ExecutionUpdateMessage
+	h.queueExecUpdate = func(u protocol.ExecutionUpdateMessage) { updates = append(updates, u) }
+
+	script := shellScript(t, "echo hi")
+	acked := 0
+	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
+		Execution: &protocol.Execution{
+			ExecutionID: execID,
+			TaskID:      "task",
+			Script:      script,
+		},
+	}, func() { acked++ })
+	require.NoError(t, err)
+	assert.Equal(t, 1, acked)
+	assert.Empty(t, runner.triggered, "terminal duplicate must not re-run")
+	require.Len(t, updates, 1, "terminal duplicate must re-queue the stored terminal update")
+	assert.Equal(t, execID, updates[0].ExecutionID)
+}
+
+// TestHandleExecutionDispatch_DuplicateReserved_ReAcksBeforeRunning covers the
+// accept→running window: a redelivered dispatch that arrives after the first is
+// accepted but before its run reaches PhaseRunning (no active-tracker entry, no
+// persisted run yet) must still be deduped by the reservation, not started twice.
+func TestHandleExecutionDispatch_DuplicateReserved_ReAcksBeforeRunning(t *testing.T) {
+	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
+	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
+	h := newDispatchInboundHandler(runner, nil, avail)
+	h.tracker = NewExecutionTracker()
+
+	script := shellScript(t, "echo hi")
+	msg := protocol.ExecutionDispatchMessage{Execution: &protocol.Execution{
+		ExecutionID: "exec-win", TaskID: "task", Script: script,
+	}}
+
+	acked := 0
+	require.NoError(t, h.HandleExecutionDispatch(context.Background(), msg, func() { acked++ }))
+	require.NoError(t, h.HandleExecutionDispatch(context.Background(), msg, func() { acked++ }))
+
+	assert.Equal(t, []string{"exec-win"}, runner.triggered,
+		"a duplicate in the accept→running window must not start a second run")
+	assert.Equal(t, 2, acked, "both dispatches must be acked")
+}
+
+// TestHandleExecutionDispatch_ReservationReleasedAfterTriggerError proves a
+// failed start frees the reservation, so a legitimate re-dispatch can retry.
+func TestHandleExecutionDispatch_ReservationReleasedAfterTriggerError(t *testing.T) {
+	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
+	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task), trigErr: errors.New("boom")}
+	h := newDispatchInboundHandler(runner, nil, avail)
+	h.tracker = NewExecutionTracker()
+
+	script := shellScript(t, "echo hi")
+	msg := protocol.ExecutionDispatchMessage{Execution: &protocol.Execution{
+		ExecutionID: "exec-retry", TaskID: "task", Script: script,
+	}}
+
+	require.Error(t, h.HandleExecutionDispatch(context.Background(), msg, nil))
+	runner.trigErr = nil
+	require.NoError(t, h.HandleExecutionDispatch(context.Background(), msg, nil))
+
+	assert.Equal(t, []string{"exec-retry", "exec-retry"}, runner.triggered,
+		"re-dispatch after a failed start must be allowed to run again")
+}
+
+// --- HandleExecutionStop ---
+
+func TestHandleExecutionStop_EmptyID(t *testing.T) {
+	h := newTestInboundHandler()
+	err := h.HandleExecutionStop(context.Background(), protocol.ExecutionStopMessage{ExecutionID: ""})
+	require.Error(t, err)
+	var ce *StationError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+}
+
+func TestHandleExecutionStop_NotFound(t *testing.T) {
+	repo := &stubRunRepo{getErr: ErrNotFound}
+	runner := &fakeTaskRunner{}
+	h := newDispatchInboundHandler(runner, repo, executor.Availability{})
+
+	err := h.HandleExecutionStop(context.Background(), protocol.ExecutionStopMessage{ExecutionID: "exec-1"})
+	require.Error(t, err)
+	var ce *StationError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, StationErrorKindUnknownExecution, ce.Kind)
+}
+
+func TestHandleExecutionStop_RunAlreadyTerminal(t *testing.T) {
+	reason := model.ReasonSuccess
+	run := &model.Run{Status: model.PhaseEnded, EndReason: &reason}
+	repo := &stubRunRepo{run: run}
+	runner := &fakeTaskRunner{}
+	h := newDispatchInboundHandler(runner, repo, executor.Availability{})
+
+	err := h.HandleExecutionStop(context.Background(), protocol.ExecutionStopMessage{ExecutionID: "exec-1"})
+	require.NoError(t, err)
+}
+
+func TestHandleExecutionStop_RunActive_NotRunning(t *testing.T) {
+	run := &model.Run{Status: model.PhasePending}
+	repo := &stubRunRepo{run: run}
+	runner := &fakeTaskRunner{}
+	h := newDispatchInboundHandler(runner, repo, executor.Availability{})
+
+	err := h.HandleExecutionStop(context.Background(), protocol.ExecutionStopMessage{ExecutionID: "exec-1"})
+	require.Error(t, err)
+	var ce *StationError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, StationErrorKindConflict, ce.Kind)
+}
+
+func TestHandleExecutionStop_RepoTransientError(t *testing.T) {
+	repo := &stubRunRepo{getErr: errors.New("db error")}
+	runner := &fakeTaskRunner{}
+	h := newDispatchInboundHandler(runner, repo, executor.Availability{})
+
+	err := h.HandleExecutionStop(context.Background(), protocol.ExecutionStopMessage{ExecutionID: "exec-1"})
+	require.Error(t, err)
+	var ce *StationError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, StationErrorKindTransient, ce.Kind)
+}
+
+// --- HandleLogReplayRequest ---
+
+func TestHandleLogReplayRequest_EmptyID(t *testing.T) {
+	h := newTestInboundHandler()
+	_, err := h.HandleLogReplayRequest(context.Background(), protocol.LogReplayRequestMessage{ExecutionID: ""})
+	require.Error(t, err)
+	var ce *StationError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, StationErrorKindValidation, ce.Kind)
+}
+
+func TestHandleLogReplayRequest_NotFound(t *testing.T) {
+	repo := &stubRunRepo{getErr: ErrNotFound}
+	h := newDispatchInboundHandler(nil, repo, executor.Availability{})
+
+	chunk, err := h.HandleLogReplayRequest(context.Background(), protocol.LogReplayRequestMessage{
+		RequestID:   "req-1",
+		ExecutionID: "exec-1",
+	})
+	require.NoError(t, err)
+	assert.False(t, chunk.Final, "unknown execution must not claim end-of-log — the dispatch may not have arrived yet")
+}
+
+func TestHandleLogReplayRequest_TransientError(t *testing.T) {
+	repo := &stubRunRepo{getErr: errors.New("db timeout")}
+	h := newDispatchInboundHandler(nil, repo, executor.Availability{})
+
+	_, err := h.HandleLogReplayRequest(context.Background(), protocol.LogReplayRequestMessage{
+		RequestID:   "req-1",
+		ExecutionID: "exec-1",
+	})
+	require.Error(t, err)
+	var ce *StationError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, StationErrorKindTransient, ce.Kind)
+}
+
+// TestInboundHandler_FreshHandlerGetters covers the four "zero-state" getter
+// branches in one place: LogDir/Uploader propagate from construction; the
+// listener queries return false because no listener was registered yet.
+func TestInboundHandler_FreshHandlerGetters(t *testing.T) {
+	h := newTestInboundHandler()
+	assert.Equal(t, "/tmp/logs", h.LogDir())
+	assert.Nil(t, h.Uploader(), "uploader must be nil when not configured")
+	assert.False(t, h.IsLogListener("exec-1"), "no listener registered → must be false")
+	assert.NotPanics(t, func() { h.RemoveLogListener("exec-1") }, "removing an absent listener must be a no-op")
+}
+
+func TestInboundHandler_HandleLogListen_And_IsLogListener(t *testing.T) {
+	h := newTestInboundHandler()
+	err := h.HandleLogListen(protocol.LogListenMessage{ExecutionID: "exec-1"})
+	require.NoError(t, err)
+	assert.True(t, h.IsLogListener("exec-1"))
+}
+
+func TestInboundHandler_HandleLogListen_EmptyID_Error(t *testing.T) {
+	h := newTestInboundHandler()
+	err := h.HandleLogListen(protocol.LogListenMessage{ExecutionID: ""})
+	require.Error(t, err)
+	assert.False(t, h.IsLogListener(""))
+}
+
+func TestInboundHandler_HandleLogListen_Idempotent(t *testing.T) {
+	h := newTestInboundHandler()
+	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: "exec-1"})
+	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: "exec-1"})
+	assert.True(t, h.IsLogListener("exec-1"))
+}
+
+func TestInboundHandler_RemoveLogListener_Present(t *testing.T) {
+	h := newTestInboundHandler()
+	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: "exec-1"})
+	h.RemoveLogListener("exec-1")
+	assert.False(t, h.IsLogListener("exec-1"))
+}
+
+func TestInboundHandler_HandleLogStop_RemovesListener(t *testing.T) {
+	h := newTestInboundHandler()
+	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: "exec-1"})
+	h.HandleLogStop(protocol.LogStopMessage{ExecutionID: "exec-1"})
+	assert.False(t, h.IsLogListener("exec-1"))
+}
+
+func TestInboundHandler_HandleLogStop_EmptyID_NoOp(t *testing.T) {
+	h := newTestInboundHandler()
+	h.HandleLogStop(protocol.LogStopMessage{ExecutionID: ""}) // must not panic
+}
+
+func TestInboundHandler_ClearLogListeners(t *testing.T) {
+	h := newTestInboundHandler()
+	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: "exec-1"})
+	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: "exec-2"})
+	h.ClearLogListeners()
+	assert.False(t, h.IsLogListener("exec-1"))
+	assert.False(t, h.IsLogListener("exec-2"))
+}
+
+func TestDecodeInboundMessage_AuthResult(t *testing.T) {
+	payload := []byte(`{"type":"auth:result","success":true,"connectionId":"conn-1"}`)
+
+	decoded, err := DecodeInboundMessage(payload)
+	require.NoError(t, err)
+
+	message, ok := decoded.(protocol.AuthResultMessage)
+	require.True(t, ok)
+	assert.True(t, message.Success)
+	assert.Equal(t, "conn-1", message.ConnectionID)
+}
+
+func TestInboundHandler_HandleAgentRestart(t *testing.T) {
+	t.Run("nil requester is rejected as conflict", func(t *testing.T) {
+		h := newTestInboundHandler() // constructed with a nil restart callback
+		err := h.HandleAgentRestart()
+		var stationErr *StationError
+		require.ErrorAs(t, err, &stationErr)
+		assert.Equal(t, StationErrorKindConflict, stationErr.Kind)
+	})
+
+	t.Run("requester error surfaces as conflict", func(t *testing.T) {
+		h := NewInboundHandler(InboundHandlerDeps{
+			LogDir:          "/tmp/logs",
+			QueueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
+			RequestRestart:  func() error { return errors.New("not service-managed") },
+		})
+		err := h.HandleAgentRestart()
+		var stationErr *StationError
+		require.ErrorAs(t, err, &stationErr)
+		assert.Equal(t, StationErrorKindConflict, stationErr.Kind)
+		assert.Contains(t, stationErr.Message, "not service-managed")
+	})
+
+	t.Run("success invokes the requester once", func(t *testing.T) {
+		calls := 0
+		h := NewInboundHandler(InboundHandlerDeps{
+			LogDir:          "/tmp/logs",
+			QueueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
+			RequestRestart:  func() error { calls++; return nil },
+		})
+		require.NoError(t, h.HandleAgentRestart())
+		assert.Equal(t, 1, calls)
+	})
+}

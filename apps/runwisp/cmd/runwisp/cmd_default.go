@@ -137,7 +137,7 @@ func launchConnectedTUI(ctx context.Context, client *apiclient.Client, mode tuiC
 	// The TUI needs a real terminal; without one it would hang on stdin. Decline
 	// clearly instead. Any spawned background daemon keeps running headless.
 	if !isInteractiveTerminal() {
-		return errors.New("no interactive terminal; the daemon runs headless here — use 'runwisp cloud' / 'runwisp daemon', or run 'runwisp tui' from a real terminal")
+		return errors.New("no interactive terminal; the daemon runs headless here — use 'runwisp station' / 'runwisp daemon', or run 'runwisp tui' from a real terminal")
 	}
 
 	info, err := client.GetDaemonInfo(ctx)

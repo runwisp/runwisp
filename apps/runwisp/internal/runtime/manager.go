@@ -52,7 +52,7 @@ type TriggerRunOptions struct {
 	// supervisor-driven restarts of services; nil for cron/API/retry runs.
 	InstanceIndex *int
 	// Params carries operator-supplied per-execution parameter values from a
-	// manual trigger surface (REST/UI/TUI/cloud). Nil on scheduled/automatic
+	// manual trigger surface (REST/UI/TUI/station). Nil on scheduled/automatic
 	// firings, which resolve to the task's declared defaults. A per-key nil
 	// pointer explicitly omits that parameter even when it declares a default;
 	// an absent key falls back to the default. See model.ResolveParamValues.
@@ -72,9 +72,9 @@ var _ TaskManager = (*defaultTaskManager)(nil)
 type defaultTaskManager struct {
 	executor executor.Executor
 	// tasks is the name-resolvable live registry. Every lookup-by-name path
-	// (GetTask, TriggerRunWithOptions, the service-control methods, cloud's
+	// (GetTask, TriggerRunWithOptions, the service-control methods, station's
 	// dispatch/service handlers via those) reads only this map, so a task
-	// dropped by RemoveTask becomes instantly unresolvable by name — a cloud
+	// dropped by RemoveTask becomes instantly unresolvable by name — a station
 	// peer (or REST/CLI restart) can no longer race the drain window to
 	// resurrect a task outside the current TOML set. See removedTasks.
 	tasks map[string]*taskState
@@ -360,7 +360,7 @@ func (m *defaultTaskManager) finalizeOrphanedQueue(ts *taskState) []*model.Run {
 // The taskState is always evicted from the name-resolvable registry
 // immediately — GetTask, TriggerRunWithOptions, and every service-control
 // method stop resolving this name the instant this call returns, regardless
-// of what is still in flight. This is what stops a cloud peer (or a delayed
+// of what is still in flight. This is what stops a station peer (or a delayed
 // local restart/retry) from racing the drain window to act on a task that no
 // longer exists in the operator's TOML.
 //
@@ -414,9 +414,9 @@ func (m *defaultTaskManager) RemoveTask(taskName string) {
 }
 
 // ListServiceTasks returns copies of every registered service task. Used by the
-// cloud integration to fold daemon-supervised services (notably cloud-declared
+// station integration to fold daemon-supervised services (notably station-declared
 // ones, registered at runtime via service:apply and absent from the TOML
-// snapshot) into the tasks.sync payload, so the cloud knows they are live here.
+// snapshot) into the tasks.sync payload, so the station knows they are live here.
 func (m *defaultTaskManager) ListServiceTasks() []*model.Task {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -557,7 +557,7 @@ func (m *defaultTaskManager) TriggerRun(taskName string, triggeredBy model.Trigg
 func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options TriggerRunOptions) (*model.Run, error) {
 	m.mu.Lock()
 	// A terminal event for a run that never executes is published after the
-	// lock is released: EventRunFailed subscribers (the cloud bridge) re-enter
+	// lock is released: EventRunFailed subscribers (the station bridge) re-enter
 	// the manager via ServiceSnapshot → m.mu.RLock, which would deadlock if we
 	// published while still holding the write lock. The deferred flush runs
 	// after m.mu.Unlock (LIFO defer order). EventRunCreated stays inline — it
@@ -1008,7 +1008,7 @@ func (m *defaultTaskManager) serviceUnrecoverable(taskName string) (bool, error)
 }
 
 // ServiceSnapshot returns the supervisor + live-run view of a service task for
-// reporting to cloud. ok is false when the task is unknown or not a service.
+// reporting to station. ok is false when the task is unknown or not a service.
 // Built under the manager lock so it is a consistent point-in-time.
 func (m *defaultTaskManager) ServiceSnapshot(taskName string) (model.ServiceSnapshot, bool) {
 	m.mu.RLock()
@@ -1244,13 +1244,13 @@ func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDura
 // reapRetiredTaskState drops a taskState once its last run has retired, for
 // the two cases where nothing else will: a reload-removed task whose runs
 // were still draining (tracked in removedTasks since RemoveTask), and an
-// ephemeral cloud-inline task that never entered the TOML registry (tracked
+// ephemeral station-inline task that never entered the TOML registry (tracked
 // in tasks, since it was never removed). Caller must hold m.mu.
 func (m *defaultTaskManager) reapRetiredTaskState(task *model.Task, ts *taskState) {
 	if ts.removed && len(ts.active) == 0 {
 		delete(m.removedTasks, task.Name)
 	} else if ts.task != nil && ts.task.Ephemeral && len(ts.active) == 0 && len(ts.queue) == 0 {
-		// Ephemeral cloud-inline tasks are one-shot and never enter the TOML
+		// Ephemeral station-inline tasks are one-shot and never enter the TOML
 		// registry, so reconcile can't remove them. Reap here once the run
 		// retires with nothing queued: mark removed and wake the queue-drain
 		// goroutine so it exits, then drop the state. Holding m.mu makes the
@@ -1264,12 +1264,12 @@ func (m *defaultTaskManager) reapRetiredTaskState(task *model.Task, ts *taskStat
 }
 
 // scheduleFollowup spawns the retry or restart goroutine dictated by the task's
-// policy after a run has ended. Cloud-triggered runs never retry locally — the
+// policy after a run has ended. Station-triggered runs never retry locally — the
 // control plane owns their retry lifecycle.
 // Service FATAL runs never reach this method — the caller guards on the FATAL
 // flag returned by recordRunOutcome.
 func (m *defaultTaskManager) scheduleFollowup(task *model.Task, run *model.Run, nextRestartAttempt int) {
-	if run.TriggeredBy == model.TriggeredByCloud {
+	if run.TriggeredBy == model.TriggeredByStation {
 		return
 	}
 	copiedRun := run.Copy()

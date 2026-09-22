@@ -30,7 +30,7 @@ min_free_space: size =0(no check) — stop accepting log lines when partition fr
 ### [daemon]
 
 ```
-allow_cloud_dispatch: bool =false — accept peer-dispatched ad-hoc shell/container/compose runs (opt-in; one-shot, never edits TOML; HTTP & existing-task triggers always allowed)
+allow_station_dispatch: bool =false — accept peer-dispatched ad-hoc shell/container/compose runs (opt-in; one-shot, never edits TOML; HTTP & existing-task triggers always allowed)
 shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flight runs on shutdown
 timezone:             IANA string =host system zone — TZ for cron eval when a task pins none
 external_url:         string      — public Web UI base for notification deep-links; absolute http(s) w/ host
@@ -165,7 +165,7 @@ notify: []string         — sugar → route on any classified failure (see fail
 
 ### [services.&lt;name&gt;] (long-running)
 
-Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `on_overlap`, `max_concurrent`, `max_queued`, `retry_*`. Shares the core task keys (including `restart_attempts`, see above): `group` (default `Services`), `description`, `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `env_base`, `user`, `failures`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify`, `manual_trigger` (bool =true; here it gates manual stop/restart/start from CLI/API/UI/TUI/cloud instead of run-triggering). Service-only:
+Not allowed (rejected by the strict loader): `cron`, `timezone`, `jitter`, `run_on_start`, `catch_up`, `on_overlap`, `max_concurrent`, `max_queued`, `retry_*`. Shares the core task keys (including `restart_attempts`, see above): `group` (default `Services`), `description`, `graceful_stop`, `stop_signal`, `working_dir`, `shell`, `umask`, `env_base`, `user`, `failures`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`, `run`/`compose_*`, `env`/`env_file`, `secrets`/`secrets_file`, `notify`, `manual_trigger` (bool =true; here it gates manual stop/restart/start from CLI/API/UI/TUI/station instead of run-triggering). Service-only:
 
 ```
 restart:             enum =always     — never | on_failure | always
@@ -228,7 +228,7 @@ sendmail: from(req email); to(req,>=1) + cc/bcc(emails); reply_to(email);
 webhook:  url (req; http/https); headers (optional map<str,str>)
 ```
 
-Secret-bearing values (`webhook_url`, `bot_token`, `password`, …) arrive final — use `${VAR}` / `${file:...}` substitution for indirection; never inline a secret you don't control. Secrets are never logged or sent over the cloud integration.
+Secret-bearing values (`webhook_url`, `bot_token`, `password`, …) arrive final — use `${VAR}` / `${file:...}` substitution for indirection; never inline a secret you don't control. Secrets are never logged or sent over the station integration.
 
 ### [[route]] (route events to channels; repeatable)
 
@@ -253,7 +253,7 @@ opt out         `set +e` as the script's first line; no TOML key exists for this
 
 Persistent flags: `-c/--config` (=`runwisp.toml`, or `/etc/runwisp/runwisp.toml` at euid 0), `--data` (=`.runwisp`, or `/var/lib/runwisp` at euid 0), `-p/--port` (=`9477`), `--host` (=`127.0.0.1`), `--log-level` (debug|info|warn|error), `--log-format` (auto|text|json). Each has an env fallback the flag wins over: `RUNWISP_CONFIG`, `RUNWISP_DATA`, `RUNWISP_PORT`, `RUNWISP_HOST`, `RUNWISP_LOG_LEVEL`, `RUNWISP_LOG_FORMAT`.
 Precedence for `-c`/`--data`: explicit flag > `RUNWISP_CONFIG`/`RUNWISP_DATA` env var > euid-derived default.
-Env: `RUNWISP_PASSWORD` (else ephemeral per-boot), `RUNWISP_AUTH` (`off` disables auth, default on; mutually exclusive with RUNWISP_PASSWORD), `RUNWISP_TLS` (auto|off; overrides `[daemon] tls`, default `off`, applied on every load incl. reload), `RUNWISP_TRUSTED_PROXIES` (CIDRs), `RUNWISP_CLOUD_TOKEN`, `RUNWISP_CLOUD_URL`.
+Env: `RUNWISP_PASSWORD` (else ephemeral per-boot), `RUNWISP_AUTH` (`off` disables auth, default on; mutually exclusive with RUNWISP_PASSWORD), `RUNWISP_TLS` (auto|off; overrides `[daemon] tls`, default `off`, applied on every load incl. reload), `RUNWISP_TRUSTED_PROXIES` (CIDRs), `RUNWISP_STATION_TOKEN`, `RUNWISP_STATION_URL`.
 
 Official Docker image: `runwisp/runwisp` (alpine default + `-debian` variant, amd64/arm64). Plain tags carry no Docker CLI; add `-docker` to the tag (e.g. `latest-docker`, `latest-debian-docker`) for a build with a Docker CLI + Compose plugin baked in, needed if `[compose.*]` or a task's `run =` shells out to `docker`/`docker compose` from inside the RunWisp container itself. Binds `0.0.0.0`, plain HTTP (daemon's `[daemon] tls` default of `off`; set `-e RUNWISP_TLS=auto` to opt into self-signed HTTPS), requires `RUNWISP_PASSWORD` or `RUNWISP_AUTH=off` set or the entrypoint refuses to start; mount config at `/etc/runwisp/runwisp.toml` and data at `/var/lib/runwisp`. See https://docs.runwisp.com/getting-started/docker/.
 
@@ -347,8 +347,8 @@ runwisp promote [TASK...]    — put a derived task's block in the root runwisp.
 runwisp password             — print the daemon's ephemeral password (local socket; exit 5 under RUNWISP_AUTH=off, refuses if RUNWISP_PASSWORD set)
 runwisp openapi              — print the OpenAPI 3.1 spec (JSON) to stdout
 runwisp schema               — print the runwisp.toml JSON Schema (draft 2020-12) to stdout; published at https://docs.runwisp.com/config.schema.json
-runwisp cloud                — start in cloud mode; --token --url --env-file(=.env) --no-tui
-runwisp demo                 — boot a throwaway, fully-populated instance; --cloud --token --url --env-file
+runwisp station              — start in station mode; --token --url --env-file(=.env) --no-tui
+runwisp demo                 — boot a throwaway, fully-populated instance; --station --token --url --env-file
 runwisp service install      — install autostart; -y --print --dry-run --force --local --binary <path>
                              — DEFAULT scope is the system-wide singleton /etc/systemd/system/runwisp.service
                                (Linux, root, no fingerprint in the name). Refuses without root, naming

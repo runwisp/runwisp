@@ -103,10 +103,10 @@ func TestShellBackend_CleanEnvBaseStillHidesDaemonSecrets(t *testing.T) {
 // the leak where a plain task (default inherit base, no env/secrets/params, no
 // run-as) left cmd.Env nil and inherited the daemon's RUNWISP_* secrets
 // verbatim. A diagnostic task printing its environment would then persist the
-// admin password / cloud token into browsable logs.
+// admin password / station token into browsable logs.
 func TestShellBackend_InheritEnvBaseStillHidesDaemonSecrets(t *testing.T) {
 	t.Setenv("RUNWISP_PASSWORD", "hunter2")
-	t.Setenv("RUNWISP_CLOUD_TOKEN", "cloud-secret")
+	t.Setenv("RUNWISP_STATION_TOKEN", "station-secret")
 	t.Setenv("ENVBASE_PROBE", "inherited")
 
 	for _, base := range []model.EnvBase{model.EnvBaseInherit, ""} {

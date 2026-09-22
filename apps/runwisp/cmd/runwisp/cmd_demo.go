@@ -26,7 +26,7 @@ import (
 const envDemoTempDir = "RUNWISP_DEMO_TEMP"
 
 var demoFlags struct {
-	Cloud    bool
+	Station  bool
 	NoTUI    bool
 	Token    string
 	URL      string
@@ -50,8 +50,8 @@ bound port — but not via ` + "`runwisp tui`" + `, which looks in the default d
 dir, not the demo's throwaway one. Everything lives under a temp directory that
 is deleted when the daemon shuts down.
 
-With --cloud the daemon connects to the control plane instead and no history is
-seeded (the cloud owns it); RUNWISP_CLOUD_TOKEN is required, as for ` + "`runwisp cloud`" + `.
+With --station the daemon connects to the control plane instead and no history is
+seeded (the Station owns it); RUNWISP_STATION_TOKEN is required, as for ` + "`runwisp station`" + `.
 
 With --no-tui the daemon is left running in the background and its Web UI
 password is printed to stdout (instead of attaching the TUI) — handy over SSH or
@@ -63,11 +63,11 @@ in a script where you want to open the Web UI in a browser. Stop it later with
 }
 
 func init() {
-	demoCmd.Flags().BoolVar(&demoFlags.Cloud, "cloud", false, "connect to the cloud control plane instead of seeding local history")
+	demoCmd.Flags().BoolVar(&demoFlags.Station, "station", false, "connect to the station control plane instead of seeding local history")
 	demoCmd.Flags().BoolVar(&demoFlags.NoTUI, "no-tui", false, "leave the daemon running and print the Web UI password to stdout instead of attaching the TUI")
-	demoCmd.Flags().StringVar(&demoFlags.Token, "token", "", "cloud token, with --cloud (overrides RUNWISP_CLOUD_TOKEN)")
-	demoCmd.Flags().StringVar(&demoFlags.URL, "url", "", "cloud API URL, with --cloud (overrides RUNWISP_CLOUD_URL)")
-	demoCmd.Flags().StringVar(&demoFlags.EnvFile, "env-file", ".env", "path to .env file, with --cloud")
+	demoCmd.Flags().StringVar(&demoFlags.Token, "token", "", "station token, with --station (overrides RUNWISP_STATION_TOKEN)")
+	demoCmd.Flags().StringVar(&demoFlags.URL, "url", "", "station API URL, with --station (overrides RUNWISP_STATION_URL)")
+	demoCmd.Flags().StringVar(&demoFlags.EnvFile, "env-file", ".env", "path to .env file, with --station")
 	demoCmd.Flags().BoolVar(&demoFlags.SeedOnly, "seed-only", false, "write the demo config to --config and seed --data, then exit without spawning a daemon or TUI (for tooling that boots its own daemon)")
 }
 
@@ -91,11 +91,11 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 	// --seed-only writes the demo config and seeds history into the
 	// caller-supplied --config/--data, then exits. No temp dir, no daemon, no
 	// TUI: the caller (e.g. the docs screenshot harness) boots its own daemon
-	// against those paths. Cloud mode owns its history, so the two are mutually
+	// against those paths. Station mode owns its history, so the two are mutually
 	// exclusive.
 	if demoFlags.SeedOnly {
-		if demoFlags.Cloud {
-			return fmt.Errorf("demo: --seed-only cannot be combined with --cloud")
+		if demoFlags.Station {
+			return fmt.Errorf("demo: --seed-only cannot be combined with --station")
 		}
 		return setupDemoDir(cmd, f)
 	}
@@ -169,7 +169,7 @@ func reportDemoNoTUI(ctx context.Context, stdout, stderr io.Writer, client crede
 }
 
 // setupDemoDir writes the embedded config, creates the data/log dirs, and either
-// resolves cloud credentials (--cloud) or seeds the fake run history.
+// resolves station credentials (--station) or seeds the fake run history.
 func setupDemoDir(cmd *cobra.Command, f Flags) error {
 	// --seed-only backs the screenshot/video tooling, which wants the demo
 	// config's fictional external_url to show a believable operator domain.
@@ -185,8 +185,8 @@ func setupDemoDir(cmd *cobra.Command, f Flags) error {
 		return err
 	}
 
-	if demoFlags.Cloud {
-		return resolveCloudEnv(demoFlags.EnvFile, cmd.Flags().Changed("env-file"), demoFlags.Token, demoFlags.URL)
+	if demoFlags.Station {
+		return resolveStationEnv(demoFlags.EnvFile, cmd.Flags().Changed("env-file"), demoFlags.Token, demoFlags.URL)
 	}
 	return seedDemoHistory(f)
 }
@@ -213,11 +213,11 @@ func seedDemoHistory(f Flags) error {
 	return nil
 }
 
-// spawnDemoDaemon launches the background daemon against the temp dir. Cloud
-// mode spawns the headless `cloud` subcommand; standalone reuses spawnDaemon.
+// spawnDemoDaemon launches the background daemon against the temp dir. Station
+// mode spawns the headless `station` subcommand; standalone reuses spawnDaemon.
 func spawnDemoDaemon(f Flags) error {
-	if demoFlags.Cloud {
-		return spawnDaemonProcess(daemonSpawnArgs([]string{"cloud", "--no-tui"}, f), f.DataDir)
+	if demoFlags.Station {
+		return spawnDaemonProcess(daemonSpawnArgs([]string{"station", "--no-tui"}, f), f.DataDir)
 	}
 	return spawnDaemon(f)
 }

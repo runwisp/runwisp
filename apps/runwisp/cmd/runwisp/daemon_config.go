@@ -14,10 +14,10 @@ import (
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/chap"
-	"github.com/runwisp/runwisp/internal/cloud"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/fingerprint"
+	"github.com/runwisp/runwisp/internal/station"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/version"
 )
@@ -31,7 +31,7 @@ const jwtKDFInfo = "runwisp-jwt-v1"
 // daemonConfig holds resolved configuration and secrets for the daemon.
 type daemonConfig struct {
 	Fingerprint       string
-	CloudConfig       cloud.Config
+	StationConfig     station.Config
 	Config            *config.Config
 	UsingDemo         bool
 	Password          string
@@ -48,17 +48,17 @@ func loadDaemonConfig(ctx context.Context, configRepo storage.ConfigRepository, 
 		return nil, err
 	}
 
-	var cloudCfg cloud.Config
-	if mode == modeCloud {
-		// Cloud mode: env vars were already set by cmd_cloud.go, so pass empty
+	var stationCfg station.Config
+	if mode == modeStation {
+		// Station mode: env vars were already set by cmd_station.go, so pass empty
 		// overrides and let LoadConfig read from the environment.
-		cloudCfg, err = cloud.LoadConfig(version.Version, "", "", fp)
+		stationCfg, err = station.LoadConfig(version.Version, "", "", fp)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	cfg, usingDemo, err := loadConfigFile(f.CfgFile, cloudCfg.Enabled)
+	cfg, usingDemo, err := loadConfigFile(f.CfgFile, stationCfg.Enabled)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func loadDaemonConfig(ctx context.Context, configRepo storage.ConfigRepository, 
 
 	return &daemonConfig{
 		Fingerprint:       fp,
-		CloudConfig:       cloudCfg,
+		StationConfig:     stationCfg,
 		Config:            cfg,
 		UsingDemo:         usingDemo,
 		Password:          password,
@@ -191,7 +191,7 @@ func resolveFingerprint(ctx context.Context, configRepo storage.ConfigRepository
 	return fp, nil
 }
 
-func loadConfigFile(path string, cloudEnabled bool) (*config.Config, bool, error) {
+func loadConfigFile(path string, stationEnabled bool) (*config.Config, bool, error) {
 	cfg, err := config.Load(path)
 	if err == nil {
 		// A root daemon executes whatever the config says; re-assert the file
@@ -207,7 +207,7 @@ func loadConfigFile(path string, cloudEnabled bool) (*config.Config, bool, error
 		return nil, false, err
 	}
 
-	if cloudEnabled {
+	if stationEnabled {
 		cfg := &config.Config{}
 		config.ApplyDefaults(cfg)
 		return cfg, false, nil

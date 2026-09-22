@@ -483,21 +483,21 @@ func TestUpsertTask_RevivesServiceStoppedOnlyByRemoval(t *testing.T) {
 }
 
 // TestEphemeralTaskReapedAfterRun is the regression test for Bug 7: a
-// cloud-inline task is marked Ephemeral and never enters the TOML registry, so
+// station-inline task is marked Ephemeral and never enters the TOML registry, so
 // reconcile can never RemoveTask it. Its taskState (and, for PolicyQueue, its
 // drain goroutine) must be reaped once its run retires, or every distinct
 // dispatched name leaks a goroutine + state for the daemon's lifetime.
 func TestEphemeralTaskReapedAfterRun(t *testing.T) {
 	jm, exec, eb := newTestManager(t)
 
-	task := testTask("cloud-adhoc", model.PolicyQueue, 1)
+	task := testTask("station-adhoc", model.PolicyQueue, 1)
 	task.Ephemeral = true
 	jm.UpsertTask(task)
 
 	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
 
 	done := watchCompletions(eb)
-	_, err := jm.TriggerRun("cloud-adhoc", model.TriggeredByCloud)
+	_, err := jm.TriggerRun("station-adhoc", model.TriggeredByStation)
 	require.NoError(t, err)
 	done.waitFor(t, 1)
 
@@ -506,7 +506,7 @@ func TestEphemeralTaskReapedAfterRun(t *testing.T) {
 	require.Eventually(t, func() bool {
 		jm.mu.Lock()
 		defer jm.mu.Unlock()
-		_, ok := jm.tasks["cloud-adhoc"]
+		_, ok := jm.tasks["station-adhoc"]
 		return !ok
 	}, 2*time.Second, 5*time.Millisecond, "an ephemeral task must be reaped after its run retires")
 }
@@ -777,7 +777,7 @@ func TestRecordMissedRunUnknownTask(t *testing.T) {
 // firing (RecordSkippedFiring), a missed-tick firing (RecordMissedRun), and a
 // concurrency-policy rejection inside TriggerRunWithOptions — publish a terminal
 // EventRunFailed. In the pre-fix code that publish happened while the manager
-// still held m.mu (write lock). The cloud bridge subscribes to EventRunFailed
+// still held m.mu (write lock). The station bridge subscribes to EventRunFailed
 // and re-enters the manager via ServiceSnapshot, which takes m.mu.RLock; an
 // RLock requested while the same goroutine already holds the write lock blocks
 // forever. The fix defers the terminal publish until after m.mu.Unlock. Each
@@ -803,7 +803,7 @@ func TestTerminalEventPublishedOffManagerLock(t *testing.T) {
 	t.Run("RecordSkippedFiring", func(t *testing.T) {
 		jm, _, eb := newTestManager(t)
 		jm.UpsertTask(testTask("task1", model.PolicySkip, 1))
-		// The cloud bridge: an EventRunFailed handler that reaches back into the
+		// The station bridge: an EventRunFailed handler that reaches back into the
 		// manager for a snapshot, re-acquiring m.mu as a reader.
 		eb.Subscribe(events.EventRunFailed, func(events.Event) { jm.ServiceSnapshot("task1") })
 		assertReturns(t, "RecordSkippedFiring", func() {
@@ -984,9 +984,9 @@ func TestRetryFiresOnFailure(t *testing.T) {
 	assert.Equal(t, runs[1].ID, *runs[2].RetryOfRunID)
 }
 
-// TestRetrySkippedForCloudRun pins the rule that cloud-triggered runs are
+// TestRetrySkippedForStationRun pins the rule that station-triggered runs are
 // retried by the control plane, never by the local daemon.
-func TestRetrySkippedForCloudRun(t *testing.T) {
+func TestRetrySkippedForStationRun(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()
 	jm := NewTaskManager(exec, eb, time.Now)
@@ -1007,13 +1007,13 @@ func TestRetrySkippedForCloudRun(t *testing.T) {
 		calls.Add(1)
 	}).Return(&executor.ExecuteResult{ExitCode: 1})
 
-	_, err := jm.TriggerRun("task1", model.TriggeredByCloud)
+	_, err := jm.TriggerRun("task1", model.TriggeredByStation)
 	require.NoError(t, err)
 
 	// One initial run, then long enough for a retry to fire if it were going
 	// to.
 	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, int32(1), calls.Load(), "cloud-triggered runs must not retry locally")
+	assert.Equal(t, int32(1), calls.Load(), "station-triggered runs must not retry locally")
 }
 
 // TestLoadPendingRunsResumed: a pending cron task with a free slot is
@@ -1297,7 +1297,7 @@ func TestTerminateRunByExecutionID_MatchesActiveRun(t *testing.T) {
 	jm.UpsertTask(task)
 
 	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{
-		TriggeredBy: model.TriggeredByCloud,
+		TriggeredBy: model.TriggeredByStation,
 		ExecutionID: "ext-123",
 	})
 	require.NoError(t, err)
@@ -1349,7 +1349,7 @@ func TestStartServiceInstances_NotAServiceTask(t *testing.T) {
 
 // TestStartServiceInstances_StoppedServiceIsNoop verifies the early-return
 // TestListServiceTasks verifies only service tasks are returned (as copies),
-// so the cloud integration folds services — not run-to-completion tasks — into
+// so the station integration folds services — not run-to-completion tasks — into
 // tasks.sync.
 func TestListServiceTasks(t *testing.T) {
 	exec := new(testutil.MockExecutor)
@@ -1622,7 +1622,7 @@ func TestScheduleJitteredRun_HeldTaskFireDroppedNotDoubleRun(t *testing.T) {
 }
 
 // TestRemoveTask_InFlightCronRunFinishes is the crux of the "reload doesn't
-// kill running work" guarantee, and the regression test for the cloud
+// kill running work" guarantee, and the regression test for the station
 // service-resurrection bug: removing a cron task while a run is in flight
 // must let that run finish under its original definition, but the task must
 // become unresolvable by name (GetTask, TriggerRunWithOptions, ...) the
@@ -1650,7 +1650,7 @@ func TestRemoveTask_InFlightCronRunFinishes(t *testing.T) {
 	require.True(t, draining, "the in-flight run's taskState must be tracked until it drains")
 	assert.True(t, ts.removed, "the taskState must be latched removed")
 
-	// Name-based resolution — including the surface a cloud peer or a delayed
+	// Name-based resolution — including the surface a station peer or a delayed
 	// local restart/retry would use — must refuse the task immediately, not
 	// just once the run has finished. This is what closes the resurrection
 	// race: previously the task stayed resolvable via m.tasks for the entire
@@ -1699,12 +1699,12 @@ func TestRemoveTask_StopsServiceInstances(t *testing.T) {
 }
 
 // TestRemoveTask_RestartCannotResurrectDuringDrain is the regression test for
-// the cloud service-resurrection bug: a service:control restart (or a REST/
+// the station service-resurrection bug: a service:control restart (or a REST/
 // CLI restart) racing the drain window between RemoveTask and its cancelled
 // instance actually exiting used to be able to bring the service back to
 // life — RestartServiceInstances resolved the task by name straight off
 // m.tasks, which stayed populated for the entire drain, with no check that
-// the task was mid-removal and no allow_cloud_dispatch gate at all. It must
+// the task was mid-removal and no allow_station_dispatch gate at all. It must
 // now fail outright: the task is unresolvable by name from the instant
 // RemoveTask returns, independent of how long the old instance takes to exit.
 //

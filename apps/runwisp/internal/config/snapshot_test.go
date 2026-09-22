@@ -203,7 +203,7 @@ func TestSnapshot_DotfileIncludeGlobIsNotCrondFiltered(t *testing.T) {
 func TestSnapshot_MissingFileAppearingIsStale(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "runwisp.toml")
-	// Snapshot a path that does not exist (cloud mode boots without a
+	// Snapshot a path that does not exist (station mode boots without a
 	// runwisp.toml); the file showing up later must read as a change.
 	snap := NewSnapshot(path, nil, time.Now())
 	require.False(t, snap.Stale())

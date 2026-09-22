@@ -102,7 +102,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&flags.logFormatRaw, "log-format", "", "log format: auto, text, json (env: RUNWISP_LOG_FORMAT)")
 
 	rootCmd.AddCommand(daemonCmd)
-	rootCmd.AddCommand(cloudCmd)
+	rootCmd.AddCommand(stationCmd)
 	rootCmd.AddCommand(tuiCmd)
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(importCmd)

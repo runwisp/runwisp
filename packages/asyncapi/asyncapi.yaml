@@ -1,8 +1,8 @@
 # =============================================================================
 # FORWARD-COMPATIBILITY CONTRACT — read before changing this file.
 #
-# Daemons ship from a separate repo and upgrade independently of the cloud.
-# Old daemons and new daemons are in the field at the same time, and new cloud
+# Daemons ship from a separate repo and upgrade independently of the station.
+# Old daemons and new daemons are in the field at the same time, and new station
 # features must keep working against old daemons. These rules keep the wire
 # evolvable. Breaking one strands executions or kills sessions in the field.
 #
@@ -11,21 +11,21 @@
 #      decodeStrict only rejects trailing JSON, never unknown fields). NEVER
 #      remove, rename, retype, or repurpose an existing field.
 #
-#   2. ADDING daemon→cloud message TYPES is safe: cloud's Hub forwards an
+#   2. ADDING daemon→station message TYPES is safe: station's Hub forwards an
 #      unknown inbound type to a metric + drop, never tearing down the session.
 #
-#   3. ADDING cloud→daemon message TYPES is safe to *send* (old daemons ignore
+#   3. ADDING station→daemon message TYPES is safe to *send* (old daemons ignore
 #      an unknown type cleanly — no error frame, session survives). But if the
-#      cloud DEPENDS on the daemon acting on the new type, it MUST treat the
+#      station DEPENDS on the daemon acting on the new type, it MUST treat the
 #      type as "gated": only send it to daemons that advertise support, and
-#      fall back otherwise. Daemons advertise the set of cloud→daemon types
+#      fall back otherwise. Daemons advertise the set of station→daemon types
 #      they handle in the `X-Runner-Protocol-Features` auth header (a JSON
 #      array, derived from the daemon's inbound decoder map). An absent header
 #      means "baseline only" (an old daemon).
 #
 #   4. ENUMS: receivers must tolerate unknown values and treat them
 #      conservatively — NEVER map an unrecognized value onto a semantically
-#      loaded zero value. A future ExecutionStatus sent to old cloud must not
+#      loaded zero value. A future ExecutionStatus sent to old station must not
 #      silently decode as "running" (iota 0) and strand the row.
 #
 #   5. The `protocolVersion` envelope integer is a RESERVED protocol
@@ -36,8 +36,8 @@
 #
 #   6. Regenerate Go/TS types from this file; never hand-edit generated output.
 #
-# The cloud-side companion to this contract is docs/PROTOCOL-COMPAT.md in the
-# runwisp-cloud repo.
+# The station-side companion to this contract is docs/PROTOCOL-COMPAT.md in the
+# runwisp-station repo.
 # =============================================================================
 asyncapi: 2.6.0
 info:
@@ -47,20 +47,20 @@ info:
     WebSocket protocol between RunWisp daemons and the control plane.
 
     Forward-compatibility is a hard requirement: old and new daemons run in the
-    field simultaneously and upgrade independently of the cloud. See the
+    field simultaneously and upgrade independently of the station. See the
     FORWARD-COMPATIBILITY CONTRACT comment block at the top of this file (and
-    docs/PROTOCOL-COMPAT.md in runwisp-cloud) before evolving any message.
+    docs/PROTOCOL-COMPAT.md in runwisp-station) before evolving any message.
 
-    Negotiation: at WS auth a daemon advertises the cloud→daemon message types
+    Negotiation: at WS auth a daemon advertises the station→daemon message types
     it understands via the `X-Runner-Protocol-Features` header (JSON array). The
-    cloud gates any feature it depends the daemon acting on, falling back when a
+    station gates any feature it depends the daemon acting on, falling back when a
     type is absent. An absent header means an old daemon (baseline types only).
 
 defaultContentType: application/json
 
 channels:
-  cloudToDaemon:
-    description: Messages sent from cloud to the daemon
+  stationToDaemon:
+    description: Messages sent from station to the daemon
     publish:
       message:
         oneOf:
@@ -76,10 +76,10 @@ channels:
           - $ref: "#/components/messages/serviceApply"
           - $ref: "#/components/messages/serviceControl"
           - $ref: "#/components/messages/serviceRemove"
-          - $ref: "#/components/messages/errorCloudToDaemon"
+          - $ref: "#/components/messages/errorStationToDaemon"
 
-  daemonToCloud:
-    description: Messages sent from the daemon to cloud
+  daemonToStation:
+    description: Messages sent from the daemon to station
     subscribe:
       message:
         oneOf:
@@ -91,7 +91,7 @@ channels:
           - $ref: "#/components/messages/logReplayChunk"
           - $ref: "#/components/messages/logSearchChunk"
           - $ref: "#/components/messages/serviceStatus"
-          - $ref: "#/components/messages/errorDaemonToCloud"
+          - $ref: "#/components/messages/errorDaemonToStation"
 
 components:
   messages:
@@ -155,7 +155,7 @@ components:
       payload:
         $ref: "#/components/schemas/ServiceRemoveMessage"
 
-    errorCloudToDaemon:
+    errorStationToDaemon:
       name: error
       payload:
         $ref: "#/components/schemas/ProtocolErrorMessage"
@@ -200,7 +200,7 @@ components:
       payload:
         $ref: "#/components/schemas/ServiceStatusMessage"
 
-    errorDaemonToCloud:
+    errorDaemonToStation:
       name: error
       payload:
         $ref: "#/components/schemas/ProtocolErrorMessage"
@@ -299,7 +299,7 @@ components:
           description: |
             Signed PUT URL the daemon uses to upload the gzipped terminal log
             archive. Optional: omitted (or empty) means archival is disabled for
-            this dispatch (transient cloud-side issuance error); the daemon keeps
+            this dispatch (transient station-side issuance error); the daemon keeps
             the local file and skips upload.
         logPath:
           type: string
@@ -320,9 +320,9 @@ components:
     ExecutionTaskConfig:
       type: object
       description: |
-        Optional per-run execution knobs the cloud control plane carries through
-        dispatch and the daemon overlays onto the dynamically-built cloud task
-        (`buildDynamicCloudTask`). Every field is optional; an omitted field
+        Optional per-run execution knobs the station control plane carries through
+        dispatch and the daemon overlays onto the dynamically-built station task
+        (`buildDynamicStationTask`). Every field is optional; an omitted field
         means "use the daemon default". Knobs not modelled here (stop signal,
         success exit codes, run-as user) are not honored by the daemon and so
         are intentionally absent — adding them would be dead surface.
@@ -334,7 +334,7 @@ components:
           description: |
             Environment variables overlaid on the run's process env, beneath
             the daemon's own env_file/secrets layers. This is the only way a
-            cloud-dispatched shell run can set process env.
+            station-dispatched shell run can set process env.
         gracefulStop:
           type: integer
           description: |
@@ -404,7 +404,7 @@ components:
     ServiceApplyMessage:
       type: object
       description: |
-        Cloud → daemon. Declares (or re-declares) a service's desired state on
+        Station → daemon. Declares (or re-declares) a service's desired state on
         the runner. Idempotent: the daemon upserts a kind=service task and, when
         `autostart` is true, brings instances up to `instances`. Re-sent when a
         runner reconnects so desired state converges after downtime. Gated by
@@ -472,7 +472,7 @@ components:
     ServiceControlMessage:
       type: object
       description: |
-        Cloud → daemon. An operator action against a declared service. Maps to
+        Station → daemon. An operator action against a declared service. Maps to
         the daemon's StartServiceInstances / StopService /
         RestartServiceInstances. Gated by the `service:control` feature token.
       properties:
@@ -500,9 +500,9 @@ components:
     ServiceRemoveMessage:
       type: object
       description: |
-        Cloud → daemon. Tears down a previously declared service on the runner:
+        Station → daemon. Tears down a previously declared service on the runner:
         the daemon cancels its instances and drops the kind=service task. Maps to
-        the daemon's RemoveTask. Without this, a cloud-declared service (and its
+        the daemon's RemoveTask. Without this, a station-declared service (and its
         supervisor goroutines) would live until daemon restart, since reconcile
         only ever removes TOML-registry tasks. Gated by the `service:remove`
         protocol-feature token — old daemons never receive it.
@@ -554,10 +554,10 @@ components:
     ServiceStatusMessage:
       type: object
       description: |
-        Daemon → cloud. A full per-service snapshot of the supervisor's state.
-        Sent on change and on a slow heartbeat — never per log line. Cloud keeps
+        Daemon → station. A full per-service snapshot of the supervisor's state.
+        Sent on change and on a slow heartbeat — never per log line. Station keeps
         only the latest snapshot (Valkey), never per-instance rows. Additive:
-        old cloud ignores it; new cloud tolerates its absence.
+        old station ignores it; new station tolerates its absence.
       properties:
         type:
           type: string
@@ -590,7 +590,7 @@ components:
     LogReplayRequestMessage:
       type: object
       description: |
-        Cloud → daemon. Requests a bounded historical page of log lines for an
+        Station → daemon. Requests a bounded historical page of log lines for an
         execution. The daemon replies with one or more log:replayChunk messages
         whose final flag marks the end of the page.
       properties:
@@ -623,9 +623,9 @@ components:
     LogSearchRequestMessage:
       type: object
       description: |
-        Cloud → daemon. Greps one execution's on-disk log for lines matching a
-        query and replies with a single log:searchChunk. A gated cloud→daemon
-        type (X-Runner-Protocol-Features "log:searchRequest"): cloud only sends
+        Station → daemon. Greps one execution's on-disk log for lines matching a
+        query and replies with a single log:searchChunk. A gated station→daemon
+        type (X-Runner-Protocol-Features "log:searchRequest"): station only sends
         it to daemons that advertise support, since an old daemon would drop it
         and the search would time out. Scope is one execution's live/recent log
         on disk — archived (rotated/uploaded) lines are not searchable here.
@@ -705,7 +705,7 @@ components:
     AgentRestartMessage:
       type: object
       description: >
-        Cloud → daemon. Asks the daemon to gracefully restart its own process
+        Station → daemon. Asks the daemon to gracefully restart its own process
         (re-exec the agent binary), e.g. after a config change or to recover a
         wedged agent. Carries no execution scope; it acts on the agent itself.
       properties:
@@ -724,7 +724,7 @@ components:
       type: object
       description: |
         The `error` frame, sent in both directions with an identical shape:
-        cloud→daemon and daemon→cloud. Receivers treat unrecognized codes as
+        station→daemon and daemon→station. Receivers treat unrecognized codes as
         connection-scoped diagnostics (log + metric, never a state flip).
       properties:
         type:
@@ -775,9 +775,9 @@ components:
           description: |
             Optional live system snapshot piggybacked on the heartbeat so the
             control plane can show a runner's CPU/memory/identity without a
-            dedicated message or any DB write (cloud stores only the latest
+            dedicated message or any DB write (station stores only the latest
             snapshot in Valkey). Add-only field; old daemons omit it and old
-            cloud ignores it.
+            station ignores it.
       required:
         - type
 
@@ -824,12 +824,12 @@ components:
     ExecutionAckMessage:
       type: object
       description: |
-        Daemon → cloud. Sent immediately after an execution:dispatch passes
+        Daemon → station. Sent immediately after an execution:dispatch passes
         validation (before the run is registered or triggered). Confirms
         receipt so the control plane can stop re-dispatching. A duplicate
         dispatch for an execution the daemon already knows is re-acked
         without starting a second run. Old daemons never send this; the
-        cloud treats execution:update(running) as an implicit ack.
+        station treats execution:update(running) as an implicit ack.
       properties:
         type:
           type: string
@@ -918,7 +918,7 @@ components:
 
     LogLineMessage:
       description: |
-        Daemon → cloud. Pushed live for any execution with an active log:listen
+        Daemon → station. Pushed live for any execution with an active log:listen
         subscription. Each message carries exactly one absolute-numbered line.
       allOf:
         - $ref: "#/components/schemas/LogLineEntry"
@@ -941,12 +941,12 @@ components:
     LogLinesMessage:
       type: object
       description: |
-        Daemon → cloud. A coalesced batch of live log lines for one execution
+        Daemon → station. A coalesced batch of live log lines for one execution
         with an active log:listen subscription — the same per-line payload as
         log:line, but grouped so a burst of output ships as one frame instead
         of one frame per line (fewer WS frames, NATS publishes, and SSE writes
         on the hot path). Lines are in ascending `n` order. An additive
-        daemon→cloud type: old cloud never receives it, and a daemon may still
+        daemon→station type: old station never receives it, and a daemon may still
         send single log:line frames — a receiver must handle both.
       properties:
         type:
@@ -971,7 +971,7 @@ components:
     LogReplayChunkMessage:
       type: object
       description: |
-        Daemon → cloud. One page of historical log lines in reply to a
+        Daemon → station. One page of historical log lines in reply to a
         log:replayRequest. A reply may span multiple chunks; final=true marks
         the last chunk.
       properties:
@@ -1003,7 +1003,7 @@ components:
     LogSearchChunkMessage:
       type: object
       description: |
-        Daemon → cloud. The single reply to a log:searchRequest. hits are
+        Daemon → station. The single reply to a log:searchRequest. hits are
         ordered by ascending line number within the execution. exhausted=true
         means the daemon scanned the whole on-disk log; when false, nextLine
         carries the resume cursor (pass it back as fromLine to page on).

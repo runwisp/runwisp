@@ -113,7 +113,7 @@ func (b *HTTPBackend) Available(_ context.Context) bool { return true }
 
 // Start ignores task/run: an HTTP execution has no argv or environment to carry
 // per-run params into, and this backend isn't built from [tasks.*] TOML (only
-// from cloud ad-hoc defs, which declare no params), so there is nothing to wire.
+// from station ad-hoc defs, which declare no params), so there is nothing to wire.
 func (b *HTTPBackend) Start(ctx context.Context, _ *model.Task, _ *model.Run, def model.ExecutionDef) (*Process, error) {
 	httpDef, ok := def.(*model.HTTPExecution)
 	if !ok {

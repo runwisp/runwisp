@@ -55,7 +55,7 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.R
 	cmd := exec.CommandContext(ctx, shellPath, shellArgs(shellPath, script)...)
 
 	// Resolve run-as (user[:group]) at run time. RunUser is read from the task,
-	// never from the execution def, so a cloud-dispatched ad-hoc run can't pick
+	// never from the execution def, so a station-dispatched ad-hoc run can't pick
 	// a uid — privilege drop is a TOML-only capability.
 	var cred *syscall.Credential
 	var identity []string
@@ -82,7 +82,7 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.R
 
 	// Always build cmd.Env through buildProcessEnv, even with no overlays:
 	// leaving it nil would make Go inherit the daemon's env verbatim, including
-	// the RUNWISP_* secrets (password, cloud token) that buildProcessEnv strips.
+	// the RUNWISP_* secrets (password, station token) that buildProcessEnv strips.
 	// The run-as identity (HOME/USER/LOGNAME) seeds beneath the task's own env
 	// so task.Env can still override it.
 	cmd.Env = buildProcessEnv(append(base, identity...), task.Env, task.Secrets, paramEnv)

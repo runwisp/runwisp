@@ -36,7 +36,7 @@ func TestSecretRedactor_MasksValues(t *testing.T) {
 
 // TestCommitGroup_RedactsSecretOnBothSinks is the bug-first guard: a secret
 // value printed by a run must not survive to either the on-disk log file or
-// the published event, since both feed downstream consumers (SSE/REST/cloud).
+// the published event, since both feed downstream consumers (SSE/REST/station).
 func TestCommitGroup_RedactsSecretOnBothSinks(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	w, err := NewLogWriter(opts)

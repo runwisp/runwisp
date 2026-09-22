@@ -59,11 +59,11 @@ func TestReportDemoNoTUI_NoPasswordExitsNonZeroWithoutLeaking(t *testing.T) {
 // setSeedOnly flips the package-global demoFlags into --seed-only mode for the
 // duration of a test and restores them afterwards. demoFlags is a global, so
 // these tests must not run in parallel with each other.
-func setSeedOnly(t *testing.T, cloud bool) {
+func setSeedOnly(t *testing.T, station bool) {
 	t.Helper()
 	prev := demoFlags
 	demoFlags.SeedOnly = true
-	demoFlags.Cloud = cloud
+	demoFlags.Station = station
 	t.Cleanup(func() { demoFlags = prev })
 }
 
@@ -104,7 +104,7 @@ func TestDemoPathFlagsRejection(t *testing.T) {
 	}
 }
 
-func TestRunDemoSeedOnlyRejectsCloud(t *testing.T) {
+func TestRunDemoSeedOnlyRejectsStation(t *testing.T) {
 	setSeedOnly(t, true)
 
 	f := Flags{
@@ -114,5 +114,5 @@ func TestRunDemoSeedOnlyRejectsCloud(t *testing.T) {
 
 	err := runDemo(demoCmd, f)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--seed-only cannot be combined with --cloud")
+	assert.Contains(t, err.Error(), "--seed-only cannot be combined with --station")
 }

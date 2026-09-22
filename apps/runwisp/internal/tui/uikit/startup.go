@@ -54,8 +54,8 @@ type StartupInfo struct {
 	// is no password to show; the Home header renders "disabled" instead.
 	AuthDisabled bool
 
-	CloudEnabled  bool
-	WebUIDisabled bool
+	StationEnabled bool
+	WebUIDisabled  bool
 	// ServiceManaged is true when the daemon runs under systemd / launchd.
 	// The quit dialog then drops its "Shut Down" option in favour of a
 	// `runwisp stop` hint, so the TUI never fights the service manager.

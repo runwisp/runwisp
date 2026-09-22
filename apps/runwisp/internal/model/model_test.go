@@ -14,7 +14,7 @@ import (
 )
 
 // TestValidateTaskName_RejectsBadInputs locks in the shared validator that
-// the TOML loader, REST inputs, and the cloud-dispatch resolver all rely
+// the TOML loader, REST inputs, and the station-dispatch resolver all rely
 // on. A drift here is a latent bug: a name accepted by TOML but rejected
 // by the API (or vice versa) makes the same task unreachable from
 // surfaces that should round-trip cleanly.
@@ -75,7 +75,6 @@ func TestDaemonInfo_JSONShapeIsLocked(t *testing.T) {
 	want := []string{
 		"authDisabled",
 		"capabilities",
-		"cloudEnabled",
 		"configLoadedAt",
 		"configStale",
 		"externalUrl",
@@ -85,6 +84,7 @@ func TestDaemonInfo_JSONShapeIsLocked(t *testing.T) {
 		"resolvedTimezone",
 		"schedulingActive",
 		"serviceManaged",
+		"stationEnabled",
 		"tasks",
 		"timezoneSource",
 		"updateAvailable",
@@ -267,7 +267,7 @@ func TestTask_ResolvedExecutionDef_EmptyRun(t *testing.T) {
 }
 
 // TestTaskJSON_HidesSecrets guards the invariant that secrets / secrets_file
-// values never escape the daemon over JSON (API, UI, cloud). Inline env, the
+// values never escape the daemon over JSON (API, UI, station). Inline env, the
 // env_file path, and the secrets_file path remain visible because operators
 // expect them in the UI.
 func TestTaskJSON_HidesSecrets(t *testing.T) {

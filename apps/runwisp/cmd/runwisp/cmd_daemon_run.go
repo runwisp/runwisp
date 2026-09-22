@@ -41,11 +41,11 @@ type daemonMode int
 
 const (
 	modeStandalone daemonMode = iota
-	modeCloud
+	modeStation
 )
 
-// noTUI is the bind target for `runwisp cloud --no-tui`; cobra needs a stable
-// address. The resolved value is read once at the cloud RunE boundary and
+// noTUI is the bind target for `runwisp station --no-tui`; cobra needs a stable
+// address. The resolved value is read once at the station RunE boundary and
 // passed into runDaemon as the headless argument — no logic helper reads it.
 // (`runwisp daemon` passes headless=true directly; the bare `runwisp` passes
 // false.)
@@ -104,10 +104,10 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		return err
 	}
 
-	// Warn standalone users who have RUNWISP_CLOUD_TOKEN set but aren't using
-	// the cloud subcommand.
-	if mode == modeStandalone && os.Getenv("RUNWISP_CLOUD_TOKEN") != "" {
-		slog.Warn("RUNWISP_CLOUD_TOKEN is set but ignored in standalone mode — use 'runwisp cloud' to start in cloud mode")
+	// Warn standalone users who have a station token set but aren't using the
+	// station subcommand.
+	if mode == modeStandalone && os.Getenv("RUNWISP_STATION_TOKEN") != "" {
+		slog.Warn("RUNWISP_STATION_TOKEN is set but ignored in standalone mode — use 'runwisp station' to start in station mode")
 	}
 
 	tlsCfg, err := resolveTLS(f, cfg.Config.Daemon)
@@ -200,8 +200,8 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		Password:          cfg.Password,
 		AuthDisabled:      cfg.NoAuth,
 
-		CloudEnabled: cfg.CloudConfig.Enabled,
-		Headless:     headless,
+		StationEnabled: cfg.StationConfig.Enabled,
+		Headless:       headless,
 
 		ScheduleWarnings: svc.ScheduleResult.Warnings,
 		InitWarnings:     svc.InitWarnings,
@@ -210,9 +210,9 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		CatchUpTriggered: svc.CatchUpResult.Triggered,
 	}
 
-	// Cloud client is only started in cloud mode; standalone gets no-ops.
-	cancelCloud, cloudWG := startCloudIfEnabled(mode, cfg, svc, srv)
-	defer cancelCloud()
+	// Station client is only started in station mode; standalone gets no-ops.
+	cancelStation, stationWG := startStationIfEnabled(mode, cfg, svc, srv)
+	defer cancelStation()
 
 	// fatalCh carries a fatal server-start error from the supervisor goroutine
 	// back to the shutdown path, so a self-triggered teardown logs the real
@@ -232,15 +232,15 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	// runs", "service xN"). The TUI path narrates runs visually and so
 	// skips this subscription.
 	rt := &daemonRuntime{
-		sigCh:       sigCh,
-		svc:         svc,
-		srv:         srv,
-		fatalCh:     fatalCh,
-		reload:      reloadFn,
-		debugWriter: debugWriter,
-		logBuffer:   logBuffer,
-		cancelCloud: cancelCloud,
-		cloudWG:     cloudWG,
+		sigCh:         sigCh,
+		svc:           svc,
+		srv:           srv,
+		fatalCh:       fatalCh,
+		reload:        reloadFn,
+		debugWriter:   debugWriter,
+		logBuffer:     logBuffer,
+		cancelStation: cancelStation,
+		stationWG:     stationWG,
 	}
 
 	if headless {
@@ -263,7 +263,7 @@ func rerouteLogsToStderrOnError(err *error) {
 }
 
 // newReconciler wires the reload reconciler that powers `runwisp reload` /
-// SIGHUP. Standalone only: cloud mode has no local scheduler to reconcile, so
+// SIGHUP. Standalone only: station mode has no local scheduler to reconcile, so
 // it returns (nil, nil), leaving POST /api/daemon/reload reporting "not available in
 // this mode".
 func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Flags, snap *config.Snapshot) (*runtime.Reconciler, func() (model.ReloadResult, error)) {
@@ -294,7 +294,7 @@ func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Fl
 //
 // Skipped unless this config actually reads a crontab: with no include_cron the
 // probe could not change a single decision, and starting it anyway would exec
-// systemctl every minute on every ordinary install. Also skipped in cloud mode,
+// systemctl every minute on every ordinary install. Also skipped in station mode,
 // which has no local scheduler to refresh (nil reconciler).
 //
 // Always returns a non-nil stop func so the caller can defer it unconditionally.
@@ -308,7 +308,7 @@ func startCronHoldWatcher(r *runtime.Reconciler, cfg *config.Config) context.Can
 
 // configWarningsFn returns the hook /api/daemon calls for the live config's
 // non-fatal findings. It prefers the reconciler's baseline so a reload's warnings
-// replace boot's; in a mode with no reconciler (cloud) the boot config is the live
+// replace boot's; in a mode with no reconciler (station) the boot config is the live
 // one and can't change.
 func configWarningsFn(r *runtime.Reconciler, boot *config.Config) func() []string {
 	if r != nil {
@@ -388,12 +388,12 @@ func configureBootLogRouting(logBuffer *server.DaemonLogBuffer, f Flags, headles
 	return debugWriter
 }
 
-// startCloudIfEnabled spins up the cloud client when running in cloud mode and
+// startStationIfEnabled spins up the station client when running in station mode and
 // returns the cancel/wait pair the shutdown path needs. Standalone gets a
 // no-op cancel and empty WaitGroup so callers can defer/wait unconditionally.
-func startCloudIfEnabled(mode daemonMode, cfg *daemonConfig, svc *daemonServices, srv *server.Server) (context.CancelFunc, *sync.WaitGroup) {
-	if mode == modeCloud {
-		return startCloudClient(context.Background(), cfg, svc, srv)
+func startStationIfEnabled(mode daemonMode, cfg *daemonConfig, svc *daemonServices, srv *server.Server) (context.CancelFunc, *sync.WaitGroup) {
+	if mode == modeStation {
+		return startStationClient(context.Background(), cfg, svc, srv)
 	}
 	return func() {}, &sync.WaitGroup{}
 }
@@ -476,7 +476,7 @@ func logStartupSummary(info uikit.StartupInfo) {
 		slog.Warn("schedule warning", "detail", w)
 	}
 	if info.WebUIDisabled {
-		slog.Info("web UI disabled (no password in cloud-only mode)")
+		slog.Info("web UI disabled (no password in station-only mode)")
 	}
 	// AuthDisabled needs no line here: logSecurityWarnings already emits the
 	// WARN (and the stderr banner) in every mode before this summary runs.
@@ -567,8 +567,8 @@ func emitReadiness(rt *daemonRuntime, listenURL string, f Flags) {
 
 // logSecurityWarnings emits log warnings for security-sensitive configurations.
 func logSecurityWarnings(cfg *daemonConfig, f Flags, tlsCfg tlsSetup) {
-	if cfg.Config.Daemon.AllowCloudDispatch {
-		slog.Warn("Cloud dispatch enabled — the cloud control plane can execute arbitrary commands (shell, container, compose) on this host")
+	if cfg.Config.Daemon.AllowStationDispatch {
+		slog.Warn("Station dispatch enabled — the Station control plane can execute arbitrary commands (shell, container, compose) on this host")
 	}
 	nonLoopback := isNonLoopbackBind(f.Host)
 	serving := tlsCfg.Scheme == "https"
