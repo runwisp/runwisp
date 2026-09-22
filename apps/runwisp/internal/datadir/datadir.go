@@ -130,38 +130,12 @@ func PidFilePath(dataDir string) string {
 	return filepath.Join(dataDir, "daemon.pid")
 }
 
-func WritePidFile(dataDir string) error {
-	return WriteSecretFile(PidFilePath(dataDir), []byte(strconv.Itoa(os.Getpid())+"\n"))
-}
-
 func ReadPidFile(dataDir string) (int, error) {
 	data, err := os.ReadFile(PidFilePath(dataDir))
 	if err != nil {
 		return 0, err
 	}
 	return strconv.Atoi(strings.TrimSpace(string(data)))
-}
-
-// CleanPidFile removes the PID file, but only when it still holds this
-// process's own PID. A second daemon that clobbered the file (or a stale file
-// belonging to an unrelated process) is left untouched so a live daemon is
-// never orphaned by another process's cleanup.
-func CleanPidFile(dataDir string) {
-	path := PidFilePath(dataDir)
-	pid, err := ReadPidFile(dataDir)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			slog.Warn("Failed to read PID file before cleanup", "err", err)
-		}
-		return
-	}
-	if pid != os.Getpid() {
-		// The file names a different process — not ours to remove.
-		return
-	}
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		slog.Warn("Failed to remove PID file", "err", err)
-	}
 }
 
 // DaemonLock is the held ownership claim returned by AcquireDaemonLock. The
@@ -213,8 +187,8 @@ func AcquireDaemonLock(dataDir string) (*DaemonLock, error) {
 
 // Release unlocks and removes the PID file, then closes the fd. Safe to
 // always remove: holding the lock while removing means no other process can
-// be treating this file as live in the meantime. Best-effort, mirroring
-// CleanPidFile: unexpected failures are logged via slog.Warn, never panicked.
+// be treating this file as live in the meantime. Best-effort: unexpected
+// failures are logged via slog.Warn, never panicked.
 func (l *DaemonLock) Release() {
 	if l == nil || l.f == nil {
 		return

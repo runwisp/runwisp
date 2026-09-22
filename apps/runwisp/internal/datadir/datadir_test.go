@@ -6,7 +6,6 @@ package datadir
 import (
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -76,132 +75,6 @@ func TestEnsureDir_Mode0700(t *testing.T) {
 	}
 	if perm := info.Mode().Perm(); perm != 0700 {
 		t.Fatalf("expected data dir mode 0700, got %#o", perm)
-	}
-}
-
-func TestWritePidFile_RefusesSymlink(t *testing.T) {
-	dataDir := t.TempDir()
-	target := filepath.Join(t.TempDir(), "victim")
-	if err := os.WriteFile(target, []byte("untouched"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(target, PidFilePath(dataDir)); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := WritePidFile(dataDir); err == nil {
-		t.Fatal("expected WritePidFile to refuse a symlinked path")
-	}
-
-	got, err := os.ReadFile(target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != "untouched" {
-		t.Fatalf("symlink target was modified: %q", got)
-	}
-}
-
-func TestCleanPidFile_RemovesExisting(t *testing.T) {
-	dataDir := t.TempDir()
-	pid := PidFilePath(dataDir)
-	if err := os.WriteFile(pid, []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
-		t.Fatal(err)
-	}
-	CleanPidFile(dataDir)
-	if _, err := os.Stat(pid); !os.IsNotExist(err) {
-		t.Fatalf("expected PID file removed, got err=%v", err)
-	}
-}
-
-// TestCleanPidFile_LeavesForeignPid guards H1: when daemon.pid names a process
-// other than the caller (e.g. a second daemon clobbered it, or a stale file
-// from an unrelated process), CleanPidFile must leave it in place so the live
-// owner is not orphaned by another process's deferred cleanup.
-func TestCleanPidFile_LeavesForeignPid(t *testing.T) {
-	dataDir := t.TempDir()
-	pid := PidFilePath(dataDir)
-	foreign := os.Getpid() + 1
-	if err := os.WriteFile(pid, []byte(strconv.Itoa(foreign)), 0600); err != nil {
-		t.Fatal(err)
-	}
-	CleanPidFile(dataDir)
-	if _, err := os.Stat(pid); err != nil {
-		t.Fatalf("expected foreign PID file to be left in place, got err=%v", err)
-	}
-}
-
-func TestCleanPidFile_MissingIsSilent(t *testing.T) {
-	CleanPidFile(t.TempDir()) // must not panic, must not log fatal
-}
-
-// TestCleanPidFile_NonNotExistErrorLogsWarning covers the `err != nil &&
-// !os.IsNotExist(err)` branch: when the PID-file path is in fact a populated
-// directory, os.Remove returns ENOTEMPTY/EISDIR — CleanPidFile must swallow
-// and log it without panicking.
-func TestCleanPidFile_NonNotExistErrorLogsWarning(t *testing.T) {
-	dataDir := t.TempDir()
-	pidPath := PidFilePath(dataDir)
-	if err := os.MkdirAll(pidPath, 0700); err != nil {
-		t.Fatal(err)
-	}
-	// Put a file inside so os.Remove can't unlink the directory.
-	if err := os.WriteFile(pidPath+"/keep", []byte("x"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	CleanPidFile(dataDir) // must not panic; logs a warning internally.
-	if _, err := os.Stat(pidPath); err != nil {
-		t.Fatalf("directory should still exist after non-removable Clean: %v", err)
-	}
-}
-
-func TestWritePidFile_HappyPathThenReadBack(t *testing.T) {
-	dataDir := t.TempDir()
-	if err := WritePidFile(dataDir); err != nil {
-		t.Fatal(err)
-	}
-	info, err := os.Lstat(PidFilePath(dataDir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if perm := info.Mode().Perm(); perm != 0600 {
-		t.Fatalf("expected PID file mode 0600, got %#o", perm)
-	}
-	pid, err := ReadPidFile(dataDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pid != os.Getpid() {
-		t.Fatalf("ReadPidFile = %d, want %d", pid, os.Getpid())
-	}
-}
-
-func TestWritePidFile_OverwritesExistingRegularFile(t *testing.T) {
-	dataDir := t.TempDir()
-	if err := os.WriteFile(PidFilePath(dataDir), []byte("999999"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := WritePidFile(dataDir); err != nil {
-		t.Fatal(err)
-	}
-	pid, err := ReadPidFile(dataDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pid != os.Getpid() {
-		t.Fatalf("ReadPidFile = %d, want %d", pid, os.Getpid())
-	}
-}
-
-func TestWritePidFile_RefusesNonRegularPath(t *testing.T) {
-	dataDir := t.TempDir()
-	// Replace the future PID file path with a directory; WriteSecretFile must
-	// reject "not a regular file" before any OpenFile attempt.
-	if err := os.MkdirAll(PidFilePath(dataDir), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := WritePidFile(dataDir); err == nil {
-		t.Fatal("expected WritePidFile to refuse non-regular path")
 	}
 }
 
@@ -285,23 +158,6 @@ func TestRandBase62_LengthMatches(t *testing.T) {
 		if len(s) != n {
 			t.Fatalf("RandBase62(%d) = len %d, want %d", n, len(s), n)
 		}
-	}
-}
-
-func TestWritePidFile_AppendsNewline(t *testing.T) {
-	dataDir := t.TempDir()
-	if err := WritePidFile(dataDir); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(PidFilePath(dataDir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasSuffix(string(data), "\n") {
-		t.Fatalf("PID file lacks trailing newline: %q", data)
-	}
-	if strings.TrimSpace(string(data)) != strconv.Itoa(os.Getpid()) {
-		t.Fatalf("unexpected PID file body: %q", data)
 	}
 }
 
