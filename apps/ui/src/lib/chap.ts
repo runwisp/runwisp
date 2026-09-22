@@ -10,6 +10,10 @@
 // The formula is hex(PBKDF2-HMAC-SHA256(password, salt=nonce, iterations, 32
 // bytes)). PBKDF2 makes an intercepted login transcript expensive to
 // brute-force offline — defense in depth behind TLS, not a substitute for it.
+//
+// Browsers only expose crypto.subtle in secure contexts (HTTPS or localhost),
+// so a daemon reached over plain HTTP at a LAN address falls back to the
+// pure-JS @noble/hashes PBKDF2. It's slower, so it's loaded only when needed.
 
 // CHAP_PBKDF2_ITERATIONS MUST equal the Go constant chap.Iterations. A bump
 // here is only correct if the Go side and the test vectors move with it.
@@ -20,6 +24,19 @@ const CHAP_PBKDF2_ITERATIONS = 600_000;
 const DERIVED_BITS = 256;
 
 export async function chapResponse(password: string, nonce: string): Promise<string> {
+    // lib.dom types subtle as always present; insecure contexts omit it.
+    if (!("subtle" in globalThis.crypto)) {
+        const [{ pbkdf2Async }, { sha256 }, { bytesToHex }] = await Promise.all([
+            import("@noble/hashes/pbkdf2.js"),
+            import("@noble/hashes/sha2.js"),
+            import("@noble/hashes/utils.js"),
+        ]);
+        const key = await pbkdf2Async(sha256, password, nonce, {
+            c: CHAP_PBKDF2_ITERATIONS,
+            dkLen: DERIVED_BITS / 8,
+        });
+        return bytesToHex(key);
+    }
     const enc = new TextEncoder();
     const keyMaterial = await globalThis.crypto.subtle.importKey(
         "raw",

@@ -177,6 +177,15 @@ function createConnectionStore() {
         }
     }
 
+    // A source the app closed on purpose (logout, unmount) is not a lost
+    // connection: forget it without flipping status or scheduling a ping.
+    // Reporting it down instead made a logged-out page ping /api/system every
+    // 2 s, and each 401 re-opened the login modal (clearing the password field).
+    function releaseSource(id: string) {
+        upSources.delete(id);
+        stalledSources.delete(id);
+    }
+
     function reportFetchError(err: unknown): boolean {
         if (isConnectionError(err)) {
             markDisconnected(err);
@@ -216,6 +225,7 @@ function createConnectionStore() {
         reportSourceUp,
         reportSourceStalled,
         reportSourceDown,
+        releaseSource,
         retryNow: attemptReconnect,
         onReconnect,
     };

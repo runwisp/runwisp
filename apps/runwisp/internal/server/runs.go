@@ -25,6 +25,22 @@ type PaginationParams struct {
 	SortDirection storage.SortDirection
 }
 
+// appStreamPingInterval is how often pumpAppStream sends a keepalive ping
+// (and roughly how often a system sample arrives) on an otherwise idle
+// connection — the longest gap sseWriteTimeout below must cover.
+const appStreamPingInterval = 30 * time.Second
+
+// sse.WriteTimeout is a per-send write deadline that huma's sse package sets
+// on every message and never clears — in practice it caps the max gap
+// between sends on a stream, not any one write's duration. Its 5s default
+// raced the 5s system-metrics sample (internal/server/server.go) and reset
+// the HTTP/2 stream every few seconds on an otherwise idle connection,
+// flashing the Web UI "offline". It's a package-level global (set once, not
+// per-server) to avoid a data race across parallel servers/tests.
+func init() {
+	sse.WriteTimeout = 2 * appStreamPingInterval
+}
+
 func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	cfg := huma.DefaultConfig("", "")
 	cfg.OpenAPI = srv.api.OpenAPI()
@@ -467,7 +483,7 @@ func (srv *Server) appStreamHandler(ctx context.Context, input *AppStreamInput, 
 // is nil when notify is disabled (a nil channel blocks forever in select, so
 // that arm simply never fires).
 func (srv *Server) pumpAppStream(ctx context.Context, sub *appSub, notifyCh <-chan inapp.Update, send sse.Sender) {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(appStreamPingInterval)
 	defer ticker.Stop()
 
 	for {

@@ -17,6 +17,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestSSEWriteTimeoutCoversPingInterval guards against sse.WriteTimeout
+// (a per-send write deadline huma never clears, so it's really "max gap
+// between sends") being shorter than the app stream's own keepalive cadence
+// — that raced the write deadline against the periodic system sample and
+// reset idle HTTP/2 connections every few seconds.
+func TestSSEWriteTimeoutCoversPingInterval(t *testing.T) {
+	assert.Greater(t, sse.WriteTimeout, appStreamPingInterval)
+}
+
 func TestToSSEEventData_RunDeletedHappyPath(t *testing.T) {
 	in := events.Event{
 		Type: events.EventRunDeleted,
