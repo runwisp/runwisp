@@ -25,7 +25,7 @@ const artifacts: ReadonlyArray<{
         label: "openapi",
         source: resolve(here, "../../runwisp/openapi.json"),
         destination: resolve(here, "../public/openapi.json"),
-        hint: "Run `bun run generate` (or `bunx moon run runwisp:openapi`) first.",
+        hint: "Run `bun run generate` (or `moon run runwisp:openapi`) first.",
     },
     {
         label: "config-schema",
