@@ -42,9 +42,9 @@ type Subscriber struct {
 func (s *Subscriber) Channel() <-chan Update { return s.ch }
 
 // Hub is an in-memory pub/sub for SSE consumers. Drop-oldest under
-// backpressure: if a slow subscriber fills its buffered channel, the new
-// update is silently dropped. SSE is a best-effort surface; pages reload via
-// REST list to recover.
+// backpressure: if a slow subscriber fills its buffered channel, its oldest
+// buffered update is evicted to make room for the newest. SSE is a best-effort
+// surface; pages reload via REST list to recover.
 type Hub struct {
 	mu      sync.RWMutex
 	subs    map[*Subscriber]struct{}
@@ -78,19 +78,37 @@ func (h *Hub) Subscribe() (*Subscriber, func()) {
 }
 
 // Publish broadcasts an update to all subscribers. Drop-oldest semantics: a
-// subscriber whose channel is full silently misses this update.
+// subscriber whose channel is full has its oldest buffered update evicted so
+// this (fresher) one still lands — every Update carries an authoritative
+// UnreadCount, so the newest must never be the one dropped.
 //
 // The send happens under the read lock so it is mutually exclusive with the
 // exclusive-locked unsubscribe that closes the channel — otherwise a send could
 // land on an already-closed channel and panic (a send on a closed channel is
-// not saved by the select's default case). The send is non-blocking, so holding
-// the read lock never stalls: concurrent Publish calls are still allowed.
+// not saved by the select's default case). Both the send and the eviction are
+// non-blocking, so holding the read lock never stalls: concurrent Publish calls
+// are still allowed.
 func (h *Hub) Publish(u Update) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for s := range h.subs {
+		sendDropOldest(s.ch, u)
+	}
+}
+
+// sendDropOldest delivers u on ch, evicting the oldest buffered update when ch
+// is full so the freshest state always reaches the subscriber. Mirrors the
+// dispatcher's enqueueDropOldest. Every step is non-blocking; the loop retries
+// only when a racing receiver drained ch between the send and the eviction.
+func sendDropOldest(ch chan Update, u Update) {
+	for {
 		select {
-		case s.ch <- u:
+		case ch <- u:
+			return
+		default:
+		}
+		select {
+		case <-ch:
 		default:
 		}
 	}

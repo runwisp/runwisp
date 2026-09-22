@@ -74,7 +74,10 @@ type Task struct {
 	// yields the same slots — but actual start times depend on run durations,
 	// like the queue policy. Task-only (services start every instance at boot)
 	// and a no-op without a cron.
-	Jitter time.Duration `toml:"-" json:"jitter,omitempty" doc:"Cap how far a cron task's start may slip so tasks sharing a fire time take turns through a daemon-wide one-at-a-time gate instead of stampeding; a run starts as soon as the gate frees and slips up to this window only under contention, in nanoseconds"`
+	// A pointer so an explicit `jitter = "0s"` (opt out of an inherited
+	// [defaults] jitter) is distinguishable from an omitted key (nil, inherits
+	// [defaults]). nil and *0 both mean "no jitter". Read via JitterValue.
+	Jitter *time.Duration `toml:"-" json:"jitter,omitempty" doc:"Cap how far a cron task's start may slip so tasks sharing a fire time take turns through a daemon-wide one-at-a-time gate instead of stampeding; a run starts as soon as the gate frees and slips up to this window only under contention, in nanoseconds"`
 	// ManualTrigger means different things by Kind: on a task, whether it can
 	// be run outside its cron schedule (see Triggerable). On a service,
 	// whether it can be stopped/restarted/started outside its restart policy
@@ -94,7 +97,11 @@ type Task struct {
 	// instance at boot.
 	RunOnStart bool `toml:"-" json:"runOnStart" doc:"For tasks: fire once at daemon startup, in addition to any cron schedule"`
 
-	Timeout time.Duration `toml:"-"                       json:"timeout,omitempty" doc:"Per-run timeout in nanoseconds"`
+	// A pointer so an explicit `timeout = "0s"` (opt out of an inherited
+	// [defaults] timeout — run with no timeout) is distinguishable from an
+	// omitted key (nil, inherits [defaults]). nil and *0 both mean "no timeout".
+	// Read via TimeoutValue.
+	Timeout *time.Duration `toml:"-"                       json:"timeout,omitempty" doc:"Per-run timeout in nanoseconds"`
 	// GracefulStop is a pointer so an explicit `graceful_stop = "0s"` (kill
 	// immediately, no grace window) is distinguishable from an omitted key (nil,
 	// inherits [defaults] then the built-in default). Applies to tasks and
@@ -272,6 +279,25 @@ func (t *Task) GracefulStopValue() time.Duration {
 		return 0
 	}
 	return *t.GracefulStop
+}
+
+// TimeoutValue returns the configured per-run timeout, or 0 ("no timeout") when
+// unset or explicitly disabled with `timeout = "0s"`. Both nil and *0 mean the
+// run manager arms no timeout timer.
+func (t *Task) TimeoutValue() time.Duration {
+	if t.Timeout == nil {
+		return 0
+	}
+	return *t.Timeout
+}
+
+// JitterValue returns the configured start-spread window, or 0 ("no jitter")
+// when unset or explicitly disabled with `jitter = "0s"`.
+func (t *Task) JitterValue() time.Duration {
+	if t.Jitter == nil {
+		return 0
+	}
+	return *t.Jitter
 }
 
 // DefaultCatchUp is the built-in catch_up value applied when the key is omitted:

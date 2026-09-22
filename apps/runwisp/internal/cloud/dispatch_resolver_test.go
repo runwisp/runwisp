@@ -415,13 +415,14 @@ func TestBuildDynamicCloudTask_DefaultsToCloudInline(t *testing.T) {
 func TestBuildDynamicCloudTask_SetsTimeout(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
 	task := buildDynamicCloudTask(&protocol.Execution{TaskID: "t", Timeout: 5000}, def)
-	assert.Equal(t, 5000*time.Millisecond, task.Timeout)
+	assert.Equal(t, 5000*time.Millisecond, task.TimeoutValue())
 }
 
 func TestBuildDynamicCloudTask_ZeroTimeoutIgnored(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
 	task := buildDynamicCloudTask(&protocol.Execution{TaskID: "t", Timeout: 0}, def)
-	assert.Equal(t, time.Duration(0), task.Timeout)
+	assert.Nil(t, task.Timeout)
+	assert.Equal(t, time.Duration(0), task.TimeoutValue())
 }
 
 func TestBuildDynamicCloudTask_AppliesTaskConfig(t *testing.T) {

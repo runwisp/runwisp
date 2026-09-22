@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Long group and service names in the TUI sidebar no longer overflow the panel** — they're truncated to fit. (@hash-bang)
+- `on_overlap = "kill"` with `max_concurrent > 1` now cancels only the excess runs instead of killing every live run when triggers arrive faster than runs stop.
+- A day-of-week cron step like `1/2` now includes Sunday (matching vixie cron) instead of silently dropping it, so imported crontabs keep their full schedule.
+- An explicit `timeout = "0s"` or `jitter = "0s"` on a task now opts out of an inherited `[defaults]` value (run with no timeout / no jitter) instead of being overridden by the default.
+- Outbound notification retries now honor the retry budget when a channel keeps returning HTTP 429, instead of retrying forever and stalling that channel.
+- The first failure after a coalesced window-close summary now pages immediately instead of being folded into the next summary.
+- The in-app notification stream now drops its oldest buffered update under backpressure, keeping a busy client's unread count current.
+- Age-based retention now evicts the oldest runs first when a task's expired backlog exceeds one cleanup batch.
+- The daemon now refuses to start if it cannot mark crash-orphaned runs interrupted, instead of leaving them stuck as "running" forever.
 
 ## [1.0.0] - 2026-09-20
 

@@ -220,7 +220,7 @@ func buildOneSyncTask(t *model.Task) (syncTask, bool) {
 	if behavior := concurrencyBehaviorMap[t.OnOverlap]; behavior != "" {
 		task.ConcurrencyBehavior = behavior
 	}
-	if timeoutMs := durationToMillis(t.Timeout); timeoutMs > 0 {
+	if timeoutMs := durationToMillis(t.TimeoutValue()); timeoutMs > 0 {
 		task.Timeout = &timeoutMs
 	}
 	if len(t.Env) > 0 {

@@ -5,7 +5,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
@@ -128,34 +127,26 @@ func TestMarkCrashedRunsWithRetry_RetriesTransientFailure(t *testing.T) {
 	db.On("MarkCrashedRuns", mock.Anything).Return(int64(0), errors.New("database is locked")).Twice()
 	db.On("MarkCrashedRuns", mock.Anything).Return(int64(3), nil).Once()
 
-	var warnings []string
-	addWarning := func(format string, args ...any) {
-		warnings = append(warnings, fmt.Sprintf(format, args...))
-	}
+	crashed, err := markCrashedRunsWithRetry(t.Context(), db)
 
-	crashed := markCrashedRunsWithRetry(t.Context(), db, addWarning)
-
+	require.NoError(t, err, "a transient failure that clears within the retry budget must not surface an error")
 	assert.Equal(t, int64(3), crashed)
-	assert.Empty(t, warnings, "a transient failure that clears within the retry budget must not surface a warning")
 	db.AssertExpectations(t)
 }
 
-// TestMarkCrashedRunsWithRetry_WarnsAfterExhaustingRetries locks in that a
-// warning is only raised once every attempt in the bounded budget has failed.
-func TestMarkCrashedRunsWithRetry_WarnsAfterExhaustingRetries(t *testing.T) {
+// TestMarkCrashedRunsWithRetry_ErrorsAfterExhaustingRetries locks in that crash
+// recovery is a boot precondition: once every attempt in the bounded budget has
+// failed it returns an error so the caller aborts boot rather than proceeding
+// with runs stuck at 'running' forever.
+func TestMarkCrashedRunsWithRetry_ErrorsAfterExhaustingRetries(t *testing.T) {
 	db := new(testutil.MockRunRepository)
 	db.On("MarkCrashedRuns", mock.Anything).Return(int64(0), errors.New("database is locked"))
 
-	var warnings []string
-	addWarning := func(format string, args ...any) {
-		warnings = append(warnings, fmt.Sprintf(format, args...))
-	}
+	crashed, err := markCrashedRunsWithRetry(t.Context(), db)
 
-	crashed := markCrashedRunsWithRetry(t.Context(), db, addWarning)
-
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mark crashed runs")
 	assert.Equal(t, int64(0), crashed)
-	require.Len(t, warnings, 1)
-	assert.Contains(t, warnings[0], "Failed to mark crashed runs")
 	db.AssertNumberOfCalls(t, "MarkCrashedRuns", 3)
 }
 

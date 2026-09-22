@@ -80,6 +80,13 @@ func TestSundayIsSeven(t *testing.T) {
 		// into other days under robfig's 0-6 bounds.
 		{name: "bare 7 with a step", spec: "0 3 * * 7/2", equiv: "0 3 * * 0"},
 		{name: "bare 7 with a step of 1", spec: "0 3 * * 7/1", equiv: "0 3 * * 0"},
+		// A bare "N/step" (no explicit high) takes vixie's implicit field max of 7,
+		// so it must reach Sunday even though the field text contains no literal 7.
+		{name: "bare step from 1 reaches sunday", spec: "0 3 * * 1/2", equiv: "0 3 * * 1,3,5,0"},
+		{name: "bare step from 5 reaches sunday", spec: "0 3 * * 5/2", equiv: "0 3 * * 5,0"},
+		{name: "bare step from 3 reaches sunday", spec: "0 3 * * 3/2", equiv: "0 3 * * 3,5,0"},
+		// A bare "N/step" that never lands on 7 must be unchanged from robfig's view.
+		{name: "bare step from 0 unchanged", spec: "0 3 * * 0/2", equiv: "0 3 * * 0,2,4,6"},
 		{name: "list with a stepped 7", spec: "0 3 * * 1,7/3", equiv: "0 3 * * 0,1"},
 		{name: "six-field form", spec: "30 47 6 * * 7", equiv: "30 47 6 * * 0"},
 		{name: "with a CRON_TZ prefix", spec: "CRON_TZ=UTC 47 6 * * 7", equiv: "CRON_TZ=UTC 47 6 * * 0"},

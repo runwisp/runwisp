@@ -104,7 +104,8 @@ func buildDynamicCloudTask(dispatch *protocol.Execution, execDef model.Execution
 	}
 
 	if dispatch.Timeout > 0 {
-		task.Timeout = time.Duration(dispatch.Timeout) * time.Millisecond
+		timeout := time.Duration(dispatch.Timeout) * time.Millisecond
+		task.Timeout = &timeout
 	}
 
 	applyCloudTaskConfig(task, dispatch.TaskConfig)

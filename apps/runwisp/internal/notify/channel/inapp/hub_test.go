@@ -62,3 +62,21 @@ func TestHubConcurrentPublishUnsubscribe(t *testing.T) {
 		t.Fatalf("expected all subscribers removed, got %d", got)
 	}
 }
+
+// TestHubPublishDropsOldestNotNewest pins drop-oldest semantics: when a
+// subscriber's buffer is full, the oldest update is evicted so the newest
+// (carrying the authoritative UnreadCount) still reaches it. The pre-fix Hub
+// dropped the newest instead, leaving the subscriber with a stale count.
+func TestHubPublishDropsOldestNotNewest(t *testing.T) {
+	hub := NewHub(1)
+	sub, unsub := hub.Subscribe()
+	defer unsub()
+
+	hub.Publish(Update{Type: UpdateTypeUnreadCountChanged, UnreadCount: 1}) // fills the buffer
+	hub.Publish(Update{Type: UpdateTypeUnreadCountChanged, UnreadCount: 2}) // must evict #1, keep #2
+
+	got := <-sub.Channel()
+	if got.UnreadCount != 2 {
+		t.Fatalf("drop-oldest: got UnreadCount %d, want the newest (2)", got.UnreadCount)
+	}
+}

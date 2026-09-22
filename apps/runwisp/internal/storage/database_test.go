@@ -9,6 +9,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -1080,4 +1081,92 @@ func TestNew_InvalidDBPathFails(t *testing.T) {
 	// fails at Open or PRAGMA time.
 	_, err := New("/proc/runwisp-nonexistent-dir/foo.db")
 	require.Error(t, err)
+}
+
+// TestSelectOldRunsByAgeOrdersOldestFirst pins that age-based retention selects
+// the OLDEST eligible runs first when the backlog exceeds the batch limit.
+// Without an ORDER BY the LIMIT slice is arbitrary (insertion order), so the
+// newest row could survive while older ones are skipped — undermining
+// oldest-first eviction under storage pressure.
+func TestSelectOldRunsByAgeOrdersOldestFirst(t *testing.T) {
+	ctx := t.Context()
+	db, err := New(":memory:")
+	require.NoError(t, err)
+	defer db.Close()
+	sdb, ok := db.(*SQLiteDatabase)
+	require.True(t, ok)
+
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	oldest := base
+	middle := base.Add(time.Hour)
+	newest := base.Add(2 * time.Hour)
+	// Insert in non-sorted order so insertion order != age order.
+	for _, at := range []time.Time{newest, oldest, middle} {
+		require.NoError(t, db.CreateRun(ctx, &model.Run{
+			ID:          ulid.Make().String(),
+			TaskName:    "t",
+			Status:      model.PhaseEnded,
+			EndReason:   model.EndReasonPtr(model.ReasonSuccess),
+			TriggeredBy: model.TriggeredByAPI,
+			CreatedAt:   at,
+		}))
+	}
+
+	// Take only 2 of the 3 eligible rows; the newest must be the one left behind.
+	rows, err := sdb.q.SelectOldRunsByAge(ctx, sqlcdb.SelectOldRunsByAgeParams{
+		TaskName:  "t",
+		CreatedAt: base.Add(24 * time.Hour), // cutoff after all three
+		Limit:     2,
+	})
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	assert.True(t, oldest.Equal(rows[0].CreatedAt), "oldest run must come first, got %s", rows[0].CreatedAt)
+	assert.True(t, middle.Equal(rows[1].CreatedAt), "second-oldest run must come next, got %s", rows[1].CreatedAt)
+	for _, r := range rows {
+		assert.False(t, newest.Equal(r.CreatedAt), "the newest run must not be evicted before older ones")
+	}
+}
+
+// TestCreateRun_RejectsDuplicateLiveExecutionID pins the partial UNIQUE index
+// on execution_id: two live runs must never share one execution_id (the key
+// every cloud lookup resolves by), but the id may be reused once the prior run
+// is soft-deleted, since the index — like every execution_id query — is scoped
+// to deleted_at IS NULL.
+func TestCreateRun_RejectsDuplicateLiveExecutionID(t *testing.T) {
+	ctx := t.Context()
+	db := setupTestDB(t)
+	defer db.Close()
+
+	eid := "01EXEC0000000000000000000"
+	mk := func() *model.Run {
+		return &model.Run{
+			ID:          ulid.Make().String(),
+			TaskName:    "t",
+			Status:      model.PhaseEnded,
+			EndReason:   model.EndReasonPtr(model.ReasonSuccess),
+			TriggeredBy: model.TriggeredByAPI,
+			CreatedAt:   time.Now(),
+			ExecutionID: &eid,
+		}
+	}
+
+	first := mk()
+	require.NoError(t, db.CreateRun(ctx, first))
+
+	// A second live row with the same execution_id must be rejected.
+	require.Error(t, db.CreateRun(ctx, mk()),
+		"duplicate live execution_id must violate the UNIQUE index")
+
+	// A run with NULL execution_id is unaffected by the partial index.
+	require.NoError(t, db.CreateRun(ctx, &model.Run{
+		ID: ulid.Make().String(), TaskName: "t", Status: model.PhaseEnded,
+		EndReason: model.EndReasonPtr(model.ReasonSuccess), TriggeredBy: model.TriggeredByAPI,
+		CreatedAt: time.Now(),
+	}))
+
+	// Once the first is soft-deleted, the execution_id is free to reuse.
+	_, err := db.SoftDeleteRuns(ctx, model.RunSelector{IDs: []string{first.ID}}, time.Now())
+	require.NoError(t, err)
+	require.NoError(t, db.CreateRun(ctx, mk()),
+		"execution_id must be reusable after the prior run is soft-deleted")
 }

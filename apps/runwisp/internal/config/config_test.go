@@ -69,7 +69,7 @@ run = "echo hello"
 		assert.True(t, task.ManualTrigger)
 		assert.Equal(t, model.PolicySkip, task.OnOverlap)
 		assert.Equal(t, 1, task.MaxConcurrent)
-		assert.Equal(t, 30*time.Minute, task.Timeout)
+		assert.Equal(t, 30*time.Minute, task.TimeoutValue())
 		assert.Equal(t, int64(200*1024*1024), task.LogMaxSize)
 		assert.Equal(t, "drop_old", task.LogOnFull)
 		assert.Equal(t, 25, *task.KeepRuns)
@@ -534,7 +534,7 @@ func TestValidate(t *testing.T) {
 					Run:           "echo hello",
 					MaxConcurrent: 1,
 					OnOverlap:     model.PolicyQueue,
-					Timeout:       -time.Second,
+					Timeout:       durPtr(-time.Second),
 				}},
 			},
 			wantErr: "timeout",
@@ -602,7 +602,7 @@ func TestApplyDefaults(t *testing.T) {
 			{
 				Name:          "overrides",
 				Run:           "echo 2",
-				Timeout:       10 * time.Minute,
+				Timeout:       durPtr(10 * time.Minute),
 				MaxConcurrent: 5,
 				OnOverlap:     model.PolicySkip,
 				LogMaxSize:    50 * 1024 * 1024,
@@ -618,7 +618,7 @@ func TestApplyDefaults(t *testing.T) {
 	assert.Equal(t, 1, defaulted.MaxConcurrent)
 	assert.Equal(t, model.PolicyQueue, defaulted.OnOverlap)
 	assert.Equal(t, model.DefaultCatchUp, defaulted.CatchUpValue())
-	assert.Equal(t, 45*time.Minute, defaulted.Timeout)
+	assert.Equal(t, 45*time.Minute, defaulted.TimeoutValue())
 	assert.Equal(t, int64(200*1024*1024), defaulted.LogMaxSize)
 	assert.Equal(t, "drop_old", defaulted.LogOnFull)
 	assert.Equal(t, 25, *defaulted.KeepRuns)
@@ -629,7 +629,7 @@ func TestApplyDefaults(t *testing.T) {
 	overridden := cfg.Tasks[1]
 	assert.Equal(t, 5, overridden.MaxConcurrent)
 	assert.Equal(t, model.PolicySkip, overridden.OnOverlap)
-	assert.Equal(t, 10*time.Minute, overridden.Timeout)
+	assert.Equal(t, 10*time.Minute, overridden.TimeoutValue())
 	assert.Equal(t, int64(50*1024*1024), overridden.LogMaxSize)
 	assert.Equal(t, "kill", overridden.LogOnFull)
 	assert.Equal(t, 5, *overridden.KeepRuns)
@@ -830,7 +830,7 @@ run = "echo hi"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		assert.Equal(t, 30*time.Minute, cfg.Tasks[0].Jitter)
+		assert.Equal(t, 30*time.Minute, cfg.Tasks[0].JitterValue())
 	})
 
 	t.Run("omitted jitter inherits from defaults", func(t *testing.T) {
@@ -844,7 +844,7 @@ run = "echo hi"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		assert.Equal(t, 5*time.Minute, cfg.Tasks[0].Jitter,
+		assert.Equal(t, 5*time.Minute, cfg.Tasks[0].JitterValue(),
 			"a cron task that omits jitter inherits [defaults] jitter")
 	})
 
@@ -860,7 +860,7 @@ run = "echo hi"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		assert.Equal(t, time.Minute, cfg.Tasks[0].Jitter)
+		assert.Equal(t, time.Minute, cfg.Tasks[0].JitterValue())
 	})
 
 	t.Run("services never inherit defaults jitter", func(t *testing.T) {
@@ -874,7 +874,7 @@ run = "exec ./bin/svc"
 		cfg, err := Load(path)
 		require.NoError(t, err)
 		require.Len(t, cfg.Tasks, 1)
-		assert.Equal(t, time.Duration(0), cfg.Tasks[0].Jitter,
+		assert.Equal(t, time.Duration(0), cfg.Tasks[0].JitterValue(),
 			"a service must not pick up [defaults] jitter — it has no fire time to spread")
 	})
 
@@ -935,8 +935,25 @@ run = "echo hi"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		assert.Equal(t, time.Duration(0), cfg.Tasks[0].Jitter,
+		assert.Equal(t, time.Duration(0), cfg.Tasks[0].JitterValue(),
 			"explicit zero jitter is the no-spread case, not an error")
+	})
+
+	t.Run("explicit zero jitter opts out of a defaults jitter", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+jitter = "5m"
+
+[tasks.t]
+cron = "0 3 * * *"
+jitter = "0s"
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.Tasks[0].Jitter, "an explicit 0s must be kept, not treated as omitted")
+		assert.Equal(t, time.Duration(0), cfg.Tasks[0].JitterValue(),
+			"an explicit jitter = 0s must NOT inherit [defaults] jitter")
 	})
 
 	t.Run("jitter on a cron-less task is tolerated", func(t *testing.T) {
@@ -947,8 +964,50 @@ run = "echo hi"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		assert.Equal(t, 5*time.Minute, cfg.Tasks[0].Jitter,
+		assert.Equal(t, 5*time.Minute, cfg.Tasks[0].JitterValue(),
 			"jitter on a cron-less task is a harmless no-op, like catch_up")
+	})
+}
+
+func TestTimeoutInheritance(t *testing.T) {
+	t.Run("omitted timeout inherits from defaults", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+timeout = "30m"
+
+[tasks.t]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, 30*time.Minute, cfg.Tasks[0].TimeoutValue())
+	})
+
+	t.Run("explicit zero timeout opts out of a defaults timeout", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+timeout = "30m"
+
+[tasks.t]
+run = "echo hi"
+timeout = "0s"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.NotNil(t, cfg.Tasks[0].Timeout, "an explicit 0s must be kept, not treated as omitted")
+		assert.Equal(t, time.Duration(0), cfg.Tasks[0].TimeoutValue(),
+			"an explicit timeout = 0s (run with no timeout) must NOT inherit [defaults] timeout")
+	})
+
+	t.Run("no defaults and omitted timeout means no timeout", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Nil(t, cfg.Tasks[0].Timeout)
+		assert.Equal(t, time.Duration(0), cfg.Tasks[0].TimeoutValue())
 	})
 }
 

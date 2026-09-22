@@ -14,6 +14,7 @@ const selectOldRunsByAge = `-- name: SelectOldRunsByAge :many
 
 SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure FROM runs
 WHERE task_name = ? AND created_at < ? AND status = 'ended' AND deleted_at IS NULL
+ORDER BY created_at ASC
 LIMIT ?
 `
 
@@ -27,6 +28,8 @@ type SelectOldRunsByAgeParams struct {
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Only terminal (ended) runs are eligible for retention: a run that is still
 // pending or running must never have its row or live log files removed.
+// ORDER BY created_at ASC so a backlog larger than the retention batch size
+// evicts the oldest runs first, rather than an arbitrary LIMIT slice.
 func (q *Queries) SelectOldRunsByAge(ctx context.Context, arg SelectOldRunsByAgeParams) ([]Run, error) {
 	rows, err := q.db.QueryContext(ctx, selectOldRunsByAge, arg.TaskName, arg.CreatedAt, arg.Limit)
 	if err != nil {

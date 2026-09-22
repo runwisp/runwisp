@@ -1087,8 +1087,8 @@ func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run) {
 	ctx := context.Background()
 	var cancel context.CancelFunc
 
-	if task.Timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, task.Timeout)
+	if timeout := task.TimeoutValue(); timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, timeout)
 	} else {
 		ctx, cancel = context.WithCancel(ctx)
 	}

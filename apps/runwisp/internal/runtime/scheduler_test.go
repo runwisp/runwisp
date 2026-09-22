@@ -361,7 +361,7 @@ func TestSchedulerWiresDSTGapRecovery(t *testing.T) {
 		Name:     "nightly",
 		Cron:     "0 2 * * *",
 		Timezone: "Europe/Bratislava",
-		Jitter:   10 * time.Minute,
+		Jitter:   durPtr(10 * time.Minute),
 		Run:      "echo",
 	}
 	sched := NewScheduler(runner, map[string]*model.Task{"nightly": task}, time.UTC, func() time.Time { return now })
@@ -396,7 +396,7 @@ func TestSchedulerRecomputeJitterOnReload(t *testing.T) {
 	require.Empty(t, sched.jitterPlans, "no jittered task yet")
 
 	// Reload adds a jittered task.
-	jittered := &model.Task{Name: "nightly", Cron: "0 2 * * *", Jitter: 10 * time.Minute, Run: "echo"}
+	jittered := &model.Task{Name: "nightly", Cron: "0 2 * * *", Jitter: durPtr(10 * time.Minute), Run: "echo"}
 	require.NoError(t, sched.AddTask(jittered))
 	sched.RecomputeJitter(map[string]*model.Task{"plain": plain, "nightly": jittered})
 
@@ -416,7 +416,7 @@ func TestSchedulerRecomputeJitterOnReload(t *testing.T) {
 // without reaching into the placement internals.
 func jitterTasks(window time.Duration) map[string]*model.Task {
 	mk := func(name string) *model.Task {
-		return &model.Task{Name: name, Cron: "0 2 * * *", Jitter: window, Run: "echo hi"}
+		return &model.Task{Name: name, Cron: "0 2 * * *", Jitter: durPtr(window), Run: "echo hi"}
 	}
 	return map[string]*model.Task{"a": mk("a"), "b": mk("b")}
 }
@@ -506,7 +506,7 @@ func TestSchedulerJitterLiveGapClampUsesConfiguredTimezone(t *testing.T) {
 	now := time.Date(2024, 1, 15, 1, 0, 0, 0, time.Local)
 
 	runner := &fakeTaskRunner{}
-	task := &model.Task{Name: "nightly", Cron: "0 3 * * *", Jitter: 10 * time.Hour, Run: "echo"}
+	task := &model.Task{Name: "nightly", Cron: "0 3 * * *", Jitter: durPtr(10 * time.Hour), Run: "echo"}
 	sched := NewScheduler(runner, map[string]*model.Task{"nightly": task}, nyLoc, func() time.Time { return now })
 	_, err = sched.Start()
 	require.NoError(t, err)
@@ -521,14 +521,14 @@ func TestSchedulerJitterLiveGapClampUsesConfiguredTimezone(t *testing.T) {
 	// Reading now's Tokyo wall-clock directly (the bug) puts 03:00 only 2h
 	// away, which WOULD clamp the window down from 10h.
 	correctGap := plan.schedule.Next(now.In(nyLoc)).Sub(now)
-	require.Greater(t, correctGap-time.Second, task.Jitter,
+	require.Greater(t, correctGap-time.Second, task.JitterValue(),
 		"anchoring sanity: the configured-timezone gap must be wider than the window so an incorrect (host-zone) gap would visibly clamp it")
 
 	sched.fireOnce("nightly", nyLoc)
 
 	calls := runner.jitteredCalls()
 	require.Len(t, calls, 1)
-	assert.Equal(t, task.Jitter, calls[0].window,
+	assert.Equal(t, task.JitterValue(), calls[0].window,
 		"the live-gap clamp must evaluate the schedule against the configured daemon timezone, not the host OS's time.Local")
 }
 

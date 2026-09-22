@@ -124,7 +124,18 @@ func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, 
 		// active returns to the limit once they exit. Skipping already-cancelled
 		// runs is what bounds the live set: re-cancelling the same dying run while
 		// spamming triggers used to let active grow without limit.
-		needed := len(ts.active) - concurrencyLimit + 1
+		//
+		// The cancel budget counts only live (not-yet-cancelled) runs. Basing it
+		// on len(ts.active) would count still-draining victims from earlier
+		// triggers too, inflating the budget and over-killing healthy runs when
+		// max_concurrent > 1 and triggers arrive faster than victims drain.
+		live := 0
+		for _, ar := range ts.active {
+			if !ar.cancelled {
+				live++
+			}
+		}
+		needed := live - concurrencyLimit + 1
 		for _, ar := range ts.active {
 			if needed <= 0 {
 				break
