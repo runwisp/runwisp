@@ -97,7 +97,7 @@ func TestTriggerRemote_NotFound(t *testing.T) {
 
 	client := apiclient.New(srv.URL, "pw")
 	client.SetToken("tok")
-	_, err := triggerRemote(t.Context(), client, "backup", srv.URL, "pw")
+	_, err := triggerRemote(t.Context(), client, "backup", srv.URL, "pw", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `task "backup" not found`)
 }
@@ -108,7 +108,7 @@ func TestTriggerRemote_Forbidden(t *testing.T) {
 
 	client := apiclient.New(srv.URL, "pw")
 	client.SetToken("tok")
-	_, err := triggerRemote(t.Context(), client, "backup", srv.URL, "pw")
+	_, err := triggerRemote(t.Context(), client, "backup", srv.URL, "pw", nil)
 	ufe, ok := isUserFacing(err)
 	require.True(t, ok)
 	assert.Contains(t, ufe.Error(), "cannot be triggered over the API")
@@ -120,7 +120,7 @@ func TestTriggerRemote_RateLimited(t *testing.T) {
 
 	client := apiclient.New(srv.URL, "pw")
 	client.SetToken("tok")
-	_, err := triggerRemote(t.Context(), client, "backup", srv.URL, "pw")
+	_, err := triggerRemote(t.Context(), client, "backup", srv.URL, "pw", nil)
 	ufe, ok := isUserFacing(err)
 	require.True(t, ok)
 	assert.Contains(t, ufe.Error(), "too many authentication attempts")
@@ -132,7 +132,7 @@ func TestTriggerRemote_OtherError(t *testing.T) {
 
 	client := apiclient.New(srv.URL, "pw")
 	client.SetToken("tok")
-	_, err := triggerRemote(t.Context(), client, "backup", srv.URL, "pw")
+	_, err := triggerRemote(t.Context(), client, "backup", srv.URL, "pw", nil)
 	require.Error(t, err)
 	_, ok := isUserFacing(err)
 	assert.False(t, ok)
@@ -147,7 +147,7 @@ func TestTriggerRemote_ReauthFailsWithoutPassword(t *testing.T) {
 
 	client := apiclient.New(srv.URL, "")
 	client.SetToken("stale")
-	_, err := triggerRemote(t.Context(), client, "backup", srv.URL, "")
+	_, err := triggerRemote(t.Context(), client, "backup", srv.URL, "", nil)
 	ufe, ok := isUserFacing(err)
 	require.True(t, ok)
 	assert.Contains(t, ufe.Error(), "password is required")

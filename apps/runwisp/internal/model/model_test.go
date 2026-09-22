@@ -287,3 +287,23 @@ func TestTaskJSON_HidesSecrets(t *testing.T) {
 	assert.NotContains(t, body, "AWS_SECRET_KEY")
 	assert.NotContains(t, body, "do-not-leak")
 }
+
+// TestTask_CheckTrigger locks the one rule every manual-trigger surface (REST,
+// cloud dispatch, standalone CLI run) relies on instead of re-deriving it.
+func TestTask_CheckTrigger(t *testing.T) {
+	tests := []struct {
+		name string
+		task Task
+		want TriggerBlockReason
+	}{
+		{"service is never triggerable regardless of manual_trigger", Task{Kind: KindService, ManualTrigger: true}, TriggerBlockedService},
+		{"task with manual_trigger disabled", Task{Kind: KindTask, ManualTrigger: false}, TriggerBlockedManualDisabled},
+		{"task with manual_trigger enabled", Task{Kind: KindTask, ManualTrigger: true}, TriggerAllowed},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, tc.task.CheckTrigger())
+			assert.Equal(t, tc.want == TriggerAllowed, tc.task.Triggerable())
+		})
+	}
+}

@@ -344,6 +344,29 @@ func (t *Task) Triggerable() bool { return !t.Kind.IsService() && t.ManualTrigge
 // task; use Triggerable there instead.
 func (t *Task) ManuallyControllable() bool { return t.ManualTrigger }
 
+// TriggerBlockReason identifies which of Triggerable's two conditions fails,
+// so a manual-trigger surface (REST, cloud dispatch, standalone CLI run) can
+// report a precise error without re-deriving the rule itself. CheckTrigger is
+// the one place that decides the order the two conditions are checked in.
+type TriggerBlockReason int
+
+const (
+	TriggerAllowed TriggerBlockReason = iota
+	TriggerBlockedService
+	TriggerBlockedManualDisabled
+)
+
+// CheckTrigger reports why t is not Triggerable, or TriggerAllowed when it is.
+func (t *Task) CheckTrigger() TriggerBlockReason {
+	if t.Kind.IsService() {
+		return TriggerBlockedService
+	}
+	if !t.ManualTrigger {
+		return TriggerBlockedManualDisabled
+	}
+	return TriggerAllowed
+}
+
 // IsFailureReason reports whether a terminal run ending with the given reason
 // and exit code counts as a failure under this task's `failures` policy. It is
 // the single source of truth for failure classification: stats, UI attention,

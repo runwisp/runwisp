@@ -17,10 +17,10 @@ You can trigger one from any surface:
 
 <Tabs syncKey="surface">
     <TabItem label="Web UI" icon="laptop">
-        The Web UI is read-only and never reloads config itself. When the
-        `runwisp.toml` on disk drifts from what the daemon is running, a banner
-        appears pointing you at `runwisp reload` — run that from a shell and the
-        banner clears on the next refresh.
+        The Web UI never edits config — your `runwisp.toml` stays the source of
+        truth. When it drifts from what the daemon is running, a banner appears
+        with a **Reload** button that triggers the same reconcile; the banner
+        clears once the daemon confirms the config is fresh again.
     </TabItem>
     <TabItem label="TUI" icon="seti:shell">
         Press <kbd>R</kbd> in the [TUI](/getting-started/tui-tour/). Same

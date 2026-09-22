@@ -151,12 +151,6 @@ export const tasksApi = {
         return unwrap(data);
     },
 
-    deleteRun: async (runId: string): Promise<void> => {
-        await apiClient.DELETE("/api/runs/{runId}", {
-            params: { path: { runId } },
-        });
-    },
-
     stopRun: async (runId: string): Promise<void> => {
         await apiClient.POST("/api/runs/{runId}/stop", {
             params: { path: { runId } },
@@ -298,6 +292,18 @@ export const systemApi = {
     getMetricsHistory: async (): Promise<MetricsSample[]> => {
         const { data } = await apiClient.GET("/api/system/metrics");
         return unwrap(data).items ?? [];
+    },
+
+    // Reload re-reads runwisp.toml and reconciles the live task set — the one
+    // action REST and the TUI already exposed that the Web UI didn't (it only
+    // told the operator to run `runwisp reload`). Unlike this file's other
+    // methods, a rejected reload (parse error, a restart-only setting changed)
+    // carries an operator-actionable reason in `detail`, so that reason is
+    // surfaced instead of a generic fallback message.
+    reload: async () => {
+        const { data, error } = await apiClient.POST("/api/daemon/reload");
+        if (error) throw new Error(error.detail ?? "Failed to reload config");
+        return data;
     },
 };
 

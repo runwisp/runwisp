@@ -255,7 +255,10 @@ func (m *Model) confirmStop() tea.Cmd {
 
 // deleteCurrentRun soft-deletes the run shown in the exec view immediately. The
 // delete is reversible (soft delete + restore), so the result toast offers undo
-// instead of a confirm dialog.
+// instead of a confirm dialog. It goes through the same bulk/delete selector
+// the Web UI uses for a single run (and this model's own bulkDeleteSelection),
+// rather than the single-run DELETE /api/runs/{runId} route, so both surfaces
+// exercise one delete path.
 func (m *Model) deleteCurrentRun() tea.Cmd {
 	run := m.currentRun()
 	if run == nil || m.execView == nil || !m.execView.CanDelete() {
@@ -266,7 +269,7 @@ func (m *Model) deleteCurrentRun() tea.Cmd {
 	runID := run.ID
 	taskName := run.TaskName
 	return func() tea.Msg {
-		err := client.DeleteRun(ctx, runID)
+		_, err := client.BulkDeleteRuns(ctx, model.RunSelector{IDs: []string{runID}})
 		return uikit.DeleteRunMsg{RunID: runID, TaskName: taskName, Err: err}
 	}
 }

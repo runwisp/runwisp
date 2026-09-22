@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`runwisp run` now accepts `--param key=value` (repeatable)** to supply task parameter values from the CLI, matching what the REST API, Web UI, and TUI already support.
+- **The Web UI's stale-config banner now has a Reload button**, applying `runwisp.toml` changes without switching to the CLI or TUI.
+
 ### Fixed
 
 - **Long group and service names in the TUI sidebar no longer overflow the panel** — they're truncated to fit. (@hash-bang)

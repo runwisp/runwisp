@@ -235,6 +235,7 @@ runwisp run <task>              # run a task, stream its output, exit with its c
 runwisp run <task> --daemon     # require a running daemon (fail fast if none)
 runwisp run <task> --standalone # require in-process (refuse if a daemon owns the dir)
 runwisp run <task> --json       # print the run outcome as JSON (log lines to stderr)
+runwisp run <task> --param key=value --param other=value  # supply parameter values
 ```
 
 `runwisp run` runs one task and streams its stdout/stderr straight to
@@ -243,6 +244,11 @@ into a script. By default it auto-detects: if a daemon owns this data
 dir, the run is dispatched through its REST API and followed live;
 otherwise the task runs in this process from `runwisp.toml`. `--daemon`
 and `--standalone` pin the choice and are mutually exclusive.
+
+If the task declares [parameters](/concepts/parameters/), repeat `--param
+key=value` for each one you want to set; a parameter you don't mention
+falls back to its declared default. `--param` is the CLI's version of the
+form the Web UI and TUI show you at trigger time.
 
 With `--json`, the run's outcome is printed to stdout as one document once it
 finishes, and the live log lines are diverted to stderr so stdout stays a single

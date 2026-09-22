@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -35,6 +36,7 @@ var runFlags struct {
 	Password   string
 	Detach     bool
 	JSON       bool
+	Params     []string
 }
 
 // runLineOut is where a run's stdout-stream log lines are written. In --json
@@ -79,7 +81,8 @@ are diverted to stderr so stdout stays machine-readable.`,
 	Example: `  runwisp run backup
   runwisp run backup --json          # print the run outcome as JSON
   runwisp run deploy --standalone    # run in-process, no daemon needed
-  runwisp run build --url https://ci.example.com --password "$RUNWISP_PASSWORD"`,
+  runwisp run build --url https://ci.example.com --password "$RUNWISP_PASSWORD"
+  runwisp run backup --param source=/data --param dest=/mnt/backup`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		exitCode, err := runTaskCLI(cmd.Context(), os.Stdout, args[0], flags)
@@ -122,15 +125,42 @@ func init() {
 	runCmd.Flags().StringVar(&runFlags.Password, "password", "", "remote daemon password for --url (env: RUNWISP_PASSWORD)")
 	runCmd.Flags().BoolVar(&runFlags.Detach, "detach", false, "with --url, trigger and print the run ID without following the log stream")
 	runCmd.Flags().BoolVar(&runFlags.JSON, "json", false, "print the run outcome as a JSON document to stdout (log lines go to stderr)")
+	runCmd.Flags().StringArrayVar(&runFlags.Params, "param", nil, "supply a task parameter as key=value (repeatable); unset parameters use their declared default")
+}
+
+// parseParamFlags turns repeated --param key=value flags into the
+// map[string]*string that TriggerRun/TriggerRunOptions expect. A key not
+// mentioned is simply absent from the map, which model.ResolveParamValues
+// resolves to the task's declared default — the CLI has no syntax for the
+// REST/UI "explicit omit" case (a present key mapped to nil), since that only
+// matters for overriding a default from a pre-filled form.
+func parseParamFlags(raw []string) (map[string]*string, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	params := make(map[string]*string, len(raw))
+	for _, kv := range raw {
+		key, value, ok := strings.Cut(kv, "=")
+		if !ok {
+			return nil, fmt.Errorf("invalid --param %q: expected key=value", kv)
+		}
+		params[key] = &value
+	}
+	return params, nil
 }
 
 func runExec(ctx context.Context, taskName string, f Flags) (int, error) {
+	params, err := parseParamFlags(runFlags.Params)
+	if err != nil {
+		return 0, err
+	}
+
 	if remoteURL := cmp.Or(runFlags.URL, os.Getenv("RUNWISP_URL")); remoteURL != "" {
 		if runFlags.Daemon || runFlags.Standalone {
 			return 0, errors.New("--url cannot be combined with --daemon or --standalone")
 		}
 		password := cmp.Or(runFlags.Password, os.Getenv("RUNWISP_PASSWORD"))
-		return runExecViaRemote(ctx, taskName, remoteURL, password, runFlags.Detach)
+		return runExecViaRemote(ctx, taskName, remoteURL, password, runFlags.Detach, params)
 	}
 
 	daemonUp := isDaemonRunning(f)
@@ -143,9 +173,9 @@ func runExec(ctx context.Context, taskName string, f Flags) (int, error) {
 	}
 
 	if daemonUp {
-		return runExecViaDaemon(ctx, taskName, f)
+		return runExecViaDaemon(ctx, taskName, f, params)
 	}
-	return runExecStandalone(taskName, f)
+	return runExecStandalone(taskName, f, params)
 }
 
 // isDaemonRunning reports whether a daemon currently owns this data dir.
@@ -163,13 +193,13 @@ func isDaemonRunning(f Flags) bool {
 // runExecViaDaemon dispatches the run through the running daemon's REST API
 // (via its local Unix socket) and follows its SSE log stream until the run
 // reaches a terminal state.
-func runExecViaDaemon(ctx context.Context, taskName string, f Flags) (int, error) {
+func runExecViaDaemon(ctx context.Context, taskName string, f Flags, params map[string]*string) (int, error) {
 	client := apiclient.NewUnix(localAPISocketPath(f))
 	if err := client.HealthCheck(ctx); err != nil {
 		return 0, fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
 	}
 
-	run, err := client.TriggerRun(ctx, taskName, nil, "cli")
+	run, err := client.TriggerRun(ctx, taskName, params, "cli")
 	if err != nil {
 		if apiclient.IsHTTPStatus(err, http.StatusNotFound) {
 			return 0, unknownTaskError(taskName, daemonTaskNames(ctx, client))
@@ -209,7 +239,7 @@ func finishExecJSON(ctx context.Context, w io.Writer, client *apiclient.Client, 
 // runExecViaRemote dispatches the run to a remote daemon over the network. It
 // reuses a cached JWT when one is valid, falling back to a CHAP handshake, and
 // (unless detached) follows the SSE log stream to propagate the exit code.
-func runExecViaRemote(ctx context.Context, taskName, baseURL, password string, detach bool) (int, error) {
+func runExecViaRemote(ctx context.Context, taskName, baseURL, password string, detach bool, params map[string]*string) (int, error) {
 	client := apiclient.NewPinned(baseURL, password, certPinStore{})
 
 	// Health is a public endpoint — probe it before auth so an unreachable
@@ -235,7 +265,7 @@ func runExecViaRemote(ctx context.Context, taskName, baseURL, password string, d
 		}
 	}
 
-	run, err := triggerRemote(ctx, client, taskName, baseURL, password)
+	run, err := triggerRemote(ctx, client, taskName, baseURL, password, params)
 	if err != nil {
 		return 0, err
 	}
@@ -281,13 +311,13 @@ func authenticateRemote(ctx context.Context, client *apiclient.Client, baseURL, 
 
 // triggerRemote triggers the run, re-authenticating once if a cached token has
 // expired (401), and maps the daemon's error codes to user-facing messages.
-func triggerRemote(ctx context.Context, client *apiclient.Client, taskName, baseURL, password string) (*model.Run, error) {
-	run, err := client.TriggerRun(ctx, taskName, nil, "cli")
+func triggerRemote(ctx context.Context, client *apiclient.Client, taskName, baseURL, password string, params map[string]*string) (*model.Run, error) {
+	run, err := client.TriggerRun(ctx, taskName, params, "cli")
 	if errors.Is(err, apiclient.ErrUnauthorized) {
 		if authErr := authenticateRemote(ctx, client, baseURL, password); authErr != nil {
 			return nil, authErr
 		}
-		run, err = client.TriggerRun(ctx, taskName, nil, "cli")
+		run, err = client.TriggerRun(ctx, taskName, params, "cli")
 	}
 	if err != nil {
 		switch {
@@ -514,7 +544,7 @@ func exitCodeFromRun(run *model.Run) int {
 
 // runExecStandalone runs the task in this CLI process. The data dir must not
 // already be owned by a daemon (isDaemonRunning's caller has confirmed that).
-func runExecStandalone(taskName string, f Flags) (int, error) {
+func runExecStandalone(taskName string, f Flags, params map[string]*string) (int, error) {
 	cfg, err := config.Load(f.CfgFile)
 	if err != nil {
 		return 0, fmt.Errorf("failed to load %s: %w", f.CfgFile, err)
@@ -537,12 +567,12 @@ func runExecStandalone(taskName string, f Flags) (int, error) {
 	}
 	// Standalone talks to the run manager directly, bypassing the daemon/cloud
 	// guard in internal/server.runService.TriggerRun — so it must enforce the
-	// same two checks itself, or manual_trigger=false and services stop being
-	// cron/API-triggerable-only everywhere as documented.
-	if target.Kind.IsService() {
+	// same rule itself (model.Task.CheckTrigger), or manual_trigger=false and
+	// services stop being cron/API-triggerable-only everywhere as documented.
+	switch target.CheckTrigger() {
+	case model.TriggerBlockedService:
 		return 0, fmt.Errorf("task %q: %w", taskName, server.ErrServiceNotRunnable)
-	}
-	if !target.ManualTrigger {
+	case model.TriggerBlockedManualDisabled:
 		return 0, standaloneManualTriggerDisabledError(taskName)
 	}
 
@@ -567,7 +597,10 @@ func runExecStandalone(taskName string, f Flags) (int, error) {
 	unsubFailed := eventBus.Subscribe(events.EventRunFailed, termHandler)
 	defer unsubFailed()
 
-	run, err := taskManager.TriggerRun(taskName, model.TriggeredByCLI)
+	run, err := taskManager.TriggerRunWithOptions(taskName, runtime.TriggerRunOptions{
+		TriggeredBy: model.TriggeredByCLI,
+		Params:      params,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("failed to trigger task %q: %w", taskName, err)
 	}
