@@ -26,6 +26,12 @@ type Config struct {
 	// raw blocks here.
 	pendingComposeBlocks map[string]map[string]any
 
+	// composeWarnings are advisory findings collected while expanding
+	// [compose.*] blocks (self-import, a bind-mount source missing from
+	// RunWisp's own filesystem view). Rendered by Warnings alongside every
+	// other advisory check; never fatal to Load.
+	composeWarnings []string
+
 	// includeFiles are the absolute paths of the TOML files merged in via
 	// [daemon].include at this load. includeGlobs are those patterns resolved
 	// against the root config dir. watchFiles is every additional on-disk input

@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +24,18 @@ func writeConfig(t *testing.T, toml string) string {
 	composeBytes, err := os.ReadFile("testdata/basic-compose.yml")
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "docker-compose.yml"), composeBytes, 0644))
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(cfgPath, []byte(toml), 0644))
+	return cfgPath
+}
+
+// writeComposeConfig is writeConfig with a caller-supplied compose file
+// instead of the shared basic-compose.yml fixture, for tests that need
+// specific service names, images, or volumes.
+func writeComposeConfig(t *testing.T, composeYAML, toml string) string {
+	t.Helper()
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte(composeYAML), 0644))
 	cfgPath := filepath.Join(dir, "runwisp.toml")
 	require.NoError(t, os.WriteFile(cfgPath, []byte(toml), 0644))
 	return cfgPath
@@ -566,6 +579,109 @@ notify = ["ghost"]
 `))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ghost")
+}
+
+func TestComposeExpansion_SelfImportWarns(t *testing.T) {
+	cfgPath := writeComposeConfig(t, `services:
+  runwisp:
+    image: runwisp/runwisp:latest
+  api:
+    image: alpine
+`, `[compose.myapp]
+`)
+	cfg, err := Load(cfgPath)
+	require.NoError(t, err)
+
+	warnings := Warnings(cfg)
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w, "myapp.runwisp") && strings.Contains(w, "runwisp/runwisp:latest") {
+			found = true
+		}
+	}
+	assert.True(t, found, "expected a self-import warning, got: %v", warnings)
+}
+
+func TestComposeExpansion_SelfImportFilteredOutNoWarning(t *testing.T) {
+	cfgPath := writeComposeConfig(t, `services:
+  runwisp:
+    image: runwisp/runwisp:latest
+  api:
+    image: alpine
+`, `[compose.myapp]
+services = ["-runwisp"]
+`)
+	cfg, err := Load(cfgPath)
+	require.NoError(t, err)
+
+	for _, w := range Warnings(cfg) {
+		assert.NotContains(t, w, "runwisp/runwisp", "filtered-out compose service must not warn")
+	}
+}
+
+func TestComposeExpansion_StackModeWarnsForEveryService(t *testing.T) {
+	cfgPath := writeComposeConfig(t, `services:
+  runwisp:
+    image: runwisp/runwisp:latest
+  api:
+    image: alpine
+`, `[compose.myapp]
+import = "stack"
+`)
+	cfg, err := Load(cfgPath)
+	require.NoError(t, err)
+	require.Len(t, cfg.Tasks, 1, "stack mode produces one task for the whole project")
+
+	warnings := Warnings(cfg)
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w, "myapp") && strings.Contains(w, "runwisp/runwisp:latest") {
+			found = true
+		}
+	}
+	assert.True(t, found, "stack mode should warn about a self-import even though it's one task, got: %v", warnings)
+}
+
+func TestComposeExpansion_MissingBindMountSourceWarns(t *testing.T) {
+	cfgPath := writeComposeConfig(t, `services:
+  api:
+    image: alpine
+    volumes:
+      - ./missing-data:/data
+`, `[compose.myapp]
+`)
+	cfg, err := Load(cfgPath)
+	require.NoError(t, err)
+
+	warnings := Warnings(cfg)
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w, "missing-data") && strings.Contains(w, "doesn't exist") {
+			found = true
+		}
+	}
+	assert.True(t, found, "expected a missing bind-mount warning, got: %v", warnings)
+}
+
+func TestComposeExpansion_ExistingBindMountSourceNoWarning(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "data"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte(`services:
+  api:
+    image: alpine
+    volumes:
+      - ./data:/data
+`), 0644))
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.WriteFile(cfgPath, []byte(`[compose.myapp]
+`), 0644))
+
+	cfg, err := Load(cfgPath)
+	require.NoError(t, err)
+
+	for _, w := range Warnings(cfg) {
+		assert.NotContains(t, w, "doesn't exist", "an existing bind source must not warn")
+	}
 }
 
 // --- test helpers ---

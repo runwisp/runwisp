@@ -231,6 +231,7 @@ func homeIsTheRunUsers(task *model.Task) bool {
 func Warnings(cfg *Config) []string {
 	w := append(gracefulStopWarnings(cfg), nonPosixShellWarnings(cfg)...)
 	w = append(w, composeExecServiceWarnings(cfg)...)
+	w = append(w, cfg.composeWarnings...)
 	return append(w, cronSourceWarnings(cfg)...)
 }
 

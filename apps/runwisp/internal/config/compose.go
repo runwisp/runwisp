@@ -5,7 +5,9 @@ package config
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -110,7 +112,7 @@ func expandComposeBlocks(cfg *Config, dirs entrySources) error {
 		if err := model.ValidateTaskName(alias); err != nil {
 			return fmt.Errorf("invalid compose alias %q: %w", alias, err)
 		}
-		newTasks, newNotify, err := expandComposeAlias(alias, blocks[alias], dirs.dir(alias), existingNames)
+		newTasks, newNotify, warnings, err := expandComposeAlias(alias, blocks[alias], dirs.dir(alias), existingNames)
 		if err != nil {
 			return fmt.Errorf("compose.%s: %w", alias, err)
 		}
@@ -119,6 +121,7 @@ func expandComposeBlocks(cfg *Config, dirs entrySources) error {
 		}
 		cfg.Tasks = append(cfg.Tasks, newTasks...)
 		notify = append(notify, newNotify...)
+		cfg.composeWarnings = append(cfg.composeWarnings, warnings...)
 	}
 
 	// Compose blocks expand after toNotifyConfig has already built cfg.Notify,
@@ -210,33 +213,34 @@ type composeServiceOverrideWire struct {
 	Failures []string `toml:"failures,omitempty"`
 }
 
-func expandComposeAlias(alias string, raw map[string]any, baseDir string, existingNames map[string]struct{}) ([]model.Task, []composeNotifySugar, error) {
+func expandComposeAlias(alias string, raw map[string]any, baseDir string, existingNames map[string]struct{}) ([]model.Task, []composeNotifySugar, []string, error) {
 	block, err := parseComposeBlock(alias, raw)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	resolvedFile, err := resolveComposeFile(block.File, baseDir)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	block.File = resolvedFile
 
 	if err := resolveComposeBlockPaths(block, baseDir, resolvedFile); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	project, err := composespec.Load(resolvedFile, block.Profiles, block.EnvFile, block.WorkingDir)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	switch block.Import {
 	case composeImportStack:
-		tasks, err := expandComposeStack(block, project, existingNames)
-		return tasks, nil, err
+		tasks, warnings, err := expandComposeStack(block, project, existingNames)
+		return tasks, nil, warnings, err
 	default:
-		return expandComposeServices(block, project, existingNames)
+		tasks, notify, warnings, err := expandComposeServices(block, project, existingNames)
+		return tasks, notify, warnings, err
 	}
 }
 
@@ -392,7 +396,7 @@ func decodeServiceOverride(svcName string, raw map[string]any) (*composeServiceO
 	return &w, nil
 }
 
-func expandComposeServices(block *composeBlock, project *composespec.Project, existingNames map[string]struct{}) ([]model.Task, []composeNotifySugar, error) {
+func expandComposeServices(block *composeBlock, project *composespec.Project, existingNames map[string]struct{}) ([]model.Task, []composeNotifySugar, []string, error) {
 	available := project.ServiceNames()
 	availableSet := make(map[string]struct{}, len(available))
 	for _, n := range available {
@@ -401,7 +405,7 @@ func expandComposeServices(block *composeBlock, project *composespec.Project, ex
 
 	imported, err := selectImportedComposeServices(block, available, availableSet)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	importedSet := make(map[string]struct{}, len(imported))
 	for _, n := range imported {
@@ -409,24 +413,25 @@ func expandComposeServices(block *composeBlock, project *composespec.Project, ex
 	}
 
 	if err := validateComposeOverridesExist(block.Overrides, importedSet, availableSet); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	tasks := make([]model.Task, 0, len(imported))
 	var notify []composeNotifySugar
+	var warnings []string
 	for _, svcName := range imported {
 		svc := project.Service(svcName)
 		taskName := applyNameFormat(block.NameFormat, block.Alias, svcName)
 		if err := model.ValidateTaskName(taskName); err != nil {
-			return nil, nil, fmt.Errorf("name_format %q produced invalid task name %q: %w", block.NameFormat, taskName, err)
+			return nil, nil, nil, fmt.Errorf("name_format %q produced invalid task name %q: %w", block.NameFormat, taskName, err)
 		}
 		if _, dup := existingNames[taskName]; dup {
-			return nil, nil, fmt.Errorf("name %q (from compose service %q) collides with an existing task or service", taskName, svcName)
+			return nil, nil, nil, fmt.Errorf("name %q (from compose service %q) collides with an existing task or service", taskName, svcName)
 		}
 
 		task, err := buildComposeServiceTask(block, svc, svcName, taskName)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		tasks = append(tasks, task)
 		if s, ok := composeServiceNotify(block.Defaults, taskName); ok {
@@ -435,9 +440,10 @@ func expandComposeServices(block *composeBlock, project *composespec.Project, ex
 		if s, ok := composeServiceNotify(block.Overrides[svcName], taskName); ok {
 			notify = append(notify, s)
 		}
+		warnings = append(warnings, composeServiceWarnings(taskName, svc)...)
 		existingNames[taskName] = struct{}{}
 	}
-	return tasks, notify, nil
+	return tasks, notify, warnings, nil
 }
 
 // composeServiceNotify extracts a service override's `notify` selection into
@@ -525,13 +531,13 @@ func validateComposeOverridesExist(overrides map[string]*composeServiceOverrideW
 	return nil
 }
 
-func expandComposeStack(block *composeBlock, _ *composespec.Project, existingNames map[string]struct{}) ([]model.Task, error) {
+func expandComposeStack(block *composeBlock, project *composespec.Project, existingNames map[string]struct{}) ([]model.Task, []string, error) {
 	taskName := block.Alias
 	if err := model.ValidateTaskName(taskName); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if _, dup := existingNames[taskName]; dup {
-		return nil, fmt.Errorf("name %q (compose stack) collides with an existing task or service", taskName)
+		return nil, nil, fmt.Errorf("name %q (compose stack) collides with an existing task or service", taskName)
 	}
 	task := model.Task{
 		Name:          taskName,
@@ -556,7 +562,60 @@ func expandComposeStack(block *composeBlock, _ *composespec.Project, existingNam
 			ProjectName: block.ProjectName,
 		},
 	}
-	return []model.Task{task}, nil
+
+	// Stack mode brings up every service in the project via `docker compose
+	// up`, not just the named [compose.<alias>] task, so the advisory checks
+	// run against all of them.
+	var warnings []string
+	for i := range project.Services {
+		warnings = append(warnings, composeServiceWarnings(taskName, &project.Services[i])...)
+	}
+	return []model.Task{task}, warnings, nil
+}
+
+// composeServiceWarnings runs the advisory checks that only make sense once a
+// compose file has actually been parsed: self-import (a block that would put
+// RunWisp's own container under its own supervision) and a bind-mount source
+// that doesn't exist from RunWisp's point of view (usually a container-path
+// mismatch when RunWisp itself runs in a container — see the compose docs).
+// svc is nil-safe so a caller that couldn't resolve the service can still
+// call this without a guard.
+func composeServiceWarnings(taskName string, svc *composespec.Service) []string {
+	if svc == nil {
+		return nil
+	}
+	var warnings []string
+	if isRunwispImage(svc.Image) {
+		warnings = append(warnings, fmt.Sprintf(
+			"compose service %q (task %q) runs the %s image, which is RunWisp itself; "+
+				"add \"-%s\" to `services` to exclude it, or it will be put under its own supervision",
+			svc.Name, taskName, svc.Image, svc.Name))
+	}
+	for _, src := range svc.BindSources {
+		if _, err := os.Stat(src); errors.Is(err, fs.ErrNotExist) {
+			warnings = append(warnings, fmt.Sprintf(
+				"compose service %q (task %q) bind-mounts %q, which doesn't exist from RunWisp's point of view; "+
+					"Docker will create an empty directory there instead of your data. If RunWisp runs in a container, "+
+					"mount the compose project's directory at the same absolute path it has on the host",
+				svc.Name, taskName, src))
+		}
+	}
+	return warnings
+}
+
+// isRunwispImage reports whether image is RunWisp's own published image
+// (any registry, any tag or digest) — the repository path's last two
+// segments are "runwisp/runwisp". A heuristic on the image reference, not a
+// guarantee: a private mirror published under a different repository name
+// won't match, and that's fine for an advisory warning.
+func isRunwispImage(image string) bool {
+	ref, _, _ := strings.Cut(image, "@") // strip a @sha256:... digest
+	parts := strings.Split(ref, "/")
+	if len(parts) < 2 {
+		return false
+	}
+	last, _, _ := strings.Cut(parts[len(parts)-1], ":") // strip :tag from the final segment only
+	return parts[len(parts)-2] == "runwisp" && last == "runwisp"
 }
 
 // buildComposeServiceTask applies compose-import defaults and per-service

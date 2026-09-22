@@ -4,6 +4,7 @@
 package composespec
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -22,10 +23,16 @@ func TestLoad_BasicEnumeratesActiveProfileServices(t *testing.T) {
 	web := p.Service("web")
 	require.NotNil(t, web)
 	assert.Equal(t, 30*time.Second, web.StopGracePeriod)
+	assert.Equal(t, "nginx:alpine", web.Image)
+	wantData, err := filepath.Abs("testdata/data")
+	require.NoError(t, err)
+	assert.Equal(t, []string{wantData}, web.BindSources,
+		"only the bind mount should surface; the named volume must not")
 
 	worker := p.Service("worker")
 	require.NotNil(t, worker)
 	assert.Zero(t, worker.StopGracePeriod, "no stop_grace_period set in fixture")
+	assert.Empty(t, worker.BindSources)
 
 	assert.Nil(t, p.Service("missing"))
 }

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`runwisp run` now accepts `--param key=value` (repeatable)** to supply task parameter values from the CLI, matching what the REST API, Web UI, and TUI already support.
 - **The Web UI's stale-config banner now has a Reload button**, applying `runwisp.toml` changes without switching to the CLI or TUI.
+- **`runwisp validate` and daemon startup now warn** when a `[compose.*]` block would import RunWisp's own service, or a bind-mount source that doesn't exist from RunWisp's point of view.
 
 ### Fixed
 
