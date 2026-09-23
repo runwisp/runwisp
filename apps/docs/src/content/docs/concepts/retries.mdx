@@ -32,14 +32,14 @@ retry_delay    = "30s"
 retry_backoff  = "exponential"
 ```
 
-`retry_attempts` is the number of _extra_ tries after the first one
+[`retry_attempts`](/configuration/tasks/#retry_attempts) is the number of _extra_ tries after the first one
 fails — it defaults to `0`, so out of the box nothing retries. Set it to
 `3` and a failing run gets up to three more goes.
 
 Not every ending counts as a failure worth retrying, though. A retry
-fires when a run ends in `failed` (non-zero exit), `timeout`, `crashed`,
+fires when a run ends in `failed` (non-zero exit), [`timeout`](/configuration/tasks/#timeout), `crashed`,
 or `log_overflow` (which is what [`log_on_full = "kill"`](/concepts/logs/#rotation-log_max_size-and-log_on_full) does after
-a run blows past `log_max_size`).
+a run blows past [`log_max_size`](/configuration/tasks/#log_max_size)).
 
 It does **not** fire on `succeeded`, `stopped`, or `skipped`. `stopped`
 means a human deliberately killed it from the API/CLI/UI, or a sibling
@@ -47,14 +47,22 @@ run cancelled it via `on_overlap = "kill"` — either way, retrying
 would override an intentional decision. `skipped` means the original run
 is _still going_, so another attempt would just race it.
 
+If you've also set [`failures`](/configuration/tasks/#failures) on the
+task, a retry only fires when the reason clears both bars: it has to be
+one of the four reasons above, _and_ [`failures`](/configuration/tasks/#failures) has to classify it as a
+failure. So `failures = ["1-23"]` means exit `42` isn't a failure and
+nothing retries, even though `42` is a non-zero exit. Promoting `stopped`
+or `missed` into [`failures`](/configuration/tasks/#failures) doesn't change any of this — those two never
+retry, no matter what [`failures`](/configuration/tasks/#failures) says.
+
 ## `retry_delay` and `retry_backoff`
 
-`retry_delay` is how long to wait before trying again, written as a
+[`retry_delay`](/configuration/tasks/#retry_delay) is how long to wait before trying again, written as a
 duration (`"5s"`, `"2m"`, `"1h"`). Turn retries on and it defaults to
 `"5s"`.
 
-`retry_backoff` decides whether that wait stays put or grows with each
-attempt. Services use the same vocabulary for their `restart_backoff`,
+[`retry_backoff`](/configuration/tasks/#retry_backoff) decides whether that wait stays put or grows with each
+attempt. Services use the same vocabulary for their [`restart_backoff`](/configuration/services/#restart_backoff),
 so once you know it here it carries over there too.
 
 | Value                   | Wait before attempt _N_ (1-indexed retries) | With `retry_delay = "10s"`       |
@@ -81,7 +89,7 @@ exactly what attempt 1 printed.
 A failure notification fires on **every** failed attempt, not just the
 last one. A task that fails twice and then succeeds will send two
 failure alerts followed by a success. If that's too noisy, dial back
-`retry_attempts` or lean on the
+[`retry_attempts`](/configuration/tasks/#retry_attempts) or lean on the
 [coalescing window](/notifications/model/#coalescing) to fold the
 repeats together.
 :::
@@ -95,18 +103,18 @@ run     = "/usr/local/bin/heavy-job.sh"
 timeout = "30m"
 ```
 
-It takes the same duration syntax as `retry_delay` (`"30s"`, `"5m"`,
+It takes the same duration syntax as [`retry_delay`](/configuration/tasks/#retry_delay) (`"30s"`, `"5m"`,
 `"1h"`). If you don't set one, it inherits from `[defaults] timeout` —
 and if that isn't set either, there's **no timeout at all** and the run
 can take as long as it needs. The window is **per attempt**, so each
-retry starts the clock fresh, and time spent waiting out `retry_delay`
+retry starts the clock fresh, and time spent waiting out [`retry_delay`](/configuration/tasks/#retry_delay)
 doesn't eat into it.
 
 When the deadline passes, the daemon SIGTERMs the run's process group,
-gives it up to [`graceful_stop`](/configuration/tasks/#retries--timeout) (default `"5s"`) to bow out, then SIGKILLs
-whatever's left and records the run with end reason `timeout`. That same
+gives it up to [`graceful_stop`](/configuration/tasks/#graceful_stop) (default `"5s"`) to bow out, then SIGKILLs
+whatever's left and records the run with end reason [`timeout`](/configuration/tasks/#timeout). That same
 SIGTERM-then-wait dance is what `on_overlap = "kill"`, manual stops,
-and daemon shutdown all use — `graceful_stop` is the one knob behind all
+and daemon shutdown all use — [`graceful_stop`](/configuration/tasks/#graceful_stop) is the one knob behind all
 of it.
 
 ## Interactions
@@ -131,27 +139,31 @@ is to stay up.
 
 The two do share a backoff vocabulary — `constant` / `linear` /
 `exponential` — so there's only one set of words to remember. The
-difference is in the surrounding knobs: tasks have `retry_attempts`
+difference is in the surrounding knobs: tasks have [`retry_attempts`](/configuration/tasks/#retry_attempts)
 (services run forever, so there's nothing to count), and services have
-`restart_delay` (the supervisor sets the pace).
+[`restart_delay`](/configuration/services/#restart_delay) (the supervisor sets the pace).
 
-| Field             | Tasks                                                        | Services                                                        |
-| ----------------- | ------------------------------------------------------------ | --------------------------------------------------------------- |
-| `retry_attempts`  | ✅ default `0`                                               | ❌ rejected                                                     |
-| `retry_delay`     | ✅ default `5s`                                              | ❌ rejected                                                     |
-| `retry_backoff`   | ✅ `constant` / `linear` / `exponential`, default `constant` | ❌ rejected                                                     |
-| `restart_delay`   | ❌ rejected                                                  | ✅ default `1s`                                                 |
-| `restart_backoff` | ❌ rejected                                                  | ✅ `constant` / `linear` / `exponential`, default `exponential` |
+`restart = "on_failure"` reads a service's [`failures`](/configuration/tasks/#failures) the same way a
+task's [`retry_attempts`](/configuration/tasks/#retry_attempts) does: the exit still has to be a failed
+execution _and_ pass [`failures`](/configuration/tasks/#failures) before the supervisor respawns it.
+
+| Field                                                         | Tasks                                                        | Services                                                        |
+| ------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------- |
+| [`retry_attempts`](/configuration/tasks/#retry_attempts)      | ✅ default `0`                                               | ❌ rejected                                                     |
+| [`retry_delay`](/configuration/tasks/#retry_delay)            | ✅ default `5s`                                              | ❌ rejected                                                     |
+| [`retry_backoff`](/configuration/tasks/#retry_backoff)        | ✅ `constant` / `linear` / `exponential`, default `constant` | ❌ rejected                                                     |
+| [`restart_delay`](/configuration/services/#restart_delay)     | ❌ rejected                                                  | ✅ default `1s`                                                 |
+| [`restart_backoff`](/configuration/services/#restart_backoff) | ❌ rejected                                                  | ✅ `constant` / `linear` / `exponential`, default `exponential` |
 
 A service supervisor restarts a replica with bounded exponential
 backoff as long as it looks like the replica can come back — but if
-it exits before `healthy_after` too many times in a row, the supervisor
+it exits before [`healthy_after`](/configuration/services/#healthy_after) too many times in a row, the supervisor
 marks that slot [FATAL](/configuration/services/#when-a-service-cant-start-fatal)
 and stops trying until you manually restart the service.
 
 ### Healthy threshold: `healthy_after`
 
-Once a replica has stayed up for at least `healthy_after` (default 60s),
+Once a replica has stayed up for at least [`healthy_after`](/configuration/services/#healthy_after) (default 60s),
 RunWisp calls it healthy — and that one threshold pulls double duty. It
 resets the restart counter, so a service that flapped a bunch on startup
 isn't stuck with long restart delays after it finally settles down. And
@@ -171,7 +183,7 @@ healthy_after = "2m"      # this one needs longer to call "stable"
 ```
 
 Rule of thumb: if you want a finite, escalating set of retries, that's a
-task with `cron` and `retry_attempts`. If you want a workload kept alive
+task with [`cron`](/configuration/tasks/#cron) and [`retry_attempts`](/configuration/tasks/#retry_attempts). If you want a workload kept alive
 and self-healing indefinitely, that's `[services.*]`.
 
 ---

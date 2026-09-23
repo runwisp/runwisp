@@ -8,7 +8,7 @@ description: Manual-only tasks triggered from CI via the REST API — schema mig
 import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 A deploy hook is a task that doesn't run on a schedule. There's no
-`cron` on it — instead, your CI pokes it through RunWisp's REST API
+[`cron`](/configuration/tasks/#cron) on it — instead, your CI pokes it through RunWisp's REST API
 whenever it wants a deploy to happen. The payoff: every deploy gets
 its own stable, browsable log entry in RunWisp's history. You're
 not SSHing in from CI, your shell scripts don't live on the build
@@ -64,7 +64,7 @@ A few of the choices in there are worth pulling out:
 
 ### No `cron`
 
-Leave `cron` off and the task becomes **manual-only** — nothing
+Leave [`cron`](/configuration/tasks/#cron) off and the task becomes **manual-only** — nothing
 fires it until something explicitly asks for a run.
 
 <Tabs syncKey="surface">
@@ -102,7 +102,7 @@ exactly right for this scenario, and almost nothing else.
 
 ### A success route to the team channel
 
-`notify` covers failures. Deploys are the one place a _success_ ping
+[`notify`](/configuration/tasks/#notify) covers failures. Deploys are the one place a _success_ ping
 earns its keep — "v1.2.3 deployed at 14:32" is what a team channel wants
 — so add a [`[[route]]`](/notifications/routes/) for it:
 
@@ -215,7 +215,7 @@ docker run --rm --env-file=/etc/app/migrate.env \\
 """
 ```
 
-Notice that `on_overlap` is `"skip"` here, not `"kill"` —
+Notice that [`on_overlap`](/configuration/tasks/#on_overlap) is `"skip"` here, not `"kill"` —
 killing a migration partway through is genuinely dangerous. A
 skipped manual trigger gets recorded as a `skipped` row (end
 reason, not `failed`) with exit code `-1` and the message "task

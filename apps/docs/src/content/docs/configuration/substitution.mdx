@@ -7,13 +7,13 @@ description: Pull values from environment variables or files into any string in 
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-Any string value in `runwisp.toml` can pull its content from the
-daemon's environment or from a file on disk:
+Any string value in `runwisp.toml` can take its value from the daemon's
+environment or from a file:
 
 ```toml
 [tasks.backup]
 cron        = "${BACKUP_CRON}"          # from the daemon's environment
-description = "backs up ${REGION}"      # works mid-string too
+description = "backs up ${REGION}"      # works inside a longer string
 run         = "/usr/local/bin/backup.sh"
 
 [notifiers.slack-ops]
@@ -21,108 +21,85 @@ type        = "slack"
 webhook_url = "${file:secrets/slack.url}"   # from a file
 ```
 
-This works on **every** string in the file — cron expressions, paths,
-env values, notifier credentials, compose blocks — with one deliberate
-exception covered below. It's how you keep credentials out of the TOML
-file without RunWisp needing a separate "secret source" key for each
-field.
+It works on every string value (cron, paths, env values, notifier credentials,
+compose blocks) except [`run`](#the-exception-run). Use it to keep credentials
+out of the TOML file.
 
-## `${VAR}` — environment variables
+## `${VAR}`: environment variables
 
-`${VAR}` is replaced with the value of `VAR` from the **daemon's**
-environment — whatever was set in the shell, systemd unit, or container
-that started `runwisp daemon`.
+`${VAR}` is replaced with `VAR` from the **daemon's** environment (the shell,
+systemd unit, or container that started `runwisp daemon`).
 
-If the variable isn't set, the config fails to load, and the error names
-both the variable and where you used it:
+- An unset variable is a config-load error that names the variable and the key:
 
-```text
-tasks.backup.cron: environment variable BACKUP_CRON is not set
-```
+    ```text
+    tasks.backup.cron: environment variable BACKUP_CRON is not set
+    ```
 
-A variable that's set but empty substitutes an empty string — only a
-genuinely _unset_ variable is an error. That's deliberate: a typo'd
-variable name should stop the daemon at boot, not silently schedule
-nothing.
+- A variable that is set but empty gives an empty string.
 
-## `${file:path}` — file contents
+## `${file:path}`: file contents
 
-`${file:path}` is replaced with the contents of the file, with leading
-and trailing whitespace trimmed (so a trailing newline won't corrupt a
-token). An unreadable or missing file is a config-load error.
+`${file:path}` is replaced with the file's contents, with leading and trailing
+whitespace removed (so a trailing newline doesn't break a token).
 
-Paths resolve the same way as every other file reference in
-`runwisp.toml`:
-
-- **Absolute** paths are used as-is.
-- **`~/...`** expands to your home directory.
-- **Relative** paths resolve against the directory `runwisp.toml` lives
-  in.
-
-This is the natural fit when a secrets manager (Vault agent, sops,
-Docker secrets at `/run/secrets/...`) drops the value on disk for you —
-just `chmod 600` the file.
+- A missing or unreadable file is a config-load error.
+- Paths can be absolute, `~/...` (your home directory), or relative to the
+  directory of `runwisp.toml`.
+- Works well with files written by a secrets tool (Vault agent, sops, Docker
+  secrets in `/run/secrets/...`). Set the file to `chmod 600`.
 
 ## When it runs
 
-Substitution happens **once, at config load** — which includes
-[`runwisp reload`](/operations/reload/), since reload re-reads and
-re-resolves the whole file. The daemon never re-reads the environment or
-the referenced files on its own while it's running. Change a variable or
-a referenced file and the daemon won't notice until the next load, so
-reload (or restart) to pick it up.
+Substitution runs once, when the config is loaded: at startup and on
+[`runwisp reload`](/operations/reload/). The daemon doesn't watch the
+environment or the files. After a change, reload or restart.
 
 ## The exception: `run`
 
-`run` (on tasks and services) is **never** substituted. Your shell
-already expands `${VAR}` at runtime, against the full process
-environment — including everything from `env`, `env_file`, `secrets`,
-and `secrets_file`:
+[`run`](/configuration/tasks/#run) (on tasks and services) is **never**
+substituted. The shell expands `${VAR}` in it at run time, using the full process
+environment, including [`env`](/configuration/tasks/#env),
+[`env_file`](/configuration/tasks/#env_file),
+[`secrets`](/configuration/tasks/#secrets), and
+[`secrets_file`](/configuration/tasks/#secrets_file):
 
 ```toml
 [tasks.backup]
-run = "backup.sh --bucket ${BACKUP_BUCKET}"   # the shell expands this, not RunWisp
+run = "backup.sh --bucket ${BACKUP_BUCKET}"   # the shell expands this
 
 [tasks.backup.env]
 BACKUP_BUCKET = "s3://prod-backups"
 ```
 
-Two expansion passes over the same string would be a recipe for
-surprises, so RunWisp leaves `run` alone and lets the shell do its job.
+## What else is not substituted
 
-## What else stays literal
-
-- **Map keys** are never substituted — env var names, task names, and
-  compose service names stay exactly as written. Only values expand.
-- **Referenced files keep their own syntax.** A dotenv file named by
-  `env_file` / `secrets_file` and a compose YAML named by [`compose_file`](/configuration/compose/)
-  are read literally — `${...}` inside them is not RunWisp's business.
+- **Keys.** Env var names, task names, and compose service names stay as
+  written. Only values are substituted.
+- **Referenced files.** Dotenv files ([`env_file`](/configuration/tasks/#env_file),
+  [`secrets_file`](/configuration/tasks/#secrets_file)) and compose files
+  ([`compose_file`](/configuration/tasks/#compose_file)) are read as they are.
+- **Crontabs** read through [`include_cron`](/configuration/daemon/#include_cron).
 
 ## Escaping
 
-Need a literal `${` in a config value? Double the dollar:
+Write `$${` for a literal `${`:
 
 ```toml
 description = "template is $${VAR}"   # → template is ${VAR}
 ```
 
-- `$${` produces a literal `${`.
-- A lone `$` (like `cost: $5`) passes through untouched — no escaping
-  needed.
-- An unterminated `${` (an opening brace with no closing `}`) is a
-  config-load error.
-
-`runwisp import` does this escaping for you. Cron and supervisord don't expand
-`${...}` at all, so anything the importer copies out of your old config — a
-comment that becomes a `description`, a `VAR=${OTHER}` line — comes across as
-`$${...}` and reaches your tasks as the text you wrote. If you want a value in
-an imported task to actually substitute, drop the extra `$` yourself.
+- A single `$` (like `cost: $5`) needs no escaping.
+- An unclosed `${` (no `}`) is a config-load error.
+- `runwisp import` escapes `${` for you, because cron and supervisord don't
+  substitute. Imported text keeps its meaning. To make an imported value
+  substitute, remove the extra `$`.
 
 ## Worked example
 
 ```toml
 [tasks.export]
-cron = "${EXPORT_CRON}"               # schedule decided by the deploy env
+cron = "${EXPORT_CRON}"
 run  = "/usr/local/bin/export"
 
 [tasks.export.secrets]
@@ -138,9 +115,8 @@ bot_token = "${file:~/.config/runwisp/tg.token}"
 chat_id   = "-1001234567890"
 ```
 
-Start the daemon with `EXPORT_CRON` and `SLACK_OPS_WEBHOOK` set, keep
-the token files at `0600`, and the TOML file itself contains nothing
-worth stealing.
+Start the daemon with `EXPORT_CRON` and `SLACK_OPS_WEBHOOK` set and the token
+files at `0600`. The TOML file then contains no secrets.
 
 ---
 
@@ -148,7 +124,7 @@ worth stealing.
     <LinkCard
         title="[tasks.*] Environment"
         href="/configuration/tasks/#environment--secrets"
-        description="env, env_file, secrets, secrets_file — and who gets to see what."
+        description="env, env_file, secrets, secrets_file, and who can see them."
     />
     <LinkCard
         title="Notifier credentials"

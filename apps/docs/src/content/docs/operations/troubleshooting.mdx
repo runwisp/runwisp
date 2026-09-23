@@ -42,7 +42,7 @@ On a headless box, start with `runwisp daemon`, not bare `runwisp`. Bare
 
 Work down this list — it's ordered by how often each one is the answer.
 
-1. **It has no `cron`.** A task without a `cron` key is manual-only by design.
+1. **It has no [`cron`](/configuration/tasks/#cron).** A task without a [`cron`](/configuration/tasks/#cron) key is manual-only by design.
    It runs when you trigger it, never on a schedule. `runwisp list` shows the
    schedule it actually parsed.
 2. **The daemon hasn't picked up your edit.** RunWisp never watches files. See
@@ -52,11 +52,11 @@ Work down this list — it's ordered by how often each one is the answer.
    CLI, API, and UI will all refuse to trigger it by hand. Intentional, but easy
    to forget you set it.
 4. **The timezone isn't what you think.** Cron is evaluated in the task's
-   `timezone`, falling back to `[daemon] timezone`, falling back to the
+   [`timezone`](/configuration/tasks/#timezone), falling back to `[daemon] timezone`, falling back to the
    host's zone. A task written for local time on a UTC server fires at the
    wrong hour. [How scheduling works](/concepts/scheduling/#timezone) covers
    this, including what happens across DST.
-5. **A previous run is still going and `on_overlap` said skip.** See
+5. **A previous run is still going and [`on_overlap`](/configuration/tasks/#on_overlap) said skip.** See
    [runs are piling up](#runs-pile-up-or-a-trigger-does-nothing).
 
 ## I edited runwisp.toml and nothing changed
@@ -75,13 +75,13 @@ running task set is left exactly as it was. In-flight runs finish under the
 definition they started with.
 
 Some settings **can't** be reloaded and need a full `runwisp restart`:
-`[daemon]` (including `timezone`), `[storage]`, `[notify]`, and the bind
+`[daemon]` (including [`timezone`](/configuration/tasks/#timezone)), `[storage]`, `[notify]`, and the bind
 host/port. Try to reload a change to one of those and the whole reload is
 rejected, so nothing changes at all. That's not a bug — [Reload](/operations/reload/)
 explains where the line is and why.
 
 Restart is also what you want when you deliberately want a fresh boot: only a
-restart re-fires `run_on_start` and re-runs missed-run catch-up.
+restart re-fires [`run_on_start`](/configuration/tasks/#run_on_start) and re-runs missed-run catch-up.
 
 ## I'm locked out of the Web UI
 
@@ -109,23 +109,23 @@ If logins are being refused rather than rejected, you may be hitting the
 
 Two different mechanisms throw output away, and they fail in different ways:
 
-- **Retention** deletes whole old runs. `keep_runs` caps how many runs a task
-  keeps; `keep_for` caps how long. If history is disappearing over time, this
+- **Retention** deletes whole old runs. [`keep_runs`](/configuration/tasks/#keep_runs) caps how many runs a task
+  keeps; [`keep_for`](/configuration/tasks/#keep_for) caps how long. If history is disappearing over time, this
   is why — see [Logs & retention](/concepts/logs/#retention-keep_runs-and-keep_for).
-- **Rotation** caps a _single_ run's output at `log_max_size`. What happens when
-  a run exceeds it is `log_on_full`: `drop_old` (the default — the log is rotated
+- **Rotation** caps a _single_ run's output at [`log_max_size`](/configuration/tasks/#log_max_size). What happens when
+  a run exceeds it is [`log_on_full`](/configuration/tasks/#log_on_full): `drop_old` (the default — the log is rotated
   to `.prev` and a fresh file started, so you keep the tail), `drop_new` (stop
   writing but let the process run on, keeping the _start_), or `kill` (end
   the run with reason `log_overflow`). Output that goes missing from the middle
   of a long run is rotation, not a bug.
 
 Whole runs vanishing that you didn't expect can also be
-[`[storage]`](/configuration/storage/) reclaiming space: `max_size` and
-`min_free_space` prune globally, across tasks.
+[`[storage]`](/configuration/storage/) reclaiming space: [`max_size`](/configuration/storage/#max_size) and
+[`min_free_space`](/configuration/storage/#min_free_space) prune globally, across tasks.
 
 ## Runs pile up, or a trigger does nothing
 
-`on_overlap` decides what happens when a run is still going as the next one
+[`on_overlap`](/configuration/tasks/#on_overlap) decides what happens when a run is still going as the next one
 comes due:
 
 - `queue` (the default for tasks) — the new run waits its turn. A slow task on
@@ -135,9 +135,9 @@ comes due:
 - `kill` — the running one is killed so the new one can start.
 
 [Concurrency policies](/concepts/concurrency/) covers all three, plus
-`max_concurrent` for letting a bounded number overlap on purpose.
+[`max_concurrent`](/configuration/tasks/#max_concurrent) for letting a bounded number overlap on purpose.
 
-Also worth checking: a run that seems stuck forever may just have no `timeout`
+Also worth checking: a run that seems stuck forever may just have no [`timeout`](/configuration/tasks/#timeout)
 set. With one, the run is killed and recorded as a timeout instead of hanging
 indefinitely — see [Retries & timeouts](/concepts/retries/#timeout).
 
@@ -150,7 +150,7 @@ that cannot start. The run history holds the exit code and captured output from
 each failed attempt, which is where the actual reason lives.
 
 If a service starts fine but is being declared failed too eagerly, look at
-[`healthy_after`](/concepts/retries/#healthy-threshold-healthy_after) — it's how
+[`healthy_after`](/configuration/services/#healthy_after) — it's how
 long a process has to stay up before RunWisp counts the start as successful.
 
 [When a service can't start: FATAL](/configuration/services/#when-a-service-cant-start-fatal)

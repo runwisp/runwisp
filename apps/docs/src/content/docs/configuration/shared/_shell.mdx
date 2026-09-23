@@ -1,9 +1,9 @@
 **type**: `string` **default**: `/bin/sh`
 
-The interpreter for `run`, as an absolute path. Set `/bin/bash` for arrays,
-`[[ ]]`, or `set -o pipefail`. It's invoked as `<shell> -e -c <script>`, so
-fail-fast is armed for POSIX shells (RunWisp warns at boot when it can't arm it).
-Can be set once in `[defaults]`.
+The shell for [`run`](/configuration/tasks/#run), as an absolute path. Use
+`/bin/bash` for arrays, `[[ ]]`, or `set -o pipefail`. It is started as
+`<shell> -e -c <script>`, so [fail-fast](/configuration/tasks/#fail-fast) works
+for POSIX shells. RunWisp warns at boot when it can't turn fail-fast on.
 
 ```toml
 [tasks.nightly-report]

@@ -2,20 +2,18 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: "[storage]"
-description: max_size and min_free_space — the two daemon-wide disk safeguards that keep RunWisp from filling your partition.
+description: "max_size and min_free_space: the two daemon-wide disk limits that keep RunWisp from filling your partition."
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-`[storage]` is the daemon-wide safety net for disk usage. It lives one
-level up from per-task [`log_max_size`](/concepts/logs/#rotation-log_max_size-and-log_on_full):
-that field caps a _single_ run's log, while this section caps the
-daemon's total log footprint and keeps some breathing room on the
-partition underneath it.
+`[storage]` limits the disk space RunWisp uses for logs, across all tasks. It
+works on top of the per-run [`log_max_size`](/configuration/tasks/#log_max_size).
+Both keys are optional, but without them logs can fill the disk. On a server,
+set both.
 
-Both keys are optional — but leave `[storage]` out entirely and the
-daemon will cheerfully fill your disk one log line at a time. On a real
-server, set both.
+Sizes use `b`, `kb`, `mb`, `gb`, `tb` (any case), with optional fractions
+(`"1.5gb"`).
 
 ## Keys
 
@@ -25,98 +23,74 @@ max_size       = "5gb"
 min_free_space = "500mb"
 ```
 
-| Key              | Type      | Default        | What it does                                                                                                                                                 |
-| ---------------- | --------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `max_size`       | byte size | `0` (no cap)   | Hard cap on total bytes used by RunWisp's log files (across all tasks).                                                                                      |
-| `min_free_space` | byte size | `0` (no check) | Refuse to start a run — and stop accepting log lines mid-run — when the data partition has less than this much free. Daemon startup itself is never blocked. |
+### max_size
 
-Both accept the same units as `log_max_size`: `b`, `kb`, `mb`, `gb`,
-`tb`, case-insensitive, with optional fractions (`"1.5gb"`).
+**type**: `size` **default**: `0` (no limit)
 
-## What `max_size` actually does
+The total size of all log files (`.log` and their `.log.meta` files). The
+database and other files in the data directory don't count.
 
-`max_size` counts **log files and nothing else** — the `.log` files
-plus their hidden `.log.meta` sidecar containers across every task's log
-directory. SQLite, the JWT secret, the PID file, and the other bits
-under the data dir don't count toward it.
-
-A background sweeper tots up the total every so often. If it's over the
-cap, it starts deleting the **oldest completed runs** — both the rows
-and their log files — in `created_at` order until the total drops back
-under the line. You'll see:
-
-```
-WARN  Log storage exceeds storage.max_size, purging oldest runs
-INFO  Purged runs to enforce storage.max_size  deleted=N
+```toml
+[storage]
+max_size = "5gb"
 ```
 
-`max_size` is a soft ceiling, not a hard wall — between sweeps the total
-can drift a little over it. And a run that's still going is never
-deleted just to get the number down.
+- A background job checks the total from time to time. When it is over the
+  limit, it deletes the **oldest completed runs** (database rows and log files)
+  until the total is under the limit again. The daemon logs:
 
-## What `min_free_space` actually does
+    ```
+    WARN  Log storage exceeds storage.max_size, purging oldest runs
+    INFO  Purged runs to enforce storage.max_size  deleted=N
+    ```
 
-`min_free_space` is checked against the partition holding the data dir,
-and it's checked in two places:
+- The total can go a little over the limit between checks.
+- A run that is still going is never deleted.
+- Make it large enough to hold several full runs of your biggest task.
+  Otherwise runs are deleted almost as fast as they are created.
 
-- **At the start of every run.** Before the executor launches the
-  task's process, it stats the data partition. If free space is already
-  below the threshold, the run never starts — it's recorded with exit
-  code `-1` and the message `insufficient disk space: X free, minimum Y
-required`. The daemon itself keeps running; only that run fails.
-- **Periodically during every run.** After roughly every 10 MB of output, the log writer
-  re-checks free space. If it has dipped below the threshold, the
-  log writer stops accepting new lines and the daemon raises a
-  `log.disk_pressure` notification (severity `warn`) so you find out
-  about the output you're no longer seeing. What happens to
-  the process itself comes down to the task's `log_on_full`:
+### min_free_space
 
-    - `drop_new` / `drop_old`: a system line `"Log output stopped: disk space critically low"`
-      goes into the log and the process keeps running.
-    - `kill`: the run is cancelled (`end_reason = "log_overflow"`) with a system line
-      `"Process killed: disk space critically low …; log_on_full=\"kill\""`.
+**type**: `size` **default**: `0` (no check)
 
-    You asked for loud failure over disk safety, and RunWisp honours that.
+The free space to keep on the partition that holds the data directory. It
+never stops the daemon from starting.
 
-That notification fires once per run, not once per check, and it carries
-`free_bytes`, `min_free_bytes`, and `killed_task` — so a dashboard can
-tell the "task survived but went quiet" case apart from the "task got
-killed" one.
+```toml
+[storage]
+min_free_space = "500mb"
+```
 
-## Interaction with per-task `log_max_size`
+- **Before each run:** if free space is below the limit, the run doesn't start.
+  It is recorded with exit code `-1` and the message
+  `insufficient disk space: X free, minimum Y required`.
+- **During each run:** about every 10 MB of output, free space is checked
+  again. If it is below the limit, the log stops taking new lines, and a
+  `log.disk_pressure` notification (severity `warn`) is sent once per run, with
+  `free_bytes`, `min_free_bytes`, and `killed_task`. The task's
+  [`log_on_full`](/configuration/tasks/#log_on_full) decides what happens to the
+  process:
+    - `drop_new` / `drop_old`: the process keeps running. The log gets the line
+      `Log output stopped: disk space critically low`.
+    - `kill`: the run is stopped with `end_reason = "log_overflow"`. The log gets
+      the line `Process killed: disk space critically low …`.
 
-The two layers are independent:
+## How the limits work together
 
-- Per-task `log_max_size` caps **a single run's log file** and acts
-  through `log_on_full` (drop, rotate, or kill).
-- `[storage] max_size` caps the **total across all tasks** by deleting
-  old runs.
-- `[storage] min_free_space` is a **partition-level emergency brake**
-  that respects `log_on_full`: `drop_*` policies stop logging silently
-  on disk (but always emit a `log.disk_pressure` notification);
-  `kill` cancels the run.
+| Limit                                                | Scope                  | What happens at the limit                                                       |
+| ---------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------- |
+| [`log_max_size`](/configuration/tasks/#log_max_size) | one run's log          | [`log_on_full`](/configuration/tasks/#log_on_full): drop old, drop new, or kill |
+| [`max_size`](#max_size)                              | all logs together      | oldest completed runs are deleted                                               |
+| [`min_free_space`](#min_free_space)                  | free space on the disk | new runs don't start; running logs stop                                         |
 
-An easy way to keep them straight: `log_max_size` is "this one run is
-about to write too much," `max_size` is "we've piled up too much over
-time," and `min_free_space` is "the disk is full and no policy is going
-to get us out of this gracefully."
+## Suggested values
 
-## Sensible values
-
-A `5gb` / `500mb` split is a safe baseline for a typical VPS. Tune it
-to your setup:
-
-| Environment                  | Suggested `max_size`           | Suggested `min_free_space` |
-| ---------------------------- | ------------------------------ | -------------------------- |
-| Raspberry Pi (8 GB SD)       | `1gb`                          | `200mb`                    |
-| Small VPS (40 GB SSD)        | `5gb`                          | `500mb`                    |
-| Large VPS (200+ GB)          | `20gb`–`50gb`                  | `2gb`                      |
-| Docker container (ephemeral) | match volume size, `1gb`–`5gb` | `500mb`                    |
-
-If a single task can churn out gigabytes per run, size `max_size` so it
-comfortably holds at least a few full runs. Set it too tight and the
-sweeper ends up deleting runs about as fast as they show up, which makes
-your history useless.
+| Environment                  | [`max_size`](#max_size)        | [`min_free_space`](#min_free_space) |
+| ---------------------------- | ------------------------------ | ----------------------------------- |
+| Raspberry Pi (8 GB SD)       | `1gb`                          | `200mb`                             |
+| Small VPS (40 GB SSD)        | `5gb`                          | `500mb`                             |
+| Large VPS (200+ GB)          | `20gb`–`50gb`                  | `2gb`                               |
+| Docker container (ephemeral) | match volume size, `1gb`–`5gb` | `500mb`                             |
 
 ---
 

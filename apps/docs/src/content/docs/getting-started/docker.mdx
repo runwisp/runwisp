@@ -119,8 +119,8 @@ compose_service = "app"
 run             = "php artisan schedule:run"
 ```
 
-That's `docker compose exec` under the hood, and setting `run` is what
-picks it — see [`compose_mode`](/configuration/compose/#running-a-command-in-a-service-compose_mode)
+That's `docker compose exec` under the hood, and setting [`run`](/configuration/tasks/#run) is what
+picks it — see [`compose_mode`](/configuration/tasks/#compose_mode)
 for the full rule and for how to ask for a fresh container instead.
 
 It works whether you brought the app up yourself with `docker compose up`
@@ -139,7 +139,7 @@ Two limits are worth knowing up front:
 
 - **The container has to be up.** If it isn't, the run fails with exit 1
   and `container … is not running` in the log. Loud, not a silent skip.
-- **[`timeout`](/concepts/retries/#timeout) can't reach inside.** Docker
+- **[`timeout`](/configuration/tasks/#timeout) can't reach inside.** Docker
   has no way to cancel an exec, so a timeout kills RunWisp's local client
   while the process inside the container carries on. Bound long work on
   the inside too: `run = "timeout 3600 php artisan long-job"`. RunWisp
@@ -183,7 +183,7 @@ compose_file    = "./docker-compose.yml"
 compose_service = "backup"
 ```
 
-With no `run`, that's `docker compose run --rm` — a **new** container each
+With no [`run`](/configuration/tasks/#run), that's `docker compose run --rm` — a **new** container each
 time, built from the image, env, and networks your compose file already
 defines, then thrown away. Fresh wins when the job shouldn't inherit a
 long-lived process's state; exec wins when the task needs the running
@@ -200,12 +200,12 @@ so without a Docker CLI in the image every such run fails with
 
 ### Which one?
 
-| The task…                                                                  | Approach                                  |
-| -------------------------------------------------------------------------- | ----------------------------------------- |
-| belongs to an app you run in a container (`artisan`, `manage.py`, your DB) | `compose_service` + `run` (exec)          |
-| is already a compose service (`backup`, `migrate`)                         | `compose_service` alone (fresh container) |
-| targets a container that isn't compose-managed                             | `run = "docker exec …"`                   |
-| is infrastructure that belongs to no app (prune, `restic`, `curl` a URL)   | bake it into the RunWisp image            |
+| The task…                                                                  | Approach                                                                                               |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| belongs to an app you run in a container (`artisan`, `manage.py`, your DB) | [`compose_service`](/configuration/tasks/#compose_service) + [`run`](/configuration/tasks/#run) (exec) |
+| is already a compose service (`backup`, `migrate`)                         | [`compose_service`](/configuration/tasks/#compose_service) alone (fresh container)                     |
+| targets a container that isn't compose-managed                             | `run = "docker exec …"`                                                                                |
+| is infrastructure that belongs to no app (prune, `restic`, `curl` a URL)   | bake it into the RunWisp image                                                                         |
 
 One thing to weigh once for both container-reaching approaches: mounting
 that socket means a task can do anything to the host's Docker, including
@@ -292,8 +292,8 @@ mount hint and exit 1 instead.
 Both checks cover every invocation that would bring a daemon up —
 `daemon`, `station`, `restart`, `demo`, and bare `runwisp` — and anything
 the entrypoint doesn't recognise is treated as one of those. One-shot
-subcommands (`validate`, `run`, `list`, `status`, `stop`, `reload`,
-`password`, `import`, `schema`, `openapi`, `tui`, `service`) skip both,
+subcommands (`validate`, [`run`](/configuration/tasks/#run), `list`, `status`, `stop`, `reload`,
+`password`, [`import`](/configuration/compose/#import), `schema`, `openapi`, `tui`, `service`) skip both,
 since they need neither a password nor a long-lived config:
 
 ```bash
@@ -325,7 +325,7 @@ Two mounts, one of which is easy to forget:
 - **`/etc/runwisp/runwisp.toml`** — your config, read-only. It has to be a
   _file_. To split config across several files, mount the directory at
   `/etc/runwisp` with `runwisp.toml` inside it and pull the rest in via
-  [`[daemon] include`](/configuration/daemon/#include).
+  [`include`](/configuration/daemon/#include).
 - **`/var/lib/runwisp`** — a named volume or bind mount for the database
   and task logs. **Skip it and every container recreate wipes your run
   history and sessions**, which is most of why you installed RunWisp.
@@ -372,7 +372,7 @@ instead, set `-e TZ=Europe/Helsinki` or bind-mount
 
 The image runs as root on purpose: per-task privilege dropping needs root
 to switch users, and the daemon has to write to whatever you mount for
-data. If no task uses `user`, set `user:` in compose (or `--user`) — just
+data. If no task uses [`user`](/configuration/tasks/#user), set `user:` in compose (or `--user`) — just
 make sure that UID can write to the `/var/lib/runwisp` volume, or the
 entrypoint will tell you it can't.
 

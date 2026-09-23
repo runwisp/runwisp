@@ -1,9 +1,9 @@
 **type**: `string`
 
-Path to a dotenv file merged beneath [env](/configuration/tasks/#env) (inline entries win). Its values
-are visible in the API/UI, like `env`. Paths may be absolute, `~/`-relative, or
-relative to the `runwisp.toml` directory. Plain `KEY=VALUE` lines, read literally
-with no shell expansion.
+A dotenv file merged below [`env`](/configuration/tasks/#env) (inline values win). Its values are
+shown in the API and UI, like `env`. Paths can be absolute, `~/`-relative, or
+relative to the `runwisp.toml` directory. Lines are plain `KEY=VALUE`, with no
+shell expansion.
 
 ```toml
 [tasks.backup]

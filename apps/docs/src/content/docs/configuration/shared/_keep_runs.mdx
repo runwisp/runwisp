@@ -1,8 +1,8 @@
 **type**: `integer` **min**: `0` **max**: `1000000`
 
-Keep only the N most recent completed runs; older rows and their logs are trimmed on
-the hourly cleanup. Inherits `[defaults]` when unset; `0` keeps no completed runs.
-Set alongside [keep_for](/configuration/tasks/#keep_for), and whichever trims more wins.
+Keep only the N most recent completed runs. Older runs and their logs are
+deleted by the hourly cleanup. `0` keeps no completed runs. With
+[`keep_for`](/configuration/tasks/#keep_for) also set, whichever deletes more wins.
 
 ```toml
 [tasks.backup-db]

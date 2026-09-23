@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: "[services.*]"
-description: Long-running processes — instances, restart backoff, graceful shutdown, and what services share with tasks.
+description: "Long-running processes: instances, restarts, boot order, graceful shutdown, and the keys shared with tasks."
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -33,11 +33,10 @@ import ComposeMode from "./shared/_compose_mode.mdx";
 
 <div class="rw-config-ref" />
 
-A service is an always-on process that RunWisp works to keep alive — it exits
-or crashes, it gets restarted, until you stop it. Every key a
-`[services.<name>]` block accepts, with its type, default, and accepted
-values. Unset keys fall back to [`[defaults]`](/configuration/defaults/), then
-a built-in default.
+A service is a long-running process. RunWisp restarts it when it exits or
+crashes, until you stop it. This page lists every key a `[services.<name>]`
+block accepts. Unset keys fall back to [`[defaults]`](/configuration/defaults/),
+then a built-in default.
 
 ## Identity & metadata
 
@@ -45,12 +44,13 @@ a built-in default.
 
 **type**: `string` **required**
 
-Whatever follows `services.` is the service's name — `[services.api-worker]`
-defines a service called `api-worker`. It shows up in the CLI, API, Web UI,
-and the log directory. Names use letters, digits, and `. _ - :`, up to 100
-characters, and are unique across `[services.*]` and
-[`[tasks.*]`](/configuration/tasks/) — they share one namespace. Quote
-anything that isn't a bare TOML key.
+The text after `services.` is the service's name: `[services.api-worker]` is a
+service called `api-worker`. The name is used in the CLI, API, Web UI, and log
+directory.
+
+- Letters, digits, and `. _ - :`, up to 100 characters.
+- Must be unique across `[services.*]` and [`[tasks.*]`](/configuration/tasks/).
+- Quote names that aren't a bare TOML key (`[services."api:v2"]`).
 
 ```toml
 [services.api-worker]
@@ -88,11 +88,13 @@ REST API, and the station control plane all refuse it; only a
 
 **type**: `integer` **default**: `1` **min**: `1` **max**: `64`
 
-Number of concurrent instances. Each shows up as its own run, tagged with its
-own `instance_index` (`0`, `1`, `2`, …); the Web UI and TUI label them
-`name#1`, `name#2`, and a single-instance service stays just `name`. They
-share the same config, pool their logs together, and when one instance's
-process exits the supervisor restarts just that one.
+How many copies of the process run at once.
+
+- Each instance is its own run with an `instance_index` (`0`, `1`, `2`, …). The
+  Web UI and TUI show them as `name#1`, `name#2`; a single instance is just
+  `name`.
+- All instances share the config and the log view.
+- When one instance exits, only that one is restarted.
 
 ```toml
 [services.api-worker]
@@ -102,80 +104,96 @@ run       = "/usr/local/bin/worker"
 
 ## Restart behaviour
 
-`restart = "always"` is baked in and **can't be overridden** — that's the deal
-with a service. If what you want is "run once and exit," that's a
+For a command that should run once and exit, use a
 [task](/concepts/tasks-vs-services/).
+
+### restart
+
+**type**: `enum` **default**: `"always"`
+
+When an instance is started again after it exits.
+
+```toml
+[services.worker]
+restart = "on_failure"
+```
+
+Possible values:
+
+- `always`: restart after any exit
+- `on_failure`: restart only when [`failures`](#failures) counts the exit as a
+  failure (and the reason is `failed`, `timeout`, `crashed`, `log_overflow`, or
+  `start_failed`)
+- `never`: don't restart; one exit is final
+
+A manual **Restart** always starts the instance again, whatever this is set to.
 
 ### restart_delay
 
 **type**: `duration` **default**: `1s`
 
-Base delay between automatic restarts after a process exits on its own. An
-explicit `0` (or `"0s"`) is kept exactly as written — never silently replaced
-by the default; only omitting the key falls back to `[defaults]`. Hitting
-**Restart** by hand skips the delay entirely.
+The base wait before an automatic restart. [`restart_backoff`](#restart_backoff)
+decides how it grows. `0` is allowed and means no wait. A manual **Restart**
+never waits.
 
 ```toml
 [services.flaky]
 restart_delay = "2s"
 ```
 
-### restart_backoff
-
-**type**: `enum` **default**: `"exponential"`
-
-Curve applied to `restart_delay` (shared with task `retry_backoff`): `constant`,
-`linear`, or `exponential`. The backoff has a ceiling, so even a long stretch
-of flapping won't push the delay forever upward.
-
-```toml
-[services.flaky]
-restart_backoff = "exponential"
-```
-
 ### healthy_after
 
-**type**: `duration` **default**: inherited (built-in `60s`)
+**type**: `duration` **default**: `60s`
 
-Uptime an instance must reach to count as healthy — resets its restart
-backoff **and** clears the failed-start streak used by `restart_attempts`.
-Exits faster than this with a failure count as a failed start.
+How long an instance must stay up to count as healthy. Reaching it resets the
+restart backoff and the failed-start count used by
+[`restart_attempts`](#restart_attempts).
 
 ```toml
 [services.api-worker]
-healthy_after = "2m"  # this one needs longer to call "stable"
+healthy_after = "2m"
 ```
 
 ### restart_attempts
 
 **type**: `integer` **default**: `3` **min**: `0` **max**: `100`
 
-Consecutive failed starts an instance tolerates before it's marked **FATAL**
-and stops restarting. `0` means give up after the very first failed start.
+How many failed starts in a row an instance may have before it goes
+[FATAL](#when-a-service-cant-start-fatal) and stops restarting. `0` gives up
+after the first failed start.
 
 ```toml
 [services.flaky]
 restart_attempts = 2
 ```
 
+### restart_backoff
+
+**type**: `enum` **default**: `"exponential"`
+
+How [`restart_delay`](#restart_delay) grows after each restart. The delay has an
+upper limit.
+
+```toml
+[services.flaky]
+restart_backoff = "exponential"
+```
+
+Possible values: `constant`, `linear`, `exponential` (the same curves as
+[`retry_backoff`](/configuration/tasks/#retry_backoff)).
+
 ### When a service can't start: FATAL
 
-Restarting forever is right for a service that _occasionally_ falls over. It's
-wrong for one that can _never_ start — a typo in the command, a missing
-binary, a bad config. Without a backstop that service would flap silently
-until you happened to look.
+A **failed start** is a failure exit before the instance reached
+[`healthy_after`](#healthy_after). A clean exit (success code) never counts.
 
-Every time an instance exits, RunWisp checks how long it stayed up. Reach
-`healthy_after` and the failed-start counter resets to zero. Exit _faster_
-than `healthy_after` with a failure (a clean exit on a success code never
-counts), and that's a failed start. Rack up more than `restart_attempts`
-failed starts in a row and the instance goes **FATAL**: it stops restarting, a
-`start_failed` run is recorded, and a `service.fatal` notification lights the
-in-app bell and any configured [notifiers](/notifications/model/).
-
-FATAL lives in memory only. Restarting the daemon, or hitting **Restart** on
-the service in the UI/API, gives it a fresh `restart_attempts` budget and
-tries again. The `start_failed` runs stay in history either way.
+- After more than [`restart_attempts`](#restart_attempts) failed starts in a
+  row, the instance goes **FATAL**: it stops restarting, a `start_failed` run is
+  recorded, and a `service.fatal` notification goes to the in-app bell and your
+  [notifiers](/notifications/model/).
+- FATAL is kept in memory only. A daemon restart, or **Restart** in the UI or
+  API, resets the count and tries again.
+- The `start_failed` runs stay in history.
 
 ```toml
 [services.flaky]
@@ -186,14 +204,29 @@ restart_attempts = 2          # give up after 2 failed starts in a row
 
 ## Startup
 
+### autostart
+
+**type**: `boolean` **default**: `true`
+
+Whether the service starts when the daemon starts. With `false`, it stays
+stopped until you start it from the UI or API.
+
+This is read from `runwisp.toml` at every boot, not saved: a manually started
+`autostart = false` service is stopped again after a daemon restart, and a
+manually stopped `autostart = true` service starts again.
+
+```toml
+[services.migration-runner]
+autostart = false
+```
+
 ### priority
 
 **type**: `integer` **default**: `0`
 
-Boot start order across services — lower starts first, ties break on name.
-This is start order **only**: it's not a readiness gate, it just fixes the
-otherwise-random spawn order. If one service needs another to actually be
-_up_ first, that's [`depends_on`](#depends_on).
+Start order at boot. Lower starts first; equal values start in name order. It
+doesn't wait for a service to be ready. For that, use
+[`depends_on`](#depends_on).
 
 ```toml
 [services.db]
@@ -203,67 +236,67 @@ priority = 0
 priority = 10
 ```
 
-### autostart
-
-**type**: `boolean` **default**: `true`
-
-Whether the service comes up at boot. `false` boots it stopped until you
-start it from the UI/API — for a maintenance worker or a one-off runner you
-trigger by hand. This desired state isn't persisted: it's re-read from
-`runwisp.toml` every boot, so a manually started `autostart = false` service
-is stopped again after a restart, and a manually stopped `autostart = true`
-service comes back up.
-
-```toml
-[services.migration-runner]
-autostart = false
-```
-
 ## Boot order with `depends_on`
 
 ### depends_on
 
 **type**: `string[]` **default**: none
 
-Other **services** that must be healthy before this one starts at boot.
-Order only.
+Services that must be healthy (at least one instance up for its
+[`healthy_after`](#healthy_after)) before this one starts at boot.
 
 ```toml
 [services.db]
 run           = "postgres -D /var/lib/pg"
-healthy_after = "3s"      # call it "up" once it stays alive 3s
+healthy_after = "3s"
 
 [services.api]
 run        = "./api-server"
-depends_on = ["db"]       # wait for db to be healthy, then start
+depends_on = ["db"]  # start after db is healthy
 ```
 
-At boot, `api` waits until `db` reports healthy — at least one `db` instance
-has stayed live for its [`healthy_after`](#healthy_after) window — and only
-then starts. A service can depend on several at once. A few rules worth
-knowing:
-
-- **It never deadlocks your boot.** If a dependency never becomes healthy, the
-  dependent waits a bounded window and then **starts anyway, with a loud
-  warning in the log**.
-- **Manual start/restart is ungated.** `depends_on` only gates the automatic
-  boot.
-- **Shutdown reverses it.** Dependents stop before the services they depend
-  on.
-- **Cycles are rejected at load**, and references must point at services (not
-  tasks) that actually exist.
-
-This is deliberately small — boot ordering and a readiness gate, nothing
-more. It is **not** [orchestration](/concepts/tasks-vs-services/): no cascade
-restarts, no run-to-completion edges, no data passing.
+- If a dependency never becomes healthy, the service waits a limited time, then
+  starts anyway and logs a warning.
+- It applies only to the automatic start at boot. Manual start and restart
+  don't wait.
+- At shutdown, dependent services stop first.
+- Names must be existing services (not tasks). Cycles are rejected at load.
+- There are no restart cascades or data passing between services. See
+  [Tasks vs Services](/concepts/tasks-vs-services/).
 
 ## Concurrency
 
-Services have no `on_overlap` — that's a `[tasks.*]` knob. A service's
-instance count is fixed by [`instances`](#instances), and the supervisor
-holds that count steady on its own, so there's nothing to configure:
-there's no "run" to overlap with, only instances to keep alive. There's
-no `max_concurrent` or `max_queued` either, for the same reason.
+Services have no [`on_overlap`](/configuration/tasks/#on_overlap),
+[`max_concurrent`](/configuration/tasks/#max_concurrent), or
+[`max_queued`](/configuration/tasks/#max_queued). The number of running copies
+is set by [`instances`](#instances).
+
+## Timeout & failures
+
+### timeout
+
+**type**: `duration` **default**: none (no limit)
+
+The longest an instance may run. After that it is stopped and recorded as
+`timeout`, then [`restart`](#restart) decides what happens next.
+
+```toml
+[services.report-server]
+timeout = "24h"
+```
+
+### failures
+
+**type**: `string[]` **default**: `["failed", "timeout", "crashed", "log_overflow", "start_failed", "missed"]`
+
+Which outcomes count as a failure: they turn the run red, fire [`notify`](#notify),
+and (with `restart = "on_failure"`) cause a restart. Same syntax as on tasks; see
+[What counts as a failure](/configuration/tasks/#what-counts-as-a-failure).
+
+```toml
+[services.web]
+failures = ["-missed"]
+```
 
 ## Graceful shutdown
 
@@ -271,16 +304,36 @@ no `max_concurrent` or `max_queued` either, for the same reason.
 
 <GracefulStop />
 
-Applies per instance — for manual stop, **Restart Service**, and daemon
-shutdown. During a whole-daemon shutdown, each instance is still capped by
-[`[daemon] shutdown_timeout`](/configuration/daemon/#shutdown_timeout) no
-matter what its own `graceful_stop` says.
+It applies to each instance, on manual stop, **Restart**, and daemon shutdown.
+At daemon shutdown, [`shutdown_timeout`](/configuration/daemon/#shutdown_timeout)
+still limits it.
+
+To stop cleanly, trap the stop signal in [`run`](#run) and exit. An instance
+that exits after `SIGTERM` is recorded as `stopped`:
+
+```bash
+trap 'echo "shutting down"; exit 0' TERM INT
+while true; do
+  # do work
+done
+```
 
 ### stop_signal
 
 <StopSignal />
 
 ## Logs & retention
+
+### keep_runs
+
+<KeepRuns />
+
+Every crash adds a run, so a service's history can grow faster than a task's.
+`200` is a good start for a service that restarts often.
+
+### keep_for
+
+<KeepFor />
 
 ### log_max_size
 
@@ -290,19 +343,9 @@ matter what its own `graceful_stop` says.
 
 <LogOnFull />
 
-### keep_runs
-
-<KeepRuns />
-
-A service's history can grow a lot faster than a task's, because every crash
-is another run row — `200` is a sensible starting point for a service that's
-prone to flapping.
-
-### keep_for
-
-<KeepFor />
-
 ## Environment & secrets
+
+All instances get the same environment.
 
 <EnvSecretsMerge />
 
@@ -322,10 +365,9 @@ prone to flapping.
 
 <SecretsFile />
 
-Every instance of a multi-instance service receives the same merged
-environment.
-
 ## Working directory & shell
+
+All instances use the same directory, shell, environment base, user, and umask.
 
 ### working_dir
 
@@ -335,10 +377,6 @@ environment.
 
 <Shell />
 
-### umask
-
-<Umask />
-
 ### env_base
 
 <EnvBase />
@@ -347,20 +385,24 @@ environment.
 
 <User />
 
-Every instance runs in the same directory, under the same interpreter, mask,
-and environment base, as the same OS user.
+### umask
+
+<Umask />
 
 ## Compose-backed services
 
-`[services.<name>]` can run a service defined in an existing
-`docker-compose.yml` instead of a raw shell command:
+A service can run a service from an existing `docker-compose.yml` instead of a
+shell command:
 
 ```toml
 [services.api]
 compose_file    = "./docker-compose.yml"
 compose_service = "api"
-notify = ["slack-prod"]
+notify          = ["slack-prod"]
 ```
+
+To import every service in a compose file, see
+[`[compose.*]`](/configuration/compose/).
 
 ### compose_file
 
@@ -376,43 +418,31 @@ notify = ["slack-prod"]
 
 <ComposeMode />
 
-For importing the whole compose file at once, see
-[`[compose.*]`](/configuration/compose/).
-
 ## Notifications
 
 ### notify
 
 <Notify />
 
-An instance's `notify` fires when it ends `failed`, `crashed`, `timeout`, or
-`missed`, or when a slot goes `fatal` — reaching the exact same channels a
-failed `[tasks.*]` run would.
-
-## Cooperating with `graceful_stop`
-
-The practical advice: trap `SIGTERM` in your `run` command and exit cleanly.
-The starter file's pattern is a fine place to begin:
-
-```bash
-trap 'echo "SIGTERM — shutting down"; exit 0' TERM INT
-while true; do
-  # do work
-done
-```
-
-An instance that catches `SIGTERM` and exits cleanly is recorded with
-`end_reason = stopped`.
+For a service, this fires when an instance ends with an outcome that
+[`failures`](/configuration/tasks/#failures) counts as a failure, and when an
+instance goes [FATAL](#when-a-service-cant-start-fatal).
 
 ## What's rejected on services
 
-- `cron`, `catch_up` — services aren't cron-driven.
-- [`params`](/configuration/tasks/#parameters) — services don't take per-execution parameters.
-- `retry_attempts`, `retry_delay`, `retry_backoff` — services restart instead of retry. Use `restart_delay` / `restart_backoff`.
-- `on_overlap`, `max_concurrent`, `max_queued` — instance count is `instances`; services don't queue or overlap.
-- A name shared with a `[tasks.*]` entry.
-- Empty or missing `run`.
-- `instances` outside `[1, 64]`.
+- [`cron`](/configuration/tasks/#cron), [`catch_up`](/configuration/tasks/#catch_up):
+  services don't run on a schedule.
+- [`params`](/configuration/tasks/#params): services don't take parameters.
+- [`retry_attempts`](/configuration/tasks/#retry_attempts),
+  [`retry_delay`](/configuration/tasks/#retry_delay),
+  [`retry_backoff`](/configuration/tasks/#retry_backoff): use
+  [`restart_delay`](#restart_delay) and [`restart_backoff`](#restart_backoff).
+- [`on_overlap`](/configuration/tasks/#on_overlap),
+  [`max_concurrent`](/configuration/tasks/#max_concurrent),
+  [`max_queued`](/configuration/tasks/#max_queued): use [`instances`](#instances).
+- A name already used by a `[tasks.*]` entry.
+- An empty or missing [`run`](#run) (unless [`compose_file`](#compose_file) is set).
+- [`instances`](#instances) outside `1` to `64`.
 
 ---
 

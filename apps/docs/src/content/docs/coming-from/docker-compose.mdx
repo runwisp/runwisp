@@ -52,7 +52,7 @@ restart = "always"
 
 Declare a channel (here, the
 [Slack provider](/notifications/providers/slack/)) and point the
-service's [`notify`](/notifications/per-task/) at it:
+service's [`notify`](/configuration/tasks/#notify) at it:
 
 ```toml
 [notifiers.slack-prod]
@@ -103,7 +103,7 @@ compose_service = "backup"
 
 ## What stays under your control
 
-- The compose file itself — networks, volumes, depends_on, image build
+- The compose file itself — networks, volumes, [`depends_on`](/configuration/services/#depends_on), image build
   contexts, healthchecks. RunWisp reads it; it never rewrites it.
 - The Docker daemon — RunWisp shells out to `docker compose`; install
   Docker the way you already do.

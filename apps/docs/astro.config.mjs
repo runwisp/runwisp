@@ -89,6 +89,7 @@ export default defineConfig({
                 // Adds a one-line HTML comment pointing AI agents at the
                 // Markdown twin of the page they just fetched as HTML.
                 Head: "./src/components/Head.astro",
+                SocialIcons: "./src/components/SocialIcons.astro",
             },
             head: [
                 {
@@ -134,9 +135,6 @@ export default defineConfig({
             ],
             editLink: {
                 baseUrl: "https://github.com/runwisp/runwisp/edit/main/apps/docs/",
-            },
-            components: {
-                SocialIcons: "./src/components/SocialIcons.astro",
             },
             // theme-tokens.css @imports the webfonts it names, so the font
             // stack is declared in exactly one place for every consumer.
@@ -185,12 +183,12 @@ export default defineConfig({
                     label: "Configuration Reference",
                     items: [
                         { label: "Overview", slug: "configuration/overview" },
-                        { label: "[storage]", slug: "configuration/storage" },
-                        { label: "[daemon]", slug: "configuration/daemon" },
-                        { label: "[defaults]", slug: "configuration/defaults" },
                         { label: "[tasks.*]", slug: "configuration/tasks" },
                         { label: "[services.*]", slug: "configuration/services" },
                         { label: "[compose.*]", slug: "configuration/compose" },
+                        { label: "[storage]", slug: "configuration/storage" },
+                        { label: "[daemon]", slug: "configuration/daemon" },
+                        { label: "[defaults]", slug: "configuration/defaults" },
                         { label: "${...} substitution", slug: "configuration/substitution" },
                     ],
                 },

@@ -232,10 +232,11 @@ type Task struct {
 	// FailureReasons and FailureExitRanges are the task's resolved failure
 	// classification, parsed from the `failures` TOML tokens by config's parse
 	// step (ParseFailures). Together they answer "does a terminal run count as a
-	// failure?" for stats, UI attention, and notifications — never for retry (see
-	// runtime/retry.IsFailedExecution). A nil FailureReasons map means "not configured"
-	// (a Task built outside the config loader); IsFailureReason then falls back to
-	// the built-in default set. Config-internal — never serialized to API/UI/station.
+	// failure?" for stats, UI attention, notifications, and (intersected with
+	// the fixed retry.IsFailedExecution ceiling) retry/restart eligibility. A nil
+	// FailureReasons map means "not configured" (a Task built outside the config
+	// loader); IsFailureReason then falls back to the built-in default set.
+	// Config-internal — never serialized to API/UI/station.
 	FailureReasons    map[EndReason]struct{} `toml:"-" json:"-"`
 	FailureExitRanges [][2]int               `toml:"-" json:"-"`
 
@@ -371,7 +372,8 @@ func (t *Task) CheckTrigger() TriggerBlockReason {
 // and exit code counts as a failure under this task's `failures` policy. It is
 // the single source of truth for failure classification: stats, UI attention,
 // and notifications all resolve through it (and the persisted run.IsFailure bit
-// it produces). It never gates retry — that is runtime/retry.IsFailedExecution.
+// it produces). retry/restart eligibility also consults it, intersected with
+// the fixed runtime/retry.IsFailedExecution ceiling.
 //
 // A nil FailureReasons map (a Task literal built outside the config loader —
 // tests, ad-hoc dispatch) falls back to the built-in default set. Exit ranges

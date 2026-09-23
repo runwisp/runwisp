@@ -1,7 +1,8 @@
 **type**: `enum` **default**: `"inherit"`
 
-What the run's environment starts from, before `env`/`secrets` layer on top. Host
-shell only: it's an error on a compose-backed unit.
+What the environment starts from, before [`env`](/configuration/tasks/#env) and
+[`secrets`](/configuration/tasks/#secrets) are added. Host processes only: it is an error on a
+compose unit.
 
 ```toml
 [tasks.backup-db]
@@ -11,7 +12,7 @@ run      = "/usr/local/bin/nightly"
 
 Possible values:
 
-- `inherit`: start from the daemon's own environment. The run then depends on how
-  the daemon was launched.
-- `clean`: start from just `PATH`, `SHELL`, `HOME`, and `USER`/`LOGNAME` (what cron
-  gives a job), so runs stay reproducible. Declare the rest in [env](/configuration/tasks/#env).
+- `inherit`: start from the daemon's environment. Runs then depend on how the
+  daemon was started.
+- `clean`: start with only `PATH`, `SHELL`, `HOME`, and `USER`/`LOGNAME` (like
+  cron), so runs are repeatable. Set everything else in [`env`](/configuration/tasks/#env).

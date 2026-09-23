@@ -92,10 +92,10 @@ PATH = "/usr/local/bin:/usr/bin"
 
 Each task carries the crontab's `SHELL` and `PATH` itself rather than a shared
 `[defaults]` block, so it stands alone and your own global settings stay
-untouched. The `env_base`, `working_dir`, `catch_up` and `on_overlap` lines
+untouched. The [`env_base`](/configuration/tasks/#env_base), [`working_dir`](/configuration/tasks/#working_dir), [`catch_up`](/configuration/tasks/#catch_up) and [`on_overlap`](/configuration/tasks/#on_overlap) lines
 reproduce cron's execution model, not the daemon's — see
 [How cron maps to TOML](/coming-from/cron-mapping/). (`warmup` gets no
-`catch_up`: a `@reboot` job has no ticks to miss.)
+[`catch_up`](/configuration/tasks/#catch_up): a `@reboot` job has no ticks to miss.)
 
 ### The summary
 
@@ -201,7 +201,7 @@ Imported tasks report `"source": "staged"` in `runwisp list --json` and
 label, not a limitation: staged tasks are scheduled and run like any other.
 
 :::note[A custom include list is yours]
-If your root config already sets its own `include` list, `--write` won't edit it
+If your root config already sets its own [`include`](/configuration/daemon/#include) list, `--write` won't edit it
 behind your back. It prints the glob to add and writes nothing.
 :::
 
@@ -215,12 +215,12 @@ runwisp promote backup      # this one
 runwisp promote --all       # all of them
 ```
 
-It works the same on a job read live via `include_cron` and on a **staged
+It works the same on a job read live via [`include_cron`](/configuration/daemon/#include_cron) and on a **staged
 import**; `--all` covers both, but what "move" means differs:
 
 - **From a live crontab:** the definition is copied into your `runwisp.toml`,
   _and_ the exact source line is commented out in the crontab it came from — the
-  same file `include_cron` read, whether that's your user spool (`crontab -e`) or
+  same file [`include_cron`](/configuration/daemon/#include_cron) read, whether that's your user spool (`crontab -e`) or
   an `/etc/cron.d` drop-in. That's not just tidying. A job is only ever "held"
   (RunWisp standing down while a live cron daemon runs it) while it's
   cron-sourced, so the instant it becomes native RunWisp would schedule it — and
@@ -248,7 +248,7 @@ does the move and the reload in one step.
 
 An import copies your jobs; it never touches your crontab. A copy has no link back
 to the crontab line it came from, so — unlike a job read live through
-`include_cron` — RunWisp can't recognise it as the same one cron runs and stand it
+[`include_cron`](/configuration/daemon/#include_cron) — RunWisp can't recognise it as the same one cron runs and stand it
 down. Starting the daemon with cron still enabled means two schedulers firing each
 job. So take the imported jobs away from cron by hand:
 
@@ -283,7 +283,7 @@ meantime. See [Taking over from cron](/coming-from/cron/).
 ## System crontabs and the user column
 
 `/etc/crontab` and files in `/etc/cron.d` put a **user** between the schedule and
-the command. RunWisp maps that column to the task's [`user`](/configuration/tasks/)
+the command. RunWisp maps that column to the task's [`user`](/configuration/tasks/#user)
 automatically — from the path or the `# ... user command` header. Force it either
 way with `--system` / `--system=false` when a piped crontab is ambiguous; the
 [mapping reference](/coming-from/cron-mapping/#what-needs-a-human) covers what

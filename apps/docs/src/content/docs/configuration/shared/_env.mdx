@@ -1,9 +1,8 @@
 **type**: `map`
 
-Environment variables injected into the process. For non-secret values only.
-Passwords, tokens, and anything you wouldn't want shown in the API or UI go in
-[secrets](/configuration/tasks/#secrets). To read from a file, use
-[env_file](/configuration/tasks/#env_file).
+Environment variables for the process. Their values are shown in the API and
+UI, so put passwords and tokens in [`secrets`](/configuration/tasks/#secrets). To read from a file,
+use [`env_file`](/configuration/tasks/#env_file).
 
 ```toml
 [tasks.backup.env]

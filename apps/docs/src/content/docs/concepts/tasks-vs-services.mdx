@@ -33,28 +33,28 @@ And if you catch yourself writing `while true; do ...; done` inside a
 
 ## What changes when you switch the header
 
-| Field                                                               | `[tasks.*]`                                            | `[services.*]`                                                  |
-| ------------------------------------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------- |
-| [`cron`](/configuration/tasks/#scheduling)                          | ✅ schedule firings                                    | ❌ rejected (services aren't cron-driven)                       |
-| [`catch_up`](/concepts/scheduling/#missed-ticks-catchup)            | ✅ integer: how many missed ticks to re-fire           | ❌ N/A                                                          |
-| [`instances`](/configuration/services/#instances)                   | ❌ rejected                                            | ✅ N replicas, default `1`, max `64`                            |
-| [`restart`](/configuration/services/#restart-behaviour)             | ❌ rejected — use `retry_attempts` instead             | ✅ `never` / `on_failure` / `always`, default `always`          |
-| [`restart_delay`](/configuration/services/#restart-behaviour)       | ❌ N/A                                                 | ✅ base delay before restart, default `1s`                      |
-| [`restart_backoff`](/configuration/services/#restart-behaviour)     | ❌ N/A                                                 | ✅ `constant` / `linear` / `exponential`, default `exponential` |
-| [`retry_attempts`](/concepts/retries/#retry_attempts)               | ✅ retry the failing run before recording final status | ❌ services restart instead of retry                            |
-| [`retry_delay`](/concepts/retries/#retry_delay-and-retry_backoff)   | ✅ base delay between retries                          | ❌ N/A                                                          |
-| [`retry_backoff`](/concepts/retries/#retry_delay-and-retry_backoff) | ✅ `constant` / `linear` / `exponential`               | ❌ N/A                                                          |
-| [`on_overlap`](/concepts/concurrency/)                              | ✅ default `queue`                                     | ❌ rejected — concurrency is `instances`, not overlap           |
-| `manual_trigger`                                                    | ✅ default `true`, gates manual **run**-triggering     | ✅ default `true`, gates manual **stop/restart/start**          |
-| `group`                                                             | ✅ default `"Tasks"`                                   | ✅ default `"Services"`                                         |
+| Field                                                         | `[tasks.*]`                                                                        | `[services.*]`                                                                              |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| [`cron`](/configuration/tasks/#cron)                          | ✅ schedule firings                                                                | ❌ rejected (services aren't cron-driven)                                                   |
+| [`catch_up`](/configuration/tasks/#catch_up)                  | ✅ integer: how many missed ticks to re-fire                                       | ❌ N/A                                                                                      |
+| [`instances`](/configuration/services/#instances)             | ❌ rejected                                                                        | ✅ N replicas, default `1`, max `64`                                                        |
+| [`restart`](/configuration/services/#restart-behaviour)       | ❌ rejected — use [`retry_attempts`](/configuration/tasks/#retry_attempts) instead | ✅ `never` / `on_failure` / `always`, default `always`                                      |
+| [`restart_delay`](/configuration/services/#restart_delay)     | ❌ N/A                                                                             | ✅ base delay before restart, default `1s`                                                  |
+| [`restart_backoff`](/configuration/services/#restart_backoff) | ❌ N/A                                                                             | ✅ `constant` / `linear` / `exponential`, default `exponential`                             |
+| [`retry_attempts`](/configuration/tasks/#retry_attempts)      | ✅ retry the failing run before recording final status                             | ❌ services restart instead of retry                                                        |
+| [`retry_delay`](/configuration/tasks/#retry_delay)            | ✅ base delay between retries                                                      | ❌ N/A                                                                                      |
+| [`retry_backoff`](/configuration/tasks/#retry_backoff)        | ✅ `constant` / `linear` / `exponential`                                           | ❌ N/A                                                                                      |
+| [`on_overlap`](/configuration/tasks/#on_overlap)              | ✅ default `queue`                                                                 | ❌ rejected — concurrency is [`instances`](/configuration/services/#instances), not overlap |
+| [`manual_trigger`](/configuration/tasks/#manual_trigger)      | ✅ default `true`, gates manual **run**-triggering                                 | ✅ default `true`, gates manual **stop/restart/start**                                      |
+| [`group`](/configuration/tasks/#group)                        | ✅ default `"Tasks"`                                                               | ✅ default `"Services"`                                                                     |
 
-Everything else behaves identically on both sides — `timeout`,
-`graceful_stop`, `log_max_size`, `log_on_full`, `keep_runs`, `keep_for`,
-`notify`, `description`.
+Everything else behaves identically on both sides — [`timeout`](/configuration/tasks/#timeout),
+[`graceful_stop`](/configuration/tasks/#graceful_stop), [`log_max_size`](/configuration/tasks/#log_max_size), [`log_on_full`](/configuration/tasks/#log_on_full), [`keep_runs`](/configuration/tasks/#keep_runs), [`keep_for`](/configuration/tasks/#keep_for),
+[`notify`](/configuration/tasks/#notify), [`description`](/configuration/tasks/#description).
 The only stragglers:
 [`max_concurrent` and `max_queued`](/configuration/tasks/#concurrency)
 are task-only, and
-[`healthy_after`](/concepts/retries/#healthy-threshold-healthy_after)
+[`healthy_after`](/configuration/services/#healthy_after)
 is service-only.
 
 ## What both share
@@ -65,11 +65,11 @@ with:
 - A unique ID and a row in the run history.
 - A captured stdout/stderr stream, written to a per-task log file and
   tailed live in the Web UI.
-- An end reason — `succeeded`, `failed`, `stopped`, `timeout`,
+- An end reason — `succeeded`, `failed`, `stopped`, [`timeout`](/configuration/tasks/#timeout),
   `crashed`, `skipped`, `log_overflow`, `missed`, `queue_full`,
   `dst_skipped`, `daemon_stopped`, or `start_failed`.
 - The same notification surface (per-task
-  [`notify`](/notifications/per-task/), plus full [`[[route]]`](/notifications/routes/) matching).
+  [`notify`](/configuration/tasks/#notify), plus full [`[[route]]`](/notifications/routes/) matching).
 
 That's really the whole idea: switching from task to service changes how
 the process gets _run_, not what you can see or how you operate it.
@@ -88,14 +88,14 @@ when one replica's process exits the supervisor restarts just that one.
 
 ## "Run N copies" on tasks vs services
 
-Tasks scale with `max_concurrent` (a ceiling on overlapping runs);
-services scale with `instances` (replicas that are always up). The thing
+Tasks scale with [`max_concurrent`](/configuration/tasks/#max_concurrent) (a ceiling on overlapping runs);
+services scale with [`instances`](/configuration/services/#instances) (replicas that are always up). The thing
 to go by is the **shape of the work**, not the number.
 
 - **`max_concurrent = 4`** on a `cron = "* * * * *"` thumbnail-render
   task. Most ticks wrap up in seconds, but if a backlog hits, up to four
   can run at once. The 5th concurrent firing has to go through
-  `on_overlap`.
+  [`on_overlap`](/configuration/tasks/#on_overlap).
 - **`instances = 4`** on a queue-worker service. Four worker processes
   stay glued to the queue forever, and if one crashes the supervisor
   brings it back. Cron doesn't enter into it — the workers pull their
@@ -127,7 +127,7 @@ built up in memory — it's a service.
 
 ### A one-off you only ever trigger from the API or UI
 
-Still a task — just leave `cron` off. It shows up in the UI and takes
+Still a task — just leave [`cron`](/configuration/tasks/#cron) off. It shows up in the UI and takes
 manual triggers from `runwisp run <name>`, the [Web UI](/getting-started/web-ui-tour/)'s **Run Task**
 button, the [TUI](/getting-started/tui-tour/), or `POST /api/tasks/{name}/run`. Set
 `manual_trigger = false` if you want it to be cron-only and not runnable
@@ -143,10 +143,10 @@ two runs would fight over a single resource — switch to
 
 ## What you can't do
 
-- **A task with `restart` or `restart_attempts`.** Rejected at startup —
+- **A task with `restart` or [`restart_attempts`](/configuration/services/#restart_attempts).** Rejected at startup —
   restart is what `[services.<name>]` is for; a task re-runs a failed run
-  with [`retry_attempts`](/concepts/retries/) instead.
-- **A service with `cron`.** Services don't have that field; they're
+  with [`retry_attempts`](/configuration/tasks/#retry_attempts) instead.
+- **A service with [`cron`](/configuration/tasks/#cron).** Services don't have that field; they're
   already running nonstop.
 - **The same name on both sides.** Tasks and services share one
   namespace, and the loader rejects duplicates with a clear error.

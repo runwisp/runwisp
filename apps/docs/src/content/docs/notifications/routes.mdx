@@ -27,30 +27,30 @@ notifiers = ["slack-ops", "tg-oncall", "inapp"]
 
 ## `match`
 
-| Field           | Required | What it does                                                                                    |
-| --------------- | -------- | ----------------------------------------------------------------------------------------------- |
-| `match.failure` | no       | Set `true` to match any run counted as a failure — the same classification `failures` controls. |
-| `match.kinds`   | no       | Specific outcomes this rule applies to. Omit (or leave empty) to match all.                     |
-| `match.task`    | no       | Shell-style glob on the task name. Omit to match every task.                                    |
+| Field           | Required | What it does                                                                                                                      |
+| --------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `match.failure` | no       | Set `true` to match any run counted as a failure — the same classification [`failures`](/configuration/tasks/#failures) controls. |
+| `match.kinds`   | no       | Specific outcomes this rule applies to. Omit (or leave empty) to match all.                                                       |
+| `match.task`    | no       | Shell-style glob on the task name. Omit to match every task.                                                                      |
 
 `match.kinds` speaks the same vocabulary as a task's
-[`failures`](/configuration/tasks/#what-counts-as-a-failure) list, so a route and the failure
+[`failures`](/configuration/tasks/#failures) list, so a route and the failure
 classifier name outcomes the same way:
 
-| Outcome             | Fires when                                                                          |
-| ------------------- | ----------------------------------------------------------------------------------- |
-| `started`           | A run starts. Opt-in only — not on by default.                                      |
-| `succeeded`         | A run ends with success.                                                            |
-| `failed`            | A run ends with a non-zero exit code.                                               |
-| `timeout`           | A run is killed for exceeding its `timeout`.                                        |
-| `crashed`           | A run is reconciled as crashed after the daemon was killed mid-flight.              |
-| `log_overflow`      | A run is killed because its log hit `log_max_size` with `log_on_full = "kill_run"`. |
-| `queue_full`        | A queued run is dropped because the concurrency queue was full.                     |
-| `stopped`           | A run is cancelled (manual stop, or `on_overlap = "kill"`).                         |
-| `daemon_stopped`    | A run is cut short by daemon shutdown.                                              |
-| `missed`            | A scheduled run was missed while the daemon was down (detected on restart).         |
-| `service.fatal`     | A service slot gave up after exhausting `restart_attempts` fast failures.           |
-| `log.disk_pressure` | Free disk space dipped below `min_free_space` mid-run.                              |
+| Outcome                                    | Fires when                                                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `started`                                  | A run starts. Opt-in only — not on by default.                                                                            |
+| `succeeded`                                | A run ends with success.                                                                                                  |
+| `failed`                                   | A run ends with a non-zero exit code.                                                                                     |
+| [`timeout`](/configuration/tasks/#timeout) | A run is killed for exceeding its [`timeout`](/configuration/tasks/#timeout).                                             |
+| `crashed`                                  | A run is reconciled as crashed after the daemon was killed mid-flight.                                                    |
+| `log_overflow`                             | A run is killed because its log hit [`log_max_size`](/configuration/tasks/#log_max_size) with `log_on_full = "kill_run"`. |
+| `queue_full`                               | A queued run is dropped because the concurrency queue was full.                                                           |
+| `stopped`                                  | A run is cancelled (manual stop, or `on_overlap = "kill"`).                                                               |
+| `daemon_stopped`                           | A run is cut short by daemon shutdown.                                                                                    |
+| `missed`                                   | A scheduled run was missed while the daemon was down (detected on restart).                                               |
+| `service.fatal`                            | A service slot gave up after exhausting [`restart_attempts`](/configuration/services/#restart_attempts) fast failures.    |
+| `log.disk_pressure`                        | Free disk space dipped below [`min_free_space`](/configuration/storage/#min_free_space) mid-run.                          |
 
 `notify.delivery_failed` (a notifier exhausted its retries) is delivered only
 to the bell and **cannot** be used in `match.kinds` — a route on it never fires.
@@ -80,7 +80,7 @@ hears about it once.
 ## Per-task notifications
 
 If you only need to alert on one task's failures, you can put the channel
-names directly on the task itself with `notify`:
+names directly on the task itself with [`notify`](/configuration/tasks/#notify):
 
 ```toml
 [tasks.publish-feed]
@@ -88,7 +88,7 @@ notify = ["slack-ops"]
 ```
 
 See [Per-task notifications](/notifications/per-task/) for the full
-behaviour. A per-task `notify` and a `[[route]]` can be used together; the
+behaviour. A per-task [`notify`](/configuration/tasks/#notify) and a `[[route]]` can be used together; the
 router removes duplicate channels.
 
 ## Delivery failures

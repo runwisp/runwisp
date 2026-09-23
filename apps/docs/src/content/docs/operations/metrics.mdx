@@ -48,7 +48,7 @@ The dedicated listener serves only `/metrics`; nothing else (no UI, no
 
 ## Scrape config
 
-A minimal `prometheus.yml` job — replace the port with `metrics_listen`'s
+A minimal `prometheus.yml` job — replace the port with [`metrics_listen`](/configuration/daemon/#metrics_listen)'s
 port if you configured a dedicated listener:
 
 ```yaml
@@ -128,7 +128,7 @@ daemon is reachable:
 This is the same posture the rest of the ecosystem takes: Prometheus,
 node_exporter, etcd, and cAdvisor all serve `/metrics` unauthenticated and
 leave isolation to a dedicated listener or a reverse proxy. RunWisp's
-`metrics_listen` is the direct analogue of etcd's `--listen-metrics-urls`.
+[`metrics_listen`](/configuration/daemon/#metrics_listen) is the direct analogue of etcd's `--listen-metrics-urls`.
 
 ## Trigger a re-scrape during a run
 

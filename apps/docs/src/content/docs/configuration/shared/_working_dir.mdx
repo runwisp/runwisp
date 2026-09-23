@@ -1,8 +1,10 @@
 **type**: `string`
 
-The directory the process runs in. Relative paths resolve against the `runwisp.toml`
-directory, and `~` is the home of whoever it runs as. Existence is checked at
-run time, not load. Unset, the run inherits the daemon's directory.
+The directory the process runs in. Unset, it is the daemon's directory.
+
+- A relative path is relative to the `runwisp.toml` directory.
+- `~` is the home directory of the user the run runs as.
+- The directory is checked when the run starts, not at load.
 
 ```toml
 [tasks.deploy]

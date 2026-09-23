@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Age-based retention now evicts the oldest runs first when a task's expired backlog exceeds one cleanup batch.
 - The daemon now refuses to start if it cannot mark crash-orphaned runs interrupted, instead of leaving them stuck as "running" forever.
 - The Web UI login form now offers proper autofill/save hooks, so password managers (Firefox, Chrome, Bitwarden, 1Password) prompt to save and can autofill the password.
+- `retry_attempts` and `restart = "on_failure"` now respect the unit's `failures` policy, so narrowing `failures` (an exit-code range, a dropped reason) narrows what gets automatically retried or restarted.
 
 ## [1.0.0] - 2026-09-20
 

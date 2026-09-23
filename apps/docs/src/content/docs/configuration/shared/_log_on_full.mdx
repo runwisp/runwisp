@@ -1,6 +1,6 @@
 **type**: `enum` **default**: `"drop_old"`
 
-What to do when a run's log reaches [log_max_size](/configuration/tasks/#log_max_size).
+What happens when a run's log reaches [`log_max_size`](/configuration/tasks/#log_max_size).
 
 ```toml
 [tasks.backup-db]
@@ -10,6 +10,6 @@ log_on_full  = "drop_old"
 
 Possible values:
 
-- `drop_old`: keep the newest output, discard the oldest
-- `drop_new`: freeze the log at the earliest output, ignore the rest
+- `drop_old`: keep the newest output, delete the oldest
+- `drop_new`: keep the first output, ignore the rest
 - `kill`: stop the run and record `log_overflow`

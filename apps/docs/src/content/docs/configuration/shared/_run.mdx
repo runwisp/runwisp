@@ -1,18 +1,19 @@
-**type**: `string` **required** (unless [compose_file](/configuration/tasks/#compose_file) is set)
+**type**: `string` **required** (unless [`compose_file`](/configuration/tasks/#compose_file) is set)
 
-The shell command that gets executed. It runs under `/bin/sh -e -c`, so the
-first command that fails stops the run and its exit code becomes the run's.
-Switch [shell](/configuration/services/#shell) to bash for arrays or `pipefail`.
+The shell command to run. It runs as `/bin/sh -e -c <command>`, so the first
+failing command stops the run and its exit code becomes the run's exit code
+(see [Fail-fast](/configuration/tasks/#fail-fast)). Set [`shell`](/configuration/tasks/#shell) to
+bash for arrays or `pipefail`.
 
-On a compose-backed unit, `run` is optional: set it to run that command
-inside the service's container instead (see [compose_mode](/configuration/tasks/#compose_mode)).
+With [`compose_file`](/configuration/tasks/#compose_file), `run` is optional: it runs your command in
+the service's container (see [`compose_mode`](/configuration/tasks/#compose_mode)).
 
 ```toml
 [tasks.backup-db]
 run = "pg_dump app | gzip > /backups/app.sql.gz"
 ```
 
-Possible values:
+Examples:
 
 - `/usr/local/bin/backup.sh`: a script on disk
 - `pg_dump app | gzip > /backups/app.sql.gz`: a shell pipeline

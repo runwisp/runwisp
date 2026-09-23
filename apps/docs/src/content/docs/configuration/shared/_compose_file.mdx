@@ -1,9 +1,9 @@
 **type**: `string`
 
-Point it at a docker-compose file so a run executes a compose service instead
-of a plain `run`. With only `compose_file` set, each run does
-`docker compose run --rm <svc>` with the service's own command. Pair it with `run`
-and `compose_mode = "exec"` to run your command inside the running container.
+Path to a docker-compose file. The unit then runs the compose service named by
+[`compose_service`](/configuration/tasks/#compose_service) instead of a shell command. Without
+[`run`](/configuration/tasks/#run), each run is `docker compose run --rm <service>` with the
+service's own command. With `run`, see [`compose_mode`](/configuration/tasks/#compose_mode).
 
 ```toml
 [tasks.nightly-backup]
