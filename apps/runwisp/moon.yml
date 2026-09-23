@@ -173,7 +173,7 @@ tasks:
       set -e
       FRAMES="$(pwd)/.tui-frames"
       rm -rf "$FRAMES" && mkdir -p "$FRAMES"
-      RUNWISP_TUI_SHOOT_DIR="$FRAMES" go test ./tests/e2e -run '^TestCaptureTUIScreenshots$' -count=1
+      RUNWISP_TUI_SHOOT_DIR="$FRAMES" RUNWISP_TUI_SHOOT_BINARY="$(pwd)/runwisp" go test ./tests/e2e -run '^TestCaptureTUIScreenshots$' -count=1
       cd ../ui && RUNWISP_TUI_FRAMES="$FRAMES" playwright test --config playwright.screenshots.config.ts
     deps:
       - '~:build'

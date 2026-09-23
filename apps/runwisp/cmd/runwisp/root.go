@@ -120,14 +120,24 @@ func init() {
 	rootCmd.AddCommand(takeoverCmd)
 	rootCmd.AddCommand(demoCmd)
 
-	// When --help is piped (an AI agent or script, not a human at a terminal),
-	// append a pointer to the machine-readable docs. Cobra inherits this help
-	// func to every subcommand, so `runwisp <cmd> --help | cat` gets it too.
-	defaultHelp := rootCmd.HelpFunc()
-	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		defaultHelp(cmd, args)
-		writeAgentHelpPointer(cmd.OutOrStdout(), isatty.IsTerminal(os.Stdout.Fd()))
-	})
+	installAgentHelpPointer(rootCmd, func() bool { return isatty.IsTerminal(os.Stdout.Fd()) })
+}
+
+// installAgentHelpPointer makes every subcommand's --help append the
+// machine-readable docs pointer when piped (an AI agent or script, not a human
+// at a terminal). It hooks the root's direct children, not the root itself:
+// fang.Execute replaces the root help func, so a wrapper there never runs.
+// Each hook resolves the root's help func at call time, so it wraps whatever
+// fang installed, and grandchildren (`service install`) inherit their
+// parent's hook. The root's own help needs no hook: its Long text carries the
+// pointer unconditionally.
+func installAgentHelpPointer(root *cobra.Command, isTTY func() bool) {
+	for _, sub := range root.Commands() {
+		sub.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+			cmd.Root().HelpFunc()(cmd, args)
+			writeAgentHelpPointer(cmd.OutOrStdout(), isTTY())
+		})
+	}
 }
 
 // writeAgentHelpPointer appends a machine-readable docs pointer to --help output
