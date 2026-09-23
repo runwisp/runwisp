@@ -92,7 +92,7 @@ func TwoTierRootConfig() string {
 }
 
 const twoTierRootConfig = SchemaDirective + `# runwisp.toml
-# Docs: https://docs.runwisp.com/coming-from/crontabs/
+# Docs: https://docs.runwisp.com/coming-from/cron/#staging-and-promoting
 #
 # Your imported jobs live in ` + ImportedStagingSubdir + `/` + ImportedStagingBase + ` (machine-managed by
 # ` + "`runwisp import`" + `). This root file is yours: add native [tasks.*] here,

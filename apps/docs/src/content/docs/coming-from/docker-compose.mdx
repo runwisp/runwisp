@@ -2,97 +2,88 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: From docker-compose
-description: Point RunWisp at an existing docker-compose.yml in 60 seconds — every service becomes an observable RunWisp service, no rewrite required.
+description: Point RunWisp at an existing docker-compose.yml. Every compose service becomes a RunWisp service, without changing the YAML.
 head:
     - tag: title
       content: "Migrate from docker-compose to RunWisp: supervise an existing compose file"
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+RunWisp can run the services in an existing compose file. Each compose service
+becomes a RunWisp service with run history, logs, restarts, and notifications.
+The containers still run under Docker, and RunWisp never edits the compose file.
 
-If you're currently running `docker compose up -d` on a single host, you
-can drop RunWisp in front without rewriting a line of YAML. Every
-compose service becomes an observable RunWisp service: logs streamed
-and indexed, restart policies enforced, notifications on failure,
-trigger/stop from the Web UI and REST API. The containers themselves
-still run under Docker, exactly as before — RunWisp is the supervisor
-and observability layer on top.
+## Point RunWisp at the compose file
 
-## 60-second migration
+Run `runwisp` in the directory with your `docker-compose.yml`. It detects the
+file and offers to create a `runwisp.toml` that imports it:
 
-1. Drop the `runwisp` binary next to your `docker-compose.yml`.
-2. Run `runwisp daemon`. On first run, RunWisp detects the compose file
-   and scaffolds a starter `runwisp.toml` that imports every service:
+```toml
+[compose.myapp]
+file = "./docker-compose.yml"
+```
 
-    ```toml
-    [compose.myapp]
-    file = "./docker-compose.yml"
-    ```
+The alias (`myapp`) comes from the directory name. Open the Web UI at
+`http://localhost:9477`; each compose service is listed as a RunWisp service.
 
-3. Open the Web UI on `:9477` (default). Every compose service is a
-   RunWisp service tagged with a small "compose" badge.
+You can also write this block yourself and start the daemon with
+`runwisp daemon`. RunWisp calls the `docker compose` CLI, so Docker and the
+Compose plugin must be installed.
 
-That's the whole migration. From here, layer on the RunWisp knobs you
-want without touching the compose file.
+## Stop the compose stack
 
-## Common follow-ups
+RunWisp starts its own containers with `docker compose run`. If the stack is
+also running from `docker compose up`, every service runs twice and published
+ports clash. Stop it first:
 
-### Restart everything on failure
+```bash
+docker compose down
+```
 
-Compose-imported services
-[restart](/configuration/services/#restart-behaviour) `on_failure` by
-default. To make critical ones restart unconditionally:
+## How the pieces map
+
+| docker-compose                   | RunWisp                                                                                                  |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| a service                        | a RunWisp service named `myapp.<service>` ([`name_format`](/configuration/compose/#name_format))         |
+| `restart:`                       | ignored; RunWisp restarts on failure by default ([`restart`](/configuration/compose/#imported-defaults)) |
+| `stop_grace_period`              | [`graceful_stop`](/configuration/tasks/#graceful_stop)                                                   |
+| `profiles`                       | [`profiles`](/configuration/compose/#profiles)                                                           |
+| images, networks, volumes, ports | used as they are                                                                                         |
+| `depends_on`                     | not started for you; import those services too, or set [`with_deps`](/configuration/compose/#with_deps)  |
+
+## Common changes
+
+Per-service settings go in a sub-table named after the compose service.
+
+Restart after every exit, not only failures:
 
 ```toml
 [compose.myapp.api]
 restart = "always"
 ```
 
-### Notify on failure
-
-Declare a channel (here, the
-[Slack provider](/notifications/providers/slack/)) and point the
-service's [`notify`](/configuration/tasks/#notify) at it:
+Get notified on failure (see [Notifications](/notifications/)):
 
 ```toml
-[notifiers.slack-prod]
-type        = "slack"
-webhook_url = "https://hooks.slack.com/services/..."
-
 [compose.myapp.api]
 notify = ["slack-prod"]
 ```
 
-### Scale a worker horizontally
+Run four copies of a worker. Each gets `RUNWISP_INSTANCE_INDEX` (0 to 3):
 
 ```toml
 [compose.myapp.worker]
 instances = 4
 ```
 
-Four containers named `myapp_worker_0` … `myapp_worker_3` come up,
-each receiving a distinct `RUNWISP_INSTANCE_INDEX` env var (0..3) so
-they can self-shard. [Instances](/configuration/services/#instances)
-covers the mechanics.
-
-### Run only a subset of services through RunWisp
+Import only some services, or leave some out:
 
 ```toml
 [compose.myapp]
-services = ["api", "worker"]   # leaves `db` etc. unmanaged
+services = ["api", "worker"]   # only these
+# services = ["-db"]           # everything except db
 ```
 
-…or drop just the ones you don't want with a `-` prefix:
-
-```toml
-[compose.myapp]
-services = ["-db"]
-```
-
-### Trigger compose images as cron jobs
-
-A nightly backup using a compose-declared image, without bringing the
-container up as a long-running service:
+Run a compose service on a schedule, in a fresh container each time:
 
 ```toml
 [tasks.nightly-backup]
@@ -101,51 +92,17 @@ compose_file    = "./docker-compose.yml"
 compose_service = "backup"
 ```
 
-## What stays under your control
+## What needs a human
 
-- The compose file itself — networks, volumes, [`depends_on`](/configuration/services/#depends_on), image build
-  contexts, healthchecks. RunWisp reads it; it never rewrites it.
-- The Docker daemon — RunWisp shells out to `docker compose`; install
-  Docker the way you already do.
-- The application — RunWisp doesn't proxy traffic, doesn't intercept
-  stdin, doesn't change container networking. `docker compose ps`,
-  `docker logs`, and `docker exec` all keep working as before.
+- **`restart:` policies.** RunWisp ignores them. Set
+  [`restart`](/configuration/services/#restart) per service if the default
+  (restart on failure) isn't what you want.
+- **Docker access.** The user running RunWisp needs access to the Docker
+  daemon. If RunWisp runs in a container, see
+  [Docker tasks](/recipes/docker/#if-runwisp-runs-in-a-container).
 
-## What RunWisp adds
+## Learn more
 
-- **Per-run history** — every container start is a RunWisp run with a
-  ULID, start/end timestamps, exit code, and captured stdout/stderr.
-- **Restart policy** — RunWisp owns supervision now; the compose-file
-  `restart:` directive is ignored on imported services.
-- **Notifications** — wire compose services into the same notification
-  rules used for [`[tasks.*]`](/configuration/tasks/) and [`[services.*]`](/configuration/services/).
-- **Manual trigger/stop** — start and stop containers from the Web UI
-  or REST API. Stops are graceful; the compose-declared
-  `stop_grace_period` is honoured.
-
-See [`[compose.*]`](/configuration/compose/) for the full reference.
-
----
-
-<CardGrid>
-    <LinkCard
-        title="[compose.*] ref"
-        href="/configuration/compose/"
-        description="Every key — import strategies, per-service overrides, name_format."
-    />
-    <LinkCard
-        title="Docker patterns"
-        href="/recipes/docker/"
-        description="Using Docker from inside plain RunWisp tasks."
-    />
-    <LinkCard
-        title="The Web UI tour"
-        href="/getting-started/web-ui-tour/"
-        description="Where your imported services show up."
-    />
-    <LinkCard
-        title="Slack provider"
-        href="/notifications/providers/slack/"
-        description="Wiring the slack-prod notifier from this recipe."
-    />
-</CardGrid>
+- [`[compose.*]`](/configuration/compose/): import strategies, per-service
+  settings, naming
+- [Docker tasks](/recipes/docker/)
