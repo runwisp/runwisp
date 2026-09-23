@@ -2,109 +2,49 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: RunWisp documentation
-description: Install RunWisp in one command; configure scheduled jobs and supervised services in one runwisp.toml; watch every run with the web UI or terminal UI. Zero runtime dependencies.
+description: RunWisp runs scheduled jobs and long-running services from one runwisp.toml and records every run with its exit code, duration, and output. One binary, no runtime dependencies.
 head:
     - tag: title
-      content: "RunWisp — install, configure, run cron jobs and supervised services"
+      content: "RunWisp: install, configure, run cron jobs and supervised services"
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-RunWisp is one small Go binary that does the job of `crond` plus a
-supervisor — and never lets a failure slip past silently. You describe
-your tasks and services in a single `runwisp.toml`, and every run gets
-an exit code, duration, and captured output you can browse in the
-embedded Web UI, watch live in the TUI, or pull over the REST API.
-These docs walk you through the whole thing — getting the binary onto a
-box, writing that config file, and keeping the daemon happy in
-production.
-
-## Start here
-
-Two ways in, depending on what you've already got running.
+RunWisp is a single binary that replaces cron and a process supervisor. You
+describe your scheduled tasks and long-running services in one `runwisp.toml`.
+Every run gets an exit code, duration, and captured output, which you can browse
+in the built-in Web UI, the terminal UI, or the REST API.
 
 <CardGrid>
     <LinkCard
         title="Quick start"
-        description="Nothing to migrate? Install RunWisp, scaffold a runwisp.toml, and watch your first task stream live."
+        description="Install RunWisp, create a runwisp.toml, and run your first task."
         href="/getting-started/quick-start/"
     />
     <LinkCard
-        title="Coming from cron, supervisord, or docker-compose"
-        description="Already have jobs running? Pick your source — RunWisp reads your existing config instead of making you rewrite it."
+        title="Migrating"
+        description="Bring over jobs from cron, supervisord, systemd, or docker-compose."
         href="/coming-from/"
     />
 </CardGrid>
 
-## Learn your way around
+## What's in these docs
 
-<CardGrid>
-    <LinkCard
-        title="Getting Started"
-        description="Install, first run, and guided tours of the embedded Web UI and the terminal UI."
-        href="/getting-started/quick-start/"
-    />
-    <LinkCard
-        title="How it works"
-        description="Why tasks and services differ, and how scheduling, concurrency, retries, and log retention actually behave."
-        href="/concepts/tasks-vs-services/"
-    />
-    <LinkCard
-        title="Configuration Reference"
-        description="Every key in runwisp.toml, table by table, with its default and what it does."
-        href="/configuration/overview/"
-    />
-    <LinkCard
-        title="Notifications"
-        description="Declare a channel, route events to it, and set per-task alerts. Slack, Discord, Telegram, email, webhooks."
-        href="/notifications/model/"
-    />
-</CardGrid>
+- **[Getting started](/getting-started/quick-start/):** install, run in Docker,
+  and a tour of the Web UI and TUI.
+- **[Guides](/concepts/tasks-vs-services/):** tasks and services, scheduling,
+  overlapping runs, retries, parameters, run logs, and notifications.
+- **[Examples](/recipes/backup/):** complete configs for a nightly backup and a
+  health check.
+- **[Migrating](/coming-from/):** move from cron, supervisord, systemd, or
+  docker-compose.
+- **[Operations](/operations/autostart/):** start on boot, reload config, log
+  in, read the daemon log, export metrics, and fix common problems.
+- **[Reference](/configuration/overview/):** every `runwisp.toml` key, every
+  CLI command, the [REST API](/api/), and notes for [AI agents](/reference/agents/).
 
-## Get things done
+Something broken? Start with [Troubleshooting](/operations/troubleshooting/).
 
-<CardGrid>
-    <LinkCard
-        title="Guides"
-        description="Worked examples to crib from — nightly backups, health checks, deploy hooks, API triggers, Docker patterns."
-        href="/recipes/backup/"
-    />
-    <LinkCard
-        title="Running in Production"
-        description="Troubleshooting, auth, surviving reboots, applying config edits, the daemon's own logs, and Prometheus metrics."
-        href="/operations/troubleshooting/"
-    />
-    <LinkCard
-        title="Reference"
-        description="The lookup surfaces: every CLI command and flag, the REST API, and a dense guide for driving RunWisp with an AI agent."
-        href="/reference/cli/"
-    />
-    <LinkCard
-        title="API reference"
-        description="REST endpoints and SSE log streams — generated from the OpenAPI schema."
-        href="/api/"
-    />
-</CardGrid>
-
-## Looking for something specific?
-
-- **A TOML field you saw in an example** — search this site or jump
-  straight to [Configuration overview](/configuration/overview/).
-- **A CLI command or flag** — [CLI reference](/reference/cli/) lists every one,
-  grouped by what you're trying to do.
-- **Something's broken** — [Troubleshooting](/operations/troubleshooting/) is
-  organised by symptom, not by subsystem.
-- **A REST endpoint** — [API reference](/api/) is generated from the
-  OpenAPI schema; the same schema ships as `/openapi.json` from a
-  running daemon.
-- **A version's breaking changes** — the
-  [CHANGELOG](https://github.com/runwisp/runwisp/blob/main/CHANGELOG.md)
-  lists them per release.
-
-## Source and contributing
-
-RunWisp is open source under GPL-3.0-or-later and developed at
-[github.com/runwisp/runwisp](https://github.com/runwisp/runwisp). Every
-docs page has an "Edit this page" link in its footer that points at the
-source MDX file — typo fixes and clarifications welcome as PRs against
-[`main`](https://github.com/runwisp/runwisp/tree/main/apps/docs).
+RunWisp is open source (GPL-3.0-or-later) at
+[github.com/runwisp/runwisp](https://github.com/runwisp/runwisp). Release notes
+are in the [CHANGELOG](https://github.com/runwisp/runwisp/blob/main/CHANGELOG.md).

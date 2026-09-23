@@ -1,24 +1,13 @@
 ---
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
-title: Logging
-description: Control the RunWisp daemon's own log output — level, format, timestamps — and read the run-lifecycle lines it emits in headless mode.
+title: Daemon log
+description: The RunWisp daemon's own stderr log (level, format, timestamps) and the one-line-per-run lifecycle entries it writes.
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
-
-When you run `runwisp daemon` (in Docker, under systemd, or on a VPS), the daemon
-is your only window into what's happening — there's no TUI in front of it. So it
-talks: a line every time a task starts, succeeds, or fails, plus startup,
-readiness, and shutdown detail. This page covers how to tune that output.
-
-These are operational knobs, not task configuration — so they live on **flags and
-environment variables**, never in `runwisp.toml`. (Your tasks are the source of
-truth; how the daemon logs about them is not.)
-
-## Run-lifecycle lines
-
-In daemon mode every run transition produces one concise line:
+This page is about the daemon's own log: what `runwisp daemon` writes to stderr,
+which ends up in `docker logs` or `journalctl`. The output of your tasks is
+stored per run; see [Run logs](/concepts/logs/).
 
 ```
 2026-05-27 14:03:01 [INFO] run started task=backup run=01J...
@@ -26,36 +15,33 @@ In daemon mode every run transition produces one concise line:
 2026-05-27 14:07:00 [WARN] run failed task=report run=01J... exit=2 reason=failed dur=412ms
 ```
 
-That's it — start, success, failure, and a warning if a task hits the disk-space
-limit. Per-output-line capture still goes to the [per-run log files](/concepts/logs/);
-these lines are the high-level heartbeat, not a replacement for them.
+The daemon writes one line when a run starts, succeeds, or fails, plus a warning
+when a task hits the disk-space limit. Around those are startup, readiness, and
+shutdown lines.
+
+The log is set with flags and environment variables, not in `runwisp.toml`.
 
 ## Level
-
-`--log-level` (or `RUNWISP_LOG_LEVEL`) takes `debug`, `info` (default), `warn`,
-or `error`:
 
 ```bash
 runwisp daemon --log-level debug
 RUNWISP_LOG_LEVEL=debug runwisp daemon
 ```
 
-An unrecognized value is rejected with a clear error and a non-zero exit — there's
-no silent fallback to `info`.
+`debug`, `info` (default), `warn`, or `error`. Any other value is an error at
+startup.
 
 ## Format
-
-`--log-format` (or `RUNWISP_LOG_FORMAT`) picks the shape:
-
-| Value            | Output                                                                                                        |
-| ---------------- | ------------------------------------------------------------------------------------------------------------- |
-| `auto` (default) | Readable `2026-… [INFO] message key=value` lines — colored on an interactive terminal, plain everywhere else. |
-| `text`           | The same readable lines, never colored (plain even on a terminal).                                            |
-| `json`           | One JSON object per line — for Docker/k8s log pipelines, Loki, etc.                                           |
 
 ```bash
 RUNWISP_LOG_FORMAT=json runwisp daemon
 ```
+
+| Value            | Output                                                               |
+| ---------------- | -------------------------------------------------------------------- |
+| `auto` (default) | `2026-… [INFO] message key=value` lines, colored only on a terminal. |
+| `text`           | The same lines, never colored.                                       |
+| `json`           | One JSON object per line, for log pipelines.                         |
 
 ```json
 {
@@ -69,40 +55,30 @@ RUNWISP_LOG_FORMAT=json runwisp daemon
 }
 ```
 
-## Clean logs when piped
-
-RunWisp detects whether stderr is a real terminal. When it isn't — piped into
-`docker logs`, journald, or a file — it automatically:
-
-- drops ANSI color (so you don't get escape-code garbage in your log files), and
-- replaces the multi-section startup banner with a handful of plain `[INFO]`
-  summary lines carrying the same facts (version, paths, task count, warnings).
-
-The standard [`NO_COLOR`](https://no-color.org/) environment variable also
-disables color on a terminal, and `--log-format=json` is always colorless.
+When stderr isn't a terminal (Docker, journald, a file), the daemon drops color
+and replaces the startup banner with a few plain `[INFO]` lines carrying the
+same facts: version, paths, task count, warnings. [`NO_COLOR`](https://no-color.org/)
+also turns color off on a terminal.
 
 ## Timestamps
 
-Text output is timestamped `2026-05-27 14:03:01` (local time) in daemon mode —
-a long-running process needs to record _when_ things happened. The one exception:
-under **systemd** (detected via `JOURNAL_STREAM`), RunWisp drops its own
-timestamps because journald already prepends them. JSON output always keeps a
-full-precision RFC3339 `time` field.
+Text lines carry a local `2026-05-27 14:03:01` timestamp. Under systemd
+(detected by `JOURNAL_STREAM`), the daemon leaves it out because journald adds
+its own. JSON always has a full RFC 3339 `time` field.
 
-## Readiness and shutdown
+## Startup and shutdown
 
-Once the daemon's local API answers, it logs an accurate readiness line:
+Once the API answers, the daemon logs:
 
 ```
 [INFO] ready, listening url=http://localhost:9477
 ```
 
-The URL respects [`external_url`](/configuration/daemon/#external_url)
-when set, and maps a wildcard `--host 0.0.0.0` bind to `localhost` (the address
-you actually connect to).
+The URL uses [`external_url`](/configuration/daemon/#external_url) when set, and
+shows a `0.0.0.0` bind as `localhost`.
 
-On `Ctrl+C` / `SIGTERM` the daemon names the signal, narrates the drain (HTTP
-requests, then scheduler and in-flight runs), and prints the total elapsed time:
+On `Ctrl+C` or `SIGTERM`, it names the signal, logs each shutdown step, and
+prints the total time:
 
 ```
 [INFO] received signal, shutting down signal=interrupt
@@ -110,23 +86,3 @@ requests, then scheduler and in-flight runs), and prints the total elapsed time:
 [INFO] stopping scheduler and waiting for in-flight runs in_flight=1 timeout=30s
 [INFO] shutdown complete elapsed=842ms
 ```
-
----
-
-<CardGrid>
-    <LinkCard
-        title="Logs & retention"
-        href="/concepts/logs/"
-        description="Per-run stdout/stderr capture — the other kind of logs."
-    />
-    <LinkCard
-        title="Metrics"
-        href="/operations/metrics/"
-        description="The Prometheus-compatible /metrics endpoint."
-    />
-    <LinkCard
-        title="Autostart"
-        href="/operations/autostart/"
-        description="Under systemd, these lines land in journalctl."
-    />
-</CardGrid>
