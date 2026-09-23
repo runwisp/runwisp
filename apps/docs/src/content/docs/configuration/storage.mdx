@@ -5,12 +5,11 @@ title: "[storage]"
 description: "max_size and min_free_space: the two daemon-wide disk limits that keep RunWisp from filling your partition."
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
-
 `[storage]` limits the disk space RunWisp uses for logs, across all tasks. It
 works on top of the per-run [`log_max_size`](/configuration/tasks/#log_max_size).
 Both keys are optional, but without them logs can fill the disk. On a server,
-set both.
+set both. A change needs `runwisp restart`; see
+[Reload & restart](/operations/reload/).
 
 Sizes use `b`, `kb`, `mb`, `gb`, `tb` (any case), with optional fractions
 (`"1.5gb"`).
@@ -91,33 +90,3 @@ min_free_space = "500mb"
 | Small VPS (40 GB SSD)        | `5gb`                          | `500mb`                             |
 | Large VPS (200+ GB)          | `20gb`–`50gb`                  | `2gb`                               |
 | Docker container (ephemeral) | match volume size, `1gb`–`5gb` | `500mb`                             |
-
----
-
-<CardGrid>
-    <LinkCard
-        title="[defaults] ref"
-        href="/configuration/defaults/"
-        description="The per-task fallback layer."
-    />
-    <LinkCard
-        title="Logs & retention"
-        href="/concepts/logs/"
-        description="How on-disk logs are organised and rotated."
-    />
-    <LinkCard
-        title="Daemon ref"
-        href="/configuration/daemon/"
-        description="Daemon-wide settings and CLI flags."
-    />
-    <LinkCard
-        title="Config overview"
-        href="/configuration/overview/"
-        description="Every key you can put in runwisp.toml."
-    />
-    <LinkCard
-        title="Running in Docker"
-        href="/getting-started/docker/"
-        description="The data-dir volume you have to mount, or every container recreate wipes this."
-    />
-</CardGrid>

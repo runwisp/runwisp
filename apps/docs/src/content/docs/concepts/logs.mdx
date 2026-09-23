@@ -1,92 +1,60 @@
 ---
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
-title: Logs & retention
-description: How RunWisp captures stdout/stderr, where logs live on disk, how rotation and retention work, and how to follow or download a run's output.
+title: Run logs
+description: Where RunWisp keeps each run's output, how size limits and retention work, and how to follow, download, and search logs.
 ---
 
-import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
+import { Tabs, TabItem } from "@astrojs/starlight/components";
 
-Every time a task runs, RunWisp writes its stdout and stderr to a
-file on disk. You can watch the output stream in live, scroll back
-through old runs, or download the whole thing as one file. The
-database keeps the metadata — exit code, how long it took, when it
-started — and the actual log bytes sit on disk, one file per run.
-
-:::note[Looking for keys and defaults?]
-This page explains _how logging, rotation, and retention behave_. The keys and
-their defaults are in [`[tasks.*]` → Logs & retention](/configuration/tasks/#logs--retention)
-and [`[storage]`](/configuration/storage/).
-:::
+RunWisp saves the stdout and stderr of every run to a file on disk. You can
+watch a running task's output live, scroll through old runs, download a log, or
+search every run of a task. The database keeps the run details (exit code,
+duration, start time); the output itself stays in the log files.
 
 ## Where logs live
 
 ```
-{data_dir}/logs/{task-name}/{YYYYMMDD}_{HHMMSS}_{run-id-suffix}.log
+<data dir>/logs/<task-name>/<YYYYMMDD>_<HHMMSS>_<run-id>.log
 ```
 
-[`data_dir`](/configuration/daemon/#cli-flags-config-data-directory--listen-address) is the directory you pass via `--data` (default `.runwisp`).
+The data directory is set with `--data` (default `.runwisp`); see
+[global options](/reference/cli/#global-options). Each run gets its own file,
+named after the run's time (in UTC) and its run ID, so files sort by time. Characters other than letters, digits, `_`, and `-` in the task name
+become `_`.
 
-Each run gets its own file, named with the start time plus a snippet
-of the run's ULID so files sort chronologically and never collide.
-Task names get sanitised — anything that isn't `[a-zA-Z0-9_-]` turns
-into `_`. The timestamp is always **UTC**, so the filenames stay
-predictable even if you move the host between timezones or hit a DST
-shift.
+stdout and stderr are written to the same file, in the order they arrived. Next
+to each `.log` there is a hidden `.<name>.log.meta` file with the indexes that
+make scrolling fast. RunWisp manages it; don't delete it while the run is still
+going.
 
-Stdout and stderr are interleaved in capture order — what you see in
-the file is exactly what the script wrote, in exactly the order it
-wrote it. The one twist is progress bars and other in-place redraws,
-which RunWisp interprets so they land as clean lines rather than raw
-`\r`/escape bytes — see [Progress bars & live redraws](#progress-bars--live-redraws).
+## Limiting log size
 
-When retention deletes a run, the daemon takes the log file with it,
-plus the little helper files next to it, plus the parent directory if
-that was the last thing in it. A run row never points at a missing
-log, and a log file never lingers without a row to match it.
-
-## Rotation: `log_max_size` and `log_on_full`
-
-There's a ceiling on how big a single run's log can grow, so one
-runaway script can't fill the disk in a single tick.
+One runaway script shouldn't fill the disk, so each run's log has a size limit:
 
 ```toml
 [tasks.bulky-job]
 cron         = "0 4 * * *"
 run          = "/usr/local/bin/bulky.sh"
-log_max_size = "50MB"
+log_max_size = "50mb"
 log_on_full  = "drop_old"
 ```
 
-[`log_max_size`](/configuration/tasks/#log_max_size) is the per-run ceiling. Default is `100MB`. You can
-write it as `b`, `kb`, `mb`, `gb`, or `tb` (case doesn't matter); a
-bare number means bytes.
+[`log_max_size`](/configuration/tasks/#log_max_size) is the limit.
+[`log_on_full`](/configuration/tasks/#log_on_full) decides what happens when a
+run reaches it: keep the newest output (`drop_old`, the default), keep the
+first output (`drop_new`), or stop the run as `log_overflow` (`kill`). In every
+case RunWisp writes a line into the log where it cut, so you can see that
+output is missing.
 
-[`log_on_full`](/configuration/tasks/#log_on_full) decides what happens when output hits that ceiling:
+For limits across all tasks (total log size and free disk space), see
+[`[storage]`](/configuration/storage/). When free space runs low during a run,
+`log_on_full` decides what happens there too.
 
-| Value      | What it does                                                                                                                                                                                            |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `drop_old` | The default. Renames the current log to `.prev` and starts a fresh file. You keep the tail — which is usually where the failure shows up.                                                               |
-| `drop_new` | Stops writing, but lets the process keep running. Pick this when the start of the log is what you actually care about (a startup banner, the preamble of a long batch) and the rest is just repetition. |
-| `kill`     | Cancels the run and kills the process. The run ends with reason `log_overflow` — still treated as a failure for retries and notifications, so you can see what happened without opening the log.        |
+## Retention
 
-Whichever way it goes, the daemon drops a marker line into the log
-at the cut-off point. You can skim the file and immediately see where
-the limit hit. Nothing gets dropped silently.
-
-[`log_on_full`](/configuration/tasks/#log_on_full) does double duty: it also decides what happens when
-`[storage] min_free_space` trips mid-run. `kill` cancels the
-run. `drop_new` and `drop_old` quietly stop writing — and the daemon
-fires a `log.disk_pressure` notification so you find out before you
-go looking for output that isn't there. More on that in
-[storage configuration](/configuration/storage/#min_free_space).
-
-## Retention: `keep_runs` and `keep_for`
-
-Retention decides how long old runs hang around before getting swept
-up — both the row in the database and the log file on disk. You can
-set a count, an age, or both. If you set both, **whichever rule cuts
-first wins**.
+Old runs and their logs are deleted by a cleanup that runs every hour. Set a
+count, an age, or both:
 
 ```toml
 [tasks.metrics]
@@ -96,230 +64,89 @@ keep_runs = 500
 keep_for  = "7d"
 ```
 
-[`keep_runs`](/configuration/tasks/#keep_runs) is the count: the N newest runs survive, anything older
-gets pruned. It's a non-negative integer with a hard ceiling of one
-million per task. Omit it to inherit from `[defaults]`; set it to `0`
-to keep no completed runs at all — set a negative value and the daemon
-refuses to start.
+[`keep_runs`](/configuration/tasks/#keep_runs) keeps the newest N runs;
+[`keep_for`](/configuration/tasks/#keep_for) deletes runs older than the age.
+With both, whichever deletes more wins. Each task uses its own settings, or the
+ones in [`[defaults]`](/configuration/defaults/).
 
-[`keep_for`](/configuration/tasks/#keep_for) is the age: anything whose `created_at` is older than that
-duration gets pruned. You can use days and weeks here too —
-`"7d"`, `"2w"`, `"36h"`, `"30m"` all work. Zero and negative
-durations are rejected.
+Only finished runs are deleted; a run that is still going is never touched.
+Because the cleanup runs on a timer, you may briefly see a few more runs than
+`keep_runs`. The database row and the log files are deleted together.
 
-Each task is on its own — retention runs independently for every
-task, using that task's settings (or whatever it inherits from
-[`[defaults]`](/configuration/defaults/)). Leave either field out and it falls back to
-`[defaults]`; set both for a hard floor _and_ a hard ceiling.
+## Following a run live
 
-Cleanup runs in the background on a timer, so you might briefly see a
-few extra rows over the [`keep_runs`](/configuration/tasks/#keep_runs) mark between sweeps. The
-daemon-wide storage cap protects in-progress runs, but the per-task
-[`keep_runs`](/configuration/tasks/#keep_runs) and [`keep_for`](/configuration/tasks/#keep_for) limits apply to all runs regardless of
-status — a long-running task that hasn't finished can still age off
-when the limit says it's time. When retention does kick in, the
-SQLite row and the log file (plus its sidecar files) all go together.
+The Web UI and the TUI show a running task's output as it's printed. When you
+open a run, they first show what's already on disk, then switch to live, so you
+never miss the first lines. A finished run opens at the end of its log; scroll
+up to load earlier lines.
 
-## Live streaming
+### Progress bars
 
-Both the [Web UI](/getting-started/web-ui-tour/) and the [TUI](/getting-started/tui-tour/) tail running logs in real time — new
-output lands in the viewer within milliseconds of the process
-printing it. When you open the view, it first replays whatever's
-already on disk, then switches over to live, so you never miss the
-opening lines.
+Many tools redraw a line in place, like a download bar that rewrites itself with
+`\r`, or `docker pull` redrawing a stack of bars. RunWisp handles these so the
+log stays readable:
 
-Scrolling back through a finished run feels the same way. The viewer
-seeks straight to the byte you asked for instead of re-reading from
-the top, so even a multi-megabyte log opens instantly.
+- **On disk**, a redraw is saved as its final frame: `build: 100%`, not every
+  percentage it passed through.
+- **Live**, the Web UI and TUI animate the bar in place. A partial line (like
+  `echo -n` output) shows up right away.
+- **Afterwards**, you can look at earlier frames of a redraw. In the Web UI,
+  click the marked line. In the TUI, move between marked lines with <kbd>[</kbd>
+  and <kbd>]</kbd> and press <kbd>enter</kbd>. The frames are sampled a few times
+  per second, so very fast changes may not all be kept.
 
-The on-disk file is always the canonical copy. The live stream is
-just a fast preview of those same bytes.
-
-## Progress bars & live redraws
-
-Lots of tools paint progress in place — a download bar that rewrites
-itself with `\r`, or something like `docker pull` redrawing a stack of
-per-layer bars with ANSI cursor moves. RunWisp understands those
-sequences instead of storing the raw control bytes, so you get the
-finished picture rather than a smear of `\r` and escape codes.
-
-Here's how it shakes out:
-
-- **On disk**, a `\r` progress bar collapses to its **final frame** —
-  one line, `build: 100%`, not every percentage it passed through.
-  A multi-line redraw settles to the last frame it drew. The log stays
-  clean and greppable.
-- **Live**, the Web UI and TUI show the active region updating **in
-  place** — the bar animates as the process writes it, then freezes as
-  the committed line once it's done. A partial line (an `echo -n`
-  without its newline yet) shows up right away instead of hiding until
-  the newline lands.
-
-A few honest limitations, none of which lose you any output:
-
-- RunWisp captures stdout and stderr as plain pipes, **not a PTY**.
-  Many tools deliberately turn _off_ their fancy progress rendering
-  when they detect they're not attached to a real terminal — those
-  just print plain lines, which is fine. We faithfully render the ones
-  that emit ANSI regardless.
-- Because the two streams are separate, a cursor move on one **can't**
-  reach across to reposition the other. Each stream redraws within its
-  own region.
-- If the daemon is hard-killed (`kill -9`) mid-redraw, the still-
-  animating frame that hadn't been finalized yet is lost — bounded to
-  that one live region. Everything already committed is on disk as
-  always.
-
-### Rewinding the frames
-
-Collapsing a bar to its final frame keeps the log clean, but sometimes
-the frames _are_ the story — what the bar looked like just before it
-stalled, or which layer was still downloading when a `docker pull`
-wedged. So RunWisp keeps a short, sampled history of the frames a
-redraw passed through and lets you scrub back to them after it settles.
-
-A settled redraw line is marked as clickable. In the **Web UI**, click
-it and the prior frames unfold right underneath; click again to fold
-them away. In the **TUI**, step between marked lines with <kbd>[</kbd>
-and <kbd>]</kbd> and press <kbd>enter</kbd> to open a viewer. Over REST,
-`GET /api/runs/{id}/log/line/{n}/history` returns the
-frames for line `n` (multi-line redraws come back as whole frames, not
-per-row). Lines without history return an empty list.
-
-This is deliberately a _supplementary_ convenience, with honest bounds:
-
-- Frames are **sampled over time** (roughly a few per second), not
-  captured on every byte — an instant burst that never actually
-  animated collapses to nothing, and very fast sub-sample animation is
-  caught coarsely. The captured span is also capped per redraw, thinned
-  evenly when it would overflow, so a long-running bar keeps its whole
-  arc rather than just the tail.
-- History lives in a best-effort sidecar container (see below), never in
-  the `.log`. Losing it — rotation, `kill -9`, retention — never costs
-  you any committed output; the durable log is untouched.
+RunWisp doesn't give the task a terminal (no PTY). Many tools notice that and
+print plain lines instead of a progress bar, which is fine. A redraw on stdout
+can't move lines on stderr, and the other way round.
 
 ## Downloading
 
-When you want the whole log as one file, you can grab it.
-
 <Tabs syncKey="surface">
     <TabItem label="Web UI" icon="laptop">
-        Hit **Download** on the run detail panel and the whole log lands in your Downloads folder.
+        Click the download button in the run header.
     </TabItem>
     <TabItem label="TUI" icon="seti:shell">
-        Press <kbd>d</kbd> on the run detail view. On a desktop your browser jumps straight to the
-        download. Over SSH the URL ends up on your clipboard, or a modal pops up that you can copy
-        from.
+        Press <kbd>d</kbd> in the run view. On a desktop your browser starts the download. Over SSH,
+        the URL is copied to your clipboard or shown in a dialog.
     </TabItem>
     <TabItem label="REST API" icon="cloud-download">
-        `GET /api/runs/{id}/log/raw` returns the same bytes — handy when you want to pipe them into
-        `curl` or another shell tool.
+        `GET /api/runs/{runId}/log/raw` returns the whole log.
     </TabItem>
 </Tabs>
 
-If a log rotated partway through the run, the download still gives
-you everything: the rotated-out chunk and the current chunk come down
-stitched together, not just the tail.
+If the log was cut by `drop_old` during the run, the download includes both the
+earlier part that's still on disk and the current part, as one file.
 
-## Full-text search
+## Searching
 
-Need to find a line across every run of a task? RunWisp just greps
-the files. No background index, no extra disk usage, nothing to wait
-on after a restart. The trade-off is honest: the bigger the haystack
-you ask it to read, the longer the query takes, so results come back
-in pages with a cursor instead of all at once.
+Search looks through the log files of a task's runs, newest run first. There's
+no index to build or wait for; a bigger search just takes longer, so results come
+in pages.
 
 <Tabs syncKey="surface">
     <TabItem label="Web UI" icon="laptop">
-        Open a task and unfold **Search logs** above the run detail.
-        The buttons next to the input toggle case sensitivity and
-        regex. Click a result and the log viewer scrolls to that
-        line, then pulses a quick highlight so you can spot it.
+        On the task page, type into **Search output across runs…**. The buttons next
+        to it turn on case sensitivity and regular expressions. Click a result to
+        jump to that line in the log.
     </TabItem>
     <TabItem label="TUI" icon="seti:shell">
-        From the exec view (or with any task selected), press
-        <kbd>/</kbd>. Same case/regex toggles as the Web UI. Hit
-        <kbd>Enter</kbd> on a result and the log pane jumps to that
-        line.
+        Press <kbd>/</kbd> with a task selected. Press <kbd>enter</kbd> on a result
+        to jump to that line.
     </TabItem>
     <TabItem label="REST API" icon="cloud-download">
-        `GET /api/tasks/{name}/log/search?q=...`. Results come back
-        newest-run-first with a `next_cursor` to page through. The
-        flags you'll probably want: `regex=true` (RE2 syntax),
-        `case=true`, `run_id=<ulid>` to scope to a single run,
-        `limit=<1-1000>` (default 200), and `cursor=<token>` to pick
-        up where the last page left off.
+        `GET /api/tasks/{taskName}/log/search?q=...`. Optional: `regex=true` (RE2
+        syntax), `case=true`, `runId=<id>` for one run, `limit` (1 to 1000,
+        default 200), and `cursor` with the `nextCursor` from the previous page.
     </TabItem>
 </Tabs>
 
-A single scan walks up to 50 of the most recent runs for that task.
-It bails out as soon as it has enough hits, hands back a cursor for
-the rest, and skips soft-deleted runs (same visibility rules as
-everywhere else in the API).
+A bad query (an empty `q`, a broken regular expression) is rejected with a
+`400` before any searching starts.
 
-If your query is malformed — unclosed regex group, empty `q`, that
-kind of thing — you'll get a `400` straight away, before any
-scanning starts.
+## After a crash
 
-## The sidecar container (`.log.meta`)
-
-Each `.log` has one companion file: a hidden `.<name>.log.meta`
-container. It's tucked behind a leading dot on purpose — a plain `ls`
-of a log directory shows only the `.log` files, never a pile of helper
-files. The container bundles everything that isn't log output itself:
-the line and timestamp indexes that make seeking fast, the rotation
-bookkeeping that keeps line numbers continuous, and the sampled
-[frame history](#rewinding-the-frames) for any in-place redraws.
-
-RunWisp creates and maintains it automatically — you never need to
-touch it, and deleting it won't free up any meaningful disk space.
-**Don't delete it while a run is still going.** When retention removes
-a run, the container goes with the parent log automatically.
-
-It's all best-effort: the indexes are rebuildable and the frame
-history is safe to lose, so a `kill -9`, a rotation, or a torn write
-never costs you any committed output — the durable `.log` is untouched.
-A short run that never drew a progress bar just gets a tiny container
-holding its final metadata. (While a log is mid-rotation you may also
-briefly see a hidden `.<name>.log.prev` — the rotated-away chunk. It
-sticks around after the run ends too, same as the `.log` and its
-container, so the download and viewer can still stitch it back in —
-retention cleans it up along with the rest of the run.)
-
-## Crash safety
-
-When a run finishes — or when the daemon shuts down gracefully — the
-log gets flushed and closed properly.
-
-If the daemon dies mid-write (power yanked, `kill -9`), the log file
-is **not** truncated. Whatever made it to disk stays there, and the
-viewer is fine with a half-written last line. When the daemon comes
-back up, the run gets marked `crashed`
-(see [scheduling: on startup](/concepts/scheduling/#on-startup-unfinished-runs-are-marked-crashed))
-and its log is left exactly as it was — those final lines are usually
-the most useful thing you've got for figuring out what went wrong.
-
----
-
-<CardGrid>
-    <LinkCard
-        title="Notifications model"
-        href="/notifications/model/"
-        description="How a failed run ends up in your inbox or chat."
-    />
-    <LinkCard
-        title="Scheduling"
-        href="/concepts/scheduling/"
-        description="What creates the run rows that retention later trims."
-    />
-    <LinkCard
-        title="[tasks.*] ref"
-        href="/configuration/tasks/"
-        description="log_max_size, log_on_full, keep_runs, keep_for."
-    />
-    <LinkCard
-        title="[storage] ref"
-        href="/configuration/storage/"
-        description="The daemon-wide cap that sits above per-task log_max_size."
-    />
-</CardGrid>
+If the daemon dies while a run is writing (power loss, `kill -9`), the log is
+not truncated: everything that reached the disk stays, and the viewer handles a
+half-written last line. On the next start the run is marked `crashed` (see
+[After a crash](/concepts/scheduling/#after-a-crash)) and its log is left as it
+was. The last lines are often the best clue to what went wrong.

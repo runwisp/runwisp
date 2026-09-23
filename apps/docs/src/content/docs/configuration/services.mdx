@@ -5,7 +5,6 @@ title: "[services.*]"
 description: "Long-running processes: instances, restarts, boot order, graceful shutdown, and the keys shared with tasks."
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 import Run from "./shared/_run.mdx";
 import Description from "./shared/_description.mdx";
 import Group from "./shared/_group.mdx";
@@ -75,12 +74,11 @@ run = "/usr/local/bin/worker"
 
 <ManualTrigger />
 
-Restart is the usual interaction for a service — the button that starts a
-stopped one back up. Set `manual_trigger = false` if you don't want anyone
-stopping or restarting this service by hand, from any front door: the
-**Stop Service** button, TUI `s`/`r`, `runwisp service stop/restart`, the
-REST API, and the station control plane all refuse it; only a
-`runwisp.toml` edit plus `runwisp reload` changes its running state.
+On a service, this gates stopping, starting, and restarting by hand. With
+`manual_trigger = false`, the Web UI buttons, TUI `s`/`r`,
+[`runwisp stop`/`restart <name>`](/reference/cli/#runwisp-restart), and the REST
+API all refuse. Only a `runwisp.toml` edit plus `runwisp reload` changes its
+running state.
 
 ## Instances
 
@@ -190,7 +188,7 @@ A **failed start** is a failure exit before the instance reached
 - After more than [`restart_attempts`](#restart_attempts) failed starts in a
   row, the instance goes **FATAL**: it stops restarting, a `start_failed` run is
   recorded, and a `service.fatal` notification goes to the in-app bell and your
-  [notifiers](/notifications/model/).
+  [notifiers](/notifications/).
 - FATAL is kept in memory only. A daemon restart, or **Restart** in the UI or
   API, resets the count and tries again.
 - The `start_failed` runs stay in history.
@@ -443,28 +441,3 @@ instance goes [FATAL](#when-a-service-cant-start-fatal).
 - A name already used by a `[tasks.*]` entry.
 - An empty or missing [`run`](#run) (unless [`compose_file`](#compose_file) is set).
 - [`instances`](#instances) outside `1` to `64`.
-
----
-
-<CardGrid>
-    <LinkCard
-        title="[tasks.*] ref"
-        href="/configuration/tasks/"
-        description="The run-and-exit counterpart."
-    />
-    <LinkCard
-        title="Tasks vs Services"
-        href="/concepts/tasks-vs-services/"
-        description="Picking the right kind."
-    />
-    <LinkCard
-        title="Retries"
-        href="/concepts/retries/"
-        description="Why retry and restart are different things."
-    />
-    <LinkCard
-        title="Scheduling"
-        href="/concepts/scheduling/"
-        description="How cron firings turn into runs."
-    />
-</CardGrid>

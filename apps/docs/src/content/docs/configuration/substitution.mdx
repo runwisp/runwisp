@@ -5,8 +5,6 @@ title: "${...} substitution"
 description: Pull values from environment variables or files into any string in runwisp.toml with ${VAR} and ${file:path}.
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
-
 Any string value in `runwisp.toml` can take its value from the daemon's
 environment or from a file:
 
@@ -117,18 +115,3 @@ chat_id   = "-1001234567890"
 
 Start the daemon with `EXPORT_CRON` and `SLACK_OPS_WEBHOOK` set and the token
 files at `0600`. The TOML file then contains no secrets.
-
----
-
-<CardGrid>
-    <LinkCard
-        title="[tasks.*] Environment"
-        href="/configuration/tasks/#environment--secrets"
-        description="env, env_file, secrets, secrets_file, and who can see them."
-    />
-    <LinkCard
-        title="Notifier credentials"
-        href="/notifications/model/#storing-the-secret"
-        description="Webhook URLs and bot tokens via ${...}."
-    />
-</CardGrid>

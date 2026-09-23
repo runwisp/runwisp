@@ -26,16 +26,16 @@ type        = "slack"
 webhook_url = "${SLACK_URL}"
 ```
 
-| Table                                           | What it holds                                                   |
-| ----------------------------------------------- | --------------------------------------------------------------- |
-| [`[tasks.<name>]`](/configuration/tasks/)       | Commands that run on a schedule or by hand, then exit.          |
-| [`[services.<name>]`](/configuration/services/) | Long-running processes RunWisp keeps alive.                     |
-| [`[compose.<alias>]`](/configuration/compose/)  | Services imported from a `docker-compose.yml`.                  |
-| [`[defaults]`](/configuration/defaults/)        | Fallback values for every task and service.                     |
-| [`[daemon]`](/configuration/daemon/)            | Daemon-wide settings: timezone, TLS, metrics, included files.   |
-| [`[storage]`](/configuration/storage/)          | Disk limits for run logs.                                       |
-| [`[notify]`](/configuration/notify/)            | Daemon-wide notification settings.                              |
-| [`[[route]]`](/configuration/routes/)           | Rules that send run events to notifiers.                        |
+| Table                                           | What it holds                                                    |
+| ----------------------------------------------- | ---------------------------------------------------------------- |
+| [`[tasks.<name>]`](/configuration/tasks/)       | Commands that run on a schedule or by hand, then exit.           |
+| [`[services.<name>]`](/configuration/services/) | Long-running processes RunWisp keeps alive.                      |
+| [`[compose.<alias>]`](/configuration/compose/)  | Services imported from a `docker-compose.yml`.                   |
+| [`[defaults]`](/configuration/defaults/)        | Fallback values for every task and service.                      |
+| [`[daemon]`](/configuration/daemon/)            | Daemon-wide settings: timezone, TLS, metrics, included files.    |
+| [`[storage]`](/configuration/storage/)          | Disk limits for run logs.                                        |
+| [`[notify]`](/configuration/notify/)            | Daemon-wide notification settings.                               |
+| [`[[route]]`](/configuration/routes/)           | Rules that send run events to notifiers.                         |
 | `[notifiers.<id>]`                              | One outbound channel each. See [Notifications](/notifications/). |
 
 Any string value can read an environment variable or a file with

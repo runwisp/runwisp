@@ -1,27 +1,12 @@
 ---
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
-title: Retries & timeouts
-description: retry_attempts, retry_delay, retry_backoff, and timeout — how RunWisp handles transient failures and runaway tasks.
+title: Failures, retries & timeouts
+description: When a run counts as a failure, how to retry failed task runs with a delay and backoff, and how to stop runs that take too long.
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
-
-If a task exits non-zero, RunWisp can take another crack at it. If a run
-drags on too long, RunWisp can pull the plug. You set both per task, and
-anything you leave off falls back to its built-in default — retry
-settings don't inherit from
-[`[defaults]`](/configuration/defaults/).
-
-Retries are a **task** thing only. Services don't retry — they
-[restart](#services-dont-retry) instead.
-
-:::note[Looking for keys and defaults?]
-This page explains _what retrying and timing out actually do_. The key list and
-defaults are in [`[tasks.*]` → Retries & timeout](/configuration/tasks/#retries--timeout).
-:::
-
-## `retry_attempts`
+A task can try again when it fails, and can be stopped when it runs too long.
+Both are set per task:
 
 ```toml
 [tasks.publish-feed]
@@ -30,71 +15,73 @@ run            = "/usr/local/bin/publish.sh"
 retry_attempts = 3
 retry_delay    = "30s"
 retry_backoff  = "exponential"
+timeout        = "10m"
 ```
 
-[`retry_attempts`](/configuration/tasks/#retry_attempts) is the number of _extra_ tries after the first one
-fails — it defaults to `0`, so out of the box nothing retries. Set it to
-`3` and a failing run gets up to three more goes.
+## What counts as a failure
 
-Not every ending counts as a failure worth retrying, though. A retry
-fires when a run ends in `failed` (non-zero exit), [`timeout`](/configuration/tasks/#timeout), `crashed`,
-or `log_overflow` (which is what [`log_on_full = "kill"`](/concepts/logs/#rotation-log_max_size-and-log_on_full) does after
-a run blows past [`log_max_size`](/configuration/tasks/#log_max_size)).
+By default, a run fails when the command exits non-zero, times out, is stopped
+by `log_on_full = "kill"`, or was still running when the daemon crashed. A
+scheduled run [missed](/concepts/scheduling/#missed-run-alerts) while the daemon
+was down counts too. A failed run turns red in the UI, sends
+[notifications](/notifications/), and can be retried.
 
-It does **not** fire on `succeeded`, `stopped`, or `skipped`. `stopped`
-means a human deliberately killed it from the API/CLI/UI, or a sibling
-run cancelled it via `on_overlap = "kill"` — either way, retrying
-would override an intentional decision. `skipped` means the original run
-is _still going_, so another attempt would just race it.
+You can change this per task with [`failures`](/configuration/tasks/#failures),
+for example to treat only some exit codes as failures. The full rules are in
+[What counts as a failure](/configuration/tasks/#what-counts-as-a-failure).
 
-If you've also set [`failures`](/configuration/tasks/#failures) on the
-task, a retry only fires when the reason clears both bars: it has to be
-one of the four reasons above, _and_ [`failures`](/configuration/tasks/#failures) has to classify it as a
-failure. So `failures = ["1-23"]` means exit `42` isn't a failure and
-nothing retries, even though `42` is a non-zero exit. Promoting `stopped`
-or `missed` into [`failures`](/configuration/tasks/#failures) doesn't change any of this — those two never
-retry, no matter what [`failures`](/configuration/tasks/#failures) says.
+## Retrying failed runs
 
-## `retry_delay` and `retry_backoff`
+[`retry_attempts`](/configuration/tasks/#retry_attempts) is the number of extra
+tries after the first one fails. It's `0` by default, so nothing retries until
+you set it. The retry keys are per task; they can't go in
+[`[defaults]`](/configuration/defaults/).
 
-[`retry_delay`](/configuration/tasks/#retry_delay) is how long to wait before trying again, written as a
-duration (`"5s"`, `"2m"`, `"1h"`). Turn retries on and it defaults to
-`"5s"`.
+A run is retried only when it failed **and** the task's `failures` list counts
+it as a failure. With `failures = ["1-23"]`, exit code `42` isn't a failure, so
+it isn't retried either.
 
-[`retry_backoff`](/configuration/tasks/#retry_backoff) decides whether that wait stays put or grows with each
-attempt. Services use the same vocabulary for their [`restart_backoff`](/configuration/services/#restart_backoff),
-so once you know it here it carries over there too.
+Some endings never retry:
 
-| Value                   | Wait before attempt _N_ (1-indexed retries) | With `retry_delay = "10s"`       |
-| ----------------------- | ------------------------------------------- | -------------------------------- |
-| `constant` _(or unset)_ | constant `delay`                            | 10s, 10s, 10s …                  |
-| `linear`                | `delay × N`                                 | 10s, 20s, 30s, 40s …             |
-| `exponential`           | `delay × 2^(N-1)`                           | 10s, 20s, 40s, 80s, 160s, 300s … |
+- `stopped`: someone stopped the run, or `on_overlap = "kill"` replaced it.
+  This also ends the retry chain.
+- `skipped`: the previous run is still going.
+- `missed`: nothing ran, so there is nothing to retry.
 
-No matter which curve you pick, every wait is **capped at 5
-minutes**. An
-`exponential` schedule with a short base climbs up to that ceiling and
-then just sits there.
+Adding `stopped` or `missed` to `failures` doesn't change this.
 
-## What retries look like in history
+A retry uses exactly the same [parameter](/concepts/parameters/) values as the
+run it retries.
 
-Every attempt is its own run — its own ID, its own exit code, its own
-log file. The Web UI lists them all under the task's history, numbered
-by `retry_attempt` (`0` for the first try, `1` for the first retry, and
-on up). That's on purpose: if attempt 1 quietly corrupted something and
-attempt 2 papered over it by succeeding, you can still go back and read
-exactly what attempt 1 printed.
+### Waiting between attempts
 
-:::caution[Each failed attempt notifies]
-A failure notification fires on **every** failed attempt, not just the
-last one. A task that fails twice and then succeeds will send two
-failure alerts followed by a success. If that's too noisy, dial back
-[`retry_attempts`](/configuration/tasks/#retry_attempts) or lean on the
-[coalescing window](/notifications/model/#coalescing) to fold the
-repeats together.
-:::
+[`retry_delay`](/configuration/tasks/#retry_delay) is the wait before the first
+retry. [`retry_backoff`](/configuration/tasks/#retry_backoff) decides whether
+later waits stay the same or grow:
 
-## `timeout`
+```toml
+[tasks.flaky-fetch]
+retry_attempts = 4
+retry_delay    = "10s"
+retry_backoff  = "exponential"   # waits 10s, 20s, 40s, 80s
+```
+
+No wait is ever longer than 5 minutes, whatever the backoff.
+
+### Retries in the history
+
+Every attempt is its own run, with its own exit code and log. The history
+numbers them with `retry_attempt`: `0` for the first try, `1` for the first
+retry, and so on. If an attempt fails and a later one succeeds, you can still
+read what the failed one printed.
+
+Each failed attempt is a failure event of its own. Repeats of the same failure
+are grouped by [`coalesce_window`](/configuration/notify/#coalesce_window), so a
+retry chain usually sends one message, not one per attempt.
+
+## Timeout
+
+[`timeout`](/configuration/tasks/#timeout) is the longest one attempt may run:
 
 ```toml
 [tasks.heavy-job]
@@ -103,110 +90,30 @@ run     = "/usr/local/bin/heavy-job.sh"
 timeout = "30m"
 ```
 
-It takes the same duration syntax as [`retry_delay`](/configuration/tasks/#retry_delay) (`"30s"`, `"5m"`,
-`"1h"`). If you don't set one, it inherits from `[defaults] timeout` —
-and if that isn't set either, there's **no timeout at all** and the run
-can take as long as it needs. The window is **per attempt**, so each
-retry starts the clock fresh, and time spent waiting out [`retry_delay`](/configuration/tasks/#retry_delay)
-doesn't eat into it.
+When the time is up, RunWisp sends the task's
+[`stop_signal`](/configuration/tasks/#stop_signal) (`SIGTERM` by default) to the
+whole process group, waits [`graceful_stop`](/configuration/tasks/#graceful_stop)
+(`5s` by default), then kills whatever is left. The run is recorded as
+`timeout`. Manual stops, `on_overlap = "kill"`, and daemon shutdown stop runs
+the same way.
 
-When the deadline passes, the daemon SIGTERMs the run's process group,
-gives it up to [`graceful_stop`](/configuration/tasks/#graceful_stop) (default `"5s"`) to bow out, then SIGKILLs
-whatever's left and records the run with end reason [`timeout`](/configuration/tasks/#timeout). That same
-SIGTERM-then-wait dance is what `on_overlap = "kill"`, manual stops,
-and daemon shutdown all use — [`graceful_stop`](/configuration/tasks/#graceful_stop) is the one knob behind all
-of it.
+- The limit is per attempt. Each retry gets the full time again, and the wait
+  between attempts doesn't count.
+- Without a `timeout` on the task or in [`[defaults]`](/configuration/defaults/),
+  runs have no time limit. Set `timeout = "0s"` on a task to turn off a
+  `[defaults]` timeout.
 
-## Interactions
+## Services restart instead
 
-A few places where retries bump into other features:
+Services don't retry; they restart. By default a service is started again after
+every exit, with a growing delay between restarts. If it keeps failing before it
+has been up for [`healthy_after`](/configuration/services/#healthy_after),
+RunWisp stops trying and marks it FATAL. The keys are
+[`restart`](/configuration/services/#restart),
+[`restart_delay`](/configuration/services/#restart_delay),
+[`restart_backoff`](/configuration/services/#restart_backoff), and
+[`restart_attempts`](/configuration/services/#restart_attempts); see
+[When a service can't start](/configuration/services/#when-a-service-cant-start-fatal).
 
-- **`on_overlap = "kill"` plus retries.** When a fresh firing
-  kills the running attempt, that attempt ends as `stopped`, which
-  **shuts the retry chain down**. The run the kill policy starts is
-  a brand-new execution, not a retry.
-- **Manual stop.** Same deal — stop a run from the API or UI and it ends
-  as `stopped`, which ends the retry chain.
-- **`max_concurrent > 1`.** Retries go through
-  the same concurrency check — but since a retry
-  only starts once its predecessor has finished,
-  there's no overlap left to evaluate.
-
-## Services don't retry
-
-Services play by different rules, because the whole point of a service
-is to stay up.
-
-The two do share a backoff vocabulary — `constant` / `linear` /
-`exponential` — so there's only one set of words to remember. The
-difference is in the surrounding knobs: tasks have [`retry_attempts`](/configuration/tasks/#retry_attempts)
-(services run forever, so there's nothing to count), and services have
-[`restart_delay`](/configuration/services/#restart_delay) (the supervisor sets the pace).
-
-`restart = "on_failure"` reads a service's [`failures`](/configuration/tasks/#failures) the same way a
-task's [`retry_attempts`](/configuration/tasks/#retry_attempts) does: the exit still has to be a failed
-execution _and_ pass [`failures`](/configuration/tasks/#failures) before the supervisor respawns it.
-
-| Field                                                         | Tasks                                                        | Services                                                        |
-| ------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------- |
-| [`retry_attempts`](/configuration/tasks/#retry_attempts)      | ✅ default `0`                                               | ❌ rejected                                                     |
-| [`retry_delay`](/configuration/tasks/#retry_delay)            | ✅ default `5s`                                              | ❌ rejected                                                     |
-| [`retry_backoff`](/configuration/tasks/#retry_backoff)        | ✅ `constant` / `linear` / `exponential`, default `constant` | ❌ rejected                                                     |
-| [`restart_delay`](/configuration/services/#restart_delay)     | ❌ rejected                                                  | ✅ default `1s`                                                 |
-| [`restart_backoff`](/configuration/services/#restart_backoff) | ❌ rejected                                                  | ✅ `constant` / `linear` / `exponential`, default `exponential` |
-
-A service supervisor restarts a replica with bounded exponential
-backoff as long as it looks like the replica can come back — but if
-it exits before [`healthy_after`](/configuration/services/#healthy_after) too many times in a row, the supervisor
-marks that slot [FATAL](/configuration/services/#when-a-service-cant-start-fatal)
-and stops trying until you manually restart the service.
-
-### Healthy threshold: `healthy_after`
-
-Once a replica has stayed up for at least [`healthy_after`](/configuration/services/#healthy_after) (default 60s),
-RunWisp calls it healthy — and that one threshold pulls double duty. It
-resets the restart counter, so a service that flapped a bunch on startup
-isn't stuck with long restart delays after it finally settles down. And
-it clears the failed-start streak behind
-[FATAL](/configuration/services/#when-a-service-cant-start-fatal), so a
-service that comes up and stays up is never given up on. Set it in
-[`[defaults]`](/configuration/defaults/) to cover every service that
-doesn't say otherwise, or per service:
-
-```toml
-[defaults]
-healthy_after = "30s"     # global default
-
-[services.flaky-worker]
-run           = "/usr/local/bin/worker"
-healthy_after = "2m"      # this one needs longer to call "stable"
-```
-
-Rule of thumb: if you want a finite, escalating set of retries, that's a
-task with [`cron`](/configuration/tasks/#cron) and [`retry_attempts`](/configuration/tasks/#retry_attempts). If you want a workload kept alive
-and self-healing indefinitely, that's `[services.*]`.
-
----
-
-<CardGrid>
-    <LinkCard
-        title="Concurrency"
-        href="/concepts/concurrency/"
-        description="What stops a retry chain when on_overlap = kill fires."
-    />
-    <LinkCard
-        title="Notifications model"
-        href="/notifications/model/"
-        description="Coalescing repeated failure alerts so retries don't spam your channel."
-    />
-    <LinkCard
-        title="[tasks.*] ref"
-        href="/configuration/tasks/"
-        description="The exact schema for every retry and timeout field."
-    />
-    <LinkCard
-        title="Scheduling"
-        href="/concepts/scheduling/"
-        description="How cron firings turn into runs and what creates the rows."
-    />
-</CardGrid>
+If you want a limited number of tries, use a task with `retry_attempts`. If you
+want a process kept alive indefinitely, use a service.

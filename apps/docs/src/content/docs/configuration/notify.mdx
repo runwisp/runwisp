@@ -19,7 +19,8 @@ coalesce_window    = "1h"
 coalesce_limit     = 10
 ```
 
-`[notify]` can't change on [reload](/operations/reload/); it needs a restart.
+`[notify]`, `[notifiers.*]`, and `[[route]]` can't change on
+[reload](/operations/reload/); they need `runwisp restart`.
 
 ## global_notifiers
 

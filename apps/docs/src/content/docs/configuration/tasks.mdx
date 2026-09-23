@@ -5,7 +5,6 @@ title: "[tasks.*]"
 description: "Every key accepted by a [tasks.<name>] table: cron, run, on_overlap, retries, timeout, retention, params, notifications."
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 import Run from "./shared/_run.mdx";
 import Description from "./shared/_description.mdx";
 import Group from "./shared/_group.mdx";
@@ -342,11 +341,11 @@ failures = ["timeout", "23", "24"]  # only these exits fail
 
 Possible values:
 
-- `failed`: the command exited non-zero
+- `failed`: the command exited non-zero or was killed by a signal
 - `timeout`: stopped for running longer than [`timeout`](#timeout)
-- `crashed`: died on a signal (OOM-killed, segfault)
+- `crashed`: still running when the daemon itself was killed (recorded at the next start)
 - `log_overflow`: hit [`log_max_size`](#log_max_size) under `log_on_full = "kill"`
-- `start_failed`: the process could not be started
+- `start_failed`: a service gave up after too many fast restarts (see [`restart_attempts`](/configuration/services/#restart_attempts))
 - `missed`: a scheduled firing was skipped while the daemon was down
 - `stopped`: an operator stopped the run
 - `daemon_stopped`: still running when the daemon shut down
@@ -548,28 +547,3 @@ The config fails to load with any of these:
   [`retry_attempts`](#retry_attempts) instead of restarts.
 - A name already used by a `[services.*]` entry.
 - An empty or missing [`run`](#run) (unless [`compose_file`](#compose_file) is set).
-
----
-
-<CardGrid>
-    <LinkCard
-        title="[services.*] ref"
-        href="/configuration/services/"
-        description="The always-on counterpart."
-    />
-    <LinkCard
-        title="[defaults] ref"
-        href="/configuration/defaults/"
-        description="What fields fall through."
-    />
-    <LinkCard
-        title="Concurrency"
-        href="/concepts/concurrency/"
-        description="The conceptual page behind the keys."
-    />
-    <LinkCard
-        title="Retries"
-        href="/concepts/retries/"
-        description="The conceptual page behind the keys."
-    />
-</CardGrid>

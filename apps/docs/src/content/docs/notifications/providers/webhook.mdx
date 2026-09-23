@@ -2,19 +2,13 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Webhook
-description: Set up the generic webhook notifier — POST structured JSON to any HTTP endpoint with optional custom headers for auth.
+description: POST RunWisp notifications as JSON to any HTTP endpoint, with custom headers for authentication.
 ---
 
-import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
-
-The webhook driver POSTs a JSON body to any HTTP endpoint you control.
-It's the catch-all for services that accept incoming webhooks but don't
-have a dedicated provider — PagerDuty, n8n, a custom server, anything
-that speaks HTTP. (For Discord, use the
-[native provider](/notifications/providers/discord/) instead — it sends
-embeds Discord actually renders.)
-
-## Fields
+The webhook notifier sends a JSON `POST` to any HTTP endpoint: PagerDuty, n8n,
+your own server. For Discord, use the
+[Discord notifier](/notifications/providers/discord/) instead, which sends
+messages Discord can display.
 
 ```toml
 [notifiers.my-hook]
@@ -25,110 +19,20 @@ url  = "${WEBHOOK_URL}"
 Authorization = "Bearer ${WEBHOOK_TOKEN}"
 ```
 
-The id (as the table key), `type`, and `url` are required.
+## Fields
 
-| Key             | Required | What it does                                                     |
-| --------------- | -------- | ---------------------------------------------------------------- |
-| `url`           | yes      | The endpoint URL — inline, `${VAR}`, or `${file:path}`.          |
-| `headers`       | no       | Extra HTTP headers sent with every request (e.g. auth tokens).   |
-| `template_path` | no       | Path to a Go-template file overriding the embedded JSON payload. |
+| Key             | Required | What it does                                                                                         |
+| --------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `url`           | yes      | The endpoint. Keep it out of the file; see [Storing the secret](/notifications/#storing-the-secret). |
+| `headers`       | no       | Extra HTTP headers sent with every request, like an auth token. Values can use `${...}` too.         |
+| `template_path` | no       | A Go template file that replaces the built-in JSON body.                                             |
 
-Use [`${...}` substitution](/configuration/substitution/) in both `url`
-and header values to pull secrets from env vars or files —
-[storing the secret](/notifications/model/#storing-the-secret).
+Webhook notifiers don't accept a `my-hook:<target>` override.
 
-## 1. Store the URL
+## What the body looks like
 
-Pick where the URL lives and reference it with
-[`${...}` substitution](/configuration/substitution/).
-
-<Tabs syncKey="webhook-secret">
-    <TabItem label="Env var" icon="seti:shell">
-        The simplest option. Set the variable in whatever already
-        manages your environment.
-
-        ```bash
-        export WEBHOOK_URL=https://example.com/hooks/abc123
-        export WEBHOOK_TOKEN=my-secret-token
-        runwisp daemon
-        ```
-
-        ```toml
-        [notifiers.my-hook]
-        type = "webhook"
-        url  = "${WEBHOOK_URL}"
-
-        [notifiers.my-hook.headers]
-        Authorization = "Bearer ${WEBHOOK_TOKEN}"
-        ```
-    </TabItem>
-    <TabItem label="File on disk" icon="document">
-        Useful when a secrets manager writes the URL to a known path.
-
-        ```bash
-        mkdir -p ~/.config/runwisp
-        chmod 0700 ~/.config/runwisp
-        printf '%s\n' 'https://example.com/hooks/abc123' > ~/.config/runwisp/webhook.url
-        chmod 0600 ~/.config/runwisp/webhook.url
-        ```
-
-        ```toml
-        [notifiers.my-hook]
-        type = "webhook"
-        url  = "${file:~/.config/runwisp/webhook.url}"
-        ```
-    </TabItem>
-    <TabItem label="Inline (don't)" icon="warning">
-        The notifier accepts the literal URL directly. Avoid it —
-        config files are often committed to git.
-
-        ```toml
-        [notifiers.my-hook]
-        type = "webhook"
-        url  = "https://example.com/hooks/abc123"
-        ```
-    </TabItem>
-
-</Tabs>
-
-## 2. Route failures to it
-
-### On one task
-
-```toml
-[tasks.backup-postgres]
-cron              = "30 2 * * *"
-notify = ["my-hook"]
-run               = "..."
-```
-
-### In a notification rule
-
-```toml
-[[route]]
-match     = { kinds = ["failed", "timeout", "crashed"] }
-notifiers = ["my-hook"]
-```
-
-See [Per-task notifications](/notifications/per-task/) and
-[Notification rules](/notifications/routes/) for the full options.
-
-## 3. Test it
-
-Trigger a task you know will fail:
-
-```bash
-runwisp run smoke-test
-```
-
-Your endpoint should receive a `POST` with `Content-Type: application/json`
-within a few seconds. If only the in-app bell shows, delivery failed —
-look for a `notify.delivery_failed` event in the bell for the reason.
-
-## What the payload looks like
-
-The default template produces a flat, machine-readable JSON object.
-Every field uses a stable key that's safe to parse downstream.
+Each event is one `POST` with `Content-Type: application/json`. The keys are
+stable, so you can parse them safely:
 
 ```json
 {
@@ -152,56 +56,18 @@ Every field uses a stable key that's safe to parse downstream.
 }
 ```
 
-[`run`](/configuration/tasks/#run), `output_tail`, and `reason` are conditional — they appear only
-when applicable. `run.url` and `run.duration` are also conditional
-within the [`run`](/configuration/tasks/#run) object.
+`run`, `output_tail`, and `reason` appear only when they apply. Inside `run`,
+`url` needs [`external_url`](/configuration/daemon/#external_url), and
+`duration` appears only for runs that have one.
 
-## Customising the payload
+## Changing the body
 
-Point `template_path` at a Go-template file. Copy
-[`webhook.tmpl.json`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/notify/render/defaults/webhook.tmpl.json)
-as your starting point. The template receives the full event struct and
-the same helpers available to other providers: `statusEmoji`,
-`statusVerb`, `eventSentence`, `eventTrigger`, `runURL`, `outputTail`,
-`fingerprint`, and more.
+Point `template_path` at your own Go template. Start from the built-in
+[`webhook.tmpl.json`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/notify/render/defaults/webhook.tmpl.json).
+It gets the whole event and the same helpers as the
+[Slack template](/notifications/providers/slack/#changing-the-message).
 
-## What the loader rejects
+## What's rejected
 
-- A missing or empty `url`.
-- A `url` that isn't `http://` or `https://`.
+- A missing or empty `url`, or one that isn't `http://` or `https://`.
 - An empty key in `headers`.
-- A notifier id containing `:` (reserved for inline target overrides) or
-  equal to `"inapp"` (reserved).
-
-Webhook notifiers do not support inline target overrides (like
-`my-hook:something`) — there's no natural "target" to override.
-
----
-
-<CardGrid>
-    <LinkCard
-        title="Slack"
-        href="/notifications/providers/slack/"
-        description="Rich Block Kit messages in Slack channels."
-    />
-    <LinkCard
-        title="Discord"
-        href="/notifications/providers/discord/"
-        description="Color-coded embeds via a Discord channel webhook."
-    />
-    <LinkCard
-        title="Telegram"
-        href="/notifications/providers/telegram/"
-        description="Bot messages to Telegram chats."
-    />
-    <LinkCard
-        title="Email (SMTP)"
-        href="/notifications/providers/smtp/"
-        description="Send failure alerts to any inbox via any SMTP server."
-    />
-    <LinkCard
-        title="Notification rules"
-        href="/notifications/routes/"
-        description="One rule covering many tasks."
-    />
-</CardGrid>

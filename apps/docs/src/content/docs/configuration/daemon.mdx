@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: "[daemon]"
-description: Daemon-wide settings: shutdown_timeout, timezone, external_url, TLS, metrics, trusted proxies, include, and include_cron.
+description: "Daemon-wide settings: shutdown_timeout, timezone, external_url, TLS, metrics, trusted proxies, include, and include_cron."
 ---
 
 `[daemon]` holds settings for the whole daemon. The table is optional. A change
@@ -252,7 +252,7 @@ include_cron = [
 While a system cron daemon is running, RunWisp **holds** the jobs it read: they
 are listed with their schedule, but RunWisp doesn't start them, so nothing runs
 twice. `sudo runwisp takeover` ends the hold. If cron is stopped some other way,
-the hold ends within a minute. See [Held jobs](/coming-from/cron/).
+the hold ends within a minute. See [Held jobs](/coming-from/cron/#held-jobs).
 :::
 
 #### Which files, and who the jobs run as
