@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Subcommand `--help` output now ends with the pointer to the machine-readable agent docs when it isn't a terminal.
+
 ## [1.0.1] - 2026-09-23
 
 ### Added
