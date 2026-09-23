@@ -2,30 +2,17 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Email (local MTA)
-description: Send notification mail through the sendmail binary already on the box — the same mechanism crond used for MAILTO, with no relay host, port, or credentials to configure.
+description: Send RunWisp notifications through the machine's own sendmail binary (Postfix, exim, msmtp, ssmtp), the way cron sent MAILTO mail. No host, port, or password to configure.
 ---
 
-import { Aside, CardGrid, LinkCard } from "@astrojs/starlight/components";
+The sendmail notifier hands each message to the machine's sendmail-compatible
+program (Postfix, exim, msmtp, ssmtp), the same way `crond` sends `MAILTO` mail.
+There's no host, port, TLS, or password to set: the mail system already knows
+where to send and handles queueing and retries.
 
-If the machine already sends mail, RunWisp can just use that. The
-`sendmail` driver pipes a plain-text message into the host's
-sendmail-compatible binary — Postfix, exim, msmtp, ssmtp — exactly
-the way `crond` has always delivered `MAILTO` output.
-
-That's the whole appeal: no host, no port, no TLS mode, no password.
-The MTA already knows where to relay and already holds the
-credentials, and queueing and retrying stay its job. If you're
-migrating a crontab that had `MAILTO=ops@example.com` at the top,
-this is the closest thing to what you had.
-
-<Aside type="tip" title="sendmail or SMTP?">
-    Use `sendmail` when the box has a working mailer already. Use
-    [`smtp`](/notifications/providers/smtp/) when it doesn't and you'd rather point RunWisp straight
-    at Gmail/SES/Postmark than install and configure an MTA. Same events, same routing — they differ
-    only in who does the sending.
-</Aside>
-
-## Fields
+Use it when the machine already sends mail. If it doesn't, the
+[SMTP notifier](/notifications/providers/smtp/) talks to Gmail, SES, or another
+server directly.
 
 ```toml
 [notifiers.mta]
@@ -34,27 +21,29 @@ from = "runwisp@example.com"
 to   = ["ops@example.com"]
 ```
 
-That's a complete notifier. The id (as the table key), `type`, `from`,
-and at least one `to` are required; everything else is optional.
+## Fields
 
-| Key             | Required | What it does                                                                 |
-| --------------- | -------- | ---------------------------------------------------------------------------- |
-| `from`          | yes      | `From:` header. Accepts `"name@example.com"` or `"Name <name@example.com>"`. |
-| `to`            | yes      | Array of `To:` recipients (at least one).                                    |
-| `cc`            | no       | Array of `Cc:` recipients.                                                   |
-| `bcc`           | no       | Array of `Bcc:` recipients. Stripped by the MTA before delivery.             |
-| `reply_to`      | no       | Optional `Reply-To:` header.                                                 |
-| `sendmail_path` | no       | Absolute path to a specific binary. Unset means find the system one.         |
-| `template_path` | no       | Override the embedded plain-text message template.                           |
+| Key             | Required | What it does                                                              |
+| --------------- | -------- | ------------------------------------------------------------------------- |
+| `from`          | yes      | The `From:` address: `"name@example.com"` or `"Name <name@example.com>"`. |
+| `to`            | yes      | List of recipients, at least one.                                         |
+| `cc`            | no       | List of `Cc:` recipients.                                                 |
+| `bcc`           | no       | List of `Bcc:` recipients. The mail system removes them before delivery.  |
+| `reply_to`      | no       | A `Reply-To:` address.                                                    |
+| `sendmail_path` | no       | Absolute path to a specific program. Unset: find the system one.          |
+| `template_path` | no       | A Go template file that replaces the built-in plain-text message.         |
 
-## Finding the binary
+To send one task's mail to another address, use `"mta:reports@example.com"` in
+`notify`, much like a per-crontab `MAILTO`. See
+[One channel, several destinations](/notifications/#one-channel-several-destinations).
 
-With `sendmail_path` unset, RunWisp tries `/usr/sbin/sendmail`,
-`/usr/lib/sendmail`, `/usr/bin/sendmail`, and then `sendmail` on
-`$PATH` — in that order. Every common MTA installs one of those.
+## Finding the sendmail program
 
-Set `sendmail_path` when you want a specific mailer rather than
-whichever one happens to own the compatibility symlink:
+Without `sendmail_path`, RunWisp tries `/usr/sbin/sendmail`,
+`/usr/lib/sendmail`, `/usr/bin/sendmail`, then `sendmail` on `$PATH`, in that
+order. Every common mail system installs one of these.
+
+Set `sendmail_path` to use a specific program:
 
 ```toml
 [notifiers.mta]
@@ -64,49 +53,27 @@ to            = ["ops@example.com"]
 sendmail_path = "/usr/local/bin/msmtp"
 ```
 
-It must be an absolute path. A relative one is rejected at load —
-the daemon can run from anywhere, and resolving a mailer through
-`$PATH` at send time is how you end up executing a different binary
-than the one you configured.
+It must be an absolute path. RunWisp looks for the program at the first send,
+not at startup, so the config still loads on a machine where the mail package
+isn't set up yet. If nothing is found, the delivery fails with an error listing
+the paths it tried.
 
-The binary is looked up on the **first send**, not at startup. A
-config that validates on your laptop shouldn't refuse to load on a
-server where the MTA package hasn't finished configuring yet. If
-nothing is found, the delivery fails with an error naming both the
-paths it tried and `sendmail_path`.
+RunWisp runs `<program> -t -i` and writes the message to its input. Addresses
+are read from the headers, never passed as command-line arguments.
 
-## Route failures to it
+## Retries
 
-Nothing special here — the routing layer doesn't care which driver
-is on the other end:
+Only exit code `75` (temporary failure) is retried. Any other error, like a
+rejected address or a broken mail setup, fails at once, and the bell gets a
+`notify.delivery_failed` warning with the program's error output.
 
-```toml
-[tasks.backup-postgres]
-cron              = "30 2 * * *"
-run               = "/usr/local/bin/backup.sh"
-notify = ["mta"]
-```
-
-Or once, for everything:
-
-```toml
-[[route]]
-match     = { kinds = ["failed", "timeout", "crashed"] }
-notifiers = ["mta"]
-```
-
-Inline overrides work too, which is the closest equivalent to a
-per-crontab `MAILTO` — one notifier, a different recipient per task:
-
-```toml
-[tasks.nightly-report]
-notify = ["mta:reports@example.com"]
-```
+An exit code of `0` means the mail system **accepted** the message, not that it
+was delivered. If accepted mail never arrives, look in `/var/log/mail.log` and
+`mailq`.
 
 ## What a message looks like
 
-Plain text, no markup — this goes down a pipe and gets read in
-`mutt` as often as in Gmail:
+Plain text, no markup:
 
 ```text
 From: runwisp@example.com
@@ -134,98 +101,33 @@ View run: https://runwisp.example.com/tasks/backup-postgres/01J...
 from runwisp · bright-falcon
 ```
 
-- The **captured-output block** appears on `run.failed` and
-  `run.timeout` only, capped at three lines / 300 bytes.
-- The **View run** link comes from
-  [`external_url`](/configuration/daemon/#external_url) and
-  is omitted when that's unset.
-- `Auto-Submitted` and `X-Auto-Response-Suppress` keep a failing
-  task from striking up a correspondence with an out-of-office bot.
-- Non-ASCII subjects are RFC 2047 encoded, so accents survive.
+- The output block appears for failures and timeouts, up to three lines or 300
+  bytes.
+- The **View run** link appears only when
+  [`external_url`](/configuration/daemon/#external_url) is set.
+- `Auto-Submitted` and `X-Auto-Response-Suppress` stop out-of-office bots from
+  replying.
+- Subjects with non-ASCII characters are encoded, so accents survive.
 
-`template_path` overrides the embedded template. Copy
-[`sendmail.tmpl.txt`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/notify/render/defaults/sendmail.tmpl.txt)
-as your starting point; the helpers `statusVerb`, `humanTime`,
-`humanDuration`, `runDuration`, `triggerPhrase`, `eventSentence`,
-`eventTrigger`, `linkLabel`, `runURL`, `taskURL`, `outputTail`, and
-`fingerprint` are available inside it.
+## Changing the message
 
-## How it invokes the mailer
+Point `template_path` at your own Go template. Start from the built-in
+[`sendmail.tmpl.txt`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/notify/render/defaults/sendmail.tmpl.txt).
+It gets the whole event and the same helpers as the
+[Slack template](/notifications/providers/slack/#changing-the-message). A header
+value containing a line break is rejected before the message is sent.
 
-RunWisp runs `<binary> -t -i` and writes the message to its stdin.
+## Coming from MAILTO
 
-`-t` means the MTA reads the recipients out of the headers, so **no
-address is ever passed as a command-line argument** — an address
-can't turn into a flag, and `Bcc` gets stripped for you. `-i` stops
-a body line consisting of a single `.` from being read as
-end-of-input, which would otherwise silently truncate a job's
-captured output.
+`runwisp import cron` finds `MAILTO=` in a crontab and prints the notifier block
+to add. One difference: cron mailed whenever a job printed anything, while
+RunWisp mails when a run fails. To also get mail for successful runs, add a
+[`[[route]]`](/configuration/routes/) with `kinds = ["succeeded"]`. See
+[Coming from cron](/coming-from/cron/).
 
-Any header value containing a newline is rejected before the
-message is composed, so a task name or a rendered subject can't
-inject headers.
-
-## Retries
-
-Only exit code `75` (`EX_TEMPFAIL` from `sysexits.h`) is retried —
-that's the one status every sendmail-compatible binary uses for "I
-couldn't reach the relay / couldn't write the queue, ask again".
-
-Anything else (a rejected address, a permissions problem, a broken
-MTA config) fails the same way next time, so RunWisp gives up
-immediately and emits a `notify.delivery_failed` event with the
-MTA's own stderr attached. Check the bell.
-
-<Aside type="caution" title="The MTA owns delivery from here">
-    A zero exit means the mailer **accepted** the message, not that it was delivered. If mail is
-    accepted and never arrives, the answer is in `/var/log/mail.log` and `mailq`, not in RunWisp.
-</Aside>
-
-## Coming from `MAILTO`
-
-`runwisp import cron` spots `MAILTO=` in a crontab and hands you the
-notifier block to paste. One difference is worth internalising
-before you rely on it:
-
-**crond mailed any output at all. RunWisp mails an event.** A job
-that printed a line and exited 0 generated cron mail; here it
-doesn't, unless you ask for it with a `[[route]]` on `match.kinds = ["succeeded"]`.
-What you get by default is failures — which is usually what people actually
-wanted from cron mail, but it is not the same rule.
-
-See [How cron maps to TOML](/coming-from/cron-mapping/) for the
-rest of the mapping.
-
-## What the loader rejects
+## What's rejected
 
 - A missing `from`, or an empty `to`.
-- A `from`, `reply_to`, `to`, `cc`, or `bcc` value that doesn't
-  parse as an RFC 5322 address.
+- A `from`, `reply_to`, `to`, `cc`, or `bcc` value that isn't a valid email
+  address.
 - A relative `sendmail_path`.
-- A notifier id containing `:` (reserved for inline target overrides) or
-  equal to `"inapp"` (reserved).
-
----
-
-<CardGrid>
-    <LinkCard
-        title="Email (SMTP)"
-        href="/notifications/providers/smtp/"
-        description="Talk to a relay directly when there's no local MTA."
-    />
-    <LinkCard
-        title="How cron maps to TOML"
-        href="/coming-from/cron-mapping/"
-        description="What import does with MAILTO and everything else."
-    />
-    <LinkCard
-        title="Slack"
-        href="/notifications/providers/slack/"
-        description="Same shape, on a different transport."
-    />
-    <LinkCard
-        title="Notification rules"
-        href="/notifications/routes/"
-        description="One rule covering many tasks."
-    />
-</CardGrid>

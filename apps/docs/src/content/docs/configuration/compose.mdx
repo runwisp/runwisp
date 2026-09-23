@@ -5,8 +5,6 @@ title: "[compose.*]"
 description: Import services from a docker-compose.yml so every service becomes a RunWisp service with logs, restarts, notifications, and start/stop.
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
-
 A `[compose.<alias>]` block imports the services of an existing
 `docker-compose.yml`. Each compose service becomes a RunWisp
 [service](/concepts/tasks-vs-services/) with captured logs, restarts,
@@ -14,7 +12,7 @@ notifications, and start/stop from the Web UI and API. The containers still run
 under Docker. For a walkthrough, see
 [Migrating from docker-compose](/coming-from/docker-compose/).
 
-## Full surface
+## Keys
 
 The smallest block imports every service from the compose file next to
 `runwisp.toml`:
@@ -411,33 +409,3 @@ Limits of `exec`:
   file's `restart:` setting is ignored.
 - If the `docker` CLI is missing or the Docker daemon is unreachable, the
   services stay visible, and their runs fail with a system log message.
-
----
-
-<CardGrid>
-    <LinkCard
-        title="Migrating from docker-compose"
-        href="/coming-from/docker-compose/"
-        description="The step-by-step guide."
-    />
-    <LinkCard
-        title="[services.*] ref"
-        href="/configuration/services/"
-        description="The keys the override sub-tables accept."
-    />
-    <LinkCard
-        title="Tasks vs Services"
-        href="/concepts/tasks-vs-services/"
-        description="Why a compose service maps to a RunWisp service."
-    />
-    <LinkCard
-        title="Docker patterns"
-        href="/recipes/docker/"
-        description="Using Docker from inside plain RunWisp tasks."
-    />
-    <LinkCard
-        title="Running RunWisp in Docker"
-        href="/getting-started/docker/"
-        description="Running the daemon in a container, and what compose-backed units need there."
-    />
-</CardGrid>

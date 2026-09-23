@@ -2,18 +2,15 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Email (SMTP)
-description: Set up the email notifier end-to-end — configure any SMTP server (Gmail, SES, Mailgun, Postmark, SendGrid, or local Postfix), store credentials safely, declare recipients, route failures to it, and test it.
+description: Send RunWisp notifications by email through any SMTP server, with examples for Gmail, SendGrid, Amazon SES, Mailgun, Postmark, and a local Postfix.
 ---
 
-import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
+import { Tabs, TabItem } from "@astrojs/starlight/components";
 
-The SMTP driver sends a real email per event — `multipart/alternative`
-with both `text/plain` and `text/html` parts, so Gmail/Outlook render
-the rich layout and terminal MUAs see a usable fallback. It works
-with any SMTP relay: Gmail (with an app password), Amazon SES,
-Mailgun, Postmark, SendGrid, or your own Postfix on `127.0.0.1`.
-
-## Fields
+The SMTP notifier sends one email per event through any SMTP server. Each email
+has an HTML part and a plain-text part, so it reads well in Gmail and in `mutt`.
+If the machine already sends mail with a local MTA, the
+[sendmail notifier](/notifications/providers/sendmail/) needs less setup.
 
 ```toml
 [notifiers.email-ops]
@@ -23,39 +20,37 @@ port     = 587
 from     = "RunWisp <runwisp@example.com>"
 to       = ["alerts@example.com"]
 username = "apikey"
-password = "${RUNWISP_SMTP_PASSWORD}"
+password = "${SMTP_PASSWORD}"
 ```
 
-The id (as the table key), `type`, `host`, `from`, and at least one `to` are required.
-Credentials are optional — leave `username` and `password` unset to
-talk to a local relay (Postfix listening on `127.0.0.1:25`, an
-internal MTA, etc.). Set them together or not at all. Use
-[`${...}` substitution](/configuration/substitution/) to pull the
-password from an env var or a file —
-[storing the secret](/notifications/model/#storing-the-secret).
+## Fields
 
-| Key               | Required | What it does                                                                 |
-| ----------------- | -------- | ---------------------------------------------------------------------------- |
-| `host`            | yes      | SMTP relay hostname (e.g. `smtp.gmail.com`).                                 |
-| `port`            | no       | TCP port. Defaults to 25; common values: 587 (STARTTLS), 465 (implicit TLS). |
-| `tls_mode`        | no       | `"starttls"` (default for 25/587), `"implicit"` (default for 465), `"off"`.  |
-| `tls_skip_verify` | no       | Skip TLS certificate verification. **Do not** set this in production.        |
-| `username`        | no       | SMTP AUTH username. Required when sending creds.                             |
-| `password`        | no       | SMTP AUTH password — inline, `${VAR}`, or `${file:path}`.                    |
-| `from`            | yes      | `From:` header. Accepts `"name@example.com"` or `"Name <name@example.com>"`. |
-| `reply_to`        | no       | Optional `Reply-To:` header.                                                 |
-| `to`              | yes      | Array of `To:` recipients (at least one).                                    |
-| `cc`              | no       | Array of `Cc:` recipients.                                                   |
-| `bcc`             | no       | Array of `Bcc:` recipients.                                                  |
-| `template_path`   | no       | Override the embedded HTML message template.                                 |
+| Key               | Required | What it does                                                                                                     |
+| ----------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| `host`            | yes      | The SMTP server, like `smtp.gmail.com`.                                                                          |
+| `port`            | no       | Default `25`. Usually `587` (STARTTLS) or `465` (TLS from the start).                                            |
+| `tls_mode`        | no       | `starttls`, `implicit`, or `off`. Default `implicit` on port 465, `starttls` otherwise. `starttls` requires TLS. |
+| `tls_skip_verify` | no       | Don't check the server's TLS certificate. Don't use it in production.                                            |
+| `username`        | no       | SMTP login. Set together with `password`, or leave both out for a server without login.                          |
+| `password`        | no       | SMTP password. Keep it out of the file; see [Storing the secret](/notifications/#storing-the-secret).            |
+| `from`            | yes      | The `From:` address: `"name@example.com"` or `"Name <name@example.com>"`.                                        |
+| `reply_to`        | no       | A `Reply-To:` address.                                                                                           |
+| `to`              | yes      | List of recipients, at least one.                                                                                |
+| `cc`              | no       | List of `Cc:` recipients.                                                                                        |
+| `bcc`             | no       | List of `Bcc:` recipients.                                                                                       |
+| `template_path`   | no       | A Go template file that replaces the built-in HTML message.                                                      |
 
-## 1. Configure the SMTP server
+To send one task's mail to another address through the same server, use
+`"email-ops:db-team@example.com"` in `notify`. It replaces the `to`, `cc`, and
+`bcc` lists for that task. See
+[One channel, several destinations](/notifications/#one-channel-several-destinations).
+
+## Server settings
 
 <Tabs syncKey="smtp-provider">
-    <TabItem label="Gmail" icon="seti:shell">
-        Gmail accepts SMTP on `smtp.gmail.com:587` via STARTTLS.
-        Use an [app password](https://myaccount.google.com/apppasswords)
-        — Gmail rejects regular account passwords for SMTP.
+    <TabItem label="Gmail">
+        Gmail needs an [app password](https://myaccount.google.com/apppasswords);
+        it rejects your normal password over SMTP.
 
         ```toml
         [notifiers.email-ops]
@@ -65,16 +60,11 @@ password from an env var or a file —
         from     = "Your Name <you@gmail.com>"
         to       = ["alerts@example.com"]
         username = "you@gmail.com"
-        password = "${RUNWISP_GMAIL_APP_PASSWORD}"
-        ```
-
-        ```bash
-        export RUNWISP_GMAIL_APP_PASSWORD='xxxx xxxx xxxx xxxx'
+        password = "${GMAIL_APP_PASSWORD}"
         ```
     </TabItem>
-    <TabItem label="SendGrid" icon="seti:shell">
-        SendGrid uses a fixed username (`apikey`) and an API key as
-        the password.
+    <TabItem label="SendGrid">
+        The username is always `apikey`; the password is your API key.
 
         ```toml
         [notifiers.email-ops]
@@ -84,12 +74,12 @@ password from an env var or a file —
         from     = "RunWisp <alerts@yourdomain.com>"
         to       = ["ops@yourdomain.com"]
         username = "apikey"
-        password = "${RUNWISP_SENDGRID_API_KEY}"
+        password = "${SENDGRID_API_KEY}"
         ```
     </TabItem>
-    <TabItem label="Amazon SES" icon="seti:shell">
-        SES uses dedicated SMTP credentials — generate them in the
-        SES console under **SMTP settings**, not your IAM password.
+    <TabItem label="Amazon SES">
+        Create SMTP credentials in the SES console under **SMTP settings**. Your IAM
+        password doesn't work here.
 
         ```toml
         [notifiers.email-ops]
@@ -99,12 +89,11 @@ password from an env var or a file —
         from     = "RunWisp <alerts@yourdomain.com>"
         to       = ["ops@yourdomain.com"]
         username = "AKIA..."
-        password = "${RUNWISP_SES_SMTP_PASSWORD}"
+        password = "${SES_SMTP_PASSWORD}"
         ```
     </TabItem>
-    <TabItem label="Mailgun / Postmark" icon="seti:shell">
-        Same shape — pick the region-appropriate host and use the
-        credentials they issue.
+    <TabItem label="Mailgun / Postmark">
+        Use your region's host and the credentials they give you.
 
         ```toml
         # Mailgun
@@ -115,7 +104,7 @@ password from an env var or a file —
         from     = "RunWisp <alerts@yourdomain.com>"
         to       = ["ops@yourdomain.com"]
         username = "postmaster@yourdomain.com"
-        password = "${RUNWISP_MAILGUN_PASSWORD}"
+        password = "${MAILGUN_PASSWORD}"
         ```
 
         ```toml
@@ -127,151 +116,40 @@ password from an env var or a file —
         from     = "RunWisp <alerts@yourdomain.com>"
         to       = ["ops@yourdomain.com"]
         username = "<server-token>"
-        password = "${RUNWISP_POSTMARK_TOKEN}"
+        password = "${POSTMARK_TOKEN}"
         ```
     </TabItem>
-    <TabItem label="Local Postfix" icon="seti:shell">
-        A relay you already trust on the same host — no auth, no
-        TLS. The daemon refuses to send credentials over cleartext,
-        so `tls_mode = "off"` only works alongside an auth-less relay.
+    <TabItem label="Local Postfix">
+        A server on the same machine, without login or TLS. `tls_mode = "off"` only
+        works without `username` and `password`.
 
         ```toml
         [notifiers.email-local]
-        type = "smtp"
-        host = "127.0.0.1"
-        port = 25
+        type     = "smtp"
+        host     = "127.0.0.1"
+        port     = 25
         tls_mode = "off"
-        from = "runwisp@myhost"
-        to   = ["ops@example.com"]
+        from     = "runwisp@myhost"
+        to       = ["ops@example.com"]
         ```
     </TabItem>
 
 </Tabs>
 
-## 2. Store the password
+## When mail doesn't arrive
 
-Pick where the password lives and reference it with
-[`${...}` substitution](/configuration/substitution/).
+If the bell shows a `notify.delivery_failed` warning, it includes the SMTP
+error. Common causes:
 
-<Tabs syncKey="smtp-secret">
-    <TabItem label="Env var" icon="seti:shell">
-        The simplest option for any deployment — Docker, systemd,
-        bare metal. Set the variable in whatever already manages
-        your environment.
+- The port doesn't match `tls_mode`: port `587` needs `starttls`, port `465`
+  needs `implicit`.
+- An expired or wrong app password.
+- The server rejects a recipient (`550 No such user`).
 
-        ```bash
-        export RUNWISP_SMTP_PASSWORD='your-app-password'
-        runwisp daemon
-        ```
-
-        ```toml
-        [notifiers.email-ops]
-        type     = "smtp"
-        host     = "smtp.example.com"
-        from     = "runwisp@example.com"
-        to       = ["ops@example.com"]
-        username = "apikey"
-        password = "${RUNWISP_SMTP_PASSWORD}"
-        ```
-    </TabItem>
-    <TabItem label="File on disk" icon="document">
-        Useful when a secrets manager (Vault agent, sops, Docker
-        secrets at `/run/secrets/...`) writes the password to a
-        known path for you. Relative paths resolve next to
-        `runwisp.toml`; `~/` works too.
-
-        ```bash
-        mkdir -p ~/.config/runwisp
-        chmod 0700 ~/.config/runwisp
-        printf '%s\n' 'your-app-password' > ~/.config/runwisp/smtp.password
-        chmod 0600 ~/.config/runwisp/smtp.password
-        ```
-
-        ```toml
-        [notifiers.email-ops]
-        type     = "smtp"
-        host     = "smtp.example.com"
-        from     = "runwisp@example.com"
-        to       = ["ops@example.com"]
-        username = "apikey"
-        password = "${file:~/.config/runwisp/smtp.password}"
-        ```
-    </TabItem>
-    <TabItem label="Inline (don't)" icon="warning">
-        The notifier accepts `password = "..."` directly. Avoid it
-        — config files are often committed to git or shared in
-        chat.
-
-        ```toml
-        [notifiers.email-ops]
-        type     = "smtp"
-        host     = "smtp.example.com"
-        from     = "runwisp@example.com"
-        to       = ["ops@example.com"]
-        username = "apikey"
-        password = "your-app-password"
-        ```
-    </TabItem>
-
-</Tabs>
-
-## 3. Route failures to it
-
-Identical to Slack and Telegram — the routing layer does not care
-which driver is on the other end:
-
-```toml
-# On one task:
-[tasks.backup-postgres]
-notify = ["email-ops"]
-# …
-
-# Or in a notification rule:
-[[route]]
-match     = { kinds = ["failed", "timeout", "crashed"] }
-notifiers = ["email-ops"]
-```
-
-Inline recipient overrides reuse one credential set across many
-destinations — `notify = ["email-ops:db-team@example.com"]`
-sends through the `email-ops` relay but to `db-team@example.com`
-instead of the parent notifier's `to` list:
-
-```toml
-[tasks.backup-postgres]
-notify = ["email-ops:db-team@example.com"]
-```
-
-You can fan out to multiple channels in the same array — the router
-sends to all of them, and an outage of one does not stop delivery
-on the others:
-
-```toml
-[tasks.critical-job]
-notify = ["email-ops", "slack-ops", "tg-oncall"]
-```
-
-## 4. Test it
-
-```bash
-runwisp run smoke-test       # something that exits non-zero
-```
-
-Emails typically arrive in a few seconds. If yours doesn't:
-
-- **Check the bell** for a `notify.delivery_failed` event with the
-  underlying SMTP error.
-- **Common causes:** wrong port for the chosen `tls_mode` (Gmail
-  needs `587` + STARTTLS; SES on `465` needs `tls_mode = "implicit"`),
-  expired app password, recipient address rejected by the relay
-  (`550 No such user`).
-- **Spam folder:** the first message from a new sender often lands
-  in spam. Whitelist the `from` address.
+If nothing failed, check the spam folder. The first mail from a new sender often
+lands there.
 
 ## What a message looks like
-
-The default template renders one message per event. A failure looks
-like:
 
 > **❌ backup-postgres failed**
 >
@@ -288,73 +166,27 @@ like:
 >
 > _from runwisp · bright-falcon_
 
-- The **captured-output block** appears on `run.failed` and
-  `run.timeout` only, capped at three lines / 300 bytes.
-- The **View run** link points at
-  `<[`external_url`](/configuration/daemon/#external_url)>/tasks/<task>/<id>`, taken from
-  [`external_url`](/configuration/daemon/#external_url).
-  When [`external_url`](/configuration/daemon/#external_url) is unset the link is omitted — no broken
-  anchors.
-- The **fingerprint footer** identifies the specific daemon that
-  emitted the event.
-- The **plain-text alternative** is derived from the HTML body, so
-  terminal MUAs (mutt, mail) see the same content without markup.
+- The output block appears for failures and timeouts, up to three lines or 300
+  bytes.
+- The **View full run** link appears only when
+  [`external_url`](/configuration/daemon/#external_url) is set.
+- The footer names the daemon that sent it.
+- The plain-text part is made from the HTML, so text-only mail readers see the
+  same content.
 
-`template_path` overrides the embedded template if you need a
-different layout. Copy
-[`smtp.tmpl.html`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/notify/render/defaults/smtp.tmpl.html)
-as your starting point. The helpers `statusEmoji`, `statusVerb`,
-`humanTime`, `humanDuration`, `runDuration`, `triggerPhrase`,
-`eventSentence`, `eventTrigger`, `linkLabel`, `runURL`, `taskURL`,
-`outputTail`, `htmlEsc`, and `fingerprint` are available inside it.
+## Changing the message
 
-## What the loader rejects
+Point `template_path` at your own Go template. Start from the built-in
+[`smtp.tmpl.html`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/notify/render/defaults/smtp.tmpl.html).
+It gets the whole event, the same helpers as the
+[Slack template](/notifications/providers/slack/#changing-the-message), and
+`htmlEsc`.
 
-- `username` set without `password` — or `password` set without
-  `username`. Either both or neither.
-- `tls_mode = "off"` combined with credentials — RunWisp refuses to
-  send PLAIN auth over cleartext.
-- A `from`, `reply_to`, `to`, `cc`, or `bcc` value that doesn't
-  parse as an RFC 5322 address.
-- A notifier id containing `:` (reserved for inline target overrides) or
-  equal to `"inapp"` (reserved).
+## What's rejected
 
----
-
-<CardGrid>
-    <LinkCard
-        title="Email (local MTA)"
-        href="/notifications/providers/sendmail/"
-        description="Skip the relay config and use the sendmail binary already on the box."
-    />
-    <LinkCard
-        title="Slack"
-        href="/notifications/providers/slack/"
-        description="Same shape, on a different transport."
-    />
-    <LinkCard
-        title="Discord"
-        href="/notifications/providers/discord/"
-        description="Color-coded embeds via a Discord channel webhook."
-    />
-    <LinkCard
-        title="Telegram"
-        href="/notifications/providers/telegram/"
-        description="Same shape, on a different transport."
-    />
-    <LinkCard
-        title="Webhook"
-        href="/notifications/providers/webhook/"
-        description="POST structured JSON to any HTTP endpoint."
-    />
-    <LinkCard
-        title="Notification rules"
-        href="/notifications/routes/"
-        description="One rule covering many tasks."
-    />
-    <LinkCard
-        title="Per-task notifications"
-        href="/notifications/per-task/"
-        description="per-task notify on one task."
-    />
-</CardGrid>
+- A missing `host`, `from`, or `to`.
+- `username` without `password`, or `password` without `username`.
+- `tls_mode = "off"` with a username and password: RunWisp won't send a
+  password without encryption.
+- A `from`, `reply_to`, `to`, `cc`, or `bcc` value that isn't a valid email
+  address.

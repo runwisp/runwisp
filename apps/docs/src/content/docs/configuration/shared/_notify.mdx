@@ -11,7 +11,8 @@ notify = ["slack-ops"]
 
 - Each entry is a notifier declared in `[notifiers.<id>]`, `"inapp"` (the bell),
   or `"<id>:<target>"` to reuse a notifier's credentials with another target
-  (`"slack:#deploys"`, `"tg:-1009998887"`).
+  (`"slack:#deploys"`, `"tg:-1009998887"`, `"mail:ops@example.com"`). See
+  [`notifiers`](/configuration/routes/#notifiers) for which types accept a target.
 - [`[notify] global_notifiers`](/configuration/notify/#global_notifiers)
   (default `["inapp"]`) is added to every list.
 - `notify = []` is the same as leaving it out.

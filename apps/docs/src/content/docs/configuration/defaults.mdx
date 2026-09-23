@@ -50,27 +50,27 @@ Two groups merge instead of replacing:
 Each key means exactly what it means on a task or service. Follow the link for
 type, default, and accepted values.
 
-| Key                | Applies to | Reference                                                                    |
-| ------------------ | ---------- | ---------------------------------------------------------------------------- |
-| `timeout`          | both       | [`timeout`](/configuration/tasks/#timeout)                                   |
-| `graceful_stop`    | both       | [`graceful_stop`](/configuration/tasks/#graceful_stop)                       |
-| `stop_signal`      | both       | [`stop_signal`](/configuration/tasks/#stop_signal)                           |
-| `shell`            | both       | [`shell`](/configuration/tasks/#shell)                                       |
-| `failures`         | both       | [`failures`](/configuration/tasks/#failures)                                 |
-| `log_max_size`     | both       | [`log_max_size`](/configuration/tasks/#log_max_size)                         |
-| `log_on_full`      | both       | [`log_on_full`](/configuration/tasks/#log_on_full)                           |
-| `keep_runs`        | both       | [`keep_runs`](/configuration/tasks/#keep_runs)                               |
-| `keep_for`         | both       | [`keep_for`](/configuration/tasks/#keep_for)                                 |
-| `env`              | both       | [`env`](/configuration/tasks/#env)                                           |
-| `env_file`         | both       | [`env_file`](/configuration/tasks/#env_file)                                 |
-| `secrets`          | both       | [`secrets`](/configuration/tasks/#secrets)                                   |
-| `secrets_file`     | both       | [`secrets_file`](/configuration/tasks/#secrets_file)                         |
-| `jitter`           | tasks      | [`jitter`](/configuration/tasks/#jitter)                                     |
-| `catch_up`         | tasks      | [`catch_up`](/configuration/tasks/#catch_up)                                 |
-| `healthy_after`    | services   | [`healthy_after`](/configuration/services/#healthy_after)                    |
-| `restart_attempts` | services   | [`restart_attempts`](/configuration/services/#restart_attempts)              |
-| `restart_delay`    | services   | [`restart_delay`](/configuration/services/#restart_delay)                    |
-| `restart_backoff`  | services   | [`restart_backoff`](/configuration/services/#restart_backoff)                |
+| Key                | Applies to | Reference                                                       |
+| ------------------ | ---------- | --------------------------------------------------------------- |
+| `timeout`          | both       | [`timeout`](/configuration/tasks/#timeout)                      |
+| `graceful_stop`    | both       | [`graceful_stop`](/configuration/tasks/#graceful_stop)          |
+| `stop_signal`      | both       | [`stop_signal`](/configuration/tasks/#stop_signal)              |
+| `shell`            | both       | [`shell`](/configuration/tasks/#shell)                          |
+| `failures`         | both       | [`failures`](/configuration/tasks/#failures)                    |
+| `log_max_size`     | both       | [`log_max_size`](/configuration/tasks/#log_max_size)            |
+| `log_on_full`      | both       | [`log_on_full`](/configuration/tasks/#log_on_full)              |
+| `keep_runs`        | both       | [`keep_runs`](/configuration/tasks/#keep_runs)                  |
+| `keep_for`         | both       | [`keep_for`](/configuration/tasks/#keep_for)                    |
+| `env`              | both       | [`env`](/configuration/tasks/#env)                              |
+| `env_file`         | both       | [`env_file`](/configuration/tasks/#env_file)                    |
+| `secrets`          | both       | [`secrets`](/configuration/tasks/#secrets)                      |
+| `secrets_file`     | both       | [`secrets_file`](/configuration/tasks/#secrets_file)            |
+| `jitter`           | tasks      | [`jitter`](/configuration/tasks/#jitter)                        |
+| `catch_up`         | tasks      | [`catch_up`](/configuration/tasks/#catch_up)                    |
+| `healthy_after`    | services   | [`healthy_after`](/configuration/services/#healthy_after)       |
+| `restart_attempts` | services   | [`restart_attempts`](/configuration/services/#restart_attempts) |
+| `restart_delay`    | services   | [`restart_delay`](/configuration/services/#restart_delay)       |
+| `restart_backoff`  | services   | [`restart_backoff`](/configuration/services/#restart_backoff)   |
 
 A tasks-only key in `[defaults]` is ignored by services, and the other way round.
 

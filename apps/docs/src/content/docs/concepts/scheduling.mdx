@@ -1,35 +1,13 @@
 ---
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
-title: How scheduling works
-description: Cron expressions, timezones, missed-tick catchup, and the determinism guarantees of the RunWisp scheduler.
+title: Scheduling
+description: Cron syntax, timezones and daylight saving time, catching up after downtime, missed-run alerts, jitter, and what happens to runs after a crash.
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
-
-The scheduler's whole job is to be boring and predictable. It reads
-plain cron expressions, fires the matching tasks when their time comes,
-and writes a row for every firing. No dependency graph, no leader
-election — one daemon owns its tasks and that's it.
-
-:::note[Looking for keys and defaults?]
-This page explains _how the scheduler behaves_. Every scheduling key and its
-default lives in [`[tasks.*]` → Scheduling](/configuration/tasks/#scheduling).
-:::
-
-:::note[Cron-sourced tasks]
-Everything on this page applies to a task read live from a real crontab
-through [`include_cron`](/configuration/daemon/#include_cron) too, once RunWisp
-owns its schedule — with one difference: those tasks keep cron's firing
-semantics, so a missed tick is recorded but never re-fired (`catch_up = 0`).
-
-While a system cron daemon still owns the file, though, the task isn't scheduled
-at all, and RunWisp isn't tracking its ticks either — so nothing is recorded
-during that window, not even as missed. See
-[Held jobs](/coming-from/cron/).
-:::
-
-## The cron field
+Give a task a [`cron`](/configuration/tasks/#cron) expression and RunWisp starts
+it on that schedule. Every scheduled start becomes a run in the history, with
+its exit code and output.
 
 ```toml
 [tasks.heartbeat]
@@ -37,297 +15,150 @@ cron = "*/5 * * * *"
 run  = "/usr/local/bin/heartbeat"
 ```
 
-[`cron`](/configuration/tasks/#cron) takes the usual 5 fields — **minute, hour, day-of-month, month,
-day-of-week** — and the familiar shorthand aliases work too:
+A task without `cron` runs only when you start it. Scheduled runs use each
+[parameter's](/concepts/parameters/) default value.
 
-| Expression              | Meaning                          |
-| ----------------------- | -------------------------------- |
-| `* * * * *`             | every minute                     |
-| `*/5 * * * *`           | every 5 minutes                  |
-| `0 * * * *`             | top of every hour                |
-| `0 2 * * *`             | every day at 02:00               |
-| `30 9 * * 1-5`          | weekdays at 09:30                |
-| `0 0 1 * *`             | first of every month at midnight |
-| `@hourly`               | top of every hour                |
-| `@daily` / `@midnight`  | every day at 00:00               |
-| `@weekly`               | Sundays at 00:00                 |
-| `@monthly`              | 1st at 00:00                     |
-| `@yearly` / `@annually` | January 1st at 00:00             |
-| `@every 1h30m`          | every 90 minutes                 |
+## Cron syntax
 
-Need finer than a minute? Prepend a **seconds** field for a 6-field spec.
-Your existing 5-field expressions are unchanged — they just fire on the `:00`
-second, exactly as before.
+The usual 5 fields: minute, hour, day of month, month, day of week.
 
-| Expression       | Meaning                         |
-| ---------------- | ------------------------------- |
-| `*/30 * * * * *` | every 30 seconds (`:00`, `:30`) |
-| `15 * * * * *`   | once a minute, at the `:15`     |
-| `0 */5 * * * *`  | every 5 minutes, on the `:00`   |
+| Expression              | Runs                                  |
+| ----------------------- | ------------------------------------- |
+| `* * * * *`             | every minute                          |
+| `*/5 * * * *`           | every 5 minutes                       |
+| `0 * * * *`             | at the top of every hour              |
+| `0 2 * * *`             | every day at 02:00                    |
+| `30 9 * * 1-5`          | at 09:30, Monday to Friday            |
+| `0 0 1 * *`             | at midnight on the 1st of every month |
+| `@hourly`               | at the top of every hour              |
+| `@daily` / `@midnight`  | every day at 00:00                    |
+| `@weekly`               | Sundays at 00:00                      |
+| `@monthly`              | the 1st at 00:00                      |
+| `@yearly` / `@annually` | January 1st at 00:00                  |
+| `@every 1h30m`          | every 90 minutes                      |
 
-`@every 30s` is still around for a plain fixed interval that doesn't care about
-where it lands on the wall clock.
+Fields take lists (`1,15`), ranges (`1-5`), and steps (`*/10`). In the day of
+week field, both `0` and `7` mean Sunday. `@every` is a fixed interval that
+doesn't line up with the clock.
 
-## Timezone
+For more than once a minute, add a seconds field in front. Plain 5-field
+expressions run at second `:00`.
 
-Cron expressions get evaluated in whatever zone [`timezone`](/configuration/tasks/#timezone)
-says. Leave it unset and the daemon just uses the host's system
-timezone.
+| Expression       | Runs                             |
+| ---------------- | -------------------------------- |
+| `*/30 * * * * *` | every 30 seconds (`:00`, `:30`)  |
+| `15 * * * * *`   | once a minute, at second `:15`   |
+| `0 */5 * * * *`  | every 5 minutes, at second `:00` |
 
-You never have to guess which zone is actually in play: the resolved
-zone — and whether it came from your config or the system — is printed
-in the [TUI](/getting-started/tui-tour/) startup banner and shown in the [Web UI](/getting-started/web-ui-tour/) header.
+`runwisp validate` checks every expression without starting anything.
+
+## Running in another timezone
+
+Cron expressions use the host's timezone unless you set one. Set it for the
+whole daemon, or per task:
 
 ```toml
-# Daemon-wide default for every task without its own timezone.
 [daemon]
-timezone = "Europe/Bratislava"
+timezone = "Europe/Bratislava"   # every task without its own timezone
 
-# Per-task override — any standard IANA timezone name works.
 [tasks.nightly-backup]
 cron     = "30 2 * * *"
-timezone = "Atlantic/Faroe"
+timezone = "Atlantic/Faroe"      # this task only
 ```
 
-| Setting                   | Default         | What it controls                                                                      |
-| ------------------------- | --------------- | ------------------------------------------------------------------------------------- |
-| `[daemon] timezone`       | _(system zone)_ | Fallback for every task without its own [`timezone`](/configuration/tasks/#timezone). |
-| `[tasks.<name>] timezone` | _(inherits)_    | Timezone for this task's cron evaluation. Overrides the daemon-wide default.          |
+See [`[daemon] timezone`](/configuration/daemon/#timezone) and
+[`timezone`](/configuration/tasks/#timezone). An unknown zone name (a typo, or a
+container image without `tzdata`) stops the config from loading; RunWisp never
+falls back to UTC silently. The TUI start screen and the Web UI connection
+indicator show which zone is in use.
 
-If the daemon doesn't recognize the name you gave it — a typo, or a host
-with no IANA timezone data, like a stripped-down container image
-missing `tzdata` — config load fails and tells you exactly which scope
-is at fault. It never quietly falls back to UTC and leaves you
-wondering.
+### Daylight saving time
 
-### DST behaviour
+A schedule runs once per wall-clock time, even across a clock change:
 
-Across DST transitions, RunWisp makes sure a schedule fires once and
-only once:
+- **Clocks go back:** a time like 02:30 happens twice, but the task runs once.
+  The second one is recorded in the history as `dst_skipped`.
+- **Clocks go forward:** a time that doesn't exist that day (02:00 when the
+  clock jumps from 01:59 to 03:00) runs once at 03:00, instead of being skipped
+  until the next day.
 
-- **Fall-back** (clocks go back). The wall-clock instant that happens
-  twice — say 02:30 — only fires once. The scheduler dedupes on the
-  full wall-clock second (year, month, day, hour, minute, second), and
-  the suppressed firing still gets a row in history.
-- **Spring-forward** (clocks jump ahead). If a cron like `0 2 * * *`
-  lands on a minute that simply doesn't exist that day — the clock jumps
-  straight from 01:59 to 03:00 — it fires once at the gap end (here,
-  03:00), the next valid instant, instead of being skipped to the next
-  day.
+## Catching up after downtime
 
-UTC has no DST, so none of this touches it.
-
-## What "fired" means
-
-A cron tick produces a **run**, not just some side effect. Every firing
-gives you:
-
-- A row in SQLite with a fresh ULID.
-- `triggered_by = "cron"`.
-- A captured stdout/stderr stream on disk.
-- A status that walks `pending → running → ended`, landing on one of
-  `succeeded`, `failed`, `stopped`, [`timeout`](/configuration/tasks/#timeout), `crashed`, `skipped`,
-  `missed`, `log_overflow`, `queue_full`, `dst_skipped`,
-  `daemon_stopped`, or `start_failed`.
-
-Whether the run _starts_ right away is up to the task's
-[concurrency policy](/concepts/concurrency/). Under the default
-`on_overlap = "queue"`, a tick that fires while the last run is still
-going simply waits in line. Under `on_overlap = "skip"`, it's recorded
-as a skipped run and the schedule moves on. Either way the tick
-**always** lands in history — that's the rule around here: nothing
-fires, and nothing fails, without leaving a trace.
-
-Scheduled runs use the declared [default](/configuration/tasks/#parameters)
-for any per-execution parameter — there's no one to fill in a form on a
-cron tick, so you set `default` on each `param` to tell the scheduler
-what to use.
-
-## Missed ticks: catchup
-
-While the daemon was down — a reboot, a deploy, a hard crash — some
-scheduled firings just didn't happen. [`catch_up`](/configuration/tasks/#catch_up) is a number: **how many
-of those missed ticks to re-fire** the next time the daemon starts up.
+When the daemon was down (a reboot, a deploy, a crash), scheduled runs didn't
+happen. [`catch_up`](/configuration/tasks/#catch_up) decides how many of them
+run when the daemon starts again:
 
 ```toml
 [tasks.metrics-rollup]
 cron     = "*/15 * * * *"
-catch_up = 1      # default
+catch_up = 1      # default: run the most recent missed one
 ```
 
-| Value   | Behaviour on startup                                                                                                                        |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `1`     | If any ticks were missed, fire **one** catch-up run. Default. Right for jobs where running twice is harmless.                               |
-| `N > 1` | Fire **one run per missed tick**, up to `N`. Right when each tick processes a discrete slice; requires `on_overlap = "queue"` (see below).  |
-| `0`     | Don't **re-run** any missed ticks. Right for monitors and probes that just want fresh data — the gap is still recorded and alerted (below). |
+Use `0` for probes that only care about fresh data, and a higher number for
+jobs where each run handles its own slice of time. RunWisp counts missed runs
+from the task's last run, or from when it first saw the task, so a new install
+doesn't replay old history.
 
-"Missed" is measured from the timestamp of the task's last recorded
-run. On the very first boot, that anchor is set the moment RunWisp first
-sees the task — so a fresh install won't suddenly queue up a mountain of
-"catch-up" runs for ticks from before the daemon ever existed.
+If more runs were missed than `catch_up` allows, the oldest are dropped and the
+daemon logs a warning with the task name and how many were dropped.
 
-### Capping the backfill
+### Missed-run alerts
 
-[`catch_up`](/configuration/tasks/#catch_up) is itself the cap. Picture a `* * * * *` task with a daemon
-that was down for a day — that's a huge backlog waiting to fire at
-startup. Setting `catch_up = 200` fires at most 200 of the missed ticks,
-so one long outage can't bury the scheduler.
+A missed run counts as a failure by default. On the restart that finds the gap,
+RunWisp records one run with `end_reason = "missed"` and sends a failure alert
+naming the task and how many runs were missed. It goes to the bell and to every
+channel that gets the task's failures. This happens whatever `catch_up` is set
+to, and the alert always reports the full count.
 
-```toml
-[tasks.metrics-rollup]
-cron     = "*/15 * * * *"
-catch_up = 200    # replay up to 200 missed ticks on startup
-```
-
-Firing more than one catch-up run back-to-back requires
-`on_overlap = "queue"` — anything higher than `1` is rejected otherwise,
-because `skip`/`kill` would only let the first replay through. The value
-must be between `0` and `10000`.
-
-And when the cap does kick in, the daemon logs a warning naming the
-task, how many ticks were `missed`, the cap, and how many got dropped.
-The silenced ticks never just vanish (Prime Directive #1).
-
-### Alerting on missed runs
-
-A run that fails is loud. A run that _never happened_ used to be silent —
-and that's exactly the kind of thing the daemon being down hides from
-you. So missed ticks get the same treatment as a failure.
-
-On the restart that detects a gap, RunWisp records **one** browsable run
-with `end_reason = "missed"` and raises a **failure-level** alert (kind
-`run.missed`) naming the task and how many scheduled runs were missed.
-It reaches the bell — and any channel that already gets your failures —
-with no extra configuration. Detection is independent of [`catch_up`](/configuration/tasks/#catch_up):
-any value — `0`, `1`, or higher — detects, records, and alerts. The value
-only decides whether anything **re-runs**. Even when [`catch_up`](/configuration/tasks/#catch_up) caps the
-backfill, the alert reports the full detected count, not the smaller
-number that re-ran.
-
-Some tasks miss ticks by design — a laptop that's only on during the
-day, a task you only ever trigger by hand. For those, drop `missed` from
-the task's [`failures`](/configuration/tasks/#failures)
-list so a miss no longer counts as a failure (the run row is still
-recorded — only the classification and its alert change):
+For a task that is expected to miss runs (a laptop that's off at night), take
+`missed` out of its [`failures`](/configuration/tasks/#failures):
 
 ```toml
-[tasks.daytime-only]
+[tasks.daytime-sync]
 cron     = "*/30 9-17 * * 1-5"
-failures = ["failed", "timeout", "crashed"]   # expected to be down overnight; don't page on misses
-
-# Or quiet every task at once:
-[defaults]
-failures = ["failed", "timeout", "crashed", "log_overflow", "start_failed"]
+failures = ["-missed"]   # still recorded, but not a failure and no alert
 ```
 
-[`failures`](/configuration/tasks/#failures) defaults to
-`["failed", "timeout", "crashed", "log_overflow", "start_failed", "missed"]`
-and inherits from `[defaults]` like the other per-task keys. See
-[Per-task notifications](/notifications/per-task/#missed-run-alerts) for
-how it fits with [`notify`](/configuration/tasks/#notify).
+Put the same line in [`[defaults]`](/configuration/defaults/) to do it for every
+task.
 
-## On startup: unfinished runs are marked crashed
+## Spreading out start times
 
-On a clean shutdown, the daemon waits for its running tasks to either
-finish or hit their timeout. On a hard crash — power loss, force kill —
-it doesn't get the chance.
-
-So the next time it starts, **any run still on the books as running gets
-marked `crashed` with exit code `-2`**. Those runs are **not** picked
-back up — resuming would mean knowing exactly where the process left
-off, and the daemon doesn't. The normal scheduling and catchup logic
-above may then spin up a fresh run.
-
-The upshot: every row in your history ends with a real result. You'll
-never find one stuck on "running" just because the daemon vanished out
-from under it.
-
-## Predictable timing
-
-Same TOML, same clock, same firings — RunWisp's scheduling is fully
-deterministic. Two tasks both set to `cron = "0 2 * * *"` fire at the
-exact same instant. That's fine until thirty of them do it at once and
-the machine buckles under the stampede.
-
-That's what [`jitter`](/configuration/tasks/#jitter) is for. Give a task a window and RunWisp stops the
-stampede — without making anything wait that doesn't have to:
+When many tasks share a start time (say, `0 3 * * *`), they all start at the
+same second. [`jitter`](/configuration/tasks/#jitter) lets RunWisp spread them
+out:
 
 ```toml
 [tasks.backup-a]
-cron = "0 2 * * *"
+cron   = "0 3 * * *"
 jitter = "30m"
 
 [tasks.backup-b]
-cron = "0 2 * * *"
+cron   = "0 3 * * *"
 jitter = "30m"
 ```
 
-RunWisp runs **one jittered task at a time** across the whole daemon. When
-the box is idle, a task starts right at its tick — no wasted delay. When
-several land together, like these two at 02:00, they don't both jump:
-they take turns as the gate frees, and a bigger pile-up spreads its starts
-across the window instead of bursting. The window is the _most_ a start
-can slip, not where it lands — whoever's first in line still goes at 02:00.
+RunWisp starts jittered tasks one at a time. If nothing else jittered is
+running, a task starts right on time. If several are due together, they take
+turns, and none starts later than its `jitter`. Each task's latest start time is
+fixed when the daemon starts, so the same config always gives the same order.
+The run history shows both the scheduled time and the real start.
 
-The firing schedule stays deterministic — the same ticks fire on the same
-clock, and each task's slot within its window is fixed at startup. What's
-load-dependent is when a run actually _starts_, exactly like a queued run
-under the [concurrency policy](/concepts/concurrency/): the daemon shows
-you the cron tick as the next run, and the history records when it really
-fired. Just a kinder load curve, no hidden surprises.
+## After a crash
 
-See the [`jitter` reference](/configuration/tasks/#jitter) for the full
-picture, including the one-line `[defaults] jitter` that spreads your
-whole task set at once.
+On a normal shutdown, every run gets a final status. After a hard crash (power
+loss, `kill -9`) the daemon can't do that, so on the next start every run still
+marked as running is ended as `crashed` with exit code `-2`. These runs are not resumed.
+Catch-up may then start a fresh run. No run is ever left stuck on "running".
 
-## Reload semantics
+## Crontab jobs
 
-The scheduler reads `runwisp.toml` at startup and again on
-[`runwisp reload`](/operations/reload/) — never on its own, and there is no file
-watcher. What that means for schedules specifically:
+Jobs read from a crontab with
+[`include_cron`](/configuration/daemon/#include_cron) follow cron's rules: a
+missed job is recorded but never run later.
 
-- A task that disappears from the file has its schedule dropped. Its run history
-  stays put.
-- A task that appears gets its schedule added, but **no catch-up** — it didn't
-  exist in the previous config, so there are no missed ticks to make up. That
-  holds whether it arrived via reload or restart.
+## Changing the schedule
 
-Everything else about reload — the validate-first guarantee, which settings need
-a full restart, what happens to in-flight runs — is on the
-[Reload](/operations/reload/) page.
-
-## Intentional scope
-
-A couple of things the scheduler deliberately won't do:
-
-- **No clustering.** One daemon owns its tasks. Point two daemons at the
-  same TOML and they'll both fire — that's a setup mistake, not a
-  feature.
-- **No "every Nth tick" logic.** Cron is the whole surface. If you want
-  every other Tuesday, bake it into the cron (`30 9 */2 * 2`) or filter
-  for it in your script.
-
----
-
-<CardGrid>
-    <LinkCard
-        title="Concurrency"
-        href="/concepts/concurrency/"
-        description="What on_overlap does when a tick fires into a still-running run."
-    />
-    <LinkCard
-        title="Retries"
-        href="/concepts/retries/"
-        description="What happens when a run fails or hangs."
-    />
-    <LinkCard
-        title="[tasks.*] ref"
-        href="/configuration/tasks/"
-        description="Every cron-related field."
-    />
-    <LinkCard
-        title="Tasks vs Services"
-        href="/concepts/tasks-vs-services/"
-        description="Picking the right kind."
-    />
-</CardGrid>
+RunWisp reads `runwisp.toml` at startup and on `runwisp reload`, never on its
+own. A task added by a reload gets no catch-up. See
+[Reload & restart](/operations/reload/).
