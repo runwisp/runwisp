@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-23
+
 ### Added
 
 - **`runwisp run` now accepts `--param key=value` (repeatable)** to supply task parameter values from the CLI, matching what the REST API, Web UI, and TUI already support.
@@ -760,7 +762,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.0.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.0.1...main
+[1.0.1]: https://github.com/runwisp/runwisp/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/runwisp/runwisp/compare/v0.16.4...v1.0.0
 [0.16.4]: https://github.com/runwisp/runwisp/compare/v0.16.3...v0.16.4
 [0.16.3]: https://github.com/runwisp/runwisp/compare/v0.16.2...v0.16.3
