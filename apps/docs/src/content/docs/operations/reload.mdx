@@ -131,7 +131,7 @@ just makes the handover immediate.
 
 A couple of boot-only behaviors deliberately **don't** fire on reload:
 
-- A newly added task does **not** run its `run_on_start` command, and it is
+- A newly added task does **not** run its [`run_on_start`](/configuration/tasks/#run_on_start) command, and it is
   **not** caught up for ticks it "missed" before it existed. It simply starts
   scheduling from now.
 - An **in-flight run keeps running under the definition it started with**.
@@ -152,7 +152,7 @@ A couple of boot-only behaviors deliberately **don't** fire on reload:
 
     `runwisp restart web` starts it (see [per-service control](/reference/cli/#apply-config-edits)).
 
-If you want the full boot path — `run_on_start`, missed-run catch-up, a fresh
+If you want the full boot path — [`run_on_start`](/configuration/tasks/#run_on_start), missed-run catch-up, a fresh
 read of the restart-only settings — use `runwisp restart` instead.
 
 ---

@@ -1,0 +1,10 @@
+**type**: `boolean` **default**: `true`
+
+Whether operators can start it by hand. Set `false` to lock it to its
+schedule (or, on a service, to supervisor-only restarts): the REST API
+returns 403, the Web UI hides its Run button, the station trigger is refused.
+
+```toml
+[tasks.backup-db]
+manual_trigger = false
+```

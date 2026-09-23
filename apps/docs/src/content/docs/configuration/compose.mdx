@@ -2,40 +2,28 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: "[compose.*]"
-description: Import services from a docker-compose.yml so every service becomes an observable RunWisp service — logs, restart policies, notifications, trigger/stop.
+description: Import services from a docker-compose.yml so every service becomes a RunWisp service with logs, restarts, notifications, and start/stop.
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-`[compose.<alias>]` blocks point RunWisp at an existing
-`docker-compose.yml`. Every service in the compose file becomes an
-observable RunWisp [service](/concepts/tasks-vs-services/):
-per-container logs are streamed and indexed,
-restart policies are enforced, failures route through your
-[notification rules](/notifications/model/), and you can trigger or
-stop containers from the Web UI and
-REST API — without rewriting anything.
+A `[compose.<alias>]` block imports the services of an existing
+`docker-compose.yml`. Each compose service becomes a RunWisp
+[service](/concepts/tasks-vs-services/) with captured logs, restarts,
+notifications, and start/stop from the Web UI and API. The containers still run
+under Docker. For a walkthrough, see
+[Migrating from docker-compose](/coming-from/docker-compose/).
 
-The containers themselves keep running under Docker exactly as before;
-RunWisp is the supervisor and observability layer on top. For the
-worked walkthrough, see
-[Migrating from docker-compose](/coming-from/docker-compose/) —
-this page is the key-by-key reference.
+## Full surface
 
-## Minimum example
-
-Drop one line next to your `docker-compose.yml`:
+The smallest block imports every service from the compose file next to
+`runwisp.toml`:
 
 ```toml
 [compose.myapp]
 ```
 
-That's it. RunWisp searches the directory of `runwisp.toml` for
-`compose.yaml`, `compose.yml`, `docker-compose.yaml`,
-`docker-compose.yml` in that order — the same fallback `docker compose`
-itself uses — and imports every service in the first file it finds.
-
-## Full surface
+All block keys:
 
 ```toml
 [compose.myapp]
@@ -52,137 +40,264 @@ pull         = "missing"                 # "missing" (default) | "always" | "nev
 name_format  = "{alias}.{service}"       # RunWisp task naming; default shown
 ```
 
+### file
+
+**type**: `string` **default**: auto-discovered next to `runwisp.toml`
+
+Path to the compose file. When unset, RunWisp looks in the `runwisp.toml`
+directory for `compose.yaml`, `compose.yml`, `docker-compose.yaml`, then
+`docker-compose.yml` (the same order `docker compose` uses).
+
+```toml
+[compose.myapp]
+file = "./docker-compose.yml"
+```
+
+### services
+
+**type**: `string[]` **default**: all services
+
+Which compose services to import.
+
+- Bare names (or `"+name"`) keep only the listed services.
+- `"-name"` drops the listed services and keeps the rest.
+- You can't mix the two styles in one list.
+- A name that doesn't exist (for example, one hidden behind an inactive
+  [profile](#profiles)) is an error.
+
+```toml
+[compose.myapp]
+services = ["api", "worker"]
+```
+
+### import
+
+**type**: `enum` **default**: `"services"`
+
+How the compose file maps to RunWisp. See [Import strategies](#import-strategies).
+
+```toml
+[compose.myapp]
+import = "stack"
+```
+
+Possible values:
+
+- `services`: one RunWisp service per compose service
+- `stack`: one RunWisp service that runs the whole project
+
+### group
+
+**type**: `string` **default**: the alias
+
+The Web UI and TUI sidebar group for every imported service.
+
+```toml
+[compose.myapp]
+group = "myapp"
+```
+
+### project_name
+
+**type**: `string` **default**: the alias
+
+The compose project name (`docker compose -p`).
+
+```toml
+[compose.myapp]
+project_name = "myapp"
+```
+
+### profiles
+
+**type**: `string[]`
+
+Compose profiles to activate (`docker compose --profile`). A service with a
+`profiles:` tag in the compose file doesn't exist for RunWisp until you activate
+its profile here.
+
+The profiles are applied first, then the [`services`](#services) filter picks
+from the result:
+
+```toml
+[compose.myapp]
+profiles = ["workers"]  # makes the profiled services visible
+services = ["worker"]   # then keep only this one
+```
+
+- Keeping a profiled service without activating its profile is an error
+  (`runwisp validate` reports an unknown service).
+- Activating a profile with no `services` filter imports every visible service,
+  profiled ones included.
+
+To see which services a profile exposes, ask Compose:
+
+```bash
+docker compose --profile workers config --services
+```
+
+### env_file
+
+**type**: `string[]`
+
+Env files for the compose command itself (`docker compose --env-file`).
+
+```toml
+[compose.myapp]
+env_file = ["./.env.prod"]
+```
+
+### working_dir
+
+**type**: `string` **default**: the directory of [`file`](#file)
+
+The directory the `docker compose` command runs in. It doesn't change the
+container's working directory.
+
+```toml
+[compose.myapp]
+working_dir = "/opt/myapp"
+```
+
+### with_deps
+
+**type**: `boolean` **default**: `false`
+
+Whether starting a service also starts its compose `depends_on` services. With
+`false`, RunWisp passes `--no-deps`.
+
+```toml
+[compose.myapp]
+with_deps = true
+```
+
+### pull
+
+**type**: `enum` **default**: `"missing"`
+
+When to pull the image before a start.
+
+```toml
+[compose.myapp]
+pull = "always"
+```
+
+Possible values: `missing`, `always`, `never`.
+
+### name_format
+
+**type**: `string` **default**: `"{alias}.{service}"`
+
+The RunWisp name of each imported service. With `import = "services"` it must
+contain `{service}`, otherwise all names would be the same.
+
+```toml
+[compose.myapp]
+name_format = "{alias}-{service}"
+```
+
 ## Block defaults
 
-Got a stack of near-identical workers that all want the same policy? Instead of
-repeating a sub-table per service, set them once in `[compose.<alias>.defaults]`.
-Every imported service inherits those keys, and any per-service sub-table still
-wins:
+`[compose.<alias>.defaults]` sets override keys once for every imported service.
+A per-service sub-table still wins.
 
 ```toml
 [compose.stack]
 services = ["worker-a", "worker-b", "worker-c"]
 
 [compose.stack.defaults]
-restart          = "always"   # applies to all three workers
+restart          = "always"
 restart_attempts = 5
 
 [compose.stack.worker-a]
-restart = "on_failure"     # worker-a opts out; the other two stay "always"
+restart = "on_failure"  # only worker-a changes
 ```
 
-This is worth knowing about because the compose-import default is
-`restart = "on_failure"` — a worker that exits **0** (batch-then-quit,
-memory-guard restart, idle timeout) counts as "done" and won't be relaunched.
-If you're migrating workers that carried `restart: unless-stopped` under plain
-Compose, a one-line `[compose.<alias>.defaults] restart = "always"` restores that
-behavior for the whole block.
+- Accepts the same keys as a [per-service override](#per-service-overrides).
+- Order: imported default, then `defaults`, then the per-service sub-table.
+- A `notify` list here adds routes to every service, on top of each service's own.
+- A compose service named `defaults` is rejected. Rename it.
+- Not allowed with `import = "stack"`. Set keys on the block instead.
 
-`defaults` accepts the same keys as a per-service override (below). Its
-`notify` list adds routes to _every_ service, on
-top of any a service declares for itself. Because `defaults` is a reserved
-sub-table name, a compose service literally named `defaults` is rejected with a
-rename hint. Block defaults aren't available in `import = "stack"` (there's only one
-task there — set its knobs on the block).
+The imported `restart` default is `on_failure`, so a worker that exits with code
+`0` is not started again. For workers that used `restart: unless-stopped` in
+Compose, set `restart = "always"` here.
+
+Possible [`restart`](/configuration/services/#restart) values:
+
+- `never`: don't restart; one exit is final
+- `on_failure`: restart only after an exit that [`failures`](/configuration/tasks/#failures) counts as a failure
+- `always`: restart after any exit, like `docker compose up`
 
 ## Per-service overrides
 
-Per-service sub-tables apply RunWisp knobs to a single compose service.
-The sub-table key has to match a compose service name — and one that
-survived your `services` filter:
+A `[compose.<alias>.<service>]` sub-table sets RunWisp keys for one compose
+service. The name must be a compose service that passed the
+[`services`](#services) filter.
 
 ```toml
 [compose.myapp]
 file = "./docker-compose.yml"
 
 [compose.myapp.api]
-restart           = "always"
-notify = ["slack-prod"]
-graceful_stop     = "30s"
-keep_runs         = 100
-env               = { LOG_LEVEL = "info" }  # layered on top of compose env at runtime
+restart       = "always"
+notify        = ["slack-prod"]
+graceful_stop = "30s"
+keep_runs     = 100
+env           = { LOG_LEVEL = "info" }  # added on top of the compose env
 
 [compose.myapp.worker]
 restart   = "on_failure"
-instances = 3                              # three identical worker instances
+instances = 3
 ```
 
-Override sub-tables accept any subset of the
-[`[services.*]`](/configuration/services/) keys:
-`restart`, `env`, `env_file`, `secrets`, `secrets_file`,
-`notify`, `graceful_stop`, `stop_signal`,
-`failures`, `keep_runs`, `keep_for`, `instances`, `timeout`,
-`description`, `log_max_size`, `log_on_full`,
-`restart_delay`, `restart_backoff`, `healthy_after`, `restart_attempts`,
-`priority`, `autostart`.
+Accepted keys:
 
-The host-process knobs — `shell`, `umask`, `env_base`, and `user` — are
-deliberately **not** accepted here: they configure a host shell run, while a
-compose service runs inside a container the runtime owns. (`env_base` in
-particular has nothing to choose between — a container never inherits the
-daemon's environment either way.) (`working_dir` comes from
-the `[compose.<alias>]` block, not the per-service sub-table.)
+- Identity: [`group`](/configuration/tasks/#group),
+  [`description`](/configuration/tasks/#description),
+  [`manual_trigger`](/configuration/tasks/#manual_trigger)
+- Supervision: [`restart`](/configuration/services/#restart),
+  [`restart_delay`](/configuration/services/#restart_delay),
+  [`restart_backoff`](/configuration/services/#restart_backoff),
+  [`healthy_after`](/configuration/services/#healthy_after),
+  [`restart_attempts`](/configuration/services/#restart_attempts),
+  [`priority`](/configuration/services/#priority),
+  [`autostart`](/configuration/services/#autostart),
+  [`instances`](#instances)
+- Stopping: [`timeout`](/configuration/tasks/#timeout),
+  [`graceful_stop`](/configuration/tasks/#graceful_stop),
+  [`stop_signal`](/configuration/tasks/#stop_signal)
+- Failures and notifications: [`failures`](/configuration/tasks/#failures),
+  [`notify`](/configuration/tasks/#notify)
+- Logs and retention: [`log_max_size`](/configuration/tasks/#log_max_size),
+  [`log_on_full`](/configuration/tasks/#log_on_full),
+  [`keep_runs`](/configuration/tasks/#keep_runs),
+  [`keep_for`](/configuration/tasks/#keep_for)
+- Environment: [`env`](/configuration/tasks/#env),
+  [`env_file`](/configuration/tasks/#env_file),
+  [`secrets`](/configuration/tasks/#secrets),
+  [`secrets_file`](/configuration/tasks/#secrets_file)
 
-One sharp edge: a compose service that happens to share a name with one
-of the scalar keys above (`file`, `services`, `import`, `group`,
-`project_name`, `profiles`, `env_file`, `working_dir`, `with_deps`,
-`pull`, `name_format`) can't get a sub-table — the loader rejects the
-config with an error asking you to rename the compose service.
+Rejected:
 
-## Profiles
+- `run`, `compose_file`, `compose_service`: the block decides what runs.
+- `on_overlap`: a task-only key.
+- [`shell`](/configuration/tasks/#shell), [`umask`](/configuration/tasks/#umask),
+  [`env_base`](/configuration/tasks/#env_base), [`user`](/configuration/tasks/#user):
+  these configure a host process, and a compose service runs in a container.
+- `working_dir`: set it on the block.
 
-If your `docker-compose.yml` puts services behind
-[Compose profiles](https://docs.docker.com/compose/profiles/), Compose
-hides them by default — a service tagged `profiles: ["workers"]` simply
-doesn't exist as far as `docker compose` is concerned until that profile
-is turned on. RunWisp is no different: it only sees the services Compose
-would, so a profile-gated service is invisible until you activate its
-profile.
-
-You activate profiles with the `profiles` key, and that has to happen
-**before** the `services` filter makes sense. Think of it as two steps:
-
-1. `profiles = [...]` decides which services exist at all.
-2. `services` then picks from that activated set.
-
-So this imports the `worker` service that lives behind the `workers`
-profile, and nothing else:
-
-```toml
-[compose.myapp]
-file     = "./docker-compose.yml"
-profiles = ["workers"]      # turn the profile on first…
-services = ["worker"]       # …then select from what it exposes
-```
-
-Two failure modes worth naming, because both look like "RunWisp ignored
-my service":
-
-- **Keeping a profiled service without activating its profile.**
-  The service isn't in the activated set, so the `services` reference
-  doesn't resolve — `runwisp validate` flags it as an unknown service.
-  Add the profile to `profiles`.
-- **Activating a profile but forgetting it widens the default set.**
-  With `profiles` set and no `services` filter, RunWisp imports _every_
-  now-visible service, profiled ones included. Use `services` to narrow
-  it back down if you only wanted a subset.
-
-A quick way to see what a given `profiles` value exposes before wiring
-it into RunWisp is to ask Compose directly:
-
-```bash
-docker compose --profile workers config --services
-```
-
-That prints exactly the service set RunWisp will choose from.
+A compose service with the same name as a block key (`file`, `services`,
+`import`, `group`, `project_name`, `profiles`, `env_file`, `working_dir`,
+`with_deps`, `pull`, `name_format`) can't have a sub-table. The config is
+rejected; rename the compose service.
 
 ## Import strategies
 
 ### `import = "services"` (default)
 
-Each compose service becomes its own RunWisp **service**, named per
-`name_format` (default `<alias>.<svc>`). Here's the exact command each
-instance runs under the hood:
+Each compose service becomes one RunWisp service, named by
+[`name_format`](#name_format). Each instance runs:
 
 ```
 docker compose -f <file> -p <project> [--profile ...] [--env-file ...]
@@ -194,65 +309,60 @@ docker compose -f <file> -p <project> [--profile ...] [--env-file ...]
         <svc>
 ```
 
-Why `run --rm` and not `up`: it keeps RunWisp's "one process per
-instance slot" supervisor invariant uniform with every other backend.
-`--service-ports` and `--use-aliases` make the container behave exactly
-like its compose-declared self; `--rm` cleans the container on exit so
-every restart starts fresh.
+`--service-ports` and `--use-aliases` give the container the same ports and
+network aliases as in the compose file. `--rm` removes the container on exit, so
+every restart starts from a fresh container.
 
 ### `import = "stack"`
 
-One RunWisp service per `[compose.<alias>]`, named `<alias>`:
+One RunWisp service named `<alias>` runs the whole project:
 
 ```
 docker compose -f <file> -p <project> up --abort-on-container-exit --no-log-prefix
 ```
 
-The whole stack runs together; logs from all containers stream into a
-single RunWisp run; the run exits when any container exits. Per-service
-sub-tables, the `services` filter, and `instances` are all rejected under
-`import = "stack"` — use `import = "services"` if you want per-service knobs.
+- Logs from all containers go into one run.
+- The run ends when any container exits.
+- Per-service sub-tables, `defaults`, the [`services`](#services) filter, and
+  [`instances`](#instances) are rejected.
 
-## Identity
+## Imported defaults
 
-Imported tasks get smarter defaults than the generic `[services.*]`
-baseline because compose users carry strong existing expectations:
+Imported services use these defaults instead of the `[services.*]` ones. A
+per-service sub-table overrides any of them.
 
-| Knob                                                          | Compose-import default                                    | Reason                                                                |
-| ------------------------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------- |
-| `kind`                                                        | `service`                                                 | Compose services are long-running.                                    |
-| `restart`                                                     | `on_failure`                                              | Matches the unspoken expectation set by `docker compose up`.          |
-| `group`                                                       | the compose alias                                         | Grouped together in the Web UI sidebar by default.                    |
-| `pull`                                                        | `missing`                                                 | Behaviour of `docker compose up`.                                     |
-| [`graceful_stop`](/configuration/services/#graceful-shutdown) | compose `stop_grace_period` when set, else daemon default | Honours the compose-declared grace window.                            |
-| Container name                                                | `{project}_{service}_{index}`                             | Matches `docker compose ps` output; `docker logs` keeps working.      |
-| Task name                                                     | `{alias}.{service}`                                       | Override with `name_format`; must contain `{service}` (else collide). |
+| Key                                                    | Default for imported services                                                    |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| kind                                                   | service                                                                          |
+| `restart`                                              | `on_failure`                                                                     |
+| [`group`](#group)                                      | the alias                                                                        |
+| [`pull`](#pull)                                        | `missing`                                                                        |
+| [`graceful_stop`](/configuration/tasks/#graceful_stop) | the compose `stop_grace_period` if set, else the daemon default                  |
+| Container name                                         | `{project}_{service}_{index}` (matches `docker compose ps`; `docker logs` works) |
+| RunWisp name                                           | `{alias}.{service}` (see [`name_format`](#name_format))                          |
 
-User overrides win over every default via `[compose.<alias>.<svc>]`.
+## Instances
 
-## Instances (identical only)
+`instances = N` in a per-service sub-table starts N parallel `docker compose run`
+containers.
 
-`instances = N` produces N parallel `docker compose run` invocations.
-Each instance receives a stable `RUNWISP_INSTANCE_INDEX=<i>` env var
-(0..N-1) and a container name suffix matching the index so
-`docker compose ps` shows each container separately. Use the env var to
-self-shard workloads.
+- Each gets `RUNWISP_INSTANCE_INDEX` (`0` to `N-1`); use it to split the work.
+- The container name ends with the index, so `docker compose ps` lists each one.
+- All instances get the same env. For different env per instance, define one
+  compose service per instance.
 
-Parameterised instances (different env per slot) are deliberately out of
-scope — for that, declare one compose service per slot.
+## Single compose services
 
-## One-off / cron uses
-
-`[services.X]` or `[tasks.X]` can also point at a compose service
-directly, without bringing in the bulk `[compose.<alias>]` block:
+A `[services.*]` or `[tasks.*]` table can run one compose service without a
+`[compose.*]` block:
 
 ```toml
-# Long-running single service backed by compose:
+# Long-running service from a compose file:
 [services.api]
 compose_file    = "./docker-compose.yml"
 compose_service = "api"                  # defaults to the table key
 
-# Cron task running a compose-defined image once:
+# Cron task that runs a compose service once:
 [tasks.nightly-backup]
 cron            = "0 3 * * *"
 compose_file    = "./docker-compose.yml"
@@ -261,9 +371,11 @@ compose_service = "backup"
 
 ## Running a command in a service: `compose_mode`
 
-Set `run` alongside `compose_service` and RunWisp runs your command
-**inside the service's already-running container** — `docker compose exec`,
-not a new container:
+With [`run`](/configuration/tasks/#run) set next to
+[`compose_service`](/configuration/tasks/#compose_service), RunWisp runs your
+command inside the service's running container (`docker compose exec`). No new
+container is started, and the command gets that container's env, code, and
+credentials.
 
 ```toml
 [tasks.laravel-schedule]
@@ -273,51 +385,32 @@ compose_service = "app"
 run             = "php artisan schedule:run"
 ```
 
-That's what most people want from a cron task attached to a running app:
-it executes in the live container, with that container's env, code
-version, and credentials, and nothing new gets started.
+[`compose_mode`](/configuration/tasks/#compose_mode) picks the mode:
 
-`compose_mode` names the choice explicitly when you need the other one:
+| Value  | What happens                                                                                                                               |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `exec` | `docker compose exec` in the running container. Requires `run`. Default when `run` is set.                                                 |
+| `run`  | `docker compose run --rm` in a new container. Runs your `run` command if set, else the service's own command. Default when `run` is unset. |
 
-| Value  | What happens                                                                                                     |
-| ------ | ---------------------------------------------------------------------------------------------------------------- |
-| `exec` | `docker compose exec` into the service's running container. Requires `run`.                                      |
-| `run`  | `docker compose run --rm` — a fresh container. With `run` set, it runs your command; without, the service's own. |
+Limits of `exec`:
 
-The default is whichever one your config can actually mean: `exec` when
-`run` is set, `run` when it isn't. So the snippet above needs no
-`compose_mode`, and neither does a plain `compose_service` task — while
-`compose_mode = "run"` gets you a fresh container running your command
-instead of the live one.
+- The container must be running. If it isn't, the run fails with
+  `container … is not running`.
+- [`timeout`](/configuration/tasks/#timeout) can't stop the process inside the
+  container. Docker can't cancel an exec, so RunWisp stops only the local client.
+  Add a limit inside the command too: `run = "timeout 3600 php artisan long-job"`.
+  RunWisp warns at startup about a long-running service in `exec` mode, because
+  each restart leaves another process behind.
+- The command runs under the container's `/bin/sh` with
+  [fail-fast](/configuration/tasks/#fail-fast), like `run` on the host.
+  [`shell`](/configuration/tasks/#shell) is not accepted.
 
-Two things to know before you lean on `exec`:
+## Supervision
 
-- **The container has to be up.** If it isn't, the run fails with
-  `container … is not running` — visibly, as a failed run with that in the
-  log, not a silent skip.
-- **`timeout` can't reach inside.** Docker offers no way to cancel an
-  exec, so when a run times out RunWisp kills the local client and the
-  process inside the container carries on. Bound long work on the inside
-  too — `run = "timeout 3600 php artisan long-job"`. RunWisp warns at
-  startup if you put a long-running **service** in `exec` mode, because
-  there the leftover process compounds on every restart.
-
-Your command runs under the container's `/bin/sh` with fail-fast armed,
-the same as [`run` on the host](/configuration/tasks/#fail-fast) — so a
-multi-line script stops at the first failing line. The `shell` key isn't
-accepted here: it configures a host process, and the host's shell path
-says nothing about what exists in someone else's image.
-
-## Supervision boundary
-
-RunWisp owns supervision: when a container exits, the RunWisp service
-supervisor decides whether to restart based on the task's `restart`
-policy and backoff curve. The compose-file `restart:` directive is
-**not** consulted — RunWisp is your supervisor now.
-
-When the docker CLI is missing or the Docker daemon is unreachable,
-imported tasks remain visible in the UI but their runs fail with a clear
-system-log message pointing at install docs.
+- RunWisp decides restarts, using `restart` and the backoff keys. The compose
+  file's `restart:` setting is ignored.
+- If the `docker` CLI is missing or the Docker daemon is unreachable, the
+  services stay visible, and their runs fail with a system log message.
 
 ---
 
@@ -325,12 +418,12 @@ system-log message pointing at install docs.
     <LinkCard
         title="Migrating from docker-compose"
         href="/coming-from/docker-compose/"
-        description="The 60-second walkthrough this reference backs."
+        description="The step-by-step guide."
     />
     <LinkCard
         title="[services.*] ref"
         href="/configuration/services/"
-        description="Every key the per-service override sub-tables accept."
+        description="The keys the override sub-tables accept."
     />
     <LinkCard
         title="Tasks vs Services"
@@ -345,6 +438,6 @@ system-log message pointing at install docs.
     <LinkCard
         title="Running RunWisp in Docker"
         href="/getting-started/docker/"
-        description="Running the daemon in a container — and the one line that makes compose-backed units work there."
+        description="Running the daemon in a container, and what compose-backed units need there."
     />
 </CardGrid>

@@ -13,14 +13,17 @@ import (
 
 // FailedExecutionReasons are the end reasons that represent a run which actually
 // executed (or attempted to start) and failed — the only reasons where
-// automatically re-running the command is meaningful. It is the single source of
-// truth for auto retry/restart eligibility (runtime/retry.IsFailedExecution) and
-// it seeds the default failure classification (DefaultFailureTokens).
+// automatically re-running the command is meaningful. It is the fixed ceiling
+// for auto retry/restart eligibility (runtime/retry.IsFailedExecution): a run
+// only retries/restarts when its reason is also in this set AND the task's
+// `failures` policy (Task.IsFailureReason) classifies it as a failure. It also
+// seeds the default failure classification (DefaultFailureTokens).
 //
 // It is deliberately narrower than Run.IsRetryable (the operator-facing "may I
-// re-run this?" affordance, which also covers stopped/timeout/etc.) and fully
-// separate from the user-configurable failure set: promoting `stopped` to a
-// failure must never make the daemon re-run a run the operator just stopped.
+// re-run this?" affordance, which also covers stopped/timeout/etc.): promoting
+// `stopped` into a task's `failures` list must never make the daemon
+// automatically re-run a run the operator just stopped, since `stopped` is
+// never in this set.
 var FailedExecutionReasons = []EndReason{
 	ReasonFailed, ReasonTimeout, ReasonCrashed, ReasonLogOverflow, ReasonStartFailed,
 }

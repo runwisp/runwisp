@@ -1,0 +1,11 @@
+**type**: `map`
+
+Environment variables for the process. Their values are shown in the API and
+UI, so put passwords and tokens in [`secrets`](/configuration/tasks/#secrets). To read from a file,
+use [`env_file`](/configuration/tasks/#env_file).
+
+```toml
+[tasks.backup.env]
+BACKUP_BUCKET = "s3://prod-backups"
+DRY_RUN       = "0"
+```

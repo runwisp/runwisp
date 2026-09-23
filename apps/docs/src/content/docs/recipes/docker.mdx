@@ -81,11 +81,11 @@ docker run --rm --init \\
 """
 ```
 
-The RunWisp side of that — [`cron`](/concepts/scheduling/),
-[`on_overlap`](/concepts/concurrency/),
-[`timeout`](/concepts/retries/#timeout),
-[`keep_runs`](/concepts/logs/#retention-keep_runs-and-keep_for),
-[`notify`](/notifications/per-task/) — has its own pages.
+The RunWisp side of that — [`cron`](/configuration/tasks/#cron),
+[`on_overlap`](/configuration/tasks/#on_overlap),
+[`timeout`](/configuration/tasks/#timeout),
+[`keep_runs`](/configuration/tasks/#keep_runs),
+[`notify`](/configuration/tasks/#notify) — has its own pages.
 Here's why the Docker side looks like that.
 
 **`--memory` / `--cpus`.** RunWisp is frugal with RAM, but that won't
@@ -96,7 +96,7 @@ daemon — and you get a failed run with an alert rather than a mystery.
 
 **`--init`.** Runs a tiny init as PID 1 inside the container. It
 forwards signals to your actual process and reaps zombies. Without it,
-many images ignore SIGTERM entirely, which means your `timeout` turns
+many images ignore SIGTERM entirely, which means your [`timeout`](/configuration/tasks/#timeout) turns
 into a hard SIGKILL five seconds later instead of a clean shutdown.
 
 **`--network=internal`.** Give the container what it needs to reach and
@@ -127,8 +127,8 @@ docker run --rm --init \\
 
 `-e NAME` with no `=value` tells Docker "take this one from my
 environment," so the value never appears on the command line, in `ps`,
-or in `runwisp.toml`. The config API and web UI never show `secrets`
-values either, only the `secrets_file` path does. It's still part of
+or in `runwisp.toml`. The config API and web UI never show [`secrets`](/configuration/tasks/#secrets)
+values either, only the [`secrets_file`](/configuration/tasks/#secrets_file) path does. It's still part of
 the process environment though: if the container prints its env or
 crashes and dumps it, the daemon scrubs the known secret value out of
 the captured output first (swapping it for `[redacted]`) before it hits
@@ -137,8 +137,8 @@ container base64s or reshapes before printing can still slip through.
 
 ### About that timeout
 
-When `timeout` fires, RunWisp signals the task's whole process group,
-waits [`graceful_stop`](/concepts/retries/#timeout) (5s by default),
+When [`timeout`](/configuration/tasks/#timeout) fires, RunWisp signals the task's whole process group,
+waits [`graceful_stop`](/configuration/tasks/#graceful_stop) (5s by default),
 then SIGKILLs. The attached `docker run` client forwards the first
 signal into the container, so a well-behaved image shuts down properly.
 
@@ -180,7 +180,7 @@ teams deploying several times a day; for everyone else, let the deploy
 itself do the pull. Pair it with the
 [deploy-hooks recipe](/recipes/deploy-hooks/).
 
-No `notify` here, deliberately. A missed prefetch costs the
+No [`notify`](/configuration/tasks/#notify) here, deliberately. A missed prefetch costs the
 next deploy a few seconds and nothing else, and an alert nobody needs
 to act on is how people learn to ignore alerts. You'll still see the
 red run in the Web UI if you go looking. And keep an eye on registry

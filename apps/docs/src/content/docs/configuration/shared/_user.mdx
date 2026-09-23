@@ -1,0 +1,13 @@
+**type**: `string`
+
+Run as another OS user: `user` or `user:group`, by name or numeric id (the same
+form as `chown` and Compose). RunWisp looks up the account at start, sets
+`HOME`, `USER`, and `LOGNAME`, and applies its groups.
+
+- Works only when the daemon runs as root. Otherwise the run fails.
+- Empty keeps the daemon's user.
+
+```toml
+[tasks.backup-db]
+user = "reporter:reporter"
+```

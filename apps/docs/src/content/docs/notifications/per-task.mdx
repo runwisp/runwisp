@@ -12,11 +12,11 @@ the channels right on the task. The setting sits next to the task it
 belongs to, so a glance at the file tells you which task pages which
 channel.
 
-Every `[tasks.*]` and `[services.*]` block takes a `notify` field: the
+Every `[tasks.*]` and `[services.*]` block takes a [`notify`](/configuration/tasks/#notify) field: the
 channels to page whenever the run counts as a **failure** (by default
-`failed`, `timeout`, `crashed`, `log_overflow`, `start_failed`, and a
+`failed`, [`timeout`](/configuration/tasks/#timeout), `crashed`, `log_overflow`, `start_failed`, and a
 missed tick — whatever the task's
-[`failures`](/configuration/tasks/#what-counts-as-a-failure) list says).
+[`failures`](/configuration/tasks/#failures) list says).
 It works the same on tasks and services. Want to hear about a _success_,
 or some other specific outcome? That's a one-line
 [`[[route]]`](/notifications/routes/) — see
@@ -42,7 +42,7 @@ channel still gets exactly one message — duplicates are dropped.
 
 ## Beyond failures
 
-`notify` covers the failure case, which is the one you almost always
+[`notify`](/configuration/tasks/#notify) covers the failure case, which is the one you almost always
 want. For anything else — a success ping, an alert scoped to just
 timeouts — reach for a [`[[route]]`](/notifications/routes/), which
 matches on event kind and a task glob:
@@ -59,7 +59,7 @@ match     = { task = "payments-api", kinds = ["succeeded"] }
 notifiers = ["slack-ops"]
 ```
 
-The per-task `notify` and the rule are independent and mix freely — the
+The per-task [`notify`](/configuration/tasks/#notify) and the rule are independent and mix freely — the
 router collects every channel that matches and sends one message per
 unique channel.
 
@@ -68,13 +68,13 @@ unique channel.
 There's no separate missed-run channel list, and that's deliberate. A
 [missed scheduled run](/concepts/scheduling/#alerting-on-missed-runs) —
 one the daemon was down for — counts as a failure by default, so it rides
-the **exact same channels you already named in `notify`** (plus
+the **exact same channels you already named in [`notify`](/configuration/tasks/#notify)** (plus
 the bell, via `global_notifiers`). You don't wire it up; it's just there.
 
 What you _can_ do is stop treating misses as failures for a task that's
 expected to miss ticks — a laptop job that only runs while you're at your
 desk, say — by dropping `missed` from its
-[`failures`](/configuration/tasks/#what-counts-as-a-failure) list:
+[`failures`](/configuration/tasks/#failures) list:
 
 ```toml
 [tasks.daytime-sync]
@@ -84,11 +84,11 @@ notify = ["slack-ops"]
 failures          = ["failed", "timeout", "crashed"]   # real failures still page; missed ticks stay quiet
 ```
 
-`failures` reclassifies outcomes for stats, the UI, _and_ alerts in one
+[`failures`](/configuration/tasks/#failures) reclassifies outcomes for stats, the UI, _and_ alerts in one
 place — it only changes whether a missed tick counts as a failure, not
 whether it's recorded. The `missed` run row is still there and browsable,
 so nothing goes invisible. Reach for it instead of hollowing out
-`notify`, which would also drop your real failure alerts.
+[`notify`](/configuration/tasks/#notify), which would also drop your real failure alerts.
 
 ## Inline target overrides
 
@@ -145,7 +145,7 @@ A per-task field is for one task; a [`[[route]]`
 block](/notifications/routes/) is for one rule covering many tasks.
 Reach for a rule when you need a pattern across many tasks
 (`match.task = "backup-*"`), a custom set of event kinds (the
-per-task failure list covers `failed`, `timeout`, `crashed`,
+per-task failure list covers `failed`, [`timeout`](/configuration/tasks/#timeout), `crashed`,
 `log_overflow`, `start_failed`, `missed`, and `service.fatal`), or
 routing for kinds that have no task — for example
 `notify.delivery_failed`. Per-task fields and rules mix freely: the
@@ -177,7 +177,7 @@ to `tg-oncall`, and adds one row to the bell.
 
 ## What the config loader rejects
 
-The loader rejects unknown notifier ids in `notify` (anything that isn't
+The loader rejects unknown notifier ids in [`notify`](/configuration/tasks/#notify) (anything that isn't
 declared under `[notifiers.*]` and isn't `"inapp"`); inline overrides
 whose parent doesn't exist,
 whose target is empty, or — for Slack — doesn't start with `#` or

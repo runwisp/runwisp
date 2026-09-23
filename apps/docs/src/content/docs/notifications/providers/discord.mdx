@@ -164,7 +164,7 @@ delivery failed — open the bell and look for a
 
 The default template builds one embed per event. The title carries the
 task name and verb and links to the run (when
-[`[daemon] external_url`](/configuration/daemon/#external_url) is set),
+[`external_url`](/configuration/daemon/#external_url) is set),
 the description carries the event sentence, the trigger, and a
 code-block tail of captured stderr (failures and timeouts only), and
 the footer reads "from runwisp" (with the daemon's fingerprint appended
@@ -193,7 +193,7 @@ Triggered via the REST API · 14 May, 17:11.
 from runwisp · bright-falcon
 ```
 
-No `external_url`? The title just isn't a link. No log file? The
+No [`external_url`](/configuration/daemon/#external_url)? The title just isn't a link. No log file? The
 code-block tail drops off. Both happen quietly, no broken layout. The
 payload also suppresses mentions, so a task that prints `@everyone`
 can't ping your whole server.

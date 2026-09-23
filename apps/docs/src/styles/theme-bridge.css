@@ -19,11 +19,19 @@
 @layer starlight.base, starlight.reset, starlight.core, starlight.content,
     starlight.components, starlight.utils, runwisp;
 
+/* JetBrains Mono — the marketing site's heading + code voice. Loaded docs-local
+ * (the shared theme-tokens.css ships Geist Mono for the dashboard); we override
+ * --sl-font-mono below so headings and code match runwisp.com exactly. */
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/700.css";
+@import "@fontsource/jetbrains-mono/800.css";
+
 :root {
     /* Small radii live in theme.css (Tailwind @theme), which docs doesn't
      * import — re-declare the two the chrome below relies on. */
     --radius-sm: 0.1875rem; /* 3px — controls / pills */
-    --radius-md: 0.25rem; /* 4px — panels / cards / code */
+    --radius-md: 0.1875rem; /* 3px — flat everywhere, the site's tmux-pane look */
 
     /* Accent — wisp teal */
     --sl-color-accent: var(--rw-primary);
@@ -70,7 +78,109 @@
     /* Typography — body stays the brand sans; chrome + headings go mono. Both
      * stacks come from theme-tokens.css so docs can't drift from the apps. */
     --sl-font: var(--rw-font-sans);
-    --sl-font-mono: var(--rw-font-mono);
+    /* JetBrains Mono, not the shared Geist Mono — match runwisp.com's mono voice. */
+    --sl-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* ─── Exact brand hex, mirrored from runwisp.com's src/styles/app.css.
+ * The site overrides the shared OKLCH tokens with flat hex in its own stylesheet;
+ * we do the same here (docs-local) so every --sl-color-* the block above maps onto
+ * a --rw-* token resolves to the site's precise hue. Keyed on Starlight's theme
+ * attribute — bare :root is the dark baseline, [data-theme="light"] flips it,
+ * matching the neutral-scale block further down. These are unlayered and imported
+ * after theme-tokens.css, so they win on source order.
+ * Also ported: the --rim / --term-rim / --lift-* elevation ladder (site-local, not
+ * in the shared package) used by the chrome rules below. */
+
+:root,
+:root[data-theme="dark"] {
+    --rw-surface: #0c1719;
+    --rw-surface-raised: #122226;
+    --rw-surface-sunken: #080f11;
+    --rw-surface-overlay: rgba(8, 15, 17, 0.86);
+    --rw-on-surface: #e8eff4;
+    --rw-on-surface-muted: #94a6b1;
+    --rw-on-surface-faint: #5f7079;
+    --rw-outline: #1d2932;
+    --rw-outline-hover: #2a3a45;
+    --rw-outline-faint: #1d2932;
+    --rw-primary: #15a0a8;
+    --rw-primary-hover: #0e7c86;
+    --rw-primary-active: #0a6068;
+    --rw-on-primary: #04181a;
+    --rw-primary-soft: rgba(21, 160, 168, 0.12);
+    --rw-primary-soft-text: #2fd4dd;
+    --rw-primary-soft-border: rgba(47, 212, 221, 0.32);
+    --rw-success: #3fc26b;
+    --rw-on-success: #041a0d;
+    --rw-success-soft: rgba(63, 194, 107, 0.13);
+    --rw-success-soft-text: #3fc26b;
+    --rw-danger: #f15a4d;
+    --rw-on-danger: #1a0403;
+    --rw-danger-soft: rgba(241, 90, 77, 0.13);
+    --rw-danger-soft-text: #f15a4d;
+    --rw-warning: #e0a52e;
+    --rw-on-warning: #1a1100;
+    --rw-warning-soft: rgba(224, 165, 46, 0.13);
+    --rw-warning-soft-text: #e0a52e;
+    --rw-info: #2fd4dd;
+    --rw-on-info: #04181a;
+    --rw-info-soft: rgba(31, 200, 210, 0.12);
+    --rw-info-soft-text: #2fd4dd;
+
+    /* elevation ladder — dark (cool-black cast, since there's no white rim to lean on) */
+    --rim: rgba(198, 240, 246, 0.085);
+    --term-rim: rgba(198, 240, 246, 0.09);
+    --lift-1: 0 2px 6px -4px rgba(0, 0, 0, 0.9);
+    --lift-2: 0 1px 0 var(--rim) inset, 0 18px 38px -26px rgba(0, 0, 0, 0.95);
+    --lift-3: 0 1px 0 var(--term-rim) inset, 0 26px 52px -32px rgba(0, 0, 0, 1);
+}
+
+:root[data-theme="light"] {
+    --rw-surface: #f5f8f9;
+    --rw-surface-raised: #ffffff;
+    --rw-surface-sunken: #e5eaec;
+    --rw-surface-overlay: #ffffff;
+    --rw-on-surface: #162428;
+    --rw-on-surface-muted: #58686e;
+    --rw-on-surface-faint: #738389;
+    --rw-outline: #d7dfe1;
+    --rw-outline-hover: #bcc7ca;
+    --rw-outline-faint: #e6ecee;
+    --rw-primary: #008388;
+    --rw-primary-hover: #00717b;
+    --rw-primary-active: #00666f;
+    --rw-on-primary: #ffffff;
+    --rw-primary-soft: rgba(0, 131, 136, 0.1);
+    --rw-primary-soft-text: #00717b;
+    --rw-primary-soft-border: rgba(0, 131, 136, 0.28);
+    --rw-success: #137738;
+    --rw-on-success: #ffffff;
+    --rw-success-soft: rgba(19, 119, 56, 0.1);
+    --rw-success-soft-text: #137738;
+    --rw-danger: #bc2c30;
+    --rw-on-danger: #ffffff;
+    --rw-danger-soft: rgba(188, 44, 48, 0.09);
+    --rw-danger-soft-text: #bc2c30;
+    --rw-warning: #9b5600;
+    --rw-on-warning: #ffffff;
+    --rw-warning-soft: rgba(155, 86, 0, 0.09);
+    --rw-warning-soft-text: #9b5600;
+    --rw-info: #008388;
+    --rw-on-info: #ffffff;
+    --rw-info-soft: rgba(0, 131, 136, 0.1);
+    --rw-info-soft-text: #00717b;
+
+    /* elevation ladder — light (cool-ink tint + white top rim, per the site) */
+    --rim: rgba(255, 255, 255, 0.95);
+    --term-rim: rgba(198, 240, 246, 0.09);
+    --lift-1: 0 1px 2px rgba(19, 38, 48, 0.05);
+    --lift-2:
+        0 1px 0 var(--rim) inset, 0 1px 2px rgba(19, 38, 48, 0.05),
+        0 12px 28px -20px rgba(19, 38, 48, 0.22);
+    --lift-3:
+        0 1px 0 var(--term-rim) inset, 0 2px 4px rgba(19, 38, 48, 0.08),
+        0 24px 48px -26px rgba(19, 38, 48, 0.42);
 }
 
 /* Teal-black / mist neutrals — declared in the runwisp layer so they always
@@ -80,7 +190,7 @@
 
 @layer runwisp {
     :root {
-        --sl-color-white: var(--rw-color-mist-50);
+        --sl-color-white: var(--rw-on-surface);
         --sl-color-gray-1: var(--rw-color-mist-200);
         --sl-color-gray-2: var(--rw-color-mist-300);
         --sl-color-gray-3: var(--rw-color-mist-400);
@@ -92,7 +202,7 @@
     }
 
     :root[data-theme="light"] {
-        --sl-color-white: var(--rw-color-mist-900);
+        --sl-color-white: var(--rw-on-surface);
         --sl-color-gray-1: var(--rw-color-mist-800);
         --sl-color-gray-2: var(--rw-color-mist-700);
         --sl-color-gray-3: var(--rw-color-mist-500);
@@ -119,18 +229,17 @@ h3,
     text-wrap: balance;
 }
 
-/* ─── Chrome depth: hairline borders carry the structure. Light gets a
- * whisper of shadow; --rw-shadow-xs resolves to `none` in dark, so dark is
- * borders-only per the design contract. Starlight already draws the header
- * bottom / sidebar edge from --sl-color-hairline (= --rw-outline). */
+/* ─── Chrome depth: hairline borders carry the structure, with the site's
+ * resting --lift-1 tier under the header and sidebar. Starlight already draws
+ * the header bottom / sidebar edge from --sl-color-hairline (= --rw-outline). */
 
 header.header {
-    box-shadow: var(--rw-shadow-xs);
+    box-shadow: var(--lift-1);
 }
 
 @media (min-width: 50rem) {
     nav.sidebar .sidebar-pane {
-        box-shadow: var(--rw-shadow-xs);
+        box-shadow: var(--lift-1);
     }
 }
 
@@ -224,19 +333,117 @@ nav.sidebar .sidebar-content .group-label .large {
  * (asides, code frames, cards). The runbook uses 3–4px everywhere; docs
  * doesn't load the Tailwind radius tokens, so pin them locally. */
 
-.starlight-aside,
-.sl-markdown-content .expressive-code .frame,
-.sl-markdown-content .expressive-code .frame pre,
 .sl-markdown-content > pre,
 .sl-markdown-content :not(pre) > code,
 .card {
     border-radius: var(--radius-md);
 }
 
-/* Expressive Code: keep Starlight's syntax theme, just tint the frame edge
- * to a hairline so terminal blocks read like every other bordered surface. */
-.sl-markdown-content .expressive-code .frame pre {
-    border-color: var(--rw-outline);
+/* Elevation: cards ride the mid --lift-2 tier; the Expressive Code frame is a
+ * dark terminal island but sits inline in the prose, so it stays on the resting
+ * --lift-1 tier rather than floating (the frame's radius + hairline border come
+ * from the always-dark EC theme in astro.config). */
+.card {
+    box-shadow: var(--lift-2);
+}
+
+.sl-markdown-content .expressive-code .frame {
+    box-shadow: var(--lift-1);
+}
+
+/* ─── Callouts (asides): a bordered pane in the runbook language. Neutral
+ * hairline all round (colour stays an accent, not the whole box), a heavier
+ * inline-start bar in the callout's semantic hue, and a mono uppercase title —
+ * the same eyebrow voice as the sidebar group labels. The semantic hue + soft
+ * background come from Starlight's own per-variant vars, already re-tinted to
+ * the brand palette by the --sl-color-blue/purple/orange/red mappings above. */
+.starlight-aside {
+    border: 1px solid var(--rw-outline);
+    border-inline-start: 0.25rem solid var(--sl-color-asides-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--lift-1);
+}
+
+.starlight-aside__title {
+    font-family: var(--sl-font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
+/* ─── Square bullets at every depth — the runbook/terminal voice reads better
+ * with a hard teal tick than a soft disc. Tighter indent (half Starlight's 40px
+ * default) pulls the list back under the prose. Ordered lists keep their numbers. */
+.sl-markdown-content ul {
+    list-style-type: square;
+    padding-inline-start: 1.25rem;
+}
+
+.sl-markdown-content ul > li::marker {
+    color: var(--rw-primary);
+}
+
+/* ─── Config key reference (configuration/{tasks,services,compose}.mdx): a
+ * flat key list that needs clear per-key boundaries. Global lives here, but
+ * scoped to those pages: each marks itself with an empty `.rw-config-ref`
+ * div, and `:has()` gates every rule on it so no other docs page's headings
+ * get the treatment. Starlight wraps each heading in
+ * `.sl-heading-wrapper.level-hN`, so each key is a level-h3 and its
+ * type/default line is the paragraph right after that wrapper. */
+
+.rw-config-ref {
+    display: none;
+}
+
+/* Section (## cluster): a heavy rule so groups read as groups. */
+.sl-markdown-content:has(> .rw-config-ref) .sl-heading-wrapper.level-h2 {
+    margin-top: 3.5rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 2px solid var(--sl-color-gray-5);
+}
+
+/* Key (### name): a top rule + air closes the previous entry, opens this one. */
+/* font-size lives on the wrapper, not the h3: Starlight's anchor-links.css
+ * sizes and vertically centers the chain icon off the wrapper's font-size,
+ * so shrinking only the h3 left the icon drawn for a bigger line than the
+ * text it sat next to. */
+.sl-markdown-content:has(> .rw-config-ref) .sl-heading-wrapper.level-h3 {
+    margin-top: 2.75rem;
+    padding-top: 1.35rem;
+    border-top: 1px solid var(--sl-color-hairline);
+    font-size: 1.15rem;
+}
+.sl-markdown-content:has(> .rw-config-ref) .sl-heading-wrapper.level-h3 h3 {
+    color: var(--sl-color-white);
+}
+
+/* First key in a section already sits under the h2's rule: drop the extra one. */
+.sl-markdown-content:has(> .rw-config-ref)
+    .sl-heading-wrapper.level-h2
+    + .sl-heading-wrapper.level-h3 {
+    margin-top: 1.5rem;
+    padding-top: 0;
+    border-top: none;
+}
+
+/* Meta line (type / default / min / max): the paragraph right after a key
+ * wrapper, styled as a compact chip so the signature stands apart from prose. */
+.sl-markdown-content:has(> .rw-config-ref) .sl-heading-wrapper.level-h3 + p {
+    display: inline-block;
+    margin-top: 0.6rem;
+    padding: 0.35rem 0.7rem;
+    font-size: var(--sl-text-sm);
+    background: var(--sl-color-gray-6);
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: var(--radius-md);
+}
+.sl-markdown-content:has(> .rw-config-ref) .sl-heading-wrapper.level-h3 + p code {
+    background: none;
+    padding: 0;
+    /* Accented text that stays legible on the chip in both themes — accent-high
+     * (= --rw-primary-active) is too dark to read on the dark meta chip. */
+    color: var(--rw-primary-soft-text);
 }
 
 /* ─── Splash hero brand flourish — the teal .rw-text-gradient (docs doesn't

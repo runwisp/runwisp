@@ -67,12 +67,12 @@ in flight — that just adds load.
 The rejected firing is recorded with `end_reason = "skipped"` and
 exit code `-1` — a distinct status from `failed`, so your health
 metrics don't get polluted by overlap-induced rows and
-`notify` stays quiet on skips.
+[`notify`](/configuration/tasks/#notify) stays quiet on skips.
 
 ### `timeout = "30s"` + `--max-time 25`
 
 Belt and braces. The shell-side `curl --max-time` exits
-non-zero before the daemon's `timeout` kicks in — so the run
+non-zero before the daemon's [`timeout`](/configuration/tasks/#timeout) kicks in — so the run
 exits with a real curl error and a useful message in the log,
 rather than the daemon's terse "killed by timeout".
 

@@ -1,0 +1,21 @@
+**type**: `enum` **default**: `"exec"` when [`run`](/configuration/tasks/#run) is set, else `"run"`
+
+How a [`compose_file`](/configuration/tasks/#compose_file) unit runs.
+
+```toml
+[tasks.migrate]
+compose_file    = "./docker-compose.yml"
+compose_service = "app"
+compose_mode    = "exec"
+run             = "rails db:migrate"
+```
+
+Possible values:
+
+- `exec`: run your [`run`](/configuration/tasks/#run) command inside the service's running container
+  (`docker compose exec`). Requires `run`.
+- `run`: start a new container for each run (`docker compose run --rm`). It runs
+  your `run` command if set, else the service's own command.
+
+See [Running a command in a service](/configuration/compose/#running-a-command-in-a-service-compose_mode)
+for the limits of `exec`.

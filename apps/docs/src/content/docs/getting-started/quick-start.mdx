@@ -303,7 +303,7 @@ finish under the definition they started with.
 
 Reach for `runwisp restart` when you change a restart-only setting
 (`[daemon]`, the scheduler timezone, `[storage]`, `[notify]`, the bind
-host/port), or to re-fire `run_on_start` and missed-run catch-up from a
+host/port), or to re-fire [`run_on_start`](/configuration/tasks/#run_on_start) and missed-run catch-up from a
 clean boot — it stops the daemon and starts a fresh one with your edits.
 (Installed as a service, it routes the restart through systemd or
 launchd.) Until you reload or restart, the TUI header, `runwisp status`,

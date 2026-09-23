@@ -1,0 +1,18 @@
+**type**: `enum` **default**: `"inherit"`
+
+What the environment starts from, before [`env`](/configuration/tasks/#env) and
+[`secrets`](/configuration/tasks/#secrets) are added. Host processes only: it is an error on a
+compose unit.
+
+```toml
+[tasks.backup-db]
+env_base = "clean"
+run      = "/usr/local/bin/nightly"
+```
+
+Possible values:
+
+- `inherit`: start from the daemon's environment. Runs then depend on how the
+  daemon was started.
+- `clean`: start with only `PATH`, `SHELL`, `HOME`, and `USER`/`LOGNAME` (like
+  cron), so runs are repeatable. Set everything else in [`env`](/configuration/tasks/#env).

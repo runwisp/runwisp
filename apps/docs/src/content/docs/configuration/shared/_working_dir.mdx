@@ -1,0 +1,13 @@
+**type**: `string`
+
+The directory the process runs in. Unset, it is the daemon's directory.
+
+- A relative path is relative to the `runwisp.toml` directory.
+- `~` is the home directory of the user the run runs as.
+- The directory is checked when the run starts, not at load.
+
+```toml
+[tasks.deploy]
+working_dir = "/srv/app"
+run         = "./bin/build"
+```

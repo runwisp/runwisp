@@ -58,11 +58,11 @@ log_max_size = "50MB"
 log_on_full  = "drop_old"
 ```
 
-`log_max_size` is the per-run ceiling. Default is `100MB`. You can
+[`log_max_size`](/configuration/tasks/#log_max_size) is the per-run ceiling. Default is `100MB`. You can
 write it as `b`, `kb`, `mb`, `gb`, or `tb` (case doesn't matter); a
 bare number means bytes.
 
-`log_on_full` decides what happens when output hits that ceiling:
+[`log_on_full`](/configuration/tasks/#log_on_full) decides what happens when output hits that ceiling:
 
 | Value      | What it does                                                                                                                                                                                            |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -74,12 +74,12 @@ Whichever way it goes, the daemon drops a marker line into the log
 at the cut-off point. You can skim the file and immediately see where
 the limit hit. Nothing gets dropped silently.
 
-`log_on_full` does double duty: it also decides what happens when
+[`log_on_full`](/configuration/tasks/#log_on_full) does double duty: it also decides what happens when
 `[storage] min_free_space` trips mid-run. `kill` cancels the
 run. `drop_new` and `drop_old` quietly stop writing — and the daemon
 fires a `log.disk_pressure` notification so you find out before you
 go looking for output that isn't there. More on that in
-[storage configuration](/configuration/storage/#what-min_free_space-actually-does).
+[storage configuration](/configuration/storage/#min_free_space).
 
 ## Retention: `keep_runs` and `keep_for`
 
@@ -96,13 +96,13 @@ keep_runs = 500
 keep_for  = "7d"
 ```
 
-`keep_runs` is the count: the N newest runs survive, anything older
+[`keep_runs`](/configuration/tasks/#keep_runs) is the count: the N newest runs survive, anything older
 gets pruned. It's a non-negative integer with a hard ceiling of one
 million per task. Omit it to inherit from `[defaults]`; set it to `0`
 to keep no completed runs at all — set a negative value and the daemon
 refuses to start.
 
-`keep_for` is the age: anything whose `created_at` is older than that
+[`keep_for`](/configuration/tasks/#keep_for) is the age: anything whose `created_at` is older than that
 duration gets pruned. You can use days and weeks here too —
 `"7d"`, `"2w"`, `"36h"`, `"30m"` all work. Zero and negative
 durations are rejected.
@@ -113,9 +113,9 @@ task, using that task's settings (or whatever it inherits from
 `[defaults]`; set both for a hard floor _and_ a hard ceiling.
 
 Cleanup runs in the background on a timer, so you might briefly see a
-few extra rows over the `keep_runs` mark between sweeps. The
+few extra rows over the [`keep_runs`](/configuration/tasks/#keep_runs) mark between sweeps. The
 daemon-wide storage cap protects in-progress runs, but the per-task
-`keep_runs` and `keep_for` limits apply to all runs regardless of
+[`keep_runs`](/configuration/tasks/#keep_runs) and [`keep_for`](/configuration/tasks/#keep_for) limits apply to all runs regardless of
 status — a long-running task that hasn't finished can still age off
 when the limit says it's time. When retention does kick in, the
 SQLite row and the log file (plus its sidecar files) all go together.

@@ -1,0 +1,14 @@
+**type**: `enum` **default**: `"SIGTERM"`
+
+The first signal sent to stop a run. The `SIG` prefix is optional. Use
+`SIGINT` for tools that expect Ctrl-C, or `SIGKILL` to skip the grace time.
+Anything still running after [`graceful_stop`](/configuration/tasks/#graceful_stop) is SIGKILLed.
+
+```toml
+[tasks.queue-drain]
+stop_signal   = "SIGINT"
+graceful_stop = "10s"
+```
+
+Possible values: `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`,
+`SIGUSR2` (also without the `SIG` prefix).

@@ -249,7 +249,7 @@ self-signs and serves HTTPS on its own — enough for a LAN or a
 tailnet, no proxy required. Where a reverse proxy still earns its
 keep is a **publicly-trusted** certificate: put it on the public
 internet behind nginx, Caddy, Traefik, or a Cloudflare Tunnel, let
-the proxy own TLS, leave `tls` at its default of `"off"` so RunWisp
+the proxy own TLS, leave [`tls`](/configuration/daemon/#tls-tls_cert-tls_key) at its default of `"off"` so RunWisp
 serves plain HTTP on its private side, and tell the daemon which IP
 ranges that proxy will be calling from:
 
@@ -269,7 +269,7 @@ ranges carefully or an attacker could consume the rate budget from
 behind a trusted proxy.
 
 Prefer to keep it in config rather than the environment? The same list
-lives in [`[daemon] trusted_proxies`](/configuration/daemon/#trusted_proxies)
+lives in [`trusted_proxies`](/configuration/daemon/#trusted_proxies)
 as a TOML array. The env var wins when both are set, so you can pin a
 default in `runwisp.toml` and still override it per-deployment.
 

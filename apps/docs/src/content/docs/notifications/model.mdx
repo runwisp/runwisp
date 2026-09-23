@@ -20,7 +20,7 @@ shows up in the bell.
 
 ## What you get with zero config
 
-Any task or service that ends in `failed`, `timeout`, or
+Any task or service that ends in `failed`, [`timeout`](/configuration/tasks/#timeout), or
 `crashed` — or [misses a scheduled run](/concepts/scheduling/#alerting-on-missed-runs)
 while the daemon was down (`missed`) — writes a row in SQLite and
 pushes it straight to the Web UI bell and the TUI footer. That row
@@ -36,7 +36,7 @@ It's three steps, and the shape is the same for every provider:
 1. **Declare the channel** in a `[notifiers.<id>]` block. One per channel.
 2. **Wire it up** in one of two ways:
     - [Per-task notifications](/notifications/per-task/) —
-      `notify` directly on the task. Best when one task has its
+      [`notify`](/configuration/tasks/#notify) directly on the task. Best when one task has its
       own destination.
     - [Notification rules](/notifications/routes/) — a
       `[[route]]` block. Best when one rule covers many tasks.
@@ -133,7 +133,7 @@ message — duplicate channels get collapsed.
 
 ### `global_notifiers` — the always-on list
 
-[`[notify] global_notifiers`](/notifications/global/#the-bell--global_notifiers) is the one setting that decides which
+[`global_notifiers`](/notifications/global/#the-bell--global_notifiers) is the one setting that decides which
 channels hear about _every_ failure, no matter what an individual task
 says. Its built-in default is `["inapp"]` — which is exactly why the
 bell just works with no TOML at all.
@@ -237,7 +237,7 @@ entirely — they are delivered directly to the in-app channel. A
 `[[route]]` rule with `match.kinds = ["notify.delivery_failed"]`
 will never fire, no matter what `notifiers` list you point it at. If you
 need a backup path, add a second notifier ID to the original
-`notify` list instead — that way both channels get the same
+[`notify`](/configuration/tasks/#notify) list instead — that way both channels get the same
 event and if one goes down the other still sees it.
 
 ## Trust model

@@ -1,0 +1,13 @@
+**type**: `string`
+
+Path to a docker-compose file. The unit then runs the compose service named by
+[`compose_service`](/configuration/tasks/#compose_service) instead of a shell command. Without
+[`run`](/configuration/tasks/#run), each run is `docker compose run --rm <service>` with the
+service's own command. With `run`, see [`compose_mode`](/configuration/tasks/#compose_mode).
+
+```toml
+[tasks.nightly-backup]
+cron            = "0 3 * * *"
+compose_file    = "./docker-compose.yml"
+compose_service = "backup"
+```

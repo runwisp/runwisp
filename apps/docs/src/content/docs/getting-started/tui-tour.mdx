@@ -76,7 +76,7 @@ There's a **sidebar** on the left, the active view on the right, and a
 **help bar** along the bottom that changes to match whatever you're
 focused on. You can see all three in the Home screenshot above. The
 sidebar starts with three navigation pages (Home / Info / Debug),
-then lists your tasks and services grouped by [`group`](/configuration/tasks/#identity--metadata).
+then lists your tasks and services grouped by [`group`](/configuration/tasks/#group).
 The triangle marker `▸` points at whatever's currently showing in the
 right pane; the highlighted row is just your cursor — move it around
 all you like, nothing happens until you press `Enter`.
@@ -171,13 +171,13 @@ Open the run detail view for a failed run and three things tell you
 what went wrong before you even scroll:
 
 - **The header status badge** carries the end reason — `failed`,
-  `timeout`, `crashed`, `stopped`, `skipped`,
+  [`timeout`](/configuration/tasks/#timeout), `crashed`, `stopped`, `skipped`,
   `log_overflow`, and the rest. Each is a distinct status with its
   own colour, not a generic "error."
 - **The exit code** sits in the header next to duration. Sentinel
   codes are real: `-1` is a skipped run that never ran (`on_overlap =
 "skip"` rejected it), `-2` is a `crashed` run the daemon was killed
-  during. A `timeout` shows whatever exit the OS produced when the
+  during. A [`timeout`](/configuration/tasks/#timeout) shows whatever exit the OS produced when the
   killed process gave up — typically `143` (SIGTERM) or `137` (SIGKILL).
   Any other positive code is whatever the script returned.
 - **The captured log** below is the raw stdout/stderr of the
@@ -194,9 +194,9 @@ For a task with [retries](/concepts/retries/), every attempt is a separate row i
 history with its own end reason — attempt 0 might be `failed` and
 attempt 1 `succeeded`. Read attempt 0's log to find out why the first
 try failed even when the retry recovered; that's the bug-hunting use
-of [`keep_runs`](/concepts/logs/#retention-keep_runs-and-keep_for).
+of [`keep_runs`](/configuration/tasks/#keep_runs).
 
-If a run never ran at all (`skipped` because of [`on_overlap`](/concepts/concurrency/),
+If a run never ran at all (`skipped` because of [`on_overlap`](/configuration/tasks/#on_overlap),
 `stopped` because of `on_overlap = "kill"`), the row is still
 there with the policy's reason in the log and a sentinel exit code.
 A skipped firing is not silence — it's a row.

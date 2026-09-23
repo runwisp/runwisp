@@ -1,0 +1,11 @@
+**type**: `string`
+
+A dotenv file merged below [`env`](/configuration/tasks/#env) (inline values win). Its values are
+shown in the API and UI, like `env`. Paths can be absolute, `~/`-relative, or
+relative to the `runwisp.toml` directory. Lines are plain `KEY=VALUE`, with no
+shell expansion.
+
+```toml
+[tasks.backup]
+env_file = "backup.env"
+```

@@ -37,7 +37,7 @@ cron = "*/5 * * * *"
 run  = "/usr/local/bin/heartbeat"
 ```
 
-`cron` takes the usual 5 fields — **minute, hour, day-of-month, month,
+[`cron`](/configuration/tasks/#cron) takes the usual 5 fields — **minute, hour, day-of-month, month,
 day-of-week** — and the familiar shorthand aliases work too:
 
 | Expression              | Meaning                          |
@@ -70,7 +70,7 @@ where it lands on the wall clock.
 
 ## Timezone
 
-Cron expressions get evaluated in whatever zone [`[daemon] timezone`](/configuration/daemon/)
+Cron expressions get evaluated in whatever zone [`timezone`](/configuration/tasks/#timezone)
 says. Leave it unset and the daemon just uses the host's system
 timezone.
 
@@ -89,10 +89,10 @@ cron     = "30 2 * * *"
 timezone = "Atlantic/Faroe"
 ```
 
-| Setting                   | Default         | What it controls                                                             |
-| ------------------------- | --------------- | ---------------------------------------------------------------------------- |
-| `[daemon] timezone`       | _(system zone)_ | Fallback for every task without its own `timezone`.                          |
-| `[tasks.<name>] timezone` | _(inherits)_    | Timezone for this task's cron evaluation. Overrides the daemon-wide default. |
+| Setting                   | Default         | What it controls                                                                      |
+| ------------------------- | --------------- | ------------------------------------------------------------------------------------- |
+| `[daemon] timezone`       | _(system zone)_ | Fallback for every task without its own [`timezone`](/configuration/tasks/#timezone). |
+| `[tasks.<name>] timezone` | _(inherits)_    | Timezone for this task's cron evaluation. Overrides the daemon-wide default.          |
 
 If the daemon doesn't recognize the name you gave it — a typo, or a host
 with no IANA timezone data, like a stripped-down container image
@@ -126,7 +126,7 @@ gives you:
 - `triggered_by = "cron"`.
 - A captured stdout/stderr stream on disk.
 - A status that walks `pending → running → ended`, landing on one of
-  `succeeded`, `failed`, `stopped`, `timeout`, `crashed`, `skipped`,
+  `succeeded`, `failed`, `stopped`, [`timeout`](/configuration/tasks/#timeout), `crashed`, `skipped`,
   `missed`, `log_overflow`, `queue_full`, `dst_skipped`,
   `daemon_stopped`, or `start_failed`.
 
@@ -146,7 +146,7 @@ what to use.
 ## Missed ticks: catchup
 
 While the daemon was down — a reboot, a deploy, a hard crash — some
-scheduled firings just didn't happen. `catch_up` is a number: **how many
+scheduled firings just didn't happen. [`catch_up`](/configuration/tasks/#catch_up) is a number: **how many
 of those missed ticks to re-fire** the next time the daemon starts up.
 
 ```toml
@@ -168,7 +168,7 @@ sees the task — so a fresh install won't suddenly queue up a mountain of
 
 ### Capping the backfill
 
-`catch_up` is itself the cap. Picture a `* * * * *` task with a daemon
+[`catch_up`](/configuration/tasks/#catch_up) is itself the cap. Picture a `* * * * *` task with a daemon
 that was down for a day — that's a huge backlog waiting to fire at
 startup. Setting `catch_up = 200` fires at most 200 of the missed ticks,
 so one long outage can't bury the scheduler.
@@ -198,15 +198,15 @@ On the restart that detects a gap, RunWisp records **one** browsable run
 with `end_reason = "missed"` and raises a **failure-level** alert (kind
 `run.missed`) naming the task and how many scheduled runs were missed.
 It reaches the bell — and any channel that already gets your failures —
-with no extra configuration. Detection is independent of `catch_up`:
+with no extra configuration. Detection is independent of [`catch_up`](/configuration/tasks/#catch_up):
 any value — `0`, `1`, or higher — detects, records, and alerts. The value
-only decides whether anything **re-runs**. Even when `catch_up` caps the
+only decides whether anything **re-runs**. Even when [`catch_up`](/configuration/tasks/#catch_up) caps the
 backfill, the alert reports the full detected count, not the smaller
 number that re-ran.
 
 Some tasks miss ticks by design — a laptop that's only on during the
 day, a task you only ever trigger by hand. For those, drop `missed` from
-the task's [`failures`](/configuration/tasks/#what-counts-as-a-failure)
+the task's [`failures`](/configuration/tasks/#failures)
 list so a miss no longer counts as a failure (the run row is still
 recorded — only the classification and its alert change):
 
@@ -220,11 +220,11 @@ failures = ["failed", "timeout", "crashed"]   # expected to be down overnight; d
 failures = ["failed", "timeout", "crashed", "log_overflow", "start_failed"]
 ```
 
-`failures` defaults to
+[`failures`](/configuration/tasks/#failures) defaults to
 `["failed", "timeout", "crashed", "log_overflow", "start_failed", "missed"]`
 and inherits from `[defaults]` like the other per-task keys. See
 [Per-task notifications](/notifications/per-task/#missed-run-alerts) for
-how it fits with `notify`.
+how it fits with [`notify`](/configuration/tasks/#notify).
 
 ## On startup: unfinished runs are marked crashed
 
@@ -249,7 +249,7 @@ deterministic. Two tasks both set to `cron = "0 2 * * *"` fire at the
 exact same instant. That's fine until thirty of them do it at once and
 the machine buckles under the stampede.
 
-That's what `jitter` is for. Give a task a window and RunWisp stops the
+That's what [`jitter`](/configuration/tasks/#jitter) is for. Give a task a window and RunWisp stops the
 stampede — without making anything wait that doesn't have to:
 
 ```toml

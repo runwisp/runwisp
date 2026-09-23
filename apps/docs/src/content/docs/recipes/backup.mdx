@@ -53,9 +53,9 @@ echo "Wrote $DEST/app_production-$TS.dump.gz ($(du -h "$DEST/app_production-$TS.
 ```
 
 The matching `[notifiers.<id>]` block — described on the
-[Slack provider page][slack] — receives `failed`, `timeout`, and
+[Slack provider page][slack] — receives `failed`, [`timeout`](/configuration/tasks/#timeout), and
 `crashed`, because those are the run-end outcomes that
-`notify` covers.
+[`notify`](/configuration/tasks/#notify) covers.
 
 [slack]: /notifications/providers/slack/
 
@@ -91,8 +91,8 @@ no fresh artefact.
 
 If you want an explicit hard kill — e.g. "no single dump should
 ever take more than 4 h on this database" — uncomment the
-`timeout` line and size it to **worst-case observed dump × ~1.5**.
-See [Retries & timeouts][retries] for what `timeout` actually does
+[`timeout`](/configuration/tasks/#timeout) line and size it to **worst-case observed dump × ~1.5**.
+See [Retries & timeouts][retries] for what [`timeout`](/configuration/tasks/#timeout) actually does
 (per-attempt, hard kill, no grace period).
 
 [retries]: /concepts/retries/
@@ -112,15 +112,15 @@ belong on probes and idempotent fetches — see
 Three months of nightly dumps is enough for both forensics ("when
 did the schema change?") and to outlast a long incident
 ("we discovered the data corruption a month later"). We use
-`keep_for` rather than `keep_runs` because a time window is what
+[`keep_for`](/configuration/tasks/#keep_for) rather than [`keep_runs`](/configuration/tasks/#keep_runs) because a time window is what
 operators actually reason about; the row count falls out of the
 cadence. See [Logs & retention][logs].
 
-[logs]: /concepts/logs/#retention-keep_runs-and-keep_for
+[logs]: /concepts/logs/#retention-[`keep_runs`](/configuration/tasks/#keep_runs)-and-[`keep_for`](/configuration/tasks/#keep_for)
 
 ### `notify`
 
-Sends a message on `failed`, `timeout`, and `crashed`. See
+Sends a message on `failed`, [`timeout`](/configuration/tasks/#timeout), and `crashed`. See
 [Per-task notifications][pertask] for the full behaviour. The bell is
 added by default, so even without Slack you still see the failure in
 the Web UI.

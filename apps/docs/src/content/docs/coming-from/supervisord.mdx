@@ -174,24 +174,24 @@ just never leave one enabled in both places.
 A `[program]` is a long-running, auto-restarted process — which is exactly a
 RunWisp **service**. Most keys carry straight over:
 
-| supervisord                     | runwisp.toml             | Notes                                                                               |
-| ------------------------------- | ------------------------ | ----------------------------------------------------------------------------------- |
-| `[program:web]`                 | `[services.web]`         | One program → one service.                                                          |
-| `command`                       | `run`                    | `%(program_name)s` is expanded.                                                     |
-| `directory`                     | `working_dir`            |                                                                                     |
-| `user`                          | `user`                   | Needs the daemon running as root to switch users.                                   |
-| `umask`                         | `umask`                  |                                                                                     |
-| `numprocs`                      | `instances`              | Each gets a `RUNWISP_INSTANCE_INDEX` (0-based).                                     |
-| `startsecs`                     | `healthy_after`          | Uptime that marks an instance healthy.                                              |
-| `startretries`                  | `restart_attempts`       | Fast failures tolerated before FATAL.                                               |
-| `stopsignal`                    | `stop_signal`            | `INT` → `SIGINT`.                                                                   |
-| `stopwaitsecs`                  | `graceful_stop`          | Grace window before SIGKILL.                                                        |
-| `exitcodes`                     | _(dropped)_              | RunWisp has no success-code allowlist: exit `0` succeeds, any non-zero is `failed`. |
-| `priority`                      | `priority`               | Boot start order.                                                                   |
-| `autostart`                     | `autostart`              | Whether instances start at boot.                                                    |
-| `environment`                   | `[services.NAME.env]`    | Quoted values are parsed correctly.                                                 |
-| `[group:site] programs=web,…`   | `group = "site"` on each | RunWisp has no program _groups_; members are tagged.                                |
-| `[include] files=conf.d/*.conf` | _(followed and merged)_  | Resolved relative to the config file.                                               |
+| supervisord                     | runwisp.toml                                                    | Notes                                                                               |
+| ------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `[program:web]`                 | `[services.web]`                                                | One program → one service.                                                          |
+| `command`                       | [`run`](/configuration/tasks/#run)                              | `%(program_name)s` is expanded.                                                     |
+| `directory`                     | [`working_dir`](/configuration/tasks/#working_dir)              |                                                                                     |
+| `user`                          | [`user`](/configuration/tasks/#user)                            | Needs the daemon running as root to switch users.                                   |
+| `umask`                         | [`umask`](/configuration/tasks/#umask)                          |                                                                                     |
+| `numprocs`                      | [`instances`](/configuration/services/#instances)               | Each gets a `RUNWISP_INSTANCE_INDEX` (0-based).                                     |
+| `startsecs`                     | [`healthy_after`](/configuration/services/#healthy_after)       | Uptime that marks an instance healthy.                                              |
+| `startretries`                  | [`restart_attempts`](/configuration/services/#restart_attempts) | Fast failures tolerated before FATAL.                                               |
+| `stopsignal`                    | [`stop_signal`](/configuration/tasks/#stop_signal)              | `INT` → `SIGINT`.                                                                   |
+| `stopwaitsecs`                  | [`graceful_stop`](/configuration/tasks/#graceful_stop)          | Grace window before SIGKILL.                                                        |
+| `exitcodes`                     | _(dropped)_                                                     | RunWisp has no success-code allowlist: exit `0` succeeds, any non-zero is `failed`. |
+| `priority`                      | [`priority`](/configuration/services/#priority)                 | Boot start order.                                                                   |
+| `autostart`                     | [`autostart`](/configuration/services/#autostart)               | Whether instances start at boot.                                                    |
+| `environment`                   | `[services.NAME.env]`                                           | Quoted values are parsed correctly.                                                 |
+| `[group:site] programs=web,…`   | `group = "site"` on each                                        | RunWisp has no program _groups_; members are tagged.                                |
+| `[include] files=conf.d/*.conf` | _(followed and merged)_                                         | Resolved relative to the config file.                                               |
 
 ## What needs a human
 
@@ -204,13 +204,13 @@ mattered. The ones to know about:
   they exit. `autorestart=true` (and supervisord's default, `unexpected`) map to
   a service directly. `autorestart=false` is different: that's a run-once
   process, so it's imported as a **task** with
-  [`run_on_start`](/configuration/tasks/) instead of a
+  [`run_on_start`](/configuration/tasks/#run_on_start) instead of a
   service. RunWisp treats only exit `0` as success, so if your program signals
-  "done, no restart" with a non-zero code, end its `run` with `|| true` so it
+  "done, no restart" with a non-zero code, end its [`run`](/configuration/tasks/#run) with `|| true` so it
   exits `0`.
 - **`exitcodes`.** Dropped — RunWisp has no success-code allowlist. Exit `0`
   succeeds and any non-zero exit is `failed`; use
-  [`failures`](/configuration/tasks/#what-counts-as-a-failure) to choose which
+  [`failures`](/configuration/tasks/#failures) to choose which
   outcomes count as failures for stats and alerts.
 - **`%(...)s` expansions.** `%(program_name)s` is filled in. Anything else —
   `%(process_num)s`, `%(ENV_x)s`, `%(host_node_name)s` — is left in place with a
@@ -236,15 +236,15 @@ mattered. The ones to know about:
   Web UI and TUI and indexed for search — not a flat file you rotate by hand.
 - **Restart visibility.** Every restart is recorded with timing, so a flapping
   instance is obvious instead of buried in `supervisord.log`. Healthy uptime
-  (`healthy_after`) resets the backoff; too many fast failures mark it FATAL.
+  ([`healthy_after`](/configuration/services/#healthy_after)) resets the backoff; too many fast failures mark it FATAL.
 - **Failure alerts.** [Notify](/notifications/model/) on failure through Slack,
   Telegram, email, or a webhook.
-- **Start ordering.** [`priority`](/configuration/services/) controls boot
-  order, and [`depends_on`](/configuration/services/) gates a service on another
+- **Start ordering.** [`priority`](/configuration/services/#priority) controls boot
+  order, and [`depends_on`](/configuration/services/#depends_on) gates a service on another
   becoming healthy first — both honored at startup.
 - **Trigger / stop from anywhere.** Start and stop services from the dashboard,
-  TUI, or REST API; stops are graceful, honoring your `stop_signal` and
-  `graceful_stop`.
+  TUI, or REST API; stops are graceful, honoring your [`stop_signal`](/configuration/tasks/#stop_signal) and
+  [`graceful_stop`](/configuration/tasks/#graceful_stop).
 
 With supervisord out of the picture, `runwisp.toml` is the single place your
 processes are defined.

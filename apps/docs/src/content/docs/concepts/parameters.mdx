@@ -14,7 +14,7 @@ to export, what date to back-fill from, whether this is a `--dry-run`.
 You could hard-code one task per tenant, or you could declare the bits
 that change as **parameters** and fill them in when you trigger.
 
-Declare `params` on a task and the dashboard, TUI, CLI, and REST API all
+Declare [`params`](/configuration/tasks/#params) on a task and the dashboard, TUI, CLI, and REST API all
 grow a little form for it. You pick the values, RunWisp feeds them to your
 command, and the run history records exactly what each execution was
 handed.
@@ -48,16 +48,16 @@ params = [
 Each entry names **exactly one** of four keywords, and that keyword
 decides how the value reaches your command:
 
-| Keyword  | How it reaches the command                                  |
-| -------- | ----------------------------------------------------------- |
-| `env`    | Exported as an environment variable                         |
-| `arg`    | Appended as a positional argument, in declaration order     |
-| `option` | Appended as `--name value`                                  |
-| `flag`   | A boolean — the token is appended when on, dropped when off |
+| Keyword                            | How it reaches the command                                  |
+| ---------------------------------- | ----------------------------------------------------------- |
+| [`env`](/configuration/tasks/#env) | Exported as an environment variable                         |
+| `arg`                              | Appended as a positional argument, in declaration order     |
+| `option`                           | Appended as `--name value`                                  |
+| `flag`                             | A boolean — the token is appended when on, dropped when off |
 
 Beyond the keyword, each input takes optional modifiers — `default`,
 `required`, `choices`, `allow_custom`, `type` (`string` or `number`), and
-a `description` shown as help text under the field. The
+a [`description`](/configuration/tasks/#description) shown as help text under the field. The
 [`[tasks.*]` reference](/configuration/tasks/#parameters) is the exhaustive
 list, with the rules the loader enforces and the omit-vs-empty-string
 distinction spelled out.
@@ -73,7 +73,7 @@ You've got four surfaces, and they're the same form in four skins:
   up in the terminal.
 - **CLI** — `runwisp run <task> --param key=value`, repeated once per
   parameter. See the [CLI reference](/reference/cli/#run-a-task-now).
-- **REST API** — the trigger call takes a `params` object. That's the one
+- **REST API** — the trigger call takes a [`params`](/configuration/tasks/#params) object. That's the one
   to reach for from a deploy script or CI; the
   [remote-trigger recipe](/recipes/remote-trigger/) has the full example.
 
@@ -86,11 +86,11 @@ produced which result.
 ## Scheduled runs use the defaults
 
 A cron tick has nobody to ask. So **scheduled runs** — anything fired by
-`cron`, `run_on_start`, or [catch-up](/concepts/scheduling/#missed-ticks-catchup) —
+[`cron`](/configuration/tasks/#cron), [`run_on_start`](/configuration/tasks/#run_on_start), or [catch-up](/concepts/scheduling/#missed-ticks-catchup) —
 use each parameter's declared `default`, and so do
 [retries](/concepts/retries/) (a retry replays exactly what the original
 run was given). That's also why a `required` parameter with no `default`
-is only allowed on a manual-only task: put one on a `cron` task and the
+is only allowed on a manual-only task: put one on a [`cron`](/configuration/tasks/#cron) task and the
 config is rejected, because the scheduler would have no value to supply.
 
 If a task is meant to run both on a schedule and by hand, give every

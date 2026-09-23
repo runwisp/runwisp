@@ -1,0 +1,10 @@
+**type**: `size` **default**: `100mb`
+
+The largest size of one run's captured output on disk. Units: `b`, `kb`, `mb`,
+`gb`, `tb`. At the limit, [`log_on_full`](/configuration/tasks/#log_on_full) decides what happens.
+`0`, negative, and invalid values are rejected at load.
+
+```toml
+[tasks.backup-db]
+log_max_size = "500mb"
+```

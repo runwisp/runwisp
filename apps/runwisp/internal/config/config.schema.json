@@ -81,7 +81,7 @@
     },
     "failures": {
       "type": "array",
-      "description": "Which outcomes count as a failure (for stats, UI badges, and notifications). Each token is an EndReason name (failed, timeout, crashed, log_overflow, start_failed, missed, stopped, …) or an exit code / inclusive range (\"42\", \"1-23\"; 1-255, exit 0 always succeeds). A bare list replaces the inherited set; prefix every token with + or - to add/drop against it instead (\"-missed\", \"+stopped\") — mixing bare and prefixed tokens is rejected. Exit tokens only apply to a run that actually exited (reason failed). Omit to inherit; the built-in default is [\"failed\",\"timeout\",\"crashed\",\"log_overflow\",\"start_failed\",\"missed\"].",
+      "description": "Which outcomes count as a failure (for stats, UI badges, notifications, and gating retry_attempts/restart=on_failure). Each token is an EndReason name (failed, timeout, crashed, log_overflow, start_failed, missed, stopped, …) or an exit code / inclusive range (\"42\", \"1-23\"; 1-255, exit 0 always succeeds). A bare list replaces the inherited set; prefix every token with + or - to add/drop against it instead (\"-missed\", \"+stopped\") — mixing bare and prefixed tokens is rejected. Exit tokens only apply to a run that actually exited (reason failed). Omit to inherit; the built-in default is [\"failed\",\"timeout\",\"crashed\",\"log_overflow\",\"start_failed\",\"missed\"]. A retry/restart still only fires for failed/timeout/crashed/log_overflow/start_failed, so narrowing failures narrows retries but promoting stopped/missed never triggers one.",
       "items": {
         "type": "string",
         "pattern": "^[+-]?((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]?)(-(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]?))?|failed|stopped|timeout|crashed|skipped|log_overflow|queue_full|dst_skipped|daemon_stopped|missed|start_failed)$"
@@ -199,7 +199,7 @@
         "max_concurrent": { "type": "integer", "minimum": 1, "maximum": 1024, "default": 1, "description": "Concurrent run cap." },
         "max_queued": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 100, "description": "Queued-run depth." },
         "on_overlap": { "$ref": "#/$defs/onOverlap", "default": "queue" },
-        "retry_attempts": { "type": "integer", "minimum": 0, "maximum": 100, "default": 0, "description": "Retries after a failed attempt." },
+        "retry_attempts": { "type": "integer", "minimum": 0, "maximum": 100, "default": 0, "description": "Retries after a failed attempt. Fires only when the reason is also classified as a failure by `failures`." },
         "retry_delay": { "$ref": "#/$defs/duration", "description": "Delay between retries. Default 5s." },
         "retry_backoff": { "$ref": "#/$defs/backoff" },
         "working_dir": { "type": "string", "description": "Process cwd; relative to runwisp.toml dir, ~ expands." },
@@ -223,7 +223,7 @@
       "properties": {
         "group": { "type": "string", "default": "Services", "description": "UI grouping label." },
         "manual_trigger": { "type": "boolean", "default": true, "description": "Allow stop/restart/start from CLI/API/UI/station; false locks it to its restart policy until a config reload." },
-        "restart": { "type": "string", "enum": ["never", "on_failure", "always"], "default": "always" },
+        "restart": { "type": "string", "enum": ["never", "on_failure", "always"], "default": "always", "description": "on_failure restarts only when the reason is also classified as a failure by `failures`." },
         "timeout": { "$ref": "#/$defs/duration" },
         "graceful_stop": { "$ref": "#/$defs/duration" },
         "working_dir": { "type": "string" },
@@ -291,7 +291,7 @@
         "manual_trigger": { "type": "boolean", "description": "Allow stop/restart/start from CLI/API/UI/station; false locks it to its restart policy until a config reload." },
         "timeout": { "$ref": "#/$defs/duration" },
         "graceful_stop": { "$ref": "#/$defs/duration" },
-        "restart": { "type": "string", "enum": ["never", "on_failure", "always"] },
+        "restart": { "type": "string", "enum": ["never", "on_failure", "always"], "description": "on_failure restarts only when the reason is also classified as a failure by `failures`." },
         "instances": { "type": "integer", "minimum": 1, "maximum": 64 },
         "restart_delay": { "$ref": "#/$defs/duration" },
         "restart_backoff": { "$ref": "#/$defs/backoff" },

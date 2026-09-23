@@ -1,0 +1,12 @@
+**type**: `string` **default**: `/bin/sh`
+
+The shell for [`run`](/configuration/tasks/#run), as an absolute path. Use
+`/bin/bash` for arrays, `[[ ]]`, or `set -o pipefail`. It is started as
+`<shell> -e -c <script>`, so [fail-fast](/configuration/tasks/#fail-fast) works
+for POSIX shells. RunWisp warns at boot when it can't turn fail-fast on.
+
+```toml
+[tasks.nightly-report]
+shell = "/bin/bash"
+run   = "set -o pipefail; make report | tee out.log"
+```

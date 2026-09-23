@@ -2,26 +2,25 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: "[daemon]"
-description: Daemon-wide settings — shutdown_timeout — plus the CLI flags that pick the data directory and listen address.
+description: Daemon-wide settings (shutdown_timeout, timezone, TLS, metrics, includes), plus the CLI flags and env vars for the config, data directory, and listen address.
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
-`[daemon]` holds the handful of settings that apply to the daemon as a
-whole, rather than to any one task or service. The whole section is
-optional — leave it out and the built-in defaults below take over.
+`[daemon]` holds settings for the whole daemon. The table is optional. A change
+to any `[daemon]` key except `include` and `include_cron` needs
+`runwisp restart`; [`runwisp reload`](/operations/reload/) rejects it.
 
-You won't find the **data directory** or **listen address** in here,
-and that's on purpose: they have to be set _before_ the config file is
-even read, so they live on the CLI instead (or in however your
-supervisor invokes `runwisp`). They're documented on this page anyway,
-since in practice you tend to think about them together.
+The config path, data directory, and listen address are
+[CLI flags](#cli-flags-config-data-directory--listen-address), because they are
+needed before the config file is read.
 
 ## Keys
 
 ```toml
 [daemon]
 shutdown_timeout = "10s"
+timezone         = "Europe/Bratislava"
 external_url     = "https://runwisp.example.com"
 check_updates    = true
 tls              = "off"
@@ -34,495 +33,358 @@ include          = ["conf.d/*.toml"]
 # include_cron   = ["/etc/crontab", "/etc/cron.d/*"]
 ```
 
-| Key                      | Default | What it does                                                                                                                                                                                                                                                |
-| ------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `shutdown_timeout`       | `"10s"` | Whole-daemon shutdown budget. After `SIGTERM`, the daemon SIGKILLs any in-flight runs that haven't exited within this window so the process can actually exit.                                                                                              |
-| `external_url`           | _unset_ | Public base URL of this daemon's Web UI. When set, notification messages (Slack, Telegram) include a deep-link back to the run; when unset, the link line is omitted.                                                                                       |
-| `check_updates`          | `true`  | Check for a newer release (usually every 6 hours) and show an indicator next to the version in the Web UI and TUI. Never auto-updates. Set `false` to keep the daemon fully offline — see [`check_updates`](#check_updates) below.                          |
-| `tls`                    | `"off"` | `"off"` always serves plain HTTP; `"auto"` serves HTTPS whenever the bind address is non-loopback (self-signing a cert on first boot). Loopback binds stay HTTP either way. Ignored when `tls_cert`/`tls_key` are set.                                      |
-| `tls_cert`               | _unset_ | Path to a PEM certificate to serve instead of the self-signed one. Set together with `tls_key`. When set, HTTPS is served on every bind address, loopback included.                                                                                         |
-| `tls_key`                | _unset_ | Path to the PEM private key matching `tls_cert`. Both keys are set together or not at all.                                                                                                                                                                  |
-| `metrics_enabled`        | `false` | Master switch for the Prometheus-compatible `/metrics` endpoint. Off by default — task names and the daemon version label are visible to anyone who can reach the endpoint, so it stays closed until you turn it on.                                        |
-| `metrics_listen`         | _unset_ | Optional `host:port` for a dedicated metrics listener (e.g. `"127.0.0.1:9478"`). When set, `/metrics` is **only** reachable on this address — never on the main UI/REST listener, and setting it enables metrics on its own.                                |
-| `allow_station_dispatch` | `false` | Opt in to ad-hoc runs requested by a connected control-plane peer. Off by default. Dispatched runs are one-shot and never modify your task set — see [the control-plane section](#allow_station_dispatch) below.                                            |
-| `trusted_proxies`        | _unset_ | CIDR allowlist of reverse proxies whose `X-Forwarded-For` header is trusted for the client IP. Catch-all ranges (`0.0.0.0/0`, `::/0`) are rejected. The `RUNWISP_TRUSTED_PROXIES` env var overrides this — see [`trusted_proxies`](#trusted_proxies) below. |
-| `include`                | _unset_ | Glob patterns for extra TOML files to merge into this config at load. Lets you split tasks across `conf.d/*.toml` instead of one giant file. Only valid in the root config.                                                                                 |
-| `include_cron`           | _unset_ | Glob patterns for real crontabs (system, `cron.d`, or per-user spool) to read as live task definitions at every load and reload. Point RunWisp at what cron already reads instead of converting everything up front. Only valid in the root config.         |
-
 ### `shutdown_timeout`
 
-Think of `shutdown_timeout` as the budget for the **whole daemon**.
-Every task and service still has its own
-[`graceful_stop`](/configuration/tasks/#retries--timeout), but it has to
-fit inside that overall cap. If some task's `graceful_stop` is longer
-than `shutdown_timeout`, the daemon warns you about it by name at boot —
-because in that situation it'll SIGKILL the straggler before its
-per-task grace window is even up.
+**type**: `duration` **default**: `"10s"`
 
-You've got three ways out of that: raise `shutdown_timeout`, lower the
-per-task `graceful_stop`, or just accept that the task's cleanup hook
-might get cut short when the daemon goes down.
+How long the daemon waits for running tasks and services to exit on shutdown.
+After that, it SIGKILLs what is left.
+
+- Each unit's [`graceful_stop`](/configuration/tasks/#graceful_stop) must fit
+  inside this. If one is longer, the daemon warns about it by name at boot, and
+  at shutdown the unit may be killed before its own grace window ends.
+- To fix the warning, raise `shutdown_timeout` or lower that unit's
+  `graceful_stop`.
+
+```toml
+[daemon]
+shutdown_timeout = "30s"
+```
+
+### `timezone`
+
+**type**: `string` **default**: the host zone (`UTC` if it can't be detected)
+
+The IANA zone used to read [`cron`](/configuration/tasks/#cron) for every task
+that doesn't set its own [`timezone`](/configuration/tasks/#timezone). An
+unknown zone name is rejected at load.
+
+```toml
+[daemon]
+timezone = "Europe/Bratislava"
+```
 
 ### `external_url`
 
-`external_url` is the **public** address where someone — you, or whoever
-gets a notification — actually reaches this daemon's Web UI. That might
-be `https://runwisp.example.com` behind a reverse proxy, or
-`http://192.168.1.50:9477` on a LAN. Trailing slashes get stripped, and
-the scheme has to be `http` or `https`.
+**type**: `string` **default**: unset
 
-The daemon never calls out to this URL itself — it's purely for
-rendering. When a Slack or Telegram notification fires, the template
-tacks on a "View run" link like
-`<external_url>/tasks/<task>/<id>`, which drops you straight into
-that run's detail panel in the dashboard.
+The public address of this daemon's Web UI, for example
+`https://runwisp.example.com` behind a reverse proxy or `http://192.168.1.50:9477`
+on a LAN. Notifications (Slack, Telegram, and others) add a "View run" link of
+the form `<external_url>/tasks/<task>/<id>`.
 
-Leaving `external_url` unset is perfectly fine and fully supported.
-Notifications still render in full — they just skip the link line rather
-than print a broken URL.
+- Must be `http` or `https` with a host. A trailing slash is removed.
+- The daemon never connects to this URL.
+- When unset, notifications leave out the link.
+
+```toml
+[daemon]
+external_url = "https://runwisp.example.com"
+```
 
 ### `check_updates`
 
-Checks for a newer release (usually every 6 hours) and shows an amber
-indicator next to the version in the Web UI and TUI. Never downloads or
-installs anything. Set `check_updates = false` to keep the daemon fully
-offline.
+**type**: `boolean` **default**: `true`
+
+Checks for a newer release (usually every 6 hours) and shows an amber marker
+next to the version in the Web UI and TUI. It never downloads or installs
+anything. Set `false` to keep the daemon fully offline.
+
+```toml
+[daemon]
+check_updates = false
+```
 
 ### `tls`, `tls_cert`, `tls_key`
 
-By default RunWisp serves plain HTTP on every bind address, loopback or
-not. Set `tls = "auto"` and it'll serve HTTPS by itself instead, with no
-certificate to obtain and nothing to wire up:
+**tls**: `enum`, default `"off"` · **tls_cert**: `string`, default unset ·
+**tls_key**: `string`, default unset
 
-- **Loopback (`--host 127.0.0.1`, the default):** stays plain HTTP even
-  with `tls = "auto"`. There's nothing on the wire to eavesdrop, and
-  `curl http://localhost:9477` just works for local dev.
-- **Non-loopback (`--host 0.0.0.0`, a LAN IP, …) with `tls = "auto"`:**
-  the daemon generates a long-lived self-signed certificate on first boot,
-  stores it under `<data>/tls/`, and serves HTTPS. Auth cookies and CHAP
-  responses never cross a real network in cleartext.
+How the HTTP server does TLS. The bind address comes from `--host`.
 
-Leave `tls` unset (or `"off"`) and a non-loopback bind serves plain HTTP —
-the daemon prints a loud startup banner when it does, since that's the
-one case where auth tokens really can cross a real network in the clear.
+| Setting                | Loopback bind (`127.0.0.1`, default) | Other bind (`0.0.0.0`, LAN IP) |
+| ---------------------- | ------------------------------------ | ------------------------------ |
+| `tls = "off"`          | HTTP                                 | HTTP, with a startup warning   |
+| `tls = "auto"`         | HTTP                                 | HTTPS, self-signed certificate |
+| `tls_cert` + `tls_key` | HTTPS, your certificate              | HTTPS, your certificate        |
 
-Because the cert is self-signed, the first browser visit shows the usual
-"not trusted" warning, and the CLI/TUI pin the cert on first connect
-(trust-on-first-use, like SSH). To let you verify you're talking to the
-right daemon, the startup log prints the certificate's SHA-256 fingerprint:
-
-```
-Serving HTTPS  bind=0.0.0.0  cert=self-signed  fingerprint=sha256:1a2b3c…
+```toml
+[daemon]
+tls = "auto"
 ```
 
-Compare that against the warning your browser shows, or the fingerprint
-the CLI pins, and you know the connection is genuine. If you ever
-regenerate the cert (delete `<data>/tls/` and restart), the CLI will
-refuse to connect until you clear the old pin — same loud "host identity
-changed" behaviour as `ssh`.
-
-**Bring your own certificate** by pointing `tls_cert` and `tls_key` at a
-PEM pair — a cert from your internal CA, say, or one a tool like `mkcert`
-made. Supplying a pair forces HTTPS on every bind address (loopback
-included) and skips the self-signed flow entirely.
-
-**Leave it off** (the default) when something else already terminates
-TLS — most commonly a reverse proxy (nginx, Caddy, Traefik) doing TLS out
-front and forwarding plain HTTP to RunWisp on a private network. In that
-case set `RUNWISP_TRUSTED_PROXIES` to the proxy's CIDR so the daemon honours
-`X-Forwarded-Proto` and still marks session cookies `Secure`. A
-non-loopback bind on `tls = "off"` prints a loud startup banner — plain
-HTTP on a real network exposes your auth tokens, and that should never be
-silent.
-
-What RunWisp deliberately does **not** do is ACME / Let's Encrypt: that
-needs outbound network and a public domain, which would break the
-local-first, offline-complete promise. For a publicly-trusted cert, use a
-reverse proxy or supply your own pair.
+- **Self-signed (`auto`):** generated on first boot and stored in `<data>/tls/`.
+  The startup log prints its fingerprint
+  (`Serving HTTPS bind=0.0.0.0 cert=self-signed fingerprint=sha256:…`) so you can
+  compare it with what your browser shows. The CLI and TUI pin the certificate
+  on first connect, like SSH.
+- **New certificate:** if you delete `<data>/tls/` and restart, the CLI refuses
+  to connect until you clear the old pin.
+- **Your own certificate:** set `tls_cert` and `tls_key` to a PEM pair (from
+  your CA or `mkcert`). Set both or neither. This overrides `tls`.
+- **Reverse proxy:** leave `tls = "off"` when a proxy (nginx, Caddy, Traefik)
+  handles TLS, and set [`trusted_proxies`](#trusted_proxies) so the daemon
+  trusts `X-Forwarded-Proto` and marks cookies `Secure`.
+- **No ACME / Let's Encrypt.** For a publicly trusted certificate, use a reverse
+  proxy or your own pair.
+- The `RUNWISP_TLS` env var overrides `tls`.
 
 ### `metrics_enabled`
 
-`metrics_enabled` is the gate on the OpenMetrics scrape endpoint at
-`/metrics`, and it's off by default for a reason: `runwisp_task_active_runs`
-exposes your task names as label values, and `runwisp_build_info`
-exposes the daemon version — that's exactly the kind of recon detail a
-publicly-reachable daemon shouldn't be handing out unasked. Flip it to
-`true` when you're ready to wire RunWisp into Prometheus, Grafana Agent,
-or an OpenTelemetry collector. The full label list and a sample scrape
-config are over in [Operations / Metrics](/operations/metrics/).
+**type**: `boolean` **default**: `false`
+
+Turns on the OpenMetrics endpoint at `/metrics` (for Prometheus, Grafana Agent,
+OpenTelemetry). It is off by default because the metrics show task names and the
+daemon version. See [Metrics](/operations/metrics/) for the metric list.
+
+```toml
+[daemon]
+metrics_enabled = true
+```
 
 ### `metrics_listen`
 
-With `metrics_enabled = true`, the endpoint rides on the main UI/REST
-listener by default. Point `metrics_listen` at something like
-`"127.0.0.1:9478"` (any host:port works) and `/metrics` binds there
-instead. That's the knob you want when `--host 0.0.0.0` puts the
-dashboard out in public but you'd rather keep the scrape surface on
-loopback. The dedicated listener serves _only_ `/metrics` — the UI, REST
-API, and `/health` all stay on the main listener.
+**type**: `string` **default**: unset
 
-The dedicated metrics listener is always plain HTTP — auto-HTTPS (see
-[`tls`](#tls-tls_cert-tls_key)) does not wrap it. Keep it on loopback (or a
-private interface like a Tailscale address) and let your scraper reach it
-locally or through a proxy; don't expose it on a public interface.
+A separate `host:port` for `/metrics`, for example `"127.0.0.1:9478"`. Use it to
+keep metrics on loopback while the Web UI is public.
 
-Setting `metrics_listen` enables metrics on its own — you don't also need
-`metrics_enabled = true`.
+- When set, `/metrics` is served only on this address. The UI, REST API, and
+  `/health` stay on the main listener.
+- Setting it turns metrics on. `metrics_enabled = false` together with
+  `metrics_listen` is an error.
+- This listener is always plain HTTP. Keep it on loopback or a private
+  interface.
+
+```toml
+[daemon]
+metrics_listen = "127.0.0.1:9478"
+```
 
 ### `trusted_proxies`
 
-When RunWisp sits behind a reverse proxy — nginx, Caddy, Traefik, a Cloudflare
-Tunnel — every request arrives from the proxy's IP, not the real client's. The
-proxy passes the original along in `X-Forwarded-For`, but a header is only
-trustworthy if you know the hop that set it. `trusted_proxies` is that list:
-the CIDR ranges RunWisp will believe `X-Forwarded-For` from.
+**type**: `string[]` (CIDR) **default**: unset
+
+Reverse proxies (nginx, Caddy, Traefik, Cloudflare Tunnel) whose
+`X-Forwarded-For` header RunWisp trusts for the real client IP.
+
+- A bare IP means a single address (`"127.0.0.1"` is `/32`).
+- `0.0.0.0/0` and `::/0` are rejected, because they would let any client fake
+  its IP.
+- The `RUNWISP_TRUSTED_PROXIES` env var (comma-separated) overrides this key.
+- See [Reverse proxies](/operations/auth/#reverse-proxies).
 
 ```toml
 [daemon]
 trusted_proxies = ["127.0.0.1/32", "10.0.0.0/8"]
 ```
 
-A bare IP is fine too (`"127.0.0.1"` is read as `/32`). Ranges that trust the
-whole internet — `0.0.0.0/0` or `::/0` — are **rejected at load**: if every
-client counts as a trusted proxy, anyone can forge the header and RunWisp's
-IP-based checks (loopback detection, the "is this request local" gate) become
-bypassable. `runwisp validate` catches a bad value before you restart into it.
-
-This is the common shape behind the [reverse-proxy setup](/operations/auth/#reverse-proxies):
-the proxy terminates TLS on the same host and forwards to `127.0.0.1`, so
-you trust loopback. The `RUNWISP_TRUSTED_PROXIES` env var (a comma-separated
-list) **overrides** this key when set — handy for a container or a systemd
-drop-in where the value is environment, not config. Like the rest of
-`[daemon]`, a change here needs a `runwisp restart`, not a reload.
-
 ### `allow_station_dispatch`
 
-RunWisp can optionally connect **outbound** to a control-plane peer. Even when
-it does, that peer can only observe runs and trigger tasks that already exist in
-your `runwisp.toml` — unless you set this:
+**type**: `boolean` **default**: `false`
+
+Lets a connected control-plane peer start **ad-hoc** runs: one-shot commands
+that are not in your config. Without it, the peer can only watch runs and
+trigger tasks defined in `runwisp.toml`.
+
+- Ad-hoc runs never change your task definitions. They are logged and stored
+  like any other run.
+- They run with the daemon's privileges. Enable this only if you need it.
 
 ```toml
 [daemon]
 allow_station_dispatch = true
 ```
 
-That lets the peer request an **ad-hoc** run: a one-shot command that isn't in
-your config. It's off by default, and deliberately so — it's the one path by
-which something outside the machine can name a command to execute.
-
-Even switched on, an ad-hoc run never modifies your task definitions. TOML stays
-the only thing that defines your tasks, and the run is logged and persisted like
-any other. Leave this off unless you specifically want that capability, and note
-the daemon runs with the privileges of whoever started it.
-
 ### `include`
 
-Once you've got more than a handful of tasks, one `runwisp.toml` gets
-unwieldy. `include` lets you break it up: point it at one or more glob
-patterns, and every matching file gets merged in as if you'd pasted it
-into the root config.
+**type**: `string[]` (glob) **default**: unset
+
+Extra TOML files to merge into the config, so you can split tasks across files.
 
 ```toml
 # runwisp.toml
 [daemon]
 include = ["conf.d/*.toml", "services/*.toml"]
-
-[tasks.heartbeat]
-run = "curl -fsS https://example.com/ping"
 ```
 
 ```toml
-# conf.d/backups.toml — no [daemon] here, just tasks
+# conf.d/backups.toml
 [tasks.nightly-backup]
-run = "/opt/backup.sh"
 cron = "0 3 * * *"
+run  = "/opt/backup.sh"
 ```
 
-A few rules keep "what wins" obvious:
-
-- **Patterns are relative to the file that wrote them.** A glob in the
-  root config resolves against the root config's directory; the same
-  goes for any relative path (`run`'s `working_dir`, `env_file`,
-  `compose_file`, `${file:...}`) _inside_ an included file — those
-  resolve against **that** file's directory, not the root's. So a
-  `conf.d/backups.toml` referencing `env_file = "backup.env"` looks for
-  `conf.d/backup.env`.
-- **Tasks, services, compose blocks, notifiers, and routes accumulate.**
-  Everything from the root and every matched file is pooled together.
-  Merge order is the root first, then matched files sorted by path — but
-  order only matters for tie-breaking error messages, since…
-- **Names must be unique across all files.** Two files defining a task,
-  service, or `[compose.*]` alias with the same name is a hard error
-  that names both files. No silent "last one wins".
-- **The big singleton tables stay in the root.** `[daemon]`,
-  `[defaults]`, `[storage]`, and `[notify]` may only appear in the root
-  config — setting one in an included file is an error. This keeps
-  daemon-wide settings and `[defaults]` inheritance in exactly one place.
-- **Includes don't nest.** An included file can't have its own
-  `[daemon].include`. One level, root-out.
-
-Editing — or adding, or deleting — any included file shows up the same
-way a root-config edit does: the daemon flags the config as stale in
-`/api/daemon` (and the UI), and a [`runwisp reload`](/operations/reload/)
-(or a restart) re-globs the patterns and picks up the change. Includes
-are resolved fresh on every load, so dropping a new `conf.d/*.toml` in
-place gets it merged on the next reload — no restart required.
+- Globs and relative paths inside a file resolve against that file's directory.
+  `env_file = "backup.env"` in `conf.d/backups.toml` means `conf.d/backup.env`.
+- Tasks, services, compose blocks, notifiers, and routes from all files are
+  merged. The root file loads first, then matches in path order.
+- Names must be unique across all files. A duplicate is an error that names both
+  files.
+- `[daemon]`, `[defaults]`, `[storage]`, and `[notify]` are allowed only in the
+  root file.
+- Includes don't nest: an included file can't have its own `include`.
+- `runwisp reload` re-reads the globs, so added, changed, or deleted files are
+  picked up without a restart.
 
 ### `include_cron`
 
-`include` merges RunWisp TOML. `include_cron` does the same thing with
-**real crontabs** — files in cron's own format, which RunWisp reads and
-never writes:
+**type**: `string[]` (glob) **default**: unset
+
+Real crontabs to load as tasks. RunWisp reads these files and never writes them.
+Every job becomes a task with captured output, run history, and a page in the UI.
 
 ```toml
-# runwisp.toml
 [daemon]
 include_cron = [
   "/etc/crontab",
   "/etc/cron.d/*",
-  "/var/spool/cron/crontabs/*", # everyone's own crontabs (needs a root daemon)
+  "/var/spool/cron/crontabs/*", # per-user crontabs (needs a root daemon)
 ]
 ```
 
-That's the whole cutover. Every job in those files becomes a RunWisp
-task with captured output, run history, and a page in the UI, and you
-haven't rewritten a single line of cron yet.
-
-You don't have to write that block by hand. `sudo runwisp takeover` finds the
-crontabs on the box and writes exactly this for you — scaffolding a
-`runwisp.toml` if there isn't one, or inserting the `include_cron` key into the
-one you have, comments and formatting untouched. The one thing it won't do is
-edit an `include_cron` you already maintain: that list is yours, so if it misses
-a crontab RunWisp prints what to add rather than changing it.
-
-Editing a crontab works
-exactly the way editing an included TOML file works: the daemon flags the
-config stale, and [`runwisp reload`](/operations/reload/) re-reads it.
-So `crontab -e` followed by `runwisp reload` is the whole workflow.
-
-When you're ready to convert a job to native TOML,
-`runwisp promote <task>` writes its definition into `runwisp.toml` — verbatim, the
-definition that was already running — and comments out the crontab line it came
-from so a still-live cron won't double-fire it. See
-[Graduating a job](/coming-from/crontabs/#graduating-a-job-into-your-own-config).
+- `sudo runwisp takeover` finds the crontabs on the host and writes this key for
+  you. It doesn't edit an `include_cron` you already have; it prints what to add.
+- After `crontab -e`, run [`runwisp reload`](/operations/reload/).
+- `runwisp promote <task>` copies a job into `runwisp.toml` and comments out the
+  crontab line. See
+  [Graduating a job](/coming-from/crontabs/#graduating-a-job-into-your-own-config).
 
 :::note[Held jobs]
-While a system cron daemon is alive and still owns these files, RunWisp
-**holds** the jobs it read from them: they load, they're listed, they show
-their schedule, and RunWisp does not fire them — cron already is. So you
-can point `include_cron` at `/etc/crontab` today and nothing runs twice.
-
-`sudo runwisp takeover` ends the hold in one step, and stopping cron any other
-way ends it within a minute — RunWisp keeps checking. See
-[Held jobs](/coming-from/cron/)
-for exactly what a hold stops, where you'll see it, and the one case that gets a
-warning instead.
+While a system cron daemon is running, RunWisp **holds** the jobs it read: they
+are listed with their schedule, but RunWisp doesn't start them, so nothing runs
+twice. `sudo runwisp takeover` ends the hold. If cron is stopped some other way,
+the hold ends within a minute. See [Held jobs](/coming-from/cron/).
 :::
 
 #### Which files, and who the jobs run as
 
-The path decides how a file is read — you don't flag it:
+The path decides the format:
 
-| Path                              | Format            | Jobs run as                         |
-| --------------------------------- | ----------------- | ----------------------------------- |
-| `/etc/crontab`, any `cron.d/*`    | system crontab    | the line's own sixth-field username |
-| `/var/spool/cron/crontabs/<user>` | per-user spool    | `<user>` — taken from the filename  |
-| `/var/spool/cron/<user>`          | per-user spool    | `<user>` (RHEL/SUSE layout)         |
-| anything else                     | `crontab -l` dump | whoever the daemon runs as          |
+| Path                              | Format            | Jobs run as                      |
+| --------------------------------- | ----------------- | -------------------------------- |
+| `/etc/crontab`, any `cron.d/*`    | system crontab    | the user in the line's 6th field |
+| `/var/spool/cron/crontabs/<user>` | per-user spool    | `<user>`, from the file name     |
+| `/var/spool/cron/<user>`          | per-user spool    | `<user>` (RHEL/SUSE layout)      |
+| anything else                     | `crontab -l` dump | the daemon's user                |
 
-Per-user crontabs need a **root daemon**, because only root can run a job
-as somebody else. If RunWisp can't become the account a spool file belongs
-to, it says so and refuses that file rather than running those jobs as
-itself. Reading your _own_ crontab without root works fine.
+- Running a job as another user needs a **root daemon**. Without root, RunWisp
+  refuses that spool file instead of running the jobs as itself. Your own
+  crontab works without root.
+- A spool file must be owned by the user it is named after (cron checks the
+  same).
 
-The filename is only a claim about who owns a spool crontab; RunWisp also
-requires the file to actually be owned by that account. That pairing is
-what makes taking an identity from a filename safe, and it's the same
-check cron makes.
+#### Which files a glob matches
 
-#### Globs read what cron would read
+A glob picks only the files cron would read:
 
-A glob only picks up the files cron itself would schedule, and the rule
-depends on which kind of directory it's globbing:
+- **`/etc/crontab` and `cron.d/*`:** regular files with names made of letters,
+  digits, `-`, and `_`. So `backup.dpkg-old`, `job.disabled`, and `README` are
+  skipped.
+- **Spool directories:** any name that could be a user (`john.doe` is fine),
+  except `tmp.*` (the temporary file `crontab -e` writes).
+- A path you name exactly is always read, whatever its name.
+- Skipped files are reported with the reason.
+- A spool directory the daemon can't read (Debian ships
+  `/var/spool/cron/crontabs` as `1730 root:crontab`) is reported, because cron
+  may be running jobs RunWisp can't see. Run RunWisp as root or as the owner.
 
-- **`/etc/crontab` and any `cron.d/*`** — regular files whose names are
-  made of letters, digits, `-` and `_`. That's how
-  `/etc/cron.d/backup.dpkg-old`, a hand-renamed `job.disabled`, and a
-  `README` stay out of your schedule.
-- **A spool directory (`/var/spool/cron/crontabs/*`)** — any name that
-  could be an account, which is a much looser rule: cron takes the
-  filename as-is and looks it up, so `john.doe` or a `$`-suffixed service
-  account is a perfectly normal crontab there. The one thing excluded on
-  purpose is `tmp.*`, which is the temp file `crontab -e` writes before
-  its atomic rename — never a real crontab, even mid-edit.
+#### Other rules
 
-Either way RunWisp skips what cron would skip too, and says which files
-it skipped and why.
+- **A job RunWisp can't reproduce is skipped; the rest of the file still
+  runs.** Each skip is reported as `file:line` at boot and by `runwisp reload`,
+  `runwisp status`, and `runwisp validate`. `runwisp import cron` explains each
+  one.
+- **An unreadable file is skipped; other files still load.** (For example: a
+  spool file for a deleted user, wrong file mode.) It is a config error only when
+  every matched file fails.
+- **NSS/LDAP/SSSD users are not visible** to the default release build
+  (`CGO_ENABLED=0`, reads only `/etc/passwd`), so their jobs are skipped. Check
+  with `getent passwd <name>`. A CGO build, or adding the user to `/etc/passwd`,
+  fixes it.
+- **`MAILTO=` is reported, not used.** RunWisp keeps the output and notifies on
+  failure instead. A [`sendmail` notifier](/notifications/providers/sendmail/)
+  replaces cron mail and removes the warning. A `SHELL=` that isn't an absolute
+  path is reported too.
+- **Missed jobs are not run later.** A job missed while the daemon was down is
+  recorded as missed, but not started. `promote` the task to get
+  [`catch_up`](/configuration/tasks/#catch_up).
+- **Overlapping runs queue.** Cron starts a second copy of a slow job; RunWisp
+  waits for the first. `promote` the task and set
+  [`max_concurrent`](/configuration/tasks/#max_concurrent) to change this.
+- **Task names come from the command.** If two crontabs give the same name, the
+  second becomes `backup-<crontab name>`, and the rename is reported.
+- **Files anyone could edit are refused.** A group- or world-writable crontab,
+  or one with an unrelated owner, fails the whole load. Spool directories are
+  the exception: they are group-writable and sticky by design.
+- **No `${...}` substitution** in cron files.
+  `0 3 * * * dump.sh ${DB}` reaches the shell as written.
+- **A file can't match both `include` and `include_cron`.** That is an error.
+- **anacron is not read.** `/etc/anacrontab` jobs keep running under anacron.
 
-Name a path outright and it's read whatever it's called:
-`include_cron = ["/etc/cron.d/backup.cron"]` is you overruling the rule on
-purpose, which is allowed.
-
-A spool directory that exists but isn't readable by this daemon
-(`/var/spool/cron/crontabs` ships `1730 root:crontab` on Debian, so a
-non-root RunWisp can't list it at all) is reported too — a plain glob
-can't tell "empty directory" apart from "directory I'm not allowed to
-open," and the second one means cron itself may be running jobs your
-`include_cron` can't see at all. Run RunWisp as root, or as the account
-that owns the crontabs you want, to read it.
-
-#### Everything else worth knowing
-
-- **A job RunWisp can't reproduce is skipped, and the rest of the file
-  still runs.** That's what cron does with a malformed entry, so it's
-  what RunWisp does too. Every skip is reported by `file:line` at boot,
-  by [`runwisp reload`](/operations/reload/), `runwisp status` and
-  `runwisp validate`, so you know exactly which jobs aren't running.
-  `runwisp import cron` on the same file explains each one in more detail.
-- **A whole file RunWisp can't read gets the same treatment as one bad
-  line: it's skipped, and every other `include_cron` file still loads.**
-  A spool crontab for a `userdel`'d account, a file at the wrong mode, an
-  NSS-only owner — none of it takes your other tasks down with it. The
-  only time this becomes a hard config error is every matched file
-  failing at once, since that's a sign the pattern itself is wrong rather
-  than one file being bad.
-- **A user column (or a spool filename) that names an NSS/LDAP/SSSD
-  account isn't visible to a statically-linked RunWisp binary.**
-  `CGO_ENABLED=0` — the default release build — makes `os/user` read only
-  `/etc/passwd`, so a job that belongs to a directory-only account is
-  skipped even though crond, which is usually dynamically linked, runs it
-  fine. `getent passwd <name>` tells you whether that's what's happening
-  on a given box; a CGO-enabled build (or the account also existing in
-  `/etc/passwd`) fixes it.
-- **A `MAILTO=` gets reported, not honoured.** Cron mailed a job's output;
-  RunWisp captures it instead and notifies on failure. Wire up a
-  [`sendmail` notifier](/notifications/providers/sendmail/) — it needs no
-  configuration on a box that was already mailing cron output — and the
-  warning stops. A `SHELL=` that isn't an absolute path is reported the
-  same way.
-- **Missed ticks aren't re-fired.** Cron has no concept of one, so neither
-  does a cron-sourced task: starting the daemon at 15:00 will not run
-  last night's 02:00 job. The gap is still recorded as a missed run, which
-  is more than cron gave you. `promote` the task if you want catch-up.
-- **Overlapping runs queue instead of piling up.** Cron starts another
-  copy of a job that outruns its own schedule; RunWisp queues the next
-  one. This is deliberate — an unbounded pile-up is why cron jobs get
-  wrapped in `flock` — and `promote` plus `max_concurrent` gets the old
-  behaviour back if you actually wanted it.
-- **Task names are derived from the command**, so two crontabs can derive
-  the same one. The second becomes `backup-<crontab name>` rather than
-  quietly replacing the first, and the rename is reported alongside the
-  skips.
-- **RunWisp won't take commands from a file anyone could have written.**
-  A crontab that's group- or world-writable, or owned by nobody relevant,
-  is refused — the whole load fails rather than running shell from it.
-  A cron spool directory is the one exception: those are group-writable
-  and sticky by design, which is what makes them safe, so they're
-  accepted as they ship.
-- **No `${...}` substitution happens on cron text.** Cron doesn't
-  expand it, so neither do we; `0 3 * * * dump.sh ${DB}` reaches the
-  shell exactly as written.
-- **Overlap with `include` is an error.** A file is either RunWisp TOML
-  or a crontab; RunWisp won't guess which.
-- **anacron isn't read.** `/etc/anacrontab` and its timestamps are
-  untouched, so on a box where anacron (not cron) is what really runs
-  `cron.daily`, those jobs keep their existing behaviour.
-
-Everything else about a cron-sourced task is ordinary: `[defaults]`
-applies, notifications fire, `runwisp run` triggers it, and the reload
-diff treats it exactly like a hand-written one.
+Otherwise a cron task is a normal task: `[defaults]` applies, notifications
+fire, `runwisp run` starts it, and reload treats it like any other task.
 
 ## CLI flags: config, data directory & listen address
 
-These flags decide which config file gets read, where state lives, and
-where the HTTP/Web UI listens. They apply to every `runwisp` subcommand
-(`daemon`, `tui`, `run`, and so on):
+These flags work on every `runwisp` subcommand (`daemon`, `tui`, `run`, and
+others). A flag always beats its env var.
 
-| Flag             | Default               | What it does                                                                                                                                        |
-| ---------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--config`, `-c` | `runwisp.toml`        | Path to the TOML config file, resolved against the working directory. Also reads `RUNWISP_CONFIG`.                                                  |
-| `--data`         | `.runwisp`            | Directory for all persistent state — SQLite database, per-task logs, PID file, and the local Unix socket. Also reads `RUNWISP_DATA`.                |
-| `--socket`       | `<data>/runwisp.sock` | Path to the control socket. The daemon binds it; every CLI subcommand connects to it. Also `RUNWISP_SOCKET`. See [Control socket](#control-socket). |
-| `--host`         | `127.0.0.1`           | Bind address for the HTTP server. Use `0.0.0.0` to listen on every interface. Also reads `RUNWISP_HOST`.                                            |
-| `--port`         | `9477`                | TCP port for the HTTP server (REST API, SSE log stream, Web UI). Also reads `RUNWISP_PORT`.                                                         |
-| `--log-level`    | `info`                | Log verbosity — `debug`, `info`, `warn`, `error`. Also reads `RUNWISP_LOG_LEVEL`.                                                                   |
-| `--log-format`   | `auto`                | Log shape — `auto`, `text`, `json`. Also reads `RUNWISP_LOG_FORMAT`.                                                                                |
-
-For every flag above, an explicit CLI flag always wins over its env var —
-the env var only fills in when the flag is left at its default. That makes
-them safe to bake into a container image's `ENV` as defaults that extra
-arguments on `docker run` can still override, which is exactly what the
-[official image](/getting-started/docker/#environment-defaults) does. (In a
-container, prefer overriding the env var: `--entrypoint` skips the image's
-startup checks, and a `--data` flag is invisible to its healthcheck.)
+| Flag             | Default               | What it does                                                                                     |
+| ---------------- | --------------------- | ------------------------------------------------------------------------------------------------ |
+| `--config`, `-c` | `runwisp.toml`        | Config file path, relative to the working directory. Env: `RUNWISP_CONFIG`.                      |
+| `--data`         | `.runwisp`            | Directory for all state: SQLite database, logs, PID file, socket. Env: `RUNWISP_DATA`.           |
+| `--socket`       | `<data>/runwisp.sock` | Control socket path. See [Control socket](#control-socket). Env: `RUNWISP_SOCKET`.               |
+| `--host`         | `127.0.0.1`           | HTTP bind address. `0.0.0.0` listens on every interface. Env: `RUNWISP_HOST`.                    |
+| `--port`         | `9477`                | HTTP port (REST API, SSE, Web UI). Env: `RUNWISP_PORT`.                                          |
+| `--log-level`    | `info`                | `debug`, `info`, `warn`, `error`. Env: `RUNWISP_LOG_LEVEL`. See [Logging](/operations/logging/). |
+| `--log-format`   | `auto`                | `auto`, `text`, `json`. Env: `RUNWISP_LOG_FORMAT`.                                               |
 
 ```bash
 runwisp daemon --data /var/lib/runwisp --host 0.0.0.0 --port 9477
 ```
 
-`--log-level` and `--log-format` shape the daemon's own log output —
-[Operations: Logging](/operations/logging/) covers what each value does.
-For the complete list of `runwisp` subcommands and flags in one place, see
-the [CLI reference](/reference/cli/).
-
-It's worth picking `--data` once and sticking with it. The database
-file (`runwisp.db`), the local Unix socket (`runwisp.sock`), and every
-task's logs all live under that directory, so relocating later is a
-plain directory move — not a config change.
-
-The daemon **never persists** the password or the JWT signing key. The
-password comes from `RUNWISP_PASSWORD` if you set it; otherwise a fresh
-ephemeral one is minted every boot. The JWT key is derived
-deterministically from the password, so setting `RUNWISP_PASSWORD` (via
-a Docker secret or systemd `LoadCredential=`, say) is what keeps browser
-sessions alive across restarts. [Auth](/operations/auth/) has the full
-story.
+- In a container, set the env vars rather than flags. The
+  [official image](/getting-started/docker/#environment-defaults) uses them as
+  defaults, and its healthcheck can't see a `--data` flag.
+- To move the data directory, stop the daemon and move the directory.
+- The password and JWT signing key are never stored. The password comes from
+  `RUNWISP_PASSWORD`, or a new one is created at every boot. The JWT key is
+  derived from the password, so a fixed `RUNWISP_PASSWORD` keeps browser
+  sessions across restarts. See [Auth](/operations/auth/).
+- All subcommands and flags: [CLI reference](/reference/cli/).
 
 ## Environment variables
 
-| Variable                  | What it does                                                                                                                                                                                                                 |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RUNWISP_PASSWORD`        | Sets the daemon password in memory. When unset, a fresh ephemeral password is minted every boot (and every session rotates with it).                                                                                         |
-| `RUNWISP_AUTH`            | `off` disables authentication entirely — local dev / trusted networks only. Defaults to on; `on` restates the default. Mutually exclusive with `RUNWISP_PASSWORD`. See [Auth](/operations/auth/#running-without-a-password). |
-| `RUNWISP_TRUSTED_PROXIES` | Comma-separated CIDR list of reverse proxies whose `X-Forwarded-*` headers the daemon may honor. Overrides the [`[daemon] trusted_proxies`](#trusted_proxies) key when set; catch-all ranges are rejected.                   |
-| `RUNWISP_STATION_TOKEN`   | Used by `runwisp station` to connect to a control plane. Ignored in standalone mode.                                                                                                                                         |
-| `RUNWISP_SOCKET`          | Control socket path. Same effect as `--socket`; the flag wins when both are set.                                                                                                                                             |
-| `RUNWISP_CONFIG`          | Config file path. Same effect as `--config`; the flag wins when both are set.                                                                                                                                                |
-| `RUNWISP_DATA`            | Data directory. Same effect as `--data`; the flag wins when both are set.                                                                                                                                                    |
-| `RUNWISP_HOST`            | HTTP bind address. Same effect as `--host`; the flag wins when both are set.                                                                                                                                                 |
-| `RUNWISP_PORT`            | HTTP port. Same effect as `--port`; the flag wins when both are set. An unparseable or out-of-range value is a startup error.                                                                                                |
-| `RUNWISP_TLS`             | Overrides [`[daemon] tls`](#tls-tls_cert-tls_key) — `auto` or `off`. Applied on every config load, including reload, so it never disagrees with itself and never trips the [reload gate](/operations/reload/).               |
-| `RUNWISP_DEBUG_ADDR`      | Opt-in. A **loopback** address (e.g. `127.0.0.1:6060`) on which to serve Go `pprof` memory/CPU profiles. Off by default; a non-loopback address is refused so profiles never reach the network.                              |
+| Variable                  | What it does                                                                                                                                                                           |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RUNWISP_PASSWORD`        | The daemon password (kept in memory only). When unset, a new password is created at every boot.                                                                                        |
+| `RUNWISP_AUTH`            | `off` disables authentication (local dev or trusted networks only). Default `on`. Can't be combined with `RUNWISP_PASSWORD`. See [Auth](/operations/auth/#running-without-a-password). |
+| `RUNWISP_TRUSTED_PROXIES` | Comma-separated CIDR list. Overrides [`trusted_proxies`](#trusted_proxies). Catch-all ranges are rejected.                                                                             |
+| `RUNWISP_STATION_TOKEN`   | Used by `runwisp station` to connect to a control plane. Ignored in standalone mode.                                                                                                   |
+| `RUNWISP_SOCKET`          | Same as `--socket`.                                                                                                                                                                    |
+| `RUNWISP_CONFIG`          | Same as `--config`.                                                                                                                                                                    |
+| `RUNWISP_DATA`            | Same as `--data`.                                                                                                                                                                      |
+| `RUNWISP_HOST`            | Same as `--host`.                                                                                                                                                                      |
+| `RUNWISP_PORT`            | Same as `--port`. An invalid value is a startup error.                                                                                                                                 |
+| `RUNWISP_TLS`             | Overrides [`tls`](#tls-tls_cert-tls_key) (`auto` or `off`). Applied on every load, including reload, so it never blocks a [reload](/operations/reload/).                               |
+| `RUNWISP_DEBUG_ADDR`      | Optional **loopback** address (for example `127.0.0.1:6060`) for Go `pprof` profiles. A non-loopback address is refused.                                                               |
 
 ## Control socket
 
-On startup the daemon creates a Unix socket — `<datadir>/runwisp.sock`
-by default. Local CLI commands and the TUI talk to the daemon over this
-socket without ever needing a password — access is gated by the data
-dir's `0700` mode, the socket's own `0600` mode, and a `SO_PEERCRED`
-check when a connection is accepted. On a graceful shutdown, the socket
-file is cleaned up.
+The daemon creates a Unix socket, `<data>/runwisp.sock` by default. The CLI and
+TUI use it without a password.
 
-You can move the socket off the data dir with `--socket` (or
-`RUNWISP_SOCKET`). Two cases where that's the difference between working
-and not:
-
-- **Bind-mounted data dir.** Some filesystems — Docker Desktop's
-  osxfs/virtiofs bind mounts, a few network filesystems — let the daemon
-  bind a socket but reject the `chmod` that locks it to `0600`. RunWisp
-  tolerates that (it warns and keeps serving, since the `0700` data dir
-  and the `SO_PEERCRED` check still gate access), but if you'd rather
-  avoid it entirely, point `--socket` at a Linux-native path like
-  `/run/runwisp.sock` and keep the database and logs on the bind mount.
-- **Reaching a non-default daemon from the CLI.** Because every
-  subcommand connects to `--socket`, you can talk to a daemon by its
-  socket alone — `runwisp status --socket /run/runwisp.sock` — without
-  restating the `--data` directory it was started with.
-
-The daemon and the CLI must agree on the path: whatever you pass to
-`runwisp daemon --socket …`, pass the same to `runwisp status`,
-`runwisp run`, and friends (or set `RUNWISP_SOCKET` once in the
-environment they share).
+- Access is limited by the data directory's `0700` mode, the socket's `0600`
+  mode, and a `SO_PEERCRED` check.
+- The socket file is removed on a clean shutdown.
+- `--socket` (or `RUNWISP_SOCKET`) moves it. The daemon and CLI must use the
+  same path.
+- Move it when the data directory is a bind mount that rejects `chmod` (Docker
+  Desktop, some network filesystems). RunWisp warns and keeps working there, but
+  a native path like `/run/runwisp.sock` avoids the warning.
+- You can reach a daemon by its socket alone:
+  `runwisp status --socket /run/runwisp.sock`.
 
 ---
 
@@ -530,11 +392,11 @@ environment they share).
     <LinkCard
         title="[tasks.*] ref"
         href="/configuration/tasks/"
-        description="Per-task graceful_stop, which lives inside the daemon-wide shutdown_timeout."
+        description="Per-task graceful_stop, which must fit inside shutdown_timeout."
     />
     <LinkCard
         title="[storage] ref"
         href="/configuration/storage/"
-        description="The disk-usage safeguards that protect the data dir."
+        description="Disk-usage limits for the data directory."
     />
 </CardGrid>

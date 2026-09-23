@@ -112,7 +112,7 @@ The filters, roughly in the order you'll reach for them:
 - **Status** — five plain-language buckets: **Running**, **Succeeded**,
   **Failed**, **Skipped**, and **Stopped**. Tick **Failed** to catch
   everything that broke or went missing — the one-click answer to "did
-  anything fail?". Need to be surgical (say, only `timeout`)? Open
+  anything fail?". Need to be surgical (say, only [`timeout`](/configuration/tasks/#timeout))? Open
   **Advanced** to pick the exact statuses.
 - **Date range** — an independent **From** / **To** pair. Set just one
   end and it stays open the other way — a **From** with no **To** means
@@ -149,7 +149,7 @@ stopped).
 If the task declares [parameters](/concepts/parameters/), clicking
 **Run Task** opens a form — each declared input renders as a text field,
 dropdown, or toggle, with validation and descriptions right there. Fill
-in what you need and submit. Tasks with no `params` trigger instantly
+in what you need and submit. Tasks with no [`params`](/configuration/tasks/#params) trigger instantly
 with no form.
 
 <Screenshot
@@ -180,7 +180,7 @@ gives you the whole file as a single download.
 
 Nothing silently fails. A failed run shows up in the same run history
 as a successful one, marked with a coloured status pill — `failed`,
-`timeout`, `crashed`, `stopped`, `skipped`, or [`log_overflow`](/concepts/logs/#rotation-log_max_size-and-log_on_full) —
+[`timeout`](/configuration/tasks/#timeout), `crashed`, `stopped`, `skipped`, or [`log_overflow`](/concepts/logs/#rotation-log_max_size-and-log_on_full) —
 alongside its exit code and duration. Click the row to open the run,
 and the captured stdout/stderr appears in the same log pane you'd
 use for any other run. The Overview page's **Attention** tab gathers

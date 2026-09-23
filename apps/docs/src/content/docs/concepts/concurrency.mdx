@@ -8,13 +8,13 @@ description: queue, skip, and kill — what each on_overlap mode does, when to u
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 Every so often a task fires while the last run is still going. RunWisp
-has to do _something_ about that, and `on_overlap` is how you tell it
+has to do _something_ about that, and [`on_overlap`](/configuration/tasks/#on_overlap) is how you tell it
 what. Three policies cover just about every real case: `queue`, `skip`,
 and `kill`.
 
 :::note[Looking for keys and defaults?]
 This page explains _which policy to pick and why_. The keys themselves —
-`on_overlap`, `max_concurrent`, and their defaults — are in
+[`on_overlap`](/configuration/tasks/#on_overlap), [`max_concurrent`](/configuration/tasks/#max_concurrent), and their defaults — are in
 [`[tasks.*]` → Concurrency](/configuration/tasks/#concurrency) and
 [`[services.*]` → Concurrency](/configuration/services/#concurrency).
 :::
@@ -23,13 +23,13 @@ This page explains _which policy to pick and why_. The keys themselves —
 
 It really comes down to two knobs:
 
-- **`max_concurrent`** — how many runs of a task are allowed to overlap.
+- **[`max_concurrent`](/configuration/tasks/#max_concurrent)** — how many runs of a task are allowed to overlap.
   Defaults to `1`, which is what most cron-style work wants.
-- **`on_overlap`** — what to do when a new run shows up and you're
+- **[`on_overlap`](/configuration/tasks/#on_overlap)** — what to do when a new run shows up and you're
   already at that limit.
 
 As long as there's a free slot, a new run just starts — the policy
-never even comes into it. `on_overlap` only has a say once the task is
+never even comes into it. [`on_overlap`](/configuration/tasks/#on_overlap) only has a say once the task is
 maxed out.
 
 ## The three policies
@@ -56,11 +56,11 @@ It's a good fit when:
   rather than fighting over shared state.
 
 The queue isn't bottomless —
-[`max_queued`](/configuration/tasks/#concurrency) caps it. Once it's full, the
+[`max_queued`](/configuration/tasks/#max_queued) caps it. Once it's full, the
 next firing gets logged with `end_reason = "queue_full"` and the
 existing queue keeps draining in order. Seeing queue-full firings is a
 signal the task is over budget: slow the cron down, bump
-`max_concurrent`, or switch to `skip` / `kill`.
+[`max_concurrent`](/configuration/tasks/#max_concurrent), or switch to `skip` / `kill`.
 
 ### `skip`
 
@@ -90,12 +90,12 @@ pattern instead of just silence.
 
 And to be clear, **`end_reason = "skipped"` is not a failure**:
 
-- `notify` stays quiet on skips, so a `* * * * *` health
+- [`notify`](/configuration/tasks/#notify) stays quiet on skips, so a `* * * * *` health
   probe that overlaps doesn't blow up your Slack.
 - Retries leave skips alone — the original run is still going, so a
   retry would just race it.
 - The stats counters keep it apart from `failed` / `crashed` /
-  `timeout`, so your failure rate stays honest.
+  [`timeout`](/configuration/tasks/#timeout), so your failure rate stays honest.
 
 ### `kill`
 
@@ -115,7 +115,7 @@ It's a good fit when:
 - The work goes stale the instant a new request lands — rebuilding a
   search index, regenerating a cached report, that kind of thing.
 
-When `kill` stops the in-flight run, that run gets `graceful_stop`
+When `kill` stops the in-flight run, that run gets [`graceful_stop`](/configuration/tasks/#graceful_stop)
 seconds to tidy up before a SIGKILL, and it's recorded with
 `end_reason = "stopped"` — exactly like a manual stop. Stopped runs
 don't retry. See [Retries](/concepts/retries/#interactions).
@@ -123,7 +123,7 @@ don't retry. See [Retries](/concepts/retries/#interactions).
 ## `max_concurrent > 1`
 
 Set `max_concurrent = N` and up to N runs of the same task can be going
-at once. `on_overlap` stays out of it until all N slots are taken.
+at once. [`on_overlap`](/configuration/tasks/#on_overlap) stays out of it until all N slots are taken.
 
 ```toml
 [tasks.thumbnail-render]
@@ -166,11 +166,11 @@ manual triggers line up together and drain in order, no favorites.
 
 ## Services don't have `on_overlap`
 
-`on_overlap` is a `[tasks.*]` knob and rejected on `[services.*]`. A
+[`on_overlap`](/configuration/tasks/#on_overlap) is a `[tasks.*]` knob and rejected on `[services.*]`. A
 service isn't triggered on demand the way a task is — its supervisor
-keeps `instances` replicas alive, each in its own slot, so there's no
+keeps [`instances`](/configuration/services/#instances) replicas alive, each in its own slot, so there's no
 "a new run shows up while one is going" to arbitrate. Concurrency for a
-service is just `instances`.
+service is just [`instances`](/configuration/services/#instances).
 
 ---
 

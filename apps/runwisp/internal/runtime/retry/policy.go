@@ -22,14 +22,23 @@ const RestartBackoffCap = 60 * time.Second
 const retryDelayCap = 5 * time.Minute
 
 // IsFailedExecution reports whether the given EndReason represents a run that
-// actually executed (or attempted to start) and failed, which is what makes it a
-// candidate for auto retry / service restart. It is membership in the fixed
-// model.FailedExecutionReasons set — deliberately decoupled from the
-// user-configurable failure classification (Task.IsFailureReason): demoting a
-// reason from a task's `failures` list must not silently stop its retries, and
-// promoting one (e.g. `stopped`) must not make the daemon re-run it.
+// actually executed (or attempted to start) and failed. It is the fixed
+// model.FailedExecutionReasons set — the ceiling for auto retry / service
+// restart eligibility: a reason promoted into a task's `failures` list (e.g.
+// `stopped`, `missed`) is never re-run automatically no matter what.
 func IsFailedExecution(reason model.EndReason) bool {
 	return slices.Contains(model.FailedExecutionReasons, reason)
+}
+
+// shouldReRun reports whether a finished run is eligible for an automatic
+// re-run (retry or restart): the reason must sit within the fixed
+// IsFailedExecution ceiling AND the task's own `failures` policy must
+// classify this run as a failure. Narrowing `failures` (an exit-code range, a
+// dropped reason) narrows what gets re-run to match.
+func shouldReRun(task *model.Task, run *model.Run) bool {
+	return run.EndReason != nil &&
+		IsFailedExecution(*run.EndReason) &&
+		task.IsFailureReason(*run.EndReason, run.ExitCode)
 }
 
 // ShouldRestart reports whether a finished run should trigger a restart per
@@ -52,7 +61,7 @@ func ShouldRestart(task *model.Task, run *model.Run) bool {
 		// prevents restart loops during teardown.
 		return true
 	case model.RestartOnFailure:
-		return run.EndReason != nil && IsFailedExecution(*run.EndReason)
+		return shouldReRun(task, run)
 	default:
 		return false
 	}
@@ -62,7 +71,7 @@ func ShouldRestart(task *model.Task, run *model.Run) bool {
 // a task-only re-run of a failed run; services re-run via ShouldRestart, and
 // scheduleFollowup consults that first, so a service never reaches here.
 func ShouldRetry(task *model.Task, run *model.Run) bool {
-	if task.RetryAttempts <= 0 || run.EndReason == nil || !IsFailedExecution(*run.EndReason) {
+	if task.RetryAttempts <= 0 || !shouldReRun(task, run) {
 		return false
 	}
 	return run.RetryAttempt < task.RetryAttempts

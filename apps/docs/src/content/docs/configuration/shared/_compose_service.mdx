@@ -1,0 +1,8 @@
+The service in [`compose_file`](/configuration/tasks/#compose_file) to run. Requires
+[`compose_file`](/configuration/tasks/#compose_file).
+
+```toml
+[tasks.nightly-backup]
+compose_file    = "./docker-compose.yml"
+compose_service = "backup"
+```

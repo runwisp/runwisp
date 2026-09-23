@@ -2,472 +2,415 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: "[tasks.*]"
-description: Every key accepted by a [tasks.<name>] table — cron, run, on_overlap, retries, timeout, retention, params, notifications.
+description: "Every key accepted by a [tasks.<name>] table: cron, run, on_overlap, retries, timeout, retention, params, notifications."
 ---
 
 import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+import Run from "./shared/_run.mdx";
+import Description from "./shared/_description.mdx";
+import Group from "./shared/_group.mdx";
+import ManualTrigger from "./shared/_manual_trigger.mdx";
+import GracefulStop from "./shared/_graceful_stop.mdx";
+import StopSignal from "./shared/_stop_signal.mdx";
+import LogMaxSize from "./shared/_log_max_size.mdx";
+import LogOnFull from "./shared/_log_on_full.mdx";
+import KeepRuns from "./shared/_keep_runs.mdx";
+import KeepFor from "./shared/_keep_for.mdx";
+import Env from "./shared/_env.mdx";
+import Secrets from "./shared/_secrets.mdx";
+import EnvFile from "./shared/_env_file.mdx";
+import SecretsFile from "./shared/_secrets_file.mdx";
+import EnvSecretsMerge from "./shared/_env_secrets_merge.mdx";
+import WorkingDir from "./shared/_working_dir.mdx";
+import Shell from "./shared/_shell.mdx";
+import Umask from "./shared/_umask.mdx";
+import EnvBase from "./shared/_env_base.mdx";
+import User from "./shared/_user.mdx";
+import Notify from "./shared/_notify.mdx";
+import ComposeFile from "./shared/_compose_file.mdx";
+import ComposeService from "./shared/_compose_service.mdx";
+import ComposeMode from "./shared/_compose_mode.mdx";
 
-A task is a unit of work that runs and then exits. The TOML key —
-`backup-db` in `[tasks.backup-db]` — is the **task name**, and it turns
-up everywhere: the CLI, the API, the Web UI, and the on-disk log path.
-Names have to be unique across both `[tasks.*]` and [`[services.*]`](/configuration/services/).
+<div class="rw-config-ref" />
 
-Names can use letters, digits, and `. _ - :` (up to 100 characters).
-Anything beyond TOML's bare-key set needs quotes around the table key —
-`[tasks."db:backup"]`. On disk, log directories flatten `:` and `.`
-to `_`, so `db:backup` logs land under `db_backup/`.
-
-Really only two things are required: the table itself and a `run`.
-Everything else either inherits from
-[`[defaults]`](/configuration/defaults/) or comes with a sensible
+Every key a `[tasks.<name>]` block accepts, with its type, default, and accepted
+values. Unset keys fall back to [`[defaults]`](/configuration/defaults/), then a
 built-in default.
 
-## Minimum example
-
-```toml
-[tasks.heartbeat]
-cron = "*/5 * * * *"
-run  = "/usr/local/bin/heartbeat"
+```bash
+runwisp validate   # validate runwisp.toml and print a summary, or a structured error
+runwisp schema     # print the full runwisp.toml JSON Schema (draft 2020-12) to stdout
 ```
-
-That's a complete, valid task. It fires every five minutes, captures
-stdout/stderr to a log file, and writes a row for every run to SQLite.
 
 ## Identity & metadata
 
-| Key              | Default   | What it does                                                                           |
-| ---------------- | --------- | -------------------------------------------------------------------------------------- |
-| _table key_      | required  | The task name. Used in CLI (`runwisp run <name>`), API, log paths.                     |
-| `run`            | required  | Shell command. Multi-line OK with TOML triple-quotes (`"""…"""`).                      |
-| `description`    | _(empty)_ | Human-readable description shown in the UI and TUI.                                    |
-| `group`          | `"Tasks"` | UI grouping label. Set to share a section header with related tasks.                   |
-| `manual_trigger` | `true`    | Allow manual triggers from CLI / API / UI. Set `false` to make the task **cron-only**. |
+### `[tasks.<name>]`
+
+**type**: `string` **required**
+
+The text after `tasks.` is the task's name: `[tasks.backup-db]` is a task
+called `backup-db`. The name is used in the Web UI, TUI, API, CLI, and log
+directory.
+
+- Letters, digits, and `. _ - :`, up to 100 characters.
+- Must be unique across `[tasks.*]` and [`[services.*]`](/configuration/services/).
+- A name with `.` or `:` must be quoted (`[tasks."db:backup"]`).
+
+```toml
+[tasks.backup-db]
+run = "pg_dump app | gzip > /backups/app.sql.gz"
+
+[tasks."db:backup"]  # quotes required: not a bare TOML key
+run = "..."
+```
+
+### run
+
+<Run />
+
+### description
+
+<Description />
+
+### group
+
+**type**: `string` **default**: `"Tasks"`
+
+<Group />
+
+### manual_trigger
+
+<ManualTrigger />
 
 ## Scheduling
 
-| Key            | Default   | What it does                                                                                                                                                                                                                                                                                        |
-| -------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cron`         | _(none)_  | 5- or 6-field cron expression (the optional 6th field is leading seconds). Supports `@hourly`, `@every 1h30m`.                                                                                                                                                                                      |
-| `timezone`     | inherited | IANA timezone for this task's cron evaluation (e.g. `"Europe/Bratislava"`). Falls back to [`[daemon] timezone`](/concepts/scheduling/#timezone), which itself falls back to the host's system zone if unset.                                                                                        |
-| `jitter`       | inherited | Cap how far this cron task's start may slip (up to this window) so tasks sharing a fire time take turns instead of stampeding. Needs a `cron` (no-op without one). Set `"0s"` to opt out even when `[defaults]` sets one. [Details below](#jitter).                                                 |
-| `catch_up`     | `1`       | How many missed firings to re-fire on startup. `0` re-runs nothing, `1` re-runs only the most recent missed tick, `N` re-runs up to `N`. Anything above `1` requires `on_overlap = "queue"` (it replays ticks back-to-back, and `skip`/`kill` would only let the first through). Range `0`–`10000`. |
-| `run_on_start` | `false`   | Fire the task once every time the daemon starts, on top of any `cron`. The `@reboot` equivalent.                                                                                                                                                                                                    |
+### cron
 
-Leave `cron` off and the task becomes **manual-only** — it runs only
-when something explicitly triggers it. That's a perfectly good pattern
-for one-shot deploy hooks and the like.
+**type**: `string`
 
-The familiar 5-field form (`min hour day month weekday`) still does exactly
-what it always did — `0 3 * * *` fires at 03:00, on the `:00` second. If you
-need sub-minute precision, prepend a seconds field for a 6-field spec:
-`*/30 * * * * *` fires every 30 seconds (on the `:00` and `:30`), and
-`15 * * * * *` fires once a minute at the `:15` second. When you want a plain
-fixed interval that doesn't care about wall-clock alignment, `@every 30s` is
-still the simpler choice.
+When the task runs, as a cron expression. Without it, the task runs only when
+started by hand. Accepts 5 fields (`min hour day month weekday`), 6 fields with
+a leading seconds field, or an `@` shorthand.
 
 ```toml
 [tasks.healthcheck]
-cron = "*/30 * * * * *" # every 30 seconds, aligned to :00 and :30
+cron = "*/30 * * * * *" # every 30s, aligned to :00 and :30
 run  = "curl -fsS http://localhost:8080/healthz"
 ```
 
-`run_on_start = true` fires the task once at daemon boot — the cron
-equivalent of `@reboot`. It's orthogonal to `cron`: a task can fire at
-boot _and_ on a schedule, or at boot only (leave `cron` off). The boot
-firing is independent of `catch_up` and isn't counted against
-it; it's tagged `triggered_by = startup` in the run
-history so you can tell it apart from a scheduled or manual run. Use it to
-warm a cache, reconcile state, or send a "daemon is up" heartbeat.
+Possible values:
+
+- `*/5 * * * *`: every 5 minutes
+- `0 3 * * *`: every day at 03:00
+- `0 9 * * 1-5`: 09:00 Monday to Friday
+- `*/30 * * * * *`: every 30 seconds (6-field, leading seconds)
+- `@hourly`, `@daily`: shorthand forms
+- `@every 1h30m`: fixed interval, ignores wall-clock alignment
+
+[How scheduling works](/concepts/scheduling/) has the full cron grammar, DST
+rules, and catch-up details. `runwisp validate` runs the same checks as daemon
+startup, so it catches a bad cron expression before you deploy.
+
+### run_on_start
+
+**type**: `boolean` **default**: `false`
+
+Run the task once when the daemon starts, like cron's `@reboot`. This is
+separate from [`cron`](#cron) and [`catch_up`](#catch_up).
 
 ```toml
 [tasks.warm-cache]
 run_on_start = true
 run          = "/usr/local/bin/warm-cache"
-# no cron — fires once per boot and never again
 ```
 
-[How scheduling works](/concepts/scheduling/) has the full cron grammar,
-the DST behaviour, and the catchup details.
+### catch_up
 
-:::tip[Catch mistakes before deploy]
-`runwisp validate` runs the exact same checks as daemon boot. A bad
-cron expression, a misspelled key (it'll suggest the one you meant),
-or a duration like `"5 minutes"` instead of `"5m"` all fail with an
-actionable message — and advisory warnings print without failing the
-exit code, so it slots into CI.
-:::
+**type**: `integer` **default**: `1` **min**: `0` **max**: `10000`
+
+How many runs missed while the daemon was down are run at startup.
+
+- `0`: run none. Good for jobs that run every minute.
+- `1`: run only the most recent missed one. Good for a daily sync.
+- `N`: run up to the `N` most recent. Good for queue processors.
+
+A value above `1` requires `on_overlap = "queue"`, because the missed runs start
+one after another.
+
+```toml
+[tasks.hourly-roll]
+cron       = "0 * * * *"
+catch_up   = 24
+on_overlap = "queue"
+```
 
 ### jitter
 
-When a pile of tasks share a fire time — the classic `0 3 * * *` nightly
-batch — they all launch in the same instant and spike CPU, IO, and memory
-together. `jitter` stops that stampede without making anything wait that
-doesn't have to:
+**type**: `duration`
+
+The longest this task's start may be delayed so that jittered tasks with the
+same start time (like 03:00) run one after another instead of all at once. It
+is a maximum, not a fixed delay: with nothing else jittered running, the task
+starts on time.
+
+- Doesn't apply to manual runs, retries, or catch-up runs.
+- Needs [`cron`](#cron).
 
 ```toml
 [tasks.nightly-report]
 cron   = "0 3 * * *"
-jitter = "30m"           # start may slip up to 30m while other jittered runs are busy
+jitter = "30m"  # start may slip up to 30m while other jittered runs are busy
 ```
 
-RunWisp targets **one in-flight jittered run at a time** across the whole
-daemon. The window is the _most_ a start can slip — a deadline, not a
-fixed offset:
+Set it in [`[defaults]`](/configuration/defaults/) to apply it to every cron
+task.
 
-- **Idle box, no delay.** Nothing else jittered in flight? The task starts
-  right at `03:00`. The window only bites when jittered runs actually
-  contend.
-- **Contention, they take turns.** Tasks that pile up release one after
-  another as the gate frees — back-to-back when runs are quick, and for a
-  big backlog, spread across the window so starts don't burst at the edge.
-- **Earliest deadline first.** Each task gets a staggered slot inside its
-  window, picked to sit as far from its neighbours as possible; when the
-  gate frees, the task with the earliest slot goes next.
+### timezone
 
-A few more things worth knowing:
+**type**: `string` **default**: [`[daemon] timezone`](/configuration/daemon/#timezone), then the host zone
 
-- **The window is a ceiling, not an offset.** `jitter = "30m"` means "this
-  start may slip up to 30 minutes," not "start 30 minutes late." Most days,
-  with nothing contending, it slips zero.
-- **The run records both times.** `created_at` is the cron tick, `start_at`
-  is when it actually ran; the gap between them _is_ the jitter, right
-  there in the run history. Nothing hidden.
-- **Next-run shows the tick.** Because the real start depends on how busy
-  the gate is — just like a queued run — the dashboard, TUI, and
-  `GET /api/tasks` show the cron tick (`03:00`) as the next run, not a
-  guessed start.
-- **Needs a `cron`.** Jitter paces scheduled firings, so it's a harmless
-  no-op on a manual-only task. Manual triggers, retries, and
-  catch-up runs never wait on the gate — they fire right away.
-- **It's self-limiting.** RunWisp never delays a run past its own next
-  tick: put `jitter = "30m"` on a `* * * * *` task and the window quietly
-  clamps to under a minute.
-- **Coordinated by time of day.** The slots line tasks up on a 24-hour
-  dial, so daily, weekly, and monthly jobs at the same clock time
-  cooperate. Tasks whose windows don't overlap never crowd each other's
-  slots; schedules that don't line up to a 24-hour rhythm (like `@every 7h`)
-  still get a slot within their own window but coordinate only
-  approximately.
-
-Set it once in [`[defaults]`](/configuration/defaults/) and every
-cron task inherits it — one line to pace your whole schedule.
-
-### `manual_trigger = false` — cron-only tasks
-
-With the default `manual_trigger = true`, you can kick the task off on
-demand from the CLI (`runwisp run <name>`), the REST API
-(`POST /api/tasks/{name}/run`), the Web UI's **Run Task** button, or the
-TUI's `r` key.
-
-Set `manual_trigger = false` and the rule becomes **only the scheduler gets
-to start this task**. That's the one you want for tasks that are
-genuinely risky to fire off-schedule — an overnight rebuild, a data job
-that isn't safe to run twice, anything timed around another schedule
-that a curious operator could break by double-firing it.
+The IANA zone this task's [`cron`](#cron) is read in. Follows daylight saving
+time.
 
 ```toml
-[tasks.nightly-merge]
-cron        = "0 4 * * *"
-manual_trigger = false        # only fires from cron, never from the UI / API / CLI
-run         = "/usr/local/bin/merge-shards"
+[tasks.eu-market-open]
+cron     = "0 9 * * 1-5"
+timezone = "Europe/Bratislava"
 ```
-
-Here's what flips when `manual_trigger = false`:
-
-- `POST /api/tasks/{name}/run` comes back **403 Forbidden** with the
-  message `manual triggering disabled for this task`.
-- `runwisp run <name>` shows the same error and exits non-zero.
-- Cron firings, retries, and `on_overlap` are **untouched** — the
-  scheduler isn't a manual trigger, so it runs the task as normal.
-
-`manual_trigger` and `cron` are independent of each other, which leaves one
-trap: a task with `manual_trigger = false` **and** no `cron` is a dead task
-— nothing can ever start it. The loader won't reject that combination
-today, but it's almost always a mistake.
 
 ## Concurrency
 
-| Key              | Default   | What it does                                                                                                                                                                                                          |
-| ---------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `max_concurrent` | `1`       | Maximum overlapping runs of this task. Positive integer; hard internal cap of 1024.                                                                                                                                   |
-| `on_overlap`     | `"queue"` | What happens when a new firing arrives at the `max_concurrent` limit: `queue` / `skip` / `kill`.                                                                                                                      |
-| `max_queued`     | `100`     | When `on_overlap = "queue"`, cap on pending firings. New firings past the cap record `end_reason = "queue_full"`. Positive integer; hard internal cap of 10000. Zero means "use the default"; negatives are rejected. |
+### on_overlap
 
-Most cron-style work is happiest with `max_concurrent = 1`.
-[Concurrency policies](/concepts/concurrency/) walks through when each
-policy is the right call.
+**type**: `enum` **default**: `"queue"`
+
+What happens when the task is triggered while already at
+[`max_concurrent`](#max_concurrent) (default `1`).
+
+```toml
+[tasks.queue-drain]
+cron       = "*/10 * * * *"
+on_overlap = "skip"
+```
+
+Possible values:
+
+- `queue`: the new run waits and starts when a slot frees up (queue size bounded by [`max_queued`](#max_queued))
+- `skip`: the new run is dropped and recorded as skipped
+- `kill`: the running run is stopped so the new one takes over
+
+### max_concurrent
+
+**type**: `integer` **default**: `1` **min**: `1` **max**: `1024`
+
+How many runs of this task may be active at once. At the limit,
+[`on_overlap`](#on_overlap) decides what happens to the next trigger.
+
+```toml
+[tasks.thumbnailer]
+max_concurrent = 4
+```
+
+### max_queued
+
+**type**: `integer` **default**: `100` **min**: `0` **max**: `10000`
+
+With `on_overlap = "queue"`, the cap on runs waiting in line. Past the cap,
+further triggers record `end_reason = "queue_full"`.
+
+```toml
+[tasks.ingest]
+on_overlap = "queue"
+max_queued = 500
+```
 
 ## Retries & timeout
 
-| Key              | Default                     | What it does                                                                                                                                           |
-| ---------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `retry_attempts` | `0`                         | Additional attempts after the initial failure. Non-negative integer; hard internal cap of 100.                                                         |
-| `retry_delay`    | `"5s"`                      | Base delay between attempts. Only consulted when `retry_attempts > 0`.                                                                                 |
-| `retry_backoff`  | `"constant"`                | Curve applied to `retry_delay`: `constant`, `linear`, or `exponential`.                                                                                |
-| `timeout`        | inherited from `[defaults]` | Per-attempt wall-clock cap. Unset means no timeout. Set `"0s"` to run with no timeout even when `[defaults]` sets one.                                 |
-| `graceful_stop`  | `"5s"`                      | Grace period after the stop signal, before SIGKILL — on `timeout`, `on_overlap = "kill"`, manual stop, and daemon shutdown. Set `"0s"` for insta-kill. |
-| `stop_signal`    | `"SIGTERM"`                 | Signal that opens the stop ladder. One of `SIGTERM`, `SIGINT`, `SIGQUIT`, `SIGHUP`, `SIGKILL`, `SIGUSR1`, `SIGUSR2`                                    |
+### timeout
 
-Exit `0` is always success; any non-zero exit ends the run as `failed`,
-which drives retries. Whether that (or a `timeout`, a
-`missed` tick, …) counts as a **failure** for stats, the UI, and
-notifications is a separate, declarative choice — see
-[What counts as a failure](#what-counts-as-a-failure).
+**type**: `duration` **default**: none (no limit)
+
+The longest one attempt may run. A longer run is stopped (with
+[`stop_signal`](#stop_signal), then [`graceful_stop`](#graceful_stop)) and
+recorded as `timeout`. `"0s"` turns off a `[defaults]` timeout.
+
+```toml
+[tasks.queue-drain]
+cron    = "*/10 * * * *"
+timeout = "9m"
+```
+
+### retry_attempts
+
+**type**: `integer` **default**: `0` **min**: `0` **max**: `100`
+
+Extra attempts after the first one fails. A retry happens only when the reason
+is `failed`, `timeout`, `crashed`, `log_overflow`, or `start_failed`, **and**
+[`failures`](#failures) counts the run as a failure. A manual stop or a kill ends
+the retries.
+
+```toml
+[tasks.flaky-fetch]
+retry_attempts = 3
+retry_delay    = "2s"
+```
+
+### retry_delay
+
+**type**: `duration` **default**: `5s`
+
+The wait before the first retry. Used only when
+[`retry_attempts`](#retry_attempts) is above `0`;
+[`retry_backoff`](#retry_backoff) decides how it grows.
+
+```toml
+[tasks.flaky-fetch]
+retry_attempts = 3
+retry_delay    = "5s"
+```
+
+### retry_backoff
+
+**type**: `enum` **default**: `"constant"`
+
+How [`retry_delay`](#retry_delay) grows across attempts.
+
+```toml
+[tasks.flaky-fetch]
+retry_attempts = 4
+retry_delay    = "2s"
+retry_backoff  = "exponential"  # 2s, 4s, 8s, 16s
+```
+
+Possible values:
+
+- `constant`: the same [`retry_delay`](#retry_delay) before every attempt (2s, 2s, 2s, 2s)
+- `linear`: [`retry_delay`](#retry_delay) times the attempt number (2s, 4s, 6s, 8s)
+- `exponential`: double each time (2s, 4s, 8s, 16s)
+
+### graceful_stop
+
+<GracefulStop />
+
+### stop_signal
+
+<StopSignal />
 
 ### Fail-fast
 
-RunWisp invokes your script as `<shell> -e -c <script>`, so a multi-line
-`run` block **stops at the first command that fails** and that command's
-exit code becomes the run's.
+RunWisp starts [`run`](#run) as `<shell> -e -c <script>`. A multi-line script
+stops at the first command that fails, and that exit code becomes the run's
+exit code. You don't need `set -e`.
 
-This matters more than it sounds. Without `-e`, a shell runs a script to
-the end and reports only the _last_ command's status — so a three-line
-script whose middle line blows up finishes green, and you find out weeks
-later that the thing you thought was running hasn't been. You don't have
-to write `set -e` yourself; it's on.
-
-Two things it deliberately doesn't do:
-
-- **`-u`** (error on unset variables) is a lint, not a failure detector,
-  and it breaks scripts that legitimately read optional env vars. If you
-  want it, write `set -u`.
-- **`-o pipefail`** isn't POSIX — dash, which is `/bin/sh` on most Linux
-  distros, rejects it outright. When you pipe one thing into another and
-  care about the upstream side's exit code, set `shell = "/bin/bash"` and
-  write `set -o pipefail` yourself. The
-  [nightly backup recipe](/recipes/backup/#shell--binbash-and-set--o-pipefail)
-  does exactly that.
-
-To turn fail-fast off for one task, make `set +e` the first line of its
-`run` — a runtime `set` overrides the flag, so there's no config key for
-this. Reach for it when a script's _last_ command is the one whose exit
-code you want and the earlier ones are allowed to fail. For a single
-command that's _expected_ to return non-zero, end the line with
-`|| true` so the run exits `0` — a non-zero exit is always `failed`, and
-whether that pages is governed by [`failures`](#what-counts-as-a-failure),
-not by re-labelling the code as success.
-
-:::note[Non-POSIX interpreters]
-`shell` accepts any absolute path, including things that aren't shells at
-all (`/usr/bin/python3`). RunWisp only passes `-e` to interpreters it
-recognises as POSIX shells, because handing the flag to something else
-can do anything from erroring out to quietly succeeding without running
-your script. When it can't arm fail-fast, it says so at daemon boot and
-in `runwisp validate` rather than leaving you to guess.
-:::
-
-Retries fire on `failed`, `timeout`, `crashed`, `log_overflow`, and
-`start_failed`. A manual stop or
-an `on_overlap = "kill"` ends the chain — see the
-[kill ⇄ retries callout](/concepts/concurrency/#kill). The
-full table of backoff formulas lives on the
-[Retries & timeouts](/concepts/retries/) page.
-
-`graceful_stop` covers the whole process group: the stop signal goes to
-the task's process group, every descendant gets the same grace window,
-and anything still alive afterward is `SIGKILL`'d together. The signal is
-`SIGTERM` unless you set `stop_signal` — pick `SIGINT` for tools that
-treat it as "Ctrl-C", or `SIGKILL` to skip the grace window entirely (the
-daemon then kills immediately, the same as `graceful_stop = "0s"`). If
-your `graceful_stop` is longer than
-[`[daemon] shutdown_timeout`](/configuration/daemon/#shutdown_timeout),
-the daemon warns you at boot and names the task — because at shutdown
-it'll SIGKILL the straggler before the per-task window is even up.
+- `-u` and `-o pipefail` are not set. For `pipefail`, set [`shell`](#shell) to
+  `/bin/bash` and add `set -o pipefail` to the script.
+- To turn fail-fast off for a task, start [`run`](#run) with `set +e`.
+- For one command that may exit non-zero, add `|| true`.
 
 ## What counts as a failure
 
-Every run ends with a reason — `succeeded`, `failed`, `timeout`,
-`crashed`, `missed`, `stopped`, and a few more — plus an exit code when
-the process actually ran. Which of those outcomes count as a **failure**
-— the thing that turns a run red in the UI, bumps the _failed_ stat, and
-fires `notify` — is yours to declare with `failures`:
+:::note[The failure model]
+Every run ends with a reason. [`failures`](#failures) decides which reasons and
+exit codes turn a run red and fire [`notify`](#notify).
 
-| Key        | Default                                                                      | What it does                                                                |
-| ---------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `failures` | `["failed", "timeout", "crashed", "log_overflow", "start_failed", "missed"]` | The outcomes classified as failures. Inherits from `[defaults]` when unset. |
+- A token is a reason name, an exit code, or an inclusive range (`"42"`,
+  `"1-23"`). Codes are 1 to 255; exit `0` is always a success.
+- With `"failed"` in the list, every non-zero exit is a failure. Without it,
+  only the listed codes fail; other non-zero exits are recorded and shown, but
+  are not red and don't notify.
+- A bare list replaces the inherited set. Prefix every token with `+` or `-` to
+  change the inherited set instead. You can't mix the two styles in one list.
 
-Each entry is either an **end-reason name** or an **exit-code token**:
+It also limits [`retry_attempts`](#retry_attempts) and services'
+`restart = "on_failure"`: only runs counted as failures are run again. Adding
+`stopped` or `missed` never causes a retry.
+:::
 
-- a reason — `"failed"`, `"timeout"`, `"crashed"`, `"log_overflow"`,
-  `"start_failed"`, `"missed"`, `"stopped"`, `"daemon_stopped"`
-- a single exit code `"42"`, or an inclusive range `"1-23"` (codes are
-  `1`–`255`; exit `0` is always success)
+### failures
 
-A finished run is a failure when its reason is in the list, **or** — for
-a run that exited non-zero (reason `failed`) — when its exit code falls
-in one of the ranges. So the two exit-code styles compose like this:
+**type**: `string[]` **default**: `["failed", "timeout", "crashed", "log_overflow", "start_failed", "missed"]`
 
-- **list `"failed"`** and every non-zero exit is a failure (the ranges
-  add nothing).
-- **omit `"failed"`** and only the exit codes you list fail; every other
-  non-zero exit stays neutral — recorded, visible, but not red and not
-  paged.
-
-A bare list _replaces_ the inherited set, so it works in both directions:
-
-```toml
-[tasks.flaky-probe]
-failures = ["failed", "crashed"]              # demote timeout & missed: no red, no page
-
-[tasks.deploy]
-failures = ["failed", "stopped", "missed"]    # promote a killed deploy to a failure
-
-[tasks.rsync]
-failures = ["timeout", "crashed", "23", "24"] # only exits 23 & 24 fail; every other
-                                              # non-zero exit is neutral
-```
-
-### Adding or dropping just one
-
-Most of the time you don't want to restate the whole default — you want
-to page on one _more_ thing, or stop paging on one. Prefix every token
-with `+` (add) or `-` (drop) and RunWisp adjusts the inherited set
-instead of replacing it:
+Which run outcomes count as a failure.
 
 ```toml
 [tasks.web]
-failures = ["-missed"]     # stop paging on a missed tick; everything else stays
+failures = ["-missed"]              # stop paging on a missed tick
 
-[tasks.deploy]
-failures = ["+stopped"]    # also page when this one gets killed
+[tasks.rsync]
+failures = ["timeout", "23", "24"]  # only these exits fail
 ```
 
-A delta at `[defaults]` adjusts the built-in default daemon-wide; a delta
-on a task adjusts whatever it inherits from `[defaults]`. You can't mix
-the two styles in one list — a list is either all bare (replace) or all
-`+`/`-` (adjust), and mixing them is rejected at load. Reach for a bare
-list when you want to pin the exact set; reach for `+`/`-` when you just
-mean "the usual, but…".
+Possible values:
 
-`failures` is purely an **observability** choice. It does **not** change
-retries: those always fire on `failed`, `timeout`, `crashed`,
-`log_overflow`, and `start_failed`, whatever you list here. Demoting
-`failed` won't quietly stop a task retrying, and promoting `stopped`
-won't make the daemon re-run something you stopped on purpose.
+- `failed`: the command exited non-zero
+- `timeout`: stopped for running longer than [`timeout`](#timeout)
+- `crashed`: died on a signal (OOM-killed, segfault)
+- `log_overflow`: hit [`log_max_size`](#log_max_size) under `log_on_full = "kill"`
+- `start_failed`: the process could not be started
+- `missed`: a scheduled firing was skipped while the daemon was down
+- `stopped`: an operator stopped the run
+- `daemon_stopped`: still running when the daemon shut down
 
 ## Logs & retention
 
-| Key            | Default                     | What it does                                                                                                                                                                                              |
-| -------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `log_max_size` | `100MB`                     | Per-run log cap. Units: `b`, `kb`, `mb`, `gb`, `tb`. Bare `0`, negative sizes, and malformed strings are rejected.                                                                                        |
-| `log_on_full`  | `"drop_old"`                | What to do at the cap: `drop_new`, `drop_old`, `kill`.                                                                                                                                                    |
-| `keep_runs`    | inherited from `[defaults]` | Keep the N most recent completed runs for this task. Non-negative integer; hard internal cap of 1 000 000. Omit to inherit from `[defaults]`; `0` keeps no completed runs at all; negatives are rejected. |
-| `keep_for`     | inherited from `[defaults]` | Delete runs older than this. Omit to inherit; zero and negatives rejected, and absurdly large values (over ~100 years) are rejected as typos.                                                             |
+### keep_runs
 
-Every duration field (`timeout`, `retry_delay`, `graceful_stop`,
-`jitter`, `keep_for`, etc.) accepts the same syntax: Go's standard
-`h`/`m`/`s`/`ms`/`us`/`ns`, plus `d` (days) and `w` (weeks) on top — so
-`"30d"` and `"2w"` work anywhere a duration is accepted. Mixed forms
-like `"1h30m"` work everywhere too.
+<KeepRuns />
 
-Set both `keep_runs` and `keep_for` and they both apply — whichever one
-trims more aggressively is the one you'll feel. See
-[Logs & retention](/concepts/logs/) for the full picture, including the
-`.prev` rotation lifecycle and the fixed one-hour cleanup cadence.
+### keep_for
+
+<KeepFor />
+
+Every duration accepts `ms`, `s`, `m`, `h`, `d` (days), and `w` (weeks), for
+example `"90s"`, `"2d"`, `"1w"`. See [Logs & retention](/concepts/logs/) for log
+rotation and cleanup timing.
+
+### log_max_size
+
+<LogMaxSize />
+
+### log_on_full
+
+<LogOnFull />
 
 ## Environment & secrets
 
-| Key            | Default  | What it does                                                                                                         |
-| -------------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
-| `env`          | _(none)_ | Inline KEY/VALUE map overlaid on the task's process env. **Visible** in the API, UI, and CLI.                        |
-| `env_file`     | _(none)_ | Path to a dotenv file merged beneath `env`. Its values are **visible** too.                                          |
-| `secrets`      | _(none)_ | Inline KEY/VALUE map, same mechanics as `env`, but its keys and values **never appear in the config API or web UI**. |
-| `secrets_file` | _(none)_ | Path to a dotenv file merged beneath `secrets`. Only the **path** is visible; contents are not.                      |
+<EnvSecretsMerge />
 
-The split is about **visibility**, not mechanics. Everything under
-`env` / `env_file` is treated as out in the open — it sits right next to
-`cron` and `run` in the dashboard, the TUI, and `GET /api/tasks`, so
-anyone logged into the daemon can read it. Everything under
-`secrets` / `secrets_file` reaches the spawned process exactly the same
-way, but the API and UI never show the keys or values — at most you'll
-see the `secrets_file` path, so you can tell where values come from.
+### env
 
-A secret is still part of the process environment, though, so a command
-can print it (`env`, a verbose tool, a crash dump). When that happens the
-daemon scrubs the value out of the captured output before it's stored,
-streamed over the API, or pushed anywhere, swapping it for `[redacted]`.
-That's a best-effort match on the literal value: a secret the program
-transforms first (base64, URL-encoding) or splits across lines can still
-slip through, so treat it as a safety net, not a licence to print secrets.
+<Env />
 
-When the task starts, all four layers merge on top of the daemon's own
-environment. On a key collision, later wins:
+### secrets
 
-1. The daemon process's own environment.
-2. `env_file`, then `env` — defaults first, then the task's own.
-3. `secrets_file`, then `secrets` — defaults first, then the task's own.
+<Secrets />
 
-So within each pair the file merges _beneath_ the inline map
-(docker-compose style: inline entries win), and secrets sit above plain
-env, so a secret always beats a same-named public value.
+### env_file
 
-File paths can be absolute, `~/`-relative, or relative to the directory
-`runwisp.toml` lives in — the same resolution as every other file
-reference. The format is plain dotenv: `KEY=VALUE` per line, `#` starts
-a comment, blank lines are skipped, and the contents are read literally
-— no shell expansion, and no [`${...}` substitution](/configuration/substitution/)
-either.
+<EnvFile />
 
-```toml
-[tasks.backup]
-cron         = "0 3 * * *"
-run          = "/usr/local/bin/backup.sh"
-env_file     = "backup.env"                       # visible config
-secrets_file = "/etc/runwisp/backup-secrets.env"  # invisible credentials
+### secrets_file
 
-[tasks.backup.env]
-BACKUP_BUCKET = "s3://prod-backups"
-DRY_RUN       = "0"
+<SecretsFile />
 
-[tasks.backup.secrets]
-RESTIC_PASSWORD = "${file:~/.config/runwisp/restic.pass}"
-```
-
-That last line shows the other tool in the box:
-[`${...}` substitution](/configuration/substitution/) pulls a value from
-an env var or a file into any string at config load — including into
-inline `secrets`. Use whichever reads better; the visibility rule is
-decided by _which key_ the value lands in, not where it came from.
-
-It's all validated at config load, so a bad entry fails loudly up front:
-keys have to match `^[A-Za-z_][A-Za-z0-9_]*$`, values can't contain NUL
-bytes, no single value can top 32 KiB, and the env + secrets entries for
-a task can't add up to more than 256.
-
-`env` and `secrets` are great for values that stay constant across runs.
-When what changes every run is the _value_ — a project ID you fill in at
-trigger time — that's a [parameter](#parameters).
+[`env`](#env) and [`secrets`](#secrets) are for values that are the same on every
+run. For a value that changes per run, use a [parameter](#params).
 
 ## Parameters
 
-New to parameters? The [Parameters concept guide](/concepts/parameters/)
-is the friendlier introduction — this section is the exhaustive key
-reference.
+For an introduction, see [Parameters](/concepts/parameters/).
 
-Sometimes a task is _almost_ the same every time, except for one or two
-things you only know when you press "run" — a project id, a date range, a
-`--dry-run` flag. That's what `params` is for. You declare the inputs a
-task accepts in `runwisp.toml`, and the dashboard, TUI, and REST API
-all grow a little form for them. Scheduled runs (cron,
-`run_on_start`, catch-up, retries) just use the declared defaults.
+### params
 
-The config is still the only place parameters are _defined_. The UI and
-API only ever _supply values_ for what you've already declared — they
-can't invent a new flag or change a command. And every value is passed to
-your program as a real argv entry or an env var, never spliced into the
-shell string, so an operator typing `; rm -rf /` into a field gets an
-inert string, not a catastrophe.
+**type**: `table` (array of `[[tasks.<name>.params]]` entries)
 
-`params` is an array of inline tables, one per input. Each table names
-**exactly one** of four keywords, which decides both how the value is fed
-to your command and the key you use everywhere else:
+The inputs a task takes. Each one becomes a field on the Run form in the Web
+UI, TUI, and REST API. Each entry has exactly one kind keyword (`env`, `arg`,
+`option`, or `flag`) that decides how the value reaches your command.
 
-| Keyword  | How it reaches the command                                 | Example declaration       |
-| -------- | ---------------------------------------------------------- | ------------------------- |
-| `env`    | Exported as an environment variable                        | `{ env = "PROJECT_ID" }`  |
-| `arg`    | Appended as a positional argument, in declaration order    | `{ arg = "source" }`      |
-| `option` | Appended as `--name value` (or `--name=value`, see below)  | `{ option = "--region" }` |
-| `flag`   | A boolean; the token is appended when on, omitted when off | `{ flag = "--force" }`    |
+- Values are passed as real arguments or env vars, never pasted into the shell
+  string, so input like `; rm -rf /` is harmless.
+- Scheduled runs (cron, catch-up, retries) use the declared defaults.
 
 ```toml
 [tasks.backup]
@@ -477,149 +420,71 @@ params = [
   { arg = "source", required = true },
   { arg = "dest", default = "/backups" },
   { option = "--region", choices = ["us", "eu"] },
-  { option = "--limit", type = "number", default = 100 },
   { flag = "--force" },
 ]
 ```
 
-Trigger that with `source = "/data"`, `--region = "eu"`, and `--force`
-on, and RunWisp runs the equivalent of:
+Kind keyword (exactly one per entry):
 
-```bash
-PROJECT_ID=… /usr/local/bin/backup.sh '/data' '/backups' '--region' 'eu' '--limit' '100' '--force'
-```
+- `env`: pass the value as an environment variable with this name. The name
+  can't also be an [`env`](#env) or [`secrets`](#secrets) key on the same task.
+- `arg`: append the value as a positional argument, in declaration order.
+- `option`: render as `--name value`. A name ending in `=` glues them
+  (`--date=2026-01-01`).
+- `flag`: a boolean whose token is appended when on, omitted when off. Takes no
+  `choices` or `type`.
 
-Tokens render in the order you declare them — the example above lays out args,
-options, then a flag because that's how it's written, but if you declared the
-`option` before the `arg` it would land before that arg on the command line.
-You control the ordering. An `option` whose name ends in `=` renders glued
-together — `{ option = "--date=" }` with value `2026-01-01` becomes
-`--date=2026-01-01` rather than two tokens.
+Attributes:
 
-If your `run` is a multi-line script, the tokens attach to its **final
-command**, so end the script with the program that should receive them (e.g.
-the `backup.sh` call on the last line, not a trailing comment).
+- `default`: the value scheduled runs use and the manual form starts with
+  (`true`/`false` for a flag).
+- `required`: the manual form won't submit without a value (`env`, `arg`,
+  `option`). A required parameter on a scheduled task must also set `default`.
+- `type`: `string` (default) or `number`. A value that isn't a number is
+  rejected before the run starts.
+- `choices`: a fixed list, shown as a dropdown. Other values are rejected.
+- `allow_custom`: with `choices`, also allow a value not in the list. Rejected
+  without `choices`.
+- `description`: help text shown under the field.
 
-Each input takes a few optional modifiers:
+:::note[Empty field vs. empty string]
+On a manual run:
 
-| Modifier       | Applies to                | What it does                                                                                                                                          |
-| -------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default`      | env / arg / option / flag | Value used by scheduled runs and pre-filled in manual forms. For a `flag`, `true`/`false`.                                                            |
-| `required`     | env / arg / option        | The manual form won't submit without a value. Can't be combined with a scheduled task unless it also has a `default` (a cron tick has no one to ask). |
-| `choices`      | env / arg / option        | Renders as a dropdown; values outside the list are rejected.                                                                                          |
-| `allow_custom` | env / arg / option        | With `choices`, also lets the operator type a value not in the list.                                                                                  |
-| `type`         | env / arg / option        | `"string"` (default) or `"number"`; a `number` that doesn't parse is rejected.                                                                        |
-| `description`  | any                       | Help text shown under the field.                                                                                                                      |
+- A filled field (the default or your value) is passed.
+- A cleared field is not passed at all: no option, arg, or env var. It does
+  not fall back to the default. A `required` field can't be cleared.
+- To pass an empty string (`--note ''`), use the toggle under the field (in the
+  TUI, <kbd>ctrl+t</kbd>).
 
-A few rules the loader enforces up front: each table has exactly one of
-`env`/`arg`/`option`/`flag`; `env`/`arg` keys match the usual env-name
-shape and `option`/`flag` names start with `-`; an `env` parameter can't
-collide with a static `env`/`secrets` key on the same task; `flag` takes
-neither `choices` nor `type`; and `allow_custom` only makes sense with
-`choices`. `params` belongs on `[tasks.*]` — services don't take it.
-
-Whatever values actually took effect (defaults filled in, flags
-canonicalised, optional blanks dropped) are recorded on the run and shown
-in its detail view, so run history always tells you what a given execution
-was handed.
-
-### Omitting a value vs. passing an empty one
-
-When you trigger a task by hand, a value field with a `default` starts
-pre-filled with it. Three things can happen with that field, and they're
-genuinely different:
-
-- **Leave it as-is** and the value (the default, or whatever you typed) is
-  passed.
-- **Clear it** and the parameter is _omitted_ — the option, arg, or env var
-  isn't passed at all. Clearing does **not** fall back to the default; an
-  empty field means "don't send this." A `required` field can't be omitted,
-  so it keeps nagging until you fill it.
-- **Pass an empty string** when your program distinguishes `--note ''` from
-  no `--note` at all. The form defaults a blank field to "omitted", so use
-  the small toggle under the field (in the TUI, <kbd>ctrl+t</kbd>) to flip it
-  to "passing empty string". The field then shows it'll send `""`.
-
-Flags don't have this ambiguity — the checkbox is the whole story, off means
-the token isn't appended. Dropdowns (`choices`) omit when left unset.
-
-Scheduled runs (cron, `run_on_start`, catch-up) and retries don't go through
-a form: they use the declared defaults, and a retry replays exactly what the
-original run was given — including anything the operator deliberately omitted.
+A flag that is off is not passed. A retry uses exactly the values of the
+original run.
+:::
 
 ## Working directory & shell
 
-| Key           | Default    | What it does                                                                                                                                                                                |
-| ------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `working_dir` | _(daemon)_ | Directory the process runs in. Relative paths resolve against the `runwisp.toml` directory; `~` is the home of whoever the task runs as. Existence is checked at run time, not config load. |
-| `shell`       | `/bin/sh`  | Interpreter for `run`. Must be an **absolute** path (e.g. `/bin/bash`). Invoked as `<shell> -e -c <script>` — see [Fail-fast](#fail-fast).                                                  |
-| `umask`       | _(daemon)_ | Octal file-creation mask applied to the run, e.g. `"027"`. 3–4 octal digits, up to `0777`. Empty inherits the daemon's umask.                                                               |
-| `env_base`    | `inherit`  | What the run's environment starts from: `inherit` (the daemon's) or `clean` (`PATH`, `SHELL`, `HOME`, `USER`/`LOGNAME` only, the way cron does it).                                         |
-| `user`        | _(daemon)_ | Run as another OS user, in `user` or `user:group` form (name or numeric id). Empty keeps the daemon's identity. Needs the daemon running as root.                                           |
+### working_dir
 
-By default a `run` script executes under `/bin/sh` in whatever directory
-the daemon was started from. Set `working_dir` when a script expects to be
-somewhere specific, and `shell` when you want bash-isms (arrays, `[[ ]]`,
-brace expansion). A relative shell path fails at config load; a missing
-`working_dir` fails at run time. `shell` can also be set
-once in [`[defaults]`](/configuration/defaults/) for every task.
+<WorkingDir />
 
-`working_dir = "~"` means the home of the user the task actually runs as — the
-daemon's own account normally, and the account named by `user` when the task
-drops privileges. That's cron's rule, and it's what makes an imported crontab
-behave the same way it did before. The lookup happens per run, alongside the
-one that resolves `user`, so a `~` on a task that runs as someone else stays
-literal in the loaded config and `runwisp validate` doesn't need that account
-to exist on the machine you're validating from.
+### shell
 
-`umask` controls the permission bits stripped from files the run creates —
-`"027"` makes new files `rw-r-----` and directories `rwxr-x---`, handy when
-a job writes logs or dumps that shouldn't be world-readable. It's applied
-inside the run's own process (so concurrent runs never affect each other or
-the daemon), and it's digit-only, so there's nothing to escape. Spell it
-with at least three digits — `"22"` is rejected because it's ambiguous;
-write `"022"`.
+<Shell />
 
-`env_base` decides what your task's environment starts as. The default,
-`inherit`, gives it everything the daemon has (minus RunWisp's own internals)
-— friendly, because a task sees the same `PATH` you tested it with. The cost
-is that a job's behaviour depends on how the daemon happened to be started:
-launch it from a login shell one day and from systemd the next, and the same
-task runs with a different environment.
+### env_base
 
-`clean` cuts that link. The run starts with `PATH=/usr/bin:/bin`, `SHELL`,
-`HOME`, and `USER`/`LOGNAME` — exactly what cron gives a job — and nothing
-else. Anything your task actually needs, you declare in its own `env`, which
-layers on top. That's why `runwisp import cron` sets `env_base = "clean"` on
-everything it imports: those jobs were written against cron's environment,
-and handing them the daemon's is how a migration looks fine for a week and
-then breaks. It's a good default for any task you want reproducible, and it's
-host-shell only — a compose-backed task never inherits the daemon's
-environment to begin with, so setting it there is an error.
+<EnvBase />
 
-`user` drops the run to another account. Write a name or a numeric id, and
-add `:group` (also name or id) when you want a specific group too — the same
-`user:group` shorthand `chown` and Docker Compose use. The daemon resolves
-the account when the run starts (not at config load, so the user can be
-created after the daemon boots), seeds `HOME`/`USER`/`LOGNAME` for it, and
-applies the user's supplementary groups. Dropping privileges only works when
-the **daemon itself runs as root** — if it doesn't, the run fails loudly with
-a start error rather than quietly staying as the daemon's user.
+### user
 
-```toml
-[tasks.report]
-working_dir = "/srv/app"
-shell       = "/bin/bash"
-umask       = "027"
-env_base    = "clean"
-user        = "reporter:reporter"
-run         = "./bin/generate-report --out reports/"
-```
+<User />
+
+### umask
+
+<Umask />
 
 ## Compose-backed tasks
 
-A cron-driven `[tasks.<name>]` can also point at a compose service for
-one-shot runs:
+A task can run a compose service instead of a shell command:
 
 ```toml
 [tasks.nightly-backup]
@@ -628,21 +493,28 @@ compose_file    = "./docker-compose.yml"
 compose_service = "backup"
 ```
 
-When only `compose_file` is set (no `run`), each firing invokes
-`docker compose run --rm <svc>` with the service's own command. When you
-need to run your own command inside the service's already-running
-container instead, set both `compose_file` and `run` together with
-`compose_mode = "exec"` — see [`compose_mode`](/configuration/compose/#running-a-command-in-a-service-compose_mode).
-For importing every service in a compose file as observable RunWisp
-services, see [`[compose.*]`](/configuration/compose/).
+### compose_file
 
-### Parameters on a compose task
+<ComposeFile />
 
-[Parameters](#parameters) work here, with one difference in the
-fresh-container mode above (`compose_file` and `compose_service`, no
-`run`): `arg`, `option`, and `flag` values go to the container the way
-`docker compose run <svc> …` passes them, so they replace the service's
-`command:` and arrive as arguments to the image's `ENTRYPOINT`.
+### compose_service
+
+**type**: `string` **default**: the task name
+
+<ComposeService />
+
+### compose_mode
+
+<ComposeMode />
+
+To import every service in a compose file, see
+[`[compose.*]`](/configuration/compose/).
+
+:::note[Parameters on a compose task]
+[Parameters](#params) work here. In new-container mode (no [`run`](#run)),
+`arg`, `option`, and `flag` values are passed like `docker compose run <svc> …`
+arguments: they replace the service's `command:` and go to the image's
+`ENTRYPOINT`.
 
 ```toml
 [tasks.nightly-backup]
@@ -652,78 +524,30 @@ compose_service = "backup"
 params          = [{ arg = "since", default = "yesterday" }]
 ```
 
-Trigger that with `since = "2026-01-01"` and the container runs its
-entrypoint with `2026-01-01`.
-
-Use `env` params to pass values without touching the command line, or
-`compose_mode = "exec"` with your own `run` to append tokens to that
-command instead.
+:::
 
 ## Notifications
 
-| Key      | Default  | What it does                                                               |
-| -------- | -------- | -------------------------------------------------------------------------- |
-| `notify` | _(none)_ | Notifier IDs to alert on any [failure outcome](#what-counts-as-a-failure). |
+### notify
 
-`notify` fires on whatever [`failures`](#what-counts-as-a-failure)
-classifies as a failure — so silencing a missed-run page, or promoting a
-stopped one, is a `failures` edit, not a separate toggle. A demoted
-outcome still records its run row; it just doesn't go red or page. To
-alert on a _non-failure_ outcome (a success, a timeout on its own), add a
-[`[[route]]`](/notifications/routes/) matching that kind.
-
-Each entry of `notify` is a notifier id you've declared in a
-[`[notifiers.<id>]`](/notifications/model/#notifiersid--declaring-a-channel)
-block. Whatever's listed in `[notify] global_notifiers` (default
-`["inapp"]`) gets tacked on automatically — set `global_notifiers = []`
-to opt out, or `["slack-ops"]` to route every failure there instead.
-[Per-task notifications](/notifications/per-task/) covers the field's
-full behaviour.
-
-These two fields are **the same on `[tasks.*]` and `[services.*]`** —
-same names, same behaviour, same duplicate-removal rules. The
-[Per-task notifications](/notifications/per-task/) page is the canonical
-reference for both, and the
-[`[services.*]` notifications](/configuration/services/#notifications)
-section just points back here.
+<Notify />
 
 ## What's rejected on tasks
 
-The config loader turns these away at startup, so they can't quietly
-bite you later:
+The config fails to load with any of these:
 
-- `restart` / `restart_attempts` — services-only; a task re-runs a failed run with `retry_attempts`/`retry_delay`/`retry_backoff`, not restart.
-- `instances = N` — a services-only field.
-- `priority` / `autostart` — services-only; they govern boot start order and whether a service comes up at boot.
-- `depends_on` — services-only; it gates a service's boot on other services being healthy.
-- A task name that's also taken by a `[services.*]` — they share one namespace.
-- An empty or missing `run`.
-
-## Worked example
-
-```toml
-[tasks.process-event-queue]
-group          = "Workers"
-description    = "Drain the queue every 10 minutes with retries"
-cron           = "*/10 * * * *"
-on_overlap     = "skip"           # never two queue drainers at once
-timeout        = "9m"             # die before the next firing
-graceful_stop  = "30s"            # this drainer needs more than the 5s default
-retry_attempts = 3
-retry_delay    = "2s"
-retry_backoff  = "exponential"
-keep_runs      = 200
-keep_for       = "14d"
-notify = ["slack-ops"]
-run = """
-trap 'echo "draining gracefully"; /usr/local/bin/process-queue --drain' TERM
-echo "Draining queue at $(date -Iseconds)"
-/usr/local/bin/process-queue
-"""
-```
-
-Want a head start? Run `runwisp` in an empty directory and it'll offer
-to scaffold a minimal `runwisp.toml` for you.
+- Service-only keys: [`restart`](/configuration/services/#restart),
+  [`restart_attempts`](/configuration/services/#restart_attempts),
+  [`restart_delay`](/configuration/services/#restart_delay),
+  [`restart_backoff`](/configuration/services/#restart_backoff),
+  [`healthy_after`](/configuration/services/#healthy_after),
+  [`instances`](/configuration/services/#instances),
+  [`priority`](/configuration/services/#priority),
+  [`autostart`](/configuration/services/#autostart),
+  [`depends_on`](/configuration/services/#depends_on). A task uses
+  [`retry_attempts`](#retry_attempts) instead of restarts.
+- A name already used by a `[services.*]` entry.
+- An empty or missing [`run`](#run) (unless [`compose_file`](#compose_file) is set).
 
 ---
 

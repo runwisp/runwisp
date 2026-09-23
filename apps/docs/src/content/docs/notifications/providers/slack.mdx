@@ -172,7 +172,7 @@ The default Slack template builds one message per event as Block Kit
 JSON. You get a header with the task name and verb, a section with the
 event sentence and what triggered it, a code-block tail (for
 `run.failed` and `run.timeout`), an action button that jumps to the run (when
-[`[daemon] external_url`](/configuration/daemon/#external_url) is set),
+[`external_url`](/configuration/daemon/#external_url) is set),
 and a footer reading "from runwisp" (with the daemon's fingerprint
 appended when set). Every event kind uses that same shape — only the
 emoji, verb, and sentence change. Rendered
@@ -193,7 +193,7 @@ Triggered via the REST API · 14 May, 17:11.
 from runwisp · bright-falcon
 ```
 
-No `external_url`? The action button drops off. No log file? The
+No [`external_url`](/configuration/daemon/#external_url)? The action button drops off. No log file? The
 code-block tail drops off. Both happen quietly, no broken layout.
 
 The helpers `statusEmoji`, `statusVerb`, `humanTime`, `humanDuration`,

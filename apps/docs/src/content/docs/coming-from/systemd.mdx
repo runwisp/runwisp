@@ -120,33 +120,33 @@ arbitrary service units isn't, so RunWisp leaves the `systemctl disable` to you.
 A unit's `[Service]` section is where the process lives. Most directives carry
 straight over:
 
-| systemd                      | runwisp.toml          | Notes                                                                                   |
-| ---------------------------- | --------------------- | --------------------------------------------------------------------------------------- |
-| `Restart=always\|on-failure` | `[services.NAME]`     | A long-running, restarted process → a service.                                          |
-| `Type=oneshot`               | `[tasks.NAME]`        | Run-once → a task with `run_on_start`.                                                  |
-| `ExecStart`                  | `run`                 | A single command; leading `@ - + !` prefixes are stripped with a note.                  |
-| `WorkingDirectory`           | `working_dir`         | Relative paths resolve against the `runwisp.toml` location.                             |
-| `User` (+ `Group`)           | `user`                | Folded to `user:group`. Needs the daemon running as root to switch users.               |
-| `Environment`                | `[services.NAME.env]` | Every `Environment=` line is kept; quoted values are parsed.                            |
-| `EnvironmentFile`            | `env_file`            | One file; a leading `-` (optional) is dropped. Multiple files → the first, with a note. |
-| `TimeoutStopSec`             | `graceful_stop`       | Grace window before `SIGKILL`.                                                          |
-| `KillSignal`                 | `stop_signal`         | `SIGTERM` stays `SIGTERM`.                                                              |
-| `[Unit] Description`         | `description`         |                                                                                         |
+| systemd                      | runwisp.toml                                           | Notes                                                                                   |
+| ---------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `Restart=always\|on-failure` | `[services.NAME]`                                      | A long-running, restarted process → a service.                                          |
+| `Type=oneshot`               | `[tasks.NAME]`                                         | Run-once → a task with [`run_on_start`](/configuration/tasks/#run_on_start).            |
+| `ExecStart`                  | [`run`](/configuration/tasks/#run)                     | A single command; leading `@ - + !` prefixes are stripped with a note.                  |
+| `WorkingDirectory`           | [`working_dir`](/configuration/tasks/#working_dir)     | Relative paths resolve against the `runwisp.toml` location.                             |
+| `User` (+ `Group`)           | [`user`](/configuration/tasks/#user)                   | Folded to `user:group`. Needs the daemon running as root to switch users.               |
+| `Environment`                | `[services.NAME.env]`                                  | Every `Environment=` line is kept; quoted values are parsed.                            |
+| `EnvironmentFile`            | [`env_file`](/configuration/tasks/#env_file)           | One file; a leading `-` (optional) is dropped. Multiple files → the first, with a note. |
+| `TimeoutStopSec`             | [`graceful_stop`](/configuration/tasks/#graceful_stop) | Grace window before `SIGKILL`.                                                          |
+| `KillSignal`                 | [`stop_signal`](/configuration/tasks/#stop_signal)     | `SIGTERM` stays `SIGTERM`.                                                              |
+| `[Unit] Description`         | [`description`](/configuration/tasks/#description)     |                                                                                         |
 
 The `[Install]` section (`WantedBy`, `RequiredBy`) is how systemd decides when to
 start the unit; RunWisp starts services at boot by default, so it's not needed.
 Use [`autostart = false`](/configuration/services/) to boot a service stopped, and
-[`depends_on`](/configuration/services/) for start ordering.
+[`depends_on`](/configuration/services/#depends_on) for start ordering.
 
 ## What needs a human
 
 The importer flags everything it can't map cleanly with a `# TODO` in the TOML and
 a note on that unit's row — nothing is silently dropped. The ones to know about:
 
-- **More than one command.** RunWisp runs a single `run`. If the unit has multiple
+- **More than one command.** RunWisp runs a single [`run`](/configuration/tasks/#run). If the unit has multiple
   `ExecStart=` lines, or any `ExecStartPre` / `ExecStartPost` / `ExecStop`, only
   the first `ExecStart` is imported and the rest are flagged. Fold them into the
-  `run` script by hand — or, for setup steps, into a separate task.
+  [`run`](/configuration/tasks/#run) script by hand — or, for setup steps, into a separate task.
 - **`Type=notify` / `Type=forking`.** These rely on a readiness protocol or a
   forked main PID that RunWisp doesn't track — it supervises the process it
   starts and treats it as up immediately. Confirm that's acceptable, or run the
@@ -163,7 +163,7 @@ a note on that unit's row — nothing is silently dropped. The ones to know abou
   service won't receive the listening socket systemd handed it. Have the process
   open its own port.
 - **Template units.** `%i`, `%I`, `%n` and friends aren't filled in — replace them
-  with concrete values in the `run` line.
+  with concrete values in the [`run`](/configuration/tasks/#run) line.
 
 ## What you get that systemd didn't
 
@@ -172,7 +172,7 @@ a note on that unit's row — nothing is silently dropped. The ones to know abou
 - **Logs you don't have to `journalctl`.** Per-run stdout/stderr, streamed live to
   the Web UI and TUI and indexed for search.
 - **Restart visibility.** Every restart is recorded with timing, so a flapping
-  service is obvious. Healthy uptime ([`healthy_after`](/configuration/services/))
+  service is obvious. Healthy uptime ([`healthy_after`](/configuration/services/#healthy_after))
   resets the backoff; too many fast failures mark it FATAL.
 - **Failure alerts.** [Notify](/notifications/model/) on failure through Slack,
   Telegram, email, or a webhook.
