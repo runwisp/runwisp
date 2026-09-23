@@ -1,0 +1,105 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: "[notify]"
+description: "Daemon-wide notification settings: global_notifiers, retry_budget, bell history, and coalescing."
+---
+
+Daemon-wide notification settings. Every key is optional. To declare a channel
+or write a routing rule, see [Notifications](/notifications/) and
+[`[[route]]`](/configuration/routes/).
+
+```toml
+[notify]
+global_notifiers   = ["inapp"]
+retry_budget       = "30s"
+keep_notifications = 1024
+keep_for           = "90d"
+coalesce_window    = "1h"
+coalesce_limit     = 10
+```
+
+`[notify]` can't change on [reload](/operations/reload/); it needs a restart.
+
+## global_notifiers
+
+**type**: `string[]` **default**: `["inapp"]`
+
+Notifier ids that get every failure, on top of each task's own
+[`notify`](/configuration/tasks/#notify) list (duplicates removed). They also
+cover tasks with no `notify` at all. `"inapp"` is the bell in the Web UI and TUI.
+
+```toml
+[notify]
+global_notifiers = ["inapp", "slack-ops"]  # bell + every failure to Slack
+```
+
+- `[]` turns the bell off and sends each failure only to the task's own
+  `notify` list.
+- Every id except `"inapp"` must be declared in a `[notifiers.<id>]` block.
+
+## retry_budget
+
+**type**: `duration` **default**: `5m`
+
+The total time one outbound delivery may spend retrying. Retries use
+exponential backoff (1s base, 60s cap) and honour `Retry-After` on a 429. When
+the budget runs out, a `notify.delivery_failed` warning goes to the bell.
+
+```toml
+[notify]
+retry_budget = "30s"  # surface a dead channel sooner
+```
+
+A budget shorter than one HTTP attempt means one try and no retries.
+
+## keep_notifications
+
+**type**: `integer` **default**: `1024`
+
+The most bell rows kept. Older rows are deleted by a background sweep. With
+[`keep_for`](#keep_for) also set, whichever deletes more wins.
+
+## keep_for
+
+**type**: `duration` **default**: `90d`
+
+Delete bell rows older than this.
+
+```toml
+[notify]
+keep_notifications = 2000
+keep_for           = "60d"
+```
+
+## coalesce_window
+
+**type**: `duration` **default**: `1h`
+
+Repeats of the same event (same task, kind, and end reason) inside this window
+update one bell row instead of adding a new one, and outbound channels hold them
+back:
+
+1. The first event goes out right away.
+2. Repeats are held. Every [`coalesce_limit`](#coalesce_limit)-th repeat goes
+   out as a **check-in** with a count.
+3. When the window ends, one **summary** covers what was held since the last
+   check-in.
+
+A task failing every minute with the defaults sends at most one message every
+six minutes (`coalesce_window / coalesce_limit`).
+
+```toml
+[notify]
+coalesce_window = "0s"  # one outbound message per event
+```
+
+`"0s"` turns off outbound grouping only. The bell always coalesces.
+
+## coalesce_limit
+
+**type**: `integer` **default**: `10`
+
+How many held repeats trigger a check-in message. It's also how many recent
+timestamps each coalesced bell row keeps for its sparkline. Raise it for fewer
+messages.

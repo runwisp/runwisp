@@ -35,8 +35,8 @@ var importFlags importOpts
 
 var importCmd = &cobra.Command{
 	Use:   "import",
-	Short: "Convert a crontab or supervisord config into runwisp.toml",
-	Long: `Convert an existing crontab or supervisord configuration into an
+	Short: "Convert a crontab, supervisord config, or systemd units into runwisp.toml",
+	Long: `Convert an existing crontab, supervisord configuration, or systemd units into an
 annotated runwisp.toml.
 
 The generated TOML is printed to stdout by default so you can review it (and

@@ -2,130 +2,116 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: CLI reference
-description: Every runwisp subcommand and global flag — starting and attaching to the daemon, validating config, running tasks, reloading and restarting, importing crontabs and supervisord configs, autostart, and the environment variables that configure it all.
+description: Every runwisp command, flag, and environment variable.
 head:
     - tag: title
       content: "RunWisp CLI: status, validate, import cron/supervisord/systemd, reload, run"
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+Every `runwisp` command, its arguments, and its flags. Each command also prints
+its own `--help`. Output is plain text when it isn't a terminal or when
+`NO_COLOR` is set.
 
-`runwisp` is one binary with a handful of subcommands. Run it with no
-subcommand and it does the friendly thing — attaches to a running daemon,
-or scaffolds a config and starts one. Everything else is a verb:
-`validate`, `reload`, [`run`](/configuration/tasks/#run), [`import`](/configuration/compose/#import), and so on. This page is the full
-list; each command also prints its own `--help`. Help pages and error
-messages are colored when you're on a terminal and plain otherwise —
-piping to a file, or setting `NO_COLOR`, gets you clean text with no
-escape codes.
+## Global options
 
-## Global flags
+These work on every command. A flag beats its environment variable.
 
-These apply to every subcommand. They decide which config gets read,
-where state lives, where the HTTP server listens, and how the daemon
-logs.
+| Flag             | Default                 | Description                                                               |
+| ---------------- | ----------------------- | ------------------------------------------------------------------------- |
+| `-c`, `--config` | `./runwisp.toml`        | Config file. Env: `RUNWISP_CONFIG`.                                       |
+| `--data`         | `./.runwisp`            | State directory: SQLite database, run logs, socket. Env: `RUNWISP_DATA`.  |
+| `--socket`       | `<data>/runwisp.sock`   | [Control socket](#control-socket) path. Env: `RUNWISP_SOCKET`.            |
+| `--host`         | `127.0.0.1`             | HTTP bind address; `0.0.0.0` for every interface. Env: `RUNWISP_HOST`.    |
+| `-p`, `--port`   | `9477`                  | HTTP port for the Web UI and REST API. Env: `RUNWISP_PORT`.               |
+| `--log-level`    | `info`                  | `debug`, `info`, `warn`, `error`. Env: `RUNWISP_LOG_LEVEL`.               |
+| `--log-format`   | `auto`                  | `auto`, `text`, `json`. See [Daemon log](/operations/logging/). Env: `RUNWISP_LOG_FORMAT`. |
 
-| Flag             | Default                                            | What it does                                                                                               |
-| ---------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `--config`, `-c` | `runwisp.toml` (root: `/etc/runwisp/runwisp.toml`) | Path to the TOML config file. Env: `RUNWISP_CONFIG`.                                                       |
-| `--data`         | `.runwisp` (root: `/var/lib/runwisp`)              | Directory for all persistent state — SQLite DB, per-task logs, PID file, Unix socket. Env: `RUNWISP_DATA`. |
-| `--port`, `-p`   | `9477`                                             | TCP port for the HTTP server (REST API, SSE log stream, Web UI).                                           |
-| `--host`         | `127.0.0.1`                                        | Bind address. Use `0.0.0.0` to listen on every interface.                                                  |
-| `--log-level`    | `info`                                             | Verbosity: `debug`, `info`, `warn`, `error`. Env: `RUNWISP_LOG_LEVEL`.                                     |
-| `--log-format`   | `auto`                                             | Log shape: `auto`, `text`, `json`. Env: `RUNWISP_LOG_FORMAT`.                                              |
+As root, `--config` defaults to `/etc/runwisp/runwisp.toml` and `--data` to
+`/var/lib/runwisp`, so `sudo runwisp reload` finds a daemon that root started.
 
-`--data` is the one to pick once and keep: the database (`runwisp.db`),
-the socket (`runwisp.sock`), and every task's logs all live under it, so
-moving it later is a plain directory move, not a config change. The two
-logging flags get the full treatment in
-[Logging](/operations/logging/).
+To move the data directory, stop the daemon and move the directory.
 
-**Running as root changes the defaults**, precisely so `sudo runwisp
-reload` (or `stop` / `restart` / `status`) finds the same daemon a root
-`runwisp daemon` started with no flags: euid 0 defaults `--config` to
-`/etc/runwisp/runwisp.toml` and `--data` to `/var/lib/runwisp` instead of
-the cwd-relative paths every other user gets. `RUNWISP_CONFIG` /
-`RUNWISP_DATA` override that (and everything else) — precedence is
-flag > env var > euid-derived default.
+## Environment variables
 
-## Start the daemon and attach
+Besides the `RUNWISP_*` twins of the global options above:
 
-```bash
-runwisp                 # attach a TUI to a running daemon, or scaffold + start one
-runwisp daemon          # start headless (no TUI) — for Docker, systemd, cron
-runwisp tui             # attach a TUI to a local daemon over its socket
-runwisp tui --url <URL> # attach a TUI to a remote daemon over HTTP
-```
+| Variable                  | Description                                                                                                                   |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `RUNWISP_PASSWORD`        | The Web UI and REST API password, kept in memory only. Unset: a new one every boot. See [Authentication](/operations/auth/). |
+| `RUNWISP_AUTH`            | `off` disables authentication. Can't be combined with `RUNWISP_PASSWORD`. See [Authentication](/operations/auth/#running-without-a-password). |
+| `RUNWISP_URL`             | Remote daemon URL for `run` and `tui`, same as `--url`.                                                                        |
+| `RUNWISP_TLS`             | Overrides [`[daemon] tls`](/configuration/daemon/#tls-tls_cert-tls_key) (`auto` or `off`).                                     |
+| `RUNWISP_TRUSTED_PROXIES` | Comma-separated CIDRs. Overrides [`[daemon] trusted_proxies`](/configuration/daemon/#trusted_proxies).                        |
+| `RUNWISP_STATION_TOKEN`   | Token for `runwisp station`.                                                                                                   |
+| `RUNWISP_STATION_URL`     | Control-plane URL for `runwisp station`.                                                                                       |
+| `RUNWISP_DEBUG_ADDR`      | Loopback address (like `127.0.0.1:6060`) for Go `pprof` profiles. Non-loopback addresses are refused.                        |
 
-Bare `runwisp` is the everyday entry point. If a daemon already owns this
-data dir, it opens the [TUI](/getting-started/tui-tour/) against it.
-Otherwise — and if there's no `runwisp.toml` yet — it offers to scaffold a
-starter config, spawns the daemon in the background, and attaches.
+## Control socket
 
-If the port is already taken by _another_ RunWisp daemon — one started from
-a different data directory — `runwisp` tells you which datadir and config
-that daemon is using and offers to connect to it, or to stop it and launch
-here instead. (Pick a different port any time with `--port`.) When the port
-belongs to something that isn't RunWisp, you get the plain "port in use"
-error with hints for finding the culprit.
+The daemon listens on a Unix socket, `<data>/runwisp.sock` by default. The CLI
+and TUI use it without a password; access is limited by file permissions
+(`0700` data directory, `0600` socket) and a peer-credential check.
 
-`runwisp daemon` is the headless variant for boxes with no terminal: it
-starts the scheduler, REST API, and Web UI without the TUI, and exits
-non-zero if there's no config rather than hanging on a prompt nobody can
-answer. `runwisp tui` connects a fresh TUI to a daemon that's already up,
-over the local socket — no password needed. Add `--url`
-(or set `RUNWISP_URL`) to attach to a daemon over HTTP — a remote host
-or a container — logging in with its password; the
-[TUI tour](/getting-started/tui-tour/#authentication-briefly) covers
-how that password is read and cached.
+Move it with `--socket` when the data directory is on a mount that rejects
+`chmod` (Docker Desktop, some network filesystems). The daemon and CLI must use
+the same path.
 
-## Look before you leap
+## Starting and attaching
+
+### `runwisp`
 
 ```bash
-runwisp validate   # parse + validate runwisp.toml without starting anything
-runwisp list       # show configured tasks and their schedules
-runwisp status     # is the daemon alive right now?
+runwisp
 ```
 
-`runwisp validate` is the CI-and-pre-commit friend: it loads the config,
-prints a short summary (task and service counts, the resolved timezone),
-and surfaces the same advisory warnings the daemon would log at boot —
-all without touching anything live. `runwisp list` renders the configured
-tasks as a table. `runwisp status` pings the daemon over its local socket
-and prints a short health summary; it also flags when `runwisp.toml` has
-changed on disk since the daemon started.
+Opens the [TUI](/getting-started/tui-tour/) against the daemon that owns the
+data directory. If none is running, it starts one in the background first. With
+no `runwisp.toml`, it offers to create a starter file.
 
-### Machine-readable output (`--json`)
+If another RunWisp daemon already holds the port, it offers to connect to that
+one or to stop it and start here.
 
-Add `--json` to `validate`, `list`, or `status` and you get a single JSON
-document on stdout instead of the human text — handy when an agent or script
-drives RunWisp headless. Every document carries a `schemaVersion` so you can
-trust its shape across releases. Within one schema version the shape only grows:
-fields can be added, but removing or repurposing one requires a new
-`schemaVersion`. A failure still exits non-zero **and** prints JSON describing
-what went wrong, so your script never has to grep stderr to learn something
-broke.
+### `runwisp daemon`
 
-`runwisp validate --json` tells you whether the config is valid and hands back
-counts, the resolved timezone, and errors and warnings as arrays:
-
-```json
-{
-    "schemaVersion": 1,
-    "valid": true,
-    "configPath": "runwisp.toml",
-    "timezone": "UTC",
-    "timezoneSource": "config",
-    "tasks": 1,
-    "services": 1,
-    "warnings": [],
-    "errors": []
-}
+```bash
+runwisp daemon
 ```
 
-On a broken config it exits non-zero with `"valid": false` and a populated
-`errors` array. Parse-time errors carry a structured location so tooling can
-jump straight to the spot instead of parsing the message:
+Starts the daemon in the foreground with no TUI. Use it under Docker, systemd,
+or any init system. Exits non-zero if the config is missing, instead of
+prompting.
+
+### `runwisp tui`
+
+```bash
+runwisp tui
+runwisp tui --url https://runwisp.example.com
+```
+
+Attaches a TUI to a running daemon.
+
+| Flag    | Description                                                                                                                     |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `--url` | Connect over HTTP instead of the local socket. Reads the password from `RUNWISP_PASSWORD` or prompts once, then caches the session. |
+
+## Inspecting
+
+### `runwisp validate`
+
+```bash
+runwisp validate
+runwisp validate --json
+```
+
+Loads and checks `runwisp.toml` exactly like daemon startup, then prints a
+summary (task and service counts, the timezone) and any warnings. Starts
+nothing. Exits non-zero on an invalid config.
+
+| Flag     | Description                                  |
+| -------- | -------------------------------------------- |
+| `--json` | Print one JSON document instead of the summary. |
+
+Parse errors in JSON carry the exact location:
 
 ```json
 {
@@ -146,113 +132,71 @@ jump straight to the spot instead of parsing the message:
 }
 ```
 
-`runwisp list --json` mirrors the config table. Like the human view it's
-offline and reads only `runwisp.toml`, so there's no run history here. Services
-report their [`instances`](/configuration/services/#instances) and omit `maxConcurrent` — a service's copy count is
-[`instances`](/configuration/services/#instances), not an overlap cap, so there's no value to report:
+### `runwisp list`
 
-```json
-{
-    "schemaVersion": 1,
-    "tasks": [
-        {
-            "name": "backup",
-            "kind": "task",
-            "schedule": "0 3 * * *",
-            "maxConcurrent": 1,
-            "onOverlap": "queue",
-            "manualTrigger": true,
-            "description": "nightly backup"
-        }
-    ]
-}
+```bash
+runwisp list
+runwisp list --json
 ```
 
-A task carries `"source"` when its definition doesn't live in your own TOML:
-`"staged"` for the machine-owned `runwisp.d/imported.toml` that
-[`import --write`](#migrate-an-existing-setup) manages, `"cron"` for a real
-crontab read via [`include_cron`](/configuration/daemon/#include_cron).
-`"sourceFile"` names the exact file. Both are derived from where the definition
-was loaded, so they're absent for your own tasks and disappear on their own once
-you move one into your root config.
+Prints every configured task and service with its schedule. Reads only
+`runwisp.toml`; no daemon needed.
 
-`runwisp status --json` is the live snapshot: daemon health, a system summary,
-and every task with its last run — the exit code, timing, and `failed`/`missed`
-flags are precomputed so you don't have to decode RunWisp's status names
-yourself:
+| Flag     | Description                              |
+| -------- | ---------------------------------------- |
+| `--json` | Print one JSON document instead of the table. |
 
-```json
-{
-    "schemaVersion": 1,
-    "healthy": true,
-    "version": "0.16.4",
-    "port": 9477,
-    "schedulingActive": true,
-    "configStale": false,
-    "resolvedTimezone": "UTC",
-    "timezoneSource": "config",
-    "system": {
-        "version": "0.16.4",
-        "uptime": "1h2m3s",
-        "cpuCores": 8,
-        "host": "my-vps",
-        "os": "linux",
-        "arch": "amd64",
-        "name": "runwisp",
-        "workDir": "/srv"
-    },
-    "tasks": [
-        {
-            "name": "backup",
-            "kind": "task",
-            "cron": "0 3 * * *",
-            "manualTrigger": false,
-            "nextRunAt": "2026-07-16T03:00:00Z",
-            "lastRun": {
-                "id": "01JZZBACKUP0000000000000000",
-                "status": "ended",
-                "endReason": "failed",
-                "exitCode": 1,
-                "triggeredBy": "cron",
-                "startedAt": "2026-07-15T03:00:00Z",
-                "endedAt": "2026-07-15T03:00:42Z",
-                "durationMs": 42000,
-                "failed": true,
-                "missed": false
-            }
-        }
-    ]
-}
+In JSON, a task not defined in your own file carries `"source"`: `"staged"`
+(from [`import --write`](#runwisp-import)) or `"cron"` (from
+[`include_cron`](/configuration/daemon/#include_cron)), plus `"sourceFile"`.
+
+### `runwisp status`
+
+```bash
+runwisp status
+runwisp status --json
 ```
 
-A task that has never run reports `"last_run": null`. If the daemon isn't
-running, `status --json` exits non-zero with `"healthy": false` and an `error`.
+Checks that the daemon is up, prints a short summary, and warns when
+`runwisp.toml` changed since the daemon loaded it. Exits non-zero if the daemon
+isn't running.
 
-## Run a task now
+| Flag     | Description                                                                          |
+| -------- | ------------------------------------------------------------------------------------ |
+| `--json` | Print daemon health plus every task and its last run (exit code, timing, `failed`, `missed`). |
 
-```sh
-runwisp run <task>              # run a task, stream its output, exit with its code
-runwisp run <task> --daemon     # require a running daemon (fail fast if none)
-runwisp run <task> --standalone # require in-process (refuse if a daemon owns the dir)
-runwisp run <task> --json       # print the run outcome as JSON (log lines to stderr)
-runwisp run <task> --param key=value --param other=value  # supply parameter values
+For "will the daemon start on boot?", use [`service status`](#runwisp-service-status).
+
+### JSON output
+
+`validate`, `list`, `status`, and `run` accept `--json`. Every document has a
+`schemaVersion`; within one version, fields are only ever added. A failure still
+exits non-zero and still prints JSON, with an `error` or `errors` field.
+
+## Running tasks
+
+### `runwisp run`
+
+```bash
+runwisp run <task>
+runwisp run backup --param source=/data --param dest=/mnt/backup
+runwisp run deploy --url https://runwisp.example.com
 ```
 
-`runwisp run` runs one task and streams its stdout/stderr straight to
-your terminal, exiting with the run's own exit code — so it slots cleanly
-into a script. By default it auto-detects: if a daemon owns this data
-dir, the run is dispatched through its REST API and followed live;
-otherwise the task runs in this process from `runwisp.toml`. `--daemon`
-and `--standalone` pin the choice and are mutually exclusive.
+Runs a task, streams its output, and exits with its exit code.
 
-If the task declares [parameters](/concepts/parameters/), repeat `--param
-key=value` for each one you want to set; a parameter you don't mention
-falls back to its declared default. `--param` is the CLI's version of the
-form the Web UI and TUI show you at trigger time.
+Without `--url`, it sends the run to the local daemon if one is running,
+otherwise it runs the task inside the CLI process.
 
-With `--json`, the run's outcome is printed to stdout as one document once it
-finishes, and the live log lines are diverted to stderr so stdout stays a single
-JSON value — ideal for an agent that needs the result, not the noise:
+| Flag              | Description                                                                                         |
+| ----------------- | --------------------------------------------------------------------------------------------------- |
+| `--param k=v`     | Set a [parameter](/concepts/parameters/). Repeatable. Unset parameters use their default.           |
+| `--daemon`        | Require a running daemon.                                                                           |
+| `--standalone`    | Require no daemon; run in-process.                                                                  |
+| `--json`          | Print the outcome as one JSON document on stdout; log lines go to stderr.                           |
+| `--url`           | Run on a remote daemon at this URL. Env: `RUNWISP_URL`. See [Remote triggers](/recipes/remote-trigger/). |
+| `--password`      | Password for `--url`. Env: `RUNWISP_PASSWORD`.                                                      |
+| `--detach`        | With `--url`, print the run ID and exit without following the output.                               |
 
 ```json
 {
@@ -270,300 +214,227 @@ JSON value — ideal for an agent that needs the result, not the noise:
 }
 ```
 
-If the run can't even start — an unknown task, an unreachable daemon, a failed
-login — the document carries an `error` string instead of a run outcome, and
-[`run`](/configuration/tasks/#run) still exits non-zero. So a caller parsing stdout always gets JSON, never
-silence:
+## Controlling the daemon
 
-```json
-{
-    "schemaVersion": 1,
-    "task": "backup",
-    "error": "task \"backup\" not found",
-    "failed": false
-}
-```
-
-## Apply config edits
+### `runwisp reload`
 
 ```bash
-runwisp reload           # re-read runwisp.toml and reconcile the live task set
-runwisp restart          # stop and start fresh (restart-only settings, run_on_start, catch-up)
-runwisp stop             # shut the daemon down
-runwisp restart <name>   # restart one service (starts it if it's stopped)
-runwisp stop <name>      # stop one service, daemon keeps running
+runwisp reload
 ```
 
-For the everyday edits — adding, changing, or removing tasks and
-services, or tweaking `[defaults]` — `runwisp reload` (the same thing as
-sending `SIGHUP`) re-reads the file and reconciles the running task set in
-place. It's validate-first: a config that won't parse, fails validation,
-or touches a restart-only setting is rejected and your running daemon
-keeps going untouched. In-flight runs finish under the definition they
-started with. The [Reload](/operations/reload/) page has the full rules.
+Re-reads `runwisp.toml` and applies task and service changes without a restart.
+Same as `SIGHUP`. See [Reload & restart](/operations/reload/).
 
-`runwisp restart` is the heavier hammer: it stops the daemon and starts a
-new one, which is what you need for the restart-only settings (`[daemon]`,
-the scheduler timezone, `[storage]`, `[notify]`, the bind host/port) and
-when you want a fresh boot to re-fire [`run_on_start`](/configuration/tasks/#run_on_start) and missed-run
-catch-up. `runwisp stop` takes the daemon down without starting a new one.
-When the daemon is managed by systemd or launchd (via
-[`runwisp service install`](/operations/autostart/)), both `restart` and
-`stop` delegate to the service manager so its view of the unit stays in
-sync. They find whichever unit is installed on their own; pass `--local`
-only when a system unit and a per-user unit both exist and you mean the
-per-user one.
-
-Give either one a service name and it acts on that single service instead of
-the whole daemon: `runwisp stop web` stops `web` and leaves everything else
-running, and `runwisp restart web` restarts it — or **starts** it, if it was
-stopped (a service that booted `autostart = false`, or one a `reload` left
-stopped). The daemon isn't touched, so this never delegates to systemd. It's
-the same start/stop you get from the dashboard, the TUI, and the REST API,
-from the command line.
-
-## Migrate an existing setup
+### `runwisp restart`
 
 ```bash
-runwisp import cron [FILE]               # convert a crontab to runwisp.toml
-runwisp import supervisord [FILE...]     # convert a supervisord config to runwisp.toml
-runwisp import systemd [UNIT...]         # convert systemd .service units to runwisp.toml
+runwisp restart
+runwisp restart <service>
 ```
 
-Each reads from a file or from stdin, prints the generated TOML to stdout
-so you can review it, and write a `# TODO` comment for anything that
-doesn't map cleanly — nothing is silently dropped. Shared flags:
+With no argument, restarts the daemon. Needed for settings a reload can't apply
+(see [Reload & restart](/operations/reload/)). Installed as a service, the
+restart goes through systemd or launchd.
 
-| Flag             | What it does                                                              |
-| ---------------- | ------------------------------------------------------------------------- |
-| `--output`, `-o` | Write the TOML to this standalone file instead of stdout.                 |
-| `--write`        | Install into the two-tier layout (see below) next to the `--config` path. |
-| `--force`        | Overwrite the target file without prompting.                              |
-| `--dry-run`      | Print the summary and name every file a real run would touch, and stop.   |
-| `--quiet`        | Drop the inventory, keep anything that needs a fix.                       |
-| `--system`       | _(cron only)_ Force system-crontab parsing (the user column).             |
+With a service name, restarts every instance of that service, or starts it if
+it's stopped. The daemon keeps running.
 
-The summary on stderr gives every job one line, with the command that will
-actually run and a mark for how it landed: `✓` mapped cleanly, `~` something
-changed, `!` needs a fix before this config loads, `-` skipped because you
-already have it. `--quiet` drops the clean rows, not the ones that need you.
-`--dry-run` and `--quiet` are rejected together — a dry run writes nothing, so
-the summary is all it has to show you.
+| Flag      | Description                                                         |
+| --------- | ------------------------------------------------------------------- |
+| `--local` | Use the per-user unit when both a system and a per-user unit exist. |
 
-`--write` doesn't append to your `runwisp.toml`. It installs the import in a
-**two-tier layout**: generated tasks land in a machine-owned
-`runwisp.d/imported.toml`, and your root `runwisp.toml` is created — or has its
-[`[daemon].include`](/configuration/daemon/) wired — so the daemon loads them.
-Both files are written and rolled back as one. Staged tasks report
-`"source": "staged"` in `list --json`, `status --json`, and the API.
-
-An import **copies** definitions — it never touches the thing you imported
-_from_, so starting the daemon on a fresh import means every job has two
-schedulers firing it. Nothing errors, so every import summary ends with the `!`
-line that says so:
-
-```
-! cron still runs these jobs. Comment them out (`crontab -e`, or move the
-  file out of /etc/cron.d) before starting RunWisp, or each one runs twice.
-```
-
-Turn the old scheduler off for the jobs you imported before `runwisp daemon`.
-[Converting crontabs](/coming-from/crontabs/#retiring-the-crontab)
-has the commands, along with the two-tier layout, the user column in system
-crontabs, and the staging-to-promoted workflow;
-[Migrating from supervisord](/coming-from/supervisord/) and
-[Migrating from systemd](/coming-from/systemd/) cover the other two sources.
-
-`import systemd` takes `.service` unit files: a unit with `Restart=` becomes a
-service, a `Type=oneshot` unit becomes a task, and the service name comes from
-the filename. There's no `takeover systemd` — disabling your own service units
-isn't something to automate — so run `sudo systemctl disable --now <unit>`
-yourself before starting the daemon. The [From systemd](/coming-from/systemd/)
-page has the full field mapping and what needs a human.
-
-### Take ownership of a task with `promote`
+### `runwisp stop`
 
 ```bash
-runwisp promote backup            # put one task's block in runwisp.toml
-runwisp promote backup reindex    # several at once
-runwisp promote --all --reload    # everything, then reconcile the daemon
+runwisp stop
+runwisp stop <service>
 ```
 
-`promote` works on any task RunWisp derived rather than you writing it: one
-staged in `runwisp.d/imported.toml` by an import, or one read live out of a
-crontab via [`include_cron`](/configuration/daemon/#include_cron). Either way
-its block ends up in your own `runwisp.toml` and it's yours — copied as text,
-comments and `# TODO` notes intact, in one transaction that changes no file if
-the result wouldn't load.
+With no argument, stops the daemon. Running tasks get
+[`shutdown_timeout`](/configuration/daemon/#shutdown_timeout) to finish.
+Installed as a service, the stop goes through systemd or launchd; the unit stays
+enabled.
 
-| Flag        | What it does                                                                                |
-| ----------- | ------------------------------------------------------------------------------------------- |
-| `--all`     | Promote everything promotable — staged _and_ crontab-sourced. Exits 0 when there's nothing. |
-| `--reload`  | Reload the running daemon afterwards so it picks the move up.                               |
-| `--dry-run` | Print the blocks that would be added and write nothing.                                     |
+With a service name, stops that service until you `runwisp restart` it. The
+daemon keeps running.
 
-A staged block is **moved** out of the staging file. A cron-sourced one is
-copied into `runwisp.toml` and its source crontab line is commented out in the
-same transaction, so a still-live cron won't double-fire it — see
-[Graduating a job](/coming-from/crontabs/#graduating-a-job-into-your-own-config).
-That link also covers what a following `runwisp reload` reports, which differs
-between a staged promotion (no change to what runs) and promoting a job while
-its cron daemon is still live (a real handover RunWisp takes over).
+| Flag      | Description                                                         |
+| --------- | ------------------------------------------------------------------- |
+| `--local` | Use the per-user unit when both a system and a per-user unit exist. |
 
-Promote refuses, and writes nothing, when you name a task it can't move: one
-that doesn't exist, one that's already native (it names the file it found it
-in), or one generated from a compose project, which has no block of its own.
+## Migrating
+
+### `runwisp import`
+
+```bash
+crontab -l | runwisp import cron
+runwisp import cron /etc/crontab --write
+runwisp import supervisord /etc/supervisor/conf.d/*.conf -o runwisp.toml
+runwisp import systemd /etc/systemd/system/myapp.service
+```
+
+Converts existing config into RunWisp TOML and prints it to stdout. Reads files
+or stdin. Anything that doesn't map cleanly becomes a `# TODO` comment. Import
+never disables the source, so turn the old job off before starting RunWisp or it
+runs twice.
+
+| Subcommand             | Converts                                                               |
+| ---------------------- | ---------------------------------------------------------------------- |
+| `cron [FILE]`          | A crontab. `/etc/crontab` and `/etc/cron.d/*` user columns are detected. |
+| `supervisord [FILE…]`  | `[program:*]` sections, following `[include]`.                          |
+| `systemd [UNIT…]`      | `.service` units. `Restart=` → service, `Type=oneshot` → task.         |
+
+| Flag             | Description                                                                                   |
+| ---------------- | --------------------------------------------------------------------------------------------- |
+| `-o`, `--output` | Write to this file instead of stdout.                                                         |
+| `--write`        | Stage into `runwisp.d/imported.toml` and include it from `--config`. See [Staging and promoting](/coming-from/cron/#staging-and-promoting). |
+| `--force`        | Overwrite the target file without asking.                                                     |
+| `--dry-run`      | Print the summary and the files that would change; write nothing.                             |
+| `--quiet`        | Show only the jobs that need attention.                                                       |
+| `--system`       | (`cron` only) Force system-crontab parsing; `--system=false` forces per-user.                 |
+
+The summary marks each job: `✓` mapped, `~` changed, `!` needs a fix, `-`
+skipped because it already exists.
+
+### `runwisp promote`
+
+```bash
+runwisp promote backup
+runwisp promote --all --reload
+```
+
+Moves an imported task (staged by `import --write`, or read from a crontab via
+[`include_cron`](/configuration/daemon/#include_cron)) into your own
+`runwisp.toml`. See [Staging and promoting](/coming-from/cron/#staging-and-promoting).
+
+| Flag        | Description                                          |
+| ----------- | ---------------------------------------------------- |
+| `--all`     | Promote every staged and crontab-sourced task.       |
+| `--reload`  | Reload the daemon afterwards.                        |
+| `--dry-run` | Print what would move; write nothing.                |
+
+### `runwisp takeover`
+
+```bash
+sudo runwisp takeover
+```
+
+Replaces the system cron in one step: writes a config that reads your crontabs,
+installs RunWisp as a system service, masks cron, and starts RunWisp. Needs root
+and systemd. See [From cron](/coming-from/cron/).
+
+| Flag                        | Description                                                  |
+| --------------------------- | ------------------------------------------------------------ |
+| `--dry-run`                 | Print the plan and exit. Exits non-zero if it would fail.    |
+| `-y`, `--yes`               | Don't ask for confirmation.                                  |
+| `--allow-skipped-cron-jobs` | Continue even if some cron jobs couldn't be read.            |
+| `--force`                   | Overwrite a hand-edited unit.                                |
+| `--binary`                  | Binary path to put in the unit (default: this binary).       |
 
 ## Autostart
 
-```bash
-sudo runwisp service install   # wire up the system-wide systemd service
-runwisp service uninstall      # remove the unit/plist (data dir is preserved)
-runwisp service status         # is autostart wired up, and has anything drifted?
-```
-
-These wire the daemon into the host init system so it survives a reboot —
-OS plumbing only, never touching `runwisp.toml`.
-
-`install` defaults to the system-wide service (`/etc/systemd/system/runwisp.service`,
-Linux, root). `--local` installs a per-user unit instead — a systemd user
-unit on Linux, a LaunchAgent on macOS, where it's currently the only
-option. Without root and without `--local`, install refuses rather than
-guessing.
-
-Other `install` flags: `--yes` (`-y`), `--print` (render the unit to
-stdout), `--dry-run`, `--force` (overwrite a hand-edited unit), and
-`--binary <path>` (override the baked-in binary path).
-
-`install` never touches cron. If cron is still running jobs on the box when
-it finishes, it says so and points at `sudo runwisp takeover` — see
-[Take over from cron](/coming-from/cron/).
-
-`uninstall` takes `--yes`, `--force`, `--local`, and `--purge` (also delete
-the data dir — which makes you type the literal word `delete` to confirm).
-`status` takes `--local`. Neither needs to be told how the unit was
-installed: they look for it. It's all covered in depth on the
-[Autostart](/operations/autostart/) page.
-
-Don't confuse `runwisp service status` ("will the daemon come back after a
-reboot?") with `runwisp status` ("is it alive right now?").
-
-## Retire cron
+### `runwisp service install`
 
 ```bash
-sudo runwisp takeover   # install the service, mask cron, reload — in that order
+sudo runwisp service install
+runwisp service install --local
 ```
 
-The front door for a cron migration, and it works from nothing: no
-`runwisp.toml` needed. It finds your crontabs, writes a config that reads
-them live, installs the system service, masks cron, and reloads a daemon
-that was already running — one plan, one question, in that order.
+Installs a unit so the daemon starts on boot. See [Autostart](/operations/autostart/).
 
-While cron is alive, RunWisp [holds](/coming-from/cron/) the jobs it
-read from cron's own files rather than firing them alongside cron;
-`takeover` is what hands them over. The reload is the part a plain
-`service install` can't do, so held jobs go live immediately instead of
-waiting for you to reload by hand.
+| Flag          | Description                                                                          |
+| ------------- | ------------------------------------------------------------------------------------ |
+| `--local`     | Per-user unit (systemd user unit, or LaunchAgent on macOS) instead of the system service. Required on macOS. |
+| `--print`     | Print the unit to stdout and exit.                                                   |
+| `--dry-run`   | Print the plan and exit.                                                             |
+| `-y`, `--yes` | Don't ask for confirmation.                                                          |
+| `--force`     | Overwrite a hand-edited unit.                                                        |
+| `--binary`    | Binary path to put in the unit (default: this binary).                               |
 
-`--dry-run` always prints a plan, including on a box where the take-over is
-blocked — there it also exits non-zero, so a provisioning script can ask
-"would this work?" without doing anything. Re-running a finished take-over
-is a no-op and exits 0.
+Re-running is safe: an identical unit is left alone, a changed one asks before
+overwriting.
 
-Takes `--dry-run`, `--yes` (`-y`), `--force` (overwrite a hand-edited unit,
-not skip the prompt), `--allow-skipped-cron-jobs`, and `--binary <path>`.
-Needs root and systemd; see
-[Take over from cron](/coming-from/cron/) for the
-refusals, the ordering, and how to undo it.
-
-## Auth and introspection
+### `runwisp service uninstall`
 
 ```bash
-runwisp password     # print the daemon's ephemeral password (local socket only)
-runwisp openapi      # print the OpenAPI 3.1 spec (JSON) to stdout
-runwisp schema       # print the runwisp.toml JSON Schema (JSON) to stdout
+sudo runwisp service uninstall
 ```
 
-`runwisp password` fetches the in-memory ephemeral password over the
-local socket — handy when you want to log in from another device. It
-prints in plaintext, so pipe it to a clipboard tool (`runwisp password |
-wl-copy`) to keep it out of your scrollback. If the daemon uses a fixed
-[`RUNWISP_PASSWORD`](/operations/auth/#the-password) it refuses (that
-value is never disclosed); if it runs with
-[`RUNWISP_AUTH=off`](/operations/auth/#running-without-a-password) there's
-no password at all and the command exits with a distinct code.
+Stops the daemon, disables autostart, and removes the unit. Keeps the data
+directory. If `takeover` retired cron, this gives cron back.
 
-`runwisp openapi` dumps the OpenAPI 3.1 schema to stdout for feeding into
-code generators — the same schema a running daemon serves at
+| Flag          | Description                                                                  |
+| ------------- | ---------------------------------------------------------------------------- |
+| `--purge`     | Also delete the data directory. Asks you to type `delete`, even with `--yes`. |
+| `--local`     | Use the per-user unit when both exist.                                       |
+| `-y`, `--yes` | Don't ask for confirmation.                                                  |
+| `--force`     | Also remove a hand-edited unit.                                              |
+
+### `runwisp service status`
+
+```bash
+runwisp service status
+```
+
+Shows whether the unit is installed, enabled, and running, and whether the unit
+or binary changed since install.
+
+| Exit code | Meaning                                              |
+| --------- | ---------------------------------------------------- |
+| `0`       | Installed, enabled, running, unchanged.              |
+| `1`       | Installed, but disabled, stopped, or changed.        |
+| `2`       | Not installed.                                       |
+
+| Flag      | Description                            |
+| --------- | -------------------------------------- |
+| `--local` | Use the per-user unit when both exist. |
+
+## Other commands
+
+### `runwisp password`
+
+```bash
+runwisp password | wl-copy
+```
+
+Prints the generated Web UI password. Fails when `RUNWISP_PASSWORD` is set, and
+when authentication is off.
+
+### `runwisp schema`
+
+Prints the JSON Schema for `runwisp.toml`. See
+[Editor support](/configuration/overview/#editor-support-and-validation).
+
+### `runwisp openapi`
+
+Prints the REST API's OpenAPI 3.1 spec, the same one a daemon serves at
 `/openapi.json`.
 
-`runwisp schema` prints the JSON Schema for `runwisp.toml` (draft 2020-12) —
-point an editor at it, or check a config before validating. It's also published
-at `https://docs.runwisp.com/config.schema.json`, which is what the `#:schema`
-line on a scaffolded config points to. For pointing an AI coding agent at
-RunWisp, see the [Driving with an AI agent](/reference/agents/) page — the short
-version is `https://docs.runwisp.com/llms.txt`, which `runwisp --help` also
-prints when its output isn't a terminal.
-
-## Station and demo
+### `runwisp demo`
 
 ```bash
-runwisp station   # connect to the optional control plane instead of scheduling locally
-runwisp demo    # boot a throwaway, fully-populated instance to explore
+runwisp demo
 ```
 
-`runwisp station` starts the daemon connected to the optional control plane;
-it needs `RUNWISP_STATION_TOKEN` (via env, `.env`, or `--token`) and takes
-`--url` and `--env-file` (default `.env`), plus `--no-tui` for headless.
-`runwisp demo` boots RunWisp against a temporary config and data dir
-pre-seeded with hundreds of historical runs, so you can poke around the
-TUI and Web UI without writing a config — everything lives in a temp
-directory that's deleted when the daemon stops. It takes `--station` (and
-the same `--token` / `--url` / `--env-file`) to point at the control plane
-instead of seeding local history. Pass `--no-tui` to leave the daemon
-running in the background and print its Web UI password to stdout instead
-of opening the TUI — handy over SSH or in a script where you just want to
-open the Web UI in a browser; stop it later with `runwisp stop --data <dir>`
-(the demo prints the exact data dir alongside the password).
+Starts a throwaway instance with a sample config and hundreds of past runs. It
+lives in a temp directory that's deleted when the daemon stops.
 
-## Environment variables
+| Flag          | Description                                                                              |
+| ------------- | ---------------------------------------------------------------------------------------- |
+| `--no-tui`    | Leave the daemon running, print its password and data directory, and exit.               |
+| `--seed-only` | Write the demo config to `--config`, seed `--data`, and exit without starting anything.  |
 
-| Variable                  | What it does                                                                                                                                                                                                                 |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RUNWISP_PASSWORD`        | Sets the daemon password in memory. Unset, a fresh ephemeral one is minted every boot. See [Auth](/operations/auth/#the-password).                                                                                           |
-| `RUNWISP_AUTH`            | `off` disables authentication entirely — local dev / trusted networks only. Defaults to on; `on` restates the default. Mutually exclusive with `RUNWISP_PASSWORD`. See [Auth](/operations/auth/#running-without-a-password). |
-| `RUNWISP_TRUSTED_PROXIES` | Comma-separated CIDR list of reverse proxies whose `X-Forwarded-*` headers the daemon may honor.                                                                                                                             |
-| `RUNWISP_STATION_TOKEN`   | Token for `runwisp station`. Ignored in standalone mode.                                                                                                                                                                     |
-| `RUNWISP_STATION_URL`     | Control-plane URL for `runwisp station` (overrides the built-in default).                                                                                                                                                    |
-| `RUNWISP_LOG_LEVEL`       | Fallback for `--log-level` (`debug`/`info`/`warn`/`error`). The flag wins when both are set.                                                                                                                                 |
-| `RUNWISP_LOG_FORMAT`      | Fallback for `--log-format` (`auto`/`text`/`json`). The flag wins when both are set.                                                                                                                                         |
+### `runwisp station`
 
----
+Starts the daemon connected to a RunWisp Station control plane instead of
+scheduling locally. Needs `RUNWISP_STATION_TOKEN`. Flags: `--token`, `--url`,
+`--env-file` (default `.env`), `--no-tui`. `runwisp demo --station` takes the
+same flags.
 
-<CardGrid>
-    <LinkCard
-        title="Auth"
-        href="/operations/auth/"
-        description="The password, the local socket, and how to turn auth off for local dev."
-    />
-    <LinkCard
-        title="Reload"
-        href="/operations/reload/"
-        description="What runwisp reload picks up live, and what needs a restart."
-    />
-    <LinkCard
-        title="Autostart"
-        href="/operations/autostart/"
-        description="Survive reboots with systemd or launchd — install, status, uninstall."
-    />
-    <LinkCard
-        title="Logging"
-        href="/operations/logging/"
-        description="What --log-level and --log-format do to the daemon's own output."
-    />
-    <LinkCard
-        title="Take over from cron"
-        href="/coming-from/cron/"
-        description="takeover, import cron, and promote — the whole cron migration in one place."
-    />
-</CardGrid>
+### `runwisp completion`
+
+```bash
+runwisp completion bash > /etc/bash_completion.d/runwisp
+```
+
+Prints a shell completion script for `bash`, `zsh`, `fish`, or `powershell`.

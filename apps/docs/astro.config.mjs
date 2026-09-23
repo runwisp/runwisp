@@ -139,124 +139,97 @@ export default defineConfig({
             // theme-tokens.css @imports the webfonts it names, so the font
             // stack is declared in exactly one place for every consumer.
             customCss: ["@runwisp/ui/theme-tokens.css", "./src/styles/theme-bridge.css"],
+            // Symfony-style layout: Getting Started (install, first run), Guides
+            // (one page per feature, explanation + examples), Reference (every
+            // key and command, lookup only). A fact lives on one page; the rest
+            // link to it. Merge into an existing page before adding one.
             sidebar: [
                 { label: "Welcome", link: "/" },
                 {
                     label: "Getting Started",
                     items: [
                         { label: "Quick start", slug: "getting-started/quick-start" },
-                        { label: "Docker", slug: "getting-started/docker" },
-                        { label: "The Web UI tour", slug: "getting-started/web-ui-tour" },
-                        { label: "The TUI tour", slug: "getting-started/tui-tour" },
+                        { label: "Running in Docker", slug: "getting-started/docker" },
+                        { label: "Web UI", slug: "getting-started/web-ui-tour" },
+                        { label: "TUI", slug: "getting-started/tui-tour" },
                     ],
                 },
                 {
-                    // Every migration route lives here, whatever the source. Cron
-                    // used to own a top-level section while supervisord and
-                    // docker-compose were filed under Recipes, so "I'm coming
-                    // from X" had two different answers in two different places.
-                    label: "Coming from…",
+                    label: "Guides",
                     items: [
-                        { label: "Start here", slug: "coming-from" },
-                        { label: "From cron", slug: "coming-from/cron" },
-                        { label: "Converting crontabs", slug: "coming-from/crontabs" },
-                        { label: "How cron maps to TOML", slug: "coming-from/cron-mapping" },
-                        { label: "From supervisord", slug: "coming-from/supervisord" },
-                        { label: "From docker-compose", slug: "coming-from/docker-compose" },
-                    ],
-                },
-                {
-                    // Explanation, not lookup: these pages say why and when.
-                    // Every key, default, and accepted value belongs to
-                    // "Configuration Reference" and is not restated here.
-                    label: "How it works",
-                    items: [
-                        { label: "Tasks vs Services", slug: "concepts/tasks-vs-services" },
-                        { label: "How scheduling works", slug: "concepts/scheduling" },
-                        { label: "Concurrency policies", slug: "concepts/concurrency" },
-                        { label: "Retries & timeouts", slug: "concepts/retries" },
+                        { label: "Tasks and services", slug: "concepts/tasks-vs-services" },
+                        { label: "Scheduling", slug: "concepts/scheduling" },
+                        { label: "Overlapping runs", slug: "concepts/concurrency" },
+                        { label: "Failures, retries & timeouts", slug: "concepts/retries" },
                         { label: "Parameters", slug: "concepts/parameters" },
-                        { label: "Logs & retention", slug: "concepts/logs" },
-                    ],
-                },
-                {
-                    label: "Configuration Reference",
-                    items: [
-                        { label: "Overview", slug: "configuration/overview" },
-                        { label: "[tasks.*]", slug: "configuration/tasks" },
-                        { label: "[services.*]", slug: "configuration/services" },
-                        { label: "[compose.*]", slug: "configuration/compose" },
-                        { label: "[storage]", slug: "configuration/storage" },
-                        { label: "[daemon]", slug: "configuration/daemon" },
-                        { label: "[defaults]", slug: "configuration/defaults" },
-                        { label: "${...} substitution", slug: "configuration/substitution" },
-                    ],
-                },
-                {
-                    label: "Notifications",
-                    items: [
-                        { label: "Model", slug: "notifications/model" },
+                        { label: "Run logs", slug: "concepts/logs" },
                         {
-                            label: "Providers",
+                            label: "Notifications",
                             items: [
+                                { label: "Overview", slug: "notifications" },
                                 { label: "Slack", slug: "notifications/providers/slack" },
-                                {
-                                    label: "Discord",
-                                    slug: "notifications/providers/discord",
-                                },
-                                {
-                                    label: "Telegram",
-                                    slug: "notifications/providers/telegram",
-                                },
-                                {
-                                    label: "Email (SMTP)",
-                                    slug: "notifications/providers/smtp",
-                                },
+                                { label: "Discord", slug: "notifications/providers/discord" },
+                                { label: "Telegram", slug: "notifications/providers/telegram" },
+                                { label: "Email (SMTP)", slug: "notifications/providers/smtp" },
                                 {
                                     label: "Email (local MTA)",
                                     slug: "notifications/providers/sendmail",
                                 },
-                                {
-                                    label: "Webhook",
-                                    slug: "notifications/providers/webhook",
-                                },
+                                { label: "Webhook", slug: "notifications/providers/webhook" },
                             ],
                         },
-                        { label: "Per-task notifications", slug: "notifications/per-task" },
-                        { label: "Notification rules", slug: "notifications/routes" },
-                        { label: "Global settings", slug: "notifications/global" },
+                        { label: "Docker tasks", slug: "recipes/docker" },
+                        { label: "Remote triggers", slug: "recipes/remote-trigger" },
                     ],
                 },
                 {
-                    // Worked examples only. The migration guides that used to sit
-                    // here now live under "Coming from…".
-                    label: "Guides",
+                    label: "Examples",
                     items: [
                         { label: "Nightly backup", slug: "recipes/backup" },
                         { label: "Health checks", slug: "recipes/healthcheck" },
-                        { label: "Deploy hooks", slug: "recipes/deploy-hooks" },
-                        { label: "Trigger via API", slug: "recipes/remote-trigger" },
-                        { label: "Docker patterns", slug: "recipes/docker" },
                     ],
                 },
                 {
-                    label: "Running in Production",
+                    label: "Migrating",
                     items: [
-                        { label: "Troubleshooting", slug: "operations/troubleshooting" },
-                        { label: "Auth", slug: "operations/auth" },
-                        { label: "Autostart", slug: "operations/autostart" },
-                        { label: "Reload", slug: "operations/reload" },
-                        { label: "Logging", slug: "operations/logging" },
-                        { label: "Metrics", slug: "operations/metrics" },
+                        { label: "Overview", slug: "coming-from" },
+                        { label: "From cron", slug: "coming-from/cron" },
+                        { label: "From supervisord", slug: "coming-from/supervisord" },
+                        { label: "From systemd", slug: "coming-from/systemd" },
+                        { label: "From docker-compose", slug: "coming-from/docker-compose" },
                     ],
                 },
                 {
-                    // The three lookup surfaces in one place. The CLI reference
-                    // is a reference doc, not an operations task.
+                    label: "Operations",
+                    items: [
+                        { label: "Autostart", slug: "operations/autostart" },
+                        { label: "Reload & restart", slug: "operations/reload" },
+                        { label: "Authentication", slug: "operations/auth" },
+                        { label: "Daemon log", slug: "operations/logging" },
+                        { label: "Metrics", slug: "operations/metrics" },
+                        { label: "Troubleshooting", slug: "operations/troubleshooting" },
+                    ],
+                },
+                {
                     label: "Reference",
                     items: [
-                        { label: "CLI reference", slug: "reference/cli" },
-                        { label: "Driving with an AI agent", slug: "reference/agents" },
+                        {
+                            label: "Configuration",
+                            items: [
+                                { label: "Overview", slug: "configuration/overview" },
+                                { label: "[tasks.*]", slug: "configuration/tasks" },
+                                { label: "[services.*]", slug: "configuration/services" },
+                                { label: "[compose.*]", slug: "configuration/compose" },
+                                { label: "[defaults]", slug: "configuration/defaults" },
+                                { label: "[daemon]", slug: "configuration/daemon" },
+                                { label: "[storage]", slug: "configuration/storage" },
+                                { label: "[notify]", slug: "configuration/notify" },
+                                { label: "[[route]]", slug: "configuration/routes" },
+                                { label: "${...} substitution", slug: "configuration/substitution" },
+                            ],
+                        },
+                        { label: "CLI", slug: "reference/cli" },
+                        { label: "AI agents", slug: "reference/agents" },
                     ],
                 },
                 ...openAPISidebarGroups,

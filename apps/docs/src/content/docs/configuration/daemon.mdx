@@ -2,18 +2,16 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: "[daemon]"
-description: Daemon-wide settings (shutdown_timeout, timezone, TLS, metrics, includes), plus the CLI flags and env vars for the config, data directory, and listen address.
+description: Daemon-wide settings: shutdown_timeout, timezone, external_url, TLS, metrics, trusted proxies, include, and include_cron.
 ---
-
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
 
 `[daemon]` holds settings for the whole daemon. The table is optional. A change
 to any `[daemon]` key except `include` and `include_cron` needs
 `runwisp restart`; [`runwisp reload`](/operations/reload/) rejects it.
 
 The config path, data directory, and listen address are
-[CLI flags](#cli-flags-config-data-directory--listen-address), because they are
-needed before the config file is read.
+[command-line flags](/reference/cli/#global-options), because they are needed
+before the config file is read.
 
 ## Keys
 
@@ -248,7 +246,7 @@ include_cron = [
 - After `crontab -e`, run [`runwisp reload`](/operations/reload/).
 - `runwisp promote <task>` copies a job into `runwisp.toml` and comments out the
   crontab line. See
-  [Graduating a job](/coming-from/crontabs/#graduating-a-job-into-your-own-config).
+  [Staging and promoting](/coming-from/cron/#staging-and-promoting).
 
 :::note[Held jobs]
 While a system cron daemon is running, RunWisp **holds** the jobs it read: they
@@ -324,79 +322,3 @@ A glob picks only the files cron would read:
 
 Otherwise a cron task is a normal task: `[defaults]` applies, notifications
 fire, `runwisp run` starts it, and reload treats it like any other task.
-
-## CLI flags: config, data directory & listen address
-
-These flags work on every `runwisp` subcommand (`daemon`, `tui`, `run`, and
-others). A flag always beats its env var.
-
-| Flag             | Default               | What it does                                                                                     |
-| ---------------- | --------------------- | ------------------------------------------------------------------------------------------------ |
-| `--config`, `-c` | `runwisp.toml`        | Config file path, relative to the working directory. Env: `RUNWISP_CONFIG`.                      |
-| `--data`         | `.runwisp`            | Directory for all state: SQLite database, logs, PID file, socket. Env: `RUNWISP_DATA`.           |
-| `--socket`       | `<data>/runwisp.sock` | Control socket path. See [Control socket](#control-socket). Env: `RUNWISP_SOCKET`.               |
-| `--host`         | `127.0.0.1`           | HTTP bind address. `0.0.0.0` listens on every interface. Env: `RUNWISP_HOST`.                    |
-| `--port`         | `9477`                | HTTP port (REST API, SSE, Web UI). Env: `RUNWISP_PORT`.                                          |
-| `--log-level`    | `info`                | `debug`, `info`, `warn`, `error`. Env: `RUNWISP_LOG_LEVEL`. See [Logging](/operations/logging/). |
-| `--log-format`   | `auto`                | `auto`, `text`, `json`. Env: `RUNWISP_LOG_FORMAT`.                                               |
-
-```bash
-runwisp daemon --data /var/lib/runwisp --host 0.0.0.0 --port 9477
-```
-
-- In a container, set the env vars rather than flags. The
-  [official image](/getting-started/docker/#environment-defaults) uses them as
-  defaults, and its healthcheck can't see a `--data` flag.
-- To move the data directory, stop the daemon and move the directory.
-- The password and JWT signing key are never stored. The password comes from
-  `RUNWISP_PASSWORD`, or a new one is created at every boot. The JWT key is
-  derived from the password, so a fixed `RUNWISP_PASSWORD` keeps browser
-  sessions across restarts. See [Auth](/operations/auth/).
-- All subcommands and flags: [CLI reference](/reference/cli/).
-
-## Environment variables
-
-| Variable                  | What it does                                                                                                                                                                           |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RUNWISP_PASSWORD`        | The daemon password (kept in memory only). When unset, a new password is created at every boot.                                                                                        |
-| `RUNWISP_AUTH`            | `off` disables authentication (local dev or trusted networks only). Default `on`. Can't be combined with `RUNWISP_PASSWORD`. See [Auth](/operations/auth/#running-without-a-password). |
-| `RUNWISP_TRUSTED_PROXIES` | Comma-separated CIDR list. Overrides [`trusted_proxies`](#trusted_proxies). Catch-all ranges are rejected.                                                                             |
-| `RUNWISP_STATION_TOKEN`   | Used by `runwisp station` to connect to a control plane. Ignored in standalone mode.                                                                                                   |
-| `RUNWISP_SOCKET`          | Same as `--socket`.                                                                                                                                                                    |
-| `RUNWISP_CONFIG`          | Same as `--config`.                                                                                                                                                                    |
-| `RUNWISP_DATA`            | Same as `--data`.                                                                                                                                                                      |
-| `RUNWISP_HOST`            | Same as `--host`.                                                                                                                                                                      |
-| `RUNWISP_PORT`            | Same as `--port`. An invalid value is a startup error.                                                                                                                                 |
-| `RUNWISP_TLS`             | Overrides [`tls`](#tls-tls_cert-tls_key) (`auto` or `off`). Applied on every load, including reload, so it never blocks a [reload](/operations/reload/).                               |
-| `RUNWISP_DEBUG_ADDR`      | Optional **loopback** address (for example `127.0.0.1:6060`) for Go `pprof` profiles. A non-loopback address is refused.                                                               |
-
-## Control socket
-
-The daemon creates a Unix socket, `<data>/runwisp.sock` by default. The CLI and
-TUI use it without a password.
-
-- Access is limited by the data directory's `0700` mode, the socket's `0600`
-  mode, and a `SO_PEERCRED` check.
-- The socket file is removed on a clean shutdown.
-- `--socket` (or `RUNWISP_SOCKET`) moves it. The daemon and CLI must use the
-  same path.
-- Move it when the data directory is a bind mount that rejects `chmod` (Docker
-  Desktop, some network filesystems). RunWisp warns and keeps working there, but
-  a native path like `/run/runwisp.sock` avoids the warning.
-- You can reach a daemon by its socket alone:
-  `runwisp status --socket /run/runwisp.sock`.
-
----
-
-<CardGrid>
-    <LinkCard
-        title="[tasks.*] ref"
-        href="/configuration/tasks/"
-        description="Per-task graceful_stop, which must fit inside shutdown_timeout."
-    />
-    <LinkCard
-        title="[storage] ref"
-        href="/configuration/storage/"
-        description="Disk-usage limits for the data directory."
-    />
-</CardGrid>

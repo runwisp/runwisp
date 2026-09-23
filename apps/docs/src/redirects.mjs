@@ -7,7 +7,10 @@
 // The migration guides (cron, supervisord, docker-compose) were scattered
 // across two top-level sections and are now one "Coming from…" group; the
 // CLI and agent references moved into "Reference". `/configuration/scheduling`
-// never existed — a released CHANGELOG entry links it by mistake.
+// never existed — a released CHANGELOG entry links it by mistake. The
+// Symfony-style rewrite merged the three cron pages into one, deploy hooks into
+// remote triggers, the notification model and per-task pages into one guide,
+// and moved [notify] and [[route]] into the configuration reference.
 // Every entry points at its final target: no redirect chains.
 //
 // Shared between astro.config.mjs (browser redirects) and
@@ -19,11 +22,18 @@ export const redirects = {
     "/replacing-cron": "/coming-from/cron/",
     "/replacing-cron/take-over-from-cron": "/coming-from/cron/",
     "/replacing-cron/held-jobs": "/coming-from/cron/",
-    "/replacing-cron/converting-crontabs": "/coming-from/crontabs/",
-    "/replacing-cron/cron-mapping": "/coming-from/cron-mapping/",
+    "/replacing-cron/converting-crontabs": "/coming-from/cron/",
+    "/replacing-cron/cron-mapping": "/coming-from/cron/",
     "/recipes/migrating-from-supervisord": "/coming-from/supervisord/",
     "/recipes/migrating-from-docker-compose": "/coming-from/docker-compose/",
     "/operations/cli": "/reference/cli/",
     "/operations/agents": "/reference/agents/",
     "/configuration/scheduling": "/concepts/scheduling/",
+    "/coming-from/crontabs": "/coming-from/cron/",
+    "/coming-from/cron-mapping": "/coming-from/cron/",
+    "/recipes/deploy-hooks": "/recipes/remote-trigger/",
+    "/notifications/model": "/notifications/",
+    "/notifications/per-task": "/notifications/",
+    "/notifications/global": "/configuration/notify/",
+    "/notifications/routes": "/configuration/routes/",
 };

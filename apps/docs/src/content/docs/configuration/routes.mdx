@@ -1,0 +1,105 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: "[[route]]"
+description: "Notification rules: match run events by kind, failure, and task name, and send them to Slack, Discord, Telegram, email, or a webhook."
+head:
+    - tag: title
+      content: "RunWisp [[route]]: route run events to Discord, Slack, Telegram, SMTP, webhooks"
+---
+
+A `[[route]]` sends matching events to a list of notifiers. Use it when one rule
+should cover many tasks, or for outcomes other than failures. For one task's
+failures, [`notify`](/configuration/tasks/#notify) on the task is simpler.
+
+```toml
+# Every failure goes to the team channel
+[[route]]
+match     = { failure = true }
+notifiers = ["slack-ops"]
+
+# Backups also page on-call
+[[route]]
+match     = { failure = true, task = "backup-*" }
+notifiers = ["tg-oncall"]
+
+# Deploys announce success
+[[route]]
+match     = { task = "deploy", kinds = ["succeeded"] }
+notifiers = ["slack-ops:#deploys"]
+```
+
+An event can match several routes, plus the task's own `notify` and
+[`global_notifiers`](/configuration/notify/#global_notifiers). RunWisp collects
+every matching notifier and sends one message to each. Route order doesn't
+matter.
+
+## match
+
+**type**: `table` **default**: `{}` (every event)
+
+All set fields must match.
+
+### match.failure
+
+**type**: `boolean`
+
+`true` matches any run counted as a failure by the task's
+[`failures`](/configuration/tasks/#failures) list.
+
+### match.kinds
+
+**type**: `string[]` **default**: all kinds
+
+The outcomes to match. Uses the same names as `failures`:
+
+- `started`: a run starts (only sent when listed here)
+- `succeeded`: a run exits `0`
+- `failed`: a run exits non-zero
+- `timeout`: stopped by [`timeout`](/configuration/tasks/#timeout)
+- `crashed`: died on a signal, or was running when the daemon was killed
+- `log_overflow`: stopped by `log_on_full = "kill"`
+- `queue_full`: dropped because [`max_queued`](/configuration/tasks/#max_queued) was reached
+- `stopped`: stopped by an operator or `on_overlap = "kill"`
+- `daemon_stopped`: cut short by daemon shutdown
+- `missed`: a scheduled run was missed while the daemon was down
+- `service.fatal`: a service gave up after [`restart_attempts`](/configuration/services/#restart_attempts)
+- `log.disk_pressure`: free disk fell below [`min_free_space`](/configuration/storage/#min_free_space)
+
+`notify.delivery_failed` always goes only to the bell and can't be routed.
+
+### match.task
+
+**type**: `string` (glob) **default**: every task
+
+A shell-style glob on the task or service name: `*` (any run of characters),
+`?` (one character), `[abc]` (one of these). Case-sensitive. No `{a,b}` braces.
+
+```toml
+[[route]]
+match     = { task = "backup-*", kinds = ["timeout"] }
+notifiers = ["tg-oncall"]
+```
+
+## notifiers
+
+**type**: `string[]` **required**, at least one
+
+Where matching events go. Each entry is one of:
+
+- a notifier id declared in a `[notifiers.<id>]` block, like `"slack-ops"`
+- `"inapp"`, the bell
+- `"<id>:<target>"`, which reuses that notifier's credentials but sends to
+  another target: a Slack channel (`"slack-ops:#deploys"`, `"slack-ops:@ana"`)
+  or a Telegram chat id (`"tg:-1009998887"`)
+
+## What's rejected
+
+The config fails to load with any of these:
+
+- A notifier id that isn't declared and isn't `"inapp"`.
+- An empty `notifiers` list.
+- An unknown `match.kinds` value, or a `match.task` glob that can't be parsed.
+- An `<id>:<target>` whose notifier isn't declared, whose target is empty, or,
+  for Slack, whose target doesn't start with `#` or `@`.
+- `"inapp:<anything>"`: the bell has no target.
