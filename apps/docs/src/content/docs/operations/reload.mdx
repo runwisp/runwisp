@@ -1,181 +1,108 @@
 ---
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
-title: Reload
-description: Pick up runwisp.toml task changes in a running daemon without a full restart. Covers runwisp reload and SIGHUP, the validate-first guarantee, what reloads live versus what needs a restart, and how in-flight runs behave.
+title: Reload & restart
+description: Apply runwisp.toml edits to a running daemon with runwisp reload or SIGHUP, and which changes need runwisp restart instead.
 ---
 
-import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
-
-You edited `runwisp.toml` — added a task, tweaked a cron, dropped one you don't
-need anymore. You don't have to restart the whole daemon to pick that up. A
-reload re-reads `runwisp.toml` and reconciles the running task set against it:
-new tasks start being scheduled, removed tasks stop, and changed tasks swap to
-their new definition.
-
-You can trigger one from any surface:
-
-<Tabs syncKey="surface">
-    <TabItem label="Web UI" icon="laptop">
-        The Web UI never edits config — your `runwisp.toml` stays the source of
-        truth. When it drifts from what the daemon is running, a banner appears
-        with a **Reload** button that triggers the same reconcile; the banner
-        clears once the daemon confirms the config is fresh again.
-    </TabItem>
-    <TabItem label="TUI" icon="seti:shell">
-        Press <kbd>R</kbd> in the [TUI](/getting-started/tui-tour/). Same
-        reconcile, same validate-first guarantee, and you get the
-        added/changed/removed summary as a toast without leaving the terminal.
-    </TabItem>
-    <TabItem label="REST API" icon="cloud-download">
-        `runwisp reload` is a thin CLI wrapper around `POST /api/daemon/reload` over the
-        local socket. RunWisp prints exactly what it did:
-
-        ```
-        Configuration reloaded.
-          + added   nightly-backup
-          ~ changed report (schedule)
-          - removed old-cleanup
-        ```
-
-        Sending the daemon a `SIGHUP` converges on the same reconcile path —
-        handy from a deploy script or a file-watcher you wired up yourself:
-
-        ```sh
-        kill -HUP "$(cat .runwisp/daemon.pid)"
-        ```
-    </TabItem>
-
-</Tabs>
-
-Reload is always explicit. RunWisp never watches the file and reloads on its
-own; it does exactly what you ask, when you ask.
-
-## Validate-first, all-or-nothing
-
-Before touching anything live, RunWisp loads and validates the **whole** new
-config. If it doesn't parse, fails validation, or changes a setting that can't
-be reloaded (see below), the reload is **rejected** and your running task set is
-left exactly as it was — no half-applied state.
+After you edit `runwisp.toml`, tell the running daemon to pick it up:
 
 ```bash
+runwisp reload
+```
+
+```
+Configuration reloaded.
+  + added   nightly-backup
+  ~ changed report (schedule)
+  - removed old-cleanup
+```
+
+The daemon never watches the file. It reloads only when you ask, and every way
+of asking runs the same reload:
+
+- `runwisp reload` from the CLI.
+- `SIGHUP` to the daemon: `kill -HUP "$(cat .runwisp/daemon.pid)"` (the PID file
+  is in the data directory).
+- <kbd>R</kbd> in the [TUI](/getting-started/tui-tour/).
+- The **Reload** button on the Web UI banner that appears when the file changed
+  since the daemon loaded it.
+
+`runwisp status` and the TUI header show the same "config changed" notice.
+
+## A bad config changes nothing
+
+The daemon loads and validates the whole new config before it touches anything.
+If the file doesn't parse, fails validation, or changes a setting that needs a
+restart, the reload is rejected and the running tasks stay exactly as they were.
+
+```console
 $ runwisp reload
 Error: reload rejected: [storage] changed; requires `runwisp restart`
 ```
 
-So a typo in `runwisp.toml` can't take your scheduler down. Fix it, reload
-again.
+Fix the file and reload again. To check a file without involving the daemon,
+run [`runwisp validate`](/reference/cli/#runwisp-validate).
 
-## What reloads live, and what needs a restart
+## What a reload applies
 
-Most of your day-to-day edits reload cleanly:
+- Adding, removing, and changing tasks and services: commands, schedules,
+  environment, instances, overlap, and retry settings.
+- [`[defaults]`](/configuration/defaults/): shows up as a change on every task
+  that inherits the changed key.
+- [`include`](/configuration/daemon/#include) and
+  [`include_cron`](/configuration/daemon/#include_cron), and the files they pull
+  in.
 
-- **Adding, removing, and changing tasks and services** — new commands, cron
-  expressions, environment, instance counts, concurrency and retry policies.
-- **`[defaults]`** — because defaults are merged into each task before the
-  comparison, changing a default shows up as a change on every task it touches.
+## What needs a restart
 
-A few daemon-wide settings can't be swapped under a running process. Changing
-any of these is rejected and asks you to run `runwisp restart`:
+A reload that changes any of these is rejected:
 
-- `[daemon]` — shutdown timeout, external URL, metrics, station dispatch, timezone
-- `[storage]`
-- `[notify]`
+- `[daemon]`, every key except `include` and `include_cron`. This includes
+  [`timezone`](/configuration/daemon/#timezone).
+- `[storage]`.
+- `[notify]`, `[notifiers.*]`, and `[[route]]`.
 
-The HTTP bind host and port aren't config at all — they're CLI flags — so they
-can only change on a fresh start.
+The bind address and port are [command-line flags](/reference/cli/#global-options),
+and `RUNWISP_*` environment variables are read at startup. Both change only on a
+restart.
 
-### Moving a task between files usually isn't a change
+```bash
+runwisp restart
+```
 
-[`runwisp promote`](/reference/cli/#take-ownership-of-a-task-with-promote)
-moves a task's definition into your `runwisp.toml` — out of the staging file an
-import wrote (`runwisp.d/imported.toml`), or out of a live crontab. Promote a
-**staged** task, or a cron task you'd already taken over from cron, and a reload
-after it reports **no task changes**, which is the honest answer: the schedule,
-the command, the environment — none of it moved. Only the file did.
-
-That's deliberate rather than a rounding error. A promoted service keeps running
-instead of being recycled, and such a cron task keeps its place in the schedule.
-The only thing the reload updates is the provenance the UI, TUI and `--json`
-report, which is why `runwisp promote --reload` exists as a shorthand.
-
-The one exception is promoting a job **while its cron daemon is still live**.
-RunWisp had been holding that job — standing down so cron alone ran it — and
-promote comments the crontab line out, so on the next load the job is native and
-no longer held. That _is_ a change: the reload reports it as a changed task and
-RunWisp takes over scheduling it. See
-[Graduating a job](/coming-from/crontabs/#graduating-a-job-into-your-own-config).
-
-## What a reload tells you
-
-`runwisp reload` prints the diff it applied — what was added, changed, and
-removed — and then any warnings the newly-live config carries, each on a `!`
-line. The most common of those is a crontab job
-[`include_cron`](/configuration/daemon/#include_cron) couldn't schedule: it names
-the file and line so you can go fix it.
-
-That's deliberately not part of the diff. A job that stopped being schedulable
-doesn't show up as a task change — from the task set's point of view it simply
-isn't there — so a reload after a bad `crontab -e` would otherwise report "no
-task changes" and leave you thinking it worked. The same warnings appear in
-`runwisp status`, in `/api/daemon` (so the UI and TUI header can show them), and in
-`runwisp validate` before you deploy at all.
-
-A reload also re-checks whether a system cron daemon is still alive, so
-the jobs it was [holding](/coming-from/cron/) become RunWisp's on
-the spot. You don't have to reload for that, though — the daemon re-checks
-on its own about once a minute either way. Reloading after you retire cron
-just makes the handover immediate.
+Running tasks get [`shutdown_timeout`](/configuration/daemon/#shutdown_timeout)
+to finish before the daemon stops. See
+[`runwisp restart`](/reference/cli/#runwisp-restart).
 
 ## Reload is not a restart
 
-A couple of boot-only behaviors deliberately **don't** fire on reload:
+- **Added tasks start from now.** A task added by a reload doesn't run its
+  [`run_on_start`](/configuration/tasks/#run_on_start) command and doesn't
+  [catch up](/configuration/tasks/#catch_up) on earlier ticks.
+- **Running runs finish under the old definition.** Changing or removing a task
+  never kills a run that's already going. The next run uses the new definition.
+- **Removed services are stopped.**
+- **A stopped service stays stopped,** even if the new definition says
+  `autostart = true`. The reload prints a `!` warning about it. Start it with
+  `runwisp restart <service>`.
 
-- A newly added task does **not** run its [`run_on_start`](/configuration/tasks/#run_on_start) command, and it is
-  **not** caught up for ticks it "missed" before it existed. It simply starts
-  scheduling from now.
-- An **in-flight run keeps running under the definition it started with**.
-  Removing or changing a cron task never kills a run that's already going — it
-  finishes, and only the next firing uses the new definition. Removed services
-  are the exception: their instances are stopped, since the whole point is to
-  take them down.
-- **Flipping a service to `autostart = true` does not start it.** A stopped
-  service stays stopped across a reload — reload reconciles definitions, it
-  doesn't decide a stopped process should now be running. When a reload leaves a
-  service stopped whose new definition says `autostart = true`, it says so on a
-  `!` line:
+If you want `run_on_start` and catch-up to happen, use `runwisp restart`.
 
-    ```
-    ! service "web" has autostart=true but is stopped — reload never starts a
-      stopped service; run 'runwisp restart web' to start it now
-    ```
+## Warnings after a reload
 
-    `runwisp restart web` starts it (see [per-service control](/reference/cli/#apply-config-edits)).
+After the diff, `runwisp reload` prints warnings for the new config on `!`
+lines. The most common is a crontab job that
+[`include_cron`](/configuration/daemon/#include_cron) couldn't schedule, with
+its file and line. That job isn't a task, so it never shows in the diff: a
+reload after a bad `crontab -e` can say "no task changes" and still warn. The
+same warnings show in `runwisp status`, the Web UI and TUI header, and
+`runwisp validate`.
 
-If you want the full boot path — [`run_on_start`](/configuration/tasks/#run_on_start), missed-run catch-up, a fresh
-read of the restart-only settings — use `runwisp restart` instead.
+A reload also checks again whether the system cron daemon is still running. Jobs
+RunWisp was holding back for cron become RunWisp's right away. The daemon does
+this check on its own about once a minute too, so the reload only makes it
+immediate.
 
----
-
-<CardGrid>
-    <LinkCard
-        title="Configuration overview"
-        href="/configuration/overview/"
-        description="What's in runwisp.toml, and which settings reload live."
-    />
-    <LinkCard
-        title="CLI reference"
-        href="/reference/cli/"
-        description="reload, restart, stop, validate — every flag on each."
-    />
-    <LinkCard
-        title="How scheduling works"
-        href="/concepts/scheduling/"
-        description="What a reload does to schedules, and why new tasks get no catch-up."
-    />
-    <LinkCard
-        title="Troubleshooting"
-        href="/operations/troubleshooting/"
-        description="Edited the config and nothing changed? The usual causes."
-    />
-</CardGrid>
+Moving a task into `runwisp.toml` with `runwisp promote` usually reloads as "no
+task changes". See [Staging and promoting](/coming-from/cron/#staging-and-promoting).

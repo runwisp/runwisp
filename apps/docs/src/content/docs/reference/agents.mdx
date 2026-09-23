@@ -1,144 +1,66 @@
 ---
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
-title: Driving RunWisp with an AI agent
-description: How an AI coding agent (Claude Code, Codex, and friends) configures, validates, runs, and inspects RunWisp — the JSON Schema for runwisp.toml, the validate/run --json loop, the socket-first local connection, and the machine-readable llms.txt index.
+title: AI agents
+description: What an AI coding agent needs to configure and run RunWisp. The llms.txt index, Markdown pages, the agent reference, the config schema, and the validate/run --json loop.
 head:
     - tag: title
       content: "RunWisp for AI agents: config schema, validate --json, run --json"
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
-
-If you let an AI coding agent edit this project, RunWisp is built to be easy for
-it to pick up. Everything an agent needs is either in the binary it already has
-or at a stable URL — no guessing at the config format, no scraping help text.
-
-Here's the short version you can hand to any agent.
+Everything an AI coding agent needs to work with RunWisp is in the binary or at
+a stable URL.
 
 ## Point your agent at the docs
 
-Drop one line into your project's `AGENTS.md`, `CLAUDE.md`, or README so any
-coding agent knows where to look:
+Add one line to your project's `AGENTS.md`, `CLAUDE.md`, or README:
 
 ```markdown
 This project uses RunWisp. Machine-readable reference: https://docs.runwisp.com/llms.txt
 ```
 
-`llms.txt` is a token-optimized index of the whole documentation — the schema,
-the CLI, and the REST surface — meant to be fed straight to an agent. You don't
-even have to add it by hand: run `runwisp --help` in a non-interactive shell
-(anything that isn't a terminal, which is exactly how an agent shells out) and
-the same pointer is appended to the help output.
+- **[`llms.txt`](https://docs.runwisp.com/llms.txt)** is a compact index of the
+  documentation for agents. `runwisp --help` prints the same pointer when its
+  output isn't a terminal, which is how agents run commands.
+- **[Agent reference](https://docs.runwisp.com/agents/reference.md)** is a dense
+  summary of the whole `runwisp.toml` schema, the CLI, and the REST API. Start
+  there.
+- **Every page is also Markdown.** Append `.md` to a page URL, or send
+  `Accept: text/markdown`.
 
-Every page on this site is also readable as plain Markdown. Send
-`Accept: text/markdown` (most agent HTTP clients already do), or just append
-`.md` to any page's URL — no nav chrome, no scripts, just the content.
-
-## The config file has a schema
-
-`runwisp.toml` has a JSON Schema (draft 2020-12) describing every table, key,
-type, and default. Print it from the binary:
+## The config schema
 
 ```bash
 runwisp schema
 ```
 
-It's also published at
+This prints the JSON Schema for `runwisp.toml`, also published at
 [`https://docs.runwisp.com/config.schema.json`](https://docs.runwisp.com/config.schema.json).
-Any `runwisp.toml` that RunWisp scaffolds (first run, or `runwisp import`) starts
-with a `#:schema` line, so editors with TOML support — Even Better TOML, taplo —
-validate and autocomplete it as you type. Add it yourself to an existing file:
+To get validation and completion in editors, see
+[Editor support](/configuration/overview/#editor-support-and-validation).
 
-```toml
-#:schema https://docs.runwisp.com/config.schema.json
+## Edit, validate, reload
 
-[tasks.backup]
-cron = "0 3 * * *"
-run  = "pg_dump mydb > /backups/db.sql"
-```
-
-## The edit → validate → run loop
-
-Edit the TOML, then validate. In `--json` mode the command exits non-zero on
-failure and every error carries a structured location, so an agent jumps
-straight to the offending line instead of parsing prose:
+To change tasks, an agent edits `runwisp.toml`, checks it, and tells the daemon
+to reload:
 
 ```bash
-runwisp validate --json
+runwisp validate --json   # non-zero exit on error; each error has key, line, column
+runwisp reload            # apply it to the running daemon
+runwisp run backup --json # run a task; the outcome is JSON on stdout, logs on stderr
 ```
 
-```json
-{
-    "valid": false,
-    "errors": [
-        {
-            "message": "unknown key \"schedule\" at line 4:1",
-            "key": "tasks.backup.schedule",
-            "line": 4,
-            "column": 1
-        }
-    ]
-}
-```
+`runwisp status --json` and `runwisp list --json` show the daemon's health, each
+task's last run, and the configured tasks. The output shapes are in
+[JSON output](/reference/cli/#json-output) and on each command in the
+[CLI reference](/reference/cli/).
 
-Once it's valid, run a task and read the outcome — the result is a single JSON
-document on stdout; live log lines go to stderr, so stdout stays clean:
+An agent on the same machine as the daemon needs no password: the CLI talks to
+it over the [control socket](/reference/cli/#control-socket). Neither the socket
+nor the REST API can change a task definition; only `runwisp.toml` can.
 
-```sh
-runwisp run backup --json
-```
+## Learn more
 
-```json
-{ "run_id": "01J…", "status": "ended", "exit_code": 0, "duration_ms": 812, "failed": false }
-```
-
-`runwisp status --json` and `runwisp list --json` round out the picture: the
-daemon's health plus each task's last run, and the configured task set.
-
-## Talking to a running daemon
-
-RunWisp binds a Unix socket at `<data-dir>/runwisp.sock` (default
-`.runwisp/runwisp.sock`). Requests over that socket are trusted as local — no
-password, no login. That's exactly what the CLI does, and it's the path an agent
-on the same host should use too: `runwisp status`, `runwisp run`, and
-`runwisp reload` all connect over it automatically.
-
-Everything the API exposes is **read state** or **trigger/stop a run**. Nothing
-over HTTP or the socket ever edits a task definition — that only happens by
-editing `runwisp.toml` and reloading. So an agent's job is always: change the
-file, `runwisp validate --json`, `runwisp reload`.
-
-## Going deeper
-
-- **[Agent reference](https://docs.runwisp.com/agents/reference.md)** — a dense,
-  token-optimized dump of the full `runwisp.toml` schema, CLI, and REST surface.
-  Start here if you're an agent.
-- **[OpenAPI spec](https://docs.runwisp.com/openapi.json)** — the REST API in
-  full, or `runwisp openapi` offline.
-- **[CLI reference](/reference/cli/)** — every subcommand and flag, for humans.
-
----
-
-<CardGrid>
-    <LinkCard
-        title="CLI reference"
-        href="/reference/cli/"
-        description="Every subcommand and flag, including the --json output shapes."
-    />
-    <LinkCard
-        title="API reference"
-        href="/api/"
-        description="REST endpoints and SSE log streams, generated from the OpenAPI schema."
-    />
-    <LinkCard
-        title="Configuration overview"
-        href="/configuration/overview/"
-        description="Every key in runwisp.toml — the file an agent will be editing."
-    />
-    <LinkCard
-        title="Troubleshooting"
-        href="/operations/troubleshooting/"
-        description="Symptom-first fixes, useful when a generated config doesn't behave."
-    />
-</CardGrid>
+- [CLI reference](/reference/cli/)
+- [API reference](/api/), or `runwisp openapi` offline
+- [Configuration overview](/configuration/overview/)

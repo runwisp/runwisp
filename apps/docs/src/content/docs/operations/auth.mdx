@@ -1,317 +1,164 @@
 ---
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
-title: Auth
-description: How RunWisp authenticates Web UI, TUI, and REST clients — local Unix socket for the CLI/TUI, password + session for the Web UI, rate limiting, reverse-proxy trust, and no secrets on disk.
+title: Authentication
+description: How the CLI, TUI, Web UI, and REST clients log in to RunWisp; setting the password; running without auth; rate limits; and reverse proxies.
 ---
 
-import { Tabs, TabItem, CardGrid, LinkCard } from "@astrojs/starlight/components";
+RunWisp has two ways in:
 
-There are really two doors into RunWisp. Network clients — the Web
-UI and remote REST callers — go through a single password and
-session. Local clients that sit on the same box as the daemon — the
-TUI and the CLI — go in through a Unix socket. No secrets are stored
-on disk. The rule of thumb is: if you can log in over the network,
-or if you can already read the data directory, you control the
-daemon. RunWisp is built for one operator on one machine, and the
-auth model leans into that.
+- The CLI and TUI on the same machine use the control socket. No password.
+- The Web UI and anything else over HTTP need the password.
 
 ## Local clients (CLI, TUI)
 
-The CLI and TUI talk to the daemon over a Unix socket at
-`<datadir>/runwisp.sock`. The socket sits at `0600` inside a `0700`
-[data directory](/configuration/daemon/#cli-flags-config-data-directory--listen-address), so only the user who started the daemon can reach
-it — same guarantee the SQLite file already relies on. As an extra
-belt to that suspenders, the daemon double-checks the peer UID at
-accept time with `SO_PEERCRED` on Linux and `LOCAL_PEERCRED` on
-macOS, and slams the door on anyone whose UID doesn't match.
+`runwisp`, `runwisp tui`, `runwisp status`, `runwisp run`, and the other
+commands talk to the daemon over the [control socket](/reference/cli/#control-socket).
+Only the user who started the daemon can open it, so there's nothing to log in
+to. Anyone who can read the data directory controls the daemon.
 
-That's why the CLI and TUI don't need a password or a JWT — being
-on the local socket as the right user _is_ the credential. Commands
-like `runwisp`, `runwisp tui`, `runwisp list`, and `runwisp run`
-all connect through the socket automatically.
+With `--url` (or `RUNWISP_URL`), `runwisp run` and `runwisp tui` connect over
+HTTP instead and log in like any network client.
 
-Point `runwisp tui` or `runwisp run` at a `--url` (or set
-`RUNWISP_URL`) and they switch to the network path below instead —
-the daemon then authenticates them like any other network client.
-
-If the socket isn't there, or the CLI can't reach it, you'll see
-`daemon not running at <datadir>` and that's it — no quiet fallback
-to some other transport. When a daemon is running but the CLI still
-can't get through, it's almost always a data-dir ownership or path
-mismatch, not a network problem.
+If the CLI prints `daemon not running at <path>` while a daemon is up, the two
+are using different data directories. Check `--data` and which user you're
+running as.
 
 ## Network clients (Web UI, remote REST)
 
-The Web UI shows a single password field. Your password never goes
-across the network in the clear. Login is a challenge-response
-handshake: the browser asks the daemon for a one-time challenge,
-runs it together with your password through PBKDF2 (600,000 rounds of
-HMAC-SHA-256), and sends back the derived response the daemon can
-verify. The password itself never hits the wire, and the slow KDF
-makes a captured transcript expensive to brute-force offline. That's
-defense in depth _behind_ the encrypted channel, not a substitute for
-it — set `tls = "auto"` (see [TLS](/configuration/daemon/#tls-tls_cert-tls_key))
-on a non-loopback bind and the handshake rides an encrypted connection too.
+The Web UI asks for the password once, then keeps you logged in with a session
+cookie for 24 hours. The password itself never crosses the network: login is a
+challenge and response. To log in from a script, use `runwisp run --url` or the
+script in [Remote triggers](/recipes/remote-trigger/).
 
-Once you're in, the daemon hands you a session inside a secure
-cookie. Set a new `RUNWISP_PASSWORD` and restart, and every
-existing session is gone.
+The session cookie and run output are only as private as the connection. When
+you bind beyond loopback, turn on [TLS](/configuration/daemon/#tls-tls_cert-tls_key)
+or put the daemon behind a [reverse proxy](#reverse-proxies) that does.
 
-When you use the TUI's "Open in browser" action, the TUI mints a
-single-use launch ticket (60-second TTL) and the browser redeems it
-into a session cookie — so you land in the dashboard already logged
-in. Locally, the TUI mints over the Unix socket and the browser
-redeems on `127.0.0.1`; the password never leaves the host. Over a
-`runwisp tui --url …` connection the ticket is minted from your
-already-authenticated session and redeemed against the remote daemon
-— minting always requires a valid session, and the ticket stays
-single-use and short-lived. If that connection is plain `http://` to
-a non-loopback host, the TUI warns you first, because the ticket
-would cross the network unencrypted; `https://` (a
-[TLS proxy](#reverse-proxies)) closes that gap.
+The TUI's **Open in browser** logs the browser in with a single-use ticket that
+expires after 60 seconds. When `runwisp tui --url` points at a plain `http://`
+address that isn't loopback, the TUI warns you first, because the ticket would
+cross the network unencrypted.
 
 ## The password
 
-RunWisp doesn't write the password — or the JWT signing key — to
-disk, ever. You've got two ways to set it:
+```bash
+RUNWISP_PASSWORD='long-random-string' runwisp daemon
+```
 
-- **Set `RUNWISP_PASSWORD`** and the daemon picks it up from the
-  environment, in memory only. This is what you want for Docker
-  secrets, systemd's `LoadCredential=`, or any sealed-secrets
-  setup. As long as the value doesn't change between restarts,
-  your existing browser sessions survive a restart.
-- **Leave it unset** and the daemon generates a fresh random
-  password every boot, again in memory only. Every restart rotates
-  the password, which rotates the JWT key, which logs every
-  browser out.
+- **Set `RUNWISP_PASSWORD`.** The daemon reads it from the environment and keeps
+  it in memory. Browser sessions survive a restart as long as the value doesn't
+  change. Keep the value in whatever secret store you already use.
+- **Leave it unset.** The daemon makes up a new random password on every boot,
+  so each restart logs everyone out. Fine for a daemon you start by hand;
+  annoying for one that runs for months.
 
-The JWT signing key isn't stored anywhere — it's **derived** from
-your password using HKDF-SHA-256, salted with a per-install
-fingerprint (machine ID, cwd, executable path, hostname). The
-fingerprint is generated once on first boot and persisted to the
-database, so the key survives restarts because the same fingerprint
-plus the same password yields the same key — not because anything
-sensitive was written to disk. Same
-password on the same install gives you the same key, so sessions
-persist across restarts. A different password — or the same
-password on a different machine — gives you a different key, so
-sessions can't leak between installs.
-
-To rotate, change `RUNWISP_PASSWORD` (or unset it to get a fresh
-random one) and restart. Everyone logged in over the network is
-out.
-
-:::tip[Installing as a service does this for you]
-A fresh daemon with no `RUNWISP_PASSWORD` mints a new random password
-every boot — fine for a throwaway dev daemon, but it means you can never
-stay logged in to a long-lived one. So
 [`runwisp service install`](/operations/autostart/#a-stable-web-ui-password)
-generates a stable password for you: it writes one into a `0600` drop-in
-beside the unit, restarts to apply it, and prints it once. Re-installing
-never rotates it. Set `RUNWISP_PASSWORD` yourself and the installer leaves
-it alone.
-:::
+generates a stable password for you, so an installed daemon doesn't have this
+problem.
 
-## Retrieving the ephemeral password
+To rotate the password, change `RUNWISP_PASSWORD` (or unset it) and restart.
+Every network session ends.
 
-When the daemon makes up its own password (because you didn't set
-`RUNWISP_PASSWORD`), the value never shows up in a log line, a
-startup banner, or anywhere on screen. There are two ways to pull it
-back out — and no Web UI tab here on purpose, since you need the
-password to get into the Web UI in the first place.
+RunWisp never writes the password or the session signing key to disk.
 
-<Tabs syncKey="surface">
-    <TabItem label="TUI" icon="seti:shell">
-        The **Home** view has a `Password` row showing `••…`. Focus
-        it and hit <kbd>Enter</kbd> — a copy modal pops up with the
-        real value already on your clipboard.
-    </TabItem>
-    <TabItem label="REST API" icon="cloud-download">
-        From any shell that can reach the daemon's data directory,
-        `runwisp password` prints it straight to stdout. It's a
-        single line, so piping it into a clipboard tool is one step:
+### Getting the generated password
 
-        ```bash
-        runwisp password | wl-copy          # Wayland
-        runwisp password | pbcopy           # macOS
-        runwisp password | xclip -selection clipboard
-        ```
-    </TabItem>
+```bash
+runwisp password | wl-copy   # Linux, Wayland
+runwisp password | pbcopy    # macOS
+```
 
-</Tabs>
+In the TUI, open **Home**, focus the `Password` row, and press <kbd>Enter</kbd>
+to copy it.
 
-The endpoint behind `runwisp password` only listens on the local
-Unix socket. Try it over the network — even with a valid session
-cookie — and you'll get **403 Forbidden**. Try it when the daemon
-was started with `RUNWISP_PASSWORD` already set, and you'll get
-**404 Not Found**. The daemon **never** hands out an
-operator-supplied password; if you set one, you're the one
-responsible for stashing it — Docker secret, systemd
-`LoadCredential=`, vault, password manager, whatever you already
-use.
-
-One thing worth flagging: `runwisp password` writes to stdout,
-which means it lands in your shell scrollback. If that matters,
-pipe it straight into a clipboard tool.
+`runwisp password` works only over the control socket, and only for a generated
+password. It exits `1` when `RUNWISP_PASSWORD` is set (RunWisp never hands out a
+password you chose) and `5` when authentication is off. Piping it into a
+clipboard tool keeps it out of your scrollback.
 
 ## Running without a password
-
-Sometimes a login wall is just in the way — a local dev container, a
-demo on your own laptop, a throwaway instance on an isolated network.
-For those cases you can switch auth off entirely:
 
 ```bash
 RUNWISP_AUTH=off runwisp daemon
 ```
 
-Set `RUNWISP_AUTH=off` (or `true`) and every `/api/` route answers
-without a password, the Web UI skips the login screen, and a
-persistent **Auth disabled** badge sits in the Web UI header so the
-instance can never be mistaken for a secured one. The TUI's Home page
-shows `Password disabled (RUNWISP_AUTH=off)` for the same reason, and
-the daemon prints an unmissable warning banner at startup.
+The API and Web UI answer every request without a password. **Anyone who can
+reach the port can read every log and run any task** as the user that started
+the daemon. Use it for local development or on an isolated network, never on a
+port the internet can reach. If you need remote access without a RunWisp login,
+put a proxy that does its own authentication in front.
 
-Be clear-eyed about what you're switching off: **anyone who can reach
-the port has full control of the daemon** — browsing run history and
-logs, and triggering tasks that execute shell commands as the user who
-started it. Only use this for local development or on a trusted,
-isolated network. Never expose the port to the public internet, and if
-you need remote access without a login, put an authenticating reverse
-proxy in front instead.
+- `RUNWISP_AUTH` accepts `off` or `on` (any case). Any other value stops the
+  daemon at startup.
+- It can't be combined with `RUNWISP_PASSWORD`; the daemon refuses to start with
+  both.
+- The daemon prints a warning at startup, the Web UI shows an **Auth disabled**
+  badge, and the TUI shows the password as disabled.
+- The control socket works the same as before.
 
-A few sharp edges, sanded:
-
-- `RUNWISP_AUTH=off` and `RUNWISP_PASSWORD` are mutually exclusive —
-  the daemon refuses to start with both set, because a password that
-  is never checked is worse than no password.
-- Any value other than `1` / `true` is a startup error, not a guess.
-- `runwisp password` exits with code **5** and an explanation — there
-  is no password to print.
-- The local Unix socket and the optional station connection are
-  unaffected; this switch only opens the local HTTP API and Web UI.
-
-### Docker for local dev
-
-This is the headline use case. The official `runwisp/runwisp` image
-already binds `0.0.0.0` and requires you to pick an auth setting
-explicitly (see [Docker](/getting-started/docker/) for the full
-picture), so for local dev it's just:
+The official Docker image won't start until you choose `RUNWISP_PASSWORD` or
+`RUNWISP_AUTH=off`. For a passwordless local container, publish the port on
+loopback only:
 
 ```bash
-docker run --rm \
-  -e RUNWISP_AUTH=off \
-  -p 127.0.0.1:9477:9477 \
-  -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro \
-  runwisp/runwisp:latest
+docker run --rm -e RUNWISP_AUTH=off -p 127.0.0.1:9477:9477 \
+  -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro runwisp/runwisp:latest
 ```
-
-Or in a `compose.yaml`:
-
-```yaml
-services:
-    runwisp:
-        image: runwisp/runwisp:latest
-        environment:
-            - RUNWISP_AUTH=off
-        ports:
-            - "127.0.0.1:9477:9477"
-        volumes:
-            - ./runwisp.toml:/etc/runwisp/runwisp.toml:ro
-            - runwisp-data:/var/lib/runwisp
-volumes:
-    runwisp-data:
-```
-
-Note the `127.0.0.1:` prefix on the port mapping — it keeps the
-passwordless daemon reachable from your machine only, not from
-everything on your LAN. Drop it only when the network between you and
-the container is genuinely trusted.
 
 ## Rate limiting
 
-Failed network logins are rate-limited per source IP. Cross the
-limit and you'll get `429 Too Many Requests` until the window slides
-past. Restarting the daemon resets the counter. The local-socket
-path is exempt.
+Login requests are limited per client IP: 5 requests in any 5-minute window,
+counting the challenge, the login, and launch-ticket redemptions together. Over
+the limit, the daemon answers `429 Too Many Requests` until the window moves on.
+A restart resets the count. The control socket isn't limited.
 
-Live log streams are capped too — a few dozen open at once, with a
-smaller per-IP cap — so one runaway script can't exhaust the daemon
-on its own. Hit the cap and you'll get `503 Service Unavailable`;
-close some open log views and try again.
+Scripts should log in once and reuse the session token; `runwisp run --url`
+does this for you.
+
+Live log streams are capped at 128 open at once, and 16 per client IP. Past the
+cap, new streams get `503 Service Unavailable`. Close some log views and try
+again.
 
 ## Reverse proxies
 
-RunWisp binds to `127.0.0.1:9477` by default and serves plain HTTP
-there. Bind beyond loopback and set
-[`tls = "auto"`](/configuration/daemon/#tls-tls_cert-tls_key) and it
-self-signs and serves HTTPS on its own — enough for a LAN or a
-tailnet, no proxy required. Where a reverse proxy still earns its
-keep is a **publicly-trusted** certificate: put it on the public
-internet behind nginx, Caddy, Traefik, or a Cloudflare Tunnel, let
-the proxy own TLS, leave [`tls`](/configuration/daemon/#tls-tls_cert-tls_key) at its default of `"off"` so RunWisp
-serves plain HTTP on its private side, and tell the daemon which IP
-ranges that proxy will be calling from:
+Use a reverse proxy (nginx, Caddy, Traefik, Cloudflare Tunnel) when you need a
+publicly trusted certificate. Let the proxy handle TLS, keep RunWisp on plain
+HTTP behind it, and tell RunWisp which addresses the proxy connects from:
 
-```bash
-export RUNWISP_TRUSTED_PROXIES='10.0.0.0/8,2001:db8::/32'
-runwisp daemon --host 127.0.0.1 --port 9477
+```toml
+[daemon]
+trusted_proxies = ["127.0.0.1/32", "10.0.0.0/8"]
 ```
 
-`RUNWISP_TRUSTED_PROXIES` is a comma-separated list of CIDR ranges
-whose `X-Forwarded-Proto` and `X-Forwarded-For` headers the daemon
-will trust. When a request comes in from one of those ranges with
-`X-Forwarded-Proto: https`, the daemon treats the connection as
-secure and marks the session cookie accordingly. Rate limiting is
-applied after the real-IP middleware, so proxied requests count against
-the originating IP, not the proxy's address — limit your trust proxy
-ranges carefully or an attacker could consume the rate budget from
-behind a trusted proxy.
+From those addresses only, RunWisp trusts:
 
-Prefer to keep it in config rather than the environment? The same list
-lives in [`trusted_proxies`](/configuration/daemon/#trusted_proxies)
-as a TOML array. The env var wins when both are set, so you can pin a
-default in `runwisp.toml` and still override it per-deployment.
+- `X-Forwarded-For`, so logs and the rate limit see the real client IP.
+- `X-Forwarded-Proto: https`, so the session cookie is marked `Secure`.
 
-The daemon refuses `0.0.0.0/0` and `::/0`, whether set by the env var or
-the TOML key. Trusting the whole internet would let any random client lie
-about where it's coming from.
+Keep the list tight: an address in it can claim to be any client IP, and so use
+up another client's login limit. The
+`RUNWISP_TRUSTED_PROXIES` environment variable (comma-separated) overrides the
+key. See [`trusted_proxies`](/configuration/daemon/#trusted_proxies).
+
+For a LAN or a tailnet, you don't need a proxy:
+[`tls = "auto"`](/configuration/daemon/#tls-tls_cert-tls_key) serves HTTPS with
+a self-signed certificate.
 
 ## Public endpoints
 
-A short list of routes that intentionally skip the password/JWT
-check:
+These answer without a password:
 
-- `/health` — liveness probe. Always `200 OK`.
-- `/metrics` — Prometheus / OpenMetrics scrape endpoint. See
-  [Metrics](/operations/metrics/) for what's exposed and the
-  trade-off that comes with it.
+- `GET /health`: always `200 OK`. Use it as a liveness probe.
+- `GET /metrics`: when [metrics](/operations/metrics/) are on and share the main
+  listener.
+- `/api/auth/*`: login status, challenge, login, and launch-ticket redemption.
+- `GET /api/daemon/identity`: tells a starting `runwisp` which daemon holds the
+  port. Loopback and socket callers only; `403` for everyone else.
+- The Web UI's static files.
 
-Everything else under `/api/` (other than the auth handshake
-itself) needs either a valid session cookie or a request coming in
-over the local Unix socket.
+Everything else under `/api/` needs a session or the control socket.
 
----
-
-<CardGrid>
-    <LinkCard
-        title="Troubleshooting"
-        href="/operations/troubleshooting/"
-        description="Locked out, or logins being refused? Start here."
-    />
-    <LinkCard
-        title="The Web UI tour"
-        href="/getting-started/web-ui-tour/"
-        description="What you get once you're past the login — runs, tasks, notifications."
-    />
-    <LinkCard
-        title="[daemon]"
-        href="/configuration/daemon/"
-        description="TLS, the bind address, the control socket, and every env var."
-    />
-    <LinkCard
-        title="Metrics"
-        href="/operations/metrics/"
-        description="The one endpoint that's public by design, and the trade-off it carries."
-    />
-</CardGrid>
+The login response is PBKDF2-HMAC-SHA256 (600,000 rounds) of the password,
+salted with a single-use challenge, so a captured login is slow to brute-force.
+It doesn't protect the session token; TLS does.

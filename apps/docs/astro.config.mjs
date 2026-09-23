@@ -225,7 +225,10 @@ export default defineConfig({
                                 { label: "[storage]", slug: "configuration/storage" },
                                 { label: "[notify]", slug: "configuration/notify" },
                                 { label: "[[route]]", slug: "configuration/routes" },
-                                { label: "${...} substitution", slug: "configuration/substitution" },
+                                {
+                                    label: "${...} substitution",
+                                    slug: "configuration/substitution",
+                                },
                             ],
                         },
                         { label: "CLI", slug: "reference/cli" },
