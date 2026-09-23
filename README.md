@@ -93,9 +93,9 @@ run          = "node /app/worker.js"
 RunWisp can start from the configuration you already have:
 
 - [Take over from cron](https://docs.runwisp.com/coming-from/cron/).
-- [Import crontab](https://docs.runwisp.com/coming-from/crontabs/).
+- [Import crontab](https://docs.runwisp.com/coming-from/cron/#convert-by-hand).
 - [Import supervisord](https://docs.runwisp.com/coming-from/supervisord/)
-- [Import docker compose](https://docs.runwisp.com/coming-from/supervisord/).
+- [Import docker compose](https://docs.runwisp.com/coming-from/docker-compose/).
 
 <div align="center">
 <img alt="RunWisp terminal UI showing tasks, live output, and run controls over SSH" src="apps/docs/src/assets/screenshots/tui-home.png" width="780">

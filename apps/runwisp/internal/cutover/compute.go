@@ -188,7 +188,7 @@ func unsupportedOSBlocker(goos string) Blocker {
 		Details: details + "\nConvert the jobs and retire the crontab by hand instead:\n" +
 			"  1. runwisp import cron --write   (the jobs become RunWisp tasks)\n" +
 			"  2. crontab -r                    (once you've seen them run under RunWisp)\n\n" +
-			"Docs: https://docs.runwisp.com/coming-from/crontabs/",
+			"Docs: https://docs.runwisp.com/coming-from/cron/#convert-by-hand",
 	}
 }
 

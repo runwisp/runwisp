@@ -2,43 +2,32 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: From supervisord
-description: Convert a supervisord config into runwisp.toml with one command — every [program] becomes a supervised RunWisp service with live logs, restart policy, and failure alerts.
+description: Convert a supervisord config into runwisp.toml with runwisp import supervisord. How each [program] key maps, and what needs a human.
 head:
     - tag: title
       content: "Migrate from supervisord to RunWisp: convert every [program] in one command"
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+`runwisp import supervisord` converts a supervisord config into `runwisp.toml`.
+Each `[program]` becomes a RunWisp [service](/configuration/services/).
 
-supervisord keeps your processes alive, and that's about where it stops. The
-web UI is an afterthought, the logs are flat files you `tail` by hand, and
-finding out _why_ something keeps restarting means SSHing in and reading
-`supervisord.log`. RunWisp supervises the same processes and gives you per-run
-history, streamed logs, and a notification when an instance flaps.
-
-You don't have to rewrite your config by hand. `runwisp import supervisord`
-reads it — `[include]` files and all — and writes the `runwisp.toml`.
-
-## The one-liner
-
-Point it at your config, or pipe one in — both are first-class:
+## Convert the config
 
 ```bash
 runwisp import supervisord /etc/supervisor/supervisord.conf -o runwisp.toml
-cat /etc/supervisor/supervisord.conf | runwisp import supervisord
 runwisp validate
 ```
 
-Given a file, it follows any `[include]` directives relative to it, so a typical
-`conf.d/`-style layout comes across in one shot. Each `[program]` becomes a
-RunWisp [service](/concepts/tasks-vs-services/). Given:
+Pass the file path rather than piping it in. With a path, `[include]` files are
+found and merged; piped input has no location to resolve them from.
+
+Given:
 
 ```ini
 [program:web]
 command=/usr/bin/gunicorn app:app
 directory=/srv/app
 user=www-data
-autostart=true
 startsecs=10
 startretries=5
 stopsignal=INT
@@ -70,94 +59,26 @@ run = "/srv/app/worker --idx %(process_num)s"
 instances = 4
 ```
 
-On stderr you get an account of every program, so you know which ones came
-across untouched and which ones want a look:
+A summary on stderr has one row per program, marked `✓` (mapped), `~`
+(changed, with the reason), `!` (needs a fix), or `-` (already in your config).
+Here, `web` is `~` because its log file setting was dropped, and `worker` is `!`
+because `%(process_num)s` isn't filled in.
 
-```
-Imported supervisord config → 2 services
-  ~ web      service
-      /usr/bin/gunicorn app:app
-      • log file settings were dropped — RunWisp captures stdout and stderr
-        per run automatically (see log_max_size / keep_runs to tune).
-  ! worker   service
-      /srv/app/worker --idx %(process_num)s
-      ! command uses supervisord %(...)s expansions RunWisp doesn't fill in
-        (e.g. %(ENV_x)s, %(process_num)s). Review the run line.
-      • numprocs=4 became instances. Each instance gets a distinct
-        RUNWISP_INSTANCE_INDEX (0-based) in place of %(process_num)s.
+If you already have a `runwisp.toml`, use `--write` instead of `-o`; see
+[Staging and promoting](/coming-from/cron/#staging-and-promoting). All flags are
+in the [CLI reference](/reference/cli/#runwisp-import).
 
-1 item carries a # TODO — fix it before you rely on it.
+## Stop the programs in supervisord
 
-Review the TOML above, save it as runwisp.toml, then run `runwisp validate`.
-
-! supervisord still manages these programs. Stop them there before starting
-  RunWisp, or each one runs twice.
-```
-
-`~` means it's imported but something changed, `!` that it needs you before you
-rely on it, `✓` that it mapped cleanly, and `-` that your `runwisp.toml` already
-had it. Every `[program]` in the file gets a row either way — including the ones
-that produced no TOML at all, which is the case worth seeing.
-
-Save it and run `runwisp validate`. Then stop the programs in supervisord —
-see [nothing has retired supervisord yet](#nothing-has-retired-supervisord-yet)
-— and `runwisp daemon` brings them up under RunWisp, where you can watch them
-from the dashboard.
-
-:::note[Piping vs. a path]
-When you pipe a config in, `[include]` directives can't be resolved — there's no
-file to resolve the paths against. Pass the file path (not a pipe) if you use
-includes, and everything comes across in one shot.
-:::
-
-### If you already have a runwisp.toml
-
-`-o` writes one flat file, which is what you want when you're starting fresh.
-When you already have a `runwisp.toml` of your own, use `--write` instead:
+The import doesn't stop supervisord or edit its config. If both run the same
+program, you get two copies fighting over ports or queues. Stop them first:
 
 ```bash
-runwisp import supervisord /etc/supervisor/supervisord.conf --write --dry-run
-runwisp import supervisord /etc/supervisor/supervisord.conf --write
+sudo supervisorctl stop web worker     # the programs you imported
 ```
 
-`--dry-run` first is worth the extra command: you get the same summary plus the
-exact files a real run would create or change, and it changes none of them.
-
-The imported services land in a machine-owned `runwisp.d/imported.toml` and your
-root config is wired to load it, so nothing you hand-wrote is touched. They show
-up as `staged` — imported, not native yet — and run exactly like any other
-service in the meantime. When you're happy with one:
-
-```bash
-runwisp promote web        # move it into your runwisp.toml
-runwisp promote --all      # or move all of them
-```
-
-The block moves verbatim, comments and `# TODO` notes included, and the service
-keeps running while it happens. Re-running the import later skips programs you've
-already promoted rather than tripping over the duplicate name. The
-[cron recipe](/coming-from/crontabs/#keeping-your-own-config-separate) has
-the full picture of the two-tier layout, which works identically here.
-
-## Nothing has retired supervisord yet
-
-An import **copies** your programs into `runwisp.toml`. It doesn't stop
-supervisord, and it doesn't edit its config — that's yours. So if you start the
-daemon while supervisord is still running the same programs, you get two of
-every process, each with its own supervisor determined to restart it.
-
-That's not a subtle problem for services the way it is for cron jobs: two
-`gunicorn` instances fight over a port, two workers double-consume a queue, and
-whichever one loses the race gets restarted by its supervisor, forever. Worth
-doing first, then:
-
-```bash
-sudo supervisorctl stop web worker     # just the ones you imported
-sudo supervisorctl stop all           # or everything
-```
-
-Then take them out of supervisord's config for good, so a `supervisorctl
-reload` or a host reboot doesn't quietly bring the second copy back:
+Then remove them from supervisord's config, so a reload or reboot doesn't
+start them again:
 
 ```bash
 sudo cp /etc/supervisor/supervisord.conf ~/supervisord.conf.backup
@@ -165,111 +86,61 @@ sudo $EDITOR /etc/supervisor/supervisord.conf   # or the conf.d/ file
 sudo supervisorctl reread && sudo supervisorctl update
 ```
 
-Once nothing is left in there, `sudo systemctl disable --now supervisor`
-retires the daemon itself. Migrating a few programs at a time works fine too —
-just never leave one enabled in both places.
+When nothing is left, `sudo systemctl disable --now supervisor` stops
+supervisord itself. You can move a few programs at a time; just never leave
+one enabled in both.
 
 ## How the pieces map
 
-A `[program]` is a long-running, auto-restarted process — which is exactly a
-RunWisp **service**. Most keys carry straight over:
-
-| supervisord                     | runwisp.toml                                                    | Notes                                                                               |
-| ------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `[program:web]`                 | `[services.web]`                                                | One program → one service.                                                          |
-| `command`                       | [`run`](/configuration/tasks/#run)                              | `%(program_name)s` is expanded.                                                     |
-| `directory`                     | [`working_dir`](/configuration/tasks/#working_dir)              |                                                                                     |
-| `user`                          | [`user`](/configuration/tasks/#user)                            | Needs the daemon running as root to switch users.                                   |
-| `umask`                         | [`umask`](/configuration/tasks/#umask)                          |                                                                                     |
-| `numprocs`                      | [`instances`](/configuration/services/#instances)               | Each gets a `RUNWISP_INSTANCE_INDEX` (0-based).                                     |
-| `startsecs`                     | [`healthy_after`](/configuration/services/#healthy_after)       | Uptime that marks an instance healthy.                                              |
-| `startretries`                  | [`restart_attempts`](/configuration/services/#restart_attempts) | Fast failures tolerated before FATAL.                                               |
-| `stopsignal`                    | [`stop_signal`](/configuration/tasks/#stop_signal)              | `INT` → `SIGINT`.                                                                   |
-| `stopwaitsecs`                  | [`graceful_stop`](/configuration/tasks/#graceful_stop)          | Grace window before SIGKILL.                                                        |
-| `exitcodes`                     | _(dropped)_                                                     | RunWisp has no success-code allowlist: exit `0` succeeds, any non-zero is `failed`. |
-| `priority`                      | [`priority`](/configuration/services/#priority)                 | Boot start order.                                                                   |
-| `autostart`                     | [`autostart`](/configuration/services/#autostart)               | Whether instances start at boot.                                                    |
-| `environment`                   | `[services.NAME.env]`                                           | Quoted values are parsed correctly.                                                 |
-| `[group:site] programs=web,…`   | `group = "site"` on each                                        | RunWisp has no program _groups_; members are tagged.                                |
-| `[include] files=conf.d/*.conf` | _(followed and merged)_                                         | Resolved relative to the config file.                                               |
+| supervisord                     | runwisp.toml                                                     | Notes                                        |
+| ------------------------------- | ---------------------------------------------------------------- | -------------------------------------------- |
+| `[program:web]`                 | `[services.web]`                                                 |                                              |
+| `command`                       | [`run`](/configuration/services/#run)                            | `%(program_name)s` is filled in.             |
+| `directory`                     | [`working_dir`](/configuration/services/#working_dir)            |                                              |
+| `user`                          | [`user`](/configuration/services/#user)                          | The daemon must run as root to switch users. |
+| `umask`                         | [`umask`](/configuration/services/#umask)                        |                                              |
+| `numprocs`                      | [`instances`](/configuration/services/#instances)                | Each gets `RUNWISP_INSTANCE_INDEX` (from 0). |
+| `startsecs`                     | [`healthy_after`](/configuration/services/#healthy_after)        |                                              |
+| `startretries`                  | [`restart_attempts`](/configuration/services/#restart_attempts)  |                                              |
+| `stopsignal`                    | [`stop_signal`](/configuration/services/#stop_signal)            | `INT` becomes `SIGINT`.                      |
+| `stopwaitsecs`                  | [`graceful_stop`](/configuration/services/#graceful_stop)        |                                              |
+| `priority`                      | [`priority`](/configuration/services/#priority)                  |                                              |
+| `autostart`                     | [`autostart`](/configuration/services/#autostart)                |                                              |
+| `environment`                   | [`env`](/configuration/services/#env)                            |                                              |
+| `autorestart=false`             | a task with [`run_on_start`](/configuration/tasks/#run_on_start) | See below.                                   |
+| `exitcodes`                     | _(dropped)_                                                      | See below.                                   |
+| `stdout_logfile` and similar    | _(dropped)_                                                      | RunWisp captures output for every run.       |
+| `[group:site] programs=web,…`   | `group = "site"` on each member                                  |                                              |
+| `[include] files=conf.d/*.conf` | _(followed and merged)_                                          | Relative to the config file.                 |
 
 ## What needs a human
 
-The importer flags everything it can't map cleanly with a `# TODO` in the TOML
-and a note on that program's row. A key it doesn't recognise at all is dropped —
-but the row says which keys, by name, so you can decide whether any of them
-mattered. The ones to know about:
+Anything that can't be mapped gets a `# TODO` in the TOML and a note on the
+program's row. Unknown keys are dropped and listed by name.
 
-- **`autorestart`.** RunWisp services are _always-on_ — they restart whenever
-  they exit. `autorestart=true` (and supervisord's default, `unexpected`) map to
-  a service directly. `autorestart=false` is different: that's a run-once
-  process, so it's imported as a **task** with
-  [`run_on_start`](/configuration/tasks/#run_on_start) instead of a
-  service. RunWisp treats only exit `0` as success, so if your program signals
-  "done, no restart" with a non-zero code, end its [`run`](/configuration/tasks/#run) with `|| true` so it
-  exits `0`.
-- **`exitcodes`.** Dropped — RunWisp has no success-code allowlist. Exit `0`
-  succeeds and any non-zero exit is `failed`; use
-  [`failures`](/configuration/tasks/#failures) to choose which
-  outcomes count as failures for stats and alerts.
-- **`%(...)s` expansions.** `%(program_name)s` is filled in. Anything else —
-  `%(process_num)s`, `%(ENV_x)s`, `%(host_node_name)s` — is left in place with a
-  TODO. For `numprocs`, the per-instance index is `RUNWISP_INSTANCE_INDEX` in the
-  environment; swap it into your command.
-- **Log files.** `stdout_logfile` / `stderr_logfile` are dropped — RunWisp
-  captures both streams for every run automatically, no paths to manage. Tune
-  size and retention with [`log_max_size` and `keep_runs`](/concepts/logs/)
-  instead.
-- **Daemon sections.** `[supervisord]`, `[supervisorctl]`, `[unix_http_server]`,
-  `[inet_http_server]`, and `[rpcinterface]` are supervisord's own plumbing and
-  have no RunWisp equivalent — RunWisp's daemon is configured in
-  [`[daemon]`](/configuration/daemon/) and served over HTTP out of the box.
-  They're skipped, with a note at the bottom of the summary.
-- **`[eventlistener]` / `[fcgi-program]`.** Not supported — RunWisp has no event
-  listener bus or FastCGI process manager. Nothing is generated for them, but
-  they still get a `!` row: they're not "nothing to do", they're "go do this
-  another way".
+- **`autorestart`.** `autorestart=true` and `unexpected` (supervisord's
+  default) become services with RunWisp's default
+  [`restart`](/configuration/services/#restart), which restarts after any exit.
+  To restart only after a failure, set `restart = "on_failure"`.
+  `autorestart=false` means the program runs once, so it becomes a task with
+  [`run_on_start`](/configuration/tasks/#run_on_start).
+- **`exitcodes`.** RunWisp treats exit `0` as success and anything else as
+  `failed`. If your program exits non-zero on purpose, end its `run` with
+  `|| true`. [`failures`](/configuration/tasks/#failures) controls which
+  outcomes count for alerts.
+- **`%(...)s` expansions.** Only `%(program_name)s` is filled in. For
+  `%(process_num)s`, use `$RUNWISP_INSTANCE_INDEX` in the command. Others, like
+  `%(ENV_x)s`, need a manual edit.
+- **Log files.** Dropped. To control log size and retention, see
+  [Logs](/concepts/logs/).
+- **supervisord's own sections** (`[supervisord]`, `[supervisorctl]`,
+  `[unix_http_server]`, `[inet_http_server]`, `[rpcinterface]`) are skipped with
+  a note. RunWisp's own settings are in [`[daemon]`](/configuration/daemon/).
+- **`[eventlistener]` and `[fcgi-program]`** are not supported. They get a `!`
+  row so you know to replace them another way.
 
-## What you get that supervisord didn't
+## Learn more
 
-- **Logs you don't have to `tail`.** Per-run stdout/stderr, streamed live to the
-  Web UI and TUI and indexed for search — not a flat file you rotate by hand.
-- **Restart visibility.** Every restart is recorded with timing, so a flapping
-  instance is obvious instead of buried in `supervisord.log`. Healthy uptime
-  ([`healthy_after`](/configuration/services/#healthy_after)) resets the backoff; too many fast failures mark it FATAL.
-- **Failure alerts.** [Notify](/notifications/model/) on failure through Slack,
-  Telegram, email, or a webhook.
-- **Start ordering.** [`priority`](/configuration/services/#priority) controls boot
-  order, and [`depends_on`](/configuration/services/#depends_on) gates a service on another
-  becoming healthy first — both honored at startup.
-- **Trigger / stop from anywhere.** Start and stop services from the dashboard,
-  TUI, or REST API; stops are graceful, honoring your [`stop_signal`](/configuration/tasks/#stop_signal) and
-  [`graceful_stop`](/configuration/tasks/#graceful_stop).
-
-With supervisord out of the picture, `runwisp.toml` is the single place your
-processes are defined.
-
----
-
-<CardGrid>
-    <LinkCard
-        title="Tasks vs Services"
-        href="/concepts/tasks-vs-services/"
-        description="Why a [program] becomes a service — and when it becomes a task."
-    />
-    <LinkCard
-        title="[services.*] reference"
-        href="/configuration/services/"
-        description="instances, healthy_after, restart_attempts, priority, depends_on."
-    />
-    <LinkCard
-        title="Logs & retention"
-        href="/concepts/logs/"
-        description="The capture that replaces stdout_logfile / stderr_logfile."
-    />
-    <LinkCard
-        title="Migrating from cron"
-        href="/coming-from/cron/"
-        description="For the scheduled half of your crontab + supervisord setup."
-    />
-</CardGrid>
+- [`[services.*]`](/configuration/services/)
+- [Tasks vs services](/concepts/tasks-vs-services/)
+- [From cron](/coming-from/cron/), for scheduled jobs

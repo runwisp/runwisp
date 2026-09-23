@@ -69,7 +69,7 @@ FROM runtime AS variant-plain
 
 # Adds a Docker CLI (with the Compose plugin) for tasks that reach into other
 # containers over a mounted /var/run/docker.sock — see
-# [compose.*] and docs/getting-started/docker#run-the-task-in-another-container.
+# [compose.*] and docs/recipes/docker#run-a-command-in-an-existing-container.
 # Opt-in (docker build --build-arg VARIANT=docker, published as the `-docker`
 # tag) because docker-cli-compose alone is ~65MB and most tasks never touch
 # Docker.

@@ -1,65 +1,30 @@
 ---
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
-title: Docker patterns
-description: Running containers from a RunWisp task — one-shot jobs, image prefetch, pruning — plus the two flags that decide whether you actually see what happened.
+title: Docker tasks
+description: Run containers from RunWisp tasks. One-shot containers, commands in a running compose service, image prefetch, pruning, and what RunWisp needs when it runs in a container itself.
 head:
     - tag: title
       content: "Running Docker containers from RunWisp tasks (recipe)"
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+This page is about tasks whose `run` command uses `docker`. To supervise the
+services in an existing `docker-compose.yml`, see
+[From docker-compose](/coming-from/docker-compose/). To run RunWisp itself in a
+container, see [Running in Docker](/getting-started/docker/).
 
-Sooner or later a task of yours is going to be a container. The nightly
-aggregation job ships as an image, the report generator needs a Python
-runtime you don't want on the host, the migration tool is easier to
-`docker run` than to install. This page is about that: **`docker` as
-the thing inside `run =`.**
+## Two flags to get right
 
-Two neighbours, so you land on the right page:
+**Always use `--rm`.** Without it, every run leaves a stopped container behind.
+An hourly task leaves about 8,700 a year. The Docker daemon does the cleanup,
+so it still happens if RunWisp kills the client on timeout.
 
-- Want RunWisp to supervise the services in a `docker-compose.yml` you
-  already have? That's
-  [migrating from docker-compose](/coming-from/docker-compose/).
-- Want to run RunWisp _itself_ in a container? That's
-  [Docker](/getting-started/docker/) in Getting started.
+**Never use `-d`.** A detached `docker run` prints a container ID and exits `0`
+at once. RunWisp records a successful 40 ms run, and the real job's output,
+exit code, and duration are lost. Stay attached: the container's stdout and
+stderr go into the run log, and its exit code becomes the run's exit code.
 
-## Two flags before anything else
-
-Everything below assumes these, and they're worth understanding once
-rather than copying blindly.
-
-### `--rm`, always
-
-Without it, every single run leaves a dead container behind. A task
-that fires hourly leaves you 8,700 `Exited` containers a year, quietly
-eating disk until something more important fails because of it.
-
-```bash
-docker run --rm  …    # ✅
-docker run       …    # ❌ one corpse per run, forever
-```
-
-`--rm` is handled by the Docker daemon, not the client, so the cleanup
-still happens even if RunWisp kills the client on timeout.
-
-### Never `-d`
-
-A detached `docker run` prints a container ID and exits `0`
-immediately. RunWisp sees a run that finished in 40 milliseconds and
-succeeded — while your actual job is only just starting, and its
-failure, its output, and its duration all happen somewhere RunWisp
-can't see. You've reintroduced exactly the silence you installed
-RunWisp to get rid of.
-
-Stay attached. Then the container's stdout and stderr stream into the
-run log, its exit code becomes the run's exit code, and its wall time
-is the run's duration.
-
-## A one-shot container as a task
-
-The bread-and-butter case: RunWisp fires, a container does one job and
-exits.
+## A one-shot container
 
 ```toml
 [tasks.crunch-numbers]
@@ -68,8 +33,7 @@ description = "Nightly aggregation of yesterday's events"
 cron        = "0 4 * * *"
 on_overlap  = "skip"
 timeout     = "2h"
-keep_runs   = 60
-notify = ["slack-ops"]
+notify      = ["slack-ops"]
 
 run = """
 docker run --rm --init \\
@@ -81,38 +45,23 @@ docker run --rm --init \\
 """
 ```
 
-The RunWisp side of that — [`cron`](/configuration/tasks/#cron),
-[`on_overlap`](/configuration/tasks/#on_overlap),
-[`timeout`](/configuration/tasks/#timeout),
-[`keep_runs`](/configuration/tasks/#keep_runs),
-[`notify`](/configuration/tasks/#notify) — has its own pages.
-Here's why the Docker side looks like that.
+- **`--memory` / `--cpus`**: a runaway job gets killed inside its container
+  and shows up as a failed run, instead of the host's OOM killer picking a
+  random process.
+- **`--init`**: runs a small init as PID 1 that forwards signals and reaps
+  zombie processes. Many images ignore SIGTERM without it, so a
+  [`timeout`](/configuration/tasks/#timeout) ends in a SIGKILL instead of a
+  clean stop.
+- **`--network`**: give the container only the network it needs. `internal`
+  is an example name from `docker network create`.
+- **`--env-file`, not `-e KEY=value`**: values on the command line show up in
+  `ps` and in the run log.
 
-**`--memory` / `--cpus`.** RunWisp is frugal with RAM, but that won't
-save you: a runaway job that eats the host's memory gets the OOM killer
-involved, and the OOM killer doesn't know which process you care
-about. Capping the container means the container dies instead of your
-daemon — and you get a failed run with an alert rather than a mystery.
+### Pass secrets by name
 
-**`--init`.** Runs a tiny init as PID 1 inside the container. It
-forwards signals to your actual process and reaps zombies. Without it,
-many images ignore SIGTERM entirely, which means your [`timeout`](/configuration/tasks/#timeout) turns
-into a hard SIGKILL five seconds later instead of a clean shutdown.
-
-**`--network=internal`.** Give the container what it needs to reach and
-nothing more. If the job only talks to your database, it has no
-business having general internet access. (`internal` is just a name —
-use whatever your `docker network create` set up.)
-
-**`--env-file`, not `-e`.** Anything on the command line is visible in
-`ps` and lands in the run log. A file you can `chmod 0600` doesn't.
-
-### Secrets: let RunWisp hold them
-
-If the values live in your `runwisp.toml` world rather than in a file
-Docker already knows about, use RunWisp's
-[`secrets` / `secrets_file`](/configuration/tasks/#environment--secrets)
-and pass them through by name:
+Keep the values in RunWisp's [`secrets`](/configuration/tasks/#secrets) or
+[`secrets_file`](/configuration/tasks/#secrets_file), and pass them with `-e`
+and no value:
 
 ```toml
 [tasks.crunch-numbers]
@@ -125,27 +74,19 @@ docker run --rm --init \\
 """
 ```
 
-`-e NAME` with no `=value` tells Docker "take this one from my
-environment," so the value never appears on the command line, in `ps`,
-or in `runwisp.toml`. The config API and web UI never show [`secrets`](/configuration/tasks/#secrets)
-values either, only the [`secrets_file`](/configuration/tasks/#secrets_file) path does. It's still part of
-the process environment though: if the container prints its env or
-crashes and dumps it, the daemon scrubs the known secret value out of
-the captured output first (swapping it for `[redacted]`) before it hits
-the run log or the API. That's a literal-value match, so a secret the
-container base64s or reshapes before printing can still slip through.
+`-e NAME` copies the variable from the task's environment, so the value is
+never on the command line. RunWisp also hides secret values in the run log;
+see [`secrets`](/configuration/tasks/#secrets) for the limits.
 
-### About that timeout
+### Timeouts and orphaned containers
 
-When [`timeout`](/configuration/tasks/#timeout) fires, RunWisp signals the task's whole process group,
-waits [`graceful_stop`](/configuration/tasks/#graceful_stop) (5s by default),
-then SIGKILLs. The attached `docker run` client forwards the first
-signal into the container, so a well-behaved image shuts down properly.
+On timeout, RunWisp sends [`stop_signal`](/configuration/tasks/#stop_signal)
+to the task, waits [`graceful_stop`](/configuration/tasks/#graceful_stop), then
+sends SIGKILL. The attached `docker run` client passes the first signal into
+the container. If the image ignores it, the client is killed and the container
+keeps running on its own.
 
-An image that ignores SIGTERM is a different story: the client gets
-killed, and the container keeps running, orphaned from the run that
-started it. If that's a real risk for you, name the container and clear
-the old one up front:
+To guard against that, name the container and remove any old one first:
 
 ```bash
 NAME=crunch-numbers
@@ -153,21 +94,86 @@ docker rm -f "$NAME" >/dev/null 2>&1 || true
 docker run --rm --init --name "$NAME" ghcr.io/example/analytics:current
 ```
 
-Now the next run reclaims the name no matter how the previous one
-died. Combined with `on_overlap = "skip"`, you can't get two of them.
+With `on_overlap = "skip"`, two copies can never run at once.
 
-## Prefetching the next image
+## Run a command in an existing container
 
-A "warm the cache" task so deploys don't spend their first minute
-pulling:
+If the work belongs to an app that already runs in a container (an `artisan`
+command, a `manage.py` job, `psql` against your database), run it there
+instead of installing the app's tools a second time. Name the compose service
+and set `run`:
+
+```toml
+[tasks.laravel-schedule]
+cron            = "* * * * *"
+compose_file    = "/srv/myapp/compose.yaml"
+compose_service = "app"
+run             = "php artisan schedule:run"
+```
+
+RunWisp runs the command with `docker compose exec` in the running container.
+The task's `env`, `secrets`, and `params` are passed in, stdout and stderr stay
+separate, and [fail-fast](/configuration/tasks/#fail-fast) applies. It works
+whether you started the app with `docker compose up` or RunWisp runs it via
+[`[compose.*]`](/configuration/compose/).
+
+The container must already be running, and `timeout` can't stop the process
+inside it. [`compose_mode`](/configuration/compose/#running-a-command-in-a-service-compose_mode)
+has the details and the workaround.
+
+### Without compose
+
+For a container that isn't compose-managed, call `docker exec` yourself:
+
+```toml
+[tasks.laravel-schedule]
+cron = "* * * * *"
+run  = "docker exec myapp-app-1 php artisan schedule:run"
+```
+
+- **No TTY.** A run has no terminal. `docker exec -it` fails with
+  `the input device is not a TTY`. `-t` alone works, but adds `\r` to every
+  line and merges stderr into stdout.
+- **Use a fixed name.** Compose may rename `myapp-app-1`. Set
+  `container_name:`, or use `docker compose -f … exec <service>`.
+- **Limit the time inside.** `timeout` can't reach the process in the
+  container, so wrap it: `docker exec myapp-app-1 timeout 3600 php artisan long-job`.
+
+## A fresh container each run
+
+If the job is already a service in your compose file, point a task at it and
+leave out `run`:
+
+```toml
+[tasks.nightly-backup]
+cron            = "0 3 * * *"
+compose_file    = "./docker-compose.yml"
+compose_service = "backup"
+```
+
+RunWisp runs `docker compose run --rm`: a new container from the compose
+file's image, env, and networks, removed afterwards. To run your own command in
+a fresh container, set `run` and `compose_mode = "run"`.
+
+## Which one to use
+
+| The task…                                                          | Use                                                                                                    |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| belongs to an app in a container (`artisan`, `manage.py`, your DB) | [`compose_service`](/configuration/tasks/#compose_service) + [`run`](/configuration/tasks/#run) (exec) |
+| is already a compose service (`backup`, `migrate`)                 | [`compose_service`](/configuration/tasks/#compose_service) alone (fresh container)                     |
+| targets a container that isn't compose-managed                     | `run = "docker exec …"`                                                                                |
+| belongs to no app (prune, `restic`, `curl` a URL)                  | a plain `run`, with the tools installed where RunWisp runs                                             |
+
+## Prefetch images
+
+Pull images ahead of time so deploys start faster:
 
 ```toml
 [tasks.docker-prefetch]
 group       = "Deploys"
-description = "Pull the latest production images so deploys are quick"
+description = "Pull the latest production images"
 cron        = "@hourly"
 on_overlap  = "skip"
-# No failure alerts on purpose — see below.
 
 run = """
 docker pull ghcr.io/example/app:current
@@ -175,81 +181,54 @@ docker pull ghcr.io/example/worker:current
 """
 ```
 
-Only bother if your `:current` tag actually moves often — hourly suits
-teams deploying several times a day; for everyone else, let the deploy
-itself do the pull. Pair it with the
-[deploy-hooks recipe](/recipes/deploy-hooks/).
+This is only worth it if the tag changes often. There is no `notify` here on
+purpose: a failed prefetch only slows the next deploy. Registries (GHCR, Docker
+Hub, ECR) rate-limit pulls, so don't run it more often than you need. To start
+the deploy itself from CI, see [Remote triggers](/recipes/remote-trigger/).
 
-No [`notify`](/configuration/tasks/#notify) here, deliberately. A missed prefetch costs the
-next deploy a few seconds and nothing else, and an alert nobody needs
-to act on is how people learn to ignore alerts. You'll still see the
-red run in the Web UI if you go looking. And keep an eye on registry
-rate limits — GHCR, Docker Hub and ECR all count pulls, and a hot
-prefetch loop across a fleet burns through the budget for no benefit.
-
-## Pruning, without shooting yourself in the foot
-
-Disks fill up when nobody's watching. Schedule a prune of the things
-that are always safe to drop:
+## Prune unused images
 
 ```toml
 [tasks.docker-prune]
 group       = "Maintenance"
-description = "Reclaim disk: dangling images and stopped containers"
+description = "Remove dangling images and stopped containers"
 cron        = "0 5 * * 0"      # Sunday 05:00
 on_overlap  = "skip"
-notify = ["slack-ops"]
+notify      = ["slack-ops"]
 
 run = """
-# Dangling images and stopped containers — always safe.
 docker image prune --force
 docker container prune --force
-
-# Leave a record of what we ended up with.
 df -h /var/lib/docker
 """
 ```
 
-That `df` at the end isn't decoration. Every run keeps its output, so
-six months from now the run history tells you whether disk use has been
-creeping up or holding steady.
+The `df` at the end keeps a record of disk use in every run's log.
 
-### Leave volumes out of it
-
-`docker volume prune` deletes every volume no _running_ container
-references — including the one holding your database, if its container
-happens to be stopped when the prune fires. Sunday at 05:00 is exactly
-when that's most likely.
-
-Run it by hand instead, with a label filter protecting anything you
-care about:
+Don't schedule `docker volume prune`. It deletes every volume that no running
+container uses, including your database volume if its container happens to be
+stopped. Run it by hand, with a label filter:
 
 ```bash
 docker volume create --label keep app-pgdata
-docker volume prune --filter 'label!=keep'   # BY HAND, after checking
+docker volume prune --filter 'label!=keep'
 ```
 
-…and check what's actually labelled in your environment first. On a
-schedule, this one eventually finds you.
+## A long-running container is a service
 
-## Long-running container? That's a service
-
-Here's the antipattern to watch for:
+Don't restart a container from cron:
 
 ```toml
-# DON'T
+# Don't do this
 [tasks.run-worker-forever]
+cron = "* * * * *"
 run  = "docker run --rm ghcr.io/example/worker:current"
-cron = "* * * * *"          # ...restart it every minute if it died?
 ```
 
-"Run forever, restart when it exits" is what
-[`[services.*]`](/configuration/services/) does, and a long-running
-container is just a long-running command:
+Use a [service](/configuration/services/). RunWisp restarts it when it exits:
 
 ```toml
 [services.worker]
-description     = "Queue worker; supervised by RunWisp"
 restart_delay   = "2s"
 restart_backoff = "exponential"
 run = """
@@ -260,62 +239,49 @@ exec docker run --rm --init \\
 """
 ```
 
-The `exec` replaces the shell with the `docker` client instead of
-leaving it hanging around as a parent. Signals reach the container
-either way — RunWisp signals the whole process group — but the process
-tree stays clean and the container's exit code arrives at RunWisp
-unfiltered. [Tasks vs services](/concepts/tasks-vs-services/) covers
-the distinction properly.
+`exec` replaces the shell with the `docker` client, so the container's exit
+code reaches RunWisp directly.
 
-## If RunWisp itself runs in a container
+## If RunWisp runs in a container
 
-Two things it needs before `docker run` works from inside a task:
+A task runs inside the RunWisp container, so every tool it calls must be in
+that image. The plain image has only `bash`, `tzdata`, and `ca-certificates`.
+A task that calls a missing tool fails with `pg_dump: not found` in its log.
+To check an image quickly:
 
-1. **A Docker CLI in the image.** The plain `runwisp/runwisp` tags don't
-   ship one — pull a `-docker` tag instead
-   (`runwisp/runwisp:latest-docker`) and it's already there, Compose
-   plugin included. Without it, `docker run` and
-   [`[compose.*]`](/configuration/compose/) units alike fail every run
-   with `docker compose unavailable`.
-2. **The Docker socket**, mounted in:
-   `-v /var/run/docker.sock:/var/run/docker.sock`. Without it, both fail
-   instead with a connection error against `/var/run/docker.sock`.
+```bash
+docker run --rm --entrypoint sh runwisp/runwisp:latest -c 'command -v pg_dump curl'
+```
 
-See [Docker](/getting-started/docker/#your-tasks-run-inside-this-container)
-for what else is (and isn't) in the image.
+To add tools, extend the image:
 
-`docker run` isn't your only option — a task can also
-`docker exec` into a container you already have running, which skips
-installing the app's toolchain twice. That's
-[running the task in another container](/getting-started/docker/#run-the-task-in-another-container).
+```dockerfile
+FROM runwisp/runwisp:latest
+RUN apk add --no-cache postgresql17-client curl
+```
 
-Worth knowing what mounting that socket means: a task can then do
-anything to the host's Docker, including starting a privileged
-container. The socket is effectively root on the host. That's usually
-fine — your TOML is trusted input, written by you — but it's a
-deliberate decision, not a detail.
+On a `-debian` tag, use `apt-get install`. The entrypoint, healthcheck, and
+environment defaults are kept.
 
----
+To run `docker` from a task (anything on this page), the container also needs:
 
-<CardGrid>
-    <LinkCard
-        title="Migrating from docker-compose"
-        href="/coming-from/docker-compose/"
-        description="Already have a compose file? Point RunWisp at it instead."
-    />
-    <LinkCard
-        title="Tasks vs Services"
-        href="/concepts/tasks-vs-services/"
-        description="Why a long-running container belongs in [services.*]."
-    />
-    <LinkCard
-        title="Running RunWisp in Docker"
-        href="/getting-started/docker/"
-        description="Image variants, volumes, env vars, reverse proxies."
-    />
-    <LinkCard
-        title="Deploy hooks"
-        href="/recipes/deploy-hooks/"
-        description="Triggering a deploy task from CI, including the auth dance."
-    />
-</CardGrid>
+1. **A Docker CLI.** Use a `-docker` tag, such as
+   `runwisp/runwisp:latest-docker`. It includes the Compose plugin. Without it,
+   compose-backed runs fail with `docker compose unavailable`. You can also
+   add `docker-cli docker-cli-compose` in your own Dockerfile.
+2. **The host's Docker socket:**
+
+    ```yaml
+    volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+    ```
+
+Access to the Docker socket is root access to the host: a task can start a
+privileged container. Your TOML is trusted input, so this is usually fine, but
+decide it on purpose.
+
+## Learn more
+
+- [`[compose.*]`](/configuration/compose/)
+- [Tasks vs services](/concepts/tasks-vs-services/)
+- [Running in Docker](/getting-started/docker/)
