@@ -2,104 +2,60 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Configuration overview
-description: "How runwisp.toml is structured: tasks, services, compose, storage, daemon, and defaults."
+description: "How runwisp.toml is structured: tasks, services, compose, defaults, daemon, storage, and notifications."
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
+RunWisp reads one file, `runwisp.toml`. It defines everything that runs; the
+Web UI and REST API can trigger runs but never change the config. After an
+edit, run [`runwisp reload`](/operations/reload/).
 
-RunWisp is configured in one file, `runwisp.toml`. It is the only place that
-defines what runs: the REST API and Web UI can read and trigger, but never change
-task definitions. After editing it, run `runwisp reload` (or send `SIGHUP`). A
-few daemon-wide settings need [`runwisp restart`](/operations/reload/).
+```toml
+[defaults]
+timeout = "1h"
 
-This page lists every table and key, with links to the reference pages.
+[tasks.backup-db]
+cron = "0 3 * * *"
+run  = "pg_dump app | gzip > /backups/app.sql.gz"
 
-## [tasks.*]
+[services.worker]
+instances = 2
+run       = "node worker.js"
 
-Units of work that run on a schedule or by hand, then exit.
-[Full reference →](/configuration/tasks/)
+[notifiers.slack-ops]
+type        = "slack"
+webhook_url = "${SLACK_URL}"
+```
 
-- **Identity**: [`[tasks.<name>]`](/configuration/tasks/#tasksname), [`run`](/configuration/tasks/#run), [`description`](/configuration/tasks/#description), [`group`](/configuration/tasks/#group), [`manual_trigger`](/configuration/tasks/#manual_trigger)
-- **Scheduling**: [`cron`](/configuration/tasks/#cron), [`run_on_start`](/configuration/tasks/#run_on_start), [`catch_up`](/configuration/tasks/#catch_up), [`jitter`](/configuration/tasks/#jitter), [`timezone`](/configuration/tasks/#timezone)
-- **Concurrency**: [`on_overlap`](/configuration/tasks/#on_overlap), [`max_concurrent`](/configuration/tasks/#max_concurrent), [`max_queued`](/configuration/tasks/#max_queued)
-- **Retries & timeout**: [`timeout`](/configuration/tasks/#timeout), [`retry_attempts`](/configuration/tasks/#retry_attempts), [`retry_delay`](/configuration/tasks/#retry_delay), [`retry_backoff`](/configuration/tasks/#retry_backoff), [`graceful_stop`](/configuration/tasks/#graceful_stop), [`stop_signal`](/configuration/tasks/#stop_signal), [`failures`](/configuration/tasks/#failures)
-- **Logs & retention**: [`keep_runs`](/configuration/tasks/#keep_runs), [`keep_for`](/configuration/tasks/#keep_for), [`log_max_size`](/configuration/tasks/#log_max_size), [`log_on_full`](/configuration/tasks/#log_on_full)
-- **Environment & secrets**: [`env`](/configuration/tasks/#env), [`secrets`](/configuration/tasks/#secrets), [`env_file`](/configuration/tasks/#env_file), [`secrets_file`](/configuration/tasks/#secrets_file)
-- **Parameters**: [`params`](/configuration/tasks/#params)
-- **Working directory & shell**: [`working_dir`](/configuration/tasks/#working_dir), [`shell`](/configuration/tasks/#shell), [`env_base`](/configuration/tasks/#env_base), [`user`](/configuration/tasks/#user), [`umask`](/configuration/tasks/#umask)
-- **Compose-backed**: [`compose_file`](/configuration/tasks/#compose_file), [`compose_service`](/configuration/tasks/#compose_service), [`compose_mode`](/configuration/tasks/#compose_mode)
-- **Notifications**: [`notify`](/configuration/tasks/#notify)
+| Table                                           | What it holds                                                   |
+| ----------------------------------------------- | --------------------------------------------------------------- |
+| [`[tasks.<name>]`](/configuration/tasks/)       | Commands that run on a schedule or by hand, then exit.          |
+| [`[services.<name>]`](/configuration/services/) | Long-running processes RunWisp keeps alive.                     |
+| [`[compose.<alias>]`](/configuration/compose/)  | Services imported from a `docker-compose.yml`.                  |
+| [`[defaults]`](/configuration/defaults/)        | Fallback values for every task and service.                     |
+| [`[daemon]`](/configuration/daemon/)            | Daemon-wide settings: timezone, TLS, metrics, included files.   |
+| [`[storage]`](/configuration/storage/)          | Disk limits for run logs.                                       |
+| [`[notify]`](/configuration/notify/)            | Daemon-wide notification settings.                              |
+| [`[[route]]`](/configuration/routes/)           | Rules that send run events to notifiers.                        |
+| `[notifiers.<id>]`                              | One outbound channel each. See [Notifications](/notifications/). |
 
-## [services.*]
+Any string value can read an environment variable or a file with
+[`${VAR}` or `${file:path}`](/configuration/substitution/).
 
-Long-running processes that RunWisp restarts until you stop them.
-[Full reference →](/configuration/services/)
+The config path, data directory, and listen address are
+[command-line flags](/reference/cli/#global-options),
+not config keys.
 
-- **Identity**: [`[services.<name>]`](/configuration/services/#servicesname), [`run`](/configuration/services/#run), [`description`](/configuration/services/#description), [`group`](/configuration/services/#group), [`manual_trigger`](/configuration/services/#manual_trigger)
-- **Instances**: [`instances`](/configuration/services/#instances)
-- **Restart behaviour**: [`restart`](/configuration/services/#restart), [`restart_delay`](/configuration/services/#restart_delay), [`healthy_after`](/configuration/services/#healthy_after), [`restart_attempts`](/configuration/services/#restart_attempts), [`restart_backoff`](/configuration/services/#restart_backoff)
-- **Startup & boot order**: [`autostart`](/configuration/services/#autostart), [`priority`](/configuration/services/#priority), [`depends_on`](/configuration/services/#depends_on)
-- **Timeout & failures**: [`timeout`](/configuration/services/#timeout), [`failures`](/configuration/services/#failures)
-- **Graceful shutdown**: [`graceful_stop`](/configuration/services/#graceful_stop), [`stop_signal`](/configuration/services/#stop_signal)
-- **Logs & retention**: [`keep_runs`](/configuration/services/#keep_runs), [`keep_for`](/configuration/services/#keep_for), [`log_max_size`](/configuration/services/#log_max_size), [`log_on_full`](/configuration/services/#log_on_full)
-- **Environment & secrets**: [`env`](/configuration/services/#env), [`secrets`](/configuration/services/#secrets), [`env_file`](/configuration/services/#env_file), [`secrets_file`](/configuration/services/#secrets_file)
-- **Working directory & shell**: [`working_dir`](/configuration/services/#working_dir), [`shell`](/configuration/services/#shell), [`env_base`](/configuration/services/#env_base), [`user`](/configuration/services/#user), [`umask`](/configuration/services/#umask)
-- **Compose-backed**: [`compose_file`](/configuration/services/#compose_file), [`compose_service`](/configuration/services/#compose_service), [`compose_mode`](/configuration/services/#compose_mode)
-- **Notifications**: [`notify`](/configuration/services/#notify)
+## Editor support and validation
 
-## [compose.\<alias\>]
+Start the file with a `#:schema` line and editors with TOML support (Even Better
+TOML, taplo) autocomplete and check it as you type. Files RunWisp creates
+already have it.
 
-Imports the services of an existing `docker-compose.yml` as RunWisp services.
-[Full reference →](/configuration/compose/)
+```toml
+#:schema https://docs.runwisp.com/config.schema.json
+```
 
-- **Block keys**: [`file`](/configuration/compose/#file), [`services`](/configuration/compose/#services), [`import`](/configuration/compose/#import), [`group`](/configuration/compose/#group), [`project_name`](/configuration/compose/#project_name), [`profiles`](/configuration/compose/#profiles), [`env_file`](/configuration/compose/#env_file), [`working_dir`](/configuration/compose/#working_dir), [`with_deps`](/configuration/compose/#with_deps), [`pull`](/configuration/compose/#pull), [`name_format`](/configuration/compose/#name_format)
-- **Overrides**: `[compose.<alias>.defaults]` and `[compose.<alias>.<service>]` accept most [`[services.*]`](/configuration/services/) keys. See [Per-service overrides](/configuration/compose/#per-service-overrides).
-
-## [storage]
-
-Disk-usage limits for logs across all tasks. [Full reference →](/configuration/storage/)
-
-- [`max_size`](/configuration/storage/#max_size), [`min_free_space`](/configuration/storage/#min_free_space)
-
-## [daemon]
-
-Settings for the whole daemon. [Full reference →](/configuration/daemon/)
-
-- [`shutdown_timeout`](/configuration/daemon/#shutdown_timeout), [`timezone`](/configuration/daemon/#timezone), [`external_url`](/configuration/daemon/#external_url), [`check_updates`](/configuration/daemon/#check_updates), [`tls`](/configuration/daemon/#tls-tls_cert-tls_key), [`tls_cert`](/configuration/daemon/#tls-tls_cert-tls_key), [`tls_key`](/configuration/daemon/#tls-tls_cert-tls_key), [`metrics_enabled`](/configuration/daemon/#metrics_enabled), [`metrics_listen`](/configuration/daemon/#metrics_listen), [`trusted_proxies`](/configuration/daemon/#trusted_proxies), [`allow_station_dispatch`](/configuration/daemon/#allow_station_dispatch), [`include`](/configuration/daemon/#include), [`include_cron`](/configuration/daemon/#include_cron)
-- The config path, data directory, listen address, and log level are
-  [CLI flags](/configuration/daemon/#cli-flags-config-data-directory--listen-address),
-  not config keys.
-
-## [defaults]
-
-Fallback values for every task and service. [Full reference →](/configuration/defaults/)
-
-- **Timing & lifecycle**: [`timeout`](/configuration/defaults/#timeout), [`jitter`](/configuration/defaults/#jitter), [`graceful_stop`](/configuration/defaults/#graceful_stop), [`stop_signal`](/configuration/defaults/#stop_signal), [`shell`](/configuration/defaults/#shell)
-- **Logs & retention**: [`log_max_size`](/configuration/defaults/#log_max_size), [`log_on_full`](/configuration/defaults/#log_on_full), [`keep_runs`](/configuration/defaults/#keep_runs), [`keep_for`](/configuration/defaults/#keep_for)
-- **Task-only**: [`catch_up`](/configuration/defaults/#catch_up)
-- **Services-only**: [`healthy_after`](/configuration/defaults/#healthy_after), [`restart_attempts`](/configuration/defaults/#restart_attempts), [`restart_delay`](/configuration/defaults/#restart_delay), [`restart_backoff`](/configuration/defaults/#restart_backoff)
-- **Environment & secrets**: [`env`](/configuration/defaults/#env), [`env_file`](/configuration/defaults/#env_file), [`secrets`](/configuration/defaults/#secrets), [`secrets_file`](/configuration/defaults/#secrets_file)
-- **Failure classification**: [`failures`](/configuration/defaults/#failures)
-
-## Other pages
-
-- **Notifications:** `[notifiers.<id>]`, `[[route]]`, and `[notify]` start at
-  the [notifications model](/notifications/model/).
-- **`${...}` substitution:** any string value can read an env var or a file
-  with `${VAR}` or `${file:path}`. See
-  [`${...}` substitution](/configuration/substitution/).
-
----
-
-<CardGrid>
-    <LinkCard
-        title="Reload"
-        href="/operations/reload/"
-        description="How the daemon picks up edits to this file, and what needs a restart."
-    />
-    <LinkCard
-        title="Driving with an AI agent"
-        href="/reference/agents/"
-        description="The JSON Schema, the edit → validate → run loop, and the dense agent reference."
-    />
-</CardGrid>
+```bash
+runwisp validate   # check runwisp.toml exactly like daemon startup does
+runwisp schema     # print the JSON Schema
+```

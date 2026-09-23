@@ -32,9 +32,10 @@ service that booted with autostart=false, or one you flipped to
 autostart=true and reloaded). Only services can be restarted this way; a
 scheduled task is triggered with 'runwisp run', not restarted.
 
-With no argument, the whole daemon restarts. A running daemon keeps the
-task set it loaded at boot — editing runwisp.toml has no effect until a
-restart. This command is how you apply config changes.
+With no argument, the whole daemon restarts. Most config edits only need
+'runwisp reload'; restart is for settings a reload can't apply ([daemon],
+[storage], [notify], the listen address) or to re-fire run_on_start and
+missed-run catch-up.
 
 When the daemon is managed by systemd or launchd (wired up via
 'runwisp service install'), the restart is delegated to the service

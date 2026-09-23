@@ -2,298 +2,83 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: "[defaults]"
-description: "Fallback values inherited by every task and service unless overridden: timeout, log_max_size, log_on_full, keep_runs, keep_for, healthy_after."
+description: "Fallback values inherited by every task and service unless overridden: timeout, log limits, retention, restart policy, env, failures."
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
-import GracefulStop from "./shared/_graceful_stop.mdx";
-import StopSignal from "./shared/_stop_signal.mdx";
-import Shell from "./shared/_shell.mdx";
-import LogMaxSize from "./shared/_log_max_size.mdx";
-import LogOnFull from "./shared/_log_on_full.mdx";
-import KeepRuns from "./shared/_keep_runs.mdx";
-import KeepFor from "./shared/_keep_for.mdx";
-
-`[defaults]` sets fallback values for every `[tasks.*]` and `[services.*]`.
-A task or service that sets the key itself wins.
-
-## Available keys
-
-```toml
-[defaults]
-timeout          = "1h"
-jitter           = "30m"
-graceful_stop    = "10s"
-stop_signal      = "SIGTERM"
-shell            = "/bin/sh"
-log_max_size     = "100mb"
-log_on_full      = "drop_old"
-keep_runs        = 50
-keep_for         = "30d"
-catch_up         = 1
-healthy_after    = "60s"
-restart_attempts = 3
-restart_delay    = "1s"
-restart_backoff  = "exponential"
-failures         = ["-missed"]
-env              = { TZ = "UTC" }
-env_file         = "common.env"
-secrets_file     = "/etc/runwisp/common-secrets.env"
-```
-
-These can't be set in `[defaults]`: [`cron`](/configuration/tasks/#cron),
-[`on_overlap`](/configuration/tasks/#on_overlap), the `retry_*` keys,
-[`max_concurrent`](/configuration/tasks/#max_concurrent),
-[`max_queued`](/configuration/tasks/#max_queued),
-[`params`](/configuration/tasks/#params), and
-[`notify`](/configuration/tasks/#notify).
-
-## Precedence
-
-For each task or service:
-
-1. The value set on the `[tasks.*]` / `[services.*]` table.
-2. Else the value in `[defaults]`.
-3. Else the built-in default (for example `100mb` for
-   [`log_max_size`](#log_max_size)).
-
-An explicit `0` (or `"0s"`) on a task or service counts as set. For example,
-`timeout = "0s"` turns off a `[defaults]` timeout, and `restart_delay = "0s"`
-means no delay.
-
-## Timing & lifecycle
-
-### timeout
-
-**type**: `duration` **default**: unset (no limit)
-
-Default run time limit for tasks and services. See
-[`[tasks.*] timeout`](/configuration/tasks/#timeout).
-
-```toml
-[defaults]
-timeout = "30m"
-```
-
-### jitter
-
-**type**: `duration` **default**: unset (off)
-
-Default [`jitter`](/configuration/tasks/#jitter) for every cron task. **Tasks
-only.**
-
-```toml
-[defaults]
-jitter = "30m"
-```
-
-### graceful_stop
-
-<GracefulStop />
-
-Applies to tasks and services. The daemon-wide
-[`shutdown_timeout`](/configuration/daemon/#shutdown_timeout) can't be set here.
-
-### stop_signal
-
-<StopSignal />
-
-### shell
-
-<Shell />
-
-## Logs & retention
-
-### log_max_size
-
-<LogMaxSize />
-
-### log_on_full
-
-<LogOnFull />
-
-### keep_runs
-
-<KeepRuns />
-
-- Unset at every level: no limit.
-- `0` is a real value: keep no completed runs. A task's `0` overrides a
-  non-zero `[defaults]`.
-- Negative values are rejected.
-
-### keep_for
-
-<KeepFor />
-
-`0` and negative values are rejected.
-
-## Task-only
-
-### catch_up
-
-**type**: `integer` **default**: `1`
-
-Default [`catch_up`](/configuration/tasks/#catch_up) for cron tasks: `0` none,
-`1` the latest, `N` up to `N`. A value above `1` needs `on_overlap = "queue"`.
-**Tasks only.**
-
-```toml
-[defaults]
-catch_up = 3
-```
-
-## Services-only
-
-### healthy_after
-
-**type**: `duration` **default**: `"60s"`
-
-Default [`healthy_after`](/configuration/services/#healthy_after). **Services
-only.**
-
-```toml
-[defaults]
-healthy_after = "30s"
-```
-
-### restart_attempts
-
-**type**: `integer` **default**: `3`
-
-Default [`restart_attempts`](/configuration/services/#restart_attempts).
-**Services only.**
-
-```toml
-[defaults]
-restart_attempts = 5
-```
-
-### restart_delay
-
-**type**: `duration` **default**: `"1s"`
-
-Default [`restart_delay`](/configuration/services/#restart_delay). **Services
-only.**
-
-```toml
-[defaults]
-restart_delay = "2s"
-```
-
-### restart_backoff
-
-**type**: `enum` **default**: `"exponential"`
-
-Default [`restart_backoff`](/configuration/services/#restart_backoff):
-`constant`, `linear`, or `exponential`. **Services only.**
-
-```toml
-[defaults]
-restart_backoff = "linear"
-```
-
-## Environment & secrets
-
-These merge with the task's own values instead of being replaced. On the same
-key, the task's value wins. See
-[Environment & secrets](/configuration/tasks/#environment--secrets) for the full
-merge order.
-
-### env
-
-**type**: `map` **default**: none
-
-Environment variables for every task and service. Visible in the API and UI.
-
-### env_file
-
-**type**: `string` **default**: none
-
-A dotenv file for every task and service, merged below `[defaults.env]`.
-Visible in the API and UI.
-
-### secrets
-
-**type**: `map` **default**: none
-
-Secret environment variables for every task and service. Never shown in the API
-or UI.
-
-### secrets_file
-
-**type**: `string` **default**: none
-
-A dotenv file merged below `[defaults.secrets]`. Only the path is shown in the
-API and UI.
-
-## Failure classification
-
-### failures
-
-**type**: `string[]` **default**: `["failed", "timeout", "crashed", "log_overflow", "start_failed", "missed"]`
-
-Which outcomes count as a failure for every task and service. A bare list
-replaces the built-in set; `+`/`-` tokens (`["-missed"]`, `["+stopped"]`) change
-it. A task's own `failures` is applied on top of this. See
-[What counts as a failure](/configuration/tasks/#what-counts-as-a-failure).
-
-```toml
-[defaults]
-failures = ["-missed"]
-```
-
-## Worked example
+`[defaults]` sets fallback values for every `[tasks.*]` and `[services.*]`. A
+task or service that sets the key itself wins.
 
 ```toml
 [defaults]
 timeout       = "30m"
 log_max_size  = "50mb"
 keep_runs     = 100
-keep_for      = "30d"
 healthy_after = "30s"
+failures      = ["-missed"]
 
 [tasks.heartbeat]
 cron = "*/5 * * * *"
-run  = "/usr/local/bin/heartbeat"
-# uses all the defaults above
+run  = "/usr/local/bin/heartbeat"   # uses every default above
 
 [tasks.nightly-export]
-cron          = "0 2 * * *"
-timeout       = "4h"     # overrides the default
-log_max_size  = "500mb"  # overrides the default
-graceful_stop = "20s"    # overrides the built-in 5s
-run           = "/usr/local/bin/export"
-
-[services.flaky-worker]
-healthy_after = "2m"     # overrides the default
-run           = "/usr/local/bin/worker"
+cron    = "0 2 * * *"
+timeout = "4h"                      # overrides the default
+run     = "/usr/local/bin/export"
 ```
 
-## Not covered by `[defaults]`
+## Precedence
 
-- `[storage]`, `[notify]`, and `[daemon]` settings (including
-  `shutdown_timeout`).
-- [`notify`](/configuration/tasks/#notify) lists. Set them per task, or use
-  `[notify] global_notifiers`. What counts as a failure does inherit, through
-  [`failures`](#failures).
+For each key, RunWisp uses the first of:
 
----
+1. the value on the `[tasks.*]` / `[services.*]` table,
+2. the value in `[defaults]`,
+3. the built-in default.
 
-<CardGrid>
-    <LinkCard
-        title="[tasks.*] ref"
-        href="/configuration/tasks/"
-        description="The per-task overrides this defaults."
-    />
-    <LinkCard title="[services.*] ref" href="/configuration/services/" description="Same." />
-    <LinkCard
-        title="[storage] ref"
-        href="/configuration/storage/"
-        description="The daemon-wide disk safeguards."
-    />
-    <LinkCard
-        title="Daemon ref"
-        href="/configuration/daemon/"
-        description="Daemon-wide settings and CLI flags."
-    />
-</CardGrid>
+An explicit `0` (or `"0s"`) on a task counts as set: `timeout = "0s"` turns off a
+`[defaults]` timeout.
+
+Two groups merge instead of replacing:
+
+- `env`, `env_file`, `secrets`, `secrets_file` merge with the task's own; on the
+  same key, the task wins. See
+  [Environment & secrets](/configuration/tasks/#environment--secrets).
+- `failures` is applied first, then the task's own `+`/`-` tokens change it. A
+  bare list on the task replaces it.
+
+## Keys
+
+Each key means exactly what it means on a task or service. Follow the link for
+type, default, and accepted values.
+
+| Key                | Applies to | Reference                                                                    |
+| ------------------ | ---------- | ---------------------------------------------------------------------------- |
+| `timeout`          | both       | [`timeout`](/configuration/tasks/#timeout)                                   |
+| `graceful_stop`    | both       | [`graceful_stop`](/configuration/tasks/#graceful_stop)                       |
+| `stop_signal`      | both       | [`stop_signal`](/configuration/tasks/#stop_signal)                           |
+| `shell`            | both       | [`shell`](/configuration/tasks/#shell)                                       |
+| `failures`         | both       | [`failures`](/configuration/tasks/#failures)                                 |
+| `log_max_size`     | both       | [`log_max_size`](/configuration/tasks/#log_max_size)                         |
+| `log_on_full`      | both       | [`log_on_full`](/configuration/tasks/#log_on_full)                           |
+| `keep_runs`        | both       | [`keep_runs`](/configuration/tasks/#keep_runs)                               |
+| `keep_for`         | both       | [`keep_for`](/configuration/tasks/#keep_for)                                 |
+| `env`              | both       | [`env`](/configuration/tasks/#env)                                           |
+| `env_file`         | both       | [`env_file`](/configuration/tasks/#env_file)                                 |
+| `secrets`          | both       | [`secrets`](/configuration/tasks/#secrets)                                   |
+| `secrets_file`     | both       | [`secrets_file`](/configuration/tasks/#secrets_file)                         |
+| `jitter`           | tasks      | [`jitter`](/configuration/tasks/#jitter)                                     |
+| `catch_up`         | tasks      | [`catch_up`](/configuration/tasks/#catch_up)                                 |
+| `healthy_after`    | services   | [`healthy_after`](/configuration/services/#healthy_after)                    |
+| `restart_attempts` | services   | [`restart_attempts`](/configuration/services/#restart_attempts)              |
+| `restart_delay`    | services   | [`restart_delay`](/configuration/services/#restart_delay)                    |
+| `restart_backoff`  | services   | [`restart_backoff`](/configuration/services/#restart_backoff)                |
+
+A tasks-only key in `[defaults]` is ignored by services, and the other way round.
+
+## What can't go here
+
+Everything else is per task or daemon-wide:
+
+- `cron`, `on_overlap`, `max_concurrent`, `max_queued`, the `retry_*` keys,
+  `params`, and `notify`. For a notifier on every task, use
+  [`[notify] global_notifiers`](/configuration/notify/#global_notifiers).
+- `[daemon]` (including `shutdown_timeout`), `[storage]`, and `[notify]`.

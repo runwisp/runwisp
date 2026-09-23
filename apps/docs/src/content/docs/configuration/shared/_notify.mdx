@@ -1,18 +1,19 @@
 **type**: `string[]`
 
-Notifier ids to alert when a run ends as a failure, as decided by
-[`failures`](/configuration/tasks/#failures). To stop or start alerts for an outcome (for example a
-missed run), change `failures`. To alert on other outcomes (a success, for
-example), add a [`[[route]]`](/notifications/routes/).
+Notifier ids to alert when a run counts as a failure (see
+[`failures`](/configuration/tasks/#failures)). A missed run is a failure by
+default, so it alerts here too.
 
 ```toml
 [tasks.backup-db]
 notify = ["slack-ops"]
 ```
 
-- Each id must be declared in a
-  [`[notifiers.<id>]`](/notifications/model/#notifiersid--declaring-a-channel)
-  block.
-- `[notify] global_notifiers` (default `["inapp"]`) is added to every list. Set
-  it to `[]` to turn that off.
-- Full details: [Per-task notifications](/notifications/per-task/).
+- Each entry is a notifier declared in `[notifiers.<id>]`, `"inapp"` (the bell),
+  or `"<id>:<target>"` to reuse a notifier's credentials with another target
+  (`"slack:#deploys"`, `"tg:-1009998887"`).
+- [`[notify] global_notifiers`](/configuration/notify/#global_notifiers)
+  (default `["inapp"]`) is added to every list.
+- `notify = []` is the same as leaving it out.
+- To alert on other outcomes (a success, for example), use a
+  [`[[route]]`](/configuration/routes/).
