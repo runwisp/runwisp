@@ -6,6 +6,7 @@ form as `chown` and Compose). RunWisp looks up the account at start, sets
 
 - Works only when the daemon runs as root. Otherwise the run fails.
 - Empty keeps the daemon's user.
+- Host processes only: it is an error on a compose unit.
 
 ```toml
 [tasks.backup-db]

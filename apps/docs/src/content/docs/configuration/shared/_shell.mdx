@@ -4,6 +4,7 @@ The shell for [`run`](/configuration/tasks/#run), as an absolute path. Use
 `/bin/bash` for arrays, `[[ ]]`, or `set -o pipefail`. It is started as
 `<shell> -e -c <script>`, so [fail-fast](/configuration/tasks/#fail-fast) works
 for POSIX shells. RunWisp warns at boot when it can't turn fail-fast on.
+Host processes only: it is an error on a compose unit.
 
 ```toml
 [tasks.nightly-report]

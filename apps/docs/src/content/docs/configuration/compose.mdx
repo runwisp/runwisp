@@ -302,8 +302,8 @@ docker compose -f <file> -p <project> [--profile ...] [--env-file ...]
     run --rm --no-deps --service-ports --use-aliases
         --name <project>_<svc>_<instance_index>
         [--pull always|missing|never]
-        -e RUNWISP_INSTANCE_INDEX=<i>
-        -e KEY=VAL ...                # your env + secrets overrides
+        -e RUNWISP_INSTANCE_INDEX
+        -e KEY ...                    # your env + secrets, values read from RunWisp's own environment
         <svc>
 ```
 

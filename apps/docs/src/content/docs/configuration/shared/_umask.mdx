@@ -5,6 +5,7 @@ The octal file-creation mask for the run: `"027"` makes new files `rw-r-----`.
 - Write at least three digits (`"022"`, not `"22"`).
 - It applies only to this run's process, not to other runs.
 - Empty keeps the daemon's umask.
+- Host processes only: it is an error on a compose unit.
 
 ```toml
 [tasks.backup-db]

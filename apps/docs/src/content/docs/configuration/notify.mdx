@@ -87,8 +87,8 @@ back:
 3. When the window ends, one **summary** covers what was held since the last
    check-in.
 
-A task failing every minute with the defaults sends at most one message every
-six minutes (`coalesce_window / coalesce_limit`).
+A task failing every minute with the defaults sends one message about every ten
+minutes (a check-in every 10th repeat).
 
 ```toml
 [notify]

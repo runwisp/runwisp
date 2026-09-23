@@ -87,7 +87,7 @@ files: they are listed with their schedule, but RunWisp doesn't start them, so
 nothing runs twice. At boot, a `HELD:` banner names them.
 
 - Held tasks show `⏸` in `runwisp status` and the TUI, a `held` badge in the
-  Web UI, and `held_by: "cron"` in the API.
+  Web UI, and `heldBy: "cron"` in the API.
 - `runwisp run <name>` still runs a held job by hand, so you can try it under
   RunWisp first.
 - `sudo runwisp takeover` ends the hold. If you stop cron some other way,

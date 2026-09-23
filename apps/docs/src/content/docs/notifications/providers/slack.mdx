@@ -75,10 +75,17 @@ Point `template_path` at your own Go template. Start from the built-in
 [`slack.tmpl.json`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/notify/render/defaults/slack.tmpl.json),
 which has the Block Kit layout and the sentence for each event. The template
 gets the whole event (task name, run id, exit code, end reason, time, output
-tail) and these helpers: `statusEmoji`, `statusVerb`, `humanTime`,
-`humanDuration`, `runDuration`, `triggerPhrase`, `eventSentence`,
-`eventTrigger`, `linkLabel`, `runURL`, `taskURL`, `outputTail`, and
-`fingerprint`.
+tail) and these helpers:
+
+- Event: `statusEmoji`, `statusVerb`, `humanTime`, `humanDuration`,
+  `runDuration`, `triggerPhrase`, `eventSentence`, `eventTrigger`, `linkLabel`,
+  `runURL`, `taskURL`, `outputTail`, `fingerprint`, and `emoji` (a Slack emoji
+  code for the event's severity).
+- Escaping: `jsonStr` (for a JSON string), `htmlEsc` (for HTML), and `tgEscape`
+  (for Telegram HTML).
+- Text: `upper`, `lower`, `trim`, and `timeRFC` (an RFC 3339 timestamp).
+
+Every template type gets the same helpers.
 
 ## What's rejected
 

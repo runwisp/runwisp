@@ -24,8 +24,8 @@ of every run. It runs on Linux, macOS, and WSL, on `x86_64` or `arm64`.
         ```
     </TabItem>
     <TabItem label="Bun / npm" icon="seti:javascript">
-        The npm package downloads the matching native binary the first time
-        it runs.
+        The npm package pulls in the matching native binary as an optional
+        dependency when it's installed.
 
         ```bash
         bunx runwisp              # try it without installing (or: npx runwisp)
@@ -132,8 +132,8 @@ All three ways use the same daemon and show up in the same run history.
         [TUI page](/getting-started/tui-tour/) lists the other keys.
     </TabItem>
     <TabItem label="Web UI" icon="laptop">
-        Open the Web UI (next step), click `hello` in the sidebar, and click
-        **Run Task**. The output streams into the log pane.
+        Open the Web UI (next step), click `hello` in the sidebar, click
+        **Run**, and confirm **Run Now**. The output streams into the log pane.
     </TabItem>
     <TabItem label="CLI" icon="cloud-download">
         ```bash

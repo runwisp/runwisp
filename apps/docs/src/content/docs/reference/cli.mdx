@@ -16,15 +16,16 @@ its own `--help`. Output is plain text when it isn't a terminal or when
 
 These work on every command. A flag beats its environment variable.
 
-| Flag             | Default               | Description                                                                                |
-| ---------------- | --------------------- | ------------------------------------------------------------------------------------------ |
-| `-c`, `--config` | `./runwisp.toml`      | Config file. Env: `RUNWISP_CONFIG`.                                                        |
-| `--data`         | `./.runwisp`          | State directory: SQLite database, run logs, socket. Env: `RUNWISP_DATA`.                   |
-| `--socket`       | `<data>/runwisp.sock` | [Control socket](#control-socket) path. Env: `RUNWISP_SOCKET`.                             |
-| `--host`         | `127.0.0.1`           | HTTP bind address; `0.0.0.0` for every interface. Env: `RUNWISP_HOST`.                     |
-| `-p`, `--port`   | `9477`                | HTTP port for the Web UI and REST API. Env: `RUNWISP_PORT`.                                |
-| `--log-level`    | `info`                | `debug`, `info`, `warn`, `error`. Env: `RUNWISP_LOG_LEVEL`.                                |
-| `--log-format`   | `auto`                | `auto`, `text`, `json`. See [Daemon log](/operations/logging/). Env: `RUNWISP_LOG_FORMAT`. |
+| Flag              | Default               | Description                                                                                |
+| ----------------- | --------------------- | ------------------------------------------------------------------------------------------ |
+| `-c`, `--config`  | `./runwisp.toml`      | Config file. Env: `RUNWISP_CONFIG`.                                                        |
+| `--data`          | `./.runwisp`          | State directory: SQLite database, run logs, socket. Env: `RUNWISP_DATA`.                   |
+| `--socket`        | `<data>/runwisp.sock` | [Control socket](#control-socket) path. Env: `RUNWISP_SOCKET`.                             |
+| `--host`          | `127.0.0.1`           | HTTP bind address; `0.0.0.0` for every interface. Env: `RUNWISP_HOST`.                     |
+| `-p`, `--port`    | `9477`                | HTTP port for the Web UI and REST API. Env: `RUNWISP_PORT`.                                |
+| `--log-level`     | `info`                | `debug`, `info`, `warn`, `error`. Env: `RUNWISP_LOG_LEVEL`.                                |
+| `--log-format`    | `auto`                | `auto`, `text`, `json`. See [Daemon log](/operations/logging/). Env: `RUNWISP_LOG_FORMAT`. |
+| `-v`, `--version` |                       | Print the RunWisp version and exit.                                                        |
 
 As root, `--config` defaults to `/etc/runwisp/runwisp.toml` and `--data` to
 `/var/lib/runwisp`, so `sudo runwisp reload` finds a daemon that root started.
