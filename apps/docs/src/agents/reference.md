@@ -94,7 +94,7 @@ timeout:             dur          — per-attempt wall-clock cap; unset = no tim
 jitter:              dur          — start-spread window inherited by cron tasks; off when unset (TASKS only)
 shell:               path =/bin/sh — interpreter for run scripts (absolute path); see FAIL-FAST
 stop_signal:         enum =SIGTERM — stop-ladder signal: SIGTERM|SIGINT|SIGQUIT|SIGHUP|SIGKILL|SIGUSR1|SIGUSR2
-failures:            []str        — outcomes classified as a failure (stats/UI/notify, and gates retry/restart); tokens are reason names (failed,timeout,crashed,log_overflow,start_failed,missed,stopped,…) or exit codes ("42","1-23"; 1..255). Default [failed,timeout,crashed,log_overflow,start_failed,missed]. is_failure = reason∈tokens OR (reason==failed AND exit∈ranges). Bare list replaces; all-+/- tokens ("-missed","+stopped") adjust the inherited set (task adjusts [defaults], [defaults] adjusts built-in); mixing bare & +/- rejected. exit 0 always success. retry_attempts/restart=on_failure fire only when reason∈{failed,timeout,crashed,log_overflow,start_failed} AND is_failure — narrowing failures narrows retry/restart; promoting stopped/missed never makes them retry
+failures:            []str        — outcomes classified as a failure (stats/UI/notify, and gates retry/restart); tokens are reason names (failed,timeout,crashed,log_overflow,start_failed,missed,stopped,daemon_stopped,skipped,queue_full,dst_skipped; not succeeded) or exit codes ("42","1-23"; 1..255). Default [failed,timeout,crashed,log_overflow,start_failed,missed]. is_failure = reason∈tokens OR (reason==failed AND exit∈ranges). Bare list replaces; all-+/- tokens ("-missed","+stopped") adjust the inherited set (task adjusts [defaults], [defaults] adjusts built-in); mixing bare & +/- rejected. exit 0 always success. retry_attempts/restart=on_failure fire only when reason∈{failed,timeout,crashed,log_overflow,start_failed} AND is_failure — narrowing failures narrows retry/restart; promoting stopped/missed never makes them retry
 log_max_size:        size =100mb  — per-run log cap (effective task default)
 log_on_full:         enum =drop_old — drop_new | drop_old | kill
 keep_runs:           int          — row-count retention; 0..1000000 (0 = keep none)
@@ -132,7 +132,7 @@ max_queued:        int  =100        — queued-run depth; 0..10000
 on_overlap:        enum =queue      — queue | skip | kill
 retry_attempts:    int  =0          — retries after a failed attempt; 0..100
 retry_delay:       dur  =5s         — delay between retries; 0s = no delay, kept literally if set
-retry_backoff:     enum             — constant | linear | exponential
+retry_backoff:     enum =constant   — constant | linear | exponential
 failures:          []str           — outcomes classified as a failure (inherits [defaults]); see [defaults].failures
 working_dir:       path             — process cwd; relative to runwisp.toml dir; ~ = home of whoever the
                                      task runs as (daemon's, or `user`'s — resolved at run time). Default: daemon cwd
@@ -160,12 +160,18 @@ env:               map<str,str>     — inline env (merged over defaults.env)
 env_file:          path             — dotenv file
 secrets:           map<str,str>     — inline secrets (merged over defaults.secrets); never shown in API/UI
 secrets_file:      path             — dotenv file merged beneath secrets; only the path is visible
+params:            []table          — per-run inputs (TASKS only, rejected on services); one [[tasks.<name>.params]] entry per input, exactly one
+                                     kind keyword: env=NAME | arg=NAME | option=--name | flag=--name. Also: default (any scalar; required if
+                                     required=true and cron is set), required bool, type=string(default)|number, choices=[]str, allow_custom bool
+                                     (needs choices), description string. Scheduled runs (cron/run_on_start/catch_up) use default; a retry uses the
+                                     original run's values; values are passed as real args/env, never pasted into the shell string. See
+                                     /configuration/tasks/#params
 notify: []string         — sugar → route on any classified failure (see failures); notifier ids, "id:override", or "inapp". Non-failure outcomes use an explicit [[route]].
 ```
 
 ### [services.&lt;name&gt;] (long-running)
 
-Not allowed (rejected by the strict loader): [`cron`](/configuration/tasks/#cron), [`timezone`](/configuration/tasks/#timezone), [`jitter`](/configuration/tasks/#jitter), [`run_on_start`](/configuration/tasks/#run_on_start), [`catch_up`](/configuration/tasks/#catch_up), [`on_overlap`](/configuration/tasks/#on_overlap), [`max_concurrent`](/configuration/tasks/#max_concurrent), [`max_queued`](/configuration/tasks/#max_queued), `retry_*`. Shares the core task keys (including [`restart_attempts`](/configuration/services/#restart_attempts), see above): [`group`](/configuration/tasks/#group) (default `Services`), [`description`](/configuration/tasks/#description), [`graceful_stop`](/configuration/tasks/#graceful_stop), [`stop_signal`](/configuration/tasks/#stop_signal), [`working_dir`](/configuration/tasks/#working_dir), [`shell`](/configuration/tasks/#shell), [`umask`](/configuration/tasks/#umask), [`env_base`](/configuration/tasks/#env_base), [`user`](/configuration/tasks/#user), [`failures`](/configuration/tasks/#failures), [`log_max_size`](/configuration/tasks/#log_max_size), [`log_on_full`](/configuration/tasks/#log_on_full), [`keep_runs`](/configuration/tasks/#keep_runs), [`keep_for`](/configuration/tasks/#keep_for), [`run`](/configuration/tasks/#run)/`compose_*`, [`env`](/configuration/tasks/#env)/[`env_file`](/configuration/tasks/#env_file), [`secrets`](/configuration/tasks/#secrets)/[`secrets_file`](/configuration/tasks/#secrets_file), [`notify`](/configuration/tasks/#notify), [`manual_trigger`](/configuration/tasks/#manual_trigger) (bool =true; here it gates manual stop/restart/start from CLI/API/UI/TUI/station instead of run-triggering). Service-only:
+Not allowed (rejected by the strict loader): [`cron`](/configuration/tasks/#cron), [`timezone`](/configuration/tasks/#timezone), [`jitter`](/configuration/tasks/#jitter), [`run_on_start`](/configuration/tasks/#run_on_start), [`catch_up`](/configuration/tasks/#catch_up), [`on_overlap`](/configuration/tasks/#on_overlap), [`max_concurrent`](/configuration/tasks/#max_concurrent), [`max_queued`](/configuration/tasks/#max_queued), `retry_*`, [`params`](/configuration/tasks/#params). Shares the core task keys (including [`restart_attempts`](/configuration/services/#restart_attempts), see above): [`group`](/configuration/tasks/#group) (default `Services`), [`description`](/configuration/tasks/#description), [`graceful_stop`](/configuration/tasks/#graceful_stop), [`stop_signal`](/configuration/tasks/#stop_signal), [`working_dir`](/configuration/tasks/#working_dir), [`shell`](/configuration/tasks/#shell), [`umask`](/configuration/tasks/#umask), [`env_base`](/configuration/tasks/#env_base), [`user`](/configuration/tasks/#user), [`failures`](/configuration/tasks/#failures), [`log_max_size`](/configuration/tasks/#log_max_size), [`log_on_full`](/configuration/tasks/#log_on_full), [`keep_runs`](/configuration/tasks/#keep_runs), [`keep_for`](/configuration/tasks/#keep_for), [`run`](/configuration/tasks/#run)/`compose_*`, [`env`](/configuration/tasks/#env)/[`env_file`](/configuration/tasks/#env_file), [`secrets`](/configuration/tasks/#secrets)/[`secrets_file`](/configuration/tasks/#secrets_file), [`notify`](/configuration/tasks/#notify), [`manual_trigger`](/configuration/tasks/#manual_trigger) (bool =true; here it gates manual stop/restart/start from CLI/API/UI/TUI/station instead of run-triggering). Service-only:
 
 ```
 restart:             enum =always     — never | on_failure | always
@@ -270,11 +276,14 @@ runwisp                      — no subcommand: attach TUI to running daemon, el
                                says so and offers the plain scaffold; those jobs are then held (see include_cron)
 runwisp daemon               — start headless daemon (no TUI)
 runwisp tui                  — attach a TUI to a running daemon
-runwisp validate             — validate runwisp.toml without starting anything
-runwisp list                 — list configured tasks and schedules
-runwisp status               — is the daemon alive?
+runwisp validate             — validate runwisp.toml without starting anything; --json for the structured document (see above)
+runwisp list                 — list configured tasks and schedules; --json for a machine-readable document
+runwisp status               — is the daemon alive?; --json for daemon health + every task's last run
 runwisp run <task>          — run a task and stream output;  --daemon (via running daemon) | --standalone (in-process), mutually exclusive
                              — --param key=value (repeatable) supplies task parameter values; a param not mentioned uses its declared default
+                             — --json prints the outcome as one JSON document on stdout once the run ends; log lines go to stderr instead
+                             — --url (env RUNWISP_URL) dispatches to a remote daemon over HTTP; --password (env RUNWISP_PASSWORD) authenticates it;
+                               --detach prints the run ID and exits without following the log stream (--url only)
 runwisp reload               — re-read runwisp.toml + reconcile live (== SIGHUP); validate-first, no run_on_start/catch-up
                              — prints the diff, then the newly-live config's warnings on `!` lines
                                (ReloadResult.warnings). Same set as boot / `validate` / status /
@@ -348,7 +357,7 @@ runwisp password             — print the daemon's ephemeral password (local so
 runwisp openapi              — print the OpenAPI 3.1 spec (JSON) to stdout
 runwisp schema               — print the runwisp.toml JSON Schema (draft 2020-12) to stdout; published at https://docs.runwisp.com/config.schema.json
 runwisp station              — start in station mode; --token --url --env-file(=.env) --no-tui
-runwisp demo                 — boot a throwaway, fully-populated instance; --station --token --url --env-file
+runwisp demo                 — boot a throwaway, fully-populated instance; --no-tui --seed-only --station --token --url --env-file
 runwisp service install      — install autostart; -y --print --dry-run --force --local --binary <path>
                              — DEFAULT scope is the system-wide singleton /etc/systemd/system/runwisp.service
                                (Linux, root, no fingerprint in the name). Refuses without root, naming
@@ -404,13 +413,12 @@ Read (GET):
 /api/daemon/log/stream                          daemon log (SSE)
 /api/tasks                                       list tasks
 /api/tasks/{task}                                one task
-/api/tasks/{task}/runs                           list runs for task
 /api/runs/{runId}                               one run
 /api/runs/{runId}/log                           log-lines page
 /api/runs/{runId}/log/raw                       full log download (text/plain)
 /api/runs/{runId}/log/stream                    run log (SSE)
 /api/tasks/{task}/log/search                     search log lines across runs
-/api/runs                                        list all runs
+/api/runs                                        list runs; filter with query params (taskName, status, triggeredBy, …), no separate per-task route
 /api/runs/summary                               aggregate run stats
 /api/events/stream                              run lifecycle + system + config-stale + notification events (SSE)
 /api/notifications                              in-app notifications

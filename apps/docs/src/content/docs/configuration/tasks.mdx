@@ -145,7 +145,7 @@ on_overlap = "queue"
 
 ### jitter
 
-**type**: `duration`
+**type**: `duration` **max**: `24h`
 
 The longest this task's start may be delayed so that jittered tasks with the
 same start time (like 03:00) run one after another instead of all at once. It
@@ -287,6 +287,8 @@ Possible values:
 - `linear`: [`retry_delay`](#retry_delay) times the attempt number (2s, 4s, 6s, 8s)
 - `exponential`: double each time (2s, 4s, 8s, 16s)
 
+The computed delay is capped at 5m, regardless of `retry_backoff`.
+
 ### graceful_stop
 
 <GracefulStop />
@@ -349,6 +351,9 @@ Possible values:
 - `missed`: a scheduled firing was skipped while the daemon was down
 - `stopped`: an operator stopped the run
 - `daemon_stopped`: still running when the daemon shut down
+- `skipped`: dropped because a run was already going under [`on_overlap = "skip"`](#on_overlap)
+- `queue_full`: dropped because the queue already held [`max_queued`](#max_queued) runs
+- `dst_skipped`: the second of two identical firings when the clock falls back for DST
 
 ## Logs & retention
 

@@ -178,9 +178,9 @@ lands there.
 
 Point `template_path` at your own Go template. Start from the built-in
 [`smtp.tmpl.html`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/notify/render/defaults/smtp.tmpl.html).
-It gets the whole event, the same helpers as the
-[Slack template](/notifications/providers/slack/#changing-the-message), and
-`htmlEsc`.
+It gets the whole event and the same helpers as the
+[Slack template](/notifications/providers/slack/#changing-the-message). Escape
+values with `htmlEsc`.
 
 ## What's rejected
 

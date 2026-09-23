@@ -95,7 +95,9 @@ catch_up = 1      # default: run the most recent missed one
 ```
 
 Use `0` for probes that only care about fresh data, and a higher number for
-jobs where each run handles its own slice of time. RunWisp counts missed runs
+jobs where each run handles its own slice of time. A value above `1` needs
+[`on_overlap = "queue"`](/configuration/tasks/#on_overlap), or the config is
+rejected. RunWisp counts missed runs
 from the task's last run, or from when it first saw the task, so a new install
 doesn't replay old history.
 

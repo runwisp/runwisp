@@ -26,10 +26,10 @@ shows the keys for whatever is focused.
 
 ## Layout
 
-The sidebar on the left starts with three pages (Home, Info, Debug), followed
-by your tasks and services, grouped by [`group`](/configuration/tasks/#group).
-`▸` marks what the right pane shows. Moving the cursor does nothing until you
-press <kbd>Enter</kbd>.
+The sidebar on the left starts with **Home**, followed by your tasks and
+services (grouped by [`group`](/configuration/tasks/#group)), then **Info**
+and **Debug** at the bottom. `▸` marks what the right pane shows. Moving the
+cursor does nothing until you press <kbd>Enter</kbd>.
 
 ## Home
 
@@ -65,10 +65,9 @@ opens a form if the task has [parameters](/concepts/parameters/).
 ## Following a run
 
 Press <kbd>Enter</kbd> on a run to open it. The log streams live, with line
-numbers, under a header with the run ID, start time, duration, status, and exit
-code.
+numbers, under a header with the run ID, start time, duration, and status.
 
-![TUI run detail for reindex-search: header with Back button, run ID, timestamp, duration, SUCCESS badge, and exit code; line-numbered log output below.](../../../assets/screenshots/tui-run-detail.png)
+![TUI run detail for reindex-search: header with Back button, run ID, timestamp, duration, and status badge; line-numbered log output below.](../../../assets/screenshots/tui-run-detail.png)
 
 - The log follows new lines. Scrolling up pauses that; <kbd>G</kbd> jumps back
   to the end and follows again.

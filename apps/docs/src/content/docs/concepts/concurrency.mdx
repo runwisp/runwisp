@@ -58,9 +58,11 @@ run        = "pg_dump app > /backups/app.sql"
 Use it when a missed run doesn't matter (a probe, a poll) or when two copies at
 once would do harm (two dumps writing the same file).
 
-A skipped run is not a failure. It doesn't send notifications, isn't retried,
-and doesn't count toward the failure rate. It still shows up in the history
-under its own status, so a task that keeps overlapping is easy to spot.
+By default a skipped run is not a failure, so it doesn't send notifications and
+doesn't count toward the failure rate ([`failures`](/configuration/tasks/#failures)
+can add `skipped` to change that). It is never retried, whatever `failures`
+says. It still shows up in the history under its own status, so a task that
+keeps overlapping is easy to spot.
 
 A manual start that gets skipped tells you so: the CLI, Web UI, and API report
 that the run was skipped.
