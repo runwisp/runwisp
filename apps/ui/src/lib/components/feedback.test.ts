@@ -6,6 +6,7 @@ import {
     FEEDBACK_URL,
     MIN_UPTIME_MS,
     SNOOZE_MS,
+    isPositive,
     parseStoredState,
     sendFeedback,
     shouldAutoOpen,
@@ -14,6 +15,15 @@ import {
 const NOW = 1_800_000_000_000;
 const up = (ms: number) => ({ startedAt: NOW - ms, now: NOW, checkUpdates: true });
 const fresh = { submitted: false };
+
+describe("isPositive", () => {
+    it("treats 4 and 5 as positive, 1 and 2 as not", () => {
+        expect(isPositive(5)).toBe(true);
+        expect(isPositive(4)).toBe(true);
+        expect(isPositive(2)).toBe(false);
+        expect(isPositive(1)).toBe(false);
+    });
+});
 
 describe("shouldAutoOpen", () => {
     it("waits for an hour of uptime", () => {
