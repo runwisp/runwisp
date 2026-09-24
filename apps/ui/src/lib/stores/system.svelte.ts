@@ -33,6 +33,10 @@ function createSystemStore() {
     // heard back from concierge; false/empty until then and when the check is off.
     let updateAvailable = $state(false);
     let latestVersion = $state("");
+    // Gate the feedback card: check_updates off keeps the dashboard from talking
+    // to concierge at all; startedAt (epoch ms) drives its one-hour uptime wait.
+    let checkUpdates = $state(false);
+    let startedAt = $state(0);
 
     let subscribed = false;
     let unsubscribes: (() => void)[] = [];
@@ -76,7 +80,10 @@ function createSystemStore() {
             stationEnabled = info.stationEnabled;
             schedulingActive = info.schedulingActive;
             updateAvailable = info.updateAvailable;
-            latestVersion = info.latestVersion ?? "";
+            latestVersion = info.latestVersion;
+            checkUpdates = info.checkUpdates;
+            const started = Date.parse(info.startedAt);
+            startedAt = Number.isNaN(started) ? 0 : started;
         } catch (err) {
             if (err instanceof AuthRequiredError) return;
             // silent — system stats are secondary
@@ -171,6 +178,12 @@ function createSystemStore() {
         },
         get latestVersion() {
             return latestVersion;
+        },
+        get checkUpdates() {
+            return checkUpdates;
+        },
+        get startedAt() {
+            return startedAt;
         },
         init,
         disconnect,

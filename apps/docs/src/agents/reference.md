@@ -34,7 +34,7 @@ allow_station_dispatch: bool =false — accept peer-dispatched ad-hoc shell/cont
 shutdown_timeout:     dur  =10s   — SIGTERM→SIGKILL drain budget for in-flight runs on shutdown
 timezone:             IANA string =host system zone — TZ for cron eval when a task pins none
 external_url:         string      — public Web UI base for notification deep-links; absolute http(s) w/ host
-check_updates:        bool =true  — poll concierge.runwisp.com for a newer release; shows an indicator, never auto-updates; false = fully offline
+check_updates:        bool =true  — poll concierge.runwisp.com for a newer release; shows an indicator, never auto-updates; also gates the Web UI feedback prompt; false = fully offline
 metrics_enabled:      bool =false — master switch for /metrics
 metrics_listen:       host:port   — dedicated metrics listener; setting it enables metrics on its own
 trusted_proxies:      []string    — CIDR allowlist of reverse proxies whose X-Forwarded-For is trusted; catch-all

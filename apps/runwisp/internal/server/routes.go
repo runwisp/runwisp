@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/runwisp/runwisp/internal/server/auth"
 	"github.com/runwisp/runwisp/internal/ui"
+	"github.com/runwisp/runwisp/internal/update"
 	"github.com/runwisp/runwisp/internal/version"
 	"github.com/sebest/xff"
 )
@@ -123,9 +124,11 @@ func securityHeaders(next http.Handler) http.Handler {
 		// this header too would intersect with the meta and break the app (the
 		// header can't carry the per-build hashes). This header covers everything
 		// else and applies to non-HTML responses (JSON/SSE) that carry no meta.
+		// concierge.runwisp.com is the Web UI feedback card's endpoint; the
+		// browser only calls it when the operator presses Submit.
 		w.Header().Set("Content-Security-Policy",
 			"img-src 'self' data:; "+
-				"connect-src 'self' ws: wss:; "+
+				"connect-src 'self' ws: wss: "+update.DefaultBaseURL+"; "+
 				"font-src 'self'; "+
 				"object-src 'none'; "+
 				"base-uri 'self'; "+

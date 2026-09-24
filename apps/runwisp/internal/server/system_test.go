@@ -5,6 +5,8 @@ package server
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -62,6 +64,25 @@ func TestHumaGetInfo(t *testing.T) {
 	out, err := srv.humaGetInfo(context.Background(), &struct{}{})
 	require.NoError(t, err)
 	assert.Equal(t, "test-fp", out.Body.Fingerprint)
+}
+
+// The Web UI's feedback card waits for an hour of uptime, counted from startedAt;
+// it must be the same instant /api/system's uptime counts from.
+func TestHumaGetInfo_StartedAtIsTheStatsStartTime(t *testing.T) {
+	start := time.Date(2026, 9, 23, 10, 0, 0, 0, time.UTC)
+	srv := &Server{stats: newStatsProvider(&model.DaemonInfo{}, start)}
+	out, err := srv.humaGetInfo(context.Background(), &struct{}{})
+	require.NoError(t, err)
+	assert.Equal(t, start, out.Body.StartedAt)
+}
+
+// The feedback card posts from the browser straight to concierge, so the CSP
+// must allow that one origin and nothing broader.
+func TestSecurityHeaders_ConnectSrcAllowsConcierge(t *testing.T) {
+	rec := httptest.NewRecorder()
+	securityHeaders(http.NotFoundHandler()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	assert.Contains(t, rec.Header().Get("Content-Security-Policy"),
+		"connect-src 'self' ws: wss: https://concierge.runwisp.com;")
 }
 
 // TestHumaGetInfo_TasksComeFromTheLiveRegistry is the reporting half of the cron

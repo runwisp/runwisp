@@ -2,9 +2,14 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import { Globe, TriangleAlert } from "@lucide/svelte";
+    import { Globe, MessageSquareHeart, TriangleAlert } from "@lucide/svelte";
     import { formatDuration, Popover, StatusDot, type StatusDotTone } from "@runwisp/ui";
-    import { connectionStore, systemStore, type ConnectionStatus } from "$lib/stores";
+    import {
+        connectionStore,
+        feedbackStore,
+        systemStore,
+        type ConnectionStatus,
+    } from "$lib/stores";
     import { appEventStream } from "$lib/stores/app-stream.svelte";
     import { stalledCopy } from "$lib/utils/connection-copy";
 
@@ -145,6 +150,17 @@
 {#if status === "connected" || status === "stalled"}
     <div class="flex items-center gap-3 border-t p-4 {theme.container}" title={theme.title}>
         {@render body()}
+        {#if status === "connected" && systemStore.checkUpdates && !feedbackStore.open}
+            <button
+                type="button"
+                title="Send feedback"
+                aria-label="Send feedback"
+                class="ml-auto shrink-0 rounded-[3px] p-1 text-on-surface-faint hover:bg-surface-sunken hover:text-primary"
+                onclick={feedbackStore.show}
+            >
+                <MessageSquareHeart size={14} />
+            </button>
+        {/if}
     </div>
 {:else}
     <button

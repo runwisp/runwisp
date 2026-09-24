@@ -94,6 +94,7 @@ func (srv *Server) humaGetInfo(ctx context.Context, input *struct{}) (*DaemonInf
 	if srv.updateStatus != nil {
 		info.UpdateAvailable, info.LatestVersion = srv.updateStatus()
 	}
+	info.StartedAt = srv.stats.startTime
 	return &DaemonInfoOutput{Body: info}, nil
 }
 

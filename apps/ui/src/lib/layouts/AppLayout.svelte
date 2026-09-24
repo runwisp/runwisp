@@ -9,6 +9,7 @@
     import AuthDisabledBadge from "$lib/components/AuthDisabledBadge.svelte";
     import StationModeBadge from "$lib/components/StationModeBadge.svelte";
     import ConnectionStatusIndicator from "$lib/components/ConnectionStatusIndicator.svelte";
+    import FeedbackCard from "$lib/components/FeedbackCard.svelte";
     import HeaderSearch from "$lib/components/HeaderSearch.svelte";
     import NotificationBell from "$lib/components/NotificationBell.svelte";
     import StaleConfigBanner from "$lib/components/StaleConfigBanner.svelte";
@@ -209,6 +210,7 @@
             {/if}
         </div>
 
+        <FeedbackCard />
         <ConnectionStatusIndicator />
     </aside>
 
