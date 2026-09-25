@@ -593,7 +593,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Restart all instances of a service */
+        /**
+         * Restart all instances of a service, or a task's run
+         * @description For a service: bounces every instance (starting it if it was stopped). For a task: cancels any active run, waits for it to end, then triggers exactly one fresh run.
+         */
         post: operations["restartTask"];
         delete?: never;
         options?: never;
@@ -621,6 +624,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{taskName}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a service, or trigger a task
+         * @description For a service: un-parks it (if operator-stopped) and fills empty instance slots; already-running instances are left alone. For a task: triggers a run, unless one is already active or queued, in which case this is a no-op.
+         */
+        post: operations["startTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{taskName}/stop": {
         parameters: {
             query?: never;
@@ -631,8 +654,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Stop a service for the daemon's lifetime
-         * @description Cancels every live instance and marks the service stopped. The supervisor stops refilling slots until a restart is issued or the daemon is restarted.
+         * Stop a service for the daemon's lifetime, or a task's runs
+         * @description For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing.
          */
         post: operations["stopTask"];
         delete?: never;
@@ -3055,7 +3078,10 @@ export interface operations {
     };
     restartTask: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Declares the caller for run provenance when this starts a fresh task run: 'ui' (Web UI / TUI) or 'cli' (runwisp start/restart). Omit for a plain API call. Ignored for services. */
+                via?: "ui" | "cli" | "";
+            };
             header?: never;
             path: {
                 /** @description Task name */
@@ -3114,6 +3140,39 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Run"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    startTask: {
+        parameters: {
+            query?: {
+                /** @description Declares the caller for run provenance when this starts a fresh task run: 'ui' (Web UI / TUI) or 'cli' (runwisp start/restart). Omit for a plain API call. Ignored for services. */
+                via?: "ui" | "cli" | "";
+            };
+            header?: never;
+            path: {
+                /** @description Task name */
+                taskName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
