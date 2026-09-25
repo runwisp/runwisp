@@ -2,21 +2,28 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
+    import type { Component, Snippet } from "svelte";
     import Modal from "./Modal.svelte";
     import Button from "./Button.svelte";
-
-    type AlertVariant = "danger" | "warning" | "info";
+    import type { ButtonVariant } from "./button-styles.js";
 
     interface Props {
         open?: boolean;
         title: string;
         description?: string | undefined;
+        size?: "sm" | "md" | "lg" | "xl" | "full";
         confirmLabel?: string;
         cancelLabel?: string;
-        variant?: AlertVariant;
-        onConfirm?: () => void;
+        confirmVariant?: ButtonVariant;
+        confirmDisabled?: boolean;
+        confirmIcon?: Component<{ size?: number }>;
+        /** May be async: the dialog shows a spinner and closes once it resolves.
+         *  If it throws, the dialog stays open so the caller can surface the error. */
+        onConfirm?: () => void | Promise<void>;
         onCancel?: () => void;
-        loading?: boolean;
+        children?: Snippet;
+        /** Replaces the default Cancel / Confirm buttons. */
+        footer?: Snippet;
         class?: string;
     }
 
@@ -24,40 +31,71 @@
         open = $bindable(false),
         title,
         description,
+        size = "sm",
         confirmLabel = "Confirm",
         cancelLabel = "Cancel",
-        variant = "danger",
+        confirmVariant = "danger",
+        confirmDisabled = false,
+        confirmIcon: ConfirmIcon,
         onConfirm,
         onCancel,
-        loading = false,
+        children,
+        footer: footerProp,
         class: className = "",
     }: Props = $props();
 
-    const confirmVariantMap: Record<AlertVariant, "danger" | "primary"> = {
-        danger: "danger",
-        warning: "primary",
-        info: "primary",
-    };
+    let confirming = $state(false);
+
+    async function handleConfirm() {
+        if (confirming) return;
+        confirming = true;
+        try {
+            await onConfirm?.();
+            open = false;
+        } finally {
+            confirming = false;
+        }
+    }
 
     function handleCancel() {
+        if (confirming) return;
         open = false;
         onCancel?.();
     }
-
-    function handleConfirm() {
-        onConfirm?.();
-    }
 </script>
 
-<Modal bind:open {title} {description} size="sm" closable onClose={handleCancel} class={className}>
+{#snippet confirmIconSnippet()}
+    {#if ConfirmIcon}<ConfirmIcon size={16} />{/if}
+{/snippet}
+
+<Modal
+    bind:open
+    {title}
+    {description}
+    {size}
+    closable={!confirming}
+    onClose={handleCancel}
+    {children}
+    class={className}
+>
     {#snippet footer()}
-        <div class="flex items-center justify-end gap-3">
-            <Button variant="secondary" onclick={handleCancel} disabled={loading}>
-                {cancelLabel}
-            </Button>
-            <Button variant={confirmVariantMap[variant]} onclick={handleConfirm} {loading}>
-                {confirmLabel}
-            </Button>
-        </div>
+        {#if footerProp}
+            {@render footerProp()}
+        {:else}
+            <div class="flex items-center justify-end gap-3">
+                <Button variant="secondary" onclick={handleCancel} disabled={confirming}>
+                    {cancelLabel}
+                </Button>
+                <Button
+                    variant={confirmVariant}
+                    loading={confirming}
+                    disabled={confirming || confirmDisabled}
+                    onclick={() => void handleConfirm()}
+                    icon={ConfirmIcon ? confirmIconSnippet : undefined}
+                >
+                    {confirmLabel}
+                </Button>
+            </div>
+        {/if}
     {/snippet}
 </Modal>

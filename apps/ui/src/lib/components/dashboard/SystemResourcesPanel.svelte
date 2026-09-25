@@ -2,9 +2,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import Badge from "@runwisp/ui/components/Badge.svelte";
-    import Card from "@runwisp/ui/components/Card.svelte";
-    import { formatBytes, Sparkline } from "@runwisp/ui";
+    import { formatBytes, Sparkline, Badge, Card } from "@runwisp/ui";
     import type { MetricsSample } from "$lib/api";
     import type { DaemonStats } from "@runwisp/ui";
 

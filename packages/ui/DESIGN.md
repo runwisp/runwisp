@@ -151,6 +151,26 @@ inline — there is no duration scale to reach for.
 
 ## When in doubt
 
-Match `/Users/riki137/boxes/website/src/styles/app.css` (the `.btn`, `.pane`, `.nav`,
-`.eyebrow`, `.codebox` classes) — it is the canonical visual. But express it through the
-semantic tokens above, never by copying its raw hex values into a component.
+The tokens in `theme-tokens.css` are the canonical palette for every RunWisp surface
+(dashboard, Station, docs, runwisp.com). For composition, runwisp.com's
+`src/styles/app.css` (`.btn`, `.pane`, `.nav`, `.eyebrow`, `.codebox`) is the reference.
+Express it through the semantic tokens above, never by copying raw hex into a component.
+
+## Consumers
+
+- **Import from the barrel** (`import { Button } from "@runwisp/ui"`). Deep
+  `@runwisp/ui/components/*` imports are rejected by `@runwisp/eslint-config/svelte`.
+- **No colours of your own.** An app stylesheet maps or composes `--rw-*` tokens
+  (`color-mix()` for tints); it never redefines them or adds hex. The exceptions are
+  places that need literal values (email templates, Satori OG images, Expressive Code
+  themes), and those name the token they mirror.
+- **Fonts come with the tokens.** `theme-tokens.css` @imports TASA Orbiter and Geist Mono.
+  Don't load another mono.
+- **Icons are `@lucide/svelte`.** Brand marks (the RunWisp logo) come from `Logo` or
+  `@runwisp/ui/assets/runwisp-logo.svg`.
+- **Theme is `.dark` on `<html>`** (Starlight: `data-theme`), persisted under
+  `localStorage["runwisp:theme"]` as `auto | light | dark`. Use `ThemeToggle` / `themeStore`.
+- **Astro sites** (runwisp.com, docs) share `@runwisp/ui/astro/SiteFooter.astro`. It is
+  plain scoped CSS, so it works without Tailwind.
+- **Promote, don't fork.** If two apps need the same component, it belongs here. A
+  one-app component stays in that app.

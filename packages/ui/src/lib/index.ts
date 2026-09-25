@@ -33,7 +33,7 @@ export { default as FormField } from "./components/FormField.svelte";
 export { default as Input } from "./components/Input.svelte";
 export { default as Radio } from "./components/Radio.svelte";
 export { default as RadioGroup } from "./components/RadioGroup.svelte";
-export { default as Select } from "./components/Select.svelte";
+export { default as Select, type SelectOption } from "./components/Select.svelte";
 export { default as Textarea } from "./components/Textarea.svelte";
 export { default as TimezoneSelect } from "./components/TimezoneSelect.svelte";
 export { default as Toggle } from "./components/Toggle.svelte";
@@ -47,9 +47,25 @@ export { default as Avatar } from "./components/Avatar.svelte";
 export { default as Badge } from "./components/Badge.svelte";
 export { default as Card } from "./components/Card.svelte";
 export { default as DataGrid } from "./components/DataGrid.svelte";
+export type { Column, DataGridProps } from "./components/DataGrid.svelte";
+export { default as FilterBar } from "./components/FilterBar.svelte";
+export { default as FilterPill } from "./components/FilterPill.svelte";
+export { default as SearchInput } from "./components/SearchInput.svelte";
+export {
+    fieldKeys,
+    fieldLabel,
+    isBlank,
+    isFieldActive,
+    seedValues,
+    type FilterField,
+    type FilterValues,
+    type TableQuery,
+} from "./components/filter-spec.js";
+export { applyFilters, matchesQuery, resolvePath } from "./utils/filter.js";
 export { default as Progress } from "./components/Progress.svelte";
 export { default as Skeleton } from "./components/Skeleton.svelte";
 export { default as Sparkline } from "./components/Sparkline.svelte";
+export { default as StatusDot, type StatusDotTone } from "./components/StatusDot.svelte";
 export { default as StatusIndicator } from "./components/StatusIndicator.svelte";
 export { default as Table } from "./components/Table.svelte";
 export { default as TableBody } from "./components/TableBody.svelte";
@@ -64,9 +80,11 @@ export { default as Dropdown } from "./components/Dropdown.svelte";
 export { default as EmptyState } from "./components/EmptyState.svelte";
 export { default as ErrorState } from "./components/ErrorState.svelte";
 export { default as Modal } from "./components/Modal.svelte";
+export { default as NotificationBell } from "./components/NotificationBell.svelte";
 export { default as Popover } from "./components/Popover.svelte";
 export { default as ToastContainer } from "./components/ToastContainer.svelte";
 export { default as Tooltip } from "./components/Tooltip.svelte";
+export { default as ThemeToggle } from "./components/ThemeToggle.svelte";
 
 export { default as CodeBlock } from "./components/CodeBlock.svelte";
 export { default as TaskCard } from "./components/TaskCard.svelte";
@@ -118,6 +136,12 @@ export { humanizeCron, type HumanizedCron } from "./components/dashboard/cron-fo
 export type { DaemonState, DaemonStats } from "./components/dashboard/types.js";
 
 export { toast, type Toast, type ToastType } from "./utils/toast.svelte.js";
+export {
+    themeStore,
+    THEME_STORAGE_KEY,
+    type ThemePreference,
+    type ResolvedTheme,
+} from "./utils/theme.svelte.js";
 export { extractErrorMessage } from "./utils/error.js";
 export {
     formatBytes,
@@ -128,4 +152,5 @@ export {
     formatFullDateTime,
 } from "./utils/format.js";
 export { formatShortId } from "./utils/id.js";
+export { debounce } from "./utils/debounce.js";
 export { TickingNow } from "./utils/ticking-now.svelte.js";

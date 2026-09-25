@@ -3,15 +3,10 @@
 
 <script lang="ts">
     import { ArrowRight, Box, Search } from "@lucide/svelte";
-    import Badge from "@runwisp/ui/components/Badge.svelte";
-    import EmptyState from "@runwisp/ui/components/EmptyState.svelte";
-    import Input from "@runwisp/ui/components/Input.svelte";
-    import Select from "@runwisp/ui/components/Select.svelte";
-    import Tooltip from "@runwisp/ui/components/Tooltip.svelte";
     import ComposeBadge from "../ComposeBadge.svelte";
     import TaskHeldBadge from "../TaskHeldBadge.svelte";
     import TaskSourceBadge from "../TaskSourceBadge.svelte";
-    import { getRunStatusConfig } from "@runwisp/ui";
+    import { getRunStatusConfig, Badge, EmptyState, Input, Select, Tooltip } from "@runwisp/ui";
     import type {
         OverviewTaskFilter,
         OverviewTaskSortKey,

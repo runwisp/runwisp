@@ -1,0 +1,52 @@
+---
+// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// Starlight's own footer (edit link, last updated, prev/next), then the brand
+// footer shared with runwisp.com. Links are absolute: they point at the
+// marketing site, which owns the canonical set in its src/lib/site.ts.
+import Default from "@astrojs/starlight/components/Footer.astro";
+import SiteFooter, { type FooterColumn } from "@runwisp/ui/astro/SiteFooter.astro";
+
+const SITE = "https://runwisp.com";
+const GITHUB = "https://github.com/runwisp/runwisp";
+
+const columns: FooterColumn[] = [
+    {
+        title: "Product",
+        links: [
+            { label: "Website", href: SITE },
+            { label: "Blog", href: `${SITE}/blog/` },
+            { label: "Privacy", href: `${SITE}/privacy/` },
+            { label: "Security", href: `${SITE}/security/` },
+        ],
+    },
+    {
+        title: "Docs",
+        links: [
+            { label: "Quick Start", href: "/getting-started/quick-start/" },
+            { label: "Configuration", href: "/configuration/overview/" },
+            { label: "CLI", href: "/reference/cli/" },
+        ],
+    },
+    {
+        title: "Project",
+        links: [
+            { label: "GitHub", href: GITHUB, external: true },
+            { label: "Releases", href: `${GITHUB}/releases`, external: true },
+            { label: "Changelog", href: `${GITHUB}/blob/main/CHANGELOG.md`, external: true },
+        ],
+    },
+];
+---
+
+<Default />
+<SiteFooter {columns} homeHref={SITE}>
+    <p>The open-source cron replacement and process supervisor with a dashboard built in.</p>
+    <Fragment slot="bottom">
+        <span>© PoppyCake, s.r.o.</span><span class="sep">·</span>
+        <span>Open-source</span><span class="sep">·</span>
+        <a href={SITE}>runwisp.com</a><span class="sep">·</span>
+        <span title="Made in Europe">🇪🇺 Made in Europe</span>
+    </Fragment>
+</SiteFooter>

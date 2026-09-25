@@ -3,10 +3,7 @@
 
 <script lang="ts">
     import type { TaskParam } from "@runwisp/common";
-    import FormField from "@runwisp/ui/components/FormField.svelte";
-    import Input from "@runwisp/ui/components/Input.svelte";
-    import Select from "@runwisp/ui/components/Select.svelte";
-    import Checkbox from "@runwisp/ui/components/Checkbox.svelte";
+    import { FormField, Input, Select, Checkbox } from "@runwisp/ui";
     import {
         isComboParam,
         paramIncluded,

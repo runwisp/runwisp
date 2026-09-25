@@ -25,7 +25,21 @@ export function createSvelteConfig({ svelteConfig, extraIgnores = [] }) {
             languageOptions: {
                 globals: { ...globals.browser, ...globals.node },
             },
-            rules: { "no-undef": "off" },
+            rules: {
+                "no-undef": "off",
+                // One import style for the shared library: the barrel.
+                "no-restricted-imports": [
+                    "error",
+                    {
+                        patterns: [
+                            {
+                                group: ["@runwisp/ui/components/*"],
+                                message: 'Import from "@runwisp/ui" instead.',
+                            },
+                        ],
+                    },
+                ],
+            },
         },
         {
             files: ["**/*.ts"],

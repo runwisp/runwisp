@@ -3,17 +3,13 @@
 
 <script lang="ts">
     import { Play, Square, RefreshCcw } from "@lucide/svelte";
-    import Button from "@runwisp/ui/components/Button.svelte";
-    import Modal from "@runwisp/ui/components/Modal.svelte";
-    import Alert from "@runwisp/ui/components/Alert.svelte";
     import { SvelteMap } from "svelte/reactivity";
     import { isService, type Task, type Run } from "@runwisp/common";
     import type { LogEvent, LogSlice, RunsListFilters, RunOutputMatch } from "@runwisp/ui";
-    import { RunsList, RunDetailPanel } from "@runwisp/ui";
+    import { RunsList, RunDetailPanel, Button, Modal, Alert, AlertDialog } from "@runwisp/ui";
     import { tasksApi } from "$lib/api";
     import { headerSearchStore } from "$lib/stores";
     import { createRunActions } from "$lib/utils/run-actions";
-    import ConfirmActionModal from "./ConfirmActionModal.svelte";
     import ParamForm from "./ParamForm.svelte";
 
     let {
@@ -400,19 +396,19 @@
     {/snippet}
 </Modal>
 
-<ConfirmActionModal
+<AlertDialog
     bind:open={stopConfirmOpen}
     title="Stop Run"
     description="Stop the current run of {task.name}?"
     confirmLabel="Stop Now"
-    variant="danger"
-    icon={Square}
+    confirmVariant="danger"
+    confirmIcon={Square}
     onConfirm={() => {
         if (onStop && selectedRun) onStop(selectedRun.id);
     }}
 />
 
-<ConfirmActionModal
+<AlertDialog
     bind:open={restartConfirmOpen}
     title={serviceStopped ? "Start Service" : "Restart Service"}
     description={serviceStopped
@@ -421,18 +417,18 @@
           ? `Cancel and restart all ${instanceCount} instances of ${task.name}?`
           : `Cancel and restart ${task.name}?`}
     confirmLabel={serviceStopped ? "Start Now" : "Restart Now"}
-    variant="primary"
-    icon={serviceStopped ? Play : RefreshCcw}
+    confirmVariant="primary"
+    confirmIcon={serviceStopped ? Play : RefreshCcw}
     onConfirm={() => onRestart?.()}
 />
 
-<ConfirmActionModal
+<AlertDialog
     bind:open={stopServiceConfirmOpen}
     title="Stop Service"
     description={`Stop ${task.name}? The daemon will not restart it until you click Restart or the daemon itself restarts.`}
     confirmLabel="Stop Now"
-    variant="danger"
-    icon={Square}
+    confirmVariant="danger"
+    confirmIcon={Square}
     onConfirm={() => onStopService?.()}
 />
 

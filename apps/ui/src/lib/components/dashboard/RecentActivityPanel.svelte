@@ -3,9 +3,13 @@
 
 <script lang="ts">
     import { ArrowRight, RotateCcwClock } from "@lucide/svelte";
-    import Card from "@runwisp/ui/components/Card.svelte";
-    import EmptyState from "@runwisp/ui/components/EmptyState.svelte";
-    import { getRunStatusConfig, runDisplayStatus, instanceSuffix } from "@runwisp/ui";
+    import {
+        getRunStatusConfig,
+        runDisplayStatus,
+        instanceSuffix,
+        Card,
+        EmptyState,
+    } from "@runwisp/ui";
     import type { Run } from "@runwisp/common";
     import {
         formatRunDurationLabel,

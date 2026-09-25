@@ -17,7 +17,7 @@
         size?: ButtonSize;
         fullWidth?: boolean;
         loading?: boolean;
-        icon?: Snippet;
+        icon?: Snippet | undefined;
         iconRight?: Snippet;
         children?: Snippet;
     }

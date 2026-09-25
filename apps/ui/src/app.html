@@ -11,10 +11,14 @@
         <title>RunWisp</title>
         <script>
             // Apply the persisted theme before first paint to avoid a flash of the
-            // wrong theme. Keep the key/logic in sync with stores/theme.svelte.ts.
+            // wrong theme. Keep the key/logic in sync with @runwisp/ui's theme.svelte.ts
+            // ("runwisp-theme" is the pre-shared-store key).
             (function () {
                 try {
-                    var p = localStorage.getItem("runwisp-theme") || "auto";
+                    var p =
+                        localStorage.getItem("runwisp:theme") ||
+                        localStorage.getItem("runwisp-theme") ||
+                        "auto";
                     var dark =
                         p === "dark" ||
                         (p === "auto" &&

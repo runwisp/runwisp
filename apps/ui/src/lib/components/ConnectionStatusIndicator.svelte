@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import { Globe, TriangleAlert } from "@lucide/svelte";
-    import { formatDuration, Popover } from "@runwisp/ui";
+    import { formatDuration, Popover, StatusDot, type StatusDotTone } from "@runwisp/ui";
     import { connectionStore, systemStore, type ConnectionStatus } from "$lib/stores";
     import { appEventStream } from "$lib/stores/app-stream.svelte";
     import { stalledCopy } from "$lib/utils/connection-copy";
@@ -14,8 +14,8 @@
         title: string;
         labelColor: string;
         subtitleColor: string;
-        dot: string;
-        ping: string | null;
+        tone: StatusDotTone;
+        pulse: boolean;
     }
 
     const THEMES: Record<ConnectionStatus, Theme> = {
@@ -25,8 +25,8 @@
             title: "Connected to the runner API",
             labelColor: "text-on-surface-muted",
             subtitleColor: "text-on-surface-muted",
-            dot: "bg-success-surface",
-            ping: "bg-success-surface",
+            tone: "success",
+            pulse: true,
         },
         connecting: {
             label: "Connecting",
@@ -34,8 +34,8 @@
             title: "Attempting to reach the runner API",
             labelColor: "text-warning-soft-text",
             subtitleColor: "text-warning-soft-text",
-            dot: "bg-warning-surface",
-            ping: "bg-warning-surface",
+            tone: "warning",
+            pulse: true,
         },
         disconnected: {
             label: "Offline",
@@ -43,8 +43,8 @@
             title: "Click to retry connecting to the runner API",
             labelColor: "text-danger-soft-text",
             subtitleColor: "text-danger-soft-text",
-            dot: "bg-danger-surface",
-            ping: null,
+            tone: "danger",
+            pulse: false,
         },
         stalled: {
             label: "Updates paused",
@@ -52,8 +52,8 @@
             title: "",
             labelColor: "text-warning-soft-text",
             subtitleColor: "text-warning-soft-text",
-            dot: "bg-warning-surface",
-            ping: null,
+            tone: "warning",
+            pulse: false,
         },
     };
 
@@ -79,14 +79,7 @@
 </script>
 
 {#snippet body()}
-    <div class="relative flex h-2 w-2 shrink-0">
-        {#if theme.ping}
-            <span
-                class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 {theme.ping}"
-            ></span>
-        {/if}
-        <span class="relative inline-flex h-2 w-2 rounded-full {theme.dot}"></span>
-    </div>
+    <StatusDot tone={theme.tone} pulse={theme.pulse} />
     <div class="flex min-w-0 flex-col">
         <span class="font-mono text-xs font-medium {theme.labelColor}">{theme.label}</span>
         <span class="flex items-center gap-1 font-mono text-2xs {theme.subtitleColor}">

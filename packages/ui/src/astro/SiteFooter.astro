@@ -2,46 +2,164 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
+// Brand footer shared by runwisp.com and docs.runwisp.com. Plain scoped CSS on
+// --rw-* tokens (no Tailwind) so it renders the same under Starlight, which
+// only loads theme-tokens.css.
+import logoSvg from "../lib/assets/runwisp-logo.svg?raw";
+
+export interface FooterLink {
+    label: string;
+    href: string;
+    external?: boolean;
+}
+
+export interface FooterColumn {
+    title: string;
+    links: FooterLink[];
+}
+
 interface Props {
-    tagline?: string;
+    columns: FooterColumn[];
+    homeHref?: string;
+    wordmark?: string;
     class?: string;
 }
 
-const { tagline = "Built by operators, for operators.", class: className = "" } =
-    Astro.props;
-
-const hasTeaser = Astro.slots.has("teaser");
-const hasColumns = Astro.slots.has("columns");
-const hasBadges = Astro.slots.has("badges");
+const { columns, homeHref = "/", wordmark = "RunWisp", class: className = "" } = Astro.props;
 ---
 
-<footer class:list={["bg-surface-sunken border-t border-outline", className]}>
-    <div class="mx-auto max-w-6xl px-6 py-12">
-        {
-            hasTeaser && (
-                <div class="bg-surface-raised mb-10 rounded-[4px] border border-outline p-6 shadow-sm">
-                    <slot name="teaser" />
-                </div>
-            )
-        }
-        {
-            hasColumns && (
-                <div class="grid gap-8 font-mono sm:grid-cols-2 lg:grid-cols-4 [&_a]:block [&_a]:text-on-surface-muted [&_a]:[&_a:hover]:text-primary [&_h4]:mb-3 [&_h4]:text-xs [&_h4]:font-medium [&_h4]:uppercase [&_h4]:tracking-[0.16em] [&_h4]:text-on-surface-faint [&_h4]:before:mr-1.5 [&_h4]:before:content-['──']">
-                    <slot name="columns" />
-                </div>
-            )
-        }
-        <div
-            class="text-on-surface-muted mt-10 flex flex-col items-start justify-between gap-4 border-t border-outline-faint pt-6 font-mono text-xs sm:flex-row sm:items-center"
-        >
-            <p>{tagline}</p>
+<footer class:list={["rw-ft", className]}>
+    <div class="rw-ft-wrap">
+        <div class="rw-ft-grid" style={`--rw-ft-cols: ${columns.length}`}>
+            <div class="rw-ft-brand">
+                <a class="rw-ft-mark" href={homeHref}
+                    ><span class="rw-ft-logo" aria-hidden="true" set:html={logoSvg} />
+                    {wordmark}</a
+                >
+                <slot />
+            </div>
             {
-                hasBadges && (
-                    <div class="flex flex-wrap items-center gap-3">
-                        <slot name="badges" />
+                columns.map((column) => (
+                    <div class="rw-ft-col">
+                        <h4>{column.title}</h4>
+                        {column.links.map((link) => (
+                            <a
+                                href={link.href}
+                                target={link.external ? "_blank" : undefined}
+                                rel={link.external ? "noopener noreferrer" : undefined}
+                            >
+                                {link.label}
+                            </a>
+                        ))}
                     </div>
-                )
+                ))
             }
         </div>
+        {
+            Astro.slots.has("bottom") && (
+                <div class="rw-ft-bottom">
+                    <slot name="bottom" />
+                </div>
+            )
+        }
     </div>
 </footer>
+
+<style>
+    .rw-ft {
+        border-top: 1px solid var(--rw-outline);
+        margin-top: 30px;
+        padding: 52px 0 0;
+        color: var(--rw-on-surface);
+        font-family: var(--rw-font-sans);
+        /* Container, not viewport: under Starlight the footer sits in the
+         * content column, not the full page width. */
+        container-type: inline-size;
+    }
+    /* Slotted content (blurb, bottom bar) doesn't carry this component's scope,
+     * so these reach it via :global, wrapped in :where() to stay at element
+     * specificity: any consumer class (e.g. a teaser paragraph) wins. */
+    :global(:where(.rw-ft) a) {
+        color: inherit;
+        text-decoration: none;
+    }
+    .rw-ft-wrap {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 0 clamp(20px, 5vw, 40px);
+    }
+    .rw-ft-grid {
+        display: grid;
+        grid-template-columns: 1.6fr repeat(var(--rw-ft-cols), 1fr);
+        gap: 30px;
+    }
+    @container (max-width: 780px) {
+        .rw-ft-grid {
+            grid-template-columns: 1fr 1fr;
+        }
+    }
+    .rw-ft-mark {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin-bottom: 14px;
+        font-weight: 700;
+        font-size: 18px;
+        letter-spacing: -0.02em;
+    }
+    .rw-ft-logo {
+        display: inline-flex;
+        width: 21px;
+        height: 21px;
+        color: var(--rw-primary);
+    }
+    .rw-ft-logo :global(svg) {
+        width: 100%;
+        height: 100%;
+    }
+    :global(:where(.rw-ft-brand) p) {
+        margin: 0;
+        color: var(--rw-on-surface-muted);
+        font-size: 13.5px;
+        max-width: 30ch;
+    }
+    .rw-ft-col h4 {
+        margin: 0 0 14px;
+        font-family: var(--rw-font-mono);
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.1em;
+        text-transform: lowercase;
+        color: var(--rw-on-surface-faint);
+    }
+    .rw-ft-col h4::before {
+        content: "── ";
+    }
+    .rw-ft-col a {
+        display: block;
+        padding: 4px 0;
+        font-family: var(--rw-font-mono);
+        font-size: 13.5px;
+        color: var(--rw-on-surface-muted);
+        transition: color 0.15s;
+    }
+    .rw-ft-col a:hover,
+    :global(:where(.rw-ft) a:hover) {
+        color: var(--rw-primary);
+    }
+    .rw-ft-bottom {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 14px;
+        align-items: center;
+        margin-top: 44px;
+        padding: 16px 0;
+        border-top: 1px solid var(--rw-outline);
+        font-family: var(--rw-font-mono);
+        font-size: 12px;
+        color: var(--rw-on-surface-faint);
+    }
+    .rw-ft-bottom :global(.sep) {
+        opacity: 0.4;
+    }
+</style>
