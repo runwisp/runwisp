@@ -6,6 +6,9 @@
     import DataGrid from "$lib/components/DataGrid.svelte";
     import StatusIndicator from "$lib/components/StatusIndicator.svelte";
     import Dropdown from "$lib/components/Dropdown.svelte";
+    import FilterBar from "$lib/components/FilterBar.svelte";
+    import { seedValues } from "$lib/components/filter-spec.js";
+    import { applyFilters } from "$lib/utils/filter.js";
     import { Play, Pause, Trash2, SquarePen } from "@lucide/svelte";
 
     const { Story } = defineMeta({
@@ -14,8 +17,10 @@
         tags: ["autodocs"],
     });
 
+    const nameColumn = { key: "name", label: "Task Name", sortable: true };
+
     const columns = [
-        { key: "name", label: "Task Name", sortable: true },
+        nameColumn,
         { key: "schedule", label: "Schedule" },
         { key: "lastRun", label: "Last Run", sortable: true },
         { key: "status", label: "Status" },
@@ -72,6 +77,31 @@
         { divider: true },
         { label: "Delete", icon: Trash2, danger: true },
     ];
+
+    /** @type {import("$lib/components/filter-spec.js").FilterField[]} */
+    const filterFields = [
+        { type: "search", key: "q", fields: ["name", "schedule"], placeholder: "Search tasks..." },
+        {
+            type: "select",
+            key: "status",
+            label: "Status",
+            primary: true,
+            options: [
+                { value: "all", label: "All" },
+                { value: "success", label: "Success" },
+                { value: "failed", label: "Failed" },
+                { value: "running", label: "Running" },
+            ],
+        },
+    ];
+</script>
+
+<script>
+    let filterValues = $state(seedValues(filterFields));
+    /** @type {any[]} */
+    let selected = $state([]);
+    let clicked = $state("");
+    const filtered = $derived(applyFilters(tasks, filterFields, filterValues));
 </script>
 
 {#snippet statusCell(/** @type {any} */ row)}
@@ -114,6 +144,39 @@
 />
 
 <Story name="Paginated" args={{ columns, data: tasks, paginate: true, pageSize: 2 }} />
+
+<Story name="Filters, Sort, Selection, Pagination" asChild>
+    <div class="flex flex-col gap-3">
+        <FilterBar fields={filterFields} bind:values={filterValues} />
+        <DataGrid
+            {columns}
+            data={filtered}
+            selectable
+            bind:selectedRows={selected}
+            sortKey="name"
+            sortDirection="asc"
+            paginate
+            pageSize={3}
+            pageSizeOptions={[3, 5, 10]}
+            onRowClick={(row) => (clicked = row.name)}
+            emptyMessage="No tasks match these filters"
+        />
+        <p class="font-mono text-xs text-on-surface-muted">
+            selected: {selected.map((r) => r.name).join(", ") || "none"} · last row click: {clicked ||
+                "none"}
+        </p>
+    </div>
+</Story>
+
+<Story name="Bare With Footer, No Header" asChild>
+    <div class="rounded-[4px] border border-outline">
+        <DataGrid columns={[nameColumn]} data={tasks} bare showHeader={false}>
+            {#snippet footer()}
+                <button class="font-mono text-xs text-primary hover:underline">Load more</button>
+            {/snippet}
+        </DataGrid>
+    </div>
+</Story>
 
 <Story name="Striped" args={{ columns, data: tasks, striped: true }} />
 
