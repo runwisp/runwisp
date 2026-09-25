@@ -47,6 +47,21 @@ export { default as Avatar } from "./components/Avatar.svelte";
 export { default as Badge } from "./components/Badge.svelte";
 export { default as Card } from "./components/Card.svelte";
 export { default as DataGrid } from "./components/DataGrid.svelte";
+export type { Column, DataGridProps } from "./components/DataGrid.svelte";
+export { default as FilterBar } from "./components/FilterBar.svelte";
+export { default as FilterPill } from "./components/FilterPill.svelte";
+export { default as SearchInput } from "./components/SearchInput.svelte";
+export {
+    fieldKeys,
+    fieldLabel,
+    isBlank,
+    isFieldActive,
+    seedValues,
+    type FilterField,
+    type FilterValues,
+    type TableQuery,
+} from "./components/filter-spec.js";
+export { applyFilters, matchesQuery, resolvePath } from "./utils/filter.js";
 export { default as Progress } from "./components/Progress.svelte";
 export { default as Skeleton } from "./components/Skeleton.svelte";
 export { default as Sparkline } from "./components/Sparkline.svelte";
@@ -136,4 +151,5 @@ export {
     formatFullDateTime,
 } from "./utils/format.js";
 export { formatShortId } from "./utils/id.js";
+export { debounce } from "./utils/debounce.js";
 export { TickingNow } from "./utils/ticking-now.svelte.js";
