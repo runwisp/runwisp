@@ -290,10 +290,16 @@ runwisp reload               — re-read runwisp.toml + reconcile live (== SIGHU
                                GET /api/daemon's config_warnings, re-derived per request so a reload's
                                replace boot's. A crontab job include_cron skipped is NOT a task
                                change — it only appears here.
-runwisp restart              — stop + fresh start (applies restart-only settings, re-fires run_on_start/catch-up); delegates to systemd/launchd if service-installed; --local to pin the per-user unit
-runwisp restart <service>    — restart ONE service via the local socket (starts it if stopped); daemon untouched, never delegates to systemd. Unknown name → suggestions; a task name → error (use `run`)
+runwisp start <target...>    — start one or more tasks/services via the local socket (or --url); target = name or quoted glob ('*' = all controllable);
+                                service: un-parks + fills empty slots, running instances untouched; task: triggers a run, no-op if one is already active/queued
+runwisp restart              — stop + fresh start the daemon (applies restart-only settings, re-fires run_on_start/catch-up); delegates to systemd/launchd if service-installed; --local to pin the per-user unit
+runwisp restart <target...>  — restart one or more tasks/services via the local socket (or --url); target = name or quoted glob; daemon untouched, never delegates to systemd
+                                service: bounces every instance (starts it if stopped); task: cancels the active run, waits for it to end, triggers exactly one fresh run (409 if it doesn't drain in time)
 runwisp stop                 — shut the daemon down (delegates to systemd/launchd if service-installed); --local to pin the per-user unit
-runwisp stop <service>       — stop ONE service via the local socket; daemon keeps running, never delegates to systemd
+runwisp stop <target...>     — stop one or more tasks/services/run IDs via the local socket (or --url); target = name, quoted glob, or a run ULID; daemon keeps running, never delegates to systemd
+                                service: cancels every instance, stops refilling slots; task: cancels the active run and drops anything queued, cron schedule keeps firing; run ID: stops just that run
+runwisp start/restart/stop   — a target locked with manual_trigger=false 403s when named directly; a glob silently skips it. --url (env RUNWISP_URL) + --password (env RUNWISP_PASSWORD) dispatch to a remote daemon,
+                                same CHAP login/session cache as `run --url`. Multiple targets: each is attempted, failures print per-target and roll up into "N of M targets failed"
 runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output --write --force --dry-run --quiet --system
 runwisp import supervisord [FILE...] — convert supervisord config to runwisp.toml; -o/--output --write --force --dry-run --quiet
 runwisp import systemd [UNIT...] — convert systemd .service units to runwisp.toml; -o/--output --write --force --dry-run --quiet
@@ -430,9 +436,10 @@ Trigger / stop / mutate runs (POST/DELETE — never touches definitions):
 
 ```
 POST   /api/daemon/reload                        re-read runwisp.toml + reconcile live task set (validate-first; reads from disk, never edits definitions)
-POST   /api/tasks/{task}/run                     trigger a new run
-POST   /api/tasks/{task}/stop                    stop service (for daemon lifetime)
-POST   /api/tasks/{task}/restart                 restart all service instances
+POST   /api/tasks/{task}/run                     trigger a new run (tasks only)
+POST   /api/tasks/{task}/start                   service: un-park + fill empty slots; task: trigger a run unless one is already active/queued (no-op then)
+POST   /api/tasks/{task}/stop                    service: stop for daemon lifetime; task: cancel active run + drop anything queued (cron schedule untouched)
+POST   /api/tasks/{task}/restart                 service: restart all instances; task: cancel active run, wait for it to end, trigger exactly one fresh run (409 if it doesn't drain in time)
 POST   /api/runs/{runId}/stop                   stop a running task
 DELETE /api/runs/{runId}                        delete a run
 POST   /api/runs/bulk/stop                       stop runs by selector

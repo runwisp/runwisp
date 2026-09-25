@@ -226,29 +226,59 @@ runwisp reload
 Re-reads `runwisp.toml` and applies task and service changes without a restart.
 Same as `SIGHUP`. See [Reload & restart](/operations/reload/).
 
+### `runwisp start`
+
+```bash
+runwisp start <target...>
+runwisp start web worker
+runwisp start 'batch-*'
+```
+
+Starts one or more tasks or services on a running daemon. A target is a task
+name, a service name, or a quoted shell glob matched against both (`'*'` for
+everything). For a service, this un-parks it (clearing a `runwisp stop` or a
+give-up) and fills empty instance slots; already-running instances are left
+alone. For a task, this triggers a run — unless one is already active or
+queued, in which case it's a no-op. It never prints a run ID; use
+`runwisp run --detach` when you need one.
+
+| Flag         | Description                                             |
+| ------------ | ------------------------------------------------------- |
+| `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`. |
+| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.          |
+
 ### `runwisp restart`
 
 ```bash
 runwisp restart
-runwisp restart <service>
+runwisp restart <target...>
+runwisp restart web 'batch-*'
 ```
 
 With no argument, restarts the daemon. Needed for settings a reload can't apply
 (see [Reload & restart](/operations/reload/)). Installed as a service, the
 restart goes through systemd or launchd.
 
-With a service name, restarts every instance of that service, or starts it if
-it's stopped. The daemon keeps running.
+With one or more targets (task names, service names, or quoted globs matched
+against both), restarts just those without touching the daemon. For a
+service, every instance is bounced — starting one that was stopped. For a
+task, the active run is cancelled, RunWisp waits for it to actually end, then
+triggers exactly one fresh run. A glob silently skips a target locked with
+`manual_trigger = false`; naming one directly is rejected.
 
-| Flag      | Description                                                         |
-| --------- | ------------------------------------------------------------------- |
-| `--local` | Use the per-user unit when both a system and a per-user unit exist. |
+| Flag         | Description                                                         |
+| ------------ | ------------------------------------------------------------------- |
+| `--local`    | Use the per-user unit when both a system and a per-user unit exist. |
+| `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`.             |
+| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                      |
 
 ### `runwisp stop`
 
 ```bash
 runwisp stop
-runwisp stop <service>
+runwisp stop <target...>
+runwisp stop web '*'
+runwisp stop 01J8Z3K9QK6VN8XG2R5F7T1C4M
 ```
 
 With no argument, stops the daemon. Running tasks get
@@ -256,12 +286,18 @@ With no argument, stops the daemon. Running tasks get
 Installed as a service, the stop goes through systemd or launchd; the unit stays
 enabled.
 
-With a service name, stops that service until you `runwisp restart` it. The
-daemon keeps running.
+With one or more targets — task names, service names, quoted globs matched
+against both, or a run ID — stops just those; the daemon keeps running. For a
+service, every live instance is cancelled and its slots stop refilling until a
+`runwisp start`/`restart` or a daemon restart. For a task, the active run is
+cancelled and anything queued is dropped, but its cron schedule keeps firing.
+A run ID stops just that run, wherever it came from.
 
-| Flag      | Description                                                         |
-| --------- | ------------------------------------------------------------------- |
-| `--local` | Use the per-user unit when both a system and a per-user unit exist. |
+| Flag         | Description                                                         |
+| ------------ | ------------------------------------------------------------------- |
+| `--local`    | Use the per-user unit when both a system and a per-user unit exist. |
+| `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`.             |
+| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                      |
 
 ## Migrating
 
