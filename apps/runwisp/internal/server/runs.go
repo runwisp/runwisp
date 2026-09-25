@@ -130,10 +130,21 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	}, srv.humaTriggerRun)
 
 	huma.Register(protectedAPI, huma.Operation{
+		OperationID:   "startTask",
+		Method:        http.MethodPost,
+		Path:          "/api/tasks/{taskName}/start",
+		Summary:       "Start a service, or trigger a task",
+		Description:   "For a service: un-parks it (if operator-stopped) and fills empty instance slots; already-running instances are left alone. For a task: triggers a run, unless one is already active or queued, in which case this is a no-op.",
+		Tags:          []string{"Runs"},
+		DefaultStatus: http.StatusNoContent,
+	}, srv.humaStartTask)
+
+	huma.Register(protectedAPI, huma.Operation{
 		OperationID:   "restartTask",
 		Method:        http.MethodPost,
 		Path:          "/api/tasks/{taskName}/restart",
-		Summary:       "Restart all instances of a service",
+		Summary:       "Restart all instances of a service, or a task's run",
+		Description:   "For a service: bounces every instance (starting it if it was stopped). For a task: cancels any active run, waits for it to end, then triggers exactly one fresh run.",
 		Tags:          []string{"Runs"},
 		DefaultStatus: http.StatusNoContent,
 	}, srv.humaRestartTask)
@@ -142,8 +153,8 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 		OperationID:   "stopTask",
 		Method:        http.MethodPost,
 		Path:          "/api/tasks/{taskName}/stop",
-		Summary:       "Stop a service for the daemon's lifetime",
-		Description:   "Cancels every live instance and marks the service stopped. The supervisor stops refilling slots until a restart is issued or the daemon is restarted.",
+		Summary:       "Stop a service for the daemon's lifetime, or a task's runs",
+		Description:   "For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing.",
 		Tags:          []string{"Runs"},
 		DefaultStatus: http.StatusNoContent,
 	}, srv.humaStopTask)
@@ -311,16 +322,23 @@ func (srv *Server) humaTriggerRun(ctx context.Context, input *TriggerRunInput) (
 	return &RunOutput{Body: *run}, nil
 }
 
-func (srv *Server) humaRestartTask(ctx context.Context, input *TaskNameInput) (*struct{}, error) {
-	if err := srv.runService.RestartService(input.TaskName); err != nil {
-		return nil, mapDomainError(ctx, err, "Failed to restart service")
+func (srv *Server) humaStartTask(ctx context.Context, input *TaskControlInput) (*struct{}, error) {
+	if err := srv.runService.StartTask(ctx, input.TaskName, viaToTriggeredBy(input.Via)); err != nil {
+		return nil, mapDomainError(ctx, err, "Failed to start task")
+	}
+	return nil, nil
+}
+
+func (srv *Server) humaRestartTask(ctx context.Context, input *TaskControlInput) (*struct{}, error) {
+	if err := srv.runService.RestartTask(ctx, input.TaskName, viaToTriggeredBy(input.Via)); err != nil {
+		return nil, mapDomainError(ctx, err, "Failed to restart task")
 	}
 	return nil, nil
 }
 
 func (srv *Server) humaStopTask(ctx context.Context, input *TaskNameInput) (*struct{}, error) {
-	if err := srv.runService.StopService(input.TaskName); err != nil {
-		return nil, mapDomainError(ctx, err, "Failed to stop service")
+	if err := srv.runService.StopTask(input.TaskName); err != nil {
+		return nil, mapDomainError(ctx, err, "Failed to stop task")
 	}
 	return nil, nil
 }

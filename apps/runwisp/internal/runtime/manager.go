@@ -29,6 +29,7 @@ const (
 	PersistenceChannelSize = 1024
 	errTaskNotFoundFmt     = "task not found: %s"
 	errTaskNotServiceFmt   = "task %s is not a service"
+	errTaskIsServiceFmt    = "task %s is a service, not a task"
 )
 
 // serviceHealthPollInterval is how often WaitServiceHealthy re-checks a
@@ -856,6 +857,30 @@ func (m *defaultTaskManager) StartServiceInstances(taskName string, triggeredBy 
 	return nil
 }
 
+// StartService un-parks a service StopService stopped (or clears a FATAL
+// instance left over from a give-up) and brings it back up to its desired
+// instance count. Unlike StartServiceInstances alone — which no-ops on an
+// operator-stopped service by design — this clears the stop/FATAL flags
+// first, so it also covers "start" for a service that was never running.
+// Already-live instances are left untouched; nothing is cancelled.
+func (m *defaultTaskManager) StartService(taskName string) error {
+	m.mu.Lock()
+	ts, exists := m.tasks[taskName]
+	if !exists {
+		m.mu.Unlock()
+		return fmt.Errorf(errTaskNotFoundFmt, taskName)
+	}
+	if !ts.task.Kind.IsService() {
+		m.mu.Unlock()
+		return fmt.Errorf(errTaskNotServiceFmt, taskName)
+	}
+	ts.supervisor.MarkRunning()
+	ts.stoppedByRemoval = false
+	m.mu.Unlock()
+
+	return m.StartServiceInstances(taskName, model.TriggeredByAPI)
+}
+
 // RestartServiceInstances brings a service back to its desired instance count.
 // If the service was operator-stopped or had FATAL instances, the stop/FATAL
 // flags are cleared and the empty slots are spawned with a fresh start-retry
@@ -1395,6 +1420,46 @@ func (m *defaultTaskManager) GetActiveRunCount(taskName string) int {
 		return 0
 	}
 	return len(ts.active)
+}
+
+// StopTask cancels every active run of a non-service task and discards
+// anything still queued, so nothing starts back up right behind the stop —
+// only in-flight/queued executions are cut short; the task's cron schedule
+// (and TOML definition) is untouched. Idempotent: a task with nothing
+// running or queued succeeds as a no-op, mirroring StopService. Cancelled
+// runs end with ReasonStopped, which is outside retry/restart eligibility
+// (see runtime/retry.IsFailedExecution), so a stop never races its own
+// automatic re-run.
+func (m *defaultTaskManager) StopTask(taskName string) error {
+	// A run orphaned out of the queue below may be tracked in-flight by the
+	// jitter gate, and its terminal event must not publish while m.mu is still
+	// held (see TriggerRunWithOptions/UpsertTask), so both happen after
+	// m.mu.Unlock (LIFO defer order).
+	var orphanedRuns []*model.Run
+	defer func() {
+		for _, r := range orphanedRuns {
+			m.gate.onComplete(r.ID)
+			m.publishTerminal(events.EventRunFailed, r)
+		}
+	}()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	ts, exists := m.tasks[taskName]
+	if !exists {
+		return fmt.Errorf(errTaskNotFoundFmt, taskName)
+	}
+	if ts.task.Kind.IsService() {
+		return fmt.Errorf(errTaskIsServiceFmt, taskName)
+	}
+	for _, ar := range ts.active {
+		ar.Cancel()
+	}
+	if ts.cond != nil {
+		orphanedRuns = m.finalizeOrphanedQueue(ts)
+		ts.cond.Broadcast()
+	}
+	return nil
 }
 
 // TerminateRun cancels a running task by ID.

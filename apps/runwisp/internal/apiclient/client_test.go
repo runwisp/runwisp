@@ -445,31 +445,32 @@ func TestNewUnix_DialsSocket(t *testing.T) {
 	assert.Equal(t, 7.0, stats.CPUUsage)
 }
 
-func TestRestartService(t *testing.T) {
+func TestRestartTask(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, "/api/tasks/my-task/restart", r.URL.Path)
+		assert.Equal(t, "cli", r.URL.Query().Get("via"))
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.RestartService(t.Context(), "my-task")
+	err := c.RestartTask(t.Context(), "my-task", "cli")
 	assert.NoError(t, err)
 }
 
-func TestRestartService_Error(t *testing.T) {
+func TestRestartTask_Error(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 	}))
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.RestartService(t.Context(), "missing-task")
+	err := c.RestartTask(t.Context(), "missing-task", "cli")
 	assert.Error(t, err)
 }
 
-func TestStopService(t *testing.T) {
+func TestStopTask(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, "/api/tasks/my-task/stop", r.URL.Path)
@@ -478,19 +479,33 @@ func TestStopService(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.StopService(t.Context(), "my-task")
+	err := c.StopTask(t.Context(), "my-task")
 	assert.NoError(t, err)
 }
 
-func TestStopService_Unauthorized(t *testing.T) {
+func TestStopTask_Unauthorized(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer srv.Close()
 
 	c := New(srv.URL, "")
-	err := c.StopService(t.Context(), "my-task")
+	err := c.StopTask(t.Context(), "my-task")
 	assert.ErrorIs(t, err, ErrUnauthorized)
+}
+
+func TestStartTask(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/api/tasks/my-task/start", r.URL.Path)
+		assert.Equal(t, "cli", r.URL.Query().Get("via"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "")
+	err := c.StartTask(t.Context(), "my-task", "cli")
+	assert.NoError(t, err)
 }
 
 func TestDeleteRun(t *testing.T) {

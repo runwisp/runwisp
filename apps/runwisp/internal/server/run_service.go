@@ -22,10 +22,14 @@ var (
 	ErrRunNotFound           = errors.New("run not found")
 	ErrNotRunning            = errors.New("run is not currently running")
 	ErrServiceNotRunnable    = errors.New("services cannot be triggered; use the restart endpoint")
-	ErrNotAService           = errors.New("task is not a service")
 	ErrCannotDeleteActiveRun = errors.New("cannot delete a run that is still pending or running; stop it first")
 	ErrInvalidSelector       = errors.New("invalid run selector")
 	ErrInvalidParams         = errors.New("invalid parameters")
+	// ErrRestartDidNotDrain means a task's active run(s) didn't end within its
+	// graceful-stop window (plus restartDrainGrace) after RestartTask's StopTask
+	// call, so it gave up rather than trigger a fresh run alongside a
+	// still-dying one.
+	ErrRestartDidNotDrain = errors.New("previous run did not stop in time")
 )
 
 func wrapSelectorErr(err error) error {
@@ -219,15 +223,13 @@ func (s *runService) awaitTerminal(ctx context.Context, run *model.Run, terminal
 	}
 }
 
-// resolveServiceTask looks up a service task and checks the two preconditions
-// RestartService and StopService both require, so the pair can't drift apart.
-func (s *runService) resolveServiceTask(taskName string) (*model.Task, error) {
+// resolveControllableTask looks up a task or service and checks the
+// manual_trigger lock that StartTask, StopTask, and RestartTask all share
+// regardless of kind, so the trio can't drift apart.
+func (s *runService) resolveControllableTask(taskName string) (*model.Task, error) {
 	task, exists := s.tasks.Get(taskName)
 	if !exists {
 		return nil, ErrTaskNotFound
-	}
-	if !task.Kind.IsService() {
-		return nil, ErrNotAService
 	}
 	if !task.ManuallyControllable() {
 		return nil, ErrManualTriggerDisabled
@@ -235,18 +237,97 @@ func (s *runService) resolveServiceTask(taskName string) (*model.Task, error) {
 	return task, nil
 }
 
-func (s *runService) RestartService(taskName string) error {
-	if _, err := s.resolveServiceTask(taskName); err != nil {
+// StartTask starts a service or triggers a task. A service un-parks (if
+// operator-stopped) and fills empty instance slots; already-running instances
+// are left alone. A task with a run already active or queued no-ops instead
+// of piling up a second execution; otherwise it triggers exactly one fresh
+// run, identical to TriggerRun.
+func (s *runService) StartTask(ctx context.Context, taskName string, triggeredBy model.TriggeredBy) error {
+	task, err := s.resolveControllableTask(taskName)
+	if err != nil {
 		return err
 	}
-	return s.taskManager.RestartServiceInstances(taskName)
+	if task.Kind.IsService() {
+		return s.taskManager.StartService(taskName)
+	}
+	// ponytail: GetActiveRunCount only counts ts.active, not a PolicyQueue
+	// task's ts.queue, so a queued run mid-handoff to a freed slot can read as
+	// 0 for an instant. Worst case here is a redundant queued run in that
+	// narrow window — not worth a dedicated queued-count method for it.
+	if s.taskManager.GetActiveRunCount(taskName) > 0 {
+		return nil
+	}
+	_, err = s.TriggerRun(ctx, taskName, nil, triggeredBy)
+	return err
 }
 
-func (s *runService) StopService(taskName string) error {
-	if _, err := s.resolveServiceTask(taskName); err != nil {
+// StopTask cancels a service's live instances or a task's active and queued
+// runs. Neither touches the task's schedule — only in-flight executions are
+// cut short.
+func (s *runService) StopTask(taskName string) error {
+	task, err := s.resolveControllableTask(taskName)
+	if err != nil {
 		return err
 	}
-	return s.taskManager.StopService(taskName)
+	if task.Kind.IsService() {
+		return s.taskManager.StopService(taskName)
+	}
+	return s.taskManager.StopTask(taskName)
+}
+
+// restartDrainPollInterval is how often RestartTask polls GetActiveRunCount
+// while waiting for a task's stopped run(s) to actually end, mirroring the
+// shutdown drain poll in cmd/runwisp/daemon_lifecycle.go's waitServiceDrained.
+// A var (not const) so tests can shrink it instead of burning wall-clock time.
+var restartDrainPollInterval = 50 * time.Millisecond
+
+// restartDrainGrace pads a task's configured graceful-stop window so
+// RestartTask's wait outlives the executor's own kill-after-timeout path
+// instead of racing it. A var (not const) so tests can shrink it.
+var restartDrainGrace = 5 * time.Second
+
+// RestartTask restarts a service's instances or, for a task, stops its active
+// runs, waits for them to actually end, then triggers exactly one fresh run —
+// done server-side so a concurrency=skip policy can't swallow the new trigger
+// racing the old run's teardown.
+func (s *runService) RestartTask(ctx context.Context, taskName string, triggeredBy model.TriggeredBy) error {
+	task, err := s.resolveControllableTask(taskName)
+	if err != nil {
+		return err
+	}
+	if task.Kind.IsService() {
+		return s.taskManager.RestartServiceInstances(taskName)
+	}
+	if err := s.taskManager.StopTask(taskName); err != nil {
+		return err
+	}
+	if err := s.awaitDrain(ctx, taskName, task.GracefulStopValue()+restartDrainGrace); err != nil {
+		return err
+	}
+	_, err = s.TriggerRun(ctx, taskName, nil, triggeredBy)
+	return err
+}
+
+// awaitDrain blocks until taskName has no active runs, ctx is cancelled, or
+// timeout elapses (returning ErrRestartDidNotDrain in the last case).
+func (s *runService) awaitDrain(ctx context.Context, taskName string, timeout time.Duration) error {
+	if s.taskManager.GetActiveRunCount(taskName) == 0 {
+		return nil
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(restartDrainPollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if s.taskManager.GetActiveRunCount(taskName) == 0 {
+				return nil
+			}
+		case <-waitCtx.Done():
+			return ErrRestartDidNotDrain
+		}
+	}
 }
 
 func (s *runService) DeleteRun(ctx context.Context, runID string) error {

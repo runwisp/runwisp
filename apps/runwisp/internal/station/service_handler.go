@@ -109,7 +109,11 @@ func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControlMes
 	action, _ := message.Action.Value().(string)
 	switch action {
 	case "start":
-		err = h.taskManager.StartServiceInstances(taskName, model.TriggeredByStation)
+		// StartService (not StartServiceInstances): the control plane's "start"
+		// means un-park it if the operator (or an earlier control message)
+		// stopped it — StartServiceInstances alone is a no-op on a stopped
+		// service by design, which would silently swallow this request.
+		err = h.taskManager.StartService(taskName)
 	case "stop":
 		err = h.taskManager.StopService(taskName)
 	case "restart":

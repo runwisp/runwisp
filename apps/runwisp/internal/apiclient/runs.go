@@ -98,13 +98,31 @@ func (c *Client) TriggerRun(ctx context.Context, taskName string, params map[str
 	return &run, nil
 }
 
-// RestartService restarts every instance of a service task.
-func (c *Client) RestartService(ctx context.Context, taskName string) error {
-	return c.doJSON(ctx, "POST", fmt.Sprintf("/api/tasks/%s/restart", taskName), nil, nil)
+// StartTask starts a service (un-parking it and filling empty instance
+// slots) or triggers a task (no-op if a run is already active or queued).
+// via is the same run-provenance label TriggerRun takes; pass "" for none.
+func (c *Client) StartTask(ctx context.Context, taskName, via string) error {
+	path := fmt.Sprintf("/api/tasks/%s/start", taskName)
+	if via != "" {
+		path += "?via=" + url.QueryEscape(via)
+	}
+	return c.doJSON(ctx, "POST", path, nil, nil)
 }
 
-// StopService stops a service for the lifetime of the daemon.
-func (c *Client) StopService(ctx context.Context, taskName string) error {
+// RestartTask restarts every instance of a service, or stops a task's active
+// run, waits for it to end, and triggers exactly one fresh run. via is the
+// same run-provenance label TriggerRun takes; pass "" for none.
+func (c *Client) RestartTask(ctx context.Context, taskName, via string) error {
+	path := fmt.Sprintf("/api/tasks/%s/restart", taskName)
+	if via != "" {
+		path += "?via=" + url.QueryEscape(via)
+	}
+	return c.doJSON(ctx, "POST", path, nil, nil)
+}
+
+// StopTask stops a service for the lifetime of the daemon, or cancels a
+// task's active runs and drops anything queued.
+func (c *Client) StopTask(ctx context.Context, taskName string) error {
 	return c.doJSON(ctx, "POST", fmt.Sprintf("/api/tasks/%s/stop", taskName), nil, nil)
 }
 

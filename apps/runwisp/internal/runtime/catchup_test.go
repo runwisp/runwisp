@@ -112,11 +112,19 @@ func (m *mockTaskRunner) TerminateRunByExecutionID(executionID string) error {
 	return m.Called(executionID).Error(0)
 }
 
+func (m *mockTaskRunner) StopTask(taskName string) error {
+	return m.Called(taskName).Error(0)
+}
+
 func (m *mockTaskRunner) RestartServiceInstances(taskName string) error {
 	return m.Called(taskName).Error(0)
 }
 
 func (m *mockTaskRunner) StopService(taskName string) error {
+	return m.Called(taskName).Error(0)
+}
+
+func (m *mockTaskRunner) StartService(taskName string) error {
 	return m.Called(taskName).Error(0)
 }
 

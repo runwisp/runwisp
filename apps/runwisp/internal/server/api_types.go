@@ -20,6 +20,15 @@ type TaskNameInput struct {
 	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
 }
 
+// TaskControlInput drives POST /api/tasks/{taskName}/start and .../restart.
+// Both can trigger a fresh run for a plain task, so both accept the same
+// provenance label TriggerRunInput does; it's ignored for a service, which
+// never creates a run.
+type TaskControlInput struct {
+	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
+	Via      string `query:"via" enum:"ui,cli," doc:"Declares the caller for run provenance when this starts a fresh task run: 'ui' (Web UI / TUI) or 'cli' (runwisp start/restart). Omit for a plain API call. Ignored for services."`
+}
+
 // TriggerWaitTimeoutMax and TriggerWaitTimeoutDefault back the waitTimeout
 // field's huma `maximum`/`default` struct tags below. Struct tags are string
 // literals, so a tag edit can't reference these constants directly — they're

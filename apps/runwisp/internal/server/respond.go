@@ -40,10 +40,10 @@ func mapDomainError(ctx context.Context, err error, fallback500 string) huma.Sta
 	case errors.Is(err, ErrManualTriggerDisabled):
 		return huma.Error403Forbidden(err.Error())
 	case errors.Is(err, ErrServiceNotRunnable),
-		errors.Is(err, ErrCannotDeleteActiveRun):
+		errors.Is(err, ErrCannotDeleteActiveRun),
+		errors.Is(err, ErrRestartDidNotDrain):
 		return huma.Error409Conflict(err.Error())
-	case errors.Is(err, ErrNotAService),
-		errors.Is(err, ErrNotRunning),
+	case errors.Is(err, ErrNotRunning),
 		errors.Is(err, ErrInvalidSelector),
 		errors.Is(err, ErrInvalidParams):
 		return huma.Error400BadRequest(err.Error())

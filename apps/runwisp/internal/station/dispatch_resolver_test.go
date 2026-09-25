@@ -95,6 +95,11 @@ func (f *fakeTaskRunner) StartServiceInstances(taskName string, _ model.Triggere
 	return f.serviceErr
 }
 
+func (f *fakeTaskRunner) StartService(taskName string) error {
+	f.startedServices = append(f.startedServices, taskName)
+	return f.serviceErr
+}
+
 func (f *fakeTaskRunner) StopService(taskName string) error {
 	f.stoppedServices = append(f.stoppedServices, taskName)
 	return f.serviceErr
