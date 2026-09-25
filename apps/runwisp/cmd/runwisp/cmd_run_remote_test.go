@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -187,7 +188,7 @@ func TestControlTargets_StopViaRemote(t *testing.T) {
 	buf := &bytes.Buffer{}
 	cmd.SetOut(buf)
 
-	err := controlTargets(cmd, Flags{}, []string{"web"}, stopControlAction, remoteFlags{URL: srv.URL, Password: "pw"})
+	err := controlTargets(cmd, Flags{}, remoteFlags{URL: srv.URL, Password: "pw"}, []string{"web"}, "stop", "stopped", (*apiclient.Client).StopTask, (*apiclient.Client).StopRun)
 	require.NoError(t, err)
 	assert.Equal(t, "/api/tasks/web/stop", stoppedPath)
 	assert.Contains(t, buf.String(), `Service "web" stopped.`)

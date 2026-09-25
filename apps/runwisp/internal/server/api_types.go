@@ -25,8 +25,8 @@ type TaskNameInput struct {
 // provenance label TriggerRunInput does; it's ignored for a service, which
 // never creates a run.
 type TaskControlInput struct {
-	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
-	Via      string `query:"via" enum:"ui,cli," doc:"Declares the caller for run provenance when this starts a fresh task run: 'ui' (Web UI / TUI) or 'cli' (runwisp start/restart). Omit for a plain API call. Ignored for services."`
+	TaskNameInput
+	Via string `query:"via" enum:"ui,cli," doc:"Declares the caller for run provenance when this starts a fresh task run: 'ui' (Web UI / TUI) or 'cli' (runwisp start/restart). Omit for a plain API call. Ignored for services."`
 }
 
 // TriggerWaitTimeoutMax and TriggerWaitTimeoutDefault back the waitTimeout

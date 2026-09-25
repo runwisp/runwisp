@@ -29,71 +29,68 @@ func TestResolveTargets(t *testing.T) {
 	}
 	const runID = "01J8Z3K9QK6VN8XG2R5F7T1C4M"
 
+	names := func(ts []model.TaskResponse) []string {
+		out := make([]string, len(ts))
+		for i, t := range ts {
+			out[i] = t.Name
+		}
+		return out
+	}
+
 	t.Run("literal name resolves regardless of lock", func(t *testing.T) {
-		got, err := resolveTargets([]string{"web", "locked-svc"}, tasks, false)
+		got, runs, err := resolveTargets([]string{"web", "locked-svc"}, tasks, false)
 		require.NoError(t, err)
-		require.Len(t, got, 2)
-		assert.Equal(t, resolvedTarget{kind: targetTaskKind, name: "web", isService: true}, got[0])
-		assert.Equal(t, resolvedTarget{kind: targetTaskKind, name: "locked-svc", isService: true}, got[1])
+		assert.Equal(t, []string{"web", "locked-svc"}, names(got))
+		assert.Empty(t, runs)
 	})
 
 	t.Run("glob matches across both kinds and skips locked entries", func(t *testing.T) {
-		got, err := resolveTargets([]string{"*"}, tasks, false)
+		got, _, err := resolveTargets([]string{"*"}, tasks, false)
 		require.NoError(t, err)
-		names := make([]string, len(got))
-		for i, g := range got {
-			names[i] = g.name
-		}
-		assert.ElementsMatch(t, []string{"web", "worker", "backup"}, names)
+		assert.ElementsMatch(t, []string{"web", "worker", "backup"}, names(got))
 	})
 
 	t.Run("glob matching only locked entries is an error", func(t *testing.T) {
-		_, err := resolveTargets([]string{"locked-*"}, tasks, false)
+		_, _, err := resolveTargets([]string{"locked-*"}, tasks, false)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "matched no controllable")
 	})
 
 	t.Run("glob with no match at all is an error", func(t *testing.T) {
-		_, err := resolveTargets([]string{"nope-*"}, tasks, false)
+		_, _, err := resolveTargets([]string{"nope-*"}, tasks, false)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), `"nope-*"`)
 	})
 
 	t.Run("invalid pattern is an error", func(t *testing.T) {
-		_, err := resolveTargets([]string{"["}, tasks, false)
+		_, _, err := resolveTargets([]string{"["}, tasks, false)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid pattern")
 	})
 
 	t.Run("dedupes overlapping literal and glob matches, preserving order", func(t *testing.T) {
-		got, err := resolveTargets([]string{"web", "w*"}, tasks, false)
+		got, _, err := resolveTargets([]string{"web", "w*"}, tasks, false)
 		require.NoError(t, err)
-		names := make([]string, len(got))
-		for i, g := range got {
-			names[i] = g.name
-		}
-		assert.Equal(t, []string{"web", "worker"}, names)
+		assert.Equal(t, []string{"web", "worker"}, names(got))
 	})
 
-	t.Run("run ID only resolves as a run target when allowed", func(t *testing.T) {
-		got, err := resolveTargets([]string{runID}, tasks, true)
+	t.Run("run ID resolves as a run target when allowed", func(t *testing.T) {
+		got, runs, err := resolveTargets([]string{runID, runID}, tasks, true)
 		require.NoError(t, err)
-		require.Len(t, got, 1)
-		assert.Equal(t, resolvedTarget{kind: targetRunKind, name: runID}, got[0])
+		assert.Empty(t, got)
+		assert.Equal(t, []string{runID}, runs)
 	})
 
-	t.Run("ULID-shaped arg stays a task name when run IDs aren't allowed", func(t *testing.T) {
-		got, err := resolveTargets([]string{runID}, tasks, false)
-		require.NoError(t, err)
-		require.Len(t, got, 1)
-		assert.Equal(t, resolvedTarget{kind: targetTaskKind, name: runID}, got[0])
+	t.Run("run ID is an unknown name when run IDs aren't allowed", func(t *testing.T) {
+		_, _, err := resolveTargets([]string{runID}, tasks, false)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), runID)
 	})
 
-	t.Run("unknown literal name still produces a task target for the server to 404", func(t *testing.T) {
-		got, err := resolveTargets([]string{"nope"}, tasks, true)
-		require.NoError(t, err)
-		require.Len(t, got, 1)
-		assert.Equal(t, resolvedTarget{kind: targetTaskKind, name: "nope"}, got[0])
+	t.Run("unknown literal name is an error with a suggestion", func(t *testing.T) {
+		_, _, err := resolveTargets([]string{"wbe"}, tasks, true)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `Did you mean "web"?`)
 	})
 }
 

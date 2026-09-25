@@ -117,8 +117,7 @@ manual_trigger = false
 	out, err = runCLI(t, projectDir, binaryPath, "stop", "longtask", "locked", "--data", daemon.dataDir, "--config", configPath)
 	require.Error(t, err, "stop must fail overall when one target is locked: %s", out)
 	require.Contains(t, out, `Task "longtask" stopped.`)
-	require.Contains(t, out, `locked: cannot stop "locked": manual_trigger = false in runwisp.toml`)
-	require.Contains(t, out, "1 of 2 targets failed")
+	require.Contains(t, out, `cannot stop "locked": manual_trigger = false in runwisp.toml`)
 	require.Eventually(t, func() bool { return len(activeRuns(t, client, "longtask")) == 0 },
 		5*time.Second, 100*time.Millisecond, "the unlocked target must still be stopped")
 }

@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path"
@@ -23,18 +22,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// remoteFlags carries the --url/--password pair shared by stop, restart, and
-// start for dispatching to a remote daemon instead of the local one.
+// remoteFlags carries the --url/--password pair start, stop, and restart
+// share for dispatching to a remote daemon instead of the local one.
 type remoteFlags struct {
 	URL      string
 	Password string
 }
 
+// controlRemote backs --url/--password on start, stop, and restart. Only one
+// command runs per process, so all three bind the same struct.
+var controlRemote remoteFlags
+
 // addRemoteFlags registers --url/--password on cmd, mirroring run's own flags
 // of the same name so all four commands describe them identically.
-func addRemoteFlags(cmd *cobra.Command, rf *remoteFlags) {
-	cmd.Flags().StringVar(&rf.URL, "url", "", "act on a remote daemon at this base URL (env: RUNWISP_URL)")
-	cmd.Flags().StringVar(&rf.Password, "password", "", "remote daemon password for --url (env: RUNWISP_PASSWORD)")
+func addRemoteFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&controlRemote.URL, "url", "", "act on a remote daemon at this base URL (env: RUNWISP_URL)")
+	cmd.Flags().StringVar(&controlRemote.Password, "password", "", "remote daemon password for --url (env: RUNWISP_PASSWORD)")
 }
 
 // resolve applies the RUNWISP_URL/RUNWISP_PASSWORD environment fallback, the
@@ -43,183 +46,119 @@ func (rf remoteFlags) resolve() (url, password string) {
 	return cmp.Or(rf.URL, os.Getenv("RUNWISP_URL")), cmp.Or(rf.Password, os.Getenv("RUNWISP_PASSWORD"))
 }
 
-// targetKind distinguishes a task/service target from a run ID target (stop
-// only accepts the latter).
-type targetKind int
+// controlFunc dispatches one control action for a task/service name or run ID.
+// Its shape matches method expressions like (*apiclient.Client).StopTask.
+type controlFunc func(c *apiclient.Client, ctx context.Context, name string) error
 
-const (
-	targetTaskKind targetKind = iota
-	targetRunKind
-)
-
-// resolvedTarget is one concrete thing a control command will act on.
-type resolvedTarget struct {
-	kind      targetKind
-	name      string
-	isService bool // meaningful only when kind == targetTaskKind
+// resolveTargets expands the CLI's positional args into the tasks/services and
+// run IDs to act on. Every arg is matched against task names with path.Match,
+// so a literal name is simply a pattern that only matches itself —
+// model.TaskNamePattern forbids glob metacharacters in names, so the two never
+// collide. A glob skips locked (manual_trigger=false) entries so `stop '*'`
+// doesn't fail on them; naming one literally still reaches the server's 403.
+// With allowRunIDs, a ULID that names no task is a run ID. An arg that
+// matches nothing is an error, so a typo acts on nothing at all.
+func resolveTargets(args []string, tasks []model.TaskResponse, allowRunIDs bool) ([]model.TaskResponse, []string, error) {
+	var targets []model.TaskResponse
+	var runIDs []string
+	seen := map[string]bool{}
+	for _, arg := range args {
+		matches, err := matchTasks(arg, tasks)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, t := range matches {
+			if !seen[t.Name] {
+				seen[t.Name] = true
+				targets = append(targets, t)
+			}
+		}
+		if len(matches) > 0 {
+			continue
+		}
+		if _, err := ulid.ParseStrict(arg); !allowRunIDs || err != nil {
+			return nil, nil, unknownTaskError(arg, responseNames(tasks))
+		}
+		if !seen[arg] {
+			seen[arg] = true
+			runIDs = append(runIDs, arg)
+		}
+	}
+	return targets, runIDs, nil
 }
 
-// resolveTargets expands the CLI's positional args into a deduplicated list of
-// concrete targets: literal task/service names, shell-style globs
-// (path.Match) matched against every manually-controllable task or service,
-// and — when allowRunIDs — run ULIDs. model.TaskNamePattern forbids glob
-// metacharacters in a task name, so a literal name and a pattern are never
-// ambiguous. A glob silently skips locked (manual_trigger=false) entries so
-// `stop '*'` doesn't fail on them; naming one literally still reaches the
-// server's 403.
-func resolveTargets(args []string, tasks []model.TaskResponse, allowRunIDs bool) ([]resolvedTarget, error) {
-	byName := make(map[string]model.TaskResponse, len(tasks))
+// matchTasks returns the tasks arg names: exact for a literal, every
+// manually-controllable match for a glob. A glob that matches nothing is an
+// error; a literal that matches nothing returns none, for the caller to judge.
+func matchTasks(arg string, tasks []model.TaskResponse) ([]model.TaskResponse, error) {
+	glob := strings.ContainsAny(arg, "*?[")
+	var out []model.TaskResponse
 	for _, t := range tasks {
-		byName[t.Name] = t
+		ok, err := path.Match(arg, t.Name)
+		if err != nil {
+			return nil, fmt.Errorf("invalid pattern %q: %w", arg, err)
+		}
+		if ok && (!glob || t.ManuallyControllable()) {
+			out = append(out, t)
+		}
 	}
-
-	var out []resolvedTarget
-	seen := make(map[targetKind]map[string]bool)
-	seen[targetTaskKind] = map[string]bool{}
-	seen[targetRunKind] = map[string]bool{}
-	add := func(rt resolvedTarget) {
-		if seen[rt.kind][rt.name] {
-			return
-		}
-		seen[rt.kind][rt.name] = true
-		out = append(out, rt)
-	}
-
-	for _, arg := range args {
-		if strings.ContainsAny(arg, "*?[") {
-			if err := resolveGlobTarget(arg, tasks, add); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		if t, ok := byName[arg]; ok {
-			add(resolvedTarget{kind: targetTaskKind, name: t.Name, isService: t.Kind.IsService()})
-			continue
-		}
-		if allowRunIDs {
-			if _, err := ulid.ParseStrict(arg); err == nil {
-				add(resolvedTarget{kind: targetRunKind, name: arg})
-				continue
-			}
-		}
-		add(resolvedTarget{kind: targetTaskKind, name: arg})
+	if glob && len(out) == 0 {
+		return nil, fmt.Errorf("pattern %q matched no controllable task or service", arg)
 	}
 	return out, nil
 }
 
-// resolveGlobTarget expands a shell-style glob against every manually-
-// controllable task or service, adding each match through add. Returns an
-// error for an invalid pattern or one that matches nothing.
-func resolveGlobTarget(pattern string, tasks []model.TaskResponse, add func(resolvedTarget)) error {
-	matched := 0
-	for _, t := range tasks {
-		if !t.ManuallyControllable() {
-			continue
-		}
-		ok, err := path.Match(pattern, t.Name)
-		if err != nil {
-			return fmt.Errorf("invalid pattern %q: %w", pattern, err)
-		}
-		if ok {
-			add(resolvedTarget{kind: targetTaskKind, name: t.Name, isService: t.Kind.IsService()})
-			matched++
-		}
-	}
-	if matched == 0 {
-		return fmt.Errorf("pattern %q matched no controllable task or service", pattern)
-	}
-	return nil
-}
-
-// controlAction bundles what a verb needs from controlTargets: verb/done are
-// the present/past-tense words used in messages ("stop"/"stopped"); taskAct
-// dispatches a task or service target; runAct (stop only) dispatches a run ID
-// target.
-type controlAction struct {
-	verb, done  string
-	taskAct     func(ctx context.Context, client *apiclient.Client, name string) error
-	runAct      func(ctx context.Context, client *apiclient.Client, runID string) error
-	allowRunIDs bool
-}
-
-var stopControlAction = controlAction{
-	verb: "stop", done: "stopped",
-	taskAct: func(ctx context.Context, client *apiclient.Client, name string) error {
-		return client.StopTask(ctx, name)
-	},
-	runAct: func(ctx context.Context, client *apiclient.Client, runID string) error {
-		return client.StopRun(ctx, runID)
-	},
-	allowRunIDs: true,
-}
-
-var restartControlAction = controlAction{
-	verb: "restart", done: "restarted",
-	taskAct: func(ctx context.Context, client *apiclient.Client, name string) error {
-		return client.RestartTask(ctx, name, "cli")
-	},
-}
-
-var startControlAction = controlAction{
-	verb: "start", done: "started",
-	taskAct: func(ctx context.Context, client *apiclient.Client, name string) error {
-		return client.StartTask(ctx, name, "cli")
-	},
-}
-
-// controlTargets resolves args to one or more targets (tasks, services, globs
-// across both, and — for stop — run IDs) and applies a's action to each, over
-// either the local daemon socket or a remote daemon (--url/RUNWISP_URL). Every
-// target is attempted; a single target's error is returned directly (matching
-// the pre-multi-target UX), while several targets report each failure to
-// stderr and roll up into one aggregate error.
-func controlTargets(cmd *cobra.Command, f Flags, args []string, a controlAction, rf remoteFlags) error {
+// controlTargets resolves args (tasks, services, globs across both, and — when
+// stopRun is set — run IDs) and applies act to each over the local daemon
+// socket or a remote daemon (--url/RUNWISP_URL). Name errors fail before
+// anything is dispatched; after that every target is attempted and each
+// failure is reported in the joined error. verb/done are the present/past-
+// tense words for messages ("stop"/"stopped").
+func controlTargets(cmd *cobra.Command, f Flags, rf remoteFlags, args []string, verb, done string, act, stopRun controlFunc) error {
 	ctx := cmd.Context()
-	out := cmd.OutOrStdout()
-
 	baseURL, password := rf.resolve()
 	client, err := controlClient(ctx, f, baseURL, password)
 	if err != nil {
 		return err
 	}
 
-	tasks, err := listTasksFor(ctx, client, baseURL, password)
-	if err != nil {
+	var tasks []model.TaskResponse
+	if err := withSessionRetry(ctx, client, baseURL, password, func() (err error) {
+		tasks, err = client.ListTasks(ctx)
 		return err
+	}); err != nil {
+		return fmt.Errorf("list tasks: %w", err)
 	}
-	targets, err := resolveTargets(args, tasks, a.allowRunIDs)
+	targets, runIDs, err := resolveTargets(args, tasks, stopRun != nil)
 	if err != nil {
 		return err
 	}
 
-	failures := 0
+	out := cmd.OutOrStdout()
+	var errs []error
 	for _, t := range targets {
-		var actErr error
-		if t.kind == targetRunKind {
-			actErr = a.runAct(ctx, client, t.name)
-		} else {
-			actErr = a.taskAct(ctx, client, t.name)
-		}
-		if actErr != nil {
-			failures++
-			msg := controlErrorMessage(ctx, client, a.verb, t, actErr, baseURL)
-			if len(targets) == 1 {
-				return msg
-			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "%s: %v\n", t.name, msg)
+		if err := act(client, ctx, t.Name); err != nil {
+			errs = append(errs, controlError(err, baseURL, verb, t.Name, false))
 			continue
 		}
-		printControlSuccess(out, t, a.done)
+		label := "Task"
+		if t.Kind.IsService() {
+			label = "Service"
+		}
+		fmt.Fprintf(out, "%s %q %s.\n", label, t.Name, done)
 	}
-	if failures > 0 {
-		return fmt.Errorf("%d of %d targets failed", failures, len(targets))
+	for _, id := range runIDs {
+		if err := stopRun(client, ctx, id); err != nil {
+			errs = append(errs, controlError(err, baseURL, verb, id, true))
+			continue
+		}
+		fmt.Fprintf(out, "Run %s %s.\n", id, done)
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // controlClient connects to either the local daemon socket or, when baseURL is
-// set, a remote daemon — mirroring the reachability checks controlTargets'
-// predecessor and run --url both used.
+// set, a remote daemon, with the same reachability checks run uses.
 func controlClient(ctx context.Context, f Flags, baseURL, password string) (*apiclient.Client, error) {
 	if baseURL != "" {
 		return connectRemote(ctx, baseURL, password)
@@ -234,72 +173,22 @@ func controlClient(ctx context.Context, f Flags, baseURL, password string) (*api
 	return client, nil
 }
 
-// listTasksFor fetches the task list to resolve targets against, re-
-// authenticating once on a stale remote session the same way triggerRemote does.
-func listTasksFor(ctx context.Context, client *apiclient.Client, baseURL, password string) ([]model.TaskResponse, error) {
-	tasks, err := client.ListTasks(ctx)
-	if baseURL != "" && errors.Is(err, apiclient.ErrUnauthorized) {
-		if authErr := authenticateRemote(ctx, client, baseURL, password); authErr != nil {
-			return nil, authErr
-		}
-		tasks, err = client.ListTasks(ctx)
-	}
-	if err != nil {
-		if baseURL != "" {
-			switch {
-			case errors.Is(err, apiclient.ErrUnauthorized):
-				return nil, remoteAuthFailedError(baseURL)
-			case errors.Is(err, apiclient.ErrRateLimited):
-				return nil, remoteRateLimitedError(baseURL)
-			}
-		}
-		return nil, fmt.Errorf("list tasks: %w", err)
-	}
-	return tasks, nil
-}
-
-// printControlSuccess writes the one-line confirmation for a successfully
-// controlled target.
-func printControlSuccess(out io.Writer, t resolvedTarget, done string) {
-	if t.kind == targetRunKind {
-		fmt.Fprintf(out, "Run %s %s.\n", t.name, done)
-		return
-	}
-	label := "Task"
-	if t.isService {
-		label = "Service"
-	}
-	fmt.Fprintf(out, "%s %q %s.\n", label, t.name, done)
-}
-
-// controlErrorMessage maps a per-target dispatch error to a user-facing one.
-func controlErrorMessage(ctx context.Context, client *apiclient.Client, verb string, t resolvedTarget, err error, baseURL string) error {
-	if baseURL != "" {
-		switch {
-		case errors.Is(err, apiclient.ErrUnauthorized):
-			return remoteAuthFailedError(baseURL)
-		case errors.Is(err, apiclient.ErrRateLimited):
-			return remoteRateLimitedError(baseURL)
-		}
-	}
-	if t.kind == targetRunKind {
-		switch {
-		case apiclient.IsHTTPStatus(err, http.StatusNotFound):
-			return fmt.Errorf("no run with ID %s", t.name)
-		case apiclient.IsHTTPStatus(err, http.StatusBadRequest):
-			return fmt.Errorf("run %s is not running", t.name)
-		default:
-			return fmt.Errorf("%s run %s: %w", verb, t.name, err)
-		}
+// controlError maps one target's dispatch error to a user-facing one.
+func controlError(err error, baseURL, verb, target string, isRun bool) error {
+	if authErr := remoteAuthError(err, baseURL); authErr != nil {
+		return authErr
 	}
 	switch {
-	case apiclient.IsHTTPStatus(err, http.StatusNotFound):
-		return unknownTaskError(t.name, daemonTaskNames(ctx, client))
+	case isRun && apiclient.IsHTTPStatus(err, http.StatusNotFound):
+		return fmt.Errorf("no run with ID %s", target)
+	case isRun && apiclient.IsHTTPStatus(err, http.StatusBadRequest):
+		return fmt.Errorf("run %s is not running", target)
+	case isRun:
+		return fmt.Errorf("%s run %s: %w", verb, target, err)
 	case apiclient.IsHTTPStatus(err, http.StatusForbidden):
-		return fmt.Errorf("cannot %s %q: manual_trigger = false in runwisp.toml", verb, t.name)
-	default:
-		return fmt.Errorf("%s %q: %w", verb, t.name, err)
+		return fmt.Errorf("cannot %s %q: manual_trigger = false in runwisp.toml", verb, target)
 	}
+	return fmt.Errorf("%s %q: %w", verb, target, err)
 }
 
 // shouldDelegateStop reports whether `runwisp stop` should go through the

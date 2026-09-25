@@ -275,16 +275,10 @@ func (s *runService) StopTask(taskName string) error {
 	return s.taskManager.StopTask(taskName)
 }
 
-// restartDrainPollInterval is how often RestartTask polls GetActiveRunCount
-// while waiting for a task's stopped run(s) to actually end, mirroring the
-// shutdown drain poll in cmd/runwisp/daemon_lifecycle.go's waitServiceDrained.
-// A var (not const) so tests can shrink it instead of burning wall-clock time.
-var restartDrainPollInterval = 50 * time.Millisecond
-
 // restartDrainGrace pads a task's configured graceful-stop window so
 // RestartTask's wait outlives the executor's own kill-after-timeout path
-// instead of racing it. A var (not const) so tests can shrink it.
-var restartDrainGrace = 5 * time.Second
+// instead of racing it.
+const restartDrainGrace = 5 * time.Second
 
 // RestartTask restarts a service's instances or, for a task, stops its active
 // runs, waits for them to actually end, then triggers exactly one fresh run —
@@ -301,33 +295,13 @@ func (s *runService) RestartTask(ctx context.Context, taskName string, triggered
 	if err := s.taskManager.StopTask(taskName); err != nil {
 		return err
 	}
-	if err := s.awaitDrain(ctx, taskName, task.GracefulStopValue()+restartDrainGrace); err != nil {
-		return err
+	waitCtx, cancel := context.WithTimeout(ctx, task.GracefulStopValue()+restartDrainGrace)
+	defer cancel()
+	if runtime.WaitIdle(waitCtx, s.taskManager, taskName) != nil {
+		return ErrRestartDidNotDrain
 	}
 	_, err = s.TriggerRun(ctx, taskName, nil, triggeredBy)
 	return err
-}
-
-// awaitDrain blocks until taskName has no active runs, ctx is cancelled, or
-// timeout elapses (returning ErrRestartDidNotDrain in the last case).
-func (s *runService) awaitDrain(ctx context.Context, taskName string, timeout time.Duration) error {
-	if s.taskManager.GetActiveRunCount(taskName) == 0 {
-		return nil
-	}
-	waitCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	ticker := time.NewTicker(restartDrainPollInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			if s.taskManager.GetActiveRunCount(taskName) == 0 {
-				return nil
-			}
-		case <-waitCtx.Done():
-			return ErrRestartDidNotDrain
-		}
-	}
 }
 
 func (s *runService) DeleteRun(ctx context.Context, runID string) error {

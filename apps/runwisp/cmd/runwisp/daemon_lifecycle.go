@@ -20,6 +20,7 @@ import (
 	"github.com/runwisp/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runlog"
+	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/station"
 	"github.com/runwisp/runwisp/internal/tui"
@@ -242,23 +243,7 @@ func preStopServices(ctx context.Context, svc *daemonServices) {
 			slog.Warn("failed to stop service during shutdown", "task", task.Name, "err", err)
 			continue
 		}
-		waitServiceDrained(ctx, svc, task.Name)
-	}
-}
-
-// waitServiceDrained blocks until a service has no active runs or ctx expires.
-func waitServiceDrained(ctx context.Context, svc *daemonServices, name string) {
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		if svc.TaskManager.GetActiveRunCount(name) == 0 {
-			return
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
+		_ = runtime.WaitIdle(ctx, svc.TaskManager, task.Name)
 	}
 }
 

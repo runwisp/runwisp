@@ -3,9 +3,12 @@
 
 package main
 
-import "github.com/spf13/cobra"
+import (
+	"context"
 
-var startRemoteFlags remoteFlags
+	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/spf13/cobra"
+)
 
 var startCmd = &cobra.Command{
 	Use:   "start <target...>",
@@ -31,10 +34,13 @@ need one.`,
   runwisp start '*' --url https://ci.example.com --password "$RUNWISP_PASSWORD"`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return controlTargets(cmd, flags, args, startControlAction, startRemoteFlags)
+		start := func(c *apiclient.Client, ctx context.Context, name string) error {
+			return c.StartTask(ctx, name, "cli")
+		}
+		return controlTargets(cmd, flags, controlRemote, args, "start", "started", start, nil)
 	},
 }
 
 func init() {
-	addRemoteFlags(startCmd, &startRemoteFlags)
+	addRemoteFlags(startCmd)
 }

@@ -523,13 +523,11 @@ func TestRestartTask_TaskDispatch_StopsWaitsThenTriggers(t *testing.T) {
 
 // TestRestartTask_TaskDispatch_DrainTimeout confirms a task whose prior run
 // never ends fails the restart instead of triggering a run alongside a
-// still-dying one. It shrinks the drain poll/grace package vars so the test
-// doesn't burn the real default timeout.
+// still-dying one. A pre-cancelled context stands in for the drain deadline
+// so the test doesn't burn the real graceful-stop window.
 func TestRestartTask_TaskDispatch_DrainTimeout(t *testing.T) {
-	origPoll, origGrace := restartDrainPollInterval, restartDrainGrace
-	restartDrainPollInterval = 2 * time.Millisecond
-	restartDrainGrace = 10 * time.Millisecond
-	t.Cleanup(func() { restartDrainPollInterval, restartDrainGrace = origPoll, origGrace })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
 
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
@@ -541,7 +539,7 @@ func TestRestartTask_TaskDispatch_DrainTimeout(t *testing.T) {
 	runner.On("StopTask", "t").Return(nil)
 	runner.On("GetActiveRunCount", "t").Return(1)
 
-	err := svc.RestartTask(context.Background(), "t", model.TriggeredByAPI)
+	err := svc.RestartTask(ctx, "t", model.TriggeredByAPI)
 	assert.ErrorIs(t, err, ErrRestartDidNotDrain)
 	runner.AssertNotCalled(t, "TriggerRunWithOptions", mock.Anything, mock.Anything)
 }

@@ -309,39 +309,46 @@ func authenticateRemote(ctx context.Context, client *apiclient.Client, baseURL, 
 		return remoteAuthRequiredError(baseURL)
 	}
 	if err := client.Authenticate(ctx); err != nil {
-		switch {
-		case errors.Is(err, apiclient.ErrUnauthorized):
-			return remoteAuthFailedError(baseURL)
-		case errors.Is(err, apiclient.ErrRateLimited):
-			return remoteRateLimitedError(baseURL)
-		default:
-			return fmt.Errorf("authenticate with %s: %w", baseURL, err)
+		if authErr := remoteAuthError(err, baseURL); authErr != nil {
+			return authErr
 		}
+		return fmt.Errorf("authenticate with %s: %w", baseURL, err)
 	}
 	storeCachedToken(baseURL, client.Token())
 	return nil
 }
 
-// triggerRemote triggers the run, re-authenticating once if a cached token has
-// expired (401), and maps the daemon's error codes to user-facing messages.
-func triggerRemote(ctx context.Context, client *apiclient.Client, taskName, baseURL, password string, params map[string]*string) (*model.Run, error) {
-	run, err := client.TriggerRun(ctx, taskName, params, "cli")
-	if errors.Is(err, apiclient.ErrUnauthorized) {
+// withSessionRetry runs call, re-authenticating once and retrying if a cached
+// remote session has expired (401), and maps a final 401/429 to its user-
+// facing error. baseURL is empty for the local socket, which has no session.
+func withSessionRetry(ctx context.Context, client *apiclient.Client, baseURL, password string, call func() error) error {
+	err := call()
+	if baseURL != "" && errors.Is(err, apiclient.ErrUnauthorized) {
 		if authErr := authenticateRemote(ctx, client, baseURL, password); authErr != nil {
-			return nil, authErr
+			return authErr
 		}
-		run, err = client.TriggerRun(ctx, taskName, params, "cli")
+		err = call()
 	}
+	if authErr := remoteAuthError(err, baseURL); authErr != nil {
+		return authErr
+	}
+	return err
+}
+
+// triggerRemote triggers the run via withSessionRetry and maps the daemon's
+// error codes to user-facing messages.
+func triggerRemote(ctx context.Context, client *apiclient.Client, taskName, baseURL, password string, params map[string]*string) (*model.Run, error) {
+	var run *model.Run
+	err := withSessionRetry(ctx, client, baseURL, password, func() (err error) {
+		run, err = client.TriggerRun(ctx, taskName, params, "cli")
+		return err
+	})
 	if err != nil {
 		switch {
 		case apiclient.IsHTTPStatus(err, http.StatusNotFound):
 			return nil, unknownTaskError(taskName, daemonTaskNames(ctx, client))
 		case apiclient.IsHTTPStatus(err, http.StatusForbidden):
 			return nil, remoteManualTriggerDisabledError(taskName)
-		case errors.Is(err, apiclient.ErrUnauthorized):
-			return nil, remoteAuthFailedError(baseURL)
-		case errors.Is(err, apiclient.ErrRateLimited):
-			return nil, remoteRateLimitedError(baseURL)
 		default:
 			return nil, fmt.Errorf("trigger %q: %w", taskName, err)
 		}
@@ -538,9 +545,13 @@ func daemonTaskNames(ctx context.Context, client *apiclient.Client) []string {
 	if err != nil {
 		return nil
 	}
-	names := make([]string, 0, len(tasks))
-	for _, t := range tasks {
-		names = append(names, t.Name)
+	return responseNames(tasks)
+}
+
+func responseNames(tasks []model.TaskResponse) []string {
+	names := make([]string, len(tasks))
+	for i, t := range tasks {
+		names[i] = t.Name
 	}
 	return names
 }

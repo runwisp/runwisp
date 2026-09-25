@@ -299,7 +299,7 @@ runwisp stop                 — shut the daemon down (delegates to systemd/laun
 runwisp stop <target...>     — stop one or more tasks/services/run IDs via the local socket (or --url); target = name, quoted glob, or a run ULID; daemon keeps running, never delegates to systemd
                                 service: cancels every instance, stops refilling slots; task: cancels the active run and drops anything queued, cron schedule keeps firing; run ID: stops just that run
 runwisp start/restart/stop   — a target locked with manual_trigger=false 403s when named directly; a glob silently skips it. --url (env RUNWISP_URL) + --password (env RUNWISP_PASSWORD) dispatch to a remote daemon,
-                                same CHAP login/session cache as `run --url`. Multiple targets: each is attempted, failures print per-target and roll up into "N of M targets failed"
+                                same CHAP login/session cache as `run --url`. An unknown name or empty glob fails before anything runs; otherwise each target is attempted and failures print per-target, exit non-zero
 runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output --write --force --dry-run --quiet --system
 runwisp import supervisord [FILE...] — convert supervisord config to runwisp.toml; -o/--output --write --force --dry-run --quiet
 runwisp import systemd [UNIT...] — convert systemd .service units to runwisp.toml; -o/--output --write --force --dry-run --quiet

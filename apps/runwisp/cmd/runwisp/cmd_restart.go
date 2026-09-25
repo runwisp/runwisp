@@ -21,8 +21,6 @@ var restartOpts struct {
 	Local bool
 }
 
-var restartRemoteFlags remoteFlags
-
 var restartCmd = &cobra.Command{
 	Use:   "restart [target...]",
 	Short: "Restart the background daemon, or one or more tasks/services",
@@ -65,15 +63,18 @@ pin the per-user one when both a system and a user unit are present.`,
 
 func init() {
 	restartCmd.Flags().BoolVar(&restartOpts.Local, "local", false, localFlagUsage)
-	addRemoteFlags(restartCmd, &restartRemoteFlags)
+	addRemoteFlags(restartCmd)
 }
 
 func runRestart(cmd *cobra.Command, args []string, f Flags) error {
 	if len(args) > 0 {
-		return controlTargets(cmd, f, args, restartControlAction, restartRemoteFlags)
+		restart := func(c *apiclient.Client, ctx context.Context, name string) error {
+			return c.RestartTask(ctx, name, "cli")
+		}
+		return controlTargets(cmd, f, controlRemote, args, "restart", "restarted", restart, nil)
 	}
 
-	if url, _ := restartRemoteFlags.resolve(); url != "" {
+	if url, _ := controlRemote.resolve(); url != "" {
 		return errors.New("--url needs a target; the remote daemon itself can't be restarted from here")
 	}
 

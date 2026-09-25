@@ -5,11 +5,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"os"
 	"strconv"
 	"testing"
 
+	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/spf13/cobra"
@@ -35,9 +37,20 @@ func serveServiceSocket(t *testing.T, mux http.Handler) (Flags, *bytes.Buffer, *
 	cmd.SetContext(t.Context())
 	buf := &bytes.Buffer{}
 	cmd.SetOut(buf)
-	errBuf := &bytes.Buffer{}
-	cmd.SetErr(errBuf)
 	return f, buf, cmd
+}
+
+// stopTargets and restartTargets drive controlTargets the way runStop and
+// runRestart do, against the local socket.
+func stopTargets(cmd *cobra.Command, f Flags, args ...string) error {
+	return controlTargets(cmd, f, remoteFlags{}, args, "stop", "stopped", (*apiclient.Client).StopTask, (*apiclient.Client).StopRun)
+}
+
+func restartTargets(cmd *cobra.Command, f Flags, args ...string) error {
+	restart := func(c *apiclient.Client, ctx context.Context, name string) error {
+		return c.RestartTask(ctx, name, "cli")
+	}
+	return controlTargets(cmd, f, remoteFlags{}, args, "restart", "restarted", restart, nil)
 }
 
 // tasksHandler serves a fixed /api/tasks list plus a best-effort health check,
@@ -55,7 +68,7 @@ func TestControlTargets_NoDaemonRunning(t *testing.T) {
 	cmd.SetOut(&bytes.Buffer{})
 	f := Flags{DataDir: testutil.ShortTempDir(t)}
 
-	err := controlTargets(cmd, f, []string{"web"}, stopControlAction, remoteFlags{})
+	err := stopTargets(cmd, f, "web")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no daemon is running")
 }
@@ -71,7 +84,7 @@ func TestControlTargets_StopHappyPath(t *testing.T) {
 	})
 	f, buf, cmd := serveServiceSocket(t, mux)
 
-	require.NoError(t, controlTargets(cmd, f, []string{"web"}, stopControlAction, remoteFlags{}))
+	require.NoError(t, stopTargets(cmd, f, "web"))
 	assert.Equal(t, http.MethodPost, gotMethod)
 	assert.Contains(t, buf.String(), `Service "web" stopped.`)
 }
@@ -85,22 +98,28 @@ func TestControlTargets_TaskStopSaysTask(t *testing.T) {
 	})
 	f, buf, cmd := serveServiceSocket(t, mux)
 
-	require.NoError(t, controlTargets(cmd, f, []string{"backup"}, stopControlAction, remoteFlags{}))
+	require.NoError(t, stopTargets(cmd, f, "backup"))
 	assert.Contains(t, buf.String(), `Task "backup" stopped.`)
 }
 
-func TestControlTargets_UnknownTaskMaps404(t *testing.T) {
+// An unknown name alongside a valid one fails before anything is dispatched,
+// so a typo in a multi-target command acts on nothing at all.
+func TestControlTargets_UnknownNameFailsBeforeDispatch(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	mux.HandleFunc("/api/tasks", tasksHandler(``))
-	mux.HandleFunc("/api/tasks/ghost/restart", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
+	mux.HandleFunc("/api/tasks", tasksHandler(`{"name":"web","kind":"service","manualTrigger":true}`))
+	restarted := 0
+	mux.HandleFunc("/api/tasks/web/restart", func(w http.ResponseWriter, _ *http.Request) {
+		restarted++
+		w.WriteHeader(http.StatusNoContent)
 	})
 	f, _, cmd := serveServiceSocket(t, mux)
 
-	err := controlTargets(cmd, f, []string{"ghost"}, restartControlAction, remoteFlags{})
+	err := restartTargets(cmd, f, "web", "wbe")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "ghost")
+	assert.Contains(t, err.Error(), `"wbe"`)
+	assert.Contains(t, err.Error(), `Did you mean "web"?`)
+	assert.Zero(t, restarted)
 }
 
 func TestControlTargets_ManualTriggerDisabledMaps403(t *testing.T) {
@@ -112,7 +131,7 @@ func TestControlTargets_ManualTriggerDisabledMaps403(t *testing.T) {
 	})
 	f, _, cmd := serveServiceSocket(t, mux)
 
-	err := controlTargets(cmd, f, []string{"locked"}, restartControlAction, remoteFlags{})
+	err := restartTargets(cmd, f, "locked")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "manual_trigger = false")
 }
@@ -129,7 +148,7 @@ func TestControlTargets_RunIDHitsStopRunEndpoint(t *testing.T) {
 	})
 	f, buf, cmd := serveServiceSocket(t, mux)
 
-	require.NoError(t, controlTargets(cmd, f, []string{runID}, stopControlAction, remoteFlags{}))
+	require.NoError(t, stopTargets(cmd, f, runID))
 	assert.Equal(t, "/api/runs/"+runID+"/stop", gotPath)
 	assert.Contains(t, buf.String(), "Run "+runID+" stopped.")
 }
@@ -149,9 +168,9 @@ func TestControlTargets_MultiTargetPartialFailureAggregates(t *testing.T) {
 	})
 	f, buf, cmd := serveServiceSocket(t, mux)
 
-	err := controlTargets(cmd, f, []string{"web", "ghost"}, stopControlAction, remoteFlags{})
+	err := stopTargets(cmd, f, "web", "ghost")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "1 of 2 targets failed")
+	assert.Contains(t, err.Error(), `stop "ghost"`)
+	assert.NotContains(t, err.Error(), `"web"`)
 	assert.Contains(t, buf.String(), `Service "web" stopped.`)
-	assert.Contains(t, cmd.ErrOrStderr().(*bytes.Buffer).String(), "ghost")
 }

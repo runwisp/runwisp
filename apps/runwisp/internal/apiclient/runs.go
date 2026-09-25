@@ -102,18 +102,20 @@ func (c *Client) TriggerRun(ctx context.Context, taskName string, params map[str
 // slots) or triggers a task (no-op if a run is already active or queued).
 // via is the same run-provenance label TriggerRun takes; pass "" for none.
 func (c *Client) StartTask(ctx context.Context, taskName, via string) error {
-	path := fmt.Sprintf("/api/tasks/%s/start", taskName)
-	if via != "" {
-		path += "?via=" + url.QueryEscape(via)
-	}
-	return c.doJSON(ctx, "POST", path, nil, nil)
+	return c.postTaskAction(ctx, "start", taskName, via)
 }
 
 // RestartTask restarts every instance of a service, or stops a task's active
 // run, waits for it to end, and triggers exactly one fresh run. via is the
 // same run-provenance label TriggerRun takes; pass "" for none.
 func (c *Client) RestartTask(ctx context.Context, taskName, via string) error {
-	path := fmt.Sprintf("/api/tasks/%s/restart", taskName)
+	return c.postTaskAction(ctx, "restart", taskName, via)
+}
+
+// postTaskAction POSTs /api/tasks/{taskName}/{action}, tagging it with the
+// optional via provenance label.
+func (c *Client) postTaskAction(ctx context.Context, action, taskName, via string) error {
+	path := fmt.Sprintf("/api/tasks/%s/%s", taskName, action)
 	if via != "" {
 		path += "?via=" + url.QueryEscape(via)
 	}

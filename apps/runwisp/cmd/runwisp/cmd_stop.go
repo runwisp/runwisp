@@ -10,6 +10,7 @@ import (
 	"io"
 	"path/filepath"
 
+	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/spf13/cobra"
@@ -18,8 +19,6 @@ import (
 var stopOpts struct {
 	Local bool
 }
-
-var stopRemoteFlags remoteFlags
 
 var stopCmd = &cobra.Command{
 	Use:   "stop [target...]",
@@ -65,15 +64,15 @@ pin the per-user one when both a system and a user unit are present.`,
 
 func init() {
 	stopCmd.Flags().BoolVar(&stopOpts.Local, "local", false, localFlagUsage)
-	addRemoteFlags(stopCmd, &stopRemoteFlags)
+	addRemoteFlags(stopCmd)
 }
 
 func runStop(cmd *cobra.Command, args []string, f Flags) error {
 	if len(args) > 0 {
-		return controlTargets(cmd, f, args, stopControlAction, stopRemoteFlags)
+		return controlTargets(cmd, f, controlRemote, args, "stop", "stopped", (*apiclient.Client).StopTask, (*apiclient.Client).StopRun)
 	}
 
-	if url, _ := stopRemoteFlags.resolve(); url != "" {
+	if url, _ := controlRemote.resolve(); url != "" {
 		return errors.New("--url needs a target; the remote daemon itself can't be stopped from here")
 	}
 
