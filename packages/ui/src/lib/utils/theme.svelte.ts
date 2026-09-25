@@ -31,8 +31,11 @@ function createThemeStore() {
 
     function apply(): void {
         if (!browser) return;
-        resolved =
-            preference === "auto" ? (media?.matches === true ? "dark" : "light") : preference;
+        if (preference === "auto") {
+            resolved = media?.matches === true ? "dark" : "light";
+        } else {
+            resolved = preference;
+        }
         document.documentElement.classList.toggle("dark", resolved === "dark");
     }
 
