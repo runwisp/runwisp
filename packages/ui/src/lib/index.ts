@@ -65,6 +65,7 @@ export { default as Dropdown } from "./components/Dropdown.svelte";
 export { default as EmptyState } from "./components/EmptyState.svelte";
 export { default as ErrorState } from "./components/ErrorState.svelte";
 export { default as Modal } from "./components/Modal.svelte";
+export { default as NotificationBell } from "./components/NotificationBell.svelte";
 export { default as Popover } from "./components/Popover.svelte";
 export { default as ToastContainer } from "./components/ToastContainer.svelte";
 export { default as Tooltip } from "./components/Tooltip.svelte";
