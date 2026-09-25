@@ -76,8 +76,10 @@ const { columns, homeHref = "/", wordmark = "RunWisp", class: className = "" } =
          * content column, not the full page width. */
         container-type: inline-size;
     }
-    /* :global — slotted links (bottom bar, blurb) don't carry this scope. */
-    .rw-ft :global(a) {
+    /* Slotted content (blurb, bottom bar) doesn't carry this component's scope,
+     * so these reach it via :global, wrapped in :where() to stay at element
+     * specificity: any consumer class (e.g. a teaser paragraph) wins. */
+    :global(:where(.rw-ft) a) {
         color: inherit;
         text-decoration: none;
     }
@@ -115,7 +117,7 @@ const { columns, homeHref = "/", wordmark = "RunWisp", class: className = "" } =
         width: 100%;
         height: 100%;
     }
-    .rw-ft-brand :global(p) {
+    :global(:where(.rw-ft-brand) p) {
         margin: 0;
         color: var(--rw-on-surface-muted);
         font-size: 13.5px;
@@ -141,7 +143,7 @@ const { columns, homeHref = "/", wordmark = "RunWisp", class: className = "" } =
         color: var(--rw-on-surface-muted);
         transition: color 0.15s;
     }
-    .rw-ft :global(a:hover) {
+    :global(:where(.rw-ft) a:hover) {
         color: var(--rw-primary);
     }
     .rw-ft-bottom {
