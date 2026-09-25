@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Notification emails now use RunWisp's colours instead of a generic blue theme.
+
 ### Fixed
 
 - Subcommand `--help` output now ends with the pointer to the machine-readable agent docs when it isn't a terminal.
