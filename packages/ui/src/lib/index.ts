@@ -33,7 +33,7 @@ export { default as FormField } from "./components/FormField.svelte";
 export { default as Input } from "./components/Input.svelte";
 export { default as Radio } from "./components/Radio.svelte";
 export { default as RadioGroup } from "./components/RadioGroup.svelte";
-export { default as Select } from "./components/Select.svelte";
+export { default as Select, type SelectOption } from "./components/Select.svelte";
 export { default as Textarea } from "./components/Textarea.svelte";
 export { default as TimezoneSelect } from "./components/TimezoneSelect.svelte";
 export { default as Toggle } from "./components/Toggle.svelte";
