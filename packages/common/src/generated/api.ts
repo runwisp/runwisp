@@ -754,6 +754,7 @@ export interface components {
             readonly $schema?: string;
             authDisabled: boolean;
             capabilities: components["schemas"]["CapInfo"][] | null;
+            checkUpdates: boolean;
             /** Format: date-time */
             configLoadedAt: string;
             configStale: boolean;
@@ -767,6 +768,8 @@ export interface components {
             resolvedTimezone: string;
             schedulingActive: boolean;
             serviceManaged: boolean;
+            /** Format: date-time */
+            startedAt: string;
             stationEnabled: boolean;
             tasks: components["schemas"]["Task"][] | null;
             /** @enum {string} */

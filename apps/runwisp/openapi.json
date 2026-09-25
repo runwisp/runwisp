@@ -213,6 +213,9 @@
               "null"
             ]
           },
+          "checkUpdates": {
+            "type": "boolean"
+          },
           "configLoadedAt": {
             "format": "date-time",
             "type": "string"
@@ -251,6 +254,10 @@
           },
           "serviceManaged": {
             "type": "boolean"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
           },
           "stationEnabled": {
             "type": "boolean"
@@ -294,7 +301,9 @@
           "tasks",
           "capabilities",
           "updateAvailable",
-          "latestVersion"
+          "latestVersion",
+          "checkUpdates",
+          "startedAt"
         ],
         "type": "object"
       },

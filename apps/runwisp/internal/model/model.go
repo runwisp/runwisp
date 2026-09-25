@@ -621,6 +621,12 @@ type DaemonInfo struct {
 	// "v0.3.0"), or empty before the first successful check, when the check is
 	// disabled, or when already up to date. Always present so the shape is stable.
 	LatestVersion string `json:"latestVersion"`
+	// CheckUpdates mirrors [daemon] check_updates. The Web UI also gates its
+	// concierge feedback prompt on it, so false keeps the dashboard silent too.
+	CheckUpdates bool `json:"checkUpdates"`
+	// StartedAt is when this daemon's HTTP server came up, the same instant the
+	// formatted uptime in /api/system counts from.
+	StartedAt time.Time `json:"startedAt"`
 }
 
 // InstanceInfo is the local-only identity of a running daemon, returned by

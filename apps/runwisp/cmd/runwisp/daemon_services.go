@@ -519,6 +519,7 @@ func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time
 		TimezoneSource:   cfg.Config.Scheduler.Source,
 		Tasks:            tasks,
 		Capabilities:     capInfos,
+		CheckUpdates:     cfg.Config.Daemon.CheckUpdates,
 	}
 }
 

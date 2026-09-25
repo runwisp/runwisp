@@ -86,7 +86,10 @@ external_url = "https://runwisp.example.com"
 
 Checks for a newer release (usually every 6 hours) and shows an amber marker
 next to the version in the Web UI and TUI. It never downloads or installs
-anything. Set `false` to keep the daemon fully offline.
+anything. It also lets the Web UI ask for a quick rating, at most once a
+month. Nothing is sent unless you press Submit, and then only your rating,
+optional note, and RunWisp version. Set `false` to keep RunWisp fully
+offline.
 
 ```toml
 [daemon]

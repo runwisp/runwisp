@@ -212,6 +212,11 @@ func TestBuildDaemonInfo_PopulatesTaskList(t *testing.T) {
 	assert.Equal(t, "alpha", info.Tasks[0].Name)
 	assert.Equal(t, "zulu", info.Tasks[1].Name)
 	assert.Len(t, info.Capabilities, 5)
+	assert.False(t, info.CheckUpdates)
+
+	cfg.Daemon.CheckUpdates = true
+	assert.True(t, buildDaemonInfo(dc, svc, time.Time{}, f.Port).CheckUpdates,
+		"check_updates must reach the Web UI, which gates its feedback prompt on it")
 }
 
 func TestOrderServicesForStart(t *testing.T) {

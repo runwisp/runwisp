@@ -9,6 +9,7 @@ export { appEventStream } from "./app-stream.svelte.js";
 export { connectionStore } from "./connection.svelte.js";
 export type { ConnectionStatus } from "./connection.svelte.js";
 export { systemStore } from "./system.svelte.js";
+export { feedbackStore } from "./feedback.svelte.js";
 export { headerSearchStore } from "./header-search.svelte.js";
 export type { HeaderSearchSpec } from "./header-search.svelte.js";
 export { notificationStore } from "./notifications.svelte.js";
