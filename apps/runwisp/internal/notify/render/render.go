@@ -235,12 +235,14 @@ func humanDuration(d time.Duration) string {
 		seconds := float64(d) / float64(time.Second)
 		return fmt.Sprintf("%.1fs", seconds)
 	}
+	// Round before splitting into units so 59.6s carries into "1m", not "60s".
+	d = d.Round(time.Second)
 	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d.Round(time.Second)/time.Second))
+		return fmt.Sprintf("%ds", int(d/time.Second))
 	}
 	if d < time.Hour {
 		m := int(d / time.Minute)
-		s := int((d - time.Duration(m)*time.Minute).Round(time.Second) / time.Second)
+		s := int((d - time.Duration(m)*time.Minute) / time.Second)
 		if s == 0 {
 			return fmt.Sprintf("%dm", m)
 		}

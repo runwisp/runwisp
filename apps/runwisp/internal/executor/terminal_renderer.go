@@ -378,7 +378,6 @@ func (tr *TerminalRenderer) newline() {
 		// empty tail. The region stays a single live row (the unterminated tail).
 		row := tr.rows[tr.curRow]
 		tr.commitRows([]*termRow{row}, true)
-		tr.pendingContinued = false
 		*row = termRow{}
 		tr.curCol = 0
 		tr.dirty = true
@@ -572,11 +571,15 @@ func (tr *TerminalRenderer) penString(id uint16) string {
 // pass withHistory=false: they emit a line mid-animation, so the region and its
 // still-growing history must survive into the eventual settling commit.
 func (tr *TerminalRenderer) commitRows(rows []*termRow, withHistory bool) {
+	// pendingContinued describes only the next finalized line; consume it here so
+	// a split during a locked redraw can't stamp every later commit.
+	continued := tr.pendingContinued
+	tr.pendingContinued = false
 	lines := make([]committedLine, len(rows))
 	finalRows := make([]string, len(rows))
 	for i, row := range rows {
 		t := tr.renderRow(row)
-		lines[i] = committedLine{text: t, continued: tr.pendingContinued}
+		lines[i] = committedLine{text: t, continued: i == 0 && continued}
 		finalRows[i] = t
 	}
 	var frames [][]string

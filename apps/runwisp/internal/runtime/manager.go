@@ -1264,12 +1264,13 @@ func (m *defaultTaskManager) reapRetiredTaskState(task *model.Task, ts *taskStat
 }
 
 // scheduleFollowup spawns the retry or restart goroutine dictated by the task's
-// policy after a run has ended. Station-triggered runs never retry locally — the
-// control plane owns their retry lifecycle.
+// policy after a run has ended. Station-triggered task runs never retry locally —
+// the control plane owns their retry lifecycle. Services are the exception: the
+// local supervisor keeps their instances alive no matter who started them.
 // Service FATAL runs never reach this method — the caller guards on the FATAL
 // flag returned by recordRunOutcome.
 func (m *defaultTaskManager) scheduleFollowup(task *model.Task, run *model.Run, nextRestartAttempt int) {
-	if run.TriggeredBy == model.TriggeredByStation {
+	if run.TriggeredBy == model.TriggeredByStation && !task.Kind.IsService() {
 		return
 	}
 	copiedRun := run.Copy()

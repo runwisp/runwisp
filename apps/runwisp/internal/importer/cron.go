@@ -801,16 +801,16 @@ func startsWithFiveStars(fields []string) bool {
 // sixth token must look like a username rather than a command, so an ordinary
 // per-user job (`* * * * * python /app/x.py`) never trips it.
 func looksLikeUserColumn(line string) bool {
-	if strings.HasPrefix(line, "@") {
-		return false
-	}
+	// Descriptor lines (`@reboot root cmd`) carry the same user column in a
+	// system crontab, so they go through the same sniff.
 	j, ok := splitCronJobLine(line, true)
 	if !ok {
 		return false
 	}
 	// Validated with an empty timezone on purpose: this is a shape sniff, and a
-	// bad CRON_TZ must not change what a line *looks* like.
-	if cronspec.Validate(j.schedule, "") != nil {
+	// bad CRON_TZ must not change what a line *looks* like. @reboot has no
+	// schedule to validate.
+	if !j.runOnStart && cronspec.Validate(j.schedule, "") != nil {
 		return false
 	}
 	return isLikelyUsername(j.user)

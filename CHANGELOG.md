@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Subcommand `--help` output now ends with the pointer to the machine-readable agent docs when it isn't a terminal.
+- A jittered crontab task that RunWisp takes over after the system cron daemon stops now keeps its `jitter` start-spread instead of firing at the raw tick until the next reload.
+- A log stream requested with a negative `from` larger than the replay limit now replays the newest lines instead of the oldest, so no lines go missing before the live tail.
+- Notification durations no longer render as "60s" or "59m 60s"; they round up to "1m" or "1h".
+- `runwisp import cron` now warns about a user column on `@reboot`, `@daily` and other `@`-shorthand lines (suggesting `--system`) instead of importing the username as the command.
+- Live output from programs that redraw the screen no longer marks every line after an over-long line as a continuation.
 
 ## [1.0.1] - 2026-09-23
 

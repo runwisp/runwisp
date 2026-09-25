@@ -170,6 +170,13 @@ func (r *Reconciler) RefreshCronHolds(state cronprobe.State) CronHoldChange {
 		}
 	}
 
+	// A hold flip changes which tasks are schedulable, so the jitter dial must be
+	// re-leveled the same way a reload's apply does: a released task otherwise
+	// fires at the raw tick until the next reload.
+	if r.scheduler != nil && len(out.Held)+len(out.Released) > 0 {
+		r.scheduler.RecomputeJitter(newTasks)
+	}
+
 	// Last, so Warnings and config.Held answer from the config whose holds are now
 	// the ones in force.
 	r.baseline = updated
