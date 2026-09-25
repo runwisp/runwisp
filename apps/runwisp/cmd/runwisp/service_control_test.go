@@ -10,9 +10,92 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func taskResponse(name string, kind model.TaskKind, manualTrigger bool) model.TaskResponse {
+	return model.TaskResponse{Task: model.Task{Name: name, Kind: kind, ManualTrigger: manualTrigger}}
+}
+
+func TestResolveTargets(t *testing.T) {
+	tasks := []model.TaskResponse{
+		taskResponse("web", model.KindService, true),
+		taskResponse("worker", model.KindService, true),
+		taskResponse("locked-svc", model.KindService, false),
+		taskResponse("backup", model.KindTask, true),
+		taskResponse("locked-task", model.KindTask, false),
+	}
+	const runID = "01J8Z3K9QK6VN8XG2R5F7T1C4M"
+
+	t.Run("literal name resolves regardless of lock", func(t *testing.T) {
+		got, err := resolveTargets([]string{"web", "locked-svc"}, tasks, false)
+		require.NoError(t, err)
+		require.Len(t, got, 2)
+		assert.Equal(t, resolvedTarget{kind: targetTaskKind, name: "web", isService: true}, got[0])
+		assert.Equal(t, resolvedTarget{kind: targetTaskKind, name: "locked-svc", isService: true}, got[1])
+	})
+
+	t.Run("glob matches across both kinds and skips locked entries", func(t *testing.T) {
+		got, err := resolveTargets([]string{"*"}, tasks, false)
+		require.NoError(t, err)
+		names := make([]string, len(got))
+		for i, g := range got {
+			names[i] = g.name
+		}
+		assert.ElementsMatch(t, []string{"web", "worker", "backup"}, names)
+	})
+
+	t.Run("glob matching only locked entries is an error", func(t *testing.T) {
+		_, err := resolveTargets([]string{"locked-*"}, tasks, false)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "matched no controllable")
+	})
+
+	t.Run("glob with no match at all is an error", func(t *testing.T) {
+		_, err := resolveTargets([]string{"nope-*"}, tasks, false)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `"nope-*"`)
+	})
+
+	t.Run("invalid pattern is an error", func(t *testing.T) {
+		_, err := resolveTargets([]string{"["}, tasks, false)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid pattern")
+	})
+
+	t.Run("dedupes overlapping literal and glob matches, preserving order", func(t *testing.T) {
+		got, err := resolveTargets([]string{"web", "w*"}, tasks, false)
+		require.NoError(t, err)
+		names := make([]string, len(got))
+		for i, g := range got {
+			names[i] = g.name
+		}
+		assert.Equal(t, []string{"web", "worker"}, names)
+	})
+
+	t.Run("run ID only resolves as a run target when allowed", func(t *testing.T) {
+		got, err := resolveTargets([]string{runID}, tasks, true)
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		assert.Equal(t, resolvedTarget{kind: targetRunKind, name: runID}, got[0])
+	})
+
+	t.Run("ULID-shaped arg stays a task name when run IDs aren't allowed", func(t *testing.T) {
+		got, err := resolveTargets([]string{runID}, tasks, false)
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		assert.Equal(t, resolvedTarget{kind: targetTaskKind, name: runID}, got[0])
+	})
+
+	t.Run("unknown literal name still produces a task target for the server to 404", func(t *testing.T) {
+		got, err := resolveTargets([]string{"nope"}, tasks, true)
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		assert.Equal(t, resolvedTarget{kind: targetTaskKind, name: "nope"}, got[0])
+	})
+}
 
 func TestShouldDelegateStop(t *testing.T) {
 	tests := []struct {

@@ -236,10 +236,12 @@ func finishExecJSON(ctx context.Context, w io.Writer, client *apiclient.Client, 
 	return writeJSON(w, newExecJSONDoc(taskName, final))
 }
 
-// runExecViaRemote dispatches the run to a remote daemon over the network. It
-// reuses a cached JWT when one is valid, falling back to a CHAP handshake, and
-// (unless detached) follows the SSE log stream to propagate the exit code.
-func runExecViaRemote(ctx context.Context, taskName, baseURL, password string, detach bool, params map[string]*string) (int, error) {
+// connectRemote establishes a pinned client against a remote daemon: it health
+// -checks the daemon (surfacing a cert-pin mismatch or unreachability with the
+// same guidance run --url gives), then reuses a cached session token or logs
+// in via CHAP if the caller supplies a password. Shared by run --url and the
+// stop/restart/start --url control commands.
+func connectRemote(ctx context.Context, baseURL, password string) (*apiclient.Client, error) {
 	client := apiclient.NewPinned(baseURL, password, certPinStore{})
 
 	// Health is a public endpoint — probe it before auth so an unreachable
@@ -249,20 +251,31 @@ func runExecViaRemote(ctx context.Context, taskName, baseURL, password string, d
 	if err := client.HealthCheck(ctx); err != nil {
 		var mismatch *apiclient.CertPinMismatchError
 		if errors.As(err, &mismatch) {
-			return 0, certPinMismatchError(baseURL, mismatch)
+			return nil, certPinMismatchError(baseURL, mismatch)
 		}
-		return 0, remoteUnreachableError(baseURL, err)
+		return nil, remoteUnreachableError(baseURL, err)
 	}
 
 	// Optimistically reuse a cached session; an expired token surfaces as a
-	// 401 on the trigger, which triggerRemote re-authenticates and retries.
+	// 401 on the first real call, which the caller re-authenticates and retries.
 	if cached := loadCachedToken(baseURL); cached != "" {
 		client.SetToken(cached)
 	}
 	if !client.IsAuthenticated() {
 		if err := authenticateRemote(ctx, client, baseURL, password); err != nil {
-			return 0, err
+			return nil, err
 		}
+	}
+	return client, nil
+}
+
+// runExecViaRemote dispatches the run to a remote daemon over the network. It
+// reuses a cached JWT when one is valid, falling back to a CHAP handshake, and
+// (unless detached) follows the SSE log stream to propagate the exit code.
+func runExecViaRemote(ctx context.Context, taskName, baseURL, password string, detach bool, params map[string]*string) (int, error) {
+	client, err := connectRemote(ctx, baseURL, password)
+	if err != nil {
+		return 0, err
 	}
 
 	run, err := triggerRemote(ctx, client, taskName, baseURL, password, params)

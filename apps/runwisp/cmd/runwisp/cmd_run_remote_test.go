@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -149,6 +151,46 @@ func TestRunExecViaRemote_MissingPassword(t *testing.T) {
 	ufe, ok := isUserFacing(err)
 	require.True(t, ok, "missing password must be a user-facing error")
 	assert.Contains(t, ufe.Error(), "password is required")
+}
+
+// TestControlTargets_StopViaRemote exercises stop --url end to end: CHAP
+// login, listing tasks to resolve "web" to a service, and dispatching the
+// stop over the network — the same client path run --url uses.
+func TestControlTargets_StopViaRemote(t *testing.T) {
+	useTempCacheDir(t)
+	const freshToken = "fresh-jwt-token"
+	var stoppedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/health":
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/api/auth/challenge":
+			_ = json.NewEncoder(w).Encode(map[string]string{"nonce": "test-nonce"})
+		case r.URL.Path == "/api/auth/login":
+			_ = json.NewEncoder(w).Encode(map[string]string{"token": freshToken})
+		case r.URL.Path == "/api/tasks":
+			require.Equal(t, "Bearer "+freshToken, r.Header.Get("Authorization"))
+			_, _ = w.Write([]byte(`{"items":[{"name":"web","kind":"service","manualTrigger":true}]}`))
+		case r.URL.Path == "/api/tasks/web/stop":
+			require.Equal(t, "Bearer "+freshToken, r.Header.Get("Authorization"))
+			stoppedPath = r.URL.Path
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Logf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	buf := &bytes.Buffer{}
+	cmd.SetOut(buf)
+
+	err := controlTargets(cmd, Flags{}, []string{"web"}, stopControlAction, remoteFlags{URL: srv.URL, Password: "pw"})
+	require.NoError(t, err)
+	assert.Equal(t, "/api/tasks/web/stop", stoppedPath)
+	assert.Contains(t, buf.String(), `Service "web" stopped.`)
 }
 
 func TestRunExecViaRemote_Unreachable(t *testing.T) {
