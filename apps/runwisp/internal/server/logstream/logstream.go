@@ -216,18 +216,13 @@ func lineFromRecord(rec logutil.LogLineRecord, frameCount int) LineEvent {
 // is clamped against the available rotation window.
 func resolveBackfillAnchor(from, replayLimit, totalLines, firstAvailable int64) int64 {
 	if from < 0 {
-		anchor := totalLines + from
-		if anchor < firstAvailable {
-			anchor = firstAvailable
-		}
-		if anchor < 0 {
-			anchor = 0
-		}
-		return anchor
+		from = max(totalLines+from, 0)
 	}
 	if from < firstAvailable {
 		from = firstAvailable
 	}
+	// A window larger than the replay budget replays its newest lines: the live
+	// loop resumes at the true end, so an oldest-first slice would drop the gap.
 	if replayLimit > 0 && totalLines-from > replayLimit {
 		from = totalLines - replayLimit
 		if from < firstAvailable {

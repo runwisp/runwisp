@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/autostart"
@@ -26,6 +27,9 @@ import (
 // running as root, would otherwise make these tests machine-dependent. Tests
 // that exercise either behaviour override the var locally and restore it.
 func TestMain(m *testing.M) {
+	// The cron trust check rejects group-writable directories, so pin the umask
+	// or t.TempDir() trees fail it on hosts that default to 002.
+	syscall.Umask(0o022)
 	scanForCron = func(string) (config.CronScan, bool) { return config.CronScan{}, false }
 	offerFirstRunCutover = func(Flags, io.Writer, func(string, []string) error) *firstRunCutover { return nil }
 	os.Exit(m.Run())
