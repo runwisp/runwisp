@@ -98,7 +98,7 @@ RunWisp can start from the configuration you already have:
 - [Import docker compose](https://docs.runwisp.com/coming-from/docker-compose/).
 
 <div align="center">
-<img alt="RunWisp terminal UI showing tasks, live output, and run controls over SSH" src="apps/docs/src/assets/screenshots/tui-home.png" width="780">
+<img alt="RunWisp terminal UI showing tasks, live output, and run controls over SSH" src="apps/docs/src/assets/screenshots/tui-demo.webp" width="780">
 <p><em>The terminal UI keeps task status, logs, history, and controls in the SSH session.</em></p>
 </div>
 
