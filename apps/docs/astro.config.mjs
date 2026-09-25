@@ -8,10 +8,9 @@ import svelte from "@astrojs/svelte";
 import starlightOpenAPI, { openAPISidebarGroups } from "starlight-openapi";
 import { redirects } from "./src/redirects.mjs";
 
-// Code blocks render as the marketing site's always-dark operator terminal in
-// both light and dark mode. Surface + syntax colours are lifted verbatim from
-// runwisp.com's --term / --syn-* tokens (src/styles/app.css) so a code sample
-// looks the same on docs.runwisp.com as it does on the landing page.
+// Code blocks render as the always-dark operator terminal in both light and
+// dark mode. Expressive Code needs literal colours, so these mirror
+// @runwisp/ui's --rw-term-* / --rw-syn-* tokens (theme-tokens.css) — keep in sync.
 const terminalTheme = {
     name: "runwisp-terminal",
     type: "dark",
@@ -68,7 +67,7 @@ export default defineConfig({
             ],
             // One fixed dark terminal theme for both colour modes. Frame radius +
             // hairline match the flat 3px chrome; the frame's drop shadow is
-            // suppressed here because theme-bridge.css casts the deeper --lift-3.
+            // suppressed here; theme-bridge.css gives it --rw-shadow-xs.
             expressiveCode: {
                 themes: [terminalTheme],
                 useStarlightDarkModeSwitch: false,
@@ -81,15 +80,15 @@ export default defineConfig({
                 },
             },
             title: "RunWisp",
-            logo: {
-                src: "@runwisp/ui/assets/runwisp-logo.svg",
-            },
             favicon: "/favicon.svg",
             components: {
                 // Adds a one-line HTML comment pointing AI agents at the
                 // Markdown twin of the page they just fetched as HTML.
                 Head: "./src/components/Head.astro",
                 SocialIcons: "./src/components/SocialIcons.astro",
+                // Starlight's footer + the brand footer shared with runwisp.com.
+                Footer: "./src/components/Footer.astro",
+                SiteTitle: "./src/components/SiteTitle.astro",
             },
             head: [
                 {
@@ -109,7 +108,7 @@ export default defineConfig({
                     attrs: {
                         name: "theme-color",
                         media: "(prefers-color-scheme: light)",
-                        content: "#f5f8f9",
+                        content: "#f3f6f6",
                     },
                 },
                 {
