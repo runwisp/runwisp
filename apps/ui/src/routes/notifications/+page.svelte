@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import { Bell } from "@lucide/svelte";
-    import EmptyState from "@runwisp/ui/components/EmptyState.svelte";
+    import { EmptyState } from "@runwisp/ui";
     import { notificationStore } from "$lib/stores";
     import NotificationItem from "$lib/components/NotificationItem.svelte";
 

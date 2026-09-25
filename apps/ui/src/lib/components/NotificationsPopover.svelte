@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import { resolve } from "$app/paths";
-    import Card from "@runwisp/ui/components/Card.svelte";
+    import { Card } from "@runwisp/ui";
     import { notificationStore } from "$lib/stores";
     import NotificationItem from "./NotificationItem.svelte";
 

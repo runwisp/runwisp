@@ -50,6 +50,7 @@ export { default as DataGrid } from "./components/DataGrid.svelte";
 export { default as Progress } from "./components/Progress.svelte";
 export { default as Skeleton } from "./components/Skeleton.svelte";
 export { default as Sparkline } from "./components/Sparkline.svelte";
+export { default as StatusDot, type StatusDotTone } from "./components/StatusDot.svelte";
 export { default as StatusIndicator } from "./components/StatusIndicator.svelte";
 export { default as Table } from "./components/Table.svelte";
 export { default as TableBody } from "./components/TableBody.svelte";
@@ -67,6 +68,7 @@ export { default as Modal } from "./components/Modal.svelte";
 export { default as Popover } from "./components/Popover.svelte";
 export { default as ToastContainer } from "./components/ToastContainer.svelte";
 export { default as Tooltip } from "./components/Tooltip.svelte";
+export { default as ThemeToggle } from "./components/ThemeToggle.svelte";
 
 export { default as CodeBlock } from "./components/CodeBlock.svelte";
 export { default as TaskCard } from "./components/TaskCard.svelte";
@@ -118,6 +120,12 @@ export { humanizeCron, type HumanizedCron } from "./components/dashboard/cron-fo
 export type { DaemonState, DaemonStats } from "./components/dashboard/types.js";
 
 export { toast, type Toast, type ToastType } from "./utils/toast.svelte.js";
+export {
+    themeStore,
+    THEME_STORAGE_KEY,
+    type ThemePreference,
+    type ResolvedTheme,
+} from "./utils/theme.svelte.js";
 export { extractErrorMessage } from "./utils/error.js";
 export {
     formatBytes,

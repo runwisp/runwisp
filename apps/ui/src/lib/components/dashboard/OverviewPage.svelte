@@ -2,8 +2,6 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import PageContainer from "@runwisp/ui/components/PageContainer.svelte";
-    import Card from "@runwisp/ui/components/Card.svelte";
     import type { MetricsSample } from "$lib/api";
     import OverviewHero from "./OverviewHero.svelte";
     import SystemResourcesPanel from "./SystemResourcesPanel.svelte";
@@ -21,7 +19,7 @@
         type TaskOverview,
     } from "./overview.js";
     import { instanceCountResolver } from "./instance-count.js";
-    import { TickingNow } from "@runwisp/ui";
+    import { TickingNow, PageContainer, Card } from "@runwisp/ui";
     import type { DaemonState, DaemonStats } from "@runwisp/ui";
     import type { Run, Task } from "@runwisp/common";
 

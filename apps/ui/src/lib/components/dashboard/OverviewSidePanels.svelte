@@ -3,11 +3,17 @@
 
 <script lang="ts">
     import { Activity, ArrowRight, Clock3, ShieldAlert, ShieldCheck } from "@lucide/svelte";
-    import Badge from "@runwisp/ui/components/Badge.svelte";
-    import Card from "@runwisp/ui/components/Card.svelte";
     import ComposeBadge from "../ComposeBadge.svelte";
     import TaskSourceBadge from "../TaskSourceBadge.svelte";
-    import { getRunStatusConfig, TaskCard, instanceSuffix, humanizeStatus } from "@runwisp/ui";
+    import {
+        getRunStatusConfig,
+        TaskCard,
+        instanceSuffix,
+        humanizeStatus,
+        StatusDot,
+        Badge,
+        Card,
+    } from "@runwisp/ui";
     import type { TaskOverview } from "./overview.js";
     import type { Run } from "@runwisp/common";
     import {
@@ -142,14 +148,7 @@
                         <div class="flex items-start justify-between gap-2">
                             <div class="min-w-0 flex-1">
                                 <div class="flex items-center gap-2">
-                                    <span class="relative flex h-2 w-2 shrink-0">
-                                        <span
-                                            class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"
-                                        ></span>
-                                        <span
-                                            class="relative inline-flex h-2 w-2 rounded-full bg-primary"
-                                        ></span>
-                                    </span>
+                                    <StatusDot pulse />
                                     <span
                                         class="truncate font-mono text-sm font-medium text-on-surface"
                                     >

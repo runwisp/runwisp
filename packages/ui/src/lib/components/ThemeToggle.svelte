@@ -2,46 +2,41 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import { Moon, Sun } from "@lucide/svelte";
+    import { ChevronDown, Monitor, Moon, Sun } from "@lucide/svelte";
+    import Dropdown from "./Dropdown.svelte";
+    import { themeStore, type ThemePreference } from "../utils/theme.svelte.js";
 
     interface Props {
-        storageKey?: string;
         class?: string;
     }
 
-    let { storageKey = "runwisp:theme", class: className = "" }: Props = $props();
+    let { class: className = "" }: Props = $props();
 
-    let isDark = $state(false);
-    let mounted = $state(false);
+    const options: { value: ThemePreference; label: string; icon: typeof Monitor }[] = [
+        { value: "auto", label: "Auto", icon: Monitor },
+        { value: "light", label: "Light", icon: Sun },
+        { value: "dark", label: "Dark", icon: Moon },
+    ];
 
-    $effect(() => {
-        isDark = document.documentElement.classList.contains("dark");
-        mounted = true;
-    });
+    let TriggerIcon = $derived(
+        themeStore.preference === "auto" ? Monitor : themeStore.resolved === "dark" ? Moon : Sun,
+    );
 
-    function toggle(): void {
-        const next = !isDark;
-        isDark = next;
-        document.documentElement.classList.toggle("dark", next);
-        try {
-            localStorage.setItem(storageKey, next ? "dark" : "light");
-        } catch {
-            // localStorage may be unavailable (private mode, embedded contexts) — fall through.
-        }
-    }
+    let items = $derived(
+        options.map((o) => ({
+            label: o.label,
+            icon: o.icon,
+            selected: themeStore.preference === o.value,
+            onClick: () => themeStore.set(o.value),
+        })),
+    );
 </script>
 
-<button
-    type="button"
-    onclick={toggle}
-    aria-pressed={isDark}
-    aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
-    title={isDark ? "Switch to light theme" : "Switch to dark theme"}
-    class="inline-flex h-9 w-9 items-center justify-center rounded-[3px] border border-outline bg-surface-raised text-on-surface-muted hover:border-outline-hover hover:text-on-surface {className}"
->
-    {#if mounted && isDark}
-        <Sun size={16} />
-    {:else}
-        <Moon size={16} />
-    {/if}
-</button>
+<Dropdown {items} align="right" triggerLabel="Theme" class={className}>
+    {#snippet trigger()}
+        <span class="flex items-center gap-1">
+            <TriggerIcon size={18} />
+            <ChevronDown size={14} class="opacity-60" />
+        </span>
+    {/snippet}
+</Dropdown>

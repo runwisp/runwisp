@@ -3,7 +3,6 @@
 
 <script lang="ts">
     import { Activity, RotateCcwClock, Menu, X } from "@lucide/svelte";
-    import Logo from "@runwisp/ui/components/Logo.svelte";
     import { type Snippet, type Component, tick } from "svelte";
     import { resolve } from "$app/paths";
     import { page } from "$app/stores";
@@ -13,7 +12,7 @@
     import HeaderSearch from "$lib/components/HeaderSearch.svelte";
     import NotificationBell from "$lib/components/NotificationBell.svelte";
     import StaleConfigBanner from "$lib/components/StaleConfigBanner.svelte";
-    import ThemeToggle from "$lib/components/ThemeToggle.svelte";
+    import { ThemeToggle, Logo } from "@runwisp/ui";
 
     let {
         activePage,
