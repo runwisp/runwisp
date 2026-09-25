@@ -4466,6 +4466,7 @@
     },
     "/api/tasks/{taskName}/restart": {
       "post": {
+        "description": "For a service: bounces every instance (starting it if it was stopped). For a task: cancels any active run, waits for it to end, then triggers exactly one fresh run.",
         "operationId": "restartTask",
         "parameters": [
           {
@@ -4478,6 +4479,21 @@
               "maxLength": 100,
               "minLength": 1,
               "pattern": "^[a-zA-Z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Declares the caller for run provenance when this starts a fresh task run: 'ui' (Web UI / TUI) or 'cli' (runwisp start/restart). Omit for a plain API call. Ignored for services.",
+            "explode": false,
+            "in": "query",
+            "name": "via",
+            "schema": {
+              "description": "Declares the caller for run provenance when this starts a fresh task run: 'ui' (Web UI / TUI) or 'cli' (runwisp start/restart). Omit for a plain API call. Ignored for services.",
+              "enum": [
+                "ui",
+                "cli",
+                ""
+              ],
               "type": "string"
             }
           }
@@ -4497,7 +4513,7 @@
             "description": "Error"
           }
         },
-        "summary": "Restart all instances of a service",
+        "summary": "Restart all instances of a service, or a task's run",
         "tags": [
           "Runs"
         ]
@@ -4598,9 +4614,64 @@
         ]
       }
     },
+    "/api/tasks/{taskName}/start": {
+      "post": {
+        "description": "For a service: un-parks it (if operator-stopped) and fills empty instance slots; already-running instances are left alone. For a task: triggers a run, unless one is already active or queued, in which case this is a no-op.",
+        "operationId": "startTask",
+        "parameters": [
+          {
+            "description": "Task name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Declares the caller for run provenance when this starts a fresh task run: 'ui' (Web UI / TUI) or 'cli' (runwisp start/restart). Omit for a plain API call. Ignored for services.",
+            "explode": false,
+            "in": "query",
+            "name": "via",
+            "schema": {
+              "description": "Declares the caller for run provenance when this starts a fresh task run: 'ui' (Web UI / TUI) or 'cli' (runwisp start/restart). Omit for a plain API call. Ignored for services.",
+              "enum": [
+                "ui",
+                "cli",
+                ""
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Start a service, or trigger a task",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
     "/api/tasks/{taskName}/stop": {
       "post": {
-        "description": "Cancels every live instance and marks the service stopped. The supervisor stops refilling slots until a restart is issued or the daemon is restarted.",
+        "description": "For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing.",
         "operationId": "stopTask",
         "parameters": [
           {
@@ -4632,7 +4703,7 @@
             "description": "Error"
           }
         },
-        "summary": "Stop a service for the daemon's lifetime",
+        "summary": "Stop a service for the daemon's lifetime, or a task's runs",
         "tags": [
           "Runs"
         ]

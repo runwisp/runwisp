@@ -52,6 +52,9 @@ type TaskRunner interface {
 	TerminateRunByExecutionID(executionID string) error
 	// StartServiceInstances brings a service up to its desired instance count.
 	StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error
+	// StartService un-parks a service the control plane (or an operator)
+	// previously stopped and brings it back up to its desired instance count.
+	StartService(taskName string) error
 	// StopService marks a service operator-stopped and cancels its instances.
 	StopService(taskName string) error
 	// RestartServiceInstances restarts a service's instances.

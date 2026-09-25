@@ -78,8 +78,10 @@ func (s *stubTaskRunner) TerminateRunByExecutionID(id string) error {
 	return s.terminatedErr
 }
 
+func (s *stubTaskRunner) StopTask(string) error                                 { panic("not used") }
 func (s *stubTaskRunner) RestartServiceInstances(string) error                  { panic("not used") }
 func (s *stubTaskRunner) StopService(string) error                              { panic("not used") }
+func (s *stubTaskRunner) StartService(string) error                             { panic("not used") }
 func (s *stubTaskRunner) StartServiceInstances(string, model.TriggeredBy) error { panic("not used") }
 func (s *stubTaskRunner) ServiceSnapshot(string) (model.ServiceSnapshot, bool) {
 	panic("not used")

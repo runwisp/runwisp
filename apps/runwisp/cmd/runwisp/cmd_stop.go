@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -20,17 +21,24 @@ var stopOpts struct {
 }
 
 var stopCmd = &cobra.Command{
-	Use:   "stop [service]",
-	Short: "Stop the background daemon, or a single service",
-	Long: `Stop the RunWisp daemon that owns this data dir — or, given a service
-name, stop just that service without touching the daemon.
+	Use:   "stop [target...]",
+	Short: "Stop the background daemon, or one or more tasks/services",
+	Long: `Stop the RunWisp daemon that owns this data dir — or, given one or more
+targets, stop just those without touching the daemon.
 
-With a service name ('runwisp stop web'), the daemon cancels every live
-instance of that service and stops refilling its slots until a
-'runwisp restart web' or a daemon restart. Only services can be stopped
-this way; a scheduled task is triggered with 'runwisp run', not stopped.
+A target is a task name, a service name, a run ID, or a quoted shell-style
+glob matched against task and service names ('web*', or '*' for everything).
+Several targets can be given at once. For a service, every live instance is
+cancelled and its slots stop refilling until a 'runwisp start'/'restart' or a
+daemon restart. For a task, any active run is cancelled and anything still
+queued is dropped — the cron schedule keeps firing. A run ID stops just that
+run, wherever it came from. A target locked with manual_trigger = false is
+rejected (403); a glob silently skips locked entries instead of failing.
 
-With no argument, the whole daemon stops. When it is managed by systemd or
+With --url (or RUNWISP_URL), targets are stopped on a remote daemon instead —
+the same CHAP login and session caching as 'runwisp run --url'.
+
+With no target, the whole daemon stops. When it is managed by systemd or
 launchd (wired up via 'runwisp service install'), the stop is delegated to
 the service manager so its view of the unit stays in sync — the unit remains
 installed and enabled, and the daemon will come back on the next boot or
@@ -43,7 +51,12 @@ silently.
 
 The delegation finds whichever unit is installed on its own. Pass --local to
 pin the per-user one when both a system and a user unit are present.`,
-	Args: cobra.MaximumNArgs(1),
+	Example: `  runwisp stop web
+  runwisp stop web worker 'batch-*'
+  runwisp stop 01J8Z3K9QK6VN8XG2R5F7T1C4M
+  runwisp stop '*' --url https://ci.example.com --password "$RUNWISP_PASSWORD"
+  runwisp stop`,
+	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runStop(cmd, args, flags)
 	},
@@ -51,11 +64,16 @@ pin the per-user one when both a system and a user unit are present.`,
 
 func init() {
 	stopCmd.Flags().BoolVar(&stopOpts.Local, "local", false, localFlagUsage)
+	addRemoteFlags(stopCmd)
 }
 
 func runStop(cmd *cobra.Command, args []string, f Flags) error {
-	if len(args) == 1 {
-		return controlService(cmd, f, args[0], "stop", "stopped", (*apiclient.Client).StopService)
+	if len(args) > 0 {
+		return controlTargets(cmd, f, controlRemote, args, "stop", "stopped", (*apiclient.Client).StopTask, (*apiclient.Client).StopRun)
+	}
+
+	if url, _ := controlRemote.resolve(); url != "" {
+		return errors.New("--url needs a target; the remote daemon itself can't be stopped from here")
 	}
 
 	out := cmd.OutOrStdout()

@@ -338,11 +338,11 @@ func (t *Task) Schedulable() bool { return t.Cron != "" && !t.Held() }
 // service.
 func (t *Task) Triggerable() bool { return !t.Kind.IsService() && t.ManualTrigger }
 
-// ManuallyControllable reports whether a service can be stopped, restarted,
-// or started outside its restart policy, via the Web UI, TUI, CLI, REST API,
-// or the station control plane. false locks it to hands-off supervision: only a
-// runwisp.toml edit + reload can change its running state. Meaningless on a
-// task; use Triggerable there instead.
+// ManuallyControllable reports whether start/stop/restart may act on this
+// task or service outside its own policy (restart policy for a service, cron
+// schedule for a task), via the Web UI, TUI, CLI, REST API, or the station
+// control plane. false locks it to hands-off supervision: only a
+// runwisp.toml edit + reload can change its running state.
 func (t *Task) ManuallyControllable() bool { return t.ManualTrigger }
 
 // TriggerBlockReason identifies which of Triggerable's two conditions fails,

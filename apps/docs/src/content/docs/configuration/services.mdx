@@ -74,11 +74,10 @@ run = "/usr/local/bin/worker"
 
 <ManualTrigger />
 
-On a service, this gates stopping, starting, and restarting by hand. With
-`manual_trigger = false`, the Web UI buttons, TUI `s`/`r`,
-[`runwisp stop`/`restart <name>`](/reference/cli/#runwisp-restart), and the REST
-API all refuse. Only a `runwisp.toml` edit plus `runwisp reload` changes its
-running state.
+On a service, this also gates the TUI's `s`/`r` keys and
+[`runwisp start`/`stop`/`restart <name>`](/reference/cli/#runwisp-restart).
+With `manual_trigger = false`, only a `runwisp.toml` edit plus `runwisp reload`
+changes its running state.
 
 ## Instances
 

@@ -211,7 +211,7 @@ func (m *Model) confirmRestartService() tea.Cmd {
 		"Restart Service",
 		prompt,
 		func() tea.Msg {
-			err := client.RestartService(ctx, taskName)
+			err := client.RestartTask(ctx, taskName, "ui")
 			return uikit.RestartServiceMsg{TaskName: taskName, Err: err}
 		},
 	)
@@ -228,7 +228,7 @@ func (m *Model) confirmStopService() tea.Cmd {
 		"Stop Service",
 		fmt.Sprintf("Stop service\n'%s'?\nIt stays stopped until you start it\nagain or the daemon restarts.", taskName),
 		func() tea.Msg {
-			err := client.StopService(ctx, taskName)
+			err := client.StopTask(ctx, taskName)
 			return uikit.StopServiceMsg{TaskName: taskName, Err: err}
 		},
 	)

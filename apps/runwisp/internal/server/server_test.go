@@ -922,7 +922,7 @@ func setupServerWithService(t *testing.T) (*Server, string) {
 	return s, svcName
 }
 
-// ---- humaRestartService ----
+// ---- humaRestartTask ----
 
 func TestRestartServiceHTTP_Success(t *testing.T) {
 	s, svcName := setupServerWithService(t)
@@ -946,16 +946,19 @@ func TestRestartServiceHTTP_TaskNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-func TestRestartServiceHTTP_NotAService(t *testing.T) {
-	s, _, _, _ := setupServer(t)
+// task1 is a plain cron task (not a service): restart now stops its (idle, so
+// a no-op) run, finds it already drained, and triggers a fresh one.
+func TestRestartTaskHTTP_PlainTaskDispatchesRestart(t *testing.T) {
+	s, _, exec, _ := setupServer(t)
+	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).
+		Return(&executor.ExecuteResult{ExitCode: 0})
 
-	// task1 is a cron task, not a service.
 	req := httptest.NewRequest(http.MethodPost, "/api/tasks/task1/restart", nil)
 	w := httptest.NewRecorder()
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusNoContent, w.Code)
 }
 
 // Regression: manual_trigger = false locks a service against a manual
@@ -975,7 +978,7 @@ func TestRestartServiceHTTP_ManualTriggerDisabled(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
-// ---- humaStopService ----
+// ---- humaStopTask ----
 
 func TestStopServiceHTTP_Success(t *testing.T) {
 	s, svcName := setupServerWithService(t)
@@ -1016,7 +1019,9 @@ func TestStopServiceHTTP_TaskNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-func TestStopServiceHTTP_NotAService(t *testing.T) {
+// task1 is a plain cron task (not a service): stop cancels its active runs
+// (there are none, so this is a no-op) and drops anything queued.
+func TestStopTaskHTTP_PlainTaskDispatchesStop(t *testing.T) {
 	s, _, _, _ := setupServer(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/tasks/task1/stop", nil)
@@ -1024,7 +1029,64 @@ func TestStopServiceHTTP_NotAService(t *testing.T) {
 	addAuth(req, s)
 	s.router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusNoContent, w.Code)
+}
+
+// ---- humaStartTask ----
+
+func TestStartServiceHTTP_Success(t *testing.T) {
+	s, svcName := setupServerWithService(t)
+	// Park the service first so start has something to un-park.
+	require.NoError(t, s.taskManager.StopService(svcName))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks/"+svcName+"/start", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+}
+
+func TestStartTaskHTTP_TaskNotFound(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks/nonexistent/start", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+// task1 has no active or queued run, so start triggers a fresh one.
+func TestStartTaskHTTP_PlainTaskTriggersWhenIdle(t *testing.T) {
+	s, _, exec, _ := setupServer(t)
+	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).
+		Return(&executor.ExecuteResult{ExitCode: 0})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks/task1/start", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+}
+
+// Regression: manual_trigger = false locks a service against a manual start
+// over the REST API too.
+func TestStartServiceHTTP_ManualTriggerDisabled(t *testing.T) {
+	s, svcName := setupServerWithService(t)
+	locked, ok := s.runService.tasks.Get(svcName)
+	require.True(t, ok)
+	locked.ManualTrigger = false
+	s.runService.tasks.Set(locked)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks/"+svcName+"/start", nil)
+	w := httptest.NewRecorder()
+	addAuth(req, s)
+	s.router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
 func TestRemoveStaleSocket_MissingPathNoError(t *testing.T) {

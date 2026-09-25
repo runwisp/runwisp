@@ -29,6 +29,7 @@ const (
 	PersistenceChannelSize = 1024
 	errTaskNotFoundFmt     = "task not found: %s"
 	errTaskNotServiceFmt   = "task %s is not a service"
+	errTaskIsServiceFmt    = "task %s is a service, not a task"
 )
 
 // serviceHealthPollInterval is how often WaitServiceHealthy re-checks a
@@ -201,19 +202,9 @@ func (m *defaultTaskManager) taskStateFor(name string) *taskState {
 
 // UpsertTask adds a task if missing or replaces the existing definition.
 func (m *defaultTaskManager) UpsertTask(task *model.Task) {
-	// A run orphaned out of the queue below may have been recorded as
-	// in-flight by the jitter gate (a breached fire that queued behind the
-	// concurrency limit), and its terminal event must not publish while m.mu is
-	// still held (see TriggerRunWithOptions). Both must happen after m.mu is
-	// released (gateMu -> mu lock order; see jitterGate's doc), so the flush
-	// is deferred ahead of the lock — LIFO defer order runs it after Unlock.
+	// Deferred ahead of the lock so it runs after Unlock (see retireOrphaned).
 	var orphanedRuns []*model.Run
-	defer func() {
-		for _, r := range orphanedRuns {
-			m.gate.onComplete(r.ID)
-			m.publishTerminal(events.EventRunFailed, r)
-		}
-	}()
+	defer func() { m.retireOrphaned(orphanedRuns) }()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	orphanedRuns = m.upsertTaskLocked(task)
@@ -231,12 +222,7 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 // non-nil error from mutate aborts the write; the task is left untouched.
 func (m *defaultTaskManager) MutateTask(taskName string, mutate func(*model.Task) error) (found bool, err error) {
 	var orphanedRuns []*model.Run
-	defer func() {
-		for _, r := range orphanedRuns {
-			m.gate.onComplete(r.ID)
-			m.publishTerminal(events.EventRunFailed, r)
-		}
-	}()
+	defer func() { m.retireOrphaned(orphanedRuns) }()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -355,6 +341,19 @@ func (m *defaultTaskManager) finalizeOrphanedQueue(ts *taskState) []*model.Run {
 	return runs
 }
 
+// retireOrphaned retires queued runs finalizeOrphanedQueue ended from the
+// jitter gate and publishes their terminal events. Callers defer it ahead of
+// taking m.mu so it runs after Unlock: a queued run can be one the gate marked
+// in-flight (gateMu -> mu lock order; see jitterGate's doc), and publishing
+// while holding the write lock risks deadlocking a re-entrant subscriber (see
+// TriggerRunWithOptions).
+func (m *defaultTaskManager) retireOrphaned(runs []*model.Run) {
+	for _, r := range runs {
+		m.gate.onComplete(r.ID)
+		m.publishTerminal(events.EventRunFailed, r)
+	}
+}
+
 // RemoveTask drops a task from the manager when a reload removes it.
 //
 // The taskState is always evicted from the name-resolvable registry
@@ -370,16 +369,9 @@ func (m *defaultTaskManager) finalizeOrphanedQueue(ts *taskState) []*model.Run {
 // in-flight runs — those finish under the definition they captured, tracked in
 // removedTasks until the last one retires (single-writer-per-task preserved).
 func (m *defaultTaskManager) RemoveTask(taskName string) {
-	// See UpsertTask: a queued run orphaned below may be tracked in-flight by
-	// the jitter gate, and both retiring it and publishing its terminal event
-	// must happen after m.mu is released.
+	// Deferred ahead of the lock so it runs after Unlock (see retireOrphaned).
 	var orphanedRuns []*model.Run
-	defer func() {
-		for _, r := range orphanedRuns {
-			m.gate.onComplete(r.ID)
-			m.publishTerminal(events.EventRunFailed, r)
-		}
-	}()
+	defer func() { m.retireOrphaned(orphanedRuns) }()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -828,14 +820,10 @@ func (m *defaultTaskManager) RecordMissedRun(taskName string, scheduledAt time.T
 // passes TriggeredByAPI.
 func (m *defaultTaskManager) StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error {
 	m.mu.RLock()
-	ts, exists := m.tasks[taskName]
-	if !exists {
+	ts, err := m.serviceLocked(taskName)
+	if err != nil {
 		m.mu.RUnlock()
-		return fmt.Errorf(errTaskNotFoundFmt, taskName)
-	}
-	if !ts.task.Kind.IsService() {
-		m.mu.RUnlock()
-		return fmt.Errorf(errTaskNotServiceFmt, taskName)
+		return err
 	}
 	if ts.supervisor.IsStopped() {
 		m.mu.RUnlock()
@@ -856,6 +844,39 @@ func (m *defaultTaskManager) StartServiceInstances(taskName string, triggeredBy 
 	return nil
 }
 
+// serviceLocked looks up a service task, rejecting unknown names and
+// non-services. Caller must hold m.mu (read or write).
+func (m *defaultTaskManager) serviceLocked(taskName string) (*taskState, error) {
+	ts, exists := m.tasks[taskName]
+	if !exists {
+		return nil, fmt.Errorf(errTaskNotFoundFmt, taskName)
+	}
+	if !ts.task.Kind.IsService() {
+		return nil, fmt.Errorf(errTaskNotServiceFmt, taskName)
+	}
+	return ts, nil
+}
+
+// StartService un-parks a service StopService stopped (or clears a FATAL
+// instance left over from a give-up) and brings it back up to its desired
+// instance count. Unlike StartServiceInstances alone — which no-ops on an
+// operator-stopped service by design — this clears the stop/FATAL flags
+// first, so it also covers "start" for a service that was never running.
+// Already-live instances are left untouched; nothing is cancelled.
+func (m *defaultTaskManager) StartService(taskName string) error {
+	m.mu.Lock()
+	ts, err := m.serviceLocked(taskName)
+	if err != nil {
+		m.mu.Unlock()
+		return err
+	}
+	ts.supervisor.MarkRunning()
+	ts.stoppedByRemoval = false
+	m.mu.Unlock()
+
+	return m.StartServiceInstances(taskName, model.TriggeredByAPI)
+}
+
 // RestartServiceInstances brings a service back to its desired instance count.
 // If the service was operator-stopped or had FATAL instances, the stop/FATAL
 // flags are cleared and the empty slots are spawned with a fresh start-retry
@@ -863,14 +884,10 @@ func (m *defaultTaskManager) StartServiceInstances(taskName string, triggeredBy 
 // and the exit handler refills the freed slots via the supervisor.
 func (m *defaultTaskManager) RestartServiceInstances(taskName string) error {
 	m.mu.Lock()
-	ts, exists := m.tasks[taskName]
-	if !exists {
+	ts, err := m.serviceLocked(taskName)
+	if err != nil {
 		m.mu.Unlock()
-		return fmt.Errorf(errTaskNotFoundFmt, taskName)
-	}
-	if !ts.task.Kind.IsService() {
-		m.mu.Unlock()
-		return fmt.Errorf(errTaskNotServiceFmt, taskName)
+		return err
 	}
 	// Capture FATAL state before MarkRunning clears it: a FATAL service has no
 	// active runs in its dead slots, so they only come back if we spawn them.
@@ -900,14 +917,10 @@ func (m *defaultTaskManager) RestartServiceInstances(taskName string) error {
 // are filled.
 func (m *defaultTaskManager) RecycleServiceInstances(taskName string) error {
 	m.mu.Lock()
-	ts, exists := m.tasks[taskName]
-	if !exists {
+	ts, err := m.serviceLocked(taskName)
+	if err != nil {
 		m.mu.Unlock()
-		return fmt.Errorf(errTaskNotFoundFmt, taskName)
-	}
-	if !ts.task.Kind.IsService() {
-		m.mu.Unlock()
-		return fmt.Errorf(errTaskNotServiceFmt, taskName)
+		return err
 	}
 	if ts.supervisor.IsStopped() {
 		m.mu.Unlock()
@@ -928,12 +941,9 @@ func (m *defaultTaskManager) StopService(taskName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	ts, exists := m.tasks[taskName]
-	if !exists {
-		return fmt.Errorf(errTaskNotFoundFmt, taskName)
-	}
-	if !ts.task.Kind.IsService() {
-		return fmt.Errorf(errTaskNotServiceFmt, taskName)
+	ts, err := m.serviceLocked(taskName)
+	if err != nil {
+		return err
 	}
 	ts.supervisor.MarkStopped()
 	ts.stoppedByRemoval = false
@@ -1396,6 +1406,50 @@ func (m *defaultTaskManager) GetActiveRunCount(taskName string) int {
 		return 0
 	}
 	return len(ts.active)
+}
+
+// WaitIdle blocks until taskName has no active runs, or returns ctx.Err()
+// once ctx is done. Used to wait out a stop's graceful teardown before acting
+// on the task again.
+func WaitIdle(ctx context.Context, r TaskRunner, taskName string) error {
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for r.GetActiveRunCount(taskName) > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+	return nil
+}
+
+// StopTask implements TaskRunner.StopTask. Idempotent, mirroring StopService.
+// Cancelled runs end with ReasonStopped, which is outside retry eligibility
+// (see runtime/retry.IsFailedExecution), so a stop never races its own
+// automatic re-run.
+func (m *defaultTaskManager) StopTask(taskName string) error {
+	// Deferred ahead of the lock so it runs after Unlock (see retireOrphaned).
+	var orphanedRuns []*model.Run
+	defer func() { m.retireOrphaned(orphanedRuns) }()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	ts, exists := m.tasks[taskName]
+	if !exists {
+		return fmt.Errorf(errTaskNotFoundFmt, taskName)
+	}
+	if ts.task.Kind.IsService() {
+		return fmt.Errorf(errTaskIsServiceFmt, taskName)
+	}
+	for _, ar := range ts.active {
+		ar.Cancel()
+	}
+	if ts.cond != nil {
+		orphanedRuns = m.finalizeOrphanedQueue(ts)
+		ts.cond.Broadcast()
+	}
+	return nil
 }
 
 // TerminateRun cancels a running task by ID.

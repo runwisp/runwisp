@@ -1318,6 +1318,10 @@ func (a *testTaskRunnerAdapter) StartServiceInstances(taskName string, triggered
 	return a.inner.StartServiceInstances(taskName, triggeredBy)
 }
 
+func (a *testTaskRunnerAdapter) StartService(taskName string) error {
+	return a.inner.StartService(taskName)
+}
+
 func (a *testTaskRunnerAdapter) StopService(taskName string) error {
 	return a.inner.StopService(taskName)
 }

@@ -45,6 +45,13 @@ type TaskRunner interface {
 	// GetActiveRunCount reports how many runs for the given task are currently
 	// in flight. Unknown tasks return 0.
 	GetActiveRunCount(taskName string) int
+	// StopTask cancels every active run of a non-service task and discards
+	// anything still queued, so nothing starts back up right behind the stop.
+	// The task's cron schedule is untouched — TOML stays the source of truth
+	// for scheduling, and only in-flight/queued executions are cut short.
+	// Returns an error for an unknown task or a service (use StopService for
+	// those).
+	StopTask(taskName string) error
 
 	// --- service supervision (driven at daemon boot and by station) ---
 
@@ -52,11 +59,17 @@ type TaskRunner interface {
 	// station integration can fold daemon-supervised services into tasks.sync.
 	ListServiceTasks() []*model.Task
 	// StartServiceInstances brings a service up to its desired instance count.
-	// Driven both at daemon boot and by a station service:apply/control message.
+	// Idempotent no-op on an operator-stopped service. Driven both at daemon
+	// boot and by a station service:apply/control message.
 	StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error
+	// StartService clears a service's operator-stop flag and any FATAL
+	// instances, then brings it up to its desired instance count — the
+	// un-stop counterpart to StopService. Unlike StartServiceInstances alone,
+	// this un-parks a service StopService stopped.
+	StartService(taskName string) error
 	// StopService marks a service as operator-stopped (in-memory only, cleared
 	// on daemon restart) and cancels every live instance. The supervisor will
-	// not refill slots until StartServiceInstances is called.
+	// not refill slots until StartService or RestartServiceInstances is called.
 	StopService(taskName string) error
 	RestartServiceInstances(taskName string) error
 	// ServiceSnapshot returns the current supervisor view of a service task

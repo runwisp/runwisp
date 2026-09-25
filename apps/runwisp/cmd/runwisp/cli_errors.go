@@ -213,6 +213,21 @@ func remoteAuthFailedError(baseURL string) error {
 	}
 }
 
+// remoteAuthError maps a remote daemon's 401/429 to its user-facing error, or
+// returns nil for any other error — or when baseURL is empty (the local
+// socket) — so the caller can fall through to its own mapping.
+func remoteAuthError(err error, baseURL string) error {
+	switch {
+	case baseURL == "":
+		return nil
+	case errors.Is(err, apiclient.ErrUnauthorized):
+		return remoteAuthFailedError(baseURL)
+	case errors.Is(err, apiclient.ErrRateLimited):
+		return remoteRateLimitedError(baseURL)
+	}
+	return nil
+}
+
 // remoteRateLimitedError is returned when the remote daemon's auth rate
 // limiter rejects our login (a 429).
 func remoteRateLimitedError(baseURL string) error {

@@ -75,6 +75,11 @@ func (m *mockTaskRunner) TerminateRunByExecutionID(executionID string) error {
 	return args.Error(0)
 }
 
+func (m *mockTaskRunner) StopTask(taskName string) error {
+	args := m.MethodCalled("StopTask", taskName)
+	return args.Error(0)
+}
+
 func (m *mockTaskRunner) RestartServiceInstances(taskName string) error {
 	args := m.MethodCalled("RestartServiceInstances", taskName)
 	return args.Error(0)
@@ -82,6 +87,11 @@ func (m *mockTaskRunner) RestartServiceInstances(taskName string) error {
 
 func (m *mockTaskRunner) StopService(taskName string) error {
 	args := m.MethodCalled("StopService", taskName)
+	return args.Error(0)
+}
+
+func (m *mockTaskRunner) StartService(taskName string) error {
+	args := m.MethodCalled("StartService", taskName)
 	return args.Error(0)
 }
 
@@ -448,28 +458,16 @@ func TestHumaTriggerRun_ViaSelectsTriggeredBy(t *testing.T) {
 
 // ---- RestartService ----
 
-func TestRestartService_TaskNotFound(t *testing.T) {
+func TestRestartTask_TaskNotFound(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
-	err := svc.RestartService("missing")
+	err := svc.RestartTask(context.Background(), "missing", model.TriggeredByAPI)
 	assert.ErrorIs(t, err, ErrTaskNotFound)
 }
 
-func TestRestartService_NotAService(t *testing.T) {
-	repo := new(testutil.MockRunRepository)
-	runner := new(mockTaskRunner)
-	tasks := map[string]*model.Task{
-		"t": {Name: "t", Kind: model.KindTask},
-	}
-	svc := makeRunService(tasks, repo, runner)
-
-	err := svc.RestartService("t")
-	assert.ErrorIs(t, err, ErrNotAService)
-}
-
-func TestRestartService_Success(t *testing.T) {
+func TestRestartTask_ServiceDispatchesToRestartServiceInstances(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
@@ -479,12 +477,12 @@ func TestRestartService_Success(t *testing.T) {
 
 	runner.On("RestartServiceInstances", "svc").Return(nil)
 
-	err := svc.RestartService("svc")
+	err := svc.RestartTask(context.Background(), "svc", model.TriggeredByAPI)
 	assert.NoError(t, err)
 	runner.AssertExpectations(t)
 }
 
-func TestRestartService_RunnerError(t *testing.T) {
+func TestRestartTask_ServiceRunnerError(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
@@ -495,15 +493,61 @@ func TestRestartService_RunnerError(t *testing.T) {
 	restartErr := errors.New("restart failed")
 	runner.On("RestartServiceInstances", "svc").Return(restartErr)
 
-	err := svc.RestartService("svc")
+	err := svc.RestartTask(context.Background(), "svc", model.TriggeredByAPI)
 	assert.ErrorIs(t, err, restartErr)
 	runner.AssertExpectations(t)
 }
 
-// Regression: manual_trigger = false locks a service against a manual
-// restart from every front door — REST, UI, TUI, and CLI all route through
-// RestartService.
-func TestRestartService_ManualTriggerDisabled(t *testing.T) {
+// TestRestartTask_TaskDispatch_StopsWaitsThenTriggers exercises restart on a
+// plain task: it stops the current run, polls until it actually drains
+// (simulated here as two "still active" reads before it clears), then
+// triggers exactly one fresh run.
+func TestRestartTask_TaskDispatch_StopsWaitsThenTriggers(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{
+		"t": {Name: "t", Kind: model.KindTask, ManualTrigger: true},
+	}
+	svc := makeRunService(tasks, repo, runner)
+
+	runner.On("StopTask", "t").Return(nil)
+	runner.On("GetActiveRunCount", "t").Return(1).Once()
+	runner.On("GetActiveRunCount", "t").Return(1).Once()
+	runner.On("GetActiveRunCount", "t").Return(0)
+	runner.On("TriggerRunWithOptions", "t", mock.Anything).Return(&model.Run{ID: "r1"}, nil)
+
+	err := svc.RestartTask(context.Background(), "t", model.TriggeredByAPI)
+	assert.NoError(t, err)
+	runner.AssertExpectations(t)
+}
+
+// TestRestartTask_TaskDispatch_DrainTimeout confirms a task whose prior run
+// never ends fails the restart instead of triggering a run alongside a
+// still-dying one. A pre-cancelled context stands in for the drain deadline
+// so the test doesn't burn the real graceful-stop window.
+func TestRestartTask_TaskDispatch_DrainTimeout(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{
+		"t": {Name: "t", Kind: model.KindTask, ManualTrigger: true},
+	}
+	svc := makeRunService(tasks, repo, runner)
+
+	runner.On("StopTask", "t").Return(nil)
+	runner.On("GetActiveRunCount", "t").Return(1)
+
+	err := svc.RestartTask(ctx, "t", model.TriggeredByAPI)
+	assert.ErrorIs(t, err, ErrRestartDidNotDrain)
+	runner.AssertNotCalled(t, "TriggerRunWithOptions", mock.Anything, mock.Anything)
+}
+
+// Regression: manual_trigger = false locks start/stop/restart against a
+// manual restart from every front door — REST, UI, TUI, and CLI all route
+// through RestartTask, for a service or a plain task alike.
+func TestRestartTask_ManualTriggerDisabled(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
@@ -511,35 +555,23 @@ func TestRestartService_ManualTriggerDisabled(t *testing.T) {
 	}
 	svc := makeRunService(tasks, repo, runner)
 
-	err := svc.RestartService("svc")
+	err := svc.RestartTask(context.Background(), "svc", model.TriggeredByAPI)
 	assert.ErrorIs(t, err, ErrManualTriggerDisabled)
 	runner.AssertNotCalled(t, "RestartServiceInstances", "svc")
 }
 
-// ---- StopService ----
+// ---- StopTask (runService) ----
 
-func TestStopService_TaskNotFound(t *testing.T) {
+func TestStopTask_TaskNotFound(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
-	err := svc.StopService("missing")
+	err := svc.StopTask("missing")
 	assert.ErrorIs(t, err, ErrTaskNotFound)
 }
 
-func TestStopService_NotAService(t *testing.T) {
-	repo := new(testutil.MockRunRepository)
-	runner := new(mockTaskRunner)
-	tasks := map[string]*model.Task{
-		"t": {Name: "t", Kind: model.KindTask},
-	}
-	svc := makeRunService(tasks, repo, runner)
-
-	err := svc.StopService("t")
-	assert.ErrorIs(t, err, ErrNotAService)
-}
-
-func TestStopService_Success(t *testing.T) {
+func TestStopTask_ServiceDispatchesToStopService(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
@@ -549,12 +581,12 @@ func TestStopService_Success(t *testing.T) {
 
 	runner.On("StopService", "svc").Return(nil)
 
-	err := svc.StopService("svc")
+	err := svc.StopTask("svc")
 	assert.NoError(t, err)
 	runner.AssertExpectations(t)
 }
 
-func TestStopService_RunnerError(t *testing.T) {
+func TestStopTask_ServiceRunnerError(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
@@ -565,15 +597,30 @@ func TestStopService_RunnerError(t *testing.T) {
 	stopErr := errors.New("stop failed")
 	runner.On("StopService", "svc").Return(stopErr)
 
-	err := svc.StopService("svc")
+	err := svc.StopTask("svc")
 	assert.ErrorIs(t, err, stopErr)
 	runner.AssertExpectations(t)
 }
 
-// Regression: manual_trigger = false locks a service against a manual stop
-// from every front door — REST, UI, TUI, and CLI all route through
-// StopService.
-func TestStopService_ManualTriggerDisabled(t *testing.T) {
+func TestStopTask_TaskDispatchesToTaskManagerStopTask(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{
+		"t": {Name: "t", Kind: model.KindTask, ManualTrigger: true},
+	}
+	svc := makeRunService(tasks, repo, runner)
+
+	runner.On("StopTask", "t").Return(nil)
+
+	err := svc.StopTask("t")
+	assert.NoError(t, err)
+	runner.AssertExpectations(t)
+}
+
+// Regression: manual_trigger = false locks start/stop/restart against a
+// manual stop from every front door — REST, UI, TUI, and CLI all route
+// through StopTask, for a service or a plain task alike.
+func TestStopTask_ManualTriggerDisabled(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	tasks := map[string]*model.Task{
@@ -581,9 +628,82 @@ func TestStopService_ManualTriggerDisabled(t *testing.T) {
 	}
 	svc := makeRunService(tasks, repo, runner)
 
-	err := svc.StopService("svc")
+	err := svc.StopTask("svc")
 	assert.ErrorIs(t, err, ErrManualTriggerDisabled)
 	runner.AssertNotCalled(t, "StopService", "svc")
+}
+
+// ---- StartTask ----
+
+func TestStartTask_TaskNotFound(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(map[string]*model.Task{}, repo, runner)
+
+	err := svc.StartTask(context.Background(), "missing", model.TriggeredByAPI)
+	assert.ErrorIs(t, err, ErrTaskNotFound)
+}
+
+func TestStartTask_ServiceDispatchesToStartService(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{
+		"svc": {Name: "svc", Kind: model.KindService, ManualTrigger: true},
+	}
+	svc := makeRunService(tasks, repo, runner)
+
+	runner.On("StartService", "svc").Return(nil)
+
+	err := svc.StartTask(context.Background(), "svc", model.TriggeredByAPI)
+	assert.NoError(t, err)
+	runner.AssertExpectations(t)
+}
+
+func TestStartTask_TaskNoOpWhenAlreadyActive(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{
+		"t": {Name: "t", Kind: model.KindTask, ManualTrigger: true},
+	}
+	svc := makeRunService(tasks, repo, runner)
+
+	runner.On("GetActiveRunCount", "t").Return(1)
+
+	err := svc.StartTask(context.Background(), "t", model.TriggeredByAPI)
+	assert.NoError(t, err)
+	runner.AssertNotCalled(t, "TriggerRunWithOptions", mock.Anything, mock.Anything)
+}
+
+func TestStartTask_TaskTriggersWhenIdle(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{
+		"t": {Name: "t", Kind: model.KindTask, ManualTrigger: true},
+	}
+	svc := makeRunService(tasks, repo, runner)
+
+	runner.On("GetActiveRunCount", "t").Return(0)
+	runner.On("TriggerRunWithOptions", "t", mock.Anything).Return(&model.Run{ID: "r1"}, nil)
+
+	err := svc.StartTask(context.Background(), "t", model.TriggeredByAPI)
+	assert.NoError(t, err)
+	runner.AssertExpectations(t)
+}
+
+// Regression: manual_trigger = false locks start/stop/restart against a
+// manual start from every front door — REST, UI, TUI, and CLI all route
+// through StartTask, for a service or a plain task alike.
+func TestStartTask_ManualTriggerDisabled(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	tasks := map[string]*model.Task{
+		"svc": {Name: "svc", Kind: model.KindService, ManualTrigger: false},
+	}
+	svc := makeRunService(tasks, repo, runner)
+
+	err := svc.StartTask(context.Background(), "svc", model.TriggeredByAPI)
+	assert.ErrorIs(t, err, ErrManualTriggerDisabled)
+	runner.AssertNotCalled(t, "StartService", "svc")
 }
 
 // ---- StopRun ----

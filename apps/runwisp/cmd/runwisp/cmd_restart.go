@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -21,18 +22,24 @@ var restartOpts struct {
 }
 
 var restartCmd = &cobra.Command{
-	Use:   "restart [service]",
-	Short: "Restart the background daemon, or a single service",
-	Long: `Restart the RunWisp daemon that owns this data dir — or, given a service
-name, restart just that service without touching the daemon.
+	Use:   "restart [target...]",
+	Short: "Restart the background daemon, or one or more tasks/services",
+	Long: `Restart the RunWisp daemon that owns this data dir — or, given one or more
+targets, restart just those without touching the daemon.
 
-With a service name ('runwisp restart web'), the daemon bounces every
-instance of that service, and starts one that was stopped (including a
-service that booted with autostart=false, or one you flipped to
-autostart=true and reloaded). Only services can be restarted this way; a
-scheduled task is triggered with 'runwisp run', not restarted.
+A target is a task name, a service name, or a quoted shell-style glob matched
+against task and service names ('web*', or '*' for everything). Several
+targets can be given at once. For a service, every instance is bounced —
+starting one that was stopped (including a service that booted with
+autostart=false, or one you flipped to autostart=true and reloaded). For a
+task, any active run is cancelled, RunWisp waits for it to actually end, then
+triggers exactly one fresh run. A target locked with manual_trigger = false is
+rejected (403); a glob silently skips locked entries instead of failing.
 
-With no argument, the whole daemon restarts. Most config edits only need
+With --url (or RUNWISP_URL), targets are restarted on a remote daemon instead
+— the same CHAP login and session caching as 'runwisp run --url'.
+
+With no target, the whole daemon restarts. Most config edits only need
 'runwisp reload'; restart is for settings a reload can't apply ([daemon],
 [storage], [notify], the listen address) or to re-fire run_on_start and
 missed-run catch-up.
@@ -44,7 +51,11 @@ fresh one is spawned in the background.
 
 The delegation finds whichever unit is installed on its own. Pass --local to
 pin the per-user one when both a system and a user unit are present.`,
-	Args: cobra.MaximumNArgs(1),
+	Example: `  runwisp restart web
+  runwisp restart web worker 'batch-*'
+  runwisp restart '*' --url https://ci.example.com --password "$RUNWISP_PASSWORD"
+  runwisp restart`,
+	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runRestart(cmd, args, flags)
 	},
@@ -52,11 +63,19 @@ pin the per-user one when both a system and a user unit are present.`,
 
 func init() {
 	restartCmd.Flags().BoolVar(&restartOpts.Local, "local", false, localFlagUsage)
+	addRemoteFlags(restartCmd)
 }
 
 func runRestart(cmd *cobra.Command, args []string, f Flags) error {
-	if len(args) == 1 {
-		return controlService(cmd, f, args[0], "restart", "restarted", (*apiclient.Client).RestartService)
+	if len(args) > 0 {
+		restart := func(c *apiclient.Client, ctx context.Context, name string) error {
+			return c.RestartTask(ctx, name, "cli")
+		}
+		return controlTargets(cmd, f, controlRemote, args, "restart", "restarted", restart, nil)
+	}
+
+	if url, _ := controlRemote.resolve(); url != "" {
+		return errors.New("--url needs a target; the remote daemon itself can't be restarted from here")
 	}
 
 	out := cmd.OutOrStdout()
