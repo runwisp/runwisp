@@ -54,6 +54,31 @@ func TestWebhook_PostsJSON(t *testing.T) {
 	assert.Equal(t, "backup-db", payload["task"])
 }
 
+func TestWebhook_FieldsOverrideRenderedKeys(t *testing.T) {
+	var payload map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		assert.NoError(t, json.Unmarshal(b, &payload))
+	}))
+	defer srv.Close()
+
+	ch, err := New(Config{
+		ID:        "my-hook",
+		URL:       srv.URL,
+		Renderer:  testutil.NewTestRenderer(t, "webhook", "application/json"),
+		Transport: testutil.NewFastTransport(),
+		Fields:    map[string]string{"task": "overridden", "topic": "<alerts>"},
+	})
+	require.NoError(t, err)
+	require.NoError(t, ch.Execute(context.Background(), &notify.Event{
+		Kind: notify.KindRunFailed, Severity: notify.SevError, TaskName: "backup-db",
+	}))
+
+	assert.Equal(t, "overridden", payload["task"], "a field replaces the key the template wrote")
+	assert.Equal(t, "<alerts>", payload["topic"], "a field adds a key the template didn't write")
+	assert.Equal(t, "run.failed", payload["kind"], "untouched keys survive")
+}
+
 func TestWebhook_CustomHeadersSent(t *testing.T) {
 	var receivedAuth string
 	var receivedCustom string

@@ -12,6 +12,9 @@ import (
 
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/channel/discord"
+	"github.com/runwisp/runwisp/internal/notify/channel/gotify"
+	"github.com/runwisp/runwisp/internal/notify/channel/ntfy"
+	"github.com/runwisp/runwisp/internal/notify/channel/pushover"
 	"github.com/runwisp/runwisp/internal/notify/channel/sendmail"
 	"github.com/runwisp/runwisp/internal/notify/channel/slack"
 	"github.com/runwisp/runwisp/internal/notify/channel/smtp"
@@ -49,14 +52,19 @@ type NotifierSpec struct {
 	// one". From/Recipients/CC/BCC are shared with SMTP.
 	SendmailPath string
 
-	// Webhook-specific
+	// Webhook-specific (URL is also the ntfy/gotify server base)
 	URL     string
 	Headers map[string]string
+
+	// Push-specific (ntfy, gotify, pushover)
+	Topic string // ntfy
+	Token string // ntfy access token, gotify/pushover application token
+	User  string // pushover user or group key
 
 	TemplatePath string // optional override
 	// Transport overrides the channel's HTTP transport. Nil means use defaults.
 	// Daemon-level glue uses this to apply a global backoff override on HTTP
-	// providers (Slack, Discord, Telegram, webhook).
+	// providers (Slack, Discord, Telegram, ntfy, Gotify, Pushover, webhook).
 	Transport *notify.HTTPProvider
 	// Backoff overrides the channel's retry backoff for non-HTTP providers
 	// (SMTP, sendmail), which don't go through Transport. Zero means use
@@ -84,6 +92,12 @@ func Build(spec NotifierSpec) (notify.Channel, error) {
 		return buildSMTP(spec)
 	case "sendmail":
 		return buildSendmail(spec)
+	case "ntfy":
+		return buildNtfy(spec)
+	case "gotify":
+		return buildGotify(spec)
+	case "pushover":
+		return buildPushover(spec)
 	case "webhook":
 		return buildWebhook(spec)
 	default:
@@ -181,6 +195,49 @@ func buildSendmail(spec NotifierSpec) (notify.Channel, error) {
 		BCC:        spec.BCC,
 		Backoff:    spec.Backoff,
 		Renderer:   r,
+	})
+}
+
+func buildNtfy(spec NotifierSpec) (notify.Channel, error) {
+	r, err := renderer(spec, "application/json")
+	if err != nil {
+		return nil, err
+	}
+	return ntfy.New(ntfy.Config{
+		ID:        spec.ID,
+		URL:       spec.URL,
+		Topic:     spec.Topic,
+		Token:     spec.Token,
+		Renderer:  r,
+		Transport: spec.Transport,
+	})
+}
+
+func buildGotify(spec NotifierSpec) (notify.Channel, error) {
+	r, err := renderer(spec, "application/json")
+	if err != nil {
+		return nil, err
+	}
+	return gotify.New(gotify.Config{
+		ID:        spec.ID,
+		URL:       spec.URL,
+		Token:     spec.Token,
+		Renderer:  r,
+		Transport: spec.Transport,
+	})
+}
+
+func buildPushover(spec NotifierSpec) (notify.Channel, error) {
+	r, err := renderer(spec, "application/json")
+	if err != nil {
+		return nil, err
+	}
+	return pushover.New(pushover.Config{
+		ID:        spec.ID,
+		Token:     spec.Token,
+		User:      spec.User,
+		Renderer:  r,
+		Transport: spec.Transport,
 	})
 }
 

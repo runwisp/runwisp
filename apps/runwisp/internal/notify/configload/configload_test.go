@@ -43,6 +43,23 @@ func TestResolve_Discord(t *testing.T) {
 	assert.Equal(t, "https://discord.com/api/webhooks/123/token", got.Notifiers[0].WebhookURL)
 }
 
+func TestResolve_PushProviders(t *testing.T) {
+	cfg := config.NotifyConfig{
+		Notifiers: []config.NotifierSpec{
+			{ID: "phone", Type: "ntfy", URL: "https://ntfy.example.com", Topic: "alerts", Token: "tk"},
+			{ID: "gotify", Type: "gotify", URL: "https://gotify.example.com", Token: "app"},
+			{ID: "po", Type: "pushover", Token: "app", User: "user"},
+		},
+	}
+	got, err := Resolve(cfg, render.TemplateContext{})
+	require.NoError(t, err)
+	require.Len(t, got.Notifiers, 3)
+	n, g, p := got.Notifiers[0], got.Notifiers[1], got.Notifiers[2]
+	assert.Equal(t, []string{"https://ntfy.example.com", "alerts", "tk"}, []string{n.URL, n.Topic, n.Token})
+	assert.Equal(t, []string{"https://gotify.example.com", "app"}, []string{g.URL, g.Token})
+	assert.Equal(t, []string{"app", "user"}, []string{p.Token, p.User})
+}
+
 func TestResolve_Telegram(t *testing.T) {
 	cfg := config.NotifyConfig{
 		Notifiers: []config.NotifierSpec{{

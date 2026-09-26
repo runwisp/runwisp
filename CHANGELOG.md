@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `start`/`stop`/`restart` now work on tasks, not just services: `start` triggers a run (no-op if one's already active or queued), `stop` cancels the active run and drops anything queued, `restart` does both in sequence. `manual_trigger = false` now locks all three verbs for tasks too, matching services.
 - New `POST /api/tasks/{task}/start` endpoint.
 - **The Web UI asks for quick feedback** after an hour of uptime, at most once a month: a one-tap rating plus an optional note, sent to the maintainers. It can be dismissed, and `check_updates = false` turns it off.
+- **ntfy, Gotify, and Pushover notifiers**: new `type = "ntfy"`, `"gotify"`, and `"pushover"` send failure alerts to your phone with a couple of keys and a built-in message.
 
 ### Changed
 

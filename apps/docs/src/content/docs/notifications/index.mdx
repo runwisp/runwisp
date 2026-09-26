@@ -2,11 +2,12 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Notifications
-description: Get told when a task fails, in the bell or on Slack, Discord, Telegram, email, or a webhook. Add a channel, store its secret, choose which tasks alert where, and test it.
+description: Get told when a task fails, in the bell or on Slack, Discord, Telegram, a phone push app, email, or a webhook. Add a channel, store its secret, choose which tasks alert where, and test it.
 ---
 
 When a run fails, RunWisp shows it in the bell in the Web UI and the TUI. Add a
-channel to also send it to Slack, Discord, Telegram, email, or a webhook.
+channel to also send it to Slack, Discord, Telegram, ntfy, Gotify, Pushover,
+email, or a webhook.
 
 ```toml
 [notifiers.slack-ops]
@@ -45,8 +46,8 @@ chat_id   = "-1001234567890"
 
 - **The id** must be unique. `inapp` is reserved for the bell, and the id can't
   contain `:`.
-- **`type`** is one of `slack`, `discord`, `telegram`, `smtp`, `sendmail`, or
-  `webhook`. The other keys depend on the type; a key that belongs to another
+- **`type`** is one of `slack`, `discord`, `telegram`, `ntfy`, `gotify`,
+  `pushover`, `smtp`, `sendmail`, or `webhook`. The other keys depend on the type; a key that belongs to another
   type is rejected.
 - **`template_path`** works on every type: a file that replaces the built-in
   message template. Each provider page links its default template to start from.
@@ -54,6 +55,9 @@ chat_id   = "-1001234567890"
 The providers: [Slack](/notifications/providers/slack/),
 [Discord](/notifications/providers/discord/),
 [Telegram](/notifications/providers/telegram/),
+[ntfy](/notifications/providers/ntfy/),
+[Gotify](/notifications/providers/gotify/),
+[Pushover](/notifications/providers/pushover/),
 [Email (SMTP)](/notifications/providers/smtp/),
 [Email (local MTA)](/notifications/providers/sendmail/), and
 [Webhook](/notifications/providers/webhook/).
@@ -139,8 +143,8 @@ notify = ["slack:#ops"]
 notify = ["slack:#deploys"]
 ```
 
-Discord and webhook channels have no target to change, so they don't accept
-this form. If many tasks use the same target, declare a separate notifier for
+Discord, Gotify, and webhook channels have no target to change, so they don't
+accept this form. If many tasks use the same target, declare a separate notifier for
 it instead.
 
 ## Missed runs

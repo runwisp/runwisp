@@ -61,6 +61,20 @@ func TestBuild_DiscordEmptyWebhookReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "url is required")
 }
 
+func TestBuild_PushProviders(t *testing.T) {
+	for _, spec := range []NotifierSpec{
+		{ID: "phone", Type: "ntfy", Topic: "alerts"},
+		{ID: "gotify", Type: "gotify", URL: "https://gotify.example.com", Token: "t"},
+		{ID: "po", Type: "pushover", Token: "t", User: "u"},
+	} {
+		t.Run(spec.Type, func(t *testing.T) {
+			ch, err := Build(spec)
+			require.NoError(t, err)
+			assert.Equal(t, spec.ID, ch.ID())
+		})
+	}
+}
+
 func TestBuild_TelegramPropagatesTransport(t *testing.T) {
 	// Regression for the dropped Transport on the telegram path: when an
 	// override is supplied, the constructed channel must use it (the only

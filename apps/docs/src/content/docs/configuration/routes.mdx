@@ -2,10 +2,10 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: "[[route]]"
-description: "Notification rules: match run events by kind, failure, and task name, and send them to Slack, Discord, Telegram, email, or a webhook."
+description: "Notification rules: match run events by kind, failure, and task name, and send them to Slack, Discord, Telegram, ntfy, Gotify, Pushover, email, or a webhook."
 head:
     - tag: title
-      content: "RunWisp [[route]]: route run events to Discord, Slack, Telegram, SMTP, webhooks"
+      content: "RunWisp [[route]]: route run events to Discord, Slack, Telegram, ntfy, Gotify, Pushover, SMTP, webhooks"
 ---
 
 A `[[route]]` sends matching events to a list of notifiers. Use it when one rule
@@ -96,8 +96,9 @@ Where matching events go. Each entry is one of:
 - `"<id>:<target>"`, which reuses that notifier's credentials but sends to
   another target: a Slack channel (`"slack-ops:#deploys"`, `"slack-ops:@ana"`),
   a Telegram chat id (`"tg:-1009998887"`), or an email address for `smtp` and
-  `sendmail` (`"mail:ops@example.com"`). Discord and webhook notifiers take no
-  target.
+  `sendmail` (`"mail:ops@example.com"`), an ntfy topic (`"phone:backups"`), or a
+  Pushover user or group key (`"po:gznej3rKEVAvPUxu9vvNnqpmZpokzF"`). Discord,
+  Gotify, and webhook notifiers take no target.
 
 ## What's rejected
 
