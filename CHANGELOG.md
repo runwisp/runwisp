@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-26
+
 ### Added
 
 - **`runwisp start`**, plus `stop`/`restart` now also accept a task or service target: `runwisp start|stop|restart <target...>`. A target is a name, a shell-style glob (`'*'` for everything), or — for `stop` — a run ID. Multiple targets can be given at once. `--url`/`--password` (or `RUNWISP_URL`/`RUNWISP_PASSWORD`) dispatch to a remote daemon, same as `runwisp run`.
@@ -783,7 +785,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.0.1...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.1.0...main
+[1.1.0]: https://github.com/runwisp/runwisp/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/runwisp/runwisp/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/runwisp/runwisp/compare/v0.16.4...v1.0.0
 [0.16.4]: https://github.com/runwisp/runwisp/compare/v0.16.3...v0.16.4
