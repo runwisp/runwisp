@@ -8,6 +8,7 @@ import (
 	"net/mail"
 	"net/url"
 	"path"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -16,7 +17,10 @@ import (
 	"github.com/runwisp/runwisp/internal/notify/kinds"
 )
 
-var allowedNotifierTypes = []string{"slack", "discord", "telegram", "smtp", "sendmail", "webhook"}
+var allowedNotifierTypes = []string{"slack", "discord", "telegram", "smtp", "sendmail", "ntfy", "gotify", "pushover", "webhook"}
+
+// ntfyTopicPattern is the topic shape an ntfy server accepts.
+var ntfyTopicPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // allowedSMTPTLSModes enumerates the values accepted for [notifiers.*].tls_mode. An
 // empty string falls back to a port-derived default (465 → implicit; everything
@@ -165,6 +169,10 @@ func buildNotifierSpecs(notifiers map[string]*notifierWire, out *NotifyConfig) e
 			BCC:           append([]string(nil), n.BCC...),
 
 			SendmailPath: n.SendmailPath,
+
+			Topic: n.Topic,
+			Token: n.Token,
+			User:  n.User,
 		}
 		if spec.ID == "" {
 			return fmt.Errorf("notifier: id is required")
@@ -253,7 +261,7 @@ func resolveInlineToken(tok string, parentByID map[string]*NotifierSpec, seen ma
 
 // cloneNotifierWithOverride copies a parent NotifierSpec, assigns a synthetic
 // ID, and replaces the type-specific target (Slack channel, Telegram chat_id,
-// SMTP recipient) with the override. Returns an error for types that have no
+// SMTP recipient, ntfy topic, Pushover user key) with the override. Returns an error for types that have no
 // overridable target.
 func cloneNotifierWithOverride(parent NotifierSpec, syntheticID, override string) (NotifierSpec, error) {
 	spec := parent
@@ -273,6 +281,15 @@ func cloneNotifierWithOverride(parent NotifierSpec, syntheticID, override string
 		spec.Recipients = []string{override}
 		spec.CC = nil
 		spec.BCC = nil
+	case "ntfy":
+		if err := validateNtfyTopic(syntheticID, override); err != nil {
+			return NotifierSpec{}, err
+		}
+		spec.Topic = override
+	case "pushover":
+		spec.User = override
+	case "gotify":
+		return NotifierSpec{}, fmt.Errorf("notify token %q: gotify notifiers do not support inline target overrides (a Gotify token is bound to one application)", syntheticID)
 	case "discord":
 		return NotifierSpec{}, fmt.Errorf("notify token %q: discord notifiers do not support inline target overrides (a Discord webhook is bound to one channel)", syntheticID)
 	case "webhook":
@@ -456,8 +473,11 @@ func validateNotifierFieldsForType(id, typ string, n *notifierWire) error {
 		{"cc", []string{"smtp", "sendmail"}, len(n.CC) > 0},
 		{"bcc", []string{"smtp", "sendmail"}, len(n.BCC) > 0},
 		{"sendmail_path", []string{"sendmail"}, n.SendmailPath != ""},
-		{"url", []string{"webhook"}, n.URL != ""},
+		{"url", []string{"webhook", "ntfy", "gotify"}, n.URL != ""},
 		{"headers", []string{"webhook"}, len(n.Headers) > 0},
+		{"topic", []string{"ntfy"}, n.Topic != ""},
+		{"token", []string{"ntfy", "gotify", "pushover"}, n.Token != ""},
+		{"user", []string{"pushover"}, n.User != ""},
 	}
 	for _, f := range fields {
 		if f.set && !slices.Contains(f.owners, typ) {
@@ -479,6 +499,12 @@ func validateNotifierByType(spec *NotifierSpec) error {
 		return validateSMTPNotifier(spec)
 	case "sendmail":
 		return validateSendmailNotifier(spec)
+	case "ntfy":
+		return validateNtfyNotifier(spec)
+	case "gotify":
+		return validateGotifyNotifier(spec)
+	case "pushover":
+		return validatePushoverNotifier(spec)
 	case "webhook":
 		return validateWebhookNotifier(spec)
 	}
@@ -601,6 +627,55 @@ func validateDiscordNotifier(spec *NotifierSpec) error {
 		return fmt.Errorf("notifier %q: webhook_url is required for type=discord", spec.ID)
 	}
 	return validateHTTPURL(spec.ID, "webhook_url", raw)
+}
+
+// validateNtfyNotifier checks an ntfy notifier. url is optional (the public
+// server is the default) and token is optional (public topics need none).
+func validateNtfyNotifier(spec *NotifierSpec) error {
+	topic := strings.TrimSpace(spec.Topic)
+	if topic == "" {
+		return fmt.Errorf("notifier %q: topic is required for type=ntfy", spec.ID)
+	}
+	if err := validateNtfyTopic(fmt.Sprintf("notifier %q", spec.ID), topic); err != nil {
+		return err
+	}
+	if raw := strings.TrimSpace(spec.URL); raw != "" {
+		return validateHTTPURL(spec.ID, "url", raw)
+	}
+	return nil
+}
+
+// validateNtfyTopic rejects a topic the ntfy server would refuse. scope
+// prefixes the message (a notifier or an inline notify token).
+func validateNtfyTopic(scope, topic string) error {
+	if !ntfyTopicPattern.MatchString(topic) {
+		return fmt.Errorf("%s: ntfy topic %q must be 1-64 letters, digits, '-' or '_'", scope, topic)
+	}
+	return nil
+}
+
+func validateGotifyNotifier(spec *NotifierSpec) error {
+	raw := strings.TrimSpace(spec.URL)
+	if raw == "" {
+		return fmt.Errorf("notifier %q: url is required for type=gotify", spec.ID)
+	}
+	if err := validateHTTPURL(spec.ID, "url", raw); err != nil {
+		return err
+	}
+	if strings.TrimSpace(spec.Token) == "" {
+		return fmt.Errorf("notifier %q: token is required for type=gotify", spec.ID)
+	}
+	return nil
+}
+
+func validatePushoverNotifier(spec *NotifierSpec) error {
+	if strings.TrimSpace(spec.Token) == "" {
+		return fmt.Errorf("notifier %q: token is required for type=pushover", spec.ID)
+	}
+	if strings.TrimSpace(spec.User) == "" {
+		return fmt.Errorf("notifier %q: user is required for type=pushover", spec.ID)
+	}
+	return nil
 }
 
 func validateWebhookNotifier(spec *NotifierSpec) error {

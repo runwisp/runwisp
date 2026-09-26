@@ -1,0 +1,86 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: ntfy
+description: Send RunWisp notifications as phone push alerts through ntfy.sh or your own ntfy server.
+---
+
+The ntfy notifier publishes each event to an [ntfy][ntfy] topic. Subscribe to
+the topic in the ntfy app on your phone or desktop, and failures arrive as push
+alerts. It works with the public `ntfy.sh` server or one you host yourself.
+
+[ntfy]: https://ntfy.sh
+
+```toml
+[notifiers.phone]
+type  = "ntfy"
+topic = "runwisp-7f3kq9"
+```
+
+## Fields
+
+| Key             | Required | What it does                                                                                                                  |
+| --------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `topic`         | yes      | The topic to publish to: 1 to 64 letters, digits, `-` or `_`.                                                                 |
+| `url`           | no       | Your ntfy server, like `https://ntfy.example.com`. Default `https://ntfy.sh`.                                                 |
+| `token`         | no       | An access token for a protected topic. Keep it out of the file; see [Storing the secret](/notifications/#storing-the-secret). |
+| `template_path` | no       | A Go template file that replaces the built-in message.                                                                        |
+
+## Picking a topic
+
+On `ntfy.sh`, a topic has no password: anyone who knows its name can read it and
+post to it. Pick a name nobody will guess, like `runwisp-7f3kq9`, and treat it
+like a secret.
+
+On your own server, lock the topic down and give RunWisp a token:
+
+```toml
+[notifiers.phone]
+type  = "ntfy"
+url   = "https://ntfy.example.com"
+topic = "runwisp"
+token = "${NTFY_TOKEN}"
+```
+
+Create the token with `ntfy token add <user>` on the server. RunWisp sends it as
+`Authorization: Bearer <token>`.
+
+To send some tasks to another topic, use `"phone:<topic>"` in `notify`; see
+[One channel, several destinations](/notifications/#one-channel-several-destinations).
+
+## What a message looks like
+
+```
+❌ backup-postgres failed
+
+Exited with code 1 after 0.3s.
+Triggered via the REST API · 14 May, 17:11.
+
+Error: connection refused
+dial tcp 127.0.0.1:5432: connect:
+connection refused
+
+from runwisp · bright-falcon
+```
+
+- The priority follows the outcome: high (4) for failures, default (3) for
+  warnings like low disk space, low (2, no sound) for everything else.
+- Tapping the notification opens the run when
+  [`external_url`](/configuration/daemon/#external_url) is set.
+- The last lines of output appear for failures and timeouts, when there is a
+  log.
+
+## Changing the message
+
+Point `template_path` at your own Go template. Start from the built-in
+[`ntfy.tmpl.json`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/notify/render/defaults/ntfy.tmpl.json),
+a body for ntfy's [JSON publish API](https://docs.ntfy.sh/publish/#publish-as-json).
+Change `priority`, or add `tags` or `actions`. RunWisp sets `topic` itself. The
+template gets the same helpers as the
+[Slack template](/notifications/providers/slack/#changing-the-message).
+
+## What's rejected
+
+- A missing `topic`, or one with characters other than letters, digits, `-`
+  and `_`.
+- A `url` that isn't `http://` or `https://`.

@@ -9,9 +9,6 @@
 package slack
 
 import (
-	"bytes"
-	"encoding/json"
-
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/channel/webhook"
 	"github.com/runwisp/runwisp/internal/notify/render"
@@ -28,12 +25,11 @@ type Config struct {
 
 // New constructs a Slack channel. Delivery (POST JSON, backoff, secret
 // redaction) is delegated to the webhook channel; only the optional channel
-// override is Slack-specific, applied as a body transform.
+// override is Slack-specific, injected as a top-level body field.
 func New(cfg Config) (notify.Channel, error) {
-	var transform func([]byte) ([]byte, error)
+	var fields map[string]string
 	if cfg.Channel != "" {
-		ch := cfg.Channel
-		transform = func(body []byte) ([]byte, error) { return injectChannel(body, ch) }
+		fields = map[string]string{"channel": cfg.Channel}
 	}
 	return webhook.New(webhook.Config{
 		Kind:      "slack",
@@ -41,23 +37,6 @@ func New(cfg Config) (notify.Channel, error) {
 		URL:       cfg.WebhookURL,
 		Renderer:  cfg.Renderer,
 		Transport: cfg.Transport,
-		Transform: transform,
+		Fields:    fields,
 	})
-}
-
-// injectChannel adds a top-level "channel" key to a JSON object body.
-func injectChannel(body []byte, ch string) ([]byte, error) {
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(body, &obj); err != nil {
-		return nil, err
-	}
-	enc, _ := json.Marshal(ch)
-	obj["channel"] = enc
-	var buf bytes.Buffer
-	e := json.NewEncoder(&buf)
-	e.SetEscapeHTML(false)
-	if err := e.Encode(obj); err != nil {
-		return nil, err
-	}
-	return bytes.TrimRight(buf.Bytes(), "\n"), nil
 }

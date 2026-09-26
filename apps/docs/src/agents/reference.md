@@ -217,12 +217,16 @@ coalesce_limit:   int  =10             — recent timestamps kept per coalesced 
 
 ### [notifiers.&lt;id&gt;] (outbound channel; map keyed by id)
 
-Common: `<id>` (map key; non-empty, not "inapp", no ":"), `type` (req: `slack`|`discord`|`telegram`|`smtp`|`sendmail`|`webhook`), `template_path` (optional).
+Common: `<id>` (map key; non-empty, not "inapp", no ":"), `type` (req: `slack`|`discord`|`telegram`|`ntfy`|`gotify`|`pushover`|`smtp`|`sendmail`|`webhook`), `template_path` (optional).
 
 ```
 slack:    webhook_url (req); channel (optional; starts # or @)
 discord:  webhook_url (req; http/https)
 telegram: bot_token (req); chat_id (req); parse_mode (MarkdownV2 needs template_path)
+ntfy:     topic (req; [A-Za-z0-9_-]{1,64}); url (optional http/https server base, default https://ntfy.sh);
+          token (optional access token, sent as Authorization: Bearer)
+gotify:   url (req; http/https server base, posts to <url>/message); token (req; app token, X-Gotify-Key)
+pushover: token (req; app token); user (req; user or group key)
 smtp:     host(req); port 0..65535; tls_mode starttls|implicit|off (default: 465→implicit else starttls);
           tls_skip_verify bool; from(req email); reply_to(email); to(req,>=1) + cc/bcc(emails);
           username + password (set together or both omitted); tls_mode=off forbids credentials

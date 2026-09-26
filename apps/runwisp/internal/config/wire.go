@@ -798,6 +798,10 @@ type notifierWire struct {
 	URL     string            `toml:"url,omitempty"`
 	Headers map[string]string `toml:"headers,omitempty"`
 
+	Topic string `toml:"topic,omitempty"`
+	Token string `toml:"token,omitempty"`
+	User  string `toml:"user,omitempty"`
+
 	TemplatePath string `toml:"template_path,omitempty"`
 }
 
