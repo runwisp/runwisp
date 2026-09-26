@@ -160,6 +160,11 @@ type Run struct {
 	// run (identity key → value). Nil for tasks without declared parameters, so
 	// it is omitted from JSON/storage and adds no behaviour for the common case.
 	Params map[string]string `json:"params,omitempty"`
+	// OutputMatched records that a captured output line matched one of the
+	// task's `failures` output patterns. Transient: set by the run manager from
+	// the executor result just before End, which folds it into the persisted
+	// IsFailure bit; never stored or serialized.
+	OutputMatched bool `json:"-"`
 }
 
 // Copy creates a deep copy of the Run to prevent data races.
@@ -207,7 +212,7 @@ func (r *Run) End(task *Task, reason EndReason, exitCode int, endedAt time.Time)
 	r.ExitCode = exitCode
 	r.EndedAt = &endedAt
 	if task != nil {
-		r.IsFailure = task.IsFailureReason(reason, exitCode)
+		r.IsFailure = task.IsFailureReason(reason, exitCode, r.OutputMatched)
 	}
 }
 

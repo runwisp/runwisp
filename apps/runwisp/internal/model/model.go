@@ -229,20 +229,20 @@ type Task struct {
 	// account may not exist when the config is validated. Rejected on
 	// compose-backed tasks (the container runtime owns the container's user).
 	RunUser string `toml:"-" json:"user,omitempty" doc:"Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root."`
-	// FailureReasons and FailureExitRanges are the task's resolved failure
-	// classification, parsed from the `failures` TOML tokens by config's parse
-	// step (ParseFailures). Together they answer "does a terminal run count as a
-	// failure?" for stats, UI attention, notifications, and (intersected with
-	// the fixed retry.IsFailedExecution ceiling) retry/restart eligibility. A nil
-	// FailureReasons map means "not configured" (a Task built outside the config
-	// loader); IsFailureReason then falls back to the built-in default set.
-	// Config-internal — never serialized to API/UI/station.
-	FailureReasons    map[EndReason]struct{} `toml:"-" json:"-"`
-	FailureExitRanges [][2]int               `toml:"-" json:"-"`
+	// Failures is the task's resolved failure classification, parsed from the
+	// `failures` TOML tokens by config's parse step (ParseFailures). It answers
+	// "does a terminal run count as a failure?" for stats, UI attention,
+	// notifications, and (intersected with the fixed retry.IsFailedExecution
+	// ceiling) retry/restart eligibility; its output patterns also drive the
+	// executor's per-line output matching. A nil Failures.Reasons map means "not
+	// configured" (a Task built outside the config loader); IsFailureReason then
+	// falls back to the built-in default set. Config-internal — never
+	// serialized to API/UI/station.
+	Failures FailureMatcher `toml:"-" json:"-"`
 
 	// FailureSpec is the task's parsed but not-yet-resolved `failures` list,
 	// carried from config's parse step to ApplyDefaults, which resolves it
-	// against the inherited [defaults] matcher into FailureReasons/FailureExitRanges
+	// against the inherited [defaults] matcher into Failures
 	// and clears this back to nil. Config-load-only: nil on any task the loader
 	// has finished with (and on Tasks built outside the loader).
 	FailureSpec *FailureSpec `toml:"-" json:"-"`
@@ -369,22 +369,24 @@ func (t *Task) CheckTrigger() TriggerBlockReason {
 }
 
 // IsFailureReason reports whether a terminal run ending with the given reason
-// and exit code counts as a failure under this task's `failures` policy. It is
+// and exit code — and whether its output matched one of the task's output
+// patterns — counts as a failure under this task's `failures` policy. It is
 // the single source of truth for failure classification: stats, UI attention,
 // and notifications all resolve through it (and the persisted run.IsFailure bit
 // it produces). retry/restart eligibility also consults it, intersected with
 // the fixed runtime/retry.IsFailedExecution ceiling.
 //
-// A nil FailureReasons map (a Task literal built outside the config loader —
+// A nil Failures.Reasons map (a Task literal built outside the config loader —
 // tests, ad-hoc dispatch) falls back to the built-in default set. Exit ranges
-// only apply to the `failed` reason (a run that actually exited); a non-`failed`
-// reason with an incidental exit code (a SIGTERM'd `stopped` run) is classified
-// purely by its reason.
-func (t *Task) IsFailureReason(reason EndReason, exitCode int) bool {
+// and output matches only apply to the `failed` reason (a run that actually
+// exited; the executor ends an output-matched exit-0 run as `failed`); a
+// non-`failed` reason with an incidental exit code (a SIGTERM'd `stopped` run)
+// is classified purely by its reason.
+func (t *Task) IsFailureReason(reason EndReason, exitCode int, outputMatched bool) bool {
 	if reason == ReasonSuccess {
 		return false
 	}
-	reasons := t.FailureReasons
+	reasons := t.Failures.Reasons
 	if reasons == nil {
 		reasons = defaultFailureReasons
 	}
@@ -392,7 +394,10 @@ func (t *Task) IsFailureReason(reason EndReason, exitCode int) bool {
 		return true
 	}
 	if reason == ReasonFailed {
-		for _, r := range t.FailureExitRanges {
+		if outputMatched {
+			return true
+		}
+		for _, r := range t.Failures.ExitRanges {
 			if exitCode >= r[0] && exitCode <= r[1] {
 				return true
 			}

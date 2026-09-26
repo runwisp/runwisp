@@ -314,8 +314,10 @@ exit code. You don't need `set -e`.
 Every run ends with a reason. [`failures`](#failures) decides which reasons and
 exit codes turn a run red and fire [`notify`](#notify).
 
-- A token is a reason name, an exit code, or an inclusive range (`"42"`,
-  `"1-23"`). Codes are 1 to 255; exit `0` is always a success.
+- A token is a reason name, an exit code, an inclusive range (`"42"`,
+  `"1-23"`), or an output pattern (`"output:(?i)error"`). Codes are 1 to 255.
+- Exit `0` is a success unless an output pattern matched a line of stdout or
+  stderr. Then the run ends as `failed`, and its log notes which pattern matched.
 - With `"failed"` in the list, every non-zero exit is a failure. Without it,
   only the listed codes fail; other non-zero exits are recorded and shown, but
   are not red and don't notify.
@@ -339,6 +341,9 @@ failures = ["-missed"]              # stop paging on a missed tick
 
 [tasks.rsync]
 failures = ["timeout", "23", "24"]  # only these exits fail
+
+[tasks.report]
+failures = ["+output:(?i)error"]    # also fail when a line says "error"
 ```
 
 Possible values:
@@ -354,6 +359,7 @@ Possible values:
 - `skipped`: dropped because a run was already going under [`on_overlap = "skip"`](#on_overlap)
 - `queue_full`: dropped because the queue already held [`max_queued`](#max_queued) runs
 - `dst_skipped`: the second of two identical firings when the clock falls back for DST
+- `output:<regex>`: a stdout or stderr line matched the [RE2](https://github.com/google/re2/wiki/Syntax) pattern, even if the command exited 0. Use `(?i)` to ignore case.
 
 ## Logs & retention
 

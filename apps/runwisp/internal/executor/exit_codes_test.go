@@ -22,6 +22,8 @@ func TestEndReason_ExitCodeClassification(t *testing.T) {
 		{"timeout overrides exit code", ExecuteResult{ExitCode: 2, TimedOut: true}, model.ReasonTimeout},
 		{"stopped overrides exit code", ExecuteResult{ExitCode: 2, Stopped: true}, model.ReasonStopped},
 		{"log overflow overrides exit code", ExecuteResult{ExitCode: 0, KilledByPolicy: true}, model.ReasonLogOverflow},
+		{"output match fails exit zero", ExecuteResult{ExitCode: 0, OutputMatched: true}, model.ReasonFailed},
+		{"timeout overrides output match", ExecuteResult{ExitCode: 0, OutputMatched: true, TimedOut: true}, model.ReasonTimeout},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

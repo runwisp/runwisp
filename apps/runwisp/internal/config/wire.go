@@ -96,7 +96,7 @@ type taskServiceWireCore struct {
 	// EndReason names and/or exit-code tokens ("42", "1-23"). nil means "unset"
 	// (inherit [defaults], then the built-in default) — distinct from an explicit
 	// empty list, which means "nothing is a failure". Parsed and validated by
-	// ApplyDefaults into model.Task.FailureReasons / FailureExitRanges.
+	// ApplyDefaults into model.Task.Failures.
 	Failures []string `toml:"failures,omitempty"`
 }
 
@@ -595,35 +595,34 @@ func (w *defaultsWire) toDefaults() (Defaults, error) {
 	// [defaults] always resolves to a concrete failure classification: the
 	// built-in default, replaced or delta-adjusted by the operator's `failures`
 	// list. Tasks that leave `failures` unset inherit this resolved matcher.
-	failureReasons, failureRanges := model.DefaultFailures()
+	failures := model.DefaultFailures()
 	if w.Failures != nil {
 		spec, perr := model.ParseFailures(w.Failures)
 		if perr != nil {
 			return Defaults{}, fmt.Errorf("invalid defaults.%w", perr)
 		}
-		failureReasons, failureRanges = spec.Resolve(failureReasons, failureRanges)
+		failures = spec.Resolve(failures)
 	}
 	return Defaults{
-		Timeout:           timeout,
-		Jitter:            jitter,
-		Shell:             w.Shell,
-		StopSignal:        w.StopSignal,
-		LogMaxSize:        logMaxSize,
-		LogOnFull:         w.LogOnFull,
-		KeepRuns:          keepRuns,
-		KeepFor:           keepFor,
-		HealthyAfter:      healthyAfter,
-		RestartAttempts:   w.RestartAttempts,
-		RestartDelay:      restartDelay,
-		RestartBackoff:    model.BackoffCurve(w.RestartBackoff),
-		CatchUp:           w.CatchUp,
-		GracefulStop:      gracefulStop,
-		FailureReasons:    failureReasons,
-		FailureExitRanges: failureRanges,
-		Env:               w.Env,
-		EnvFile:           w.EnvFile,
-		Secrets:           w.Secrets,
-		SecretsFile:       w.SecretsFile,
+		Timeout:         timeout,
+		Jitter:          jitter,
+		Shell:           w.Shell,
+		StopSignal:      w.StopSignal,
+		LogMaxSize:      logMaxSize,
+		LogOnFull:       w.LogOnFull,
+		KeepRuns:        keepRuns,
+		KeepFor:         keepFor,
+		HealthyAfter:    healthyAfter,
+		RestartAttempts: w.RestartAttempts,
+		RestartDelay:    restartDelay,
+		RestartBackoff:  model.BackoffCurve(w.RestartBackoff),
+		CatchUp:         w.CatchUp,
+		GracefulStop:    gracefulStop,
+		Failures:        failures,
+		Env:             w.Env,
+		EnvFile:         w.EnvFile,
+		Secrets:         w.Secrets,
+		SecretsFile:     w.SecretsFile,
 	}, nil
 }
 

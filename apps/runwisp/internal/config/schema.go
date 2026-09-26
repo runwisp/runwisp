@@ -319,12 +319,11 @@ type Defaults struct {
 	CatchUp      *int
 	GracefulStop *time.Duration
 
-	// FailureReasons and FailureExitRanges are the [defaults] failure
-	// classification, always resolved (to the operator's `failures` list or the
-	// built-in default) by toDefaults. A task that leaves `failures` unset inherits
-	// this matcher; one that sets it overrides wholesale.
-	FailureReasons    map[model.EndReason]struct{}
-	FailureExitRanges [][2]int
+	// Failures is the [defaults] failure classification, always resolved (to
+	// the operator's `failures` list or the built-in default) by toDefaults. A
+	// task that leaves `failures` unset inherits this matcher; one that sets it
+	// replaces or delta-adjusts it.
+	Failures model.FailureMatcher
 
 	// Env is the inline env block from [defaults.env]; env_file values merge
 	// in beneath it at load time. Visible in API/UI.

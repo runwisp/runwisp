@@ -10,7 +10,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"log/slog"
@@ -37,12 +39,14 @@ type ExecuteResult struct {
 	TimedOut       bool
 	Stopped        bool
 	KilledByPolicy bool // log_on_full = "kill" tripped — recorded as failed, not stopped
+	OutputMatched  bool // an output line matched a `failures` output pattern
 }
 
 // EndReason maps the raw process outcome to a terminal reason. Exit 0 is the sole
-// success code; any non-zero exit is ReasonFailed. Whether a ReasonFailed run
-// counts as a *failure* is a separate, per-task decision (Task.IsFailureReason,
-// driven by the `failures` config) applied later — not here.
+// success code, unless the output matched a `failures` output pattern; anything
+// else that exited is ReasonFailed. Whether a ReasonFailed run counts as a
+// *failure* is a separate, per-task decision (Task.IsFailureReason, driven by
+// the `failures` config) applied later — not here.
 func (r *ExecuteResult) EndReason() model.EndReason {
 	switch {
 	case r.TimedOut:
@@ -51,7 +55,7 @@ func (r *ExecuteResult) EndReason() model.EndReason {
 		return model.ReasonLogOverflow
 	case r.Stopped:
 		return model.ReasonStopped
-	case r.ExitCode == 0:
+	case r.ExitCode == 0 && !r.OutputMatched:
 		return model.ReasonSuccess
 	default:
 		return model.ReasonFailed
@@ -214,14 +218,39 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 		r.onProcessStarted(run.ID, proc.ForceKill)
 	}
 
-	r.streamProcessOutput(proc, writer, task, run)
+	matcher := &outputMatcher{res: task.Failures.OutputRegexps()}
+	r.streamProcessOutput(proc, writer, task, run, matcher)
 
 	exitCode, waitErr := proc.Wait()
 	if proc.Cleanup != nil {
 		proc.Cleanup()
 	}
 
-	return classifyExecuteResult(cancelCtx, writer, exitCode, waitErr)
+	result := classifyExecuteResult(cancelCtx, writer, exitCode, waitErr)
+	result.OutputMatched = matcher.matched.Load()
+	return result
+}
+
+// outputMatcher checks committed output lines against a task's `failures`
+// output patterns. One is shared by a run's stdout and stderr goroutines.
+type outputMatcher struct {
+	res     []*regexp.Regexp
+	matched atomic.Bool
+}
+
+// observe records the first line matching any pattern and notes it inline in
+// the run log, so the operator sees why an exit-0 run turned red. Later lines
+// are not checked: one match is enough to decide the outcome.
+func (m *outputMatcher) observe(text string, writer *LogWriter) {
+	if len(m.res) == 0 || m.matched.Load() {
+		return
+	}
+	for _, re := range m.res {
+		if re.MatchString(text) && m.matched.CompareAndSwap(false, true) {
+			writer.WriteLineEvent(fmt.Sprintf("Output matched failures pattern %q; run will be marked failed", re.String()), logutil.StreamSystem)
+			return
+		}
+	}
 }
 
 // notifyRunUpdated fans the post-log-prep run state out to the persistence
@@ -276,14 +305,14 @@ func (r *RoutingExecutor) startBackend(ctx context.Context, backend Backend, tas
 // streamProcessOutput tees both standard streams into the run's log writer
 // and blocks until each goroutine finishes. Panics inside the streamer are
 // logged so one misbehaving backend cannot abort Execute mid-flight.
-func (r *RoutingExecutor) streamProcessOutput(proc *Process, writer *LogWriter, task *model.Task, run *model.Run) {
+func (r *RoutingExecutor) streamProcessOutput(proc *Process, writer *LogWriter, task *model.Task, run *model.Run, matcher *outputMatcher) {
 	var wg sync.WaitGroup
-	r.streamOne(&wg, proc.Stdout, writer, task, run, logutil.StreamStdout)
-	r.streamOne(&wg, proc.Stderr, writer, task, run, logutil.StreamStderr)
+	r.streamOne(&wg, proc.Stdout, writer, task, run, matcher, logutil.StreamStdout)
+	r.streamOne(&wg, proc.Stderr, writer, task, run, matcher, logutil.StreamStderr)
 	wg.Wait()
 }
 
-func (r *RoutingExecutor) streamOne(wg *sync.WaitGroup, reader io.ReadCloser, writer *LogWriter, task *model.Task, run *model.Run, stream string) {
+func (r *RoutingExecutor) streamOne(wg *sync.WaitGroup, reader io.ReadCloser, writer *LogWriter, task *model.Task, run *model.Run, matcher *outputMatcher, stream string) {
 	if reader == nil {
 		return
 	}
@@ -295,7 +324,7 @@ func (r *RoutingExecutor) streamOne(wg *sync.WaitGroup, reader io.ReadCloser, wr
 				slog.Error("Recovered from panic in stream", "stream", stream, "task", task.Name, "err", rec)
 			}
 		}()
-		r.streamToFile(reader, writer, task, run, stream)
+		r.streamToFile(reader, writer, task, run, matcher, stream)
 	}()
 }
 
@@ -438,7 +467,7 @@ func writeCommittedLines(writer *LogWriter, stream string, texts []string) ([]in
 	return ns, anchor
 }
 
-func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task *model.Task, run *model.Run, stream string) {
+func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task *model.Task, run *model.Run, matcher *outputMatcher, stream string) {
 	executionID := ""
 	if run.ExecutionID != nil {
 		executionID = *run.ExecutionID
@@ -446,7 +475,10 @@ func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task
 
 	nowMs := func() int64 { return r.now().UnixMilli() }
 
+	// publishCommitted sees each successfully written line's redacted text, so
+	// output patterns match exactly what the operator sees in the log.
 	publishCommitted := func(text string, lineNum int64, continued bool, frameCount int) {
+		matcher.observe(text, writer)
 		if r.eventBus == nil {
 			return
 		}

@@ -78,9 +78,11 @@ func TestShouldRestart(t *testing.T) {
 	// restart on an exit code outside that range.
 	t.Run("on_failure narrows to the task's failures exit ranges", func(t *testing.T) {
 		task := &model.Task{
-			Restart:           model.RestartOnFailure,
-			FailureReasons:    map[model.EndReason]struct{}{},
-			FailureExitRanges: [][2]int{{1, 23}},
+			Restart: model.RestartOnFailure,
+			Failures: model.FailureMatcher{
+				Reasons:    map[model.EndReason]struct{}{},
+				ExitRanges: [][2]int{{1, 23}},
+			},
 		}
 		assert.False(t, ShouldRestart(task, &model.Run{EndReason: &failed, ExitCode: 42}),
 			"exit 42 is outside the configured failure range")
@@ -91,9 +93,9 @@ func TestShouldRestart(t *testing.T) {
 		logOverflow := model.ReasonLogOverflow
 		task := &model.Task{
 			Restart: model.RestartOnFailure,
-			FailureReasons: map[model.EndReason]struct{}{
+			Failures: model.FailureMatcher{Reasons: map[model.EndReason]struct{}{
 				model.ReasonFailed: {},
-			},
+			}},
 		}
 		assert.False(t, ShouldRestart(task, &model.Run{EndReason: &logOverflow}),
 			"log_overflow was dropped from this task's failures list")
@@ -102,16 +104,16 @@ func TestShouldRestart(t *testing.T) {
 	t.Run("on_failure never restarts on a promoted reason outside the ceiling", func(t *testing.T) {
 		task := &model.Task{
 			Restart: model.RestartOnFailure,
-			FailureReasons: map[model.EndReason]struct{}{
+			Failures: model.FailureMatcher{Reasons: map[model.EndReason]struct{}{
 				model.ReasonStopped: {},
-			},
+			}},
 		}
 		assert.False(t, ShouldRestart(task, &model.Run{EndReason: &stopped}),
 			"stopped is outside IsFailedExecution regardless of failures")
 	})
 
 	t.Run("on_failure with unconfigured failures behaves as before", func(t *testing.T) {
-		task := &model.Task{Restart: model.RestartOnFailure} // nil FailureReasons
+		task := &model.Task{Restart: model.RestartOnFailure} // nil Failures.Reasons
 		assert.True(t, ShouldRestart(task, &model.Run{EndReason: &failed}))
 		assert.True(t, ShouldRestart(task, &model.Run{EndReason: &timeout}))
 		assert.True(t, ShouldRestart(task, &model.Run{EndReason: &crashed}))
@@ -155,9 +157,11 @@ func TestShouldRetry(t *testing.T) {
 	// retry budget on an exit code outside that range.
 	t.Run("retry narrows to the task's failures exit ranges", func(t *testing.T) {
 		task := &model.Task{
-			RetryAttempts:     3,
-			FailureReasons:    map[model.EndReason]struct{}{},
-			FailureExitRanges: [][2]int{{1, 23}},
+			RetryAttempts: 3,
+			Failures: model.FailureMatcher{
+				Reasons:    map[model.EndReason]struct{}{},
+				ExitRanges: [][2]int{{1, 23}},
+			},
 		}
 		assert.False(t, ShouldRetry(task, &model.Run{EndReason: &failed, ExitCode: 42}),
 			"exit 42 is outside the configured failure range")
@@ -168,9 +172,9 @@ func TestShouldRetry(t *testing.T) {
 		logOverflow := model.ReasonLogOverflow
 		task := &model.Task{
 			RetryAttempts: 3,
-			FailureReasons: map[model.EndReason]struct{}{
+			Failures: model.FailureMatcher{Reasons: map[model.EndReason]struct{}{
 				model.ReasonFailed: {},
-			},
+			}},
 		}
 		assert.False(t, ShouldRetry(task, &model.Run{EndReason: &logOverflow}),
 			"log_overflow was dropped from this task's failures list")
@@ -179,16 +183,28 @@ func TestShouldRetry(t *testing.T) {
 	t.Run("retry never fires on a promoted reason outside the ceiling", func(t *testing.T) {
 		task := &model.Task{
 			RetryAttempts: 3,
-			FailureReasons: map[model.EndReason]struct{}{
+			Failures: model.FailureMatcher{Reasons: map[model.EndReason]struct{}{
 				model.ReasonStopped: {},
-			},
+			}},
 		}
 		assert.False(t, ShouldRetry(task, &model.Run{EndReason: &stopped}),
 			"stopped is outside IsFailedExecution regardless of failures")
 	})
 
+	t.Run("retry fires on an output-matched run even when failed is dropped", func(t *testing.T) {
+		task := &model.Task{
+			RetryAttempts: 3,
+			Failures: model.FailureMatcher{
+				Reasons:        map[model.EndReason]struct{}{},
+				OutputPatterns: []string{"ERROR"},
+			},
+		}
+		assert.True(t, ShouldRetry(task, &model.Run{EndReason: &failed, OutputMatched: true}))
+		assert.False(t, ShouldRetry(task, &model.Run{EndReason: &failed, ExitCode: 1}))
+	})
+
 	t.Run("retry with unconfigured failures behaves as before", func(t *testing.T) {
-		task := &model.Task{RetryAttempts: 3} // nil FailureReasons
+		task := &model.Task{RetryAttempts: 3} // nil Failures.Reasons
 		assert.True(t, ShouldRetry(task, &model.Run{EndReason: &failed}))
 	})
 }

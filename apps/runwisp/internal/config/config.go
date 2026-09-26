@@ -1451,16 +1451,15 @@ func applyInheritedStopSignal(task *model.Task, d Defaults) {
 // +/- delta adjusts it — against that same [defaults] base. toDefaults always
 // leaves the defaults matcher non-nil, so downstream readers never see nil.
 // The nil-spec/nil-reasons guard leaves a Task built outside the loader (which
-// may set FailureReasons directly) untouched.
+// may set Failures directly) untouched.
 func applyInheritedFailures(task *model.Task, d Defaults) {
 	if task.FailureSpec == nil {
-		if task.FailureReasons == nil {
-			task.FailureReasons = d.FailureReasons
-			task.FailureExitRanges = d.FailureExitRanges
+		if task.Failures.Reasons == nil {
+			task.Failures = d.Failures
 		}
 		return
 	}
-	task.FailureReasons, task.FailureExitRanges = task.FailureSpec.Resolve(d.FailureReasons, d.FailureExitRanges)
+	task.Failures = task.FailureSpec.Resolve(d.Failures)
 	task.FailureSpec = nil
 }
 

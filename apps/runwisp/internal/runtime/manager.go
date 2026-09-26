@@ -1197,6 +1197,7 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 		outcome.endReason = model.ReasonStartFailed
 		outcome.eventType = events.EventRunFailed
 	}
+	run.OutputMatched = result.OutputMatched
 	run.End(task, outcome.endReason, result.ExitCode, endTime)
 
 	m.persistence.PersistExisting(run)
