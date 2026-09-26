@@ -38,8 +38,8 @@ run = "curl -fsS localhost"
 	assert.Equal(t, DefaultHealthCheckTimeout, probe.TimeoutValue())
 	assert.Equal(t, DefaultHealthCheckRetryAttempts, probe.RetryAttempts)
 	assert.Equal(t, time.Duration(0), *probe.GracefulStop, "a timed-out probe is killed outright")
-	assert.True(t, probe.IsFailureReason(model.ReasonFailed, 1))
-	assert.True(t, probe.IsFailureReason(model.ReasonTimeout, -1))
+	assert.True(t, probe.IsFailureReason(model.ReasonFailed, 1, false))
+	assert.True(t, probe.IsFailureReason(model.ReasonTimeout, -1, false))
 }
 
 func TestHealthCheck_TaskKeysResolveLikeATask(t *testing.T) {
@@ -63,7 +63,7 @@ retry_backoff = "linear"
 	assert.Equal(t, "*/5 * * * *", probe.Cron)
 	assert.Equal(t, "Europe/Bratislava", probe.Timezone, "the cron runs in the daemon timezone")
 	assert.Equal(t, 7*time.Second, probe.TimeoutValue(), "[defaults].timeout beats the probe fallback")
-	assert.False(t, probe.IsFailureReason(model.ReasonTimeout, -1))
+	assert.False(t, probe.IsFailureReason(model.ReasonTimeout, -1, false))
 	assert.Zero(t, probe.RetryAttempts, "an explicit 0 is kept")
 	assert.Equal(t, 3*time.Second, *probe.RetryDelay)
 	assert.Equal(t, model.BackoffLinear, probe.RetryBackoff)
@@ -112,7 +112,7 @@ env = { LEVEL = "probe" }
 		"FILE_LEVEL":    "probe",
 	}, probe.Env)
 	assert.Equal(t, map[string]string{"TOKEN": "svc-token"}, probe.Secrets)
-	assert.True(t, probe.IsFailureReason(model.ReasonTimeout, -1), "failures is not inherited from the service")
+	assert.True(t, probe.IsFailureReason(model.ReasonTimeout, -1, false), "failures is not inherited from the service")
 }
 
 func TestHealthCheck_ComposeProbeInheritsNothing(t *testing.T) {

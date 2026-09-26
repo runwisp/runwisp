@@ -168,7 +168,7 @@ func TestWatch_CancelMidProbeIsNotAPass(t *testing.T) {
 
 func TestWatch_HonorsProbeFailuresPolicy(t *testing.T) {
 	// failures = ["timeout"]: a non-zero exit is not a failure, so it passes.
-	probe := &model.Task{FailureReasons: map[model.EndReason]struct{}{model.ReasonTimeout: {}}}
+	probe := &model.Task{Failures: model.FailureMatcher{Reasons: map[model.EndReason]struct{}{model.ReasonTimeout: {}}}}
 	h := newHarness(t, false)
 	h.cancelAt = 1
 
