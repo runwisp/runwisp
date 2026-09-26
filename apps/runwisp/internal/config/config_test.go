@@ -651,9 +651,9 @@ run = "echo hi"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonMissed, 0))
-		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonFailed, 1))
-		assert.False(t, cfg.Tasks[0].IsFailureReason(model.ReasonStopped, 0))
+		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonMissed, 0, false))
+		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonFailed, 1, false))
+		assert.False(t, cfg.Tasks[0].IsFailureReason(model.ReasonStopped, 0, false))
 	})
 
 	t.Run("per-task failures without missed demotes it", func(t *testing.T) {
@@ -664,9 +664,9 @@ failures = ["failed", "crashed"]
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		assert.False(t, cfg.Tasks[0].IsFailureReason(model.ReasonMissed, 0),
+		assert.False(t, cfg.Tasks[0].IsFailureReason(model.ReasonMissed, 0, false),
 			"a task that omits missed from failures is not alerted on misses")
-		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonFailed, 1))
+		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonFailed, 1, false))
 	})
 
 	t.Run("per-task failures can promote stopped", func(t *testing.T) {
@@ -677,7 +677,7 @@ failures = ["failed", "stopped"]
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonStopped, 0),
+		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonStopped, 0, false),
 			"promoting stopped makes a killed run count as a failure")
 	})
 
@@ -691,9 +691,9 @@ run = "echo hi"
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		assert.False(t, cfg.Tasks[0].IsFailureReason(model.ReasonMissed, 0),
+		assert.False(t, cfg.Tasks[0].IsFailureReason(model.ReasonMissed, 0, false),
 			"a task that omits the key inherits the [defaults] set (missed demoted)")
-		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonFailed, 1))
+		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonFailed, 1, false))
 	})
 
 	t.Run("per-task failures wins over defaults", func(t *testing.T) {
@@ -707,7 +707,7 @@ failures = ["failed", "missed"]
 `)
 		cfg, err := Load(path)
 		require.NoError(t, err)
-		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonMissed, 0),
+		assert.True(t, cfg.Tasks[0].IsFailureReason(model.ReasonMissed, 0, false),
 			"a per-task failures list overrides [defaults]")
 	})
 
@@ -720,10 +720,10 @@ failures = ["timeout", "23", "30-35"]
 		cfg, err := Load(path)
 		require.NoError(t, err)
 		task := cfg.Tasks[0]
-		assert.True(t, task.IsFailureReason(model.ReasonFailed, 23), "exit 23 is a failure")
-		assert.True(t, task.IsFailureReason(model.ReasonFailed, 32), "exit 32 is within 30-35")
-		assert.False(t, task.IsFailureReason(model.ReasonFailed, 50), "exit 50 matches no token")
-		assert.True(t, task.IsFailureReason(model.ReasonTimeout, 0), "timeout reason still classified")
+		assert.True(t, task.IsFailureReason(model.ReasonFailed, 23, false), "exit 23 is a failure")
+		assert.True(t, task.IsFailureReason(model.ReasonFailed, 32, false), "exit 32 is within 30-35")
+		assert.False(t, task.IsFailureReason(model.ReasonFailed, 50, false), "exit 50 matches no token")
+		assert.True(t, task.IsFailureReason(model.ReasonTimeout, 0, false), "timeout reason still classified")
 	})
 
 	t.Run("rejects succeeded as a failure token", func(t *testing.T) {
@@ -755,11 +755,11 @@ failures = ["-missed"]
 		cfg, err := Load(path)
 		require.NoError(t, err)
 		task := cfg.Tasks[0]
-		assert.False(t, task.IsFailureReason(model.ReasonMissed, 0),
+		assert.False(t, task.IsFailureReason(model.ReasonMissed, 0, false),
 			"-missed drops just missed from the built-in default")
-		assert.True(t, task.IsFailureReason(model.ReasonFailed, 1),
+		assert.True(t, task.IsFailureReason(model.ReasonFailed, 1, false),
 			"the rest of the default set is retained")
-		assert.True(t, task.IsFailureReason(model.ReasonTimeout, 0))
+		assert.True(t, task.IsFailureReason(model.ReasonTimeout, 0, false))
 	})
 
 	t.Run("delta +stopped adds to the inherited default", func(t *testing.T) {
@@ -771,8 +771,8 @@ failures = ["+stopped"]
 		cfg, err := Load(path)
 		require.NoError(t, err)
 		task := cfg.Tasks[0]
-		assert.True(t, task.IsFailureReason(model.ReasonStopped, 0), "+stopped adds stopped")
-		assert.True(t, task.IsFailureReason(model.ReasonMissed, 0), "default missed still present")
+		assert.True(t, task.IsFailureReason(model.ReasonStopped, 0, false), "+stopped adds stopped")
+		assert.True(t, task.IsFailureReason(model.ReasonMissed, 0, false), "default missed still present")
 	})
 
 	t.Run("task delta adjusts the resolved [defaults] set, not the built-in", func(t *testing.T) {
@@ -787,9 +787,9 @@ failures = ["+stopped"]
 		cfg, err := Load(path)
 		require.NoError(t, err)
 		task := cfg.Tasks[0]
-		assert.True(t, task.IsFailureReason(model.ReasonStopped, 0), "delta adds stopped")
-		assert.True(t, task.IsFailureReason(model.ReasonFailed, 1), "inherited [defaults] failed kept")
-		assert.False(t, task.IsFailureReason(model.ReasonMissed, 0),
+		assert.True(t, task.IsFailureReason(model.ReasonStopped, 0, false), "delta adds stopped")
+		assert.True(t, task.IsFailureReason(model.ReasonFailed, 1, false), "inherited [defaults] failed kept")
+		assert.False(t, task.IsFailureReason(model.ReasonMissed, 0, false),
 			"delta applies on top of [defaults] (which dropped missed), not the built-in default")
 	})
 
@@ -804,9 +804,44 @@ run = "echo hi"
 		cfg, err := Load(path)
 		require.NoError(t, err)
 		task := cfg.Tasks[0]
-		assert.False(t, task.IsFailureReason(model.ReasonMissed, 0),
+		assert.False(t, task.IsFailureReason(model.ReasonMissed, 0, false),
 			"[defaults] -missed drops missed daemon-wide")
-		assert.True(t, task.IsFailureReason(model.ReasonFailed, 1))
+		assert.True(t, task.IsFailureReason(model.ReasonFailed, 1, false))
+	})
+
+	t.Run("output patterns inherit from [defaults] and a task delta drops them", func(t *testing.T) {
+		path := writeTOML(t, `
+[defaults]
+failures = ["+output:ERROR", "+output:(?i)fatal"]
+
+[tasks.inherits]
+run = "echo hi"
+
+[tasks.drops]
+run = "echo hi"
+failures = ["-output:ERROR"]
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		byName := map[string]*model.Task{}
+		for i := range cfg.Tasks {
+			byName[cfg.Tasks[i].Name] = &cfg.Tasks[i]
+		}
+		assert.Equal(t, []string{"ERROR", "(?i)fatal"}, byName["inherits"].Failures.OutputPatterns)
+		assert.Equal(t, []string{"(?i)fatal"}, byName["drops"].Failures.OutputPatterns)
+		assert.True(t, byName["drops"].IsFailureReason(model.ReasonFailed, 1, false),
+			"the inherited failed reason survives the delta")
+	})
+
+	t.Run("rejects an invalid output pattern", func(t *testing.T) {
+		path := writeTOML(t, `
+[tasks.t]
+run = "echo hi"
+failures = ["+output:("]
+`)
+		_, err := Load(path)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not a valid output pattern")
 	})
 
 	t.Run("rejects mixing bare and delta tokens", func(t *testing.T) {

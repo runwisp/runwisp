@@ -65,7 +65,7 @@ func TestStreamManager_OneEventPerLine(t *testing.T) {
 	run := &model.Run{ID: "r1"}
 
 	source := strings.NewReader("alpha\nbeta\ngamma\n")
-	sm.streamToFile(source, w, task, run, logutil.StreamStdout)
+	sm.streamToFile(source, w, task, run, &outputMatcher{}, logutil.StreamStdout)
 	require.NoError(t, w.Close())
 
 	got := drain()
@@ -100,7 +100,7 @@ func TestStreamManager_StderrTaggedNoPrefixInText(t *testing.T) {
 	task := &model.Task{Name: "t"}
 	run := &model.Run{ID: "r1"}
 
-	sm.streamToFile(strings.NewReader("uh oh\n"), w, task, run, logutil.StreamStderr)
+	sm.streamToFile(strings.NewReader("uh oh\n"), w, task, run, &outputMatcher{}, logutil.StreamStderr)
 	require.NoError(t, w.Close())
 
 	got := drain()
@@ -136,7 +136,7 @@ func TestStreamManager_OversizedLineSplit(t *testing.T) {
 	// 200 KB of one logical line, no newline until the very end → forces
 	// LineBuffer overflow flushes (each ~64KB).
 	huge := strings.Repeat("x", 200*1024) + "\n"
-	sm.streamToFile(strings.NewReader(huge), w, task, run, logutil.StreamStdout)
+	sm.streamToFile(strings.NewReader(huge), w, task, run, &outputMatcher{}, logutil.StreamStdout)
 	require.NoError(t, w.Close())
 
 	got := drain()
@@ -194,7 +194,7 @@ func TestStreamManager_NonEOFReadErrorIsSurfaced(t *testing.T) {
 
 	readErr := errors.New("simulated I/O error: input/output error")
 	src := &errAfterReader{data: []byte("partial output\n"), err: readErr}
-	sm.streamToFile(src, w, task, run, logutil.StreamStdout)
+	sm.streamToFile(src, w, task, run, &outputMatcher{}, logutil.StreamStdout)
 	require.NoError(t, w.Close())
 
 	disk, err := os.ReadFile(logPath)

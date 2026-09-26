@@ -94,6 +94,40 @@ func TestExecuteFailure(t *testing.T) {
 	assert.Equal(t, 1, result.ExitCode)
 }
 
+// An exit-0 run whose output matches a `failures` output pattern ends failed,
+// with a system line in its log explaining why; a non-matching run succeeds.
+func TestExecuteOutputPatternFailsExitZero(t *testing.T) {
+	spec, err := model.ParseFailures([]string{"+output:(?i)error"})
+	require.NoError(t, err)
+	failures := spec.Resolve(model.DefaultFailures())
+
+	for _, tc := range []struct {
+		script string
+		want   model.EndReason
+	}{
+		{"echo ok; echo 'Error: disk full' >&2; exit 0", model.ReasonFailed},
+		{"echo all good", model.ReasonSuccess},
+	} {
+		t.Run(tc.script, func(t *testing.T) {
+			eb := events.NewEventBus()
+			exec := New(Options{LogDir: t.TempDir(), EventBus: eb, StationDispatchEnabled: true, HasLocalTasks: true})
+			getLogPath := captureLogPath(eb)
+
+			task := &model.Task{Name: "grep-task", Run: tc.script, Failures: failures}
+			run := &model.Run{ID: ulid.Make().String(), Status: model.PhaseRunning}
+
+			result := exec.Execute(context.Background(), task, run)
+			assert.Equal(t, 0, result.ExitCode)
+			assert.Equal(t, tc.want, result.EndReason())
+
+			logContent, err := os.ReadFile(getLogPath())
+			require.NoError(t, err)
+			hasNote := strings.Contains(string(logContent), "Output matched failures pattern")
+			assert.Equal(t, tc.want == model.ReasonFailed, hasNote)
+		})
+	}
+}
+
 func TestExecuteTimeout(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "executor-test")
 	require.NoError(t, err)

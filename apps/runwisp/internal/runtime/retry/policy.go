@@ -38,7 +38,7 @@ func IsFailedExecution(reason model.EndReason) bool {
 func shouldReRun(task *model.Task, run *model.Run) bool {
 	return run.EndReason != nil &&
 		IsFailedExecution(*run.EndReason) &&
-		task.IsFailureReason(*run.EndReason, run.ExitCode)
+		task.IsFailureReason(*run.EndReason, run.ExitCode, run.OutputMatched)
 }
 
 // ShouldRestart reports whether a finished run should trigger a restart per

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`runwisp start`**, plus `stop`/`restart` now also accept a task or service target: `runwisp start|stop|restart <target...>`. A target is a name, a shell-style glob (`'*'` for everything), or — for `stop` — a run ID. Multiple targets can be given at once. `--url`/`--password` (or `RUNWISP_URL`/`RUNWISP_PASSWORD`) dispatch to a remote daemon, same as `runwisp run`.
 - `start`/`stop`/`restart` now work on tasks, not just services: `start` triggers a run (no-op if one's already active or queued), `stop` cancels the active run and drops anything queued, `restart` does both in sequence. `manual_trigger = false` now locks all three verbs for tasks too, matching services.
 - New `POST /api/tasks/{task}/start` endpoint.
+- **`failures` accepts `output:<regex>` tokens**: a run whose stdout or stderr matches the pattern is marked failed, even if it exits 0. For example, `failures = ["+output:(?i)error"]`.
 - **The Web UI asks for quick feedback** after an hour of uptime, at most once a month: a one-tap rating plus an optional note, sent to the maintainers. It can be dismissed, and `check_updates = false` turns it off.
 
 ### Changed

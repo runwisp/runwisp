@@ -81,10 +81,10 @@
     },
     "failures": {
       "type": "array",
-      "description": "Which outcomes count as a failure (for stats, UI badges, notifications, and gating retry_attempts/restart=on_failure). Each token is an EndReason name (failed, timeout, crashed, log_overflow, start_failed, missed, stopped, …) or an exit code / inclusive range (\"42\", \"1-23\"; 1-255, exit 0 always succeeds). A bare list replaces the inherited set; prefix every token with + or - to add/drop against it instead (\"-missed\", \"+stopped\") — mixing bare and prefixed tokens is rejected. Exit tokens only apply to a run that actually exited (reason failed). Omit to inherit; the built-in default is [\"failed\",\"timeout\",\"crashed\",\"log_overflow\",\"start_failed\",\"missed\"]. A retry/restart still only fires for failed/timeout/crashed/log_overflow/start_failed, so narrowing failures narrows retries but promoting stopped/missed never triggers one.",
+      "description": "Which outcomes count as a failure (for stats, UI badges, notifications, and gating retry_attempts/restart=on_failure). Each token is an EndReason name (failed, timeout, crashed, log_overflow, start_failed, missed, stopped, …) an exit code / inclusive range (\"42\", \"1-23\"; 1-255), or an output pattern (\"output:(?i)error\", RE2) matched against each stdout/stderr line. Exit 0 succeeds unless an output pattern matched, which ends the run as failed. A bare list replaces the inherited set; prefix every token with + or - to add/drop against it instead (\"-missed\", \"+stopped\") — mixing bare and prefixed tokens is rejected. Exit and output tokens only apply to a run that actually exited (reason failed). Omit to inherit; the built-in default is [\"failed\",\"timeout\",\"crashed\",\"log_overflow\",\"start_failed\",\"missed\"]. A retry/restart still only fires for failed/timeout/crashed/log_overflow/start_failed, so narrowing failures narrows retries but promoting stopped/missed never triggers one.",
       "items": {
         "type": "string",
-        "pattern": "^[+-]?((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]?)(-(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]?))?|failed|stopped|timeout|crashed|skipped|log_overflow|queue_full|dst_skipped|daemon_stopped|missed|start_failed)$"
+        "pattern": "^[+-]?((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]?)(-(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]?))?|failed|stopped|timeout|crashed|skipped|log_overflow|queue_full|dst_skipped|daemon_stopped|missed|start_failed|output:.+)$"
       }
     },
     "envMap": {

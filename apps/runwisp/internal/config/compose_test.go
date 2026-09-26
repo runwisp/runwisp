@@ -126,11 +126,11 @@ failures = ["+stopped"]
 	require.NoError(t, err)
 
 	web := findTask(t, cfg, "myapp.web")
-	assert.True(t, web.IsFailureReason(model.ReasonStopped, 0), "override adds stopped")
+	assert.True(t, web.IsFailureReason(model.ReasonStopped, 0, false), "override adds stopped")
 
 	// non-overridden services keep the inherited default classification.
 	worker := findTask(t, cfg, "myapp.worker")
-	assert.False(t, worker.IsFailureReason(model.ReasonStopped, 0))
+	assert.False(t, worker.IsFailureReason(model.ReasonStopped, 0, false))
 }
 
 func TestComposeExpansion_PerServiceOverrideServiceKnobs(t *testing.T) {
