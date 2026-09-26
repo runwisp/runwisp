@@ -73,14 +73,19 @@ func TestStartServiceInstances_HonorsAutostart(t *testing.T) {
 
 // TestStartServiceInstances_GatesDependentOnDependencyHealth proves the launcher
 // holds a dependent until its dependency is healthy: web must not start while db
-// is still short of its healthy_after, then comes up once db crosses it.
+// is still short of its healthy_after, then comes up once db crosses it. Health
+// is read from the injected clock, so db only turns healthy when the test
+// advances it; wall-clock scheduling jitter cannot let web through early.
 func TestStartServiceInstances_GatesDependentOnDependencyHealth(t *testing.T) {
 	exec := testutil.NewGateExecutor()
 	bus := events.NewEventBus()
-	tm := runtime.NewTaskManager(exec, bus, time.Now)
+	clock := testutil.NewClock(time.Now())
+	tm := runtime.NewTaskManager(exec, bus, clock.Now)
 	t.Cleanup(tm.Shutdown)
 
-	db := bootTestService("db", 400*time.Millisecond)
+	// A long healthy_after keeps the launcher's wall-clock fallback window
+	// (graceWindow + healthy_after) far beyond the test's runtime.
+	db := bootTestService("db", time.Minute)
 	web := bootTestService("web", time.Nanosecond, "db")
 	tm.UpsertTask(db)
 	tm.UpsertTask(web)
@@ -90,12 +95,13 @@ func TestStartServiceInstances_GatesDependentOnDependencyHealth(t *testing.T) {
 	defer cancel()
 	startServiceInstances(ctx, tm, tasksMap)
 
-	// db comes up immediately; web is gated behind db's 400ms healthy bar.
 	require.Eventually(t, func() bool { return activeCount(tm, "db") == 1 },
-		time.Second, 10*time.Millisecond, "db should start right away")
+		2*time.Second, 10*time.Millisecond, "db should start right away")
+	// An ungated launcher would start web immediately; db cannot be healthy yet.
 	time.Sleep(200 * time.Millisecond)
 	assert.Equal(t, 0, activeCount(tm, "web"), "web must wait until db is healthy")
 
+	clock.Advance(time.Minute)
 	require.Eventually(t, func() bool { return activeCount(tm, "web") == 1 },
 		2*time.Second, 10*time.Millisecond, "web should start once db is healthy")
 }
