@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`runwisp start`**, plus `stop`/`restart` now also accept a task or service target: `runwisp start|stop|restart <target...>`. A target is a name, a shell-style glob (`'*'` for everything), or — for `stop` — a run ID. Multiple targets can be given at once. `--url`/`--password` (or `RUNWISP_URL`/`RUNWISP_PASSWORD`) dispatch to a remote daemon, same as `runwisp run`.
 - `start`/`stop`/`restart` now work on tasks, not just services: `start` triggers a run (no-op if one's already active or queued), `stop` cancels the active run and drops anything queued, `restart` does both in sequence. `manual_trigger = false` now locks all three verbs for tasks too, matching services.
 - New `POST /api/tasks/{task}/start` endpoint.
+- **Service health checks**: an optional `[services.<name>.health_check]` command decides when an instance is healthy and stops it as `unhealthy` when it keeps failing, so `restart` brings it back. It reuses task keys (`cron`, `timeout`, `failures`, `retry_*`).
 - **The Web UI asks for quick feedback** after an hour of uptime, at most once a month: a one-tap rating plus an optional note, sent to the maintainers. It can be dismissed, and `check_updates = false` turns it off.
 
 ### Changed
@@ -27,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Notification durations no longer render as "60s" or "59m 60s"; they round up to "1m" or "1h".
 - `runwisp import cron` now warns about a user column on `@reboot`, `@daily` and other `@`-shorthand lines (suggesting `--system`) instead of importing the username as the command.
 - Live output from programs that redraw the screen no longer marks every line after an over-long line as a continuation.
+- Notifications for a run killed by `log_on_full = "kill"` now say so instead of reporting the kill signal's exit code.
 
 ## [1.0.1] - 2026-09-23
 

@@ -51,7 +51,7 @@ var statusFilterCycle = []string{"", "running", "succeeded", "failed", "skipped"
 // of run statuses (phases + end reasons) sent to the server, mirroring the web
 // UI's STATUS_BUCKETS (packages/ui .../run-filters.ts). Without this the TUI
 // "Failed" filter matched only literal "failed" and silently dropped
-// crashed/timeout/log_overflow/start_failed/missed; likewise Running dropped
+// crashed/timeout/log_overflow/start_failed/unhealthy/missed; likewise Running dropped
 // pending, Skipped dropped dst_skipped/queue_full, Stopped dropped
 // daemon_stopped. The "failed" set must stay in sync with the web UI's
 // NEEDS_ATTENTION_STATUSES (the "Failed" browse bucket in run-filters.ts). This
@@ -60,7 +60,7 @@ var statusFilterWire = map[string]string{
 	"":          "",
 	"running":   "pending,running",
 	"succeeded": "succeeded",
-	"failed":    "failed,crashed,timeout,log_overflow,start_failed,missed",
+	"failed":    "failed,crashed,timeout,log_overflow,start_failed,unhealthy,missed",
 	"skipped":   "skipped,dst_skipped,queue_full",
 	"stopped":   "stopped,daemon_stopped",
 }

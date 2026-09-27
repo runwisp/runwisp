@@ -62,6 +62,7 @@ The outcomes to match. Uses the same names as `failures`:
 - `timeout`: stopped by [`timeout`](/configuration/tasks/#timeout)
 - `crashed`: still running when the daemon itself was killed
 - `log_overflow`: stopped by `log_on_full = "kill"`
+- `unhealthy`: a service instance stopped for failing its [`health_check`](/configuration/services/#health_check)
 - `queue_full`: dropped because [`max_queued`](/configuration/tasks/#max_queued) was reached
 - `stopped`: stopped by an operator or `on_overlap = "kill"`
 - `daemon_stopped`: cut short by daemon shutdown

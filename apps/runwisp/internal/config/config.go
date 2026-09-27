@@ -86,9 +86,9 @@ func collectWatchFiles(cfg *Config, dirs entrySources) []string {
 	if cfg.Defaults.EnvFile != "" {
 		files = append(files, resolveAgainst(dirs.root, cfg.Defaults.EnvFile))
 	}
-	for i := range cfg.Tasks {
-		if ef := cfg.Tasks[i].EnvFile; ef != "" {
-			files = append(files, resolveAgainst(dirs.dir(cfg.Tasks[i].Name), ef))
+	for owner, unit := range cfg.units() {
+		if unit.EnvFile != "" {
+			files = append(files, resolveAgainst(dirs.dir(owner), unit.EnvFile))
 		}
 	}
 	return files
@@ -129,14 +129,13 @@ func resolveEnvLayers(cfg *Config, dirs entrySources) error {
 	if cfg.Defaults.Secrets, err = mergeEnvFileLayer(dirs.root, cfg.Defaults.SecretsFile, cfg.Defaults.Secrets, "defaults"); err != nil {
 		return err
 	}
-	for i := range cfg.Tasks {
-		task := &cfg.Tasks[i]
-		baseDir := dirs.dir(task.Name)
-		scope := fmt.Sprintf("task %q", task.Name)
-		if task.Env, err = mergeEnvFileLayer(baseDir, task.EnvFile, task.Env, scope); err != nil {
+	for owner, unit := range cfg.units() {
+		baseDir := dirs.dir(owner)
+		scope := fmt.Sprintf("task %q", unit.Name)
+		if unit.Env, err = mergeEnvFileLayer(baseDir, unit.EnvFile, unit.Env, scope); err != nil {
 			return err
 		}
-		if task.Secrets, err = mergeEnvFileLayer(baseDir, task.SecretsFile, task.Secrets, scope); err != nil {
+		if unit.Secrets, err = mergeEnvFileLayer(baseDir, unit.SecretsFile, unit.Secrets, scope); err != nil {
 			return err
 		}
 	}
@@ -162,14 +161,14 @@ func mergeEnvFileLayer(baseDir, file string, inline map[string]string, scope str
 // the IsAbs guard. WorkingDir defaults to the file's directory so the CLI runs
 // from there, matching docker compose's own behaviour.
 func resolveComposePaths(cfg *Config, dirs entrySources) error {
-	for i := range cfg.Tasks {
-		ce, ok := cfg.Tasks[i].ExecutionDef.(*model.ComposeExecution)
+	for owner, unit := range cfg.units() {
+		ce, ok := unit.ExecutionDef.(*model.ComposeExecution)
 		if !ok || ce.File == "" || filepath.IsAbs(ce.File) {
 			continue
 		}
-		resolved, err := resolveComposeFile(ce.File, dirs.dir(cfg.Tasks[i].Name))
+		resolved, err := resolveComposeFile(ce.File, dirs.dir(owner))
 		if err != nil {
-			return fmt.Errorf("task %q: %w", cfg.Tasks[i].Name, err)
+			return fmt.Errorf("task %q: %w", unit.Name, err)
 		}
 		ce.File = resolved
 		if ce.WorkingDir == "" {
@@ -190,12 +189,11 @@ func resolveComposePaths(cfg *Config, dirs entrySources) error {
 // A `~` on a task that also sets `user` is the one path left unresolved here;
 // see homeIsTheRunUsers.
 func resolveWorkingDirs(cfg *Config, dirs entrySources) error {
-	for i := range cfg.Tasks {
-		task := &cfg.Tasks[i]
+	for owner, task := range cfg.units() {
 		if task.WorkingDir == "" || homeIsTheRunUsers(task) {
 			continue
 		}
-		resolved, err := resolvePath(dirs.dir(task.Name), task.WorkingDir)
+		resolved, err := resolvePath(dirs.dir(owner), task.WorkingDir)
 		if err != nil {
 			return fmt.Errorf("working_dir for task %q: %w", task.Name, err)
 		}
@@ -274,8 +272,7 @@ func composeExecServiceWarnings(cfg *Config) []string {
 // validate` rather than discovering it via a run that passed when it shouldn't.
 func nonPosixShellWarnings(cfg *Config) []string {
 	var warnings []string
-	for i := range cfg.Tasks {
-		task := &cfg.Tasks[i]
+	for _, task := range cfg.units() {
 		if task.Shell == "" || model.ShellSupportsErrexit(task.Shell) {
 			continue
 		}
@@ -655,6 +652,13 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 	if err := validateTaskIdentity(task, seen); err != nil {
 		return err
 	}
+	return validateUnit(task)
+}
+
+// validateUnit runs every check an executable unit gets apart from its
+// identity (name shape and uniqueness): a task or service, and a service's
+// health_check probe, which has no registered name of its own.
+func validateUnit(task *model.Task) error {
 	if err := validateTaskCommand(task); err != nil {
 		return err
 	}
@@ -1164,7 +1168,10 @@ func validateServiceTask(task *model.Task) error {
 	if task.HealthyAfter != nil && *task.HealthyAfter < 0 {
 		return fmt.Errorf("invalid healthy_after for service %s: must be a positive duration", task.Name)
 	}
-	return validateRestartAttempts(fmt.Sprintf("restart_attempts for service %s", task.Name), task.RestartAttempts)
+	if err := validateRestartAttempts(fmt.Sprintf("restart_attempts for service %s", task.Name), task.RestartAttempts); err != nil {
+		return err
+	}
+	return validateHealthCheck(task)
 }
 
 // validateRestartAttempts bounds restart_attempts the same way for services,
@@ -1390,6 +1397,7 @@ func ApplyDefaults(cfg *Config) {
 			applyTaskDefaults(task)
 		}
 		applyInheritedDefaults(task, cfg.Defaults)
+		applyHealthCheckDefaults(task, cfg.Defaults, cfg.Scheduler.Timezone)
 	}
 }
 

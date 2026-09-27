@@ -495,6 +495,103 @@ type serviceWire struct {
 	// DependsOn names other services that must become healthy before this one
 	// starts at boot. Valid only on [services.*] — a task has no boot ordering.
 	DependsOn []string `toml:"depends_on,omitempty"`
+
+	HealthCheck *healthCheckWire `toml:"health_check,omitempty"`
+}
+
+// healthCheckWire mirrors [services.*.health_check]. It declares exactly the
+// [tasks.*] keys a probe accepts, under the same names so they read and parse
+// the same, and nothing else — strict decoding rejects every other task key.
+type healthCheckWire struct {
+	// Run is exempt from ${...} substitution, like a task's run.
+	Run string `toml:"run,omitempty" expand:"-"`
+
+	Cron     string   `toml:"cron,omitempty"`
+	Timezone string   `toml:"timezone,omitempty"`
+	Timeout  string   `toml:"timeout,omitempty"`
+	Failures []string `toml:"failures,omitempty"`
+
+	// RetryAttempts is a pointer so an explicit `retry_attempts = 0` (unhealthy
+	// on the first failed check) is distinguishable from an omitted key, which
+	// resolves to DefaultHealthCheckRetryAttempts rather than a task's 0.
+	RetryAttempts *int               `toml:"retry_attempts,omitempty"`
+	RetryDelay    string             `toml:"retry_delay,omitempty"`
+	RetryBackoff  model.BackoffCurve `toml:"retry_backoff,omitempty"`
+
+	WorkingDir  string            `toml:"working_dir,omitempty"`
+	Shell       string            `toml:"shell,omitempty"`
+	Umask       string            `toml:"umask,omitempty"`
+	EnvBase     string            `toml:"env_base,omitempty"`
+	User        string            `toml:"user,omitempty"`
+	Env         map[string]string `toml:"env,omitempty"`
+	EnvFile     string            `toml:"env_file,omitempty"`
+	Secrets     map[string]string `toml:"secrets,omitempty"`
+	SecretsFile string            `toml:"secrets_file,omitempty"`
+
+	ComposeFile    string `toml:"compose_file,omitempty"`
+	ComposeService string `toml:"compose_service,omitempty"`
+	ComposeMode    string `toml:"compose_mode,omitempty"`
+}
+
+// healthCheckTask builds the service's probe as a task, through the same
+// taskWire.toTask every [tasks.*] entry goes through. A host probe inherits the
+// service's host exec keys it leaves unset, so the check runs where and as the
+// service does; its env/secrets merge over the service's in ApplyDefaults, once
+// both sides have their env_file layers resolved. A compose probe (compose_file
+// set) inherits nothing, exactly like a compose-backed task.
+func (w *serviceWire) healthCheckTask(name string) (*model.Task, error) {
+	hc := w.HealthCheck
+	if hc == nil {
+		return nil, nil
+	}
+	// A probe checks the service's running container; `run` mode would start a
+	// fresh one per check under a project named after the probe.
+	if hc.ComposeMode == model.ComposeModeRun {
+		return nil, fmt.Errorf("health_check for service %q: compose_mode = %q is not supported; a probe execs into a running container (compose_mode = %q)",
+			name, model.ComposeModeRun, model.ComposeModeExec)
+	}
+	core := taskServiceWireCore{
+		unitOverrideWire: unitOverrideWire{
+			Timeout:     hc.Timeout,
+			Env:         hc.Env,
+			EnvFile:     hc.EnvFile,
+			Secrets:     hc.Secrets,
+			SecretsFile: hc.SecretsFile,
+		},
+		WorkingDir:     hc.WorkingDir,
+		Shell:          hc.Shell,
+		Umask:          hc.Umask,
+		EnvBase:        hc.EnvBase,
+		User:           hc.User,
+		Run:            hc.Run,
+		ComposeFile:    hc.ComposeFile,
+		ComposeService: hc.ComposeService,
+		ComposeMode:    hc.ComposeMode,
+		Failures:       hc.Failures,
+	}
+	if hc.ComposeFile == "" {
+		core.WorkingDir = firstSet(hc.WorkingDir, w.WorkingDir)
+		core.Shell = firstSet(hc.Shell, w.Shell)
+		core.Umask = firstSet(hc.Umask, w.Umask)
+		core.EnvBase = firstSet(hc.EnvBase, w.EnvBase)
+		core.User = firstSet(hc.User, w.User)
+	}
+	retryAttempts := DefaultHealthCheckRetryAttempts
+	if hc.RetryAttempts != nil {
+		retryAttempts = *hc.RetryAttempts
+	}
+	probe, err := (&taskWire{
+		taskServiceWireCore: core,
+		Cron:                hc.Cron,
+		Timezone:            hc.Timezone,
+		RetryAttempts:       retryAttempts,
+		RetryDelay:          hc.RetryDelay,
+		RetryBackoff:        hc.RetryBackoff,
+	}).toTask(name + healthCheckSuffix)
+	if err != nil {
+		return nil, err
+	}
+	return &probe, nil
 }
 
 func (w *serviceWire) toTask(name string) (model.Task, error) {
@@ -509,6 +606,10 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 	healthyAfter, err := parseDurationPtr(w.HealthyAfter)
 	if err != nil {
 		return model.Task{}, fmt.Errorf("invalid healthy_after for task %q: %w", name, err)
+	}
+	healthCheck, err := w.healthCheckTask(name)
+	if err != nil {
+		return model.Task{}, err
 	}
 	autostart := true
 	if w.Autostart != nil {
@@ -526,6 +627,7 @@ func (w *serviceWire) toTask(name string) (model.Task, error) {
 	task.Priority = w.Priority
 	task.Autostart = autostart
 	task.DependsOn = w.DependsOn
+	task.HealthCheck = healthCheck
 	return task, nil
 }
 

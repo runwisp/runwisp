@@ -785,7 +785,7 @@ export interface components {
          * @description Why a run ended. Set when status=ended.
          * @enum {string}
          */
-        EndReason: "succeeded" | "failed" | "stopped" | "timeout" | "crashed" | "skipped" | "log_overflow" | "queue_full" | "dst_skipped" | "daemon_stopped" | "missed" | "start_failed";
+        EndReason: "succeeded" | "failed" | "stopped" | "timeout" | "crashed" | "skipped" | "log_overflow" | "queue_full" | "dst_skipped" | "daemon_stopped" | "missed" | "start_failed" | "unhealthy";
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
             location?: string;
@@ -1411,7 +1411,7 @@ export interface components {
             group?: string;
             /**
              * Format: int64
-             * @description For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start
+             * @description For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start. With a health_check, the deadline for its first pass instead.
              */
             healthyAfter?: number;
             /**
@@ -1607,7 +1607,7 @@ export interface components {
             group?: string;
             /**
              * Format: int64
-             * @description For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start
+             * @description For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start. With a health_check, the deadline for its first pass instead.
              */
             healthyAfter?: number;
             /**

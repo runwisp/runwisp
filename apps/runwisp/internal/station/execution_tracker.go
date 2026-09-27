@@ -144,6 +144,7 @@ var terminalReasonMap = map[model.EndReason]protocol.ExecutionStatus{
 	model.ReasonCrashed:       protocol.ExecutionStatusFailed,
 	model.ReasonLogOverflow:   protocol.ExecutionStatusFailed,
 	model.ReasonStartFailed:   protocol.ExecutionStatusFailed,
+	model.ReasonUnhealthy:     protocol.ExecutionStatusFailed,
 	model.ReasonDaemonStopped: protocol.ExecutionStatusStopped,
 	model.ReasonSkipped:       protocol.ExecutionStatusSkipped,
 	model.ReasonQueueFull:     protocol.ExecutionStatusFailed,

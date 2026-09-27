@@ -89,8 +89,8 @@ func TestLogWriter_KillOverflow(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	opts.MaxSize = 100
 	opts.Overflow = "kill"
-	cancelled := false
-	opts.CancelFunc = func() { cancelled = true }
+	killed := false
+	opts.Kill = func() { killed = true }
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
@@ -98,37 +98,36 @@ func TestLogWriter_KillOverflow(t *testing.T) {
 	w.WriteLineEvent(chunk, logutil.StreamStdout)
 	require.NoError(t, w.Close())
 
-	assert.True(t, cancelled)
+	assert.True(t, killed, "kill overflow must kill the run so it is recorded as log_overflow, not stopped")
 	assert.True(t, w.truncated)
-	assert.True(t, w.KilledByPolicy(),
-		"kill overflow must flag KilledByPolicy so the runtime records the run as failed, not stopped")
 }
 
-func TestLogWriter_DropNewDoesNotMarkKilledByPolicy(t *testing.T) {
+func TestLogWriter_DropNewDoesNotKill(t *testing.T) {
 	opts := newTestOpts(t.TempDir())
 	opts.MaxSize = 100
 	opts.Overflow = "drop_new"
+	killed := false
+	opts.Kill = func() { killed = true }
 	w, err := NewLogWriter(opts)
 	require.NoError(t, err)
 
 	w.WriteLineEvent(strings.Repeat("x", 110), logutil.StreamStdout)
 	require.NoError(t, w.Close())
 
-	assert.False(t, w.KilledByPolicy(),
-		"drop_new keeps the process alive — only kill should set KilledByPolicy")
+	assert.False(t, killed, "drop_new keeps the process alive — only kill may kill the run")
 }
 
 // TestLogWriter_DiskPressure_DropNew_FiresCallback verifies the disk-pressure
 // path on a non-kill policy: log writes silently stop, the task keeps
-// running (cancelFunc is NOT called), and OnDiskPressure fires exactly once.
+// running (Kill is NOT called), and OnDiskPressure fires exactly once.
 func TestLogWriter_DiskPressure_DropNew_FiresCallback(t *testing.T) {
 	dir := t.TempDir()
 	opts := newTestOpts(dir)
 	opts.LogDir = dir
 	opts.Overflow = "drop_new"
 	opts.MinFreeDisk = math.MaxInt64 // any free space < this trips the threshold
-	cancelled := false
-	opts.CancelFunc = func() { cancelled = true }
+	killed := false
+	opts.Kill = func() { killed = true }
 	hits := 0
 	var seenFree, seenMin int64
 	var seenKilled bool
@@ -154,7 +153,7 @@ func TestLogWriter_DiskPressure_DropNew_FiresCallback(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
-	assert.False(t, cancelled, "drop_new policy must not kill the task on disk pressure")
+	assert.False(t, killed, "drop_new policy must not kill the task on disk pressure")
 	assert.True(t, w.truncated, "writer must mark the run truncated")
 	assert.Equal(t, 1, hits, "OnDiskPressure must fire exactly once per writer")
 	assert.False(t, seenKilled, "killedTask=false for drop_new")
@@ -166,17 +165,17 @@ func TestLogWriter_DiskPressure_DropNew_FiresCallback(t *testing.T) {
 	assert.NotContains(t, string(data), "should be dropped")
 }
 
-// TestLogWriter_DiskPressure_Kill_CancelsContext verifies that disk
-// pressure on a kill task actually kills the task (calls cancelFunc),
+// TestLogWriter_DiskPressure_Kill_KillsRun verifies that disk
+// pressure on a kill task actually kills the task (calls Kill),
 // reports killedTask=true to OnDiskPressure, and stops further writes.
-func TestLogWriter_DiskPressure_Kill_CancelsContext(t *testing.T) {
+func TestLogWriter_DiskPressure_Kill_KillsRun(t *testing.T) {
 	dir := t.TempDir()
 	opts := newTestOpts(dir)
 	opts.LogDir = dir
 	opts.Overflow = "kill"
 	opts.MinFreeDisk = math.MaxInt64
-	cancelled := false
-	opts.CancelFunc = func() { cancelled = true }
+	killed := false
+	opts.Kill = func() { killed = true }
 	var seenKilled bool
 	opts.OnDiskPressure = func(free, minFree int64, killedTask bool) {
 		seenKilled = killedTask
@@ -192,12 +191,10 @@ func TestLogWriter_DiskPressure_Kill_CancelsContext(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 
-	assert.True(t, cancelled, "kill must cancel the task context on disk pressure")
+	assert.True(t, killed, "disk-pressure kill must kill the run, same as log_max_size kill, so it "+
+		"is recorded as a policy-initiated kill (ReasonLogOverflow) instead of a plain stop")
 	assert.True(t, seenKilled, "OnDiskPressure must report killedTask=true")
 	assert.True(t, w.truncated)
-	assert.True(t, w.KilledByPolicy(),
-		"disk-pressure kill must flag KilledByPolicy, same as log_max_size kill, so the runtime "+
-			"records the run as a policy-initiated kill (ReasonLogOverflow) instead of a plain stop")
 }
 
 // TestLogWriter_DiskPressure_SurvivesRotation guards the regression where the

@@ -114,7 +114,7 @@ func mapRunEventType(t events.EventType, run *model.Run) (Kind, bool) {
 			return KindRunFailed, true
 		}
 		switch *run.EndReason {
-		case model.ReasonFailed, model.ReasonLogOverflow:
+		case model.ReasonFailed, model.ReasonLogOverflow, model.ReasonUnhealthy:
 			return KindRunFailed, true
 		case model.ReasonTimeout:
 			return KindRunTimeout, true

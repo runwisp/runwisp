@@ -32,11 +32,13 @@ type Executor interface {
 }
 
 type ExecuteResult struct {
-	ExitCode       int
-	Error          error
-	TimedOut       bool
-	Stopped        bool
-	KilledByPolicy bool // log_on_full = "kill" tripped — recorded as failed, not stopped
+	ExitCode int
+	Error    error
+	TimedOut bool
+	Stopped  bool
+	// KillReason is why a policy stopped the run (log_on_full = "kill" →
+	// log_overflow, a failing health check → unhealthy); empty when none did.
+	KillReason model.EndReason
 }
 
 // EndReason maps the raw process outcome to a terminal reason. Exit 0 is the sole
@@ -47,8 +49,8 @@ func (r *ExecuteResult) EndReason() model.EndReason {
 	switch {
 	case r.TimedOut:
 		return model.ReasonTimeout
-	case r.KilledByPolicy:
-		return model.ReasonLogOverflow
+	case r.KillReason != "":
+		return r.KillReason
 	case r.Stopped:
 		return model.ReasonStopped
 	case r.ExitCode == 0:
@@ -64,6 +66,7 @@ type RoutingExecutor struct {
 	logDir           string
 	onUpdate         func(*model.Run)
 	onProcessStarted func(runID string, forceKill func())
+	watcher          RunWatcher
 	eventBus         *events.Bus
 	backends         map[string]Backend
 	availability     Availability
@@ -182,13 +185,21 @@ func (r *RoutingExecutor) SetOnProcessStarted(callback func(runID string, forceK
 	r.onProcessStarted = callback
 }
 
+// SetRunWatcher registers the RunWatcher started alongside every run's
+// process. Late-binding mirrors SetOnProcessStarted.
+func (r *RoutingExecutor) SetRunWatcher(watcher RunWatcher) {
+	r.watcher = watcher
+}
+
 // Execute resolves the execution backend and runs the task, streaming output.
 func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *model.Run) *ExecuteResult {
 	if err := r.checkDisk(); err != nil {
 		return &ExecuteResult{ExitCode: -1, Error: err}
 	}
 
-	writer, logPath, cancelCtx, cancelFunc, err := r.prepareLogWriter(ctx, task, run)
+	killer := newRunKiller(ctx)
+	defer killer.cancel()
+	writer, logPath, err := r.prepareLogWriter(task, run, killer)
 	if err != nil {
 		return &ExecuteResult{ExitCode: -1, Error: err}
 	}
@@ -197,22 +208,22 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 			slog.Warn("Failed to close run log writer", "task", task.Name, "run", run.ID, "err", err)
 		}
 	}()
-	defer cancelFunc()
 
 	r.notifyRunUpdated(run, logPath)
 
-	backend, execDef, errResult := r.resolveBackend(task, writer)
+	backend, execDef, errResult := r.resolveBackend(task, run, writer)
 	if errResult != nil {
 		return errResult
 	}
 
-	proc, errResult := r.startBackend(cancelCtx, backend, task, run, execDef, writer)
+	proc, errResult := r.startBackend(killer.ctx, backend, task, run, execDef, writer)
 	if errResult != nil {
 		return errResult
 	}
 	if r.onProcessStarted != nil {
 		r.onProcessStarted(run.ID, proc.ForceKill)
 	}
+	stopWatcher := r.startWatcher(task, run, writer, killer)
 
 	r.streamProcessOutput(proc, writer, task, run)
 
@@ -220,8 +231,12 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	if proc.Cleanup != nil {
 		proc.Cleanup()
 	}
+	// Seal before stopping the watcher: from here the process has exited on
+	// its own terms, and no late kill may relabel how it ended.
+	killReason := killer.seal()
+	stopWatcher()
 
-	return classifyExecuteResult(cancelCtx, writer, exitCode, waitErr)
+	return classifyExecuteResult(killer.ctx, killReason, exitCode, waitErr)
 }
 
 // notifyRunUpdated fans the post-log-prep run state out to the persistence
@@ -249,7 +264,7 @@ func (r *RoutingExecutor) notifyRunUpdated(run *model.Run, logPath string) {
 // definition and returns an *ExecuteResult only when resolution fails. The
 // error path writes a synthetic system log line so operators see the failure
 // inline with the rest of the run.
-func (r *RoutingExecutor) resolveBackend(task *model.Task, writer *LogWriter) (Backend, model.ExecutionDef, *ExecuteResult) {
+func (r *RoutingExecutor) resolveBackend(task *model.Task, run *model.Run, writer *LogWriter) (Backend, model.ExecutionDef, *ExecuteResult) {
 	execDef := task.ResolvedExecutionDef()
 	if execDef == nil {
 		return nil, nil, &ExecuteResult{ExitCode: -1, Error: errors.New("missing execution definition")}
@@ -257,7 +272,7 @@ func (r *RoutingExecutor) resolveBackend(task *model.Task, writer *LogWriter) (B
 	backend, ok := r.backends[execDef.ExecType()]
 	if !ok {
 		errMsg := fmt.Sprintf("unsupported execution type: %s", execDef.ExecType())
-		writer.WriteLineEvent(errMsg, logutil.StreamSystem)
+		r.systemLine(writer, task, run, errMsg)
 		return nil, nil, &ExecuteResult{ExitCode: -1, Error: errors.New(errMsg)}
 	}
 	return backend, execDef, nil
@@ -267,7 +282,7 @@ func (r *RoutingExecutor) startBackend(ctx context.Context, backend Backend, tas
 	proc, err := backend.Start(ctx, task, run, execDef)
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to start %s execution: %v", execDef.ExecType(), err)
-		writer.WriteLineEvent(errMsg, logutil.StreamSystem)
+		r.systemLine(writer, task, run, errMsg)
 		return nil, &ExecuteResult{ExitCode: -1, Error: errors.New(errMsg)}
 	}
 	return proc, nil
@@ -300,34 +315,37 @@ func (r *RoutingExecutor) streamOne(wg *sync.WaitGroup, reader io.ReadCloser, wr
 }
 
 // classifyExecuteResult translates wait state + cancellation cause into the
-// terminal ExecuteResult. Wait errors are only surfaced when no context-driven
+// terminal ExecuteResult. killReason is the policy kill recorded by the run's
+// runKiller, if any. Wait errors are only surfaced when no context-driven
 // cancellation explains them, since the OS error is expected after a
-// timeout / stop / log-disk kill.
-func classifyExecuteResult(cancelCtx context.Context, writer *LogWriter, exitCode int, waitErr error) *ExecuteResult {
-	timedOut := errors.Is(cancelCtx.Err(), context.DeadlineExceeded)
-	killedByPolicy := writer.KilledByPolicy()
-	stopped := !timedOut && !killedByPolicy && errors.Is(cancelCtx.Err(), context.Canceled)
+// timeout / stop / policy kill.
+func classifyExecuteResult(ctx context.Context, killReason model.EndReason, exitCode int, waitErr error) *ExecuteResult {
+	timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
+	killed := !timedOut && killReason != ""
+	stopped := !timedOut && !killed && errors.Is(ctx.Err(), context.Canceled)
 
 	var resultErr error
-	if waitErr != nil && !timedOut && !stopped && !killedByPolicy {
+	if waitErr != nil && !timedOut && !stopped && !killed {
 		resultErr = waitErr
 	}
 
-	return &ExecuteResult{
-		ExitCode:       exitCode,
-		Error:          resultErr,
-		TimedOut:       timedOut,
-		Stopped:        stopped,
-		KilledByPolicy: killedByPolicy,
+	result := &ExecuteResult{
+		ExitCode: exitCode,
+		Error:    resultErr,
+		TimedOut: timedOut,
+		Stopped:  stopped,
 	}
+	if killed {
+		result.KillReason = killReason
+	}
+	return result
 }
 
-func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task, run *model.Run) (*LogWriter, string, context.Context, context.CancelFunc, error) {
+func (r *RoutingExecutor) prepareLogWriter(task *model.Task, run *model.Run, killer *runKiller) (*LogWriter, string, error) {
 	logPath := logutil.ResolveRunLogPath(r.logDir, task.Name, run.ID, run.CreatedAt)
 	if err := os.MkdirAll(filepath.Dir(logPath), 0755); err != nil {
-		return nil, "", nil, nil, fmt.Errorf("create task log dir: %w", err)
+		return nil, "", fmt.Errorf("create task log dir: %w", err)
 	}
-	cancelCtx, cancelFunc := context.WithCancel(ctx)
 
 	bus := r.eventBus
 	taskName := task.Name
@@ -336,7 +354,7 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 		LogPath:     logPath,
 		MaxSize:     task.LogMaxSize,
 		Overflow:    task.LogOnFull,
-		CancelFunc:  cancelFunc,
+		Kill:        func() { killer.kill(model.ReasonLogOverflow) },
 		MinFreeDisk: r.minFreeDisk,
 		LogDir:      r.logDir,
 		Now:         r.now,
@@ -354,10 +372,9 @@ func (r *RoutingExecutor) prepareLogWriter(ctx context.Context, task *model.Task
 		},
 	})
 	if err != nil {
-		cancelFunc()
-		return nil, "", nil, nil, err
+		return nil, "", err
 	}
-	return writer, logPath, cancelCtx, cancelFunc, nil
+	return writer, logPath, nil
 }
 
 func (r *RoutingExecutor) checkDisk() error {
@@ -447,20 +464,7 @@ func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task
 	nowMs := func() int64 { return r.now().UnixMilli() }
 
 	publishCommitted := func(text string, lineNum int64, continued bool, frameCount int) {
-		if r.eventBus == nil {
-			return
-		}
-		r.eventBus.Publish(events.EventLogLine, events.LogLineEvent{
-			TaskName:    task.Name,
-			RunID:       run.ID,
-			ExecutionID: executionID,
-			LineNum:     lineNum,
-			Timestamp:   nowMs(),
-			Stream:      stream,
-			Text:        text,
-			Continued:   continued,
-			FrameCount:  frameCount,
-		})
+		r.publishLine(task, run, stream, text, lineNum, continued, frameCount)
 	}
 
 	publishRegion := func(epoch int, rows []string) {
@@ -505,11 +509,45 @@ func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task
 				// inline in the run's own log so the operator can tell the
 				// capture was cut short by a real error.
 				slog.Warn("Process output stream ended with a non-EOF error", "stream", stream, "task", task.Name, "err", err)
-				writer.WriteLineEvent(fmt.Sprintf("Output capture stopped: %v", err), logutil.StreamSystem)
+				r.systemLine(writer, task, run, fmt.Sprintf("Output capture stopped: %v", err))
 			}
 			break
 		}
 	}
 
 	renderer.Close()
+}
+
+// systemLine writes a daemon-authored SYSTEM line into the run's log and
+// publishes it like captured output, so the live view shows it too, not only
+// the stored log.
+func (r *RoutingExecutor) systemLine(writer *LogWriter, task *model.Task, run *model.Run, msg string) {
+	lineNum, err := writer.WriteLineEvent(msg, logutil.StreamSystem)
+	if err != nil || lineNum < 0 {
+		return
+	}
+	r.publishLine(task, run, logutil.StreamSystem, msg, lineNum, false, 0)
+}
+
+// publishLine announces one line already written to the run's log on the
+// event bus (SSE, station push).
+func (r *RoutingExecutor) publishLine(task *model.Task, run *model.Run, stream, text string, lineNum int64, continued bool, frameCount int) {
+	if r.eventBus == nil {
+		return
+	}
+	executionID := ""
+	if run.ExecutionID != nil {
+		executionID = *run.ExecutionID
+	}
+	r.eventBus.Publish(events.EventLogLine, events.LogLineEvent{
+		TaskName:    task.Name,
+		RunID:       run.ID,
+		ExecutionID: executionID,
+		LineNum:     lineNum,
+		Timestamp:   r.now().UnixMilli(),
+		Stream:      stream,
+		Text:        text,
+		Continued:   continued,
+		FrameCount:  frameCount,
+	})
 }

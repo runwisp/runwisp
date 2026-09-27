@@ -29,6 +29,7 @@ const RUN_VERDICTS: Record<RunStatus, RunVerdict> = {
     daemon_stopped: { verb: "cut short after", timed: true },
     log_overflow: { verb: "killed after", timed: true },
     start_failed: { verb: "gave up after", timed: true },
+    unhealthy: { verb: "killed as unhealthy after", timed: true },
     ended: { verb: "ended after", timed: true },
     running: { verb: "running for", timed: true },
     pending: { verb: "queued", timed: false },

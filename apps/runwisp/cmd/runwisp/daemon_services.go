@@ -326,7 +326,8 @@ func initRetentionCleaner(cfg *daemonConfig, db storage.RunRepository, tasks *ru
 // healthy within dep.HealthyAfter+graceWindow starts anyway with a WARN — the
 // "nothing silently fails" rule means depends_on never deadlocks boot. It is
 // deliberately not a TOML key: the window is derived from the dep's own
-// healthy_after so operators tune readiness in one place.
+// healthy_after so operators tune readiness in one place. That holds with a
+// health_check too, where healthy_after is the deadline for its first pass.
 const graceWindow = 5 * time.Second
 
 // startServiceInstances brings every service up to its desired instance count

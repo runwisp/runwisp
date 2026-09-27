@@ -4,6 +4,7 @@
 package model
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -125,11 +126,12 @@ type Task struct {
 	// HealthyAfter is the uptime an instance must reach to count as healthy.
 	// Reaching it both resets the restart-backoff counter and clears the
 	// failed-start streak; fast failures below it accrue toward RestartAttempts.
+	// With a HealthCheck it is instead the deadline for the first passing probe.
 	// Service-only. A pointer so an explicit `healthy_after = "0s"` (healthy the
 	// instant it starts) is distinguishable from an omitted key (nil, inherits
 	// [defaults] then the built-in default). Always resolved to non-nil by the
 	// config loader's defaulting pass.
-	HealthyAfter *time.Duration `toml:"-" json:"healthyAfter,omitempty" doc:"For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start"`
+	HealthyAfter *time.Duration `toml:"-" json:"healthyAfter,omitempty" doc:"For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start. With a health_check, the deadline for its first pass instead."`
 	// RestartAttempts is the number of consecutive fast failures a service
 	// instance is allowed before the supervisor marks it FATAL. Service-only
 	// (tasks re-run via retry_*). A pointer so an explicit `restart_attempts = 0`
@@ -149,6 +151,13 @@ type Task struct {
 	// restarts, no run-to-completion edges. Service-only. A dependent that
 	// never sees its dep go healthy starts anyway after a bounded window.
 	DependsOn []string `toml:"-" json:"dependsOn,omitempty" doc:"For services: service names that must be healthy before this one starts at boot — boot ordering only, not a workflow DAG"`
+	// HealthCheck is the service's probe, mapped from [services.*.health_check].
+	// It is a task in its own right — cron, timeout, failures, retry_* and the
+	// exec keys all mean what they mean on [tasks.*] — but it is never
+	// registered, scheduled, or persisted: the runtime runs it alongside each
+	// live instance and its outcome only decides that instance's health.
+	// Service-only; nil means health is judged by HealthyAfter uptime alone.
+	HealthCheck *Task `toml:"-" json:"-"`
 
 	RetryAttempts int `toml:"retry_attempts,omitempty" json:"retryAttempts,omitempty"`
 	// RetryDelay is a pointer so an explicit `retry_delay = "0s"` (retry with no
@@ -290,6 +299,16 @@ func (t *Task) TimeoutValue() time.Duration {
 		return 0
 	}
 	return *t.Timeout
+}
+
+// WithTimeout derives the context one execution of the task runs under: bounded
+// by its timeout when one is set, otherwise only cancellable. The single place
+// `timeout` is enforced, for runs and health-check probes alike.
+func (t *Task) WithTimeout(parent context.Context) (context.Context, context.CancelFunc) {
+	if timeout := t.TimeoutValue(); timeout > 0 {
+		return context.WithTimeout(parent, timeout)
+	}
+	return context.WithCancel(parent)
 }
 
 // JitterValue returns the configured start-spread window, or 0 ("no jitter")

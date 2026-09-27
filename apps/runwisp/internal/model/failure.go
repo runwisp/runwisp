@@ -25,7 +25,7 @@ import (
 // automatically re-run a run the operator just stopped, since `stopped` is
 // never in this set.
 var FailedExecutionReasons = []EndReason{
-	ReasonFailed, ReasonTimeout, ReasonCrashed, ReasonLogOverflow, ReasonStartFailed,
+	ReasonFailed, ReasonTimeout, ReasonCrashed, ReasonLogOverflow, ReasonStartFailed, ReasonUnhealthy,
 }
 
 // DefaultFailureTokens is the built-in `failures` list used when a task (and

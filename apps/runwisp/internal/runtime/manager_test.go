@@ -1184,25 +1184,6 @@ func TestRemoveTask_FinalizesQueuedRuns(t *testing.T) {
 		"the finalized run must publish a terminal event, not just persist silently")
 }
 
-func TestResolveRunOutcomeKilledByPolicy(t *testing.T) {
-	cases := []struct {
-		name       string
-		result     executor.ExecuteResult
-		wantReason model.EndReason
-	}{
-		{"policy kill records as log_overflow", executor.ExecuteResult{ExitCode: -1, Stopped: true, KilledByPolicy: true}, model.ReasonLogOverflow},
-		{"clean stop stays stopped", executor.ExecuteResult{ExitCode: -1, Stopped: true}, model.ReasonStopped},
-		{"timeout still wins over policy", executor.ExecuteResult{ExitCode: -1, TimedOut: true, KilledByPolicy: true}, model.ReasonTimeout},
-		{"success unaffected", executor.ExecuteResult{ExitCode: 0}, model.ReasonSuccess},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := tc.result.EndReason()
-			assert.Equal(t, tc.wantReason, got)
-		})
-	}
-}
-
 func TestPersistAfterShutdownDoesNotPanic(t *testing.T) {
 	exec := new(testutil.MockExecutor)
 	eb := events.NewEventBus()

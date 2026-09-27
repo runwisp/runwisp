@@ -137,7 +137,7 @@ func runStatusColor(status string) color.Color {
 		return uikit.ColorSuccess
 	case "pending":
 		return uikit.ColorPending
-	case "failed", "crashed", "timeout", "start_failed", "log_overflow":
+	case "failed", "crashed", "timeout", "start_failed", "log_overflow", "unhealthy":
 		return uikit.ColorError
 	case "stopped", "missed":
 		return uikit.ColorWarning

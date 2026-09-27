@@ -55,6 +55,7 @@ export const END_REASONS = [
   "daemon_stopped",
   "missed",
   "start_failed",
+  "unhealthy",
 ] as const satisfies readonly EndReason[];
 
 // Compile-time exhaustiveness: identity-asserts that every EndReason

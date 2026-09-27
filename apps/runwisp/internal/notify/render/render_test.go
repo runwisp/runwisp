@@ -116,6 +116,10 @@ func TestEventSentence(t *testing.T) {
 	noDur := &model.Run{ExitCode: 2}
 	daemonStoppedReason := model.ReasonDaemonStopped
 	daemonStopped := &model.Run{StartedAt: &start, EndedAt: &end, EndReason: &daemonStoppedReason}
+	unhealthyReason := model.ReasonUnhealthy
+	unhealthy := &model.Run{StartedAt: &start, EndedAt: &end, ExitCode: -1, EndReason: &unhealthyReason}
+	overflowReason := model.ReasonLogOverflow
+	overflow := &model.Run{ExitCode: -1, EndReason: &overflowReason}
 
 	cases := []struct {
 		name string
@@ -125,6 +129,8 @@ func TestEventSentence(t *testing.T) {
 		{"failed with run + duration", &notify.Event{Kind: notify.KindRunFailed, Run: withDur}, "Exited with code 1 after 0.3s."},
 		{"failed with run, no duration", &notify.Event{Kind: notify.KindRunFailed, Run: noDur}, "Exited with code 2."},
 		{"failed without run", &notify.Event{Kind: notify.KindRunFailed}, "Exited with code ?."},
+		{"unhealthy", &notify.Event{Kind: notify.KindRunFailed, Run: unhealthy}, "Stopped for failing its health check after 0.3s."},
+		{"log overflow", &notify.Event{Kind: notify.KindRunFailed, Run: overflow}, "Killed for exceeding log_max_size."},
 		{"succeeded with duration", &notify.Event{Kind: notify.KindRunSucceeded, Run: withDur}, "Completed in 0.3s."},
 		{"succeeded without duration", &notify.Event{Kind: notify.KindRunSucceeded}, "Completed."},
 		{"timeout with duration", &notify.Event{Kind: notify.KindRunTimeout, Run: withDur}, "The task was killed after the configured timeout (0.3s elapsed)."},

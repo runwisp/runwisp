@@ -81,10 +81,10 @@
     },
     "failures": {
       "type": "array",
-      "description": "Which outcomes count as a failure (for stats, UI badges, notifications, and gating retry_attempts/restart=on_failure). Each token is an EndReason name (failed, timeout, crashed, log_overflow, start_failed, missed, stopped, …) or an exit code / inclusive range (\"42\", \"1-23\"; 1-255, exit 0 always succeeds). A bare list replaces the inherited set; prefix every token with + or - to add/drop against it instead (\"-missed\", \"+stopped\") — mixing bare and prefixed tokens is rejected. Exit tokens only apply to a run that actually exited (reason failed). Omit to inherit; the built-in default is [\"failed\",\"timeout\",\"crashed\",\"log_overflow\",\"start_failed\",\"missed\"]. A retry/restart still only fires for failed/timeout/crashed/log_overflow/start_failed, so narrowing failures narrows retries but promoting stopped/missed never triggers one.",
+      "description": "Which outcomes count as a failure (for stats, UI badges, notifications, and gating retry_attempts/restart=on_failure). Each token is an EndReason name (failed, timeout, crashed, log_overflow, start_failed, missed, stopped, …) or an exit code / inclusive range (\"42\", \"1-23\"; 1-255, exit 0 always succeeds). A bare list replaces the inherited set; prefix every token with + or - to add/drop against it instead (\"-missed\", \"+stopped\") — mixing bare and prefixed tokens is rejected. Exit tokens only apply to a run that actually exited (reason failed). Omit to inherit; the built-in default is [\"failed\",\"timeout\",\"crashed\",\"log_overflow\",\"start_failed\",\"unhealthy\",\"missed\"]. A retry/restart still only fires for failed/timeout/crashed/log_overflow/start_failed/unhealthy, so narrowing failures narrows retries but promoting stopped/missed never triggers one.",
       "items": {
         "type": "string",
-        "pattern": "^[+-]?((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]?)(-(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]?))?|failed|stopped|timeout|crashed|skipped|log_overflow|queue_full|dst_skipped|daemon_stopped|missed|start_failed)$"
+        "pattern": "^[+-]?((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]?)(-(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]?))?|failed|stopped|timeout|crashed|skipped|log_overflow|queue_full|dst_skipped|daemon_stopped|missed|start_failed|unhealthy)$"
       }
     },
     "envMap": {
@@ -164,7 +164,7 @@
         "jitter": { "$ref": "#/$defs/duration", "description": "Start-spread window inherited by cron tasks (tasks only)." },
         "shell": { "type": "string", "default": "/bin/sh", "description": "Interpreter for run scripts (absolute path)." },
         "stop_signal": { "$ref": "#/$defs/stopSignal", "default": "SIGTERM" },
-        "failures": { "$ref": "#/$defs/failures", "description": "Which outcomes count as a failure, inherited by every unit. Bare list replaces the built-in default; +/- tokens (\"-missed\", \"+stopped\") adjust it. Built-in default: [\"failed\",\"timeout\",\"crashed\",\"log_overflow\",\"start_failed\",\"missed\"]." },
+        "failures": { "$ref": "#/$defs/failures", "description": "Which outcomes count as a failure, inherited by every unit. Bare list replaces the built-in default; +/- tokens (\"-missed\", \"+stopped\") adjust it. Built-in default: [\"failed\",\"timeout\",\"crashed\",\"log_overflow\",\"start_failed\",\"unhealthy\",\"missed\"]." },
         "log_max_size": { "$ref": "#/$defs/byteSize", "description": "Per-run log cap. Default 100mb." },
         "log_on_full": { "$ref": "#/$defs/logOnFull", "default": "drop_old" },
         "keep_runs": { "type": "integer", "minimum": 0, "maximum": 1000000, "description": "Row-count retention; 0 keeps no completed runs." },
@@ -239,11 +239,40 @@
         "instances": { "type": "integer", "minimum": 1, "maximum": 64, "default": 1, "description": "Parallel instances." },
         "restart_delay": { "$ref": "#/$defs/duration", "description": "Delay before a restart. Default 1s." },
         "restart_backoff": { "$ref": "#/$defs/backoff", "default": "exponential" },
-        "healthy_after": { "$ref": "#/$defs/duration", "description": "Uptime counted as healthy. Default 60s." },
+        "healthy_after": { "$ref": "#/$defs/duration", "description": "Uptime counted as healthy. Default 60s. With health_check: the deadline for its first pass." },
         "restart_attempts": { "type": "integer", "minimum": 0, "maximum": 100, "default": 3, "description": "Consecutive fast failures before an instance goes FATAL." },
         "priority": { "type": "integer", "default": 0, "description": "Boot start order; lower starts first." },
         "autostart": { "type": "boolean", "default": true, "description": "Start at boot; false boots it stopped." },
-        "depends_on": { "type": "array", "items": { "type": "string" }, "description": "Services that must be healthy before this one starts at boot (order only)." }
+        "depends_on": { "type": "array", "items": { "type": "string" }, "description": "Services that must be healthy before this one starts at boot (order only)." },
+        "health_check": { "$ref": "#/$defs/healthCheck" }
+      }
+    },
+    "healthCheck": {
+      "type": "object",
+      "description": "A service's probe ([services.<name>.health_check]): a command run alongside each instance. Its first pass marks the instance healthy; failing after that (retries included) stops it as unhealthy. Keys mean what they mean on [tasks.*]; unset host exec keys inherit the service's (none when compose_file is set).",
+      "additionalProperties": false,
+      "required": ["run"],
+      "properties": {
+        "run": { "type": "string", "description": "Probe command; a non-failure outcome (per failures) is a pass. With compose_file, run inside the compose service's running container." },
+        "cron": { "type": "string", "description": "When to probe. Default @every 10s." },
+        "timezone": { "type": "string", "description": "IANA timezone for cron. Default: the daemon timezone." },
+        "timeout": { "$ref": "#/$defs/duration", "description": "Per-probe cap; must be positive. Inherits [defaults], else 5s." },
+        "failures": { "$ref": "#/$defs/failures" },
+        "retry_attempts": { "type": "integer", "minimum": 0, "maximum": 100, "default": 2, "description": "Re-checks after a failed check once healthy, before the instance is stopped as unhealthy." },
+        "retry_delay": { "$ref": "#/$defs/duration", "description": "Delay between re-checks. Default 5s." },
+        "retry_backoff": { "$ref": "#/$defs/backoff" },
+        "working_dir": { "type": "string" },
+        "shell": { "type": "string" },
+        "umask": { "type": "string" },
+        "env_base": { "$ref": "#/$defs/envBase" },
+        "user": { "type": "string" },
+        "env": { "$ref": "#/$defs/envMap" },
+        "env_file": { "type": "string" },
+        "secrets": { "$ref": "#/$defs/secretsMap" },
+        "secrets_file": { "type": "string" },
+        "compose_file": { "type": "string" },
+        "compose_service": { "type": "string" },
+        "compose_mode": { "type": "string", "enum": ["exec"], "description": "Only exec: a probe runs inside the service's running container." }
       }
     },
     "param": {
@@ -363,7 +392,7 @@
               "description": "Match on fine-grained outcomes — the same vocabulary as [tasks.*] failures.",
               "items": {
                 "type": "string",
-                "enum": ["started", "succeeded", "failed", "timeout", "crashed", "log_overflow", "queue_full", "stopped", "daemon_stopped", "missed", "service.fatal", "log.disk_pressure"]
+                "enum": ["started", "succeeded", "failed", "timeout", "crashed", "log_overflow", "queue_full", "stopped", "daemon_stopped", "missed", "unhealthy", "service.fatal", "log.disk_pressure"]
               }
             },
             "failure": { "type": "boolean", "description": "Match any run classified as a failure (per [tasks.*] failures)." },

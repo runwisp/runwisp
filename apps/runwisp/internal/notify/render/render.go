@@ -349,6 +349,15 @@ func kindSentence(e *notify.Event) string {
 
 // failedSentence reports the exit code (and duration when known) for a failed run.
 func failedSentence(e *notify.Event) string {
+	if e.Run != nil && e.Run.EndReason != nil {
+		// A policy kill: the exit code is the kill signal's, not the task's.
+		switch *e.Run.EndReason {
+		case model.ReasonUnhealthy:
+			return durationSentence("Stopped for failing its health check", e.Run)
+		case model.ReasonLogOverflow:
+			return durationSentence("Killed for exceeding log_max_size", e.Run)
+		}
+	}
 	code := "?"
 	if e.Run != nil {
 		code = fmt.Sprintf("%d", e.Run.ExitCode)
@@ -357,6 +366,14 @@ func failedSentence(e *notify.Event) string {
 		return fmt.Sprintf("Exited with code %s after %s.", code, d)
 	}
 	return fmt.Sprintf("Exited with code %s.", code)
+}
+
+// durationSentence ends verb with the run's duration, when known.
+func durationSentence(verb string, run *model.Run) string {
+	if d := runDuration(run); d != "" {
+		return fmt.Sprintf("%s after %s.", verb, d)
+	}
+	return verb + "."
 }
 
 // succeededSentence reports a successful completion, including duration when known.
@@ -381,10 +398,7 @@ func stoppedSentence(e *notify.Event) string {
 	if e.Run != nil && e.Run.EndReason != nil && *e.Run.EndReason == model.ReasonDaemonStopped {
 		verb = "Stopped by daemon shutdown"
 	}
-	if d := runDuration(e.Run); d != "" {
-		return fmt.Sprintf("%s after %s.", verb, d)
-	}
-	return verb + "."
+	return durationSentence(verb, e.Run)
 }
 
 // crashedSentence reports a process that couldn't start, including the reason when present.
