@@ -254,23 +254,28 @@ const catchupCountDisplayFloor = 1000
 // hour changes) so catch-up and the live scheduler agree on what would have
 // fired. Even if the daemon had been running through the gap, a duplicate
 // firing would never have executed as a real run — it isn't a missed one, so
-// it is walked past without being counted or becoming lastTick.
+// it is walked past without being counted or becoming lastTick. Fixed-interval
+// (@every) schedules are exempt from the dedup here too, for the same reason
+// fireOnce exempts them — see isFixedInterval.
 func countMissedTicks(schedule cron.Schedule, lastRunTime, now time.Time, maxCount int) (count int, lastTick time.Time, truncated bool) {
 	next := schedule.Next(lastRunTime)
+	fixedInterval := isFixedInterval(schedule)
 	var curHour wallHour
 	var seen map[wallSecond]struct{}
 	for !next.After(now) {
-		wall := newWallSecond(next)
-		hour := wall.inHour()
-		if seen == nil || hour != curHour {
-			curHour = hour
-			seen = make(map[wallSecond]struct{})
+		if !fixedInterval {
+			wall := newWallSecond(next)
+			hour := wall.inHour()
+			if seen == nil || hour != curHour {
+				curHour = hour
+				seen = make(map[wallSecond]struct{})
+			}
+			if _, duplicate := seen[wall]; duplicate {
+				next = schedule.Next(next)
+				continue
+			}
+			seen[wall] = struct{}{}
 		}
-		if _, duplicate := seen[wall]; duplicate {
-			next = schedule.Next(next)
-			continue
-		}
-		seen[wall] = struct{}{}
 
 		count++
 		lastTick = next

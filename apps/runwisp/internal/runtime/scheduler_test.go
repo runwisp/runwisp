@@ -33,7 +33,7 @@ func TestScheduler(t *testing.T) {
 	// fireOnce is the cron callback; invoking it directly exercises our firing
 	// logic without waiting a real second for the @every tick (which would only
 	// be testing the cron library).
-	sched.fireOnce("task1", time.UTC)
+	sched.fireOnce("task1", time.UTC, false)
 	assert.Equal(t, 1, runner.triggerCount(), "a firing must trigger the task once")
 
 	// Start computes next-run instants synchronously, so this is ready now.
@@ -104,9 +104,9 @@ func TestSchedulerDSTWallClockDedup(t *testing.T) {
 	require.Equal(t, 2, secondFire.In(loc).Hour(), "anchoring sanity: second fire must also read 02:00 (post fall-back)")
 
 	sched.now = func() time.Time { return firstFire }
-	sched.fireOnce("eu-2am", loc)
+	sched.fireOnce("eu-2am", loc, false)
 	sched.now = func() time.Time { return secondFire }
-	sched.fireOnce("eu-2am", loc)
+	sched.fireOnce("eu-2am", loc, false)
 
 	wm := wallSecond{year: 2026, month: time.October, day: 25, hour: 2, minute: 0, second: 0}
 	fired := sched.firedTicks["eu-2am"]
@@ -141,9 +141,9 @@ func TestSchedulerDSTDifferentMinuteFires(t *testing.T) {
 	second := first.Add(time.Minute)
 
 	sched.now = func() time.Time { return first }
-	sched.fireOnce("eu-mins", loc)
+	sched.fireOnce("eu-mins", loc, false)
 	sched.now = func() time.Time { return second }
-	sched.fireOnce("eu-mins", loc)
+	sched.fireOnce("eu-mins", loc, false)
 
 	wm := wallSecond{year: 2026, month: time.October, day: 25, hour: 2, minute: 1, second: 0}
 	fired := sched.firedTicks["eu-mins"]
@@ -197,7 +197,7 @@ func TestSchedulerFireOnce_GoldenTriggerSkipSequence(t *testing.T) {
 	require.NoError(t, err)
 
 	for range stamps {
-		sched.fireOnce("tick", loc)
+		sched.fireOnce("tick", loc, false)
 	}
 
 	// Observed behavior via the public runner records: two triggers
@@ -247,7 +247,7 @@ func TestSchedulerDSTFallbackMultipleTicksPerHourSuppressed(t *testing.T) {
 	})
 
 	for range stamps {
-		sched.fireOnce("twice-hourly", loc)
+		sched.fireOnce("twice-hourly", loc, false)
 	}
 
 	assert.Equal(t, []string{"twice-hourly", "twice-hourly"}, runner.triggers,
@@ -289,7 +289,7 @@ func TestSchedulerSubMinuteFiresNotSuppressed(t *testing.T) {
 	sched := NewScheduler(runner, map[string]*model.Task{"sub-minute": task}, time.UTC, clock)
 
 	for range stamps {
-		sched.fireOnce("sub-minute", time.UTC)
+		sched.fireOnce("sub-minute", time.UTC, false)
 	}
 
 	assert.Equal(t, []string{"sub-minute", "sub-minute"}, runner.triggers,
@@ -330,7 +330,7 @@ func TestSchedulerEverySecondDSTFallbackSuppressed(t *testing.T) {
 	})
 
 	for range stamps {
-		sched.fireOnce("per-minute", loc)
+		sched.fireOnce("per-minute", loc, false)
 	}
 
 	assert.Equal(t, []string{"per-minute"}, runner.triggers,
@@ -433,8 +433,8 @@ func TestSchedulerJitterRoutesThroughGate(t *testing.T) {
 	require.NoError(t, err)
 	defer sched.Stop()
 
-	sched.fireOnce("a", time.UTC)
-	sched.fireOnce("b", time.UTC)
+	sched.fireOnce("a", time.UTC, false)
+	sched.fireOnce("b", time.UTC, false)
 
 	// Every jittered task — including the offset-0 one — is submitted to the
 	// gate rather than triggered directly, so the gate can hold peers while one
@@ -471,7 +471,7 @@ func TestSchedulerJitterClampsSlotToLiveGap(t *testing.T) {
 	require.NoError(t, err)
 	defer sched.Stop()
 
-	sched.fireOnce("b", time.UTC)
+	sched.fireOnce("b", time.UTC, false)
 
 	calls := runner.jitteredCalls()
 	require.Len(t, calls, 1)
@@ -524,7 +524,7 @@ func TestSchedulerJitterLiveGapClampUsesConfiguredTimezone(t *testing.T) {
 	require.Greater(t, correctGap-time.Second, task.JitterValue(),
 		"anchoring sanity: the configured-timezone gap must be wider than the window so an incorrect (host-zone) gap would visibly clamp it")
 
-	sched.fireOnce("nightly", nyLoc)
+	sched.fireOnce("nightly", nyLoc, false)
 
 	calls := runner.jitteredCalls()
 	require.Len(t, calls, 1)
@@ -545,8 +545,8 @@ func TestSchedulerJitterSkipsDSTDuplicate(t *testing.T) {
 	require.NoError(t, err)
 	defer sched.Stop()
 
-	sched.fireOnce("b", time.UTC) // genuine firing → jittered
-	sched.fireOnce("b", time.UTC) // same wall-minute → DST duplicate
+	sched.fireOnce("b", time.UTC, false) // genuine firing → jittered
+	sched.fireOnce("b", time.UTC, false) // same wall-minute → DST duplicate
 
 	assert.Len(t, runner.jitteredCalls(), 1, "only the genuine firing is jittered")
 	assert.Equal(t,
@@ -615,7 +615,7 @@ func TestSchedulerAddTaskAfterStart(t *testing.T) {
 	assert.NotNil(t, sched.GetNextRun("added"), "an added task must have a next run")
 
 	// A firing on the freshly added entry triggers the task.
-	sched.fireOnce("added", time.UTC)
+	sched.fireOnce("added", time.UTC, false)
 	assert.Equal(t, 1, runner.triggerCount())
 }
 
@@ -641,7 +641,7 @@ func TestSchedulerRemoveTaskClearsState(t *testing.T) {
 	defer sched.Stop()
 
 	// Fire once so the DST dedup state is populated, then remove.
-	sched.fireOnce("tick", time.UTC)
+	sched.fireOnce("tick", time.UTC, false)
 	_, hadEntry := sched.entryIDs["tick"]
 	require.True(t, hadEntry)
 	_, hadFired := sched.firedTicks["tick"]
@@ -678,4 +678,48 @@ func TestSchedulerRemoveThenAddTaskReschedules(t *testing.T) {
 	second, ok := sched.entryIDs["tick"]
 	require.True(t, ok)
 	assert.NotEqual(t, first, second, "reschedule must build a fresh cron entry")
+}
+
+// TestSchedulerEveryFiresThroughDSTFallback proves an @every task keeps running
+// through the repeated hour. Its interval is real elapsed time, so every firing
+// in that hour is genuine — but an interval that divides an hour evenly lands
+// each one on a wall-clock time already seen an hour earlier, and the fall-back
+// dedup used to drop them as dst_skipped (silently, since that reason never
+// alerts). "@every 30m" lost 02:25 and 02:55 CET; "@every 5m" lost a whole hour.
+func TestSchedulerEveryFiresThroughDSTFallback(t *testing.T) {
+	runner := &fakeTaskRunner{}
+	task := &model.Task{
+		Name:     "every-30m",
+		Cron:     "@every 30m",
+		Timezone: "Europe/Bratislava",
+		Run:      "echo",
+	}
+
+	// 2026-10-25 fall-back: 03:00 CEST rewinds to 02:00 CET, so 02:25 and 02:55
+	// each occur twice. All four are 30 minutes of real time apart.
+	stamps := []time.Time{
+		time.Date(2026, 10, 25, 0, 25, 0, 0, time.UTC), // 02:25 CEST
+		time.Date(2026, 10, 25, 0, 55, 0, 0, time.UTC), // 02:55 CEST
+		time.Date(2026, 10, 25, 1, 25, 0, 0, time.UTC), // 02:25 CET
+		time.Date(2026, 10, 25, 1, 55, 0, 0, time.UTC), // 02:55 CET
+	}
+	idx := 0
+	sched := NewScheduler(runner, map[string]*model.Task{"every-30m": task}, time.UTC, func() time.Time {
+		at := stamps[idx]
+		idx++
+		return at
+	})
+
+	// Go through the real registration path so the exemption is exercised as
+	// wired, not as a hand-passed flag.
+	require.NoError(t, sched.AddTask(task))
+	entry := sched.cron.Entry(sched.entryIDs["every-30m"])
+	require.NotNil(t, entry.Job)
+
+	for range stamps {
+		entry.Job.Run()
+	}
+
+	assert.Len(t, runner.triggers, 4, "every @every firing in the rewound hour is a real run")
+	assert.Empty(t, runner.skips, "a fixed-interval schedule has no wall-clock time to repeat")
 }

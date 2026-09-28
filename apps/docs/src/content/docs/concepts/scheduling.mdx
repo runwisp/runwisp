@@ -82,6 +82,9 @@ A schedule runs once per wall-clock time, even across a clock change:
   clock jumps from 01:59 to 03:00) runs once at 03:00, instead of being skipped
   until the next day.
 
+`@every` schedules are not affected. They count real elapsed time, not wall-clock
+times, so `@every 30m` keeps running every 30 minutes through a clock change.
+
 ## Catching up after downtime
 
 When the daemon was down (a reboot, a deploy, a crash), scheduled runs didn't
