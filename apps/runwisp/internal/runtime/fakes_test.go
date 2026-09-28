@@ -109,4 +109,5 @@ func (r *fakeTaskRunner) StartServiceInstances(string, model.TriggeredBy) error 
 func (r *fakeTaskRunner) ServiceSnapshot(string) (model.ServiceSnapshot, bool) {
 	return model.ServiceSnapshot{}, false
 }
-func (r *fakeTaskRunner) GetActiveRunCount(string) int { return 0 }
+func (r *fakeTaskRunner) GetActiveRunCount(string) int      { return 0 }
+func (r *fakeTaskRunner) GetActiveRuns(string) []*ActiveRun { return nil }

@@ -29,6 +29,7 @@ import Notify from "./shared/_notify.mdx";
 import ComposeFile from "./shared/_compose_file.mdx";
 import ComposeService from "./shared/_compose_service.mdx";
 import ComposeMode from "./shared/_compose_mode.mdx";
+import HookTokens from "./shared/_hook_tokens.mdx";
 
 <div class="rw-config-ref" />
 
@@ -81,25 +82,9 @@ run = "..."
 
 <ManualTrigger />
 
-### trigger_tokens
+### hook_tokens
 
-**type**: `array of strings`
-
-Bearer tokens that let CI or a webhook trigger this task without the dashboard
-password. Each token works for this task only. Load them with `${VAR}` or
-`${file:...}` so they stay out of the file. Tokens are never shown in the API or
-Web UI.
-
-```toml
-[tasks.deploy]
-run            = "./deploy.sh"
-trigger_tokens = ["${CI_DEPLOY_TOKEN}"]
-```
-
-Each token needs at least 32 characters and no whitespace. Generate one with
-`openssl rand -hex 32`. List more than one to rotate without downtime, or to
-give each caller its own. Rejected with `manual_trigger = false`. See
-[Trigger tokens](/operations/auth/#trigger-tokens) for the request.
+<HookTokens />
 
 ## Scheduling
 

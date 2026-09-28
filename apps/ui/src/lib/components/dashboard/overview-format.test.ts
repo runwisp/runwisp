@@ -204,8 +204,8 @@ describe("formatTriggeredByLabel", () => {
         expect(formatTriggeredByLabel("startup")).toBe("Startup");
     });
 
-    it("returns 'Token' for 'token'", () => {
-        expect(formatTriggeredByLabel("token")).toBe("Token");
+    it("returns 'Hook' for 'hook'", () => {
+        expect(formatTriggeredByLabel("hook")).toBe("Hook");
     });
 });
 

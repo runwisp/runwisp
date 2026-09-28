@@ -266,7 +266,7 @@ describe("triggerDescription", () => {
         expect(triggerDescription("cli")).toBe("CLI");
         expect(triggerDescription("service")).toBe("Service auto-start");
         expect(triggerDescription("startup")).toBe("On daemon start");
-        expect(triggerDescription("token")).toBe("Trigger token");
+        expect(triggerDescription("hook")).toBe("Hook");
     });
 
     it("falls back to a humanized token for anything unknown", () => {
@@ -283,7 +283,7 @@ describe("FILTERABLE_TRIGGERS", () => {
             "cli",
             "service",
             "startup",
-            "token",
+            "hook",
         ]);
         expect(FILTERABLE_TRIGGERS).not.toContain("station");
     });

@@ -131,9 +131,9 @@ const (
 	TriggeredByStation TriggeredBy = "station"
 	TriggeredByService TriggeredBy = "service"
 	TriggeredByStartup TriggeredBy = "startup"
-	// TriggeredByToken: a caller presented one of the task's trigger_tokens
-	// to POST /api/hooks/{taskName}.
-	TriggeredByToken TriggeredBy = "token"
+	// TriggeredByHook: a caller presented one of the unit's hook_tokens to a
+	// POST /api/hooks/tasks/{name}/<action> route.
+	TriggeredByHook TriggeredBy = "hook"
 )
 
 // Run is the domain representation of an execution. The storage layer keeps a
@@ -154,7 +154,7 @@ type Run struct {
 	ExitCode      int         `json:"exitCode"`
 	StartedAt     *time.Time  `json:"startedAt,omitempty"`
 	EndedAt       *time.Time  `json:"endedAt,omitempty"`
-	TriggeredBy   TriggeredBy `json:"triggeredBy" enum:"cron,api,ui,cli,station,service,startup,token" doc:"How the run was triggered"`
+	TriggeredBy   TriggeredBy `json:"triggeredBy" enum:"cron,api,ui,cli,station,service,startup,hook" doc:"How the run was triggered"`
 	CreatedAt     time.Time   `json:"createdAt"`
 	RetryAttempt  int         `json:"retryAttempt"`
 	RetryOfRunID  *string     `json:"retryOfRunId,omitempty"`

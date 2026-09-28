@@ -1,0 +1,23 @@
+**type**: `array of strings or tables`
+
+Tokens that let CI or a webhook control this unit over a
+[hook](/operations/auth/#hooks) without the dashboard password. Each token works
+for this unit only. Load them with `${VAR}` or `${file:...}` so they stay out of
+the file. Tokens are never shown in the API or Web UI.
+
+```toml
+[tasks.deploy]
+run         = "./deploy.sh"
+hook_tokens = [
+  "${CI_DEPLOY_TOKEN}",                                  # every action
+  { token = "${ROLLBACK_TOKEN}", allow = ["stop"] },     # stop only
+]
+```
+
+A plain string allows every action. A table with `allow` limits the token to
+the listed actions: `run`, `start`, `stop`, `restart` (services have no `run`).
+
+Each token needs at least 32 characters and no whitespace. Generate one with
+`openssl rand -hex 32`. List more than one to rotate without downtime, or to
+give each caller its own. [`manual_trigger`](/configuration/tasks/#manual_trigger) doesn't apply to
+hooks.

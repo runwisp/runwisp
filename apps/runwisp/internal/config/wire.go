@@ -98,6 +98,44 @@ type taskServiceWireCore struct {
 	// empty list, which means "nothing is a failure". Parsed and validated by
 	// ApplyDefaults into model.Task.FailureReasons / FailureExitRanges.
 	Failures []string `toml:"failures,omitempty"`
+
+	// HookTokens decodes on [tasks.*] and [services.*] only — never
+	// [defaults] or compose overrides, where one shared token would defeat
+	// per-unit scoping.
+	HookTokens []hookTokenWire `toml:"hook_tokens,omitempty"`
+}
+
+// hookTokenWire is one hook_tokens entry, in either form: a bare string (the
+// token, granting every action) or a { token, allow } table. go-toml hands a
+// string to UnmarshalText and decodes a table field by field, strictly.
+type hookTokenWire struct {
+	Token string   `toml:"token"`
+	Allow []string `toml:"allow,omitempty"`
+}
+
+func (h *hookTokenWire) UnmarshalText(text []byte) error {
+	h.Token = string(text)
+	return nil
+}
+
+// toHookTokens maps the wire entries onto the model. An omitted allow keeps
+// Allow nil (every action); the values themselves are checked by
+// validateTaskHookTokens once the unit's kind is final.
+func toHookTokens(ws []hookTokenWire) []model.HookToken {
+	if ws == nil {
+		return nil
+	}
+	out := make([]model.HookToken, len(ws))
+	for i, w := range ws {
+		out[i].Token = w.Token
+		if w.Allow != nil {
+			out[i].Allow = make([]model.HookAction, len(w.Allow))
+			for j, a := range w.Allow {
+				out[i].Allow[j] = model.HookAction(a)
+			}
+		}
+	}
+	return out
 }
 
 // serviceSupervisionWire holds the restart/instance-supervision TOML keys
@@ -311,6 +349,7 @@ func (w *taskServiceWireCore) toTaskCore(name, label string, kind model.TaskKind
 		EnvFile:       w.EnvFile,
 		Secrets:       w.Secrets,
 		SecretsFile:   w.SecretsFile,
+		HookTokens:    toHookTokens(w.HookTokens),
 	}
 	if err := w.applyComposeBackend(&task, name, label); err != nil {
 		return model.Task{}, err
@@ -434,11 +473,6 @@ type taskWire struct {
 	// are never manually triggered.
 	Params []paramWire `toml:"params,omitempty"`
 
-	// TriggerTokens decodes on [tasks.*] only — never [defaults], where one
-	// shared token would defeat per-task scoping, and never [services.*],
-	// which are not triggerable.
-	TriggerTokens []string `toml:"trigger_tokens,omitempty"`
-
 	Cron     string `toml:"cron,omitempty"`
 	Timezone string `toml:"timezone,omitempty"`
 	Jitter   string `toml:"jitter,omitempty"`
@@ -474,7 +508,6 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	}
 	task.OnOverlap = w.OnOverlap
 	task.Parameters = params
-	task.TriggerTokens = w.TriggerTokens
 	task.Cron = w.Cron
 	task.Timezone = w.Timezone
 	task.Jitter = jitter

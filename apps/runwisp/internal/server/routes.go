@@ -281,10 +281,11 @@ func (srv *Server) setupRoutes() error {
 		srv.registerRateLimitedAuthRoutes(r)
 	})
 
-	// Token-authenticated trigger hooks. Outside the protected group: the
-	// per-task token is the credential, checked by the handler (also with
-	// RUNWISP_AUTH=off). No cookie is read, so no CSRF guard is needed. The
-	// limiter counts rejected tokens only, never successful triggers.
+	// Hooks: /api/hooks/<session route>, authenticated by the unit's
+	// hook_tokens. Outside the protected group: the token is the credential,
+	// checked by the handler (also with RUNWISP_AUTH=off). No cookie is read,
+	// so no CSRF guard is needed. The limiter counts rejected tokens only,
+	// never successful calls.
 	srv.router.Group(func(r chi.Router) {
 		r.Use(maxBodySize(maxProtectedBodySize))
 		r.Use(hookFailureLimiter())

@@ -683,7 +683,7 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 	if err := validateTaskParams(task); err != nil {
 		return err
 	}
-	if err := validateTaskTriggerTokens(task); err != nil {
+	if err := validateTaskHookTokens(task); err != nil {
 		return err
 	}
 	if task.Kind.IsService() {
@@ -714,25 +714,32 @@ func validateTaskCron(task *model.Task) error {
 	return nil
 }
 
-// minTriggerTokenLength is long enough that guessing a token over HTTP is
+// minHookTokenLength is long enough that guessing a token over HTTP is
 // infeasible; the hooks failure limiter only has to stop scanners.
-const minTriggerTokenLength = 32
+const minHookTokenLength = 32
 
-// validateTaskTriggerTokens rejects tokens too short to resist guessing,
-// tokens with whitespace (a pasted newline would never match a header), and
-// tokens on a task whose manual_trigger = false would refuse every hook call.
-// Token values never appear in errors — only their position.
-func validateTaskTriggerTokens(task *model.Task) error {
-	if len(task.TriggerTokens) > 0 && !task.ManualTrigger {
-		return fmt.Errorf("task %q sets trigger_tokens but manual_trigger = false; a token could never trigger it", task.Name)
-	}
-	for i, tok := range task.TriggerTokens {
-		if len(tok) < minTriggerTokenLength {
-			return fmt.Errorf("trigger_tokens[%d] for task %q is %d characters; use at least %d (e.g. `openssl rand -hex 32`)",
-				i, task.Name, len(tok), minTriggerTokenLength)
+// validateTaskHookTokens rejects tokens too short to resist guessing, tokens
+// with whitespace (a pasted newline would never match a header), and allow
+// lists naming an action the unit doesn't support. manual_trigger does not
+// gate hooks, so it isn't consulted here. Token values never appear in errors,
+// only their position.
+func validateTaskHookTokens(task *model.Task) error {
+	supported := model.HookActionsFor(task.Kind)
+	for i, h := range task.HookTokens {
+		if len(h.Token) < minHookTokenLength {
+			return fmt.Errorf("hook_tokens[%d] for %s %q is %d characters; use at least %d (e.g. `openssl rand -hex 32`)",
+				i, unitKind(task), task.Name, len(h.Token), minHookTokenLength)
 		}
-		if strings.IndexFunc(tok, unicode.IsSpace) >= 0 {
-			return fmt.Errorf("trigger_tokens[%d] for task %q contains whitespace", i, task.Name)
+		if strings.IndexFunc(h.Token, unicode.IsSpace) >= 0 {
+			return fmt.Errorf("hook_tokens[%d] for %s %q contains whitespace", i, unitKind(task), task.Name)
+		}
+		if h.Allow != nil && len(h.Allow) == 0 {
+			return fmt.Errorf("hook_tokens[%d] for %s %q has an empty allow list; omit allow to grant every action", i, unitKind(task), task.Name)
+		}
+		for _, a := range h.Allow {
+			if !slices.Contains(supported, a) {
+				return fmt.Errorf("hook_tokens[%d] for %s %q allows %q; valid actions are %v", i, unitKind(task), task.Name, a, supported)
+			}
 		}
 	}
 	return nil

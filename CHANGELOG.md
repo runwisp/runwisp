@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`runwisp start`**, plus `stop`/`restart` now also accept a task or service target: `runwisp start|stop|restart <target...>`. A target is a name, a shell-style glob (`'*'` for everything), or — for `stop` — a run ID. Multiple targets can be given at once. `--url`/`--password` (or `RUNWISP_URL`/`RUNWISP_PASSWORD`) dispatch to a remote daemon, same as `runwisp run`.
 - `start`/`stop`/`restart` now work on tasks, not just services: `start` triggers a run (no-op if one's already active or queued), `stop` cancels the active run and drops anything queued, `restart` does both in sequence. `manual_trigger = false` now locks all three verbs for tasks too, matching services.
 - New `POST /api/tasks/{task}/start` endpoint.
-- **Trigger tokens**: a task's `trigger_tokens` list lets CI or a webhook start it with `POST /api/hooks/{task}` and a bearer header or `?token=`, without the dashboard password. Rejected tokens are rate-limited per IP; runs show up as triggered by `token`. See [Trigger tokens](https://docs.runwisp.com/operations/auth/#trigger-tokens).
+- **Hooks**: a task's or service's `hook_tokens` let CI or a webhook run, start, stop, or restart it via `POST /api/hooks/tasks/{name}/<action>` with a bearer header or `?token=`, without the dashboard password. A token can be limited to some actions; rejected tokens are rate-limited per IP; runs show up as triggered by `hook`.
+- `POST /api/tasks/{task}/start`, `.../stop`, and `.../restart` accept `?wait=true`, returning once the run finishes (or, for stop, once every run has ended).
 - **The Web UI asks for quick feedback** after an hour of uptime, at most once a month: a one-tap rating plus an optional note, sent to the maintainers. It can be dismissed, and `check_updates = false` turns it off.
 
 ### Changed

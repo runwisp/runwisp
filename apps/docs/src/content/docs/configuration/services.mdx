@@ -29,6 +29,7 @@ import Notify from "./shared/_notify.mdx";
 import ComposeFile from "./shared/_compose_file.mdx";
 import ComposeService from "./shared/_compose_service.mdx";
 import ComposeMode from "./shared/_compose_mode.mdx";
+import HookTokens from "./shared/_hook_tokens.mdx";
 
 <div class="rw-config-ref" />
 
@@ -76,8 +77,12 @@ run = "/usr/local/bin/worker"
 
 On a service, this also gates the TUI's `s`/`r` keys and
 [`runwisp start`/`stop`/`restart <name>`](/reference/cli/#runwisp-restart).
-With `manual_trigger = false`, only a `runwisp.toml` edit plus `runwisp reload`
-changes its running state.
+With `manual_trigger = false`, only a `runwisp.toml` edit plus `runwisp reload`,
+or a [hook](#hook_tokens), changes its running state.
+
+### hook_tokens
+
+<HookTokens />
 
 ## Instances
 
@@ -430,8 +435,6 @@ instance goes [FATAL](#when-a-service-cant-start-fatal).
 - [`cron`](/configuration/tasks/#cron), [`catch_up`](/configuration/tasks/#catch_up):
   services don't run on a schedule.
 - [`params`](/configuration/tasks/#params): services don't take parameters.
-- [`trigger_tokens`](/configuration/tasks/#trigger_tokens): services aren't
-  triggered.
 - [`retry_attempts`](/configuration/tasks/#retry_attempts),
   [`retry_delay`](/configuration/tasks/#retry_delay),
   [`retry_backoff`](/configuration/tasks/#retry_backoff): use
