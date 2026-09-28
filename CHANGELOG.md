@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-28
+
 ### Fixed
 
 - `@every` tasks no longer lose runs on the night the clocks go back. An interval that divides an hour evenly (`@every 5m`, `30m`, `1h`) had its runs in the repeated hour recorded as `dst_skipped` instead of executed.
@@ -794,7 +796,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.1.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.2.0...main
+[1.2.0]: https://github.com/runwisp/runwisp/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/runwisp/runwisp/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/runwisp/runwisp/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/runwisp/runwisp/compare/v0.16.4...v1.0.0
