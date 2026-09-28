@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.0] - 2026-09-28
 
+### Added
+
+- **Hooks**: a task's or service's `hook_tokens` let CI or a webhook run, start, stop, or restart it via `POST /api/hooks/tasks/{name}/<action>` with a bearer header or `?token=`, without the dashboard password. A token can be limited to some actions; rejected tokens are rate-limited per IP; runs show up as triggered by `hook`.
+- `POST /api/tasks/{task}/start`, `.../stop`, and `.../restart` accept `?wait=true`, returning once the run finishes (or, for stop, once every run has ended).
+- **ntfy, Gotify, and Pushover notifiers**: new `type = "ntfy"`, `"gotify"`, and `"pushover"` send failure alerts to your phone with a couple of keys and a built-in message.
+
+### Changed
+
+- In the web UI, runs that start, finish or get deleted while you watch now animate in the run history and the overview's Recent activity: new runs slide in with a brief highlight, removed runs fade out, and the rest of the list slides to make room. Clicking through runs stays instant.
+- The overview's Recent activity now lists finished runs only; queued runs no longer flash in and out of it.
+
 ### Fixed
 
 - `@every` tasks no longer lose runs on the night the clocks go back. An interval that divides an hour evenly (`@every 5m`, `30m`, `1h`) had its runs in the repeated hour recorded as `dst_skipped` instead of executed.
@@ -20,17 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`runwisp start`**, plus `stop`/`restart` now also accept a task or service target: `runwisp start|stop|restart <target...>`. A target is a name, a shell-style glob (`'*'` for everything), or — for `stop` — a run ID. Multiple targets can be given at once. `--url`/`--password` (or `RUNWISP_URL`/`RUNWISP_PASSWORD`) dispatch to a remote daemon, same as `runwisp run`.
 - `start`/`stop`/`restart` now work on tasks, not just services: `start` triggers a run (no-op if one's already active or queued), `stop` cancels the active run and drops anything queued, `restart` does both in sequence. `manual_trigger = false` now locks all three verbs for tasks too, matching services.
 - New `POST /api/tasks/{task}/start` endpoint.
-- **Hooks**: a task's or service's `hook_tokens` let CI or a webhook run, start, stop, or restart it via `POST /api/hooks/tasks/{name}/<action>` with a bearer header or `?token=`, without the dashboard password. A token can be limited to some actions; rejected tokens are rate-limited per IP; runs show up as triggered by `hook`.
-- `POST /api/tasks/{task}/start`, `.../stop`, and `.../restart` accept `?wait=true`, returning once the run finishes (or, for stop, once every run has ended).
 - **The Web UI asks for quick feedback** after an hour of uptime, at most once a month: a one-tap rating plus an optional note, sent to the maintainers. It can be dismissed, and `check_updates = false` turns it off.
-- **ntfy, Gotify, and Pushover notifiers**: new `type = "ntfy"`, `"gotify"`, and `"pushover"` send failure alerts to your phone with a couple of keys and a built-in message.
 
 ### Changed
 
 - `POST /api/tasks/{task}/stop` and `.../restart` now act on plain tasks instead of returning 400 Bad Request.
 - Notification emails now use RunWisp's colours instead of a generic blue theme.
-- In the web UI, runs that start, finish or get deleted while you watch now animate in the run history and the overview's Recent activity: new runs slide in with a brief highlight, removed runs fade out, and the rest of the list slides to make room. Clicking through runs stays instant.
-- The overview's Recent activity now lists finished runs only; queued runs no longer flash in and out of it.
 
 ### Fixed
 
