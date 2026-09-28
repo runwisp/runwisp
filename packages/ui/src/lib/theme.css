@@ -298,3 +298,42 @@ h3 {
 .btn-scale:active {
     transform: scale(0.97);
 }
+
+/* Live arrival: the row drops in, then a primary ring glows and fades so the
+   eye finds the new run. Added by the `arrival` action; `translate` composes
+   with any inline `transform`. */
+.run-arrive {
+    border-radius: 3px;
+    animation: run-arrive 1.2s ease-out;
+}
+@keyframes run-arrive {
+    0% {
+        opacity: 0;
+        translate: 0 -6px;
+        box-shadow: 0 0 0 1px var(--color-primary);
+    }
+    18% {
+        opacity: 1;
+        translate: 0 0;
+        box-shadow:
+            0 0 0 1px var(--color-primary),
+            0 0 12px color-mix(in srgb, var(--color-primary) 35%, transparent);
+    }
+    100% {
+        box-shadow: 0 0 0 1px transparent;
+    }
+}
+@keyframes run-arrive-still {
+    0%,
+    18% {
+        box-shadow: 0 0 0 1px var(--color-primary);
+    }
+    100% {
+        box-shadow: 0 0 0 1px transparent;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .run-arrive {
+        animation-name: run-arrive-still;
+    }
+}

@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import type { Run } from "@runwisp/common";
-    import type { LogEvent, LogSlice, RunsListFilters } from "@runwisp/ui";
+    import type { LogEvent, LogSlice, RunMotion, RunsListFilters } from "@runwisp/ui";
     import { RunsList, RunDetailPanel } from "@runwisp/ui";
     import { headerSearchStore, taskStore } from "$lib/stores";
     import { createRunActions } from "$lib/utils/run-actions";
@@ -20,6 +20,7 @@
         streamLogs,
         fetchLineHistory,
         getInstanceCount = () => 1,
+        motion,
         initialRunId = null,
         runNotFound = false,
         onSelectRun,
@@ -32,6 +33,8 @@
         onOptimisticRemove: (ids: string[]) => void;
         onOptimisticRestore: (runs: Run[]) => void;
         getInstanceCount?: (taskName: string) => number;
+        // Runs that arrived or were removed live moments ago; they animate.
+        motion?: RunMotion;
         initialRunId?: string | null;
         // True when the deep-linked run id (initialRunId) was fetched and doesn't
         // exist. Distinguishes "deleted/bad permalink" from a stale selection that
@@ -132,6 +135,7 @@
         onBulkDelete={handleBulkDelete}
         onBulkRerun={handleBulkRerun}
         {getInstanceCount}
+        {motion}
     />
 
     <RunDetailPanel
@@ -142,6 +146,7 @@
         showTaskName
         onDelete={deleteSingle}
         {getInstanceCount}
+        {motion}
         notFound={deepLinkMissing}
     />
 </div>

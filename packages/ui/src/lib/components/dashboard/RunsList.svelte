@@ -15,6 +15,8 @@
     import { SvelteSet } from "svelte/reactivity";
     import { createVirtualizer } from "@tanstack/svelte-virtual";
     import Button from "../Button.svelte";
+    import { arrival, leave, prefersReducedMotion } from "../../actions/row-motion.js";
+    import type { RunMotion } from "../../utils/run-motion.js";
     import EmptyState from "../EmptyState.svelte";
     import RunFilterPopover from "./RunFilterPopover.svelte";
     import type { Run } from "./types.js";
@@ -68,6 +70,7 @@
         onBulkDelete,
         onBulkRerun,
         getInstanceCount = () => 1,
+        motion,
         flush = false,
         outputSearch = false,
         outputQuery = "",
@@ -99,6 +102,9 @@
         // Resolves a task's currently configured instance count so multi-instance
         // services render a 1-based #N suffix. Defaults to single-instance.
         getInstanceCount?: (taskName: string) => number;
+        // Which runs arrived or were removed live moments ago: their rows animate
+        // in or out. Page loads, scrolling and filtering never do.
+        motion?: RunMotion;
         // Flush rail mode (task detail page): render as a borderless rail that
         // fills its column and is divided from the detail panel by a single right
         // border — no card chrome of its own. Default renders the standalone card
@@ -189,8 +195,13 @@
 
     // `setOptions` always notifies the store (see @tanstack/svelte-virtual src),
     // so reading $virtualizer here would loop. Untrack the store read.
-    $effect(() => {
+    // Pre-effect so the count lands in the same render as `items`: otherwise
+    // the row pushed past the old count unmounts for a frame and remounts
+    // without its slide. A pre-effect first runs before `bind:this`, so it also
+    // re-runs once the scroll element exists or the virtualizer never attaches.
+    $effect.pre(() => {
         const count = items.length;
+        if (!scrollElement) return;
         untrack(() => $virtualizer.setOptions({ count }));
     });
 
@@ -222,8 +233,10 @@
         if (!scrollElement) return;
         lastScrolled = id;
         // "auto" only scrolls when the row is off-screen, so visible selections
-        // (and manual clicks) don't jump.
-        untrack(() => $virtualizer.scrollToIndex(index, { align: "auto" }));
+        // (and manual clicks) don't jump. A live arrival taking focus glides
+        // there so the operator sees where it went; deep links jump.
+        const behavior = motion?.arrived(id) && !prefersReducedMotion() ? "smooth" : "auto";
+        untrack(() => $virtualizer.scrollToIndex(index, { align: "auto", behavior }));
     });
 
     function isRowSelected(id: string): boolean {
@@ -575,8 +588,19 @@
                 {#each $virtualizer.getVirtualItems() as row (items[row.index]?.id ?? row.index)}
                     {@const run = items[row.index]}
                     {#if run}
+                        <!-- The transform transition slides rows aside when a live
+                             run is inserted or removed. Navigation never animates:
+                             filter/sort/task changes remount rows, pagination
+                             appends, and scrolling doesn't move a row. `leave`
+                             is global because this {#if}, not the row's each
+                             item, is the block it would otherwise wait for; it
+                             only plays for runs removed live. -->
                         <div
-                            class="group/row flex items-center gap-1"
+                            data-run-id={run.id}
+                            use:arrival={motion?.arrived(run.id) ?? false}
+                            out:leave|global={motion?.removed}
+                            class="group/row flex items-center gap-1 transition-transform duration-200 ease-out motion-reduce:transition-none"
+                            style:transition-delay="var(--rw-shift-delay, 0ms)"
                             style:position="absolute"
                             style:top="0"
                             style:left="0"

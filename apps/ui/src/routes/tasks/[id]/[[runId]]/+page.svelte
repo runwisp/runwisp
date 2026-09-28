@@ -203,6 +203,7 @@
                 fetchLogs={logSession.fetchLogs}
                 streamLogs={logSession.streamLogs}
                 fetchLineHistory={logSession.fetchLineHistory}
+                motion={source.motion}
                 initialRunId={runIdParam}
                 initialHighlightLine={(() => {
                     const v = $page.url.searchParams.get("line");
