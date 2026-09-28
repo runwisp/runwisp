@@ -7,7 +7,9 @@
 package webhook
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -23,7 +25,7 @@ type Channel struct {
 	headers   http.Header
 	transport *notify.HTTPProvider
 	renderer  render.Renderer
-	transform func([]byte) ([]byte, error)
+	fields    map[string]string
 }
 
 // Config is the inputs the factory needs to build a webhook Channel.
@@ -36,10 +38,11 @@ type Config struct {
 	Headers   map[string]string // optional; merged into every request
 	Renderer  render.Renderer
 	Transport *notify.HTTPProvider // optional; default constructed when nil
-	// Transform optionally rewrites the rendered JSON body before it is
-	// POSTed (e.g. Slack injecting a target channel). Nil means send as
-	// rendered.
-	Transform func([]byte) ([]byte, error)
+	// Fields are top-level string keys set on the rendered JSON object
+	// before it is POSTed, overriding any the template wrote (e.g. Slack's
+	// target channel, ntfy's topic, Pushover's credentials). Keeping them out
+	// of the template means a template_path override can't drop them.
+	Fields map[string]string
 }
 
 // New constructs a webhook channel.
@@ -72,7 +75,7 @@ func New(cfg Config) (*Channel, error) {
 		headers:   h,
 		transport: transport,
 		renderer:  cfg.Renderer,
-		transform: cfg.Transform,
+		fields:    cfg.Fields,
 	}, nil
 }
 
@@ -88,14 +91,33 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 		return fmt.Errorf("%s: render: %w", c, err)
 	}
 	body := rendered.Body
-	if c.transform != nil {
-		body, err = c.transform(body)
+	if len(c.fields) > 0 {
+		body, err = injectFields(body, c.fields)
 		if err != nil {
-			return fmt.Errorf("%s: transform body: %w", c, err)
+			return fmt.Errorf("%s: inject fields: %w", c, err)
 		}
 	}
 	if err := c.transport.PostJSONWithHeaders(ctx, c.url, "application/json", body, c.headers); err != nil {
 		return fmt.Errorf("%s: %w", c, notify.RedactError(err, c.url))
 	}
 	return nil
+}
+
+// injectFields sets top-level string keys on a JSON object body.
+func injectFields(body []byte, fields map[string]string) ([]byte, error) {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return nil, err
+	}
+	for k, v := range fields {
+		enc, _ := json.Marshal(v)
+		obj[k] = enc
+	}
+	var buf bytes.Buffer
+	e := json.NewEncoder(&buf)
+	e.SetEscapeHTML(false)
+	if err := e.Encode(obj); err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
 }

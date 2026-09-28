@@ -1,0 +1,74 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Pushover
+description: Send RunWisp notifications to your phone through Pushover.
+---
+
+The Pushover notifier sends each event to your devices through
+[Pushover][pushover].
+
+[pushover]: https://pushover.net
+
+```toml
+[notifiers.po]
+type  = "pushover"
+token = "${PUSHOVER_TOKEN}"
+user  = "${PUSHOVER_USER}"
+```
+
+## Fields
+
+| Key             | Required | What it does                                                                                                  |
+| --------------- | -------- | ------------------------------------------------------------------------------------------------------------- |
+| `token`         | yes      | The application token. Keep it out of the file; see [Storing the secret](/notifications/#storing-the-secret). |
+| `user`          | yes      | Your user key, or a group key to reach several people.                                                        |
+| `template_path` | no       | A Go template file that replaces the built-in message.                                                        |
+
+## Getting the keys
+
+1. Log in at [pushover.net](https://pushover.net). Your **user key** is on the
+   dashboard.
+2. Under **Your Applications**, click **Create an Application/API Token**.
+3. Name it, for example `RunWisp`, and copy the **API token**.
+
+Both look like `azGDORePK8gMaC0QOYAMyEEuzJnyUi`. Treat them as secrets.
+
+To send some tasks to another user or group, use `"po:<user key>"` in `notify`;
+see
+[One channel, several destinations](/notifications/#one-channel-several-destinations).
+
+## What a message looks like
+
+```
+❌ backup-postgres failed
+
+Exited with code 1 after 0.3s.
+Triggered via the REST API · 14 May, 17:11.
+
+Error: connection refused
+dial tcp 127.0.0.1:5432: connect:
+connection refused
+
+from runwisp · bright-falcon
+```
+
+- Failures and warnings use normal priority. Everything else is quiet
+  (priority -1): no sound or vibration.
+- The notification links to the run when
+  [`external_url`](/configuration/daemon/#external_url) is set.
+- The last lines of output appear for failures and timeouts, when there is a
+  log.
+
+## Changing the message
+
+Point `template_path` at your own Go template. Start from the built-in
+[`pushover.tmpl.json`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/notify/render/defaults/pushover.tmpl.json),
+a body for Pushover's [message API](https://pushover.net/api). Change
+`priority`, or add `sound` or `device`. RunWisp sets `token` and `user` itself.
+The template gets the same helpers as the
+[Slack template](/notifications/providers/slack/#changing-the-message).
+
+## What's rejected
+
+- A missing `token` or `user`.

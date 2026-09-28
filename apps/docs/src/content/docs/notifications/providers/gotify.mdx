@@ -1,0 +1,73 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Gotify
+description: Send RunWisp notifications to your self-hosted Gotify server as push messages.
+---
+
+The Gotify notifier sends each event as a message to your [Gotify][gotify]
+server. The Gotify Android app and web UI show it as a push notification.
+
+[gotify]: https://gotify.net
+
+```toml
+[notifiers.gotify]
+type  = "gotify"
+url   = "https://gotify.example.com"
+token = "${GOTIFY_TOKEN}"
+```
+
+## Fields
+
+| Key             | Required | What it does                                                                                                  |
+| --------------- | -------- | ------------------------------------------------------------------------------------------------------------- |
+| `url`           | yes      | Your Gotify server, like `https://gotify.example.com`. RunWisp posts to `<url>/message`.                      |
+| `token`         | yes      | The application token. Keep it out of the file; see [Storing the secret](/notifications/#storing-the-secret). |
+| `template_path` | no       | A Go template file that replaces the built-in message.                                                        |
+
+## Creating the token
+
+1. In the Gotify web UI, open **Apps** and click **Create Application**.
+2. Name it, for example `RunWisp`.
+3. Copy the token from the new row. It looks like `AWH4z0Kc.0jpNnG`.
+
+Anyone with the token can post as the app, so treat it as a secret. A token
+belongs to one app; for a second app, create a second token and a second
+`[notifiers.*]` block. Gotify notifiers don't accept a `gotify:<target>`
+override.
+
+## What a message looks like
+
+```
+❌ backup-postgres failed
+
+Exited with code 1 after 0.3s.
+Triggered via the REST API · 14 May, 17:11.
+
+Error: connection refused
+dial tcp 127.0.0.1:5432: connect:
+connection refused
+
+from runwisp · bright-falcon
+```
+
+- The priority follows the outcome: 8 for failures, 5 for warnings like low
+  disk space, 2 for everything else.
+- Tapping the notification opens the run when
+  [`external_url`](/configuration/daemon/#external_url) is set.
+- The last lines of output appear for failures and timeouts, when there is a
+  log.
+
+## Changing the message
+
+Point `template_path` at your own Go template. Start from the built-in
+[`gotify.tmpl.json`](https://github.com/runwisp/runwisp/blob/main/apps/runwisp/internal/notify/render/defaults/gotify.tmpl.json),
+a body for Gotify's
+[message API](https://gotify.net/api-docs#/message/createMessage). The template
+gets the same helpers as the
+[Slack template](/notifications/providers/slack/#changing-the-message).
+
+## What's rejected
+
+- A missing `url`, or one that isn't `http://` or `https://`.
+- A missing `token`.

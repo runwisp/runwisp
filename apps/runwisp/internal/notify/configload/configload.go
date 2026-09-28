@@ -65,6 +65,16 @@ func resolveNotifier(n config.NotifierSpec, renderCtx render.TemplateContext) ch
 		fillSMTPSpec(&spec, n)
 	case "sendmail":
 		fillSendmailSpec(&spec, n)
+	case "ntfy":
+		spec.URL = n.URL
+		spec.Topic = n.Topic
+		spec.Token = n.Token
+	case "gotify":
+		spec.URL = n.URL
+		spec.Token = n.Token
+	case "pushover":
+		spec.Token = n.Token
+		spec.User = n.User
 	case "webhook":
 		spec.URL = n.URL
 		if n.Headers != nil {

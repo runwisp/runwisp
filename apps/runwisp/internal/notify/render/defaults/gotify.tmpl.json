@@ -1,0 +1,14 @@
+{{- /* Gotify notification. Priority: 8 on errors, 5 on warnings, 2 otherwise. */ -}}
+{{- $tail := "" -}}{{- if or (eq .Kind "run.failed") (eq .Kind "run.timeout") -}}{{- $tail = outputTail . -}}{{- end -}}
+{{- $url := "" -}}{{- if eq .Kind "log.disk_pressure" -}}{{- $url = taskURL .TaskName -}}{{- else -}}{{- $url = runURL .Run -}}{{- end -}}
+{{- $footer := "from runwisp" -}}{{- with fingerprint -}}{{- $footer = printf "from runwisp · %s" . -}}{{- end -}}
+{{- $message := printf "%s\n%s · %s." (eventSentence .) (eventTrigger .) (humanTime .Timestamp) -}}
+{{- if $tail -}}{{- $message = printf "%s\n\n%s" $message $tail -}}{{- end -}}
+{{- $message = printf "%s\n\n%s" $message $footer -}}
+{{- $priority := 2 -}}{{- if eq .Severity "error" -}}{{- $priority = 8 -}}{{- else if eq .Severity "warn" -}}{{- $priority = 5 -}}{{- end -}}
+{
+  "title": "{{ jsonStr (printf "%s %s %s" (statusEmoji .Kind) .TaskName (statusVerb .Kind)) }}",
+  "message": "{{ jsonStr $message }}",
+  "priority": {{ $priority }}{{ if $url }},
+  "extras": { "client::notification": { "click": { "url": "{{ jsonStr $url }}" } } }{{ end }}
+}

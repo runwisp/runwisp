@@ -58,7 +58,7 @@ We welcome reports against:
 - Unix-socket trust bypass — anything that lets a foreign UID drive the daemon despite `SO_PEERCRED` / `LOCAL_PEERCRED`, or that lets a network caller reach socket-only endpoints (e.g. `GET /api/local/credentials`)
 - Launch-ticket flaws — replay, forgery, or off-host redemption of a ticket meant for `127.0.0.1`
 - Authorization flaws — unauthorized triggering, listing, stopping, or observing of tasks via REST or the control-plane protocol
-- Injection into the REST API, SSE log stream, or notification channels (Slack, Discord, Telegram, email/SMTP, generic webhooks, in-app)
+- Injection into the REST API, SSE log stream, or notification channels (Slack, Discord, Telegram, ntfy, Gotify, Pushover, email/SMTP, generic webhooks, in-app)
 - Path traversal or arbitrary file disclosure via the daemon
 - TOML parser bugs that escalate privilege beyond what `run = "..."` already permits
 - Misuse of `X-Forwarded-*` headers — spoofing the source IP or scheme past `RUNWISP_TRUSTED_PROXIES`

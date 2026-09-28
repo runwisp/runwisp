@@ -203,9 +203,14 @@ type NotifierSpec struct {
 	// one". Addressing (From/Recipients/CC/BCC) is shared with SMTP.
 	SendmailPath string
 
-	// Webhook-specific
+	// Webhook-specific (URL is also the ntfy/gotify server base)
 	URL     string
 	Headers map[string]string
+
+	// Push-specific (ntfy, gotify, pushover)
+	Topic string // ntfy
+	Token string // ntfy access token, gotify/pushover application token
+	User  string // pushover user or group key
 
 	TemplatePath string
 }

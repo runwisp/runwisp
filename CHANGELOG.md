@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Hooks**: a task's or service's `hook_tokens` let CI or a webhook run, start, stop, or restart it via `POST /api/hooks/tasks/{name}/<action>` with a bearer header or `?token=`, without the dashboard password. A token can be limited to some actions; rejected tokens are rate-limited per IP; runs show up as triggered by `hook`.
 - `POST /api/tasks/{task}/start`, `.../stop`, and `.../restart` accept `?wait=true`, returning once the run finishes (or, for stop, once every run has ended).
 - **The Web UI asks for quick feedback** after an hour of uptime, at most once a month: a one-tap rating plus an optional note, sent to the maintainers. It can be dismissed, and `check_updates = false` turns it off.
+- **ntfy, Gotify, and Pushover notifiers**: new `type = "ntfy"`, `"gotify"`, and `"pushover"` send failure alerts to your phone with a couple of keys and a built-in message.
 
 ### Changed
 

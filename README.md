@@ -114,7 +114,7 @@ RunWisp can start from the configuration you already have:
 
 - Exit code, duration, timestamps, and status persisted in embedded SQLite
 - Live stdout/stderr streaming in the web UI and terminal UI
-- Per-task log rotation and failure notifications through Slack, Discord, Telegram, email, webhooks, or the in-app inbox
+- Per-task log rotation and failure notifications through Slack, Discord, Telegram, ntfy, Gotify, Pushover, email, webhooks, or the in-app inbox
 
 **Day-to-day operation**
 
@@ -125,19 +125,19 @@ RunWisp can start from the configuration you already have:
 
 ## Comparison
 
-|                      | crond                | systemd timers     | supervisord    | **RunWisp**                                  |
-| -------------------- | -------------------- | ------------------ | -------------- | -------------------------------------------- |
-| Cron scheduling      | Yes                  | Yes                | No             | **Yes**                                      |
-| Process supervision  | No                   | Yes                | Yes            | **Yes**                                      |
-| Web dashboard        | No                   | No                 | Basic HTML     | **Built in**                                 |
-| Terminal UI          | No                   | No                 | No             | **Built in**                                 |
-| Remote interface     | No                   | D-Bus              | XML-RPC        | **REST API**                                 |
-| Live log streaming   | No                   | `journalctl -f`    | Tail only      | **Web UI, TUI, and SSE**                     |
-| Concurrency policies | No                   | Overlap prevention | No             | **Queue, skip, or kill**                     |
-| Failure alerts       | No                   | `OnFailure=` unit  | Event listener | **Slack, Discord, Telegram, email, webhook** |
-| Execution history    | No                   | `journalctl`       | No             | **SQLite, browsable in the UI**              |
-| Runtime dependencies | libc                 | systemd            | Python         | **None**                                     |
-| Configuration        | crontab              | Unit files         | INI files      | **One TOML file**                            |
+|                      | crond                | systemd timers     | supervisord    | **RunWisp**                                                          |
+| -------------------- | -------------------- | ------------------ | -------------- | -------------------------------------------------------------------- |
+| Cron scheduling      | Yes                  | Yes                | No             | **Yes**                                                              |
+| Process supervision  | No                   | Yes                | Yes            | **Yes**                                                              |
+| Web dashboard        | No                   | No                 | Basic HTML     | **Built in**                                                         |
+| Terminal UI          | No                   | No                 | No             | **Built in**                                                         |
+| Remote interface     | No                   | D-Bus              | XML-RPC        | **REST API**                                                         |
+| Live log streaming   | No                   | `journalctl -f`    | Tail only      | **Web UI, TUI, and SSE**                                             |
+| Concurrency policies | No                   | Overlap prevention | No             | **Queue, skip, or kill**                                             |
+| Failure alerts       | No                   | `OnFailure=` unit  | Event listener | **Slack, Discord, Telegram, ntfy, Gotify, Pushover, email, webhook** |
+| Execution history    | No                   | `journalctl`       | No             | **SQLite, browsable in the UI**                                      |
+| Runtime dependencies | libc                 | systemd            | Python         | **None**                                                             |
+| Configuration        | crontab              | Unit files         | INI files      | **One TOML file**                                                    |
 
 The API and user interfaces can inspect tasks and trigger or stop them. **Task definitions cannot be modified remotely.** `runwisp.toml` remains the source of truth.
 

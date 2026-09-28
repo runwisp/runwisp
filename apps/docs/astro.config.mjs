@@ -169,6 +169,9 @@ export default defineConfig({
                                 { label: "Slack", slug: "notifications/providers/slack" },
                                 { label: "Discord", slug: "notifications/providers/discord" },
                                 { label: "Telegram", slug: "notifications/providers/telegram" },
+                                { label: "ntfy", slug: "notifications/providers/ntfy" },
+                                { label: "Gotify", slug: "notifications/providers/gotify" },
+                                { label: "Pushover", slug: "notifications/providers/pushover" },
                                 { label: "Email (SMTP)", slug: "notifications/providers/smtp" },
                                 {
                                     label: "Email (local MTA)",
