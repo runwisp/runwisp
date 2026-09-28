@@ -106,6 +106,41 @@ docker run --rm -e RUNWISP_AUTH=off -p 127.0.0.1:9477:9477 \
   -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro runwisp/runwisp:latest
 ```
 
+## Trigger tokens
+
+A CI job or webhook can start one task without the password. Give the task a
+[`trigger_tokens`](/configuration/tasks/#trigger_tokens) entry, then send the
+token as a bearer header:
+
+```bash
+curl -fsS -X POST -H "Authorization: Bearer $CI_DEPLOY_TOKEN" \
+  "https://runwisp.example.com:9477/api/hooks/deploy?wait=true"
+```
+
+The response is the run, and it returns `201 Created`. With `?wait=true` the
+request holds until the run ends, so the body carries its `exitCode` and
+`endReason`. The optional JSON body takes `{"params": {...}}`, the same as
+`POST /api/tasks/{task}/run`. The run history shows these runs as triggered by
+`token`.
+
+If a webhook sender can only set a URL, pass the token as a query parameter
+instead. The header wins when both are sent.
+
+```text
+https://runwisp.example.com:9477/api/hooks/deploy?token=<token>
+```
+
+:::caution
+A token in the URL is insecure. Proxies, CI logs, browser history, and the
+webhook sender's own dashboard can all record it. Use the header whenever you
+can, and give URL callers their own token so you can rotate it on its own.
+:::
+
+A missing or wrong token gets `401`, and so does an unknown task, so the
+endpoint doesn't reveal which tasks exist. Tokens are checked even with
+`RUNWISP_AUTH=off`. A rotated token takes effect on
+[`runwisp reload`](/operations/reload/).
+
 ## Rate limiting
 
 Login requests are limited per client IP: 5 requests in any 5-minute window,
@@ -115,6 +150,10 @@ A restart resets the count. The control socket isn't limited.
 
 Scripts should log in once and reuse the session token; `runwisp run --url`
 does this for you.
+
+[Trigger tokens](#trigger-tokens) are limited by failures only: after 20
+rejected tokens from one client IP within a minute, that IP gets `429` (even
+with a valid token) until the window moves on. Successful triggers never count.
 
 Live log streams are capped at 128 open at once, and 16 per client IP. Past the
 cap, new streams get `503 Service Unavailable`. Close some log views and try
@@ -153,6 +192,8 @@ These answer without a password:
 - `GET /metrics`: when [metrics](/operations/metrics/) are on and share the main
   listener.
 - `/api/auth/*`: login status, challenge, login, and launch-ticket redemption.
+- `POST /api/hooks/{task}`: needs one of the task's
+  [trigger tokens](#trigger-tokens) instead, in the header or the URL.
 - `GET /api/daemon/identity`: tells a starting `runwisp` which daemon holds the
   port. Loopback and socket callers only; `403` for everyone else.
 - The Web UI's static files.

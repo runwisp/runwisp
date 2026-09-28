@@ -1256,7 +1256,8 @@
               "cli",
               "station",
               "service",
-              "startup"
+              "startup",
+              "token"
             ],
             "type": "string"
           }
@@ -1379,7 +1380,7 @@
             "type": "string"
           },
           "triggeredBy": {
-            "description": "Filter by what triggered the run (cron/api/ui/cli/station/service/startup)",
+            "description": "Filter by what triggered the run (cron/api/ui/cli/station/service/startup/token)",
             "type": "string"
           }
         },
@@ -3070,6 +3071,135 @@
         ]
       }
     },
+    "/api/hooks/{taskName}": {
+      "post": {
+        "description": "For CI and webhooks: authenticates with `Authorization: Bearer \u003ctoken\u003e` (or, less safely, `?token=`), where the token is one of the task's `trigger_tokens` in runwisp.toml, instead of a session. Enforced even with RUNWISP_AUTH=off. An unknown task, a task without tokens, and a wrong token all return the same 401. After 20 rejected attempts in a minute, the client IP gets 429 until the window slides.",
+        "operationId": "triggerTaskWithToken",
+        "parameters": [
+          {
+            "description": "Task name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Bearer \u003ctoken\u003e, where \u003ctoken\u003e is one of the task's trigger_tokens",
+            "in": "header",
+            "name": "Authorization",
+            "schema": {
+              "description": "Bearer \u003ctoken\u003e, where \u003ctoken\u003e is one of the task's trigger_tokens",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The trigger token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent.",
+            "explode": false,
+            "in": "query",
+            "name": "token",
+            "schema": {
+              "description": "The trigger token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Block until the run finishes and return the completed run (with exitCode and endReason).",
+            "explode": false,
+            "in": "query",
+            "name": "wait",
+            "schema": {
+              "description": "Block until the run finishes and return the completed run (with exitCode and endReason).",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state.",
+            "explode": false,
+            "in": "query",
+            "name": "waitTimeout",
+            "schema": {
+              "default": 120,
+              "description": "With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state.",
+              "format": "int64",
+              "maximum": 240,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerRunInputBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Trigger a run with a per-task trigger token",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
     "/api/local/credentials": {
       "get": {
         "description": "Returns the in-memory ephemeral password to a local CLI/TUI client arriving on the Unix socket. Always 403 over TCP — even with a valid JWT. Always 404 when the daemon is configured with RUNWISP_PASSWORD.",
@@ -3365,6 +3495,7 @@
                 "station",
                 "service",
                 "startup",
+                "token",
                 ""
               ],
               "type": "string"

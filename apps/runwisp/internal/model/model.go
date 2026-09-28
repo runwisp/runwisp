@@ -175,6 +175,11 @@ type Task struct {
 	// firings use the declared defaults. Declarations come from TOML only — the
 	// API/UI supply values, never definitions. Mapped from [tasks.*.params].
 	Parameters []TaskParam `toml:"-" json:"parameters,omitempty" doc:"Per-execution parameters an operator may supply at manual trigger time; scheduled runs use the declared defaults"`
+	// TriggerTokens holds [tasks.*] trigger_tokens: bearer secrets that let a
+	// caller trigger this one task via POST /api/hooks/{taskName} without a
+	// session. Hidden from JSON/TOML so values never leak to API/UI/station
+	// serialization.
+	TriggerTokens []string `toml:"-" json:"-"`
 
 	Run          string          `toml:"run,omitempty" json:"-"`
 	ExecutionDef ExecutionDef    `toml:"-"             json:"-"`

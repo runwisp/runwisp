@@ -266,6 +266,7 @@ describe("triggerDescription", () => {
         expect(triggerDescription("cli")).toBe("CLI");
         expect(triggerDescription("service")).toBe("Service auto-start");
         expect(triggerDescription("startup")).toBe("On daemon start");
+        expect(triggerDescription("token")).toBe("Trigger token");
     });
 
     it("falls back to a humanized token for anything unknown", () => {
@@ -275,7 +276,15 @@ describe("triggerDescription", () => {
 
 describe("FILTERABLE_TRIGGERS", () => {
     it("offers every trigger except station", () => {
-        expect(FILTERABLE_TRIGGERS).toEqual(["cron", "api", "ui", "cli", "service", "startup"]);
+        expect(FILTERABLE_TRIGGERS).toEqual([
+            "cron",
+            "api",
+            "ui",
+            "cli",
+            "service",
+            "startup",
+            "token",
+        ]);
         expect(FILTERABLE_TRIGGERS).not.toContain("station");
     });
 });

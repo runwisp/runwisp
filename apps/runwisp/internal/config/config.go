@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/runwisp/runwisp/internal/cronspec"
@@ -682,6 +683,9 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 	if err := validateTaskParams(task); err != nil {
 		return err
 	}
+	if err := validateTaskTriggerTokens(task); err != nil {
+		return err
+	}
 	if task.Kind.IsService() {
 		if err := validateServiceTask(task); err != nil {
 			return err
@@ -706,6 +710,30 @@ func validateTaskCron(task *model.Task) error {
 		return fmt.Errorf(
 			"invalid cron for task %q: %q — %v; expected 5 fields \"min hour day month weekday\" (e.g. \"0 3 * * *\" = 03:00 daily), an optional leading seconds field for 6 fields \"sec min hour day month weekday\" (e.g. \"*/30 * * * * *\" = every 30s on the :00 and :30), a descriptor like @hourly/@daily/@weekly, or @every for fixed intervals (e.g. @every 30s, @every 1h30m)",
 			task.Name, task.Cron, err)
+	}
+	return nil
+}
+
+// minTriggerTokenLength is long enough that guessing a token over HTTP is
+// infeasible; the hooks failure limiter only has to stop scanners.
+const minTriggerTokenLength = 32
+
+// validateTaskTriggerTokens rejects tokens too short to resist guessing,
+// tokens with whitespace (a pasted newline would never match a header), and
+// tokens on a task whose manual_trigger = false would refuse every hook call.
+// Token values never appear in errors — only their position.
+func validateTaskTriggerTokens(task *model.Task) error {
+	if len(task.TriggerTokens) > 0 && !task.ManualTrigger {
+		return fmt.Errorf("task %q sets trigger_tokens but manual_trigger = false; a token could never trigger it", task.Name)
+	}
+	for i, tok := range task.TriggerTokens {
+		if len(tok) < minTriggerTokenLength {
+			return fmt.Errorf("trigger_tokens[%d] for task %q is %d characters; use at least %d (e.g. `openssl rand -hex 32`)",
+				i, task.Name, len(tok), minTriggerTokenLength)
+		}
+		if strings.IndexFunc(tok, unicode.IsSpace) >= 0 {
+			return fmt.Errorf("trigger_tokens[%d] for task %q contains whitespace", i, task.Name)
+		}
 	}
 	return nil
 }

@@ -212,7 +212,8 @@
         "compose_service": { "type": "string", "description": "Which compose service; requires compose_file. Default = task name." },
         "compose_mode": { "$ref": "#/$defs/composeUnitMode" },
         "notify": { "type": "array", "items": { "type": "string" }, "description": "Notifier ids (or \"id:override\", or \"inapp\") to page when this unit's `failures` policy classifies a run as a failure. Non-failure outcomes (a success ping, a timeout-only escalation) use an explicit [[route]] instead." },
-        "params": { "type": "array", "items": { "$ref": "#/$defs/param" }, "description": "Per-execution inputs ([tasks.*.params])." }
+        "params": { "type": "array", "items": { "$ref": "#/$defs/param" }, "description": "Per-execution inputs ([tasks.*.params])." },
+        "trigger_tokens": { "type": "array", "items": { "type": "string", "minLength": 32, "pattern": "^\\S+$" }, "description": "Bearer tokens that may trigger this task via POST /api/hooks/<name> without a session. Use ${VAR} or ${file:...}; never shown in API/UI." }
       }
     },
     "service": {

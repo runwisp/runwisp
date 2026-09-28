@@ -225,7 +225,7 @@ export function humanizeStatus(status: string): string {
 
 /**
  * Descriptive label for a run's trigger source — fuller than the one-word row
- * badge (`formatTriggeredByLabel`) for the "cron"/"station"/"service"/"startup"
+ * badge (`formatTriggeredByLabel`) for the "cron"/"station"/"service"/"startup"/"token"
  * sources, where the extra words disambiguate (e.g. "REST API" vs a bare
  * "API"). "ui" and "cli" already read fine as their bare badge word, so those
  * two match `formatTriggeredByLabel` exactly.
@@ -249,6 +249,8 @@ export function triggerDescription(trigger: string): string {
             return "Service auto-start";
         case "startup":
             return "On daemon start";
+        case "token":
+            return "Trigger token";
         default:
             return humanizeStatus(trigger);
     }

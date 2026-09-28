@@ -79,6 +79,6 @@ A tasks-only key in `[defaults]` is ignored by services, and the other way round
 Everything else is per task or daemon-wide:
 
 - `cron`, `on_overlap`, `max_concurrent`, `max_queued`, the `retry_*` keys,
-  `params`, and `notify`. For a notifier on every task, use
+  `params`, `trigger_tokens`, and `notify`. For a notifier on every task, use
   [`[notify] global_notifiers`](/configuration/notify/#global_notifiers).
 - `[daemon]` (including `shutdown_timeout`), `[storage]`, and `[notify]`.

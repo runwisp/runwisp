@@ -67,9 +67,26 @@ type TriggerRunInput struct {
 	Via string `query:"via" enum:"ui,cli," doc:"Declares the caller for run provenance: 'ui' (Web UI / TUI Run Now) or 'cli' (runwisp run). Omit for a plain API call."`
 	// Body is a pointer so it is optional — a zero-param trigger can POST with
 	// no payload at all.
-	Body *struct {
-		Params map[string]*string `json:"params,omitempty" doc:"Values for the task's declared parameters, keyed by parameter identity. A null value omits that parameter (overriding its default); an empty string passes an empty value; an absent key uses the declared default."`
-	}
+	Body *TriggerRunInputBody
+}
+
+// TriggerRunInputBody is the optional trigger payload shared by /run and
+// /hooks. Its name matches the schema huma derived when it was an anonymous
+// struct on TriggerRunInput, so the OpenAPI component name is unchanged.
+type TriggerRunInputBody struct {
+	Params map[string]*string `json:"params,omitempty" doc:"Values for the task's declared parameters, keyed by parameter identity. A null value omits that parameter (overriding its default); an empty string passes an empty value; an absent key uses the declared default."`
+}
+
+// HookTriggerInput drives POST /api/hooks/{taskName}: TriggerRunInput minus
+// Via (the provenance is always `token`), plus the trigger token (header, or
+// query for URL-only webhook senders) that stands in for a session.
+type HookTriggerInput struct {
+	TaskName      string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
+	Authorization string `header:"Authorization" doc:"Bearer <token>, where <token> is one of the task's trigger_tokens"`
+	Token         string `query:"token" doc:"The trigger token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent."`
+	Wait          bool   `query:"wait" doc:"Block until the run finishes and return the completed run (with exitCode and endReason)."`
+	WaitTimeout   int    `query:"waitTimeout" minimum:"1" maximum:"240" default:"120" doc:"With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state."`
+	Body          *TriggerRunInputBody
 }
 
 // RunIDInput drives the per-run endpoints (GET/DELETE /api/runs/{runId},
@@ -91,7 +108,7 @@ type RunsQueryInput struct {
 	Offset        int       `query:"offset" minimum:"0" default:"0" doc:"Pagination offset"`
 	Status        string    `query:"status" doc:"Comma-separated run statuses (phase or end reason); a run matches any listed value"`
 	TaskName      string    `query:"taskName" doc:"Filter by task name"`
-	TriggeredBy   string    `query:"triggeredBy" enum:"cron,api,ui,cli,station,service,startup," doc:"Filter by what triggered the run"`
+	TriggeredBy   string    `query:"triggeredBy" enum:"cron,api,ui,cli,station,service,startup,token," doc:"Filter by what triggered the run"`
 	CreatedAfter  time.Time `query:"createdAfter" doc:"Only runs created at or after this RFC3339 time"`
 	CreatedBefore time.Time `query:"createdBefore" doc:"Only runs created at or before this RFC3339 time"`
 	ExitCodeMin   string    `query:"exitCodeMin" pattern:"^-?[0-9]+$" doc:"Only runs whose exit code is >= this (inclusive)"`

@@ -203,6 +203,10 @@ describe("formatTriggeredByLabel", () => {
     it("returns 'Startup' for 'startup'", () => {
         expect(formatTriggeredByLabel("startup")).toBe("Startup");
     });
+
+    it("returns 'Token' for 'token'", () => {
+        expect(formatTriggeredByLabel("token")).toBe("Token");
+    });
 });
 
 describe("formatCompactCount", () => {

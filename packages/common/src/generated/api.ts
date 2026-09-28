@@ -171,6 +171,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hooks/{taskName}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger a run with a per-task trigger token
+         * @description For CI and webhooks: authenticates with `Authorization: Bearer <token>` (or, less safely, `?token=`), where the token is one of the task's `trigger_tokens` in runwisp.toml, instead of a session. Enforced even with RUNWISP_AUTH=off. An unknown task, a task without tokens, and a wrong token all return the same 401. After 20 rejected attempts in a minute, the client IP gets 429 until the window slides.
+         */
+        post: operations["triggerTaskWithToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/local/credentials": {
         parameters: {
             query?: never;
@@ -1204,7 +1224,7 @@ export interface components {
              * @description How the run was triggered
              * @enum {string}
              */
-            triggeredBy: "cron" | "api" | "ui" | "cli" | "station" | "service" | "startup";
+            triggeredBy: "cron" | "api" | "ui" | "cli" | "station" | "service" | "startup" | "token";
         };
         RunCompletedEvent: {
             error?: string;
@@ -1253,7 +1273,7 @@ export interface components {
             status?: string;
             /** @description Filter by task name */
             taskName?: string;
-            /** @description Filter by what triggered the run (cron/api/ui/cli/station/service/startup) */
+            /** @description Filter by what triggered the run (cron/api/ui/cli/station/service/startup/token) */
             triggeredBy?: string;
         };
         RunSelector: {
@@ -2226,6 +2246,79 @@ export interface operations {
             };
         };
     };
+    triggerTaskWithToken: {
+        parameters: {
+            query?: {
+                /** @description The trigger token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent. */
+                token?: string;
+                /** @description Block until the run finishes and return the completed run (with exitCode and endReason). */
+                wait?: boolean;
+                /** @description With wait=true, the maximum seconds to hold the request open. On timeout the run keeps running and the response returns it in its current (non-terminal) state. */
+                waitTimeout?: number;
+            };
+            header?: {
+                /** @description Bearer <token>, where <token> is one of the task's trigger_tokens */
+                Authorization?: string;
+            };
+            path: {
+                /** @description Task name */
+                taskName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TriggerRunInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     getLocalCredentials: {
         parameters: {
             query?: never;
@@ -2418,7 +2511,7 @@ export interface operations {
                 /** @description Filter by task name */
                 taskName?: string;
                 /** @description Filter by what triggered the run */
-                triggeredBy?: "cron" | "api" | "ui" | "cli" | "station" | "service" | "startup" | "";
+                triggeredBy?: "cron" | "api" | "ui" | "cli" | "station" | "service" | "startup" | "token" | "";
                 /** @description Only runs created at or after this RFC3339 time */
                 createdAfter?: string;
                 /** @description Only runs created at or before this RFC3339 time */

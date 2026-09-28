@@ -434,6 +434,11 @@ type taskWire struct {
 	// are never manually triggered.
 	Params []paramWire `toml:"params,omitempty"`
 
+	// TriggerTokens decodes on [tasks.*] only — never [defaults], where one
+	// shared token would defeat per-task scoping, and never [services.*],
+	// which are not triggerable.
+	TriggerTokens []string `toml:"trigger_tokens,omitempty"`
+
 	Cron     string `toml:"cron,omitempty"`
 	Timezone string `toml:"timezone,omitempty"`
 	Jitter   string `toml:"jitter,omitempty"`
@@ -469,6 +474,7 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	}
 	task.OnOverlap = w.OnOverlap
 	task.Parameters = params
+	task.TriggerTokens = w.TriggerTokens
 	task.Cron = w.Cron
 	task.Timezone = w.Timezone
 	task.Jitter = jitter

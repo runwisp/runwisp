@@ -307,15 +307,21 @@ func (srv *Server) humaTriggerRun(ctx context.Context, input *TriggerRunInput) (
 	if input.Body != nil {
 		params = input.Body.Params
 	}
-	triggeredBy := viaToTriggeredBy(input.Via)
-	if input.Wait {
-		run, err := srv.runService.TriggerRunAndWait(ctx, input.TaskName, params, triggeredBy, time.Duration(input.WaitTimeout)*time.Second)
+	return srv.dispatchTrigger(ctx, input.TaskName, params, viaToTriggeredBy(input.Via), input.Wait, input.WaitTimeout)
+}
+
+// dispatchTrigger is the shared tail of every REST trigger (session-authed
+// /run and token-authed /hooks): trigger now, or trigger and hold the request
+// until the run ends when wait is set.
+func (srv *Server) dispatchTrigger(ctx context.Context, taskName string, params map[string]*string, triggeredBy model.TriggeredBy, wait bool, waitTimeoutSec int) (*RunOutput, error) {
+	if wait {
+		run, err := srv.runService.TriggerRunAndWait(ctx, taskName, params, triggeredBy, time.Duration(waitTimeoutSec)*time.Second)
 		if err != nil {
 			return nil, mapDomainError(ctx, err, "Failed to trigger run")
 		}
 		return &RunOutput{Body: *run}, nil
 	}
-	run, err := srv.runService.TriggerRun(ctx, input.TaskName, params, triggeredBy)
+	run, err := srv.runService.TriggerRun(ctx, taskName, params, triggeredBy)
 	if err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to trigger run")
 	}
