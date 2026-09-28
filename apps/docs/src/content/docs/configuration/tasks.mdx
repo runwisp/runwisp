@@ -249,7 +249,8 @@ timeout = "9m"
 **type**: `integer` **default**: `0` **min**: `0` **max**: `100`
 
 Extra attempts after the first one fails. A retry happens only when the reason
-is `failed`, `timeout`, `crashed`, `log_overflow`, or `start_failed`, **and**
+is `failed`, `timeout`, `crashed`, `log_overflow`, `start_failed`, or
+`unhealthy`, **and**
 [`failures`](#failures) counts the run as a failure. A manual stop or a kill ends
 the retries.
 
@@ -334,7 +335,7 @@ It also limits [`retry_attempts`](#retry_attempts) and services'
 
 ### failures
 
-**type**: `string[]` **default**: `["failed", "timeout", "crashed", "log_overflow", "start_failed", "missed"]`
+**type**: `string[]` **default**: `["failed", "timeout", "crashed", "log_overflow", "start_failed", "unhealthy", "missed"]`
 
 Which run outcomes count as a failure.
 
@@ -353,6 +354,7 @@ Possible values:
 - `crashed`: still running when the daemon itself was killed (recorded at the next start)
 - `log_overflow`: hit [`log_max_size`](#log_max_size) under `log_on_full = "kill"`
 - `start_failed`: a service gave up after too many fast restarts (see [`restart_attempts`](/configuration/services/#restart_attempts))
+- `unhealthy`: a service instance was stopped for failing its [`health_check`](/configuration/services/#health_check)
 - `missed`: a scheduled firing was skipped while the daemon was down
 - `stopped`: an operator stopped the run
 - `daemon_stopped`: still running when the daemon shut down

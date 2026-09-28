@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: "[services.*]"
-description: "Long-running processes: instances, restarts, boot order, graceful shutdown, and the keys shared with tasks."
+description: "Long-running processes: instances, restarts, health checks, boot order, graceful shutdown, and the keys shared with tasks."
 ---
 
 import Run from "./shared/_run.mdx";
@@ -124,8 +124,8 @@ Possible values:
 
 - `always`: restart after any exit
 - `on_failure`: restart only when [`failures`](#failures) counts the exit as a
-  failure (and the reason is `failed`, `timeout`, `crashed`, `log_overflow`, or
-  `start_failed`)
+  failure (and the reason is `failed`, `timeout`, `crashed`, `log_overflow`,
+  `start_failed`, or `unhealthy`)
 - `never`: don't restart; one exit is final
 
 A manual **Restart** always starts the instance again, whatever this is set to.
@@ -150,6 +150,9 @@ restart_delay = "2s"
 How long an instance must stay up to count as healthy. Reaching it resets the
 restart backoff and the failed-start count used by
 [`restart_attempts`](#restart_attempts).
+
+With a [`health_check`](#health_check), it is the deadline for the first passing
+check instead, and `0` is rejected.
 
 ```toml
 [services.api-worker]
@@ -186,8 +189,10 @@ Possible values: `constant`, `linear`, `exponential` (the same curves as
 
 ### When a service can't start: FATAL
 
-A **failed start** is a failure exit before the instance reached
-[`healthy_after`](#healthy_after). A clean exit (success code) never counts.
+A **failed start** is a failure exit before the instance became healthy: before
+it reached [`healthy_after`](#healthy_after), or, with a
+[`health_check`](#health_check), before its check first passed. A clean exit
+(success code) never counts.
 
 - After more than [`restart_attempts`](#restart_attempts) failed starts in a
   row, the instance goes **FATAL**: it stops restarting, a `start_failed` run is
@@ -202,6 +207,65 @@ A **failed start** is a failure exit before the instance reached
 run              = "exit 1"   # can never come up
 healthy_after    = "5s"       # must stay up 5s to count as healthy
 restart_attempts = 2          # give up after 2 failed starts in a row
+```
+
+## Health checks
+
+### health_check
+
+**type**: `table` **default**: none
+
+A command that decides when an instance is healthy, and stops it when it stops
+passing. Without it, uptime ([`healthy_after`](#healthy_after)) is the only
+signal.
+
+```toml
+[services.api]
+run = "./api-server"
+
+[services.api.health_check]
+run = "curl -fsS http://127.0.0.1:8080/healthz"
+```
+
+- The check runs on its schedule next to every running instance. A non-zero
+  exit fails it.
+- The first pass makes the instance healthy. Failures before that are ignored,
+  but if nothing passes within [`healthy_after`](#healthy_after), the instance is
+  stopped as `unhealthy` and counts as a
+  [failed start](#when-a-service-cant-start-fatal).
+- Once healthy, a failed check is retried. When the retries run out, the instance
+  is stopped as `unhealthy` and [`restart`](#restart) decides what happens next.
+- Each failed check, the first pass, and the reason for a stop are written to the
+  instance's log. The check gets no runs of its own.
+
+The table takes these task keys, with the same meaning:
+
+| Key                                                                                                                                                                                                                    | Default                                               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| [`run`](/configuration/tasks/#run)                                                                                                                                                                                     | required                                              |
+| [`cron`](/configuration/tasks/#cron)                                                                                                                                                                                   | `"@every 10s"`                                        |
+| [`timezone`](/configuration/tasks/#timezone)                                                                                                                                                                           | the daemon's                                          |
+| [`timeout`](/configuration/tasks/#timeout)                                                                                                                                                                             | `[defaults]` timeout, else `5s`; `0` is rejected      |
+| [`failures`](/configuration/tasks/#failures)                                                                                                                                                                           | `[defaults]` failures, not the service's              |
+| [`retry_attempts`](/configuration/tasks/#retry_attempts)                                                                                                                                                               | `2`; `0` stops the instance on the first failed check |
+| [`retry_delay`](/configuration/tasks/#retry_delay), [`retry_backoff`](/configuration/tasks/#retry_backoff)                                                                                                             | as on tasks                                           |
+| [`working_dir`](/configuration/tasks/#working_dir), [`shell`](/configuration/tasks/#shell), [`umask`](/configuration/tasks/#umask), [`env_base`](/configuration/tasks/#env_base), [`user`](/configuration/tasks/#user) | the service's                                         |
+| [`env`](/configuration/tasks/#env), [`secrets`](/configuration/tasks/#secrets)                                                                                                                                         | merged over the service's, key by key                 |
+| [`env_file`](/configuration/tasks/#env_file), [`secrets_file`](/configuration/tasks/#secrets_file)                                                                                                                     | none                                                  |
+| [`compose_file`](/configuration/tasks/#compose_file), [`compose_service`](/configuration/tasks/#compose_service), [`compose_mode`](/configuration/tasks/#compose_mode)                                                 | none                                                  |
+
+A check that times out is killed at once. Ticks that fall while a check is still
+running are skipped.
+
+To check inside a running compose container, set `compose_file` and
+`compose_service`. Only `compose_mode = "exec"` is allowed, and the check then
+takes nothing from the service:
+
+```toml
+[services.api.health_check]
+run             = "curl -fsS http://127.0.0.1:8080/healthz"
+compose_file    = "./compose.yaml"
+compose_service = "api"
 ```
 
 ## Startup
@@ -245,7 +309,8 @@ priority = 10
 **type**: `string[]` **default**: none
 
 Services that must be healthy (at least one instance up for its
-[`healthy_after`](#healthy_after)) before this one starts at boot.
+[`healthy_after`](#healthy_after), or passing its
+[`health_check`](#health_check)) before this one starts at boot.
 
 ```toml
 [services.db]
@@ -289,7 +354,7 @@ timeout = "24h"
 
 ### failures
 
-**type**: `string[]` **default**: `["failed", "timeout", "crashed", "log_overflow", "start_failed", "missed"]`
+**type**: `string[]` **default**: `["failed", "timeout", "crashed", "log_overflow", "start_failed", "unhealthy", "missed"]`
 
 Which outcomes count as a failure: they turn the run red, fire [`notify`](#notify),
 and (with `restart = "on_failure"`) cause a restart. Same syntax as on tasks; see
@@ -433,12 +498,14 @@ instance goes [FATAL](#when-a-service-cant-start-fatal).
 ## What's rejected on services
 
 - [`cron`](/configuration/tasks/#cron), [`catch_up`](/configuration/tasks/#catch_up):
-  services don't run on a schedule.
+  services don't run on a schedule. A [`health_check`](#health_check) takes its
+  own `cron`.
 - [`params`](/configuration/tasks/#params): services don't take parameters.
 - [`retry_attempts`](/configuration/tasks/#retry_attempts),
   [`retry_delay`](/configuration/tasks/#retry_delay),
   [`retry_backoff`](/configuration/tasks/#retry_backoff): use
   [`restart_delay`](#restart_delay) and [`restart_backoff`](#restart_backoff).
+  A [`health_check`](#health_check) takes its own.
 - [`on_overlap`](/configuration/tasks/#on_overlap),
   [`max_concurrent`](/configuration/tasks/#max_concurrent),
   [`max_queued`](/configuration/tasks/#max_queued): use [`instances`](#instances).

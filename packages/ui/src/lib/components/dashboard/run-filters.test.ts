@@ -179,6 +179,7 @@ describe("STATUS_BUCKETS", () => {
         "timeout",
         "log_overflow",
         "start_failed",
+        "unhealthy",
         "missed",
     ];
 

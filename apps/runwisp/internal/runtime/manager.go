@@ -33,8 +33,8 @@ const (
 )
 
 // serviceHealthPollInterval is how often WaitServiceHealthy re-checks a
-// dependency's readiness. Readiness is time-based, so a tick this short keeps
-// boot gating responsive without busy-looping.
+// dependency's readiness. Readiness is uptime- or probe-based, so a tick this
+// short keeps boot gating responsive without busy-looping.
 const serviceHealthPollInterval = 250 * time.Millisecond
 
 // errShuttingDown is returned by TriggerRunWithOptions once Shutdown has begun.
@@ -138,6 +138,13 @@ func NewTaskManager(exec executor.Executor, bus *events.Bus, clock func() time.T
 		shutdownCancel: shutdownCancel,
 	}
 	m.gate = newJitterGate(clock, m.triggerJittered)
+
+	type runWatcherSetter interface {
+		SetRunWatcher(executor.RunWatcher)
+	}
+	if setter, ok := exec.(runWatcherSetter); ok {
+		setter.SetRunWatcher(m.watchRun)
+	}
 	return m
 }
 
@@ -953,10 +960,10 @@ func (m *defaultTaskManager) StopService(taskName string) error {
 	return nil
 }
 
-// ServiceHealthy reports whether a service currently has at least one instance
-// that has been running for at least its healthy_after. Non-services and
-// unknown tasks report false. This is the live readiness signal consumed by
-// depends_on boot gating.
+// ServiceHealthy reports whether a service currently has at least one healthy
+// instance (see services.Supervisor.IsHealthy). Non-services and unknown tasks
+// report false. This is the live readiness signal consumed by depends_on boot
+// gating.
 func (m *defaultTaskManager) ServiceHealthy(taskName string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -972,8 +979,8 @@ func (m *defaultTaskManager) ServiceHealthy(taskName string) bool {
 // intervention (operator-stopped, or every live slot gone and a FATAL one
 // left). It returns nil only on healthy; every other exit is an error so the
 // caller can decide whether to proceed anyway. It polls rather than waiting on
-// a condition variable: readiness is time-based (healthy_after), so a slot
-// already running crosses the threshold with no state change to signal on.
+// a condition variable: uptime-based readiness (healthy_after) crosses its
+// threshold with no state change to signal on.
 func (m *defaultTaskManager) WaitServiceHealthy(ctx context.Context, taskName string) error {
 	if m.ServiceHealthy(taskName) {
 		return nil
@@ -1094,14 +1101,7 @@ func serviceRollupState(stopped bool, running, fatal, desired int) string {
 // startRun registers the run and spawns the execution goroutine. Assumes m.mu
 // is held.
 func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run) {
-	ctx := context.Background()
-	var cancel context.CancelFunc
-
-	if timeout := task.TimeoutValue(); timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-	} else {
-		ctx, cancel = context.WithCancel(ctx)
-	}
+	ctx, cancel := task.WithTimeout(context.Background())
 
 	active := &ActiveRun{
 		Run:       run,
@@ -1131,9 +1131,10 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	run.StartedAt = &active.StartedAt
 	if task.Kind.IsService() {
 		// Stamp the live-readiness clock the moment the instance is running so
-		// dependents gating on this service measure uptime from here.
+		// dependents gating on this service measure uptime from here. A run
+		// started under a health_check is healthy only once watchRun says so.
 		if ts := m.tasks[task.Name]; ts != nil && ts.supervisor != nil {
-			ts.supervisor.MarkLive(run.InstanceIndex)
+			ts.supervisor.MarkLive(run.InstanceIndex, task.HealthCheck != nil)
 		}
 	}
 	m.mu.Unlock()

@@ -49,6 +49,7 @@ var crossKindKeyHints = map[string]string{
 	"autostart":        "autostart is only valid on [services.*]",
 	"instances":        "instances is only valid on [services.*]",
 	"depends_on":       "depends_on is only valid on [services.*]",
+	"health_check":     "health_check is only valid on [services.*]",
 
 	// Task-only keys, mistakenly set on a service.
 	"cron":           "cron is only valid on [tasks.*] — services are not cron-driven",
@@ -68,10 +69,12 @@ var crossKindKeyHints = map[string]string{
 // when none applies.
 //
 // A single-segment key means an entire top-level table failed to match (see
-// removedTableHints). Otherwise, when the key path starts with "tasks" or
-// "services", the segment right before the leaf is the operator's own
-// task/service name rather than the literal table name, so cross-kind
-// guidance is matched on the leaf alone (crossKindKeyHints). Every other case
+// removedTableHints). Otherwise, when the key is a direct child of a
+// [tasks.<name>] or [services.<name>] table, the segment right before the leaf
+// is the operator's own task/service name rather than the literal table name,
+// so cross-kind guidance is matched on the leaf alone (crossKindKeyHints).
+// Deeper keys (inside [services.<name>.health_check]) are not unit keys, so
+// they get no cross-kind hint — did-you-mean covers them. Every other case
 // matches on the failing key's immediate table and leaf name (e.g.
 // "defaults"+"on_overlap") via misplacedKeyHints — a correctly-placed key
 // never has a strict-mode error to begin with.
@@ -83,7 +86,7 @@ func sectionHint(key toml.Key) string {
 		return ""
 	}
 	leaf := key[len(key)-1]
-	if key[0] == "tasks" || key[0] == "services" {
+	if len(key) == 3 && (key[0] == "tasks" || key[0] == "services") {
 		if hint := crossKindKeyHints[leaf]; hint != "" {
 			return hint
 		}

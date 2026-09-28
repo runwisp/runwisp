@@ -23,15 +23,30 @@ const defaultHealthyAfter = 60 * time.Second
 
 // slotState is one instance slot's state: whether it's currently occupied,
 // its consecutive-restart attempt counter, when it last reached the running
-// phase, its consecutive fast-failure streak, and whether it has tripped into
-// the FATAL state. Keyed by slot index on Supervisor.slots so all five facets
-// of a slot move together instead of four parallel maps updated in lockstep.
+// phase and how its health is judged there, its consecutive fast-failure
+// streak, and whether it has tripped into the FATAL state. Keyed by slot index
+// on Supervisor.slots so every facet of a slot moves together instead of
+// parallel maps updated in lockstep.
 type slotState struct {
-	live       bool
-	attempts   int
-	liveSince  time.Time
+	live      bool
+	attempts  int
+	liveSince time.Time
+	// gated marks a run started under a health_check: it is healthy only once
+	// the check passes (healthy), never by uptime. Stamped per run by MarkLive
+	// so a reload that adds or drops the check never re-judges a live run.
+	gated      bool
+	healthy    bool
 	startFails int
 	fatal      bool
+}
+
+// wasHealthy reports whether the slot's current run has proven healthy: its
+// health check passed, or — without one — it has been up for healthyAfter.
+func (st *slotState) wasHealthy(uptime, healthyAfter time.Duration) bool {
+	if st.gated {
+		return st.healthy
+	}
+	return uptime >= healthyAfter
 }
 
 // Supervisor tracks the live instance slots for one service task and the
@@ -50,7 +65,8 @@ type Supervisor struct {
 
 // NewSupervisor creates a Supervisor for a service with the given desired
 // instance count. instances < 1 is normalised to 1. healthyAfter is the
-// minimum live duration that marks an instance as healthy — it both resets the
+// minimum live duration that marks an instance without a health check as
+// healthy (a gated one needs MarkHealthy instead) — being healthy both resets the
 // consecutive-restart counter and clears the failed-start streak; non-positive
 // values fall back to the package default. startStopped seeds the operator-stop
 // flag so an autostart=false service boots without spawning instances until an
@@ -141,27 +157,30 @@ func (s *Supervisor) Reserve(requested *int) (int, error) {
 // and tracks consecutive fast failures toward the FATAL threshold.
 //
 // The returned nextAttempt is the index to feed into retry.ComputeRestartDelay
-// for the next restart (0 means "first restart in this backoff cycle"). Runs
-// that lasted at least the supervisor's configured healthy_after reset that
-// counter before the value is captured.
+// for the next restart (0 means "first restart in this backoff cycle"). A run
+// that became healthy (slotState.wasHealthy) resets that counter before the
+// value is captured.
 //
 // fatal reports whether this exit tripped the slot into the FATAL state: the
-// instance fast-failed (wasFailure, before reaching healthy_after of uptime)
-// more than startRetries times in a row. A FATAL slot is left empty — the
-// caller must not restart it. A healthy run (reached healthy_after) or any
-// non-failure exit clears the fast-failure streak and any prior FATAL flag.
+// instance fast-failed (wasFailure, before it ever became healthy) more than
+// startRetries times in a row. A FATAL slot is left empty — the caller must
+// not restart it. A healthy run or any non-failure exit clears the
+// fast-failure streak and any prior FATAL flag.
 func (s *Supervisor) RecordExit(idx int, runDuration time.Duration, startRetries int, wasFailure bool) (nextAttempt int, fatal bool) {
 	st := s.mutateSlot(idx)
+	healthy := st.wasHealthy(runDuration, s.healthyAfter)
 	st.live = false
 	st.liveSince = time.Time{}
+	st.gated = false
+	st.healthy = false
 
-	if runDuration >= s.healthyAfter {
+	if healthy {
 		st.attempts = 0
 	}
 	nextAttempt = st.attempts
 	st.attempts = nextAttempt + 1
 
-	if !wasFailure || runDuration >= s.healthyAfter {
+	if !wasFailure || healthy {
 		st.startFails = 0
 		st.fatal = false
 		return nextAttempt, false
@@ -182,12 +201,23 @@ func (s *Supervisor) IsLive(idx int) bool {
 // MarkLive stamps the moment a slot reached the running phase. The runtime
 // calls it once per run, when the run transitions to PhaseRunning — that is the
 // reference point for the live readiness gate, distinct from the reservation
-// recorded by Reserve.
-func (s *Supervisor) MarkLive(idx int) {
-	s.mutateSlot(idx).liveSince = s.clock()
+// recorded by Reserve. gated reports that the run started under a
+// health_check, so only MarkHealthy can make it healthy.
+func (s *Supervisor) MarkLive(idx int, gated bool) {
+	st := s.mutateSlot(idx)
+	st.liveSince = s.clock()
+	st.gated = gated
+	st.healthy = false
 }
 
-// IsHealthy reports whether the service currently has at least one instance
+// MarkHealthy records that the health check of the slot's current run passed.
+// The slot stays healthy until the run exits.
+func (s *Supervisor) MarkHealthy(idx int) {
+	s.mutateSlot(idx).healthy = true
+}
+
+// IsHealthy reports whether the service currently has at least one healthy
+// instance: one whose health check has passed, or — without a check — one
 // that has been running continuously for at least healthy_after. This is the
 // live readiness signal a dependent waits on at boot. It is false while the
 // service is operator-stopped and ignores FATAL slots (they are not coming
@@ -201,7 +231,7 @@ func (s *Supervisor) IsHealthy() bool {
 		if st.liveSince.IsZero() || st.fatal {
 			continue
 		}
-		if now.Sub(st.liveSince) >= s.healthyAfter {
+		if st.wasHealthy(now.Sub(st.liveSince), s.healthyAfter) {
 			return true
 		}
 	}
@@ -259,7 +289,7 @@ func (s *Supervisor) MarkRunning() {
 func (s *Supervisor) IsStopped() bool { return s.stopped }
 
 // StartFails returns the current consecutive fast-failure count for a slot —
-// the number of below-healthy_after exits since its last healthy run. Exposed
+// the number of failure exits since its last healthy run. Exposed
 // for the FATAL event payload and tests.
 func (s *Supervisor) StartFails(idx int) int { return s.slot(idx).startFails }
 

@@ -13,6 +13,7 @@ import {
     FileExclamationPoint,
     CalendarX,
     OctagonX,
+    HeartCrack,
 } from "@lucide/svelte";
 import type { Component } from "svelte";
 import { displayStatus, type RunStatus, type Run } from "@runwisp/common";
@@ -152,6 +153,16 @@ export const RUN_STATUS_CONFIG: Record<RunStatus, RunStatusConfig> = {
         badge: "bg-danger-soft text-danger-soft-text",
         description:
             "The run (or service instance) kept failing; after restart_attempts consecutive failures, RunWisp gave up restarting it automatically.",
+    },
+    unhealthy: {
+        icon: HeartCrack,
+        color: "text-danger-surface",
+        bg: "bg-danger-soft",
+        border: "border-danger-soft",
+        dot: "bg-danger-surface",
+        badge: "bg-danger-soft text-danger-soft-text",
+        description:
+            "The service instance kept failing its health_check, so RunWisp stopped it. Its restart policy decides what happens next.",
     },
     pending: {
         icon: Clock,

@@ -70,10 +70,16 @@ const (
 	ReasonMissed EndReason = "missed"
 	// ReasonStartFailed marks the final, FATAL instance run of a service that
 	// fast-failed more than `restart_attempts` times in a row without ever
-	// reaching `healthy_after` of uptime. The supervisor stops restarting it;
+	// becoming healthy (reaching `healthy_after` of uptime, or passing its
+	// health_check). The supervisor stops restarting it;
 	// this run row is the durable record of the give-up. Treated as a failure
 	// for retry/notify/station classification.
 	ReasonStartFailed EndReason = "start_failed"
+	// ReasonUnhealthy marks a service instance its health_check stopped: the
+	// probe never passed within healthy_after, or kept failing (through its
+	// retry_* chain) after it had passed. Treated as a failure, so restart =
+	// "on_failure" restarts it.
+	ReasonUnhealthy EndReason = "unhealthy"
 )
 
 // AllEndReasons is the canonical, ordered list of end-reason values. The order
@@ -93,6 +99,7 @@ var AllEndReasons = []EndReason{
 	ReasonDaemonStopped,
 	ReasonMissed,
 	ReasonStartFailed,
+	ReasonUnhealthy,
 }
 
 const endReasonSchemaName = "EndReason"

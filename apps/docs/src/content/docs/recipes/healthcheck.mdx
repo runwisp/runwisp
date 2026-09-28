@@ -8,6 +8,10 @@ description: An HTTP health check every 5 minutes with RunWisp. Skips on overlap
 A health check is a `curl` on a schedule. The settings around it decide how
 quickly you hear about an outage and how much noise a flaky service makes.
 
+To check a service RunWisp runs itself, and restart it when the check keeps
+failing, use its [`health_check`](/configuration/services/#health_check)
+instead.
+
 ## The task
 
 ```toml

@@ -334,7 +334,8 @@
           "dst_skipped",
           "daemon_stopped",
           "missed",
-          "start_failed"
+          "start_failed",
+          "unhealthy"
         ],
         "type": "string"
       },
@@ -1697,7 +1698,7 @@
             "type": "string"
           },
           "healthyAfter": {
-            "description": "For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start",
+            "description": "For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start. With a health_check, the deadline for its first pass instead.",
             "format": "int64",
             "type": "integer"
           },
@@ -2045,7 +2046,7 @@
             "type": "string"
           },
           "healthyAfter": {
-            "description": "For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start",
+            "description": "For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start. With a health_check, the deadline for its first pass instead.",
             "format": "int64",
             "type": "integer"
           },

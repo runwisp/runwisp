@@ -278,7 +278,8 @@
             displayed === "crashed" ||
             displayed === "log_overflow" ||
             displayed === "missed" ||
-            displayed === "start_failed"
+            displayed === "start_failed" ||
+            displayed === "unhealthy"
         )
             return "var(--color-danger-surface)";
         if (displayed === "timeout" || displayed === "daemon_stopped" || displayed === "queue_full")

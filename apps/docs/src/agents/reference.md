@@ -94,7 +94,7 @@ timeout:             dur          — per-attempt wall-clock cap; unset = no tim
 jitter:              dur          — start-spread window inherited by cron tasks; off when unset (TASKS only)
 shell:               path =/bin/sh — interpreter for run scripts (absolute path); see FAIL-FAST
 stop_signal:         enum =SIGTERM — stop-ladder signal: SIGTERM|SIGINT|SIGQUIT|SIGHUP|SIGKILL|SIGUSR1|SIGUSR2
-failures:            []str        — outcomes classified as a failure (stats/UI/notify, and gates retry/restart); tokens are reason names (failed,timeout,crashed,log_overflow,start_failed,missed,stopped,daemon_stopped,skipped,queue_full,dst_skipped; not succeeded) or exit codes ("42","1-23"; 1..255). Default [failed,timeout,crashed,log_overflow,start_failed,missed]. is_failure = reason∈tokens OR (reason==failed AND exit∈ranges). Bare list replaces; all-+/- tokens ("-missed","+stopped") adjust the inherited set (task adjusts [defaults], [defaults] adjusts built-in); mixing bare & +/- rejected. exit 0 always success. retry_attempts/restart=on_failure fire only when reason∈{failed,timeout,crashed,log_overflow,start_failed} AND is_failure — narrowing failures narrows retry/restart; promoting stopped/missed never makes them retry
+failures:            []str        — outcomes classified as a failure (stats/UI/notify, and gates retry/restart); tokens are reason names (failed,timeout,crashed,log_overflow,start_failed,unhealthy,missed,stopped,daemon_stopped,skipped,queue_full,dst_skipped; not succeeded) or exit codes ("42","1-23"; 1..255). Default [failed,timeout,crashed,log_overflow,start_failed,unhealthy,missed]. is_failure = reason∈tokens OR (reason==failed AND exit∈ranges). Bare list replaces; all-+/- tokens ("-missed","+stopped") adjust the inherited set (task adjusts [defaults], [defaults] adjusts built-in); mixing bare & +/- rejected. exit 0 always success. retry_attempts/restart=on_failure fire only when reason∈{failed,timeout,crashed,log_overflow,start_failed,unhealthy} AND is_failure — narrowing failures narrows retry/restart; promoting stopped/missed never makes them retry
 log_max_size:        size =100mb  — per-run log cap (effective task default)
 log_on_full:         enum =drop_old — drop_new | drop_old | kill
 keep_runs:           int          — row-count retention; 0..1000000 (0 = keep none)
@@ -179,11 +179,31 @@ restart:             enum =always     — never | on_failure | always
 instances:           int  =1           — parallel instances; 1..64
 restart_delay:       dur  =1s          — delay before a restart; 0 = restart instantly, kept literally if set
 restart_backoff:     enum =exponential — constant | linear | exponential
-healthy_after:       dur  =60s         — uptime that counts as healthy: resets the restart counter and clears the failed-start streak; 0 = healthy immediately, kept literally if set
+healthy_after:       dur  =60s         — uptime that counts as healthy: resets the restart counter and clears the failed-start streak; 0 = healthy immediately, kept literally if set. With health_check: deadline for the first passing check (0 rejected); missing it stops the instance as unhealthy and counts as a failed start
 priority:            int  =0           — boot start order across services; lower starts first, ties break on name
 autostart:           bool =true        — start at boot; false boots it stopped until started from UI/API
 depends_on:          []string          — services that must be healthy before this one starts at boot (order only)
+health_check:        table             — optional probe deciding health (see below)
 ```
+
+`[services.<name>.health_check]` is a shell probe run next to each live instance; no run row, log file, or notification of its own (its results are SYSTEM lines in the instance's log). The first pass makes the instance healthy (satisfies depends_on, resets restart backoff and the failed-start streak); failures before it are ignored until `healthy_after` runs out. After that, a failed check is retried per `retry_*` and, when the retries run out, the instance is stopped with end reason `unhealthy` (then `restart` applies). Keys, all task keys with task semantics:
+
+```
+run:                 string (required) — the probe command; non-zero exit = failed check
+cron:                string =@every 10s — when to check; ticks during a running check are skipped
+timezone:            string =[daemon] timezone
+timeout:             dur  =[defaults].timeout, else 5s — 0 rejected; a timed-out probe is killed immediately
+failures:            []str =[defaults]/built-in (not the service's) — which probe outcomes fail the check
+retry_attempts:      int  =2           — extra checks after a failed one before the instance is unhealthy; 0 = first failed check
+retry_delay:         dur  =5s
+retry_backoff:       enum =constant
+working_dir, shell, umask, env_base, user — unset = the service's value
+env, secrets         — merged key by key over the service's ([defaults] < service < probe; each side's *_file beneath its inline table)
+env_file, secrets_file — the probe's own layer
+compose_file, compose_service, compose_mode — never inherited; set compose_file to exec into a running container (compose_mode "exec" only). A compose probe inherits nothing from the service
+```
+
+Any other key is rejected. `health_check` on `[tasks.*]` is rejected.
 
 ### [compose.&lt;alias&gt;] (import docker-compose services)
 
@@ -245,7 +265,7 @@ Secret-bearing values (`webhook_url`, `bot_token`, `password`, …) arrive final
 
 ```
 match.failure: bool     — match any run classified as a failure (same axis as [tasks.*] failures) (optional)
-match.kinds:   []string — outcomes (same vocab as failures): started | succeeded | failed | timeout | crashed | log_overflow | queue_full | stopped | daemon_stopped | missed | service.fatal | log.disk_pressure (notify.delivery_failed rejected)
+match.kinds:   []string — outcomes (same vocab as failures): started | succeeded | failed | timeout | crashed | log_overflow | unhealthy | queue_full | stopped | daemon_stopped | missed | service.fatal | log.disk_pressure (notify.delivery_failed rejected)
 match.task:    string   — glob over task name (optional)
 notifiers:      []string (req, non-empty) — notifier ids (or "inapp"); "id:#override" inline target (slack #/@, telegram chat_id, smtp/sendmail email)
 ```

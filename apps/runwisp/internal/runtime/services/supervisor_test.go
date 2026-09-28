@@ -196,7 +196,7 @@ func TestMissingSlotsExcludesFatal(t *testing.T) {
 	s := newSupervisorForTest("svc", 1)
 	_, err := s.Reserve(nil)
 	require.NoError(t, err)
-	s.MarkLive(0)
+	s.MarkLive(0, false)
 	_, fatal := s.RecordExit(0, time.Millisecond, 0, true)
 	require.True(t, fatal)
 
@@ -213,7 +213,7 @@ func TestIsHealthyTracksLiveUptime(t *testing.T) {
 
 	_, err := s.Reserve(nil)
 	require.NoError(t, err)
-	s.MarkLive(0)
+	s.MarkLive(0, false)
 	assert.False(t, s.IsHealthy(), "just-live instance has not reached the threshold")
 
 	now = now.Add(threshold - time.Second)
@@ -235,7 +235,7 @@ func TestIsHealthyFalseWhenStopped(t *testing.T) {
 
 	_, err := s.Reserve(nil)
 	require.NoError(t, err)
-	s.MarkLive(0)
+	s.MarkLive(0, false)
 	now = now.Add(threshold)
 	require.True(t, s.IsHealthy())
 
@@ -252,7 +252,7 @@ func TestIsHealthyIgnoresFatalSlot(t *testing.T) {
 	// Slot 0 trips FATAL via a fast failure; slot 1 stays a fresh reservation.
 	_, err := s.Reserve(nil)
 	require.NoError(t, err)
-	s.MarkLive(0)
+	s.MarkLive(0, false)
 	_, fatal := s.RecordExit(0, time.Millisecond, 0, true)
 	require.True(t, fatal)
 
@@ -270,4 +270,69 @@ func TestSetInstancesAffectsSubsequentReserve(t *testing.T) {
 	idx, err := s.Reserve(nil)
 	require.NoError(t, err)
 	assert.Equal(t, 1, idx)
+}
+
+// A slot whose run started under a health_check is healthy only once the check
+// has passed, however long it has been up, and until it exits.
+func TestIsHealthyGatedSlotNeedsMarkHealthy(t *testing.T) {
+	const threshold = 30 * time.Second
+	now := time.Unix(0, 0)
+	s := NewSupervisor("svc", 1, threshold, false, func() time.Time { return now })
+	_, err := s.Reserve(nil)
+	require.NoError(t, err)
+	s.MarkLive(0, true)
+
+	now = now.Add(time.Hour)
+	assert.False(t, s.IsHealthy(), "uptime alone never makes a gated slot healthy")
+
+	s.MarkHealthy(0)
+	assert.True(t, s.IsHealthy())
+
+	s.RecordExit(0, time.Hour, 0, false)
+	_, err = s.Reserve(nil)
+	require.NoError(t, err)
+	s.MarkLive(0, true)
+	assert.False(t, s.IsHealthy(), "a new run starts unhealthy again")
+}
+
+// A gated run that never passed is a failed start however long it ran: it
+// keeps the backoff climbing and counts toward FATAL. One that passed resets
+// both, however briefly it ran.
+func TestRecordExitGatedSlotJudgedByHealthCheck(t *testing.T) {
+	s := NewSupervisor("svc", 1, time.Second, false, nil)
+	exit := func(passed bool) (int, bool) {
+		_, err := s.Reserve(nil)
+		require.NoError(t, err)
+		s.MarkLive(0, true)
+		if passed {
+			s.MarkHealthy(0)
+		}
+		return s.RecordExit(0, time.Hour, 1, true)
+	}
+
+	_, fatal := exit(false)
+	require.False(t, fatal)
+	require.Equal(t, 1, s.StartFails(0), "a long run without a pass is a failed start")
+
+	next, fatal := exit(true)
+	assert.False(t, fatal)
+	assert.Equal(t, 0, next, "a passed check resets the backoff")
+	assert.Zero(t, s.StartFails(0), "a passed check clears the failed-start streak")
+
+	exit(false)
+	_, fatal = exit(false)
+	assert.True(t, fatal, "two failed starts in a row exceed start retries 1")
+}
+
+// Gating belongs to the run, not the supervisor: an ungated MarkLive (the
+// service's health_check was removed on reload) falls back to uptime.
+func TestMarkLiveUngatedUsesUptime(t *testing.T) {
+	s := NewSupervisor("svc", 1, time.Second, false, nil)
+	_, err := s.Reserve(nil)
+	require.NoError(t, err)
+	s.MarkLive(0, false)
+	next, fatal := s.RecordExit(0, time.Hour, 0, true)
+	assert.False(t, fatal)
+	assert.Equal(t, 0, next)
+	assert.Zero(t, s.StartFails(0))
 }
