@@ -788,3 +788,25 @@ func TestRunMissedTickCatchUp(t *testing.T) {
 		assert.Contains(t, gotReason, "catch_up")
 	})
 }
+
+// TestCountMissedTicks_EveryNotDeduped mirrors
+// TestSchedulerEveryFiresThroughDSTFallback for startup catch-up: the two must
+// agree on what would have fired. An @every tick whose wall-clock reading
+// repeats one from an hour earlier is still a missed run, so undercounting it
+// would understate the downtime gap.
+func TestCountMissedTicks_EveryNotDeduped(t *testing.T) {
+	loc, err := time.LoadLocation("Europe/Bratislava")
+	assert.NoError(t, err)
+
+	sched, err := cronspec.NewScheduleParser().Parse("@every 30m")
+	assert.NoError(t, err)
+
+	// 02:00 CEST through 03:00 CET on the fall-back day: four 30-minute ticks,
+	// of which 02:30 CEST and 02:30 CET share a wall-clock reading.
+	lastRun := time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC).In(loc)
+	now := time.Date(2026, 10, 25, 2, 0, 0, 0, time.UTC).In(loc)
+
+	got, _, truncated := countMissedTicks(sched, lastRun, now, 1000)
+	assert.False(t, truncated)
+	assert.Equal(t, 4, got, "all four fixed-interval ticks were missed; none is a DST duplicate")
+}

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `@every` tasks no longer lose runs on the night the clocks go back. An interval that divides an hour evenly (`@every 5m`, `30m`, `1h`) had its runs in the repeated hour recorded as `dst_skipped` instead of executed.
+
 ## [1.1.0] - 2026-09-26
 
 ### Added

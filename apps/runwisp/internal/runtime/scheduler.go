@@ -332,20 +332,40 @@ func resolveTaskSchedule(task *model.Task, defaultLoc *time.Location) (string, *
 func (scheduler *Scheduler) addTask(task *model.Task) error {
 	taskName := task.Name
 	spec, loc := scheduler.effectiveSpec(task)
-	entryID, err := scheduler.cron.AddFunc(spec, func() {
-		scheduler.fireOnce(taskName, loc)
-	})
-	if err == nil {
-		scheduler.entryIDs[taskName] = entryID
+	// Parse here rather than via cron.AddFunc so the firing callback knows
+	// whether it is on a fixed interval, which decides whether the DST
+	// fall-back dedup applies at all. The parser is the one the cron itself was
+	// built with, so the schedule is identical either way.
+	schedule, err := cronspec.NewScheduleParser().Parse(spec)
+	if err != nil {
+		return err
 	}
-	return err
+	fixedInterval := isFixedInterval(schedule)
+	scheduler.entryIDs[taskName] = scheduler.cron.Schedule(schedule, cron.FuncJob(func() {
+		scheduler.fireOnce(taskName, loc, fixedInterval)
+	}))
+	return nil
+}
+
+// isFixedInterval reports whether a schedule fires on a fixed duration
+// (@every) instead of matching wall-clock fields. Such a schedule has no
+// wall-clock time it can repeat: on a fall-back day every one of its firings
+// in the rewound hour is a genuine tick of real elapsed time, even though an
+// interval dividing an hour evenly ("@every 30m") lands each of them on a
+// local time already seen an hour earlier. The wall-clock dedup must therefore
+// skip them, mirroring the spring-forward exemption cronspec already makes for
+// the same schedules.
+func isFixedInterval(schedule cron.Schedule) bool {
+	_, ok := schedule.(cron.ConstantDelaySchedule)
+	return ok
 }
 
 // fireOnce is the cron callback for a scheduled task. It dedupes wall-clock
 // duplicates (DST fall-back) by tracking every wall-clock second already
 // fired within the task's current wall hour (see firedHour); a duplicate is
-// recorded as ReasonDSTSkipped and never reaches the executor.
-func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location) {
+// recorded as ReasonDSTSkipped and never reaches the executor. fixedInterval
+// tasks (@every) are exempt — see isFixedInterval.
+func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location, fixedInterval bool) {
 	// Runs in robfig/cron's own goroutine, which has no panic recovery: an
 	// unguarded panic here would crash the process and (with a TUI attached)
 	// leave the terminal in raw mode. Route it through the daemon's shutdown.
@@ -357,14 +377,17 @@ func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location) {
 
 	hour := wm.inHour()
 	scheduler.mutex.Lock()
-	fired, ok := scheduler.firedTicks[taskName]
-	if !ok || fired.hour != hour {
-		fired = &firedHour{hour: hour, ticks: make(map[wallSecond]struct{})}
-		scheduler.firedTicks[taskName] = fired
-	}
-	_, duplicate := fired.ticks[wm]
-	if !duplicate {
-		fired.ticks[wm] = struct{}{}
+	duplicate := false
+	if !fixedInterval {
+		fired, ok := scheduler.firedTicks[taskName]
+		if !ok || fired.hour != hour {
+			fired = &firedHour{hour: hour, ticks: make(map[wallSecond]struct{})}
+			scheduler.firedTicks[taskName] = fired
+		}
+		_, duplicate = fired.ticks[wm]
+		if !duplicate {
+			fired.ticks[wm] = struct{}{}
+		}
 	}
 	plan, hasJitter := scheduler.jitterPlans[taskName]
 	scheduler.mutex.Unlock()
