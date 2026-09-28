@@ -45,6 +45,9 @@ type TaskRunner interface {
 	// GetActiveRunCount reports how many runs for the given task are currently
 	// in flight. Unknown tasks return 0.
 	GetActiveRunCount(taskName string) int
+	// GetActiveRuns snapshots the runs currently in flight for the given task
+	// (copies, safe to read). Unknown tasks return nil.
+	GetActiveRuns(taskName string) []*ActiveRun
 	// StopTask cancels every active run of a non-service task and discards
 	// anything still queued, so nothing starts back up right behind the stop.
 	// The task's cron schedule is untouched — TOML stays the source of truth
@@ -87,7 +90,6 @@ type TaskManager interface {
 	// service instances (cron runs drain), and deletes the task's state once no
 	// run is in flight.
 	RemoveTask(taskName string)
-	GetActiveRuns(taskName string) []*ActiveRun
 	LoadPendingRuns(runs []model.Run) PendingRunsResult
 	// RecycleServiceInstances picks up a reload-changed service definition
 	// without the operator-restart semantics of RestartServiceInstances: a

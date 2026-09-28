@@ -98,6 +98,25 @@
       "description": "Secret values merged into the task env; never shown in API/UI.",
       "additionalProperties": { "type": "string" }
     },
+    "hookTokens": {
+      "type": "array",
+      "description": "Tokens for POST /api/hooks/tasks/<name>/<action> (run/start/stop/restart) without a session. A string grants every action; a table limits it to allow. Use ${VAR} or ${file:...}; never shown in API/UI. manual_trigger does not apply.",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/hookTokenValue" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["token"],
+            "properties": {
+              "token": { "$ref": "#/$defs/hookTokenValue" },
+              "allow": { "type": "array", "minItems": 1, "items": { "type": "string", "enum": ["run", "start", "stop", "restart"] }, "description": "Actions this token may perform. Omit for every action; services don't support run." }
+            }
+          }
+        ]
+      }
+    },
+    "hookTokenValue": { "type": "string", "minLength": 32, "pattern": "^\\S+$" },
     "unitCommon": {
       "type": "object",
       "description": "Properties declared byte-for-byte identically on task, service, and composeOverride, factored out once so the three can't drift out of sync (see wire.go's unitOverrideWire).",
@@ -212,7 +231,8 @@
         "compose_service": { "type": "string", "description": "Which compose service; requires compose_file. Default = task name." },
         "compose_mode": { "$ref": "#/$defs/composeUnitMode" },
         "notify": { "type": "array", "items": { "type": "string" }, "description": "Notifier ids (or \"id:override\", or \"inapp\") to page when this unit's `failures` policy classifies a run as a failure. Non-failure outcomes (a success ping, a timeout-only escalation) use an explicit [[route]] instead." },
-        "params": { "type": "array", "items": { "$ref": "#/$defs/param" }, "description": "Per-execution inputs ([tasks.*.params])." }
+        "params": { "type": "array", "items": { "$ref": "#/$defs/param" }, "description": "Per-execution inputs ([tasks.*.params])." },
+        "hook_tokens": { "$ref": "#/$defs/hookTokens" }
       }
     },
     "service": {
@@ -223,6 +243,7 @@
       "properties": {
         "group": { "type": "string", "default": "Services", "description": "UI grouping label." },
         "manual_trigger": { "type": "boolean", "default": true, "description": "Allow stop/restart/start from CLI/API/UI/station; false locks it to its restart policy until a config reload." },
+        "hook_tokens": { "$ref": "#/$defs/hookTokens" },
         "restart": { "type": "string", "enum": ["never", "on_failure", "always"], "default": "always", "description": "on_failure restarts only when the reason is also classified as a failure by `failures`." },
         "timeout": { "$ref": "#/$defs/duration" },
         "graceful_stop": { "$ref": "#/$defs/duration" },

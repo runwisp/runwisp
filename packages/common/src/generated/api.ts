@@ -171,6 +171,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hooks/tasks/{taskName}/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restart all instances of a service, or a task's run (hook token)
+         * @description Same as `POST /api/tasks/{taskName}/restart`, but authenticated with one of the unit's `hook_tokens` from runwisp.toml instead of a session: `Authorization: Bearer <token>`, or (less safely) `?token=`. manual_trigger does not apply. Enforced even with RUNWISP_AUTH=off. An unknown unit, a unit without tokens, and a wrong token all return the same 401; a valid token whose `allow` list omits this action gets 403. After 20 rejected tokens in a minute, the client IP gets 429 until the window slides.
+         *
+         *     For a service: bounces every instance (starting it if it was stopped). For a task: cancels any active run, waits for it to end, then triggers exactly one fresh run. With `wait=true` on a task: returns 200 and the fresh run once it ends.
+         */
+        post: operations["hookRestartTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hooks/tasks/{taskName}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger a new run (hook token)
+         * @description Same as `POST /api/tasks/{taskName}/run`, but authenticated with one of the unit's `hook_tokens` from runwisp.toml instead of a session: `Authorization: Bearer <token>`, or (less safely) `?token=`. manual_trigger does not apply. Enforced even with RUNWISP_AUTH=off. An unknown unit, a unit without tokens, and a wrong token all return the same 401; a valid token whose `allow` list omits this action gets 403. After 20 rejected tokens in a minute, the client IP gets 429 until the window slides.
+         *
+         *     Triggers the task and returns the pending run immediately. Pass `wait=true` to instead hold the request open until the run finishes and return it with its exit code and end reason — a one-call alternative to triggering then polling.
+         */
+        post: operations["hookRunTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hooks/tasks/{taskName}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a service, or trigger a task (hook token)
+         * @description Same as `POST /api/tasks/{taskName}/start`, but authenticated with one of the unit's `hook_tokens` from runwisp.toml instead of a session: `Authorization: Bearer <token>`, or (less safely) `?token=`. manual_trigger does not apply. Enforced even with RUNWISP_AUTH=off. An unknown unit, a unit without tokens, and a wrong token all return the same 401; a valid token whose `allow` list omits this action gets 403. After 20 rejected tokens in a minute, the client IP gets 429 until the window slides.
+         *
+         *     For a service: un-parks it (if operator-stopped) and fills empty instance slots; already-running instances are left alone. For a task: triggers a run, unless one is already active or queued, in which case this is a no-op. With `wait=true` on a task: returns 200 and the started (or already active) run once it ends.
+         */
+        post: operations["hookStartTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hooks/tasks/{taskName}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop a service for the daemon's lifetime, or a task's runs (hook token)
+         * @description Same as `POST /api/tasks/{taskName}/stop`, but authenticated with one of the unit's `hook_tokens` from runwisp.toml instead of a session: `Authorization: Bearer <token>`, or (less safely) `?token=`. manual_trigger does not apply. Enforced even with RUNWISP_AUTH=off. An unknown unit, a unit without tokens, and a wrong token all return the same 401; a valid token whose `allow` list omits this action gets 403. After 20 rejected tokens in a minute, the client IP gets 429 until the window slides.
+         *
+         *     For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing. With `wait=true`: returns once everything has ended, or 409 if that takes longer than waitTimeout.
+         */
+        post: operations["hookStopTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/local/credentials": {
         parameters: {
             query?: never;
@@ -595,7 +683,7 @@ export interface paths {
         put?: never;
         /**
          * Restart all instances of a service, or a task's run
-         * @description For a service: bounces every instance (starting it if it was stopped). For a task: cancels any active run, waits for it to end, then triggers exactly one fresh run.
+         * @description For a service: bounces every instance (starting it if it was stopped). For a task: cancels any active run, waits for it to end, then triggers exactly one fresh run. With `wait=true` on a task: returns 200 and the fresh run once it ends.
          */
         post: operations["restartTask"];
         delete?: never;
@@ -635,7 +723,7 @@ export interface paths {
         put?: never;
         /**
          * Start a service, or trigger a task
-         * @description For a service: un-parks it (if operator-stopped) and fills empty instance slots; already-running instances are left alone. For a task: triggers a run, unless one is already active or queued, in which case this is a no-op.
+         * @description For a service: un-parks it (if operator-stopped) and fills empty instance slots; already-running instances are left alone. For a task: triggers a run, unless one is already active or queued, in which case this is a no-op. With `wait=true` on a task: returns 200 and the started (or already active) run once it ends.
          */
         post: operations["startTask"];
         delete?: never;
@@ -655,7 +743,7 @@ export interface paths {
         put?: never;
         /**
          * Stop a service for the daemon's lifetime, or a task's runs
-         * @description For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing.
+         * @description For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing. With `wait=true`: returns once everything has ended, or 409 if that takes longer than waitTimeout.
          */
         post: operations["stopTask"];
         delete?: never;
@@ -1204,7 +1292,7 @@ export interface components {
              * @description How the run was triggered
              * @enum {string}
              */
-            triggeredBy: "cron" | "api" | "ui" | "cli" | "station" | "service" | "startup";
+            triggeredBy: "cron" | "api" | "ui" | "cli" | "station" | "service" | "startup" | "hook";
         };
         RunCompletedEvent: {
             error?: string;
@@ -1253,7 +1341,7 @@ export interface components {
             status?: string;
             /** @description Filter by task name */
             taskName?: string;
-            /** @description Filter by what triggered the run (cron/api/ui/cli/station/service/startup) */
+            /** @description Filter by what triggered the run (cron/api/ui/cli/station/service/startup/hook) */
             triggeredBy?: string;
         };
         RunSelector: {
@@ -2226,6 +2314,320 @@ export interface operations {
             };
         };
     };
+    hookRestartTask: {
+        parameters: {
+            query?: {
+                /** @description The hook token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent. */
+                token?: string;
+                /** @description Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts. */
+                wait?: boolean;
+                /** @description With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going. */
+                waitTimeout?: number;
+            };
+            header?: {
+                /** @description Bearer <token>, where <token> is one of the unit's hook_tokens */
+                Authorization?: string;
+            };
+            path: {
+                /** @description Task or service name */
+                taskName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    hookRunTask: {
+        parameters: {
+            query?: {
+                /** @description The hook token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent. */
+                token?: string;
+                /** @description Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts. */
+                wait?: boolean;
+                /** @description With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going. */
+                waitTimeout?: number;
+            };
+            header?: {
+                /** @description Bearer <token>, where <token> is one of the unit's hook_tokens */
+                Authorization?: string;
+            };
+            path: {
+                /** @description Task or service name */
+                taskName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TriggerRunInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    hookStartTask: {
+        parameters: {
+            query?: {
+                /** @description The hook token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent. */
+                token?: string;
+                /** @description Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts. */
+                wait?: boolean;
+                /** @description With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going. */
+                waitTimeout?: number;
+            };
+            header?: {
+                /** @description Bearer <token>, where <token> is one of the unit's hook_tokens */
+                Authorization?: string;
+            };
+            path: {
+                /** @description Task or service name */
+                taskName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    hookStopTask: {
+        parameters: {
+            query?: {
+                /** @description The hook token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent. */
+                token?: string;
+                /** @description Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts. */
+                wait?: boolean;
+                /** @description With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going. */
+                waitTimeout?: number;
+            };
+            header?: {
+                /** @description Bearer <token>, where <token> is one of the unit's hook_tokens */
+                Authorization?: string;
+            };
+            path: {
+                /** @description Task or service name */
+                taskName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     getLocalCredentials: {
         parameters: {
             query?: never;
@@ -2418,7 +2820,7 @@ export interface operations {
                 /** @description Filter by task name */
                 taskName?: string;
                 /** @description Filter by what triggered the run */
-                triggeredBy?: "cron" | "api" | "ui" | "cli" | "station" | "service" | "startup" | "";
+                triggeredBy?: "cron" | "api" | "ui" | "cli" | "station" | "service" | "startup" | "hook" | "";
                 /** @description Only runs created at or after this RFC3339 time */
                 createdAfter?: string;
                 /** @description Only runs created at or before this RFC3339 time */
@@ -3082,6 +3484,10 @@ export interface operations {
     restartTask: {
         parameters: {
             query?: {
+                /** @description Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts. */
+                wait?: boolean;
+                /** @description With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going. */
+                waitTimeout?: number;
                 /** @description Declares the caller for run provenance when this starts a fresh task run: 'ui' (Web UI / TUI) or 'cli' (runwisp start/restart). Omit for a plain API call. Ignored for services. */
                 via?: "ui" | "cli" | "";
             };
@@ -3099,7 +3505,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
             };
             /** @description Error */
             default: {
@@ -3115,9 +3523,9 @@ export interface operations {
     runTask: {
         parameters: {
             query?: {
-                /** @description Block until the run finishes and return the completed run (with exitCode and endReason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead. */
+                /** @description Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts. */
                 wait?: boolean;
-                /** @description With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout (with margin for request/dispatch overhead) since the response is a single write made after the full wait elapses. On timeout the run keeps running and the response returns it in its current (non-terminal) state. */
+                /** @description With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going. */
                 waitTimeout?: number;
                 /** @description Declares the caller for run provenance: 'ui' (Web UI / TUI Run Now) or 'cli' (runwisp run). Omit for a plain API call. */
                 via?: "ui" | "cli" | "";
@@ -3158,6 +3566,10 @@ export interface operations {
     startTask: {
         parameters: {
             query?: {
+                /** @description Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts. */
+                wait?: boolean;
+                /** @description With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going. */
+                waitTimeout?: number;
                 /** @description Declares the caller for run provenance when this starts a fresh task run: 'ui' (Web UI / TUI) or 'cli' (runwisp start/restart). Omit for a plain API call. Ignored for services. */
                 via?: "ui" | "cli" | "";
             };
@@ -3175,7 +3587,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
             };
             /** @description Error */
             default: {
@@ -3190,7 +3604,12 @@ export interface operations {
     };
     stopTask: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts. */
+                wait?: boolean;
+                /** @description With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going. */
+                waitTimeout?: number;
+            };
             header?: never;
             path: {
                 /** @description Task name */

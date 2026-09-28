@@ -285,6 +285,8 @@ func triggerPhrase(t model.TriggeredBy) string {
 		return "Service auto-started"
 	case model.TriggeredByStartup:
 		return "Ran on daemon startup"
+	case model.TriggeredByHook:
+		return "Triggered by a hook"
 	default:
 		if t == "" {
 			return "Run"

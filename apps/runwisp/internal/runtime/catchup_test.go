@@ -140,6 +140,8 @@ func (m *mockTaskRunner) GetActiveRunCount(taskName string) int {
 	return m.Called(taskName).Int(0)
 }
 
+func (m *mockTaskRunner) GetActiveRuns(string) []*ActiveRun { return nil }
+
 func (m *mockTaskRunner) StartServiceInstances(taskName string, triggeredBy model.TriggeredBy) error {
 	return m.Called(taskName, triggeredBy).Error(0)
 }

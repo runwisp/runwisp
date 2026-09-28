@@ -26,7 +26,14 @@ type TaskNameInput struct {
 // never creates a run.
 type TaskControlInput struct {
 	TaskNameInput
+	WaitInput
 	Via string `query:"via" enum:"ui,cli," doc:"Declares the caller for run provenance when this starts a fresh task run: 'ui' (Web UI / TUI) or 'cli' (runwisp start/restart). Omit for a plain API call. Ignored for services."`
+}
+
+// TaskStopInput drives POST /api/tasks/{taskName}/stop.
+type TaskStopInput struct {
+	TaskNameInput
+	WaitInput
 }
 
 // TriggerWaitTimeoutMax and TriggerWaitTimeoutDefault back the waitTimeout
@@ -48,6 +55,37 @@ const (
 	TriggerWaitTimeoutDefault = 120
 )
 
+// WaitInput is the optional ?wait / ?waitTimeout pair shared by every
+// run/start/stop/restart route, session and hook alike.
+type WaitInput struct {
+	Wait        bool `query:"wait" doc:"Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts."`
+	WaitTimeout int  `query:"waitTimeout" minimum:"1" maximum:"240" default:"120" doc:"With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going."`
+}
+
+// duration is the wait budget, or 0 when the caller didn't ask to wait.
+func (w WaitInput) duration() time.Duration {
+	if !w.Wait {
+		return 0
+	}
+	return time.Duration(w.WaitTimeout) * time.Second
+}
+
+// WaitedRunOutput answers start/restart: 204 with no body, or with wait=true
+// on a task, 200 and the run it waited on.
+type WaitedRunOutput struct {
+	Status int
+	Body   *model.Run
+}
+
+// waitedRun builds the start/restart response: nil (the 204 default) unless
+// the caller waited and there is a run to report.
+func waitedRun(run *model.Run, wait time.Duration) *WaitedRunOutput {
+	if wait <= 0 || run == nil {
+		return nil
+	}
+	return &WaitedRunOutput{Status: http.StatusOK, Body: run}
+}
+
 // TriggerRunInput drives POST /api/tasks/{taskName}/run. With wait=false
 // (default) it returns immediately with the pending run; with wait=true the
 // request blocks until the run finishes so a single call yields its exit code.
@@ -56,9 +94,8 @@ const (
 // with no payload. Flag/option names are never accepted here — only values
 // keyed by the parameter identities declared in runwisp.toml.
 type TriggerRunInput struct {
-	TaskName    string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
-	Wait        bool   `query:"wait" doc:"Block until the run finishes and return the completed run (with exitCode and endReason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead."`
-	WaitTimeout int    `query:"waitTimeout" minimum:"1" maximum:"240" default:"120" doc:"With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout (with margin for request/dispatch overhead) since the response is a single write made after the full wait elapses. On timeout the run keeps running and the response returns it in its current (non-terminal) state."`
+	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task name"`
+	WaitInput
 	// Via lets a first-party caller (Web UI, TUI, CLI) declare its own
 	// provenance so the run history can tell "someone clicked Run Now" apart
 	// from a raw REST call. Purely a label — a scripted caller can set this
@@ -67,9 +104,36 @@ type TriggerRunInput struct {
 	Via string `query:"via" enum:"ui,cli," doc:"Declares the caller for run provenance: 'ui' (Web UI / TUI Run Now) or 'cli' (runwisp run). Omit for a plain API call."`
 	// Body is a pointer so it is optional — a zero-param trigger can POST with
 	// no payload at all.
-	Body *struct {
-		Params map[string]*string `json:"params,omitempty" doc:"Values for the task's declared parameters, keyed by parameter identity. A null value omits that parameter (overriding its default); an empty string passes an empty value; an absent key uses the declared default."`
-	}
+	Body *TriggerRunInputBody
+}
+
+// TriggerRunInputBody is the optional trigger payload shared by /run and
+// /hooks. Its name matches the schema huma derived when it was an anonymous
+// struct on TriggerRunInput, so the OpenAPI component name is unchanged.
+type TriggerRunInputBody struct {
+	Params map[string]*string `json:"params,omitempty" doc:"Values for the task's declared parameters, keyed by parameter identity. A null value omits that parameter (overriding its default); an empty string passes an empty value; an absent key uses the declared default."`
+}
+
+// HookAuthInput carries a hook token: the Authorization header, or the
+// ?token= query for webhook senders that can only set a URL.
+type HookAuthInput struct {
+	Authorization string `header:"Authorization" doc:"Bearer <token>, where <token> is one of the unit's hook_tokens"`
+	Token         string `query:"token" doc:"The hook token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent."`
+}
+
+// HookControlInput drives POST /api/hooks/tasks/{taskName}/{start,stop,restart}:
+// the session route's input, with a hook token in place of a session (and no
+// Via — the provenance is always `hook`).
+type HookControlInput struct {
+	TaskName string `path:"taskName" minLength:"1" maxLength:"100" pattern:"^[a-zA-Z0-9._:-]+$" doc:"Task or service name"`
+	HookAuthInput
+	WaitInput
+}
+
+// HookRunInput drives POST /api/hooks/tasks/{taskName}/run.
+type HookRunInput struct {
+	HookControlInput
+	Body *TriggerRunInputBody
 }
 
 // RunIDInput drives the per-run endpoints (GET/DELETE /api/runs/{runId},
@@ -91,7 +155,7 @@ type RunsQueryInput struct {
 	Offset        int       `query:"offset" minimum:"0" default:"0" doc:"Pagination offset"`
 	Status        string    `query:"status" doc:"Comma-separated run statuses (phase or end reason); a run matches any listed value"`
 	TaskName      string    `query:"taskName" doc:"Filter by task name"`
-	TriggeredBy   string    `query:"triggeredBy" enum:"cron,api,ui,cli,station,service,startup," doc:"Filter by what triggered the run"`
+	TriggeredBy   string    `query:"triggeredBy" enum:"cron,api,ui,cli,station,service,startup,hook," doc:"Filter by what triggered the run"`
 	CreatedAfter  time.Time `query:"createdAfter" doc:"Only runs created at or after this RFC3339 time"`
 	CreatedBefore time.Time `query:"createdBefore" doc:"Only runs created at or before this RFC3339 time"`
 	ExitCodeMin   string    `query:"exitCodeMin" pattern:"^-?[0-9]+$" doc:"Only runs whose exit code is >= this (inclusive)"`

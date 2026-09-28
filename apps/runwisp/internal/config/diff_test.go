@@ -37,6 +37,17 @@ func TestDiffTasks_AddedRemoved(t *testing.T) {
 	assert.Empty(t, d.Added)
 }
 
+// A rotated hook token must be a Changed entry so the reconciler swaps the
+// registry pointer the hooks endpoints read, otherwise the old token would
+// keep working after `runwisp reload`.
+func TestDiffTasks_HookTokenRotationIsAChange(t *testing.T) {
+	old := tasksMap(&model.Task{Name: "a", Run: "echo", HookTokens: []model.HookToken{{Token: "old"}}})
+	updated := tasksMap(&model.Task{Name: "a", Run: "echo", HookTokens: []model.HookToken{{Token: "new"}}})
+	d := DiffTasks(old, updated)
+	require.Len(t, d.Changed, 1)
+	assert.True(t, d.Changed[0].Has(ReasonSettings))
+}
+
 func TestDiffTasks_IdenticalIsEmpty(t *testing.T) {
 	old := tasksMap(&model.Task{Name: "a", Run: "echo", Cron: "@daily"})
 	updated := tasksMap(&model.Task{Name: "a", Run: "echo", Cron: "@daily"})

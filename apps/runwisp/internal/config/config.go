@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/runwisp/runwisp/internal/cronspec"
@@ -682,6 +683,9 @@ func validateTask(task *model.Task, seen map[string]struct{}) error {
 	if err := validateTaskParams(task); err != nil {
 		return err
 	}
+	if err := validateTaskHookTokens(task); err != nil {
+		return err
+	}
 	if task.Kind.IsService() {
 		if err := validateServiceTask(task); err != nil {
 			return err
@@ -706,6 +710,37 @@ func validateTaskCron(task *model.Task) error {
 		return fmt.Errorf(
 			"invalid cron for task %q: %q — %v; expected 5 fields \"min hour day month weekday\" (e.g. \"0 3 * * *\" = 03:00 daily), an optional leading seconds field for 6 fields \"sec min hour day month weekday\" (e.g. \"*/30 * * * * *\" = every 30s on the :00 and :30), a descriptor like @hourly/@daily/@weekly, or @every for fixed intervals (e.g. @every 30s, @every 1h30m)",
 			task.Name, task.Cron, err)
+	}
+	return nil
+}
+
+// minHookTokenLength is long enough that guessing a token over HTTP is
+// infeasible; the hooks failure limiter only has to stop scanners.
+const minHookTokenLength = 32
+
+// validateTaskHookTokens rejects tokens too short to resist guessing, tokens
+// with whitespace (a pasted newline would never match a header), and allow
+// lists naming an action the unit doesn't support. manual_trigger does not
+// gate hooks, so it isn't consulted here. Token values never appear in errors,
+// only their position.
+func validateTaskHookTokens(task *model.Task) error {
+	supported := model.HookActionsFor(task.Kind)
+	for i, h := range task.HookTokens {
+		if len(h.Token) < minHookTokenLength {
+			return fmt.Errorf("hook_tokens[%d] for %s %q is %d characters; use at least %d (e.g. `openssl rand -hex 32`)",
+				i, unitKind(task), task.Name, len(h.Token), minHookTokenLength)
+		}
+		if strings.IndexFunc(h.Token, unicode.IsSpace) >= 0 {
+			return fmt.Errorf("hook_tokens[%d] for %s %q contains whitespace", i, unitKind(task), task.Name)
+		}
+		if h.Allow != nil && len(h.Allow) == 0 {
+			return fmt.Errorf("hook_tokens[%d] for %s %q has an empty allow list; omit allow to grant every action", i, unitKind(task), task.Name)
+		}
+		for _, a := range h.Allow {
+			if !slices.Contains(supported, a) {
+				return fmt.Errorf("hook_tokens[%d] for %s %q allows %q; valid actions are %v", i, unitKind(task), task.Name, a, supported)
+			}
+		}
 	}
 	return nil
 }

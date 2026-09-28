@@ -1256,7 +1256,8 @@
               "cli",
               "station",
               "service",
-              "startup"
+              "startup",
+              "hook"
             ],
             "type": "string"
           }
@@ -1379,7 +1380,7 @@
             "type": "string"
           },
           "triggeredBy": {
-            "description": "Filter by what triggered the run (cron/api/ui/cli/station/service/startup)",
+            "description": "Filter by what triggered the run (cron/api/ui/cli/station/service/startup/hook)",
             "type": "string"
           }
         },
@@ -3070,6 +3071,528 @@
         ]
       }
     },
+    "/api/hooks/tasks/{taskName}/restart": {
+      "post": {
+        "description": "Same as `POST /api/tasks/{taskName}/restart`, but authenticated with one of the unit's `hook_tokens` from runwisp.toml instead of a session: `Authorization: Bearer \u003ctoken\u003e`, or (less safely) `?token=`. manual_trigger does not apply. Enforced even with RUNWISP_AUTH=off. An unknown unit, a unit without tokens, and a wrong token all return the same 401; a valid token whose `allow` list omits this action gets 403. After 20 rejected tokens in a minute, the client IP gets 429 until the window slides.\n\nFor a service: bounces every instance (starting it if it was stopped). For a task: cancels any active run, waits for it to end, then triggers exactly one fresh run. With `wait=true` on a task: returns 200 and the fresh run once it ends.",
+        "operationId": "hookRestartTask",
+        "parameters": [
+          {
+            "description": "Task or service name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task or service name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Bearer \u003ctoken\u003e, where \u003ctoken\u003e is one of the unit's hook_tokens",
+            "in": "header",
+            "name": "Authorization",
+            "schema": {
+              "description": "Bearer \u003ctoken\u003e, where \u003ctoken\u003e is one of the unit's hook_tokens",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The hook token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent.",
+            "explode": false,
+            "in": "query",
+            "name": "token",
+            "schema": {
+              "description": "The hook token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts.",
+            "explode": false,
+            "in": "query",
+            "name": "wait",
+            "schema": {
+              "description": "Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts.",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going.",
+            "explode": false,
+            "in": "query",
+            "name": "waitTimeout",
+            "schema": {
+              "default": 120,
+              "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going.",
+              "format": "int64",
+              "maximum": 240,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            },
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Restart all instances of a service, or a task's run (hook token)",
+        "tags": [
+          "Hooks"
+        ]
+      }
+    },
+    "/api/hooks/tasks/{taskName}/run": {
+      "post": {
+        "description": "Same as `POST /api/tasks/{taskName}/run`, but authenticated with one of the unit's `hook_tokens` from runwisp.toml instead of a session: `Authorization: Bearer \u003ctoken\u003e`, or (less safely) `?token=`. manual_trigger does not apply. Enforced even with RUNWISP_AUTH=off. An unknown unit, a unit without tokens, and a wrong token all return the same 401; a valid token whose `allow` list omits this action gets 403. After 20 rejected tokens in a minute, the client IP gets 429 until the window slides.\n\nTriggers the task and returns the pending run immediately. Pass `wait=true` to instead hold the request open until the run finishes and return it with its exit code and end reason — a one-call alternative to triggering then polling.",
+        "operationId": "hookRunTask",
+        "parameters": [
+          {
+            "description": "Task or service name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task or service name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Bearer \u003ctoken\u003e, where \u003ctoken\u003e is one of the unit's hook_tokens",
+            "in": "header",
+            "name": "Authorization",
+            "schema": {
+              "description": "Bearer \u003ctoken\u003e, where \u003ctoken\u003e is one of the unit's hook_tokens",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The hook token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent.",
+            "explode": false,
+            "in": "query",
+            "name": "token",
+            "schema": {
+              "description": "The hook token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts.",
+            "explode": false,
+            "in": "query",
+            "name": "wait",
+            "schema": {
+              "description": "Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts.",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going.",
+            "explode": false,
+            "in": "query",
+            "name": "waitTimeout",
+            "schema": {
+              "default": 120,
+              "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going.",
+              "format": "int64",
+              "maximum": 240,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerRunInputBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Trigger a new run (hook token)",
+        "tags": [
+          "Hooks"
+        ]
+      }
+    },
+    "/api/hooks/tasks/{taskName}/start": {
+      "post": {
+        "description": "Same as `POST /api/tasks/{taskName}/start`, but authenticated with one of the unit's `hook_tokens` from runwisp.toml instead of a session: `Authorization: Bearer \u003ctoken\u003e`, or (less safely) `?token=`. manual_trigger does not apply. Enforced even with RUNWISP_AUTH=off. An unknown unit, a unit without tokens, and a wrong token all return the same 401; a valid token whose `allow` list omits this action gets 403. After 20 rejected tokens in a minute, the client IP gets 429 until the window slides.\n\nFor a service: un-parks it (if operator-stopped) and fills empty instance slots; already-running instances are left alone. For a task: triggers a run, unless one is already active or queued, in which case this is a no-op. With `wait=true` on a task: returns 200 and the started (or already active) run once it ends.",
+        "operationId": "hookStartTask",
+        "parameters": [
+          {
+            "description": "Task or service name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task or service name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Bearer \u003ctoken\u003e, where \u003ctoken\u003e is one of the unit's hook_tokens",
+            "in": "header",
+            "name": "Authorization",
+            "schema": {
+              "description": "Bearer \u003ctoken\u003e, where \u003ctoken\u003e is one of the unit's hook_tokens",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The hook token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent.",
+            "explode": false,
+            "in": "query",
+            "name": "token",
+            "schema": {
+              "description": "The hook token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts.",
+            "explode": false,
+            "in": "query",
+            "name": "wait",
+            "schema": {
+              "description": "Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts.",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going.",
+            "explode": false,
+            "in": "query",
+            "name": "waitTimeout",
+            "schema": {
+              "default": 120,
+              "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going.",
+              "format": "int64",
+              "maximum": 240,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            },
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Start a service, or trigger a task (hook token)",
+        "tags": [
+          "Hooks"
+        ]
+      }
+    },
+    "/api/hooks/tasks/{taskName}/stop": {
+      "post": {
+        "description": "Same as `POST /api/tasks/{taskName}/stop`, but authenticated with one of the unit's `hook_tokens` from runwisp.toml instead of a session: `Authorization: Bearer \u003ctoken\u003e`, or (less safely) `?token=`. manual_trigger does not apply. Enforced even with RUNWISP_AUTH=off. An unknown unit, a unit without tokens, and a wrong token all return the same 401; a valid token whose `allow` list omits this action gets 403. After 20 rejected tokens in a minute, the client IP gets 429 until the window slides.\n\nFor a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing. With `wait=true`: returns once everything has ended, or 409 if that takes longer than waitTimeout.",
+        "operationId": "hookStopTask",
+        "parameters": [
+          {
+            "description": "Task or service name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task or service name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._:-]+$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Bearer \u003ctoken\u003e, where \u003ctoken\u003e is one of the unit's hook_tokens",
+            "in": "header",
+            "name": "Authorization",
+            "schema": {
+              "description": "Bearer \u003ctoken\u003e, where \u003ctoken\u003e is one of the unit's hook_tokens",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The hook token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent.",
+            "explode": false,
+            "in": "query",
+            "name": "token",
+            "schema": {
+              "description": "The hook token, for callers that can only set a URL. Less safe than the header: URLs end up in proxy and CI logs. Ignored when an Authorization header is sent.",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts.",
+            "explode": false,
+            "in": "query",
+            "name": "wait",
+            "schema": {
+              "description": "Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts.",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going.",
+            "explode": false,
+            "in": "query",
+            "name": "waitTimeout",
+            "schema": {
+              "default": 120,
+              "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going.",
+              "format": "int64",
+              "maximum": 240,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Stop a service for the daemon's lifetime, or a task's runs (hook token)",
+        "tags": [
+          "Hooks"
+        ]
+      }
+    },
     "/api/local/credentials": {
       "get": {
         "description": "Returns the in-memory ephemeral password to a local CLI/TUI client arriving on the Unix socket. Always 403 over TCP — even with a valid JWT. Always 404 when the daemon is configured with RUNWISP_PASSWORD.",
@@ -3365,6 +3888,7 @@
                 "station",
                 "service",
                 "startup",
+                "hook",
                 ""
               ],
               "type": "string"
@@ -4475,7 +4999,7 @@
     },
     "/api/tasks/{taskName}/restart": {
       "post": {
-        "description": "For a service: bounces every instance (starting it if it was stopped). For a task: cancels any active run, waits for it to end, then triggers exactly one fresh run.",
+        "description": "For a service: bounces every instance (starting it if it was stopped). For a task: cancels any active run, waits for it to end, then triggers exactly one fresh run. With `wait=true` on a task: returns 200 and the fresh run once it ends.",
         "operationId": "restartTask",
         "parameters": [
           {
@@ -4489,6 +5013,30 @@
               "minLength": 1,
               "pattern": "^[a-zA-Z0-9._:-]+$",
               "type": "string"
+            }
+          },
+          {
+            "description": "Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts.",
+            "explode": false,
+            "in": "query",
+            "name": "wait",
+            "schema": {
+              "description": "Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts.",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going.",
+            "explode": false,
+            "in": "query",
+            "name": "waitTimeout",
+            "schema": {
+              "default": 120,
+              "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going.",
+              "format": "int64",
+              "maximum": 240,
+              "minimum": 1,
+              "type": "integer"
             }
           },
           {
@@ -4509,6 +5057,13 @@
         ],
         "responses": {
           "204": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            },
             "description": "No Content"
           },
           "default": {
@@ -4547,23 +5102,23 @@
             }
           },
           {
-            "description": "Block until the run finishes and return the completed run (with exitCode and endReason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead.",
+            "description": "Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts.",
             "explode": false,
             "in": "query",
             "name": "wait",
             "schema": {
-              "description": "Block until the run finishes and return the completed run (with exitCode and endReason). Best for short tasks; long runs may exceed reverse-proxy timeouts — follow the log stream or poll instead.",
+              "description": "Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts.",
               "type": "boolean"
             }
           },
           {
-            "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout (with margin for request/dispatch overhead) since the response is a single write made after the full wait elapses. On timeout the run keeps running and the response returns it in its current (non-terminal) state.",
+            "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going.",
             "explode": false,
             "in": "query",
             "name": "waitTimeout",
             "schema": {
               "default": 120,
-              "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout (with margin for request/dispatch overhead) since the response is a single write made after the full wait elapses. On timeout the run keeps running and the response returns it in its current (non-terminal) state.",
+              "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going.",
               "format": "int64",
               "maximum": 240,
               "minimum": 1,
@@ -4625,7 +5180,7 @@
     },
     "/api/tasks/{taskName}/start": {
       "post": {
-        "description": "For a service: un-parks it (if operator-stopped) and fills empty instance slots; already-running instances are left alone. For a task: triggers a run, unless one is already active or queued, in which case this is a no-op.",
+        "description": "For a service: un-parks it (if operator-stopped) and fills empty instance slots; already-running instances are left alone. For a task: triggers a run, unless one is already active or queued, in which case this is a no-op. With `wait=true` on a task: returns 200 and the started (or already active) run once it ends.",
         "operationId": "startTask",
         "parameters": [
           {
@@ -4639,6 +5194,30 @@
               "minLength": 1,
               "pattern": "^[a-zA-Z0-9._:-]+$",
               "type": "string"
+            }
+          },
+          {
+            "description": "Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts.",
+            "explode": false,
+            "in": "query",
+            "name": "wait",
+            "schema": {
+              "description": "Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts.",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going.",
+            "explode": false,
+            "in": "query",
+            "name": "waitTimeout",
+            "schema": {
+              "default": 120,
+              "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going.",
+              "format": "int64",
+              "maximum": 240,
+              "minimum": 1,
+              "type": "integer"
             }
           },
           {
@@ -4659,6 +5238,13 @@
         ],
         "responses": {
           "204": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            },
             "description": "No Content"
           },
           "default": {
@@ -4680,7 +5266,7 @@
     },
     "/api/tasks/{taskName}/stop": {
       "post": {
-        "description": "For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing.",
+        "description": "For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing. With `wait=true`: returns once everything has ended, or 409 if that takes longer than waitTimeout.",
         "operationId": "stopTask",
         "parameters": [
           {
@@ -4694,6 +5280,30 @@
               "minLength": 1,
               "pattern": "^[a-zA-Z0-9._:-]+$",
               "type": "string"
+            }
+          },
+          {
+            "description": "Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts.",
+            "explode": false,
+            "in": "query",
+            "name": "wait",
+            "schema": {
+              "description": "Hold the request until the action finishes. run, and start/restart on a task: until the run ends, then return it with exitCode and endReason. stop: until every run or instance has ended. Not supported for start/restart on a service. Best for short tasks; long waits may exceed reverse-proxy timeouts.",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going.",
+            "explode": false,
+            "in": "query",
+            "name": "waitTimeout",
+            "schema": {
+              "default": 120,
+              "description": "With wait=true, the maximum seconds to hold the request open. Capped below the server's 5-minute write timeout. On timeout, run/start/restart return the run in its current (non-terminal) state and stop returns 409; the action itself keeps going.",
+              "format": "int64",
+              "maximum": 240,
+              "minimum": 1,
+              "type": "integer"
             }
           }
         ],

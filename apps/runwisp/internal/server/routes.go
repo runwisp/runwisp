@@ -281,6 +281,17 @@ func (srv *Server) setupRoutes() error {
 		srv.registerRateLimitedAuthRoutes(r)
 	})
 
+	// Hooks: /api/hooks/<session route>, authenticated by the unit's
+	// hook_tokens. Outside the protected group: the token is the credential,
+	// checked by the handler (also with RUNWISP_AUTH=off). No cookie is read,
+	// so no CSRF guard is needed. The limiter counts rejected tokens only,
+	// never successful calls.
+	srv.router.Group(func(r chi.Router) {
+		r.Use(maxBodySize(maxProtectedBodySize))
+		r.Use(hookFailureLimiter())
+		srv.registerHookRoutes(r)
+	})
+
 	// Protected routes. With RUNWISP_AUTH=off the JWT gate is skipped entirely
 	// — an explicit operator opt-in, warned about loudly at startup — but the
 	// body-size cap stays in place.

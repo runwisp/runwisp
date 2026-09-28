@@ -119,45 +119,10 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 		Tags:        []string{"Runs"},
 	}, srv.humaGetRun)
 
-	huma.Register(protectedAPI, huma.Operation{
-		OperationID:   "runTask",
-		Method:        http.MethodPost,
-		Path:          "/api/tasks/{taskName}/run",
-		Summary:       "Trigger a new run",
-		Description:   "Triggers the task and returns the pending run immediately. Pass `wait=true` to instead hold the request open until the run finishes and return it with its exit code and end reason — a one-call alternative to triggering then polling.",
-		Tags:          []string{"Runs"},
-		DefaultStatus: http.StatusCreated,
-	}, srv.humaTriggerRun)
-
-	huma.Register(protectedAPI, huma.Operation{
-		OperationID:   "startTask",
-		Method:        http.MethodPost,
-		Path:          "/api/tasks/{taskName}/start",
-		Summary:       "Start a service, or trigger a task",
-		Description:   "For a service: un-parks it (if operator-stopped) and fills empty instance slots; already-running instances are left alone. For a task: triggers a run, unless one is already active or queued, in which case this is a no-op.",
-		Tags:          []string{"Runs"},
-		DefaultStatus: http.StatusNoContent,
-	}, srv.humaStartTask)
-
-	huma.Register(protectedAPI, huma.Operation{
-		OperationID:   "restartTask",
-		Method:        http.MethodPost,
-		Path:          "/api/tasks/{taskName}/restart",
-		Summary:       "Restart all instances of a service, or a task's run",
-		Description:   "For a service: bounces every instance (starting it if it was stopped). For a task: cancels any active run, waits for it to end, then triggers exactly one fresh run.",
-		Tags:          []string{"Runs"},
-		DefaultStatus: http.StatusNoContent,
-	}, srv.humaRestartTask)
-
-	huma.Register(protectedAPI, huma.Operation{
-		OperationID:   "stopTask",
-		Method:        http.MethodPost,
-		Path:          "/api/tasks/{taskName}/stop",
-		Summary:       "Stop a service for the daemon's lifetime, or a task's runs",
-		Description:   "For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing.",
-		Tags:          []string{"Runs"},
-		DefaultStatus: http.StatusNoContent,
-	}, srv.humaStopTask)
+	huma.Register(protectedAPI, runTaskOperation(), srv.humaTriggerRun)
+	huma.Register(protectedAPI, startTaskOperation(), srv.humaStartTask)
+	huma.Register(protectedAPI, restartTaskOperation(), srv.humaRestartTask)
+	huma.Register(protectedAPI, stopTaskOperation(), srv.humaStopTask)
 
 	huma.Register(protectedAPI, huma.Operation{
 		OperationID:   "deleteRun",
@@ -302,42 +267,89 @@ func (srv *Server) humaGetRunSummary(ctx context.Context, input *struct{}) (*Run
 	return &RunSummaryOutput{Body: *summary}, nil
 }
 
+// The four control operations are defined once and registered twice: as the
+// session routes above, and through hookOperation as their token-authenticated
+// /api/hooks mirrors (see hooks.go). They are functions, not shared vars, so
+// each registration gets its own copy for huma to fill in.
+
+func runTaskOperation() huma.Operation {
+	return huma.Operation{
+		OperationID:   "runTask",
+		Method:        http.MethodPost,
+		Path:          "/api/tasks/{taskName}/run",
+		Summary:       "Trigger a new run",
+		Description:   "Triggers the task and returns the pending run immediately. Pass `wait=true` to instead hold the request open until the run finishes and return it with its exit code and end reason — a one-call alternative to triggering then polling.",
+		Tags:          []string{"Runs"},
+		DefaultStatus: http.StatusCreated,
+	}
+}
+
+func startTaskOperation() huma.Operation {
+	return huma.Operation{
+		OperationID:   "startTask",
+		Method:        http.MethodPost,
+		Path:          "/api/tasks/{taskName}/start",
+		Summary:       "Start a service, or trigger a task",
+		Description:   "For a service: un-parks it (if operator-stopped) and fills empty instance slots; already-running instances are left alone. For a task: triggers a run, unless one is already active or queued, in which case this is a no-op. With `wait=true` on a task: returns 200 and the started (or already active) run once it ends.",
+		Tags:          []string{"Runs"},
+		DefaultStatus: http.StatusNoContent,
+	}
+}
+
+func restartTaskOperation() huma.Operation {
+	return huma.Operation{
+		OperationID:   "restartTask",
+		Method:        http.MethodPost,
+		Path:          "/api/tasks/{taskName}/restart",
+		Summary:       "Restart all instances of a service, or a task's run",
+		Description:   "For a service: bounces every instance (starting it if it was stopped). For a task: cancels any active run, waits for it to end, then triggers exactly one fresh run. With `wait=true` on a task: returns 200 and the fresh run once it ends.",
+		Tags:          []string{"Runs"},
+		DefaultStatus: http.StatusNoContent,
+	}
+}
+
+func stopTaskOperation() huma.Operation {
+	return huma.Operation{
+		OperationID:   "stopTask",
+		Method:        http.MethodPost,
+		Path:          "/api/tasks/{taskName}/stop",
+		Summary:       "Stop a service for the daemon's lifetime, or a task's runs",
+		Description:   "For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing. With `wait=true`: returns once everything has ended, or 409 if that takes longer than waitTimeout.",
+		Tags:          []string{"Runs"},
+		DefaultStatus: http.StatusNoContent,
+	}
+}
+
 func (srv *Server) humaTriggerRun(ctx context.Context, input *TriggerRunInput) (*RunOutput, error) {
 	var params map[string]*string
 	if input.Body != nil {
 		params = input.Body.Params
 	}
-	triggeredBy := viaToTriggeredBy(input.Via)
-	if input.Wait {
-		run, err := srv.runService.TriggerRunAndWait(ctx, input.TaskName, params, triggeredBy, time.Duration(input.WaitTimeout)*time.Second)
-		if err != nil {
-			return nil, mapDomainError(ctx, err, "Failed to trigger run")
-		}
-		return &RunOutput{Body: *run}, nil
-	}
-	run, err := srv.runService.TriggerRun(ctx, input.TaskName, params, triggeredBy)
+	run, err := srv.runService.TriggerRunAndWait(ctx, input.TaskName, params, viaToTriggeredBy(input.Via), input.duration())
 	if err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to trigger run")
 	}
 	return &RunOutput{Body: *run}, nil
 }
 
-func (srv *Server) humaStartTask(ctx context.Context, input *TaskControlInput) (*struct{}, error) {
-	if err := srv.runService.StartTask(ctx, input.TaskName, viaToTriggeredBy(input.Via)); err != nil {
+func (srv *Server) humaStartTask(ctx context.Context, input *TaskControlInput) (*WaitedRunOutput, error) {
+	run, err := srv.runService.StartTask(ctx, input.TaskName, viaToTriggeredBy(input.Via), input.duration())
+	if err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to start task")
 	}
-	return nil, nil
+	return waitedRun(run, input.duration()), nil
 }
 
-func (srv *Server) humaRestartTask(ctx context.Context, input *TaskControlInput) (*struct{}, error) {
-	if err := srv.runService.RestartTask(ctx, input.TaskName, viaToTriggeredBy(input.Via)); err != nil {
+func (srv *Server) humaRestartTask(ctx context.Context, input *TaskControlInput) (*WaitedRunOutput, error) {
+	run, err := srv.runService.RestartTask(ctx, input.TaskName, viaToTriggeredBy(input.Via), input.duration())
+	if err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to restart task")
 	}
-	return nil, nil
+	return waitedRun(run, input.duration()), nil
 }
 
-func (srv *Server) humaStopTask(ctx context.Context, input *TaskNameInput) (*struct{}, error) {
-	if err := srv.runService.StopTask(input.TaskName); err != nil {
+func (srv *Server) humaStopTask(ctx context.Context, input *TaskStopInput) (*struct{}, error) {
+	if err := srv.runService.StopTask(ctx, input.TaskName, input.duration()); err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to stop task")
 	}
 	return nil, nil

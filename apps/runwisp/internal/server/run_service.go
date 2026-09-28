@@ -30,6 +30,12 @@ var (
 	// call, so it gave up rather than trigger a fresh run alongside a
 	// still-dying one.
 	ErrRestartDidNotDrain = errors.New("previous run did not stop in time")
+	// ErrStopDidNotDrain means a stop with wait=true was signalled but the
+	// active run(s) or instances were still ending when the wait ran out.
+	ErrStopDidNotDrain = errors.New("stop requested, but runs were still ending when the wait ran out")
+	// ErrWaitUnsupported rejects wait=true on start/restart of a service: its
+	// instances run until stopped, so there is no end to wait for.
+	ErrWaitUnsupported = errors.New("wait is not supported for start/restart on a service; its instances run until stopped")
 )
 
 func wrapSelectorErr(err error) error {
@@ -131,44 +137,67 @@ func viaToTriggeredBy(via string) model.TriggeredBy {
 	}
 }
 
+// The exported control methods (TriggerRun, StartTask, StopTask, RestartTask)
+// are the session entry points: they resolve the unit by name and honor its
+// manual_trigger lock. Hooks resolve the unit by token instead and call the
+// unexported trigger/start/stop/restart below directly, because a hook token
+// is itself the TOML-declared grant and manual_trigger does not gate it.
+
 func (s *runService) TriggerRun(ctx context.Context, taskName string, params map[string]*string, triggeredBy model.TriggeredBy) (*model.Run, error) {
+	return s.TriggerRunAndWait(ctx, taskName, params, triggeredBy, 0)
+}
+
+// TriggerRunAndWait triggers a run and, when wait > 0, blocks until it reaches
+// a terminal state or wait elapses, returning the finished run (with
+// exit_code / end_reason). On timeout it returns the run in its latest known,
+// possibly still running, state; callers tell the two apart via the run's
+// status. It exists so a remote caller can fire a task and read its result in
+// a single request instead of trigger-then-poll.
+func (s *runService) TriggerRunAndWait(ctx context.Context, taskName string, params map[string]*string, triggeredBy model.TriggeredBy, wait time.Duration) (*model.Run, error) {
 	task, exists := s.tasks.Get(taskName)
 	if !exists {
 		return nil, ErrTaskNotFound
 	}
-	switch task.CheckTrigger() {
-	case model.TriggerBlockedService:
-		return nil, ErrServiceNotRunnable
-	case model.TriggerBlockedManualDisabled:
+	if task.CheckTrigger() == model.TriggerBlockedManualDisabled {
 		return nil, ErrManualTriggerDisabled
+	}
+	return s.trigger(ctx, task, params, triggeredBy, wait)
+}
+
+// trigger starts one run of task, lock-free (see the note above TriggerRun).
+func (s *runService) trigger(ctx context.Context, task *model.Task, params map[string]*string, triggeredBy model.TriggeredBy, wait time.Duration) (*model.Run, error) {
+	if task.Kind.IsService() {
+		return nil, ErrServiceNotRunnable
 	}
 	// Validate supplied values at the boundary so a bad value surfaces as a 400
 	// (the manager re-resolves the same pure transform before persisting).
 	if _, err := model.ResolveParamValues(task.Parameters, params); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrInvalidParams, err.Error())
 	}
-	return s.taskManager.TriggerRunWithOptions(taskName, runtime.TriggerRunOptions{
-		TriggeredBy: triggeredBy,
-		Params:      params,
+	return s.waitForRun(ctx, wait, func() (*model.Run, error) {
+		return s.taskManager.TriggerRunWithOptions(task.Name, runtime.TriggerRunOptions{
+			TriggeredBy: triggeredBy,
+			Params:      params,
+		})
 	})
 }
 
-// terminalWaitBackstop is how often TriggerRunAndWait re-reads storage while
+// terminalWaitBackstop is how often waitForRun re-reads storage while
 // waiting. The in-memory event bus is best-effort (a slow consumer's event can
 // be dropped) and persistence is async, so neither is authoritative alone —
 // the poll is a cheap safety net that bounds worst-case latency if the live
 // event is missed.
 const terminalWaitBackstop = 2 * time.Second
 
-// TriggerRunAndWait triggers a run and blocks until it reaches a terminal state
-// or timeout elapses, returning the finished run (with exit_code / end_reason).
-// On timeout it returns the run in its latest known — possibly still running —
-// state; callers tell the two apart via the run's status. It exists so a remote
-// caller can fire a task and read its result in a single request instead of
-// trigger-then-poll.
-func (s *runService) TriggerRunAndWait(ctx context.Context, taskName string, params map[string]*string, triggeredBy model.TriggeredBy, timeout time.Duration) (*model.Run, error) {
-	// Subscribe before triggering: a fast task can finish and publish its
-	// terminal event before TriggerRun even returns, so we must already be
+// waitForRun calls act and, when wait > 0, blocks until the run it returns
+// ends or wait elapses (see awaitTerminal). A nil run (nothing started) is
+// returned as-is.
+func (s *runService) waitForRun(ctx context.Context, wait time.Duration, act func() (*model.Run, error)) (*model.Run, error) {
+	if wait <= 0 {
+		return act()
+	}
+	// Subscribe before acting: a fast task can finish and publish its
+	// terminal event before act even returns, so we must already be
 	// listening. The handler forwards every terminal run; we filter by ID once
 	// we know it.
 	terminal := make(chan *model.Run, 64)
@@ -185,11 +214,11 @@ func (s *runService) TriggerRunAndWait(ctx context.Context, taskName string, par
 	unsubFailed := s.eventBus.Subscribe(events.EventRunFailed, forward)
 	defer unsubFailed()
 
-	run, err := s.TriggerRun(ctx, taskName, params, triggeredBy)
-	if err != nil {
-		return nil, err
+	run, err := act()
+	if err != nil || run == nil {
+		return run, err
 	}
-	return s.awaitTerminal(ctx, run, terminal, timeout), nil
+	return s.awaitTerminal(ctx, run, terminal, wait), nil
 }
 
 // awaitTerminal blocks until run reaches a terminal state, timeout elapses, or
@@ -239,40 +268,63 @@ func (s *runService) resolveControllableTask(taskName string) (*model.Task, erro
 
 // StartTask starts a service or triggers a task. A service un-parks (if
 // operator-stopped) and fills empty instance slots; already-running instances
-// are left alone. A task with a run already active or queued no-ops instead
-// of piling up a second execution; otherwise it triggers exactly one fresh
-// run, identical to TriggerRun.
-func (s *runService) StartTask(ctx context.Context, taskName string, triggeredBy model.TriggeredBy) error {
+// are left alone. A task with a run already active no-ops instead of piling up
+// a second execution; otherwise it triggers exactly one fresh run, identical
+// to TriggerRun. The returned run is the one started or already in flight (nil
+// for a service); with wait > 0 it is returned once it ends.
+func (s *runService) StartTask(ctx context.Context, taskName string, triggeredBy model.TriggeredBy, wait time.Duration) (*model.Run, error) {
 	task, err := s.resolveControllableTask(taskName)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	return s.start(ctx, task, triggeredBy, wait)
+}
+
+func (s *runService) start(ctx context.Context, task *model.Task, triggeredBy model.TriggeredBy, wait time.Duration) (*model.Run, error) {
 	if task.Kind.IsService() {
-		return s.taskManager.StartService(taskName)
+		if wait > 0 {
+			return nil, ErrWaitUnsupported
+		}
+		return nil, s.taskManager.StartService(task.Name)
 	}
-	// ponytail: GetActiveRunCount only counts ts.active, not a PolicyQueue
-	// task's ts.queue, so a queued run mid-handoff to a freed slot can read as
-	// 0 for an instant. Worst case here is a redundant queued run in that
-	// narrow window — not worth a dedicated queued-count method for it.
-	if s.taskManager.GetActiveRunCount(taskName) > 0 {
-		return nil
+	// ponytail: GetActiveRuns only sees ts.active, not a PolicyQueue task's
+	// ts.queue, so a queued run mid-handoff to a freed slot can read as idle
+	// for an instant. Worst case here is a redundant queued run in that narrow
+	// window — not worth a dedicated queued-count method for it.
+	if active := s.taskManager.GetActiveRuns(task.Name); len(active) > 0 {
+		return s.waitForRun(ctx, wait, func() (*model.Run, error) { return active[0].Run, nil })
 	}
-	_, err = s.TriggerRun(ctx, taskName, nil, triggeredBy)
-	return err
+	return s.trigger(ctx, task, nil, triggeredBy, wait)
 }
 
 // StopTask cancels a service's live instances or a task's active and queued
 // runs. Neither touches the task's schedule — only in-flight executions are
-// cut short.
-func (s *runService) StopTask(taskName string) error {
+// cut short. With wait > 0 it returns once nothing is active any more, or
+// ErrStopDidNotDrain if that takes longer than wait.
+func (s *runService) StopTask(ctx context.Context, taskName string, wait time.Duration) error {
 	task, err := s.resolveControllableTask(taskName)
 	if err != nil {
 		return err
 	}
+	return s.stop(ctx, task, wait)
+}
+
+func (s *runService) stop(ctx context.Context, task *model.Task, wait time.Duration) error {
+	var err error
 	if task.Kind.IsService() {
-		return s.taskManager.StopService(taskName)
+		err = s.taskManager.StopService(task.Name)
+	} else {
+		err = s.taskManager.StopTask(task.Name)
 	}
-	return s.taskManager.StopTask(taskName)
+	if err != nil || wait <= 0 {
+		return err
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
+	if runtime.WaitIdle(waitCtx, s.taskManager, task.Name) != nil {
+		return ErrStopDidNotDrain
+	}
+	return nil
 }
 
 // restartDrainGrace pads a task's configured graceful-stop window so
@@ -283,25 +335,32 @@ const restartDrainGrace = 5 * time.Second
 // RestartTask restarts a service's instances or, for a task, stops its active
 // runs, waits for them to actually end, then triggers exactly one fresh run —
 // done server-side so a concurrency=skip policy can't swallow the new trigger
-// racing the old run's teardown.
-func (s *runService) RestartTask(ctx context.Context, taskName string, triggeredBy model.TriggeredBy) error {
+// racing the old run's teardown. For a task the fresh run is returned; with
+// wait > 0, once it ends.
+func (s *runService) RestartTask(ctx context.Context, taskName string, triggeredBy model.TriggeredBy, wait time.Duration) (*model.Run, error) {
 	task, err := s.resolveControllableTask(taskName)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	return s.restart(ctx, task, triggeredBy, wait)
+}
+
+func (s *runService) restart(ctx context.Context, task *model.Task, triggeredBy model.TriggeredBy, wait time.Duration) (*model.Run, error) {
 	if task.Kind.IsService() {
-		return s.taskManager.RestartServiceInstances(taskName)
+		if wait > 0 {
+			return nil, ErrWaitUnsupported
+		}
+		return nil, s.taskManager.RestartServiceInstances(task.Name)
 	}
-	if err := s.taskManager.StopTask(taskName); err != nil {
-		return err
+	if err := s.taskManager.StopTask(task.Name); err != nil {
+		return nil, err
 	}
-	waitCtx, cancel := context.WithTimeout(ctx, task.GracefulStopValue()+restartDrainGrace)
+	drainCtx, cancel := context.WithTimeout(ctx, task.GracefulStopValue()+restartDrainGrace)
 	defer cancel()
-	if runtime.WaitIdle(waitCtx, s.taskManager, taskName) != nil {
-		return ErrRestartDidNotDrain
+	if runtime.WaitIdle(drainCtx, s.taskManager, task.Name) != nil {
+		return nil, ErrRestartDidNotDrain
 	}
-	_, err = s.TriggerRun(ctx, taskName, nil, triggeredBy)
-	return err
+	return s.trigger(ctx, task, nil, triggeredBy, wait)
 }
 
 func (s *runService) DeleteRun(ctx context.Context, runID string) error {

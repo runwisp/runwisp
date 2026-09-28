@@ -106,6 +106,58 @@ docker run --rm -e RUNWISP_AUTH=off -p 127.0.0.1:9477:9477 \
   -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro runwisp/runwisp:latest
 ```
 
+## Hooks
+
+A CI job or webhook can control one task or service without the password. Give
+it a [`hook_tokens`](/configuration/tasks/#hook_tokens) entry, then send the
+token as a bearer header:
+
+```bash
+curl -fsS -X POST -H "Authorization: Bearer $CI_DEPLOY_TOKEN" \
+  "https://runwisp.example.com:9477/api/hooks/tasks/deploy/run?wait=true"
+```
+
+Each hook is a session route under `/api/hooks/`, with the same query, body, and
+response:
+
+| Hook                                   | Same as                          |
+| -------------------------------------- | -------------------------------- |
+| `POST /api/hooks/tasks/{name}/run`     | `POST /api/tasks/{name}/run`     |
+| `POST /api/hooks/tasks/{name}/start`   | `POST /api/tasks/{name}/start`   |
+| `POST /api/hooks/tasks/{name}/stop`    | `POST /api/tasks/{name}/stop`    |
+| `POST /api/hooks/tasks/{name}/restart` | `POST /api/tasks/{name}/restart` |
+
+Add `?wait=true` to hold the request until the work is done:
+
+- `run`, `start`, `restart` on a task: returns the finished run with its
+  `exitCode` and `endReason`. `start` on a task that is already running waits
+  for that run.
+- `stop`: returns once every run has ended, or `409` if some are still ending
+  when `waitTimeout` (seconds, default `120`) runs out.
+- `start`, `restart` on a service: `400`, since a service instance doesn't end
+  on its own.
+
+Runs started this way show as triggered by `hook`.
+
+If a webhook sender can only set a URL, pass the token as a query parameter
+instead. The header wins when both are sent.
+
+```text
+https://runwisp.example.com:9477/api/hooks/tasks/deploy/run?token=<token>
+```
+
+:::caution
+A token in the URL is insecure. Proxies, CI logs, browser history, and the
+webhook sender's own dashboard can all record it. Use the header whenever you
+can, and give URL callers their own token so you can rotate it on its own.
+:::
+
+A missing or wrong token gets `401`, and so does an unknown task, so hooks don't
+reveal which tasks exist. A valid token whose `allow` list leaves out the action
+gets `403`. Tokens are checked even with `RUNWISP_AUTH=off`, and
+[`manual_trigger`](/configuration/tasks/#manual_trigger) doesn't apply. A rotated
+token takes effect on [`runwisp reload`](/operations/reload/).
+
 ## Rate limiting
 
 Login requests are limited per client IP: 5 requests in any 5-minute window,
@@ -115,6 +167,10 @@ A restart resets the count. The control socket isn't limited.
 
 Scripts should log in once and reuse the session token; `runwisp run --url`
 does this for you.
+
+[Hooks](#hooks) are limited by failures only: after 20 rejected tokens from one
+client IP within a minute, that IP gets `429` (even with a valid token) until
+the window moves on. Successful calls never count.
 
 Live log streams are capped at 128 open at once, and 16 per client IP. Past the
 cap, new streams get `503 Service Unavailable`. Close some log views and try
@@ -153,6 +209,8 @@ These answer without a password:
 - `GET /metrics`: when [metrics](/operations/metrics/) are on and share the main
   listener.
 - `/api/auth/*`: login status, challenge, login, and launch-ticket redemption.
+- `POST /api/hooks/*`: needs one of the unit's [hook tokens](#hooks) instead,
+  in the header or the URL.
 - `GET /api/daemon/identity`: tells a starting `runwisp` which daemon holds the
   port. Loopback and socket callers only; `403` for everyone else.
 - The Web UI's static files.

@@ -203,6 +203,10 @@ describe("formatTriggeredByLabel", () => {
     it("returns 'Startup' for 'startup'", () => {
         expect(formatTriggeredByLabel("startup")).toBe("Startup");
     });
+
+    it("returns 'Hook' for 'hook'", () => {
+        expect(formatTriggeredByLabel("hook")).toBe("Hook");
+    });
 });
 
 describe("formatCompactCount", () => {
