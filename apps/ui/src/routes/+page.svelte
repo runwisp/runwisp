@@ -6,7 +6,7 @@
     import { goto } from "$app/navigation";
     import { resolve } from "$app/paths";
     import { OverviewPage, type DaemonState, type DaemonStats } from "$lib/components/dashboard";
-    import { formatBytes } from "@runwisp/ui";
+    import { formatBytes, RunMotion } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { runsApi, tasksApi, systemApi, systemEventSchema, type MetricsSample } from "$lib/api";
     import {
@@ -106,6 +106,9 @@
         };
     });
 
+    // Runs that finish while the page is open slide into Recent activity.
+    const motion = new RunMotion();
+
     $effect(() => {
         const unsubscribe = runUpdatesStore.subscribeToUpdates((event) => {
             if (event.type === "run.deleted") {
@@ -115,6 +118,7 @@
                 return;
             }
             const run = event.data.run;
+            if (run.status === "ended") motion.markArrived(run.id);
 
             dashState.recentRuns = upsertRun(dashState.recentRuns, run).slice(0, RECENT_RUN_LIMIT);
             dashState.runningRuns = upsertRunningRun(dashState.runningRuns, run, RUNNING_RUN_LIMIT);
@@ -249,5 +253,6 @@
         onViewAllRuns={() => goto(resolve("/runs"))}
         onTaskClick={handleTaskClick}
         onRunClick={handleRunClick}
+        {motion}
     />
 </AsyncDataView>

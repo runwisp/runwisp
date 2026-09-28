@@ -42,6 +42,8 @@ export default defineConfig({
                 "packages/ui/src/lib/components/filter-spec.ts",
                 "packages/ui/src/lib/utils/filter.ts",
                 "packages/ui/src/lib/utils/debounce.ts",
+                "packages/ui/src/lib/utils/run-motion.ts",
+                "packages/ui/src/lib/actions/row-motion.ts",
                 "packages/common/src/utils/ulid.ts",
             ],
             exclude: [

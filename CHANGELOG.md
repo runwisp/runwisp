@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `POST /api/tasks/{task}/stop` and `.../restart` now act on plain tasks instead of returning 400 Bad Request.
 - Notification emails now use RunWisp's colours instead of a generic blue theme.
+- In the web UI, runs that start, finish or get deleted while you watch now animate in the run history and the overview's Recent activity: new runs slide in with a brief highlight, removed runs fade out, and the rest of the list slides to make room. Clicking through runs stays instant.
+- The overview's Recent activity now lists finished runs only; queued runs no longer flash in and out of it.
 
 ### Fixed
 

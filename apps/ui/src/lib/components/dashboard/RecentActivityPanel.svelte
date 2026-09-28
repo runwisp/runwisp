@@ -4,12 +4,16 @@
 <script lang="ts">
     import { ArrowRight, RotateCcwClock } from "@lucide/svelte";
     import {
+        arrival,
+        leave,
+        shift,
         getRunStatusConfig,
         runDisplayStatus,
         instanceSuffix,
         Card,
         EmptyState,
     } from "@runwisp/ui";
+    import type { RunMotion } from "@runwisp/ui";
     import type { Run } from "@runwisp/common";
     import {
         formatRunDurationLabel,
@@ -23,12 +27,17 @@
         onRunClick,
         onViewAllRuns,
         getInstanceCount = () => 1,
+        motion,
     } = $props<{
         recentActivity?: Run[];
         now?: Date;
         onRunClick?: (taskName: string, runId: string) => void;
         onViewAllRuns?: () => void;
         getInstanceCount?: (taskName: string) => number;
+        // Runs that finished live moments ago drop in with the shared arrival
+        // cue. Rows only ever leave this list live (deleted, or pushed off the
+        // bottom), so they always sweep out.
+        motion?: RunMotion;
     }>();
 
     function viewRun(run: Run): void {
@@ -65,6 +74,10 @@
                 {@const suffix = instanceSuffix(run.instanceIndex, getInstanceCount(run.taskName))}
 
                 <button
+                    data-run-id={run.id}
+                    animate:shift
+                    use:arrival={motion?.arrived(run.id) ?? false}
+                    out:leave={() => true}
                     class="group flex w-full items-start gap-3 rounded-[3px] p-2.5 text-left hover:bg-surface-sunken"
                     onclick={() => viewRun(run)}
                 >

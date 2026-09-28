@@ -314,6 +314,55 @@ describe("createRunsSource SSE filter parity (matchesFilters)", () => {
         expect(src.total).toBe(3);
     });
 
+    // The arrival animation must fire only for runs that arrive live, never for
+    // rows a page fetch loaded, and must expire so a later click stays instant.
+    it("marks only live-inserted runs fresh, for a short window", async () => {
+        const src = await loadedWithRuns({}, [makeRun("loaded")]);
+        const now = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+        try {
+            src.upsert(
+                makeRun("live", { createdAt: "2026-06-22T12:01:00.000Z", status: "pending" }),
+            );
+            // A terminal run inserted by a deep-link fetch or undo restore.
+            src.upsert(makeRun("restored", { createdAt: "2026-06-22T11:00:00.000Z" }));
+            expect(src.motion.arrived("live")).toBe(true);
+            expect(src.motion.arrived("loaded")).toBe(false);
+            expect(src.motion.arrived("restored")).toBe(false);
+
+            now.mockReturnValue(1_000_000 + 2000);
+            expect(src.motion.arrived("live")).toBe(false);
+        } finally {
+            now.mockRestore();
+        }
+    });
+
+    it("forgets arrivals when the filters change", async () => {
+        const src = await loadedWith({});
+        src.upsert(makeRun("live", { status: "running" }));
+        expect(src.motion.arrived("live")).toBe(true);
+        src.setFilters(baseFilters({ statuses: ["failed"] }));
+        expect(src.motion.arrived("live")).toBe(false);
+    });
+
+    // The exit animation must fire for runs removed live (a delete, or a live
+    // update dropping out of the filter), never for rows a refetch replaced.
+    it("marks live removals, not rows a filter change dropped", async () => {
+        const src = await loadedWithRuns({ statuses: ["running"] }, [
+            makeRun("deleted", { status: "running" }),
+            makeRun("finished", { status: "running" }),
+            makeRun("refetched", { status: "running" }),
+        ]);
+        src.remove("deleted");
+        src.upsert(makeRun("finished", { status: "ended" }));
+        expect(src.items.map((r) => r.id)).toEqual(["refetched"]);
+        expect(src.motion.removed("deleted")).toBe(true);
+        expect(src.motion.removed("finished")).toBe(true);
+
+        src.setFilters(baseFilters());
+        expect(src.motion.removed("deleted")).toBe(false);
+        expect(src.motion.removed("refetched")).toBe(false);
+    });
+
     // Guards M3: the optimistic remove and the server's run.deleted SSE echo
     // both call remove() for the same id. Only the call that actually removes a
     // row may decrement total, or the count drifts below the true value.

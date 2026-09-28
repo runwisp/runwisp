@@ -20,7 +20,7 @@
     } from "./overview.js";
     import { instanceCountResolver } from "./instance-count.js";
     import { TickingNow, PageContainer, Card } from "@runwisp/ui";
-    import type { DaemonState, DaemonStats } from "@runwisp/ui";
+    import type { DaemonState, DaemonStats, RunMotion } from "@runwisp/ui";
     import type { Run, Task } from "@runwisp/common";
 
     const TASK_FILTERS: { value: OverviewTaskFilter; label: string }[] = [
@@ -60,6 +60,7 @@
         onViewAllRuns,
         onTaskClick,
         onRunClick,
+        motion,
     } = $props<{
         state: DaemonState;
         stats: DaemonStats;
@@ -73,6 +74,8 @@
         onViewAllRuns?: () => void;
         onTaskClick?: (taskName: string) => void;
         onRunClick?: (taskName: string, runId: string) => void;
+        // Runs that finished live moments ago; they animate in.
+        motion?: RunMotion;
     }>();
 
     let searchQuery = $state("");
@@ -118,10 +121,11 @@
     let upcomingTasks = $derived(
         schedulingActive ? filterTaskOverviews(taskOverviews, "", "scheduled", "next_run") : [],
     );
-    // Exclude in-flight runs — they already have their own "Running now" pane;
-    // Recent activity is for finished work.
+    // Recent activity is for finished work; running runs have their own
+    // "Running now" pane. Pending runs are excluded too: a scheduled run is
+    // pending for an instant, and listing it made the rows jump in and out.
     let recentActivity = $derived(
-        sortRunsByStartDesc(recentRuns.filter((run: Run) => run.status !== "running")).slice(
+        sortRunsByStartDesc(recentRuns.filter((run: Run) => run.status === "ended")).slice(
             0,
             RECENT_ACTIVITY_LIMIT,
         ),
@@ -171,6 +175,7 @@
                 {onRunClick}
                 {onViewAllRuns}
                 {getInstanceCount}
+                {motion}
             />
         </div>
     </div>

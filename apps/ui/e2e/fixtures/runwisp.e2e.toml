@@ -50,6 +50,10 @@ printf '\n'
 echo progress-done
 """
 
+[tasks.arrival-task]
+description = "Exercised only by run-motion.spec, so its run list stays short"
+run = "echo arrived"
+
 # Surface failed runs as in-app notifications so the bell + popover have
 # something real to render. No outbound notifiers configured.
 [[route]]

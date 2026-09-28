@@ -5,7 +5,13 @@
     import { Play, Square, RefreshCcw } from "@lucide/svelte";
     import { SvelteMap } from "svelte/reactivity";
     import { isService, type Task, type Run } from "@runwisp/common";
-    import type { LogEvent, LogSlice, RunsListFilters, RunOutputMatch } from "@runwisp/ui";
+    import type {
+        LogEvent,
+        LogSlice,
+        RunMotion,
+        RunsListFilters,
+        RunOutputMatch,
+    } from "@runwisp/ui";
     import { RunsList, RunDetailPanel, Button, Modal, Alert, AlertDialog } from "@runwisp/ui";
     import { tasksApi } from "$lib/api";
     import { headerSearchStore } from "$lib/stores";
@@ -34,6 +40,7 @@
         fetchLogs,
         streamLogs,
         fetchLineHistory,
+        motion,
         initialRunId = null,
         initialHighlightLine = null,
         selectRunId = null,
@@ -69,6 +76,8 @@
             initialState?: { fromLine: number },
         ) => () => void;
         fetchLineHistory?: (runId: string, lineNum: number) => Promise<string[][]>;
+        // Runs that arrived or were removed live moments ago; they animate.
+        motion?: RunMotion;
         initialRunId?: string | null;
         initialHighlightLine?: number | null;
         selectRunId?: string | null;
@@ -334,6 +343,7 @@
                 onBulkDelete={handleBulkDelete}
                 onBulkRerun={handleBulkRerun}
                 getInstanceCount={() => instanceCount}
+                {motion}
                 outputSearch
                 {outputQuery}
                 {outputMatches}
@@ -363,6 +373,7 @@
             historyVisible={historyExpanded}
             {highlightLine}
             getInstanceCount={() => instanceCount}
+            {motion}
             notFound={deepLinkMissing}
         />
     </div>

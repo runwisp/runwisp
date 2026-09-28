@@ -45,6 +45,7 @@ export default defineConfig({
                 "notifications.spec.ts",
                 "theme.spec.ts",
                 "frame-history.spec.ts",
+                "run-motion.spec.ts",
             ],
             use: { ...devices["Desktop Chrome"] },
         },

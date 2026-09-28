@@ -107,6 +107,7 @@
         fetchLogs={logSession.fetchLogs}
         streamLogs={logSession.streamLogs}
         fetchLineHistory={logSession.fetchLineHistory}
+        motion={source.motion}
         {getInstanceCount}
         initialRunId={runIdParam}
         {runNotFound}

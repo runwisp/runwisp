@@ -29,6 +29,8 @@
     import Popover from "../Popover.svelte";
     import Tooltip from "../Tooltip.svelte";
     import { portal } from "../../actions/portal.js";
+    import { prefersReducedMotion } from "../../actions/row-motion.js";
+    import type { RunMotion } from "../../utils/run-motion.js";
     import type { Run } from "./types.js";
     import { isLogEvent, type LogEvent, type LogSlice } from "../../log-console/types.js";
     import { formatClockTime, formatCalendarDate } from "../../utils/format.js";
@@ -63,6 +65,7 @@
         historyVisible = false,
         highlightLine = null,
         getInstanceCount = () => 1,
+        motion,
         notFound = false,
     }: {
         run: Run | undefined;
@@ -109,11 +112,35 @@
         // Resolves a task's currently configured instance count so multi-instance
         // services render a 1-based #N suffix. Defaults to single-instance.
         getInstanceCount?: (taskName: string) => number;
+        // Which runs arrived or were removed live moments ago. The panel eases in
+        // when a new run takes it (triggered, or a scheduled run auto-selected)
+        // or when its run was deleted and another takes its place; picking a
+        // run by hand swaps instantly.
+        motion?: RunMotion;
         // True when a deep-linked run id resolved to no run (deleted by retention,
         // or never existed). The empty state then says so plainly instead of the
         // generic "Select a run" — the caller must not silently substitute another.
         notFound?: boolean;
     } = $props();
+
+    function easeInFresh(node: HTMLElement, runId: string) {
+        let shown = runId;
+        const play = (id: string) => {
+            const previous = shown;
+            shown = id;
+            if (!motion?.arrived(id) && !motion?.removed(previous)) return;
+            if (prefersReducedMotion()) return;
+            node.animate(
+                [
+                    { opacity: 0.35, translate: "0 6px" },
+                    { opacity: 1, translate: "0 0" },
+                ],
+                { duration: 200, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
+            );
+        };
+        play(runId);
+        return { update: play };
+    }
 
     let canDelete = $derived.by(() => {
         if (!run || !onDelete) return false;
@@ -355,7 +382,10 @@
     <!-- The panel: a status spine runs the full left edge across both the header
          readout and the console below, hugging the rail divider (artifact
          ".detail .spine"). -->
-    <div class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div
+        use:easeInFresh={run.id}
+        class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+    >
         <!-- Status spine: a vivid edge coloring the panel by outcome; it streams
              a light sweep while a run is live. -->
         <div

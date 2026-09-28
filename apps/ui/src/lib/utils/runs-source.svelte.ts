@@ -7,6 +7,7 @@ import {
     runPhaseOrder,
     exitCodeRange,
     FAILURE_STATUS_TOKEN,
+    RunMotion,
     type ExitCodeRange,
     type RunsListFilters,
 } from "@runwisp/ui";
@@ -39,6 +40,13 @@ export interface RunsSource {
     refresh(): void;
     upsert(run: Run): void;
     remove(runId: string): void;
+    /**
+     * Runs that arrived (in flight, via upsert(): a trigger or a scheduled
+     * firing) or left (remove(), or a live update that no longer matches the
+     * filters) moments ago. Drives the list animations; page fetches, filter
+     * changes and pagination never mark anything.
+     */
+    readonly motion: RunMotion;
 }
 
 type RunsQuery = NonNullable<Parameters<typeof runsApi.getAll>[0]>;
@@ -143,6 +151,7 @@ export function createRunsSource(): RunsSource {
     let error = $state<Error | null>(null);
     let currentFilters = $state<RunsFilters | null>(null);
     let fetchToken = 0;
+    const motion = new RunMotion();
 
     const done = $derived(currentFilters !== null && items.length >= total);
 
@@ -198,6 +207,7 @@ export function createRunsSource(): RunsSource {
     function setFilters(next: RunsFilters): void {
         if (filtersEqual(currentFilters, next)) return;
         currentFilters = { ...next };
+        motion.clear();
         items = [];
         total = 0;
         void fetchPage(0, true);
@@ -223,6 +233,7 @@ export function createRunsSource(): RunsSource {
         }
         const next = [...items];
         if (!matchesFilters(run, f)) {
+            motion.markRemoved(run.id);
             next.splice(idx, 1);
             items = next;
             if (total > 0) total -= 1;
@@ -234,6 +245,9 @@ export function createRunsSource(): RunsSource {
 
     function insertNew(run: Run, f: RunsFilters): void {
         if (!matchesFilters(run, f)) return;
+        // Triggered and scheduled runs always arrive in flight. A terminal run
+        // inserted here is a deep-link fetch or an undo restore, not news.
+        if (run.status === "pending" || run.status === "running") motion.markArrived(run.id);
         if (isCreatedAtDesc(f)) {
             const ts = Date.parse(run.createdAt);
             const insertAt = items.findIndex((r) => Date.parse(r.createdAt) < ts);
@@ -266,6 +280,7 @@ export function createRunsSource(): RunsSource {
         // same id; decrementing on the second (idx === -1) call would drift the
         // count below the true total and can prematurely mark the list "done".
         if (idx === -1) return;
+        motion.markRemoved(runId);
         const next = [...items];
         next.splice(idx, 1);
         items = next;
@@ -299,5 +314,6 @@ export function createRunsSource(): RunsSource {
         refresh,
         upsert,
         remove,
+        motion,
     };
 }
