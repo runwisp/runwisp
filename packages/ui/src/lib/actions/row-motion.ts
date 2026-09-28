@@ -11,6 +11,16 @@ const LEAVE_MS = 160;
 const CLOSE_GAP_DELAY_MS = 110;
 const SHIFT_MS = 200;
 
+// The slices of a row (and of the list it sits in) these helpers touch. Every
+// real row element satisfies them; naming just the members used keeps the
+// helpers unit-testable without a browser DOM.
+type ArrivingRow = { readonly classList: Pick<DOMTokenList, "add"> };
+type LeavingRow = {
+    readonly dataset: DOMStringMap;
+    readonly parentElement: { readonly style: ListStyle } | null;
+};
+type ListStyle = Pick<CSSStyleDeclaration, "setProperty" | "removeProperty">;
+
 export function prefersReducedMotion(): boolean {
     return matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
@@ -20,7 +30,7 @@ export function prefersReducedMotion(): boolean {
  * mounts for a freshly arrived run. Mount-only, so the run's next re-render
  * (pending → running) can't cut the animation short.
  */
-export function arrival(node: HTMLElement, fresh: boolean) {
+export function arrival(node: ArrivingRow, fresh: boolean) {
     if (fresh) node.classList.add("run-arrive");
 }
 
@@ -32,7 +42,7 @@ export function arrival(node: HTMLElement, fresh: boolean) {
  * rows sliding up with a CSS transition start after the fade.
  */
 export function leave(
-    node: HTMLElement,
+    node: LeavingRow,
     removed: ((runId: string) => boolean) | undefined,
 ): TransitionConfig {
     const runId = node.dataset.runId;
