@@ -423,7 +423,11 @@ func (cp *crontabParser) importJob(line string) bool {
 	command := cc.run
 
 	base := deriveCronName(command)
-	ref, name, skip := cp.names.resolve(base, base, model.KindTask, command, cp.line)
+	// The per-line user column, or the whole file's owner for a spool crontab.
+	// applyOwner resolves which, so buildJob doesn't have to know the difference.
+	owner := cp.applyOwner(j)
+	id := OwnedEntry{Kind: model.KindTask, Run: command, User: owner, Schedule: cronSchedule(j.schedule, j.runOnStart)}
+	ref, name, skip := cp.names.resolve(base, base, id, cp.line)
 	if skip {
 		return true
 	}
@@ -440,9 +444,7 @@ func (cp *crontabParser) importJob(line string) bool {
 
 	schedule := cp.applySchedule(&b, ref, j.schedule, j.runOnStart)
 
-	// The per-line user column, or the whole file's owner for a spool crontab.
-	// applyOwner resolves which, so buildJob doesn't have to know the difference.
-	if owner := cp.applyOwner(j); owner != "" {
+	if owner != "" {
 		b.set("user", tomlString(owner))
 	}
 	// A relative SHELL was already flagged in handleEnv; only an absolute path

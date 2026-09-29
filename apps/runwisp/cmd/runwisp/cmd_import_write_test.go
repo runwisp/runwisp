@@ -165,7 +165,8 @@ func TestImportCronTwoTierReimportRenamesDifferentCommand(t *testing.T) {
 
 	stderr, err := importTwoTier(t, cfgPath, "30 2 * * * /usr/bin/backup.sh --full\n")
 	require.NoError(t, err)
-	assert.Contains(t, stderr, "imported this one as")
+	// The report wraps notes to the terminal, so compare with whitespace folded.
+	assert.Contains(t, strings.Join(strings.Fields(stderr), " "), "imported this one as")
 
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)

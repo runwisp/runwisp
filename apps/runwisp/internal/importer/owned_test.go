@@ -45,42 +45,58 @@ func TestOwnedFrom_SkipsStaged(t *testing.T) {
 }
 
 func TestSameEntry(t *testing.T) {
+	job := OwnedEntry{Kind: model.KindTask, Run: "/bin/job"}
 	tests := []struct {
 		name     string
 		existing OwnedEntry
-		kind     model.TaskKind
-		command  string
+		incoming OwnedEntry
 		want     bool
 	}{
-		{
-			name:     "same kind and command",
-			existing: OwnedEntry{Kind: model.KindTask, Run: "/bin/job"},
-			kind:     model.KindTask, command: "/bin/job", want: true,
-		},
+		{name: "same kind and command", existing: job, incoming: job, want: true},
 		{
 			name:     "whitespace differences don't matter",
 			existing: OwnedEntry{Kind: model.KindTask, Run: "  /bin/job "},
-			kind:     model.KindTask, command: "/bin/job", want: true,
+			incoming: job, want: true,
 		},
 		{
 			name:     "different command",
 			existing: OwnedEntry{Kind: model.KindTask, Run: "/bin/other"},
-			kind:     model.KindTask, command: "/bin/job", want: false,
+			incoming: job, want: false,
 		},
 		{
 			name:     "different kind",
 			existing: OwnedEntry{Kind: model.KindService, Run: "/bin/job"},
-			kind:     model.KindTask, command: "/bin/job", want: false,
+			incoming: job, want: false,
 		},
 		{
 			name:     "both commandless is not a match",
-			existing: OwnedEntry{Kind: model.KindTask, Run: ""},
-			kind:     model.KindTask, command: "", want: false,
+			existing: OwnedEntry{Kind: model.KindTask},
+			incoming: OwnedEntry{Kind: model.KindTask}, want: false,
+		},
+		{
+			name:     "different user",
+			existing: OwnedEntry{Kind: model.KindTask, Run: "/bin/job", User: "alice"},
+			incoming: OwnedEntry{Kind: model.KindTask, Run: "/bin/job", User: "bob"}, want: false,
+		},
+		{
+			name:     "operator-authored entry matches any schedule",
+			existing: job,
+			incoming: OwnedEntry{Kind: model.KindTask, Run: "/bin/job", Schedule: "0 3 * * *"}, want: true,
+		},
+		{
+			name:     "cron-sourced entry on another schedule",
+			existing: OwnedEntry{Kind: model.KindTask, Run: "/bin/job", Schedule: "0 3 * * *"},
+			incoming: OwnedEntry{Kind: model.KindTask, Run: "/bin/job", Schedule: "30 4 * * *"}, want: false,
+		},
+		{
+			name:     "cron-sourced entry on its own schedule",
+			existing: OwnedEntry{Kind: model.KindTask, Run: "/bin/job", Schedule: "@reboot"},
+			incoming: OwnedEntry{Kind: model.KindTask, Run: "/bin/job", Schedule: "@reboot"}, want: true,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := sameEntry(tc.existing, tc.kind, tc.command); got != tc.want {
+			if got := sameEntry(tc.existing, tc.incoming); got != tc.want {
 				t.Errorf("sameEntry = %v, want %v", got, tc.want)
 			}
 		})

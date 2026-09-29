@@ -285,6 +285,9 @@ A glob picks only the files cron would read:
 - **Spool directories:** any name that could be a user (`john.doe` is fine),
   except `tmp.*` (the temporary file `crontab -e` writes).
 - A path you name exactly is always read, whatever its name.
+- A symlink is not followed, even though cron may run it. It is reported as a
+  job that is not running, and `runwisp takeover` stops until you replace it
+  with the file it points to.
 - Skipped files are reported with the reason.
 - A spool directory the daemon can't read (Debian ships
   `/var/spool/cron/crontabs` as `1730 root:crontab`) is reported, because cron

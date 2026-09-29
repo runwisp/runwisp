@@ -230,6 +230,28 @@ func TestCronExistingRenamesDifferentCommand(t *testing.T) {
 	}
 }
 
+func TestCronExistingCronSourcedJobMatchesOnlyItsOwnLine(t *testing.T) {
+	// A task the live config reads from a crontab is one exact line. The same
+	// command on another schedule or for another user is a different crond job,
+	// and used to be skipped as "already defined", dropping it from the import.
+	cronSourced := OwnedFrom([]model.Task{{
+		Name: "backup", Kind: model.KindTask, Run: "/usr/bin/backup.sh",
+		Cron: "0 3 * * *", RunUser: "root", Source: model.SourceCron,
+	}})
+	for _, line := range []string{
+		"30 2 * * * root /usr/bin/backup.sh\n",
+		"0 3 * * * deploy /usr/bin/backup.sh\n",
+	} {
+		res := parseCron(t, line, CronOptions{System: true, Existing: cronSourced})
+		mustContain(t, res.TOML(), "[tasks.backup-2]")
+	}
+
+	res := parseCron(t, "0 3 * * * root /usr/bin/backup.sh\n", CronOptions{System: true, Existing: cronSourced})
+	if !hasNoteKind(res, NoteAlreadyDefined) {
+		t.Fatalf("the very line include_cron already runs must be skipped, got %+v", allNotes(res))
+	}
+}
+
 func TestCronExistingServiceForcesRename(t *testing.T) {
 	// A clash against a service always renames, never skips — a service and a
 	// task are different things even at the same name with the same command.

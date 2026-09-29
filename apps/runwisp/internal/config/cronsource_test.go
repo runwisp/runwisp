@@ -191,6 +191,92 @@ include_cron = ["crontabs/*"]
 	assert.Contains(t, warnings, "backup-zeta")
 }
 
+// TestIncludeCron_SameCommandInTwoCrontabsBothRun: one command in two crontabs is
+// two crond jobs, whatever their schedules. A later file used to match the earlier
+// one on the command alone and drop its job with no finding, so it silently
+// stopped running after a takeover.
+func TestIncludeCron_SameCommandInTwoCrontabsBothRun(t *testing.T) {
+	stubCronUsers(t, "root", "deploy")
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["cron.d/*"]
+`,
+		"cron.d/alpha": "0 3 * * * root /usr/local/bin/backup.sh\n",
+		"cron.d/mu":    "0 3 * * * root /usr/local/bin/backup.sh\n",
+		"cron.d/zeta":  "30 4 * * * deploy /usr/local/bin/backup.sh\n",
+	})
+
+	cfg := loadTree(t, dir)
+	assert.ElementsMatch(t, []string{"backup", "backup-mu", "backup-zeta"}, taskNames(cfg))
+	assert.Equal(t, "30 4 * * *", findTask(t, cfg, "backup-zeta").Cron)
+	assert.Equal(t, "deploy", findTask(t, cfg, "backup-zeta").RunUser)
+	for _, f := range cfg.CronFindings {
+		assert.False(t, f.Skipped, "no job may be dropped: %s", f)
+	}
+
+	scan := ScanCronSources([]string{"cron.d/*"}, filepath.Join(dir, "runwisp.toml"))
+	assert.Equal(t, 3, scan.Live, "the takeover scan must agree that all three run")
+	assert.Empty(t, scan.Skipped)
+}
+
+// TestIncludeCron_NativeTaskOfAnotherUserDoesNotClaimCronJob: a TOML task only
+// stands in for a crontab line that runs as the same account. Bob's job is not
+// the one promoted out of Alice's crontab.
+func TestIncludeCron_NativeTaskOfAnotherUserDoesNotClaimCronJob(t *testing.T) {
+	stubCronUsers(t, "alice", "bob")
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["cron.d/*"]
+
+[tasks.backup]
+cron = "0 3 * * *"
+run = "/usr/local/bin/backup.sh"
+user = "alice"
+`,
+		"cron.d/bob": "0 3 * * * bob /usr/local/bin/backup.sh\n",
+	})
+
+	cfg := loadTree(t, dir)
+	require.ElementsMatch(t, []string{"backup", "backup-bob"}, taskNames(cfg))
+	assert.Equal(t, "bob", findTask(t, cfg, "backup-bob").RunUser)
+}
+
+// TestIncludeCron_SymlinkInGlobIsSkippedAndBlocksTakeover: Debian's crond runs a
+// root-owned symlink in /etc/cron.d, but the trust check refuses symlinks (see
+// TestCronTrust_SymlinkRefused). Those jobs therefore stop after a takeover, so the
+// finding must be Skipped: that is what makes the takeover plan block on it.
+func TestIncludeCron_SymlinkInGlobIsSkippedAndBlocksTakeover(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": `
+[daemon]
+include_cron = ["cron.d/*"]
+`,
+		"cron.d/live":   "0 3 * * * root /usr/local/bin/live.sh\n",
+		"elsewhere/job": "0 4 * * * root /usr/local/bin/linked.sh\n",
+	})
+	stubCronUsers(t, "root")
+	link := filepath.Join(dir, "cron.d", "linked")
+	require.NoError(t, os.Symlink(filepath.Join(dir, "elsewhere", "job"), link))
+
+	cfg := loadTree(t, dir)
+	assert.Equal(t, []string{"live"}, taskNames(cfg))
+	var found *CronFinding
+	for i := range cfg.CronFindings {
+		if cfg.CronFindings[i].File == link {
+			found = &cfg.CronFindings[i]
+		}
+	}
+	require.NotNil(t, found, "the symlink was passed over silently")
+	assert.True(t, found.Skipped, "crond may run it, so it has stopped running")
+	assert.Contains(t, found.Reason, "symlink")
+
+	scan := ScanCronSources([]string{"cron.d/*"}, filepath.Join(dir, "runwisp.toml"))
+	require.Len(t, scan.Skipped, 1, "the takeover gate reads Skipped")
+	assert.Contains(t, scan.Skipped[0], link)
+}
+
 // TestIncludeCron_BlockedJobSkippedRestKept is the parity decision: crond drops a
 // malformed entry and keeps the file, so RunWisp does too — loudly.
 func TestIncludeCron_BlockedJobSkippedRestKept(t *testing.T) {
