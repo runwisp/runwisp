@@ -5,6 +5,7 @@ package configedit
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -226,7 +227,7 @@ func TestFileBackup_RestoreUsesAtomicReplace(t *testing.T) {
 	require.NoError(t, err)
 	changedIno := changed.Sys().(*syscall.Stat_t).Ino
 
-	b.restore()
+	b.restore(hostDisk())
 
 	assert.Equal(t, "original\n", readFile(t, path))
 	after, err := os.Stat(path)
@@ -310,4 +311,183 @@ func TestTxn_WritePreservingOwnerRollsBackOnFailure(t *testing.T) {
 	afterOwner := after.Sys().(*syscall.Stat_t)
 	assert.Equal(t, beforeOwner.Uid, afterOwner.Uid, "restore must preserve the original owner")
 	assert.Equal(t, beforeOwner.Gid, afterOwner.Gid, "restore must preserve the original group")
+}
+
+// TestTxn_WriteThroughSymlinkKeepsTheLink: a runwisp.toml symlinked into a
+// dotfiles repo used to be replaced by a plain file (rename swaps the link
+// itself), silently forking the config from the repo. The edit must land in
+// the link's target and the link must survive, including across a rollback.
+func TestTxn_WriteThroughSymlinkKeepsTheLink(t *testing.T) {
+	repo := writeFileTree(t, map[string]string{"runwisp.toml": "original\n"})
+	target := filepath.Join(repo, "runwisp.toml")
+	link := filepath.Join(t.TempDir(), "runwisp.toml")
+	require.NoError(t, os.Symlink(target, link))
+
+	txn := New()
+	txn.Write(link, []byte("changed\n"), DefaultPerm)
+	require.NoError(t, txn.Apply(nil))
+
+	assertSymlink(t, link, target)
+	assert.Equal(t, "changed\n", readFile(t, target))
+
+	txn = New()
+	txn.Write(link, []byte("refused\n"), DefaultPerm)
+	require.Error(t, txn.Apply(func() error { return errors.New("no") }))
+
+	assertSymlink(t, link, target)
+	assert.Equal(t, "changed\n", readFile(t, target))
+}
+
+// TestTxn_WriteThroughRelativeSymlinkChain covers a relative link pointing at
+// another link: each hop resolves against the directory of the link holding it.
+func TestTxn_WriteThroughRelativeSymlinkChain(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{"real/runwisp.toml": "original\n"})
+	require.NoError(t, os.Symlink("real/runwisp.toml", filepath.Join(dir, "hop.toml")))
+	require.NoError(t, os.Symlink("hop.toml", filepath.Join(dir, "runwisp.toml")))
+
+	txn := New()
+	txn.Write(filepath.Join(dir, "runwisp.toml"), []byte("changed\n"), DefaultPerm)
+	require.NoError(t, txn.Apply(nil))
+
+	assertSymlink(t, filepath.Join(dir, "runwisp.toml"), "hop.toml")
+	assertSymlink(t, filepath.Join(dir, "hop.toml"), "real/runwisp.toml")
+	assert.Equal(t, "changed\n", readFile(t, filepath.Join(dir, "real", "runwisp.toml")))
+}
+
+func TestTxn_SymlinkLoopIsAWriteError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.Symlink("runwisp.toml", path))
+
+	txn := New()
+	txn.Write(path, []byte("x\n"), DefaultPerm)
+	var we *WriteError
+	require.ErrorAs(t, txn.Apply(nil), &we)
+	assert.Equal(t, path, we.Path)
+}
+
+func assertSymlink(t *testing.T, link, wantTarget string) {
+	t.Helper()
+	got, err := os.Readlink(link)
+	require.NoError(t, err, "%s must still be a symlink", link)
+	assert.Equal(t, wantTarget, got)
+}
+
+// recordingDisk is a diskOps whose chown and fsync record their calls instead
+// of (or before) touching the disk, standing in for root and for a power cut.
+type recordingDisk struct {
+	chowns []string
+	fsyncs []string
+	// onFsync, when set, runs before each recorded fsync.
+	onFsync func(name string)
+}
+
+func (r *recordingDisk) ops(euid int) diskOps {
+	return diskOps{
+		euid: euid,
+		chown: func(name string, uid, gid int) error {
+			r.chowns = append(r.chowns, fmt.Sprintf("%s %d:%d", filepath.Base(name), uid, gid))
+			return nil
+		},
+		fsync: func(f *os.File) error {
+			if r.onFsync != nil {
+				r.onFsync(f.Name())
+			}
+			r.fsyncs = append(r.fsyncs, f.Name())
+			return f.Sync()
+		},
+	}
+}
+
+// TestTxn_RootWriteKeepsTheOriginalOwner: a root edit of a user-owned
+// runwisp.toml used to hand the file to root, because rename installs the temp
+// file with the writer's own uid/gid. As root the temp file must be chowned to
+// the original owner before the rename.
+func TestTxn_RootWriteKeepsTheOriginalOwner(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{"runwisp.toml": "original\n"})
+	path := filepath.Join(dir, "runwisp.toml")
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	st := info.Sys().(*syscall.Stat_t)
+
+	var rec recordingDisk
+	txn := New()
+	txn.disk = rec.ops(0)
+	txn.Write(path, []byte("changed\n"), DefaultPerm)
+	require.NoError(t, txn.Apply(nil))
+
+	require.Len(t, rec.chowns, 1)
+	assert.Regexp(t, fmt.Sprintf(`^\.runwisp\.toml\.tmp-\d+ %d:%d$`, st.Uid, st.Gid), rec.chowns[0],
+		"the temp file, not the target, is chowned to the original owner")
+}
+
+// TestTxn_NonRootWriteDoesNotChown: an unprivileged writer can't give files
+// away, and the temp file already carries its own uid, so no chown is tried.
+func TestTxn_NonRootWriteDoesNotChown(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{"runwisp.toml": "original\n"})
+
+	var rec recordingDisk
+	txn := New()
+	txn.disk = rec.ops(1000)
+	txn.Write(filepath.Join(dir, "runwisp.toml"), []byte("changed\n"), DefaultPerm)
+	require.NoError(t, txn.Apply(nil))
+	assert.Empty(t, rec.chowns)
+}
+
+// TestTxn_RootWriteKeepsTheOriginalOwnerOnDisk is the same guarantee with a
+// real chown; it needs root to own a file as somebody else.
+func TestTxn_RootWriteKeepsTheOriginalOwnerOnDisk(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root to create a file owned by another user")
+	}
+	dir := writeFileTree(t, map[string]string{"runwisp.toml": "original\n"})
+	path := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.Chown(path, 4242, 4343))
+
+	txn := New()
+	txn.Write(path, []byte("changed\n"), DefaultPerm)
+	require.NoError(t, txn.Apply(nil))
+
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	st := info.Sys().(*syscall.Stat_t)
+	assert.Equal(t, uint32(4242), st.Uid)
+	assert.Equal(t, uint32(4343), st.Gid)
+}
+
+// TestTxn_FsyncsTheFileBeforeRenameAndTheDirAfter: without an fsync of the
+// temp file before the rename, a power loss can leave the new name pointing at
+// an empty or truncated file; without one of the directory after, the rename
+// itself can be lost. Both apply to plain writes, crontab rewrites, and removes.
+func TestTxn_FsyncsTheFileBeforeRenameAndTheDirAfter(t *testing.T) {
+	dir := writeFileTree(t, map[string]string{
+		"runwisp.toml": "original\n",
+		"crontab":      "original\n",
+		"gone.toml":    "x\n",
+	})
+	path := filepath.Join(dir, "runwisp.toml")
+	crontab := filepath.Join(dir, "crontab")
+
+	var rec recordingDisk
+	var seen []string
+	rec.onFsync = func(name string) {
+		seen = append(seen, readFile(t, path)+"|"+readFile(t, crontab))
+	}
+	txn := New()
+	txn.disk = rec.ops(os.Geteuid())
+	txn.Write(path, []byte("changed\n"), DefaultPerm)
+	txn.WritePreservingOwner(crontab, []byte("changed\n"))
+	txn.Remove(filepath.Join(dir, "gone.toml"))
+	require.NoError(t, txn.Apply(nil))
+
+	require.Len(t, rec.fsyncs, 5)
+	assert.Regexp(t, `/\.runwisp\.toml\.tmp-\d+$`, rec.fsyncs[0])
+	assert.Equal(t, "original\n|original\n", seen[0], "temp file synced before the rename")
+	assert.Equal(t, dir, rec.fsyncs[1])
+	assert.Equal(t, "changed\n|original\n", seen[1], "dir synced after the rename")
+	assert.Regexp(t, `/\.crontab\.tmp-\d+$`, rec.fsyncs[2])
+	assert.Equal(t, "changed\n|original\n", seen[2])
+	assert.Equal(t, dir, rec.fsyncs[3])
+	assert.Equal(t, "changed\n|changed\n", seen[3])
+	assert.Equal(t, dir, rec.fsyncs[4], "dir synced after the remove")
 }
