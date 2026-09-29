@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/signal"
 	"sync"
@@ -12,10 +13,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestAwaitOrLog_ReturnsWhenWaitGroupCompletes asserts the helper returns
@@ -84,7 +89,7 @@ func TestWaitInput_ImmediateReturnWhenNothingPending(t *testing.T) {
 // service-managed. The dispatch check runs before the service-manager check,
 // so this is exercised without depending on the test host's environment.
 func TestRequestSelfRestart_RejectsWithoutStationDispatchOptIn(t *testing.T) {
-	err := requestSelfRestart(false)
+	err := requestSelfRestart(false, nil)
 	if err == nil {
 		t.Fatal("expected requestSelfRestart(false) to be rejected")
 	}
@@ -98,7 +103,7 @@ func TestStartStationClient_DisabledReturnsZeroWG(t *testing.T) {
 	cfg := &daemonConfig{}
 	cfg.StationConfig.Enabled = false
 
-	cancelStation, wg := startStationClient(context.Background(), cfg, &daemonServices{}, nil)
+	cancelStation, wg := startStationClient(context.Background(), cfg, &daemonServices{}, nil, nil)
 	if cancelStation == nil {
 		t.Fatal("expected non-nil cancel func")
 	}
@@ -252,4 +257,69 @@ func TestRunHeadless_ExitsOnSignal(t *testing.T) {
 	// Recreate ignored tasks aren't necessary; svc was minimalServices and
 	// gracefulShutdown already tore it down.
 	_ = model.Task{}
+}
+
+// runHeadlessUntil runs runHeadless against idle services, fires trigger once
+// it is waiting on signals, and returns what it exits with: runDaemon's return
+// value, so non-nil here is exit status 1.
+func runHeadlessUntil(t *testing.T, rt *daemonRuntime, trigger func()) error {
+	t.Helper()
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+	rt.sigCh = sigCh
+	rt.svc = minimalServices(t)
+	rt.cancelStation = func() {}
+	rt.stationWG = &sync.WaitGroup{}
+
+	done := make(chan error, 1)
+	go func() { done <- runHeadless(rt) }()
+	trigger()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(5 * time.Second):
+		t.Fatal("runHeadless did not return")
+		return nil
+	}
+}
+
+// A fatal server error used to shut the daemon down with exit 0, so systemd's
+// Restart=on-failure never restarted it and OnFailure= never fired.
+func TestRunHeadless_FatalServerErrorExitsNonZero(t *testing.T) {
+	fatalCh := make(chan error, 1)
+	bindErr := errors.New("listen unix runwisp.sock: bind: invalid argument")
+	err := runHeadlessUntil(t, &daemonRuntime{fatalCh: fatalCh}, func() {
+		if err := exitNonZero(fatalCh, bindErr); err != nil {
+			t.Error(err)
+		}
+	})
+	assert.ErrorIs(t, err, bindErr)
+}
+
+// Same for a panic crashguard recovers in a guarded goroutine: a real Guard,
+// the real latch.
+func TestRunHeadless_GuardedPanicExitsNonZero(t *testing.T) {
+	err := runHeadlessUntil(t, &daemonRuntime{panicked: crashguard.Panicked}, func() {
+		go func() {
+			defer crashguard.Guard()
+			panic("boom")
+		}()
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "boom")
+}
+
+// An agent:restart has to exit non-zero too: systemd and launchd only bring
+// back a daemon that did not exit cleanly, so an exit 0 stopped the agent for
+// good instead of restarting it.
+func TestRequestSelfRestart_ExitsNonZeroForServiceManager(t *testing.T) {
+	t.Setenv(autostart.ServiceManagedEnv, "1")
+	fatalCh := make(chan error, 1)
+	err := runHeadlessUntil(t, &daemonRuntime{fatalCh: fatalCh}, func() {
+		if err := requestSelfRestart(true, fatalCh); err != nil {
+			t.Error(err)
+		}
+	})
+	assert.ErrorIs(t, err, errRestartRequested)
 }

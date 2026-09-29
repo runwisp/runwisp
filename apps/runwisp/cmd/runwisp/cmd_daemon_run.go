@@ -23,6 +23,7 @@ import (
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/clilog"
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/model"
@@ -210,15 +211,17 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		CatchUpTriggered: svc.CatchUpResult.Triggered,
 	}
 
+	// fatalCh carries the reason for a self-triggered teardown (a fatal
+	// server-start error, a station restart request) back to the shutdown
+	// path, which logs it instead of a phantom signal and returns it so the
+	// daemon exits non-zero. Buffered + send-before-self-signal (exitNonZero)
+	// so the value is visible by the time the signal handler reads it.
+	fatalCh := make(chan error, 1)
+
 	// Station client is only started in station mode; standalone gets no-ops.
-	cancelStation, stationWG := startStationIfEnabled(mode, cfg, svc, srv)
+	cancelStation, stationWG := startStationIfEnabled(mode, cfg, svc, srv, fatalCh)
 	defer cancelStation()
 
-	// fatalCh carries a fatal server-start error from the supervisor goroutine
-	// back to the shutdown path, so a self-triggered teardown logs the real
-	// cause instead of a phantom signal. Buffered + send-before-self-signal so
-	// the value is visible by the time the signal handler reads it.
-	fatalCh := make(chan error, 1)
 	go superviseServerStart(srv, fatalCh)
 
 	emitStartupBanner(startupInfo, f)
@@ -236,6 +239,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		svc:           svc,
 		srv:           srv,
 		fatalCh:       fatalCh,
+		panicked:      crashguard.Panicked,
 		reload:        reloadFn,
 		debugWriter:   debugWriter,
 		logBuffer:     logBuffer,
@@ -391,28 +395,40 @@ func configureBootLogRouting(logBuffer *server.DaemonLogBuffer, f Flags, headles
 // startStationIfEnabled spins up the station client when running in station mode and
 // returns the cancel/wait pair the shutdown path needs. Standalone gets a
 // no-op cancel and empty WaitGroup so callers can defer/wait unconditionally.
-func startStationIfEnabled(mode daemonMode, cfg *daemonConfig, svc *daemonServices, srv *server.Server) (context.CancelFunc, *sync.WaitGroup) {
+func startStationIfEnabled(mode daemonMode, cfg *daemonConfig, svc *daemonServices, srv *server.Server, fatalCh chan<- error) (context.CancelFunc, *sync.WaitGroup) {
 	if mode == modeStation {
-		return startStationClient(context.Background(), cfg, svc, srv)
+		return startStationClient(context.Background(), cfg, svc, srv, fatalCh)
 	}
 	return func() {}, &sync.WaitGroup{}
 }
 
-// superviseServerStart runs srv.Start in this goroutine and, on failure,
-// reports the cause on fatalCh and then self-signals SIGTERM so the daemon's
-// signal handler tears the rest of the process down cleanly instead of leaving
-// us in a half-initialized state. The send happens before the signal so the
-// handler can distinguish a fatal-error teardown from an external signal.
+// superviseServerStart runs srv.Start in this goroutine and, on failure, hands
+// the cause to exitNonZero so the daemon's signal handler tears the rest of the
+// process down cleanly instead of leaving us in a half-initialized state.
 func superviseServerStart(srv *server.Server, fatalCh chan<- error) {
 	if startErr := srv.Start(); startErr != nil {
 		slog.Error("Server failed", "err", startErr)
-		select {
-		case fatalCh <- startErr:
-		default:
-		}
-		p, _ := os.FindProcess(os.Getpid())
-		_ = p.Signal(syscall.SIGTERM)
+		_ = exitNonZero(fatalCh, startErr)
 	}
+}
+
+// exitNonZero reports cause on fatalCh, then self-signals SIGTERM: the signal
+// handler runs the normal graceful shutdown and returns cause, so the process
+// exits 1 and a service manager (systemd Restart=on-failure and OnFailure=,
+// launchd KeepAlive SuccessfulExit=false) sees a failure rather than a clean
+// stop. The send happens before the signal so the handler can distinguish this
+// from an external signal. Non-blocking: a cause already pending exits
+// non-zero just the same.
+func exitNonZero(fatalCh chan<- error, cause error) error {
+	select {
+	case fatalCh <- cause:
+	default:
+	}
+	p, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		return err
+	}
+	return p.Signal(syscall.SIGTERM)
 }
 
 // emitStartupBanner picks between the fancy multi-section TTY banner and the

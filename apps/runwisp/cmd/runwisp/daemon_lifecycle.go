@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -34,6 +35,7 @@ func startStationClient(
 	cfg *daemonConfig,
 	svc *daemonServices,
 	srv *server.Server,
+	fatalCh chan<- error,
 ) (context.CancelFunc, *sync.WaitGroup) {
 	stationCtx, cancelStation := context.WithCancel(ctx)
 	var stationWG sync.WaitGroup
@@ -54,7 +56,7 @@ func startStationClient(
 		OnConnected: func() {
 			slog.Info("Station connected")
 		},
-		RequestRestart: func() error { return requestSelfRestart(cfg.Config.Daemon.AllowStationDispatch) },
+		RequestRestart: func() error { return requestSelfRestart(cfg.Config.Daemon.AllowStationDispatch, fatalCh) },
 		SystemStats:    srv.SystemStats,
 	})
 	if clientErr != nil {
@@ -82,26 +84,27 @@ func startStationClient(
 	return cancelStation, &stationWG
 }
 
-// requestSelfRestart honours a Station agent:restart by delivering SIGTERM to
-// this process, which the signal handler turns into the same graceful shutdown
-// a `runwisp stop` would — and the service manager then brings the daemon back.
-// It is refused when the daemon is not service-managed, since exiting would
-// then stop the agent for good rather than restart it, and when the operator
-// hasn't opted into station dispatch — restarting the daemon process is at least
-// as sensitive as the ad-hoc task execution that flag already gates.
-func requestSelfRestart(allowStationDispatch bool) error {
+// errRestartRequested is the exit cause for a Station agent:restart. It exits
+// non-zero on purpose: systemd (Restart=on-failure) and launchd (KeepAlive
+// SuccessfulExit=false) only bring back a daemon that did not exit cleanly.
+var errRestartRequested = errors.New("restart requested by station; exiting so the service manager starts RunWisp again")
+
+// requestSelfRestart honours a Station agent:restart via exitNonZero: the same
+// graceful shutdown a `runwisp stop` runs, but ending in a non-zero exit so the
+// service manager brings the daemon back. It is refused when the daemon is not
+// service-managed, since exiting would then stop the agent for good rather than
+// restart it, and when the operator hasn't opted into station dispatch —
+// restarting the daemon process is at least as sensitive as the ad-hoc task
+// execution that flag already gates.
+func requestSelfRestart(allowStationDispatch bool, fatalCh chan<- error) error {
 	if !allowStationDispatch {
 		return fmt.Errorf("station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)")
 	}
 	if !autostart.RunningUnderServiceManager() {
 		return fmt.Errorf("daemon is not managed by a service manager; restart it manually")
 	}
-	p, err := os.FindProcess(os.Getpid())
-	if err != nil {
-		return fmt.Errorf("locate own process: %w", err)
-	}
 	slog.Info("restarting agent on station request; service manager will bring it back")
-	if err := p.Signal(syscall.SIGTERM); err != nil {
+	if err := exitNonZero(fatalCh, errRestartRequested); err != nil {
 		return fmt.Errorf("signal self for restart: %w", err)
 	}
 	return nil
@@ -264,10 +267,13 @@ func awaitOrLog(ctx context.Context, wg *sync.WaitGroup, label string) {
 // Bundling them keeps runHeadless / runWithTUI signatures narrow while leaving
 // each field individually named.
 type daemonRuntime struct {
-	sigCh         <-chan os.Signal
-	svc           *daemonServices
-	srv           *server.Server
-	fatalCh       chan error
+	sigCh   <-chan os.Signal
+	svc     *daemonServices
+	srv     *server.Server
+	fatalCh chan error
+	// panicked reports a panic a crashguard.Guard recovered (crashguard.Panicked
+	// in production); nil means none. Injected so tests don't share the latch.
+	panicked      func() error
 	reload        func() (model.ReloadResult, error)
 	debugWriter   *tui.DebugLogWriter
 	logBuffer     *server.DaemonLogBuffer
@@ -289,19 +295,41 @@ func runHeadless(rt *daemonRuntime) error {
 		}
 
 		start := time.Now()
-		// A fatal server error self-signals SIGTERM (superviseServerStart); when
-		// that's the cause, log it as such instead of implying a phantom
-		// external signal.
-		if ferr := readFatal(rt.fatalCh); ferr != nil {
-			slog.Error("shutting down due to fatal server error", "err", ferr)
+		// A self-triggered teardown (exitNonZero, crashguard) arrives as
+		// SIGTERM too; when that's the cause, log it as such instead of
+		// implying a phantom external signal.
+		cause := rt.exitCause()
+		if cause != nil {
+			slog.Error("shutting down, will exit non-zero", "cause", cause)
 		} else {
 			slog.Info("received signal, shutting down", "signal", sig.String())
 		}
 		gracefulShutdown(rt.cancelStation, rt.stationWG, rt.svc, rt.srv)
 		slog.Info("shutdown complete", "elapsed", time.Since(start).Round(time.Millisecond))
-		return nil
+		if cause == nil {
+			cause = rt.panicCause() // a guarded goroutine may panic mid-shutdown
+		}
+		return cause
 	}
 	return nil
+}
+
+// exitCause is why the daemon is shutting down itself, nil for an operator's
+// SIGINT/SIGTERM. runDaemon returns it, so a non-nil cause exits 1: a fatal
+// daemon failure must look like one to a service manager, or systemd's
+// Restart=on-failure and OnFailure= never see it. Consumes fatalCh.
+func (rt *daemonRuntime) exitCause() error {
+	if err := readFatal(rt.fatalCh); err != nil {
+		return err
+	}
+	return rt.panicCause()
+}
+
+func (rt *daemonRuntime) panicCause() error {
+	if rt.panicked == nil {
+		return nil
+	}
+	return rt.panicked()
 }
 
 // readFatal non-blockingly reads a fatal server error if one is pending. Nil
@@ -405,5 +433,5 @@ func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo, f Flags) error {
 
 	tui.PrintShutdownComplete()
 
-	return nil
+	return rt.exitCause()
 }

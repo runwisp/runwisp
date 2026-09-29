@@ -6,6 +6,7 @@ package crashguard
 import (
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -30,6 +31,11 @@ func TestGuardRecoversAndSignals(t *testing.T) {
 		// Recovered and signalled: the goroutine did not crash the process.
 	case <-time.After(5 * time.Second):
 		t.Fatal("Guard did not self-signal SIGTERM after a panic")
+	}
+	// The daemon exits non-zero off this latch; without it a panic shut the
+	// daemon down with exit 0, so systemd's Restart=on-failure never fired.
+	if err := Panicked(); err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("Panicked() = %v, want the recovered panic", err)
 	}
 }
 
