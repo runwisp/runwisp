@@ -288,6 +288,11 @@ func handleKeyEnterHeader(m Model) (Model, tea.Cmd, bool) {
 		return m, m.closeExecView(), true
 	case execlist.HeaderFocusAction:
 		return handleKeyEnterActionButton(m)
+	case execlist.HeaderFocusDelete:
+		if m.execView.CanDelete() {
+			return m, m.confirmAction(confirmActionDelete), true
+		}
+		return m, nil, true
 	case execlist.HeaderFocusStarted, execlist.HeaderFocusDuration, execlist.HeaderFocusID:
 		return m, m.copyExecField(), true
 	case execlist.HeaderFocusParams:

@@ -448,13 +448,6 @@ func TestHandleKeyEnterActionButton_NilClient_Actions(t *testing.T) {
 				return ev
 			},
 		},
-		{
-			"ActionDelete (ended, non-retryable, non-service)",
-			func() execlist.ExecView {
-				success := model.ReasonSuccess
-				return execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &success})
-			},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1139,21 +1132,23 @@ func TestHandleKeyEnterHeader_FocusNone(t *testing.T) {
 	}
 }
 
-// ─── handleKeyEnterActionButton: ActionDelete ────────────────────────────────
+// ─── handleKeyEnterHeader: Delete button ─────────────────────────────────────
 
-func TestHandleKeyEnterActionButton_ActionDelete(t *testing.T) {
+// Enter on a focused Delete button deletes the run, failed runs included (#298).
+func TestHandleKeyEnterHeader_Delete(t *testing.T) {
 	m := newTestModel(nil)
-	success := model.ReasonSuccess
+	m.client = newDummyClient()
 	ev := execlist.NewExecView(&model.Run{
 		ID:        "r-1234567890",
 		TaskName:  "t1",
 		Status:    model.PhaseEnded,
-		EndReason: &success,
+		EndReason: model.EndReasonPtr(model.ReasonFailed),
 	})
+	ev.HeaderFocus = execlist.HeaderFocusDelete
 	m.execView = &ev
-	_, _, handled := handleKeyEnterActionButton(m)
-	if !handled {
-		t.Fatal("expected handled=true for ActionDelete")
+	_, cmd, handled := handleKeyEnterHeader(m)
+	if !handled || cmd == nil {
+		t.Fatalf("expected a delete command, got handled=%v cmd=%v", handled, cmd)
 	}
 }
 

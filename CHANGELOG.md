@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Crontabs read by `runwisp import cron` or `include_cron` no longer turn `TZ=` into the task's `timezone`; it goes into `env`, since cron only passes it to the job. `CRON_TZ=` is kept in `env` too, and sets `timezone` except on Debian/Ubuntu, whose cron ignores it.
 - A cron job with the same command as a job in another crontab, or for another user, now runs as its own task (renamed, like `backup-zeta`) in `include_cron`, `runwisp takeover` and `runwisp import cron`.
 - `runwisp takeover` now lists a symlink in `/etc/cron.d` as a job that won't run and stops on it, since RunWisp doesn't read cron sources through symlinks.
+- The TUI now shows a Delete button on failed runs, next to Retry.
+- The TUI run header fits an 80-column terminal: its Stop, Retry, and Delete buttons were pushed off-screen.
 
 ## [1.2.0] - 2026-09-28
 

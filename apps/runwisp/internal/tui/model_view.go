@@ -157,7 +157,7 @@ func (m Model) buildExecViewHelpText() string {
 		return strings.Join([]string{keys.JoinBar(scroll...), "select text with mouse", keys.Quit.Bar}, "  ")
 	}
 	switch m.execView.HeaderFocus {
-	case execlist.HeaderFocusBack, execlist.HeaderFocusAction:
+	case execlist.HeaderFocusBack, execlist.HeaderFocusAction, execlist.HeaderFocusDelete:
 		parts = append(parts, "enter activate  ←→ switch  ↓ details")
 	case execlist.HeaderFocusID:
 		parts = append(parts, "enter copy  ←→ switch  ↓ details")

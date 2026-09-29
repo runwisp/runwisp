@@ -418,31 +418,36 @@ func TestHandleExecViewClick_ActionStop(t *testing.T) {
 	}
 }
 
-// TestHandleExecViewClick_ActionDelete covers the action-button branch with a
-// terminal, non-retryable, non-service run → ActionDelete. Regression guard:
-// the mouse handler previously omitted the Delete case, so clicking 🗑 Delete
-// did nothing even though the hover highlight worked.
-func TestHandleExecViewClick_ActionDelete(t *testing.T) {
+// TestHandleExecViewClick_Delete covers the Delete button for both a
+// successful run and a failed one. Regression guard for #298: a failed run
+// showed only Retry, so its Delete button didn't exist; earlier still, the
+// mouse handler omitted the Delete case so clicking it did nothing.
+func TestHandleExecViewClick_Delete(t *testing.T) {
+	for _, reason := range []model.EndReason{model.ReasonSuccess, model.ReasonFailed} {
+		t.Run(string(reason), func(t *testing.T) {
+			assertDeleteClick(t, reason)
+		})
+	}
+}
+
+func assertDeleteClick(t *testing.T, reason model.EndReason) {
+	t.Helper()
 	m := newTestModel(nil)
-	m, _ = m.applyWindowSize(120, 30)
+	m, _ = m.applyWindowSize(80, 24)
 	m.client = newDummyClient() // confirmAction needs a non-nil client
 	run := &model.Run{
 		ID:        "r-1234567890",
 		TaskName:  "t1",
 		Status:    model.PhaseEnded,
-		EndReason: model.EndReasonPtr(model.ReasonSuccess),
+		EndReason: model.EndReasonPtr(reason),
 	}
 	ev := execlist.NewExecView(run)
-	ev.SetSize(80, 20)
+	ev.SetSize(80-uikit.SidebarWidth, 20)
 	m.execView = &ev
 
-	if ev.Action() != execlist.ActionDelete {
-		t.Fatalf("test setup: expected ActionDelete, got %d", ev.Action())
-	}
-
-	x, y, ok := findHitCoord(m.execView, execlist.HeaderFocusAction, 80)
+	x, y, ok := findHitCoord(m.execView, execlist.HeaderFocusDelete, 80-uikit.SidebarWidth)
 	if !ok {
-		t.Skip("no HeaderFocusAction hit-coordinate found")
+		t.Fatal("no HeaderFocusDelete hit-coordinate found")
 	}
 	updated, cmd := m.handleExecViewClick(x, y)
 	got, ok := updated.(Model)

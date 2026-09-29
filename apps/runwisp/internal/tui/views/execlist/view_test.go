@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/oklog/ulid/v2"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -319,14 +320,14 @@ func TestExecView_HasActionButton(t *testing.T) {
 
 	ev.Run.Status = model.PhaseEnded
 	ev.Run.EndReason = model.EndReasonPtr(model.ReasonSuccess)
-	if !ev.hasActionButton() {
-		t.Fatal("expected action button (Delete) for success status")
+	if ev.hasActionButton() || !ev.CanDelete() {
+		t.Fatal("expected only the Delete button for success status")
 	}
 
 	ev.Run.Status = model.PhaseEnded
 	ev.Run.EndReason = model.EndReasonPtr(model.ReasonFailed)
-	if !ev.hasActionButton() {
-		t.Fatal("expected action button for failed status")
+	if !ev.hasActionButton() || !ev.CanDelete() {
+		t.Fatal("expected Retry and Delete buttons for failed status")
 	}
 
 	ev.Run.Status = model.PhasePending
@@ -479,7 +480,7 @@ func TestExecView_HandleKeyRight_AllTransitions(t *testing.T) {
 		{"ID→ID (no-op, rightmost row 1)", HeaderFocusID, HeaderFocusID, true},
 		{"Started→Duration", HeaderFocusStarted, HeaderFocusDuration, false},
 		{"Action→Action (no change)", HeaderFocusAction, HeaderFocusAction, true},
-		{"Duration→Action (no params)", HeaderFocusDuration, HeaderFocusAction, false},
+		{"Duration→Delete (succeeded, no params)", HeaderFocusDuration, HeaderFocusDelete, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -825,7 +826,7 @@ func TestRenderActionButtons_AllActions(t *testing.T) {
 
 	// ActionStop
 	ev.Run.Status = model.PhaseRunning
-	out := ev.renderActionButtons()
+	out := ev.renderActionButton()
 	if !strings.Contains(out, "Stop") {
 		t.Fatalf("expected Stop button, got %q", out)
 	}
@@ -833,7 +834,7 @@ func TestRenderActionButtons_AllActions(t *testing.T) {
 	// ActionRetry (failed run, non-service)
 	ev.Run.Status = model.PhaseEnded
 	ev.Run.EndReason = model.EndReasonPtr(model.ReasonFailed)
-	out2 := ev.renderActionButtons()
+	out2 := ev.renderActionButton()
 	if !strings.Contains(out2, "Retry") {
 		t.Fatalf("expected Retry button, got %q", out2)
 	}
@@ -841,31 +842,33 @@ func TestRenderActionButtons_AllActions(t *testing.T) {
 	// ActionStopService
 	ev.TaskIsService = true
 	ev.SetServiceStopped(false)
-	out3 := ev.renderActionButtons()
+	out3 := ev.renderActionButton()
 	if !strings.Contains(out3, "Stop") {
 		t.Fatalf("expected Stop button for service, got %q", out3)
 	}
 
 	// ActionRestartService
 	ev.SetServiceStopped(true)
-	out4 := ev.renderActionButtons()
+	out4 := ev.renderActionButton()
 	if !strings.Contains(out4, "Restart") {
 		t.Fatalf("expected Restart button for stopped service, got %q", out4)
 	}
 
-	// ActionDelete — success run, non-service (still deletable)
+	// Success run, non-service: no primary action (Delete is its own button)
 	ev.TaskIsService = false
 	ev.Run.Status = model.PhaseEnded
 	ev.Run.EndReason = model.EndReasonPtr(model.ReasonSuccess)
-	out5 := ev.renderActionButtons()
-	if !strings.Contains(out5, "Delete") {
+	if out5 := ev.renderActionButton(); out5 != "" {
+		t.Fatalf("expected no action button for ended successful run, got %q", out5)
+	}
+	if out5 := ev.renderDeleteButton(); !strings.Contains(out5, "Delete") {
 		t.Fatalf("expected Delete button for ended successful run, got %q", out5)
 	}
 
 	// ActionNone — pending run
 	ev.Run.Status = model.PhasePending
 	ev.Run.EndReason = nil
-	out6 := ev.renderActionButtons()
+	out6 := ev.renderActionButton()
 	if out6 != "" {
 		t.Fatalf("expected empty output for pending run, got %q", out6)
 	}
@@ -877,7 +880,7 @@ func TestRenderActionButtons_HoveredAndFocused(t *testing.T) {
 
 	// Hovered action
 	ev.HoveredHeader = HeaderFocusAction
-	out := ev.renderActionButtons()
+	out := ev.renderActionButton()
 	if !strings.Contains(out, "Stop") {
 		t.Fatalf("expected Stop in hovered action, got %q", out)
 	}
@@ -885,7 +888,7 @@ func TestRenderActionButtons_HoveredAndFocused(t *testing.T) {
 	// Focused action
 	ev.HoveredHeader = HeaderFocusNone
 	ev.HeaderFocus = HeaderFocusAction
-	out2 := ev.renderActionButtons()
+	out2 := ev.renderActionButton()
 	if !strings.Contains(out2, "Stop") {
 		t.Fatalf("expected Stop in focused action, got %q", out2)
 	}
@@ -1120,5 +1123,119 @@ func TestExecView_View_SingleInstanceNoSuffix(t *testing.T) {
 	out := ev.View()
 	if strings.Contains(out, "solo#") {
 		t.Fatalf("expected no instance suffix for single-instance task, got %q", out)
+	}
+}
+
+func newFailedExecView(w int) ExecView {
+	ev := newSizedExecView(w, 24)
+	ev.Run.Status = model.PhaseEnded
+	ev.Run.EndReason = model.EndReasonPtr(model.ReasonFailed)
+	now := time.Now()
+	ev.Run.StartedAt, ev.Run.EndedAt = &now, &now
+	return ev
+}
+
+// hitX returns the left edge of item's hit box on screen row y, or -1.
+func hitX(ev *ExecView, item HeaderFocusItem, y int) int {
+	for x := 0; x < uikit.SidebarWidth+ev.Pane.Width; x++ {
+		if ev.HitAt(x, y) == item {
+			return x
+		}
+	}
+	return -1
+}
+
+// A failed run offers both Retry and Delete (#298), and the header fits an
+// 80-col terminal (pane = 80 - sidebar) as well as a wide one: no line is
+// wider than the pane (the terminal would clip it) and every button's hit box
+// sits exactly where its label is drawn.
+func TestExecView_FailedRunHeader_RetryAndDeleteFit(t *testing.T) {
+	cases := []struct {
+		name   string
+		w      int
+		params map[string]string
+		wantY  int
+	}{
+		{"80-col terminal", 80 - uikit.SidebarWidth, nil, 3},
+		{"80-col terminal, params", 80 - uikit.SidebarWidth, map[string]string{"a": "1"}, 3},
+		{"wide terminal", 172 - uikit.SidebarWidth, map[string]string{"a": "1"}, 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ev := newFailedExecView(tc.w)
+			ev.Run.Params = tc.params
+			lines := strings.Split(ev.View(), "\n")
+			for i, line := range lines[:execHeaderHeight] {
+				if got := uikit.VisibleWidth(line); got > tc.w {
+					t.Errorf("header line %d is %d cols, pane is %d: %q", i, got, tc.w, ansi.Strip(line))
+				}
+			}
+			for item, label := range map[HeaderFocusItem]string{HeaderFocusAction: "↻ Retry (r)", HeaderFocusDelete: "Delete (D)"} {
+				x := hitX(&ev, item, tc.wantY)
+				if x < 0 {
+					t.Fatalf("no hit box for %q on row %d", label, tc.wantY)
+				}
+				plain := []rune(ansi.Strip(lines[tc.wantY]))
+				col := x - uikit.SidebarWidth + 1 // +1: button padding
+				if col < 0 || col+len([]rune(label)) > len(plain) || string(plain[col:col+len([]rune(label))]) != label {
+					t.Fatalf("hit box for %q at col %d doesn't match drawn row %q", label, col, string(plain))
+				}
+			}
+			if tc.params != nil && tc.wantY == 2 && hitX(&ev, HeaderFocusParams, 2) < 0 {
+				t.Fatal("expected Params chip on a wide header")
+			}
+		})
+	}
+}
+
+// A running run's Stop button and FOLLOW indicator also stay inside an 80-col
+// terminal.
+func TestExecView_RunningHeader_Fits80Cols(t *testing.T) {
+	w := 80 - uikit.SidebarWidth
+	ev := newSizedExecView(w, 24)
+	ev.Pane.Follow = true
+	lines := strings.Split(ev.View(), "\n")
+	for i, line := range lines[:execHeaderHeight] {
+		if got := uikit.VisibleWidth(line); got > w {
+			t.Errorf("header line %d is %d cols, pane is %d", i, got, w)
+		}
+	}
+	if hitX(&ev, HeaderFocusAction, 2) < 0 && hitX(&ev, HeaderFocusAction, 3) < 0 {
+		t.Fatal("Stop button not drawn")
+	}
+}
+
+func TestExecView_FailedRunNavigation_RetryThenDelete(t *testing.T) {
+	ev := newFailedExecView(80)
+	ev.HeaderFocus = HeaderFocusID
+	steps := []struct {
+		key  rune
+		want HeaderFocusItem
+	}{
+		{tea.KeyDown, HeaderFocusDelete},
+		{tea.KeyLeft, HeaderFocusAction},
+		{tea.KeyLeft, HeaderFocusDuration},
+		{tea.KeyRight, HeaderFocusAction},
+		{tea.KeyRight, HeaderFocusDelete},
+		{tea.KeyRight, HeaderFocusDelete},
+		{tea.KeyUp, HeaderFocusID},
+	}
+	for i, s := range steps {
+		ev.Update(tea.KeyPressMsg{Code: s.key})
+		if ev.HeaderFocus != s.want {
+			t.Fatalf("step %d: expected focus=%d, got %d", i, s.want, ev.HeaderFocus)
+		}
+	}
+}
+
+// A Params chip that doesn't fit the header is skipped by keyboard focus.
+func TestExecView_HiddenParamsSkippedByNavigation(t *testing.T) {
+	ev := newFailedExecView(80 - uikit.SidebarWidth)
+	ev.Run.Params = map[string]string{"a": "1"}
+	_ = ev.View()
+	ev.HeaderFocus = HeaderFocusAction
+	ev.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	if ev.HeaderFocus != HeaderFocusDuration {
+		t.Fatalf("expected Duration (Params hidden), got %d", ev.HeaderFocus)
 	}
 }
