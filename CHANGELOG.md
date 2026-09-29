@@ -29,8 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp import --write` no longer writes a config that fails to load. When a line can't be converted, it exits non-zero, names the line, and writes nothing.
 - A cron expression with `*/N` in the day-of-month or day-of-week field now matches both day fields, as cron does: `0 0 */2 * 1` fires on odd days that are Mondays, not on every odd day plus every Monday. This affects `[tasks.*] cron` as well as imported crontabs.
 - Crontabs read by `runwisp import cron` or `include_cron` no longer turn `TZ=` into the task's `timezone`; it goes into `env`, since cron only passes it to the job. `CRON_TZ=` is kept in `env` too, and sets `timezone` except on Debian/Ubuntu, whose cron ignores it.
-- `runwisp takeover`, `runwisp import cron` and `include_cron` no longer drop a cron job whose command also appears in another crontab, on another schedule, or for another user. Both jobs now run.
-- A symlink in `/etc/cron.d` is now reported as a job that is not running, and `runwisp takeover` stops on it instead of retiring cron while those jobs quietly stop.
+- A cron job with the same command as a job in another crontab, or for another user, now runs as its own task (renamed, like `backup-zeta`) in `include_cron`, `runwisp takeover` and `runwisp import cron`.
+- `runwisp takeover` now lists a symlink in `/etc/cron.d` as a job that won't run and stops on it, since RunWisp doesn't read cron sources through symlinks.
 
 ## [1.2.0] - 2026-09-28
 
