@@ -15,6 +15,7 @@ RunWisp is an open-source, self-hosted cron job manager and process supervisor. 
 [![CI](https://github.com/runwisp/runwisp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/runwisp/runwisp/actions/workflows/ci.yml)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=runwisp_runwisp&metric=coverage)](https://sonarcloud.io/component_measures?id=runwisp_runwisp&metric=coverage)
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=runwisp_runwisp&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=runwisp_runwisp)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/runwisp/runwisp/badge)](https://scorecard.dev/viewer/?uri=github.com/runwisp/runwisp)
 [![GitHub Stars](https://img.shields.io/github/stars/runwisp/runwisp?style=social)](https://github.com/runwisp/runwisp)
 
 </div>

@@ -34,6 +34,10 @@ Security fixes ship only on the latest release — there are no patch backports 
 | Latest release | Yes       |
 | Older releases | No        |
 
+## Verifying a download
+
+Verify a release tarball, checksum file or Docker image with `gh attestation verify <file> --repo runwisp/runwisp` (for an image: `gh attestation verify oci://runwisp/runwisp:<tag> --repo runwisp/runwisp`).
+
 ## Trust model
 
 Before reporting, understand the boundaries RunWisp commits to:

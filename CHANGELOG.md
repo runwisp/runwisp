@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Service health checks**: an optional `[services.<name>.health_check]` command decides when an instance is healthy and stops it as `unhealthy` when it keeps failing, so `restart` brings it back. It reuses task keys (`cron`, `timeout`, `failures`, `retry_*`).
+- Release tarballs, checksums and Docker images now ship with signed build provenance you can check with `gh attestation verify`.
 
 ### Fixed
 
