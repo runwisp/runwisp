@@ -94,9 +94,11 @@ type Task struct {
 	// CatchUpValue, which falls back to the default of 1 when nil.
 	CatchUp *int `toml:"catch_up,omitempty" json:"catchUp,omitempty" doc:"Max missed cron ticks to re-run at startup after downtime: 0 skips, 1 re-runs only the most recent, N re-runs up to the N most recent"`
 	// RunOnStart fires the task once at daemon boot, independent of cron and
-	// catch-up. The @reboot equivalent. Task-only — services already start every
-	// instance at boot.
-	RunOnStart bool `toml:"-" json:"runOnStart" doc:"For tasks: fire once at daemon startup, in addition to any cron schedule"`
+	// catch-up. Task-only — services already start every instance at boot.
+	// RunOnStartMode says which start counts; it is non-empty exactly when
+	// RunOnStart is true. Both are kept so the REST boolean stays as it was.
+	RunOnStart     bool           `toml:"-" json:"runOnStart" doc:"For tasks: fire once at daemon startup, in addition to any cron schedule"`
+	RunOnStartMode RunOnStartMode `toml:"-" json:"runOnStartMode,omitempty" enum:"daemon,boot" doc:"For run_on_start tasks: daemon fires on every daemon start, boot once per machine (or container) boot"`
 
 	// A pointer so an explicit `timeout = "0s"` (opt out of an inherited
 	// [defaults] timeout — run with no timeout) is distinguishable from an
@@ -437,6 +439,17 @@ func (t *Task) ResolvedExecutionDef() ExecutionDef {
 }
 
 // ConcurrencyPolicy controls how overlapping runs are handled.
+// RunOnStartMode selects which start fires a run_on_start task.
+type RunOnStartMode string
+
+const (
+	// RunOnStartDaemon fires on every daemon start (`run_on_start = true`).
+	RunOnStartDaemon RunOnStartMode = "daemon"
+	// RunOnStartBoot fires once per machine or container boot, the cron
+	// @reboot rule: a daemon restart within the same boot does not re-fire.
+	RunOnStartBoot RunOnStartMode = "boot"
+)
+
 type ConcurrencyPolicy string
 
 const (

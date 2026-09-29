@@ -111,6 +111,16 @@ func (m *MockRunRepository) GetTaskRegistration(ctx context.Context, taskName st
 	return args.Get(0).(*model.TaskRegistration), args.Error(1)
 }
 
+func (m *MockRunRepository) GetTaskBootID(ctx context.Context, taskName string) (string, error) {
+	args := m.Called(ctx, taskName)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockRunRepository) SetTaskBootID(ctx context.Context, taskName, bootID string) error {
+	args := m.Called(ctx, taskName, bootID)
+	return args.Error(0)
+}
+
 func (m *MockRunRepository) SoftDeleteRuns(ctx context.Context, sel model.RunSelector, deletedAt time.Time) ([]storage.RunRef, error) {
 	args := m.Called(ctx, sel, deletedAt)
 	if args.Get(0) == nil {

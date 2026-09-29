@@ -274,20 +274,20 @@ it as changed, and RunWisp starts scheduling it.
 These rules apply to `runwisp import cron` and to jobs read live through
 [`include_cron`](/configuration/daemon/#include_cron).
 
-| crontab                        | runwisp.toml                                                | Notes                                         |
-| ------------------------------ | ----------------------------------------------------------- | --------------------------------------------- |
-| `30 2 * * * cmd`               | `cron = "30 2 * * *"` + [`run`](/configuration/tasks/#run)  | Copied as is.                                 |
-| `@daily`, `@hourly`, `@weekly` | `cron = "@daily"` …                                         | Same names.                                   |
-| `@midnight`, `@annually`       | `@daily`, `@yearly`                                         | Renamed to RunWisp's spelling.                |
-| `@reboot cmd`                  | [`run_on_start = true`](/configuration/tasks/#run_on_start) | Runs when the daemon starts, not the machine. |
-| user column (system crontab)   | [`user`](/configuration/tasks/#user)                        | Detected automatically.                       |
-| `SHELL=/bin/bash`              | [`shell`](/configuration/tasks/#shell)                      | Must be an absolute path.                     |
-| `PATH=…`, other `VAR=val`      | [`env`](/configuration/tasks/#env)                          |                                               |
-| `CRON_TZ=…` / `TZ=…`           | [`timezone`](/configuration/tasks/#timezone)                | An unknown zone gets a `# TODO`.              |
-| `# comment` above a job        | [`description`](/configuration/tasks/#description)          |                                               |
-| `\%` in a command              | a literal `%`                                               |                                               |
-| `cmd % input`                  | `run = "cmd"` + a `# TODO`                                  | See [below](#what-needs-a-human).             |
-| `MAILTO=…`                     | a `sendmail` notifier, printed for you to add               | See [below](#what-needs-a-human).             |
+| crontab                        | runwisp.toml                                                  | Notes                             |
+| ------------------------------ | ------------------------------------------------------------- | --------------------------------- |
+| `30 2 * * * cmd`               | `cron = "30 2 * * *"` + [`run`](/configuration/tasks/#run)    | Copied as is.                     |
+| `@daily`, `@hourly`, `@weekly` | `cron = "@daily"` …                                           | Same names.                       |
+| `@midnight`, `@annually`       | `@daily`, `@yearly`                                           | Renamed to RunWisp's spelling.    |
+| `@reboot cmd`                  | [`run_on_start = "boot"`](/configuration/tasks/#run_on_start) | Once per machine boot.            |
+| user column (system crontab)   | [`user`](/configuration/tasks/#user)                          | Detected automatically.           |
+| `SHELL=/bin/bash`              | [`shell`](/configuration/tasks/#shell)                        | Must be an absolute path.         |
+| `PATH=…`, other `VAR=val`      | [`env`](/configuration/tasks/#env)                            |                                   |
+| `CRON_TZ=…` / `TZ=…`           | [`timezone`](/configuration/tasks/#timezone)                  | An unknown zone gets a `# TODO`.  |
+| `# comment` above a job        | [`description`](/configuration/tasks/#description)            |                                   |
+| `\%` in a command              | a literal `%`                                                 |                                   |
+| `cmd % input`                  | `run = "cmd"` + a `# TODO`                                    | See [below](#what-needs-a-human). |
+| `MAILTO=…`                     | a `sendmail` notifier, printed for you to add                 | See [below](#what-needs-a-human). |
 
 Crontab-wide settings (`SHELL`, `CRON_TZ`, variables) are copied onto each
 task from that file. An import never changes your `[defaults]` or `[daemon]`.
@@ -329,8 +329,9 @@ For jobs read live through `include_cron`, you can't edit these lines;
   add it to each task's [`notify`](/configuration/tasks/#notify). Cron mailed
   any output; RunWisp mails on failure. Without a local MTA, use
   [`smtp`](/notifications/providers/smtp/) instead.
-- **`@reboot`.** [`run_on_start`](/configuration/tasks/#run_on_start) runs when
-  the daemon starts, which is not always when the machine boots.
+- **`@reboot`.** [`run_on_start = "boot"`](/configuration/tasks/#run_on_start)
+  runs once per boot, but only once the daemon is up. If the daemon starts
+  late, or only after the boot, the job runs then.
 - **A `%` that feeds input.** In cron, text after an unescaped `%` is sent to
   the job on stdin. RunWisp has no stdin setting, so the command is cut at the
   `%` and the input is quoted in a `# TODO`. Put it back into the command, for

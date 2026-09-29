@@ -42,9 +42,9 @@ run = "/opt/app/cleanup"
 [tasks.cleanup.env]
 PATH = "/usr/local/bin:/usr/bin:/bin"
 
-# @reboot — runs once each time the daemon starts.
+# @reboot: runs once per machine boot, not on daemon restarts.
 [tasks.warmup]
-run_on_start = true
+run_on_start = "boot"
 timezone = "Europe/Bratislava"
 shell = "/bin/bash"
 env_base = "clean"

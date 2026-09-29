@@ -123,7 +123,8 @@ program's row. Unknown keys are dropped and listed by name.
   [`restart`](/configuration/services/#restart), which restarts after any exit.
   To restart only after a failure, set `restart = "on_failure"`.
   `autorestart=false` means the program runs once, so it becomes a task with
-  [`run_on_start`](/configuration/tasks/#run_on_start).
+  [`run_on_start = true`](/configuration/tasks/#run_on_start). Like under
+  supervisord, it runs again whenever the daemon starts.
 - **`exitcodes`.** RunWisp treats exit `0` as success and anything else as
   `failed`. If your program exits non-zero on purpose, end its `run` with
   `|| true`. [`failures`](/configuration/tasks/#failures) controls which

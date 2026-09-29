@@ -55,6 +55,10 @@ type RunRepository interface {
 	GetRunSummary(ctx context.Context) (*model.RunSummary, error)
 	EnsureTaskRegistered(ctx context.Context, taskName string, firstSeen time.Time) error
 	GetTaskRegistration(ctx context.Context, taskName string) (*model.TaskRegistration, error)
+	// GetTaskBootID returns the boot a run_on_start = "boot" task last fired
+	// in, or "" when it never has.
+	GetTaskBootID(ctx context.Context, taskName string) (string, error)
+	SetTaskBootID(ctx context.Context, taskName, bootID string) error
 	SoftDeleteRuns(ctx context.Context, sel model.RunSelector, deletedAt time.Time) ([]RunRef, error)
 	RestoreRuns(ctx context.Context, sel model.RunSelector) ([]model.Run, error)
 	ResolveSelectorIDs(ctx context.Context, sel model.RunSelector, statusFilter string) ([]RunRef, error)
@@ -488,6 +492,18 @@ func (db *SQLiteDatabase) GetTaskRegistration(ctx context.Context, taskName stri
 		return nil, err
 	}
 	return &model.TaskRegistration{TaskName: r.TaskName, FirstSeenAt: r.FirstSeenAt}, nil
+}
+
+func (db *SQLiteDatabase) GetTaskBootID(ctx context.Context, taskName string) (string, error) {
+	id, err := db.q.GetTaskBootID(ctx, taskName)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}
+
+func (db *SQLiteDatabase) SetTaskBootID(ctx context.Context, taskName, bootID string) error {
+	return db.q.SetTaskBootID(ctx, sqlcdb.SetTaskBootIDParams{TaskName: taskName, BootID: bootID})
 }
 
 func (db *SQLiteDatabase) GetConfigValue(ctx context.Context, key string) (string, bool, error) {

@@ -4,7 +4,7 @@
 [tasks.oneshot]
 description = "Database migration"
 run = "/usr/local/bin/migrate up"
-run_on_start = true
+run_on_start = "boot"
 user = "deploy"
 
 [tasks.oneshot.env]

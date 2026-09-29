@@ -10,9 +10,9 @@ catch_up = 0  # cron never re-fires a missed tick
 on_overlap = "queue"  # cron would overlap instead of queueing
 run = "/usr/bin/rollup"
 
-# @reboot — runs once each time the daemon starts.
+# @reboot: runs once per machine boot, not on daemon restarts.
 [tasks.warmup]
-run_on_start = true
+run_on_start = "boot"
 timezone = "Mars/Olympus"  # TODO: RunWisp couldn't use this timezone — fix it.
 env_base = "clean"
 working_dir = "~"

@@ -38,6 +38,9 @@ type Querier interface {
 	// `failures` policy, resolved at termination) rather than a hardcoded end_reason
 	// set, so this metric can never drift from the rest of the failure readouts.
 	GetRunSummary(ctx context.Context) (GetRunSummaryRow, error)
+	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
+	// SPDX-License-Identifier: GPL-3.0-or-later
+	GetTaskBootID(ctx context.Context, taskName string) (string, error)
 	GetTaskRegistration(ctx context.Context, taskName string) (TaskRegistration, error)
 	InsertNotification(ctx context.Context, arg InsertNotificationParams) error
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
@@ -93,6 +96,7 @@ type Querier interface {
 	// runs neither count against the cap nor get purged.
 	SelectOldRunsByCount(ctx context.Context, arg SelectOldRunsByCountParams) ([]Run, error)
 	SetConfigValue(ctx context.Context, arg SetConfigValueParams) error
+	SetTaskBootID(ctx context.Context, arg SetTaskBootIDParams) error
 	SoftDeleteRunsByFilter(ctx context.Context, arg SoftDeleteRunsByFilterParams) ([]SoftDeleteRunsByFilterRow, error)
 	SoftDeleteRunsByIDs(ctx context.Context, arg SoftDeleteRunsByIDsParams) ([]SoftDeleteRunsByIDsRow, error)
 	UpdateNotificationCoalesced(ctx context.Context, arg UpdateNotificationCoalescedParams) error

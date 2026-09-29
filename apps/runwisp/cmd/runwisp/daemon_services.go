@@ -13,6 +13,7 @@ import (
 	"log/slog"
 
 	"github.com/runwisp/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/internal/bootid"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
@@ -206,7 +207,7 @@ func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storag
 	// Fire run_on_start tasks once at boot, before notify so a boot-triggered
 	// run doesn't page. Catch-up (which pages on missed runs) is deferred to
 	// after notify starts so run.missed events reach a subscriber.
-	runOnStartResult := runtime.RunStartupTasks(tasksMap, taskManager)
+	runOnStartResult := runtime.RunStartupTasks(ctx, tasksMap, taskManager, db, bootid.Current())
 	if runOnStartResult.Errors > 0 {
 		slog.Warn("run_on_start firing completed with errors",
 			"triggered", runOnStartResult.Triggered, "errors", runOnStartResult.Errors)

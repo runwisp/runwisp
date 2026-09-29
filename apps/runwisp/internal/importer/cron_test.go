@@ -98,7 +98,7 @@ func TestCronReboot(t *testing.T) {
 	res := parseCron(t, "@reboot /opt/app/warmup\n", CronOptions{})
 	out := res.TOML()
 	mustContain(t, out, "[tasks.warmup]")
-	mustContain(t, out, "run_on_start = true")
+	mustContain(t, out, `run_on_start = "boot"`)
 	mustNotContain(t, out, "cron =")
 	if res.Items()[0].Schedule != "@reboot" {
 		t.Fatalf("schedule: got %q", res.Items()[0].Schedule)
@@ -461,7 +461,7 @@ func TestCronSystemUserColumnOnDescriptorLine(t *testing.T) {
 	// column has to come off the descriptor form too, or it rides into `run`.
 	res := parseCron(t, "@reboot root /usr/bin/warmup\n", CronOptions{System: true})
 	out := res.TOML()
-	mustContain(t, out, "run_on_start = true")
+	mustContain(t, out, `run_on_start = "boot"`)
 	mustContain(t, out, `user = "root"`)
 	mustContain(t, out, `run = "/usr/bin/warmup"`)
 	mustNotContain(t, out, `run = "root /usr/bin/warmup"`)

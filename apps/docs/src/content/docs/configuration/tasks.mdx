@@ -117,16 +117,34 @@ startup, so it catches a bad cron expression before you deploy.
 
 ### run_on_start
 
-**type**: `boolean` **default**: `false`
+**type**: `boolean` or `enum` **default**: `false`
 
-Run the task once when the daemon starts, like cron's `@reboot`. This is
-separate from [`cron`](#cron) and [`catch_up`](#catch_up).
+Run the task once at startup. This is separate from [`cron`](#cron) and
+[`catch_up`](#catch_up).
 
 ```toml
 [tasks.warm-cache]
 run_on_start = true
 run          = "/usr/local/bin/warm-cache"
+
+[tasks.start-tunnel]
+run_on_start = "boot"
+run          = "/usr/local/bin/start-tunnel"
 ```
+
+Possible values:
+
+- `false`: don't run at startup
+- `true` or `"daemon"`: run every time the daemon starts, including after
+  `runwisp restart` and updates
+- `"boot"`: run once per machine boot, like cron's `@reboot`. Restarting the
+  daemon doesn't run it again until the next boot. In a container, each
+  container start counts as a boot.
+
+On Linux, RunWisp tells boots apart by the kernel boot ID and the start time
+of PID 1. On macOS it uses the boot session UUID. Where neither is available,
+`"boot"` runs on every daemon start, like `true`. A container that shares the
+host's PID namespace (`--pid=host`) follows the host's boots.
 
 ### catch_up
 

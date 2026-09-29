@@ -158,9 +158,9 @@ func TestRunStartupTasksSkipsHeldTask(t *testing.T) {
 	held.RunOnStart = true
 	ours := &model.Task{Name: "our-boot", Run: "echo hi", RunOnStart: true}
 
-	result := RunStartupTasks(map[string]*model.Task{
+	result := RunStartupTasks(t.Context(), map[string]*model.Task{
 		"held-boot": held, "our-boot": ours,
-	}, runner)
+	}, runner, nil, "")
 
 	assert.Equal(t, 1, result.Triggered, "only the task RunWisp owns fires at boot")
 	assert.Equal(t, 0, result.Errors)

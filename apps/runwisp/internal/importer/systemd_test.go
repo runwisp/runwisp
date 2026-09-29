@@ -45,7 +45,7 @@ ExecStart=/usr/local/bin/migrate up
 `)
 	out := res.TOML()
 	mustContain(t, out, "[tasks.service]")
-	mustContain(t, out, "run_on_start = true")
+	mustContain(t, out, `run_on_start = "boot"`)
 	if tally := res.Tally(); tally.Tasks != 1 || tally.Services != 0 {
 		t.Fatalf("counts: got %+v, want 1 task / 0 services", tally)
 	}
