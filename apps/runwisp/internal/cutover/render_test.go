@@ -166,17 +166,17 @@ func TestRender_SettingsAreOmittedOnceTheUnitMatches(t *testing.T) {
 	assert.NotContains(t, text, "Resolved settings:")
 }
 
-// TestRender_SaysCronMailStops: cron mailed these jobs' output (to MAILTO, or
-// the owner by default) and that mail silently ended at takeover. The plan has
-// to say so and point at notifications; a crontab that mails nobody must not
-// get the line.
+// TestRender_SaysCronMailStops: cron mailed these jobs' output to MAILTO and
+// that mail silently ended at takeover. The plan has to say so and point at
+// notifications; a crontab with no MAILTO, or an empty one, must not get the
+// line.
 func TestRender_SaysCronMailStops(t *testing.T) {
 	for _, tc := range []struct {
 		name, crontab string
 		want          bool
 	}{
 		{"MAILTO", "MAILTO=ops@example.com\n" + oneJob, true},
-		{"owner by default", oneJob, true},
+		{"no MAILTO", oneJob, false},
 		{"MAILTO empty", "MAILTO=\"\"\n" + oneJob, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -235,7 +235,7 @@ func TestDescribeOffer_SaysCronMailStops(t *testing.T) {
 		CronUnit: "cron.service",
 		Scan:     config.CronScan{Mails: true},
 	}})
-	assert.Contains(t, body, "stop cron's mail of job output")
+	assert.Contains(t, body, "stop cron's MAILTO mail")
 	assert.Contains(t, body, "https://docs.runwisp.com/notifications/")
 }
 

@@ -38,13 +38,12 @@ type Result struct {
 	// TOML without a row here to account for it.
 	items []Item
 	notes []Note
-	// cronMails is set when crond would mail at least one job's output: the job
-	// runs under a non-empty MAILTO, or under none, which mails the owner.
+	// cronMails is set when at least one job runs under a non-empty MAILTO.
 	cronMails bool
 }
 
-// CronMails reports whether crond would mail the output of any job in this
-// crontab, which stops once RunWisp runs the jobs instead.
+// CronMails reports whether any job in this crontab runs under a MAILTO, whose
+// mail stops once RunWisp runs the jobs instead.
 func (r *Result) CronMails() bool { return r.cronMails }
 
 // field is one `key = value` line. value is already TOML-formatted.

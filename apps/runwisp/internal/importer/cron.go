@@ -221,11 +221,9 @@ type crontabParser struct {
 	// where it's assigned rather than per job.
 	timezoneErr    error
 	pendingComment string // a "# ..." line directly above a job
-	// mailto is the MAILTO in force for the next job, "" for cron's "mail
-	// nobody"; mailtoSet is false until the crontab sets one, when cron mails
-	// the crontab's owner.
-	mailto    string
-	mailtoSet bool
+	// mailto is the MAILTO in force for the next job, "" when unset or set to
+	// cron's "mail nobody".
+	mailto string
 }
 
 // addItem opens a report row for the line currently being fed, stamped with its
@@ -287,7 +285,7 @@ func (cp *crontabParser) handleEnv(name, value string) {
 					"absolute shell path. The imported tasks keep the default shell.")
 		}
 	case "MAILTO":
-		cp.mailto, cp.mailtoSet = mailtoAddr(value), true
+		cp.mailto = mailtoAddr(value)
 		cp.noteMailto(cp.mailto)
 	case "CRON_TZ", "TZ":
 		cp.timezone = value
@@ -301,7 +299,7 @@ func (cp *crontabParser) handleEnv(name, value string) {
 func (cp *crontabParser) handleJob(line string) {
 	parsed := cp.importJob(line)
 	cp.pendingComment = ""
-	if parsed && (!cp.mailtoSet || cp.mailto != "") {
+	if parsed && cp.mailto != "" {
 		cp.res.cronMails = true
 	}
 	if !parsed {

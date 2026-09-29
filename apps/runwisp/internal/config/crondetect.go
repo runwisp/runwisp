@@ -79,8 +79,8 @@ type CronScan struct {
 	// same CronFinding.String, so the two sets are comparable rather than
 	// merely similar.
 	Skipped []string
-	// Mails is true when crond would mail some job's output (a MAILTO, or the
-	// owner by default). RunWisp sends no such mail, so a cutover has to say so.
+	// Mails is true when some job runs under a MAILTO. RunWisp sends no such
+	// mail, so a cutover has to say so.
 	Mails bool
 }
 

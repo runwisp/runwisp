@@ -47,8 +47,7 @@ Cron isn't touched until the config and unit are on disk. If RunWisp fails to
 start, cron is unmasked (and restarted if it was running), and you see the
 error.
 
-Cron mail stops with cron. If a crontab sets `MAILTO`, or leaves it unset so
-cron mails the owner, the plan says so. Set up
+If a crontab sets `MAILTO`, the plan warns that cron mail stops. Set up
 [notifications](/notifications/) to hear about failures; see
 [`MAILTO`](#what-needs-a-human) below.
 

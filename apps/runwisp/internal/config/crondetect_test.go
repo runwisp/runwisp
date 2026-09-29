@@ -70,7 +70,7 @@ func TestScanCronSources_Mails(t *testing.T) {
 	cfgPath := filepath.Join(dir, "runwisp.toml")
 	assert.False(t, ScanCronSources([]string{"quiet"}, cfgPath).Mails)
 
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "loud"), []byte("0 3 * * * /bin/b\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "loud"), []byte("MAILTO=ops@example.com\n0 3 * * * /bin/b\n"), 0o644))
 	assert.True(t, ScanCronSources([]string{"quiet", "loud"}, cfgPath).Mails)
 }
 

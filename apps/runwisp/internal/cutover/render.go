@@ -45,12 +45,10 @@ func Render(w io.Writer, p Plan) {
 	}
 }
 
-// cronMailStops is the plan's note for crontabs cron has been mailing output
-// from. That mail stops at takeover and RunWisp sends none in its place, so an
+// cronMailStops is the plan's note for crontabs that set MAILTO. That mail stops at takeover and RunWisp sends none in its place, so an
 // operator who relied on it for failures would otherwise hear nothing at all.
-const cronMailStops = "Cron mail stops: cron mails these jobs' output (to MAILTO, or to the crontab's\n" +
-	"owner by default). RunWisp does not send that mail. To hear about failures, set\n" +
-	"up notifications: " + notificationsDocs
+const cronMailStops = "Cron mail stops: a crontab sets MAILTO, and RunWisp does not send that mail.\n" +
+	"To hear about failures, set up notifications: " + notificationsDocs
 
 const notificationsDocs = "https://docs.runwisp.com/notifications/"
 
@@ -130,7 +128,7 @@ func PromptQuestion(p Plan) string {
 func DescribeOffer(p Plan) string {
 	mail := ""
 	if p.Evidence.Scan.Mails {
-		mail = "  · stop cron's mail of job output; RunWisp sends none (notifications:\n" +
+		mail = "  · stop cron's MAILTO mail; RunWisp sends none (notifications:\n" +
 			"    " + notificationsDocs + ")\n"
 	}
 	return fmt.Sprintf(`
