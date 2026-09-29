@@ -457,10 +457,10 @@ func (srv *Server) registerAppStreamSSE(api huma.API) {
 }
 
 // appStreamHandler is the SSE callback for the unified app event stream. It
-// admits the client (subject to the stream limit), flushes headers, replays any
-// events the client missed since its Last-Event-ID, then subscribes to the live
-// feed (via the shared appEventLog) and — when notify is enabled — the
-// notification hub, relaying everything plus periodic pings over the one
+// admits the client (subject to the stream limit), subscribes to the live feed
+// (via the shared appEventLog) and, when notify is enabled, the notification
+// hub, then flushes headers, replays any events the client missed since its
+// Last-Event-ID, and relays everything plus periodic pings over the one
 // connection until the client disconnects. Folding these onto a single stream
 // is what keeps a browser tab to one EventSource instead of three.
 func (srv *Server) appStreamHandler(ctx context.Context, input *AppStreamInput, send sse.Sender) {
@@ -476,19 +476,13 @@ func (srv *Server) appStreamHandler(ctx context.Context, input *AppStreamInput, 
 	}
 	defer release()
 
-	// Flush response headers immediately so SSE clients (e.g. EventSource
-	// polyfill using fetch) receive the 200 + text/event-stream header
-	// without waiting for the first real event. No id: this ping is outside
-	// the event sequence and must not perturb the browser's lastEventId.
-	if err := send(sse.Message{Data: PingEvent{}}); err != nil {
-		return
-	}
-
-	// Subscribe to the notification hub before flushing the appEvents replay
-	// backlog below: that flush can block on network writes for a while, and
-	// the hub has no replay of its own, so a notification published during
-	// the flush would otherwise be delivered to nobody. Subscribing first
-	// means it queues in this subscriber's own buffered channel instead.
+	// Subscribe to both feeds before any write: the initial ping and the
+	// replay flush below can block on network writes, the hub has no replay
+	// of its own, and a fresh client (no Last-Event-ID) gets no appEvents
+	// replay either. Anything published during those writes would otherwise
+	// reach nobody; subscribing first queues it in this subscriber's buffered
+	// channels instead. Clients treat the ping as "connected", so everything
+	// published after they see it must reach them.
 	var notifyCh <-chan inapp.Update
 	if srv.notifyHub != nil {
 		nsub, unsubscribe := srv.notifyHub.Subscribe()
@@ -498,6 +492,15 @@ func (srv *Server) appStreamHandler(ctx context.Context, input *AppStreamInput, 
 
 	replay, sub, unsub := srv.appEvents.subscribe(resolveResumeID(input.LastEventID, input.LastEventQuery))
 	defer unsub()
+
+	// Flush response headers immediately so SSE clients (e.g. EventSource
+	// polyfill using fetch) receive the 200 + text/event-stream header
+	// without waiting for the first real event. No id: this ping is outside
+	// the event sequence and must not perturb the browser's lastEventId.
+	if err := send(sse.Message{Data: PingEvent{}}); err != nil {
+		return
+	}
+
 	for _, e := range replay {
 		if err := send(sse.Message{ID: e.id, Data: toSSEEventData(e.ev)}); err != nil {
 			return

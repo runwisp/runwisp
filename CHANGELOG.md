@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp takeover` now warns when a crontab sets `MAILTO` that cron mail stops, and points to notifications.
 - The advice for held cron jobs now says to disable cron, not just stop it. A stopped cron that is still enabled kept the jobs held with nothing running them.
 - On WSL and in containers where systemd isn't running, RunWisp no longer trusts `systemctl` to decide whether cron is live, so a running cron keeps its jobs held instead of both schedulers running them.
+- The live event stream no longer drops an event published at the moment a web UI tab or the TUI connects, so a run starting right then shows up without a refresh.
 
 ## [1.2.0] - 2026-09-28
 
