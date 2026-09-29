@@ -6,9 +6,14 @@ package main
 import (
 	"os"
 	"testing"
+
+	"github.com/runwisp/runwisp/internal/importer"
 )
 
 func TestResolveCronOptions(t *testing.T) {
+	prev := hostCronFlavor
+	hostCronFlavor = func() importer.CronFlavor { return importer.CronFlavorDebian }
+	t.Cleanup(func() { hostCronFlavor = prev })
 	// Explicit --system=false forces per-user and disables detection.
 	if o := resolveCronOptions("/etc/crontab", false, true); o.System || o.Detect {
 		t.Errorf("explicit --system=false should force per-user with no detect, got %+v", o)
@@ -24,6 +29,16 @@ func TestResolveCronOptions(t *testing.T) {
 	// Otherwise the parser auto-detects.
 	if o := resolveCronOptions("-", false, false); o.System || !o.Detect {
 		t.Errorf("unset + stdin should enable detect, got %+v", o)
+	}
+	// Only a file the host's cron reads takes the host's cron flavor: a piped or
+	// copied crontab says nothing about which cron fired it.
+	if o := resolveCronOptions("/etc/cron.d/backup", false, false); o.Flavor != importer.CronFlavorDebian {
+		t.Errorf("host crontab should take the host flavor, got %+v", o)
+	}
+	for _, src := range []string{"-", "/home/me/jobs.cron"} {
+		if o := resolveCronOptions(src, false, false); o.Flavor != importer.CronFlavorUnknown {
+			t.Errorf("%s should keep the unknown flavor, got %+v", src, o)
+		}
 	}
 }
 

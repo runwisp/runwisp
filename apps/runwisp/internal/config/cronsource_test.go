@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/cronprobe"
+	"github.com/runwisp/runwisp/internal/importer"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1240,4 +1241,58 @@ func TestCronHold(t *testing.T) {
 	live := cronprobe.State{Live: true, State: "is running"}
 	state, _ := CronHold(&Config{cronDaemon: live})
 	assert.Equal(t, live, state, "the watcher starts from the answer the config was resolved with")
+}
+
+// stubCronFlavor pretends this box runs the given cron implementation.
+func stubCronFlavor(t *testing.T, flavor importer.CronFlavor) {
+	t.Helper()
+	prev := cronFlavor
+	cronFlavor = func() importer.CronFlavor { return flavor }
+	t.Cleanup(func() { cronFlavor = prev })
+}
+
+// TestIncludeCron_CronTZFollowsHostFlavor: a taken-over job keeps firing when
+// the host's cron fired it. cronie schedules by CRON_TZ; Debian cron ignores it
+// and fires in the system zone. The host's answer only applies to a file its
+// cron reads itself: a crontab only RunWisp reads was never fired by it.
+func TestIncludeCron_CronTZFollowsHostFlavor(t *testing.T) {
+	tests := []struct {
+		name     string
+		flavor   importer.CronFlavor
+		file     string
+		wantZone string
+	}{
+		{name: "cronie host", flavor: importer.CronFlavorUnknown, file: "cron.d/backup", wantZone: "Europe/Bratislava"},
+		{name: "debian host", flavor: importer.CronFlavorDebian, file: "cron.d/backup"},
+		{name: "debian host, file cron never read", flavor: importer.CronFlavorDebian, file: "crontabs/backup", wantZone: "Europe/Bratislava"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stubCronUsers(t, "root")
+			stubCronFlavor(t, tt.flavor)
+			user := ""
+			if strings.HasPrefix(tt.file, "cron.d/") {
+				user = "root "
+			}
+			dir := writeFileTree(t, map[string]string{
+				"runwisp.toml": "[daemon]\ninclude_cron = [\"" + filepath.Dir(tt.file) + "/*\"]\n",
+				tt.file:        "CRON_TZ=Europe/Bratislava\n0 3 * * * " + user + "/usr/local/bin/backup.sh\n",
+			})
+
+			cfg := loadTree(t, dir)
+			task := findTask(t, cfg, "backup")
+			assert.Equal(t, tt.wantZone, task.Timezone)
+			assert.Equal(t, "Europe/Bratislava", task.Env["CRON_TZ"], "both crons export it to the job")
+
+			warnings := strings.Join(Warnings(cfg), "\n")
+			scan := ScanCronSources([]string{filepath.Join(dir, filepath.Dir(tt.file), "*")}, filepath.Join(dir, "runwisp.toml"))
+			if tt.wantZone == "" {
+				assert.Contains(t, warnings, "CRON_TZ=Europe/Bratislava, which this host's Debian cron ignores")
+				assert.Equal(t, []string{filepath.Join(dir, tt.file)}, scan.CronTZIgnored)
+			} else {
+				assert.NotContains(t, warnings, "CRON_TZ")
+				assert.Empty(t, scan.CronTZIgnored)
+			}
+		})
+	}
 }

@@ -265,3 +265,22 @@ func TestJoinSources(t *testing.T) {
 	assert.Equal(t, "/etc/crontab, /etc/cron.d and bob's crontab",
 		JoinSources([]string{"/etc/crontab", "/etc/cron.d", "bob's crontab"}))
 }
+
+// TestRender_NamesCrontabsWhoseCronTZIsIgnored: on a Debian host the take-over
+// keeps a CRON_TZ-carrying job in the system zone, as Debian cron ran it. The
+// plan says so, or the operator reads the zone in the file and expects it.
+func TestRender_NamesCrontabsWhoseCronTZIsIgnored(t *testing.T) {
+	var out bytes.Buffer
+	Render(&out, Plan{Evidence: Evidence{
+		Scan: config.CronScan{
+			Files: []string{"/etc/cron.d/backup", "/etc/crontab"}, Jobs: 2, Live: 2,
+			CronTZIgnored: []string{"/etc/cron.d/backup"},
+		},
+		Sources: []string{"/etc/cron.d", "/etc/crontab"},
+	}})
+	assert.Contains(t, out.String(), "(CRON_TZ in /etc/cron.d is ignored, as this host's cron ignores it)")
+
+	out.Reset()
+	Render(&out, Plan{Evidence: Evidence{Scan: config.CronScan{Jobs: 1, Live: 1}}})
+	assert.NotContains(t, out.String(), "CRON_TZ")
+}

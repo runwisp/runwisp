@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp takeover` no longer says "Nothing to do" while the RunWisp service is stopped and cron is masked; it starts the service instead. `runwisp stop` now warns when stopping leaves cron masked by a take-over, so no jobs run.
 - `runwisp import --write` no longer writes a config that fails to load. When a line can't be converted, it exits non-zero, names the line, and writes nothing.
 - A cron expression with `*/N` in the day-of-month or day-of-week field now matches both day fields, as cron does: `0 0 */2 * 1` fires on odd days that are Mondays, not on every odd day plus every Monday. This affects `[tasks.*] cron` as well as imported crontabs.
-- Crontabs read by `runwisp import cron` or `include_cron` no longer turn `TZ=` into the task's `timezone`. It goes into `env`, since cron only passes it to the job. `CRON_TZ=` still sets `timezone` and is also kept in `env`.
+- Crontabs read by `runwisp import cron` or `include_cron` no longer turn `TZ=` into the task's `timezone`; it goes into `env`, since cron only passes it to the job. `CRON_TZ=` is kept in `env` too, and sets `timezone` except on Debian/Ubuntu, whose cron ignores it.
 
 ## [1.2.0] - 2026-09-28
 

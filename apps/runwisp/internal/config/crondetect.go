@@ -5,6 +5,7 @@ package config
 
 import (
 	"path/filepath"
+	"slices"
 
 	"github.com/runwisp/runwisp/internal/importer"
 )
@@ -82,6 +83,11 @@ type CronScan struct {
 	// Mails is true when some job runs under a MAILTO. RunWisp sends no such
 	// mail, so a cutover has to say so.
 	Mails bool
+	// CronTZIgnored are the crontabs whose CRON_TZ was not used as a schedule
+	// timezone, because this host's cron ignores it (see importer.CronFlavor).
+	// Their jobs still run; a take-over plan names them so the operator isn't
+	// surprised that a zone written in the file has no effect.
+	CronTZIgnored []string
 }
 
 // ScanCronSources globs patterns exactly like `[daemon] include_cron` would
@@ -118,7 +124,11 @@ func ScanCronSources(patterns []string, cfgPath string) CronScan {
 		}
 		scan.Files = append(scan.Files, path)
 		claimOwned(owned, res)
-		scan.Skipped = appendSkipped(scan.Skipped, findingsFrom(res, path))
+		findings := findingsFrom(res, path)
+		scan.Skipped = appendSkipped(scan.Skipped, findings)
+		if slices.ContainsFunc(findings, func(f CronFinding) bool { return f.kind == importer.NoteCronTZIgnored }) {
+			scan.CronTZIgnored = append(scan.CronTZIgnored, path)
+		}
 		scan.Mails = scan.Mails || res.CronMails()
 		for _, it := range res.Items() {
 			scan.Jobs++

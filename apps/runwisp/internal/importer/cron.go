@@ -55,6 +55,10 @@ type CronOptions struct {
 	// between loads; leave it empty for a one-off import, where -2 is stable
 	// because there is only one file in one order. See deduper.uniqueIn.
 	NameSuffix string
+	// Flavor is the cron implementation that has been running this crontab, when
+	// known. It decides what CRON_TZ means; see CronFlavor. Leave it unknown for a
+	// crontab that isn't this machine's.
+	Flavor CronFlavor
 }
 
 // cronWrappers are leading command tokens that don't name the real program, so
@@ -220,6 +224,7 @@ type crontabParser struct {
 	// timezoneErr is why the crontab's CRON_TZ can't be used, checked once
 	// where it's assigned rather than per job.
 	timezoneErr    error
+	cronTZNoted    bool   // the CRON_TZ-ignored note was already added for this file
 	pendingComment string // a "# ..." line directly above a job
 	// mailto is the MAILTO in force for the next job, "" when unset or set to
 	// cron's "mail nobody".
@@ -288,13 +293,17 @@ func (cp *crontabParser) handleEnv(name, value string) {
 		cp.mailto = mailtoAddr(value)
 		cp.noteMailto(cp.mailto)
 	case "CRON_TZ":
-		// cronie schedules the table in CRON_TZ. Debian/Ubuntu cron has no such
-		// setting and schedules in the system zone; cronie is the only
-		// implementation that gives the name a meaning, so it wins. Both still
-		// hand it to the job as a plain variable, so it lands in env too.
+		// Both cronie and Debian cron hand it to the job as a plain variable.
+		cp.env[name] = value
+		if cp.opts.Flavor == CronFlavorDebian {
+			// Debian cron has no CRON_TZ support and fires in the system zone, so
+			// the job keeps firing when it did.
+			cp.noteCronTZIgnored(value)
+			break
+		}
+		// cronie schedules the table in CRON_TZ.
 		cp.timezone = value
 		cp.timezoneErr = validateCronTimezone(value)
-		cp.env[name] = value
 	default:
 		// TZ included: no cron schedules by it (cronie, Debian and vixie all
 		// fire in the daemon's zone, or CRON_TZ); it only reaches the command.
@@ -327,6 +336,19 @@ func mailtoAddr(value string) string {
 		return ""
 	}
 	return addr
+}
+
+// noteCronTZIgnored says, once per crontab, that its CRON_TZ did not become the
+// task timezone because this host's cron never scheduled by it.
+func (cp *crontabParser) noteCronTZIgnored(value string) {
+	if cp.cronTZNoted {
+		return
+	}
+	cp.cronTZNoted = true
+	cp.res.fileNote(NoteCronTZIgnored,
+		"crontab sets CRON_TZ="+value+", which this host's Debian cron ignores: its jobs "+
+			"fire in the system timezone, so RunWisp keeps that schedule and only passes "+
+			"CRON_TZ to the job.")
 }
 
 // noteMailto explains what happens to a crontab's MAILTO.

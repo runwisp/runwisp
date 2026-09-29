@@ -3,7 +3,13 @@
 
 package importer
 
-import "path/filepath"
+import (
+	"bufio"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+)
 
 // This file is the one place that may know where a crontab lives on disk.
 // IsSystemCrontabPath and UserSpoolOwner already read it; first-run cron
@@ -85,4 +91,53 @@ func UserSpoolDirs() []string {
 		"/usr/lib/cron/tabs",       // macOS
 		"/var/at/tabs",             // macOS/BSD, alongside at(1)'s spool
 	}
+}
+
+// CronFlavor is the cron implementation a crontab was written for, as far as it
+// changes what a crontab line means. Today that is only CRON_TZ.
+type CronFlavor int
+
+const (
+	// CronFlavorUnknown covers cronie and anything not recognized: CRON_TZ is the
+	// schedule's timezone, as cronie reads it.
+	CronFlavorUnknown CronFlavor = iota
+	// CronFlavorDebian is Debian/Ubuntu's `cron` package (vixie cron 3.0 with
+	// Debian's patches). It has no CRON_TZ support: every job fires in the
+	// system timezone and CRON_TZ is only exported to the command.
+	CronFlavorDebian
+)
+
+// dpkgStatusPath is dpkg's database of installed packages, relative to the root
+// of the fs.FS DetectCronFlavor reads.
+const dpkgStatusPath = "var/lib/dpkg/status"
+
+// HostCronFlavor detects the cron implementation installed on this machine.
+func HostCronFlavor() CronFlavor { return DetectCronFlavor(os.DirFS("/")) }
+
+// DetectCronFlavor reports CronFlavorDebian when dpkg lists the `cron` package
+// as installed under root. It reads dpkg's status file rather than checking
+// /etc/debian_version or a binary path: Debian also packages cronie, and a
+// removed-but-not-purged cron leaves files behind, so only the package state
+// says which cron is really there.
+func DetectCronFlavor(root fs.FS) CronFlavor {
+	f, err := root.Open(dpkgStatusPath)
+	if err != nil {
+		return CronFlavorUnknown
+	}
+	defer func() { _ = f.Close() }()
+	pkg := ""
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := sc.Text()
+		if name, ok := strings.CutPrefix(line, "Package: "); ok {
+			pkg = name
+		} else if status, ok := strings.CutPrefix(line, "Status: "); ok && pkg == "cron" {
+			// "install ok installed"; a removed package reads "... config-files".
+			if strings.HasSuffix(status, " installed") {
+				return CronFlavorDebian
+			}
+			return CronFlavorUnknown
+		}
+	}
+	return CronFlavorUnknown
 }

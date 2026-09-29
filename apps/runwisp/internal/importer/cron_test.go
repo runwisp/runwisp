@@ -6,6 +6,7 @@ package importer
 import (
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -768,4 +769,73 @@ func TestCronSystemUserColumnSniffCoversTheDescriptorForm(t *testing.T) {
 		t.Errorf("status = %v, want blocked", got)
 	}
 	findNote(t, res, NoteUserColumnSuspect)
+}
+
+// TestCronTZFollowsHostFlavor is the takeover promise for CRON_TZ: a job keeps
+// firing when the host's cron fired it. cronie schedules by CRON_TZ; Debian cron
+// has no CRON_TZ support and fires in the system zone, so on Debian it must not
+// become the task timezone, and the report has to say why.
+func TestCronTZFollowsHostFlavor(t *testing.T) {
+	in := "CRON_TZ=Europe/Bratislava\n0 4 * * * /bin/job\n1 4 * * * /bin/other\nCRON_TZ=UTC\n"
+	tests := []struct {
+		name   string
+		flavor CronFlavor
+	}{
+		{name: "cronie or unknown", flavor: CronFlavorUnknown},
+		{name: "debian", flavor: CronFlavorDebian},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			debian := tt.flavor == CronFlavorDebian
+			res := parseCron(t, in, CronOptions{Flavor: tt.flavor})
+			out := res.TOML()
+			mustContain(t, out, `CRON_TZ = "Europe/Bratislava"`)
+			if debian {
+				mustNotContain(t, out, "timezone =")
+			} else {
+				mustContain(t, out, `timezone = "Europe/Bratislava"`)
+			}
+			ignored := 0
+			for _, n := range res.Notes() {
+				if n.Kind == NoteCronTZIgnored {
+					ignored++
+				}
+			}
+			// One note per crontab on Debian, however many CRON_TZ lines it has.
+			want := 0
+			if debian {
+				want = 1
+			}
+			if ignored != want {
+				t.Fatalf("CRON_TZ-ignored notes = %d, want %d: %+v", ignored, want, allNotes(res))
+			}
+		})
+	}
+}
+
+func TestDetectCronFlavor(t *testing.T) {
+	status := func(cronStatus string) fstest.MapFS {
+		return fstest.MapFS{dpkgStatusPath: {Data: []byte(
+			"Package: bash\nStatus: install ok installed\n\n" +
+				"Package: cron\nStatus: " + cronStatus + "\nPriority: important\n\n" +
+				"Package: cron-daemon-common\nStatus: install ok installed\n")}}
+	}
+	tests := []struct {
+		name string
+		root fstest.MapFS
+		want CronFlavor
+	}{
+		{name: "debian cron installed", root: status("install ok installed"), want: CronFlavorDebian},
+		{name: "debian cron removed, config left", root: status("deinstall ok config-files"), want: CronFlavorUnknown},
+		{name: "no dpkg", root: fstest.MapFS{}, want: CronFlavorUnknown},
+		{name: "dpkg without cron", root: fstest.MapFS{dpkgStatusPath: {Data: []byte(
+			"Package: cronie\nStatus: install ok installed\n")}}, want: CronFlavorUnknown},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := DetectCronFlavor(tt.root); got != tt.want {
+				t.Fatalf("DetectCronFlavor = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
