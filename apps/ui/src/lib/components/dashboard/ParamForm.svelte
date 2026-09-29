@@ -2,6 +2,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
+    import { untrack } from "svelte";
     import type { TaskParam } from "@runwisp/common";
     import { FormField, Input, Select, Checkbox } from "@runwisp/ui";
     import {
@@ -71,8 +72,9 @@
 
     // Raw field state keyed by parameter identity. Flags hold "true"/"false";
     // everything else holds the entered string ("" means "not supplied").
+    // Seeded once from the construction-time props (see `initial`).
     let vals = $state<Record<string, string>>(
-        Object.fromEntries(params.map((p) => [p.key, seedValue(p)])),
+        untrack(() => Object.fromEntries(params.map((p) => [p.key, seedValue(p)]))),
     );
     let touched = $state<Record<string, boolean>>({});
 
@@ -86,12 +88,14 @@
     // the free-text input shows). Seeded true when a default isn't a listed
     // choice, so a custom default opens in custom mode pre-filled.
     let customMode = $state<Record<string, boolean>>(
-        Object.fromEntries(
-            params.filter(isComboParam).map((p) => {
-                const v = vals[p.key] ?? "";
-                const isChoice = p.choices?.includes(v) ?? false;
-                return [p.key, v !== "" && !isChoice];
-            }),
+        untrack(() =>
+            Object.fromEntries(
+                params.filter(isComboParam).map((p) => {
+                    const v = vals[p.key] ?? "";
+                    const isChoice = p.choices?.includes(v) ?? false;
+                    return [p.key, v !== "" && !isChoice];
+                }),
+            ),
         ),
     );
 
