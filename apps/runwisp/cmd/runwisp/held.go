@@ -50,9 +50,17 @@ func printHeldBlock(w io.Writer, names []string, cronState string) {
 	fmt.Fprintf(w, "\n⏸ %s held — %s still owns %s, so RunWisp is not running %s:\n",
 		heldTaskCount(len(names)), daemon, pronounFor(len(names)), pronounFor(len(names)))
 	fmt.Fprintf(w, "    %s\n", heldNameList(names))
-	fmt.Fprintf(w, "  Run 'sudo runwisp takeover' to hand %s over — or just stop cron, and RunWisp picks %s up.\n",
-		pronounFor(len(names)), pronounFor(len(names)))
+	fmt.Fprintf(w, "  Run 'sudo runwisp takeover' to hand %s over, or stop cron and disable it at boot\n",
+		pronounFor(len(names)))
+	fmt.Fprintf(w, "  (for example '%s') and RunWisp picks %s up.\n", disableCronExample, pronounFor(len(names)))
 }
+
+// disableCronExample is the one-liner the held surfaces suggest for retiring cron
+// by hand. Stopping alone is not enough: a stopped cron that is still enabled
+// starts again at the next boot, so the probe keeps counting it live and RunWisp
+// keeps holding the jobs while nothing runs them. The unit is Debian's name; the
+// "for example" covers crond/cronie.
+const disableCronExample = "sudo systemctl disable --now cron"
 
 // heldNameList renders the names, collapsing the tail past heldNamesShown.
 func heldNameList(names []string) string {
@@ -96,8 +104,10 @@ func printHeldBanner(w io.Writer, names []string, cronState string) {
 	b.WriteString("  RunWisp is standing down so nothing fires twice — cron keeps running these\n")
 	b.WriteString("  jobs, and RunWisp records no history or output for them.\n")
 	fmt.Fprintf(&b, "    %s\n", heldNameList(names))
-	b.WriteString("  Run 'sudo runwisp takeover' to hand them over. Or just stop cron: RunWisp\n")
-	b.WriteString("  notices within a minute and takes them on, no reload needed.\n")
+	b.WriteString("  Run 'sudo runwisp takeover' to hand them over. Or stop cron and disable it at\n")
+	fmt.Fprintf(&b, "  boot (for example '%s'): RunWisp notices within a\n", disableCronExample)
+	b.WriteString("  minute and takes them on, no reload needed. A stopped cron that is still\n")
+	b.WriteString("  enabled keeps them held.\n")
 	b.WriteString("================================================================================\n")
 	_, _ = fmt.Fprint(w, b.String())
 }

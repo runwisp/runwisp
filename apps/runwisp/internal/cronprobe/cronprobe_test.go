@@ -139,3 +139,30 @@ func TestProcessAlive(t *testing.T) {
 	assert.False(t, processAlive(-1))
 	assert.False(t, processAlive(999999999))
 }
+
+// TestProbe_SystemctlWithoutSystemd is the WSL / container case: systemctl is on
+// PATH but systemd is not PID 1, so it reports every unit inactive while a crond
+// started some other way is running. Trusting it released the hold and let both
+// schedulers fire every job. Runs the real systemctlState against a fake binary.
+func TestProbe_SystemctlWithoutSystemd(t *testing.T) {
+	sc := fakeSystemctl(t, "inactive\ninactive\ninactive\n", 3)
+	t.Setenv("PATH", filepath.Dir(sc))
+
+	livePid := filepath.Join(t.TempDir(), "cron.pid")
+	require.NoError(t, os.WriteFile(livePid, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600))
+	prevPids, prevBooted := PidFiles, SystemdBootedDir
+	t.Cleanup(func() { PidFiles, SystemdBootedDir = prevPids, prevBooted })
+	PidFiles = []string{livePid}
+
+	t.Run("not booted with systemd falls back to the pidfile", func(t *testing.T) {
+		SystemdBootedDir = filepath.Join(t.TempDir(), "missing")
+		got := Probe()
+		assert.True(t, got.Live)
+		assert.Contains(t, got.State, "live pidfile")
+	})
+
+	t.Run("booted with systemd trusts systemctl", func(t *testing.T) {
+		SystemdBootedDir = t.TempDir()
+		assert.Equal(t, State{}, Probe())
+	})
+}

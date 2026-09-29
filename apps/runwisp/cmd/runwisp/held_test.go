@@ -114,3 +114,16 @@ func TestPrintHeldBlock_ReadsWithoutCronState(t *testing.T) {
 	assert.Contains(t, got, "cron still owns it")
 	assert.NotContains(t, got, "a system cron daemon ,")
 }
+
+// "Just stop cron" was wrong on systemd: a stopped cron that is still enabled
+// starts again at boot, so the probe keeps it live and the jobs stay held with
+// nothing running them. The advice has to say to disable it.
+func TestPrintHeld_AdviceDisablesCronNotJustStops(t *testing.T) {
+	var block, banner bytes.Buffer
+	printHeldBlock(&block, []string{"backup"}, "is running")
+	printHeldBanner(&banner, []string{"backup"}, "is running")
+	for _, got := range []string{block.String(), banner.String()} {
+		assert.Contains(t, got, "systemctl disable --now cron")
+		assert.NotContains(t, got, "just stop cron")
+	}
+}

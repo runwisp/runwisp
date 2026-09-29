@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/importer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -165,6 +166,38 @@ func TestRender_SettingsAreOmittedOnceTheUnitMatches(t *testing.T) {
 	assert.NotContains(t, text, "Resolved settings:")
 }
 
+// TestRender_SaysCronMailStops: cron mailed these jobs' output (to MAILTO, or
+// the owner by default) and that mail silently ended at takeover. The plan has
+// to say so and point at notifications; a crontab that mails nobody must not
+// get the line.
+func TestRender_SaysCronMailStops(t *testing.T) {
+	for _, tc := range []struct {
+		name, crontab string
+		want          bool
+	}{
+		{"MAILTO", "MAILTO=ops@example.com\n" + oneJob, true},
+		{"owner by default", oneJob, true},
+		{"MAILTO empty", "MAILTO=\"\"\n" + oneJob, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _, _ := fixture{
+				crontabs:   map[string]string{"backup": tc.crontab},
+				cronUnit:   "cron.service",
+				cronActive: true,
+			}.build(t)
+
+			_, text := render(t, c)
+
+			if tc.want {
+				assert.Contains(t, text, "Cron mail stops")
+				assert.Contains(t, text, "https://docs.runwisp.com/notifications/")
+			} else {
+				assert.NotContains(t, text, "Cron mail stops")
+			}
+		})
+	}
+}
+
 // TestPromptQuestion_NamesTheUnitBeingRetired: a bare "Proceed?" must never be
 // the last thing an operator sees before cron stops.
 func TestPromptQuestion_NamesTheUnitBeingRetired(t *testing.T) {
@@ -193,6 +226,17 @@ func TestDescribeOffer_StatesAllThreeEffects(t *testing.T) {
 	assert.Contains(t, body, "starts on boot")
 	assert.Contains(t, body, "stop and mask cron.service")
 	assert.Contains(t, body, "Take over from cron?")
+	assert.NotContains(t, body, "mail")
+}
+
+// The first-run offer retires cron too, so it names the mail that stops.
+func TestDescribeOffer_SaysCronMailStops(t *testing.T) {
+	body := DescribeOffer(Plan{Evidence: Evidence{
+		CronUnit: "cron.service",
+		Scan:     config.CronScan{Mails: true},
+	}})
+	assert.Contains(t, body, "stop cron's mail of job output")
+	assert.Contains(t, body, "https://docs.runwisp.com/notifications/")
 }
 
 func TestDescribeSources_CollapsesDirectoriesAndNamesSpoolOwners(t *testing.T) {

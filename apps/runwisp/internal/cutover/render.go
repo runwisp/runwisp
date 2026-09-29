@@ -40,7 +40,19 @@ func Render(w io.Writer, p Plan) {
 		fmt.Fprintln(w, "\nNothing to mask — this host has no cron systemd unit, so RunWisp owns these\n"+
 			"jobs the moment it starts.")
 	}
+	if p.Evidence.Scan.Mails && !p.NothingToDo() {
+		fmt.Fprintf(w, "\n%s\n", cronMailStops)
+	}
 }
+
+// cronMailStops is the plan's note for crontabs cron has been mailing output
+// from. That mail stops at takeover and RunWisp sends none in its place, so an
+// operator who relied on it for failures would otherwise hear nothing at all.
+const cronMailStops = "Cron mail stops: cron mails these jobs' output (to MAILTO, or to the crontab's\n" +
+	"owner by default). RunWisp does not send that mail. To hear about failures, set\n" +
+	"up notifications: " + notificationsDocs
+
+const notificationsDocs = "https://docs.runwisp.com/notifications/"
 
 // renderFindings opens with what the machine sweep found, which is the part an
 // operator wants confirmed before anything else. It prints even on a blocked
@@ -116,13 +128,18 @@ func PromptQuestion(p Plan) string {
 // daemon that dies with the operator's terminal would trade double-firing for
 // nothing firing at all.
 func DescribeOffer(p Plan) string {
+	mail := ""
+	if p.Evidence.Scan.Mails {
+		mail = "  · stop cron's mail of job output; RunWisp sends none (notifications:\n" +
+			"    " + notificationsDocs + ")\n"
+	}
 	return fmt.Sprintf(`
 RunWisp can take over from cron. It will:
   · read %s as RunWisp tasks (nothing rewritten — crontab -e still works)
   · install itself as a system service, so it starts on boot
   · stop and mask %s, so nothing fires twice
-
-Take over from cron?`, JoinSources(p.Evidence.Sources), p.Evidence.CronUnit)
+%s
+Take over from cron?`, JoinSources(p.Evidence.Sources), p.Evidence.CronUnit, mail)
 }
 
 // DescribeSources renders matched cron files as a short, friendly list: every

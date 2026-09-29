@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The daemon now exits non-zero when it shuts down because of a fatal error (the server failing to start, a crash in a background worker), so systemd and launchd restart it. `runwisp stop` and SIGTERM still exit 0.
 - Config and crontab edits (`import`, `takeover`, `promote`) are now power-loss safe, write through a symlinked `runwisp.toml` instead of replacing the link, and keep the file's owner when run as root.
 - The headless startup warning about a generated password no longer claims the Web UI can't be logged into; it points to `runwisp password`.
+- `runwisp takeover` now warns that cron stops mailing job output (`MAILTO`, or the crontab owner by default) and points to notifications.
+- The advice for held cron jobs now says to disable cron, not just stop it. A stopped cron that is still enabled kept the jobs held with nothing running them.
+- On WSL and in containers where systemd isn't running, RunWisp no longer trusts `systemctl` to decide whether cron is live, so a running cron keeps its jobs held instead of both schedulers running them.
 
 ## [1.2.0] - 2026-09-28
 

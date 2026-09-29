@@ -61,6 +61,19 @@ func TestScanCronSources_CountsJobsAndLiveEligibility(t *testing.T) {
 	assert.Empty(t, scan.Blocked)
 }
 
+// The takeover plan warns that cron mail stops from scan.Mails, so any read
+// crontab that mails has to set it.
+func TestScanCronSources_Mails(t *testing.T) {
+	dir := t.TempDir()
+	quiet := filepath.Join(dir, "quiet")
+	require.NoError(t, os.WriteFile(quiet, []byte("MAILTO=\"\"\n0 3 * * * /bin/a\n"), 0o644))
+	cfgPath := filepath.Join(dir, "runwisp.toml")
+	assert.False(t, ScanCronSources([]string{"quiet"}, cfgPath).Mails)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "loud"), []byte("0 3 * * * /bin/b\n"), 0o644))
+	assert.True(t, ScanCronSources([]string{"quiet", "loud"}, cfgPath).Mails)
+}
+
 // TestScanCronSources_UnreadableFileIsBlockedNotFatal: unlike
 // mergeCronSources, which is fail-open across a whole config load,
 // ScanCronSources runs before any config exists — a refused file just lands

@@ -344,6 +344,29 @@ func TestCronEmptyMailtoIsNotAGapToFill(t *testing.T) {
 	}
 }
 
+// TestCronMails pins when crond would mail a job's output: under a non-empty
+// MAILTO, and under none at all (cron mails the owner). The takeover plan reads
+// it to say that mail stops, so a false "no" would silence it again.
+func TestCronMails(t *testing.T) {
+	for _, tc := range []struct {
+		name, crontab string
+		want          bool
+	}{
+		{"explicit MAILTO", "MAILTO=ops@example.com\n0 4 * * * /bin/rollup\n", true},
+		{"no MAILTO mails the owner", "0 4 * * * /bin/rollup\n", true},
+		{"empty MAILTO mails nobody", "MAILTO=\"\"\n0 4 * * * /bin/rollup\n", false},
+		{"bare MAILTO= mails nobody", "MAILTO=\n0 4 * * * /bin/rollup\n", false},
+		{"a job before MAILTO= still mails", "0 4 * * * /bin/a\nMAILTO=\n0 5 * * * /bin/b\n", true},
+		{"MAILTO with no jobs", "MAILTO=ops@example.com\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := parseCron(t, tc.crontab, CronOptions{}).CronMails(); got != tc.want {
+				t.Errorf("CronMails() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCronCommentBecomesDescription(t *testing.T) {
 	in := "# Rotate the nginx logs\n0 0 * * * /usr/sbin/logrotate\n"
 	res := parseCron(t, in, CronOptions{})
