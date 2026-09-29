@@ -58,27 +58,6 @@ func importSupervisordTwoTier(t *testing.T, cfgPath, conf string) (stderr string
 	return errb.String(), err
 }
 
-// TestImportCronTwoTierNamesAPreexistingBreakageToo covers the one write that
-// skips the load gate: the import has its own `# TODO`, so the files are kept for
-// the operator to fix. Without this, a root config that was already broken went
-// unmentioned — they'd resolve every TODO, run validate, and be told about
-// something they never touched.
-func TestImportCronTwoTierNamesAPreexistingBreakageToo(t *testing.T) {
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "runwisp.toml")
-	// Valid TOML, invalid config: a task with a schedule and no command.
-	require.NoError(t, os.WriteFile(cfgPath, []byte("[tasks.web]\ncron = \"@daily\"\n"), 0o600))
-
-	// An unparseable cron expression is what makes the import itself carry a TODO.
-	stderr, err := importTwoTier(t, cfgPath, "99 99 * * * /bin/bad\n")
-	require.NoError(t, err)
-
-	assert.Contains(t, stderr, "Resolve the # TODO items in")
-	assert.Contains(t, stderr, "didn't load before this import either:")
-	assert.FileExists(t, filepath.Join(dir, "runwisp.d", "imported.toml"),
-		"the files are kept precisely so the operator can fix them in place")
-}
-
 func TestImportCronTwoTierGreenfield(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "runwisp.toml")
@@ -195,19 +174,31 @@ func TestImportCronTwoTierReimportRenamesDifferentCommand(t *testing.T) {
 	assert.True(t, loadedTask(t, cfg, "backup-2").Source == model.SourceStaged)
 }
 
-func TestImportCronTwoTierContentErrorKeepsFiles(t *testing.T) {
+// TestImportCronTwoTierRefusesContentThatWouldNotLoad: one bad crontab line
+// used to be staged and wired in anyway, leaving a config the daemon fails to
+// load on its next start, so every task stopped. It must exit non-zero, name the
+// bad line, and leave the config exactly as it was.
+func TestImportCronTwoTierRefusesContentThatWouldNotLoad(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "runwisp.toml")
+	const root = "[tasks.native]\nrun = \"echo native\"\n"
+	require.NoError(t, os.WriteFile(cfgPath, []byte(root), 0o644))
 
-	stderr, err := importTwoTier(t, cfgPath, "99 99 * * * /usr/bin/broken.sh\n")
-	require.NoError(t, err) // a TODO is not a hard failure — the operator fixes it in place
+	stderr, err := importTwoTier(t, cfgPath, "30 2 * * * /usr/bin/good.sh\n99 99 * * * /usr/bin/broken.sh\n")
+	require.Error(t, err)
+	ue, ok := isUserFacing(err)
+	require.True(t, ok)
+	assert.Contains(t, ue.title, "would not load, so nothing was written")
+	assert.Contains(t, err.Error(), `task "broken"`)
+	assert.Contains(t, err.Error(), "99 99 * * *")
+	assert.Contains(t, stderr, "/usr/bin/broken.sh", "the summary still shows which line needs the fix")
 
-	stagingBytes, err := os.ReadFile(filepath.Join(dir, "runwisp.d", "imported.toml"))
-	require.NoError(t, err)
-	assert.Contains(t, string(stagingBytes), "TODO")
-	_, err = os.Stat(cfgPath)
-	require.NoError(t, err, "root config should still be created")
-	assert.Contains(t, stderr, "needs a fix before this config loads")
+	rootBytes, readErr := os.ReadFile(cfgPath)
+	require.NoError(t, readErr)
+	assert.Equal(t, root, string(rootBytes), "the root config must not be wired")
+	assert.NoFileExists(t, filepath.Join(dir, "runwisp.d", "imported.toml"))
+	_, loadErr := config.Load(cfgPath)
+	require.NoError(t, loadErr)
 }
 
 // TestStageImportReportsConflict drives the writer with staging content that

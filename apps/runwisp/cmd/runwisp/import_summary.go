@@ -233,25 +233,6 @@ func twoTierEpilogue(rep importReport, staged configedit.StageResult, layout con
 		fmt.Fprintf(w, "Staged %s in %s\n", pluralizeCounts(rep.emitted()), staged.StagingPath)
 		fmt.Fprintln(w, moodDid.line(staged.Root, layout.RootPath))
 
-		if rep.validationErr != nil {
-			fmt.Fprintln(w)
-			if rep.blockingRows() == 0 {
-				fmt.Fprintf(w, "%s the staged config didn't validate yet:\n  %s\n",
-					st.attn.Render("!"), rep.validationErr.Error())
-			}
-			fmt.Fprintf(w, "Resolve the # TODO items in %s, then run `runwisp validate`.\n", staged.StagingPath)
-			if staged.PreLoadErr != nil {
-				// This write skipped the load gate because the import itself has a TODO,
-				// so a root that was already broken went unmentioned — and the operator
-				// would fix every TODO, run validate, and be told about something they
-				// never touched. Two problems named up front beat one discovered later.
-				fmt.Fprintln(w)
-				fmt.Fprintf(w, "%s separately, %s didn't load before this import either:\n  %s\n",
-					st.attn.Render("!"), filepath.Base(layout.RootPath), staged.PreLoadErr.Error())
-			}
-			return
-		}
-
 		fmt.Fprintln(w)
 		fmt.Fprintf(w, "Validated — the daemon loads these on next start or `runwisp reload`.\n")
 		rep.writeStillRuns(w, st)

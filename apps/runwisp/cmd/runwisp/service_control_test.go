@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -190,4 +191,31 @@ func TestStopWaitTimeout(t *testing.T) {
 		require.NoError(t, os.WriteFile(path, []byte("[daemon]\nshutdown_timeout = \"2s\"\n\n[tasks.t]\nrun = \"echo hi\"\n"), 0o600))
 		assert.Equal(t, 15*time.Second, stopWaitTimeout(Flags{CfgFile: path}))
 	})
+}
+
+// Stopping a taken-over daemon leaves the box with no scheduler: cron is masked,
+// so no job runs until RunWisp is back. The stop used to say only "it will start
+// again on the next boot".
+func TestStopViaService_WarnsWhenCronIsMasked(t *testing.T) {
+	f := Flags{DataDir: t.TempDir()}
+	for _, tt := range []struct {
+		name string
+		st   autostart.Status
+		warn bool
+	}{
+		{"masked by the take-over", autostart.Status{CronUnit: "cron.service", CronMasked: true}, true},
+		{"cron came back", autostart.Status{CronUnit: "cron.service", CronActive: true}, false},
+		{"never took over", autostart.Status{}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+			require.NoError(t, stopViaService(&out, &fakeTakeoverInstaller{}, autostart.InstallOptions{}, tt.st, f))
+			if tt.warn {
+				assert.Contains(t, out.String(), "cron.service is masked by the RunWisp take-over, so no cron jobs run")
+				assert.Contains(t, out.String(), "runwisp restart")
+			} else {
+				assert.NotContains(t, out.String(), "Warning")
+			}
+		})
+	}
 }

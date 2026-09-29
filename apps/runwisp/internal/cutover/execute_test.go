@@ -372,3 +372,29 @@ func TestExecute_NothingToDoBoxIsANoop(t *testing.T) {
 	assert.Empty(t, inst.calls)
 	assert.Equal(t, Result{}, res)
 }
+
+// TestExecute_ScaffoldThatDoesNotLoadIsRemovedBeforeAnythingIsMasked: the write
+// step gets the same load gate the wire step has. A scaffold the daemon can't
+// read would otherwise be installed under a unit that masks cron and then
+// crash-loops, leaving the box with no scheduler.
+func TestExecute_ScaffoldThatDoesNotLoadIsRemovedBeforeAnythingIsMasked(t *testing.T) {
+	c, inst, cfgPath := fixture{
+		crontabs:   map[string]string{"backup": oneJob},
+		cronUnit:   "cron.service",
+		cronActive: true,
+	}.build(t)
+	c.deps.WriteConfig = func(path string, _ []string) error {
+		return os.WriteFile(path, []byte("[tasks.broken]\ncron = \"99 99 * * *\"\nrun = \"true\"\n"), 0o644)
+	}
+
+	p, err := c.Compute(context.Background())
+	require.NoError(t, err)
+
+	_, err = c.Execute(context.Background(), p, &bytes.Buffer{})
+	var ue *userError
+	require.ErrorAs(t, err, &ue)
+	assert.Contains(t, ue.Title(), "would not load")
+	assert.Contains(t, ue.Details(), `task "broken"`)
+	assert.Empty(t, inst.calls, "nothing may be installed or masked")
+	assert.NoFileExists(t, cfgPath)
+}

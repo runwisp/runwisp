@@ -197,7 +197,8 @@ func (s *systemdInstaller) restoreCron(ctx context.Context, unit, prior string, 
 // upgrade brought it back), and reporting "already installed ✓" on a box with
 // two schedulers is exactly the silent double-fire the take-over exists to end.
 //
-// Cheap when there is nothing wrong: one probe, no output, no writes.
+// Cheap when there is nothing wrong: one probe and an `enable --now` that is a
+// no-op on a running unit, no output, no writes.
 //
 // It does not ask. Consent for stopping and masking cron is the caller's, taken
 // once against a plan that spells the mask out: either internal/cutover's (which
@@ -213,7 +214,10 @@ func (s *systemdInstaller) reassertCronTakeover(ctx context.Context, opts Instal
 		return fmt.Errorf("systemctl show %s: %w", plan.CronUnit, err)
 	}
 	if activeState != "active" && unitFileState == "masked" {
-		return nil
+		// Cron is retired, so RunWisp is the only scheduler left. The unit may
+		// still be stopped (`runwisp stop`), which leaves nothing running the
+		// jobs; `enable --now` brings it back and is a no-op when it is up.
+		return s.runEnableNow(ctx, opts.System)
 	}
 	fmt.Fprintf(out, "%s is back since the take-over — it and RunWisp are both running your jobs.\n", plan.CronUnit)
 	cronPrior, stopped, err := s.stopAndMaskCron(ctx, plan.CronUnit, out)

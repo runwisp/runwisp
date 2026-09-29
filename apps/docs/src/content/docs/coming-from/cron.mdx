@@ -239,6 +239,9 @@ runwisp.d/imported.toml   # written by the importer
   A job with the same name but a **different** command is renamed (`backup`
   becomes `backup-2`).
 - Both files are written together. If anything fails, both are rolled back.
+- If the result wouldn't load (any `!` row), nothing is written and the
+  command exits non-zero. Fix the line and run it again, or use `-o` to get a
+  file you can edit by hand.
 
 Imported tasks show `"source": "staged"` in `runwisp list --json` and
 `runwisp status --json`. They run like any other task.

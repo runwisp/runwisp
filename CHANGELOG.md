@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The live event stream no longer drops an event published at the moment a web UI tab or the TUI connects, so a run starting right then shows up without a refresh.
 - `run_on_start = "boot"` runs a task once per machine boot, or per container start, instead of on every daemon start. `true` keeps its current meaning.
 - Cron `@reboot` jobs and systemd `Type=oneshot` units imported by `runwisp import`/`takeover` now use `run_on_start = "boot"`, so a daemon restart or update no longer runs them a second time in the same boot.
+- `runwisp takeover` no longer says "Nothing to do" while the RunWisp service is stopped and cron is masked; it starts the service instead. `runwisp stop` now warns when stopping leaves cron masked by a take-over, so no jobs run.
+- `runwisp import --write` no longer writes a config that fails to load. When a line can't be converted, it exits non-zero, names the line, and writes nothing.
 
 ## [1.2.0] - 2026-09-28
 

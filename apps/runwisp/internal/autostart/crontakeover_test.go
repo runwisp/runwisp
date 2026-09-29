@@ -520,8 +520,10 @@ func TestInstall_NoopRepairRollsBackWhenServiceWontStart(t *testing.T) {
 	assert.Contains(t, out.String(), "Unmasking cron.service")
 }
 
-// Nothing to repair costs one probe and says nothing: a re-run of `takeover` on
-// a box where the take-over still holds is not an excuse to bounce cron.
+// Nothing to repair on the cron side and says nothing: a re-run of `takeover` on
+// a box where the take-over still holds is not an excuse to bounce cron. It does
+// make sure RunWisp is up: after `runwisp stop` the box with masked cron runs
+// no jobs at all, and this path is how a re-run of `takeover` starts it again.
 func TestInstall_NoopLeavesAlreadyRetiredCronAlone(t *testing.T) {
 	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
 	inst.deps.Euid = 0
@@ -533,10 +535,11 @@ func TestInstall_NoopLeavesAlreadyRetiredCronAlone(t *testing.T) {
 		[]byte("loaded\ninactive\nmasked\n"), nil, nil)
 	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
 		[]byte("loaded\ninactive\nmasked\n"), nil, nil)
+	cmd.Expect("systemctl", []string{"enable", "--now", "runwisp.service"}, nil, nil, nil)
 
 	out := &bytes.Buffer{}
 	require.NoError(t, inst.Install(context.Background(), opts, out))
-	assert.Zero(t, cmd.Remaining(), "no stop, no mask, no enable scripted — none must be attempted")
+	assert.Zero(t, cmd.Remaining(), "no stop or mask scripted, only the start")
 	assert.NotContains(t, out.String(), "Masking")
 }
 

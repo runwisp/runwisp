@@ -333,7 +333,8 @@ runwisp import systemd [UNIT...] — convert systemd .service units to runwisp.t
                                %i templates. NO `takeover systemd` (disable units yourself: systemctl disable --now)
                              — -o writes one standalone file; --write installs the two-tier layout
                                (tasks → machine-owned runwisp.d/imported.toml, root runwisp.toml's
-                               [daemon].include wired to load it; both written atomically or rolled back).
+                               [daemon].include wired to load it; both written atomically or rolled back;
+                               refused, non-zero, nothing written, if the result would not load).
                                Tasks from the staging file report "source": "staged" in list/status --json.
                              — stderr summary gives every source job one row (name, schedule, the full command,
                                wrapped not truncated) marked ✓ clean / ~ changed / ! needs a fix / - skipped,

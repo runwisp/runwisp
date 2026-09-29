@@ -49,11 +49,6 @@ type StageRequest struct {
 	// Staging is the full contents of the staging file. It is machine-owned, so
 	// it is overwritten without prompting.
 	Staging []byte
-	// Validate gates the write on the merged config still loading. Set it false
-	// when the generated content is already known not to validate (an unmappable
-	// job that became a `# TODO`) — then the files are kept so the operator can
-	// fix them in place, which is the whole point of emitting the TODO.
-	Validate bool
 }
 
 // StageResult reports where the staging file landed and what happened to the
@@ -62,9 +57,9 @@ type StageResult struct {
 	StagingPath string
 	Root        RootOutcome
 	// PreLoadErr is the root config's load error from *before* this write, when
-	// there was one. A real Stage with Validate set never returns a result
-	// alongside one — the gate turns it into a *PreexistingError — so this matters
-	// to PlanStage, where it's the failure a real run would stop on.
+	// there was one. A real Stage never returns a result alongside one (the gate
+	// turns it into a *PreexistingError), so this matters to PlanStage, where it's
+	// the failure a real run would stop on.
 	PreLoadErr error
 }
 
@@ -111,22 +106,16 @@ func Stage(req StageRequest) (StageResult, error) {
 		txn.Write(req.Layout.RootPath, plan.bytes, DefaultPerm)
 	}
 
-	var gate func() error
-	if req.Validate {
-		gate = func() error {
-			if _, err := config.Load(req.Layout.RootPath); err != nil {
-				if plan.preLoadErr != nil {
-					return &PreexistingError{Err: plan.preLoadErr}
-				}
-				return &ConflictError{Err: err}
+	err = txn.Apply(func() error {
+		if _, err := config.Load(req.Layout.RootPath); err != nil {
+			if plan.preLoadErr != nil {
+				return &PreexistingError{Err: plan.preLoadErr}
 			}
-			return nil
+			return &ConflictError{Err: err}
 		}
-	}
-	if err := txn.Apply(gate); err != nil {
-		return res, err
-	}
-	return res, nil
+		return nil
+	})
+	return res, err
 }
 
 // PlanStage reports what Stage would do to the root config without touching

@@ -21,7 +21,7 @@ func TestStage_GreenfieldCreatesRootAndStaging(t *testing.T) {
 	dir := t.TempDir()
 	layout := NewLayout(filepath.Join(dir, "runwisp.toml"))
 
-	res, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask), Validate: true})
+	res, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask)})
 	require.NoError(t, err)
 	assert.Equal(t, RootCreated, res.Root)
 	assert.Equal(t, layout.StagingPath, res.StagingPath)
@@ -38,7 +38,7 @@ func TestStage_BrownfieldWiresIncludeAndKeepsOperatorBytes(t *testing.T) {
 	})
 	layout := NewLayout(filepath.Join(dir, "runwisp.toml"))
 
-	res, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask), Validate: true})
+	res, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask)})
 	require.NoError(t, err)
 	assert.Equal(t, RootWired, res.Root)
 
@@ -56,7 +56,7 @@ func TestStage_AlreadyIncludedLeavesRootByteIdentical(t *testing.T) {
 	dir := writeFileTree(t, map[string]string{"runwisp.toml": rootTOML})
 	layout := NewLayout(filepath.Join(dir, "runwisp.toml"))
 
-	res, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask), Validate: true})
+	res, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask)})
 	require.NoError(t, err)
 	assert.Equal(t, RootAlreadyIncluded, res.Root)
 	assert.Equal(t, rootTOML, readFile(t, layout.RootPath))
@@ -67,7 +67,7 @@ func TestStage_RefusesCustomIncludeWithoutWriting(t *testing.T) {
 	dir := writeFileTree(t, map[string]string{"runwisp.toml": rootTOML})
 	layout := NewLayout(filepath.Join(dir, "runwisp.toml"))
 
-	_, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask), Validate: true})
+	_, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask)})
 	require.ErrorIs(t, err, ErrIncludeNeedsManualWiring)
 
 	assert.Equal(t, rootTOML, readFile(t, layout.RootPath))
@@ -84,7 +84,7 @@ func TestStage_ConflictRollsBackBothFiles(t *testing.T) {
 	dir := writeFileTree(t, map[string]string{"runwisp.toml": rootTOML})
 	layout := NewLayout(filepath.Join(dir, "runwisp.toml"))
 
-	_, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask), Validate: true})
+	_, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask)})
 	var conflict *ConflictError
 	require.ErrorAs(t, err, &conflict)
 	assert.Contains(t, conflict.Err.Error(), "backup")
@@ -105,7 +105,7 @@ func TestStage_AlreadyInvalidRootIsNotBlamedOnTheImport(t *testing.T) {
 	dir := writeFileTree(t, map[string]string{"runwisp.toml": rootTOML})
 	layout := NewLayout(filepath.Join(dir, "runwisp.toml"))
 
-	_, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask), Validate: true})
+	_, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask)})
 	var preexisting *PreexistingError
 	require.ErrorAs(t, err, &preexisting, "an already-broken config must not be reported as a conflict")
 
@@ -114,20 +114,20 @@ func TestStage_AlreadyInvalidRootIsNotBlamedOnTheImport(t *testing.T) {
 	assert.Equal(t, rootTOML, readFile(t, layout.RootPath))
 }
 
-// TestStage_ValidateFalseKeepsFilesForTheOperator covers content that is known
-// not to validate — an unmappable cron line that became a `# TODO`. Rolling that
-// back would throw away the only record of what needs fixing.
-func TestStage_ValidateFalseKeepsFilesForTheOperator(t *testing.T) {
+// TestStage_ContentThatDoesNotLoadWritesNothing: staging content that won't
+// load is rolled back with the root it would have created, never left wired in
+// for the daemon to fail on at its next start.
+func TestStage_ContentThatDoesNotLoadWritesNothing(t *testing.T) {
 	dir := t.TempDir()
 	layout := NewLayout(filepath.Join(dir, "runwisp.toml"))
 	broken := "[tasks.mystery]\ncron = \"@every second thursday\"  # TODO: couldn't map this schedule\nrun = \"echo hi\"\n"
 
-	_, err := Stage(StageRequest{Layout: layout, Staging: []byte(broken), Validate: false})
-	require.NoError(t, err)
+	_, err := Stage(StageRequest{Layout: layout, Staging: []byte(broken)})
+	var conflict *ConflictError
+	require.ErrorAs(t, err, &conflict)
 
-	assert.Contains(t, readFile(t, layout.StagingPath), "# TODO")
-	_, loadErr := config.Load(layout.RootPath)
-	assert.Error(t, loadErr, "the point of this case is that the config does not load yet")
+	assert.NoFileExists(t, layout.StagingPath)
+	assert.NoFileExists(t, layout.RootPath)
 }
 
 func TestStage_OverwritesTheMachineOwnedStagingFile(t *testing.T) {
@@ -137,7 +137,7 @@ func TestStage_OverwritesTheMachineOwnedStagingFile(t *testing.T) {
 	})
 	layout := NewLayout(filepath.Join(dir, "runwisp.toml"))
 
-	_, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask), Validate: true})
+	_, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask)})
 	require.NoError(t, err)
 
 	cfg, err := config.Load(layout.RootPath)
@@ -167,10 +167,15 @@ func TestPlanStageMatchesStage(t *testing.T) {
 			// the plan was made against.
 			before := testutil.SnapshotTree(t, dir)
 
-			// Validate false: this test is about the root outcome, not the load gate,
-			// and the "already invalid" root would fail that gate by design.
-			staged, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask), Validate: false})
-			require.NoError(t, err)
+			// The "already invalid" root fails the load gate by design; the outcome it
+			// reports alongside the refusal is still what the plan must match.
+			staged, err := Stage(StageRequest{Layout: layout, Staging: []byte(stagedTask)})
+			if name == "already invalid" {
+				var preexisting *PreexistingError
+				require.ErrorAs(t, err, &preexisting)
+			} else {
+				require.NoError(t, err)
+			}
 
 			assert.Equal(t, staged.Root, plan.Root, "the plan promised a different root outcome")
 			assert.Equal(t, staged.StagingPath, plan.StagingPath)
@@ -179,7 +184,9 @@ func TestPlanStageMatchesStage(t *testing.T) {
 			} else {
 				assert.EqualError(t, plan.PreLoadErr, staged.PreLoadErr.Error())
 			}
-			assert.NotEqual(t, before, testutil.SnapshotTree(t, dir), "the real Stage should have written something")
+			if err == nil {
+				assert.NotEqual(t, before, testutil.SnapshotTree(t, dir), "the real Stage should have written something")
+			}
 		})
 	}
 }
