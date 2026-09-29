@@ -471,7 +471,7 @@ func logStartupSummary(info uikit.StartupInfo) {
 	// otherwise come up with a login nobody can perform and say nothing about
 	// it in the log.
 	if info.PasswordEphemeral && !info.AuthDisabled {
-		slog.Warn("no RUNWISP_PASSWORD set — generated a random password for this boot; the Web UI cannot be logged into until you set one, and every restart invalidates existing sessions",
+		slog.Warn("no RUNWISP_PASSWORD set, so this boot generated a random Web UI password; print it with `runwisp password`. It changes on every restart and signs out existing sessions",
 			"hint", "runwisp password")
 	}
 	if info.CrashedRuns > 0 {
