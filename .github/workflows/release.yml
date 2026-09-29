@@ -13,6 +13,7 @@
 #        - main `runwisp` package (waits for the platform packages to be live first)
 #      → build and push the runwisp/runwisp Docker image (alpine + debian,
 #        linux/amd64 + linux/arm64) to Docker Hub, from the same release tarballs.
+#      → regenerate the Homebrew formula in runwisp/homebrew-tap (stable only).
 #
 # Auth is OIDC Trusted Publisher (per-package, configured on npmjs.com) for npm,
 # and a Docker Hub access token (DOCKERHUB_USERNAME / DOCKERHUB_TOKEN repo
@@ -441,6 +442,56 @@ jobs:
         env:
           HOOK: ${{ secrets.CF_PAGES_DEPLOY_HOOK }}
         run: curl -fsS -X POST "$HOOK"
+
+  # Regenerate Formula/runwisp.rb in runwisp/homebrew-tap from the published
+  # tarballs. Stable releases only, so `brew install` never picks up an rc.
+  # HOMEBREW_TAP_TOKEN is a fine-grained PAT with contents:write on the tap;
+  # without it the job leaves a notice and the release carries on.
+  homebrew-tap:
+    if: github.event_name == 'release' && !contains(github.event.release.tag_name, '-')
+    name: Update Homebrew tap
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      HAS_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Skip without HOMEBREW_TAP_TOKEN
+        if: env.HAS_TAP_TOKEN != 'true'
+        run: echo "::notice::HOMEBREW_TAP_TOKEN is not set; skipping the Homebrew tap update."
+
+      - uses: actions/checkout@v6
+        if: env.HAS_TAP_TOKEN == 'true'
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          sparse-checkout: packaging/homebrew
+
+      - uses: actions/checkout@v6
+        if: env.HAS_TAP_TOKEN == 'true'
+        with:
+          repository: runwisp/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Generate and push the formula
+        if: env.HAS_TAP_TOKEN == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" --pattern checksums-sha256.txt --dir /tmp
+          mkdir -p tap/Formula
+          packaging/homebrew/formula.sh "${TAG#v}" /tmp/checksums-sha256.txt > tap/Formula/runwisp.rb
+          cd tap
+          git add Formula/runwisp.rb
+          if git diff --cached --quiet; then
+            echo "Formula already up to date for ${TAG}."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "runwisp ${TAG#v}"
+          git push
 
   docker-publish:
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'

@@ -57,6 +57,7 @@ func ResolveBinary(opts ResolveBinaryOptions) (path, warning string, err error) 
 		}
 		resolved = abs
 	}
+	resolved = homebrewOptPath(resolved)
 
 	if reason := transientBinaryReason(resolved); reason != "" {
 		return "", "", fmt.Errorf(
@@ -79,6 +80,23 @@ func ResolveBinary(opts ResolveBinaryOptions) (path, warning string, err error) 
 
 	warning = awkwardBinaryWarning(resolved, opts.HomeDir)
 	return resolved, warning, nil
+}
+
+// homebrewOptPath swaps a versioned Homebrew keg path
+// (<prefix>/Cellar/runwisp/<version>/bin/runwisp) for its stable
+// <prefix>/opt/runwisp/bin/runwisp symlink. The keg is deleted by the
+// cleanup after `brew upgrade`, so a unit pointing into it would stop
+// booting after the first upgrade.
+func homebrewOptPath(p string) string {
+	prefix, rest, ok := strings.Cut(p, "/Cellar/runwisp/")
+	if !ok {
+		return p
+	}
+	_, inKeg, ok := strings.Cut(rest, "/")
+	if !ok {
+		return p
+	}
+	return prefix + "/opt/runwisp/" + inKeg
 }
 
 // transientBinaryReason returns a short reason string when the path

@@ -40,6 +40,12 @@ Install the latest binary on your `PATH`:
 curl -fsSL https://get.runwisp.com | sh
 ```
 
+On macOS or Linux with [Homebrew](https://brew.sh):
+
+```bash
+brew install runwisp/tap/runwisp
+```
+
 You can also use the npm package, which runs the prebuilt Go binary:
 
 ```bash

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Homebrew**: `brew install runwisp/tap/runwisp` installs RunWisp on macOS and Linux, and the tap updates with every release. `runwisp service install` from a Homebrew install keeps working after `brew upgrade`.
+
 ### Fixed
 
 - `runwisp restart --attach` follows only the new runs, and `runwisp logs` and `--attach` report a stopped run as `run ended` instead of `run failed`.
