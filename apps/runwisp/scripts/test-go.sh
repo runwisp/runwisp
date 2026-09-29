@@ -20,12 +20,16 @@ mkdir -p "${covdir}"
 # Run the unit suite under the race detector: several fixes are data-race /
 # shutdown-timing hardening that only a -race run can catch (-covermode=atomic
 # makes coverage counters atomic; it does NOT enable the detector). The detector
-# needs CGO and a C toolchain — reliable on Linux; skip it on macOS, matching the
-# CI matrix's "-race on the Ubuntu runner only" split. A scalar (not an array)
-# keeps this safe under `set -u` on macOS's bash 3.2 when the flag is empty.
+# needs CGO and a C toolchain, so CGO is forced on rather than inherited: an
+# ambient CGO_ENABLED=0 would otherwise make `go test -race` refuse to run.
+# macOS skips it, so the CI Unit Tests job races on ubuntu-latest only. A scalar
+# (not an array) keeps this safe under `set -u` on macOS's bash 3.2 when the
+# flag is empty.
 race_flag=-race
 if [[ "$(uname -s)" == "Darwin" ]]; then
   race_flag=
+else
+  export CGO_ENABLED=1
 fi
 
 RUNWISP_E2E_COVDIR="${covdir}" go test ${race_flag} -covermode=atomic -coverpkg=./... \
