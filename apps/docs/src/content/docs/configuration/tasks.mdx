@@ -339,7 +339,7 @@ Every run ends with a reason. [`failures`](#failures) decides which reasons and
 exit codes turn a run red and fire [`notify`](#notify).
 
 - A token is a reason name, an exit code, an inclusive range (`"42"`,
-  `"1-23"`), or an output pattern (`"output:(?i)error"`). Codes are 1 to 255.
+  `"1-23"`), or an output pattern (`'output:(?i)error'`). Codes are 1 to 255.
 - Exit `0` is a success unless an output pattern matched a line of stdout or
   stderr. Then the run ends as `failed`, and its log notes which pattern matched.
 - With `"failed"` in the list, every non-zero exit is a failure. Without it,
@@ -367,7 +367,7 @@ failures = ["-missed"]              # stop paging on a missed tick
 failures = ["timeout", "23", "24"]  # only these exits fail
 
 [tasks.report]
-failures = ["+output:(?i)error"]    # also fail when a line says "error"
+failures = ['+output:(?i)error']    # also fail when a line says "error"
 ```
 
 Possible values:
@@ -384,7 +384,64 @@ Possible values:
 - `skipped`: dropped because a run was already going under [`on_overlap = "skip"`](#on_overlap)
 - `queue_full`: dropped because the queue already held [`max_queued`](#max_queued) runs
 - `dst_skipped`: the second of two identical firings when the clock falls back for DST
-- `output:<regex>`: a stdout or stderr line matched the [RE2](https://github.com/google/re2/wiki/Syntax) pattern, even if the command exited 0. Use `(?i)` to ignore case.
+- `output:<regex>`: a line of stdout or stderr matched the regex, even if the command exited 0. See [Output patterns](#output-patterns).
+
+### Output patterns
+
+Some commands print an error and still exit 0. Add an `output:` token to catch
+that:
+
+```toml
+[tasks.report]
+run = "./report.sh"
+failures = ['+output:ERROR']
+```
+
+- Each line of stdout and stderr is checked on its own. The pattern can match
+  anywhere in the line.
+- The first match ends the run as `failed`. The log shows which pattern matched.
+- Lines are checked after [`secrets`](#secrets) are masked, so they look the
+  same as in the log.
+- Wrap the token in single quotes. Inside double quotes, TOML reads `\` as an
+  escape: `"output:\d"` is a config error, and `"output:\bfail"` quietly turns
+  `\b` into a backspace character.
+
+Add several tokens to fail on any of them:
+
+```toml
+failures = ['+output:(?i)\berror\b', '+output:^Traceback']
+```
+
+Patterns use Go's [RE2 syntax](https://github.com/google/re2/wiki/Syntax), which
+is close to the regex in most languages. Lookarounds (`(?=...)`) and
+backreferences (`\1`) are not supported. Common patterns:
+
+| Token                             | Fails when a line                                       |
+| --------------------------------- | ------------------------------------------------------- |
+| `'output:ERROR'`                  | contains `ERROR`, in upper case only                    |
+| `'output:(?i)error'`              | contains `error` in any case (`Error`, `ERROR`)         |
+| `'output:\bfail\b'`               | contains the word `fail`, but not `failover`            |
+| `'output:^FATAL'`                 | starts with `FATAL`                                     |
+| `'output:failed$'`                | ends with `failed`                                      |
+| `'output:error\|warning'`         | contains `error` or `warning`                           |
+| `'output:\[ERROR\]'`              | contains `[ERROR]` (`\` makes `[` and `]` plain text)   |
+| `'output:[1-9][0-9]* errors?'`    | reports one or more errors (`3 errors`), not `0 errors` |
+| `'output:HTTP 5[0-9]{2}'`         | contains a 5xx status such as `HTTP 503`                |
+| `'output:(?i)(exception\|panic)'` | contains `exception` or `panic` in any case             |
+
+The building blocks:
+
+- `(?i)` at the start ignores case for the whole pattern.
+- `^` is the start of the line, `$` is the end.
+- `\b` is a word edge, `\d` or `[0-9]` is a digit, `.` is any character.
+- `*` repeats the previous item zero or more times, `+` one or more, `?` makes
+  it optional, `{2}` exactly twice.
+- `a|b` matches either side. Use `(...)` to group.
+- To match `. [ ] ( ) * + ? | ^ $ \` as plain text, put `\` before it.
+
+To drop a pattern inherited from [`[defaults]`](/configuration/defaults/), write
+the same token with `-`, for example `'-output:(?i)error'`. The text must match
+exactly.
 
 ## Logs & retention
 
