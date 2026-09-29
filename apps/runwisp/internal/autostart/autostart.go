@@ -125,6 +125,15 @@ type Plan struct {
 	// either the install was not asked to retire cron, or an
 	// uninstall found no marker it can prove it wrote itself.
 	CronUnit string
+
+	// CronFailsafe is the rendered failsafe unit a take-over installs next to
+	// the service, so a RunWisp that keeps failing hands the jobs back to
+	// CronUnit. Empty when there is no cron to hand back to.
+	CronFailsafe string
+
+	// cronPrior is, on an uninstall plan, the state to restore CronUnit to
+	// (a cronPrior* value; empty for a unit that predates the marker).
+	cronPrior string
 }
 
 // InstallOptions is the input to ComputePlan / Install.
@@ -165,6 +174,9 @@ type InstallOptions struct {
 	// take-over marker into a rendered unit without going through the
 	// real discovery/masking path.
 	maskedCronUnit string
+	// cronPriorState is resolved alongside maskedCronUnit: the state that
+	// cron unit was in before RunWisp first masked it.
+	cronPriorState string
 }
 
 // UninstallOptions is the input to Uninstall.

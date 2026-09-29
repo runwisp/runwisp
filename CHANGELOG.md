@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- After `runwisp takeover`, a RunWisp that keeps crashing no longer leaves the box with no scheduler: once systemd gives up restarting it, cron is unmasked and started again.
+- Uninstalling or rolling back a take-over restores cron to the state it was in before: a cron you had masked stays masked, and a stopped one is not started.
+
 ## [1.2.0] - 2026-09-28
 
 ### Added

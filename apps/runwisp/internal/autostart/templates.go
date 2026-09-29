@@ -38,6 +38,22 @@ type SystemdParams struct {
 	// which cron unit this install has masked, so uninstall knows it may
 	// unmask it and Status can show the post-cutover check.
 	MaskedCronUnit string
+	// CronPriorState records, as a # runwisp-cron-prior-state marker, what
+	// MaskedCronUnit looked like before the take-over first touched it
+	// (cronPriorActive/Inactive/Masked), so undo restores exactly that.
+	CronPriorState string
+	// CronFailsafeUnit, when non-empty, caps restarts and names the unit
+	// OnFailure= starts once systemd gives up on RunWisp, so a crash-looping
+	// daemon hands the jobs back to the cron it masked.
+	CronFailsafeUnit string
+}
+
+// CronFailsafeParams is the data passed to runwisp-cron-failsafe.service.tmpl.
+type CronFailsafeParams struct {
+	// Service is the RunWisp unit whose failure starts the failsafe.
+	Service string
+	// CronUnit is the cron unit the take-over masked.
+	CronUnit string
 }
 
 // LaunchdParams is the data passed to com.runwisp.daemon.plist.tmpl.
@@ -68,11 +84,22 @@ func RenderSystemdUnit(p SystemdParams) ([]byte, error) {
 		"Binary": p.Binary, "Config": p.Config, "DataDir": p.DataDir,
 		"Host": p.Host, "Home": p.Home, "Path": p.Path,
 		"ConfigHash": p.ConfigHash, "BinarySHA": p.BinarySHA,
-		"MaskedCronUnit": p.MaskedCronUnit,
+		"MaskedCronUnit": p.MaskedCronUnit, "CronPriorState": p.CronPriorState,
+		"CronFailsafeUnit": p.CronFailsafeUnit,
 	}); err != nil {
 		return nil, err
 	}
 	return renderTemplate("templates/runwisp.service.tmpl", p)
+}
+
+// RenderCronFailsafeUnit returns the oneshot unit a take-over installs next to
+// runwisp.service. Both names come from this package (serviceName and
+// importer.CronUnits), never from an operator, so they are interpolated as-is.
+func RenderCronFailsafeUnit(p CronFailsafeParams) ([]byte, error) {
+	if err := rejectControlChars(map[string]string{"Service": p.Service, "CronUnit": p.CronUnit}); err != nil {
+		return nil, err
+	}
+	return renderTemplate("templates/runwisp-cron-failsafe.service.tmpl", p)
 }
 
 // RenderLaunchdPlist returns the rendered com.runwisp.daemon.plist body. As with

@@ -136,7 +136,7 @@ func (s *systemdInstaller) renderUnit(opts InstallOptions) ([]byte, string, erro
 		binarySHA = hashContent(data)
 	}
 	configHash := SettingsHash(opts.Binary, opts.Config, opts.DataDir, opts.Host, opts.Port)
-	body, err := RenderSystemdUnit(SystemdParams{
+	params := SystemdParams{
 		Binary:         opts.Binary,
 		Config:         opts.Config,
 		DataDir:        opts.DataDir,
@@ -148,7 +148,12 @@ func (s *systemdInstaller) renderUnit(opts InstallOptions) ([]byte, string, erro
 		BinarySHA:      binarySHA,
 		System:         opts.System,
 		MaskedCronUnit: opts.maskedCronUnit,
-	})
+		CronPriorState: opts.cronPriorState,
+	}
+	if wantsCronFailsafe(opts) {
+		params.CronFailsafeUnit = cronFailsafeUnitName
+	}
+	body, err := RenderSystemdUnit(params)
 	return body, binarySHA, err
 }
 
@@ -159,11 +164,11 @@ func (s *systemdInstaller) Render(opts InstallOptions) ([]byte, error) {
 		return nil, err
 	}
 	resolved := opts
-	maskedUnit, err := s.resolveMaskedCronUnit(context.Background(), opts)
+	maskedUnit, prior, err := s.resolveMaskedCronUnit(context.Background(), opts)
 	if err != nil {
 		return nil, err
 	}
-	resolved.maskedCronUnit = maskedUnit
+	resolved.maskedCronUnit, resolved.cronPriorState = maskedUnit, prior
 	body, _, err := s.renderUnit(resolved)
 	return body, err
 }
@@ -174,11 +179,11 @@ func (s *systemdInstaller) ComputePlan(ctx context.Context, opts InstallOptions)
 		return Plan{}, err
 	}
 	resolved := opts
-	maskedUnit, err := s.resolveMaskedCronUnit(ctx, opts)
+	maskedUnit, prior, err := s.resolveMaskedCronUnit(ctx, opts)
 	if err != nil {
 		return Plan{}, err
 	}
-	resolved.maskedCronUnit = maskedUnit
+	resolved.maskedCronUnit, resolved.cronPriorState = maskedUnit, prior
 
 	desired, _, err := s.renderUnit(resolved)
 	if err != nil {
@@ -204,6 +209,13 @@ func (s *systemdInstaller) ComputePlan(ctx context.Context, opts InstallOptions)
 	plan.Port = opts.Port
 	plan.LingerOn = lingerOn
 	plan.CronUnit = maskedUnit
+	if wantsCronFailsafe(resolved) {
+		failsafe, err := RenderCronFailsafeUnit(CronFailsafeParams{Service: s.serviceName(true), CronUnit: maskedUnit})
+		if err != nil {
+			return Plan{}, err
+		}
+		plan.CronFailsafe = string(failsafe)
+	}
 	plan.Steps = s.planSteps(plan, opts)
 	return plan, nil
 }
@@ -218,11 +230,18 @@ func (s *systemdInstaller) planSteps(plan Plan, opts InstallOptions) []Step {
 			Action:      ActionWriteUnit,
 			Description: "Write unit file\n       " + plan.UnitPath,
 		},
-		{
-			Action:      ActionDaemonReload,
-			Description: s.daemonReloadCmd(opts.System),
-		},
 	}
+	if plan.CronFailsafe != "" {
+		steps = append(steps, Step{
+			Action: ActionWriteUnit,
+			Description: fmt.Sprintf("Write failsafe unit (starts %s again if RunWisp keeps failing)\n       %s",
+				plan.CronUnit, cronFailsafePath()),
+		})
+	}
+	steps = append(steps, Step{
+		Action:      ActionDaemonReload,
+		Description: s.daemonReloadCmd(opts.System),
+	})
 	if !opts.System && !plan.LingerOn {
 		steps = append(steps, Step{
 			Action:      ActionEnableLinger,
@@ -308,6 +327,12 @@ func (s *systemdInstaller) applyInstall(ctx context.Context, plan Plan, opts Ins
 		return fmt.Errorf("write unit: %w", err)
 	}
 	fmt.Fprintf(out, "Wrote %s\n", plan.UnitPath)
+	if plan.CronFailsafe != "" {
+		if err := s.deps.FS.WriteFile(cronFailsafePath(), []byte(plan.CronFailsafe), 0644); err != nil {
+			return fmt.Errorf("write failsafe unit: %w", err)
+		}
+		fmt.Fprintf(out, "Wrote %s\n", cronFailsafePath())
+	}
 
 	if err := s.runDaemonReload(ctx, opts.System); err != nil {
 		return err
@@ -317,13 +342,13 @@ func (s *systemdInstaller) applyInstall(ctx context.Context, plan Plan, opts Ins
 		return err
 	}
 
-	cronWasActive, err := s.takeOverCronIfRequested(ctx, opts, plan, out)
+	cronPrior, err := s.takeOverCronIfRequested(ctx, opts, plan, out)
 	if err != nil {
 		return err
 	}
 
 	if err := s.runEnableNow(ctx, opts.System); err != nil {
-		s.rollbackCronTakeover(ctx, opts, plan, cronWasActive, out)
+		s.rollbackCronTakeover(ctx, opts, plan, cronPrior, out)
 		return err
 	}
 
@@ -368,29 +393,29 @@ func (s *systemdInstaller) enableLingerIfNeeded(ctx context.Context, opts Instal
 // a successful stop (the initial probe, or the stop itself) means cron was
 // never touched, so there is nothing to roll back — doing so anyway would
 // unmask or start a unit RunWisp never masked or stopped.
-func (s *systemdInstaller) takeOverCronIfRequested(ctx context.Context, opts InstallOptions, plan Plan, out io.Writer) (bool, error) {
+func (s *systemdInstaller) takeOverCronIfRequested(ctx context.Context, opts InstallOptions, plan Plan, out io.Writer) (string, error) {
 	if !opts.TakeOverCron {
-		return false, nil
+		return "", nil
 	}
-	cronWasActive, stopped, err := s.stopAndMaskCron(ctx, plan.CronUnit, out)
+	cronPrior, stopped, err := s.stopAndMaskCron(ctx, plan.CronUnit, out)
 	if err != nil {
 		if stopped {
-			s.rollbackCronTakeover(ctx, opts, plan, cronWasActive, out)
+			s.rollbackCronTakeover(ctx, opts, plan, cronPrior, out)
 		}
-		return false, fmt.Errorf("take over cron: %w", err)
+		return "", fmt.Errorf("take over cron: %w", err)
 	}
-	return cronWasActive, nil
+	return cronPrior, nil
 }
 
 // rollbackCronTakeover restores cron after a take-over step fails partway —
 // either stopAndMaskCron itself, or a later `enable --now`. Best-effort: the
 // install has already failed, so a restore failure gets a warning rather than
 // masking the original error.
-func (s *systemdInstaller) rollbackCronTakeover(ctx context.Context, opts InstallOptions, plan Plan, cronWasActive bool, out io.Writer) {
+func (s *systemdInstaller) rollbackCronTakeover(ctx context.Context, opts InstallOptions, plan Plan, cronPrior string, out io.Writer) {
 	if !opts.TakeOverCron {
 		return
 	}
-	if rbErr := s.unmaskCron(ctx, plan.CronUnit, cronWasActive, out); rbErr != nil {
+	if rbErr := s.restoreCron(ctx, plan.CronUnit, cronPrior, out); rbErr != nil {
 		fmt.Fprintf(out, "Warning: cron could not be restored: %v\n", rbErr)
 		fmt.Fprintf(out, "Warning: run 'sudo systemctl unmask %s' by hand to bring back a scheduler.\n", plan.CronUnit)
 	}
@@ -635,15 +660,23 @@ func (s *systemdInstaller) ComputeUninstallPlan(_ context.Context, opts Uninstal
 			{Action: ActionRemoveUnit, Description: "Remove unit file\n       " + unitPath},
 			{Action: ActionDaemonReload, Description: "Run:  " + systemctlCommandLine(opts.System, s.deps.Euid, systemctlDaemonReload)},
 		}
+		if opts.System {
+			if _, err := s.deps.FS.Stat(cronFailsafePath()); err == nil {
+				plan.Steps = append(plan.Steps, Step{Action: ActionRemoveUnit, Description: "Remove failsafe unit\n       " + cronFailsafePath()})
+			}
+		}
 		// Only ever unmask a unit this instance can prove it masked —
 		// the marker in its own unit file. Cron masked some other way
-		// (by hand, or by a different instance) is not ours to touch.
-		if unit := s.cronMarkerFromUnitFile(unitPath); unit != "" {
-			plan.CronUnit = unit
-			plan.Steps = append(plan.Steps, Step{
-				Action:      ActionUnmaskCron,
-				Description: "Run:  " + systemctlCommandLine(true, s.deps.Euid, "unmask", unit) + " (and restart it)",
-			})
+		// (by hand, by a different instance, or by the operator before
+		// the take-over) is not ours to touch.
+		unit, prior := s.cronMarkerFromUnitFile(unitPath)
+		if unit != "" && prior != cronPriorMasked {
+			plan.CronUnit, plan.cronPrior = unit, prior
+			desc := "Run:  " + systemctlCommandLine(true, s.deps.Euid, "unmask", unit)
+			if prior != cronPriorInactive {
+				desc += " (and restart it)"
+			}
+			plan.Steps = append(plan.Steps, Step{Action: ActionUnmaskCron, Description: desc})
 		}
 	}
 	return plan, nil
@@ -703,6 +736,13 @@ func (s *systemdInstaller) applyUninstall(ctx context.Context, plan Plan, opts U
 		return fmt.Errorf("remove unit: %w", err)
 	}
 	fmt.Fprintf(out, "Removed %s\n", plan.UnitPath)
+	if opts.System {
+		if err := s.deps.FS.Remove(cronFailsafePath()); err == nil {
+			fmt.Fprintf(out, "Removed %s\n", cronFailsafePath())
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			fmt.Fprintf(out, "Warning: remove failsafe unit: %v\n", err)
+		}
+	}
 	if _, stderr, err := s.runSystemctl(ctx, opts.System, systemctlDaemonReload); err != nil {
 		fmt.Fprintf(out, "Warning: %s: %v %s\n", systemctlErrLabel(opts.System, systemctlDaemonReload), err, string(stderr))
 	}
@@ -711,7 +751,7 @@ func (s *systemdInstaller) applyUninstall(ctx context.Context, plan Plan, opts U
 		// already gone, so failing to restore cron must not turn into a
 		// failed uninstall — it would just leave the operator with no
 		// way to remove a unit that no longer exists.
-		if err := s.unmaskCron(ctx, plan.CronUnit, true, out); err != nil {
+		if err := s.restoreCron(ctx, plan.CronUnit, plan.cronPrior, out); err != nil {
 			fmt.Fprintf(out, "Warning: %v\n", err)
 		}
 	}

@@ -412,7 +412,11 @@ runwisp takeover             — retire cron in one step; --dry-run --force -y -
                                install the system service -> stop+mask cron -> start RunWisp -> reload a daemon
                                that was already running (so tasks the cron gate held go live immediately;
                                `enable --now` on an already-active unit is a no-op). Needs root + systemd.
-                             — a failed start unmasks and restarts cron rather than leaving no scheduler.
+                             — a failed start restores cron to its pre-take-over state rather than leaving no
+                               scheduler. Later crash loops: unit has StartLimitBurst=5/300s + OnFailure=
+                               runwisp-cron-failsafe.service, which unmasks+starts cron only when runwisp.service
+                               is "failed" and Result != timeout (so stop never triggers it). Uninstall restores
+                               the recorded `# runwisp-cron-prior-state:` (masked stays masked, stopped stays stopped).
                              — --dry-run ALWAYS prints a plan, blocked or not, then exits non-zero if blocked.
                                A finished take-over re-runs as a no-op (exit 0), so it is script-safe.
                              — blocked by (all reported at once, nothing written): not Linux/systemd; not root;

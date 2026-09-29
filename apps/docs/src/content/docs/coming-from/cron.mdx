@@ -47,6 +47,13 @@ Cron isn't touched until the config and unit are on disk. If RunWisp fails to
 start, cron is unmasked (and restarted if it was running), and you see the
 error.
 
+If RunWisp keeps crashing later, systemd stops restarting it after 5 starts in 5
+minutes. A small `runwisp-cron-failsafe.service` then unmasks and starts cron,
+so your jobs keep running, and logs why to the journal. A `runwisp stop` or
+`systemctl stop` never triggers it. Once RunWisp is fixed, run
+`sudo systemctl reset-failed runwisp.service` and `sudo runwisp takeover`.
+Until then RunWisp holds the cron jobs, so nothing runs twice.
+
 Your crontabs are never rewritten. Running `takeover` again on a finished
 take-over does nothing and exits 0. Flags such as `--dry-run` and `--yes` are
 in the [CLI reference](/reference/cli/#runwisp-takeover).
@@ -103,8 +110,10 @@ every load.
 runwisp service uninstall
 ```
 
-This unmasks and restarts cron, but only if this RunWisp's unit recorded the
-take-over (a `# runwisp-masked-cron:` line in the unit). If something starts
+This puts cron back the way the take-over found it: unmasked, and restarted
+only if it was running. A cron you had masked yourself stays masked. It only
+touches cron if this RunWisp's unit recorded the take-over (a
+`# runwisp-masked-cron:` line in the unit). If something starts
 cron again later, `runwisp service status` reports it and RunWisp holds the
 jobs again within a minute. `sudo runwisp takeover` fixes the cron side.
 
