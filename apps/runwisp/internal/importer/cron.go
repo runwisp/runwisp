@@ -217,7 +217,7 @@ type crontabParser struct {
 	env      map[string]string
 	shell    string
 	timezone string
-	// timezoneErr is why the crontab's CRON_TZ/TZ can't be used, checked once
+	// timezoneErr is why the crontab's CRON_TZ can't be used, checked once
 	// where it's assigned rather than per job.
 	timezoneErr    error
 	pendingComment string // a "# ..." line directly above a job
@@ -287,10 +287,17 @@ func (cp *crontabParser) handleEnv(name, value string) {
 	case "MAILTO":
 		cp.mailto = mailtoAddr(value)
 		cp.noteMailto(cp.mailto)
-	case "CRON_TZ", "TZ":
+	case "CRON_TZ":
+		// cronie schedules the table in CRON_TZ. Debian/Ubuntu cron has no such
+		// setting and schedules in the system zone; cronie is the only
+		// implementation that gives the name a meaning, so it wins. Both still
+		// hand it to the job as a plain variable, so it lands in env too.
 		cp.timezone = value
 		cp.timezoneErr = validateCronTimezone(value)
+		cp.env[name] = value
 	default:
+		// TZ included: no cron schedules by it (cronie, Debian and vixie all
+		// fire in the daemon's zone, or CRON_TZ); it only reaches the command.
 		cp.env[name] = value
 	}
 	cp.pendingComment = ""
@@ -371,7 +378,7 @@ func (cp *crontabParser) bannerIfAmbiguous() {
 // those settings to every job that follows them in the file, so the state is
 // snapshotted at the job's position rather than folded globally.
 //
-// There is no daemon-wide counterpart: a crontab's SHELL, CRON_TZ/TZ, and
+// There is no daemon-wide counterpart: a crontab's SHELL, CRON_TZ, and
 // top-of-file env vars are folded onto the individual tasks here rather than
 // becoming [defaults] / [daemon] singletons. That keeps every imported task
 // self-contained — and safe to live in an included staging file, which the config
@@ -746,7 +753,7 @@ func (cp *crontabParser) applySchedule(b *block, ref itemRef, schedule string, r
 	return schedule
 }
 
-// applyTimezone folds the crontab's CRON_TZ/TZ onto the task. A zone RunWisp
+// applyTimezone folds the crontab's CRON_TZ onto the task. A zone RunWisp
 // can't load gets its own TODO rather than a clean import that then fails
 // config.Load — the job doesn't run, so the report must not call it clean.
 func (cp *crontabParser) applyTimezone(b *block, ref itemRef) {
@@ -763,7 +770,7 @@ func (cp *crontabParser) applyTimezone(b *block, ref itemRef) {
 	b.set("timezone", tomlString(cp.timezone))
 }
 
-// validateCronTimezone reports whether a crontab CRON_TZ/TZ value names a
+// validateCronTimezone reports whether a crontab CRON_TZ value names a
 // timezone RunWisp can use, via the same helper the scheduler and config loader
 // validate with — rather than a direct time.LoadLocation, which would put a
 // second, differently-behaved answer in the tree.

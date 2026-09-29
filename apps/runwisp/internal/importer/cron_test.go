@@ -171,10 +171,23 @@ func TestCronRelativeShellNoted(t *testing.T) {
 func TestCronTimezone(t *testing.T) {
 	res := parseCron(t, "CRON_TZ=Europe/Bratislava\n0 4 * * * /bin/job\n", CronOptions{})
 	out := res.TOML()
-	// CRON_TZ/TZ folds onto each task's timezone, not the [daemon] singleton.
+	// CRON_TZ folds onto each task's timezone, not the [daemon] singleton.
 	mustNotContain(t, out, "[daemon]")
 	mustContain(t, out, "[tasks.job]")
 	mustContain(t, out, `timezone = "Europe/Bratislava"`)
+	// cronie and Debian both still export it to the job.
+	mustContain(t, out, `CRON_TZ = "Europe/Bratislava"`)
+}
+
+// TestCronTZIsJobEnvNotSchedule is the bug: a crontab TZ= was read as the
+// schedule zone and dropped from the job's environment. No cron schedules by TZ
+// (Debian's crontab(5): it "will affect only the commands executed"; cronie
+// schedules by CRON_TZ alone), so the job fired at a different time and saw a
+// different TZ than it did under crond.
+func TestCronTZIsJobEnvNotSchedule(t *testing.T) {
+	out := parseCron(t, "TZ=America/New_York\n0 4 * * * /bin/job\n", CronOptions{}).TOML()
+	mustNotContain(t, out, "timezone =")
+	mustContain(t, out, `TZ = "America/New_York"`)
 }
 
 func TestCronExistingSkipsSameCommand(t *testing.T) {
