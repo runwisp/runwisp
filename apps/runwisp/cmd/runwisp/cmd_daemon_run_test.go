@@ -57,10 +57,7 @@ func captureStderr(t *testing.T, fn func()) string {
 // the duration of fn.
 func captureSlog(t *testing.T, fn func()) string {
 	t.Helper()
-	var buf bytes.Buffer
-	old := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
-	t.Cleanup(func() { slog.SetDefault(old) })
+	buf := captureCLISlog(t)
 	fn()
 	return buf.String()
 }

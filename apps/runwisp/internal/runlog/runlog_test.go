@@ -154,3 +154,29 @@ func TestSubscribe_FailedShutdownReasonsDemoteToDebug(t *testing.T) {
 		assert.Contains(t, out, "level=WARN", "genuine failures must stay loud — the whole point of the demotion is not to hide them")
 	})
 }
+
+func TestLogEnded(t *testing.T) {
+	t.Run("success logs run succeeded at INFO", func(t *testing.T) {
+		buf := captureSlog(t)
+		LogEnded(sampleRun(model.ReasonSuccess, 0))
+		assert.Contains(t, buf.String(), "level=INFO msg=\"run succeeded\"")
+	})
+
+	t.Run("a classified failure WARNs", func(t *testing.T) {
+		buf := captureSlog(t)
+		run := sampleRun(model.ReasonFailed, 7)
+		run.IsFailure = true
+		LogEnded(run)
+		out := buf.String()
+		assert.Contains(t, out, "level=WARN msg=\"run failed\"")
+		assert.Contains(t, out, "exit=7")
+	})
+
+	t.Run("an operator stop stays visible at INFO", func(t *testing.T) {
+		buf := captureSlog(t)
+		LogEnded(sampleRun(model.ReasonStopped, -1))
+		out := buf.String()
+		assert.Contains(t, out, "level=INFO msg=\"run failed\"")
+		assert.Contains(t, out, "reason=stopped")
+	})
+}

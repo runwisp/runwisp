@@ -14,9 +14,11 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -160,4 +162,37 @@ func TestFollowRun_RereadsNonTerminalRowAfterDone(t *testing.T) {
 	require.NotNil(t, final)
 	assert.Equal(t, model.PhaseEnded, final.Status, "a non-terminal row after done must be re-read")
 	assert.Equal(t, 7, code, "a failed run must not be reported as exit 0")
+}
+
+// TestFollowRunLog_QuietStreamDoesNotSpendStallBudget is the regression test
+// for giving up on a quiet run: the server closes every log stream after
+// LogStreamTimeout, so a run that prints nothing for that long yields an empty
+// stream too. Counting those as stalls made `runwisp run` abandon a run silent
+// for followMaxStalls × LogStreamTimeout (~8h), read the still-running row, and
+// exit 0. A stream that stayed open past quietAfter was live and must just be
+// re-opened.
+func TestFollowRunLog_QuietStreamDoesNotSpendStallBudget(t *testing.T) {
+	const quietAfter = 5 * time.Millisecond
+	var streamHits atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		if streamHits.Add(1) <= followMaxStalls+5 {
+			w.(http.Flusher).Flush()
+			time.Sleep(2 * quietAfter) // a live connection with nothing to say
+			return
+		}
+		fmt.Fprint(w, "event: line\ndata: {\"n\":0,\"stream\":\"stdout\",\"text\":\"finally\"}\n\n")
+		fmt.Fprint(w, "event: done\ndata: {\"finalLine\":0,\"status\":\"ended\"}\n\n")
+	}))
+	defer srv.Close()
+
+	var got []string
+	done, err := followRunLog(t.Context(), apiclient.New(srv.URL, ""), "task", "run-1", 0, quietAfter, func(l server.LogLineEntry) {
+		got = append(got, l.Text)
+	})
+	require.NoError(t, err)
+	assert.True(t, done, "a quiet run must be followed until it ends")
+	assert.Equal(t, []string{"finally"}, got)
 }

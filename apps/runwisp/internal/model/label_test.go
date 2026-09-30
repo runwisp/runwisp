@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package execlist
+package model
 
 import "testing"
 
@@ -21,9 +21,9 @@ func TestInstanceLabel(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := instanceLabel(tt.taskName, tt.instanceIndex, tt.instanceCount)
+			got := InstanceLabel(tt.taskName, tt.instanceIndex, tt.instanceCount)
 			if got != tt.want {
-				t.Fatalf("instanceLabel(%q, %d, %d) = %q, want %q",
+				t.Fatalf("InstanceLabel(%q, %d, %d) = %q, want %q",
 					tt.taskName, tt.instanceIndex, tt.instanceCount, got, tt.want)
 			}
 		})

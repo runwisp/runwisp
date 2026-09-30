@@ -327,6 +327,11 @@ runwisp stop <target...>     — stop one or more tasks/services/run IDs via the
 runwisp pause <task...>      — pause cron schedules via the local socket (or --url): ticks skipped, no run rows, never caught up; manual runs still work; persisted in SQLite (survives reload/restart);
                                 needs manual_trigger=true; 409 for a service, a task without cron, a held task. A reload that makes the task unpausable (cron removed, service, manual_trigger=false, task removed) clears it with a warning
 runwisp resume <task...>     — lift a pause; fires from the next tick, skipped ticks not caught up; no-op if not paused; a glob matches only paused tasks
+runwisp logs <target...>     — print run output via the local socket (or --url); target = name, quoted glob (includes manual_trigger=false), or a run ULID; name → its active runs, else its last ended run
+                                full log by default; -n N = last N lines, -n +N = first N; task stderr stays on stderr; lines prefixed "name | " (services with instances>1: "name#k | ") when >1 target or a multi-instance service
+                                outcome of ended runs logged to stderr ("run succeeded"/"run failed"); exit code = could the logs be shown, never the run's exit code
+                             — -f follows: replays last 10 lines (or -n N; -n +N rejected), then streams; names/globs also follow new runs (globs match tasks a reload adds) until Ctrl+C; run IDs only → exits when they end
+                             — --json: NDJSON on stdout; {"type":"line",task,runId,n,ts,stream,text,continued?} per line, {"type":"end", ...same fields as run --json} when a run ends
 runwisp start/restart/stop/pause/resume — a target locked with manual_trigger=false 403s when named directly; a glob silently skips it (pause's glob also skips services, cron-less and held tasks). --url (env RUNWISP_URL) + --password (env RUNWISP_PASSWORD) dispatch to a remote daemon,
                                 same CHAP login/session cache as `run --url`. An unknown name or empty glob fails before anything runs; otherwise each target is attempted and failures print per-target, exit non-zero
 runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output --write --force --dry-run --quiet --system

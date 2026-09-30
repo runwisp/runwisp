@@ -59,6 +59,15 @@ func TestResolveTargets(t *testing.T) {
 		assert.Contains(t, err.Error(), "matched no controllable")
 	})
 
+	t.Run("read-only glob includes locked entries", func(t *testing.T) {
+		got, _, err := resolveTargets([]string{"locked-*"}, tasks, false, allTargets)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"locked-svc", "locked-task"}, names(got))
+
+		_, _, err = resolveTargets([]string{"nope-*"}, tasks, false, allTargets)
+		require.ErrorContains(t, err, "matched no task or service")
+	})
+
 	t.Run("glob with no match at all is an error", func(t *testing.T) {
 		_, _, err := resolveTargets([]string{"nope-*"}, tasks, false, controllableTargets)
 		require.Error(t, err)

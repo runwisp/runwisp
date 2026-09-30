@@ -65,6 +65,13 @@ var controllableTargets = targetFilter{
 	noun:     "controllable task or service",
 }
 
+// allTargets is the read-only filter (logs): reading a log isn't control, so
+// a glob matches locked entries too.
+var allTargets = targetFilter{
+	eligible: func(model.TaskResponse) bool { return true },
+	noun:     "task or service",
+}
+
 // resolveTargets expands the CLI's positional args into the tasks/services and
 // run IDs to act on. Every arg is matched against task names with path.Match,
 // so a literal name is simply a pattern that only matches itself —
@@ -133,18 +140,9 @@ func matchTasks(arg string, tasks []model.TaskResponse, filter targetFilter) ([]
 // match.
 func controlTargets(cmd *cobra.Command, f Flags, rf remoteFlags, args []string, verb, done string, act, stopRun controlFunc, filter targetFilter) error {
 	ctx := cmd.Context()
-	baseURL, password := rf.resolve()
-	client, err := controlClient(ctx, f, baseURL, password)
+	client, baseURL, tasks, err := connectAndListTasks(ctx, f, rf)
 	if err != nil {
 		return err
-	}
-
-	var tasks []model.TaskResponse
-	if err := withSessionRetry(ctx, client, baseURL, password, func() (err error) {
-		tasks, err = client.ListTasks(ctx)
-		return err
-	}); err != nil {
-		return fmt.Errorf("list tasks: %w", err)
 	}
 	targets, runIDs, err := resolveTargets(args, tasks, stopRun != nil, filter)
 	if err != nil {
@@ -172,6 +170,25 @@ func controlTargets(cmd *cobra.Command, f Flags, rf remoteFlags, args []string, 
 		fmt.Fprintf(out, "Run %s %s.\n", id, done)
 	}
 	return errors.Join(errs...)
+}
+
+// connectAndListTasks connects to the local or remote daemon (see
+// controlClient) and lists its tasks, logging in again if a cached remote
+// session has expired. baseURL is empty for the local socket.
+func connectAndListTasks(ctx context.Context, f Flags, rf remoteFlags) (*apiclient.Client, string, []model.TaskResponse, error) {
+	baseURL, password := rf.resolve()
+	client, err := controlClient(ctx, f, baseURL, password)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	var tasks []model.TaskResponse
+	if err := withSessionRetry(ctx, client, baseURL, password, func() (err error) {
+		tasks, err = client.ListTasks(ctx)
+		return err
+	}); err != nil {
+		return nil, "", nil, fmt.Errorf("list tasks: %w", err)
+	}
+	return client, baseURL, tasks, nil
 }
 
 // controlClient connects to either the local daemon socket or, when baseURL is

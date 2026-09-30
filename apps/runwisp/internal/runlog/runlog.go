@@ -5,8 +5,9 @@
 // the headless daemon. Without it a `docker logs` / journald operator sees a
 // black box once the startup banner scrolls past — directly undercutting Prime
 // Directive 1 ("Nothing silently fails") on the one surface with no TUI/UI in
-// front of the user. The interactive TUI already visualizes runs, so this is
-// wired only on the daemon boot path.
+// front of the user. The interactive TUI already visualizes runs, so Subscribe
+// is wired only on the daemon boot path; LogEnded lets the CLI (`runwisp logs`)
+// report a run's outcome in the same words.
 package runlog
 
 import (
@@ -49,6 +50,10 @@ func logCompleted(e events.Event) {
 	if !ok {
 		return
 	}
+	logSucceeded(run)
+}
+
+func logSucceeded(run *model.Run) {
 	slog.Info("run succeeded",
 		"task", run.TaskName, "run", run.ID,
 		"exit", run.ExitCode, "dur", runDuration(run))
@@ -70,10 +75,30 @@ func logFailed(e events.Event) {
 			level = slog.LevelDebug
 		}
 	}
+	logFailure(level, run)
+}
+
+func logFailure(level slog.Level, run *model.Run) {
 	slog.Log(context.Background(), level, "run failed",
 		"task", run.TaskName, "run", run.ID,
 		"exit", run.ExitCode, "reason", reasonString(run),
 		"dur", runDuration(run))
+}
+
+// LogEnded emits the line the daemon logs when run ends, for a caller holding
+// the ended run rather than its bus event. Unlike the daemon's handler it keeps
+// an operator stop at INFO: someone reading this run's log asked to see how it
+// ended. Only runs the task's `failures` policy classifies as failures warn.
+func LogEnded(run *model.Run) {
+	if run.EndReason != nil && *run.EndReason == model.ReasonSuccess {
+		logSucceeded(run)
+		return
+	}
+	level := slog.LevelInfo
+	if run.IsFailure {
+		level = slog.LevelWarn
+	}
+	logFailure(level, run)
 }
 
 func logDiskPressure(e events.Event) {

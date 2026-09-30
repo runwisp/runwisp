@@ -22,7 +22,6 @@ import (
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/server"
@@ -356,18 +355,6 @@ func triggerRemote(ctx context.Context, client *apiclient.Client, taskName, base
 	return run, nil
 }
 
-// followMaxStalls bounds consecutive log-stream re-opens that deliver nothing —
-// no line and no Done event. A just-triggered run is handed back to the caller
-// before its row is durably persisted (persistence is async), so the first
-// stream(s) can find no run yet and the server closes them empty. We retry
-// until the run becomes streamable; the bound only guards against a run ID that
-// never materializes at all. followStallBackoff paces those retries so the
-// not-yet-persisted row has time to land without busy-looping.
-const (
-	followMaxStalls    = 50
-	followStallBackoff = 100 * time.Millisecond
-)
-
 // followRun streams the run's logs to lineOut until it reaches a terminal state,
 // returning the exit code and — when it fetched one — the terminal run so a
 // caller can render --json without re-fetching. final may be nil only alongside
@@ -388,60 +375,24 @@ func followRun(client *apiclient.Client, taskName, runID string, lineOut io.Writ
 		}
 	}()
 
-	// Line numbers are zero-indexed; the server reads from=0 as the default
-	// tail window and clamps to anchor 0 on a fresh run, so we see every line.
-	from := int64(0)
-	stalls := 0
-
-	for {
-		ch, err := client.StreamLogLines(ctx, runID, apiclient.StreamLogOpts{FromLine: from})
-		if err != nil {
-			return 0, nil, fmt.Errorf("open log stream: %w", err)
-		}
-
-		exitCode, final, highest, done, err := streamRunLogs(context.Background(), ch, client, taskName, runID, from, lineOut)
-		if done {
-			return exitCode, final, err
-		}
-		if ctx.Err() != nil {
-			break // interrupted (Ctrl+C) — stop reconnecting
-		}
-
-		if highest >= from {
-			// Progress: the SSE transport blipped mid-run (seen under heavy
-			// load) but delivered lines before closing. Re-open from the next
-			// unseen line so the persisted tail is never silently dropped — the
-			// run is terminal by now, so the server replays the rest off disk
-			// and sends Done. Making progress resets the stall budget.
-			from = highest + 1
-			stalls = 0
-			continue
-		}
-
-		// Stall: the stream closed without a line or a Done event. The run is
-		// not streamable yet — it was just triggered and its row lags the
-		// trigger response (persistence is async), so the server can't resolve
-		// it and closes the stream empty. Bailing here would exit 0 having
-		// silently swallowed the run's output, violating "nothing silently
-		// fails"; instead back off and retry until the row lands. (An accepted,
-		// pending, or running run keeps the stream open rather than closing it
-		// empty, so a stall only ever means "not persisted yet".)
-		stalls++
-		if stalls > followMaxStalls {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			// Use a fresh, uncancelled context for this fallback fetch: ctx is
-			// the interrupt-cancelled one, and the whole point here is to still
-			// report an accurate exit code after Ctrl+C rather than fail fast.
-			return exitCodeFromRunState(context.Background(), client, runID)
-		case <-time.After(followStallBackoff):
-		}
+	// Line numbers are zero-indexed; from=0 replays every line of a fresh run.
+	done, err := followRunLog(ctx, client, taskName, runID, 0, followQuietAfter, func(l server.LogLineEntry) {
+		writeLogLine(lineOut, os.Stderr, l.Stream, l.Text, "")
+	})
+	if err != nil && !errors.Is(err, errLogStreamStalled) {
+		return 0, nil, err
 	}
-
+	if done {
+		run, getErr := fetchTerminalRun(context.Background(), client, taskName, runID)
+		if getErr != nil {
+			return 0, nil, fmt.Errorf("fetch final run state: %w", getErr)
+		}
+		return exitCodeFromRun(run), run, nil
+	}
 	// Stream never delivered a Done event (interrupted, or the run never became
 	// streamable); fall back to the persisted terminal state for the exit code.
+	// A fresh, uncancelled context: ctx is the interrupt-cancelled one, and the
+	// whole point is to still report an accurate exit code after Ctrl+C.
 	return exitCodeFromRunState(context.Background(), client, runID)
 }
 
@@ -478,7 +429,11 @@ func fetchTerminalRun(ctx context.Context, client *apiclient.Client, taskName, r
 	var err error
 	for attempt := range terminalFetchAttempts {
 		if attempt > 0 {
-			time.Sleep(terminalFetchBackoff)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(terminalFetchBackoff):
+			}
 		}
 		run, err = client.GetRun(ctx, runID)
 		if err == nil && run.Status == model.PhaseEnded {
@@ -493,49 +448,6 @@ func fetchTerminalRun(ctx context.Context, client *apiclient.Client, taskName, r
 	slog.Warn("Run reported done but its state still reads non-terminal; exit code may be wrong",
 		"task", taskName, "run", runID, "status", run.Status)
 	return run, nil
-}
-
-// streamRunLogs prints each streamed log line to stdout/stderr until the stream reports the run is done or errors.
-// Lines below `from` are skipped as already seen. done=true means terminal outcome reached.
-// On Done it returns the fetched terminal run so callers can reuse it (e.g. for
-// the --json document) without a second GetRun that could fail and mask the
-// already-known exit code.
-func streamRunLogs(ctx context.Context, ch <-chan apiclient.LogStreamMsg, client *apiclient.Client, taskName, runID string, from int64, lineOut io.Writer) (exitCode int, final *model.Run, highest int64, done bool, err error) {
-	highest = from - 1
-	for msg := range ch {
-		switch msg.Kind {
-		case apiclient.LogStreamMsgKindLine:
-			highest = printStreamedLogLine(msg, from, highest, lineOut)
-		case apiclient.LogStreamMsgKindDone:
-			run, getErr := fetchTerminalRun(ctx, client, taskName, runID)
-			if getErr != nil {
-				return 0, nil, highest, true, fmt.Errorf("fetch final run state: %w", getErr)
-			}
-			return exitCodeFromRun(run), run, highest, true, nil
-		case apiclient.LogStreamMsgKindErr:
-			return 0, nil, highest, true, fmt.Errorf("log stream error: %w", msg.ErrValue)
-		}
-	}
-	return 0, nil, highest, false, nil
-}
-
-// printStreamedLogLine prints one streamed line unless it was already seen
-// (N < from), returning the running highest line number printed. Stdout-stream
-// lines go to lineOut (stdout normally, stderr under --json so stdout stays a
-// single JSON document); stderr-stream lines always go to os.Stderr.
-func printStreamedLogLine(msg apiclient.LogStreamMsg, from, highest int64, lineOut io.Writer) int64 {
-	if msg.Line.N < from {
-		return highest // already printed on an earlier connection
-	}
-	if msg.Line.Stream == logutil.StreamStderr {
-		fmt.Fprintln(os.Stderr, msg.Line.Text)
-	} else {
-		fmt.Fprintln(lineOut, msg.Line.Text)
-	}
-	if msg.Line.N > highest {
-		return msg.Line.N
-	}
-	return highest
 }
 
 // daemonTaskNames fetches the daemon's task list for the unknown-task
@@ -655,12 +567,7 @@ func runLogLineHandler(taskName string, lineOut io.Writer) func(events.Event) {
 		if !ok || ll.TaskName != taskName {
 			return
 		}
-		switch ll.Stream {
-		case logutil.StreamStderr:
-			fmt.Fprintln(os.Stderr, ll.Text)
-		default:
-			fmt.Fprintln(lineOut, ll.Text)
-		}
+		writeLogLine(lineOut, os.Stderr, ll.Stream, ll.Text, "")
 	}
 }
 
