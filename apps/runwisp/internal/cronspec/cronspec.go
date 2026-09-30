@@ -9,7 +9,6 @@
 package cronspec
 
 import (
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -44,7 +43,54 @@ type specParser struct {
 }
 
 func (p specParser) Parse(spec string) (cron.Schedule, error) {
-	return p.inner.Parse(sundayAliased(spec))
+	sched, err := p.inner.Parse(sundayAliased(spec))
+	if err != nil {
+		return nil, err
+	}
+	if s, ok := sched.(*cron.SpecSchedule); ok {
+		markStarDays(s, spec)
+	}
+	return sched, nil
+}
+
+// starBit is robfig/cron's unexported "field was *" flag (spec.go). dayMatches
+// ANDs day-of-month with day-of-week when either carries it, and ORs them when
+// neither does.
+const starBit = 1 << 63
+
+// markStarDays restores vixie/cronie's day-matching rule for stepped stars.
+// Traditional cron sets DOM_STAR / DOW_STAR whenever the field's first character
+// is '*', so "*/2" still counts as unrestricted and "0 0 */2 * 1" means odd
+// days that are also Mondays. robfig clears the flag for any step above 1, which
+// turned that into odd days OR Mondays. '?' is robfig's alias for '*' and is
+// treated the same way.
+func markStarDays(s *cron.SpecSchedule, spec string) {
+	dom, dow, ok := dayFields(spec)
+	if !ok {
+		return
+	}
+	if strings.HasPrefix(dom, "*") || strings.HasPrefix(dom, "?") {
+		s.Dom |= starBit
+	}
+	if strings.HasPrefix(dow, "*") || strings.HasPrefix(dow, "?") {
+		s.Dow |= starBit
+	}
+}
+
+// dayFields returns the day-of-month and day-of-week fields of a 5- or 6-field
+// spec. robfig peels a TZ= / CRON_TZ= prefix off before counting fields, so it
+// is skipped here too. ok is false for descriptors and wrong field counts.
+func dayFields(spec string) (dom, dow string, ok bool) {
+	body := strings.Fields(spec)
+	if len(body) > 0 && (strings.HasPrefix(body[0], "TZ=") || strings.HasPrefix(body[0], "CRON_TZ=")) {
+		body = body[1:]
+	}
+	if len(body) != 5 && len(body) != 6 {
+		return "", "", false
+	}
+	// Both sit at the same offset from the end of the 5-field and the
+	// seconds-prefixed 6-field form.
+	return body[len(body)-3], body[len(body)-1], true
 }
 
 // NewScheduleParser returns a cron.ScheduleParser for the RunWisp cron grammar
@@ -168,26 +214,17 @@ func Validate(spec, timezone string) error {
 // elsewhere, a minute or month value of 7, and every @descriptor pass through
 // unchanged. An unrecognized field count is left alone for robfig to reject.
 func sundayAliased(spec string) string {
+	_, dow, ok := dayFields(spec)
+	if !ok {
+		return spec
+	}
+	aliased := dowField(dow)
+	if aliased == dow {
+		return spec
+	}
 	fields := strings.Fields(spec)
-	body := fields
-	// robfig peels a TZ= / CRON_TZ= prefix off before counting fields, so it must
-	// not be counted here either.
-	if len(body) > 0 && (strings.HasPrefix(body[0], "TZ=") || strings.HasPrefix(body[0], "CRON_TZ=")) {
-		body = body[1:]
-	}
-	if len(body) != 5 && len(body) != 6 {
-		return spec
-	}
-	// dow is the last field of both the 5-field and the seconds-prefixed 6-field
-	// form, so no index arithmetic can get the position wrong.
-	last := len(fields) - 1
-	dow := dowField(fields[last])
-	if dow == fields[last] {
-		return spec
-	}
-	out := slices.Clone(fields)
-	out[last] = dow
-	return strings.Join(out, " ")
+	fields[len(fields)-1] = aliased
+	return strings.Join(fields, " ")
 }
 
 // dowField rewrites one day-of-week field, term by comma-separated term.

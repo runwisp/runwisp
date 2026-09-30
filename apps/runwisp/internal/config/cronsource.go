@@ -314,9 +314,18 @@ func assertSpoolRunnable(path, runAs string) error {
 // one has to agree with the filesystem. crond pairs the same two checks on the same
 // files. A file whose jobs run as someone else is refused unless the daemon can
 // actually become them; see assertSpoolRunnable.
+//
+// The host's cron flavor only applies to a file the host's cron reads itself: that
+// is the schedule a take-over has to keep. A crontab-format file only RunWisp
+// reads (/opt/myapp/jobs.cron) was never fired by it.
 func cronOptionsFor(path string, owned importer.Owned) importer.CronOptions {
 	spoolOwner, _ := importer.UserSpoolOwner(path)
+	flavor := importer.CronFlavorUnknown
+	if importer.CronOwnsPath(path) {
+		flavor = cronFlavor()
+	}
 	return importer.CronOptions{
+		Flavor:   flavor,
 		System:   importer.IsSystemCrontabPath(path),
 		User:     spoolOwner,
 		Existing: owned,
@@ -339,6 +348,10 @@ func cronOptionsFor(path string, owned importer.Owned) importer.CronOptions {
 // the real answer comes from the machine, and a test needs to ask the question about
 // a machine it can describe. Never assigned outside tests.
 var cronUserExists = importer.SystemUserExists
+
+// cronFlavor detects which cron this box runs. A package var
+// for the same reason cronUserExists is one. Never assigned outside tests.
+var cronFlavor = importer.HostCronFlavor
 
 // cronNameSuffix derives the stable collision suffix from a source path: the
 // basename with its extension dropped, sanitized to a task-name-safe form.

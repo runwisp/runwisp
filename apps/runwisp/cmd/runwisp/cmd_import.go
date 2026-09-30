@@ -275,6 +275,11 @@ func resolveCronOptions(source string, systemFlag, systemSet bool) importer.Cron
 	if source != "" && source != "-" {
 		opts.UserExists = importer.SystemUserExists
 	}
+	// Only a file this host's cron reads has been firing on this host's
+	// cron's schedule, so only that one takes its CRON_TZ semantics.
+	if importer.CronOwnsPath(source) {
+		opts.Flavor = hostCronFlavor()
+	}
 	switch {
 	case systemSet:
 		opts.System = systemFlag
@@ -285,6 +290,10 @@ func resolveCronOptions(source string, systemFlag, systemSet bool) importer.Cron
 	}
 	return opts
 }
+
+// hostCronFlavor detects which cron this box runs. A package var so tests can
+// describe a host; never assigned outside tests.
+var hostCronFlavor = importer.HostCronFlavor
 
 // openImportSource returns a reader for a file path, or stdin when source is
 // "-" (or empty). The returned close function is always safe to call.

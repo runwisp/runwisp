@@ -10,6 +10,9 @@ catch_up = 0  # cron never re-fires a missed tick
 on_overlap = "queue"  # cron would overlap instead of queueing
 run = "/usr/bin/rollup"
 
+[tasks.rollup.env]
+CRON_TZ = "Mars/Olympus"
+
 # @reboot: runs once per machine boot, not on daemon restarts.
 [tasks.warmup]
 run_on_start = "boot"
@@ -18,3 +21,6 @@ env_base = "clean"
 working_dir = "~"
 on_overlap = "queue"  # cron would overlap instead of queueing
 run = "/usr/bin/warmup"
+
+[tasks.warmup.env]
+CRON_TZ = "Mars/Olympus"

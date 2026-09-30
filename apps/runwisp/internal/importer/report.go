@@ -33,6 +33,7 @@ const (
 	NotePercentTranslated
 	NotePercentStdin
 	NoteUserColumnSuspect
+	NoteCronTZIgnored
 
 	// Naming and identity, shared by both parsers.
 	NoteAlreadyDefined
@@ -139,6 +140,11 @@ var noteKindInfo = map[NoteKind]noteSeverity{
 		// The TODO is not advice, it is the input the command needed and did not
 		// get. Running it runs something the crontab never asked for.
 		slug: "percent-stdin", blocking: true, unsafeLive: true,
+	},
+	NoteCronTZIgnored: {
+		// The job keeps firing when the host's cron fired it; the note is there
+		// because the crontab reads as if it set a timezone.
+		slug: "cron-tz-ignored", blocking: true, unsafeLive: false,
 	},
 	NoteUserColumnSuspect: {
 		// Both halves of the split are wrong: neither the identity nor the command

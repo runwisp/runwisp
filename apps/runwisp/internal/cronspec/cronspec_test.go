@@ -283,3 +283,58 @@ func TestNonDSTDayUnaffected(t *testing.T) {
 	want := time.Date(2024, 6, 15, 2, 0, 0, 0, loc)
 	assert.True(t, want.Equal(got), "want %s, got %s", want, got.In(loc))
 }
+
+// TestSteppedStarDaysAreAnded is the regression test for "*/N" in a day field.
+// vixie and cronie set DOM_STAR / DOW_STAR whenever the field starts with '*',
+// so "0 0 */2 * 1" is odd days that are also Mondays. robfig drops its star flag
+// for any step above 1 and ORed the two fields instead, firing on every odd day
+// plus every Monday.
+func TestSteppedStarDaysAreAnded(t *testing.T) {
+	from := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC) // a Saturday
+	day := func(m time.Month, d int) time.Time { return time.Date(2026, m, d, 0, 0, 0, 0, time.UTC) }
+
+	tests := []struct {
+		name string
+		spec string
+		want []time.Time
+	}{
+		{
+			name: "stepped star day-of-month with a weekday",
+			spec: "0 0 */2 * 1",
+			want: []time.Time{day(8, 3), day(8, 17), day(8, 31), day(9, 7)},
+		},
+		{
+			name: "stepped star day-of-week with a day of month",
+			spec: "0 0 1 * */2",
+			want: []time.Time{day(9, 1), day(10, 1), day(11, 1), day(12, 1)},
+		},
+		{
+			name: "six-field form",
+			spec: "0 0 0 */2 * 1",
+			want: []time.Time{day(8, 3), day(8, 17), day(8, 31), day(9, 7)},
+		},
+		{
+			name: "behind a CRON_TZ prefix",
+			spec: "CRON_TZ=UTC 0 0 */2 * 1",
+			want: []time.Time{day(8, 3), day(8, 17), day(8, 31), day(9, 7)},
+		},
+		{
+			// No leading '*': vixie ORs these, so the fix must not touch it.
+			name: "explicit stepped range still ORs",
+			spec: "0 0 1-31/2 * 1",
+			want: []time.Time{day(8, 3), day(8, 5), day(8, 7), day(8, 9)},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sched, err := NewScheduleParser().Parse(tt.spec)
+			require.NoError(t, err)
+			var got []time.Time
+			for next := from; len(got) < len(tt.want); {
+				next = sched.Next(next)
+				got = append(got, next.UTC())
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
