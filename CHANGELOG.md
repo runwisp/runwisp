@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Notifications for a run killed by `log_on_full = "kill"` now say so instead of reporting the kill signal's exit code.
 - After `runwisp takeover`, if systemd gives up restarting RunWisp, cron is unmasked and started again, so the box is never left without a scheduler.
 - Uninstalling or rolling back a take-over restores cron to the state it was in before: a cron you had masked stays masked, and a stopped one is not started.
 - The daemon now exits non-zero when it shuts down because of a fatal error (the server failing to start, a crash in a background worker), so systemd and launchd restart it. `runwisp stop` and SIGTERM still exit 0.
@@ -81,7 +82,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Notification durations no longer render as "60s" or "59m 60s"; they round up to "1m" or "1h".
 - `runwisp import cron` now warns about a user column on `@reboot`, `@daily` and other `@`-shorthand lines (suggesting `--system`) instead of importing the username as the command.
 - Live output from programs that redraw the screen no longer marks every line after an over-long line as a continuation.
-- Notifications for a run killed by `log_on_full = "kill"` now say so instead of reporting the kill signal's exit code.
 
 ## [1.0.1] - 2026-09-23
 
