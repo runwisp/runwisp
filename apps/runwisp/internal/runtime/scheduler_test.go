@@ -491,19 +491,18 @@ func TestSchedulerJitterClampsSlotToLiveGap(t *testing.T) {
 // matches time.Local, silently falling back to the host's zone instead of the
 // operator's configured one.
 func TestSchedulerJitterLiveGapClampUsesConfiguredTimezone(t *testing.T) {
-	origLocal := time.Local
-	t.Cleanup(func() { time.Local = origLocal })
 	tokyo, err := time.LoadLocation("Asia/Tokyo")
 	require.NoError(t, err)
-	time.Local = tokyo // stands in for a host OS zone that differs from the configured daemon timezone
-
 	nyLoc, err := time.LoadLocation("America/New_York")
 	require.NoError(t, err)
 
-	// now is what a real, uninjected clock.Now() returns in production: its
-	// Location() is exactly time.Local (the host's zone), never the configured
-	// scheduler location.
-	now := time.Date(2024, 1, 15, 1, 0, 0, 0, time.Local)
+	// now stands in for a real, uninjected clock.Now(), whose Location() is the
+	// host's zone rather than the configured scheduler location. Tokyo plays the
+	// host zone. The test doesn't assign time.Local for it: a bare schedule is
+	// evaluated in the input time's own Location() either way, and writing that
+	// global races with every goroutine calling time.Now (timers left running
+	// by other tests in this package), which failed this test under -race.
+	now := time.Date(2024, 1, 15, 1, 0, 0, 0, tokyo)
 
 	runner := &fakeTaskRunner{}
 	task := &model.Task{Name: "nightly", Cron: "0 3 * * *", Jitter: durPtr(10 * time.Hour), Run: "echo"}
