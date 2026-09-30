@@ -16,6 +16,11 @@ go vet ./...
 # `bun run ci` / `moon run runwisp:check`, not just the SonarCloud scan.
 "${script_dir}/lint-go.sh" ./...
 
+# Fail on known vulnerabilities reachable from our code, in the standard
+# library (the toolchain pinned in go.mod) or in a module. Pinned, and kept out
+# of go.mod like golangci-lint.
+go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
 unformatted_files=$(gofmt -l .)
 if [[ -n "${unformatted_files}" ]]; then
   printf 'These Go files need gofmt:\n%s\n' "${unformatted_files}" >&2

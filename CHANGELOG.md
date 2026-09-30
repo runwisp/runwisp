@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Release binaries and Docker images are now built with Go 1.26.8 and patched `golang.org/x` modules, which fixes known vulnerabilities in the standard library, including a critical `crypto/tls` certificate validation bug.
+
 ## [1.3.0] - 2026-09-30
 
 ### Added
