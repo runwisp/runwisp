@@ -27,6 +27,7 @@ type DialogManager struct {
 
 	flashMessage string
 	flashExpiry  time.Time
+	flashError   bool
 	// undoCmd is the inverse action offered by the current toast, fired by `u`.
 	// It rides with the flash so it auto-expires on the same clock; a plain
 	// Flash clears it so a stale undo can never fire after an unrelated message.
@@ -308,34 +309,34 @@ var clipboardWriteAll = clipboard.WriteAll
 // CopyToClipboard attempts clipboard copy. On failure, opens a CopyDialog
 // so the user can manually select the text.
 func (dm *DialogManager) CopyToClipboard(value string) tea.Cmd {
-	err := clipboardWriteAll(value)
-	if err == nil {
-		dm.flashMessage = "✓ Copied!"
-		dm.flashExpiry = time.Now().Add(2 * time.Second)
-		return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
-			return uikit.FlashExpiredMsg{}
-		})
+	if err := clipboardWriteAll(value); err == nil {
+		return dm.Flash("Copied", 2*time.Second)
 	}
 	dm.ShowCopy("Copy", value)
 	return dm.SyncMouseState()
 }
 
-// Flash sets a transient message shown in the help bar. It clears any pending
-// undo so a stale inverse can't fire after an unrelated message.
+// Flash shows a transient success/info toast. It clears any pending undo so a
+// stale inverse can't fire after an unrelated message.
 func (dm *DialogManager) Flash(msg string, duration time.Duration) tea.Cmd {
-	dm.flashMessage = msg
-	dm.flashExpiry = time.Now().Add(duration)
-	dm.undoCmd = nil
-	return tea.Tick(duration, func(time.Time) tea.Msg {
-		return uikit.FlashExpiredMsg{}
-	})
+	return dm.setFlash(msg, duration, nil, false)
+}
+
+// FlashError shows a transient toast styled as a failure.
+func (dm *DialogManager) FlashError(msg string, duration time.Duration) tea.Cmd {
+	return dm.setFlash(msg, duration, nil, true)
 }
 
 // FlashUndo shows a toast that offers an inverse action. The undo command is
 // fired by TakeUndo (the `u` key) and auto-expires with the toast.
 func (dm *DialogManager) FlashUndo(msg string, undo tea.Cmd, duration time.Duration) tea.Cmd {
+	return dm.setFlash(msg, duration, undo, false)
+}
+
+func (dm *DialogManager) setFlash(msg string, duration time.Duration, undo tea.Cmd, isErr bool) tea.Cmd {
 	dm.flashMessage = msg
 	dm.flashExpiry = time.Now().Add(duration)
+	dm.flashError = isErr
 	dm.undoCmd = undo
 	return tea.Tick(duration, func(time.Time) tea.Msg {
 		return uikit.FlashExpiredMsg{}
@@ -345,13 +346,18 @@ func (dm *DialogManager) FlashUndo(msg string, undo tea.Cmd, duration time.Durat
 // TakeUndo returns the pending undo command (if the toast is still live) and
 // clears it so it fires at most once. Returns nil when nothing is undoable.
 func (dm *DialogManager) TakeUndo() tea.Cmd {
-	if dm.undoCmd == nil || time.Now().After(dm.flashExpiry) {
+	if !dm.HasUndo() {
 		return nil
 	}
 	cmd := dm.undoCmd
 	dm.undoCmd = nil
 	dm.flashMessage = ""
 	return cmd
+}
+
+// HasUndo reports whether the live toast offers an undo.
+func (dm *DialogManager) HasUndo() bool {
+	return dm.undoCmd != nil && time.Now().Before(dm.flashExpiry)
 }
 
 // ClearFlashIfExpired clears the flash message (and any undo) if past expiry.
@@ -368,6 +374,11 @@ func (dm *DialogManager) FlashActive() (string, bool) {
 		return dm.flashMessage, true
 	}
 	return "", false
+}
+
+// FlashIsError reports whether the current toast is a failure.
+func (dm *DialogManager) FlashIsError() bool {
+	return dm.flashError
 }
 
 // MouseDisabled reports whether terminal mouse tracking is currently

@@ -228,3 +228,26 @@ func SliceLineColumns(s string, start, cols int) (string, bool) {
 	}
 	return out, clipped
 }
+
+// OverlayAt draws box on top of base with its top-left corner at column x,
+// row y, keeping the base content visible to the left and right of the box.
+// Box lines that fall outside base are dropped; x and y are clamped to 0.
+func OverlayAt(base, box string, x, y int) string {
+	x, y = max(x, 0), max(y, 0)
+	lines := strings.Split(base, "\n")
+	for i, boxLine := range strings.Split(box, "\n") {
+		row := y + i
+		if row >= len(lines) {
+			break
+		}
+		line := lines[row]
+		lineW := ansi.StringWidth(line)
+		left := ansi.Cut(line, 0, x)
+		if gap := x - lineW; gap > 0 {
+			left += strings.Repeat(" ", gap)
+		}
+		right := ansi.Cut(line, x+ansi.StringWidth(boxLine), lineW)
+		lines[row] = left + "\x1b[0m" + boxLine + "\x1b[0m" + right
+	}
+	return strings.Join(lines, "\n")
+}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -63,4 +64,23 @@ func TestReassertResets(t *testing.T) {
 	// Every embedded reset is patched.
 	got := ReassertResets("\x1b[0ma\x1b[0mb", base)
 	assert.Equal(t, 2, strings.Count(got, base))
+}
+
+func TestOverlayAt_SplicesBoxKeepingSurroundings(t *testing.T) {
+	base := "\x1b[31mabcdefghij\x1b[0m\n0123456789\nKLMNOPQRST"
+	got := OverlayAt(base, "XX\nYY", 3, 1)
+	lines := strings.Split(got, "\n")
+	assert.Equal(t, "\x1b[31mabcdefghij\x1b[0m", lines[0], "rows above the box are untouched")
+	assert.Equal(t, "012XX56789", ansi.Strip(lines[1]))
+	assert.Equal(t, "KLMYYPQRST", ansi.Strip(lines[2]))
+	for _, ln := range lines {
+		assert.Equal(t, 10, ansi.StringWidth(ln))
+	}
+}
+
+func TestOverlayAt_DropsRowsPastBaseAndPadsShortLines(t *testing.T) {
+	got := OverlayAt("ab\ncd", "XX\nYY\nZZ", 4, 1)
+	lines := strings.Split(got, "\n")
+	assert.Len(t, lines, 2)
+	assert.Equal(t, "cd  XX", ansi.Strip(lines[1]))
 }

@@ -779,6 +779,20 @@ func TestConfirmStopService_HappyPath(t *testing.T) {
 	}
 }
 
+// TestConfirmStopService_FromHome is the regression for stopping a service
+// whose run was opened from Home: the sidebar has no active task there, so the
+// stop resolved to "" and silently did nothing.
+func TestConfirmStopService_FromHome(t *testing.T) {
+	m := newTestModel([]model.Task{{Name: "svc", Kind: model.KindService}})
+	m.client = newDummyClient()
+	m.openExecView(&model.Run{ID: "r-svc", TaskName: "svc", Status: model.PhaseRunning})
+	m.panelFocus = uikit.PanelMain
+	m.confirmStopService()
+	if !m.dialogs.HasConfirm() {
+		t.Fatal("expected stop-service dialog for the open run's task")
+	}
+}
+
 // TestTriggerRun_EmptyTaskNameReturnsNil covers the empty-task guard.
 func TestTriggerRun_EmptyTaskNameReturnsNil(t *testing.T) {
 	m := newTestModel(nil)

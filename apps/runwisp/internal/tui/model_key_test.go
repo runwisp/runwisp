@@ -383,9 +383,32 @@ func TestHandleKeyEnterNotifications_SelectedWithRunID(t *testing.T) {
 		t.Fatal("precondition: expected a selection after Upsert+Toggle")
 	}
 
-	_, _, handled := handleKeyEnterNotifications(m)
+	newM, _, handled := handleKeyEnterNotifications(m)
 	if !handled {
 		t.Fatal("expected handled=true for selected with RunID")
+	}
+	// The run isn't loaded locally, so the lookup is async: the panel must
+	// stay open until it resolves (it may turn out deleted, see #306).
+	if !newM.notifications.IsExpanded() {
+		t.Fatal("expected panel to stay open while the run is fetched")
+	}
+}
+
+func TestHandleKeyEnterNotifications_CachedRunOpensAndCollapses(t *testing.T) {
+	m := newTestModel(nil)
+	m.execWindow.UpsertRun(model.Run{ID: "run-1", TaskName: "t1", Status: model.PhasePending})
+	n := testNotif("n1")
+	n.RunID = "run-1"
+	n.TaskName = "t1"
+	m.notifications.Upsert(n)
+	m.notifications.Toggle()
+
+	newM, _, _ := handleKeyEnterNotifications(m)
+	if newM.execView == nil || newM.execView.Run.ID != "run-1" {
+		t.Fatal("expected exec view for run-1")
+	}
+	if newM.notifications.IsExpanded() {
+		t.Fatal("expected panel collapsed once the run opened")
 	}
 }
 

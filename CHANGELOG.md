@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Service health checks**: an optional `[services.<name>.health_check]` command decides when an instance is healthy and stops it as `unhealthy` when it keeps failing, so `restart` brings it back. It reuses task keys (`cron`, `timeout`, `failures`, `retry_*`).
 - Release tarballs, checksums and Docker images now ship with signed build provenance you can check with `gh attestation verify`.
 
+### Changed
+
+- TUI status messages now appear as a toast in the bottom-right corner, red for failures, instead of in the help bar.
+
 ### Fixed
 
 - After `runwisp takeover`, if systemd gives up restarting RunWisp, cron is unmasked and started again, so the box is never left without a scheduler.
@@ -33,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp takeover` now lists a symlink in `/etc/cron.d` as a job that won't run and stops on it, since RunWisp doesn't read cron sources through symlinks.
 - The TUI now shows a Delete button on failed runs, next to Retry.
 - The TUI run header fits an 80-column terminal: its Stop, Retry, and Delete buttons were pushed off-screen.
+- In the TUI, opening a notification whose run was deleted now says the run no longer exists, instead of closing the panel and showing nothing.
+- In the TUI, stopping a service from a run opened on the Home page now works.
+- In the TUI, restarting a service now leaves the old run and opens the fresh instance (or returns to the task), instead of staying on the dead run with a Stop button.
 
 ## [1.2.0] - 2026-09-28
 

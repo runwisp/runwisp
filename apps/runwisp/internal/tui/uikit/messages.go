@@ -298,9 +298,12 @@ type SpinnerTickMsg struct {
 
 // OpenRunMsg requests the model open an exec view for the given run. Used by
 // asynchronous run lookups (e.g., notification → exec view) where the run is
-// not in the local execWindow cache yet.
+// not in the local execWindow cache yet. Err is set (and Run nil) when the
+// lookup failed, e.g. a 404 because the run was deleted.
 type OpenRunMsg struct {
-	Run *model.Run
+	Run   *model.Run
+	RunID string
+	Err   error
 }
 
 // NotificationUnreadCountMsg delivers the snapshot unread count fetched at

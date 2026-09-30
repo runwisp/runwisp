@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
 )
@@ -44,20 +45,46 @@ func TestRenderHelpBar_NoFlashReturnsHelp(t *testing.T) {
 	}
 }
 
-func TestRenderHelpBar_PrependsActiveFlash(t *testing.T) {
+func TestRenderHelpBar_OmitsFlash(t *testing.T) {
 	m := newTestModel(nil)
 	m, _ = m.applyWindowSize(120, 30)
-	// Flash is applied through DialogManager — set one with a long TTL so it
-	// is still "active" when renderHelpBar queries.
 	m.dialogs.Flash("Saved", 5*time.Second)
-	got := m.renderHelpBar()
-	// Both the flash and the help text must survive — the flash is prepended as
-	// its own styled segment, not by replacing the help bar.
-	if !strings.Contains(got, "Saved") {
-		t.Fatalf("expected flash text in output, got: %q", got)
+	if got := m.renderHelpBar(); strings.Contains(got, "Saved") {
+		t.Fatalf("flash must render as a toast, not in the help bar: %q", got)
 	}
-	if !strings.Contains(got, "navigate") {
-		t.Fatalf("expected help text alongside flash, got: %q", got)
+}
+
+// TestView_ShowsToastAboveHelpBar verifies the flash floats as a toast in the
+// bottom-right corner while the help bar stays intact on the last line.
+func TestView_ShowsToastAboveHelpBar(t *testing.T) {
+	m := newTestModel(nil)
+	m, _ = m.applyWindowSize(120, 30)
+	m.dialogs.FlashUndo("Deleted run", func() tea.Msg { return nil }, 5*time.Second)
+	lines := strings.Split(ansi.Strip(m.View().Content), "\n")
+	if len(lines) != 30 {
+		t.Fatalf("expected 30 lines, got %d", len(lines))
+	}
+	if !strings.Contains(lines[29], "navigate") {
+		t.Fatalf("help bar must stay on the last line, got %q", lines[29])
+	}
+	above := strings.Join(lines[24:29], "\n")
+	if !strings.Contains(above, "✓ Deleted run") || !strings.Contains(above, "u undo") {
+		t.Fatalf("expected toast with undo hint above the help bar, got:\n%s", above)
+	}
+	for i, ln := range lines[:29] {
+		if w := ansi.StringWidth(ln); w > 120 {
+			t.Fatalf("line %d overflows terminal: width %d", i, w)
+		}
+	}
+}
+
+func TestRenderToast_ErrorUsesCross(t *testing.T) {
+	m := newTestModel(nil)
+	m, _ = m.applyWindowSize(120, 30)
+	m.dialogs.FlashError("Stop failed: boom", 5*time.Second)
+	toast, ok := m.renderToast()
+	if !ok || !strings.Contains(ansi.Strip(toast), "✗ Stop failed: boom") {
+		t.Fatalf("expected error toast, got %q (ok=%v)", toast, ok)
 	}
 }
 

@@ -181,11 +181,16 @@ func (m Model) tickCmd() tea.Cmd {
 // It checks the exec window for a more recent version of the run
 // (SSE events may arrive before the API response that triggered this call).
 // Any unread notifications attached to this run are marked read — opening the
-// run is the operator acknowledging it.
+// run is the operator acknowledging it. An expanded notifications panel is
+// collapsed so the run gets the full main area.
 // Returns a tea.Cmd to start log streaming if the run is active or completed.
 func (m *Model) openExecView(run *model.Run) tea.Cmd {
 	if latest := m.execWindow.FindRun(run.ID); latest != nil {
 		run = latest
+	}
+	if m.notifications.IsExpanded() {
+		m.notifications.Toggle()
+		m.updateLayout()
 	}
 	ev := execlist.NewExecView(run)
 	ev.TaskIsService = m.isService(run.TaskName)
@@ -453,8 +458,13 @@ func serviceManagerLabel() string {
 	}
 }
 
-// resolveTaskName determines which task to act on based on current focus.
+// resolveTaskName determines which task to act on based on current focus. An
+// open exec view wins: its header actions target the run's task, which the
+// sidebar doesn't know about when the run was opened from Home.
 func (m *Model) resolveTaskName() string {
+	if m.execView != nil && m.execView.Run != nil {
+		return m.execView.Run.TaskName
+	}
 	if m.panelFocus == uikit.PanelMain {
 		return m.sidebar.ActiveTask()
 	}
@@ -506,10 +516,7 @@ func (m *Model) openRunByID(taskName, runID string) tea.Cmd {
 	ctx := m.streams.streamCtx
 	return func() tea.Msg {
 		run, err := client.GetRun(ctx, runID)
-		if err != nil {
-			return uikit.DebugLogMsg{Message: fmt.Sprintf("Failed to load run %s: %s", runID, err.Error())}
-		}
-		return uikit.OpenRunMsg{Run: run}
+		return uikit.OpenRunMsg{Run: run, RunID: runID, Err: err}
 	}
 }
 

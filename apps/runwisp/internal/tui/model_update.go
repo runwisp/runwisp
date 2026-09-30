@@ -6,6 +6,7 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -279,6 +280,18 @@ func (m Model) handleNotificationsLoaded(msg uikit.NotificationsLoadedMsg) (tea.
 }
 
 func (m Model) handleOpenRun(msg uikit.OpenRunMsg) (tea.Model, tea.Cmd) {
+	if msg.Err != nil {
+		m.debugView.AppendLine(fmt.Sprintf("Failed to load run %s: %s", msg.RunID, msg.Err))
+		if apiclient.IsHTTPStatus(msg.Err, http.StatusNotFound) {
+			// Nothing left to open: count the attempt as acknowledging any
+			// notification that still points at the run.
+			return m, tea.Batch(
+				m.markRunNotificationsRead(msg.RunID),
+				m.dialogs.FlashError("That run no longer exists (deleted or cleaned up by retention)", 6*time.Second),
+			)
+		}
+		return m, m.dialogs.FlashError("Couldn't open run: "+msg.Err.Error(), 6*time.Second)
+	}
 	if msg.Run == nil {
 		return m, nil
 	}
@@ -720,9 +733,9 @@ func (m Model) handleTriggerRun(msg uikit.TriggerRunMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
 		// Concurrency limit or other error — close exec view to show the task list.
 		if m.execView != nil {
-			return m, tea.Batch(m.closeExecView(), m.dialogs.Flash("Run failed: "+msg.Err.Error(), 6*time.Second))
+			return m, tea.Batch(m.closeExecView(), m.dialogs.FlashError("Run failed: "+msg.Err.Error(), 6*time.Second))
 		}
-		return m, m.dialogs.Flash("Run failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Run failed: "+msg.Err.Error(), 6*time.Second)
 	}
 	if msg.Run != nil {
 		// Run/retry is confirmed up front (no undo toast); just flash the result.
@@ -743,7 +756,7 @@ func (m Model) handleStopRun(msg uikit.StopRunMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleDeleteRun(msg uikit.DeleteRunMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Deleted run for", msg.TaskName, msg.Err)
 	if msg.Err != nil {
-		return m, m.dialogs.Flash("Delete failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Delete failed: "+msg.Err.Error(), 6*time.Second)
 	}
 	var cmds []tea.Cmd
 	if m.execView != nil && m.execView.Run != nil && m.execView.Run.ID == msg.RunID {
@@ -754,7 +767,7 @@ func (m Model) handleDeleteRun(msg uikit.DeleteRunMsg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, m.fetchExecWindow())
 	// Soft delete is reversible — offer an undo that restores the run.
 	undo := m.streams.RestoreRuns(model.RunSelector{IDs: []string{msg.RunID}})
-	cmds = append(cmds, m.dialogs.FlashUndo("Deleted run — press u to undo", undo, 6*time.Second))
+	cmds = append(cmds, m.dialogs.FlashUndo("Deleted run", undo, 6*time.Second))
 	return m, tea.Batch(cmds...)
 }
 
@@ -762,7 +775,7 @@ func (m Model) handleDeleteRun(msg uikit.DeleteRunMsg) (tea.Model, tea.Cmd) {
 // refreshes the list and flashes a count. Bulk delete is itself undoable.
 func (m Model) handleBulkAction(msg uikit.BulkActionMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
-		return m, m.dialogs.Flash(msg.Action+" failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError(msg.Action+" failed: "+msg.Err.Error(), 6*time.Second)
 	}
 	cmds := []tea.Cmd{m.fetchExecWindow()}
 	summary := fmt.Sprintf("%s %d run%s", msg.Action, msg.Affected, textutil.Pluralize(msg.Affected, "", "s"))
@@ -776,13 +789,13 @@ func (m Model) handleBulkAction(msg uikit.BulkActionMsg) (tea.Model, tea.Cmd) {
 // already soft-deleted before this action.
 func (m Model) handleBulkDeleteResult(msg uikit.BulkDeleteResultMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
-		return m, m.dialogs.Flash("Delete failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Delete failed: "+msg.Err.Error(), 6*time.Second)
 	}
 	cmds := []tea.Cmd{m.fetchExecWindow()}
 	label := fmt.Sprintf("Deleted %d run%s", msg.Affected, textutil.Pluralize(msg.Affected, "", "s"))
 	if !msg.Restore.MatchAll && msg.Affected > 0 {
 		undo := m.streams.RestoreRuns(msg.Restore)
-		cmds = append(cmds, m.dialogs.FlashUndo(label+" — press u to undo", undo, 6*time.Second))
+		cmds = append(cmds, m.dialogs.FlashUndo(label, undo, 6*time.Second))
 	} else {
 		cmds = append(cmds, m.dialogs.Flash(label, 4*time.Second))
 	}
@@ -792,18 +805,26 @@ func (m Model) handleBulkDeleteResult(msg uikit.BulkDeleteResultMsg) (tea.Model,
 func (m Model) handleRestartService(msg uikit.RestartServiceMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Restarted service", msg.TaskName, msg.Err)
 	if msg.Err != nil {
-		return m, m.dialogs.Flash("Restart failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Restart failed: "+msg.Err.Error(), 6*time.Second)
 	}
-	if m.execView != nil && m.execView.Run != nil && m.execView.Run.TaskName == msg.TaskName {
-		m.execView.SetServiceStopped(false)
+	if m.execView == nil || m.execView.Run == nil || m.execView.Run.TaskName != msg.TaskName {
+		return m, nil
 	}
-	return m, nil
+	// The open run is a pre-restart instance, now dead. Leave it for the fresh
+	// instance when it's already running, else for the parent screen (the SSE
+	// auto-open follows a single-instance service there once it starts).
+	oldID := m.execView.Run.ID
+	cmds := []tea.Cmd{m.closeExecView()}
+	if run := m.latestRunningExec(msg.TaskName); run != nil && run.ID != oldID && m.isSingleInstanceService(msg.TaskName) {
+		cmds = append(cmds, m.openExecView(run))
+	}
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) handleStopService(msg uikit.StopServiceMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Stopped service", msg.TaskName, msg.Err)
 	if msg.Err != nil {
-		return m, m.dialogs.Flash("Stop failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Stop failed: "+msg.Err.Error(), 6*time.Second)
 	}
 	if m.execView != nil && m.execView.Run != nil && m.execView.Run.TaskName == msg.TaskName {
 		m.execView.SetServiceStopped(true)
@@ -827,7 +848,7 @@ func (m Model) handleLogLineHistory(msg uikit.LogLineHistoryMsg) (tea.Model, tea
 		return m, nil
 	}
 	if msg.Err != nil {
-		return m, m.dialogs.Flash("Failed to load frame history", 3*time.Second)
+		return m, m.dialogs.FlashError("Failed to load frame history", 3*time.Second)
 	}
 	if len(msg.Frames) == 0 {
 		return m, m.dialogs.Flash("No frame history for this line", 3*time.Second)
@@ -905,7 +926,7 @@ func (m *Model) reloadConfig() tea.Cmd {
 // daemon's reason and leaves the running set untouched.
 func (m Model) handleReloadResult(msg uikit.ReloadResultMsg) (tea.Model, tea.Cmd) {
 	if msg.Err != nil {
-		return m, m.dialogs.Flash("Reload failed: "+msg.Err.Error(), 6*time.Second)
+		return m, m.dialogs.FlashError("Reload failed: "+msg.Err.Error(), 6*time.Second)
 	}
 
 	var cmds []tea.Cmd

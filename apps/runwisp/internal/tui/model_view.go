@@ -41,6 +41,13 @@ func (m Model) View() tea.View {
 		output = m.logSearch.View(m.width, m.height)
 	}
 	content := m.dialogs.RenderOverlays(output, m.width, m.height)
+	// The toast floats bottom-right, just above the help bar, on top of any
+	// dialog so feedback like "Copied" stays visible while a modal is open.
+	if toast, ok := m.renderToast(); ok {
+		x := m.width - lipgloss.Width(toast) - 1
+		y := m.height - 1 - lipgloss.Height(toast)
+		content = uikit.OverlayAt(content, toast, x, y)
+	}
 	if m.frame != nil {
 		*m.frame = content
 	}
@@ -48,24 +55,46 @@ func (m Model) View() tea.View {
 	return v
 }
 
-// renderHelpBar builds the bottom help bar from fully-styled segments that each
-// carry the bar background, then fills the line width with PadLine. Styling each
-// segment (rather than wrapping a pre-rendered, foreground-only flash in one
-// width-bounded Render) keeps the background continuous: an embedded reset is
-// always immediately followed by the next segment's full SGR, so no part of the
-// line falls back to the terminal's default background.
+// renderHelpBar builds the bottom help bar and fills the line width with the
+// bar background.
 func (m Model) renderHelpBar() string {
-	bar := uikit.HelpBarStyle.Render(m.buildHelpText())
-	if flash, ok := m.dialogs.FlashActive(); ok {
-		flashStr := lipgloss.NewStyle().
-			Background(uikit.ColorBgLight).
-			Foreground(uikit.ColorSuccess).
-			Bold(true).
-			PaddingLeft(1).
-			Render(flash)
-		bar = flashStr + bar
+	return uikit.PadLine(uikit.HelpBarStyle.Render(m.buildHelpText()), m.width, uikit.ColorBgLight)
+}
+
+// toastMaxWidth caps the toast box so long error messages wrap instead of
+// covering the whole bottom of the screen.
+const toastMaxWidth = 60
+
+// renderToast renders the active flash as a bordered box, green for success
+// and red for failures, with a `u undo` hint when the toast is undoable.
+func (m Model) renderToast() (string, bool) {
+	msg, ok := m.dialogs.FlashActive()
+	if !ok {
+		return "", false
 	}
-	return uikit.PadLine(bar, m.width, uikit.ColorBgLight)
+	accent, icon := uikit.ColorSuccess, "✓ "
+	if m.dialogs.FlashIsError() {
+		accent, icon = uikit.ColorError, "✗ "
+	}
+	bg := lipgloss.NewStyle().Background(uikit.ColorBgLight)
+	body := bg.Foreground(accent).Bold(true).Render(icon) + bg.Foreground(uikit.ColorTextBright).Render(msg)
+	if m.dialogs.HasUndo() {
+		body += "\n" + bg.Foreground(uikit.ColorTextMuted).Render("u undo")
+	}
+	// Inner width: text plus 1-cell padding each side, bounded by the cap and
+	// the terminal (minus border and a 1-cell right margin).
+	inner := min(lipgloss.Width(body)+2, toastMaxWidth, m.width-3)
+	if inner < 4 {
+		return "", false
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accent).
+		BorderBackground(uikit.ColorBgLight).
+		Background(uikit.ColorBgLight).
+		Padding(0, 1).
+		Width(inner + 2).
+		Render(body), true
 }
 
 func (m Model) renderBody() string {

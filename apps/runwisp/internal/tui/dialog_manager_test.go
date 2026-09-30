@@ -129,12 +129,24 @@ func TestDialogManager_Flash(t *testing.T) {
 	}
 }
 
+func TestDialogManager_FlashErrorFlagResetsOnNextFlash(t *testing.T) {
+	var dm DialogManager
+	dm.FlashError("Stop failed", time.Hour)
+	if !dm.FlashIsError() {
+		t.Fatal("expected FlashError to mark the toast as a failure")
+	}
+	dm.Flash("Started run", time.Hour)
+	if dm.FlashIsError() {
+		t.Fatal("expected a plain Flash to clear the failure flag")
+	}
+}
+
 func TestDialogManager_FlashUndo(t *testing.T) {
 	var dm DialogManager
 	fired := false
 	undo := func() tea.Msg { fired = true; return nil }
 
-	dm.FlashUndo("Deleted — press u to undo", undo, time.Hour)
+	dm.FlashUndo("Deleted run", undo, time.Hour)
 
 	if _, ok := dm.FlashActive(); !ok {
 		t.Fatal("expected the undo toast to be active")
