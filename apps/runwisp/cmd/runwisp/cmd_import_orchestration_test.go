@@ -106,6 +106,34 @@ func TestRunImportCronWriteAndForce(t *testing.T) {
 	}
 }
 
+// TestRunImportCronForcedOverwriteIsAtomic: --force used to truncate and
+// rewrite the target in place, so a crash mid-write could leave it empty. It
+// now goes through configedit's temp+rename, which installs a new inode.
+func TestRunImportCronForcedOverwriteIsAtomic(t *testing.T) {
+	src := tempFile(t, "crontab", "0 0 * * * /usr/bin/backup.sh\n")
+	target := tempFile(t, "out.toml", "# old\n")
+	before, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	if err := runImportCron(&stdout, &stderr, openTempFile(t, ""), src,
+		importer.CronOptions{}, Flags{}, importOpts{output: target, force: true}); err != nil {
+		t.Fatalf("forced overwrite: %v", err)
+	}
+	after, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(before, after) {
+		t.Error("forced overwrite rewrote the target in place instead of replacing it atomically")
+	}
+	if after.Mode().Perm() != 0o600 {
+		t.Errorf("overwrite must keep the target's mode 0600, got %o", after.Mode().Perm())
+	}
+}
+
 func TestRunImportCronWriteToConfigPath(t *testing.T) {
 	// --write installs the two-tier layout: the config path is created and wired,
 	// and the task itself lands in the machine-owned runwisp.d staging file.

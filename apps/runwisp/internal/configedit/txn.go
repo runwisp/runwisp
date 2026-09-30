@@ -41,6 +41,7 @@ const DefaultPerm fs.FileMode = 0o644
 // one caller in one operation.
 type Txn struct {
 	queued []queuedWrite
+	disk   diskOps
 }
 
 type queuedWrite struct {
@@ -56,7 +57,7 @@ type queuedWrite struct {
 }
 
 // New returns an empty transaction.
-func New() *Txn { return &Txn{} }
+func New() *Txn { return &Txn{disk: hostDisk()} }
 
 // Write queues the full contents of one file. perm applies only when the file is
 // created; an existing file keeps its own mode, so rewriting a runwisp.toml the
@@ -119,7 +120,7 @@ func (t *Txn) Apply(gate func() error) error {
 	backups := make([]fileBackup, 0, len(t.queued))
 	rollback := func() {
 		for i := range backups {
-			backups[i].restore()
+			backups[i].restore(t.disk)
 		}
 	}
 
@@ -127,8 +128,18 @@ func (t *Txn) Apply(gate func() error) error {
 	// operation, so each path appears here at most once — its backup is
 	// always the true pre-transaction original.
 	for _, w := range t.queued {
-		backups = append(backups, backupFile(w.path))
-		if err := w.perform(); err != nil {
+		// Every operation, and its backup, acts on the file a symlink points
+		// at, never on the link: a runwisp.toml symlinked into a dotfiles repo
+		// must stay a link, with the repo's copy carrying the edit.
+		target, err := resolveSymlinks(w.path)
+		if err != nil {
+			rollback()
+			return &WriteError{Path: w.path, Err: err}
+		}
+		op := w
+		op.path = target
+		backups = append(backups, backupFile(target))
+		if err := op.perform(t.disk); err != nil {
 			rollback()
 			return &WriteError{Path: w.path, Err: err}
 		}
@@ -144,17 +155,46 @@ func (t *Txn) Apply(gate func() error) error {
 }
 
 // perform carries out one queued operation against the filesystem.
-func (w queuedWrite) perform() error {
+func (w queuedWrite) perform(d diskOps) error {
 	if w.remove {
-		if err := os.Remove(w.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := os.Remove(w.path); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
 			return err
 		}
-		return nil
+		return d.syncDir(filepath.Dir(w.path))
 	}
 	if w.preserveOwner {
-		return writeFileAtomicPreservingOwner(w.path, w.data)
+		return d.writeFileAtomicPreservingOwner(w.path, w.data)
 	}
-	return writeFileAtomic(w.path, w.data, w.perm)
+	return d.writeFileAtomic(w.path, w.data, w.perm)
+}
+
+// maxSymlinkHops bounds resolveSymlinks so a link loop fails instead of
+// spinning; 40 is Linux's own MAXSYMLINKS.
+const maxSymlinkHops = 40
+
+// resolveSymlinks follows path while it is a symlink and returns the file the
+// chain ends at. Unlike filepath.EvalSymlinks it accepts a dangling final
+// target (that is where a new file gets created), and it leaves directory
+// components alone: the temp file and rename go through them either way.
+func resolveSymlinks(path string) (string, error) {
+	for range maxSymlinkHops {
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode()&fs.ModeSymlink == 0 {
+			return path, nil
+		}
+		target, err := os.Readlink(path)
+		if err != nil {
+			return "", err
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(path), target)
+		}
+		path = target
+	}
+	return "", fmt.Errorf("%s: too many levels of symbolic links", path)
 }
 
 // WriteError reports a file the transaction could not write or remove. The
@@ -204,27 +244,63 @@ func backupFile(path string) fileBackup {
 // write uses, or removing the file if it didn't exist before. Best-effort — a
 // rollback runs on an already-failing path, and reporting a second error there
 // would only bury the first.
-func (b fileBackup) restore() {
+func (b fileBackup) restore(d diskOps) {
 	if b.existed {
-		_ = atomicReplace(b.path, b.content, b.perm, b.owner)
+		_ = d.atomicReplace(b.path, b.content, b.perm, b.owner)
 		return
 	}
 	_ = os.Remove(b.path)
 }
 
+// diskOps holds the process-level facts and syscalls the write path depends on,
+// so tests can stand in a root euid or a recording chown/fsync without running
+// as root or pulling the power. hostDisk is the only production value.
+type diskOps struct {
+	euid  int
+	chown func(name string, uid, gid int) error
+	fsync func(f *os.File) error
+}
+
+func hostDisk() diskOps {
+	return diskOps{euid: os.Geteuid(), chown: os.Chown, fsync: (*os.File).Sync}
+}
+
+// syncDir fsyncs a directory so a rename or removal inside it survives a
+// power loss, not just the file data.
+func (d diskOps) syncDir(dir string) error {
+	f, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	syncErr := d.fsync(f)
+	closeErr := f.Close()
+	if syncErr != nil {
+		return fmt.Errorf("sync %s: %w", dir, syncErr)
+	}
+	return closeErr
+}
+
 // writeFileAtomic writes data to path via a temp file in the same directory and
 // an atomic rename, so a crash mid-write never leaves a half-written config.
 // Missing parent directories are created first. perm is the mode for a new file;
-// an existing file keeps the mode it already has.
-func writeFileAtomic(path string, data []byte, perm fs.FileMode) error {
+// an existing file keeps the mode it already has. When running as root it also
+// keeps its owner: `sudo runwisp import --write` on an operator's own
+// runwisp.toml must not hand the file to root.
+func (d diskOps) writeFileAtomic(path string, data []byte, perm fs.FileMode) error {
 	dir := filepath.Dir(path)
+	// ponytail: a freshly created directory isn't fsynced into its parent, so a
+	// power loss right after the first write to a new runwisp.d/ can lose it.
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
+	var owner *ownerID
 	if info, err := os.Stat(path); err == nil {
 		perm = info.Mode().Perm()
+		if stat, ok := info.Sys().(*syscall.Stat_t); ok && d.euid == 0 {
+			owner = &ownerID{uid: int(stat.Uid), gid: int(stat.Gid)}
+		}
 	}
-	return atomicReplace(path, data, perm, nil)
+	return d.atomicReplace(path, data, perm, owner)
 }
 
 // writeFileAtomicPreservingOwner is writeFileAtomic's crontab variant. Plain
@@ -234,7 +310,7 @@ func writeFileAtomic(path string, data []byte, perm fs.FileMode) error {
 // The file must already exist (a crontab this rewrites was always read off
 // disk first); if its owner can't be determined, this refuses rather than
 // landing the file mis-owned.
-func writeFileAtomicPreservingOwner(path string, data []byte) error {
+func (d diskOps) writeFileAtomicPreservingOwner(path string, data []byte) error {
 	info, err := os.Stat(path)
 	if err != nil {
 		return fmt.Errorf("stat %s: %w", path, err)
@@ -244,7 +320,7 @@ func writeFileAtomicPreservingOwner(path string, data []byte) error {
 		return fmt.Errorf("cannot determine %s's owner on this platform; refusing to rewrite it", path)
 	}
 	owner := &ownerID{uid: int(stat.Uid), gid: int(stat.Gid)}
-	return atomicReplace(path, data, info.Mode().Perm(), owner)
+	return d.atomicReplace(path, data, info.Mode().Perm(), owner)
 }
 
 // ownerID is the uid/gid a rewritten file must be chowned back to.
@@ -253,8 +329,10 @@ type ownerID struct{ uid, gid int }
 // atomicReplace is the shared temp-file-then-rename mechanics behind both
 // write paths above. owner, when non-nil, chowns the temp file before the
 // rename; a failed chown is treated the same as a failed write — cleaned up
-// and reported, never silently skipped.
-func atomicReplace(path string, data []byte, perm fs.FileMode, owner *ownerID) error {
+// and reported, never silently skipped. The temp file is fsynced before the
+// rename and the directory after it: without both, a power loss can leave the
+// new name pointing at an empty or truncated file (a blank /etc/crontab).
+func (d diskOps) atomicReplace(path string, data []byte, perm fs.FileMode, owner *ownerID) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
@@ -266,6 +344,9 @@ func atomicReplace(path string, data []byte, perm fs.FileMode, owner *ownerID) e
 		return err
 	}
 	_, writeErr := tmp.Write(data)
+	if writeErr == nil {
+		writeErr = d.fsync(tmp)
+	}
 	closeErr := tmp.Close()
 	if writeErr != nil {
 		return cleanup(writeErr)
@@ -277,12 +358,12 @@ func atomicReplace(path string, data []byte, perm fs.FileMode, owner *ownerID) e
 		return cleanup(err)
 	}
 	if owner != nil {
-		if err := os.Chown(tmpName, owner.uid, owner.gid); err != nil {
+		if err := d.chown(tmpName, owner.uid, owner.gid); err != nil {
 			return cleanup(fmt.Errorf("preserve owner of %s: %w", path, err))
 		}
 	}
 	if err := os.Rename(tmpName, path); err != nil {
 		return cleanup(err)
 	}
-	return nil
+	return d.syncDir(dir)
 }

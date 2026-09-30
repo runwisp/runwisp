@@ -463,7 +463,9 @@ func confirmAndWrite(stderr io.Writer, stdin *os.File, target, toml string, opts
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if err := os.WriteFile(target, []byte(toml), 0o644); err != nil {
+	txn := configedit.New()
+	txn.Write(target, []byte(toml), configedit.DefaultPerm)
+	if err := txn.Apply(nil); err != nil {
 		return &userFacingError{
 			title:   fmt.Sprintf("can't write %s", target),
 			details: err.Error(),
