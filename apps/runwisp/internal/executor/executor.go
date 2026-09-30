@@ -242,30 +242,37 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	stopWatcher()
 
 	result := classifyExecuteResult(killer.ctx, killReason, exitCode, waitErr)
-	result.OutputMatched = matcher.matched.Load()
+	result.OutputMatched = matcher.pattern() != ""
 	return result
 }
 
-// outputMatcher checks committed output lines against a task's `failures`
-// output patterns. One is shared by a run's stdout and stderr goroutines.
+// outputMatcher checks output lines against a task's `failures` output
+// patterns. One is shared by a run's (or probe's) stdout and stderr goroutines.
 type outputMatcher struct {
 	res     []*regexp.Regexp
-	matched atomic.Bool
+	matched atomic.Pointer[regexp.Regexp] // first pattern that matched
 }
 
-// observe records the first line matching any pattern and notes it inline in
-// the run log, so the operator sees why an exit-0 run turned red. Later lines
-// are not checked: one match is enough to decide the outcome.
-func (m *outputMatcher) observe(text string, writer *LogWriter) {
-	if len(m.res) == 0 || m.matched.Load() {
-		return
+// match reports the pattern text matched, but only for the first match: one
+// is enough to decide the outcome, so later lines are not checked.
+func (m *outputMatcher) match(text string) (*regexp.Regexp, bool) {
+	if len(m.res) == 0 || m.matched.Load() != nil {
+		return nil, false
 	}
 	for _, re := range m.res {
-		if re.MatchString(text) && m.matched.CompareAndSwap(false, true) {
-			writer.WriteLineEvent(fmt.Sprintf("Output matched failures pattern %q; run will be marked failed", re.String()), logutil.StreamSystem)
-			return
+		if re.MatchString(text) && m.matched.CompareAndSwap(nil, re) {
+			return re, true
 		}
 	}
+	return nil, false
+}
+
+// pattern is the source of the pattern that matched, or "" when none did.
+func (m *outputMatcher) pattern() string {
+	if re := m.matched.Load(); re != nil {
+		return re.String()
+	}
+	return ""
 }
 
 // notifyRunUpdated fans the post-log-prep run state out to the persistence
@@ -495,7 +502,10 @@ func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task
 	// publishCommitted sees each successfully written line's redacted text, so
 	// output patterns match exactly what the operator sees in the log.
 	publishCommitted := func(text string, lineNum int64, continued bool, frameCount int) {
-		matcher.observe(text, writer)
+		// Note the match inline, so the operator sees why an exit-0 run turned red.
+		if re, ok := matcher.match(text); ok {
+			writer.WriteLineEvent(fmt.Sprintf("Output matched failures pattern %q; run will be marked failed", re.String()), logutil.StreamSystem)
+		}
 		r.publishLine(task, run, stream, text, lineNum, continued, frameCount)
 	}
 

@@ -146,6 +146,8 @@ func (w *Watcher) describe(res executor.ProbeResult) string {
 		outcome = res.Error.Error()
 	case res.EndReason() == model.ReasonTimeout:
 		outcome = fmt.Sprintf("timed out after %s", w.Probe.TimeoutValue())
+	case res.MatchedPattern != "":
+		outcome = fmt.Sprintf("exit %d, output matched failures pattern %q", res.ExitCode, res.MatchedPattern)
 	default:
 		outcome = fmt.Sprintf("exit %d", res.ExitCode)
 	}

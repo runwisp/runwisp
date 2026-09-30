@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -153,6 +154,32 @@ func TestProbe_OutputTailIsCapped(t *testing.T) {
 	assert.Len(t, res.Output, probeOutputTail)
 	assert.True(t, strings.HasSuffix(res.Output, "the end"))
 	assert.Equal(t, model.ReasonSuccess, res.EndReason())
+}
+
+func TestProbe_OutputPatternFailsExitZero(t *testing.T) {
+	r, _ := newScriptedExecutor(t, &scriptedBackend{output: "ok\nDB error: hunter2 rejected\n"})
+	probe := &model.Task{
+		Name:     "p",
+		Run:      "check",
+		Secrets:  map[string]string{"PW": "hunter2"},
+		Failures: model.FailureMatcher{OutputPatterns: []string{"hunter2", "error: " + regexp.QuoteMeta(redactMask)}},
+	}
+
+	res := r.probe(context.Background(), probe, newRun())
+
+	assert.Equal(t, model.ReasonFailed, res.EndReason())
+	assert.Equal(t, "error: "+regexp.QuoteMeta(redactMask), res.MatchedPattern, "patterns see redacted output, like a run's log")
+	assert.True(t, probe.IsFailureReason(res.EndReason(), res.ExitCode, res.OutputMatched))
+}
+
+func TestProbe_OutputPatternNoMatchSucceeds(t *testing.T) {
+	r, _ := newScriptedExecutor(t, &scriptedBackend{output: "all good\n"})
+	probe := &model.Task{Name: "p", Run: "check", Failures: model.FailureMatcher{OutputPatterns: []string{"error"}}}
+
+	res := r.probe(context.Background(), probe, newRun())
+
+	assert.Equal(t, model.ReasonSuccess, res.EndReason())
+	assert.Empty(t, res.MatchedPattern)
 }
 
 func TestProbe_Timeout(t *testing.T) {
