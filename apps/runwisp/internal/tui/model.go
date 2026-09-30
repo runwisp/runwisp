@@ -163,6 +163,7 @@ func (m Model) Init() tea.Cmd {
 		m.streams.SubscribeEvents(),
 		m.streams.FetchUnreadCount(),
 		m.streams.FetchNotifications(),
+		m.streams.FetchPausedTasks(),
 		m.tickCmd(),
 	}
 	if m.isRemote {
@@ -317,7 +318,7 @@ func (m *Model) recalcExecListHeight() {
 	listH := mainH
 	if m.sidebar.ActivePage() == uikit.PageHome || m.sidebar.ActiveTask() != "" {
 		if m.sidebar.ActiveTask() != "" {
-			header, btnY := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), mainW, false)
+			header, btnY := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), mainW, false, m.isPaused(m.sidebar.ActiveTask()))
 			m.layout.taskBtnY = btnY
 			m.layout.taskH = strings.Count(header, "\n")
 			listH -= m.layout.taskH
@@ -347,6 +348,12 @@ func (m *Model) taskDisplayByName(name string) *model.Task {
 		}
 	}
 	return nil
+}
+
+// isPaused reports whether an operator paused the named task's cron schedule.
+func (m *Model) isPaused(name string) bool {
+	_, ok := m.info.PausedTasks[name]
+	return ok
 }
 
 // isSingleInstanceService reports whether the task is a service with exactly one instance.

@@ -5,6 +5,7 @@ package tui
 
 import (
 	"context"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -278,6 +279,46 @@ func (sm *StreamManager) FetchDaemonInfo() tea.Cmd {
 	return func() tea.Msg {
 		info, err := client.GetDaemonInfo(ctx)
 		return uikit.DaemonInfoMsg{Info: info, Err: err}
+	}
+}
+
+// FetchPausedTasks returns a command that reads which cron schedules are
+// paused. /api/daemon doesn't carry pause state, so this rides next to
+// FetchDaemonInfo to pick up pauses made from the CLI or the Web UI.
+func (sm *StreamManager) FetchPausedTasks() tea.Cmd {
+	if sm.client == nil {
+		return nil
+	}
+	client := sm.client
+	ctx := sm.streamCtx
+	return func() tea.Msg {
+		tasks, err := client.ListTasks(ctx)
+		if err != nil {
+			return uikit.PausedTasksMsg{Err: err}
+		}
+		paused := make(map[string]time.Time)
+		for _, t := range tasks {
+			if t.PausedAt != nil {
+				paused[t.Name] = *t.PausedAt
+			}
+		}
+		return uikit.PausedTasksMsg{Paused: paused}
+	}
+}
+
+// SetSchedulePaused pauses (pause=true) or resumes a task's cron schedule.
+func (sm *StreamManager) SetSchedulePaused(taskName string, pause bool) tea.Cmd {
+	if sm.client == nil {
+		return nil
+	}
+	client := sm.client
+	ctx := sm.streamCtx
+	return func() tea.Msg {
+		act := client.ResumeTask
+		if pause {
+			act = client.PauseTask
+		}
+		return uikit.SchedulePauseMsg{TaskName: taskName, Paused: pause, Err: act(ctx, taskName)}
 	}
 }
 

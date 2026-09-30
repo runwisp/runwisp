@@ -31,7 +31,8 @@ glob matched against task and service names ('web*', or '*' for everything).
 Several targets can be given at once. For a service, every live instance is
 cancelled and its slots stop refilling until a 'runwisp start'/'restart' or a
 daemon restart. For a task, any active run is cancelled and anything still
-queued is dropped — the cron schedule keeps firing. A run ID stops just that
+queued is dropped — the cron schedule keeps firing ('runwisp pause' skips
+it). A run ID stops just that
 run, wherever it came from. A target locked with manual_trigger = false is
 rejected (403); a glob silently skips locked entries instead of failing.
 
@@ -69,7 +70,7 @@ func init() {
 
 func runStop(cmd *cobra.Command, args []string, f Flags) error {
 	if len(args) > 0 {
-		return controlTargets(cmd, f, controlRemote, args, "stop", "stopped", (*apiclient.Client).StopTask, (*apiclient.Client).StopRun)
+		return controlTargets(cmd, f, controlRemote, args, "stop", "stopped", (*apiclient.Client).StopTask, (*apiclient.Client).StopRun, controllableTargets)
 	}
 
 	if url, _ := controlRemote.resolve(); url != "" {

@@ -56,6 +56,19 @@ class TaskStore {
             this.#notifyError(message);
         }
     }
+
+    /** Refetch after the daemon's task set changed (reload, schedule pause).
+     * Keeps the current list on failure: connection loss is already surfaced
+     * by the connection tracker, and a toast here would repeat it. */
+    async refresh(): Promise<void> {
+        try {
+            this.#items = await this.#getTasks();
+            this.#loaded = true;
+        } catch (err) {
+            if (err instanceof AuthRequiredError) return;
+            this.#reportFetchError(err);
+        }
+    }
 }
 
 /** Construct a task store. Tests pass `deps` to inject fakes; the default

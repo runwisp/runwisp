@@ -84,6 +84,9 @@ func runStatus(ctx context.Context, out io.Writer, f Flags, asJSON bool) error {
 		// They have no runs — `status` is one of the few places they exist at all.
 		printHeldBlock(out, heldTaskNames(info.Tasks), "")
 	}
+	if tasks, err := client.ListTasks(ctx); err == nil {
+		printPausedBlock(out, pausedTaskNames(tasks))
+	}
 	return nil
 }
 

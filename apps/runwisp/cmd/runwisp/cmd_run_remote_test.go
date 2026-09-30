@@ -188,7 +188,7 @@ func TestControlTargets_StopViaRemote(t *testing.T) {
 	buf := &bytes.Buffer{}
 	cmd.SetOut(buf)
 
-	err := controlTargets(cmd, Flags{}, remoteFlags{URL: srv.URL, Password: "pw"}, []string{"web"}, "stop", "stopped", (*apiclient.Client).StopTask, (*apiclient.Client).StopRun)
+	err := controlTargets(cmd, Flags{}, remoteFlags{URL: srv.URL, Password: "pw"}, []string{"web"}, "stop", "stopped", (*apiclient.Client).StopTask, (*apiclient.Client).StopRun, controllableTargets)
 	require.NoError(t, err)
 	assert.Equal(t, "/api/tasks/web/stop", stoppedPath)
 	assert.Contains(t, buf.String(), `Service "web" stopped.`)

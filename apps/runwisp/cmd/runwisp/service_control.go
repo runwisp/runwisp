@@ -22,15 +22,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// remoteFlags carries the --url/--password pair start, stop, and restart
-// share for dispatching to a remote daemon instead of the local one.
+// remoteFlags carries the --url/--password pair the control verbs (start,
+// stop, restart, pause, resume) share for dispatching to a remote daemon
+// instead of the local one.
 type remoteFlags struct {
 	URL      string
 	Password string
 }
 
-// controlRemote backs --url/--password on start, stop, and restart. Only one
-// command runs per process, so all three bind the same struct.
+// controlRemote backs --url/--password on the control verbs. Only one command
+// runs per process, so they all bind the same struct.
 var controlRemote remoteFlags
 
 // addRemoteFlags registers --url/--password on cmd, mirroring run's own flags
@@ -50,20 +51,35 @@ func (rf remoteFlags) resolve() (url, password string) {
 // Its shape matches method expressions like (*apiclient.Client).StopTask.
 type controlFunc func(c *apiclient.Client, ctx context.Context, name string) error
 
+// targetFilter decides which tasks a glob may pick for a control verb, and
+// names them for the "matched nothing" error.
+type targetFilter struct {
+	eligible func(model.TaskResponse) bool
+	noun     string
+}
+
+// controllableTargets is the start/stop/restart filter: anything not locked
+// with manual_trigger = false.
+var controllableTargets = targetFilter{
+	eligible: func(t model.TaskResponse) bool { return t.ManuallyControllable() },
+	noun:     "controllable task or service",
+}
+
 // resolveTargets expands the CLI's positional args into the tasks/services and
 // run IDs to act on. Every arg is matched against task names with path.Match,
 // so a literal name is simply a pattern that only matches itself —
 // model.TaskNamePattern forbids glob metacharacters in names, so the two never
-// collide. A glob skips locked (manual_trigger=false) entries so `stop '*'`
-// doesn't fail on them; naming one literally still reaches the server's 403.
+// collide. A glob skips entries the filter rejects (e.g. locked
+// manual_trigger=false ones) so `stop '*'` doesn't fail on them; naming one
+// literally still reaches the server's 403/409.
 // With allowRunIDs, a ULID that names no task is a run ID. An arg that
 // matches nothing is an error, so a typo acts on nothing at all.
-func resolveTargets(args []string, tasks []model.TaskResponse, allowRunIDs bool) ([]model.TaskResponse, []string, error) {
+func resolveTargets(args []string, tasks []model.TaskResponse, allowRunIDs bool, filter targetFilter) ([]model.TaskResponse, []string, error) {
 	var targets []model.TaskResponse
 	var runIDs []string
 	seen := map[string]bool{}
 	for _, arg := range args {
-		matches, err := matchTasks(arg, tasks)
+		matches, err := matchTasks(arg, tasks, filter)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -87,10 +103,10 @@ func resolveTargets(args []string, tasks []model.TaskResponse, allowRunIDs bool)
 	return targets, runIDs, nil
 }
 
-// matchTasks returns the tasks arg names: exact for a literal, every
-// manually-controllable match for a glob. A glob that matches nothing is an
-// error; a literal that matches nothing returns none, for the caller to judge.
-func matchTasks(arg string, tasks []model.TaskResponse) ([]model.TaskResponse, error) {
+// matchTasks returns the tasks arg names: exact for a literal, every match the
+// filter accepts for a glob. A glob that matches nothing is an error; a
+// literal that matches nothing returns none, for the caller to judge.
+func matchTasks(arg string, tasks []model.TaskResponse, filter targetFilter) ([]model.TaskResponse, error) {
 	glob := strings.ContainsAny(arg, "*?[")
 	var out []model.TaskResponse
 	for _, t := range tasks {
@@ -98,12 +114,12 @@ func matchTasks(arg string, tasks []model.TaskResponse) ([]model.TaskResponse, e
 		if err != nil {
 			return nil, fmt.Errorf("invalid pattern %q: %w", arg, err)
 		}
-		if ok && (!glob || t.ManuallyControllable()) {
+		if ok && (!glob || filter.eligible(t)) {
 			out = append(out, t)
 		}
 	}
 	if glob && len(out) == 0 {
-		return nil, fmt.Errorf("pattern %q matched no controllable task or service", arg)
+		return nil, fmt.Errorf("pattern %q matched no %s", arg, filter.noun)
 	}
 	return out, nil
 }
@@ -113,8 +129,9 @@ func matchTasks(arg string, tasks []model.TaskResponse) ([]model.TaskResponse, e
 // socket or a remote daemon (--url/RUNWISP_URL). Name errors fail before
 // anything is dispatched; after that every target is attempted and each
 // failure is reported in the joined error. verb/done are the present/past-
-// tense words for messages ("stop"/"stopped").
-func controlTargets(cmd *cobra.Command, f Flags, rf remoteFlags, args []string, verb, done string, act, stopRun controlFunc) error {
+// tense words for messages ("stop"/"stopped"); filter picks what a glob may
+// match.
+func controlTargets(cmd *cobra.Command, f Flags, rf remoteFlags, args []string, verb, done string, act, stopRun controlFunc, filter targetFilter) error {
 	ctx := cmd.Context()
 	baseURL, password := rf.resolve()
 	client, err := controlClient(ctx, f, baseURL, password)
@@ -129,7 +146,7 @@ func controlTargets(cmd *cobra.Command, f Flags, rf remoteFlags, args []string, 
 	}); err != nil {
 		return fmt.Errorf("list tasks: %w", err)
 	}
-	targets, runIDs, err := resolveTargets(args, tasks, stopRun != nil)
+	targets, runIDs, err := resolveTargets(args, tasks, stopRun != nil, filter)
 	if err != nil {
 		return err
 	}
@@ -178,6 +195,7 @@ func controlError(err error, baseURL, verb, target string, isRun bool) error {
 	if authErr := remoteAuthError(err, baseURL); authErr != nil {
 		return authErr
 	}
+	var statusErr *apiclient.HTTPStatusError
 	switch {
 	case isRun && apiclient.IsHTTPStatus(err, http.StatusNotFound):
 		return fmt.Errorf("no run with ID %s", target)
@@ -187,6 +205,8 @@ func controlError(err error, baseURL, verb, target string, isRun bool) error {
 		return fmt.Errorf("%s run %s: %w", verb, target, err)
 	case apiclient.IsHTTPStatus(err, http.StatusForbidden):
 		return fmt.Errorf("cannot %s %q: manual_trigger = false in runwisp.toml", verb, target)
+	case errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusConflict:
+		return fmt.Errorf("cannot %s %q: %s", verb, target, statusErr.Detail())
 	}
 	return fmt.Errorf("%s %q: %w", verb, target, err)
 }

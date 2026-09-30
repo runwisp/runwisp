@@ -36,6 +36,7 @@ var globalKeyHandlers = map[string]keyHandlerFn{
 	"r":         handleKeyR,
 	"R":         handleKeyR,
 	"i":         handleKeyI,
+	"p":         handleKeyP,
 	"u":         handleKeyU,
 	"s":         handleKeyS,
 	"d":         handleKeyD,
@@ -412,8 +413,20 @@ func handleKeyI(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if taskName == "" {
 		return m, nil, false
 	}
-	m.dialogs.ShowTaskDetail(taskName, m.taskDisplayByName(taskName))
+	m.dialogs.ShowTaskDetail(taskName, m.taskDisplayByName(taskName), m.isPaused(taskName))
 	return m, m.streams.FetchTaskSummary(taskName), true
+}
+
+// handleKeyP pauses or resumes the cron schedule of the task `i` would inspect.
+// Services and tasks without cron fall through. A locked or held task still
+// reaches the daemon, whose refusal names the reason.
+func handleKeyP(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
+	name := m.inspectTaskName()
+	task := m.taskDisplayByName(name)
+	if task == nil || task.Kind.IsService() || task.Cron == "" {
+		return m, nil, false
+	}
+	return m, m.streams.SetSchedulePaused(name, !m.isPaused(name)), true
 }
 
 // inspectTaskName picks the task the inspector should describe. While the

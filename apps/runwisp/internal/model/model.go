@@ -371,6 +371,14 @@ func (t *Task) Triggerable() bool { return !t.Kind.IsService() && t.ManualTrigge
 // runwisp.toml edit + reload can change its running state.
 func (t *Task) ManuallyControllable() bool { return t.ManualTrigger }
 
+// Pausable reports whether an operator may pause this task's cron schedule at
+// runtime: a cron task (not a service) whose ManualTrigger allows manual
+// control. Held is deliberately not consulted, so a pause survives a cron hold
+// coming and going; pausing a task that is currently held is refused
+// separately. A pause on a task that stops being Pausable (a reload removes
+// its cron or sets manual_trigger = false) is cleared: TOML wins.
+func (t *Task) Pausable() bool { return !t.Kind.IsService() && t.Cron != "" && t.ManualTrigger }
+
 // TriggerBlockReason identifies which of Triggerable's two conditions fails,
 // so a manual-trigger surface (REST, cloud dispatch, standalone CLI run) can
 // report a precise error without re-deriving the rule itself. CheckTrigger is
@@ -706,4 +714,9 @@ type CapInfo struct {
 type TaskRegistration struct {
 	TaskName    string
 	FirstSeenAt time.Time
+	// PausedAt is set while an operator has the task's cron schedule paused.
+	PausedAt *time.Time
+	// ResumedAt is the last time a pause was lifted; missed-tick catch-up
+	// anchors no earlier than this so a paused window never counts as missed.
+	ResumedAt *time.Time
 }

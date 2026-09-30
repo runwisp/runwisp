@@ -87,6 +87,7 @@ type statusTaskJSON struct {
 	SourceFile    string       `json:"sourceFile,omitempty"`
 	HeldBy        string       `json:"heldBy,omitempty"`
 	NextRunAt     *time.Time   `json:"nextRunAt,omitempty"`
+	PausedAt      *time.Time   `json:"pausedAt,omitempty"`
 	LastRun       *lastRunJSON `json:"lastRun"`
 }
 
@@ -133,6 +134,7 @@ func newStatusTaskJSON(tr model.TaskResponse, last *model.Run) statusTaskJSON {
 		SourceFile:    tr.SourceFile,
 		HeldBy:        string(tr.HeldBy),
 		NextRunAt:     tr.NextRunAt,
+		PausedAt:      tr.PausedAt,
 	}
 	if last != nil {
 		lr := newLastRunJSON(last)

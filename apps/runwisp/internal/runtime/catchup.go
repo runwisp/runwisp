@@ -191,8 +191,11 @@ func catchupOneTask(parser cron.ScheduleParser, task *model.Task, runner TaskRun
 	return triggered, errors
 }
 
-// resolveCatchupAnchor returns the time to use as the catch-up anchor point
-// (the last run time, or the first-seen registration time if no runs exist).
+// resolveCatchupAnchor returns the time to use as the catch-up anchor point:
+// the last run time, or the first-seen registration time if no runs exist,
+// moved forward to the last schedule resume when that is later (a paused
+// window is the operator's choice, not missed ticks). A task whose schedule is
+// paused right now owes nothing and is skipped.
 // Returns (anchor, true, 0) on success or (zero, false, 1) on error/skip.
 func resolveCatchupAnchor(ctx context.Context, db storage.RunRepository, task *model.Task) (time.Time, bool, int) {
 	lastRun, err := db.GetLastRunByTask(ctx, task.Name)
@@ -200,18 +203,27 @@ func resolveCatchupAnchor(ctx context.Context, db storage.RunRepository, task *m
 		slog.Warn("Failed to query last run for catch-up", "task", task.Name, "err", err)
 		return time.Time{}, false, 1
 	}
-	if lastRun != nil {
-		return lastRun.CreatedAt, true, 0
-	}
 	reg, err := db.GetTaskRegistration(ctx, task.Name)
 	if err != nil {
 		slog.Warn("Failed to query task registration for catch-up", "task", task.Name, "err", err)
 		return time.Time{}, false, 1
 	}
-	if reg == nil {
+	if reg != nil && reg.PausedAt != nil {
 		return time.Time{}, false, 0
 	}
-	return reg.FirstSeenAt, true, 0
+	var anchor time.Time
+	switch {
+	case lastRun != nil:
+		anchor = lastRun.CreatedAt
+	case reg != nil:
+		anchor = reg.FirstSeenAt
+	default:
+		return time.Time{}, false, 0
+	}
+	if reg != nil && reg.ResumedAt != nil && reg.ResumedAt.After(anchor) {
+		anchor = *reg.ResumedAt
+	}
+	return anchor, true, 0
 }
 
 // computeCatchupTriggers returns the number of runs to trigger and whether older

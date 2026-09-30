@@ -36,6 +36,9 @@ var (
 	// ErrWaitUnsupported rejects wait=true on start/restart of a service: its
 	// instances run until stopped, so there is no end to wait for.
 	ErrWaitUnsupported = errors.New("wait is not supported for start/restart on a service; its instances run until stopped")
+	// ErrSchedulingInactive rejects pause/resume on a daemon that runs no
+	// scheduler of its own (station mode: the station owns scheduling).
+	ErrSchedulingInactive = errors.New("scheduling is not active on this daemon; the station owns it")
 )
 
 func wrapSelectorErr(err error) error {
@@ -49,12 +52,12 @@ type runService struct {
 	db          storage.RunRepository
 	taskManager runtime.TaskRunner
 	tasks       *runtime.TaskRegistry
-	scheduler   runtime.NextRunGetter
+	scheduler   *runtime.Scheduler // nil when scheduling is inactive (station mode)
 	logDir      string
 	eventBus    *events.Bus
 }
 
-func newRunService(db storage.RunRepository, jm runtime.TaskRunner, tasks *runtime.TaskRegistry, sched runtime.NextRunGetter, logDir string, bus *events.Bus) *runService {
+func newRunService(db storage.RunRepository, jm runtime.TaskRunner, tasks *runtime.TaskRegistry, sched *runtime.Scheduler, logDir string, bus *events.Bus) *runService {
 	return &runService{db: db, taskManager: jm, tasks: tasks, scheduler: sched, logDir: logDir, eventBus: bus}
 }
 
@@ -81,6 +84,7 @@ func (s *runService) toTaskResponse(task *model.Task) model.TaskResponse {
 	tr := model.TaskResponse{Task: *task}
 	if task.Cron != "" && s.scheduler != nil {
 		tr.NextRunAt = s.scheduler.GetNextRun(task.Name)
+		tr.PausedAt = s.scheduler.PausedAt(task.Name)
 	}
 	return tr
 }
@@ -295,6 +299,41 @@ func (s *runService) start(ctx context.Context, task *model.Task, triggeredBy mo
 		return s.waitForRun(ctx, wait, func() (*model.Run, error) { return active[0].Run, nil })
 	}
 	return s.trigger(ctx, task, nil, triggeredBy, wait)
+}
+
+// PauseTask pauses a cron task's schedule: its ticks are skipped, and not
+// caught up later, until ResumeTask. The pause survives reloads and restarts;
+// manual runs keep working. Gated by manual_trigger like start/stop/restart.
+func (s *runService) PauseTask(ctx context.Context, taskName string) error {
+	return s.setSchedulePaused(ctx, taskName, true)
+}
+
+// ResumeTask lifts a schedule pause; the task fires again from its next tick.
+// A no-op when the schedule isn't paused.
+func (s *runService) ResumeTask(ctx context.Context, taskName string) error {
+	return s.setSchedulePaused(ctx, taskName, false)
+}
+
+func (s *runService) setSchedulePaused(ctx context.Context, taskName string, paused bool) error {
+	if _, err := s.resolveControllableTask(taskName); err != nil {
+		return err
+	}
+	if s.scheduler == nil {
+		return ErrSchedulingInactive
+	}
+	var err error
+	if paused {
+		err = s.scheduler.Pause(ctx, taskName)
+	} else {
+		err = s.scheduler.Resume(ctx, taskName)
+	}
+	if err != nil {
+		return err
+	}
+	if s.eventBus != nil {
+		s.eventBus.Publish(events.EventTasksChanged, events.TasksChangedEvent{})
+	}
+	return nil
 }
 
 // StopTask cancels a service's live instances or a task's active and queued

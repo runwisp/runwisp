@@ -5,7 +5,9 @@ package tui
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -199,6 +201,14 @@ func (m Model) dispatchActionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case uikit.DeleteRunMsg:
 		model, cmd := m.handleDeleteRun(msg)
 		return model, cmd, true
+	case uikit.SchedulePauseMsg:
+		model, cmd := m.handleSchedulePause(msg)
+		return model, cmd, true
+	case uikit.PausedTasksMsg:
+		if msg.Err == nil {
+			m.info.PausedTasks = msg.Paused
+		}
+		return m, nil, true
 	case uikit.BulkActionMsg:
 		model, cmd := m.handleBulkAction(msg)
 		return model, cmd, true
@@ -802,6 +812,37 @@ func (m Model) handleBulkDeleteResult(msg uikit.BulkDeleteResultMsg) (tea.Model,
 	return m, tea.Batch(cmds...)
 }
 
+// handleSchedulePause applies a pause or resume (or its undo): the header flips
+// at once, a fetch picks up the daemon's pausedAt, and the toast offers undo.
+func (m Model) handleSchedulePause(msg uikit.SchedulePauseMsg) (tea.Model, tea.Cmd) {
+	verb, failed := "Resumed", "Resume failed: "
+	if msg.Paused {
+		verb, failed = "Paused", "Pause failed: "
+	}
+	m.logActionResult(verb+" schedule of", msg.TaskName, msg.Err)
+	if msg.Err != nil {
+		reason := msg.Err.Error()
+		var statusErr *apiclient.HTTPStatusError
+		if errors.As(msg.Err, &statusErr) {
+			reason = statusErr.Detail()
+		}
+		return m, m.dialogs.Flash(failed+reason, 6*time.Second)
+	}
+	paused := maps.Clone(m.info.PausedTasks)
+	if paused == nil {
+		paused = make(map[string]time.Time)
+	}
+	if msg.Paused {
+		paused[msg.TaskName] = time.Now()
+	} else {
+		delete(paused, msg.TaskName)
+	}
+	m.info.PausedTasks = paused
+	undo := m.streams.SetSchedulePaused(msg.TaskName, !msg.Paused)
+	label := fmt.Sprintf("%s the schedule of '%s' · press u to undo", verb, msg.TaskName)
+	return m, tea.Batch(m.streams.FetchPausedTasks(), m.dialogs.FlashUndo(label, undo, 6*time.Second))
+}
+
 func (m Model) handleRestartService(msg uikit.RestartServiceMsg) (tea.Model, tea.Cmd) {
 	m.logActionResult("Restarted service", msg.TaskName, msg.Err)
 	if msg.Err != nil {
@@ -868,7 +909,7 @@ func (m Model) handleTick() (tea.Model, tea.Cmd) {
 	}
 	if time.Since(m.lastInfoFetch) >= infoPollInterval {
 		m.lastInfoFetch = time.Now()
-		cmds = append(cmds, m.streams.FetchDaemonInfo())
+		cmds = append(cmds, m.streams.FetchDaemonInfo(), m.streams.FetchPausedTasks())
 	}
 	if m.notifications.PanelHeight() > 0 {
 		m.notifications.RefreshLabels()
@@ -938,7 +979,8 @@ func (m Model) handleReloadResult(msg uikit.ReloadResultMsg) (tea.Model, tea.Cmd
 		m.execList.SetFilter(m.sidebar.ActiveTask())
 		m.recalcExecListHeight()
 		m.updateLayout()
-		cmds = append(cmds, m.fetchExecWindow())
+		// A reload clears the pause of a task it made unpausable.
+		cmds = append(cmds, m.fetchExecWindow(), m.streams.FetchPausedTasks())
 	}
 	cmds = append(cmds, m.dialogs.Flash(reloadSummary(msg.Result), 5*time.Second))
 	return m, tea.Batch(cmds...)

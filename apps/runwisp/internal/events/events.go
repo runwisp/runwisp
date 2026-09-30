@@ -27,11 +27,12 @@ const (
 	EventServiceFatal    EventType = "service.fatal"
 	EventSystemSample    EventType = "system"
 	EventConfigStale     EventType = "config.stale"
+	EventTasksChanged    EventType = "tasks.changed"
 )
 
 // AllEventTypes lists the run/log lifecycle events SubscribeAll fans out to.
-// EventSystemSample and EventConfigStale are deliberately excluded: they are
-// periodic UI-push events, not lifecycle events, so notify (a SubscribeAll
+// EventSystemSample, EventConfigStale and EventTasksChanged are deliberately
+// excluded: they are UI-push events, not lifecycle events, so notify (a SubscribeAll
 // consumer) need not churn on them. Subscribers that want them attach directly
 // with Subscribe(EventSystemSample, …).
 var AllEventTypes = []EventType{
@@ -69,6 +70,7 @@ func (LogDiskPressureEvent) eventData() { /* sealed-type marker */ }
 func (ServiceFatalEvent) eventData()    { /* sealed-type marker */ }
 func (SystemSampleEvent) eventData()    { /* sealed-type marker */ }
 func (ConfigStaleEvent) eventData()     { /* sealed-type marker */ }
+func (TasksChangedEvent) eventData()    { /* sealed-type marker */ }
 
 // SystemSampleEvent carries a periodic system resource snapshot pushed to live
 // dashboards so they don't poll /api/system. Uptime is formatted server-side
@@ -85,6 +87,11 @@ type SystemSampleEvent struct {
 type ConfigStaleEvent struct {
 	Stale bool
 }
+
+// TasksChangedEvent fires when the live task list's state changes outside a
+// run: a schedule pause/resume or an applied reload. It carries nothing;
+// dashboards refetch /api/tasks on it.
+type TasksChangedEvent struct{}
 
 // RunEvent tracks lifecycle updates for a run.
 //

@@ -4,9 +4,11 @@
 package runtime
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
@@ -269,4 +271,34 @@ func TestReconcile_AutostartFlipOnRunningServiceDoesNotWarn(t *testing.T) {
 	_, _, _, warnings := applyDiffWith(mgr, taskSet(before), taskSet(&after))
 
 	assert.Empty(t, warnings, "a running service needs no restart nudge")
+}
+
+// A reload that locks a paused task with manual_trigger = false clears the pause
+// (TOML wins) and reports it in the reload result; a reload that only changes a
+// paused task's cron keeps it paused.
+func TestReconcile_ClearsPauseTheConfigNoLongerAllows(t *testing.T) {
+	locked := &model.Task{Name: "locked", Cron: "0 3 * * *", Run: "a", ManualTrigger: true}
+	kept := &model.Task{Name: "kept", Cron: "0 3 * * *", Run: "b", ManualTrigger: true}
+	old := taskSet(locked, kept)
+
+	sched := NewScheduler(&fakeTaskRunner{}, old, time.UTC, nil)
+	_, err := sched.Start()
+	require.NoError(t, err)
+	defer sched.Stop()
+	require.NoError(t, sched.Pause(context.Background(), "locked"))
+	require.NoError(t, sched.Pause(context.Background(), "kept"))
+
+	lockedNow := *locked
+	lockedNow.ManualTrigger = false
+	keptNow := *kept
+	keptNow.Cron = "0 4 * * *"
+	updated := taskSet(&lockedNow, &keptNow)
+
+	r := &Reconciler{registry: NewTaskRegistry(old), manager: &recordingManager{}, scheduler: sched}
+	warnings := r.apply(config.DiffTasks(old, updated), old, updated)
+
+	assert.Contains(t, warnings, `task "locked": schedule pause cleared (manual_trigger = false)`)
+	assert.Nil(t, sched.PausedAt("locked"))
+	assert.NotNil(t, sched.PausedAt("kept"), "a cron change keeps the pause")
+	assert.Nil(t, sched.GetNextRun("kept"))
 }

@@ -37,9 +37,13 @@ type RunOnStartResult struct {
 // all, so the clock-based predicate would let it through while a live cron daemon
 // is firing the very same line on its own startup.
 //
+// A task whose cron schedule an operator paused is skipped as well (paused
+// reports it; nil means none are): a pause means no automatic runs, and a
+// restart or self-update must not fire the job the operator held back.
+//
 // Tasks are visited in name order so the firing sequence is deterministic; the
 // function reads no clock, filesystem, or randomness — bootID is injected.
-func RunStartupTasks(ctx context.Context, tasks map[string]*model.Task, runner TaskRunner, db storage.RunRepository, bootID string) RunOnStartResult {
+func RunStartupTasks(ctx context.Context, tasks map[string]*model.Task, runner TaskRunner, db storage.RunRepository, bootID string, paused func(string) bool) RunOnStartResult {
 	var result RunOnStartResult
 	names := make([]string, 0, len(tasks))
 	for name := range tasks {
@@ -56,8 +60,7 @@ func RunStartupTasks(ctx context.Context, tasks map[string]*model.Task, runner T
 			continue
 		}
 		perBoot := task.RunOnStartMode == model.RunOnStartBoot && bootID != ""
-		if perBoot && alreadyRanThisBoot(ctx, db, name, bootID) {
-			slog.Info(`run_on_start = "boot" task already ran this boot; not firing it again`, "task", name)
+		if skipStartupRun(ctx, db, name, bootID, perBoot, paused) {
 			continue
 		}
 		if _, err := runner.TriggerRunWithOptions(name, TriggerRunOptions{
@@ -73,6 +76,21 @@ func RunStartupTasks(ctx context.Context, tasks map[string]*model.Task, runner T
 		}
 	}
 	return result
+}
+
+// skipStartupRun reports that an otherwise eligible run_on_start task must not
+// fire at this start: its schedule is paused, or it is a "boot" task that
+// already ran this boot.
+func skipStartupRun(ctx context.Context, db storage.RunRepository, name, bootID string, perBoot bool, paused func(string) bool) bool {
+	if paused != nil && paused(name) {
+		slog.Info("Skipped run_on_start: schedule paused", "task", name)
+		return true
+	}
+	if perBoot && alreadyRanThisBoot(ctx, db, name, bootID) {
+		slog.Info(`run_on_start = "boot" task already ran this boot; not firing it again`, "task", name)
+		return true
+	}
+	return false
 }
 
 // warnNoBootID says once that "boot" tasks lost their once-per-boot guard.

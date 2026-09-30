@@ -63,6 +63,8 @@ type TaskBootID struct {
 }
 
 type TaskRegistration struct {
-	TaskName    string    `json:"task_name"`
-	FirstSeenAt time.Time `json:"first_seen_at"`
+	TaskName    string     `json:"task_name"`
+	FirstSeenAt time.Time  `json:"first_seen_at"`
+	PausedAt    *time.Time `json:"paused_at"`
+	ResumedAt   *time.Time `json:"resumed_at"`
 }

@@ -123,6 +123,24 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 	huma.Register(protectedAPI, startTaskOperation(), srv.humaStartTask)
 	huma.Register(protectedAPI, restartTaskOperation(), srv.humaRestartTask)
 	huma.Register(protectedAPI, stopTaskOperation(), srv.humaStopTask)
+	huma.Register(protectedAPI, huma.Operation{
+		OperationID:   "pauseTask",
+		Method:        http.MethodPost,
+		Path:          "/api/tasks/{taskName}/pause",
+		Summary:       "Pause a task's cron schedule",
+		Description:   "Skips the task's cron ticks until it is resumed. Skipped ticks record no runs and are not caught up on resume; manual runs keep working. The pause survives reloads and daemon restarts, and a reload that removes the task's cron, turns it into a service, or sets manual_trigger = false clears it. Pausing a paused task is a no-op that keeps the original pausedAt. 403 when manual_trigger = false; 409 for a service, a task without cron, a task a system cron daemon still holds, or a daemon whose scheduling the station owns.",
+		Tags:          []string{"Runs"},
+		DefaultStatus: http.StatusNoContent,
+	}, srv.humaPauseTask)
+	huma.Register(protectedAPI, huma.Operation{
+		OperationID:   "resumeTask",
+		Method:        http.MethodPost,
+		Path:          "/api/tasks/{taskName}/resume",
+		Summary:       "Resume a task's paused cron schedule",
+		Description:   "Lifts a pause set with POST /api/tasks/{taskName}/pause; the task fires again from its next tick. Ticks skipped while paused are not caught up. A no-op when the schedule isn't paused. 403 when manual_trigger = false; 409 on a daemon whose scheduling the station owns.",
+		Tags:          []string{"Runs"},
+		DefaultStatus: http.StatusNoContent,
+	}, srv.humaResumeTask)
 
 	huma.Register(protectedAPI, huma.Operation{
 		OperationID:   "deleteRun",
@@ -314,7 +332,7 @@ func stopTaskOperation() huma.Operation {
 		Method:        http.MethodPost,
 		Path:          "/api/tasks/{taskName}/stop",
 		Summary:       "Stop a service for the daemon's lifetime, or a task's runs",
-		Description:   "For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing. With `wait=true`: returns once everything has ended, or 409 if that takes longer than waitTimeout.",
+		Description:   "For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing (pause it with POST /api/tasks/{taskName}/pause). With `wait=true`: returns once everything has ended, or 409 if that takes longer than waitTimeout.",
 		Tags:          []string{"Runs"},
 		DefaultStatus: http.StatusNoContent,
 	}
@@ -351,6 +369,20 @@ func (srv *Server) humaRestartTask(ctx context.Context, input *TaskControlInput)
 func (srv *Server) humaStopTask(ctx context.Context, input *TaskStopInput) (*struct{}, error) {
 	if err := srv.runService.StopTask(ctx, input.TaskName, input.duration()); err != nil {
 		return nil, mapDomainError(ctx, err, "Failed to stop task")
+	}
+	return nil, nil
+}
+
+func (srv *Server) humaPauseTask(ctx context.Context, input *TaskNameInput) (*struct{}, error) {
+	if err := srv.runService.PauseTask(ctx, input.TaskName); err != nil {
+		return nil, mapDomainError(ctx, err, "Failed to pause schedule")
+	}
+	return nil, nil
+}
+
+func (srv *Server) humaResumeTask(ctx context.Context, input *TaskNameInput) (*struct{}, error) {
+	if err := srv.runService.ResumeTask(ctx, input.TaskName); err != nil {
+		return nil, mapDomainError(ctx, err, "Failed to resume schedule")
 	}
 	return nil, nil
 }
@@ -438,7 +470,7 @@ func (srv *Server) registerAppStreamSSE(api huma.API) {
 		Method:      http.MethodGet,
 		Path:        "/api/events/stream",
 		Summary:     "Stream live application events",
-		Description: "Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.",
+		Description: "Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, task-list changes (a schedule paused or resumed, a reload applied), and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.",
 		Tags:        []string{"Runs"},
 	}, map[string]any{
 		"run.created":                      RunCreatedEvent{},
@@ -449,6 +481,7 @@ func (srv *Server) registerAppStreamSSE(api huma.API) {
 		"run.deleted":                      RunDeletedSSEEvent{},
 		"system":                           SystemSampleSSEEvent{},
 		"config.stale":                     ConfigStaleSSEEvent{},
+		"tasks.changed":                    TasksChangedSSEEvent{},
 		inapp.UpdateTypeCreated:            NotificationCreatedEvent{},
 		inapp.UpdateTypeUpdated:            NotificationUpdatedEvent{},
 		inapp.UpdateTypeUnreadCountChanged: NotificationUnreadCountEvent{},
@@ -570,6 +603,8 @@ func toSSEEventData(event events.Event) any {
 			return ConfigStaleSSEEvent{Stale: c.Stale}
 		}
 		return ConfigStaleSSEEvent{}
+	case events.EventTasksChanged:
+		return TasksChangedSSEEvent{}
 	}
 	re, ok := event.Data.(events.RunEvent)
 	if !ok {

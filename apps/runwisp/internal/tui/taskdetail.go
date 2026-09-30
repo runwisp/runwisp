@@ -34,6 +34,8 @@ type TaskDetailDialog struct {
 	taskName string
 	task     *model.Task
 	health   taskHealth
+	// paused reports that an operator paused the task's cron schedule.
+	paused bool
 }
 
 // NewTaskDetailDialog builds the inspector for a task. task may be nil when the
@@ -160,7 +162,11 @@ func (d *TaskDetailDialog) kindRows(add func(label, value string)) {
 		schedule = task.Cron
 	}
 	add("Schedule", schedule)
-	add("Next run", home.NextCronRun(task.Cron))
+	if d.paused {
+		add("Next run", "paused")
+	} else {
+		add("Next run", home.NextCronRun(task.Cron))
+	}
 	if task.MaxConcurrent > 0 {
 		add("Concurrency", fmt.Sprintf("max %d · %s", task.MaxConcurrent, overlapLabel(task.OnOverlap)))
 	}

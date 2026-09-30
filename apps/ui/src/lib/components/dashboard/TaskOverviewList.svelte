@@ -66,6 +66,12 @@
             accentClass: "border-l-wisp-300",
             toneClass: "bg-primary-soft text-primary-soft-text",
         },
+        paused: {
+            label: "Paused",
+            badge: "warning",
+            accentClass: "border-l-warning-300",
+            toneClass: "bg-warning-soft text-warning-soft-text",
+        },
         scheduled: {
             label: "Scheduled",
             badge: "info",

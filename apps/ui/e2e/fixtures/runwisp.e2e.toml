@@ -54,6 +54,12 @@ echo progress-done
 description = "Exercised only by run-motion.spec, so its run list stays short"
 run = "echo arrived"
 
+[tasks.nightly-task]
+description = "Cron task for schedule-pause.spec; fires only at midnight on 1 January"
+cron = "0 0 1 1 *"
+timezone = "UTC"
+run = "echo nightly"
+
 # Surface failed runs as in-app notifications so the bell + popover have
 # something real to render. No outbound notifiers configured.
 [[route]]

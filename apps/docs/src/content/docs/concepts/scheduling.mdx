@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Scheduling
-description: Cron syntax, timezones and daylight saving time, catching up after downtime, missed-run alerts, jitter, and what happens to runs after a crash.
+description: Cron syntax, timezones and daylight saving time, catching up after downtime, missed-run alerts, jitter, pausing a schedule, and what happens to runs after a crash.
 ---
 
 Give a task a [`cron`](/configuration/tasks/#cron) expression and RunWisp starts
@@ -148,6 +148,29 @@ running, a task starts right on time. If several are due together, they take
 turns, and none starts later than its `jitter`. Each task's latest start time is
 fixed when the daemon starts, so the same config always gives the same order.
 The run history shows both the scheduled time and the real start.
+
+## Pausing a schedule
+
+Pause a task to stop its schedule without editing `runwisp.toml`, for example
+while something it depends on is down:
+
+```bash
+runwisp pause nightly-backup
+runwisp resume nightly-backup
+```
+
+In the Web UI, click the schedule next to the task name at the top of its page.
+In the TUI, press <kbd>p</kbd> on the task. The REST API has `POST /api/tasks/{task}/pause` and `.../resume`.
+
+While a task is paused, its scheduled times are skipped. They add no runs and
+are not caught up when you resume or when the daemon restarts. You can still run
+the task by hand. `runwisp status` lists paused tasks.
+
+The pause survives `runwisp reload` and restarts. Pausing needs
+[`manual_trigger`](/configuration/tasks/#manual_trigger) on, and a reload that
+removes the task's `cron` or sets `manual_trigger = false` clears the pause with
+a warning. A task cron still runs ([held](/coming-from/cron/#held-jobs)) can't
+be paused.
 
 ## After a crash
 

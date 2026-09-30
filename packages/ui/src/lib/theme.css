@@ -259,7 +259,17 @@ h3 {
     font-weight: 800;
     line-height: 1.1;
     letter-spacing: -0.02em;
-    text-wrap: balance;
+}
+
+/* Layered, unlike the rule above: text-wrap sets the same property as
+   white-space, so unlayered it would beat the `truncate` utility and wrap a
+   heading that asked to be cut to one line. */
+@layer base {
+    h1,
+    h2,
+    h3 {
+        text-wrap: balance;
+    }
 }
 
 /* Utility classes for the design system */

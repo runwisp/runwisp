@@ -5,10 +5,12 @@ package model
 
 import "time"
 
-// TaskResponse extends a Task with the optional next scheduled run time.
+// TaskResponse extends a Task with its live schedule state: the next scheduled
+// run time, and when an operator paused the cron schedule (if they did).
 type TaskResponse struct {
 	Task
 	NextRunAt *time.Time `json:"nextRunAt,omitempty"`
+	PausedAt  *time.Time `json:"pausedAt,omitempty" doc:"When an operator paused this task's cron schedule (POST /api/tasks/{taskName}/pause); absent when not paused. A paused task has no nextRunAt."`
 }
 
 // ReloadResult is the diff produced by an explicit config reload: which tasks

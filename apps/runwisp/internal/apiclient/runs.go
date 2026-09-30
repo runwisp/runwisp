@@ -112,6 +112,17 @@ func (c *Client) RestartTask(ctx context.Context, taskName, via string) error {
 	return c.postTaskAction(ctx, "restart", taskName, via)
 }
 
+// PauseTask stops a cron task's schedule from firing until ResumeTask; manual
+// runs still work. Idempotent.
+func (c *Client) PauseTask(ctx context.Context, taskName string) error {
+	return c.postTaskAction(ctx, "pause", taskName, "")
+}
+
+// ResumeTask lets a paused cron schedule fire again. Idempotent.
+func (c *Client) ResumeTask(ctx context.Context, taskName string) error {
+	return c.postTaskAction(ctx, "resume", taskName, "")
+}
+
 // postTaskAction POSTs /api/tasks/{taskName}/{action}, tagging it with the
 // optional via provenance label.
 func (c *Client) postTaskAction(ctx context.Context, action, taskName, via string) error {

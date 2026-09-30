@@ -113,6 +113,8 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(restartCmd)
+	rootCmd.AddCommand(pauseCmd)
+	rootCmd.AddCommand(resumeCmd)
 	rootCmd.AddCommand(reloadCmd)
 	rootCmd.AddCommand(passwordCmd)
 	rootCmd.AddCommand(openapiCmd)

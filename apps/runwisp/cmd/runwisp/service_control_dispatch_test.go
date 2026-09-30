@@ -43,14 +43,14 @@ func serveServiceSocket(t *testing.T, mux http.Handler) (Flags, *bytes.Buffer, *
 // stopTargets and restartTargets drive controlTargets the way runStop and
 // runRestart do, against the local socket.
 func stopTargets(cmd *cobra.Command, f Flags, args ...string) error {
-	return controlTargets(cmd, f, remoteFlags{}, args, "stop", "stopped", (*apiclient.Client).StopTask, (*apiclient.Client).StopRun)
+	return controlTargets(cmd, f, remoteFlags{}, args, "stop", "stopped", (*apiclient.Client).StopTask, (*apiclient.Client).StopRun, controllableTargets)
 }
 
 func restartTargets(cmd *cobra.Command, f Flags, args ...string) error {
 	restart := func(c *apiclient.Client, ctx context.Context, name string) error {
 		return c.RestartTask(ctx, name, "cli")
 	}
-	return controlTargets(cmd, f, remoteFlags{}, args, "restart", "restarted", restart, nil)
+	return controlTargets(cmd, f, remoteFlags{}, args, "restart", "restarted", restart, nil, controllableTargets)
 }
 
 // tasksHandler serves a fixed /api/tasks list plus a best-effort health check,

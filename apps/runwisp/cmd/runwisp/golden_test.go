@@ -99,6 +99,7 @@ func TestStatusJSONGolden(t *testing.T) {
 	end := start.Add(42 * time.Second)
 	failed := model.ReasonFailed
 	nextRun := time.Date(2026, 7, 16, 3, 0, 0, 0, time.UTC)
+	pausedAt := time.Date(2026, 7, 14, 9, 30, 0, 0, time.UTC)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -117,6 +118,7 @@ func TestStatusJSONGolden(t *testing.T) {
 	mux.HandleFunc("/api/tasks", func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(server.TasksResponseBody{Items: []model.TaskResponse{
 			{Task: model.Task{Name: "backup", Cron: "0 3 * * *"}, NextRunAt: &nextRun},
+			{Task: model.Task{Name: "report", Cron: "0 6 * * 1", ManualTrigger: true}, PausedAt: &pausedAt},
 			{Task: model.Task{Name: "web", Kind: model.KindService, ManualTrigger: true}},
 		}})
 	})

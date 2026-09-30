@@ -2146,6 +2146,11 @@
               "null"
             ]
           },
+          "pausedAt": {
+            "description": "When an operator paused this task's cron schedule (POST /api/tasks/{taskName}/pause); absent when not paused. A paused task has no nextRunAt.",
+            "format": "date-time",
+            "type": "string"
+          },
           "priority": {
             "description": "For services: boot start order, lowest first (name breaks ties). Start order only — not a dependency.",
             "format": "int64",
@@ -2270,6 +2275,10 @@
           "runOnStart",
           "autostart"
         ],
+        "type": "object"
+      },
+      "TasksChangedSSEEvent": {
+        "additionalProperties": false,
         "type": "object"
       },
       "TasksResponseBody": {
@@ -2719,7 +2728,7 @@
     },
     "/api/events/stream": {
       "get": {
-        "description": "Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.",
+        "description": "Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, task-list changes (a schedule paused or resumed, a reload applied), and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.",
         "operationId": "streamAppEvents",
         "parameters": [
           {
@@ -3060,6 +3069,32 @@
                           "event"
                         ],
                         "title": "Event system",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/TasksChangedSSEEvent"
+                          },
+                          "event": {
+                            "const": "tasks.changed",
+                            "description": "The event name.",
+                            "type": "string"
+                          },
+                          "id": {
+                            "description": "The event ID.",
+                            "type": "integer"
+                          },
+                          "retry": {
+                            "description": "The retry time in milliseconds.",
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "data",
+                          "event"
+                        ],
+                        "title": "Event tasks.changed",
                         "type": "object"
                       }
                     ]
@@ -3489,7 +3524,7 @@
     },
     "/api/hooks/tasks/{taskName}/stop": {
       "post": {
-        "description": "Same as `POST /api/tasks/{taskName}/stop`, but authenticated with one of the unit's `hook_tokens` from runwisp.toml instead of a session: `Authorization: Bearer \u003ctoken\u003e`, or (less safely) `?token=`. manual_trigger does not apply. Enforced even with RUNWISP_AUTH=off. An unknown unit, a unit without tokens, and a wrong token all return the same 401; a valid token whose `allow` list omits this action gets 403. After 20 rejected tokens in a minute, the client IP gets 429 until the window slides.\n\nFor a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing. With `wait=true`: returns once everything has ended, or 409 if that takes longer than waitTimeout.",
+        "description": "Same as `POST /api/tasks/{taskName}/stop`, but authenticated with one of the unit's `hook_tokens` from runwisp.toml instead of a session: `Authorization: Bearer \u003ctoken\u003e`, or (less safely) `?token=`. manual_trigger does not apply. Enforced even with RUNWISP_AUTH=off. An unknown unit, a unit without tokens, and a wrong token all return the same 401; a valid token whose `allow` list omits this action gets 403. After 20 rejected tokens in a minute, the client IP gets 429 until the window slides.\n\nFor a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing (pause it with POST /api/tasks/{taskName}/pause). With `wait=true`: returns once everything has ended, or 409 if that takes longer than waitTimeout.",
         "operationId": "hookStopTask",
         "parameters": [
           {
@@ -5014,6 +5049,46 @@
         ]
       }
     },
+    "/api/tasks/{taskName}/pause": {
+      "post": {
+        "description": "Skips the task's cron ticks until it is resumed. Skipped ticks record no runs and are not caught up on resume; manual runs keep working. The pause survives reloads and daemon restarts, and a reload that removes the task's cron, turns it into a service, or sets manual_trigger = false clears it. Pausing a paused task is a no-op that keeps the original pausedAt. 403 when manual_trigger = false; 409 for a service, a task without cron, a task a system cron daemon still holds, or a daemon whose scheduling the station owns.",
+        "operationId": "pauseTask",
+        "parameters": [
+          {
+            "description": "Task name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Pause a task's cron schedule",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
     "/api/tasks/{taskName}/restart": {
       "post": {
         "description": "For a service: bounces every instance (starting it if it was stopped). For a task: cancels any active run, waits for it to end, then triggers exactly one fresh run. With `wait=true` on a task: returns 200 and the fresh run once it ends.",
@@ -5095,6 +5170,46 @@
           }
         },
         "summary": "Restart all instances of a service, or a task's run",
+        "tags": [
+          "Runs"
+        ]
+      }
+    },
+    "/api/tasks/{taskName}/resume": {
+      "post": {
+        "description": "Lifts a pause set with POST /api/tasks/{taskName}/pause; the task fires again from its next tick. Ticks skipped while paused are not caught up. A no-op when the schedule isn't paused. 403 when manual_trigger = false; 409 on a daemon whose scheduling the station owns.",
+        "operationId": "resumeTask",
+        "parameters": [
+          {
+            "description": "Task name",
+            "in": "path",
+            "name": "taskName",
+            "required": true,
+            "schema": {
+              "description": "Task name",
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9._:-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Resume a task's paused cron schedule",
         "tags": [
           "Runs"
         ]
@@ -5283,7 +5398,7 @@
     },
     "/api/tasks/{taskName}/stop": {
       "post": {
-        "description": "For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing. With `wait=true`: returns once everything has ended, or 409 if that takes longer than waitTimeout.",
+        "description": "For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing (pause it with POST /api/tasks/{taskName}/pause). With `wait=true`: returns once everything has ended, or 409 if that takes longer than waitTimeout.",
         "operationId": "stopTask",
         "parameters": [
           {

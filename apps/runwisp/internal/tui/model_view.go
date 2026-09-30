@@ -134,7 +134,7 @@ func (m Model) renderMainContent() string {
 func (m Model) renderHomeContent(panelW int, panelView string) string {
 	if m.sidebar.ActiveTask() != "" {
 		runNowHovered := m.mouse.hoverY == m.layout.taskBtnY && m.mouse.hoverX >= uikit.SidebarWidth
-		header, _ := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), panelW, runNowHovered)
+		header, _ := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), panelW, runNowHovered, m.isPaused(m.sidebar.ActiveTask()))
 		return header + panelView + m.execList.View()
 	}
 	header, _ := home.RenderHeader(m.info, m.hasLaunchTicket(), panelW, m.homeCursor, m.mouse.homeHover)
@@ -229,11 +229,29 @@ func (m Model) appendExecViewActionHints(parts []string) []string {
 	return parts
 }
 
+// pauseHint is the help-bar segment for `p` on the named task, or "" when its
+// schedule can't be toggled from here.
+func (m *Model) pauseHint(name string) string {
+	task := m.taskDisplayByName(name)
+	switch {
+	case task == nil || !task.Pausable():
+		return ""
+	case m.isPaused(name):
+		return keys.Resume.Bar
+	case task.Held():
+		return ""
+	}
+	return keys.Pause.Bar
+}
+
 func (m Model) buildSidebarHelpText() string {
 	if name := m.sidebar.CursorTaskName(); name != "" {
 		actionHint := keys.RunNow.Bar
 		if m.isService(name) {
 			actionHint = keys.Restart.Bar
+		}
+		if hint := m.pauseHint(name); hint != "" {
+			actionHint += "  " + hint
 		}
 		return keys.Move.Bar + "  enter select  " + actionHint + "  " + keys.TaskInfo.Bar + "  " + keys.FilterTasks.Bar + "  → main panel  " + keys.Quit.Bar
 	}
@@ -258,6 +276,9 @@ func (m Model) buildMainHelpText() string {
 		actionHint := keys.RunNow.Bar
 		if m.isService(name) {
 			actionHint = keys.Restart.Bar
+		}
+		if hint := m.pauseHint(name); hint != "" {
+			actionHint += "  " + hint
 		}
 		base := keys.JoinBar(keys.Move, keys.Open) + "  " + actionHint + "  " +
 			keys.JoinBar(keys.Filter, keys.TaskInfo) + "  " + keys.ToSidebar.Bar

@@ -108,6 +108,14 @@ describe("formatTaskNextRunLabel", () => {
         expect(formatTaskNextRunLabel(overview)).toBe("Manual only");
     });
 
+    it("returns 'Paused' for a paused cron task", () => {
+        const overview = makeOverview({
+            task: makeTask({ cron: "0 3 * * *", pausedAt: "2026-09-29T14:00:00Z" }),
+            nextRunMs: undefined,
+        });
+        expect(formatTaskNextRunLabel(overview)).toBe("Paused");
+    });
+
     it("returns 'Not scheduled' when nextRunMs is undefined and isApiOnly is false", () => {
         const overview = makeOverview({ nextRunMs: undefined, isApiOnly: false });
         expect(formatTaskNextRunLabel(overview)).toBe("Not scheduled");

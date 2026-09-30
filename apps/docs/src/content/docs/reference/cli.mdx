@@ -290,14 +290,43 @@ With one or more targets — task names, service names, quoted globs matched
 against both, or a run ID — stops just those; the daemon keeps running. For a
 service, every live instance is cancelled and its slots stop refilling until a
 `runwisp start`/`restart` or a daemon restart. For a task, the active run is
-cancelled and anything queued is dropped, but its cron schedule keeps firing.
-A run ID stops just that run, wherever it came from.
+cancelled and anything queued is dropped, but its cron schedule keeps firing
+(use [`runwisp pause`](#runwisp-pause) to skip it). A run ID stops just that
+run, wherever it came from.
 
 | Flag         | Description                                                         |
 | ------------ | ------------------------------------------------------------------- |
 | `--local`    | Use the per-user unit when both a system and a per-user unit exist. |
 | `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`.             |
 | `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.                      |
+
+### `runwisp pause`
+
+```bash
+runwisp pause <task...>
+runwisp pause nightly-backup 'report-*'
+```
+
+Pauses the cron schedule of one or more tasks; `runwisp resume` lifts it. See
+[Pausing a schedule](/concepts/scheduling/#pausing-a-schedule). A glob skips
+services, tasks without `cron`, and tasks that are locked or held; naming one
+directly is rejected. An active run is left alone.
+
+| Flag         | Description                                             |
+| ------------ | ------------------------------------------------------- |
+| `--url`      | Act on a remote daemon at this URL. Env: `RUNWISP_URL`. |
+| `--password` | Password for `--url`. Env: `RUNWISP_PASSWORD`.          |
+
+### `runwisp resume`
+
+```bash
+runwisp resume <task...>
+runwisp resume '*'
+```
+
+Resumes paused schedules. Each task fires again from its next scheduled time;
+skipped ones are not caught up. A glob matches only paused tasks. Takes the same
+flags as `pause`.
 
 ## Migrating
 

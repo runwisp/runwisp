@@ -71,7 +71,7 @@ func runRestart(cmd *cobra.Command, args []string, f Flags) error {
 		restart := func(c *apiclient.Client, ctx context.Context, name string) error {
 			return c.RestartTask(ctx, name, "cli")
 		}
-		return controlTargets(cmd, f, controlRemote, args, "restart", "restarted", restart, nil)
+		return controlTargets(cmd, f, controlRemote, args, "restart", "restarted", restart, nil, controllableTargets)
 	}
 
 	if url, _ := controlRemote.resolve(); url != "" {

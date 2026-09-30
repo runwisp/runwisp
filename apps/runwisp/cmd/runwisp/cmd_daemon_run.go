@@ -26,6 +26,7 @@ import (
 	"github.com/runwisp/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/internal/datadir"
+	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runlog"
 	"github.com/runwisp/runwisp/internal/runtime"
@@ -287,8 +288,15 @@ func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Fl
 	// The `failures` policy lives on model.Task, so Reconcile() swaps it into the
 	// live registry and every run terminating afterwards is classified under the
 	// new policy — notify routes on that persisted bit, so no notify-side refresh
-	// is needed on reload.
-	return r, r.Reconcile
+	// is needed on reload. A successful reload tells dashboards to refetch the
+	// task list (added/removed tasks, pauses a reload cleared).
+	return r, func() (model.ReloadResult, error) {
+		result, err := r.Reconcile()
+		if err == nil && svc.EventBus != nil {
+			svc.EventBus.Publish(events.EventTasksChanged, events.TasksChangedEvent{})
+		}
+		return result, err
+	}
 }
 
 // startCronHoldWatcher starts the loop that keeps the cron holds honest, so an

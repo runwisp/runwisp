@@ -10,6 +10,7 @@ import (
 	"log/slog"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
 )
 
@@ -42,7 +43,9 @@ func mapDomainError(ctx context.Context, err error, fallback500 string) huma.Sta
 	case errors.Is(err, ErrServiceNotRunnable),
 		errors.Is(err, ErrCannotDeleteActiveRun),
 		errors.Is(err, ErrRestartDidNotDrain),
-		errors.Is(err, ErrStopDidNotDrain):
+		errors.Is(err, ErrStopDidNotDrain),
+		errors.Is(err, ErrSchedulingInactive),
+		errors.Is(err, runtime.ErrNotPausable):
 		return huma.Error409Conflict(err.Error())
 	case errors.Is(err, ErrNotRunning),
 		errors.Is(err, ErrInvalidSelector),

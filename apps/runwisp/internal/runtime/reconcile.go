@@ -224,6 +224,11 @@ func (r *Reconciler) apply(diff config.Diff, oldTasks, newTasks map[string]*mode
 	if r.scheduler != nil && (len(diff.Added) > 0 || len(diff.Removed) > 0 || len(diff.Changed) > 0) {
 		r.scheduler.RecomputeJitter(newTasks)
 	}
+	// A pause the new config no longer allows (task removed, turned into a
+	// service, cron dropped, manual_trigger = false) is cleared: TOML wins.
+	if r.scheduler != nil {
+		warnings = append(warnings, r.scheduler.PrunePauses(newTasks)...)
+	}
 	return warnings
 }
 

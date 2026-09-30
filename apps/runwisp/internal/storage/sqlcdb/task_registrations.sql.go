@@ -29,12 +29,83 @@ func (q *Queries) EnsureTaskRegistered(ctx context.Context, arg EnsureTaskRegist
 }
 
 const getTaskRegistration = `-- name: GetTaskRegistration :one
-SELECT task_name, first_seen_at FROM task_registrations WHERE task_name = ?
+SELECT task_name, first_seen_at, paused_at, resumed_at FROM task_registrations WHERE task_name = ?
 `
 
 func (q *Queries) GetTaskRegistration(ctx context.Context, taskName string) (TaskRegistration, error) {
 	row := q.db.QueryRowContext(ctx, getTaskRegistration, taskName)
 	var i TaskRegistration
-	err := row.Scan(&i.TaskName, &i.FirstSeenAt)
+	err := row.Scan(
+		&i.TaskName,
+		&i.FirstSeenAt,
+		&i.PausedAt,
+		&i.ResumedAt,
+	)
 	return i, err
+}
+
+const listPausedTaskSchedules = `-- name: ListPausedTaskSchedules :many
+SELECT task_name, paused_at FROM task_registrations WHERE paused_at IS NOT NULL
+`
+
+type ListPausedTaskSchedulesRow struct {
+	TaskName string     `json:"task_name"`
+	PausedAt *time.Time `json:"paused_at"`
+}
+
+func (q *Queries) ListPausedTaskSchedules(ctx context.Context) ([]ListPausedTaskSchedulesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPausedTaskSchedules)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPausedTaskSchedulesRow{}
+	for rows.Next() {
+		var i ListPausedTaskSchedulesRow
+		if err := rows.Scan(&i.TaskName, &i.PausedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const pauseTaskSchedule = `-- name: PauseTaskSchedule :exec
+INSERT INTO task_registrations (task_name, first_seen_at, paused_at)
+VALUES (?1, ?2, ?2)
+ON CONFLICT(task_name) DO UPDATE SET paused_at = COALESCE(task_registrations.paused_at, excluded.paused_at)
+`
+
+type PauseTaskScheduleParams struct {
+	TaskName string    `json:"task_name"`
+	PausedAt time.Time `json:"paused_at"`
+}
+
+// Upsert: the registration row normally exists, but a failed registration
+// write must not make a pause silently disappear. An already-paused task keeps
+// its original paused_at.
+func (q *Queries) PauseTaskSchedule(ctx context.Context, arg PauseTaskScheduleParams) error {
+	_, err := q.db.ExecContext(ctx, pauseTaskSchedule, arg.TaskName, arg.PausedAt)
+	return err
+}
+
+const resumeTaskSchedule = `-- name: ResumeTaskSchedule :exec
+UPDATE task_registrations SET paused_at = NULL, resumed_at = ?1
+WHERE task_name = ?2 AND paused_at IS NOT NULL
+`
+
+type ResumeTaskScheduleParams struct {
+	ResumedAt *time.Time `json:"resumed_at"`
+	TaskName  string     `json:"task_name"`
+}
+
+func (q *Queries) ResumeTaskSchedule(ctx context.Context, arg ResumeTaskScheduleParams) error {
+	_, err := q.db.ExecContext(ctx, resumeTaskSchedule, arg.ResumedAt, arg.TaskName)
+	return err
 }

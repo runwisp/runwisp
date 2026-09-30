@@ -47,6 +47,7 @@ type Querier interface {
 	// SPDX-License-Identifier: GPL-3.0-or-later
 	ListNotifications(ctx context.Context, limit int64) ([]Notification, error)
 	ListNotificationsBefore(ctx context.Context, arg ListNotificationsBeforeParams) ([]Notification, error)
+	ListPausedTaskSchedules(ctx context.Context) ([]ListPausedTaskSchedulesRow, error)
 	ListPendingLogUploads(ctx context.Context) ([]PendingLogUpload, error)
 	MarkAllNotificationsRead(ctx context.Context, readAt *time.Time) error
 	// Boot-time crash recovery marks these orphans is_failure=1 using the default
@@ -56,6 +57,10 @@ type Querier interface {
 	MarkCrashedRuns(ctx context.Context, endedAt *time.Time) (int64, error)
 	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) (int64, error)
 	MarkNotificationUnread(ctx context.Context, id string) (int64, error)
+	// Upsert: the registration row normally exists, but a failed registration
+	// write must not make a pause silently disappear. An already-paused task keeps
+	// its original paused_at.
+	PauseTaskSchedule(ctx context.Context, arg PauseTaskScheduleParams) error
 	PruneNotificationsByAge(ctx context.Context, lastOccurredAt time.Time) (int64, error)
 	PruneNotificationsByCount(ctx context.Context, offset int64) (int64, error)
 	QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreatedAtAscParams) ([]QueryRunsCreatedAtAscRow, error)
@@ -78,6 +83,7 @@ type Querier interface {
 	ResolveSelectorIDsByIDs(ctx context.Context, arg ResolveSelectorIDsByIDsParams) ([]ResolveSelectorIDsByIDsRow, error)
 	RestoreRunsByFilter(ctx context.Context, arg RestoreRunsByFilterParams) ([]Run, error)
 	RestoreRunsByIDs(ctx context.Context, ids []string) ([]Run, error)
+	ResumeTaskSchedule(ctx context.Context, arg ResumeTaskScheduleParams) error
 	SelectExistingForFingerprint(ctx context.Context, arg SelectExistingForFingerprintParams) (SelectExistingForFingerprintRow, error)
 	// SPDX-FileCopyrightText: PoppyCake, s.r.o.
 	// SPDX-License-Identifier: GPL-3.0-or-later
