@@ -152,3 +152,51 @@ func TestAppStreamHandler_NotifyHubSubscribedBeforeReplayFlush(t *testing.T) {
 	}
 	t.Fatalf("notification published during the replay flush never reached the stream; messages: %+v", messages)
 }
+
+// Regression: the initial ping is a client's "connected" signal (the e2e
+// harness and CLI wait for it before triggering anything), and a fresh client
+// has no Last-Event-ID so gets no replay. The handler must therefore already
+// be subscribed to appEvents when that ping goes out: it used to subscribe
+// after, so an event published between the two reached zero subscribers and
+// was lost (seen as TestGoldenPathFireAppearsInAPILogAndSSE missing its
+// run.created). The fake send publishes synchronously from inside the ping.
+func TestAppStreamHandler_SubscribedBeforeInitialPing(t *testing.T) {
+	s, _, _, _ := setupServer(t)
+
+	runID := ulid.Make().String()
+	var mu sync.Mutex
+	var messages []sse.Message
+	first := true
+	fakeSend := func(msg sse.Message) error {
+		mu.Lock()
+		messages = append(messages, msg)
+		isFirst := first
+		first = false
+		mu.Unlock()
+		if isFirst {
+			s.eventBus.Publish(events.EventRunCreated, events.RunEvent{Run: &model.Run{ID: runID}})
+		}
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		s.appStreamHandler(ctx, &AppStreamInput{}, fakeSend)
+		close(done)
+	}()
+
+	assert.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, m := range messages {
+			if e, ok := m.Data.(RunCreatedEvent); ok && e.Run != nil && e.Run.ID == runID {
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 10*time.Millisecond, "run.created published right after the initial ping never reached the stream")
+	cancel()
+	<-done
+}
