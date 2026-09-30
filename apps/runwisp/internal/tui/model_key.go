@@ -275,8 +275,9 @@ func handleKeyEnter(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 func handleKeyEnterNotifications(m Model) (Model, tea.Cmd, bool) {
 	sel := m.notifications.Selected()
 	if sel != nil && sel.RunID != "" {
-		m.notifications.Toggle()
-		m.updateLayout()
+		// The panel stays open until the run actually opens (openExecView
+		// collapses it), so a run that no longer exists leaves the operator
+		// where they were, with a flash explaining why.
 		return m, m.openRunByID(sel.TaskName, sel.RunID), true
 	}
 	return m, nil, true

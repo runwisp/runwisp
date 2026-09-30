@@ -6,6 +6,7 @@ package tui
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -983,6 +984,21 @@ func TestHandleTriggerRun_FlashesNoUndo(t *testing.T) {
 	}
 }
 
+// TestHandleTriggerRun_FailureFlashesError verifies a failed trigger shows an
+// error-styled toast, so it can't be mistaken for a success.
+func TestHandleTriggerRun_FailureFlashesError(t *testing.T) {
+	m := newTestModelWithClient(nil)
+	updated, _ := m.handleTriggerRun(uikit.TriggerRunMsg{TaskName: "task-x", Err: errors.New("concurrency limit")})
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updated)
+	}
+	flash, active := got.dialogs.FlashActive()
+	if !active || flash != "Run failed: concurrency limit" || !got.dialogs.FlashIsError() {
+		t.Fatalf("expected an error toast, got %q (active=%v, error=%v)", flash, active, got.dialogs.FlashIsError())
+	}
+}
+
 // TestHandleDeleteRun_ArmsUndo verifies a successful delete arms a restore undo.
 func TestHandleDeleteRun_ArmsUndo(t *testing.T) {
 	m := newTestModelWithClient(nil)
@@ -1063,15 +1079,33 @@ func TestHandleStopRun_LogsActionResult(t *testing.T) {
 	}
 }
 
-func TestHandleRestartService_ResetsServiceStopped(t *testing.T) {
-	m := newTestModel(nil)
-	run := &model.Run{ID: "r-svc", TaskName: "svc"}
+// TestHandleRestartService_LeavesDeadInstance is the regression for restarting
+// a stopped service while viewing its old run: the view stayed on the dead run
+// and only flipped the button to "Stop service".
+func TestHandleRestartService_LeavesDeadInstance(t *testing.T) {
+	m := newTestModel([]model.Task{{Name: "svc", Kind: model.KindService}})
+	run := &model.Run{ID: "r-old", TaskName: "svc", Status: model.PhaseEnded}
 	ev := execlist.NewExecView(run)
+	ev.TaskIsService = true
 	m.execView = &ev
 	m.execView.SetServiceStopped(true)
-	_, cmd := m.handleRestartService(uikit.RestartServiceMsg{TaskName: "svc"})
-	if cmd != nil {
-		t.Fatal("expected no flash cmd on a successful restart")
+	updated, _ := m.handleRestartService(uikit.RestartServiceMsg{TaskName: "svc"})
+	if got := updated.(Model); got.execView != nil {
+		t.Fatalf("expected the dead run's view to close, still showing %s", got.execView.RunID())
+	}
+}
+
+func TestHandleRestartService_OpensFreshInstance(t *testing.T) {
+	m := newTestModel([]model.Task{{Name: "svc", Kind: model.KindService}})
+	m.execWindow.UpsertRun(model.Run{ID: "r-new", TaskName: "svc", Status: model.PhaseRunning})
+	run := &model.Run{ID: "r-old", TaskName: "svc", Status: model.PhaseEnded}
+	ev := execlist.NewExecView(run)
+	ev.TaskIsService = true
+	m.execView = &ev
+	updated, _ := m.handleRestartService(uikit.RestartServiceMsg{TaskName: "svc"})
+	got := updated.(Model)
+	if got.execView == nil || got.execView.RunID() != "r-new" {
+		t.Fatalf("expected the fresh instance r-new to open, got %v", got.execView)
 	}
 }
 
@@ -1281,5 +1315,46 @@ func TestHandleOpenBrowser_EmptyURLNoopNoErr(t *testing.T) {
 	_, cmd := m.handleOpenBrowser(uikit.OpenBrowserMsg{})
 	if cmd != nil {
 		t.Fatal("expected nil cmd for empty browser msg")
+	}
+}
+
+// TestHandleOpenRun_DeletedRunFlashesAndKeepsPanel is the #306 regression:
+// Enter on a notification whose run was deleted used to close the panel and
+// show nothing. Now the panel stays open, a flash explains why, and the
+// notification counts as read.
+func TestHandleOpenRun_DeletedRunFlashesAndKeepsPanel(t *testing.T) {
+	m := newTestModel(nil)
+	n := testNotif("n1")
+	n.RunID = "run-gone"
+	m.notifications.Upsert(n)
+	m.notifications.Toggle()
+
+	newM, cmd := m.handleOpenRun(uikit.OpenRunMsg{
+		RunID: "run-gone",
+		Err:   &apiclient.HTTPStatusError{StatusCode: 404, Body: "not found"},
+	})
+	got := newM.(Model)
+	if cmd == nil {
+		t.Fatal("expected flash cmd")
+	}
+	if !strings.Contains(got.dialogs.flashMessage, "no longer exists") {
+		t.Fatalf("flash: got %q", got.dialogs.flashMessage)
+	}
+	if !got.notifications.IsExpanded() {
+		t.Fatal("expected notifications panel to stay open")
+	}
+	if ids := got.notifications.UnreadIDsForRun("run-gone"); len(ids) != 0 {
+		t.Fatalf("expected notification marked read, still unread: %v", ids)
+	}
+	if got.execView != nil {
+		t.Fatal("expected no exec view for a missing run")
+	}
+}
+
+func TestHandleOpenRun_OtherErrorFlashes(t *testing.T) {
+	m := newTestModel(nil)
+	newM, _ := m.handleOpenRun(uikit.OpenRunMsg{RunID: "r1", Err: errors.New("connection refused")})
+	if msg := newM.(Model).dialogs.flashMessage; !strings.HasPrefix(msg, "Couldn't open run") {
+		t.Fatalf("flash: got %q", msg)
 	}
 }

@@ -5,10 +5,13 @@ package tui
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -408,6 +411,28 @@ func TestOpenRunByID_RunInWindowOpensExecView(t *testing.T) {
 	}
 	if m.execView.Run == nil || m.execView.Run.ID != "r-found" {
 		t.Fatalf("expected execView to wrap run r-found, got %+v", m.execView.Run)
+	}
+}
+
+// TestOpenRunByID_DeletedRunReportsNotFound: a run missing from the window
+// that the daemon 404s on must come back as an OpenRunMsg carrying the error,
+// so handleOpenRun can tell the operator (#306).
+func TestOpenRunByID_DeletedRunReportsNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(srv.Close)
+	m := newTestModel(nil)
+	m.client = apiclient.New(srv.URL, "")
+
+	cmd := m.openRunByID("backup-db", "r-gone")
+	if cmd == nil {
+		t.Fatal("expected fetch cmd")
+	}
+	msg, ok := cmd().(uikit.OpenRunMsg)
+	if !ok {
+		t.Fatalf("expected OpenRunMsg, got %T", cmd())
+	}
+	if msg.RunID != "r-gone" || !apiclient.IsHTTPStatus(msg.Err, http.StatusNotFound) {
+		t.Fatalf("got %+v", msg)
 	}
 }
 
