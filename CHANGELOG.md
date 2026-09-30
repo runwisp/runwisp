@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-30
+
 ### Added
 
 - **Service health checks**: an optional `[services.<name>.health_check]` command decides when an instance is healthy and stops it as `unhealthy` when it keeps failing, so `restart` brings it back. It reuses task keys (`cron`, `timeout`, `failures`, `retry_*`).
@@ -844,7 +846,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.2.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.3.0...main
+[1.3.0]: https://github.com/runwisp/runwisp/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/runwisp/runwisp/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/runwisp/runwisp/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/runwisp/runwisp/compare/v1.0.0...v1.0.1
