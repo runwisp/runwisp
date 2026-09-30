@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- After `runwisp takeover`, if systemd gives up restarting RunWisp, cron is unmasked and started again, so the box is never left without a scheduler.
+- Uninstalling or rolling back a take-over restores cron to the state it was in before: a cron you had masked stays masked, and a stopped one is not started.
+- The daemon now exits non-zero when it shuts down because of a fatal error (the server failing to start, a crash in a background worker), so systemd and launchd restart it. `runwisp stop` and SIGTERM still exit 0.
+
 ## [1.2.0] - 2026-09-28
 
 ### Added

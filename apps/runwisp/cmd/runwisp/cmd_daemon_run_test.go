@@ -279,7 +279,7 @@ func TestConfigureBootLogRouting_TUIReturnsNonNilWriter(t *testing.T) {
 
 func TestStartStationIfEnabled_StandaloneReturnsNoOps(t *testing.T) {
 	t.Parallel()
-	cancel, wg := startStationIfEnabled(modeStandalone, nil, nil, nil)
+	cancel, wg := startStationIfEnabled(modeStandalone, nil, nil, nil, nil)
 	require.NotNil(t, cancel)
 	require.NotNil(t, wg)
 	cancel() // must not panic
@@ -288,7 +288,7 @@ func TestStartStationIfEnabled_StandaloneReturnsNoOps(t *testing.T) {
 func TestStartStationIfEnabled_StationWithDisabledConfigShortCircuits(t *testing.T) {
 	t.Parallel()
 	cfg := &daemonConfig{StationConfig: station.Config{Enabled: false}}
-	cancel, wg := startStationIfEnabled(modeStation, cfg, nil, nil)
+	cancel, wg := startStationIfEnabled(modeStation, cfg, nil, nil, nil)
 	require.NotNil(t, cancel)
 	require.NotNil(t, wg)
 	cancel()

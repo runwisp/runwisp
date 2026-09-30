@@ -67,6 +67,10 @@ type parsedUnit struct {
 	// (TakeOverCron false) knows to carry the marker forward instead of
 	// erasing it, and how uninstall knows it may unmask that unit.
 	maskedCron string
+	// cronPrior is the runwisp-cron-prior-state marker: the state maskedCron
+	// was in before the take-over. Empty on units written before the marker
+	// existed.
+	cronPrior string
 }
 
 // managedMarkerBare is the text following the comment-syntax leader.
@@ -91,6 +95,7 @@ func markerFields(out *parsedUnit) []struct {
 		{"# runwisp-config-hash:", "", &out.configHash},
 		{"# runwisp-binary-sha256:", "", &out.binarySHA},
 		{"# runwisp-masked-cron:", "", &out.maskedCron},
+		{"# runwisp-cron-prior-state:", "", &out.cronPrior},
 		{"<!-- runwisp-config-hash:", "-->", &out.configHash},
 		{"<!-- runwisp-binary-sha256:", "-->", &out.binarySHA},
 		{"<!-- runwisp-masked-cron:", "-->", &out.maskedCron},

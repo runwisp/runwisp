@@ -1,0 +1,12 @@
+# Managed by runwisp service install — DO NOT EDIT
+# Started by OnFailure= in {{.Service}}. That fires on every crash (the unit is
+# back in auto-restart by then) and on a stop that timed out, so this only acts
+# once {{.Service}} sits in "failed" because systemd stopped restarting it.
+[Unit]
+Description=Hand cron jobs back to {{.CronUnit}} when RunWisp keeps failing
+Documentation=https://docs.runwisp.com/
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'state=$$(systemctl show -p ActiveState --value {{.Service}}); result=$$(systemctl show -p Result --value {{.Service}}); if [ "$$state" != failed ] || [ "$$result" = timeout ]; then echo "{{.Service}} is $$state ($$result) and systemd has not given up on it; leaving {{.CronUnit}} masked"; exit 0; fi; echo "<2>RunWisp kept failing and systemd stopped restarting it. Unmasking and starting {{.CronUnit}} so your cron jobs keep running. Once RunWisp is fixed, run: systemctl reset-failed {{.Service}} && runwisp takeover"; systemctl unmask {{.CronUnit}} && systemctl start --no-block {{.CronUnit}}'

@@ -8,6 +8,10 @@ package autostart
 import (
 	"bytes"
 	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -30,7 +34,7 @@ func TestDiscoverCronUnit_FirstCandidateFound(t *testing.T) {
 	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
 		[]byte("loaded\nactive\nenabled\n"), nil, nil)
 
-	unit, err := inst.discoverCronUnit(context.Background())
+	unit, _, _, err := inst.discoverCronUnit(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "cron.service", unit)
 	assert.Zero(t, cmd.Remaining())
@@ -44,7 +48,7 @@ func TestDiscoverCronUnit_FallsThroughToCrond(t *testing.T) {
 	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "crond.service"},
 		[]byte("loaded\nactive\nenabled\n"), nil, nil)
 
-	unit, err := inst.discoverCronUnit(context.Background())
+	unit, _, _, err := inst.discoverCronUnit(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "crond.service", unit)
 }
@@ -70,25 +74,22 @@ func TestCronStatus_NoCronUnitIsNotAnError(t *testing.T) {
 func TestCronStatus_ReportsRunningUnit(t *testing.T) {
 	inst, _, cmd, _, _ := newFakeInstaller(t, false)
 	inst.deps.Euid = 0
-	// Once for discovery, once for the active-state read.
-	for range 2 {
-		cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
-			[]byte("loaded\nactive\nenabled\n"), nil, nil)
-	}
+	// One probe answers both discovery and the active-state read.
+	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+		[]byte("loaded\nactive\nenabled\n"), nil, nil)
 
 	unit, active, err := inst.CronStatus(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "cron.service", unit)
 	assert.True(t, active)
+	assert.Zero(t, cmd.Remaining())
 }
 
 func TestCronStatus_ReportsStoppedUnit(t *testing.T) {
 	inst, _, cmd, _, _ := newFakeInstaller(t, false)
 	inst.deps.Euid = 0
-	for range 2 {
-		cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
-			[]byte("loaded\ninactive\nenabled\n"), nil, nil)
-	}
+	cmd.Expect("systemctl", []string{"show", "-p", "LoadState,ActiveState,UnitFileState", "--value", "cron.service"},
+		[]byte("loaded\ninactive\nenabled\n"), nil, nil)
 
 	unit, active, err := inst.CronStatus(context.Background())
 	require.NoError(t, err)
@@ -104,7 +105,7 @@ func TestDiscoverCronUnit_NoneFound(t *testing.T) {
 			[]byte("not-found\n\n\n"), nil, nil)
 	}
 
-	_, err := inst.discoverCronUnit(context.Background())
+	_, _, _, err := inst.discoverCronUnit(context.Background())
 	assert.ErrorIs(t, err, ErrNoCronUnit)
 }
 
@@ -659,4 +660,222 @@ func TestRender_TakeOverCron_IncludesMarker(t *testing.T) {
 	body, err := inst.Render(opts)
 	require.NoError(t, err)
 	assert.Contains(t, string(body), "# runwisp-masked-cron: cron.service")
+}
+
+const cronShowState = "show -p LoadState,ActiveState,UnitFileState --value cron.service"
+
+// installTakeover runs a take-over install that succeeds, with cron probed as
+// "<ActiveState>\n<UnitFileState>" before RunWisp touched it.
+func installTakeover(t *testing.T, inst *systemdInstaller, fs *FakeFS, cmd *FakeRunner, prompter *ScriptedPrompter, opts InstallOptions, cronState string) {
+	t.Helper()
+	opts.TakeOverCron = true
+	prompter.YesNo = []bool{true}
+	require.NoError(t, fs.WriteFile(opts.Config, []byte("[scheduler]\n"), 0644))
+	for range 2 { // discovery, then stopAndMaskCron's re-probe
+		cmd.Expect("systemctl", strings.Fields(cronShowState), []byte("loaded\n"+cronState+"\n"), nil, nil)
+	}
+	cmd.Expect("systemctl", []string{"daemon-reload"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"stop", "cron.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"mask", "cron.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"enable", "--now", "runwisp.service"}, nil, nil, nil)
+	require.NoError(t, inst.Install(context.Background(), opts, &bytes.Buffer{}))
+}
+
+// callsSince renders every systemctl call made after the first n as
+// "verb args…", for asserting what an undo did or did not touch.
+func callsSince(cmd *FakeRunner, n int) []string {
+	var out []string
+	for _, c := range cmd.Log()[n:] {
+		out = append(out, strings.Join(c.Args, " "))
+	}
+	return out
+}
+
+func uninstallSystem(t *testing.T, inst *systemdInstaller, cmd *FakeRunner) []string {
+	t.Helper()
+	plan, err := inst.ComputeUninstallPlan(context.Background(), UninstallOptions{System: true})
+	require.NoError(t, err)
+	// Scripted so they succeed if called; the caller asserts whether they were.
+	cmd.Expect("systemctl", []string{"unmask", "cron.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"start", "cron.service"}, nil, nil, nil)
+	n := len(cmd.Log())
+	require.NoError(t, inst.applyUninstall(context.Background(), plan, UninstallOptions{System: true}, &bytes.Buffer{}))
+	return callsSince(cmd, n)
+}
+
+// Finding RW-37#13: an operator who had masked cron themselves before the
+// take-over must not get it back on uninstall; RunWisp never owned that mask.
+func TestTakeover_UninstallLeavesOperatorMaskedCronMasked(t *testing.T) {
+	inst, fs, cmd, prompter, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	installTakeover(t, inst, fs, cmd, prompter, systemInstallOpts(binary), "inactive\nmasked")
+
+	calls := uninstallSystem(t, inst, cmd)
+	assert.NotContains(t, calls, "unmask cron.service")
+	assert.NotContains(t, calls, "start cron.service")
+}
+
+// Cron that was enabled but stopped at take-over time comes back unmasked
+// (so it starts on the next boot, as before) but is not started now.
+func TestTakeover_UninstallRestoresStoppedCronStopped(t *testing.T) {
+	inst, fs, cmd, prompter, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	installTakeover(t, inst, fs, cmd, prompter, systemInstallOpts(binary), "inactive\nenabled")
+
+	calls := uninstallSystem(t, inst, cmd)
+	assert.Contains(t, calls, "unmask cron.service")
+	assert.NotContains(t, calls, "start cron.service")
+}
+
+func TestTakeover_UninstallRestartsCronThatWasRunning(t *testing.T) {
+	inst, fs, cmd, prompter, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	installTakeover(t, inst, fs, cmd, prompter, systemInstallOpts(binary), "active\nenabled")
+
+	calls := uninstallSystem(t, inst, cmd)
+	assert.Contains(t, calls, "unmask cron.service")
+	assert.Contains(t, calls, "start cron.service")
+}
+
+// The rollback half of RW-37#13: a failed `enable --now` must not unmask a
+// cron the operator had masked before RunWisp touched it.
+func TestTakeover_RollbackLeavesOperatorMaskedCronMasked(t *testing.T) {
+	inst, fs, cmd, prompter, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := systemInstallOpts(binary)
+	opts.TakeOverCron = true
+	prompter.YesNo = []bool{true}
+	require.NoError(t, fs.WriteFile(opts.Config, []byte("[scheduler]\n"), 0644))
+	for range 2 {
+		cmd.Expect("systemctl", strings.Fields(cronShowState), []byte("loaded\ninactive\nmasked\n"), nil, nil)
+	}
+	cmd.Expect("systemctl", []string{"daemon-reload"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"stop", "cron.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"mask", "cron.service"}, nil, nil, nil)
+	cmd.Expect("systemctl", []string{"enable", "--now", "runwisp.service"}, nil, []byte("failed"), assertErrFake("enable failed"))
+
+	require.Error(t, inst.Install(context.Background(), opts, &bytes.Buffer{}))
+	assert.NotContains(t, callsSince(cmd, 0), "unmask cron.service")
+}
+
+// Re-running takeover finds cron masked by RunWisp itself; that must not be
+// recorded as the operator's own mask, or uninstall would never bring cron back.
+func TestTakeover_RerunKeepsTheOriginalCronState(t *testing.T) {
+	inst, fs, cmd, prompter, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	opts := systemInstallOpts(binary)
+	installTakeover(t, inst, fs, cmd, prompter, opts, "active\nenabled")
+
+	for range 2 { // discovery, then the reassert probe: still retired, nothing to do
+		cmd.Expect("systemctl", strings.Fields(cronShowState), []byte("loaded\ninactive\nmasked\n"), nil, nil)
+	}
+	opts.TakeOverCron = true
+	require.NoError(t, inst.Install(context.Background(), opts, &bytes.Buffer{}))
+
+	calls := uninstallSystem(t, inst, cmd)
+	assert.Contains(t, calls, "unmask cron.service")
+	assert.Contains(t, calls, "start cron.service")
+}
+
+const failsafePath = "/etc/systemd/system/runwisp-cron-failsafe.service"
+
+// Finding RW-37#12: a take-over leaves cron masked, so a RunWisp that keeps
+// crashing must eventually give up and hand the jobs back instead of
+// restarting forever with no scheduler on the box.
+func TestTakeover_InstallsCronFailsafe(t *testing.T) {
+	inst, fs, cmd, prompter, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	installTakeover(t, inst, fs, cmd, prompter, systemInstallOpts(binary), "active\nenabled")
+
+	unit, err := fs.ReadFile(inst.unitPath(true))
+	require.NoError(t, err)
+	assert.Contains(t, string(unit), "StartLimitBurst=")
+	assert.Contains(t, string(unit), "StartLimitIntervalSec=")
+	assert.Contains(t, string(unit), "OnFailure=runwisp-cron-failsafe.service")
+	failsafe, err := fs.ReadFile(failsafePath)
+	require.NoError(t, err)
+	assert.Contains(t, string(failsafe), ManagedMarker)
+
+	uninstallSystem(t, inst, cmd)
+	_, err = fs.ReadFile(failsafePath)
+	assert.Error(t, err, "uninstall removes the failsafe with the unit")
+}
+
+// A plain install never masked cron, so it keeps systemd's default restart
+// behaviour and gets no failsafe.
+func TestInstall_NoTakeoverMeansNoFailsafe(t *testing.T) {
+	inst, _, _, _, binary := newFakeInstaller(t, false)
+	body, err := inst.Render(systemInstallOpts(binary))
+	require.NoError(t, err)
+	assert.NotContains(t, string(body), "OnFailure=")
+	assert.NotContains(t, string(body), "StartLimitBurst=")
+}
+
+// Cron the operator masked themselves is not a scheduler to hand back to.
+func TestTakeover_NoFailsafeWhenOperatorHadMaskedCron(t *testing.T) {
+	inst, fs, cmd, prompter, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	installTakeover(t, inst, fs, cmd, prompter, systemInstallOpts(binary), "inactive\nmasked")
+
+	unit, err := fs.ReadFile(inst.unitPath(true))
+	require.NoError(t, err)
+	assert.NotContains(t, string(unit), "OnFailure=")
+	_, err = fs.ReadFile(failsafePath)
+	assert.Error(t, err)
+}
+
+// runFailsafe executes the failsafe unit's ExecStart script for real under
+// /bin/sh, with a fake systemctl on PATH that reports state and result as
+// runwisp.service's ActiveState and Result and logs every call. Returns the
+// logged calls.
+func runFailsafe(t *testing.T, failsafe []byte, state, result string) []string {
+	t.Helper()
+	var script string
+	for _, l := range strings.Split(string(failsafe), "\n") {
+		if v, ok := strings.CutPrefix(l, "ExecStart=/bin/sh -c '"); ok {
+			script = strings.ReplaceAll(strings.TrimSuffix(v, "'"), "$$", "$")
+		}
+	}
+	require.NotEmpty(t, script, "failsafe has no /bin/sh ExecStart")
+
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "calls")
+	fake := "#!/bin/sh\necho \"$*\" >> " + logPath + "\n" +
+		"case \"$3\" in ActiveState) echo " + state + ";; Result) echo " + result + ";; esac\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "systemctl"), []byte(fake), 0o755))
+
+	c := exec.Command("/bin/sh", "-c", script)
+	c.Env = []string{"PATH=" + dir}
+	out, err := c.CombinedOutput()
+	require.NoError(t, err, string(out))
+	logged, _ := os.ReadFile(logPath)
+	return strings.Split(strings.TrimSpace(string(logged)), "\n")
+}
+
+// OnFailure= fires on every crash while systemd is still restarting RunWisp,
+// and on a stop that timed out. Only "failed" after the restarts ran out may
+// bring cron back; a `runwisp stop` / `systemctl stop` must leave it masked.
+// (A clean stop leaves the unit inactive, so OnFailure= never fires at all.)
+// The states are the ones systemd 259 reports at each point.
+func TestCronFailsafe_OnlyHandsBackAfterRestartsGiveUp(t *testing.T) {
+	inst, fs, cmd, prompter, binary := newFakeInstaller(t, false)
+	inst.deps.Euid = 0
+	installTakeover(t, inst, fs, cmd, prompter, systemInstallOpts(binary), "active\nenabled")
+	failsafe, err := fs.ReadFile(failsafePath)
+	require.NoError(t, err)
+
+	probes := []string{
+		"show -p ActiveState --value runwisp.service",
+		"show -p Result --value runwisp.service",
+	}
+	for _, gaveUp := range []string{"exit-code", "start-limit-hit", "signal"} {
+		assert.Equal(t, append(probes, "unmask cron.service", "start --no-block cron.service"),
+			runFailsafe(t, failsafe, "failed", gaveUp), gaveUp)
+	}
+	for _, stillTrying := range [][2]string{
+		{"activating", "exit-code"}, // a crash systemd is about to restart
+		{"failed", "timeout"},       // a stop that ran past TimeoutStopSec
+	} {
+		assert.Equal(t, probes, runFailsafe(t, failsafe, stillTrying[0], stillTrying[1]), stillTrying)
+	}
 }

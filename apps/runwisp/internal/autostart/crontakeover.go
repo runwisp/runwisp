@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/importer"
@@ -51,17 +52,18 @@ func (s *systemdInstaller) probeCronUnit(ctx context.Context, unit string) (load
 // caller that never asks for take-over never pays for more than zero
 // probes — this must only be called when InstallOptions.TakeOverCron is
 // set, or every existing ComputePlan test would see an unexpected call.
-func (s *systemdInstaller) discoverCronUnit(ctx context.Context) (string, error) {
+// It returns the matching probe's states too, so no caller re-probes.
+func (s *systemdInstaller) discoverCronUnit(ctx context.Context) (unit, activeState, unitFileState string, err error) {
 	for _, name := range importer.CronUnits() {
-		loadState, _, _, err := s.probeCronUnit(ctx, name)
+		loadState, activeState, unitFileState, err := s.probeCronUnit(ctx, name)
 		if err != nil {
 			continue
 		}
 		if loadState != "" && loadState != "not-found" {
-			return name, nil
+			return name, activeState, unitFileState, nil
 		}
 	}
-	return "", ErrNoCronUnit
+	return "", "", "", ErrNoCronUnit
 }
 
 // CronStatus implements Installer: it reports which cron unit this host has
@@ -74,81 +76,111 @@ func (s *systemdInstaller) discoverCronUnit(ctx context.Context) (string, error)
 // whose caller explicitly asked for a take-over); it just answers "nothing
 // to take over".
 func (s *systemdInstaller) CronStatus(ctx context.Context) (unit string, active bool, err error) {
-	unit, err = s.discoverCronUnit(ctx)
-	if err != nil {
-		if errors.Is(err, ErrNoCronUnit) {
-			return "", false, nil
-		}
-		return "", false, err
+	unit, activeState, _, err := s.discoverCronUnit(ctx)
+	if errors.Is(err, ErrNoCronUnit) {
+		return "", false, nil
 	}
-	_, activeState, _, err := s.probeCronUnit(ctx, unit)
-	if err != nil {
-		return unit, false, err
-	}
-	return unit, activeState == "active", nil
+	return unit, activeState == "active", err
 }
 
-// resolveMaskedCronUnit decides what runwisp-masked-cron marker the
-// rendered unit should carry. When TakeOverCron is requested it discovers
-// the live cron unit; otherwise it carries forward whatever marker the
-// existing on-disk unit already records, so a plain re-install (no flag)
-// never silently erases a prior take-over and leaves cron masked with
-// nothing recording who did it.
-func (s *systemdInstaller) resolveMaskedCronUnit(ctx context.Context, opts InstallOptions) (string, error) {
-	if opts.TakeOverCron {
-		return s.discoverCronUnit(ctx)
+// The runwisp-cron-prior-state values: what the cron unit looked like before
+// RunWisp first touched it, so every undo (uninstall, rollback) restores
+// exactly that instead of assuming cron was running.
+const (
+	cronPriorActive   = "active"
+	cronPriorInactive = "inactive"
+	// cronPriorMasked means the operator had masked cron themselves. RunWisp
+	// never owned that mask, so nothing it does may lift it.
+	cronPriorMasked = "masked"
+)
+
+// cronPriorState classifies a probe into a runwisp-cron-prior-state value.
+// Enablement needs no slot: mask never touches it, so unmask alone restores it.
+func cronPriorState(activeState, unitFileState string) string {
+	switch {
+	case strings.HasPrefix(unitFileState, "masked"): // "masked" or "masked-runtime"
+		return cronPriorMasked
+	case activeState == "active":
+		return cronPriorActive
+	default:
+		return cronPriorInactive
 	}
-	existing, err := s.deps.FS.ReadFile(s.unitPath(opts.System))
+}
+
+// resolveMaskedCronUnit decides what runwisp-masked-cron and
+// runwisp-cron-prior-state markers the rendered unit should carry. When
+// TakeOverCron is requested it discovers the live cron unit; otherwise it
+// carries forward whatever the existing on-disk unit already records, so a
+// plain re-install (no flag) never silently erases a prior take-over and
+// leaves cron masked with nothing recording who did it.
+func (s *systemdInstaller) resolveMaskedCronUnit(ctx context.Context, opts InstallOptions) (unit, prior string, err error) {
+	var recorded parsedUnit
+	if existing, err := s.deps.FS.ReadFile(s.unitPath(opts.System)); err == nil {
+		if parsed := extractMarkers(existing); parsed.managed {
+			recorded = parsed
+		}
+	}
+	if !opts.TakeOverCron {
+		return recorded.maskedCron, recorded.cronPrior, nil
+	}
+	unit, activeState, unitFileState, err := s.discoverCronUnit(ctx)
 	if err != nil {
-		return "", nil
+		return "", "", err
 	}
-	parsed := extractMarkers(existing)
-	if !parsed.managed {
-		return "", nil
+	// A re-run finds cron masked because RunWisp masked it. Recording that as
+	// the prior state would make uninstall leave cron masked forever, so the
+	// state recorded by the first take-over stands.
+	if recorded.maskedCron == unit {
+		return unit, recorded.cronPrior, nil
 	}
-	return parsed.maskedCron, nil
+	return unit, cronPriorState(activeState, unitFileState), nil
 }
 
 // stopAndMaskCron stops the cron unit, then masks it — in that order, since
 // masking first would leave a window where a running cron could still fire
-// a job on the old schedule before the stop takes effect. It reports
-// whether cron was active beforehand so a failed RunWisp start can roll
-// back to exactly that state, and separately whether `systemctl stop`
-// itself succeeded: a probe or stop failure means cron was never actually
-// stopped, so the caller must not roll back a take-over that never took —
-// unmasking a unit that was never masked, or starting one that was never
-// stopped, would just poke cron for no reason.
-func (s *systemdInstaller) stopAndMaskCron(ctx context.Context, unit string, out io.Writer) (wasActive, stopped bool, err error) {
-	_, activeState, _, err := s.probeCronUnit(ctx, unit)
+// a job on the old schedule before the stop takes effect. It reports the
+// state cron was in beforehand (a cronPrior* value) so a failed RunWisp
+// start can roll back to exactly that state, and separately whether
+// `systemctl stop` itself succeeded: a probe or stop failure means cron was
+// never actually stopped, so the caller must not roll back a take-over that
+// never took — unmasking a unit that was never masked, or starting one that
+// was never stopped, would just poke cron for no reason.
+func (s *systemdInstaller) stopAndMaskCron(ctx context.Context, unit string, out io.Writer) (prior string, stopped bool, err error) {
+	_, activeState, unitFileState, err := s.probeCronUnit(ctx, unit)
 	if err != nil {
-		return false, false, fmt.Errorf("systemctl show %s: %w", unit, err)
+		return "", false, fmt.Errorf("systemctl show %s: %w", unit, err)
 	}
-	wasActive = activeState == "active"
+	prior = cronPriorState(activeState, unitFileState)
 
 	fmt.Fprintf(out, "Stopping %s\n", unit)
 	if _, stderr, err := s.runSystemctlSystem(ctx, "stop", unit); err != nil {
-		return wasActive, false, fmt.Errorf("systemctl stop %s: %w: %s", unit, err, string(stderr))
+		return prior, false, fmt.Errorf("systemctl stop %s: %w: %s", unit, err, string(stderr))
 	}
 	stopped = true
 
 	fmt.Fprintf(out, "Masking %s\n", unit)
 	if _, stderr, err := s.runSystemctlSystem(ctx, "mask", unit); err != nil {
-		return wasActive, stopped, fmt.Errorf("systemctl mask %s: %w: %s", unit, err, string(stderr))
+		return prior, stopped, fmt.Errorf("systemctl mask %s: %w: %s", unit, err, string(stderr))
 	}
-	return wasActive, stopped, nil
+	return prior, stopped, nil
 }
 
-// unmaskCron reverses stopAndMaskCron. mask is self-inverting — it writes a
-// /dev/null symlink without touching multi-user.target.wants, so unmask
-// alone restores whatever enablement state cron had before — but it does
-// not restart a unit that was stopped-then-masked, so restoreActive decides
-// whether to also start it.
-func (s *systemdInstaller) unmaskCron(ctx context.Context, unit string, restoreActive bool, out io.Writer) error {
+// restoreCron reverses stopAndMaskCron back to prior. mask is self-inverting
+// — it writes a /dev/null symlink without touching multi-user.target.wants,
+// so unmask alone restores whatever enablement state cron had before — but it
+// does not restart a unit that was stopped-then-masked, so prior decides
+// whether to also start it. An empty prior comes from a unit written before
+// the prior-state marker existed, and keeps the old unmask-and-start.
+func (s *systemdInstaller) restoreCron(ctx context.Context, unit, prior string, out io.Writer) error {
+	if prior == cronPriorMasked {
+		fmt.Fprintf(out, "Leaving %s masked, as it was before the take-over\n", unit)
+		return nil
+	}
 	fmt.Fprintf(out, "Unmasking %s\n", unit)
 	if _, stderr, err := s.runSystemctlSystem(ctx, "unmask", unit); err != nil {
 		return fmt.Errorf("systemctl unmask %s: %w: %s", unit, err, string(stderr))
 	}
-	if !restoreActive {
+	if prior == cronPriorInactive {
 		return nil
 	}
 	fmt.Fprintf(out, "Starting %s\n", unit)
@@ -184,10 +216,10 @@ func (s *systemdInstaller) reassertCronTakeover(ctx context.Context, opts Instal
 		return nil
 	}
 	fmt.Fprintf(out, "%s is back since the take-over — it and RunWisp are both running your jobs.\n", plan.CronUnit)
-	cronWasActive, stopped, err := s.stopAndMaskCron(ctx, plan.CronUnit, out)
+	cronPrior, stopped, err := s.stopAndMaskCron(ctx, plan.CronUnit, out)
 	if err != nil {
 		if stopped {
-			s.rollbackCronTakeover(ctx, opts, plan, cronWasActive, out)
+			s.rollbackCronTakeover(ctx, opts, plan, cronPrior, out)
 		}
 		return fmt.Errorf("take over cron: %w", err)
 	}
@@ -196,19 +228,38 @@ func (s *systemdInstaller) reassertCronTakeover(ctx context.Context, opts Instal
 	// with no scheduler at all. Same order and same rollback as a real install;
 	// `enable --now` is a no-op when the unit is already running.
 	if err := s.runEnableNow(ctx, opts.System); err != nil {
-		s.rollbackCronTakeover(ctx, opts, plan, cronWasActive, out)
+		s.rollbackCronTakeover(ctx, opts, plan, cronPrior, out)
 		return err
 	}
 	return nil
 }
 
-// cronMarkerFromUnitFile reads the runwisp-masked-cron marker (if any) from
-// the unit already on disk at unitPath, for uninstall — which must only
-// ever unmask a unit it can prove it masked itself.
-func (s *systemdInstaller) cronMarkerFromUnitFile(unitPath string) string {
+// cronMarkerFromUnitFile reads the runwisp-masked-cron and
+// runwisp-cron-prior-state markers (if any) from the unit already on disk at
+// unitPath, for uninstall — which must only ever unmask a unit it can prove it
+// masked itself, and only back to the state it found it in.
+func (s *systemdInstaller) cronMarkerFromUnitFile(unitPath string) (unit, prior string) {
 	existing, err := s.deps.FS.ReadFile(unitPath)
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	return extractMarkers(existing).maskedCron
+	parsed := extractMarkers(existing)
+	return parsed.maskedCron, parsed.cronPrior
+}
+
+// cronFailsafeUnitName is the oneshot a take-over installs next to the
+// system-wide runwisp.service; its OnFailure= starts it once systemd gives up
+// restarting RunWisp, so cron runs the jobs again instead of nothing.
+const cronFailsafeUnitName = "runwisp-cron-failsafe.service"
+
+func cronFailsafePath() string {
+	return filepath.Join(systemdSystemUnitDir, cronFailsafeUnitName)
+}
+
+// wantsCronFailsafe reports whether the unit rendered from opts gets the
+// failsafe. Only a system-wide unit can: a user unit's OnFailure= cannot reach
+// the system manager that owns cron. And only when there is a cron to hand
+// back to, not one the operator had masked themselves.
+func wantsCronFailsafe(opts InstallOptions) bool {
+	return opts.System && opts.maskedCronUnit != "" && opts.cronPriorState != cronPriorMasked
 }

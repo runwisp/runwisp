@@ -2,10 +2,18 @@
 # runwisp-config-hash: {{.ConfigHash}}
 # runwisp-binary-sha256: {{.BinarySHA}}
 {{if .MaskedCronUnit}}# runwisp-masked-cron: {{.MaskedCronUnit}}
+{{end}}{{if .CronPriorState}}# runwisp-cron-prior-state: {{.CronPriorState}}
 {{end}}[Unit]
 Description=RunWisp — lightweight cron daemon
 Documentation=https://docs.runwisp.com/
 {{if .System}}After=network.target remote-fs.target nss-user-lookup.target time-sync.target{{else}}After=network.target{{end}}
+{{- if .CronFailsafeUnit}}
+# Cron is masked while RunWisp runs your jobs. If RunWisp keeps failing,
+# stop restarting it and hand the jobs back to cron.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+OnFailure={{.CronFailsafeUnit}}
+{{- end}}
 
 [Service]
 Type=simple
