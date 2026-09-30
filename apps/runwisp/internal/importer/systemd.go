@@ -228,7 +228,7 @@ func importSystemdUnit(names *namer, sections []systemdSection, unitName, source
 	runLine, _ := systemdRunLine(execStarts)
 
 	base := finalizeTaskName(unitName, "service")
-	ref, name, skip := names.resolve(source, base, kind, runLine, 0)
+	ref, name, skip := names.resolve(source, base, OwnedEntry{Kind: kind, Run: runLine, User: systemdUser(svc)}, 0)
 	if skip {
 		return
 	}
@@ -421,14 +421,21 @@ func systemdApplyKillSignal(b *block, ref itemRef, key, value string) {
 }
 
 func systemdApplyUser(b *block, svc *systemdSection) {
+	if user := systemdUser(svc); user != "" {
+		b.set("user", tomlString(user))
+	}
+}
+
+// systemdUser is the unit's User[:Group], or empty when it sets no User.
+func systemdUser(svc *systemdSection) string {
 	user := strings.TrimSpace(svc.last("User"))
 	if user == "" {
-		return
+		return ""
 	}
 	if group := strings.TrimSpace(svc.last("Group")); group != "" {
 		user += ":" + group
 	}
-	b.set("user", tomlString(user))
+	return user
 }
 
 func systemdApplyEnvFiles(b *block, svc *systemdSection, ref itemRef) {

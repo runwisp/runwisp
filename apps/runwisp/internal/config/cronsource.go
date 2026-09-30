@@ -385,18 +385,19 @@ func mergeCronResult(root *tomlConfig, res *importer.Result, path string, byName
 // cron parse renames around them instead of emitting a duplicate that would fail
 // the merged load.
 //
-// The command comes from the wire's `run`, which is what makes the dedup
-// identity-aware rather than name-only: a native task with the same derived name
-// but a different command is a different job, and it gets renamed and kept
-// running. Dropping it on a name match alone would retire a live job with nothing
-// but a warning — see importer.sameEntry.
+// The command and user come from the wire's `run` and `user`, which is what
+// makes the dedup identity-aware rather than name-only: a native task with the
+// same derived name but a different command, or run as another account, is a
+// different job, and it gets renamed and kept running. Dropping it on a name
+// match alone would retire a live job with nothing but a warning — see
+// importer.sameEntry.
 func ownedFromWire(w *tomlConfig) importer.Owned {
 	owned := make(importer.Owned, len(w.Tasks)+len(w.Services)+len(w.Compose))
 	for name, t := range w.Tasks {
-		owned[name] = importer.OwnedEntry{Kind: model.KindTask, Run: t.Run}
+		owned[name] = importer.OwnedEntry{Kind: model.KindTask, Run: t.Run, User: t.User}
 	}
 	for name, s := range w.Services {
-		owned[name] = importer.OwnedEntry{Kind: model.KindService, Run: s.Run}
+		owned[name] = importer.OwnedEntry{Kind: model.KindService, Run: s.Run, User: s.User}
 	}
 	for name := range w.Compose {
 		// A compose alias has no comparable one-shot command, so an empty Run makes
@@ -408,12 +409,18 @@ func ownedFromWire(w *tomlConfig) importer.Owned {
 
 // claimOwned folds one source's emitted names into the shared Owned map so the
 // next source in the glob renames around them.
+//
+// It reserves the name and nothing else. crond runs every line of every crontab,
+// so a job in another crontab is another job even with the same command, the
+// same way two identical lines in one file are. Recording the command let
+// sameEntry treat a later file's job as already owned and drop it with no
+// finding. With no command the entry can never match, so a clash always renames.
 func claimOwned(owned importer.Owned, res *importer.Result) {
 	for _, it := range res.Items() {
 		if !it.LiveEligible() {
 			continue
 		}
-		owned[it.Name] = importer.OwnedEntry{Kind: it.Kind, Run: it.Run}
+		owned[it.Name] = importer.OwnedEntry{Kind: it.Kind}
 	}
 }
 
@@ -634,6 +641,14 @@ func partitionCrondEligible(hits []string, ignored []ignoredSource) ([]string, [
 			kept = append(kept, h)
 		case info.IsDir():
 			ignored = append(ignored, ignoredSource{Path: h, Reason: "it is a directory"})
+		case info.Mode()&os.ModeSymlink != 0 && isRegularFile(h):
+			// Debian's crond runs a root-owned symlink in /etc/cron.d, but
+			// assertPathTrusted refuses symlinks, because one can be repointed after
+			// the check. Following it here would undo that, so the jobs stay
+			// unread and the finding is Skipped: a takeover then blocks on it
+			// instead of retiring cron with these jobs quietly stopped.
+			ignored = append(ignored, ignoredSource{Path: h, Skipped: true, Reason: "it is a symlink, " +
+				"which RunWisp does not follow; replace it with the file it points to"})
 		case !info.Mode().IsRegular():
 			ignored = append(ignored, ignoredSource{Path: h, Reason: "it is not a regular file"})
 		case !crondGlobEligibleName(h):
@@ -643,6 +658,12 @@ func partitionCrondEligible(hits []string, ignored []ignoredSource) ([]string, [
 		}
 	}
 	return kept, ignored
+}
+
+// isRegularFile reports whether path, following symlinks, is a regular file.
+func isRegularFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 // crondGlobEligibleName picks the right naming rule for where h lives: the

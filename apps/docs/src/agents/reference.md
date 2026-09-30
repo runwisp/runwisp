@@ -49,7 +49,8 @@ include_cron:         []string    — glob(s) of REAL crontabs read as live task
                                     filename safe to trust); any other path = `crontab -l` dump, runs as the daemon.
                                     Glob hits are filtered to what crond itself reads, and the rule depends on
                                     the dir: in /etc/cron.d-style dirs, regular files named [A-Za-z0-9_-]+ only, so
-                                    *.dpkg-old / *.disabled / README / subdirs are skipped and reported; in a spool
+                                    *.dpkg-old / *.disabled / README / subdirs are skipped and reported (a symlink
+                                    is never followed: reported as skipped, and `takeover` blocks on it); in a spool
                                     dir, any plausible account name (letters, digits, - _ . $) EXCEPT tmp.* (the
                                     temp file `crontab -e` writes). A LITERAL path (no glob metachars) is never
                                     filtered.

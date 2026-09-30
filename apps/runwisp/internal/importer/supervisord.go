@@ -215,7 +215,9 @@ func (sd *supervisordState) buildGroupMap() map[string]string {
 
 func (sd *supervisordState) processProgram(rawName string, s *iniSection, group string) {
 	taskKind := programKind(s)
-	ref, name, skip := sd.names.resolve(rawName, sanitizeProgramName(rawName), taskKind, programCommand(s, rawName), 0)
+	user, _ := s.get("user")
+	id := OwnedEntry{Kind: taskKind, Run: programCommand(s, rawName), User: user}
+	ref, name, skip := sd.names.resolve(rawName, sanitizeProgramName(rawName), id, 0)
 	if skip {
 		return
 	}

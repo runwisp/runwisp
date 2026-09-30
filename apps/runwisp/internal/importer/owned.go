@@ -26,6 +26,15 @@ type OwnedEntry struct {
 	// command (a compose-backed task), which therefore can never match an
 	// imported command and always force a rename rather than a skip.
 	Run string
+	// User is who the entry runs as, empty for the daemon's own account. The same
+	// command in Alice's and Bob's crontabs is two jobs, not one.
+	User string
+	// Schedule is set only for an entry read live from a crontab: its cron
+	// expression, or "@reboot". That entry is one exact crontab line, so the same
+	// command on another schedule is another crond job. An operator-authored entry
+	// leaves it empty and matches on any schedule, because a job promoted out of a
+	// crontab and retimed since is still that job.
+	Schedule string
 }
 
 // OwnedFrom snapshots the tasks and services a config defines, skipping staged
@@ -44,9 +53,22 @@ func OwnedFrom(tasks []model.Task) Owned {
 		if t.Source == model.SourceStaged {
 			continue
 		}
-		owned[t.Name] = OwnedEntry{Kind: t.Kind, Run: t.Run}
+		e := OwnedEntry{Kind: t.Kind, Run: t.Run, User: t.RunUser}
+		if t.Source == model.SourceCron {
+			e.Schedule = cronSchedule(t.Cron, t.RunOnStart)
+		}
+		owned[t.Name] = e
 	}
 	return owned
+}
+
+// cronSchedule is the schedule a crontab line imports to: its cron expression,
+// or "@reboot" for a run-on-start job. The same string Item.Schedule carries.
+func cronSchedule(cron string, runOnStart bool) string {
+	if runOnStart && cron == "" {
+		return "@reboot"
+	}
+	return cron
 }
 
 // namer assigns each imported entry its final RunWisp name: unique within this
@@ -76,10 +98,11 @@ func (n *namer) unique(base string) string { return n.dd.uniqueIn(base, n.suffix
 
 // resolve opens this job's report row and picks its RunWisp name. source is what
 // the source file called the job; base is that name sanitized to RunWisp's
-// rules. It returns skip=true when the live config already owns exactly this
-// entry — same name, same kind, same command, i.e. a job that was already
-// promoted and is still sitting in the source file — and otherwise a unique
-// name, renamed when something else already claims the base.
+// rules; id is the incoming entry as sameEntry compares it. It returns
+// skip=true when the live config already owns exactly this entry (see
+// sameEntry), i.e. a job that was already promoted and is still sitting in the
+// source file, and otherwise a unique name, renamed when something else already
+// claims the base.
 //
 // The row is opened here, before the skip return, because this is the one place
 // both parsers pass through on their way to a name and the one place that
@@ -87,10 +110,10 @@ func (n *namer) unique(base string) string { return n.dd.uniqueIn(base, n.suffix
 // job never gets, which is the silent drop this design exists to prevent.
 //
 // line is the 1-based source line, or 0 for a source that isn't line-oriented.
-func (n *namer) resolve(source, base string, kind model.TaskKind, command string, line int) (ref itemRef, name string, skip bool) {
+func (n *namer) resolve(source, base string, id OwnedEntry, line int) (ref itemRef, name string, skip bool) {
 	ref = n.res.addItemAt(source, line)
 	existing, reserved := n.owned[base]
-	if reserved && sameEntry(existing, kind, command) {
+	if reserved && sameEntry(existing, id) {
 		ref.note(NoteAlreadyDefined, "already defined in runwisp.toml with the same command")
 		return ref, "", true
 	}
@@ -99,7 +122,7 @@ func (n *namer) resolve(source, base string, kind model.TaskKind, command string
 	case name == base:
 	case reserved:
 		ref.note(NoteRenamedOwned,
-			"runwisp.toml already defines \""+base+"\" with a different command — imported this one as \""+name+"\".")
+			"runwisp.toml already defines \""+base+"\" as a different job — imported this one as \""+name+"\".")
 	default:
 		ref.note(NoteRenamedCollision,
 			"another job in this import already took the name \""+base+"\" — imported this one as \""+name+"\".")
@@ -108,13 +131,20 @@ func (n *namer) resolve(source, base string, kind model.TaskKind, command string
 }
 
 // sameEntry reports whether an imported entry is the same job the live config
-// already owns. `promote` preserves the command verbatim, so trimmed equality
-// plus a matching kind reliably identifies "this one, again" — the signal for
-// skipping a re-import rather than renaming it. An empty command never matches:
-// two entries that merely both lack a command are not the same job.
-func sameEntry(existing OwnedEntry, kind model.TaskKind, command string) bool {
-	if existing.Kind != kind {
-		return false
-	}
-	return strings.TrimSpace(command) != "" && strings.TrimSpace(existing.Run) == strings.TrimSpace(command)
+// already owns. `promote` preserves the command and user verbatim, so trimmed
+// equality of both plus a matching kind identifies "this one, again", the
+// signal for skipping a re-import rather than renaming it. The schedule counts
+// only when the owned entry carries one (see OwnedEntry.Schedule). An empty
+// command never matches: two entries that merely both lack a command are not
+// the same job.
+//
+// Anything short of a match renames, which keeps both jobs running. A false
+// match drops a job without a finding, so every doubt resolves to a rename.
+func sameEntry(existing, incoming OwnedEntry) bool {
+	command := strings.TrimSpace(incoming.Run)
+	return command != "" &&
+		existing.Kind == incoming.Kind &&
+		strings.TrimSpace(existing.Run) == command &&
+		strings.TrimSpace(existing.User) == strings.TrimSpace(incoming.User) &&
+		(existing.Schedule == "" || existing.Schedule == incoming.Schedule)
 }
