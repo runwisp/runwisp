@@ -724,8 +724,8 @@ func cronStdin(rest string) string {
 // a TODO so the operator fixes the line they wrote.
 func (cp *crontabParser) applySchedule(b *block, ref itemRef, schedule string, runOnStart bool) string {
 	if runOnStart {
-		b.set("run_on_start", "true")
-		b.lead = []string{"@reboot — runs once each time the daemon starts."}
+		b.set("run_on_start", tomlString(string(model.RunOnStartBoot)))
+		b.lead = []string{"@reboot: runs once per machine boot, not on daemon restarts."}
 		// @reboot consults no cron grammar, but it still runs under the crontab's
 		// timezone, so a bad zone has to be caught here too.
 		cp.applyTimezone(b, ref)

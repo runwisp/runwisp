@@ -1841,6 +1841,14 @@
             "description": "For tasks: fire once at daemon startup, in addition to any cron schedule",
             "type": "boolean"
           },
+          "runOnStartMode": {
+            "description": "For run_on_start tasks: daemon fires on every daemon start, boot once per machine (or container) boot",
+            "enum": [
+              "daemon",
+              "boot"
+            ],
+            "type": "string"
+          },
           "secretsFile": {
             "description": "Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values are not.",
             "type": "string"
@@ -2192,6 +2200,14 @@
           "runOnStart": {
             "description": "For tasks: fire once at daemon startup, in addition to any cron schedule",
             "type": "boolean"
+          },
+          "runOnStartMode": {
+            "description": "For run_on_start tasks: daemon fires on every daemon start, boot once per machine (or container) boot",
+            "enum": [
+              "daemon",
+              "boot"
+            ],
+            "type": "string"
           },
           "secretsFile": {
             "description": "Path to a dotenv file whose KEY=VALUE pairs are injected into the task's process env. The path is visible in the API/UI; keys and values are not.",

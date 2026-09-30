@@ -121,7 +121,7 @@ description:        string          — human description
 cron:              string          — 5- or 6-field cron (optional leading seconds); also @hourly, @every 1h30m; omit => manual-only
 timezone:          IANA string      — per-task TZ override (else [daemon] timezone)
 jitter:            dur              — cap how far this cron task's start may slip; needs cron (inherits [defaults])
-run_on_start:      bool =false      — fire once at daemon start, on top of any cron (the @reboot equivalent)
+run_on_start:      bool|enum =false — fire once at start, on top of any cron: true|"daemon" = every daemon start; "boot" = once per machine/container boot (@reboot; Linux boot_id + PID 1 start time, macOS kern.bootsessionuuid, else every start); import cron @reboot + systemd oneshot write "boot", supervisord autorestart=false writes true
 manual_trigger:    bool =true       — allow CLI/API/UI trigger; false = cron-only
 hook_tokens:       [](str|{token,allow}) — tasks + services (rejected in [defaults]); bearer tokens for POST /api/hooks/tasks/{name}/{run,start,stop,restart} without a session; plain string = every action, table `allow` = subset (services: no run); each ≥32 chars, no whitespace; use ${VAR}/${file:...}; never shown in API/UI; manual_trigger does NOT apply
 catch_up:          int  =1          — missed-tick replay count: 0 none | 1 latest | N up to N; >1 requires on_overlap=queue (rejected otherwise); 0..10000
@@ -317,7 +317,7 @@ runwisp reload               — re-read runwisp.toml + reconcile live (== SIGHU
                                change — it only appears here.
 runwisp start <target...>    — start one or more tasks/services via the local socket (or --url); target = name or quoted glob ('*' = all controllable);
                                 service: un-parks + fills empty slots, running instances untouched; task: triggers a run, no-op if one is already active/queued
-runwisp restart              — stop + fresh start the daemon (applies restart-only settings, re-fires run_on_start/catch-up); delegates to systemd/launchd if service-installed; --local to pin the per-user unit
+runwisp restart              — stop + fresh start the daemon (applies restart-only settings, re-fires run_on_start (except "boot" tasks already run this boot)/catch-up); delegates to systemd/launchd if service-installed; --local to pin the per-user unit
 runwisp restart <target...>  — restart one or more tasks/services via the local socket (or --url); target = name or quoted glob; daemon untouched, never delegates to systemd
                                 service: bounces every instance (starts it if stopped); task: cancels the active run, waits for it to end, triggers exactly one fresh run (409 if it doesn't drain in time)
 runwisp stop                 — shut the daemon down (delegates to systemd/launchd if service-installed); --local to pin the per-user unit

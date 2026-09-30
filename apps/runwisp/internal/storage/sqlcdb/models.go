@@ -57,6 +57,11 @@ type Run struct {
 	IsFailure     int64             `json:"is_failure"`
 }
 
+type TaskBootID struct {
+	TaskName string `json:"task_name"`
+	BootID   string `json:"boot_id"`
+}
+
 type TaskRegistration struct {
 	TaskName    string    `json:"task_name"`
 	FirstSeenAt time.Time `json:"first_seen_at"`

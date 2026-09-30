@@ -478,8 +478,11 @@ type taskWire struct {
 	Jitter   string `toml:"jitter,omitempty"`
 	// CatchUp is *int so an explicit `catch_up = 0` (skip) is distinguishable from
 	// an omitted key (nil, inherits the default).
-	CatchUp    *int `toml:"catch_up,omitempty"`
-	RunOnStart bool `toml:"run_on_start,omitempty"`
+	CatchUp *int `toml:"catch_up,omitempty"`
+	// RunOnStart is a boolean or a mode string ("daemon" / "boot"), so it
+	// decodes as any and is resolved by parseRunOnStart. Exempt from ${...}
+	// substitution: the expander cannot write through an interface.
+	RunOnStart any `toml:"run_on_start,omitempty" expand:"-"`
 
 	MaxConcurrent int `toml:"max_concurrent,omitempty"`
 	MaxQueued     int `toml:"max_queued,omitempty"`
@@ -506,13 +509,18 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	if err != nil {
 		return model.Task{}, err
 	}
+	runOnStart, err := parseRunOnStart(w.RunOnStart)
+	if err != nil {
+		return model.Task{}, fmt.Errorf("task %q has invalid run_on_start: %w", name, err)
+	}
 	task.OnOverlap = w.OnOverlap
 	task.Parameters = params
 	task.Cron = w.Cron
 	task.Timezone = w.Timezone
 	task.Jitter = jitter
 	task.CatchUp = w.CatchUp
-	task.RunOnStart = w.RunOnStart
+	task.RunOnStart = runOnStart != ""
+	task.RunOnStartMode = runOnStart
 	task.MaxConcurrent = w.MaxConcurrent
 	task.MaxQueued = w.MaxQueued
 	task.RetryAttempts = w.RetryAttempts
@@ -520,6 +528,28 @@ func (w *taskWire) toTask(name string) (model.Task, error) {
 	task.RetryBackoff = w.RetryBackoff
 	return task, nil
 }
+
+// parseRunOnStart resolves the run_on_start value: true is shorthand for
+// "daemon", false and absent mean off (empty mode).
+func parseRunOnStart(v any) (model.RunOnStartMode, error) {
+	switch v := v.(type) {
+	case nil:
+		return "", nil
+	case bool:
+		if v {
+			return model.RunOnStartDaemon, nil
+		}
+		return "", nil
+	case string:
+		if m := model.RunOnStartMode(v); m == model.RunOnStartDaemon || m == model.RunOnStartBoot {
+			return m, nil
+		}
+		return "", fmt.Errorf("got %q; %s", v, runOnStartValid)
+	}
+	return "", fmt.Errorf("got %v; %s", v, runOnStartValid)
+}
+
+const runOnStartValid = `valid values are true, false, "daemon", and "boot"`
 
 // serviceWire is the over-the-wire shape for [services.*] entries. Cron and
 // catch_up are intentionally omitted — services are not cron-driven. Services
