@@ -112,7 +112,10 @@ type fixture struct {
 	// than a field of its own because PlanNoop is PlanKind's zero value, so a
 	// fixture that spelled it out could not tell "noop" from "unset".
 	unitInstalled bool
-	daemonRunning bool
+	// serviceStopped reports an installed unit that is not running, the state
+	// `runwisp stop` leaves behind.
+	serviceStopped bool
+	daemonRunning  bool
 
 	allowSkipped bool
 	// scanBlocked seeds CronScan.Blocked, the pre-config refusals.
@@ -141,7 +144,7 @@ func (fx fixture) build(t *testing.T) (*Cutover, *fakeInstaller, string) {
 	inst := &fakeInstaller{
 		cronUnit:   fx.cronUnit,
 		cronActive: fx.cronActive,
-		status:     autostart.Status{Installed: fx.unitInstalled},
+		status:     autostart.Status{Installed: fx.unitInstalled, Running: fx.unitInstalled && !fx.serviceStopped},
 		plan:       unitPlan,
 	}
 

@@ -372,6 +372,31 @@ func TestCompute_FullyDoneBoxHasNothingToDo(t *testing.T) {
 	assert.True(t, p.NothingToDo())
 }
 
+// TestCompute_StoppedServiceWithCronMaskedIsNotSatisfied: after `runwisp stop`
+// on a taken-over box, cron is masked and RunWisp is down, so nothing runs the
+// jobs. A re-run of `takeover` used to call that "Nothing to do".
+func TestCompute_StoppedServiceWithCronMaskedIsNotSatisfied(t *testing.T) {
+	c, _, cfgPath := fixture{
+		crontabs:       map[string]string{"backup": oneJob},
+		cronUnit:       "cron.service",
+		cronActive:     false, // masked by the take-over
+		unitInstalled:  true,
+		serviceStopped: true,
+	}.build(t)
+	require.NoError(t, os.WriteFile(cfgPath, []byte(
+		"[daemon]\ninclude_cron = [\""+filepath.Join(filepath.Dir(cfgPath), "crontabs", "*")+"\"]\n"), 0o644))
+
+	p, err := c.Compute(context.Background())
+	require.NoError(t, err)
+
+	require.False(t, p.Blocked(), "%v", blockerKinds(p))
+	assert.False(t, p.NothingToDo())
+	s, ok := p.step(StepInstallService)
+	require.True(t, ok)
+	assert.False(t, s.Satisfied)
+	assert.Contains(t, s.Detail, "Start RunWisp")
+}
+
 // TestCompute_CollectsEveryBlockerRatherThanTheFirst matters for --dry-run: an
 // operator fixing a box should see the whole list, not discover the next one
 // after each attempt.

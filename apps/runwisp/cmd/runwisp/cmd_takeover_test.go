@@ -76,7 +76,7 @@ func (f *fakeTakeoverInstaller) Uninstall(context.Context, autostart.UninstallOp
 }
 
 func (f *fakeTakeoverInstaller) Status(context.Context, autostart.InstallOptions) (autostart.Status, error) {
-	return autostart.Status{Installed: f.installed}, nil
+	return autostart.Status{Installed: f.installed, Running: f.installed}, nil
 }
 
 func (f *fakeTakeoverInstaller) Stop(context.Context, autostart.InstallOptions) error    { return nil }

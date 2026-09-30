@@ -120,6 +120,15 @@ func (c *Cutover) applyConfig(p Plan, res *Result, out io.Writer) error {
 		if err := c.deps.WriteConfig(path, patterns); err != nil {
 			return err
 		}
+		// The same gate WireCron applies: a scaffold the daemon can't load would
+		// have cron masked under a service that crash-loops.
+		if _, err := c.deps.Load(path); err != nil {
+			_ = os.Remove(path)
+			return &userError{
+				title:   fmt.Sprintf("%s would not load, so nothing was written", path),
+				details: err.Error() + "\n\nCron is untouched.",
+			}
+		}
 		fmt.Fprintf(out, "Wrote %s\n", path)
 		res.ConfigWritten = path
 

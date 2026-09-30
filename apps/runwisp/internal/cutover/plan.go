@@ -110,8 +110,10 @@ type Evidence struct {
 	// nothing to mask, not that RunWisp must refuse.
 	CronUnit   string
 	CronActive bool
-	// UnitInstalled reports whether RunWisp's own service is already installed.
-	UnitInstalled bool
+	// UnitInstalled reports whether RunWisp's own service is already installed,
+	// and ServiceRunning whether it is up right now.
+	UnitInstalled  bool
+	ServiceRunning bool
 	// DaemonRunning is sampled before anything is executed.
 	DaemonRunning bool
 }

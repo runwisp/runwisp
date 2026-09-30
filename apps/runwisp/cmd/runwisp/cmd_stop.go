@@ -85,6 +85,9 @@ func runStop(cmd *cobra.Command, args []string, f Flags) error {
 
 	if !isDaemonRunning(f) {
 		fmt.Fprintf(out, "No daemon is running on data dir %s — nothing to stop.\n", absPathOrFallback(f.DataDir))
+		if ok {
+			warnCronMasked(out, st)
+		}
 		return nil
 	}
 
@@ -108,5 +111,17 @@ func stopViaService(out io.Writer, installer autostart.Installer, opts autostart
 		}
 	}
 	fmt.Fprintln(out, "Daemon stopped. It stays enabled and will start again on the next boot; 'runwisp service uninstall' removes it for good.")
+	warnCronMasked(out, st)
 	return nil
+}
+
+// warnCronMasked says so when a stop leaves the box with no scheduler at all:
+// the take-over masked cron, so none of those jobs run until RunWisp is back.
+func warnCronMasked(out io.Writer, st autostart.Status) {
+	if st.CronUnit == "" || !st.CronMasked {
+		return
+	}
+	fmt.Fprintf(out, "\nWarning: %s is masked by the RunWisp take-over, so no cron jobs run until RunWisp starts again.\n"+
+		"  runwisp restart             start it now\n"+
+		"  runwisp service uninstall   hand the jobs back to %s\n", st.CronUnit, st.CronUnit)
 }

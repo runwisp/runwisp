@@ -141,7 +141,7 @@ func (c *Cutover) probeUnits(ctx context.Context, ev *Evidence) error {
 	if err != nil {
 		return fmt.Errorf("probe the runwisp service: %w", err)
 	}
-	ev.UnitInstalled = st.Installed
+	ev.UnitInstalled, ev.ServiceRunning = st.Installed, st.Running
 	return nil
 }
 
@@ -346,7 +346,8 @@ func (c *Cutover) configSteps(ev Evidence) []Step {
 // only if cron is also already retired: a marker-carrying unit whose cron came
 // back is not "done", it is the reassert case, and treating it as satisfied is
 // how re-running `takeover` used to print "Already installed ✓" and return on a
-// box that was double-firing.
+// box that was double-firing. The same goes for a stopped service on a box whose
+// cron is masked: that box runs no jobs at all.
 func (c *Cutover) installStep(ctx context.Context, p Plan) ([]Step, error) {
 	opts := p.Opts
 	opts.TakeOverCron = p.MasksCron
@@ -360,7 +361,14 @@ func (c *Cutover) installStep(ctx context.Context, p Plan) ([]Step, error) {
 	if p.MasksCron {
 		detail = fmt.Sprintf("Install RunWisp as a system service and retire %s", p.Evidence.CronUnit)
 	}
-	satisfied := unitPlan.Kind == autostart.PlanNoop && !p.Evidence.CronActive && p.Evidence.UnitInstalled
+	// A stopped service is not "done" either: with cron masked, nothing runs the
+	// jobs until RunWisp is back, so a re-run has to start it.
+	noop := unitPlan.Kind == autostart.PlanNoop && !p.Evidence.CronActive && p.Evidence.UnitInstalled
+	satisfied := noop && (p.Evidence.ServiceRunning || !p.MasksCron)
+	if noop && !satisfied {
+		detail = fmt.Sprintf("Start RunWisp: it is installed but not running, and with %s masked\n"+
+			"       nothing is running your jobs", p.Evidence.CronUnit)
+	}
 
 	steps := append(c.configSteps(p.Evidence), Step{
 		Kind:      StepInstallService,

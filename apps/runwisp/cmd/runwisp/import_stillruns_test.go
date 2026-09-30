@@ -94,8 +94,7 @@ func TestImportDoesNotWarnWithNothingToDuplicate(t *testing.T) {
 	t.Run("config that won't load", func(t *testing.T) {
 		dir := t.TempDir()
 		stderr, err := importTwoTier(t, filepath.Join(dir, "runwisp.toml"), "99 99 * * * /bin/bad\n")
-		require.NoError(t, err)
-		assert.Contains(t, stderr, "Resolve the # TODO items in")
+		require.Error(t, err, "a config that won't load is refused")
 		assert.NotContains(t, stderr, want)
 	})
 }

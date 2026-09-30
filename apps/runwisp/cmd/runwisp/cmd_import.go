@@ -374,17 +374,23 @@ func printImportPlan(stderr io.Writer, rep importReport, f Flags, opts importOpt
 // transaction, the include wiring, and the merged-load gate; this function maps
 // its outcomes onto the CLI's voice.
 //
-// rep.validationErr is the pre-known validation error of the generated content
-// itself (an unparseable cron that became a `# TODO`). When set, the write skips
-// the load gate so the files are kept for the operator to fix in place —
-// matching the single-file --write behavior, and the reason the TODO was emitted
-// at all.
+// rep.validationErr means the generated content itself doesn't load (a crontab
+// line that became a `# TODO`). That is refused before anything is written:
+// wiring it in would leave a config the daemon can't load, so every task stops
+// on the next restart, and on a taken-over box cron is masked too.
 func stageImport(stderr io.Writer, rootPath, stagingContent string, rep importReport, opts importOpts) error {
 	layout := configedit.NewLayout(rootPath)
+	if rep.validationErr != nil {
+		printImportSummary(stderr, rep, opts, func(io.Writer, importStyles) {})
+		return &userFacingError{
+			title: "the imported config would not load, so nothing was written",
+			details: rep.validationErr.Error() +
+				"\n\nFix that line in the source and re-run, or use -o FILE to get a standalone file you can edit by hand.",
+		}
+	}
 	staged, err := configedit.Stage(configedit.StageRequest{
-		Layout:   layout,
-		Staging:  []byte(stagingContent),
-		Validate: rep.validationErr == nil,
+		Layout:  layout,
+		Staging: []byte(stagingContent),
 	})
 	if err != nil {
 		return stageError(err, layout)
