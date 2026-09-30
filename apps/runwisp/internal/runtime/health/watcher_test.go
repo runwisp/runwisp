@@ -168,7 +168,7 @@ func TestWatch_CancelMidProbeIsNotAPass(t *testing.T) {
 
 func TestWatch_HonorsProbeFailuresPolicy(t *testing.T) {
 	// failures = ["timeout"]: a non-zero exit is not a failure, so it passes.
-	probe := &model.Task{FailureReasons: map[model.EndReason]struct{}{model.ReasonTimeout: {}}}
+	probe := &model.Task{Failures: model.FailureMatcher{Reasons: map[model.EndReason]struct{}{model.ReasonTimeout: {}}}}
 	h := newHarness(t, false)
 	h.cancelAt = 1
 
@@ -182,6 +182,8 @@ func TestDescribe(t *testing.T) {
 	timedOut := executor.ProbeResult{ExecuteResult: executor.ExecuteResult{ExitCode: -1, TimedOut: true}}
 	assert.Equal(t, "timed out after 5s", w.describe(timedOut))
 	assert.Equal(t, "exit 2", w.describe(executor.ProbeResult{ExecuteResult: executor.ExecuteResult{ExitCode: 2}}))
+	matched := executor.ProbeResult{ExecuteResult: executor.ExecuteResult{OutputMatched: true}, MatchedPattern: "(?i)error"}
+	assert.Equal(t, `exit 0, output matched failures pattern "(?i)error"`, w.describe(matched))
 }
 
 func ptr(d time.Duration) *time.Duration { return &d }

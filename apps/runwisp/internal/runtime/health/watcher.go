@@ -134,7 +134,7 @@ func (w *Watcher) check(ctx context.Context) (res executor.ProbeResult, done boo
 // passed applies the probe's own `failures` policy, exactly as for a task run:
 // any outcome it doesn't classify as a failure is a pass.
 func (w *Watcher) passed(res executor.ProbeResult) bool {
-	return !w.Probe.IsFailureReason(res.EndReason(), res.ExitCode)
+	return !w.Probe.IsFailureReason(res.EndReason(), res.ExitCode, res.OutputMatched)
 }
 
 // describe renders one probe outcome for a log line: why it ended, then what
@@ -146,6 +146,8 @@ func (w *Watcher) describe(res executor.ProbeResult) string {
 		outcome = res.Error.Error()
 	case res.EndReason() == model.ReasonTimeout:
 		outcome = fmt.Sprintf("timed out after %s", w.Probe.TimeoutValue())
+	case res.MatchedPattern != "":
+		outcome = fmt.Sprintf("exit %d, output matched failures pattern %q", res.ExitCode, res.MatchedPattern)
 	default:
 		outcome = fmt.Sprintf("exit %d", res.ExitCode)
 	}

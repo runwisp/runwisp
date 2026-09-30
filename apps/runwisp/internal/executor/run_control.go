@@ -4,6 +4,7 @@
 package executor
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -41,6 +42,9 @@ type RunControl interface {
 type ProbeResult struct {
 	ExecuteResult
 	Output string
+	// MatchedPattern is the `failures` output pattern a line matched (which
+	// also sets OutputMatched); empty when none did.
+	MatchedPattern string
 }
 
 // probeOutputTail caps how much of a probe's output ProbeResult keeps: enough
@@ -151,6 +155,8 @@ func (r *RoutingExecutor) probe(ctx context.Context, probe *model.Task, run *mod
 		return probeError(fmt.Errorf("failed to start %s execution: %w", execDef.ExecType(), err))
 	}
 
+	redactor := newSecretRedactor(probe.Secrets)
+	matcher := &outputMatcher{res: probe.Failures.OutputRegexps()}
 	tail := &tailBuffer{max: probeOutputTail}
 	var wg sync.WaitGroup
 	for _, stream := range []io.Reader{proc.Stdout, proc.Stderr} {
@@ -160,7 +166,9 @@ func (r *RoutingExecutor) probe(ctx context.Context, probe *model.Task, run *mod
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _ = io.Copy(tail, stream)
+			scanProbeLines(io.TeeReader(stream, tail), func(line string) {
+				matcher.match(redactor.text(line))
+			})
 		}()
 	}
 	wg.Wait()
@@ -169,9 +177,28 @@ func (r *RoutingExecutor) probe(ctx context.Context, probe *model.Task, run *mod
 		proc.Cleanup()
 	}
 
-	return ProbeResult{
-		ExecuteResult: *classifyExecuteResult(ctx, "", exitCode, waitErr),
-		Output:        newSecretRedactor(probe.Secrets).text(tail.String()),
+	res := ProbeResult{
+		ExecuteResult:  *classifyExecuteResult(ctx, "", exitCode, waitErr),
+		Output:         redactor.text(tail.String()),
+		MatchedPattern: matcher.pattern(),
+	}
+	res.OutputMatched = res.MatchedPattern != ""
+	return res
+}
+
+// probeLineMax bounds one line a probe's output patterns see. A longer line is
+// matched in pieces, so a probe that never prints a newline can't grow memory.
+const probeLineMax = 64 * 1024
+
+// scanProbeLines calls fn with each line read from r, until r ends or fails.
+func scanProbeLines(r io.Reader, fn func(string)) {
+	lines := bufio.NewReaderSize(r, probeLineMax)
+	for {
+		line, _, err := lines.ReadLine()
+		if err != nil {
+			return
+		}
+		fn(string(line))
 	}
 }
 
