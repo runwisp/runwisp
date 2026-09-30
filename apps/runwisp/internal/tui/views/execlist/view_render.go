@@ -114,7 +114,7 @@ func (v *ExecView) renderTitleRow(w int) string {
 	}
 	idTag := idStyle.Render("#" + v.Run.ID[len(v.Run.ID)-8:])
 
-	taskLabel := instanceLabel(v.Run.TaskName, v.Run.InstanceIndex, v.InstanceCount)
+	taskLabel := model.InstanceLabel(v.Run.TaskName, v.Run.InstanceIndex, v.InstanceCount)
 	headerLeft := bgLight.Render("  ") +
 		backBtn +
 		bgLight.Render("  ") +

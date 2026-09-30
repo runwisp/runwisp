@@ -40,7 +40,7 @@ Besides the `RUNWISP_*` twins of the global options above:
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `RUNWISP_PASSWORD`        | The Web UI and REST API password, kept in memory only. Unset: a new one every boot. See [Authentication](/operations/auth/).                  |
 | `RUNWISP_AUTH`            | `off` disables authentication. Can't be combined with `RUNWISP_PASSWORD`. See [Authentication](/operations/auth/#running-without-a-password). |
-| `RUNWISP_URL`             | Remote daemon URL for `run` and `tui`, same as `--url`.                                                                                       |
+| `RUNWISP_URL`             | Remote daemon URL for `run`, `logs`, `start`, `stop`, `restart`, and `tui`, same as `--url`.                                                  |
 | `RUNWISP_TLS`             | Overrides [`[daemon] tls`](/configuration/daemon/#tls-tls_cert-tls_key) (`auto` or `off`).                                                    |
 | `RUNWISP_TRUSTED_PROXIES` | Comma-separated CIDRs. Overrides [`[daemon] trusted_proxies`](/configuration/daemon/#trusted_proxies).                                        |
 | `RUNWISP_STATION_TOKEN`   | Token for `runwisp station`.                                                                                                                  |
@@ -174,6 +174,9 @@ For "will the daemon start on boot?", use [`service status`](#runwisp-service-st
 `schemaVersion`; within one version, fields are only ever added. A failure still
 exits non-zero and still prints JSON, with an `error` or `errors` field.
 
+[`logs --json`](#runwisp-logs) streams instead: one JSON object per line, each
+with a `type`.
+
 ## Running tasks
 
 ### `runwisp run`
@@ -213,6 +216,49 @@ otherwise it runs the task inside the CLI process.
     "durationMs": 812,
     "failed": false
 }
+```
+
+### `runwisp logs`
+
+```bash
+runwisp logs backup
+runwisp logs backup -n 50 | grep -i error
+runwisp logs -f web worker
+runwisp logs -f '*'
+runwisp logs 01J8Z3K9QK6VN8XG2R5F7T1C4M -n +20
+```
+
+Prints the output of tasks, services, and runs, then exits. Needs a running
+daemon.
+
+A target is a task or service name, a run ID, or a quoted glob (`'web*'`, or
+`'*'` for everything). A name shows its active runs, or its most recent finished
+run when none is active. A glob also matches tasks with `manual_trigger = false`.
+
+Each run's full log is printed. What the task wrote to stderr goes to stderr, so
+add `2>&1` to grep both. When the output mixes several tasks, or several
+instances of one service, each line starts with its source (`web#2 | ...`).
+How each finished run ended is printed to stderr.
+
+The exit code says whether the logs could be shown. Use
+[`runwisp run`](#runwisp-run) to exit with a task's exit code.
+
+| Flag             | Description                                                                                                                               |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `-n`, `--lines`  | `N` prints the last N lines of each run, `+N` the first N. Default: all lines, or 10 with `-f`.                                           |
+| `-f`, `--follow` | Keep printing new output. With a name or glob, also follow new runs of the matching tasks until Ctrl+C. With run IDs, exit when they end. |
+| `--json`         | Print one JSON object per line on stdout, including stderr lines.                                                                         |
+| `--url`          | Read from a remote daemon at this URL. Env: `RUNWISP_URL`.                                                                                |
+| `--password`     | Password for `--url`. Env: `RUNWISP_PASSWORD`.                                                                                            |
+
+With `--json`, each log line is a `line` record, and a run that ends adds an
+`end` record with the same fields as [`run --json`](#runwisp-run). `ts` is
+the line's Unix time in milliseconds. A line too long to store in one piece
+is split, and every piece after the first has `"continued":true`.
+
+```json
+{"type":"line","task":"backup","runId":"01JZZBACKUP0000000000000000","n":0,"ts":1767225600000,"stream":"stdout","text":"copying files"}
+{"type":"end","schemaVersion":1,"task":"backup","runId":"01JZZBACKUP0000000000000000","status":"ended","endReason":"failed","exitCode":3,"triggeredBy":"cron","failed":true}
 ```
 
 ## Controlling the daemon

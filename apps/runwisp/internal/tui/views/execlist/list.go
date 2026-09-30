@@ -335,7 +335,7 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 	if e.instanceCount != nil {
 		count = e.instanceCount(item.Run.TaskName)
 	}
-	taskLabel := instanceLabel(item.Run.TaskName, item.Run.InstanceIndex, count)
+	taskLabel := model.InstanceLabel(item.Run.TaskName, item.Run.InstanceIndex, count)
 	return rowStyle.Render(e.rowPrefix(item.Run.ID)+padCell(taskLabel, cw.task)+" ") +
 		statusCell +
 		rowStyle.Render(" "+

@@ -56,6 +56,10 @@ task's last run, and the configured tasks. The output shapes are in
 [JSON output](/reference/cli/#json-output) and on each command in the
 [CLI reference](/reference/cli/).
 
+To see why a run failed, `runwisp logs backup -n 50` prints the last 50 lines of
+the task's latest run and how it ended. It never waits for more output unless
+you pass `-f`. See [`runwisp logs`](/reference/cli/#runwisp-logs).
+
 An agent on the same machine as the daemon needs no password: the CLI talks to
 it over the [control socket](/reference/cli/#control-socket). Neither the socket
 nor the REST API can change a task definition; only `runwisp.toml` can.

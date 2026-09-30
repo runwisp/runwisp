@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release tarballs, checksums and Docker images now ship with signed build provenance you can check with `gh attestation verify`.
 - **`failures` accepts `output:<regex>` tokens**: a run whose stdout or stderr matches the pattern is marked failed, even if it exits 0. For example, `failures = ["+output:(?i)error"]`.
 - **Pause a cron task's schedule** from the schedule chip on its Web UI page, `p` in the TUI, `runwisp pause`/`resume`, or `POST /api/tasks/{task}/pause` and `.../resume`. Skipped ticks are not caught up, manual runs still work, and the pause survives reloads and restarts. Needs `manual_trigger = true`; `runwisp status` lists paused tasks.
+- **`runwisp logs <target...>`** prints the output of tasks, services, and runs from the CLI (`-n N` for the last lines, `-n +N` for the first), or follows it live with `-f`. `--json` prints one record per line for scripts.
 
 ### Changed
 
@@ -20,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `runwisp run` no longer gives up on a task that prints nothing for hours and exits 0 while it is still running.
 - After `runwisp takeover`, if systemd gives up restarting RunWisp, cron is unmasked and started again, so the box is never left without a scheduler.
 - Uninstalling or rolling back a take-over restores cron to the state it was in before: a cron you had masked stays masked, and a stopped one is not started.
 - The daemon now exits non-zero when it shuts down because of a fatal error (the server failing to start, a crash in a background worker), so systemd and launchd restart it. `runwisp stop` and SIGTERM still exit 0.
