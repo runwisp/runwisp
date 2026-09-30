@@ -243,6 +243,10 @@ func (m Model) handleExecViewClick(x, y int) (tea.Model, tea.Cmd) {
 		if ca, ok := actionConfirm(m.execView.Action()); ok {
 			return m, m.confirmAction(ca)
 		}
+	case execlist.HeaderFocusDelete:
+		if m.execView.CanDelete() {
+			return m, m.confirmAction(confirmActionDelete)
+		}
 	}
 
 	return m, nil

@@ -28,8 +28,8 @@ const (
 
 // actionConfirm maps the exec view's header action button to its confirm
 // constant. Single source of truth shared by mouse-click and Enter handling
-// so the two paths can never drift (a missing ActionDelete case here
-// previously made the Delete button unclickable with the mouse).
+// so the two paths can never drift. The Delete button is a separate header
+// item (HeaderFocusDelete), not an Action.
 func actionConfirm(a execlist.Action) (confirmAction, bool) {
 	switch a {
 	case execlist.ActionStop:
@@ -40,8 +40,6 @@ func actionConfirm(a execlist.Action) (confirmAction, bool) {
 		return confirmActionRetry, true
 	case execlist.ActionRestartService:
 		return confirmActionRestartService, true
-	case execlist.ActionDelete:
-		return confirmActionDelete, true
 	}
 	return 0, false
 }

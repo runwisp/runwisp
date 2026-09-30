@@ -582,7 +582,6 @@ func TestActionConfirm(t *testing.T) {
 		{"StopService", execlist.ActionStopService, confirmActionStopService, true},
 		{"Retry", execlist.ActionRetry, confirmActionRetry, true},
 		{"RestartService", execlist.ActionRestartService, confirmActionRestartService, true},
-		{"Delete", execlist.ActionDelete, confirmActionDelete, true},
 		{"None falls through", execlist.ActionNone, 0, false},
 	}
 	for _, tc := range tests {

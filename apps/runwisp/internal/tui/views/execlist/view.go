@@ -27,6 +27,7 @@ const (
 	HeaderFocusDuration
 	HeaderFocusParams
 	HeaderFocusID
+	HeaderFocusDelete
 )
 
 type Action int
@@ -41,9 +42,6 @@ const (
 	// ActionRestartService re-spawns a stopped service or restarts a
 	// running one.
 	ActionRestartService
-	// ActionDelete removes a terminal run record (and its log files).
-	// Never offered for running, pending, or service runs.
-	ActionDelete
 )
 
 type headerHitBox struct {
@@ -89,7 +87,10 @@ type ExecView struct {
 	headerLayout   execHeaderLayout
 	TaskIsService  bool
 	serviceStopped bool
-	LoadingOlder   bool
+	// paramsHidden is set by View when the Params chip didn't fit the header
+	// width, so keyboard navigation skips it.
+	paramsHidden bool
+	LoadingOlder bool
 	// InstanceCount is the task's currently configured instance count. When it
 	// exceeds 1 the header shows a 1-based #N instance suffix.
 	InstanceCount int
@@ -181,19 +182,19 @@ func (v *ExecView) Update(msg tea.Msg) tea.Cmd {
 // Header focus moves on a two-row grid:
 //
 //	Row 1:  Back .................... ID
-//	Row 2:  Started Duration [Params] ........ Action
+//	Row 2:  Started Duration [Params] ........ [Action] [Delete]
 //
-// Params and Action are optional; navigation skips whichever is absent.
-// Up/Down cross between rows (and into the log pane); Left/Right walk within
-// a row. The Action button is the right end of row 2 — reachable from row 1
-// by pressing Down on ID, and from row 2 by walking Right through the meta
-// fields.
+// Params, Action and Delete are optional; navigation skips whichever is
+// absent. Up/Down cross between rows (and into the log pane); Left/Right walk
+// within a row. The buttons are the right end of row 2 (focus-wise, even when
+// a narrow header draws them on the line below) — reachable from row 1 by
+// pressing Down on ID, and from row 2 by walking Right through the meta fields.
 
 func (v *ExecView) handleKeyUp() tea.Cmd {
 	switch v.HeaderFocus {
 	case HeaderFocusBack, HeaderFocusID:
 		return nil
-	case HeaderFocusStarted, HeaderFocusDuration, HeaderFocusParams, HeaderFocusAction:
+	case HeaderFocusStarted, HeaderFocusDuration, HeaderFocusParams, HeaderFocusAction, HeaderFocusDelete:
 		v.HeaderFocus = HeaderFocusID
 		return nil
 	default:
@@ -215,7 +216,7 @@ func (v *ExecView) handleKeyDown(key string) tea.Cmd {
 	case HeaderFocusID:
 		v.HeaderFocus = v.rightmostRow2()
 		return nil
-	case HeaderFocusStarted, HeaderFocusDuration, HeaderFocusParams, HeaderFocusAction:
+	case HeaderFocusStarted, HeaderFocusDuration, HeaderFocusParams, HeaderFocusAction, HeaderFocusDelete:
 		v.HeaderFocus = HeaderFocusNone
 		return nil
 	default:
@@ -229,12 +230,15 @@ func (v *ExecView) handleKeyLeft(key string) tea.Cmd {
 	case HeaderFocusID:
 		v.HeaderFocus = HeaderFocusBack
 		return nil
-	case HeaderFocusAction:
-		if v.hasParams() {
-			v.HeaderFocus = HeaderFocusParams
+	case HeaderFocusDelete:
+		if v.hasActionButton() {
+			v.HeaderFocus = HeaderFocusAction
 		} else {
-			v.HeaderFocus = HeaderFocusDuration
+			v.HeaderFocus = v.lastMetaField()
 		}
+		return nil
+	case HeaderFocusAction:
+		v.HeaderFocus = v.lastMetaField()
 		return nil
 	case HeaderFocusParams:
 		v.HeaderFocus = HeaderFocusDuration
@@ -261,16 +265,19 @@ func (v *ExecView) handleKeyRight(key string) tea.Cmd {
 	case HeaderFocusDuration:
 		if v.hasParams() {
 			v.HeaderFocus = HeaderFocusParams
-		} else if v.hasActionButton() {
-			v.HeaderFocus = HeaderFocusAction
+		} else {
+			v.HeaderFocus = v.firstButton(v.HeaderFocus)
 		}
 		return nil
 	case HeaderFocusParams:
-		if v.hasActionButton() {
-			v.HeaderFocus = HeaderFocusAction
+		v.HeaderFocus = v.firstButton(v.HeaderFocus)
+		return nil
+	case HeaderFocusAction:
+		if v.CanDelete() {
+			v.HeaderFocus = HeaderFocusDelete
 		}
 		return nil
-	case HeaderFocusID, HeaderFocusAction:
+	case HeaderFocusID, HeaderFocusDelete:
 		return nil
 	default:
 		v.Pane.HandleKeyScroll(key)
@@ -279,16 +286,35 @@ func (v *ExecView) handleKeyRight(key string) tea.Cmd {
 }
 
 // rightmostRow2 returns the right-most focusable item on header row 2, used
-// when dropping down from the row-1 ID field. Action sits at the far right
-// when present, otherwise the last meta field.
+// when dropping down from the row-1 ID field. Delete sits at the far right
+// when present, then Action, otherwise the last meta field.
 func (v *ExecView) rightmostRow2() HeaderFocusItem {
+	if v.CanDelete() {
+		return HeaderFocusDelete
+	}
 	if v.hasActionButton() {
 		return HeaderFocusAction
 	}
+	return v.lastMetaField()
+}
+
+// lastMetaField is the right-most meta field on row 2 (Params when shown).
+func (v *ExecView) lastMetaField() HeaderFocusItem {
 	if v.hasParams() {
 		return HeaderFocusParams
 	}
 	return HeaderFocusDuration
+}
+
+// firstButton is the left-most header button, or current when there is none.
+func (v *ExecView) firstButton(current HeaderFocusItem) HeaderFocusItem {
+	if v.hasActionButton() {
+		return HeaderFocusAction
+	}
+	if v.CanDelete() {
+		return HeaderFocusDelete
+	}
+	return current
 }
 
 func (v *ExecView) Action() Action {
@@ -314,12 +340,12 @@ func (v *ExecView) Action() Action {
 	if v.Run.IsRetryable() {
 		return ActionRetry
 	}
-	return ActionDelete
+	return ActionNone
 }
 
-// CanDelete reports whether the run is in a state that allows deletion.
-// Used by keybindings and confirm flows that surface delete independently
-// of the header action button.
+// CanDelete reports whether the run is in a state that allows deletion
+// (terminal, non-service). Delete has its own header button next to the
+// primary Action, so a failed run offers both Retry and Delete.
 func (v *ExecView) CanDelete() bool {
 	if v.Run == nil || v.TaskIsService {
 		return false
@@ -338,7 +364,7 @@ func (v *ExecView) hasActionButton() bool {
 // hasParams reports whether the run carries any resolved parameters worth
 // surfacing as the focusable header chip.
 func (v *ExecView) hasParams() bool {
-	return v.Run != nil && len(v.Run.Params) > 0
+	return v.Run != nil && len(v.Run.Params) > 0 && !v.paramsHidden
 }
 
 func (v *ExecView) CopyableValue() string {
