@@ -59,13 +59,8 @@ func RunStartupTasks(ctx context.Context, tasks map[string]*model.Task, runner T
 		if !task.RunOnStart || task.Kind.IsService() || task.Held() {
 			continue
 		}
-		if paused != nil && paused(name) {
-			slog.Info("Skipped run_on_start: schedule paused", "task", name)
-			continue
-		}
 		perBoot := task.RunOnStartMode == model.RunOnStartBoot && bootID != ""
-		if perBoot && alreadyRanThisBoot(ctx, db, name, bootID) {
-			slog.Info(`run_on_start = "boot" task already ran this boot; not firing it again`, "task", name)
+		if skipStartupRun(ctx, db, name, bootID, perBoot, paused) {
 			continue
 		}
 		if _, err := runner.TriggerRunWithOptions(name, TriggerRunOptions{
@@ -81,6 +76,21 @@ func RunStartupTasks(ctx context.Context, tasks map[string]*model.Task, runner T
 		}
 	}
 	return result
+}
+
+// skipStartupRun reports that an otherwise eligible run_on_start task must not
+// fire at this start: its schedule is paused, or it is a "boot" task that
+// already ran this boot.
+func skipStartupRun(ctx context.Context, db storage.RunRepository, name, bootID string, perBoot bool, paused func(string) bool) bool {
+	if paused != nil && paused(name) {
+		slog.Info("Skipped run_on_start: schedule paused", "task", name)
+		return true
+	}
+	if perBoot && alreadyRanThisBoot(ctx, db, name, bootID) {
+		slog.Info(`run_on_start = "boot" task already ran this boot; not firing it again`, "task", name)
+		return true
+	}
+	return false
 }
 
 // warnNoBootID says once that "boot" tasks lost their once-per-boot guard.
