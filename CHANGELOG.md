@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Web UI task list now picks up `runwisp reload` without a page refresh.
 - Long task names no longer wrap onto a second line in the Web UI top bar; they are cut short instead.
 - Notifications for a run killed by `log_on_full = "kill"` now say so instead of reporting the kill signal's exit code.
+- Jittered tasks that share a cron tick no longer start two at once at the tick. They now take turns whatever order the scheduler hands them over in.
 
 ## [1.2.0] - 2026-09-28
 

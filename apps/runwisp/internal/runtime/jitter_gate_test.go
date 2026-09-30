@@ -32,6 +32,7 @@ type manualTimers struct {
 // fireAll never race on it.
 type manualTimer struct {
 	owner   *manualTimers
+	delay   time.Duration
 	fn      func()
 	stopped bool
 }
@@ -44,10 +45,10 @@ func (t *manualTimer) Stop() bool {
 	return !was
 }
 
-func (m *manualTimers) after(_ time.Duration, fn func()) stopper {
+func (m *manualTimers) after(d time.Duration, fn func()) stopper {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	t := &manualTimer{owner: m, fn: fn}
+	t := &manualTimer{owner: m, delay: d, fn: fn}
 	m.timers = append(m.timers, t)
 	return t
 }
@@ -64,6 +65,19 @@ func (m *manualTimers) pending() int {
 		}
 	}
 	return n
+}
+
+// armed returns the delays of the still-armed breaches, in arming order.
+func (m *manualTimers) armed() []time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []time.Duration
+	for _, t := range m.timers {
+		if !t.stopped {
+			out = append(out, t.delay)
+		}
+	}
+	return out
 }
 
 // fireAll invokes every still-armed breach exactly once, simulating each timer
@@ -247,6 +261,37 @@ func TestJitterGate_ReleasesEarliestSlotFirst(t *testing.T) {
 	}
 	assert.Equal(t, []string{"blk", "early", "late"}, order,
 		"held fires release earliest-slot first (EDF), regardless of submit order")
+}
+
+// TestJitterGate_SameTickLateArrivalTakesOverSlot proves fires of one tick
+// start one at a time whatever order the cron loop hands them over in. The
+// later-slot fires arrive first and the first one finds the gate idle; the
+// slot-0 fire, arriving last with its deadline already due, used to breach at
+// once and run beside it. Now each late arrival takes over the deadline the
+// pulled-forward run no longer needs, so nothing breaches at the tick and the
+// deadlines stay spread across the window.
+func TestJitterGate_SameTickLateArrivalTakesOverSlot(t *testing.T) {
+	clk := testutil.NewClock(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
+	jm, exec, mt, _ := newJitterTestManager(t, clk.Now)
+	for _, n := range []string{"a", "b", "c"} {
+		jm.UpsertTask(testTask(n, model.PolicySkip, 1))
+	}
+
+	// The scheduler passes each fire its own read of the clock as the tick, so
+	// the late arrivals carry a tick just after c started.
+	t0 := clk.Now()
+	jm.ScheduleJitteredRun("c", t0, t0.Add(20*time.Minute), 30*time.Minute)
+	_ = exec.waitStarted(t) // c finds the gate idle and is pulled forward
+	clk.Advance(time.Millisecond)
+	jm.ScheduleJitteredRun("b", clk.Now(), t0.Add(10*time.Minute), 30*time.Minute)
+	clk.Advance(time.Millisecond)
+	jm.ScheduleJitteredRun("a", clk.Now(), clk.Now(), 30*time.Minute)
+
+	// b took c's +20m and handed it +10m, then a took that +10m. Without the
+	// swap a's breach is armed at 0 and it starts beside c.
+	assert.Equal(t, []time.Duration{20*time.Minute - time.Millisecond, 10*time.Minute - 2*time.Millisecond}, mt.armed())
+	assert.Equal(t, 0, jm.GetActiveRunCount("a"), "a waits for c instead of breaching at the tick")
+	assert.Equal(t, 0, jm.GetActiveRunCount("b"))
 }
 
 // TestJitterGate_BreachesHeldFiresAtSlot proves the slot is a real deadline:

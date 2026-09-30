@@ -51,9 +51,17 @@ type jitterGate struct {
 	trigger func(taskName string, tick time.Time) (runID string, started bool)
 
 	mu       sync.Mutex
-	pending  []*heldRun           // ordered by slot then name (EDF)
-	inflight map[string]time.Time // runID → start time of gate-triggered runs
+	pending  []*heldRun         // ordered by slot then name (EDF)
+	inflight map[string]gateRun // runID → gate-triggered run
 	closed   bool
+}
+
+// gateRun is one in-flight gate-triggered run. slot is the deadline it held;
+// while start is before it the run was pulled forward and still owns that
+// later deadline, which a same-tick peer can take over (see swapSlot).
+type gateRun struct {
+	start time.Time
+	slot  time.Time
 }
 
 func newJitterGate(now func() time.Time, trigger func(string, time.Time) (string, bool)) *jitterGate {
@@ -61,7 +69,7 @@ func newJitterGate(now func() time.Time, trigger func(string, time.Time) (string
 		now:      now,
 		after:    func(d time.Duration, fn func()) stopper { return time.AfterFunc(d, fn) },
 		trigger:  trigger,
-		inflight: make(map[string]time.Time),
+		inflight: make(map[string]gateRun),
 	}
 }
 
@@ -77,16 +85,53 @@ func (g *jitterGate) submit(taskName string, tick, slot time.Time, window time.D
 	}
 
 	h := &heldRun{taskName: taskName, tick: tick, slot: slot, horizon: window}
+	if !g.freeFor(window) {
+		g.swapSlot(h)
+	}
 	g.insert(h)
 
 	// Arm the breach timer before advancing: if advance pulls h (or an
 	// earlier-slot peer) forward, it stops the timer; if not, the timer
 	// releases h at its deadline. A delay of 0 (offset-0 task that can't be
 	// pulled forward) breaches almost immediately — its deadline is the tick.
-	delay := max(slot.Sub(g.now()), 0)
+	delay := max(h.slot.Sub(g.now()), 0)
 	h.timer = g.after(delay, func() { g.breach(taskName) })
 
 	g.advance()
+}
+
+// swapSlot fixes the arrival race between fires of the same tick. The cron
+// loop hands them to the gate in no particular order, so a later-slot fire can
+// find the gate idle and start first; an earlier-slot peer arriving after it
+// would then find its own deadline already due and breach at once, putting two
+// runs on the box at the tick. Had the peer arrived first, EDF would have run
+// it first and held the other until its slot. So the peer takes over the
+// deadline the pulled-forward run no longer needs (capped at its own window),
+// and hands it its own earlier one: the tick's deadlines stay spread across
+// the window, each used once. A fire from a later tick may take one over too;
+// it still starts within its own window, just less likely beside the run.
+// Assumes the lock is held.
+func (g *jitterGate) swapSlot(h *heldRun) {
+	id := ""
+	for rid, r := range g.inflight {
+		if r.start.Before(r.slot) && r.slot.After(h.slot) &&
+			(id == "" || r.slot.After(g.inflight[id].slot)) {
+			id = rid
+		}
+	}
+	if id == "" {
+		return
+	}
+	r := g.inflight[id]
+	r.slot, h.slot = h.slot, minTime(r.slot, h.tick.Add(h.horizon))
+	g.inflight[id] = r
+}
+
+func minTime(a, b time.Time) time.Time {
+	if b.Before(a) {
+		return b
+	}
+	return a
 }
 
 // cmpHeld orders held runs by slot deadline, then name — the EDF release order.
@@ -147,7 +192,7 @@ func (g *jitterGate) fire(h *heldRun) {
 	if !started {
 		return
 	}
-	g.inflight[runID] = g.now()
+	g.inflight[runID] = gateRun{start: g.now(), slot: h.slot}
 }
 
 // freeFor reports whether no in-flight jittered run started within the given
@@ -155,8 +200,8 @@ func (g *jitterGate) fire(h *heldRun) {
 // window and so no longer blocks it. Assumes the lock is held.
 func (g *jitterGate) freeFor(horizon time.Duration) bool {
 	now := g.now()
-	for _, startedAt := range g.inflight {
-		if now.Sub(startedAt) < horizon {
+	for _, r := range g.inflight {
+		if now.Sub(r.start) < horizon {
 			return false
 		}
 	}
