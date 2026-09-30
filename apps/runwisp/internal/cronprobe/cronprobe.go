@@ -37,11 +37,17 @@ type State struct {
 // machine running the suite. Never assigned outside tests.
 var PidFiles = []string{"/run/crond.pid", "/run/cron.pid", "/var/run/crond.pid", "/var/run/cron.pid"}
 
+// SystemdBootedDir is the directory systemd creates when it is PID 1: the same
+// check sd_booted(3) makes. A package var for the same reason PidFiles is one.
+// Never assigned outside tests.
+var SystemdBootedDir = "/run/systemd/system"
+
 // ServiceProbe asks the init system whether a cron service is active or enabled.
 // A package var for the same reason PidFiles is one: the real answer comes from
 // systemd, and a test needs to ask the question about an init system it can
 // describe. ok is false when the probe itself couldn't run (no systemctl on this
-// box — a non-systemd Linux, or macOS), telling the caller to fall back to the
+// box, or systemd isn't the running init: a non-systemd Linux, WSL or a container
+// without systemd as PID 1, macOS), telling the caller to fall back to the
 // pid-file check. Never assigned outside tests.
 var ServiceProbe = systemctlState
 
@@ -76,7 +82,15 @@ func Probe() State {
 // output is just as informative — and this runs on a timer now, not only at
 // boot, where six short-lived processes a minute is not the "predictable
 // resource use" the daemon promises.
+//
+// The binary existing is not enough: WSL and most container images ship
+// systemctl without systemd running, and there it answers "inactive"/"offline"
+// for a crond that is running right now, so the probe would release the hold and
+// both schedulers would fire every job. Only trust it when systemd is PID 1.
 func systemctlState() (active, enabled, ok bool) {
+	if fi, err := os.Stat(SystemdBootedDir); err != nil || !fi.IsDir() {
+		return false, false, false
+	}
 	systemctlPath, err := exec.LookPath("systemctl")
 	if err != nil {
 		return false, false, false

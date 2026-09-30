@@ -221,6 +221,9 @@ type crontabParser struct {
 	// where it's assigned rather than per job.
 	timezoneErr    error
 	pendingComment string // a "# ..." line directly above a job
+	// mailto is the MAILTO in force for the next job, "" when unset or set to
+	// cron's "mail nobody".
+	mailto string
 }
 
 // addItem opens a report row for the line currently being fed, stamped with its
@@ -282,7 +285,8 @@ func (cp *crontabParser) handleEnv(name, value string) {
 					"absolute shell path. The imported tasks keep the default shell.")
 		}
 	case "MAILTO":
-		cp.noteMailto(value)
+		cp.mailto = mailtoAddr(value)
+		cp.noteMailto(cp.mailto)
 	case "CRON_TZ", "TZ":
 		cp.timezone = value
 		cp.timezoneErr = validateCronTimezone(value)
@@ -295,6 +299,9 @@ func (cp *crontabParser) handleEnv(name, value string) {
 func (cp *crontabParser) handleJob(line string) {
 	parsed := cp.importJob(line)
 	cp.pendingComment = ""
+	if parsed && cp.mailto != "" {
+		cp.res.cronMails = true
+	}
 	if !parsed {
 		// A line the operator wrote that RunWisp can't read is still a job, so it
 		// gets a row rather than a note at the bottom of the report — carrying the
@@ -303,6 +310,16 @@ func (cp *crontabParser) handleJob(line string) {
 		cp.addItem(line).note(NoteLineUnparseable,
 			"this isn't a schedule followed by a command, so nothing was imported for it.")
 	}
+}
+
+// mailtoAddr normalizes a MAILTO value, mapping both spellings of cron's "mail
+// nobody" (an empty value and a literal "") to "".
+func mailtoAddr(value string) string {
+	addr := strings.TrimSpace(value)
+	if addr == `""` {
+		return ""
+	}
+	return addr
 }
 
 // noteMailto explains what happens to a crontab's MAILTO.
@@ -319,9 +336,8 @@ func (cp *crontabParser) handleJob(line string) {
 // reaching into daemon-wide settings, which is the line Phase A drew when it
 // stopped emitting [defaults] and [daemon]. It is also the operator's
 // identity to choose, not a machine-owned staging file's.
-func (cp *crontabParser) noteMailto(value string) {
-	addr := strings.TrimSpace(value)
-	if addr == "" || strings.EqualFold(addr, `""`) {
+func (cp *crontabParser) noteMailto(addr string) {
+	if addr == "" {
 		cp.res.fileNote(NoteMailto,
 			"crontab sets an empty MAILTO, which tells crond to mail nobody. "+
 				"Nothing to carry over — RunWisp is silent by default too.")

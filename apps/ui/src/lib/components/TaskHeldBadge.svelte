@@ -21,7 +21,9 @@
             ? "Held: a system cron daemon still owns this job, so RunWisp is not " +
                   "running it — cron is. RunWisp records no history or output for it " +
                   "until cron is retired. Run `sudo runwisp takeover` to hand it over, " +
-                  "or just stop cron — RunWisp picks it up on its own within a minute."
+                  "or stop cron and disable it at boot (for example " +
+                  "`sudo systemctl disable --now cron`): RunWisp picks it up on its own " +
+                  "within a minute."
             : "Held: RunWisp is not scheduling this task.",
     );
 </script>

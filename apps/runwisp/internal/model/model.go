@@ -538,8 +538,8 @@ const (
 	// HeldByCron is a task read from a crontab that a live system cron daemon is
 	// still reading itself. Both schedulers firing the same job is invisible
 	// until a non-idempotent one runs twice, so RunWisp stands down and says so
-	// rather than racing cron for it. Cleared by retiring cron — `runwisp
-	// takeover`, or stopping cron and reloading.
+	// rather than racing cron for it. Cleared by retiring cron: `runwisp
+	// takeover`, or stopping and disabling cron (the hold watcher notices).
 	HeldByCron HoldReason = "cron"
 )
 

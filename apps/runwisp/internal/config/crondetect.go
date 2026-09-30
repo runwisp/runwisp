@@ -79,6 +79,9 @@ type CronScan struct {
 	// same CronFinding.String, so the two sets are comparable rather than
 	// merely similar.
 	Skipped []string
+	// Mails is true when some job runs under a MAILTO. RunWisp sends no such
+	// mail, so a cutover has to say so.
+	Mails bool
 }
 
 // ScanCronSources globs patterns exactly like `[daemon] include_cron` would
@@ -116,6 +119,7 @@ func ScanCronSources(patterns []string, cfgPath string) CronScan {
 		scan.Files = append(scan.Files, path)
 		claimOwned(owned, res)
 		scan.Skipped = appendSkipped(scan.Skipped, findingsFrom(res, path))
+		scan.Mails = scan.Mails || res.CronMails()
 		for _, it := range res.Items() {
 			scan.Jobs++
 			if it.LiveEligible() {
