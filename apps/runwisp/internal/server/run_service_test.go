@@ -1133,3 +1133,17 @@ func TestStopTask_WaitTimesOut(t *testing.T) {
 
 	assert.ErrorIs(t, svc.StopTask(context.Background(), "t", 20*time.Millisecond), ErrStopDidNotDrain)
 }
+
+// Station mode builds no scheduler, and the daemon hands the nil
+// *runtime.Scheduler straight into the server. Listing a cron task must still
+// work (no next run, nothing paused) instead of dereferencing it.
+func TestListTasks_NilSchedulerWithCronTask(t *testing.T) {
+	var sched *runtime.Scheduler
+	tasks := map[string]*model.Task{"nightly": {Name: "nightly", Cron: "0 3 * * *", ManualTrigger: true}}
+	svc := newRunService(nil, nil, runtime.NewTaskRegistry(tasks), sched, "", nil)
+
+	got := svc.ListTasks()
+	require.Len(t, got, 1)
+	assert.Nil(t, got[0].NextRunAt)
+	assert.Nil(t, got[0].PausedAt)
+}

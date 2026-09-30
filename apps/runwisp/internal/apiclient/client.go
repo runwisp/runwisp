@@ -246,6 +246,18 @@ func (e *HTTPStatusError) Error() string {
 	return fmt.Sprintf("API error %d: %s", e.StatusCode, e.Body)
 }
 
+// Detail returns the problem-details "detail" message from the body, or the
+// raw body when it carries none.
+func (e *HTTPStatusError) Detail() string {
+	var problem struct {
+		Detail string `json:"detail"`
+	}
+	if json.Unmarshal([]byte(e.Body), &problem) == nil && problem.Detail != "" {
+		return problem.Detail
+	}
+	return e.Body
+}
+
 // IsHTTPStatus reports whether err is (or wraps) an HTTPStatusError with the
 // given code. It is a convenience for status-code dispatch in callers that
 // otherwise would have to call errors.As at every site.

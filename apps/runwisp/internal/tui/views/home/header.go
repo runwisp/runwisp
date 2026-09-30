@@ -100,6 +100,14 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 			Render(fmt.Sprintf("⏸ %d held by cron — `sudo runwisp takeover`", n))
 		parts = append(parts, warn)
 	}
+	if n := len(info.PausedTasks); n > 0 {
+		// Warning color like held: a forgotten pause silently stops a job.
+		warn := lipgloss.NewStyle().
+			Background(uikit.ColorBgLight).
+			Foreground(uikit.ColorWarning).
+			Render("⏸ " + textutil.Count(n, "schedule", "schedules") + " paused")
+		parts = append(parts, warn)
+	}
 	if n := len(info.ConfigWarnings); n > 0 {
 		// Warning color for the same reason as the stale notice: these name jobs the
 		// daemon is not running, and nothing else in the TUI would ever mention them.
@@ -217,10 +225,11 @@ func renderActionRow(b *strings.Builder, label string, labelColor color.Color, w
 	b.WriteString("\n")
 }
 
-// RenderTaskHeader renders the task info header with a Run Now button.
+// RenderTaskHeader renders the task info header with a Run Now button. paused
+// reports that an operator paused the task's cron schedule.
 // The runNowBtnY output is the screen-relative Y offset of the Run Now button row
 // within this header (0-based from header start).
-func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered bool) (string, int) {
+func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered, paused bool) (string, int) {
 	var b strings.Builder
 	lineCount := 0
 
@@ -246,7 +255,7 @@ func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered bo
 	}
 	held := task != nil && task.HeldBy != model.HeldByNothing
 	schedInfo := "  Schedule: " + schedule
-	if !held && task != nil && !task.Kind.IsService() {
+	if !held && !paused && task != nil && !task.Kind.IsService() {
 		if nextRun := NextCronRun(schedule); nextRun != "" {
 			schedInfo += "  •  Next: " + nextRun
 		}
@@ -263,6 +272,12 @@ func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered bo
 			Background(uikit.ColorBgLight).
 			Foreground(uikit.ColorWarning).
 			Render("  •  ⏸ held — cron still owns this job")
+	} else if paused {
+		// Same slot and tone as held: the schedule is listed but nothing fires.
+		schedText += lipgloss.NewStyle().
+			Background(uikit.ColorBgLight).
+			Foreground(uikit.ColorWarning).
+			Render("  •  ⏸ paused, p resumes")
 	}
 
 	style := uikit.BtnRunNowStyle

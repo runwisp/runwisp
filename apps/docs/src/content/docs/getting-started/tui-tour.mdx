@@ -46,7 +46,7 @@ cursor does nothing until you press <kbd>Enter</kbd>.
 
 Press <kbd>n</kbd> to open the notifications panel. If some tasks come from
 crontabs that cron still runs, the header shows how many are
-[held](/coming-from/cron/#held-jobs).
+[held](/coming-from/cron/#held-jobs). It also counts paused schedules.
 
 ## Task detail
 
@@ -58,6 +58,8 @@ opens a form if the task has [parameters](/concepts/parameters/).
 
 - <kbd>f</kbd> filters the runs by status. A banner shows while a filter is active.
 - <kbd>i</kbd> shows the task's full definition and recent health.
+- <kbd>p</kbd> [pauses or resumes](/concepts/scheduling/#pausing-a-schedule) the task's schedule.
+  <kbd>u</kbd> undoes it while its notice is showing.
 - <kbd>space</kbd> selects runs, <kbd>a</kbd> selects all that match the filter. Then <kbd>d</kbd>
   deletes, <kbd>c</kbd> cancels, and <kbd>e</kbd>
   re-runs them. <kbd>u</kbd> undoes a delete while its notice is showing.
@@ -115,6 +117,7 @@ connection drops. The TUI reconnects by itself.
 | <kbd>/</kbd>                                        | Filter tasks (sidebar) or search the task's logs      |
 | <kbd>r</kbd>                                        | Run now (task), restart (service), or retry (run)     |
 | <kbd>s</kbd>                                        | Stop a run or service                                 |
+| <kbd>p</kbd>                                        | Pause or resume a task's schedule                     |
 | <kbd>R</kbd>                                        | Reload `runwisp.toml` ([Reload](/operations/reload/)) |
 | <kbd>n</kbd>                                        | Notifications panel (on Home)                         |
 | <kbd>i</kbd>                                        | Task or run details                                   |

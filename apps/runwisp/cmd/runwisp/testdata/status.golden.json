@@ -38,6 +38,14 @@
       }
     },
     {
+      "name": "report",
+      "kind": "task",
+      "cron": "0 6 * * 1",
+      "manualTrigger": true,
+      "pausedAt": "2026-07-14T09:30:00Z",
+      "lastRun": null
+    },
+    {
       "name": "web",
       "kind": "service",
       "manualTrigger": true,

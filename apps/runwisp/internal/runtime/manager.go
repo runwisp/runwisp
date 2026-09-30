@@ -117,6 +117,17 @@ type defaultTaskManager struct {
 	// jittered run at a time, pulling the next forward as soon as the box is
 	// idle and breaching held tasks at their slots under congestion.
 	gate *jitterGate
+	// schedulePaused reports whether an operator paused the task's cron
+	// schedule; set by NewScheduler (nil until then). Consulted only for a
+	// jittered fire already waiting in the gate (see triggerJittered).
+	schedulePaused func(string) bool
+}
+
+// setSchedulePaused wires the scheduler's pause check; see NewScheduler.
+func (m *defaultTaskManager) setSchedulePaused(fn func(string) bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.schedulePaused = fn
 }
 
 // NewTaskManager constructs the default run-manager. clock must not be nil;
@@ -723,8 +734,12 @@ func (m *defaultTaskManager) triggerJittered(taskName string, tick time.Time) (s
 	// A removed task is never in m.tasks (RemoveTask evicts immediately), so
 	// exists==true already implies not removed; only Held needs checking.
 	stale := !exists || ts.task.Held()
+	schedulePaused := m.schedulePaused
 	m.mu.RUnlock()
-	if stale {
+	// A schedule paused while this fire waited in the gate refuses it the same
+	// way. Asked outside m.mu: the scheduler's lock is a leaf (gate.mu →
+	// scheduler.mutex), never taken with the manager lock held.
+	if stale || (schedulePaused != nil && schedulePaused(taskName)) {
 		return "", false
 	}
 

@@ -6,7 +6,7 @@ import { toast, extractErrorMessage } from "@runwisp/ui";
 import { runsApi } from "$lib/api";
 
 /** Window in which a destructive action's toast offers an Undo. */
-const UNDO_MS = 5000;
+export const UNDO_MS = 5000;
 
 interface TriggeredRun {
     taskName: string;

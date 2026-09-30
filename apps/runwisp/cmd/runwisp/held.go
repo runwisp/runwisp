@@ -62,6 +62,34 @@ func printHeldBlock(w io.Writer, names []string, cronState string) {
 // "for example" covers crond/cronie.
 const disableCronExample = "sudo systemctl disable --now cron"
 
+// pausedTaskNames pulls the tasks whose cron schedule an operator paused out of
+// a task list, preserving its order.
+func pausedTaskNames(tasks []model.TaskResponse) []string {
+	var out []string
+	for _, t := range tasks {
+		if t.PausedAt != nil {
+			out = append(out, t.Name)
+		}
+	}
+	return out
+}
+
+// printPausedBlock lists the tasks whose cron schedule is paused, and the
+// command that lifts it. Like held tasks, a paused one quietly records no cron
+// runs, so status says so rather than leave the silence to be misread.
+func printPausedBlock(w io.Writer, names []string) {
+	if len(names) == 0 {
+		return
+	}
+	schedules := "1 cron schedule is"
+	if len(names) > 1 {
+		schedules = fmt.Sprintf("%d cron schedules are", len(names))
+	}
+	fmt.Fprintf(w, "\n⏸ %s paused:\n", schedules)
+	fmt.Fprintf(w, "    %s\n", heldNameList(names))
+	fmt.Fprintf(w, "  Run 'runwisp resume <task>' to let %s fire again.\n", pronounFor(len(names)))
+}
+
 // heldNameList renders the names, collapsing the tail past heldNamesShown.
 func heldNameList(names []string) string {
 	if len(names) <= heldNamesShown {

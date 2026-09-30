@@ -198,6 +198,14 @@ func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storag
 
 	scheduler := runtime.NewScheduler(taskManager, tasksMap, schedLoc, nil)
 	boot.scheduler = scheduler
+	// Restore operator schedule pauses before the first tick can fire. A read
+	// failure is not fatal (the daemon must boot), but it does mean paused
+	// tasks will fire, so it is surfaced as a warning.
+	cleared, err := scheduler.RestorePauses(ctx, db)
+	if err != nil {
+		*warnings = append(*warnings, fmt.Sprintf("Failed to restore paused schedules (paused tasks will fire): %v", err))
+	}
+	*warnings = append(*warnings, cleared...)
 	schedResult, err := scheduler.Start()
 	if err != nil {
 		*warnings = append(*warnings, fmt.Sprintf("Failed to start scheduler: %v", err))
@@ -207,7 +215,7 @@ func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storag
 	// Fire run_on_start tasks once at boot, before notify so a boot-triggered
 	// run doesn't page. Catch-up (which pages on missed runs) is deferred to
 	// after notify starts so run.missed events reach a subscriber.
-	runOnStartResult := runtime.RunStartupTasks(ctx, tasksMap, taskManager, db, bootid.Current())
+	runOnStartResult := runtime.RunStartupTasks(ctx, tasksMap, taskManager, db, bootid.Current(), scheduler.IsPaused)
 	if runOnStartResult.Errors > 0 {
 		slog.Warn("run_on_start firing completed with errors",
 			"triggered", runOnStartResult.Triggered, "errors", runOnStartResult.Errors)

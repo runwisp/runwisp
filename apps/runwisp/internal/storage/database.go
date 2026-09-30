@@ -80,12 +80,21 @@ type PendingLogUploadRepository interface {
 	ListPendingLogUploads(ctx context.Context) ([]model.PendingLogUpload, error)
 }
 
+// TaskPauseRepository persists operator pauses of a task's cron schedule so a
+// pause survives a daemon restart (see runtime.Scheduler.Pause).
+type TaskPauseRepository interface {
+	PauseTaskSchedule(ctx context.Context, taskName string, at time.Time) error
+	ResumeTaskSchedule(ctx context.Context, taskName string, at time.Time) error
+	ListPausedTaskSchedules(ctx context.Context) (map[string]time.Time, error)
+}
+
 // Database is the full persistent store for the daemon: runs + configuration + notifications.
 type Database interface {
 	RunRepository
 	ConfigRepository
 	NotificationRepository
 	PendingLogUploadRepository
+	TaskPauseRepository
 }
 
 // SQLiteDatabase wraps persistence concerns for runs and configuration.
@@ -491,7 +500,34 @@ func (db *SQLiteDatabase) GetTaskRegistration(ctx context.Context, taskName stri
 	if err != nil {
 		return nil, err
 	}
-	return &model.TaskRegistration{TaskName: r.TaskName, FirstSeenAt: r.FirstSeenAt}, nil
+	return &model.TaskRegistration{
+		TaskName:    r.TaskName,
+		FirstSeenAt: r.FirstSeenAt,
+		PausedAt:    r.PausedAt,
+		ResumedAt:   r.ResumedAt,
+	}, nil
+}
+
+func (db *SQLiteDatabase) PauseTaskSchedule(ctx context.Context, taskName string, at time.Time) error {
+	return db.q.PauseTaskSchedule(ctx, sqlcdb.PauseTaskScheduleParams{TaskName: taskName, PausedAt: at})
+}
+
+func (db *SQLiteDatabase) ResumeTaskSchedule(ctx context.Context, taskName string, at time.Time) error {
+	return db.q.ResumeTaskSchedule(ctx, sqlcdb.ResumeTaskScheduleParams{TaskName: taskName, ResumedAt: &at})
+}
+
+func (db *SQLiteDatabase) ListPausedTaskSchedules(ctx context.Context) (map[string]time.Time, error) {
+	rows, err := db.q.ListPausedTaskSchedules(ctx)
+	if err != nil {
+		return nil, err
+	}
+	paused := make(map[string]time.Time, len(rows))
+	for _, r := range rows {
+		if r.PausedAt != nil {
+			paused[r.TaskName] = *r.PausedAt
+		}
+	}
+	return paused, nil
 }
 
 func (db *SQLiteDatabase) GetTaskBootID(ctx context.Context, taskName string) (string, error) {

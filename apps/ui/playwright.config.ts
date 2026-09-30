@@ -46,6 +46,7 @@ export default defineConfig({
                 "theme.spec.ts",
                 "frame-history.spec.ts",
                 "run-motion.spec.ts",
+                "schedule-pause.spec.ts",
             ],
             use: { ...devices["Desktop Chrome"] },
         },

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Service health checks**: an optional `[services.<name>.health_check]` command decides when an instance is healthy and stops it as `unhealthy` when it keeps failing, so `restart` brings it back. It reuses task keys (`cron`, `timeout`, `failures`, `retry_*`).
 - Release tarballs, checksums and Docker images now ship with signed build provenance you can check with `gh attestation verify`.
 - **`failures` accepts `output:<regex>` tokens**: a run whose stdout or stderr matches the pattern is marked failed, even if it exits 0. For example, `failures = ["+output:(?i)error"]`.
+- **Pause a cron task's schedule** from the schedule chip on its Web UI page, `p` in the TUI, `runwisp pause`/`resume`, or `POST /api/tasks/{task}/pause` and `.../resume`. Skipped ticks are not caught up, manual runs still work, and the pause survives reloads and restarts. Needs `manual_trigger = true`; `runwisp status` lists paused tasks.
 
 ### Changed
 
@@ -41,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - In the TUI, opening a notification whose run was deleted now says the run no longer exists, instead of closing the panel and showing nothing.
 - In the TUI, stopping a service from a run opened on the Home page now works.
 - In the TUI, restarting a service now leaves the old run and opens the fresh instance (or returns to the task), instead of staying on the dead run with a Stop button.
+- The Web UI task list now picks up `runwisp reload` without a page refresh.
+- Long task names no longer wrap onto a second line in the Web UI top bar; they are cut short instead.
+- Notifications for a run killed by `log_on_full = "kill"` now say so instead of reporting the kill signal's exit code.
 
 ## [1.2.0] - 2026-09-28
 
@@ -81,7 +85,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Notification durations no longer render as "60s" or "59m 60s"; they round up to "1m" or "1h".
 - `runwisp import cron` now warns about a user column on `@reboot`, `@daily` and other `@`-shorthand lines (suggesting `--system`) instead of importing the username as the command.
 - Live output from programs that redraw the screen no longer marks every line after an over-long line as a continuation.
-- Notifications for a run killed by `log_on_full = "kill"` now say so instead of reporting the kill signal's exit code.
 
 ## [1.0.1] - 2026-09-23
 

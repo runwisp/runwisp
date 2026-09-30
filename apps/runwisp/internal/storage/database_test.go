@@ -823,6 +823,53 @@ func TestGetTaskRegistration(t *testing.T) {
 	assert.WithinDuration(t, firstSeen, reg.FirstSeenAt, time.Second)
 }
 
+func TestTaskSchedulePause(t *testing.T) {
+	ctx := t.Context()
+	db := setupFullTestDB(t)
+	defer db.Close()
+
+	at := time.Date(2026, 9, 29, 14, 0, 0, 0, time.UTC)
+
+	// Pausing a task with no registration row upserts one.
+	require.NoError(t, db.PauseTaskSchedule(ctx, "fresh", at))
+	reg, err := db.GetTaskRegistration(ctx, "fresh")
+	require.NoError(t, err)
+	require.NotNil(t, reg)
+	require.NotNil(t, reg.PausedAt)
+	assert.True(t, reg.PausedAt.Equal(at))
+	assert.Nil(t, reg.ResumedAt)
+
+	// Re-pausing keeps the first pause time; first_seen_at is untouched.
+	require.NoError(t, db.EnsureTaskRegistered(ctx, "known", at.Add(-time.Hour)))
+	require.NoError(t, db.PauseTaskSchedule(ctx, "known", at))
+	require.NoError(t, db.PauseTaskSchedule(ctx, "known", at.Add(time.Hour)))
+	reg, err = db.GetTaskRegistration(ctx, "known")
+	require.NoError(t, err)
+	assert.True(t, reg.PausedAt.Equal(at))
+	assert.True(t, reg.FirstSeenAt.Equal(at.Add(-time.Hour)))
+
+	paused, err := db.ListPausedTaskSchedules(ctx)
+	require.NoError(t, err)
+	assert.Len(t, paused, 2)
+	assert.True(t, paused["known"].Equal(at))
+
+	// Resume clears the pause and stamps resumed_at; resuming again is a no-op
+	// that keeps the first resume time.
+	resumed := at.Add(2 * time.Hour)
+	require.NoError(t, db.ResumeTaskSchedule(ctx, "known", resumed))
+	require.NoError(t, db.ResumeTaskSchedule(ctx, "known", resumed.Add(time.Hour)))
+	reg, err = db.GetTaskRegistration(ctx, "known")
+	require.NoError(t, err)
+	assert.Nil(t, reg.PausedAt)
+	require.NotNil(t, reg.ResumedAt)
+	assert.True(t, reg.ResumedAt.Equal(resumed))
+
+	paused, err = db.ListPausedTaskSchedules(ctx)
+	require.NoError(t, err)
+	assert.Len(t, paused, 1)
+	assert.Contains(t, paused, "fresh")
+}
+
 func TestUpsertPendingLogUpload(t *testing.T) {
 	ctx := t.Context()
 	db := setupFullTestDB(t)

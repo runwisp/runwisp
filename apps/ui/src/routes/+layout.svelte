@@ -6,7 +6,15 @@
     import { browser } from "$app/environment";
     import { page } from "$app/stores";
     import { preloadCode } from "$app/navigation";
-    import { runUpdatesStore, authStore, taskStore, notificationStore } from "$lib/stores";
+    import { untrack } from "svelte";
+    import {
+        runUpdatesStore,
+        authStore,
+        taskStore,
+        notificationStore,
+        appEventStream,
+        connectionStore,
+    } from "$lib/stores";
     import { systemStore } from "$lib/stores/system.svelte";
     import AuthModal from "$lib/components/AuthModal.svelte";
     import AppLayout from "$lib/layouts/AppLayout.svelte";
@@ -68,6 +76,8 @@
         return "";
     });
 
+    let activeTask = $derived(taskStore.items.find((t) => toTaskPageId(t.name) === activePage));
+
     let navTasks = $derived(
         taskStore.items.map((t) => ({
             id: toTaskPageId(t.name),
@@ -79,6 +89,23 @@
     );
 
     let isAuthenticated = $derived(!hydrated ? false : authStore.current.authenticated);
+
+    // The daemon announces task-set changes (a reload, a schedule pause) on the
+    // app stream; refetch so the sidebar and top bar follow without a page
+    // reload. A reconnect may have missed one.
+    $effect(() => {
+        if (!isAuthenticated) return;
+        return untrack(() => {
+            const offChanged = appEventStream.subscribe("tasks.changed", () => {
+                void taskStore.refresh();
+            });
+            const offReconnect = connectionStore.onReconnect(() => void taskStore.refresh());
+            return () => {
+                offChanged();
+                offReconnect();
+            };
+        });
+    });
 </script>
 
 <svelte:head>
@@ -93,7 +120,7 @@
 <ToastContainer />
 
 {#if isAuthenticated}
-    <AppLayout {activePage} tasks={navTasks} urls={{ overview: "/", runs: "/runs" }}>
+    <AppLayout {activePage} {activeTask} tasks={navTasks} urls={{ overview: "/", runs: "/runs" }}>
         {@render children()}
     </AppLayout>
 {:else if !hydrated || !authStore.current.loaded}

@@ -87,6 +87,36 @@ describe("buildTaskOverviews", () => {
         expect(result.at(0)?.nextRunMs).toBeDefined();
     });
 
+    it("sets paused state for a paused cron task, which is neither scheduled nor manual", () => {
+        const tasks = [
+            makeTask("nightly", {
+                cron: "0 3 * * *",
+                manualTrigger: true,
+                pausedAt: "2026-09-29T14:00:00Z",
+            }),
+        ];
+        const [overview] = buildTaskOverviews(tasks, [], []);
+        expect(overview?.state).toBe("paused");
+        expect(overview?.isApiOnly).toBe(false);
+        expect(overview && countTaskOverviews([overview])).toMatchObject({
+            scheduled: 0,
+            manual: 0,
+        });
+    });
+
+    it("attention takes priority over paused (a failure stays visible)", () => {
+        const tasks = [
+            makeTask("nightly", {
+                cron: "0 3 * * *",
+                manualTrigger: true,
+                pausedAt: "2026-09-29T14:00:00Z",
+            }),
+        ];
+        const failedRun = makeRun("nightly", { endReason: "failed", isFailure: true });
+        const result = buildTaskOverviews(tasks, [failedRun], []);
+        expect(result.at(0)?.state).toBe("attention");
+    });
+
     it("sets manual state when manualTrigger is true and no schedule", () => {
         const tasks = [makeTask("trigger-only", { manualTrigger: true })];
         const result = buildTaskOverviews(tasks, [], []);

@@ -13,10 +13,15 @@
     import HeaderSearch from "$lib/components/HeaderSearch.svelte";
     import NotificationBell from "$lib/components/NotificationBell.svelte";
     import StaleConfigBanner from "$lib/components/StaleConfigBanner.svelte";
+    import TaskScheduleChip from "$lib/components/TaskScheduleChip.svelte";
+    import { systemStore } from "$lib/stores";
+    import { showScheduleChip } from "$lib/utils/task-schedule";
     import { ThemeToggle, Logo } from "@runwisp/ui";
+    import type { Task } from "@runwisp/common";
 
     let {
         activePage,
+        activeTask,
         tasks = [],
         urls = {
             overview: "#",
@@ -25,6 +30,8 @@
         children,
     } = $props<{
         activePage: string;
+        /** The task whose detail page is open, if any. */
+        activeTask?: Task | undefined;
         tasks?: { id: string; name: string; group?: string; icon: Component; href?: string }[];
         urls?: { overview: string; runs: string };
         children: Snippet;
@@ -47,12 +54,6 @@
     });
 
     let showGroupHeaders = $derived(taskGroups.length > 1);
-
-    // On a task detail page `activePage` is the task's page id; resolve it back to
-    // the real task name so the breadcrumb shows the literal name (its only home).
-    let activeTaskName = $derived(
-        tasks.find((t: { id: string; name: string }) => t.id === activePage)?.name,
-    );
 
     let sidebarOpen = $state(false);
     let firstLink = $state<HTMLElement | null>(null);
@@ -216,7 +217,7 @@
 
     <main class="flex flex-1 flex-col overflow-hidden">
         <header
-            class="flex h-[52px] items-center justify-between border-b border-outline bg-surface-raised px-6"
+            class="@container flex h-[52px] items-center justify-between gap-2 border-b border-outline bg-surface-raised px-6"
         >
             <div class="flex min-w-0 items-center gap-3">
                 <button
@@ -229,14 +230,19 @@
                 >
                     <Menu size={20} />
                 </button>
-                <span class="hidden font-mono text-on-surface-faint sm:inline">RunWisp</span>
-                <span class="hidden font-mono text-on-surface-faint sm:inline">/</span>
-                {#if activeTaskName}
+                <!-- The breadcrumb root is the first thing to go when the bar
+                     gets tight; the task name and schedule matter more. -->
+                <span class="hidden font-mono text-on-surface-faint @4xl:inline">RunWisp</span>
+                <span class="hidden font-mono text-on-surface-faint @4xl:inline">/</span>
+                {#if activeTask}
                     <!-- On a task page the breadcrumb is the page's primary heading:
                          the task name appears here and nowhere else. -->
                     <h1 class="min-w-0 truncate font-mono text-base font-extrabold text-on-surface">
-                        {activeTaskName}
+                        {activeTask.name}
                     </h1>
+                    {#if showScheduleChip(activeTask, systemStore.schedulingActive)}
+                        <TaskScheduleChip task={activeTask} />
+                    {/if}
                 {:else}
                     <span class="font-mono font-semibold text-on-surface capitalize"
                         >{activePage.replace("task_", "").replace(/_/g, " ")}</span
@@ -246,7 +252,7 @@
 
             <!-- Center: page search (filters the run list / searches log output).
                  Empty space when the active page registers no search. -->
-            <div class="hidden min-w-0 flex-1 justify-center px-4 md:flex lg:px-8">
+            <div class="hidden min-w-24 flex-1 justify-center px-4 md:flex lg:px-8">
                 <HeaderSearch />
             </div>
 

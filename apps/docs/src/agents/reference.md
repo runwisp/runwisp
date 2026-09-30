@@ -9,7 +9,7 @@ Notation in schema blocks: `key: type =default — note`. `=default` omitted mea
 
 ## Model
 
-- `runwisp.toml` is the ONLY source of task definitions. REST/UI/TUI can read + trigger/stop/restart runs, never create or edit definitions.
+- `runwisp.toml` is the ONLY source of task definitions. REST/UI/TUI can read + trigger/stop/restart runs and pause/resume a cron schedule, never create or edit definitions.
 - Config reload is explicit: `runwisp reload` / `SIGHUP` / `POST /api/daemon/reload` re-read the whole TOML and reconcile the live task set (add/change/remove tasks, services, `[defaults]`). Validate-first/atomic — a parse/validation failure, or a change to a restart-only setting (`[daemon]` including [`timezone`](/configuration/daemon/#timezone), `[storage]`, `[notify]` including `[notifiers.*]` and `[[route]]`, bind host/port), is rejected and leaves the running set untouched. Reload is NOT a restart: added tasks get no [`run_on_start`](/configuration/tasks/#run_on_start)/catch-up, in-flight runs finish under their old definition. The daemon never auto-watches the file. Restart-only settings (and re-firing [`run_on_start`](/configuration/tasks/#run_on_start)/catch-up) need `runwisp restart`.
 - Two unit kinds: `[tasks.<name>]` run-to-exit (cron or manual); `[services.<name>]` long-running, `restart` defaults to `always`. Names must be unique across both tables. `name` validated by RunWisp's task-name rules.
 - `run =` is shell, executed from disk only — never from an HTTP/WS body.
@@ -304,7 +304,7 @@ runwisp daemon               — start headless daemon (no TUI)
 runwisp tui                  — attach a TUI to a running daemon
 runwisp validate             — validate runwisp.toml without starting anything; --json for the structured document (see above)
 runwisp list                 — list configured tasks and schedules; --json for a machine-readable document
-runwisp status               — is the daemon alive?; --json for daemon health + every task's last run
+runwisp status               — is the daemon alive?; --json for daemon health + every task's last run (+ pausedAt when its schedule is paused); human output lists paused schedules
 runwisp run <task>          — run a task and stream output;  --daemon (via running daemon) | --standalone (in-process), mutually exclusive
                              — --param key=value (repeatable) supplies task parameter values; a param not mentioned uses its declared default
                              — --json prints the outcome as one JSON document on stdout once the run ends; log lines go to stderr instead
@@ -324,7 +324,10 @@ runwisp restart <target...>  — restart one or more tasks/services via the loca
 runwisp stop                 — shut the daemon down (delegates to systemd/launchd if service-installed); --local to pin the per-user unit
 runwisp stop <target...>     — stop one or more tasks/services/run IDs via the local socket (or --url); target = name, quoted glob, or a run ULID; daemon keeps running, never delegates to systemd
                                 service: cancels every instance, stops refilling slots; task: cancels the active run and drops anything queued, cron schedule keeps firing; run ID: stops just that run
-runwisp start/restart/stop   — a target locked with manual_trigger=false 403s when named directly; a glob silently skips it. --url (env RUNWISP_URL) + --password (env RUNWISP_PASSWORD) dispatch to a remote daemon,
+runwisp pause <task...>      — pause cron schedules via the local socket (or --url): ticks skipped, no run rows, never caught up; manual runs still work; persisted in SQLite (survives reload/restart);
+                                needs manual_trigger=true; 409 for a service, a task without cron, a held task. A reload that makes the task unpausable (cron removed, service, manual_trigger=false, task removed) clears it with a warning
+runwisp resume <task...>     — lift a pause; fires from the next tick, skipped ticks not caught up; no-op if not paused; a glob matches only paused tasks
+runwisp start/restart/stop/pause/resume — a target locked with manual_trigger=false 403s when named directly; a glob silently skips it (pause's glob also skips services, cron-less and held tasks). --url (env RUNWISP_URL) + --password (env RUNWISP_PASSWORD) dispatch to a remote daemon,
                                 same CHAP login/session cache as `run --url`. An unknown name or empty glob fails before anything runs; otherwise each target is attempted and failures print per-target, exit non-zero
 runwisp import cron [FILE]   — convert a crontab to runwisp.toml; -o/--output --write --force --dry-run --quiet --system
 runwisp import supervisord [FILE...] — convert supervisord config to runwisp.toml; -o/--output --write --force --dry-run --quiet
@@ -457,7 +460,7 @@ Read (GET):
 /api/tasks/{task}/log/search                     search log lines across runs
 /api/runs                                        list runs; filter with query params (taskName, status, triggeredBy, …), no separate per-task route
 /api/runs/summary                               aggregate run stats
-/api/events/stream                              run lifecycle + system + config-stale + notification events (SSE)
+/api/events/stream                              run lifecycle + system + config-stale + notification + tasks.changed (reload, pause/resume: refetch /api/tasks) events (SSE)
 /api/notifications                              in-app notifications
 /api/notifications/unread-count                 unread count
 /api/local/credentials                          ephemeral password (Unix socket only)
@@ -471,6 +474,8 @@ POST   /api/tasks/{task}/run                     trigger a new run (tasks only)
 POST   /api/tasks/{task}/start                   service: un-park + fill empty slots; task: trigger a run unless one is already active/queued (no-op then)
 POST   /api/tasks/{task}/stop                    service: stop for daemon lifetime; task: cancel active run + drop anything queued (cron schedule untouched)
 POST   /api/tasks/{task}/restart                 service: restart all instances; task: cancel active run, wait for it to end, trigger exactly one fresh run (409 if it doesn't drain in time)
+POST   /api/tasks/{task}/pause                   pause the cron schedule (204, idempotent, keeps first pausedAt); 403 manual_trigger=false; 409 service / no cron / held / station mode. Task gains pausedAt, loses nextRunAt
+POST   /api/tasks/{task}/resume                  lift a pause (204, idempotent); skipped ticks not caught up
          ?wait=true&waitTimeout=N (1..240, default 120) on run/start/restart: task returns the finished run (start follows an already-active run); service start/restart → 400. On stop: returns once drained, 409 on timeout
 POST   /api/hooks/tasks/{task}/{run,start,stop,restart}  same as the session routes above, authed by a hook token instead of a session (triggeredBy=hook)
 POST   /api/runs/{runId}/stop                   stop a running task

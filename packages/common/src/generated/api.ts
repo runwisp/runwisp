@@ -160,7 +160,7 @@ export interface paths {
         };
         /**
          * Stream live application events
-         * @description Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.
+         * @description Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, task-list changes (a schedule paused or resumed, a reload applied), and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.
          */
         get: operations["streamAppEvents"];
         put?: never;
@@ -250,7 +250,7 @@ export interface paths {
          * Stop a service for the daemon's lifetime, or a task's runs (hook token)
          * @description Same as `POST /api/tasks/{taskName}/stop`, but authenticated with one of the unit's `hook_tokens` from runwisp.toml instead of a session: `Authorization: Bearer <token>`, or (less safely) `?token=`. manual_trigger does not apply. Enforced even with RUNWISP_AUTH=off. An unknown unit, a unit without tokens, and a wrong token all return the same 401; a valid token whose `allow` list omits this action gets 403. After 20 rejected tokens in a minute, the client IP gets 429 until the window slides.
          *
-         *     For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing. With `wait=true`: returns once everything has ended, or 409 if that takes longer than waitTimeout.
+         *     For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing (pause it with POST /api/tasks/{taskName}/pause). With `wait=true`: returns once everything has ended, or 409 if that takes longer than waitTimeout.
          */
         post: operations["hookStopTask"];
         delete?: never;
@@ -672,6 +672,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{taskName}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause a task's cron schedule
+         * @description Skips the task's cron ticks until it is resumed. Skipped ticks record no runs and are not caught up on resume; manual runs keep working. The pause survives reloads and daemon restarts, and a reload that removes the task's cron, turns it into a service, or sets manual_trigger = false clears it. Pausing a paused task is a no-op that keeps the original pausedAt. 403 when manual_trigger = false; 409 for a service, a task without cron, a task a system cron daemon still holds, or a daemon whose scheduling the station owns.
+         */
+        post: operations["pauseTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{taskName}/restart": {
         parameters: {
             query?: never;
@@ -686,6 +706,26 @@ export interface paths {
          * @description For a service: bounces every instance (starting it if it was stopped). For a task: cancels any active run, waits for it to end, then triggers exactly one fresh run. With `wait=true` on a task: returns 200 and the fresh run once it ends.
          */
         post: operations["restartTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{taskName}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume a task's paused cron schedule
+         * @description Lifts a pause set with POST /api/tasks/{taskName}/pause; the task fires again from its next tick. Ticks skipped while paused are not caught up. A no-op when the schedule isn't paused. 403 when manual_trigger = false; 409 on a daemon whose scheduling the station owns.
+         */
+        post: operations["resumeTask"];
         delete?: never;
         options?: never;
         head?: never;
@@ -743,7 +783,7 @@ export interface paths {
         put?: never;
         /**
          * Stop a service for the daemon's lifetime, or a task's runs
-         * @description For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing. With `wait=true`: returns once everything has ended, or 409 if that takes longer than waitTimeout.
+         * @description For a service: cancels every live instance and marks it stopped; the supervisor stops refilling slots until a restart is issued or the daemon is restarted. For a task: cancels any active run and drops anything queued; the cron schedule keeps firing (pause it with POST /api/tasks/{taskName}/pause). With `wait=true`: returns once everything has ended, or 409 if that takes longer than waitTimeout.
          */
         post: operations["stopTask"];
         delete?: never;
@@ -1765,6 +1805,11 @@ export interface components {
             /** @description Per-execution parameters an operator may supply at manual trigger time; scheduled runs use the declared defaults */
             parameters?: components["schemas"]["TaskParam"][] | null;
             /**
+             * Format: date-time
+             * @description When an operator paused this task's cron schedule (POST /api/tasks/{taskName}/pause); absent when not paused. A paused task has no nextRunAt.
+             */
+            pausedAt?: string;
+            /**
              * Format: int64
              * @description For services: boot start order, lowest first (name breaks ties). Start order only — not a dependency.
              */
@@ -1838,6 +1883,7 @@ export interface components {
             /** @description Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal "~" means the run-as user's home, resolved at run time */
             workingDir?: string;
         };
+        TasksChangedSSEEvent: Record<string, never>;
         TasksResponseBody: {
             /**
              * Format: uri
@@ -2306,6 +2352,17 @@ export interface operations {
                          * @constant
                          */
                         event: "system";
+                        /** @description The event ID. */
+                        id?: number;
+                        /** @description The retry time in milliseconds. */
+                        retry?: number;
+                    } | {
+                        data: components["schemas"]["TasksChangedSSEEvent"];
+                        /**
+                         * @description The event name.
+                         * @constant
+                         */
+                        event: "tasks.changed";
                         /** @description The event ID. */
                         id?: number;
                         /** @description The retry time in milliseconds. */
@@ -3491,6 +3548,36 @@ export interface operations {
             };
         };
     };
+    pauseTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Task name */
+                taskName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     restartTask: {
         parameters: {
             query?: {
@@ -3518,6 +3605,36 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Run"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    resumeTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Task name */
+                taskName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

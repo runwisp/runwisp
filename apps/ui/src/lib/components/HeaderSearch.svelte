@@ -102,7 +102,7 @@
             </button>
         {:else}
             <kbd
-                class="pointer-events-none hidden shrink-0 items-center rounded-[3px] border border-outline-faint bg-surface-raised px-1.5 py-0.5 font-mono text-2xs font-medium text-on-surface-faint shadow-sm sm:flex"
+                class="pointer-events-none hidden shrink-0 items-center rounded-[3px] border border-outline-faint bg-surface-raised px-1.5 py-0.5 font-mono text-2xs font-medium text-on-surface-faint shadow-sm @2xl:flex"
             >
                 {shortcut}
             </kbd>

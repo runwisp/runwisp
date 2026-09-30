@@ -4,7 +4,11 @@
 package runtime
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -15,7 +19,12 @@ import (
 	"github.com/runwisp/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/runtime/jitter"
+	"github.com/runwisp/runwisp/internal/storage"
 )
+
+// ErrNotPausable is returned by Scheduler.Pause for a task whose cron schedule
+// an operator can't pause; the wrapped message names the reason.
+var ErrNotPausable = errors.New("schedule cannot be paused")
 
 // ScheduleResult holds the outcome of scheduling tasks.
 type ScheduleResult struct {
@@ -52,9 +61,16 @@ type Scheduler struct {
 	// task lands at the same place every day between reloads. Tasks without a
 	// jitter window are absent and fire immediately.
 	jitterPlans map[string]jitterPlan
-	now         func() time.Time
-	mutex       sync.Mutex
-	started     bool
+	// paused maps each task whose schedule an operator paused to when. A paused
+	// task keeps its cron entry (so reloads, holds and jitter placement need no
+	// special case); fireOnce drops its ticks and GetNextRun reports none.
+	// pauses persists it; nil (tests that never call RestorePauses) keeps
+	// pauses in memory only.
+	paused  map[string]time.Time
+	pauses  storage.TaskPauseRepository
+	now     func() time.Time
+	mutex   sync.Mutex
+	started bool
 }
 
 // jitterPlan is a task's resolved start-spread: a slot offset within its
@@ -123,7 +139,7 @@ func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location
 	if clock == nil {
 		clock = time.Now
 	}
-	return &Scheduler{
+	scheduler := &Scheduler{
 		cron:        cron.New(cron.WithLocation(location), cron.WithParser(cronspec.NewScheduleParser())),
 		location:    location,
 		taskManager: taskManager,
@@ -131,8 +147,19 @@ func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location
 		entryIDs:    make(map[string]cron.EntryID),
 		firedTicks:  make(map[string]*firedHour),
 		jitterPlans: make(map[string]jitterPlan),
+		paused:      make(map[string]time.Time),
 		now:         clock,
 	}
+	// A jittered fire can wait in the manager's gate past the moment its task
+	// is paused; the manager asks back before starting it. Optional so the
+	// TaskRunner interface (and every fake of it) stays unchanged.
+	type pauseGuardSetter interface {
+		setSchedulePaused(func(string) bool)
+	}
+	if setter, ok := taskManager.(pauseGuardSetter); ok {
+		setter.setSchedulePaused(scheduler.IsPaused)
+	}
+	return scheduler
 }
 
 func (scheduler *Scheduler) Start() (ScheduleResult, error) {
@@ -377,6 +404,11 @@ func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location, fixedI
 
 	hour := wm.inHour()
 	scheduler.mutex.Lock()
+	if _, paused := scheduler.paused[taskName]; paused {
+		scheduler.mutex.Unlock()
+		slog.Debug("Skipped cron tick: schedule paused", "task", taskName)
+		return
+	}
 	duplicate := false
 	if !fixedInterval {
 		fired, ok := scheduler.firedTicks[taskName]
@@ -441,6 +473,9 @@ func (scheduler *Scheduler) GetNextRun(taskName string) *time.Time {
 	if !ok {
 		return nil
 	}
+	if _, paused := scheduler.paused[taskName]; paused {
+		return nil
+	}
 	entry := scheduler.cron.Entry(entryID)
 	// Surface the bare cron tick. Under the gate a jittered task starts at
 	// min(when the gate frees for it, its slot): with no contention that's the
@@ -450,4 +485,143 @@ func (scheduler *Scheduler) GetNextRun(taskName string) *time.Time {
 	// alike.
 	next := entry.Next
 	return &next
+}
+
+// pauseClearReason names why a task can't carry a schedule pause, or "" when it
+// can. nil means the task is no longer defined.
+func pauseClearReason(task *model.Task) string {
+	switch {
+	case task == nil:
+		return "not in runwisp.toml"
+	case task.Kind.IsService():
+		return "it is a service"
+	case task.Cron == "":
+		return "it has no cron schedule"
+	case !task.ManualTrigger:
+		return "manual_trigger = false"
+	}
+	return ""
+}
+
+// RestorePauses loads the persisted schedule pauses at boot, before Start, and
+// clears any the current config no longer allows (see PrunePauses). store
+// becomes the write-through target for later Pause/Resume calls. The returned
+// strings describe the cleared pauses, for the boot warnings.
+func (scheduler *Scheduler) RestorePauses(ctx context.Context, store storage.TaskPauseRepository) ([]string, error) {
+	paused, err := store.ListPausedTaskSchedules(ctx)
+	scheduler.mutex.Lock()
+	defer scheduler.mutex.Unlock()
+	scheduler.pauses = store
+	if err != nil {
+		return nil, err
+	}
+	scheduler.paused = paused
+	cleared := scheduler.prunePausesLocked(ctx, scheduler.tasks)
+	for name, at := range scheduler.paused {
+		slog.Info("Cron schedule is paused", "task", name, "since", at)
+	}
+	return cleared, nil
+}
+
+// Pause stops the task's cron ticks from firing until Resume. The cron entry
+// stays registered, so a reload that reschedules or re-plans the task keeps
+// the pause. Pausing an already-paused task is a no-op that keeps the original
+// pause time. Validated against the scheduler's own task set under its lock, so
+// a reload racing the request can't slip a pause onto a task it just locked.
+//
+// ponytail: the single-row SQLite write runs under the scheduler lock; move it
+// to a dedicated pause lock if it ever shows up in fire latency.
+func (scheduler *Scheduler) Pause(ctx context.Context, name string) error {
+	scheduler.mutex.Lock()
+	defer scheduler.mutex.Unlock()
+	task := scheduler.tasks[name]
+	if reason := pauseClearReason(task); reason != "" {
+		return fmt.Errorf("%w: %s", ErrNotPausable, reason)
+	}
+	if task.Held() {
+		return fmt.Errorf("%w: a system cron daemon still owns it", ErrNotPausable)
+	}
+	if _, ok := scheduler.paused[name]; ok {
+		return nil
+	}
+	at := scheduler.now()
+	if scheduler.pauses != nil {
+		if err := scheduler.pauses.PauseTaskSchedule(ctx, name, at); err != nil {
+			return fmt.Errorf("persist schedule pause: %w", err)
+		}
+	}
+	scheduler.paused[name] = at
+	slog.Info("Cron schedule paused", "task", name)
+	return nil
+}
+
+// Resume lets the task's cron ticks fire again from the next tick on. Ticks
+// that fell inside the pause are not caught up. A no-op when not paused.
+func (scheduler *Scheduler) Resume(ctx context.Context, name string) error {
+	scheduler.mutex.Lock()
+	defer scheduler.mutex.Unlock()
+	if _, ok := scheduler.paused[name]; !ok {
+		return nil
+	}
+	if scheduler.pauses != nil {
+		if err := scheduler.pauses.ResumeTaskSchedule(ctx, name, scheduler.now()); err != nil {
+			return fmt.Errorf("persist schedule resume: %w", err)
+		}
+	}
+	delete(scheduler.paused, name)
+	slog.Info("Cron schedule resumed", "task", name)
+	return nil
+}
+
+// PausedAt reports when the task's schedule was paused, or nil if it isn't.
+func (scheduler *Scheduler) PausedAt(name string) *time.Time {
+	scheduler.mutex.Lock()
+	defer scheduler.mutex.Unlock()
+	at, ok := scheduler.paused[name]
+	if !ok {
+		return nil
+	}
+	return &at
+}
+
+// IsPaused reports whether the task's schedule is paused.
+func (scheduler *Scheduler) IsPaused(name string) bool {
+	scheduler.mutex.Lock()
+	defer scheduler.mutex.Unlock()
+	_, ok := scheduler.paused[name]
+	return ok
+}
+
+// PrunePauses clears every pause whose task the given (reloaded) task set no
+// longer allows to be paused: removed, turned into a service, stripped of its
+// cron, or locked with manual_trigger = false. TOML wins. Returns one notice
+// per cleared pause for the reload result.
+func (scheduler *Scheduler) PrunePauses(tasks map[string]*model.Task) []string {
+	scheduler.mutex.Lock()
+	defer scheduler.mutex.Unlock()
+	return scheduler.prunePausesLocked(context.Background(), tasks)
+}
+
+func (scheduler *Scheduler) prunePausesLocked(ctx context.Context, tasks map[string]*model.Task) []string {
+	var cleared []string
+	// Name order, so the reload notices read the same on every run.
+	for _, name := range slices.Sorted(maps.Keys(scheduler.paused)) {
+		reason := pauseClearReason(tasks[name])
+		if reason == "" {
+			continue
+		}
+		// Drop the in-memory pause even if the write fails: the config says
+		// this task can't be paused, so it must not stay paused. A failed clear
+		// is retried by the next boot's RestorePauses.
+		if scheduler.pauses != nil {
+			if err := scheduler.pauses.ResumeTaskSchedule(ctx, name, scheduler.now()); err != nil {
+				slog.Error("Failed to persist cleared schedule pause", "task", name, "err", err)
+			}
+		}
+		delete(scheduler.paused, name)
+		notice := fmt.Sprintf("task %q: schedule pause cleared (%s)", name, reason)
+		slog.Warn("Schedule pause cleared", "task", name, "reason", reason)
+		cleared = append(cleared, notice)
+	}
+	return cleared
 }

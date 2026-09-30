@@ -35,7 +35,7 @@ type Server struct {
 	notifyRepo  storage.NotificationRepository
 	notifyHub   NotificationHub
 	taskManager runtime.TaskRunner
-	scheduler   runtime.NextRunGetter
+	scheduler   *runtime.Scheduler
 	// tasks is the live task set, read per /api/daemon request so derived state that
 	// changes while the daemon runs — a cron hold releasing itself, a reload adding
 	// or removing tasks — is reported as it is now, not as it was at boot.
@@ -104,12 +104,14 @@ type Server struct {
 // DaemonInfo and CapInfo live in the model package.
 
 type Options struct {
-	DB                storage.RunRepository
-	NotificationDB    storage.NotificationRepository // optional; nil disables /api/notifications
-	NotificationHub   NotificationHub                // optional; nil disables live notification events on /api/events/stream
-	TaskManager       runtime.TaskRunner
-	Tasks             *runtime.TaskRegistry
-	Scheduler         runtime.NextRunGetter
+	DB              storage.RunRepository
+	NotificationDB  storage.NotificationRepository // optional; nil disables /api/notifications
+	NotificationHub NotificationHub                // optional; nil disables live notification events on /api/events/stream
+	TaskManager     runtime.TaskRunner
+	Tasks           *runtime.TaskRegistry
+	// Scheduler is nil when scheduling is inactive (station mode); pause and
+	// resume then answer 409 and tasks report no next run.
+	Scheduler         *runtime.Scheduler
 	Host              string // Bind address (default: 127.0.0.1)
 	Port              int
 	DataDir           string // Resolved data directory; disclosed via GET /api/daemon/identity (local only)
@@ -193,7 +195,7 @@ func New(opts Options) (*Server, error) {
 		for _, t := range []events.EventType{
 			events.EventRunCreated, events.EventRunStarted, events.EventRunCompleted,
 			events.EventRunFailed, events.EventRunUpdated, events.EventRunDeleted,
-			events.EventSystemSample, events.EventConfigStale,
+			events.EventSystemSample, events.EventConfigStale, events.EventTasksChanged,
 		} {
 			opts.EventBus.Subscribe(t, s.appEvents.ingest)
 		}

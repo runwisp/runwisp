@@ -5,6 +5,7 @@ package uikit
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -70,6 +71,10 @@ type StartupInfo struct {
 	// header shows a count; a skipped job has no runs, so this is the only place
 	// the TUI can mention it at all.
 	ConfigWarnings []string
+	// PausedTasks maps each task whose cron schedule an operator paused to when
+	// it was paused. Kept current by polling /api/tasks next to /api/daemon,
+	// which has no pause state of its own.
+	PausedTasks map[string]time.Time
 
 	// Headless is set when the daemon runs without an interactive TUI. The
 	// startup banner renders one extra dim line ("Press Ctrl+C to stop.") in

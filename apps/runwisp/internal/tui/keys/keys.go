@@ -62,6 +62,9 @@ var (
 	OpenRun  = Binding{Keys: "enter", Desc: "open the selected run"}
 	TaskInfo = Binding{Keys: "i", Desc: "inspect — task health, or run details in a log view", Bar: "i details"}
 	Undo     = Binding{Keys: "u", Desc: "undo the last action (while the toast shows)", Bar: "u undo"}
+	// Pause and Resume are the two bar forms of `p`, like RunNow and Restart.
+	Pause  = Binding{Keys: "p", Desc: "pause / resume the cron schedule", Bar: "p pause"}
+	Resume = Binding{Bar: "p resume"}
 )
 
 // Run-list filter action, active when the executions list is focused.
@@ -121,7 +124,7 @@ var (
 var OverlaySections = []Section{
 	{Title: "Global", Bindings: []Binding{Help, Quit, NotifPanel, ReloadConfig, SearchLogs}},
 	{Title: "Navigate", Bindings: []Binding{Move, SwitchPanel, Open, Back, FilterTasks}},
-	{Title: "Task", Bindings: []Binding{Run, OpenRun, TaskInfo, Undo}},
+	{Title: "Task", Bindings: []Binding{Run, Pause, OpenRun, TaskInfo, Undo}},
 	{Title: "Run list", Bindings: []Binding{Filter, Select, SelectAll, BulkDelete, BulkCancel, BulkRerun, ClearSelect}},
 	{Title: "Exec view", Bindings: []Binding{Stop, Retry, DownloadDel, Fullscreen, TopEnd, Page, FrameHist}},
 	{Title: "Run dialog", Bindings: []Binding{FlagToggle, ChooseOpt, IncludeOmit, RunCancel}},

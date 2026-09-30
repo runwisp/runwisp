@@ -5,7 +5,8 @@ import { displayStatus, type RunStatus, type Run, type Task } from "@runwisp/com
 
 export type TaskWithId = Task & { id: string };
 
-export type OverviewTaskState = "attention" | "running" | "scheduled" | "manual" | "idle";
+export type OverviewTaskState =
+    "attention" | "running" | "paused" | "scheduled" | "manual" | "idle";
 export type OverviewTaskFilter = "all" | "attention" | "running" | "scheduled" | "manual";
 export type OverviewTaskSortKey = "attention" | "last_activity" | "next_run" | "name";
 
@@ -31,9 +32,10 @@ export type OverviewTaskCounts = Record<OverviewTaskFilter, number>;
 const TASK_STATE_ORDER: Record<OverviewTaskState, number> = {
     attention: 0,
     running: 1,
-    scheduled: 2,
-    manual: 3,
-    idle: 4,
+    paused: 2,
+    scheduled: 3,
+    manual: 4,
+    idle: 5,
 };
 const LOWEST_PRIORITY_TIME = -1;
 
@@ -60,6 +62,8 @@ export function buildTaskOverviews(
             state = "running";
         } else if (lastRun?.isFailure === true) {
             state = "attention";
+        } else if (task.pausedAt) {
+            state = "paused";
         } else if (nextRunMs !== undefined) {
             state = "scheduled";
         } else if (isApiOnly) {

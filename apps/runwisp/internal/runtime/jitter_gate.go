@@ -43,7 +43,8 @@ type heldRun struct {
 // It is owned by defaultTaskManager and reuses its clock and run-trigger path.
 // The gate holds its own mutex; the lock order is always gateMu → manager mu
 // (trigger re-acquires the manager lock), never the reverse — onComplete is
-// invoked only after the manager lock is released.
+// invoked only after the manager lock is released. trigger may also take the
+// scheduler's lock (its pause check), which is a leaf: gateMu → scheduler mutex.
 type jitterGate struct {
 	now     func() time.Time
 	after   afterFunc

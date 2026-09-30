@@ -113,8 +113,3 @@ type TaskManager interface {
 	// recorded with end_reason = "daemon_stopped".
 	ShutdownWithDeadline(deadline time.Duration)
 }
-
-// NextRunGetter is the subset of Scheduler consumed by the server package.
-type NextRunGetter interface {
-	GetNextRun(taskName string) *time.Time
-}

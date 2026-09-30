@@ -64,6 +64,10 @@ export function formatTaskNextRunLabel(task: TaskOverview, now: Date = new Date(
         return "Always on";
     }
 
+    if (task.task.pausedAt) {
+        return "Paused";
+    }
+
     if (task.nextRunMs !== undefined) {
         return formatRelativeTimeWithAbsolute(new Date(task.nextRunMs), now);
     }

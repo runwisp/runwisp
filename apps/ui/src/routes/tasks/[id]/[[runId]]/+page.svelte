@@ -8,7 +8,7 @@
     import { toast, ErrorState, Skeleton } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { tasksApi } from "$lib/api";
-    import { runUpdatesStore, systemStore, connectionStore } from "$lib/stores";
+    import { runUpdatesStore, systemStore, connectionStore, appEventStream } from "$lib/stores";
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import { createLogSession } from "$lib/utils/log-session";
     import { createRunsSource } from "$lib/utils/runs-source.svelte";
@@ -78,6 +78,9 @@
         if (taskName) void taskData.fetch();
         return () => taskData.abort();
     });
+
+    // A reload can change this task's definition without touching its runs.
+    $effect(() => appEventStream.subscribe("tasks.changed", () => void taskData.fetch()));
 
     // Resync the list after a genuine SSE reconnect (fires only on recovery from
     // a prior connection). Covers the rare gap that outlived the server's replay

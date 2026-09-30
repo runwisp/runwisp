@@ -27,7 +27,7 @@ func TestRunStartupTasks(t *testing.T) {
 		TriggerRunOptions{TriggeredBy: model.TriggeredByStartup}).
 		Return(&model.Run{}, nil).Once()
 
-	result := RunStartupTasks(t.Context(), tasks, runner, nil, "")
+	result := RunStartupTasks(t.Context(), tasks, runner, nil, "", nil)
 
 	assert.Equal(t, 1, result.Triggered)
 	assert.Equal(t, 0, result.Errors)
@@ -44,7 +44,7 @@ func TestRunStartupTasksCountsErrors(t *testing.T) {
 	runner.On("TriggerRunWithOptions", "boot", mock.Anything).
 		Return((*model.Run)(nil), errors.New("boom")).Once()
 
-	result := RunStartupTasks(t.Context(), tasks, runner, nil, "")
+	result := RunStartupTasks(t.Context(), tasks, runner, nil, "", nil)
 
 	assert.Equal(t, 0, result.Triggered)
 	assert.Equal(t, 1, result.Errors)
@@ -66,7 +66,7 @@ func TestRunStartupTasksBootModeOncePerBoot(t *testing.T) {
 	}
 	start := func(bootID string) []string {
 		runner := &fakeTaskRunner{}
-		RunStartupTasks(t.Context(), tasks, runner, db, bootID)
+		RunStartupTasks(t.Context(), tasks, runner, db, bootID, nil)
 		return runner.triggers
 	}
 
@@ -86,11 +86,11 @@ func TestRunStartupTasksBootModeFailedTriggerRetriesOnRestart(t *testing.T) {
 			RunOnStart: true, RunOnStartMode: model.RunOnStartBoot},
 	}
 
-	failed := RunStartupTasks(t.Context(), tasks, &fakeTaskRunner{triggerErr: errors.New("boom")}, db, "boot-1")
+	failed := RunStartupTasks(t.Context(), tasks, &fakeTaskRunner{triggerErr: errors.New("boom")}, db, "boot-1", nil)
 	assert.Equal(t, 1, failed.Errors)
 
 	runner := &fakeTaskRunner{}
-	RunStartupTasks(t.Context(), tasks, runner, db, "boot-1")
+	RunStartupTasks(t.Context(), tasks, runner, db, "boot-1", nil)
 	assert.Equal(t, []string{"reboot"}, runner.triggers)
 }
 
@@ -104,8 +104,27 @@ func TestRunStartupTasksBootModeWithoutBootIDFiresEveryStart(t *testing.T) {
 	db := new(testutil.MockRunRepository)
 	for range 2 {
 		runner := &fakeTaskRunner{}
-		RunStartupTasks(t.Context(), tasks, runner, db, "")
+		RunStartupTasks(t.Context(), tasks, runner, db, "", nil)
 		assert.Equal(t, []string{"reboot"}, runner.triggers)
 	}
 	db.AssertExpectations(t)
+}
+
+// A paused schedule means no automatic runs at all: a restart (or self-update
+// re-exec) must not fire run_on_start for a job the operator held back.
+func TestRunStartupTasksSkipsPausedTask(t *testing.T) {
+	tasks := map[string]*model.Task{
+		"paused": {Name: "paused", Kind: model.KindTask, RunOnStart: true, Cron: "0 3 * * *", ManualTrigger: true},
+		"boot":   {Name: "boot", Kind: model.KindTask, RunOnStart: true, Run: "echo hi"},
+	}
+	runner := new(mockTaskRunner)
+	runner.On("TriggerRunWithOptions", "boot",
+		TriggerRunOptions{TriggeredBy: model.TriggeredByStartup}).
+		Return(&model.Run{}, nil).Once()
+
+	result := RunStartupTasks(t.Context(), tasks, runner, nil, "", func(name string) bool { return name == "paused" })
+
+	assert.Equal(t, 1, result.Triggered)
+	runner.AssertExpectations(t)
+	runner.AssertNumberOfCalls(t, "TriggerRunWithOptions", 1)
 }

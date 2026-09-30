@@ -144,6 +144,18 @@ export const tasksApi = {
         });
     },
 
+    pauseSchedule: async (taskName: string): Promise<void> => {
+        await apiClient.POST("/api/tasks/{taskName}/pause", {
+            params: { path: { taskName } },
+        });
+    },
+
+    resumeSchedule: async (taskName: string): Promise<void> => {
+        await apiClient.POST("/api/tasks/{taskName}/resume", {
+            params: { path: { taskName } },
+        });
+    },
+
     getRun: async (_taskName: string, runId: string) => {
         const { data } = await apiClient.GET("/api/runs/{runId}", {
             params: { path: { runId } },

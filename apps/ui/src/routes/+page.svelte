@@ -149,12 +149,18 @@
             }
         });
 
+        // A reload or a schedule pause changes the task list without a run.
+        const unsubscribeTasks = appEventStream.subscribe("tasks.changed", () => {
+            void refreshTasks();
+        });
+
         void pageData.fetch();
         void loadMetricsHistory();
 
         return () => {
             unsubscribe();
             unsubscribeSystem();
+            unsubscribeTasks();
             if (tasksRefreshTimer) {
                 clearTimeout(tasksRefreshTimer);
                 tasksRefreshTimer = null;

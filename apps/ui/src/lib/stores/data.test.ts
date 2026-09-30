@@ -140,3 +140,41 @@ describe("TaskStore.loadIfNeeded", () => {
         expect(notifyError).not.toHaveBeenCalled();
     });
 });
+
+describe("TaskStore.refresh", () => {
+    const tasks: Task[] = [
+        { name: "t1", manualTrigger: true, autostart: false, runOnStart: false },
+    ];
+
+    it("refetches even after the first load", async () => {
+        const getTasks = vi.fn(() => Promise.resolve(tasks));
+        const store = createTaskStore({
+            getTasks,
+            reportFetchError: () => false,
+            notifyError: () => {},
+        });
+
+        await store.loadIfNeeded();
+        await store.refresh();
+
+        expect(getTasks).toHaveBeenCalledTimes(2);
+        expect(store.items).toEqual(tasks);
+    });
+
+    it("keeps the current list and stays quiet on failure", async () => {
+        const notifyError = vi.fn();
+        const reportFetchError = vi.fn(() => true);
+        const getTasks = vi
+            .fn<() => Promise<Task[]>>()
+            .mockResolvedValueOnce(tasks)
+            .mockRejectedValueOnce(new Error("network down"));
+        const store = createTaskStore({ getTasks, reportFetchError, notifyError });
+
+        await store.loadIfNeeded();
+        await store.refresh();
+
+        expect(store.items).toEqual(tasks);
+        expect(reportFetchError).toHaveBeenCalledTimes(1);
+        expect(notifyError).not.toHaveBeenCalled();
+    });
+});

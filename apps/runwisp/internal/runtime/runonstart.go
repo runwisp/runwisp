@@ -37,9 +37,13 @@ type RunOnStartResult struct {
 // all, so the clock-based predicate would let it through while a live cron daemon
 // is firing the very same line on its own startup.
 //
+// A task whose cron schedule an operator paused is skipped as well (paused
+// reports it; nil means none are): a pause means no automatic runs, and a
+// restart or self-update must not fire the job the operator held back.
+//
 // Tasks are visited in name order so the firing sequence is deterministic; the
 // function reads no clock, filesystem, or randomness — bootID is injected.
-func RunStartupTasks(ctx context.Context, tasks map[string]*model.Task, runner TaskRunner, db storage.RunRepository, bootID string) RunOnStartResult {
+func RunStartupTasks(ctx context.Context, tasks map[string]*model.Task, runner TaskRunner, db storage.RunRepository, bootID string, paused func(string) bool) RunOnStartResult {
 	var result RunOnStartResult
 	names := make([]string, 0, len(tasks))
 	for name := range tasks {
@@ -53,6 +57,10 @@ func RunStartupTasks(ctx context.Context, tasks map[string]*model.Task, runner T
 	for _, name := range names {
 		task := tasks[name]
 		if !task.RunOnStart || task.Kind.IsService() || task.Held() {
+			continue
+		}
+		if paused != nil && paused(name) {
+			slog.Info("Skipped run_on_start: schedule paused", "task", name)
 			continue
 		}
 		perBoot := task.RunOnStartMode == model.RunOnStartBoot && bootID != ""

@@ -400,6 +400,11 @@ type ConfigStaleSSEEvent struct {
 	Stale bool `json:"stale" doc:"True when runwisp.toml changed on disk but isn't applied yet"`
 }
 
+// TasksChangedSSEEvent tells clients to refetch /api/tasks (a schedule was
+// paused or resumed, or a reload was applied); maps to the `tasks.changed`
+// event name. It carries no payload.
+type TasksChangedSSEEvent struct{}
+
 // LogLineSSEEvent is the per-line payload for the run-log stream. Identical
 // shape to LogLineEntry; aliased so huma/sse's reverse-type lookup can map it
 // to the `line` event name.

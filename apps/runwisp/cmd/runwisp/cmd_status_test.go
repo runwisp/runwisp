@@ -10,8 +10,10 @@ import (
 	"net"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -122,6 +124,29 @@ func TestRunStatus_ConfigStaleWarns(t *testing.T) {
 	var buf bytes.Buffer
 	require.NoError(t, runStatus(t.Context(), &buf, f, false))
 	assert.Contains(t, buf.String(), "runwisp.toml has changed")
+}
+
+// A paused schedule records no cron runs, so status is where it shows up.
+func TestRunStatus_ListsPausedSchedules(t *testing.T) {
+	pausedAt := time.Date(2026, 9, 29, 14, 0, 0, 0, time.UTC)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/api/tasks", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(server.TasksResponseBody{Items: []model.TaskResponse{
+			{Task: model.Task{Name: "nightly", Cron: "0 3 * * *", ManualTrigger: true}, PausedAt: &pausedAt},
+			{Task: model.Task{Name: "hourly", Cron: "0 * * * *", ManualTrigger: true}},
+		}})
+	})
+	f := serveStatusSocket(t, mux)
+
+	var buf bytes.Buffer
+	require.NoError(t, runStatus(t.Context(), &buf, f, false))
+	out := buf.String()
+	assert.Contains(t, out, "1 cron schedule is paused:\n    nightly\n")
+	assert.Contains(t, out, "runwisp resume <task>")
+	assert.NotContains(t, out, "hourly")
 }
 
 func TestRunStatus_HealthNon200Errors(t *testing.T) {

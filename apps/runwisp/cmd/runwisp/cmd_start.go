@@ -37,7 +37,7 @@ need one.`,
 		start := func(c *apiclient.Client, ctx context.Context, name string) error {
 			return c.StartTask(ctx, name, "cli")
 		}
-		return controlTargets(cmd, flags, controlRemote, args, "start", "started", start, nil)
+		return controlTargets(cmd, flags, controlRemote, args, "start", "started", start, nil, controllableTargets)
 	},
 }
 

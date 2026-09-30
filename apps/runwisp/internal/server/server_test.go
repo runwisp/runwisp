@@ -663,6 +663,7 @@ func TestAppStream(t *testing.T) {
 		// stream, so a single tab connection carries them all.
 		s.eventBus.Publish(events.EventSystemSample, events.SystemSampleEvent{Sample: model.MetricsSample{CPUUsage: 12.5}, Uptime: "1m"})
 		s.eventBus.Publish(events.EventConfigStale, events.ConfigStaleEvent{Stale: true})
+		s.eventBus.Publish(events.EventTasksChanged, events.TasksChangedEvent{})
 		time.Sleep(100 * time.Millisecond)
 		cancel()
 	}()
@@ -676,6 +677,7 @@ func TestAppStream(t *testing.T) {
 	assert.Contains(t, body, "event: run.created")
 	assert.Contains(t, body, "event: system")
 	assert.Contains(t, body, "event: config.stale")
+	assert.Contains(t, body, "event: tasks.changed")
 }
 
 // TestShutdown_InterruptsActiveSSEConnections guards against Server.Shutdown

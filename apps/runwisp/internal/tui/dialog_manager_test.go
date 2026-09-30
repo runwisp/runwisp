@@ -422,7 +422,7 @@ func TestDialogManager_TaskDetailLifecycle(t *testing.T) {
 		t.Fatal("expected no task detail initially")
 	}
 
-	dm.ShowTaskDetail("alpha", &model.Task{Name: "alpha"})
+	dm.ShowTaskDetail("alpha", &model.Task{Name: "alpha"}, false)
 	if !dm.HasTaskDetail() {
 		t.Fatal("expected task detail after ShowTaskDetail")
 	}
@@ -442,7 +442,7 @@ func TestDialogManager_TaskDetailLifecycle(t *testing.T) {
 	// ApplyTaskSummary is a no-op once the inspector has closed.
 	dm.ApplyTaskSummary(uikit.TaskSummaryMsg{TaskName: "alpha"})
 
-	dm.ShowTaskDetail("beta", nil)
+	dm.ShowTaskDetail("beta", nil, false)
 	dm.DismissTaskDetail()
 	if dm.HasTaskDetail() {
 		t.Fatal("expected task detail nil after DismissTaskDetail")

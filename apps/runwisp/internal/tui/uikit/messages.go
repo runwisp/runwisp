@@ -110,6 +110,21 @@ type StopServiceMsg struct {
 	Err      error
 }
 
+// SchedulePauseMsg is the result of pausing (Paused) or resuming a task's cron
+// schedule.
+type SchedulePauseMsg struct {
+	TaskName string
+	Paused   bool
+	Err      error
+}
+
+// PausedTasksMsg delivers the tasks whose cron schedule is paused, keyed by
+// name, from a fresh /api/tasks read.
+type PausedTasksMsg struct {
+	Paused map[string]time.Time
+	Err    error
+}
+
 // QuitAction specifies what should happen to the daemon when the TUI exits.
 type QuitAction int
 
