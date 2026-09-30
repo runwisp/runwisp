@@ -70,7 +70,7 @@ run = "true"
 	daemon := startDaemon(t, projectDir, binaryPath, configPath)
 	client := socketClient(t, daemon.dataDir)
 
-	require.Eventually(t, func() bool { return runCount(t, client, "fast") > 0 },
+	require.Eventually(t, func() bool { n, ok := runCount(client, "fast"); return ok && n > 0 },
 		10*time.Second, 100*time.Millisecond, "the task should fire before it is paused")
 
 	out, err := runCLI(t, projectDir, binaryPath, "pause", "*", "--data", daemon.dataDir, "--config", configPath)
@@ -79,13 +79,14 @@ run = "true"
 
 	// A tick already past the pause check may still land; let it settle.
 	time.Sleep(1500 * time.Millisecond)
-	settled := runCount(t, client, "fast")
-	require.Never(t, func() bool { return runCount(t, client, "fast") != settled },
+	settled, ok := runCount(client, "fast")
+	require.True(t, ok)
+	require.Never(t, func() bool { n, ok := runCount(client, "fast"); return ok && n != settled },
 		3*time.Second, 200*time.Millisecond, "a paused schedule must not fire")
 
 	_, err = client.TriggerRun(t.Context(), "fast", nil, "")
 	require.NoError(t, err, "manual runs keep working while paused")
-	require.Eventually(t, func() bool { return runCount(t, client, "fast") == settled+1 },
+	require.Eventually(t, func() bool { n, ok := runCount(client, "fast"); return ok && n == settled+1 },
 		5*time.Second, 100*time.Millisecond)
 }
 
@@ -115,14 +116,15 @@ func taskByName(t *testing.T, client *apiclient.Client, name string) model.TaskR
 func requireNoMissedRuns(t *testing.T, client *apiclient.Client, msg string) {
 	t.Helper()
 	require.Never(t, func() bool {
-		s, err := client.GetRunSummary(t.Context())
+		s, err := client.GetRunSummary(context.Background())
 		return err == nil && s.Missed != 0
 	}, 2*time.Second, 200*time.Millisecond, msg)
 }
 
-func runCount(t *testing.T, client *apiclient.Client, taskName string) int64 {
-	t.Helper()
-	_, total, err := client.ListRunsByTask(t.Context(), taskName, apiclient.RunsParams{Limit: 1})
-	require.NoError(t, err)
-	return total
+// runCount is polled from require.Eventually/Never, whose condition goroutines
+// can outlive the check and the test, so it must not fail the test or use
+// t.Context(). ok is false when the request failed.
+func runCount(client *apiclient.Client, taskName string) (total int64, ok bool) {
+	_, total, err := client.ListRunsByTask(context.Background(), taskName, apiclient.RunsParams{Limit: 1})
+	return total, err == nil
 }
