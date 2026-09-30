@@ -769,9 +769,10 @@ func TestTakeover_RerunKeepsTheOriginalCronState(t *testing.T) {
 	opts := systemInstallOpts(binary)
 	installTakeover(t, inst, fs, cmd, prompter, opts, "active\nenabled")
 
-	for range 2 { // discovery, then the reassert probe: still retired, nothing to do
+	for range 2 { // discovery, then the reassert probe: still retired
 		cmd.Expect("systemctl", strings.Fields(cronShowState), []byte("loaded\ninactive\nmasked\n"), nil, nil)
 	}
+	cmd.Expect("systemctl", []string{"enable", "--now", "runwisp.service"}, nil, nil, nil) // cron stays retired, RunWisp is started
 	opts.TakeOverCron = true
 	require.NoError(t, inst.Install(context.Background(), opts, &bytes.Buffer{}))
 
