@@ -40,7 +40,7 @@ func applyDefaultMemoryLimit() {
 
 // applyDefaultMaxProcs lowers GOMAXPROCS to defaultMaxProcs on big hosts.
 // Applied only when GOMAXPROCS is unset, and it only ever lowers the value:
-// runtime.GOMAXPROCS(0) reports the current value, which on Go 1.25 already
+// runtime.GOMAXPROCS(0) reports the current value, which since Go 1.25
 // reflects a cgroup CPU-quota limit, so a container limited to fewer CPUs keeps
 // its smaller value. Pinning it disables the runtime's *dynamic* cgroup
 // re-adjustment — an acceptable trade for a long-lived daemon.
