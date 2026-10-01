@@ -225,6 +225,8 @@ test.describe("runs page", () => {
         // 3. While the restore fetch is still in flight, the stale not-found must
         //    already be cleared — no flash.
         await expect(page.getByText("Run not found")).toBeHidden({ timeout: 4_000 });
+        //    The detail panel holds a loading state instead of showing another run.
+        await expect(page.getByRole("main").getByRole("status").first()).toBeVisible();
 
         // 4. Let the fetch complete; the valid run resolves.
         releaseGetById();

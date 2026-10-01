@@ -23,6 +23,7 @@
         activePage,
         activeTask,
         tasks = [],
+        tasksLoading = false,
         urls = {
             overview: "#",
             runs: "#",
@@ -33,6 +34,8 @@
         /** The task whose detail page is open, if any. */
         activeTask?: Task | undefined;
         tasks?: { id: string; name: string; group?: string; icon: Component; href?: string }[];
+        /** The task list hasn't loaded yet: show placeholders, not an empty list. */
+        tasksLoading?: boolean;
         urls?: { overview: string; runs: string };
         children: Snippet;
     }>();
@@ -174,7 +177,19 @@
                 )}
             </nav>
 
-            {#if showGroupHeaders}
+            {#if tasksLoading}
+                <div class="mt-4 space-y-0.5" role="status" aria-label="Loading tasks">
+                    {#each [0, 1, 2, 3] as i (i)}
+                        <div class="flex items-center gap-3 px-3 py-2">
+                            <span class="size-[18px] animate-pulse rounded bg-outline-hover"></span>
+                            <span
+                                class="h-3 animate-pulse rounded bg-outline-hover"
+                                style:width="{60 - i * 10}%"
+                            ></span>
+                        </div>
+                    {/each}
+                </div>
+            {:else if showGroupHeaders}
                 {#each taskGroups as group (group.name)}
                     <div
                         class="mt-4 mb-2 px-3 font-mono text-2xs font-medium tracking-[0.16em] text-on-surface-faint uppercase first:mt-0"

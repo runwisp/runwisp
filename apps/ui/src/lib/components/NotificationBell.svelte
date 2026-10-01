@@ -40,7 +40,9 @@
     {/snippet}
 
     <div class="-mx-2 max-h-96 space-y-2 overflow-y-auto px-2">
-        {#if items.length === 0}
+        {#if !notificationStore.loaded}
+            <p class="px-2 py-6 text-center text-xs text-on-surface-faint">Loading…</p>
+        {:else if items.length === 0}
             <p class="px-2 py-6 text-center text-xs text-on-surface-faint">No notifications yet.</p>
         {:else}
             {#each items as item (item.id)}

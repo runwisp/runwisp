@@ -5,7 +5,7 @@
     import { page } from "$app/stores";
     import { resolve } from "$app/paths";
     import { TaskPage } from "$lib/components/dashboard";
-    import { toast, ErrorState, Skeleton } from "@runwisp/ui";
+    import { toast, ErrorState, RunsList, RunDetailPanel } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { tasksApi } from "$lib/api";
     import { runUpdatesStore, systemStore, connectionStore, appEventStream } from "$lib/stores";
@@ -92,6 +92,9 @@
     // selecting the running/newest run.
     let runNotFound = $state(false);
     let checkedMissingId = $state<string | null>(null);
+    // True while that lookup is in flight, so the detail panel shows a loading
+    // state instead of another run.
+    let runLookupPending = $state(false);
 
     $effect(() => {
         const initialRunId = runIdParam;
@@ -110,6 +113,7 @@
         // latched by a previous dead link so it doesn't flash "Run not found"
         // for this (possibly valid) run while the fetch is in flight.
         runNotFound = false;
+        runLookupPending = true;
         void (async () => {
             try {
                 const run = await tasksApi.getRun(taskName, initialRunId);
@@ -119,6 +123,8 @@
                 }
             } catch {
                 // Fall through: not found / not authorized is treated as missing.
+            } finally {
+                runLookupPending = false;
             }
             checkedMissingId = initialRunId;
             runNotFound = true;
@@ -180,45 +186,49 @@
 </script>
 
 <AsyncDataView data={taskData}>
+    {#snippet skeleton()}
+        <!-- The task page's own rail and panel, in their loading states. -->
+        <div class="-m-6 flex h-[calc(100%+3rem)] min-h-0 flex-col md:flex-row">
+            <RunsList flush items={[]} total={0} loading filters={emptyRunFilters()} />
+            <RunDetailPanel run={undefined} loading fetchLogs={() => undefined} />
+        </div>
+    {/snippet}
     {#if task}
-        {#if !source.loaded}
-            <Skeleton rows={5} />
-        {:else}
-            <TaskPage
-                {task}
-                stationMode={systemStore.stationEnabled}
-                items={source.items}
-                total={source.total}
-                loading={source.loading}
-                bind:filters
-                onLoadMore={() => source.loadMore()}
-                onOptimisticRemove={(ids) => ids.forEach((id) => source.remove(id))}
-                onOptimisticRestore={(runs) => runs.forEach((run) => source.upsert(run))}
-                {concurrencyReached}
-                {triggering}
-                {restarting}
-                {stoppingService}
-                {serviceStopped}
-                onRun={handleRun}
-                onStop={handleStop}
-                onRestart={handleRestart}
-                onStopService={handleStopService}
-                fetchLogs={logSession.fetchLogs}
-                streamLogs={logSession.streamLogs}
-                fetchLineHistory={logSession.fetchLineHistory}
-                motion={source.motion}
-                initialRunId={runIdParam}
-                initialHighlightLine={(() => {
-                    const v = $page.url.searchParams.get("line");
-                    if (!v) return null;
-                    const n = Number(v);
-                    return Number.isFinite(n) ? n : null;
-                })()}
-                {selectRunId}
-                {runNotFound}
-                onSelectRun={selectRun}
-            />
-        {/if}
+        <TaskPage
+            {task}
+            stationMode={systemStore.stationEnabled}
+            items={source.items}
+            total={source.total}
+            loading={source.loading || !source.loaded}
+            bind:filters
+            onLoadMore={() => source.loadMore()}
+            onOptimisticRemove={(ids) => ids.forEach((id) => source.remove(id))}
+            onOptimisticRestore={(runs) => runs.forEach((run) => source.upsert(run))}
+            {concurrencyReached}
+            {triggering}
+            {restarting}
+            {stoppingService}
+            {serviceStopped}
+            onRun={handleRun}
+            onStop={handleStop}
+            onRestart={handleRestart}
+            onStopService={handleStopService}
+            fetchLogs={logSession.fetchLogs}
+            streamLogs={logSession.streamLogs}
+            fetchLineHistory={logSession.fetchLineHistory}
+            motion={source.motion}
+            initialRunId={runIdParam}
+            initialHighlightLine={(() => {
+                const v = $page.url.searchParams.get("line");
+                if (!v) return null;
+                const n = Number(v);
+                return Number.isFinite(n) ? n : null;
+            })()}
+            {selectRunId}
+            {runNotFound}
+            runPending={runLookupPending}
+            onSelectRun={selectRun}
+        />
     {:else}
         <ErrorState message={'No task named "' + taskName + '" found.'} />
     {/if}

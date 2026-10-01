@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import { Bell } from "@lucide/svelte";
-    import { EmptyState } from "@runwisp/ui";
+    import { EmptyState, Skeleton } from "@runwisp/ui";
     import { notificationStore } from "$lib/stores";
     import NotificationItem from "$lib/components/NotificationItem.svelte";
 
@@ -44,7 +44,9 @@
         {/if}
     </header>
 
-    {#if items.length === 0}
+    {#if !notificationStore.loaded}
+        <Skeleton rows={4} header={false} />
+    {:else if items.length === 0}
         <div class="rounded-[4px] border border-dashed border-outline bg-surface-raised">
             <EmptyState
                 title="No notifications yet"

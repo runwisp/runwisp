@@ -11,16 +11,23 @@
     let {
         data,
         skeletonRows = 4,
+        skeleton,
         children,
     }: {
         data: AsyncData<T>;
         skeletonRows?: number;
+        /** Page-shaped placeholder for the first load; generic rows otherwise. */
+        skeleton?: Snippet;
         children: Snippet;
     } = $props();
 </script>
 
 {#if data.loading && typeof data.data === "undefined"}
-    <Skeleton rows={skeletonRows} />
+    {#if skeleton}
+        {@render skeleton()}
+    {:else}
+        <Skeleton rows={skeletonRows} />
+    {/if}
 {:else if connectionStore.status !== "connected" && typeof data.data === "undefined"}
     <ConnectionLostPanel />
 {:else if typeof data.error !== "undefined" && typeof data.data === "undefined"}

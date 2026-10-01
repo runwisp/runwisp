@@ -45,6 +45,7 @@
         initialHighlightLine = null,
         selectRunId = null,
         runNotFound = false,
+        runPending = false,
         onSelectRun,
     } = $props<{
         task: Task;
@@ -85,6 +86,10 @@
         // exist under this task — surfaces a "not found" panel instead of quietly
         // falling back to the running/newest run under a dead URL.
         runNotFound?: boolean;
+        // True while the deep-linked run (initialRunId) is being fetched because
+        // it isn't in the loaded list yet. Holds the detail panel on a loading
+        // state rather than flashing another run first.
+        runPending?: boolean;
         // Notified whenever the user picks a run (click or freshly triggered),
         // so the route can mirror it into the address bar. The auto-fallback
         // selection (newest/running) is deliberately not reported.
@@ -273,11 +278,13 @@
             !items.some((r: Run) => r.id === userSelectedRunId),
     );
 
+    let deepLinkPending = $derived(runPending && userSelectedRunId === initialRunId);
+
     let selectedRunId = $derived.by(() => {
         if (userSelectedRunId && items.some((r: Run) => r.id === userSelectedRunId)) {
             return userSelectedRunId;
         }
-        if (deepLinkMissing) return null;
+        if (deepLinkMissing || deepLinkPending) return null;
         const running = items.find((r: Run) => r.status === "running");
         if (running) return running.id;
         return items[0]?.id ?? null;
@@ -375,6 +382,7 @@
             getInstanceCount={() => instanceCount}
             {motion}
             notFound={deepLinkMissing}
+            loading={(loading && items.length === 0) || deepLinkPending}
         />
     </div>
 </div>

@@ -23,6 +23,7 @@
         motion,
         initialRunId = null,
         runNotFound = false,
+        runPending = false,
         onSelectRun,
     } = $props<{
         items: Run[];
@@ -40,6 +41,10 @@
         // exist. Distinguishes "deleted/bad permalink" from a stale selection that
         // merely scrolled out of the loaded window.
         runNotFound?: boolean;
+        // True while the deep-linked run (initialRunId) is being fetched because
+        // it isn't in the loaded list yet. Holds the detail panel on a loading
+        // state rather than flashing another run first.
+        runPending?: boolean;
         // Notified when the user picks a run, so the route can mirror it into
         // the address bar. The auto-fallback to newest is not reported.
         onSelectRun?: (runId: string | null) => void;
@@ -99,11 +104,13 @@
             !items.some((r: Run) => r.id === userSelectedRunId),
     );
 
+    let deepLinkPending = $derived(runPending && userSelectedRunId === initialRunId);
+
     let selectedRunId = $derived.by(() => {
         if (userSelectedRunId && items.some((r: Run) => r.id === userSelectedRunId)) {
             return userSelectedRunId;
         }
-        if (deepLinkMissing) return null;
+        if (deepLinkMissing || deepLinkPending) return null;
         return items[0]?.id ?? null;
     });
 
@@ -148,5 +155,6 @@
         {getInstanceCount}
         {motion}
         notFound={deepLinkMissing}
+        loading={(loading && items.length === 0) || deepLinkPending}
     />
 </div>

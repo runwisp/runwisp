@@ -120,7 +120,13 @@
 <ToastContainer />
 
 {#if isAuthenticated}
-    <AppLayout {activePage} {activeTask} tasks={navTasks} urls={{ overview: "/", runs: "/runs" }}>
+    <AppLayout
+        {activePage}
+        {activeTask}
+        tasks={navTasks}
+        tasksLoading={!taskStore.loaded}
+        urls={{ overview: "/", runs: "/runs" }}
+    >
         {@render children()}
     </AppLayout>
 {:else if !hydrated || !authStore.current.loaded}
