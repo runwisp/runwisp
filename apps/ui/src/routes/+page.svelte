@@ -5,7 +5,12 @@
     import { untrack } from "svelte";
     import { goto } from "$app/navigation";
     import { resolve } from "$app/paths";
-    import { OverviewPage, type DaemonState, type DaemonStats } from "$lib/components/dashboard";
+    import {
+        OverviewPage,
+        OverviewSkeleton,
+        type DaemonState,
+        type DaemonStats,
+    } from "$lib/components/dashboard";
     import { formatBytes, RunMotion } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { runsApi, tasksApi, systemApi, systemEventSchema, type MetricsSample } from "$lib/api";
@@ -246,6 +251,7 @@
 </script>
 
 <AsyncDataView data={pageData}>
+    {#snippet skeleton()}<OverviewSkeleton />{/snippet}
     <OverviewPage
         state={daemonState}
         {stats}

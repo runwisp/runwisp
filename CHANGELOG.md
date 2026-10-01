@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Release binaries and Docker images are now built with Go 1.27.1, and the bundled SQLite driver, Docker client and other dependencies are on their latest releases.
 
+### Fixed
+
+- The Web UI shows a visible loading placeholder while pages load, instead of a blank page, "No runs yet", or the previous task's page.
+
 ## [1.3.1] - 2026-10-01
 
 ### Security

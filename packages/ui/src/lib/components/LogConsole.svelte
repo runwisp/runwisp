@@ -37,6 +37,10 @@
         // run that simply produced no output. Null/undefined renders nothing;
         // the caller clears it once a subsequent fetch succeeds.
         error?: string | null;
+        // The caller is still fetching this console's first output (e.g. the
+        // run panel seeding its tail). Shows the loading state rather than
+        // "No output yet" until that output arrives.
+        loading?: boolean;
         // Wrap long lines instead of horizontally scrolling them. When on, each
         // rendered row's height becomes a multiple of `lineHeight` (one per
         // wrapped visual row), so the virtualizer switches from the fixed-height
@@ -55,6 +59,7 @@
         endLabel = "end of output",
         endTone = "muted",
         error = null,
+        loading = false,
         wrap = $bindable(false),
     }: Props = $props();
 
@@ -798,7 +803,7 @@
                 {/each}
             {/if}
 
-            {#if cache.totalLines === 0 && overlayRows.length === 0 && !fetcher?.isFetching}
+            {#if cache.totalLines === 0 && overlayRows.length === 0 && !loading && !fetcher?.isFetching}
                 <div
                     class="absolute inset-0 flex items-center justify-center text-[var(--rw-con-dim)]"
                 >
@@ -809,7 +814,7 @@
                 </div>
             {/if}
 
-            {#if cache.totalLines === 0 && fetcher?.isFetching}
+            {#if cache.totalLines === 0 && (loading || fetcher?.isFetching)}
                 <div
                     class="absolute inset-0 flex items-center justify-center text-[var(--rw-con-dim)]"
                 >

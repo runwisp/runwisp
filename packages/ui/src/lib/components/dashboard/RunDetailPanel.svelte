@@ -67,6 +67,7 @@
         getInstanceCount = () => 1,
         motion,
         notFound = false,
+        loading = false,
     }: {
         run: Run | undefined;
         fetchLogs: (
@@ -121,6 +122,9 @@
         // or never existed). The empty state then says so plainly instead of the
         // generic "Select a run" — the caller must not silently substitute another.
         notFound?: boolean;
+        // True while there is no run to show *yet* (the run list or a deep-linked
+        // run is still loading), so the empty state doesn't claim "No runs yet".
+        loading?: boolean;
     } = $props();
 
     function easeInFresh(node: HTMLElement, runId: string) {
@@ -170,6 +174,10 @@
     // changes, not on every run object reference swap from SSE array updates.
     let runId = $derived(run?.id);
 
+    // The run whose seed fetch has settled. Until it matches the shown run the
+    // console says it's loading, not "No output yet".
+    let seededRunId = $state<string | null>(null);
+
     // Fetches the batched tail page a run's console opens on (see the effect
     // below) and paints it into the console. Resolves the line the live
     // stream should resume from, or null when there's nothing left to stream
@@ -201,7 +209,10 @@
         if (!id) return;
 
         const stream = streamLogs;
-        if (!stream) return;
+        if (!stream) {
+            seededRunId = id;
+            return;
+        }
 
         logFetchError = null;
 
@@ -217,7 +228,9 @@
                 // (its disk backfill from that anchor closes the fetch↔stream
                 // race, and the daemon dedupes anything already shown).
                 const seeded = await seedConsoleTail(id, () => cancelled);
-                if (cancelled || !seeded) return;
+                if (cancelled) return;
+                seededRunId = id;
+                if (!seeded) return;
                 cleanup = stream(
                     id,
                     (event: LogEvent) => {
@@ -817,8 +830,41 @@
                     {endLabel}
                     {endTone}
                     error={logFetchError}
+                    loading={seededRunId !== run.id}
                 />
             {/key}
+        </div>
+    </div>
+{:else if loading && !notFound}
+    <!-- Loading: the panel's own frame (verdict header over the console) with
+         placeholders where the run's facts go, so nothing jumps when it lands. -->
+    <div
+        class="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+        role="status"
+        aria-label="Loading run"
+    >
+        <div class="shrink-0 border-b border-outline-faint bg-surface-raised">
+            <div class="pt-[18px] pr-[22px] pb-[16px] pl-[26px]">
+                <div class="flex h-[33px] items-center gap-2.5">
+                    <span class="size-[18px] animate-pulse rounded-full bg-outline-hover"></span>
+                    <span class="h-[18px] w-40 animate-pulse rounded-[3px] bg-outline-hover"></span>
+                </div>
+                <div class="mt-2.5 flex h-[17px] items-center">
+                    <span class="h-3 w-64 max-w-full animate-pulse rounded-[3px] bg-outline-hover"
+                    ></span>
+                </div>
+            </div>
+        </div>
+        <div
+            class="ml-1 flex min-h-[300px] flex-1 flex-col overflow-hidden border-t border-[var(--rw-con-gutter)] bg-[var(--rw-con-bg)]"
+        >
+            <div
+                class="flex shrink-0 items-center gap-2 border-b border-[var(--rw-con-gutter)] bg-[var(--rw-con-panel)] px-3.5 py-[9px] font-mono text-[11.5px] font-semibold text-[var(--rw-con-text)]"
+            >
+                <TerminalIcon size={14} class="opacity-70" />
+                Console output
+            </div>
+            <LogConsole fetchLogs={() => undefined} loading class="min-h-0 flex-1" />
         </div>
     </div>
 {:else}

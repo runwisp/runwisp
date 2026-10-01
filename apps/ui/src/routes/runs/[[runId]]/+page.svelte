@@ -6,7 +6,6 @@
     import { resolve } from "$app/paths";
     import { RunsPage } from "$lib/components/dashboard";
     import { instanceCountResolver } from "$lib/components/dashboard/instance-count";
-    import { Skeleton } from "@runwisp/ui";
     import { runsApi } from "$lib/api";
     import { runUpdatesStore, taskStore, connectionStore } from "$lib/stores";
     import { createRunsSource } from "$lib/utils/runs-source.svelte";
@@ -57,6 +56,9 @@
     // the newest run.
     let runNotFound = $state(false);
     let checkedMissingId = $state<string | null>(null);
+    // True while that lookup is in flight, so the detail panel shows a loading
+    // state instead of another run.
+    let runLookupPending = $state(false);
 
     // Restore a deep-linked run (/runs/{runId}) that isn't on the loaded page.
     // The run ULID is globally unique, so we can fetch it without a task name.
@@ -77,6 +79,7 @@
         // latched by a previous dead link so it doesn't flash "Run not found"
         // for this (possibly valid) run while the fetch is in flight.
         runNotFound = false;
+        runLookupPending = true;
         void (async () => {
             try {
                 const run = await runsApi.getById(initialRunId);
@@ -86,6 +89,8 @@
                 }
             } catch {
                 // Fall through: not found / not authorized is treated as missing.
+            } finally {
+                runLookupPending = false;
             }
             checkedMissingId = initialRunId;
             runNotFound = true;
@@ -93,24 +98,21 @@
     });
 </script>
 
-{#if !source.loaded}
-    <Skeleton rows={5} />
-{:else}
-    <RunsPage
-        items={source.items}
-        total={source.total}
-        loading={source.loading}
-        onLoadMore={() => source.loadMore()}
-        bind:filters
-        onOptimisticRemove={(ids) => ids.forEach((id) => source.remove(id))}
-        onOptimisticRestore={(runs) => runs.forEach((run) => source.upsert(run))}
-        fetchLogs={logSession.fetchLogs}
-        streamLogs={logSession.streamLogs}
-        fetchLineHistory={logSession.fetchLineHistory}
-        motion={source.motion}
-        {getInstanceCount}
-        initialRunId={runIdParam}
-        {runNotFound}
-        onSelectRun={selectRun}
-    />
-{/if}
+<RunsPage
+    items={source.items}
+    total={source.total}
+    loading={source.loading || !source.loaded}
+    onLoadMore={() => source.loadMore()}
+    bind:filters
+    onOptimisticRemove={(ids) => ids.forEach((id) => source.remove(id))}
+    onOptimisticRestore={(runs) => runs.forEach((run) => source.upsert(run))}
+    fetchLogs={logSession.fetchLogs}
+    streamLogs={logSession.streamLogs}
+    fetchLineHistory={logSession.fetchLineHistory}
+    motion={source.motion}
+    {getInstanceCount}
+    initialRunId={runIdParam}
+    {runNotFound}
+    runPending={runLookupPending}
+    onSelectRun={selectRun}
+/>
