@@ -149,9 +149,13 @@ The API and user interfaces can inspect tasks and trigger or stop them. **Task d
 - [Security policy](SECURITY.md) — responsible disclosure
 - [Issue tracker](https://github.com/runwisp/runwisp/issues) — bug reports and feature requests
 
-## Development transparency
+## How RunWisp is made
 
-RunWisp is built by PoppyCake, s.r.o., led by Richard Popelis, a software engineer with 15 years of professional experience. PoppyCake owns the product design, APIs, configuration model, architecture, and release decisions. Generative AI helps with implementation, tests, documentation, and review; generated work is reviewed before release.
+RunWisp is built by PoppyCake, s.r.o. Most of the code isn't written by hand, so we lean hard on review and tests. Review goes down to the small stuff, like whether a helper deserves to exist or should just be three lines inline, because that's how the code stays small and quick to read. The daemon has more lines of tests than code, including awkward cases like a daily job scheduled inside the hour that daylight saving skips.
+
+Careful review and good tests still aren't a guarantee. If we missed something, [open an issue](https://github.com/runwisp/runwisp/issues) and we'll fix it.
+
+_Richard Popelis, lead developer_
 
 ## License
 
