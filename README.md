@@ -45,9 +45,15 @@ bunx runwisp
 bun add -g runwisp     # or: npm install -g runwisp
 ```
 
-Tarballs are available from [GitHub Releases](https://github.com/runwisp/runwisp/releases). For Docker:
+Tarballs are available from [GitHub Releases](https://github.com/runwisp/runwisp/releases). For Docker, create a config file first, then start the container:
 
 ```bash
+cat > runwisp.toml <<'EOF'
+[tasks.hello]
+cron = "* * * * *"
+run  = "echo hello from RunWisp"
+EOF
+
 docker run -d --name runwisp -p 9477:9477 \
   -e RUNWISP_PASSWORD=change-me \
   -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro \

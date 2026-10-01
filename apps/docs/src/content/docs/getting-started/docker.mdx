@@ -13,6 +13,19 @@ the same release binary as the install script and the npm package.
 
 ## Quick start
 
+Create a config file first. If `runwisp.toml` doesn't exist, Docker mounts an
+empty directory in its place and the container exits.
+
+```bash
+cat > runwisp.toml <<'EOF'
+[tasks.hello]
+cron = "* * * * *"
+run  = "echo hello from RunWisp"
+EOF
+```
+
+Then start the container with Compose:
+
 ```yaml
 # compose.yaml
 services:
