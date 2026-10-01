@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The Web UI shows a visible loading placeholder while pages load, instead of a blank page, "No runs yet", or the previous task's page.
+- Web UI pages now show loading skeletons while data arrives, instead of flashing a blank screen, a false "No runs yet", or the task you just left.
 
 ## [1.3.1] - 2026-10-01
 
