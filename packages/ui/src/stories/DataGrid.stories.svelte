@@ -9,7 +9,7 @@
     import FilterBar from "$lib/components/FilterBar.svelte";
     import { seedValues } from "$lib/components/filter-spec.js";
     import { applyFilters } from "$lib/utils/filter.js";
-    import { Play, Pause, Trash2, SquarePen } from "@lucide/svelte";
+    import { Play, Pause, Trash, SquarePen } from "@lucide/svelte";
 
     const { Story } = defineMeta({
         title: "Data/DataGrid",
@@ -75,7 +75,7 @@
         { label: "Run Now", icon: Play },
         { label: "Pause", icon: Pause },
         { divider: true },
-        { label: "Delete", icon: Trash2, danger: true },
+        { label: "Delete", icon: Trash, danger: true },
     ];
 
     /** @type {import("$lib/components/filter-spec.js").FilterField[]} */

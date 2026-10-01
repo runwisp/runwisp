@@ -8,7 +8,7 @@
         Check,
         Terminal as TerminalIcon,
         Download,
-        Trash2,
+        Trash,
         Play,
         Square,
         MousePointerClick,
@@ -691,7 +691,7 @@
                                         title="Delete this run"
                                         aria-label="Delete run"
                                     >
-                                        <Trash2 size={15} />
+                                        <Trash size={15} />
                                     </span>
                                 {/snippet}
                                 <div class="w-60">

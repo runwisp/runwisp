@@ -674,11 +674,8 @@ describe("SharedAppStream", () => {
             onmessage: ((event: MessageEvent) => void) | null = null;
             constructor(_name: string) {
                 constructed++;
-                void _name;
             }
-            postMessage(_data: unknown): void {
-                void _data;
-            }
+            postMessage(_data: unknown): void {}
             close(): void {}
         }
         vi.stubGlobal("BroadcastChannel", SpyBroadcastChannel);
@@ -708,9 +705,8 @@ describe("SharedAppStream", () => {
     it("uses Web Locks for election when available", () => {
         const requested: string[] = [];
         const fakeLocks = {
-            request: (name: string, opts: unknown, cb: () => Promise<void>) => {
+            request: (name: string, _opts: unknown, cb: () => Promise<void>) => {
                 requested.push(name);
-                void opts;
                 return cb();
             },
         };

@@ -10,7 +10,7 @@
 </script>
 
 <script lang="ts">
-    import { Clock, ArrowUpDown, X, Square, Trash2, RotateCw } from "@lucide/svelte";
+    import { Clock, ArrowUpDown, X, Square, Trash, RotateCw } from "@lucide/svelte";
     import { untrack } from "svelte";
     import { SvelteSet } from "svelte/reactivity";
     import { createVirtualizer } from "@tanstack/svelte-virtual";
@@ -459,7 +459,7 @@
                             )}
                         title="Delete run{selectionCount === 1 ? '' : 's'}"
                     >
-                        {#snippet icon()}<Trash2 size={14} />{/snippet}
+                        {#snippet icon()}<Trash size={14} />{/snippet}
                     </Button>
                 {/if}
             </div>

@@ -4,7 +4,7 @@
 <script module>
     import { defineMeta } from "@storybook/addon-svelte-csf";
     import Button from "$lib/components/Button.svelte";
-    import { Play, Plus, ArrowRight, Download, Trash2 } from "@lucide/svelte";
+    import { Play, Plus, ArrowRight, Download, Trash } from "@lucide/svelte";
 
     const { Story } = defineMeta({
         title: "Core/Button",
@@ -71,7 +71,7 @@
             Export
         </Button>
         <Button variant="danger">
-            {#snippet icon()}<Trash2 size={16} />{/snippet}
+            {#snippet icon()}<Trash size={16} />{/snippet}
             Delete
         </Button>
     </div>

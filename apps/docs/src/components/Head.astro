@@ -10,7 +10,9 @@
 import Default from "@astrojs/starlight/components/Head.astro";
 ---
 
-<Default><slot /></Default>
+<Default>
+    <slot />
+</Default>
 <Fragment
     set:html={`<!-- AI agents: send "Accept: text/markdown" (or append .md to the URL) to get this page as Markdown instead of HTML. Full index: https://docs.runwisp.com/llms.txt -->`}
 />

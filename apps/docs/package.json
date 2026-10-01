@@ -8,24 +8,24 @@
         "build": "bun scripts/sync-openapi.ts && bunx --bun astro build"
     },
     "dependencies": {
-        "@astrojs/starlight": "^0.41.6",
+        "@astrojs/starlight": "^0.42.5",
         "@astrojs/svelte": "^9.0.1",
         "@runwisp/ui": "workspace:*",
-        "astro": "^7.3.3",
+        "astro": "^7.3.5",
         "js-yaml": "^4.3.2",
-        "sharp": "^0.35.4",
-        "starlight-openapi": "^0.26.0",
-        "svelte": "^5.56.8"
+        "sharp": "^0.35.5",
+        "starlight-openapi": "^0.26.3",
+        "svelte": "^5.57.1"
     },
     "devDependencies": {
         "@astrojs/check": "^0.9.10",
         "@runwisp/eslint-config": "workspace:*",
         "cookie": "^2.0.1",
-        "eslint": "^10.8.0",
-        "eslint-plugin-astro": "^3.1.0",
-        "eslint-plugin-svelte": "^3.22.0",
-        "prettier": "^3.9.6",
-        "prettier-plugin-astro": "^0.14.1",
+        "eslint": "^10.11.0",
+        "eslint-plugin-astro": "^3.2.1",
+        "eslint-plugin-svelte": "^3.23.0",
+        "prettier": "^3.9.9",
+        "prettier-plugin-astro": "^1.1.0",
         "prettier-plugin-svelte": "^4.1.1",
         "typescript": "6.0.3"
     }

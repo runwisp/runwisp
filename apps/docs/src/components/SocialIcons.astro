@@ -11,36 +11,34 @@ import { Icon } from "@astrojs/starlight/components";
 const links = config.social || [];
 ---
 
-{
-    links.length > 0 && (
-        <>
-            {links.map(({ label, href, icon }) => (
-                <a {href} rel="me" class="sl-flex">
-                    <span class="sr-only">{label}</span>
-                    {icon === "external" ? (
-                        <svg
-                            aria-hidden="true"
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                        >
-                            <circle cx="12" cy="12" r="10" />
-                            <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
-                            <path d="M2 12h20" />
-                        </svg>
-                    ) : (
-                        <Icon name={icon} />
-                    )}
-                </a>
-            ))}
-        </>
-    )
-}
+{links.length > 0 && (
+    <>
+        {links.map(({ label, href, icon }) => (
+            <a {href} rel="me" class="sl-flex">
+                <span class="sr-only">{label}</span>
+                {icon === "external" ? (
+                    <svg
+                        aria-hidden="true"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+                        <path d="M2 12h20" />
+                    </svg>
+                ) : (
+                    <Icon name={icon} />
+                )}
+            </a>
+        ))}
+    </>
+)}
 
 <style>
     @layer starlight.core {
