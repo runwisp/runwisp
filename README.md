@@ -121,7 +121,7 @@ RunWisp can start from the configuration you already have:
 - One binary with the Svelte web dashboard and SQLite embedded
 - TOML configuration that can be versioned and reviewed like code
 - Validate-first reloads, recoverable state after a crash or power loss, and interrupted-run reporting on restart
-- Local-first operation with no signup, account, telemetry, or required network connection
+- Local-first operation with no signup, account, or required network connection. The only outbound call by default is an anonymous update check (version, OS, CPU architecture), turned off with [`check_updates = false`](https://docs.runwisp.com/configuration/daemon/#check_updates)
 
 ## Comparison
 
