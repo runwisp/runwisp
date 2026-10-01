@@ -4,7 +4,7 @@
 <script module>
     import { defineMeta } from "@storybook/addon-svelte-csf";
     import Dropdown from "$lib/components/Dropdown.svelte";
-    import { Play, Pause, SquarePen, Copy, Trash2, Settings, ChevronDown } from "@lucide/svelte";
+    import { Play, Pause, SquarePen, Copy, Trash, Settings, ChevronDown } from "@lucide/svelte";
 
     const { Story } = defineMeta({
         title: "Core/Dropdown",
@@ -24,7 +24,7 @@
         { label: "Duplicate", icon: Copy, onClick: () => console.log("Duplicate") },
         { label: "Pause", icon: Pause, onClick: () => console.log("Pause") },
         { divider: true },
-        { label: "Delete", icon: Trash2, danger: true, onClick: () => console.log("Delete") },
+        { label: "Delete", icon: Trash, danger: true, onClick: () => console.log("Delete") },
     ];
 
     const settingsMenu = [
@@ -63,7 +63,7 @@
             { label: "Edit", icon: SquarePen },
             { label: "Duplicate", icon: Copy, disabled: true },
             { divider: true },
-            { label: "Delete", icon: Trash2, danger: true, disabled: true },
+            { label: "Delete", icon: Trash, danger: true, disabled: true },
         ],
     }}
 />

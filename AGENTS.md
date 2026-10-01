@@ -1,7 +1,7 @@
 # RunWisp — Agent Directives
 
 **License**: GPL-3.0-or-later (`apps/`) · Apache-2.0 (`packages/`) · **Status**: 1.0 · semver (breaking changes require a major bump)
-**Stack**: Go 1.26 daemon, Svelte 5 (runes) + Tailwind UI, Bun workspaces + moon (`moon run`), embedded SQLite (`database/sql` + `modernc.org/sqlite`), AsyncAPI-defined optional control-plane protocol.
+**Stack**: Go 1.27 daemon, Svelte 5 (runes) + Tailwind UI, Bun workspaces + moon (`moon run`), embedded SQLite (`database/sql` + `modernc.org/sqlite`), AsyncAPI-defined optional control-plane protocol.
 
 ## 🎯 PRODUCT VISION (read this first — it outranks everything below)
 

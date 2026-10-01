@@ -6,7 +6,7 @@ RunWisp follows semver. Breaking changes require a major version bump, and back-
 
 ## Prerequisites
 
-- Go 1.26+ for the daemon
+- Go 1.27+ for the daemon
 - [Bun](https://bun.sh/) 1.3+ for the workspace, TS/Svelte builds, and codegen
 
 No Docker, Postgres, or Redis. The repo bootstraps with one `bun install`.
