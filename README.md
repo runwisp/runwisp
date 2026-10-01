@@ -8,7 +8,7 @@
 
 RunWisp is an open-source, self-hosted cron job manager and process supervisor. It ships as a single Go binary with a built-in web dashboard, terminal UI, and REST API.
 
-[runwisp.com](https://runwisp.com) · [Documentation](https://docs.runwisp.com) · [Install](#install) · [Quick Start](#quick-start) · [Compare](#runwisp-vs-cron-systemd-timers-and-supervisord)
+[runwisp.com](https://runwisp.com) · [Documentation](https://docs.runwisp.com) · [Install](#install) · [Quick Start](#quick-start) · [Compare](#comparison)
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Latest Release](https://img.shields.io/github/v/release/runwisp/runwisp?include_prereleases&sort=semver&color=00ADD8)](https://github.com/runwisp/runwisp/releases)
