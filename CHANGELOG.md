@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-10-01
+
 ### Security
 
 - Release binaries and Docker images are now built with Go 1.26.8 and patched `golang.org/x` modules, which fixes known vulnerabilities in the standard library, including a critical `crypto/tls` certificate validation bug.
@@ -850,7 +852,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.3.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.3.1...main
+[1.3.1]: https://github.com/runwisp/runwisp/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/runwisp/runwisp/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/runwisp/runwisp/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/runwisp/runwisp/compare/v1.0.1...v1.1.0
