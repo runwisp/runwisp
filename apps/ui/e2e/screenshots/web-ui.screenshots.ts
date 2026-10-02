@@ -137,6 +137,24 @@ test("overview, runs, task detail", async ({ authenticatedPage: page, daemonStat
     }
 });
 
+// A health-checked service: notes-api's check fails while the instance warms
+// up (ignored until the first pass), then passes ~15s after the daemon boots.
+// The live instance log shows both, written by the real health watcher.
+const HEALTH_SERVICE = "notes-api";
+test("service health check", async ({ authenticatedPage: page }) => {
+    for (const theme of THEMES) {
+        await page.emulateMedia({ colorScheme: theme });
+        await page.goto(`/tasks/${HEALTH_SERVICE}`);
+        await expect(page.getByRole("heading", { name: HEALTH_SERVICE, level: 1 })).toBeVisible();
+        await expect(runVerdict(page, "running")).toBeVisible();
+        await expect(
+            page.getByRole("main").getByText("health check passed; the instance is healthy"),
+        ).toBeVisible({ timeout: 30_000 });
+        await settle(page);
+        await shoot(page, `web-ui-health-check-${theme}`);
+    }
+});
+
 // The parameter form: the demo's export-org-data task declares all four param
 // kinds (env / arg / option / flag) plus every modifier, so the "Run Task" modal
 // renders one of each control — the shot the docs embed for the params concept.

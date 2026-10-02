@@ -410,6 +410,38 @@ while true; do
 done
 '''
 
+# The app itself. The health check is a readiness file, the same pattern as a
+# Kubernetes `cat /tmp/healthy` probe: it fails while the caches warm up (those
+# failures are ignored until the first pass), then passes once the API listens.
+# `working_dir = "."` keeps api.ready next to this config, so two demos on one
+# box don't share it.
+[services.notes-api]
+group         = "Services"
+description   = "The Acme Notes HTTP API. A health check holds it unhealthy until the caches are warm, then restarts it if it stops answering."
+working_dir   = "."
+graceful_stop = "10s"
+restart_delay = "2s"
+healthy_after = "1m"
+shell         = "/bin/bash" # $RANDOM below is a bash-ism
+run = '''
+rm -f api.ready
+echo "[api $$] loading /etc/acme-notes/api.toml"
+echo "[api $$] connected to postgres primary (pool 20)"
+echo "[api $$] warming template and query caches"
+sleep 12
+echo "[api $$] listening on :8080"
+date -u +%s > api.ready
+while true; do
+  sleep 4
+  printf "[api %s] GET /api/notes 200 %sms\n" "$$" "$((RANDOM % 40 + 8))"
+done
+'''
+
+[services.notes-api.health_check]
+cron    = "@every 5s"
+timeout = "2s"
+run     = 'test -f api.ready || { echo "GET /healthz 503: warming up"; exit 1; }'
+
 [services.cache-warmer]
 group         = "Services"
 description   = "Keeps the hottest Redis keys warm so cold deploys don't stall the home page."
