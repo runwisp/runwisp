@@ -5,6 +5,7 @@ package logutil
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -131,7 +132,11 @@ func ReadLineRange(logPath string, from, limit int64) (lines []LogLineRecord, fi
 		return nil, firstAvailable, firstAvailable, statErr
 	}
 	indices := sc.Index
-	totalLines = int64(CalculateTotalLines(file, indices, stat.Size(), meta))
+	total, countErr := CalculateTotalLines(file, indices, stat.Size(), meta)
+	if countErr != nil {
+		return nil, firstAvailable, firstAvailable, countErr
+	}
+	totalLines = int64(total)
 	if totalLines <= firstAvailable {
 		return nil, firstAvailable, totalLines, nil
 	}
@@ -314,18 +319,31 @@ func ScanOffset(rs io.ReadSeeker, startPos int64, linesToSkip int) (int64, int, 
 	return scanToLine(rs, startPos, linesToSkip)
 }
 
-// scanAllLines counts all remaining newlines from the current reader position.
-func scanAllLines(rs io.ReadSeeker, startPos int64) (int64, int, error) {
-	scanner := bufio.NewScanner(rs)
-	linesFound := 0
-	for scanner.Scan() {
-		linesFound++
+// scanAllLines counts all remaining lines from the current reader position:
+// every newline, plus one for a trailing line that has no newline yet (a run
+// still writing). Unlike bufio.Scanner it has no per-line length limit.
+func scanAllLines(rs io.Reader, startPos int64) (int64, int, error) {
+	buf := make([]byte, ScanBufferSize)
+	pos := startPos
+	lines := 0
+	var last byte
+	for {
+		n, err := rs.Read(buf)
+		if n > 0 {
+			lines += bytes.Count(buf[:n], []byte{'\n'})
+			last = buf[n-1]
+			pos += int64(n)
+		}
+		if errors.Is(err, io.EOF) {
+			if pos > startPos && last != '\n' {
+				lines++
+			}
+			return pos, lines, nil
+		}
+		if err != nil {
+			return pos, lines, err
+		}
 	}
-	if err := scanner.Err(); err != nil {
-		return startPos, linesFound, err
-	}
-	currentPos, _ := rs.Seek(0, io.SeekCurrent)
-	return currentPos, linesFound, nil
 }
 
 // scanToLine advances through the reader counting newlines until linesToSkip
@@ -371,24 +389,30 @@ func countNewlinesInBuf(buf []byte, linesFound, linesToSkip int) (offset, newLin
 
 // CalculateTotalLines returns the total number of lines across rotated
 // and current log segments.
-func CalculateTotalLines(rs io.ReadSeeker, indices []int64, fileSize int64, meta LogMeta) int {
+func CalculateTotalLines(rs io.ReadSeeker, indices []int64, fileSize int64, meta LogMeta) (int, error) {
 	if meta.Finalized {
-		return int(meta.RotatedLines + meta.FinalLines)
+		return int(meta.RotatedLines + meta.FinalLines), nil
 	}
 
 	var currentLines int
 	if len(indices) == 0 {
 		if fileSize > 0 {
-			_, lines, _ := ScanOffset(rs, 0, -1)
+			_, lines, err := ScanOffset(rs, 0, -1)
+			if err != nil {
+				return 0, err
+			}
 			currentLines = lines
 		}
 	} else {
 		lastIdx := len(indices) - 1
-		_, tailLines, _ := ScanOffset(rs, indices[lastIdx], -1)
+		_, tailLines, err := ScanOffset(rs, indices[lastIdx], -1)
+		if err != nil {
+			return 0, err
+		}
 		currentLines = (lastIdx * LogIndexInterval) + tailLines
 	}
 
-	return int(meta.RotatedLines) + currentLines
+	return int(meta.RotatedLines) + currentLines, nil
 }
 
 func CalculateLineOffset(rs io.ReadSeeker, indices []int64, line int, meta LogMeta) int64 {
