@@ -24,7 +24,6 @@ import (
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/server/auth"
 	"github.com/runwisp/runwisp/internal/storage"
-	"github.com/sebest/xff"
 )
 
 // Server exposes the HTTP API and serves the UI.
@@ -53,7 +52,7 @@ type Server struct {
 	auth              *auth.Service
 	passwordEphemeral bool
 	noAuth            bool
-	trustedProxies    *xff.Options
+	trustedProxies    proxySet
 	daemonLogBuffer   *DaemonLogBuffer
 	runService        *runService
 	stats             *statsProvider

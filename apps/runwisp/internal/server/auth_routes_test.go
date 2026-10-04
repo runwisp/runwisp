@@ -68,8 +68,8 @@ func TestParseTrustedProxies_RejectsCatchAll(t *testing.T) {
 func TestParseTrustedProxies_AcceptsValidCIDR(t *testing.T) {
 	opts, err := parseTrustedProxies("10.0.0.0/8,127.0.0.1")
 	require.NoError(t, err)
-	require.NotNil(t, opts)
-	assert.Equal(t, []string{"10.0.0.0/8", "127.0.0.1/32"}, opts.AllowedSubnets)
+	require.Len(t, opts, 2)
+	assert.Equal(t, "127.0.0.1/32", opts[1].String())
 }
 
 // --- Local-request gating helpers ---
@@ -453,4 +453,22 @@ func TestAuthStatus_AuthenticatedViaCookie(t *testing.T) {
 	require.NoError(t, json.NewDecoder(statusW.Body).Decode(&body))
 	assert.True(t, body.AuthRequired)
 	assert.True(t, body.Authenticated)
+}
+
+// Behind a trusted proxy the limiter must key off the hop the proxy appended,
+// not the client-controlled left end of X-Forwarded-For.
+func TestAuthRateLimit_NotBypassableViaSpoofedXFFBehindTrustedProxy(t *testing.T) {
+	s, _, _, _ := setupServerWithOpts(t, func(o *Options) { o.TrustedProxies = "10.0.0.0/8" })
+
+	var lastCode int
+	for i := 0; i < auth.MaxAuthAttempts+3; i++ {
+		req := httptest.NewRequest("GET", "/api/auth/challenge", nil)
+		req.RemoteAddr = "10.0.0.1:44444"
+		req.Header.Set("X-Forwarded-For", "198.51.100."+strconv.Itoa(i+1)+", 203.0.113.9")
+		w := httptest.NewRecorder()
+		s.router.ServeHTTP(w, req)
+		lastCode = w.Code
+	}
+
+	assert.Equal(t, http.StatusTooManyRequests, lastCode)
 }

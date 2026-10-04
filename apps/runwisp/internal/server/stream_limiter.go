@@ -80,14 +80,11 @@ func (l *streamLimiter) acquire(ctx context.Context) (release func(), ok bool) {
 	}, true
 }
 
-// streamClientIPFromCtx returns the real TCP peer's IP, ignoring proxy headers.
-// We deliberately use peerAddr (captured before the trusted-proxy XFF
-// middleware) so that an attacker cannot bypass the cap by rotating
-// X-Forwarded-For values. It reads from context because huma SSE handlers do
-// not receive the *http.Request directly.
+// streamClientIPFromCtx returns the client IP resolved by resolveClientIP: the
+// TCP peer, or behind a trusted proxy the rightmost untrusted X-Forwarded-For
+// hop, which a client cannot rotate to dodge the cap. It reads from context
+// because huma SSE handlers do not receive the *http.Request directly.
 func streamClientIPFromCtx(ctx context.Context) string {
-	if peer, ok := ctx.Value(peerAddrContextKey).(string); ok {
-		return hostFromAddr(peer)
-	}
-	return ""
+	ip, _ := ctx.Value(clientIPKey{}).(string)
+	return ip
 }

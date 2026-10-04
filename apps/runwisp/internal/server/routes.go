@@ -6,7 +6,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -21,13 +20,12 @@ import (
 	"github.com/runwisp/runwisp/internal/ui"
 	"github.com/runwisp/runwisp/internal/update"
 	"github.com/runwisp/runwisp/internal/version"
-	"github.com/sebest/xff"
 )
 
 type contextKey string
 
 // peerAddrContextKey stores the original TCP peer address before the
-// trusted-proxy (XFF) middleware can overwrite r.RemoteAddr from headers.
+// client-IP middleware can overwrite r.RemoteAddr from headers.
 const peerAddrContextKey contextKey = "peerAddr"
 
 // proxiedContextKey stores whether the request reached the daemon through a
@@ -97,7 +95,7 @@ func authOrLocalTrusted(authSvc *auth.Service) func(http.Handler) http.Handler {
 
 // savePeerAddr captures the original TCP peer address into context, along with
 // whether the request was relayed by a proxy. Must be registered before the
-// trusted-proxy (XFF) middleware so that security-critical loopback checks
+// client-IP middleware so that security-critical loopback checks
 // (isLocalCtx) use the real connection address instead of the
 // potentially-spoofed X-Real-IP / X-Forwarded-For value.
 func (srv *Server) savePeerAddr(next http.Handler) http.Handler {
@@ -213,16 +211,9 @@ func sameOriginRequest(r *http.Request) bool {
 
 func (srv *Server) setupRoutes() error {
 	// savePeerAddr MUST be first: captures the raw TCP peer address before the
-	// trusted-proxy (XFF) middleware can overwrite r.RemoteAddr.
+	// client-IP middleware can overwrite r.RemoteAddr.
 	srv.router.Use(srv.savePeerAddr)
-	if srv.trustedProxies != nil {
-		xffmw, err := xff.New(*srv.trustedProxies)
-		if err != nil {
-			slog.Warn("Invalid trusted_proxies configuration; XFF middleware disabled", "err", err)
-		} else {
-			srv.router.Use(xffmw.Handler)
-		}
-	}
+	srv.router.Use(srv.resolveClientIP)
 	srv.router.Use(securityHeaders)
 	srv.router.Use(middleware.RequestLogger(slogAccessLogger{}))
 	srv.router.Use(middleware.Recoverer)
@@ -231,11 +222,11 @@ func (srv *Server) setupRoutes() error {
 	// X-Forwarded-For / X-Real-IP / True-Client-IP from *any* client, which
 	// would let a remote attacker rotate those headers to mint a fresh
 	// per-IP bucket on every request and bypass the auth rate limiter
-	// (httprate.LimitByIP below keys off r.RemoteAddr). The sebest/xff
-	// middleware above already rewrites r.RemoteAddr from XFF, but only when
-	// the immediate peer is in the operator's configured trusted-proxy set,
-	// so r.RemoteAddr stays the real client IP behind a trusted proxy and the
-	// un-spoofable raw peer otherwise. Do not re-add middleware.RealIP.
+	// (httprate.LimitByIP below keys off r.RemoteAddr). resolveClientIP above
+	// rewrites r.RemoteAddr from XFF only when the immediate peer is in the
+	// operator's trusted-proxy set, and then takes the rightmost hop that is not
+	// itself a trusted proxy, so a client cannot choose its own bucket. Do not
+	// re-add middleware.RealIP.
 
 	// Create huma API after all global middleware is registered (chi requirement)
 	config := huma.DefaultConfig("RunWisp API", version.Version)
