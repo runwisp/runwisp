@@ -5,6 +5,7 @@ package logutil
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -344,4 +345,32 @@ func TestCalculateLineOffset_RotatedLinesExact(t *testing.T) {
 	meta := LogMeta{RotatedLines: 3}
 	offset := CalculateLineOffset(f, nil, 3, meta)
 	assert.Equal(t, int64(0), offset)
+}
+
+// failingReadSeeker fails Seek (seekErr) or, when Seek succeeds, every Read.
+type failingReadSeeker struct{ seekErr error }
+
+func (f failingReadSeeker) Seek(int64, int) (int64, error) { return 0, f.seekErr }
+func (failingReadSeeker) Read([]byte) (int, error)         { return 0, errors.New("read failed") }
+
+func TestScanOffset_ReadErrorIsReturned(t *testing.T) {
+	_, _, err := ScanOffset(failingReadSeeker{}, 0, -1)
+	assert.EqualError(t, err, "read failed")
+}
+
+func TestCalculateTotalLines_ReturnsScanErrors(t *testing.T) {
+	rs := failingReadSeeker{seekErr: errors.New("seek failed")}
+
+	_, err := CalculateTotalLines(rs, nil, 10, LogMeta{})
+	assert.EqualError(t, err, "seek failed", "no index")
+
+	_, err = CalculateTotalLines(rs, []int64{0}, 10, LogMeta{})
+	assert.EqualError(t, err, "seek failed", "with index")
+}
+
+// A log that cannot be read must surface an error instead of an empty (or
+// truncated) page: a directory opens fine but fails on read.
+func TestReadLineRange_ReturnsCountError(t *testing.T) {
+	_, _, _, err := ReadLineRange(t.TempDir(), 0, 10)
+	assert.Error(t, err)
 }
