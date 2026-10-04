@@ -67,6 +67,22 @@ func TestBuildGroupItems(t *testing.T) {
 	assert.Equal(t, "charlie", items[4].label)
 }
 
+// Tasks arrive sorted by name; groups must still be ordered by group name.
+func TestBuildItems_GroupsSortedByGroupName(t *testing.T) {
+	items := buildItems([]model.Task{
+		{Name: "fail-test", Group: "Tests"},
+		{Name: "rclone", Group: "Backups"},
+	})
+
+	var headers []string
+	for _, item := range items {
+		if item.kind == entryGroupHeader {
+			headers = append(headers, item.label)
+		}
+	}
+	assert.Equal(t, []string{"Backups", "Tests"}, headers)
+}
+
 func TestNewSidebar_BasicState(t *testing.T) {
 	tasks := makeTasks("task1", "task2")
 	s := NewSidebar("RunWisp", "0.1.0", "fp123", tasks)
