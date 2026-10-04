@@ -53,18 +53,7 @@ func followRunLog(ctx context.Context, client *apiclient.Client, taskName, runID
 	stalls := 0
 	for {
 		opened := time.Now()
-		ch, err := client.StreamLogLines(ctx, runID, apiclient.StreamLogOpts{FromLine: from})
-		if err != nil && !runNotPersistedYet(err) {
-			if ctx.Err() != nil {
-				return false, nil
-			}
-			return false, fmt.Errorf("open log stream: %w", err)
-		}
-
-		highest, done := from-1, false
-		if err == nil {
-			highest, done, err = drainLogStream(ch, taskName, runID, from, onLine)
-		}
+		highest, done, err := followOnce(ctx, client, taskName, runID, from, onLine)
 		if ctx.Err() != nil {
 			return false, nil // interrupted — stop reconnecting
 		}
@@ -101,6 +90,21 @@ func followRunLog(ctx context.Context, client *apiclient.Client, taskName, runID
 		case <-time.After(followStallBackoff):
 		}
 	}
+}
+
+// followOnce opens one log stream and drains it. done means the loop must stop
+// and err explains why: the run ended (err is a stream error, if any) or the
+// stream could not be opened. A 404 is not an error here: the run's row has not
+// landed yet, which counts as a stall (nothing streamed, not done).
+func followOnce(ctx context.Context, client *apiclient.Client, taskName, runID string, from int64, onLine func(server.LogLineEntry)) (highest int64, done bool, err error) {
+	ch, err := client.StreamLogLines(ctx, runID, apiclient.StreamLogOpts{FromLine: from})
+	if runNotPersistedYet(err) {
+		return from - 1, false, nil
+	}
+	if err != nil {
+		return from - 1, true, fmt.Errorf("open log stream: %w", err)
+	}
+	return drainLogStream(ch, taskName, runID, from, onLine)
 }
 
 // runNotPersistedYet reports whether a stream-open error is the daemon's 404
