@@ -7,12 +7,9 @@ import (
 	"bytes"
 	"context"
 	"net/http"
-	"os"
-	"strconv"
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -20,18 +17,13 @@ import (
 )
 
 // serveServiceSocket binds an HTTP mux to the daemon's Unix socket and makes
-// isDaemonRunning see a live daemon: it writes a PID file for this test process
-// and points lookupProcessName at a runwisp-named process so processIsDaemon
-// accepts it. Returns Flags aimed at the socket plus a command whose stdout is
+// isDaemonRunning see a live daemon: it holds the PID-file lock for this test
+// process. Returns Flags aimed at the socket plus a command whose stdout is
 // captured.
 func serveServiceSocket(t *testing.T, mux http.Handler) (Flags, *bytes.Buffer, *cobra.Command) {
 	t.Helper()
 	f := serveStatusSocket(t, mux)
-	require.NoError(t, os.WriteFile(datadir.PidFilePath(f.DataDir), []byte(strconv.Itoa(os.Getpid())), 0o600))
-
-	prev := lookupProcessName
-	lookupProcessName = func(int) (string, bool) { return "runwisp", true }
-	t.Cleanup(func() { lookupProcessName = prev })
+	writeLivePidFile(t, f.DataDir)
 
 	cmd := &cobra.Command{}
 	cmd.SetContext(t.Context())

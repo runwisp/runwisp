@@ -9,12 +9,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/cutover"
+	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -177,12 +177,14 @@ func (h *takeoverHarness) flags() Flags {
 	return Flags{CfgFile: h.cfgPath, DataDir: h.dataDir, Host: "127.0.0.1", Port: 9477}
 }
 
-// writeLivePidFile claims a data dir for a live daemon, so isDaemonRunning
-// reports true without a real one.
+// writeLivePidFile claims a data dir for a live daemon (it holds the PID-file
+// lock for the rest of the test), so isDaemonRunning reports true without a
+// real one.
 func writeLivePidFile(t *testing.T, dir string) {
 	t.Helper()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "daemon.pid"),
-		[]byte(strconv.Itoa(os.Getpid())), 0o600))
+	lock, err := datadir.AcquireDaemonLock(dir)
+	require.NoError(t, err)
+	t.Cleanup(lock.Release)
 }
 
 // TestRunTakeover_WorksFromNothing is the regression test at the command level:

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -320,5 +321,75 @@ func TestWriteSecretFile_RefusesForeignOwner(t *testing.T) {
 	}
 	if err := WriteSecretFile(path, []byte("y")); err == nil {
 		t.Fatal("expected WriteSecretFile to refuse a file owned by a different user")
+	}
+}
+
+// TestAcquireDaemonLock_RetriesWhenFileWasUnlinkedUnderUs is the race: the
+// previous owner removes the PID file after we opened it but before we locked
+// it. Locking that unlinked inode used to succeed, so a third daemon could
+// create a fresh file and lock it too. The lock must end up on the file at path.
+func TestAcquireDaemonLock_RetriesWhenFileWasUnlinkedUnderUs(t *testing.T) {
+	dataDir := t.TempDir()
+	owner, err := AcquireDaemonLock(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	released := false
+	lock, err := acquireDaemonLock(dataDir, func() {
+		if !released {
+			released = true
+			owner.Release()
+		}
+	})
+	if err != nil {
+		t.Fatalf("expected acquire to retry past the unlinked file: %v", err)
+	}
+	defer lock.Release()
+
+	pid, err := ReadPidFile(dataDir)
+	if err != nil {
+		t.Fatalf("PID file must exist on disk while the lock is held: %v", err)
+	}
+	if pid != os.Getpid() {
+		t.Fatalf("PID file holds %d, want %d", pid, os.Getpid())
+	}
+	if _, err := AcquireDaemonLock(dataDir); err == nil {
+		t.Fatal("a second daemon must not be able to lock the data dir")
+	}
+}
+
+func TestEnsureDir_SkipsChmodWhenAlreadyTight(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "data")
+	if err := ensureDir(dir, os.Chmod); err != nil {
+		t.Fatal(err)
+	}
+	chmod := func(string, os.FileMode) error {
+		t.Fatal("chmod called on a dir that is already 0700")
+		return nil
+	}
+	if err := ensureDir(dir, chmod); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestEnsureDir_ToleratesChmodNotPermitted is the bug: a writable data dir the
+// process doesn't own (Kubernetes fsGroup mount, group-writable bind mount)
+// can't be chmod'ed, and every command failed on the EPERM.
+func TestEnsureDir_ToleratesChmodNotPermitted(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "data")
+	if err := os.Mkdir(dir, 0775); err != nil {
+		t.Fatal(err)
+	}
+	denied := func(path string, _ os.FileMode) error {
+		return &os.PathError{Op: "chmod", Path: path, Err: syscall.EPERM}
+	}
+	if err := ensureDir(dir, denied); err != nil {
+		t.Fatalf("EPERM from chmod must not fail EnsureDir: %v", err)
+	}
+	other := func(path string, _ os.FileMode) error {
+		return &os.PathError{Op: "chmod", Path: path, Err: syscall.EIO}
+	}
+	if err := ensureDir(dir, other); err == nil {
+		t.Fatal("other chmod errors must still be returned")
 	}
 }
