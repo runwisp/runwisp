@@ -4,11 +4,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SSEErrorInfo } from "$lib/utils/event-source";
 
-const h = vi.hoisted(() => ({
-    errorHandlers: [] as ((info: SSEErrorInfo) => void)[],
-    handleUnauthorized: vi.fn(),
-    reportSourceDown: vi.fn(),
-}));
+const h = vi.hoisted(() => {
+    const errorHandlers: ((info: SSEErrorInfo) => void)[] = [];
+    return { errorHandlers, handleUnauthorized: vi.fn(), reportSourceDown: vi.fn() };
+});
 
 vi.mock("./app-stream.svelte", () => ({
     appEventStream: {
