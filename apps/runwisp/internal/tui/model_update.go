@@ -112,7 +112,7 @@ func (m Model) dispatchStreamMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		model, cmd := m.handleSSEEventMsg(msg)
 		return model, cmd, true
 	case uikit.SSEDisconnectedMsg:
-		model, cmd := m.handleSSEDisconnected()
+		model, cmd := m.handleSSEDisconnected(msg)
 		return model, cmd, true
 	}
 	return m, nil, false
@@ -586,8 +586,12 @@ func (m Model) handleSSEEventMsg(msg uikit.SSEEventMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmd, m.streams.ContinueListeningSSE())
 }
 
-func (m Model) handleSSEDisconnected() (tea.Model, tea.Cmd) {
-	m.debugView.AppendLine("Events stream disconnected. Reconnecting...")
+func (m Model) handleSSEDisconnected(msg uikit.SSEDisconnectedMsg) (tea.Model, tea.Cmd) {
+	if msg.Err != nil {
+		m.debugView.AppendLine("Events stream failed: " + msg.Err.Error() + ". Retrying...")
+	} else {
+		m.debugView.AppendLine("Events stream disconnected. Reconnecting...")
+	}
 	return m, m.streams.SubscribeEvents()
 }
 

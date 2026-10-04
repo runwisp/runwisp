@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/apiclient"
@@ -472,6 +473,36 @@ func TestStreamManager_SubscribeEvents_ResumesFromRecordedEventID(t *testing.T) 
 	cmd()
 
 	assert.Equal(t, "42", gotQuery, "reconnect must resume from the last recorded event ID")
+}
+
+// A failed connect must come back as SSEDisconnectedMsg: handleSSEDisconnected
+// is the only thing that re-subscribes, so a bare debug message left the TUI on
+// stale data when the first reconnect landed while the daemon was still booting.
+func TestStreamManager_SubscribeEvents_FailedConnectSchedulesRetry(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "booting", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	sm := NewStreamManager(apiclient.New(srv.URL, ""))
+	sm.eventsRetryDelay = time.Millisecond
+	t.Cleanup(sm.Shutdown)
+
+	msg := sm.SubscribeEvents()()
+	got, ok := msg.(uikit.SSEDisconnectedMsg)
+	require.True(t, ok, "expected SSEDisconnectedMsg, got %T", msg)
+	assert.Error(t, got.Err)
+}
+
+func TestStreamManager_SubscribeEvents_ShutdownDuringRetryDelayStops(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "booting", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	sm := NewStreamManager(apiclient.New(srv.URL, ""))
+	sm.eventsRetryDelay = time.Hour
+	sm.Shutdown()
+
+	assert.Nil(t, sm.SubscribeEvents()(), "a cancelled manager must not schedule another subscribe")
 }
 
 func TestStreamManager_RecordEventID_IgnoresEmpty(t *testing.T) {

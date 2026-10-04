@@ -153,8 +153,9 @@ type SSEEventMsg struct {
 	Event apiclient.RunStreamEvent
 }
 
-// SSEDisconnectedMsg signals the SSE stream dropped.
-type SSEDisconnectedMsg struct{}
+// SSEDisconnectedMsg signals the SSE stream dropped, or that (re)connecting it
+// failed (Err). Either way the model schedules another subscribe.
+type SSEDisconnectedMsg struct{ Err error }
 
 // ExecWindowFetchedMsg delivers results from an execution window fetch.
 type ExecWindowFetchedMsg struct {
