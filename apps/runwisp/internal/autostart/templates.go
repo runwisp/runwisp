@@ -123,7 +123,7 @@ func RenderLaunchdPlist(p LaunchdParams) ([]byte, error) {
 //   - xml:    XML text/attribute escaping (launchd <string> bodies)
 var templateFuncs = template.FuncMap{
 	"sysesc": systemdEscape,
-	"sysq":   func(s string) string { return `"` + systemdEscape(s) + `"` },
+	"sysq":   systemdExecArg,
 	"xml":    xmlEscape,
 }
 
@@ -135,6 +135,13 @@ var templateFuncs = template.FuncMap{
 // rejected before render, so they need no handling here.
 func systemdEscape(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `"`, `\"`, `%`, `%%`).Replace(s)
+}
+
+// systemdExecArg quotes one ExecStart argument. ExecStart expands $VAR and ${VAR}
+// (Environment= values don't, hence the "$" handling lives here and not in
+// systemdEscape), so a literal "$" in a path is written "$$".
+func systemdExecArg(s string) string {
+	return `"` + strings.ReplaceAll(systemdEscape(s), "$", "$$") + `"`
 }
 
 func xmlEscape(s string) string {
