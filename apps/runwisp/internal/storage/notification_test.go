@@ -78,11 +78,10 @@ func TestUpsertByFingerprint_CoalescesWithinWindow(t *testing.T) {
 	assert.Equal(t, second.LastOccurredAt.Unix(), got.Occurrences[0].Unix())
 }
 
-// On a coalesced update the passed-in notification pointer must be rewritten to
-// carry the FIRST occurrence's created_at and run_id — not the current event's —
-// so callers (e.g. the in-app coalescer's SSE payload) match what a later read
-// of the persisted row returns.
-func TestUpsertByFingerprint_CoalesceKeepsFirstSeenMetadata(t *testing.T) {
+// On a coalesced update the passed-in notification pointer must carry the
+// FIRST occurrence's created_at, and the row's run_id follows the newest
+// occurrence so "View run" opens the failure the bell text describes.
+func TestUpsertByFingerprint_CoalesceKeepsFirstCreatedAtAndNewestRun(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationDB(t)
 	now := time.Now().UTC().Truncate(time.Second)
@@ -99,7 +98,12 @@ func TestUpsertByFingerprint_CoalesceKeepsFirstSeenMetadata(t *testing.T) {
 	require.False(t, created)
 
 	assert.Equal(t, first.CreatedAt.Unix(), second.CreatedAt.Unix(), "created_at must stay first-seen")
-	assert.Equal(t, "run-first", second.RunID, "run_id must stay first-seen")
+	assert.Equal(t, "run-second", second.RunID, "run_id must follow the newest occurrence")
+
+	rows, err := db.ListNotifications(ctx, 10, "")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "run-second", rows[0].RunID)
 }
 
 func TestUpsertByFingerprint_InsertsAfterWindowExpires(t *testing.T) {
