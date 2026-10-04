@@ -899,7 +899,9 @@ func cronEnvLine(line string) (name, value string, ok bool) {
 		}
 	}
 	value = strings.TrimSpace(line[eq+1:])
-	value = strings.Trim(value, `"'`)
+	if n := len(value); n >= 2 && (value[0] == '"' || value[0] == '\'') && value[n-1] == value[0] {
+		value = value[1 : n-1] // one matched pair, as cron does
+	}
 	return name, value, true
 }
 

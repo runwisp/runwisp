@@ -32,9 +32,9 @@ func (s *iniSection) get(key string) (string, bool) {
 }
 
 // parseINI parses the supervisord dialect of INI: `[section]` headers,
-// `key=value` (or `key:value`) pairs, full-line comments starting with `;` or
-// `#`, and ConfigParser-style continuation lines (a line indented further than
-// its key appends to the previous value). It is intentionally small — just
+// `key=value` (or `key:value`) pairs, `;`/`#` comments (full-line, or inline
+// after whitespace), and ConfigParser-style continuation lines (a line
+// indented further than its key appends to the previous value). It is intentionally small — just
 // enough to read supervisord configs, not a general INI library.
 func parseINI(r io.Reader) ([]iniSection, error) {
 	p := &iniParser{}
@@ -59,6 +59,7 @@ type iniParser struct {
 
 // feed classifies one raw line and folds it into the parser state.
 func (p *iniParser) feed(raw string) {
+	raw = stripInlineComment(raw)
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		p.lastKey = ""
@@ -82,6 +83,18 @@ func (p *iniParser) feed(raw string) {
 		return // stray key before any section header
 	}
 	p.addKeyValue(trimmed)
+}
+
+// stripInlineComment drops a trailing `;` or `#` comment the way supervisord's
+// ConfigParser does: the marker only starts a comment at the start of the line
+// or after whitespace, so `a;b` and `a#b` keep their text.
+func stripInlineComment(line string) string {
+	for i := 0; i < len(line); i++ {
+		if (line[i] == ';' || line[i] == '#') && (i == 0 || line[i-1] == ' ' || line[i-1] == '\t') {
+			return line[:i]
+		}
+	}
+	return line
 }
 
 func (p *iniParser) isContinuation(raw, trimmed string) bool {
