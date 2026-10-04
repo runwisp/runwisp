@@ -62,8 +62,8 @@ type Model struct {
 	streams       StreamManager
 	notifications notifications.Panel
 	logSearch     *logsearch.Model
-	// pendingHighlight, when non-zero, is the absolute log-line number the
-	// next exec-view fetch should land on. Set when a search hit is
+	// pendingHighlight, when non-zero, is the 1-based gutter line number the
+	// next exec-view fetch should land on (line index N is gutter N+1). Set when a search hit is
 	// selected for a run that's not yet open; consumed by the log
 	// streamer/fetcher when the buffer is ready. pendingHighlightRun is the
 	// run ID it targets — required because opening that run can be

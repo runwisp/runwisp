@@ -135,7 +135,7 @@ func TestUpdate_EnterOnHitEmitsSelectMsg(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected SelectMsg, got %T", cmd())
 	}
-	if sel.TaskName != "task1" || sel.RunID != "rA" || sel.Line != 42 {
+	if sel.TaskName != "task1" || sel.RunID != "rA" || sel.Line != 43 {
 		t.Fatalf("SelectMsg fields wrong: %+v", sel)
 	}
 	if m2.Cursor() != 0 {
@@ -325,7 +325,7 @@ func TestUpdate_EnterSelectsAfterSearch(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected SelectMsg, got %T", cmd())
 	}
-	if sel.RunID != "rX" || sel.Line != 9 || sel.TaskName != "task1" {
+	if sel.RunID != "rX" || sel.Line != 10 || sel.TaskName != "task1" {
 		t.Fatalf("SelectMsg fields wrong: %+v", sel)
 	}
 }

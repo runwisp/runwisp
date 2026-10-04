@@ -726,6 +726,32 @@ func TestStartShutdownSpinner_KeepsExistingDialog(t *testing.T) {
 
 // ─── handleLogTailLoaded ─────────────────────────────────────────────────────
 
+// A search hit carries the 0-based line index; the pane's gutter and
+// HighlightLine are 1-based. Selecting the hit on index 2 (text "l2") must
+// highlight the row the gutter numbers 3, not the one after it.
+func TestHandleLogTailLoaded_PendingHighlightLandsOnHitLine(t *testing.T) {
+	m := newTestModel(nil)
+	m.pendingHighlight = 3 // SelectMsg.Line for the hit on line index 2
+	m.pendingHighlightRun = "r-a"
+	run := &model.Run{ID: "r-a", TaskName: "t1", Status: model.PhaseEnded}
+	ev := execlist.NewExecView(run)
+	m.execView = &ev
+
+	updated, _ := m.handleLogTailLoaded(uikit.LogTailLoadedMsg{
+		RunID:     "r-a",
+		Lines:     []server.LogLineEntry{{N: 0, Text: "l0"}, {N: 1, Text: "l1"}, {N: 2, Text: "l2"}},
+		Finalized: true,
+	})
+	pane := updated.(Model).execView.Pane
+	if pane.HighlightLine == 0 {
+		t.Fatal("the highlight should apply once the hit's line is in the buffer")
+	}
+	idx := int(pane.HighlightLine) - pane.FirstLoadedLine - 1
+	if idx < 0 || idx >= len(pane.Lines) || pane.Lines[idx].Text != "l2" {
+		t.Fatalf("highlight on gutter line %d should be the hit line l2, lines=%+v", pane.HighlightLine, pane.Lines)
+	}
+}
+
 // TestHandleLogTailLoaded_PendingHighlightNotAppliedToDifferentRun mirrors
 // TestHandleLogLine_PendingHighlightNotAppliedToDifferentRun for the tail-load
 // path: opening a different run than the one a pending search highlight

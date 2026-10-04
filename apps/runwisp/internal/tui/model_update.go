@@ -606,7 +606,7 @@ func (m Model) handleLogTailLoaded(msg uikit.LogTailLoadedMsg) (tea.Model, tea.C
 	for _, l := range msg.Lines {
 		m.execView.Pane.AppendLogLine(l.N, l.Stream, l.Text, l.FrameCount)
 	}
-	if n := len(msg.Lines); m.pendingHighlight != 0 && m.pendingHighlightRun == msg.RunID && n > 0 && msg.Lines[n-1].N >= m.pendingHighlight {
+	if n := len(msg.Lines); m.pendingHighlight != 0 && m.pendingHighlightRun == msg.RunID && n > 0 && msg.Lines[n-1].N+1 >= m.pendingHighlight {
 		m.execView.Pane.JumpToLine(m.pendingHighlight)
 		m.pendingHighlight = 0
 		m.pendingHighlightRun = ""
@@ -644,7 +644,7 @@ func (m Model) handleLogLine(msg uikit.LogLineMsg) (tea.Model, tea.Cmd) {
 	// If a search hit selected this run, jump as soon as the target line
 	// lands in the buffer. The pending marker is cleared so subsequent
 	// scroll input isn't yanked back to the hit.
-	if m.pendingHighlight != 0 && m.pendingHighlightRun == msg.RunID && msg.Line.N >= m.pendingHighlight {
+	if m.pendingHighlight != 0 && m.pendingHighlightRun == msg.RunID && msg.Line.N+1 >= m.pendingHighlight {
 		m.execView.Pane.JumpToLine(m.pendingHighlight)
 		m.pendingHighlight = 0
 		m.pendingHighlightRun = ""
