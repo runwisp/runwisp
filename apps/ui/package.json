@@ -4,7 +4,7 @@
     "license": "GPL-3.0-or-later",
     "private": true,
     "scripts": {
-        "prepare": "bunx @sveltejs/kit sync"
+        "prepare": "bunx @sveltejs/kit@2 sync"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
