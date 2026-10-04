@@ -306,6 +306,7 @@ runwisp validate             — validate runwisp.toml without starting anything
 runwisp list                 — list configured tasks and schedules; --json for a machine-readable document
 runwisp status               — is the daemon alive?; --json for daemon health + every task's last run (+ pausedAt when its schedule is paused); human output lists paused schedules
 runwisp run <task>          — run a task and stream output;  --daemon (via running daemon) | --standalone (in-process), mutually exclusive
+                             — exit code = the process's exit code; 1 when the run failed (failures pattern, timeout, stop) but the process exited 0
                              — --param key=value (repeatable) supplies task parameter values; a param not mentioned uses its declared default
                              — --json prints the outcome as one JSON document on stdout once the run ends; log lines go to stderr instead
                              — --url (env RUNWISP_URL) dispatches to a remote daemon over HTTP; --password (env RUNWISP_PASSWORD) authenticates it;
