@@ -22,6 +22,7 @@ import (
 // a run ID that already ended, and a live follow that picks up a run started
 // after it attached.
 func TestCLILogs(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 	configPath := writeE2EConfig(t, t.TempDir())

@@ -13,6 +13,7 @@ import (
 )
 
 func TestTUIStreamsLiveLogsAndSettlesSuccessfulHeaderState(t *testing.T) {
+	t.Parallel()
 	suite := newTUISuite(t)
 	suite.selectAlphaTask(t)
 

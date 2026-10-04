@@ -25,6 +25,7 @@ import (
 // startup banner warns loudly, and `runwisp password` refuses with its
 // dedicated exit code.
 func TestNoAuth_UnauthenticatedTCPAccess(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 	configDir := t.TempDir()
@@ -68,6 +69,7 @@ func TestNoAuth_UnauthenticatedTCPAccess(t *testing.T) {
 // contradictory RUNWISP_AUTH=off + RUNWISP_PASSWORD combination at startup
 // instead of silently picking one.
 func TestNoAuth_ConflictWithPasswordRefusesToBoot(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 	configDir := t.TempDir()

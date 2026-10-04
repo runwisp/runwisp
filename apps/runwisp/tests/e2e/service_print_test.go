@@ -22,6 +22,7 @@ import (
 // per-user unit the operator didn't ask for. The message must name both
 // ways forward, since either could be what they meant.
 func TestCLIServiceInstallRefusesSystemScopeUnprivileged(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		t.Skip("autostart is only built for linux and darwin")
 	}
@@ -62,6 +63,7 @@ func TestCLIServiceInstallRefusesSystemScopeUnprivileged(t *testing.T) {
 // system-wide service, which refuses without root (see
 // TestCLIServiceInstallRefusesSystemScopeUnprivileged).
 func TestCLIServicePrintGolden(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		t.Skip("autostart is only built for linux and darwin")
 	}

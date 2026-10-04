@@ -23,6 +23,7 @@ import (
 // come back from SQLite, and the 15 ticks inside the paused window must not be
 // recorded as missed, neither at boot nor when `runwisp resume` lifts it.
 func TestPausedScheduleSurvivesRestartWithoutMissedRuns(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
@@ -59,6 +60,7 @@ run = "true"
 // TestPauseStopsCronFiring pauses a fast `@every` task through the CLI and
 // checks that it records no further runs, while a manual run still works.
 func TestPauseStopsCronFiring(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 

@@ -32,6 +32,7 @@ import (
 // so a real, non-zero jitter window is computed and threaded through to the
 // gate (rather than clamping to zero).
 func TestJitterCronTaskFiresAndIsBrowsable(t *testing.T) {
+	t.Parallel()
 	const taskName = "jittered"
 
 	configPath := writeJitterConfig(t, taskName)

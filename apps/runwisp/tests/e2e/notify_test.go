@@ -35,6 +35,7 @@ import (
 // flapping-task storms. A separate test below verifies the
 // `coalesce_window = "0s"` opt-out.
 func TestNotificationsOutboundFiresAndCoalesces(t *testing.T) {
+	t.Parallel()
 	received := make(chan []byte, 8)
 	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -117,6 +118,7 @@ notifiers = ["ops", "inapp"]
 // URL with the default JSON template body, the application/json content
 // type, and any custom headers from the TOML passed through verbatim.
 func TestNotificationsGenericWebhookFires(t *testing.T) {
+	t.Parallel()
 	type capturedRequest struct {
 		method      string
 		contentType string
@@ -197,6 +199,7 @@ notifiers = ["hook"]
 // genuinely want a webhook hit per failure (e.g., piping into their own
 // aggregator).
 func TestNotificationsOutboundCoalesceOptOut(t *testing.T) {
+	t.Parallel()
 	received := make(chan []byte, 8)
 	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -244,6 +247,7 @@ notifiers = ["ops"]
 // retry budget, the daemon must surface a notify.delivery_failed in-app row
 // (so a broken webhook never silently rots).
 func TestNotificationsDeliveryFailureSurfacesInApp(t *testing.T) {
+	t.Parallel()
 	var hits atomic.Int64
 	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hits.Add(1)
@@ -300,6 +304,7 @@ notifiers = ["broken", "inapp"]
 // produces an in-app notification when a run fails. The bell in the Web UI
 // and the footer line in the TUI must light up out of the box.
 func TestNotificationsZeroConfigInappFires(t *testing.T) {
+	t.Parallel()
 	configPath := writeNotifyConfig(t, `
 [tasks.fail-task]
 run = "exit 1"
@@ -335,6 +340,7 @@ run = "exit 1"
 // within the coalesce window must NOT trigger a second SMTP transaction
 // (outbound coalescing applies to SMTP exactly like Slack).
 func TestNotificationsSMTPDeliversAndCoalesces(t *testing.T) {
+	t.Parallel()
 	srv := newTestSMTPServer(t)
 	t.Cleanup(srv.Close)
 
@@ -633,6 +639,7 @@ func hasDeliveryFailure(items []server.NotificationDTO) bool {
 // notification.unreadCountChanged event so listeners can refresh the
 // badge without delta-tracking.
 func TestNotificationsUnreadCountShipsOnEveryEvent(t *testing.T) {
+	t.Parallel()
 	configPath := writeNotifyConfig(t, `
 [tasks.fail-task]
 run = "exit 1"

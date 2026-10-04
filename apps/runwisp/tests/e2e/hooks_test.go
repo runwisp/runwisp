@@ -57,6 +57,7 @@ func postHookE2E(t *testing.T, baseURL, action, token string) (int, model.Run) {
 // token. A rotated token takes effect on `runwisp reload` and
 // the old one stops working.
 func TestHooks_TokenAndRotation(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 	configPath := t.TempDir() + "/runwisp.toml"

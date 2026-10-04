@@ -24,6 +24,7 @@ import (
 // On the API side, env + env_file values are visible while secrets keys and
 // values never reach the wire — only the secrets_file path is exposed.
 func TestEnvMergedIntoSpawnedProcessAndAPIHidesSecrets(t *testing.T) {
+	t.Parallel()
 	const (
 		taskName          = "env-task"
 		fileSecretValue   = "file-secret-do-not-leak"

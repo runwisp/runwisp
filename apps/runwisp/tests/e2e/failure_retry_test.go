@@ -13,6 +13,7 @@ import (
 )
 
 func TestTUIShowsRetryForFailedRunsAndRetryStartsANewExecution(t *testing.T) {
+	t.Parallel()
 	suite := newTUISuite(t)
 	client := suite.client(t)
 	suite.selectBravoTask(t)

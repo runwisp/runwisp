@@ -30,6 +30,7 @@ import (
 // whose first line is `set +e` must still finish successfully, since that is
 // what makes a dedicated TOML key unnecessary.
 func TestMultilineRunStopsAtFirstFailure(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "runwisp.toml")
 	require.NoError(t, os.WriteFile(configPath, []byte(`

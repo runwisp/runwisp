@@ -23,6 +23,7 @@ import (
 // "another process" message. stdin is not a TTY, so it takes the
 // non-interactive branch and exits with the identity-rich error.
 func TestPortConflict_AnotherRunwispReportsIdentity(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 	configPath := writeE2EConfig(t, t.TempDir())

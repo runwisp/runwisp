@@ -41,6 +41,7 @@ func runCLI(t *testing.T, projectDir, binaryPath string, args ...string) (string
 }
 
 func TestCLIValidateCmd(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
@@ -69,6 +70,7 @@ func TestCLIValidateCmd(t *testing.T) {
 // reach stderr. The station URL points at a closed port — boot fails at config
 // parse, before any connection attempt, so the test stays offline.
 func TestStationCmdBootErrorVisible(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
@@ -99,6 +101,7 @@ func TestStationCmdBootErrorVisible(t *testing.T) {
 }
 
 func TestCLIListCmd(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
@@ -113,6 +116,7 @@ func TestCLIListCmd(t *testing.T) {
 }
 
 func TestCLIStatusCmd(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
@@ -147,6 +151,7 @@ run = "echo changed"
 }
 
 func TestCLIOpenAPICmd(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
@@ -157,6 +162,7 @@ func TestCLIOpenAPICmd(t *testing.T) {
 }
 
 func TestCLIExecViaDaemon(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
@@ -188,6 +194,7 @@ func TestCLIExecViaDaemon(t *testing.T) {
 }
 
 func TestCLIExecStandalone(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
