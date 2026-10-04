@@ -9,6 +9,8 @@
 package cronspec
 
 import (
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -198,8 +200,36 @@ func Validate(spec, timezone string) error {
 	if timezone != "" {
 		full = "CRON_TZ=" + timezone + " " + spec
 	}
-	_, err := NewParser().Parse(full)
-	return err
+	sched, err := NewParser().Parse(full)
+	if err != nil {
+		return err
+	}
+	if every, ok := everyDuration(spec); ok && every < time.Second {
+		return fmt.Errorf("@every interval %s is below the 1s minimum", every)
+	}
+	// robfig parses specs like "0 0 30 2 *" happily but Next never finds a
+	// match and returns the zero time. Any fixed reference works: Next looks
+	// five years ahead, which covers every real calendar (leap days included).
+	if sched.Next(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)).IsZero() {
+		return errors.New("schedule never fires (the day of month does not exist in the given months)")
+	}
+	return nil
+}
+
+// everyDuration returns the interval of an "@every <duration>" spec (after an
+// optional TZ= / CRON_TZ= prefix). robfig's ConstantDelaySchedule has already
+// rounded a zero or sub-second interval up to 1s by the time Parse returns, so
+// the original text is the only place to reject it.
+func everyDuration(spec string) (time.Duration, bool) {
+	fields := strings.Fields(spec)
+	if len(fields) > 0 && (strings.HasPrefix(fields[0], "TZ=") || strings.HasPrefix(fields[0], "CRON_TZ=")) {
+		fields = fields[1:]
+	}
+	if len(fields) != 2 || fields[0] != "@every" {
+		return 0, false
+	}
+	d, err := time.ParseDuration(fields[1])
+	return d, err == nil
 }
 
 // sundayAliased rewrites the day-of-week field so 7 means Sunday, the vixie-cron
@@ -277,13 +307,19 @@ func dowTerm(term string) string {
 	return expandDowRangeTo7(term, lo, step, hasStep)
 }
 
+var dowNames = map[string]int{"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6}
+
 // expandDowRangeTo7 expands a day-of-week range that ends at 7 (Sunday) into an
 // explicit comma list, folding day 7 to day 0. It returns term unchanged if lo
 // or the step can't be parsed.
 func expandDowRangeTo7(term, lo, step string, hasStep bool) string {
 	from, err := strconv.Atoi(lo)
 	if err != nil {
-		return term
+		// A named start ("sun-7", "fri-7") means the same as its number.
+		var ok bool
+		if from, ok = dowNames[strings.ToLower(lo)]; !ok {
+			return term
+		}
 	}
 	by := 1
 	if hasStep {

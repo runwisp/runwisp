@@ -234,6 +234,9 @@ func (scheduler *Scheduler) computeJitterPlans() {
 			continue
 		}
 		base := sched.Next(now)
+		if base.IsZero() {
+			continue // never fires; nothing to spread
+		}
 		gap := sched.Next(base).Sub(base)
 		length := min(jitterWindow, gap-time.Second)
 		if length <= 0 {
