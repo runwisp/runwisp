@@ -472,6 +472,8 @@ func (srv *Server) registerAppStreamSSE(api huma.API) {
 		Summary:     "Stream live application events",
 		Description: "Single Server-Sent Events feed the web UI holds open per tab: run lifecycle events, periodic system resource samples, config-staleness flips, task-list changes (a schedule paused or resumed, a reload applied), and in-app notifications. Each event carries a monotonic id; a reconnecting client resumes from Last-Event-ID (or the lastEventId query) and replays what it missed.",
 		Tags:        []string{"Runs"},
+		Errors:      []int{http.StatusServiceUnavailable},
+		Middlewares: srv.streamGate(api, nil),
 	}, map[string]any{
 		"run.created":                      RunCreatedEvent{},
 		"run.started":                      RunStartedEvent{},
@@ -490,24 +492,14 @@ func (srv *Server) registerAppStreamSSE(api huma.API) {
 }
 
 // appStreamHandler is the SSE callback for the unified app event stream. It
-// admits the client (subject to the stream limit), subscribes to the live feed
-// (via the shared appEventLog) and, when notify is enabled, the notification
-// hub, then flushes headers, replays any events the client missed since its
+// subscribes to the live feed (via the shared appEventLog) and, when notify is
+// enabled, the notification hub, then flushes headers, replays any events the client missed since its
 // Last-Event-ID, and relays everything plus periodic pings over the one
 // connection until the client disconnects. Folding these onto a single stream
 // is what keeps a browser tab to one EventSource instead of three.
 func (srv *Server) appStreamHandler(ctx context.Context, input *AppStreamInput, send sse.Sender) {
 	ctx, cancelShutdown := srv.withShutdown(ctx)
 	defer cancelShutdown()
-
-	release, ok := srv.streams.acquire(ctx)
-	if !ok {
-		// huma owns the response writer here, so we communicate refusal via
-		// the SSE channel and return; the client will see a single ping then
-		// EOF, which the UI already handles as a closed stream.
-		return
-	}
-	defer release()
 
 	// Subscribe to both feeds before any write: the initial ping and the
 	// replay flush below can block on network writes, the hub has no replay

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
@@ -17,12 +18,12 @@ import (
 	"github.com/runwisp/runwisp/internal/server/logstream"
 )
 
-// followMaxStalls bounds consecutive log-stream re-opens that close at once
-// with nothing — no line and no Done event. A just-triggered run is handed back
-// to the caller before its row is durably persisted (persistence is async), so
-// the first stream(s) can find no run yet and the server closes them empty. We
-// retry until the run becomes streamable; the bound only guards against a run
-// ID that never materializes at all (or a daemon refusing the stream).
+// followMaxStalls bounds consecutive log-stream opens that find nothing to
+// stream: a 404 or a stream that closes at once with no line and no Done event.
+// A just-triggered run is handed back to the caller before its row is durably
+// persisted (persistence is async), so the first stream(s) can find no run yet.
+// We retry until the run becomes streamable; the bound only guards against a run
+// ID that never materializes at all.
 // followStallBackoff paces those retries so the not-yet-persisted row has time
 // to land without busy-looping.
 //
@@ -53,14 +54,17 @@ func followRunLog(ctx context.Context, client *apiclient.Client, taskName, runID
 	for {
 		opened := time.Now()
 		ch, err := client.StreamLogLines(ctx, runID, apiclient.StreamLogOpts{FromLine: from})
-		if err != nil {
+		if err != nil && !runNotPersistedYet(err) {
 			if ctx.Err() != nil {
 				return false, nil
 			}
 			return false, fmt.Errorf("open log stream: %w", err)
 		}
 
-		highest, done, err := drainLogStream(ch, taskName, runID, from, onLine)
+		highest, done := from-1, false
+		if err == nil {
+			highest, done, err = drainLogStream(ch, taskName, runID, from, onLine)
+		}
 		if ctx.Err() != nil {
 			return false, nil // interrupted — stop reconnecting
 		}
@@ -97,6 +101,13 @@ func followRunLog(ctx context.Context, client *apiclient.Client, taskName, runID
 		case <-time.After(followStallBackoff):
 		}
 	}
+}
+
+// runNotPersistedYet reports whether a stream-open error is the daemon's 404
+// for a run whose row has not landed yet (see followMaxStalls).
+func runNotPersistedYet(err error) bool {
+	var status *apiclient.HTTPStatusError
+	return errors.As(err, &status) && status.StatusCode == http.StatusNotFound
 }
 
 // drainLogStream forwards one connection's lines to onLine until it closes.
