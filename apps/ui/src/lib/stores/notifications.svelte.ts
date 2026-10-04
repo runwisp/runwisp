@@ -6,6 +6,8 @@ import { getApiUrl as defaultGetApiUrl } from "$lib/utils/env";
 import type { AppEventStream } from "./event-manager";
 import { appEventStream } from "./app-stream.svelte";
 import { createLogger } from "$lib/utils/logger";
+import { authFetch, handleUnauthorized } from "$lib/utils/auth-required";
+import { HTTP_STATUS } from "$lib/config/constants";
 import { connectionStore } from "./connection.svelte";
 
 const notificationSchema = z.object({
@@ -262,7 +264,9 @@ class NotificationStore {
             }),
             this.#events.onError((info) => {
                 this.#connected = false;
-                if (info.status !== 401) {
+                if (info.status === HTTP_STATUS.UNAUTHORIZED) {
+                    handleUnauthorized();
+                } else {
                     connectionStore.reportSourceDown(
                         SOURCE_ID,
                         info.message ?? "Notifications stream error",
@@ -366,7 +370,7 @@ class NotificationStore {
  * default singleton uses the browser-auth EventSource factory and global fetch. */
 export function createNotificationStore(deps: NotificationStoreDeps = {}): NotificationStore {
     return new NotificationStore({
-        fetch: deps.fetch ?? ((...args) => globalThis.fetch(...args)),
+        fetch: deps.fetch ?? authFetch,
         events: deps.events ?? appEventStream,
         getApiUrl: deps.getApiUrl ?? defaultGetApiUrl,
     });

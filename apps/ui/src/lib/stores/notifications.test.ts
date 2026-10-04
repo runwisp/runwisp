@@ -1,11 +1,17 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createNotificationStore, type Notification } from "./notifications.svelte";
 import { EventManager } from "./event-manager";
 import { connectionStore } from "./connection.svelte";
 import type { SSEStream } from "$lib/adapters/browser";
+import { handleUnauthorized } from "$lib/utils/auth-required";
+
+vi.mock("$lib/utils/auth-required", () => ({
+    handleUnauthorized: vi.fn(),
+    authFetch: vi.fn(),
+}));
 
 function makeNotification(overrides: Partial<Notification> = {}): Notification {
     const base: Notification = {
@@ -149,6 +155,14 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
 }
 
 describe("NotificationStore", () => {
+    it("routes a 401 on the stream to the auth handler instead of reporting the source down", async () => {
+        const { store, es } = setupHarness({ items: [], unread: 0 });
+        await store.init();
+        es.onerror?.(Object.assign(new Event("error"), { status: 401, message: "unauthorized" }));
+        expect(handleUnauthorized).toHaveBeenCalledOnce();
+        store.disconnect();
+    });
+
     it("seeds items and unread count from the server during init()", async () => {
         const seed = makeNotification({ id: "01H000000000000000000SEED1" });
         const { store } = setupHarness({ items: [seed], unread: 3 });
