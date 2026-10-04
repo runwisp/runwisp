@@ -292,6 +292,15 @@ func (h *InboundHandler) resolveServiceTarget(taskID, taskName string) (name str
 // instead of feeding it to ParseExecutionDef (which rejects it). Only a real def
 // overrides the command.
 func (h *InboundHandler) mergeServiceApply(task *model.Task, svc *protocol.Service) error {
+	// manual_trigger = false locks a service to its TOML definition, the same
+	// gate HandleServiceControl applies; an apply would otherwise rescale or
+	// retune it.
+	if !task.ManuallyControllable() {
+		return &StationError{
+			Kind:    StationErrorKindConflict,
+			Message: fmt.Sprintf("service %q has manual_trigger disabled and cannot be changed by the control plane", task.Name),
+		}
+	}
 	if len(svc.Script) > 0 && string(svc.Script) != "null" {
 		execDef, err := model.ParseExecutionDef(svc.Script)
 		if err != nil {
