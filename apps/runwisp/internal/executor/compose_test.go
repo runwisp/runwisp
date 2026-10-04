@@ -39,7 +39,7 @@ func TestComposeBackend_BuildArgs_ServicesMode(t *testing.T) {
 	}
 	run := &model.Run{InstanceIndex: 2}
 
-	args := buildComposeArgs(ce, task, run, "fp-123")
+	args := buildComposeArgs(ce, task, run, "fp-123", "myapp_web_2")
 	joined := strings.Join(args, " ")
 
 	assert.Contains(t, joined, "compose -f ./docker-compose.yml")
@@ -79,7 +79,7 @@ func TestComposeBackend_BuildArgs_ExecMode(t *testing.T) {
 	}
 	task := &model.Task{Name: "myapp.schedule", Env: map[string]string{"LOG_LEVEL": "info"}}
 
-	args := buildComposeArgs(ce, task, &model.Run{InstanceIndex: 0}, "fp-123")
+	args := buildComposeArgs(ce, task, &model.Run{InstanceIndex: 0}, "fp-123", "")
 	joined := strings.Join(args, " ")
 
 	assert.Contains(t, joined, "compose -f ./compose.yaml")
@@ -113,7 +113,7 @@ func TestComposeBackend_BuildArgs_ExecModeAlwaysDisablesTTY(t *testing.T) {
 		Mode:    model.ComposeModeExec,
 		Command: "true",
 	}
-	args := buildComposeArgs(ce, &model.Task{}, nil, "")
+	args := buildComposeArgs(ce, &model.Task{}, nil, "", "")
 
 	execIdx := -1
 	for i, a := range args {
@@ -141,7 +141,7 @@ func TestComposeBackend_BuildArgs_ExecModeAppendsParamTokens(t *testing.T) {
 	}
 	run := &model.Run{Params: map[string]string{"target": "nightly; rm -rf /"}}
 
-	args := buildComposeArgs(ce, task, run, "")
+	args := buildComposeArgs(ce, task, run, "", "")
 	// Shell-quoted into the script text, exactly as the host shell backend does,
 	// so a hostile parameter value is an inert literal rather than a second
 	// command running inside the user's container.
@@ -154,7 +154,7 @@ func TestComposeBackend_BuildArgs_StackMode(t *testing.T) {
 		ProjectName: "myapp",
 		Mode:        model.ComposeModeStack,
 	}
-	args := buildComposeArgs(ce, &model.Task{}, nil, "")
+	args := buildComposeArgs(ce, &model.Task{}, nil, "", "")
 	joined := strings.Join(args, " ")
 
 	assert.Contains(t, joined, "compose -f ./docker-compose.yml -p myapp up --abort-on-container-exit --no-log-prefix")
@@ -169,7 +169,7 @@ func TestComposeBackend_BuildArgs_OmitsNoDepsWhenWithDeps(t *testing.T) {
 		Mode:     model.ComposeModeRun,
 		WithDeps: true,
 	}
-	args := buildComposeArgs(ce, &model.Task{}, nil, "")
+	args := buildComposeArgs(ce, &model.Task{}, nil, "", "")
 	assert.NotContains(t, strings.Join(args, " "), "--no-deps")
 }
 
@@ -180,7 +180,7 @@ func TestComposeBackend_BuildArgs_OmitsPullWhenMissing(t *testing.T) {
 		Mode:    model.ComposeModeRun,
 		Pull:    model.ComposePullMissing,
 	}
-	args := buildComposeArgs(ce, &model.Task{}, nil, "")
+	args := buildComposeArgs(ce, &model.Task{}, nil, "", "")
 	assert.NotContains(t, strings.Join(args, " "), "--pull")
 }
 
@@ -447,6 +447,46 @@ func TestComposeBackend_StartReclaimBoundedWhenDockerHangs(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Start blocked on a hung `docker ps` reclaim")
 	}
+}
+
+// TestComposeBackend_OverlappingRunsKeepTheirOwnContainer: a second run of the
+// same slot while the first is live must neither reuse its --name nor reclaim
+// (force-remove) its container, and each run's cleanup removes only its own.
+func TestComposeBackend_OverlappingRunsKeepTheirOwnContainer(t *testing.T) {
+	dir := t.TempDir()
+	logFile := filepath.Join(dir, "calls.log")
+	installRecordingDockerShim(t, dir, logFile, "")
+
+	b := &ComposeBackend{dockerCmd: "docker", fingerprint: "fp-test"}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", ProjectName: "demo", Service: "web", Mode: model.ComposeModeRun}
+	task := &model.Task{Name: "boxes.web"}
+
+	start := func(runID string) *Process {
+		proc, err := b.Start(context.Background(), task, &model.Run{ID: runID}, ce)
+		require.NoError(t, err)
+		go drain(proc.Stdout)
+		go drain(proc.Stderr)
+		proc.Wait()
+		return proc
+	}
+	first := start("RUN1")
+	require.NoError(t, os.WriteFile(logFile, nil, 0644)) // only the second start's calls from here
+	second := start("RUN2")
+
+	calls := readDockerCalls(t, logFile)
+	assert.Contains(t, calls, "--name demo_web_0_RUN2", "an overlapping run needs its own container name")
+	assert.Contains(t, calls, "--label com.runwisp.run=RUN2")
+	assert.NotContains(t, calls, "ps -aq", "only the slot's first start reclaims; later ones would hit live containers")
+
+	require.NoError(t, os.WriteFile(logFile, nil, 0644))
+	first.Cleanup()
+	assert.Contains(t, readDockerCalls(t, logFile), "--filter label=com.runwisp.run=RUN1", "cleanup must target only its own run")
+	second.Cleanup()
+
+	// With both released the plain name is free again.
+	require.NoError(t, os.WriteFile(logFile, nil, 0644))
+	start("RUN3")
+	assert.Contains(t, readDockerCalls(t, logFile), "--name demo_web_0 ")
 }
 
 // TestComposeBackend_Start_StackModeNoReclaimOrCleanup confirms stack mode

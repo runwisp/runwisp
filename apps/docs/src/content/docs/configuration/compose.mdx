@@ -329,15 +329,15 @@ docker compose -f <file> -p <project> up --abort-on-container-exit --no-log-pref
 Imported services use these defaults instead of the `[services.*]` ones. A
 per-service sub-table overrides any of them.
 
-| Key                                                    | Default for imported services                                                    |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| kind                                                   | service                                                                          |
-| `restart`                                              | `on_failure`                                                                     |
-| [`group`](#group)                                      | the alias                                                                        |
-| [`pull`](#pull)                                        | `missing`                                                                        |
-| [`graceful_stop`](/configuration/tasks/#graceful_stop) | the compose `stop_grace_period` if set, else the daemon default                  |
-| Container name                                         | `{project}_{service}_{index}` (matches `docker compose ps`; `docker logs` works) |
-| RunWisp name                                           | `{alias}.{service}` (see [`name_format`](#name_format))                          |
+| Key                                                    | Default for imported services                                                                                          |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| kind                                                   | service                                                                                                                |
+| `restart`                                              | `on_failure`                                                                                                           |
+| [`group`](#group)                                      | the alias                                                                                                              |
+| [`pull`](#pull)                                        | `missing`                                                                                                              |
+| [`graceful_stop`](/configuration/tasks/#graceful_stop) | the compose `stop_grace_period` if set, else the daemon default                                                        |
+| Container name                                         | `{project}_{service}_{index}` (matches `docker compose ps`; `docker logs` works). An overlapping run adds `_{run id}`. |
+| RunWisp name                                           | `{alias}.{service}` (see [`name_format`](#name_format))                                                                |
 
 ## Instances
 
