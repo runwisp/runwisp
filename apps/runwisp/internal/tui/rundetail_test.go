@@ -10,7 +10,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
+	_ "time/tzdata"
 )
 
 func endedRun() *model.Run {
@@ -132,7 +134,7 @@ func TestHandleKeyI_ExecViewOpensRunDetail(t *testing.T) {
 
 func TestInterceptRunDetail_EnterOpensParent(t *testing.T) {
 	m := newTestModelWithClient([]model.Task{{Name: "backup-db"}})
-	m.dialogs.ShowRunDetail(endedRun(), false, 1)
+	m.dialogs.ShowRunDetail(endedRun(), false, 1, nil)
 
 	updated, cmd, intercepted := m.interceptRunDetailDialog(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !intercepted {
@@ -147,5 +149,40 @@ func TestInterceptRunDetail_EnterOpensParent(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("opening the parent should produce a fetch command")
+	}
+}
+
+// The TUI can run in a different zone than the daemon (a container, a service
+// user without TZ). Timestamps must follow the daemon's zone.
+func TestRunDetailDialog_ShowsTimesInDaemonZone(t *testing.T) {
+	run := endedRun()
+	run.CreatedAt = time.Date(2026, 10, 4, 1, 15, 0, 0, time.UTC)
+	m := NewModel(TUIConfig{
+		Client: newDummyClient(),
+		Info:   uikit.StartupInfo{Version: "0.0.0-test", Timezone: "Etc/GMT-2"}, // UTC+2
+	})
+	ev := execlist.NewExecView(run)
+	m.execView = &ev
+
+	updated, _ := m.handleKey(tea.KeyPressMsg{Code: 'i', Text: "i"})
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatal("handleKey did not return a Model")
+	}
+	out := got.dialogs.runDetail.View(80, 30)
+	if !strings.Contains(out, "2026-10-04 03:15:00") {
+		t.Fatalf("started time should be shown in the daemon's zone (03:15), got:\n%s", out)
+	}
+}
+
+func TestHandleDaemonInfo_AdoptsTimezoneChange(t *testing.T) {
+	m := newTestModelWithClient(nil)
+	updated, _ := m.handleDaemonInfo(uikit.DaemonInfoMsg{Info: &model.DaemonInfo{ResolvedTimezone: "Etc/GMT-2", TimezoneSource: "config"}})
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatal("handleDaemonInfo did not return a Model")
+	}
+	if got.loc.String() != "Etc/GMT-2" {
+		t.Fatalf("loc: want Etc/GMT-2, got %v", got.loc)
 	}
 }

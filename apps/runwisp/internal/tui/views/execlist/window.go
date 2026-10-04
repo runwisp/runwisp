@@ -6,6 +6,7 @@ package execlist
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
@@ -37,6 +38,7 @@ type ExecWindow struct {
 	items        []uikit.ExecListItem
 	idSet        map[string]struct{} // dedup for SSE upserts
 	loading      bool
+	loc          *time.Location // daemon zone for TimeAgo labels; nil = process zone
 }
 
 // statusFilterCycle is the run-status filter the list cycles through with `f`.
@@ -72,17 +74,25 @@ func NewExecWindow(client *apiclient.Client) *ExecWindow {
 	}
 }
 
-func newExecListItem(run model.Run) uikit.ExecListItem {
+func newExecListItem(run model.Run, loc *time.Location) uikit.ExecListItem {
 	return uikit.ExecListItem{
 		Run:      run,
 		Duration: uikit.FormatDuration(run),
-		TimeAgo:  uikit.FormatTimeAgo(run.CreatedAt),
+		TimeAgo:  uikit.FormatTimeAgo(run.CreatedAt, loc),
 	}
 }
 
-func refreshExecListItem(item *uikit.ExecListItem) {
+func refreshExecListItem(item *uikit.ExecListItem, loc *time.Location) {
 	item.Duration = uikit.FormatDuration(item.Run)
-	item.TimeAgo = uikit.FormatTimeAgo(item.Run.CreatedAt)
+	item.TimeAgo = uikit.FormatTimeAgo(item.Run.CreatedAt, loc)
+}
+
+// SetLocation sets the zone used for the list's absolute time labels (the
+// daemon's timezone). Call it before the first fetch.
+func (w *ExecWindow) SetLocation(loc *time.Location) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.loc = loc
 }
 
 func (w *ExecWindow) TotalCount() int {
@@ -204,6 +214,7 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() ([]uikit.ExecListIte
 	w.loading = true
 	filter := w.filterTask
 	statusFilter := statusFilterWire[w.statusFilter]
+	loc := w.loc
 	w.mu.Unlock()
 
 	return func() ([]uikit.ExecListItem, int, int, error) {
@@ -237,7 +248,7 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() ([]uikit.ExecListIte
 
 		items := make([]uikit.ExecListItem, len(runs))
 		for i, run := range runs {
-			items[i] = newExecListItem(run)
+			items[i] = newExecListItem(run, loc)
 		}
 
 		return items, offset, int(total), nil
@@ -265,7 +276,7 @@ func (w *ExecWindow) UpsertRun(run model.Run) {
 		for i := range w.items {
 			if w.items[i].Run.ID == run.ID {
 				w.items[i].Run = run
-				refreshExecListItem(&w.items[i])
+				refreshExecListItem(&w.items[i], w.loc)
 				return
 			}
 		}
@@ -284,7 +295,7 @@ func (w *ExecWindow) UpsertRun(run model.Run) {
 
 	// New run — prepend when window starts at 0 (i.e. viewing the top).
 	if w.windowStart == 0 {
-		item := newExecListItem(run)
+		item := newExecListItem(run, w.loc)
 		w.items = append([]uikit.ExecListItem{item}, w.items...)
 		w.idSet[run.ID] = struct{}{}
 		if len(w.items) > windowSize+50 {
@@ -341,7 +352,7 @@ func (w *ExecWindow) UpdateVisibleTimes(scroll, vpH int) {
 		if local < 0 || local >= len(w.items) {
 			continue
 		}
-		w.items[local].TimeAgo = uikit.FormatTimeAgo(w.items[local].Run.CreatedAt)
+		w.items[local].TimeAgo = uikit.FormatTimeAgo(w.items[local].Run.CreatedAt, w.loc)
 		if !w.items[local].Run.Status.IsTerminal() {
 			w.items[local].Duration = uikit.FormatDuration(w.items[local].Run)
 		}

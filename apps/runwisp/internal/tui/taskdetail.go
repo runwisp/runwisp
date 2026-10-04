@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -37,6 +38,8 @@ type TaskDetailDialog struct {
 	health   taskHealth
 	// paused reports that an operator paused the task's cron schedule.
 	paused bool
+	// loc is the zone the task's schedule is evaluated and shown in.
+	loc *time.Location
 }
 
 // NewTaskDetailDialog builds the inspector for a task. task may be nil when the
@@ -191,7 +194,7 @@ func (d *TaskDetailDialog) kindRows(add func(label, value string)) {
 	if d.paused {
 		add("Next run", "paused")
 	} else {
-		add("Next run", home.NextCronRun(task.Cron))
+		add("Next run", home.NextCronRun(task.Cron, d.loc))
 	}
 	if task.MaxConcurrent > 0 {
 		add("Concurrency", fmt.Sprintf("max %d · %s", task.MaxConcurrent, overlapLabel(task.OnOverlap)))
@@ -238,7 +241,7 @@ func (d *TaskDetailDialog) healthRows(row func(label, value string, color color.
 		out = append(out, row("Success rate", rate, uikit.ColorText))
 	}
 	if s.LastFailure != nil {
-		out = append(out, row("Last failure", uikit.FormatTimeAgo(*s.LastFailure), uikit.ColorWarning))
+		out = append(out, row("Last failure", uikit.FormatTimeAgo(*s.LastFailure, d.loc), uikit.ColorWarning))
 	} else {
 		out = append(out, row("Last failure", "none", uikit.ColorSuccess))
 	}

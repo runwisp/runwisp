@@ -113,7 +113,7 @@ func TestNextCronRun_ResultShapes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := NextCronRun(tt.expr)
+			result := NextCronRun(tt.expr, nil)
 			if tt.empty {
 				assert.Empty(t, result)
 				return
@@ -126,7 +126,7 @@ func TestNextCronRun_ResultShapes(t *testing.T) {
 	}
 
 	t.Run("format-is-HH-MM-SS-followed-by-relative-suffix", func(t *testing.T) {
-		result := NextCronRun("* * * * *")
+		result := NextCronRun("* * * * *", nil)
 		require.NotEmpty(t, result)
 		parts := strings.SplitN(result, " (in ", 2)
 		require.Len(t, parts, 2, "result must contain ' (in ' separator: %s", result)
@@ -135,7 +135,7 @@ func TestNextCronRun_ResultShapes(t *testing.T) {
 	})
 
 	t.Run("hourly-shows-seconds-or-minutes", func(t *testing.T) {
-		result := NextCronRun("0 * * * *")
+		result := NextCronRun("0 * * * *", nil)
 		require.NotEmpty(t, result)
 		if !strings.Contains(result, "s") && !strings.Contains(result, "m") {
 			t.Fatalf("expected seconds or minutes in hourly cron result, got %q", result)
@@ -183,7 +183,7 @@ func TestRenderTaskHeader_ServiceTask(t *testing.T) {
 		Kind:      model.KindService,
 		Instances: 3,
 	}
-	out, _ := RenderTaskHeader("my-service", task, 80, false, false)
+	out, _ := RenderTaskHeader("my-service", task, 80, false, false, nil)
 	assert.Contains(t, out, "my-service")
 	assert.Contains(t, out, "service x3")
 }
@@ -193,7 +193,7 @@ func TestRenderTaskHeader_CronTask(t *testing.T) {
 		Kind: model.KindTask,
 		Cron: "*/5 * * * *",
 	}
-	out, _ := RenderTaskHeader("my-task", task, 80, false, false)
+	out, _ := RenderTaskHeader("my-task", task, 80, false, false, nil)
 	assert.Contains(t, out, "my-task")
 	assert.Contains(t, out, "*/5 * * * *")
 	assert.Contains(t, out, "Next:")
@@ -204,27 +204,27 @@ func TestRenderTaskHeader_ManualTask(t *testing.T) {
 		Kind: model.KindTask,
 		Cron: "",
 	}
-	out, _ := RenderTaskHeader("manual-task", task, 80, false, false)
+	out, _ := RenderTaskHeader("manual-task", task, 80, false, false, nil)
 	assert.Contains(t, out, "manual-task")
 	assert.Contains(t, out, "manual")
 }
 
 func TestRenderTaskHeader_NilTask(t *testing.T) {
-	out, _ := RenderTaskHeader("task-name", nil, 80, false, false)
+	out, _ := RenderTaskHeader("task-name", nil, 80, false, false, nil)
 	assert.Contains(t, out, "task-name")
 	assert.Contains(t, out, "manual")
 }
 
 func TestRenderTaskHeader_RunNowButtonLineY(t *testing.T) {
 	task := &model.Task{Kind: model.KindTask, Cron: "*/5 * * * *"}
-	_, btnY := RenderTaskHeader("my-task", task, 80, false, false)
+	_, btnY := RenderTaskHeader("my-task", task, 80, false, false, nil)
 	assert.Equal(t, 2, btnY)
 }
 
 func TestRenderTaskHeader_HoveredButton(t *testing.T) {
 	task := &model.Task{Kind: model.KindTask}
-	outHovered, _ := RenderTaskHeader("t", task, 80, true, false)
-	outNormal, _ := RenderTaskHeader("t", task, 80, false, false)
+	outHovered, _ := RenderTaskHeader("t", task, 80, true, false, nil)
+	outNormal, _ := RenderTaskHeader("t", task, 80, false, false, nil)
 	assert.NotEmpty(t, outHovered)
 	assert.NotEmpty(t, outNormal)
 }
@@ -322,7 +322,7 @@ func TestRenderHeader_NoHeldChipWhenNothingIsHeld(t *testing.T) {
 // RunWisp firing anything, because the scheduler stood down for cron.
 func TestRenderTaskHeader_HeldTaskReplacesNextRunWithTheReason(t *testing.T) {
 	task := &model.Task{Kind: model.KindTask, Cron: "*/5 * * * *", HeldBy: model.HeldByCron}
-	out, _ := RenderTaskHeader("backup", task, 100, false, false)
+	out, _ := RenderTaskHeader("backup", task, 100, false, false, nil)
 	assert.Contains(t, out, "*/5 * * * *", "the schedule is still real and still shown")
 	assert.Contains(t, out, "held")
 	assert.Contains(t, out, "cron still owns this job")
@@ -332,7 +332,7 @@ func TestRenderTaskHeader_HeldTaskReplacesNextRunWithTheReason(t *testing.T) {
 // A paused schedule has no next run; the header says so and names the key.
 func TestRenderTaskHeader_PausedTaskReplacesNextRun(t *testing.T) {
 	task := &model.Task{Kind: model.KindTask, Cron: "*/5 * * * *", ManualTrigger: true}
-	out, _ := RenderTaskHeader("backup", task, 100, false, true)
+	out, _ := RenderTaskHeader("backup", task, 100, false, true, nil)
 	assert.Contains(t, out, "*/5 * * * *")
 	assert.Contains(t, out, "paused, p resumes")
 	assert.NotContains(t, out, "Next:")
@@ -342,4 +342,12 @@ func TestRenderHeader_ShowsPausedChip(t *testing.T) {
 	info := uikit.StartupInfo{Port: 9477, PausedTasks: map[string]time.Time{"backup": time.Now()}}
 	out, _ := RenderHeader(info, false, 100, -1, -1)
 	assert.Contains(t, out, "1 schedule paused")
+}
+
+func TestNextCronRun_ShownInGivenZone(t *testing.T) {
+	loc := time.FixedZone("CEST", 2*3600)
+	result := NextCronRun("15 3 * * *", loc)
+	if !strings.HasPrefix(result, "03:15:00 (in ") {
+		t.Fatalf("next run should read 03:15:00 in the task's zone, got %q", result)
+	}
 }

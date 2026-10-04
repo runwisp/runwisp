@@ -57,8 +57,31 @@ func FormatDuration(run model.Run) string {
 	return fmt.Sprintf("%dh%dm", hrs, mins)
 }
 
+// ResolveLocation returns the zone for an IANA name (the daemon's resolved
+// timezone), falling back to the process zone when the name is empty or unknown.
+func ResolveLocation(name string) *time.Location {
+	if name == "" {
+		return time.Local
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return time.Local
+	}
+	return loc
+}
+
+// FormatTimestamp renders a timestamp as "2006-01-02 15:04:05" in loc. A nil loc
+// means the process zone.
+func FormatTimestamp(t time.Time, loc *time.Location) string {
+	if loc == nil {
+		loc = time.Local
+	}
+	return t.In(loc).Format("2006-01-02 15:04:05")
+}
+
 // FormatTimeAgo renders a short relative-time label ("5m ago", "Jan 02 15:04").
-func FormatTimeAgo(t time.Time) string {
+// Past a day it shows the absolute time in loc (nil means the process zone).
+func FormatTimeAgo(t time.Time, loc *time.Location) string {
 	d := time.Since(t)
 	switch {
 	case d < time.Second:
@@ -70,6 +93,9 @@ func FormatTimeAgo(t time.Time) string {
 	case d < 24*time.Hour:
 		return fmt.Sprintf("%dh ago", int(d.Hours()))
 	default:
-		return t.Format("Jan 02 15:04")
+		if loc == nil {
+			loc = time.Local
+		}
+		return t.In(loc).Format("Jan 02 15:04")
 	}
 }

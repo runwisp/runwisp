@@ -137,7 +137,7 @@ func (v *ExecView) renderTitleRow(w int) string {
 func (v *ExecView) renderMetaRow(w int) string {
 	bgLight := lipgloss.NewStyle().Background(uikit.ColorBgLight)
 	dur := uikit.FormatDuration(*v.Run)
-	startedAt := v.Run.CreatedAt.Local().Format("2006-01-02 15:04:05")
+	startedAt := uikit.FormatTimestamp(v.Run.CreatedAt, v.Loc)
 	metaSep := bgLight.Foreground(uikit.ColorTextMuted).Render("  ·  ")
 
 	metaPrefix := bgLight.Render("  ")

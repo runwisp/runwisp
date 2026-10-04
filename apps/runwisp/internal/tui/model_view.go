@@ -134,7 +134,7 @@ func (m Model) renderMainContent() string {
 func (m Model) renderHomeContent(panelW int, panelView string) string {
 	if m.sidebar.ActiveTask() != "" {
 		runNowHovered := m.mouse.hoverY == m.layout.taskBtnY && m.mouse.hoverX >= uikit.SidebarWidth
-		header, _ := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), panelW, runNowHovered, m.isPaused(m.sidebar.ActiveTask()))
+		header, _ := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), panelW, runNowHovered, m.isPaused(m.sidebar.ActiveTask()), m.taskLoc(m.taskDisplayByName(m.sidebar.ActiveTask())))
 		return header + panelView + m.execList.View()
 	}
 	header, _ := home.RenderHeader(m.info, m.hasLaunchTicket(), panelW, m.homeCursor, m.mouse.homeHover)

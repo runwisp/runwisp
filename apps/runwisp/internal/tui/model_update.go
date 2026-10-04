@@ -947,6 +947,12 @@ func (m Model) handleDaemonInfo(msg uikit.DaemonInfoMsg) (tea.Model, tea.Cmd) {
 		m.info.ConfigStale = msg.Info.ConfigStale
 		m.info.ConfigWarnings = msg.Info.ConfigWarnings
 		m.info.ServiceManaged = msg.Info.ServiceManaged
+		if msg.Info.ResolvedTimezone != m.info.Timezone {
+			m.info.Timezone = msg.Info.ResolvedTimezone
+			m.info.TimezoneSource = msg.Info.TimezoneSource
+			m.loc = uikit.ResolveLocation(m.info.Timezone)
+			m.execWindow.SetLocation(m.loc)
+		}
 		m.sidebar.SetUpdate(msg.Info.UpdateAvailable, msg.Info.LatestVersion)
 	}
 	return m, nil

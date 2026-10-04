@@ -76,7 +76,12 @@ type Model struct {
 
 	panelFocus uikit.PanelFocus
 	info       uikit.StartupInfo
-	client     *apiclient.Client
+	// loc is the daemon's timezone; every timestamp the TUI shows is in it, so a
+	// TUI running in another zone (a container, a service user) still agrees with
+	// the scheduler. taskZones memoises per-task [tasks.*] timezone lookups.
+	loc       *time.Location
+	taskZones map[string]*time.Location
+	client    *apiclient.Client
 
 	// Home page cursor for interactive fields (-1 = not in header area).
 	homeCursor int
@@ -142,6 +147,8 @@ func NewModel(cfg TUIConfig) Model {
 		notifications:    notifications.NewPanel(),
 		panelFocus:       uikit.PanelSidebar,
 		info:             cfg.Info,
+		loc:              uikit.ResolveLocation(cfg.Info.Timezone),
+		taskZones:        make(map[string]*time.Location),
 		client:           cfg.Client,
 		homeCursor:       -1,
 		mouse:            mouseState{homeHover: -1},
@@ -153,6 +160,7 @@ func NewModel(cfg TUIConfig) Model {
 	// serviceInstances reads only the immutable info.Tasks snapshot, so this
 	// closure stays correct across the value-copied model.
 	m.execList.SetInstanceCountLookup(m.serviceInstances)
+	m.execWindow.SetLocation(m.loc)
 	return m
 }
 
@@ -194,6 +202,7 @@ func (m *Model) openExecView(run *model.Run) tea.Cmd {
 		m.updateLayout()
 	}
 	ev := execlist.NewExecView(run)
+	ev.Loc = m.loc
 	ev.TaskIsService = m.isService(run.TaskName)
 	ev.InstanceCount = m.serviceInstances(run.TaskName)
 	mainW, mainH := m.mainSize()
@@ -318,7 +327,7 @@ func (m *Model) recalcExecListHeight() {
 	listH := mainH
 	if m.sidebar.ActivePage() == uikit.PageHome || m.sidebar.ActiveTask() != "" {
 		if m.sidebar.ActiveTask() != "" {
-			header, btnY := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), mainW, false, m.isPaused(m.sidebar.ActiveTask()))
+			header, btnY := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), mainW, false, m.isPaused(m.sidebar.ActiveTask()), m.taskLoc(m.taskDisplayByName(m.sidebar.ActiveTask())))
 			m.layout.taskBtnY = btnY
 			m.layout.taskH = strings.Count(header, "\n")
 			listH -= m.layout.taskH
@@ -348,6 +357,21 @@ func (m *Model) taskDisplayByName(name string) *model.Task {
 		}
 	}
 	return nil
+}
+
+// taskLoc is the zone a task's schedule runs in: its own [tasks.*] timezone when
+// set, otherwise the daemon's. A nil task (definition not cached) gets the
+// daemon's.
+func (m *Model) taskLoc(task *model.Task) *time.Location {
+	if task == nil || task.Timezone == "" {
+		return m.loc
+	}
+	loc, ok := m.taskZones[task.Timezone]
+	if !ok {
+		loc = uikit.ResolveLocation(task.Timezone)
+		m.taskZones[task.Timezone] = loc
+	}
+	return loc
 }
 
 // isPaused reports whether an operator paused the named task's cron schedule.

@@ -203,9 +203,10 @@ func (dm *DialogManager) HasTaskDetail() bool {
 
 // ShowTaskDetail opens the task inspector for the named task. Health figures
 // arrive asynchronously and are applied via ApplyTaskSummary.
-func (dm *DialogManager) ShowTaskDetail(taskName string, task *model.Task, paused bool) {
+func (dm *DialogManager) ShowTaskDetail(taskName string, task *model.Task, paused bool, loc *time.Location) {
 	d := NewTaskDetailDialog(taskName, task)
 	d.paused = paused
+	d.loc = loc
 	dm.taskDetail = &d
 }
 
@@ -237,8 +238,9 @@ func (dm *DialogManager) HasRunDetail() bool {
 }
 
 // ShowRunDetail opens the run inspector for the given run.
-func (dm *DialogManager) ShowRunDetail(run *model.Run, isService bool, instanceCount int) {
+func (dm *DialogManager) ShowRunDetail(run *model.Run, isService bool, instanceCount int, loc *time.Location) {
 	d := NewRunDetailDialog(run, isService, instanceCount)
+	d.loc = loc
 	dm.runDetail = &d
 }
 
