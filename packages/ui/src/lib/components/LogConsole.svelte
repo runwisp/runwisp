@@ -6,6 +6,7 @@
     import { ansiLineToHtml, visibleColumns } from "../log-console/ansi.js";
     import { LogCache } from "../log-console/LogCache.svelte.js";
     import { LogFetcher } from "../log-console/LogFetcher.svelte.js";
+    import { createHighlightScroll } from "../log-console/highlight-scroll.js";
     import type { FetchLogsFn, LogEvent } from "../log-console/types.js";
     import { formatBytes } from "../utils/format.js";
 
@@ -538,29 +539,32 @@
         scrollTop = 0;
     }
 
-    // Search-hit deep-link: when highlightLine flips to a non-null number,
-    // scroll the viewport so that line is centred, and pulse a one-shot
-    // flash class for ~1.5s. Cleaning up the timer on prop change keeps a
-    // rapid sequence of jumps from leaking timers.
-    $effect(() => {
-        const target = highlightLine;
-        if (target === null || target === undefined) {
+    // Search-hit deep-link: scroll the viewport so the highlighted line is
+    // centred, once per highlightLine, and pulse a one-shot flash class for
+    // ~1.5s. createHighlightScroll keeps later layout changes (new lines on a
+    // live run, resizes) from pulling the view back to the hit.
+    const syncHighlightScroll = createHighlightScroll({
+        line: () => highlightLine,
+        ready: (line) => containerEl !== null && containerHeight > 0 && line < cache.totalLines,
+        reveal: (line) => {
+            if (!containerEl) return;
+            const targetY = lineTop(line) - containerHeight / 2 + lineHeight / 2;
+            const clamped = Math.max(0, Math.min(targetY, totalHeight - containerHeight));
+            containerEl.scrollTo({ top: clamped, behavior: "smooth" });
+            isAutoScroll = false;
+            userScrolledUp = true;
+            flashLine = line;
+            if (flashTimer !== null) clearTimeout(flashTimer);
+            flashTimer = setTimeout(() => {
+                flashLine = null;
+                flashTimer = null;
+            }, 1500);
+        },
+        clear: () => {
             flashLine = null;
-            return;
-        }
-        if (!containerEl) return;
-        const targetY = lineTop(target) - containerHeight / 2 + lineHeight / 2;
-        const clamped = Math.max(0, Math.min(targetY, totalHeight - containerHeight));
-        containerEl.scrollTo({ top: clamped, behavior: "smooth" });
-        isAutoScroll = false;
-        userScrolledUp = true;
-        flashLine = target;
-        if (flashTimer !== null) clearTimeout(flashTimer);
-        flashTimer = setTimeout(() => {
-            flashLine = null;
-            flashTimer = null;
-        }, 1500);
+        },
     });
+    $effect(syncHighlightScroll);
 
     $effect(() => {
         if (!containerEl) return;
