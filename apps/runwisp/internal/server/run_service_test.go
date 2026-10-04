@@ -771,6 +771,35 @@ func TestStopRun_TerminateError(t *testing.T) {
 	runner.AssertExpectations(t)
 }
 
+// A run of a manual_trigger = false task is as locked as the task itself.
+func TestStopRun_ManualTriggerDisabled(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(map[string]*model.Task{
+		"locked": {Name: "locked", ManualTrigger: false},
+	}, repo, runner)
+
+	repo.On("GetRun", mock.Anything, "run-1").Return(&model.Run{ID: "run-1", TaskName: "locked", Status: model.PhaseRunning}, nil)
+
+	err := svc.StopRun(context.Background(), "run-1")
+	assert.ErrorIs(t, err, ErrManualTriggerDisabled)
+	runner.AssertNotCalled(t, "TerminateRun", "run-1")
+}
+
+// A run whose task is not in the registry (ad-hoc station run, or removed by a
+// reload) has no TOML lock, so it stays stoppable.
+func TestStopRun_UnknownTaskStillStoppable(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(map[string]*model.Task{}, repo, runner)
+
+	repo.On("GetRun", mock.Anything, "run-1").Return(&model.Run{ID: "run-1", TaskName: "adhoc-1", Status: model.PhaseRunning}, nil)
+	runner.On("TerminateRun", "run-1").Return(nil)
+
+	assert.NoError(t, svc.StopRun(context.Background(), "run-1"))
+	runner.AssertExpectations(t)
+}
+
 // ---- DeleteRun ----
 
 func TestDeleteRun_RunNotFound(t *testing.T) {
@@ -878,6 +907,25 @@ func TestBulkCancel_TerminatesEachResolvedRun(t *testing.T) {
 	assert.Equal(t, 2, signalled)
 	repo.AssertExpectations(t)
 	runner.AssertExpectations(t)
+}
+
+func TestBulkCancel_SkipsManualTriggerDisabled(t *testing.T) {
+	repo := new(testutil.MockRunRepository)
+	runner := new(mockTaskRunner)
+	svc := makeRunService(map[string]*model.Task{
+		"locked": {Name: "locked", ManualTrigger: false},
+		"open":   {Name: "open", ManualTrigger: true},
+	}, repo, runner)
+
+	sel := model.RunSelector{IDs: []string{"a", "b"}}
+	repo.On("ResolveSelectorIDs", mock.Anything, sel, string(model.PhaseRunning)).Return(
+		[]storage.RunRef{{ID: "a", TaskName: "locked"}, {ID: "b", TaskName: "open"}}, nil)
+	runner.On("TerminateRun", "b").Return(nil)
+
+	signalled, err := svc.bulkCancel(t.Context(), sel)
+	require.NoError(t, err)
+	assert.Equal(t, 1, signalled)
+	runner.AssertNotCalled(t, "TerminateRun", "a")
 }
 
 func TestBulkCancel_ResolveError(t *testing.T) {
