@@ -283,6 +283,13 @@ func (m *defaultTaskManager) upsertTaskLocked(task *model.Task) []*model.Run {
 
 	if task.Kind.IsService() {
 		m.upsertSupervisor(ts, task)
+	} else if ts.supervisor != nil {
+		// A service reloaded into a plain task: its supervisor stays behind
+		// (late exits still report to it) but stopped as bookkeeping only, so
+		// reviving the service later must restart it per Autostart, not leave
+		// the stop in place.
+		ts.supervisor.MarkStopped()
+		ts.stoppedByRemoval = true
 	}
 
 	if task.OnOverlap == model.PolicyQueue {
