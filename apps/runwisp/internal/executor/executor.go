@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sync"
@@ -197,14 +198,17 @@ func (r *RoutingExecutor) SetRunWatcher(watcher RunWatcher) {
 
 // Execute resolves the execution backend and runs the task, streaming output.
 func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *model.Run) *ExecuteResult {
-	if err := r.checkDisk(); err != nil {
-		return &ExecuteResult{ExitCode: -1, Error: err}
-	}
+	diskErr := r.checkDisk()
 
 	killer := newRunKiller(ctx)
 	defer killer.cancel()
 	writer, logPath, err := r.prepareLogWriter(task, run, killer)
 	if err != nil {
+		// No log to put the reason in; the daemon log is all there is.
+		if diskErr != nil {
+			err = diskErr
+		}
+		slog.Error("Run failed before it started", "task", task.Name, "run", run.ID, "err", err)
 		return &ExecuteResult{ExitCode: -1, Error: err}
 	}
 	defer func() {
@@ -214,6 +218,11 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	}()
 
 	r.notifyRunUpdated(run, logPath)
+
+	if diskErr != nil {
+		r.systemLine(writer, task, run, diskErr.Error())
+		return &ExecuteResult{ExitCode: -1, Error: diskErr}
+	}
 
 	backend, execDef, errResult := r.resolveBackend(task, run, writer)
 	if errResult != nil {
@@ -242,8 +251,25 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 	stopWatcher()
 
 	result := classifyExecuteResult(killer.ctx, killReason, exitCode, waitErr)
+	if msg := abnormalExitMessage(result.Error); msg != "" {
+		r.systemLine(writer, task, run, msg)
+	}
 	result.OutputMatched = matcher.pattern() != ""
 	return result
+}
+
+// abnormalExitMessage describes a wait error that the exit code alone does not
+// explain, such as death by signal (exit -1, "signal: killed"). A plain non-zero
+// exit is already shown as the exit code, so it returns "".
+func abnormalExitMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() >= 0 {
+		return ""
+	}
+	return "Process terminated abnormally: " + err.Error()
 }
 
 // outputMatcher checks output lines against a task's `failures` output
