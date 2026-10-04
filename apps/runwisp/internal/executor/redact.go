@@ -3,7 +3,10 @@
 
 package executor
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // redactMask is what a matched secret value is rewritten to in captured output.
 const redactMask = "[redacted]"
@@ -26,17 +29,30 @@ type secretRedactor struct {
 // there is nothing to redact (the common case — a nil *secretRedactor is a safe
 // no-op through all its methods, so callers never branch).
 func newSecretRedactor(secrets map[string]string) *secretRedactor {
-	var pairs []string
+	var values []string
 	for _, v := range secrets {
 		if v == "" {
 			// An empty old string makes strings.Replacer match between every
 			// rune; skip it (an empty secret value can't leak anyway).
 			continue
 		}
-		pairs = append(pairs, v, redactMask)
+		values = append(values, v)
 	}
-	if len(pairs) == 0 {
+	if len(values) == 0 {
 		return nil
+	}
+	// strings.Replacer tries pairs in argument order at each position, so a
+	// secret that is a prefix of another must come after it or the longer one
+	// is only partly masked. Map order is random; sort for a fixed result.
+	slices.SortFunc(values, func(a, b string) int {
+		if len(a) != len(b) {
+			return len(b) - len(a)
+		}
+		return strings.Compare(a, b)
+	})
+	pairs := make([]string, 0, 2*len(values))
+	for _, v := range values {
+		pairs = append(pairs, v, redactMask)
 	}
 	return &secretRedactor{r: strings.NewReplacer(pairs...)}
 }

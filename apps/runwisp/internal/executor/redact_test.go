@@ -78,3 +78,12 @@ func TestCommitGroup_NoSecretsPassesThrough(t *testing.T) {
 	assert.Contains(t, string(data), "plain line")
 	assert.Equal(t, []string{"plain line"}, published)
 }
+
+// One secret being a prefix of another must not leave the longer one partly
+// visible, whatever order the map iterates in.
+func TestSecretRedactor_PrefixSecretMasksLongerWhole(t *testing.T) {
+	for range 50 {
+		r := newSecretRedactor(map[string]string{"SHORT": "abc", "LONG": "abcdef", "OTHER": "abcd"})
+		assert.Equal(t, "x [redacted] y", r.text("x abcdef y"))
+	}
+}
