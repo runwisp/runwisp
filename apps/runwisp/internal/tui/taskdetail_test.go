@@ -108,6 +108,24 @@ func TestTaskDetailDialog_View_RendersDefinitionAndHealth(t *testing.T) {
 	}
 }
 
+func TestTaskDetailDialog_View_ShowsDescription(t *testing.T) {
+	d := NewTaskDetailDialog("test", &model.Task{Name: "test", Cron: "0 3 * * *", Description: "This is a test"})
+	if !strings.Contains(d.View(80, 30), "This is a test") {
+		t.Fatal("view should show the task description")
+	}
+}
+
+func TestTaskDetailDialog_View_ClipsLongDescription(t *testing.T) {
+	d := NewTaskDetailDialog("test", &model.Task{Name: "test", Description: strings.Repeat("word ", 80)})
+	view := d.View(80, 30)
+	if !strings.Contains(view, "…") {
+		t.Fatal("a description past the line cap should end in an ellipsis")
+	}
+	if !strings.Contains(view, "Recent health") {
+		t.Fatal("the health block should survive a long description")
+	}
+}
+
 func TestTaskDetailDialog_View_ServiceWithAllFields(t *testing.T) {
 	d := NewTaskDetailDialog("web", &model.Task{
 		Name:          "web",

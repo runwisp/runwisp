@@ -12,6 +12,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -78,8 +79,11 @@ func (d *TaskDetailDialog) View(screenWidth, screenHeight int) string {
 	lines := []string{
 		modalEmptyLine(innerWidth),
 		modalSurfaceLine(d.taskName, innerWidth, uikit.ColorTextBright, true),
-		modalEmptyLine(innerWidth),
 	}
+	if desc := d.descriptionLines(innerWidth); len(desc) > 0 {
+		lines = append(lines, desc...)
+	}
+	lines = append(lines, modalEmptyLine(innerWidth))
 	lines = append(lines, d.definitionRows(row, innerWidth)...)
 	lines = append(lines,
 		modalEmptyLine(innerWidth),
@@ -94,6 +98,28 @@ func (d *TaskDetailDialog) View(screenWidth, screenHeight int) string {
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorPrimary, lines)
 	return box.view
+}
+
+// maxDescriptionLines caps the wrapped description so a long one can't push the
+// health block off a short terminal.
+const maxDescriptionLines = 3
+
+// descriptionLines renders the task's description under its name, wrapped to the
+// modal width and clipped with an ellipsis past maxDescriptionLines.
+func (d *TaskDetailDialog) descriptionLines(innerWidth int) []string {
+	if d.task == nil || strings.TrimSpace(d.task.Description) == "" {
+		return nil
+	}
+	wrapped := strings.Split(ansi.Wrap(strings.TrimSpace(d.task.Description), innerWidth-4, ""), "\n")
+	if len(wrapped) > maxDescriptionLines {
+		wrapped = wrapped[:maxDescriptionLines]
+		wrapped[maxDescriptionLines-1] = uikit.TruncateToWidth(wrapped[maxDescriptionLines-1]+"…", innerWidth-4)
+	}
+	out := make([]string, len(wrapped))
+	for i, l := range wrapped {
+		out[i] = modalSurfaceLine(l, innerWidth, uikit.ColorTextMuted, false)
+	}
+	return out
 }
 
 // definitionRows renders the static task definition: kind, schedule, concurrency
