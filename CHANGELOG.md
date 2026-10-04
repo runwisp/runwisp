@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Web UI pages now show loading skeletons while data arrives, instead of flashing a blank screen, a false "No runs yet", or the task you just left.
+- Compose-backed services no longer hang on start when the Docker engine stops responding; the leftover-container check now gives up after 10 seconds.
 
 ## [1.3.1] - 2026-10-01
 

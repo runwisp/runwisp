@@ -18,8 +18,15 @@ go vet ./...
 
 # Fail on known vulnerabilities reachable from our code, in the standard
 # library (the toolchain pinned in go.mod) or in a module. Pinned, and kept out
-# of go.mod like golangci-lint.
-go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+# of go.mod like golangci-lint; installed into <repo>/.bin so CI can cache it.
+GOVULNCHECK_VERSION="v1.8.0"
+bin_dir=$(cd "${script_dir}/../../.." && pwd)/.bin
+govulncheck="${bin_dir}/govulncheck"
+if [[ ! -x "${govulncheck}" || "$(go version -m "${govulncheck}" | awk '$1 == "mod" { print $3 }')" != "${GOVULNCHECK_VERSION}" ]]; then
+  mkdir -p "${bin_dir}"
+  GOBIN="${bin_dir}" go install "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}"
+fi
+"${govulncheck}" ./...
 
 unformatted_files=$(gofmt -l .)
 if [[ -n "${unformatted_files}" ]]; then

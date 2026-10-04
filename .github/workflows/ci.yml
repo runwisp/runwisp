@@ -30,6 +30,15 @@ jobs:
           go-version-file: apps/runwisp/go.mod
           cache-dependency-path: apps/runwisp/go.sum
 
+      # sqlc, golangci-lint and govulncheck are pinned in apps/runwisp/scripts and
+      # compiled from source on a miss, which costs ~2 min. Keyed per job: each
+      # job installs a different subset, and a shared key would keep only the first.
+      - name: Cache pinned Go tools
+        uses: actions/cache@v4
+        with:
+          path: .bin
+          key: go-tools-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/runwisp/go.mod', 'apps/runwisp/scripts/sqlc-generate.sh', 'apps/runwisp/scripts/lint-go.sh', 'apps/runwisp/scripts/check-go.sh') }}
+
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: package.json
@@ -57,6 +66,15 @@ jobs:
         with:
           go-version-file: apps/runwisp/go.mod
           cache-dependency-path: apps/runwisp/go.sum
+
+      # sqlc, golangci-lint and govulncheck are pinned in apps/runwisp/scripts and
+      # compiled from source on a miss, which costs ~2 min. Keyed per job: each
+      # job installs a different subset, and a shared key would keep only the first.
+      - name: Cache pinned Go tools
+        uses: actions/cache@v4
+        with:
+          path: .bin
+          key: go-tools-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/runwisp/go.mod', 'apps/runwisp/scripts/sqlc-generate.sh', 'apps/runwisp/scripts/lint-go.sh', 'apps/runwisp/scripts/check-go.sh') }}
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
@@ -110,6 +128,15 @@ jobs:
           go-version-file: apps/runwisp/go.mod
           cache-dependency-path: apps/runwisp/go.sum
 
+      # sqlc, golangci-lint and govulncheck are pinned in apps/runwisp/scripts and
+      # compiled from source on a miss, which costs ~2 min. Keyed per job: each
+      # job installs a different subset, and a shared key would keep only the first.
+      - name: Cache pinned Go tools
+        uses: actions/cache@v4
+        with:
+          path: .bin
+          key: go-tools-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/runwisp/go.mod', 'apps/runwisp/scripts/sqlc-generate.sh', 'apps/runwisp/scripts/lint-go.sh', 'apps/runwisp/scripts/check-go.sh') }}
+
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version-file: package.json
@@ -152,6 +179,15 @@ jobs:
         with:
           go-version-file: apps/runwisp/go.mod
           cache-dependency-path: apps/runwisp/go.sum
+
+      # sqlc, golangci-lint and govulncheck are pinned in apps/runwisp/scripts and
+      # compiled from source on a miss, which costs ~2 min. Keyed per job: each
+      # job installs a different subset, and a shared key would keep only the first.
+      - name: Cache pinned Go tools
+        uses: actions/cache@v4
+        with:
+          path: .bin
+          key: go-tools-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/runwisp/go.mod', 'apps/runwisp/scripts/sqlc-generate.sh', 'apps/runwisp/scripts/lint-go.sh', 'apps/runwisp/scripts/check-go.sh') }}
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:

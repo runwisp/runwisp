@@ -26,14 +26,13 @@ import (
 // payoff to a longer wait.
 const composeAvailableTimeout = 2 * time.Second
 
-// composeCleanupTimeout bounds the `docker ps`/`docker rm -f` calls made from
-// Process.Cleanup (via removeManagedInstance). Cleanup runs in the same
-// goroutine the daemon shutdown coordinator waits on after ForceKill has
-// already unblocked it; without a deadline a hung (not merely unreachable —
-// that fails fast) Docker/Podman engine would stall shutdown indefinitely even
-// though the process itself is already dead. A var (not const) so tests can
-// shrink it instead of waiting out the real 10s to prove the deadline fires.
-var composeCleanupTimeout = 10 * time.Second
+// composeHousekeepingTimeout bounds the `docker ps`/`docker rm -f` calls made by
+// reclaim-on-start and Process.Cleanup (both via removeManagedInstance). Without
+// a deadline a hung (not merely unreachable, that fails fast) Docker/Podman
+// engine would stall a run before it launches, or stall shutdown: Cleanup runs
+// in the goroutine the shutdown coordinator waits on after ForceKill. A var (not
+// const) so tests can shrink it instead of waiting out the real 10s.
+var composeHousekeepingTimeout = 10 * time.Second
 
 // composeExecShell is the interpreter exec-mode hands the script to *inside the
 // target container*. It is not the daemon's `shell` setting: that key is
@@ -106,7 +105,9 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 	// touched. Stack mode lets compose own container lifecycle, and exec mode
 	// targets a container we never created, so both are exempt.
 	if ce.Mode == model.ComposeModeRun {
-		b.removeManagedInstance(ctx, task.Name, instanceIndex)
+		reclaimCtx, cancel := context.WithTimeout(ctx, composeHousekeepingTimeout)
+		b.removeManagedInstance(reclaimCtx, task.Name, instanceIndex)
+		cancel()
 	}
 
 	args := buildComposeArgs(ce, task, run, b.fingerprint)
@@ -145,7 +146,7 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 	if ce.Mode == model.ComposeModeRun {
 		taskName := task.Name
 		proc.Cleanup = func() {
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), composeCleanupTimeout)
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), composeHousekeepingTimeout)
 			defer cancel()
 			b.removeManagedInstance(cleanupCtx, taskName, instanceIndex)
 		}
