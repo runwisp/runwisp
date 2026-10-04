@@ -21,6 +21,7 @@ import (
 	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
+	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -679,7 +680,7 @@ func TestRunServiceInstall_PrintRendersUnit(t *testing.T) {
 	tomlPath := filepath.Join(dir, "runwisp.toml")
 	require.NoError(t, os.WriteFile(tomlPath, []byte("[daemon]\n"), 0o600))
 
-	f := Flags{CfgFile: tomlPath, DataDir: dir, Host: "127.0.0.1", Port: 9477}
+	f := Flags{CfgFile: tomlPath, DataDir: dir, Host: "127.0.0.1", Port: testutil.PickFreePort(t)}
 
 	// Force --print so install path skips disk I/O.
 	serviceInstallOpts.Print = true
@@ -715,7 +716,7 @@ func TestRunServiceInstall_DryRunPrintsPlan(t *testing.T) {
 	tomlPath := filepath.Join(dir, "runwisp.toml")
 	require.NoError(t, os.WriteFile(tomlPath, []byte("[daemon]\n"), 0o600))
 
-	f := Flags{CfgFile: tomlPath, DataDir: dir, Host: "127.0.0.1", Port: 9477}
+	f := Flags{CfgFile: tomlPath, DataDir: dir, Host: "127.0.0.1", Port: testutil.PickFreePort(t)}
 
 	serviceInstallOpts.DryRun = true
 	requireUnprivileged(t)
