@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/runwisp/runwisp/internal/version"
 	"github.com/stretchr/testify/assert"
@@ -127,15 +128,31 @@ func TestOpenMetrics_EmptyState(t *testing.T) {
 	assert.Contains(t, body, "# TYPE runwisp_task_active_runs gauge")
 }
 
-func TestOpenMetrics_ToleratesSummaryError(t *testing.T) {
+// A failed summary query must fail the scrape: a 200 with zeroed counters reads
+// as a counter reset to Prometheus.
+func TestOpenMetrics_SummaryErrorFailsScrape(t *testing.T) {
 	srv, repo, _ := buildOpenMetricsServer(t, &model.DaemonInfo{})
 	repo.On("GetRunSummary", mock.Anything).Return(nil, assert.AnError)
 
 	code, body, _ := scrapeMetrics(t, srv)
-	require.Equal(t, http.StatusOK, code,
-		"scrape must succeed even if the summary query fails — partial data beats no data")
-	assert.Contains(t, body, `runwisp_runs_total{status="success"} 0`)
-	assert.True(t, strings.HasSuffix(body, "# EOF\n"))
+	require.Equal(t, http.StatusInternalServerError, code)
+	assert.NotContains(t, body, "runwisp_runs_total")
+}
+
+// The task gauge follows the live registry, not the boot-time DaemonInfo, so a
+// reload that adds or removes tasks shows up on the next scrape.
+func TestOpenMetrics_TaskGaugeTracksLiveRegistry(t *testing.T) {
+	srv, repo, runner := buildOpenMetricsServer(t, &model.DaemonInfo{
+		Tasks: []model.Task{{Name: "removed", Kind: model.KindTask}},
+	})
+	srv.tasks = runtime.NewTaskRegistry(map[string]*model.Task{"added": {Name: "added", Kind: model.KindTask}})
+	repo.On("GetRunSummary", mock.Anything).Return(&model.RunSummary{}, nil)
+	runner.On("GetActiveRunCount", "added").Return(2)
+
+	code, body, _ := scrapeMetrics(t, srv)
+	require.Equal(t, http.StatusOK, code)
+	assert.Contains(t, body, `runwisp_task_active_runs{task="added",kind="task"} 2`)
+	assert.NotContains(t, body, `task="removed"`)
 }
 
 func TestEscapeLabelValue(t *testing.T) {

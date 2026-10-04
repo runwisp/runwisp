@@ -6,6 +6,7 @@ package server
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -25,14 +26,27 @@ const openMetricsContentType = "application/openmetrics-text; version=1.0.0; cha
 // group so external scrapers can hit it without a JWT — operators bind to
 // loopback or firewall the port to keep it private.
 func (srv *Server) handleOpenMetrics(w http.ResponseWriter, r *http.Request) {
+	// Query before the first byte: once the 200 header is out, a DB failure can
+	// only be reported as zeroed counters, which a scraper reads as a counter
+	// reset rather than a failed scrape.
+	summary, err := srv.db.GetRunSummary(r.Context())
+	if err != nil {
+		slog.Error("metrics: run summary query failed", "err", err)
+		http.Error(w, "run summary unavailable", http.StatusInternalServerError)
+		return
+	}
+	if summary == nil {
+		summary = &model.RunSummary{}
+	}
 	w.Header().Set("Content-Type", openMetricsContentType)
 	w.WriteHeader(http.StatusOK)
 
-	summary, err := srv.db.GetRunSummary(r.Context())
-	if err != nil || summary == nil {
-		summary = &model.RunSummary{}
+	// Live registry, not the boot-time DaemonInfo list: a reload adds and
+	// removes tasks (see humaGetInfo).
+	tasks := srv.currentTasks()
+	if tasks == nil {
+		tasks = srv.stats.GetDaemonInfo().Tasks
 	}
-	daemonInfo := srv.stats.GetDaemonInfo()
 	stats := srv.stats.GetSystemStats()
 	uptime := time.Since(srv.stats.startTime).Seconds()
 
@@ -49,7 +63,7 @@ func (srv *Server) handleOpenMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeHelpType(w, "runwisp_task_active_runs", "gauge", "Currently active runs per task.")
-	for _, task := range daemonInfo.Tasks {
+	for _, task := range tasks {
 		kind := string(task.Kind)
 		if kind == "" {
 			kind = "task"
