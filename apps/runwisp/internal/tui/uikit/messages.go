@@ -170,6 +170,9 @@ type LogOlderLoadedMsg struct {
 	Lines     []server.LogLineEntry
 	FirstLine int64
 	Total     int64
+	// FirstAvailable is the lowest line the server still holds (a rotated log
+	// has dropped everything below it).
+	FirstAvailable int64
 }
 
 // LogTailLoadedMsg delivers the initial tail page for a run's log, fetched in

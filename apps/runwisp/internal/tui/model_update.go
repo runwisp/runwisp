@@ -694,11 +694,21 @@ func (m Model) handleLogOlderLoaded(msg uikit.LogOlderLoadedMsg) (tea.Model, tea
 		return m, nil
 	}
 	m.execView.LoadingOlder = false
-	pane := make([]logpane.Line, len(msg.Lines))
-	for i, l := range msg.Lines {
-		pane[i] = logpane.Line{Stream: l.Stream, Text: l.Text}
+	m.execView.Pane.SetFirstAvailable(int(msg.FirstAvailable))
+	// On a rotated log the server clamps `from` up to FirstAvailable but keeps the
+	// requested limit, so the page can run past the lines already loaded. Keep only
+	// the lines below the loaded range, and anchor on the first one returned.
+	older := msg.Lines
+	for len(older) > 0 && older[len(older)-1].N >= int64(m.execView.Pane.FirstLoadedLineNum()) {
+		older = older[:len(older)-1]
 	}
-	m.execView.Pane.PrependLines(pane, int(msg.FirstLine))
+	if len(older) > 0 {
+		pane := make([]logpane.Line, len(older))
+		for i, l := range older {
+			pane[i] = logpane.Line{Stream: l.Stream, Text: l.Text}
+		}
+		m.execView.Pane.PrependLines(pane, int(older[0].N))
+	}
 	if msg.Total > 0 {
 		m.execView.Pane.SetTotalLines(int(msg.Total))
 	}

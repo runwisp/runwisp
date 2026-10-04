@@ -6,6 +6,7 @@ package tui
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -604,6 +605,47 @@ func TestHandleLogOlderLoaded_PrependsLinesAndUpdatesTotal(t *testing.T) {
 	}
 	if m.execView.LoadingOlder {
 		t.Fatal("LoadingOlder must be cleared once the page arrives")
+	}
+}
+
+// On a rotated log the server clamps `from` up to firstAvailable but keeps the
+// requested limit, so the page overlaps the lines already loaded. Only the lines
+// below the loaded range may be prepended, and once the oldest surviving line is
+// loaded the pane must stop asking for older ones.
+func TestHandleLogOlderLoaded_RotatedLogDoesNotDuplicateLines(t *testing.T) {
+	m := newTestModel(nil)
+	run := &model.Run{ID: "r-1", TaskName: "t1", Status: model.PhaseRunning}
+	ev := execlist.NewExecView(run)
+	m.execView = &ev
+	m.execView.LoadingOlder = true
+	for n := int64(300); n < 310; n++ {
+		m.execView.Pane.AppendLogLine(n, "stdout", fmt.Sprintf("l%d", n), 0)
+	}
+	m.execView.Pane.Scroll = 0
+
+	// Asked for [100,300); the server clamped to 250 and returned 100 lines.
+	page := make([]server.LogLineEntry, 0, 100)
+	for n := int64(250); n < 350; n++ {
+		page = append(page, server.LogLineEntry{N: n, Stream: "stdout", Text: fmt.Sprintf("l%d", n)})
+	}
+	updated, _ := m.handleLogOlderLoaded(uikit.LogOlderLoadedMsg{
+		RunID: "r-1", Lines: page, FirstLine: 250, Total: 350, FirstAvailable: 250,
+	})
+
+	pane := updated.(Model).execView.Pane
+	if pane.FirstLoadedLine != 250 {
+		t.Fatalf("FirstLoadedLine: want 250, got %d", pane.FirstLoadedLine)
+	}
+	if len(pane.Lines) != 60 {
+		t.Fatalf("buffer should hold lines 250..309 once (60), got %d", len(pane.Lines))
+	}
+	for i, l := range pane.Lines {
+		if want := fmt.Sprintf("l%d", 250+i); l.Text != want {
+			t.Fatalf("buffer[%d]: want %s, got %s (gutter would go non-monotonic)", i, want, l.Text)
+		}
+	}
+	if pane.NeedsOlder() {
+		t.Fatal("nothing older than the first available line exists; the pane must stop paging")
 	}
 }
 

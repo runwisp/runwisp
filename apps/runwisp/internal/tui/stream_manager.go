@@ -199,10 +199,11 @@ func (sm *StreamManager) FetchOlderLogs(runID string, beforeLine, count int64) t
 			first = page.Lines[0].N
 		}
 		return uikit.LogOlderLoadedMsg{
-			RunID:     runID,
-			Lines:     page.Lines,
-			FirstLine: first,
-			Total:     page.TotalLines,
+			RunID:          runID,
+			Lines:          page.Lines,
+			FirstLine:      first,
+			Total:          page.TotalLines,
+			FirstAvailable: page.FirstAvailable,
 		}
 	}
 }
