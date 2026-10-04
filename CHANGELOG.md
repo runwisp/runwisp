@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Web UI opens the login prompt when your session expires while a page is open, so run lists and notifications don't stop updating.
+- The Web UI keeps a single live stream when a page subscribes during a reconnect.
+- Log search paging moves past a hit on the first line of a log instead of returning it again.
+- Line counts and tail views stay correct for running or killed runs whose log has a line of 64 KiB or more.
+- A notification that groups repeated failures now links to the latest run.
+- A search hit opened in a running run's log is scrolled to once, so new output doesn't pull the view back.
 - `runwisp run` exits 1 when a run is marked failed but the process exited 0, such as a `failures` output pattern match or a timeout the task handled.
 - `runwisp import` reads supervisord configs the way supervisord does (inline `;` and `#` comments are dropped), keeps matched quote pairs in crontab environment values, writes control characters in commands as valid TOML, and quotes systemd `ExecStart` arguments such as `*` and `;` so the shell doesn't act on them.
 - `runwisp import systemd` leaves out an `EnvironmentFile=-path` that doesn't exist yet (with a note) and no longer turns `TimeoutStopSec=0` into an immediate kill.
@@ -30,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - When one secret value is a prefix of another, the longer one is now always fully masked in run output.
+- Slack notifications escape `&`, `<` and `>` and keep task output inside its code block, so output can't produce `@channel` mentions or links.
 
 ## [1.4.0] - 2026-10-05
 
