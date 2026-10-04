@@ -222,7 +222,6 @@ func (sd *supervisordState) processProgram(rawName string, s *iniSection, group 
 		return
 	}
 	isService := taskKind.IsService()
-	sd.noteKindChoice(s, ref)
 
 	prefix, schedule := "services.", "service"
 	if !isService {
@@ -234,7 +233,9 @@ func (sd *supervisordState) processProgram(rawName string, s *iniSection, group 
 		b.set("group", tomlString(group))
 	}
 	run := sd.applyCommand(&b, s, ref, rawName)
-	if !isService {
+	if isService {
+		sd.applyRestart(&b, s, ref)
+	} else {
 		sd.applyRunOnce(&b, s, ref)
 	}
 	env := sd.applyProgramKeys(&b, s, ref, isService)
@@ -248,43 +249,47 @@ func (sd *supervisordState) processProgram(rawName string, s *iniSection, group 
 
 // programKind decides whether a [program] maps onto a RunWisp service.
 // supervisord programs are long-running and restart by default, which maps onto
-// a RunWisp service (services are always-on and always restart). The one
-// exception is autorestart=false: that program runs once and is left alone,
-// which is a run-once task, not a service. supervisord's own default is
-// "unexpected", so an omitted autorestart still means service.
+// a RunWisp service. The one exception is autorestart=false (or any of
+// supervisord's other false spellings: no, off, 0): that program runs once and
+// is left alone, which is a run-once task, not a service. supervisord's own
+// default is "unexpected", so an omitted autorestart still means service.
 //
-// Pure, so the kind is available for identity dedup before any note is emitted —
-// noteKindChoice explains the non-obvious case once the final name is known.
+// Pure, so the kind is available for identity dedup before any note is emitted.
 func programKind(s *iniSection) model.TaskKind {
-	v, ok := s.get("autorestart")
-	if !ok {
-		return model.KindService
-	}
-	if strings.EqualFold(strings.TrimSpace(v), "false") {
-		return model.KindTask
+	if v, ok := s.get("autorestart"); ok {
+		if on, valid := parseBool(v); valid && !on {
+			return model.KindTask
+		}
 	}
 	return model.KindService
 }
 
-// noteKindChoice explains an autorestart value whose mapping isn't obvious.
-// An omitted autorestart gets the same explanation as an explicit
-// autorestart=unexpected: supervisord's own default IS "unexpected" (see
-// programKind), so the two cases behave identically and both deserve the
-// same heads-up — omitting the key is, in practice, the most common way
-// operators end up here.
-func (sd *supervisordState) noteKindChoice(s *iniSection, ref itemRef) {
+// applyRestart maps autorestart onto the service's restart key. supervisord's
+// default (and `unexpected`) restarts only after an exit it doesn't expect,
+// which is RunWisp's on_failure; true restarts after any exit, RunWisp's
+// default, so it emits no key. The false spellings never get here (programKind
+// made them tasks). A value that isn't a supervisord boolean or `unexpected` is
+// reported.
+func (sd *supervisordState) applyRestart(b *block, s *iniSection, ref itemRef) {
 	v, ok := s.get("autorestart")
-	switch {
-	case !ok:
-		ref.note(NoteAutorestartUnexpected,
-			"autorestart not set (supervisord defaults to unexpected) → imported "+
-				"as an always-on service. RunWisp services restart on any exit, not "+
-				"only unexpected ones.")
-	case strings.EqualFold(strings.TrimSpace(v), "unexpected"):
-		ref.note(NoteAutorestartUnexpected,
-			"autorestart=unexpected → imported as an always-on service. RunWisp "+
-				"services restart on any exit, not only unexpected ones.")
+	if on, valid := parseBool(v); ok && valid && on {
+		return
 	}
+	if ok && !strings.EqualFold(strings.TrimSpace(v), "unexpected") {
+		sd.noteUnreadable(ref, "autorestart", v)
+		return
+	}
+	b.set("restart", tomlString(string(model.RestartOnFailure)))
+	if ok {
+		ref.note(NoteAutorestartUnexpected,
+			"autorestart=unexpected → restart = \"on_failure\". supervisord decides what's "+
+				"unexpected from exitcodes (default 0,2); RunWisp counts any non-zero exit as a failure.")
+		return
+	}
+	ref.note(NoteAutorestartUnexpected,
+		"autorestart not set (supervisord defaults to unexpected) → restart = \"on_failure\". "+
+			"supervisord decides what's unexpected from exitcodes (default 0,2); RunWisp counts "+
+			"any non-zero exit as a failure.")
 }
 
 // programCommand returns the run line a program would import to, so identity
@@ -334,8 +339,8 @@ func (sd *supervisordState) applyRunOnce(b *block, s *iniSection, ref itemRef) {
 		b.set("run_on_start", "true")
 	}
 	ref.note(NoteRunOnce,
-		"autorestart=false → imported as a run-once task (run_on_start), "+
-			"since RunWisp services always restart.")
+		"autorestart is off → imported as a run-once task (run_on_start), "+
+			"so it runs at boot and isn't restarted.")
 }
 
 // supervisordCosmeticKey lists the keys RunWisp drops without a word. Each one
@@ -497,7 +502,7 @@ func (sd *supervisordState) serviceOnly(key string, ref itemRef, isService bool)
 	}
 	ref.note(NoteServiceKeyDropped,
 		key+" was dropped — it only applies to always-on services, and this "+
-			"program imported as a run-once task (autorestart=false).")
+			"program imported as a run-once task (autorestart is off).")
 	return false
 }
 

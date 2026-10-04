@@ -72,6 +72,7 @@ const (
 	NoteSystemdRestartBehavior
 	NoteSystemdOneshot
 	NoteSystemdEnvFileMulti
+	NoteSystemdEnvFileMissing
 
 	// noteKindCount bounds the enum so TestNoteKindsAreTotal can walk it.
 	noteKindCount
@@ -225,6 +226,11 @@ var noteKindInfo = map[NoteKind]noteSeverity{
 	NoteSystemdEnvFileMulti: {
 		// RunWisp takes one env_file; the extra EnvironmentFile paths were dropped.
 		slug: "systemd-env-file-multi", blocking: false, unsafeLive: false,
+	},
+	NoteSystemdEnvFileMissing: {
+		// An optional EnvironmentFile=-path that doesn't exist yet; RunWisp's
+		// env_file must exist, so it was left out rather than failing the load.
+		slug: "systemd-env-file-missing", blocking: false, unsafeLive: false,
 	},
 }
 

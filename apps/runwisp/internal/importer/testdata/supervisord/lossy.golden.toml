@@ -3,3 +3,4 @@
 
 [services.web]
 run = "/usr/bin/web --serve"
+restart = "on_failure"

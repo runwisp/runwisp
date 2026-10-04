@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -266,9 +267,8 @@ func importSystemdUnit(names *namer, sections []systemdSection, unitName, source
 
 // systemdKind decides whether a unit maps onto a RunWisp service or a run-once
 // task. Type=oneshot is the run-once task; everything else is a long-running
-// service. Restart is irrelevant to the choice — RunWisp services always
-// restart, so a Restart=no service becomes a service with a behavior note, not a
-// task.
+// service. Restart is irrelevant to the choice: it maps onto the service's own
+// restart key (see systemdApplyRestart).
 func systemdKind(svc *systemdSection) model.TaskKind {
 	if strings.EqualFold(svc.last("Type"), "oneshot") {
 		return model.KindTask
@@ -288,11 +288,65 @@ func systemdRunLine(execStarts []string) (run string, stripped bool) {
 
 // stripExecPrefixes removes systemd's ExecStart special prefixes (@, -, +, !,
 // !!, :) and reports whether any were present. They change argv[0], privilege,
-// or failure semantics RunWisp doesn't reproduce.
+// or failure semantics RunWisp doesn't reproduce. The rest of the line is made
+// safe for `sh -c`, see quoteExecForShell.
 func stripExecPrefixes(cmd string) (string, bool) {
 	trimmed := strings.TrimLeft(cmd, "@-+!:")
 	trimmed = strings.TrimSpace(trimmed)
-	return trimmed, trimmed != strings.TrimSpace(cmd)
+	return quoteExecForShell(trimmed), trimmed != strings.TrimSpace(cmd)
+}
+
+// shellMeta are the characters `sh -c` treats specially but systemd's exec-style
+// ExecStart passes through as plain argument text. `$` is left out on purpose:
+// systemd expands $VAR and ${VAR} itself, so the shell doing it is the same.
+const shellMeta = "*?[]{}~;|&<>()!#`"
+
+// quoteExecForShell single-quotes each bare word of an ExecStart line that holds
+// a shell metacharacter, so `sh -c` passes it through the way systemd's direct
+// exec does. A word with quotes or backslashes is left as written (the shell
+// reads those like systemd does), and so is a lone `;`, which systemd uses to
+// chain commands.
+func quoteExecForShell(cmd string) string {
+	var out strings.Builder
+	var word strings.Builder
+	var quote byte
+	plain := true // the word so far has no quotes or backslashes
+	flush := func() {
+		w := word.String()
+		if plain && w != ";" && strings.ContainsAny(w, shellMeta) {
+			w = "'" + w + "'"
+		}
+		out.WriteString(w)
+		word.Reset()
+		plain = true
+	}
+	for i := 0; i < len(cmd); i++ {
+		c := cmd[i]
+		switch {
+		case quote != 0:
+			word.WriteByte(c)
+			if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'':
+			quote, plain = c, false
+			word.WriteByte(c)
+		case c == '\\':
+			plain = false
+			word.WriteByte(c)
+			if i+1 < len(cmd) {
+				i++
+				word.WriteByte(cmd[i])
+			}
+		case c == ' ' || c == '\t':
+			flush()
+			out.WriteByte(c)
+		default:
+			word.WriteByte(c)
+		}
+	}
+	flush()
+	return out.String()
 }
 
 // systemdApplyRun sets the run line from ExecStart, flagging the cases RunWisp
@@ -359,7 +413,13 @@ func systemdApplyServiceKeys(b *block, svc *systemdSection, ref itemRef, kind mo
 		case "KillSignal":
 			systemdApplyKillSignal(b, ref, kv.key, kv.value)
 		case "TimeoutStopSec", "TimeoutSec":
-			if d, ok := systemdSeconds(kv.value); ok {
+			if d, ok := systemdSeconds(kv.value); ok && isZeroDuration(d) {
+				// systemd's 0 means "wait forever"; RunWisp's 0s kills at once, and
+				// it has no wait-forever setting, so leave graceful_stop at its default.
+				ref.note(NoteKeyUnreadable,
+					kv.key+"="+kv.value+" means no timeout in systemd, but RunWisp has no such "+
+						"setting (graceful_stop = \"0s\" would kill at once), so graceful_stop was left at its default.")
+			} else if ok {
 				b.set("graceful_stop", tomlString(d))
 			} else {
 				ref.note(NoteKeyUnreadable,
@@ -384,7 +444,7 @@ func systemdApplyServiceKeys(b *block, svc *systemdSection, ref itemRef, kind mo
 	systemdApplyUser(b, svc)
 	systemdApplyEnvFiles(b, svc, ref)
 	systemdApplyType(svc, ref)
-	systemdApplyRestartBehavior(svc, ref, kind)
+	systemdApplyRestart(b, svc, ref, kind)
 	systemdNoteDropped(ref, dropped, sawSandbox, sawSocket)
 	return env
 }
@@ -439,15 +499,25 @@ func systemdUser(svc *systemdSection) string {
 }
 
 func systemdApplyEnvFiles(b *block, svc *systemdSection, ref itemRef) {
-	files := svc.all("EnvironmentFile")
-	if len(files) == 0 {
+	var usable []string
+	for _, raw := range svc.all("EnvironmentFile") {
+		// A leading "-" marks the file optional in systemd. RunWisp's env_file must
+		// exist, so an optional file is only imported when it's there to be read.
+		path, optional := strings.CutPrefix(strings.TrimSpace(raw), "-")
+		path = strings.TrimSpace(path)
+		if _, err := os.Stat(path); optional && err != nil {
+			ref.note(NoteSystemdEnvFileMissing,
+				"EnvironmentFile=-"+path+" doesn't exist, and RunWisp's env_file must, so it "+
+					"was left out. Add env_file once the file exists.")
+			continue
+		}
+		usable = append(usable, path)
+	}
+	if len(usable) == 0 {
 		return
 	}
-	// A leading "-" marks the file optional in systemd; RunWisp always tolerates a
-	// missing env_file, so the marker carries no meaning and is stripped.
-	first := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(files[0]), "-"))
-	b.set("env_file", tomlString(first))
-	if len(files) > 1 {
+	b.set("env_file", tomlString(usable[0]))
+	if len(usable) > 1 {
 		ref.note(NoteSystemdEnvFileMulti,
 			"the unit set multiple EnvironmentFile= lines — RunWisp takes one env_file, so "+
 				"only the first was imported. Merge the rest by hand.")
@@ -464,26 +534,40 @@ func systemdApplyType(svc *systemdSection, ref itemRef) {
 	}
 }
 
-// systemdApplyRestartBehavior notes when a service that systemd did not
-// auto-restart becomes a RunWisp service, which always restarts.
-func systemdApplyRestartBehavior(svc *systemdSection, ref itemRef, kind model.TaskKind) {
+// systemdRestartPolicy maps Restart= onto a RunWisp restart value. exact is
+// false for the values RunWisp has no equal for (on-success, on-abnormal,
+// on-abort, on-watchdog), which land on the nearest policy with a note.
+func systemdRestartPolicy(restart string) (policy model.RestartPolicy, exact bool) {
+	switch restart {
+	case "always":
+		return model.RestartAlways, true
+	case "", "no":
+		return model.RestartNever, true
+	case "on-failure":
+		return model.RestartOnFailure, true
+	case "on-success":
+		return model.RestartAlways, false
+	default: // on-abnormal, on-abort, on-watchdog: restart after a bad ending only
+		return model.RestartOnFailure, false
+	}
+}
+
+// systemdApplyRestart maps Restart= for a service. "always" is RunWisp's
+// default, so it emits no key.
+func systemdApplyRestart(b *block, svc *systemdSection, ref itemRef, kind model.TaskKind) {
 	if kind != model.KindService {
 		return
 	}
 	restart := strings.ToLower(strings.TrimSpace(svc.last("Restart")))
-	if restart == "" || restart == "no" {
+	policy, exact := systemdRestartPolicy(restart)
+	if policy != model.RestartAlways {
+		b.set("restart", tomlString(string(policy)))
+	}
+	if !exact {
 		ref.note(NoteSystemdRestartBehavior,
-			"the unit did not auto-restart (Restart="+orNone(restart)+"), but RunWisp services "+
-				"always restart on exit. If it's meant to run once, set Type=oneshot in the source "+
-				"or make it a [tasks.*] entry.")
+			"Restart="+restart+" has no exact RunWisp equivalent; imported as restart = \""+
+				string(policy)+"\". Check that it restarts when you expect.")
 	}
-}
-
-func orNone(s string) string {
-	if s == "" {
-		return "unset"
-	}
-	return s
 }
 
 // systemdSeconds turns a systemd time value into a RunWisp duration. It handles
@@ -507,6 +591,11 @@ func systemdSeconds(value string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func isZeroDuration(d string) bool {
+	dur, err := time.ParseDuration(d)
+	return err == nil && dur == 0
 }
 
 // parseSystemdEnvInto parses one Environment= value — space-separated KEY=VALUE

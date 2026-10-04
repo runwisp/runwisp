@@ -4,6 +4,8 @@
 package importer
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -160,4 +162,100 @@ ExecStart=/bin/app \
   --flag two
 `)
 	mustContain(t, res.TOML(), `run = "/bin/app --flag one --flag two"`)
+}
+
+// TestSystemdRestartMapsToRestartPolicy: a unit that systemd restarts only on
+// failure, or never, used to become an always-restart service.
+func TestSystemdRestartMapsToRestartPolicy(t *testing.T) {
+	cases := []struct {
+		restart, want string
+		noted         bool
+	}{
+		{"always", "", false},
+		{"on-failure", `restart = "on_failure"`, false},
+		{"no", `restart = "never"`, false},
+		{"", `restart = "never"`, false},
+		{"on-success", "", true},
+		{"on-abnormal", `restart = "on_failure"`, true},
+		{"on-abort", `restart = "on_failure"`, true},
+	}
+	for _, tc := range cases {
+		in := "[Service]\nExecStart=/bin/app\n"
+		if tc.restart != "" {
+			in += "Restart=" + tc.restart + "\n"
+		}
+		res := parseUnit(t, in)
+		out := res.TOML()
+		if tc.want == "" {
+			mustNotContain(t, out, "restart =")
+		} else {
+			mustContain(t, out, tc.want)
+		}
+		if got := hasNoteKind(res, NoteSystemdRestartBehavior); got != tc.noted {
+			t.Errorf("Restart=%q: note present = %v, want %v", tc.restart, got, tc.noted)
+		}
+	}
+}
+
+// TestSystemdZeroTimeoutIsNotImportedAsInstantKill: in systemd 0 means wait
+// forever, in RunWisp "0s" means SIGKILL at once.
+func TestSystemdZeroTimeoutIsNotImportedAsInstantKill(t *testing.T) {
+	for _, line := range []string{"TimeoutStopSec=0", "TimeoutSec=0", "TimeoutStopSec=0s", "TimeoutStopSec=0min"} {
+		res := parseUnit(t, "[Service]\nExecStart=/bin/app\n"+line+"\n")
+		mustNotContain(t, res.TOML(), "graceful_stop")
+		if !hasNoteKind(res, NoteKeyUnreadable) {
+			t.Errorf("%s: dropped without a note, got %+v", line, allNotes(res))
+		}
+	}
+	mustContain(t, parseUnit(t, "[Service]\nExecStart=/bin/app\nTimeoutStopSec=30\n").TOML(), `graceful_stop = "30s"`)
+}
+
+// TestSystemdOptionalEnvironmentFileMustExist: RunWisp's env_file has to exist,
+// so EnvironmentFile=-path is imported only when the file is there.
+func TestSystemdOptionalEnvironmentFileMustExist(t *testing.T) {
+	dir := t.TempDir()
+	present := filepath.Join(dir, "present.env")
+	if err := os.WriteFile(present, []byte("A=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(dir, "missing.env")
+
+	res := parseUnit(t, "[Service]\nExecStart=/bin/app\nEnvironmentFile=-"+missing+"\n")
+	mustNotContain(t, res.TOML(), "env_file")
+	assertNotes(t, res, []NoteKind{NoteSystemdNoName, NoteSystemdEnvFileMissing})
+
+	res = parseUnit(t, "[Service]\nExecStart=/bin/app\nEnvironmentFile=-"+present+"\n")
+	mustContain(t, res.TOML(), `env_file = "`+present+`"`)
+	assertNotes(t, res, []NoteKind{NoteSystemdNoName})
+
+	// A missing optional file is skipped in favour of the next usable one.
+	res = parseUnit(t, "[Service]\nExecStart=/bin/app\nEnvironmentFile=-"+missing+"\nEnvironmentFile="+present+"\n")
+	mustContain(t, res.TOML(), `env_file = "`+present+`"`)
+	if hasNoteKind(res, NoteSystemdEnvFileMulti) {
+		t.Errorf("one usable file should not trigger the multi-file note: %+v", allNotes(res))
+	}
+}
+
+// TestSystemdExecStartShellMetacharactersAreQuoted: systemd execs ExecStart
+// without a shell, but RunWisp runs `run` through sh -c, so a bare `*` or `;`
+// argument would be globbed or end the command.
+func TestSystemdExecStartShellMetacharactersAreQuoted(t *testing.T) {
+	cases := map[string]string{
+		`/bin/app --glob *.log`:    `/bin/app --glob '*.log'`,
+		`/bin/app a;b`:             `/bin/app 'a;b'`,
+		`/bin/app --x=$HOME/a`:     `/bin/app --x=$HOME/a`,
+		`/bin/app "a b;c" --y`:     `/bin/app "a b;c" --y`,
+		`/bin/app 'x*' $(id)`:      `/bin/app 'x*' '$(id)'`,
+		`/bin/a ; /bin/b`:          `/bin/a ; /bin/b`,
+		`/bin/app | tee`:           `/bin/app '|' tee`,
+		`-/bin/app plain`:          `/bin/app plain`,
+		`/bin/app --name=a\;b`:     `/bin/app --name=a\;b`,
+		`/bin/app   spaced   args`: `/bin/app   spaced   args`,
+	}
+	for in, want := range cases {
+		got, _ := stripExecPrefixes(in)
+		if got != want {
+			t.Errorf("stripExecPrefixes(%q) = %q, want %q", in, got, want)
+		}
+	}
 }
