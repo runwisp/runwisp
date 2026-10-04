@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `runwisp import` maps systemd `Restart=` and supervisord `autorestart` onto the `restart` key (`on-failure` and `unexpected` become `on_failure`, `no` becomes `never`), and reads `no`, `off` and `0` as supervisord's "don't restart".
+
+### Fixed
+
+- `runwisp run` exits 1 when a run is marked failed but the process exited 0, such as a `failures` output pattern match or a timeout the task handled.
+- `runwisp import` reads supervisord configs the way supervisord does (inline `;` and `#` comments are dropped), keeps matched quote pairs in crontab environment values, writes control characters in commands as valid TOML, and quotes systemd `ExecStart` arguments such as `*` and `;` so the shell doesn't act on them.
+- `runwisp import systemd` leaves out an `EnvironmentFile=-path` that doesn't exist yet (with a note) and no longer turns `TimeoutStopSec=0` into an immediate kill.
+- The systemd unit written by `runwisp service install` keeps a literal `$` in the binary, config or data path.
+- Two daemons can no longer end up sharing a data dir when one starts as another stops.
+- RunWisp starts when the data dir belongs to another user (a Kubernetes `fsGroup` volume, a group-writable bind mount) and warns that its permissions are looser than 0700.
+- `runwisp stop` and `restart` recognize a running daemon by its PID file lock, so a recycled PID or a renamed binary is no longer mistaken for the daemon.
+
 ## [1.4.0] - 2026-10-05
 
 ### Changed
