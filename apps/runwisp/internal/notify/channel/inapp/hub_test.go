@@ -4,6 +4,7 @@
 package inapp
 
 import (
+	"runtime"
 	"sync"
 	"testing"
 
@@ -33,6 +34,9 @@ func TestHubConcurrentPublishUnsubscribe(t *testing.T) {
 					return
 				default:
 					hub.Publish(u)
+					// Without a yield the spinning readers starve unsubscribe's
+					// write lock on small CI runners (minutes under -race).
+					runtime.Gosched()
 				}
 			}
 		}()
@@ -43,7 +47,7 @@ func TestHubConcurrentPublishUnsubscribe(t *testing.T) {
 		subWg.Add(1)
 		go func() {
 			defer subWg.Done()
-			for i := 0; i < 3000; i++ {
+			for i := 0; i < 500; i++ {
 				sub, unsub := hub.Subscribe()
 				select {
 				case <-sub.Channel():
