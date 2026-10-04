@@ -622,3 +622,14 @@ func TestLogWriter_WriteError_StopsWriterInsteadOfRetryingForever(t *testing.T) 
 	require.NoError(t, err2)
 	assert.Equal(t, int64(-1), n2, "once stopped, later lines are dropped too rather than re-attempting the broken write")
 }
+
+// A retention sweep can remove the task's log directory (it was just emptied)
+// between the executor's MkdirAll and the file create; the writer recreates it.
+func TestNewLogWriter_RecreatesDirectoryRemovedBeforeCreate(t *testing.T) {
+	opts := LogWriterOpts{LogPath: filepath.Join(t.TempDir(), "task", "run.log")}
+
+	w, err := NewLogWriter(opts)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	assert.FileExists(t, opts.LogPath)
+}

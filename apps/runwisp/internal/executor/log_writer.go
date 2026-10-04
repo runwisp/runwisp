@@ -6,7 +6,9 @@ package executor
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -111,6 +113,13 @@ type LogWriterOpts struct {
 
 func NewLogWriter(opts LogWriterOpts) (*LogWriter, error) {
 	f, err := os.Create(opts.LogPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		// The caller made the directory just before this, but a retention or
+		// purge sweep may have removed it again as empty. Recreate it once.
+		if os.MkdirAll(filepath.Dir(opts.LogPath), 0755) == nil {
+			f, err = os.Create(opts.LogPath)
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to create log file: %w", err)
 	}
