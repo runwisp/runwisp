@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Web UI pages now show loading skeletons while data arrives, instead of flashing a blank screen, a false "No runs yet", or the task you just left.
+- The TUI shows run and next-run times in the daemon's timezone, even when it runs in a container or under a service user in another zone.
+- The TUI sorts task groups by group name and shows a task's `description` in its detail view (`i`).
+- The TUI reconnects to the run-event stream when the daemon was not ready at the first retry, search results jump to the matching log line, and older log lines load when you scroll to the top with the mouse wheel or on a rotated log.
+- Changing the run list's status filter in the TUI now clears the run selection, so bulk actions only touch runs you can see.
 
 ## [1.3.1] - 2026-10-01
 
