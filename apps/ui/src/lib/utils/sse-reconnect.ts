@@ -54,6 +54,9 @@ export function createReconnectingConnection(
 
     function connect(): void {
         if (disposed) return;
+        // Replace, never add: a pending backoff timer or a live stream would
+        // otherwise survive next to the new one and duplicate every event.
+        stop();
 
         const { url, label } = options.resolve();
         let es: SSEStream;
