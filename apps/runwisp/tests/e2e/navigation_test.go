@@ -13,6 +13,7 @@ import (
 )
 
 func TestRemoteTUINavigatesAcrossPrimaryScreens(t *testing.T) {
+	t.Parallel()
 	suite := newTUISuite(t)
 
 	homeScreen := suite.tui.currentScreen(t)

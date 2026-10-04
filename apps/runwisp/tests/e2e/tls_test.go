@@ -115,6 +115,7 @@ func startNonLoopbackDaemon(t *testing.T, configPath, scheme string) *daemonProc
 }
 
 func TestTLS_AutoHTTPSOnNonLoopbackBind(t *testing.T) {
+	t.Parallel()
 	d := startTLSDaemon(t)
 
 	// Connect over HTTPS with a pinning client. The first successful connect is
@@ -156,6 +157,7 @@ func TestTLS_AutoHTTPSOnNonLoopbackBind(t *testing.T) {
 }
 
 func TestTLS_PinMismatchFailsLoudly(t *testing.T) {
+	t.Parallel()
 	d := startTLSDaemon(t)
 
 	// First, learn the daemon's real fingerprint via an honest TOFU connect.
@@ -178,6 +180,7 @@ func TestTLS_PinMismatchFailsLoudly(t *testing.T) {
 }
 
 func TestTLS_OffKeepsHTTPWithLoudBanner(t *testing.T) {
+	t.Parallel()
 	// tls = "off" opts out of auto-HTTPS even on a non-loopback bind. The
 	// daemon then serves cleartext and must warn loudly that it is doing so.
 	configPath := filepath.Join(t.TempDir(), "runwisp.tls-off.toml")

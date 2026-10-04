@@ -28,6 +28,7 @@ import (
 // as separate lines), and live viewers must receive at least one region
 // snapshot while the bar animates.
 func TestProgressBarCommitsFinalFrameAndStreamsRegion(t *testing.T) {
+	t.Parallel()
 	const taskName = "progress-task"
 
 	configPath := writeProgressConfig(t, taskName)
@@ -78,6 +79,7 @@ func TestProgressBarCommitsFinalFrameAndStreamsRegion(t *testing.T) {
 // container (holding the frame history) exists on disk, and deleting the run
 // removes it.
 func TestProgressBarExposesFrameHistory(t *testing.T) {
+	t.Parallel()
 	const taskName = "progress-hist-task"
 
 	configPath := writeProgressConfig(t, taskName)

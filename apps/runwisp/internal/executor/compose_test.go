@@ -492,6 +492,7 @@ func TestComposeBackend_ProcessGroupSIGTERMReapsChildren(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "child.pid")
 	body := "#!/bin/sh\n" +
+		"[ \"$1\" = ps ] && exit 0\n" + // reclaim probe in Start must not block
 		"sleep 30 &\n" +
 		"echo $! > '" + pidFile + "'\n" +
 		"wait\n"
@@ -531,7 +532,7 @@ func TestComposeBackend_ProcessGroupSIGTERMReapsChildren(t *testing.T) {
 // The shim traps SIGTERM so only SIGKILL can end it.
 func TestComposeBackend_ImmediateKillWhenGracefulStopZero(t *testing.T) {
 	dir := t.TempDir()
-	installDockerShimScript(t, dir, "#!/bin/sh\ntrap '' TERM\nsleep 30\n")
+	installDockerShimScript(t, dir, "#!/bin/sh\n[ \"$1\" = ps ] && exit 0\ntrap '' TERM\nsleep 30\n")
 
 	task := &model.Task{GracefulStop: durPtr(0)}
 	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeRun}

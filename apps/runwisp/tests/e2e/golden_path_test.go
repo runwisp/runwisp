@@ -35,6 +35,7 @@ import (
 // The task is triggered via the REST API rather than a cron expression so the
 // test converges in milliseconds and avoids a minute-aligned wait.
 func TestGoldenPathFireAppearsInAPILogAndSSE(t *testing.T) {
+	t.Parallel()
 	const taskName = "golden-task"
 
 	configPath := writeGoldenConfig(t, taskName)

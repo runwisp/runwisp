@@ -22,6 +22,7 @@ import (
 // the values are passed inertly (never re-interpreted by the shell), and the
 // resolved set is recorded on the run and returned by the API.
 func TestParamsAppliedToProcessAndPersisted(t *testing.T) {
+	t.Parallel()
 	const taskName = "param-task"
 
 	dir := t.TempDir()
@@ -104,6 +105,7 @@ params = [
 // not re-injected), while an explicit empty string is passed through as a real,
 // empty argv value.
 func TestParamsOmitVsEmptyString(t *testing.T) {
+	t.Parallel()
 	const taskName = "note-task"
 
 	dir := t.TempDir()

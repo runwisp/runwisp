@@ -18,6 +18,7 @@ import (
 // `runwisp stop`: restart SIGTERMs the running daemon and spawns a fresh one
 // on the same port; stop brings it down and a second stop is a friendly no-op.
 func TestCLIStopRestart(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
