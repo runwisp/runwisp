@@ -164,19 +164,21 @@ func ReadLineRange(logPath string, from, limit int64) (lines []LogLineRecord, fi
 		currentStart = meta.RotatedLines
 	}
 
-	startOffset := CalculateLineOffset(file, indices, int(currentStart), meta)
-	if _, seekErr := file.Seek(startOffset, io.SeekStart); seekErr != nil {
-		return lines, firstAvailable, totalLines, seekErr
-	}
+	more, scanErr := readCurrentSegment(file, indices, meta, currentStart, limit-int64(len(lines)))
+	lines = append(lines, more...)
+	return lines, firstAvailable, totalLines, scanErr
+}
 
+// readCurrentSegment reads up to limit lines of the current segment starting at
+// absolute line startLine, seeking through the sidecar index.
+func readCurrentSegment(file *os.File, indices []int64, meta LogMeta, startLine, limit int64) ([]LogLineRecord, error) {
+	startOffset := CalculateLineOffset(file, indices, int(startLine), meta)
+	if _, err := file.Seek(startOffset, io.SeekStart); err != nil {
+		return nil, err
+	}
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, ScanBufferSize), 1024*1024)
-	more, scanErr := collectLines(scanner, currentStart, limit-int64(len(lines)))
-	lines = append(lines, more...)
-	if scanErr != nil {
-		return lines, firstAvailable, totalLines, scanErr
-	}
-	return lines, firstAvailable, totalLines, nil
+	return collectLines(scanner, startLine, limit)
 }
 
 // resolvePrevSegment reports whether logPath has a `.log.prev` segment and
