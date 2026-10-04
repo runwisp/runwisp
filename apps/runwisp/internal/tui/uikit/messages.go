@@ -162,6 +162,9 @@ type ExecWindowFetchedMsg struct {
 	Items  []ExecListItem
 	Offset int
 	Total  int
+	// Gen is the window generation the page was fetched under; a page from
+	// before a filter change is dropped (see ExecWindow.IsCurrent).
+	Gen uint64
 }
 
 // LogOlderLoadedMsg delivers the result of a scroll-up REST page fetch.

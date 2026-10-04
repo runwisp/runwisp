@@ -178,6 +178,9 @@ func (e *ExecList) Update(msg tea.Msg) tea.Cmd {
 	if keyMsg.String() == "f" {
 		e.window.CycleStatusFilter()
 		e.cursor, e.Scroll = 0, 0
+		// Rows under the old filter may no longer be visible; a bulk action on a
+		// carried-over selection would hit runs the operator can't see.
+		e.ClearSelection()
 		return nil
 	}
 	n := e.totalCount()

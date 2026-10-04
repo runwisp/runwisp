@@ -264,11 +264,11 @@ func (sm *StreamManager) FetchExecWindow(window *execlist.ExecWindow, scroll, vp
 		return nil
 	}
 	return func() tea.Msg {
-		items, offset, total, err := fn()
+		res, err := fn()
 		if err != nil {
 			return uikit.DebugLogMsg{Message: "Failed to load runs: " + err.Error()}
 		}
-		return uikit.ExecWindowFetchedMsg{Items: items, Offset: offset, Total: total}
+		return uikit.ExecWindowFetchedMsg{Items: res.Items, Offset: res.Offset, Total: res.Total, Gen: res.Gen}
 	}
 }
 

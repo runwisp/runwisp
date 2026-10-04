@@ -572,6 +572,9 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleExecWindowFetched(msg uikit.ExecWindowFetchedMsg) (tea.Model, tea.Cmd) {
+	if !m.execWindow.IsCurrent(msg.Gen) {
+		return m, nil
+	}
 	m.execWindow.ApplyFetch(msg.Items, msg.Offset, msg.Total)
 	return m, nil
 }

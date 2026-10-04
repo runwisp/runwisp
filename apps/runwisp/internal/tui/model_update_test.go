@@ -1426,3 +1426,17 @@ func TestHandleOpenRun_OtherErrorFlashes(t *testing.T) {
 		t.Fatalf("flash: got %q", msg)
 	}
 }
+
+func TestHandleExecWindowFetched_DropsPageFromOldFilter(t *testing.T) {
+	m := newTestModel(nil)
+	oldGen := uint64(0) // the window's generation before the filter change
+	m.execList.SetFilter("other-task")
+
+	items := []uikit.ExecListItem{{Run: model.Run{ID: "old-1", TaskName: "t1"}}}
+	updated, _ := m.handleExecWindowFetched(uikit.ExecWindowFetchedMsg{Items: items, Total: 99, Gen: oldGen})
+	got := updated.(Model)
+
+	if got.execWindow.TotalCount() != 0 {
+		t.Fatalf("a page from the previous filter must not inflate the count, got %d", got.execWindow.TotalCount())
+	}
+}
