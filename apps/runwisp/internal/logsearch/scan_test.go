@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -144,8 +145,8 @@ func TestScanTask_CursorResumes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cur == nil || cur.NextN != hits[1].N {
-		t.Fatalf("expected cursor at last consumed line, got %+v", cur)
+	if cur == nil || cur.NextN != hits[1].N+1 {
+		t.Fatalf("expected cursor after last consumed line, got %+v", cur)
 	}
 	// Resume.
 	hits2, _, _, err := ScanTask(context.Background(), runs, factory, ScanOpts{MaxHits: 2}, cur.RunID, cur.NextN)
@@ -158,7 +159,7 @@ func TestScanTask_CursorResumes(t *testing.T) {
 	// One more resume should yield no hits — the cursor from page 2 may
 	// be a false positive when the run ended exactly at maxHits, and the
 	// client tolerates the empty page.
-	hits3, _, _, err := ScanTask(context.Background(), runs, factory, ScanOpts{MaxHits: 2}, "R1", hits2[1].N)
+	hits3, _, _, err := ScanTask(context.Background(), runs, factory, ScanOpts{MaxHits: 2}, "R1", hits2[1].N+1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,5 +296,37 @@ func TestScanTask_CancelMidScan(t *testing.T) {
 	_, _, _, err := ScanTask(ctx, runs, factory, ScanOpts{MaxHits: 1000}, "", 0)
 	if err != context.Canceled {
 		t.Fatalf("want context.Canceled, got %v", err)
+	}
+}
+
+// A page ending on a line-0 hit must advance: the cursor names the next line to
+// scan, so it can never collide with "start from line 0".
+func TestScanTask_CursorAdvancesPastLineZeroHit(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a.log")
+	writeLog(t, a, "hit0", "hit1", "hit2")
+
+	runs := []RunRef{{ID: "R1", LogPath: a, CreatedAt: time.Unix(1, 0)}}
+	factory := func() Matcher {
+		m, _ := NewMatcher("hit", false, false)
+		return m
+	}
+	var got []string
+	runID, nextN := "", int64(0)
+	for page := 0; page < 5; page++ {
+		hits, cur, _, err := ScanTask(context.Background(), runs, factory, ScanOpts{MaxHits: 1}, runID, nextN)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, h := range hits {
+			got = append(got, h.Text)
+		}
+		if cur == nil {
+			break
+		}
+		runID, nextN = cur.RunID, cur.NextN
+	}
+	if want := []string{"hit0", "hit1", "hit2"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("paging with MaxHits=1: want %v, got %v", want, got)
 	}
 }
