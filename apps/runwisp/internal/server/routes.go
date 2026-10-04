@@ -143,21 +143,26 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// csrfGuard blocks cross-origin state-changing requests that ride on the
-// ambient session cookie. SameSite=Strict already stops classic cross-*site*
-// requests, but not cross-*origin* ones from the same site — another port on
-// localhost, or a compromised sibling subdomain — so a same-site page could
-// otherwise POST /api/tasks/{name}/run using the victim's cookie.
+// csrfGuard blocks cross-origin state-changing browser requests. SameSite=Strict
+// already stops classic cross-*site* requests, but not cross-*origin* ones from
+// the same site — another port on localhost, or a compromised sibling subdomain
+// — so a same-site page could otherwise POST /api/tasks/{name}/run using the
+// victim's cookie. With RUNWISP_AUTH=off there is no cookie to ride on, but a
+// cross-site page can still fire body-less simple requests at the daemon, so a
+// request that declares a foreign origin is refused whether or not it carries
+// a session cookie.
 //
-// The guard fires only for the exact conditions that make CSRF possible: an
-// unsafe method, authenticated by a session cookie the browser attaches
-// automatically. It is deliberately inert for:
-//   - safe methods (GET/HEAD/OPTIONS),
-//   - local-trusted requests on the Unix socket (CLI/TUI),
-//   - Bearer-authenticated requests (a cross-site page cannot set an
-//     Authorization header on a simple request), and
-//   - requests with no session cookie at all (nothing ambient to abuse) —
-//     which keeps headless TCP API clients working under RUNWISP_AUTH=off.
+// Browsers always send Origin (or Sec-Fetch-Site) on cross-origin unsafe
+// requests, so the guard acts on what the request declares:
+//   - a session cookie requires a same-origin Origin/Referer, since the cookie is
+//     attached automatically and a missing source is itself suspicious;
+//   - without one, a request is refused only when its Origin names another
+//     host or Sec-Fetch-Site says cross-site. Headless clients (CLI, curl,
+//     apiclient) send neither and keep working under RUNWISP_AUTH=off.
+//
+// It is inert for safe methods (GET/HEAD/OPTIONS), local-trusted requests on the
+// Unix socket (CLI/TUI), and Bearer-authenticated requests (a cross-site page
+// cannot set an Authorization header on a simple request).
 func csrfGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -177,12 +182,8 @@ func csrfGuard(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if _, err := r.Cookie(auth.CookieName); err != nil {
-			// No session cookie — not a cookie-authenticated request.
-			next.ServeHTTP(w, r)
-			return
-		}
-		if !sameOriginRequest(r) {
+		_, cookieErr := r.Cookie(auth.CookieName)
+		if cookieErr == nil && !sameOriginRequest(r) || cookieErr != nil && declaredCrossOrigin(r) {
 			http.Error(w, "cross-origin request refused", http.StatusForbidden)
 			return
 		}
@@ -202,11 +203,27 @@ func sameOriginRequest(r *http.Request) bool {
 	if src == "" {
 		return false
 	}
+	return sourceMatchesHost(src, r.Host)
+}
+
+// declaredCrossOrigin reports whether the request itself says it came from
+// another origin: Sec-Fetch-Site: cross-site, or an Origin (including the
+// opaque "null") that doesn't name the host it was sent to. A request with
+// neither header is not a browser cross-origin request.
+func declaredCrossOrigin(r *http.Request) bool {
+	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+		return true
+	}
+	origin := r.Header.Get("Origin")
+	return origin != "" && !sourceMatchesHost(origin, r.Host)
+}
+
+func sourceMatchesHost(src, host string) bool {
 	u, err := url.Parse(src)
 	if err != nil || u.Host == "" {
 		return false
 	}
-	return strings.EqualFold(u.Host, r.Host)
+	return strings.EqualFold(u.Host, host)
 }
 
 func (srv *Server) setupRoutes() error {
