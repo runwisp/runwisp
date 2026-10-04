@@ -26,6 +26,13 @@ const holds: Record<string, string> = {
     // typescript-eslint, svelte-check, @astrojs/check and @sveltejs/kit all cap
     // their typescript peer below 7 (the native port).
     typescript: "<7",
+    // SvelteKit 3 drops svelte.config.js, `$app/stores` and `$app/environment`,
+    // and types `resolve()` strictly, so apps/ui and packages/ui need a
+    // migration first. adapter-static 4 requires Kit 3.
+    // Keep the `prepare` script in apps/ui on the same major (bunx fetches the
+    // registry copy when Cloudflare Pages installs before the bins are linked).
+    "@sveltejs/kit": "<3",
+    "@sveltejs/adapter-static": "<4",
     // These two exist only to pin what a framework's build output imports:
     // SvelteKit's server chunk resolves cookie from apps/ui and needs its
     // named exports (gone in 1.x), Starlight's prerender chunk resolves js-yaml
