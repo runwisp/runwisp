@@ -126,9 +126,8 @@ func TestPlace_Deterministic(t *testing.T) {
 // TestPlace_PerClusterIndependence pins the cluster fix: a tight (zero-length)
 // group must not compress an unrelated loose group's spread. The two 03:00
 // tasks share a 30m window with nothing else overlapping it, so they land at
-// the window's two ends (0 and 30m) regardless of the pinned 04:00 pair. Under
-// the old single global gap the pinned pair would force g=0 and flatten the
-// loose pair to 0,0 — this asserts they still spread.
+// the window's two ends (0 and 30m) regardless of the pinned 04:00 pair. A
+// single global gap would force g=0 and flatten the loose pair to 0,0.
 func TestPlace_PerClusterIndependence(t *testing.T) {
 	windows := []Window{
 		{Name: "loose-a", Phase: 3 * time.Hour, Length: 30 * time.Minute},

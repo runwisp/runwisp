@@ -9,7 +9,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/cronprobe"
@@ -123,31 +123,20 @@ func (m cronMerge) originSet() map[string]bool {
 // pulled in twice under two different readings is a hard error rather than a
 // merge conflict nobody can explain.
 //
-// An individual job RunWisp can't reproduce is skipped and reported, because
-// that is what crond does with a malformed entry and because taking down
-// every other job in the file over one bad line would make include_cron
-// unusable on a real machine. A whole file RunWisp can't read at all —
-// unreadable, untrusted, a spool crontab this daemon can't become the owner
-// of — gets the same treatment: a CronFinding{Skipped: true} rather than a
-// rejected load. The trigger is mundane (a userdel'd account whose spool file
-// shadow-utils left behind, one file at the wrong mode from an Ansible
-// playbook, an NSS-only account) and none of it should be able to take the
-// rest of the config down with it — under Restart=on-failure that used to be
-// a five-second restart loop on a box that now runs nothing at all, cron
-// included, since a prior version of this masked cron before restarting.
+// A job RunWisp can't reproduce is skipped and reported, as crond does with a
+// malformed entry. A whole file RunWisp can't read (unreadable, untrusted, a
+// spool crontab this daemon can't become the owner of) is also a
+// CronFinding{Skipped: true} rather than a rejected load, so one stale or
+// mis-permissioned crontab cannot take the rest of the config down with it
+// (under Restart=on-failure that would be a restart loop running nothing).
 //
-// The one case that still hard-fails here is every matched source failing at
-// once: nothing parsed suggests a broken include_cron pattern rather than one
-// bad file, and that is worth surfacing as loudly as a config that doesn't
-// load at all rather than a wall of findings on an otherwise-quiet boot.
-// assertNoIncludeOverlap and a resolvePath failure also stay hard errors —
-// both mean the config specifies something nobody wrote, not that one
-// crontab has gone bad.
+// Hard errors remain for: every matched source failing at once (more likely a
+// broken include_cron pattern than one bad file), assertNoIncludeOverlap, and
+// a resolvePath failure.
 //
-// Reload atomicity is unaffected either way: the whole config is parsed and
-// validated (including every cron source's refusal) before any live task is
-// touched, so a bad crontab lands as one CronFinding and one excluded file,
-// never a half-applied reconcile.
+// Reload stays atomic: the whole config is parsed and validated before any
+// live task is touched, so a bad crontab is one finding, never a half-applied
+// reconcile.
 func mergeCronSources(root *tomlConfig, patterns []string, rootDir, rootPath string,
 	byName map[string]string, tomlMatched []string) (cronMerge, error) {
 	if len(patterns) == 0 {
@@ -200,18 +189,14 @@ func mergeCronSources(root *tomlConfig, patterns []string, rootDir, rootPath str
 }
 
 // collectBlocks records, for every live-eligible job in one parse, the TOML
-// that produced it and where its line physically lives in path — the bytes
+// that produced it and where its line physically lives in path: the bytes
 // `runwisp promote` copies into root, and the exact line it later comments out
 // once that copy has landed.
 //
-// The line snapshot is re-read from path here rather than threaded through
-// from the importer, because the importer only tracks the derived name or the
-// raw text of a job that failed to parse at all (Item.Source) — never the
-// original line of one that parsed fine. Re-reading is a second pass over a
-// file that is, in practice, a handful of kilobytes at most. A read that fails
-// here is not fatal to the load: it just means this job's name is absent from
-// m.lines, so a later promote of it refuses instead of guessing which line to
-// touch.
+// The line text is re-read from path because the importer does not keep the
+// original line of a job that parsed fine. A failed read is not fatal: the
+// job is just absent from m.lines, so a later promote of it refuses instead of
+// guessing which line to touch.
 func (m *cronMerge) collectBlocks(res *importer.Result, path string) {
 	data, _ := os.ReadFile(path)
 	fileLines := splitCronLines(data)
@@ -411,10 +396,9 @@ func ownedFromWire(w *tomlConfig) importer.Owned {
 // next source in the glob renames around them.
 //
 // It reserves the name and nothing else. crond runs every line of every crontab,
-// so a job in another crontab is another job even with the same command, the
-// same way two identical lines in one file are. Recording the command let
-// sameEntry treat a later file's job as already owned and drop it with no
-// finding. With no command the entry can never match, so a clash always renames.
+// so a job in another crontab is another job even with the same command. With
+// no command recorded the entry can never match in sameEntry, so a clash
+// always renames.
 func claimOwned(owned importer.Owned, res *importer.Result) {
 	for _, it := range res.Items() {
 		if !it.LiveEligible() {
@@ -438,12 +422,9 @@ func findingsFrom(res *importer.Result, path string) []CronFinding {
 }
 
 // fileFindings reports the notes about the crontab itself rather than about any one
-// job — a MAILTO nobody is honouring, a SHELL that isn't an absolute path.
+// job: a MAILTO nobody is honouring, a SHELL that isn't an absolute path.
 //
-// These belong to no Item, so the per-job walk could never reach them. Until this
-// existed, a crontab that had been mailing its output for years went quiet on the
-// switch to include_cron and said nothing at all, which is the exact failure this
-// type was introduced to prevent.
+// These belong to no Item, so the per-job walk could never reach them.
 func fileFindings(res *importer.Result, path string) []CronFinding {
 	var out []CronFinding
 	for _, n := range res.Notes() {
@@ -561,7 +542,7 @@ func resolveCronIncludes(patterns []string, rootDir, rootPath string) (globs, ma
 		}
 		matched = appendGlobHits(matched, hits, rootAbs, seen)
 	}
-	sort.Strings(matched)
+	slices.Sort(matched)
 	return globs, matched, ignored, nil
 }
 
@@ -618,14 +599,12 @@ func hasGlobMeta(pattern string) bool {
 //
 // crond applies two different naming rules depending on where a file lives.
 // Its /etc/cron.d-style run-parts scan accepts only regular files whose names
-// are letters, digits, hyphens and underscores — no dots — which is precisely
+// are letters, digits, hyphens and underscores (no dots), which is precisely
 // how a package upgrade's `backup.dpkg-old`, a hand-disabled `job.disabled`,
 // and a `README` stay out of the schedule. A per-user spool directory has no
 // such rule: crond takes the filename as-is and looks it up with getpwnam, so
 // `john.doe` or a `$`-suffixed service account is a perfectly legitimate
-// crontab there. Applying the run-parts rule to a spool glob — as this
-// function used to, unconditionally — silently dropped those crontabs with a
-// message ("crond ignores this name") that was simply false for that account.
+// crontab there, and the run-parts rule would wrongly drop it.
 // Reading a file crond passes over is the worse divergence in the other
 // direction, because it runs jobs the operator believes are switched off, and
 // a matched subdirectory would fail the whole load on a read error.
@@ -712,13 +691,11 @@ func isCrondEligibleName(name string) bool {
 
 // ignoredFindings reports the passed-over hits, one finding per file.
 //
-// Skipped is false for most of these: nothing stopped running because of them.
-// crond wasn't running a `.dpkg-old` or a `README` either, so the machine is
-// doing exactly what it did before — but an operator who dropped a file in and
-// can't find its tasks needs to be told the name is why, and the alternative
-// (say nothing) is how `job.disabled` becomes a twenty-minute mystery.
-// unlistableDirFinding is the exception: crond, running as root, can read a
-// directory this daemon can't, so that one sets Skipped.
+// Skipped is false for most of these: crond wasn't running a `.dpkg-old` or a
+// `README` either, but an operator who dropped a file in and can't find its
+// tasks needs to be told the name is why. unlistableDirFinding is the
+// exception: crond, running as root, can read a directory this daemon can't,
+// so that one sets Skipped.
 func ignoredFindings(ignored []ignoredSource) []CronFinding {
 	out := make([]CronFinding, 0, len(ignored))
 	for _, ig := range ignored {

@@ -21,9 +21,7 @@ import (
 )
 
 // RenderedMessage carries the output of a Renderer. Title and Body are the
-// canonical fields; ContentType and Metadata let providers communicate
-// transport details (Slack expects application/json, Telegram cares about
-// parse_mode).
+// canonical fields; ContentType labels the body's MIME type.
 type RenderedMessage struct {
 	ContentType string
 	Body        []byte
@@ -313,9 +311,9 @@ func triggerPhrase(t model.TriggeredBy) string {
 
 // eventSentence renders the per-kind body sentence ending in a period, plus a
 // coalesced-count suffix when this delivery folded several repeats. It is the
-// single source of truth for the failure/success phrasing previously duplicated
-// inside the Telegram and Slack templates. Output is plain text; callers apply
-// the provider-specific escape (tgEscape, jsonStr).
+// single source of truth for the per-kind phrasing shared by the provider
+// templates. Output is plain text; callers apply the provider-specific escape
+// (tgEscape, jsonStr).
 func eventSentence(e *notify.Event) string {
 	return kindSentence(e) + coalescedSuffix(e)
 }
@@ -323,11 +321,9 @@ func eventSentence(e *notify.Event) string {
 // coalescedSuffix discloses that an outbound delivery stands in for several
 // suppressed repeats. The outbound coalescer (internal/notify/coalesce) folds a
 // flapping task's bursts into one delivery and records the fold count on the
-// event's Extra map; without surfacing it here the folded delivery would read
-// exactly like a single occurrence, hiding how bad the flap really is — a silent
-// loss the coalescer's own doc comment promises the renderer discloses. The key
-// is written by coalesce.summarize; a plain (uncoalesced) event has no such key
-// and gets no suffix.
+// event's Extra map (see coalesce.summarize); without surfacing it here the
+// folded delivery would read exactly like a single occurrence. A plain
+// (uncoalesced) event has no such key and gets no suffix.
 func coalescedSuffix(e *notify.Event) string {
 	if e == nil || e.Extra == nil {
 		return ""
@@ -454,8 +450,8 @@ func defaultSentence(e *notify.Event) string {
 	return statusVerb(e.Kind) + "."
 }
 
-// eventTrigger returns just the trigger phrase ("Scheduled run", "Manually
-// triggered via API", or "Event" fallback when the event carries no Run).
+// eventTrigger returns just the trigger phrase ("Scheduled run", "Triggered
+// via the REST API", or "Event" fallback when the event carries no Run).
 // The template owns the separator, timestamp, and trailing period.
 func eventTrigger(e *notify.Event) string {
 	if e.Run == nil {

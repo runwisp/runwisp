@@ -14,7 +14,7 @@ import (
 // single set of semantics shared by ${file:...} substitution, env_file /
 // secrets_file loading, and compose file resolution: absolute paths pass
 // through, "~" / "~/..." expands to the user's home directory, and anything
-// else joins onto baseDir (the runwisp.toml directory).
+// else joins onto baseDir (the declaring config file's directory).
 func resolvePath(baseDir, path string) (string, error) {
 	if filepath.IsAbs(path) {
 		return path, nil

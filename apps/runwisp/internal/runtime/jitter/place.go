@@ -2,28 +2,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Package jitter computes deterministic per-task start slots within their
-// jitter windows. It is pure geometry — no cron, no clock, no state — so
-// placement is exhaustively unit-testable and obeys the determinism invariant:
-// the same windows always yield the same slots.
+// jitter windows. It is pure geometry (no cron, no clock, no state), so the
+// same windows always yield the same slots.
 //
-// Each task gets a slot offset inside its own window. The slot is the *latest*
-// a start may slip (its deadline); the runtime gate pulls runs forward when the
-// box is idle, so the slots double as a release order under congestion rather
-// than as fixed delays. Two ideas shape the offsets:
-//
-//   - Even spread (max-min-gap): within a set of contending windows, slots are
-//     chosen so the smallest spacing between any two consecutive ones is as
-//     large as possible. For N tasks sharing one window this is a 1/(N-1)
-//     spread. The stagger is what makes a congested backlog release evenly
-//     instead of bursting at the window edge.
-//   - Per-cluster independence: windows are grouped into clusters of
-//     chain-overlapping [Phase, Phase+Length] ranges and spread one cluster at
-//     a time. Tasks whose windows don't overlap never compress each other's
-//     spread, and non-contending tasks get offset 0.
-//
-// Ties resolve earliest-deadline-first: among windows that could take the same
-// slot, the tightest one (smallest Length) wins it. Because the slots also feed
-// the gate's release order, EDF ordering falls out for free.
+// A slot is the latest a start may slip (its deadline). The runtime gate pulls
+// runs forward when the box is idle, so under congestion the slots act as a
+// release order rather than fixed delays. Within each cluster of overlapping
+// windows, slots maximize the smallest gap between consecutive starts, so a
+// backlog releases evenly instead of bursting at the window edge. Ties go
+// earliest-deadline-first: the tightest window takes the earlier slot.
 package jitter
 
 import (

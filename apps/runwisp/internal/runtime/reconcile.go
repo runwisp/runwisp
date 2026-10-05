@@ -124,13 +124,10 @@ type CronHoldChange struct {
 
 // RefreshCronHolds applies a fresh cron-liveness answer to the live task set.
 //
-// It is not a reload. runwisp.toml is not re-read and no edit the operator has
-// made since boot is picked up — config reload stays explicit. The only thing
-// re-derived is the machine fact "does a live cron daemon own this crontab",
-// which RunWisp asked about once at load and, without this, would never ask
-// about again. A hold that only lifts on an explicit reload leaves an operator
-// who retires cron and forgets to reload with jobs *neither* scheduler runs,
-// which is the exact class of silent failure the hold exists to prevent.
+// It is not a reload: runwisp.toml is not re-read, so config reload stays
+// explicit. The only thing re-derived is the machine fact "does a live cron
+// daemon own this crontab". Without it, an operator who retires cron and
+// forgets to reload has jobs neither scheduler runs.
 func (r *Reconciler) RefreshCronHolds(state cronprobe.State) CronHoldChange {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -187,9 +184,7 @@ func (r *Reconciler) RefreshCronHolds(state cronprobe.State) CronHoldChange {
 // jobs include_cron declined to schedule.
 //
 // It reads the reconciler's baseline rather than a boot-time copy because a
-// reload can introduce a skip (or fix one), and a count captured at startup would
-// keep saying whatever was true then. The whole point of reporting a skipped job
-// is that nothing else will.
+// reload can introduce or fix a skip.
 func (r *Reconciler) Warnings() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -202,7 +197,7 @@ func (r *Reconciler) Warnings() []string {
 // autostart flip that reload deliberately doesn't act on) for the reload result.
 func (r *Reconciler) apply(diff config.Diff, oldTasks, newTasks map[string]*model.Task) []string {
 	for _, name := range diff.Removed {
-		r.applyRemoved(name, oldTasks[name])
+		r.applyRemoved(name)
 	}
 	for _, name := range diff.Added {
 		r.applyAdded(newTasks[name])
@@ -234,7 +229,7 @@ func (r *Reconciler) apply(diff config.Diff, oldTasks, newTasks map[string]*mode
 
 // applyRemoved unschedules, stops, and forgets a task. Cron tasks keep their
 // in-flight runs (they drain under the old definition); services are stopped.
-func (r *Reconciler) applyRemoved(name string, _ *model.Task) {
+func (r *Reconciler) applyRemoved(name string) {
 	if r.scheduler != nil {
 		r.scheduler.RemoveTask(name)
 	}
@@ -248,11 +243,9 @@ func (r *Reconciler) applyRemoved(name string, _ *model.Task) {
 // does NOT run catch-up — those are boot-only.
 func (r *Reconciler) applyAdded(task *model.Task) {
 	r.registry.Set(task)
-	// A held task is deliberately left unregistered: the anchor is what catch-up
-	// measures the downtime gap from, and stamping it now would make the whole
-	// hold window look like RunWisp's missed ticks the moment the hold lifts. It
-	// gets its anchor on the first load where it is schedulable, which is exactly
-	// when RunWisp starts being responsible for it.
+	// A held task is left unregistered: stamping its catch-up anchor now would
+	// make the whole hold window look like missed ticks once the hold lifts. It
+	// gets its anchor when it becomes schedulable (see anchorUnheld).
 	if !task.Held() {
 		if err := r.db.EnsureTaskRegistered(context.Background(), task.Name, r.now()); err != nil {
 			slog.Warn("Failed to register added task for catch-up tracking", "task", task.Name, "err", err)
@@ -278,10 +271,10 @@ func (r *Reconciler) applyAdded(task *model.Task) {
 // applyChanged swaps in the new definition. Already-running cron runs keep the
 // pointer they captured; new firings use the new one. A schedule/kind change
 // reschedules the cron entry; a changed service is recycled so the new command,
-// env, or instance count takes effect.
-// applyChanged returns a non-fatal notice for the reload result when the change
-// deliberately does nothing an operator might have expected — currently only an
-// autostart false→true flip on a service that stays stopped.
+// env, or instance count takes effect. It returns a non-fatal notice for the
+// reload result when the change deliberately does nothing an operator might have
+// expected (currently only an autostart false→true flip on a service that stays
+// stopped).
 func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *model.Task) string {
 	r.registry.Set(newTask)
 
@@ -300,23 +293,22 @@ func (r *Reconciler) applyChanged(change config.TaskChange, oldTask, newTask *mo
 		r.rescheduleChanged(newTask)
 	}
 
-	if newTask.Kind.IsService() {
-		if oldTask.Kind.IsService() {
-			// A genuine service-definition change: bounce the running instances so
-			// the new command, env, or instance count takes effect.
-			r.recycleChangedService(newTask)
-			return r.autostartFlipWarning(oldTask, newTask)
-		} else {
-			// A task→service kind flip: the run in flight under the old non-service
-			// definition must finish under it — reload never cancels an in-flight
-			// run — so it is left to drain on its own goroutine. Recycling here would
-			// cancel it (RecycleServiceInstances cancels every active run, and that
-			// old run was never a supervisor-managed instance). Only bring the new
-			// service up to its instance count, exactly as a freshly added service
-			// would; StartServiceInstances honours Autostart / a stopped supervisor.
-			r.startChangedService(newTask)
-		}
+	if !newTask.Kind.IsService() {
+		return ""
 	}
+	if oldTask.Kind.IsService() {
+		// A genuine service-definition change: bounce the running instances so
+		// the new command, env, or instance count takes effect.
+		r.recycleChangedService(newTask)
+		return r.autostartFlipWarning(oldTask, newTask)
+	}
+	// A task→service kind flip: the run in flight under the old non-service
+	// definition must finish under it (reload never cancels an in-flight run),
+	// so it is left to drain on its own goroutine. Recycling here would cancel
+	// it. Only bring the new service up to its instance count, exactly as a
+	// freshly added service would; StartServiceInstances honours Autostart / a
+	// stopped supervisor.
+	r.startChangedService(newTask)
 	return ""
 }
 
@@ -341,9 +333,7 @@ func (r *Reconciler) autostartFlipWarning(oldTask, newTask *model.Task) string {
 // a task `runwisp promote` graduated out of the staging file into the operator's
 // own config. The registry and manager take the new pointer so the API, UI and
 // TUI stop reporting it as staged, and that is all: nothing is rescheduled and no
-// service is recycled, because what the task runs did not change. Bouncing a
-// running service because its definition moved between two files would be a
-// surprise the operator never asked for.
+// service is recycled, because what the task runs did not change.
 func (r *Reconciler) applyRestamped(task *model.Task) {
 	r.registry.Set(task)
 	r.manager.UpsertTask(task)
@@ -391,9 +381,7 @@ func (r *Reconciler) recycleChangedService(newTask *model.Task) {
 
 // startChangedService brings a task that a reload just turned into a service up
 // to its instance count without disturbing any run still draining under the
-// prior non-service definition. It mirrors applyAdded's service path — a fresh
-// supervisor with no live slots — because to the new definition that is exactly
-// what this is: a service starting from zero live instances.
+// prior non-service definition. It mirrors applyAdded's service path.
 func (r *Reconciler) startChangedService(newTask *model.Task) {
 	if err := r.manager.StartServiceInstances(newTask.Name, model.TriggeredByService); err != nil {
 		slog.Error("Failed to start instances for newly-serviced task", "task", newTask.Name, "err", err)

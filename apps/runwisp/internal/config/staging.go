@@ -8,14 +8,14 @@ import "path/filepath"
 // This file describes RunWisp's two-tier config layout: a root runwisp.toml the
 // operator owns and keeps in git, plus a machine-owned staging file that
 // `runwisp import` writes and `runwisp promote` graduates entries out of. The
-// loader reads it (to derive Task.Staged); internal/configedit writes it. Both
+// loader reads it (to derive Task.Source); internal/configedit writes it. Both
 // sides agree on the paths here rather than each spelling them out.
 
 // ImportedStagingBase is the reserved basename of the machine-owned staging
 // file that `runwisp import` writes and `runwisp promote` rewrites. It lives at
 // <ImportedStagingSubdir>/<ImportedStagingBase> relative to the root config.
-// Tasks whose origin is this exact file are marked Staged (imported, not yet
-// promoted to native TOML) in the API/UI.
+// Tasks whose origin is this exact file are marked model.SourceStaged
+// (imported, not yet promoted to native TOML) in the API/UI.
 const ImportedStagingBase = "imported.toml"
 
 // ImportedStagingSubdir is RunWisp's drop-in directory — the machine-managed
@@ -25,7 +25,7 @@ const ImportedStagingBase = "imported.toml"
 // include dir like conf.d/; this one is owned by `import`/`promote`.)
 const ImportedStagingSubdir = "runwisp.d"
 
-// StagingIncludeGlob is the include pattern that `import` / `adopt` wire into
+// StagingIncludeGlob is the include pattern that `runwisp import` wires into
 // the root config so the machine-owned runwisp.d staging directory is picked up
 // on every load and reload.
 const StagingIncludeGlob = ImportedStagingSubdir + "/*.toml"

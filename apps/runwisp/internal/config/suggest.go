@@ -125,7 +125,7 @@ func unknownKeyInfo(key toml.Key) (segment string, candidates []string, ok bool)
 	return "", nil, false
 }
 
-// unwrap strips pointers and slices: array-of-table paths ([notifier]) carry
+// unwrap strips pointers and slices: array-of-table paths ([[route]]) carry
 // no index segment, so the element type is matched directly.
 func unwrap(t reflect.Type) reflect.Type {
 	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice {

@@ -11,20 +11,19 @@ import (
 )
 
 // expandConfig applies ${VAR} / ${file:path} substitution to every string
-// value in the decoded wire config, in place. It runs once, right after TOML
-// decoding — the restart-only reload invariant means values never re-expand
-// during the daemon's lifetime.
+// value in the decoded wire config, in place. It runs once per load (boot or
+// reload), right after TOML decoding.
 //
 // Rules:
 //   - ${VAR} resolves through lookupEnv; an unset variable is a hard error
 //     naming the variable and the TOML path. Set-but-empty substitutes "".
 //   - ${file:path} reads the file (strings.TrimSpace'd); relative paths
-//     resolve against baseDir (the runwisp.toml directory), "~/" against the
+//     resolve against baseDir (the declaring file's directory), "~/" against the
 //     user's home. An unreadable file is a hard error.
 //   - $${ escapes to a literal ${. Any other $ passes through verbatim.
 //   - Struct fields tagged expand:"-" (task/service `run`) are skipped: the
 //     shell expands those at runtime with the full process env.
-//   - Map keys are never substituted — only values.
+//   - Map keys are never substituted, only values.
 func expandConfig(raw *tomlConfig, baseDir string, lookupEnv func(string) (string, bool)) error {
 	e := &expander{baseDir: baseDir, lookupEnv: lookupEnv}
 	return e.walkValue(reflect.ValueOf(raw).Elem(), "")

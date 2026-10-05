@@ -8,6 +8,8 @@
 package configload
 
 import (
+	"maps"
+
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/channel"
@@ -77,13 +79,7 @@ func resolveNotifier(n config.NotifierSpec, renderCtx render.TemplateContext) ch
 		spec.User = n.User
 	case "webhook":
 		spec.URL = n.URL
-		if n.Headers != nil {
-			h := make(map[string]string, len(n.Headers))
-			for k, v := range n.Headers {
-				h[k] = v
-			}
-			spec.Headers = h
-		}
+		spec.Headers = maps.Clone(n.Headers)
 	}
 	return spec
 }

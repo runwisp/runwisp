@@ -484,10 +484,9 @@ func TestUpsertTask_ServiceBackAfterPlainTaskIsRunnable(t *testing.T) {
 // race: RemoveTask stops a service's supervisor as mechanical bookkeeping and
 // moves its taskState into removedTasks rather than deleting it outright when
 // an instance hasn't retired yet. A reload that re-adds the same-named
-// service before that instance retires used to leave the revived supervisor
-// permanently stopped — StartServiceInstances silently no-ops on a stopped
-// supervisor, so the service came back registered with zero live instances
-// and no error surfaced anywhere.
+// service before that instance retires must not leave the revived supervisor
+// permanently stopped (StartServiceInstances silently no-ops on a stopped
+// supervisor, so it would come back with zero live instances and no error).
 func TestUpsertTask_RevivesServiceStoppedOnlyByRemoval(t *testing.T) {
 	jm, exec, eb := newGatedManager(t)
 	started := watchRuns(eb, events.EventRunStarted)
@@ -1674,10 +1673,8 @@ func TestRemoveTask_InFlightCronRunFinishes(t *testing.T) {
 
 	// Name-based resolution — including the surface a station peer or a delayed
 	// local restart/retry would use — must refuse the task immediately, not
-	// just once the run has finished. This is what closes the resurrection
-	// race: previously the task stayed resolvable via m.tasks for the entire
-	// drain window, so a well-timed restart/apply on the still-registered name
-	// could bring a just-removed service back to life with no opt-in check.
+	// just once the run has finished, or a well-timed restart/apply during the
+	// drain window could bring a just-removed service back to life.
 	_, found := jm.GetTask("task1")
 	assert.False(t, found, "a removed task must not resolve by name while its old run drains")
 	_, err = jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
@@ -1723,12 +1720,9 @@ func TestRemoveTask_StopsServiceInstances(t *testing.T) {
 // TestRemoveTask_RestartCannotResurrectDuringDrain is the regression test for
 // the station service-resurrection bug: a service:control restart (or a REST/
 // CLI restart) racing the drain window between RemoveTask and its cancelled
-// instance actually exiting used to be able to bring the service back to
-// life — RestartServiceInstances resolved the task by name straight off
-// m.tasks, which stayed populated for the entire drain, with no check that
-// the task was mid-removal and no allow_station_dispatch gate at all. It must
-// now fail outright: the task is unresolvable by name from the instant
-// RemoveTask returns, independent of how long the old instance takes to exit.
+// instance exiting must not bring the service back to life. It must fail
+// outright: the task is unresolvable by name from the instant RemoveTask
+// returns, independent of how long the old instance takes to exit.
 //
 // The instance is held "in flight" past its own cancellation with a callback
 // that blocks on a channel this test controls instead of selecting on ctx —

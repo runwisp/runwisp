@@ -99,9 +99,6 @@ func dispatchQueryRuns(
 			return sqlcdb.QueryRunsCreatedAtAscRow(r)
 		}), err)
 	}
-	// Defensive: ParseSortColumn rejects unknown columns before they reach
-	// this dispatcher; the error path exists so a future caller who skips
-	// the parser sees a clear failure rather than silent default behaviour.
 	return nil, fmt.Errorf("unknown sort column %q", col)
 }
 

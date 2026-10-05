@@ -14,19 +14,15 @@ package services
 import (
 	"fmt"
 	"time"
-)
 
-// defaultHealthyAfter is the fallback "healthy run" threshold when a caller
-// constructs a Supervisor without a configured value. The config layer
-// applies a default during load; this only protects direct test usage.
-const defaultHealthyAfter = 60 * time.Second
+	"github.com/runwisp/runwisp/internal/config"
+)
 
 // slotState is one instance slot's state: whether it's currently occupied,
 // its consecutive-restart attempt counter, when it last reached the running
 // phase and how its health is judged there, its consecutive fast-failure
 // streak, and whether it has tripped into the FATAL state. Keyed by slot index
-// on Supervisor.slots so every facet of a slot moves together instead of
-// parallel maps updated in lockstep.
+// on Supervisor.slots.
 type slotState struct {
 	live      bool
 	attempts  int
@@ -68,13 +64,13 @@ type Supervisor struct {
 // minimum live duration that marks an instance without a health check as
 // healthy (a gated one needs MarkHealthy instead) — being healthy both resets the
 // consecutive-restart counter and clears the failed-start streak; non-positive
-// values fall back to the package default. startStopped seeds the operator-stop
+// values fall back to config.DefaultHealthyAfter. startStopped seeds the operator-stop
 // flag so an autostart=false service boots without spawning instances until an
 // operator starts it. clock supplies "now" for the live-readiness signal; a nil
 // clock falls back to time.Now.
 func NewSupervisor(taskName string, instances int, healthyAfter time.Duration, startStopped bool, clock func() time.Time) *Supervisor {
 	if healthyAfter <= 0 {
-		healthyAfter = defaultHealthyAfter
+		healthyAfter = config.DefaultHealthyAfter
 	}
 	if clock == nil {
 		clock = time.Now
@@ -118,10 +114,10 @@ func (s *Supervisor) SetInstances(instances int) {
 
 // SetHealthyAfter updates the "run was healthy" threshold that drives both the
 // restart-counter reset and the failed-start streak. A non-positive value
-// reverts to the package default.
+// reverts to config.DefaultHealthyAfter.
 func (s *Supervisor) SetHealthyAfter(healthyAfter time.Duration) {
 	if healthyAfter <= 0 {
-		healthyAfter = defaultHealthyAfter
+		healthyAfter = config.DefaultHealthyAfter
 	}
 	s.healthyAfter = healthyAfter
 }
@@ -156,7 +152,7 @@ func (s *Supervisor) Reserve(requested *int) (int, error) {
 // RecordExit releases an instance slot, advances its restart-backoff counter,
 // and tracks consecutive fast failures toward the FATAL threshold.
 //
-// The returned nextAttempt is the index to feed into retry.ComputeRestartDelay
+// The returned nextAttempt is the index to feed into retry.RestartDelay
 // for the next restart (0 means "first restart in this backoff cycle"). A run
 // that became healthy (slotState.wasHealthy) resets that counter before the
 // value is captured.
@@ -319,8 +315,5 @@ func (s *Supervisor) ClearFatal() {
 }
 
 func clampInstances(n int) int {
-	if n < 1 {
-		return 1
-	}
-	return n
+	return max(n, 1)
 }

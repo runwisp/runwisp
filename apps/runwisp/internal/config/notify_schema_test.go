@@ -20,7 +20,7 @@ timezone = "UTC"
 
 // coalesce_window is a pointer so an explicit "0s" (disable outbound coalescing)
 // is distinguishable from an omitted key (nil, default 1h window applied by the
-// coalescers). Replaces the removed coalesce_outbound bool.
+// coalescers).
 func TestDecode_CoalesceWindowPointer(t *testing.T) {
 	t.Run("omitted stays nil", func(t *testing.T) {
 		cfg, err := decode([]byte(schedulerTZHeader+"\n[notify]\nglobal_notifiers = [\"inapp\"]\n"), "")
@@ -762,9 +762,9 @@ notify = ["ops"]
 	assert.True(t, found, "service task with notify must produce a route")
 }
 
-// TestValidate_RouteSeverityRejected pins that the dropped match.severity axis
-// is no longer a recognized key: it must be rejected at strict decode, not
-// silently accepted as dead config.
+// TestValidate_RouteSeverityRejected pins that match.severity is not a
+// recognized key: it must be rejected at strict decode, not silently accepted
+// as dead config.
 func TestValidate_RouteSeverityRejected(t *testing.T) {
 	src := `
 [[route]]

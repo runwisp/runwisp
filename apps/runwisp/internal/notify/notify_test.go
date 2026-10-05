@@ -49,9 +49,8 @@ func missedRunEvent(taskName string) events.Event {
 }
 
 // TestOnBusEvent_MissedReachesIngress confirms a run.missed event is mapped and
-// enqueued for routing — onBusEvent no longer filters by task (the old
-// per-task mute is gone). Whether it actually pages is decided downstream by the
-// classified failure bit (run.IsFailure) against the failure route, covered by
+// enqueued for routing; onBusEvent does not filter by task. Whether it actually
+// pages is decided downstream by the classified failure bit (run.IsFailure) against the failure route, covered by
 // the MatchFailure predicate and configload route-compilation tests.
 func TestOnBusEvent_MissedReachesIngress(t *testing.T) {
 	svc := New(Config{})
@@ -182,14 +181,13 @@ func TestOnBusEvent_IgnoresUnknownEvents(t *testing.T) {
 	assert.Empty(t, svc.ingressCh)
 }
 
-// TestOnBusEvent_AfterStopDropsWithoutPanic pins the M1 fix: Stop closes
-// ingressCh, but an onBusEvent that captured the subscriber list just before
-// unsubscribe may still be mid-send. The old code did a bare close, so that
-// late send panicked ("send on closed channel"). The fix guards the close and
-// the send with ingressMu + an ingressClosed flag: a post-Stop onBusEvent must
-// observe the closed state and drop, never panic. We drive the send path
-// directly after Stop — with an empty (drained) channel the send branch, not
-// the backpressure default, is what would have panicked pre-fix.
+// TestOnBusEvent_AfterStopDropsWithoutPanic: Stop closes ingressCh, but an
+// onBusEvent that captured the subscriber list just before unsubscribe may
+// still be mid-send. ingressMu + the ingressClosed flag make a post-Stop
+// onBusEvent observe the closed state and drop, never panic with "send on
+// closed channel". We drive the send path directly after Stop: with an empty
+// (drained) channel the send branch, not the backpressure default, is the one
+// at risk.
 func TestOnBusEvent_AfterStopDropsWithoutPanic(t *testing.T) {
 	svc := New(Config{Bus: events.NewEventBus()})
 	require.NoError(t, svc.Start(context.Background()))

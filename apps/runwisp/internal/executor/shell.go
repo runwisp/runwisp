@@ -23,7 +23,8 @@ import (
 // are pinned together by TestShellArgs_DefaultShellMatchesConfig.
 const defaultShell = "/bin/sh"
 
-// ShellBackend executes shell scripts on the host via /bin/sh.
+// ShellBackend executes shell scripts on the host via the task's shell
+// (default /bin/sh).
 type ShellBackend struct{}
 
 func (b *ShellBackend) Available(_ context.Context) bool { return true }
@@ -98,16 +99,13 @@ func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.R
 
 // resolveWorkingDir expands a leading `~` against the run-as user's home.
 //
-// config.Load absolutizes working_dir already, and leaves exactly one case for
-// here: a `~` on a task that also drops to another user. That means *that* user's
-// home — cron's rule, which is what makes a system crontab reproducible — and it
-// can only be answered once the credential has been looked up, next to the
-// lookup that produced it. Everything else arrives absolute and passes through.
+// config.Load absolutizes working_dir already, except a `~` on a task that
+// drops to another user: that means that user's home (cron's rule), which is
+// only known once the credential has been looked up. Everything else arrives
+// absolute and passes through.
 //
-// An empty home is an error rather than a fallback: the daemon's own home would
-// be a directory the dropped process may not even be able to read, and silently
-// running somewhere other than where the task said is how a job writes its
-// output into the void.
+// An empty home is an error rather than a fallback to the daemon's home, which
+// the dropped process may not be able to read.
 func resolveWorkingDir(spec, runUserHome string) (string, error) {
 	if spec != "~" && !strings.HasPrefix(spec, "~/") {
 		return spec, nil
@@ -182,25 +180,17 @@ func validateWorkingDir(dir, startErrPrefix string) error {
 	return nil
 }
 
-// stdioCloseGrace bounds how long a run's stdout/stderr pipes are allowed to
-// stay open, past the stop ladder finishing, before Execute forces them shut.
+// stdioCloseGrace bounds how long a run's stdout/stderr pipes may stay open
+// after the stop ladder fires before they are forced shut.
 //
-// The executor drains those pipes to EOF *before* calling Process.Wait (see
-// RoutingExecutor.streamProcessOutput) — the documented, correct order for
-// os/exec's StdoutPipe/StderrPipe, and the only one that never loses buffered
-// output. But it means the read side has no bound of its own: a shell task
-// that backgrounds a child which escapes the process group (`cmd & disown`
-// combined with setsid, or a double-forked daemon) keeps that child's copy of
-// the pipe open long after the tracked process is dead. Signalling -pgid never
-// reaches it, so nothing ever closes the write end, and the executor's read
-// loop — and with it the run, and (if this fires mid-shutdown) the daemon's
-// shutdown drain — hangs forever. cmd.WaitDelay does not help here: it only
-// bounds os/exec's own internal io.Copy goroutines, which StdoutPipe/
-// StderrPipe never use (see the Stdout/Stderr field docs on exec.Cmd).
-// closeStdioAfterGrace is the manual equivalent for this pipe-pull style.
+// The executor drains the pipes to EOF before calling Process.Wait (the
+// correct order for StdoutPipe/StderrPipe), so the read side has no bound of
+// its own: a child that escaped the process group (setsid, a double fork)
+// keeps the write end open after the tracked process dies, and the run (and a
+// shutdown drain) would hang forever. cmd.WaitDelay does not cover pipes
+// obtained via StdoutPipe/StderrPipe, so closeStdioAfterGrace does it by hand.
 //
-// A var (not const) so tests can shrink it instead of waiting out the real
-// delay, matching containerCleanupTimeout/composeHousekeepingTimeout.
+// A var so tests can shrink it.
 var stdioCloseGrace = 10 * time.Second
 
 // makeCancelFunc builds the cmd.Cancel callback that opens the stop ladder:
@@ -208,8 +198,7 @@ var stdioCloseGrace = 10 * time.Second
 // non-positive or stopSig is already SIGKILL). done aborts the pending kill once
 // the process has been reaped. stdout/stderr are the run's pipe read ends,
 // force-closed by closeStdioAfterGrace once the kill ladder has had
-// stdioCloseGrace to work and the run still hasn't been reaped — see
-// stdioCloseGrace for why.
+// stdioCloseGrace to work and the run still hasn't been reaped.
 func makeCancelFunc(cmd *exec.Cmd, grace time.Duration, stopSig syscall.Signal, done <-chan struct{}, stdout, stderr io.Closer) func() error {
 	return func() error {
 		if cmd.Process == nil {
@@ -238,7 +227,7 @@ func makeCancelFunc(cmd *exec.Cmd, grace time.Duration, stopSig syscall.Signal, 
 // still hasn't been reaped (done) by the time d has elapsed since the stop
 // ladder fired. Closing them unblocks any Read the executor's stream capture
 // is stuck in, letting streamProcessOutput return so Execute can reach
-// Process.Wait — see stdioCloseGrace for the scenario this backstops.
+// Process.Wait.
 func closeStdioAfterGrace(done <-chan struct{}, stdout, stderr io.Closer, d time.Duration) {
 	select {
 	case <-done:
@@ -257,32 +246,11 @@ func startError(err error, cred *syscall.Credential, startErrPrefix string) erro
 	return fmt.Errorf("%s: %w", startErrPrefix, err)
 }
 
-// shellArgs builds the interpreter argv for a run script. Fail-fast (`-e`,
-// errexit) is armed here so a multi-line `run` block stops at the first failing
-// command instead of running on and reporting the *last* command's exit code —
-// without it, a script whose middle line fails is persisted as a successful
-// run, which is the invisible failure the daemon exists to prevent.
-//
-// Why `-e` in argv rather than a `set -e` line prepended to the script: both
-// dash and bash number `-c` diagnostics relative to the script string, so
-// prepending a line shifts every error message in every failing run by one.
-// The operator reads "line 7", counts to line 7 of their `run` block, and finds
-// the wrong command. Passing the flag costs no offset and leaves the executed
-// script byte-identical to what the TOML says.
-//
-// Only `-e`. `-u` (unset variables) is unrelated strictness and breaks scripts
-// that legitimately read optional env vars. `-o pipefail` is not POSIX — dash
-// rejects it outright — so a task that needs it selects `shell = "/bin/bash"`
-// and writes `set -o pipefail` itself.
-//
-// Opting out needs no config key: `set +e` as the script's first line turns
-// errexit back off, because a runtime `set` overrides the argv flag.
-//
-// One fidelity cost, accepted knowingly: bash-as-/bin/sh (macOS) reports exit 1
-// instead of 127 when errexit aborts on a missing *absolute path*, though a
-// failed PATH lookup still reports 127 and dash reports 127 for both. A less
-// specific exit code on one dev platform is a small price for not recording
-// failed runs as successes on every platform.
+// shellArgs builds the interpreter argv for a run script. Errexit (`-e`) makes
+// a multi-line `run` block stop at the first failing command, so a failing
+// middle line is never recorded as a successful run. It goes in argv rather
+// than as a prepended `set -e` line so `-c` diagnostics keep the line numbers
+// of the operator's script. A script opts out with `set +e`.
 func shellArgs(shellPath, script string) []string {
 	if model.ShellSupportsErrexit(shellPath) {
 		return []string{"-e", "-c", script}
@@ -294,10 +262,7 @@ func shellArgs(shellPath, script string) []string {
 // is configured, so the mask applies in the child only. Calling syscall.Umask
 // in the daemon would be process-global and not goroutine-safe — it would race
 // every other concurrent run. The umask value is digit-only (validated at
-// config load), so there is no injection surface. We deliberately do not `exec`
-// the script: RunWisp already signals the whole process group (-pgid), so it
-// doesn't matter that the shell stays the group leader, and `exec` cannot wrap
-// an arbitrary compound run script.
+// config load), so there is no injection surface.
 func wrapScriptUmask(umask, script string) string {
 	if umask == "" {
 		return script
@@ -329,8 +294,9 @@ func appendArgTokens(script string, tokens []string) string {
 }
 
 // shellQuote single-quote-wraps a token for /bin/sh, rendering an embedded
-// single quote as the classic '\” sequence. Single quotes suppress every
-// shell metacharacter, so a value like `'; rm -rf /` becomes an inert literal.
+// single quote as close-quote, escaped quote, reopen. Single quotes suppress
+// every shell metacharacter, so a value like `'; rm -rf /` becomes an inert
+// literal.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

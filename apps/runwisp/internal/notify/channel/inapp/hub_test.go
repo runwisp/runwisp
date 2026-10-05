@@ -12,12 +12,10 @@ import (
 )
 
 // TestHubConcurrentPublishUnsubscribe drives Subscribe/unsubscribe churn
-// against a steady stream of Publish calls. On the pre-fix Hub, a Publish that
-// snapshots the subscriber set and then sends outside the lock could land on a
-// channel that a concurrent unsubscribe had just closed, panicking with "send
-// on closed channel" (not saved by the select's default case). The fixed Hub
-// sends under the read lock, mutually exclusive with the close, so this runs to
-// completion without panicking.
+// against a steady stream of Publish calls. A Publish that sent outside the lock
+// could land on a channel a concurrent unsubscribe had just closed and panic
+// with "send on closed channel"; Hub sends under the read lock, mutually
+// exclusive with the close, so this runs to completion without panicking.
 func TestHubConcurrentPublishUnsubscribe(t *testing.T) {
 	hub := NewHub(1)
 
@@ -69,8 +67,8 @@ func TestHubConcurrentPublishUnsubscribe(t *testing.T) {
 
 // TestHubPublishDropsOldestNotNewest pins drop-oldest semantics: when a
 // subscriber's buffer is full, the oldest update is evicted so the newest
-// (carrying the authoritative UnreadCount) still reaches it. The pre-fix Hub
-// dropped the newest instead, leaving the subscriber with a stale count.
+// (carrying the authoritative UnreadCount) still reaches it rather than leaving
+// the subscriber with a stale count.
 func TestHubPublishDropsOldestNotNewest(t *testing.T) {
 	hub := NewHub(1)
 	sub, unsub := hub.Subscribe()

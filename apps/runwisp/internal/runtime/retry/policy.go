@@ -94,10 +94,10 @@ func RestartDelay(task *model.Task, attempt int, reason *model.EndReason) time.D
 	if reason != nil && *reason == model.ReasonStopped {
 		return 0
 	}
-	return ComputeRestartDelay(task, attempt)
+	return computeRestartDelay(task, attempt)
 }
 
-// ComputeRestartDelay calculates the delay before a service instance is
+// computeRestartDelay calculates the delay before a service instance is
 // re-spawned after exiting. attempt is the number of consecutive prior
 // restarts without a healthy run (a run that lived past the supervisor's
 // configured healthy_after).
@@ -107,7 +107,7 @@ func RestartDelay(task *model.Task, attempt int, reason *model.EndReason) time.D
 // to config.DefaultRestartDelay; an explicit zero (restart_delay = "0s") is
 // honored literally, including through backoff — see computeBackoff's
 // overflow guard, which must not treat a legitimate zero delay as overflow.
-func ComputeRestartDelay(task *model.Task, attempt int) time.Duration {
+func computeRestartDelay(task *model.Task, attempt int) time.Duration {
 	base := config.OrDefault(task.RestartDelay, config.DefaultRestartDelay)
 	if attempt <= 0 {
 		return base

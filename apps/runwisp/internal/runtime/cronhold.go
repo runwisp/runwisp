@@ -17,29 +17,23 @@ import (
 // can never be stale for longer than one tick of the thing it is holding for,
 // and the steady-state cost is two short-lived systemctl processes a minute.
 //
-// Deliberately not a TOML setting. Nothing an operator could set here would make
-// their config better, and every knob on the schema is a user-visible surface to
-// keep working forever.
+// Not a TOML setting: no value an operator could pick would improve their
+// config.
 const cronHoldPollInterval = time.Minute
 
 // StartCronHoldWatcher re-asks the machine whether a system cron daemon is live
 // and hands the answer to refresh, so a hold releases itself when cron retires
 // and comes back if cron does. It returns the func that stops the loop.
 //
-// It exists because the hold used to be fixed until the operator ran `runwisp
-// reload`. That made the safe half of the handover safe and the finishing half a
-// trap: stop cron, forget the reload, and the jobs are held by RunWisp while cron
-// is no longer running them — nothing fires them at all, and no run record exists
-// to make that visible. Re-probing is what turns the hold from something the
-// operator maintains into something that just works.
+// Without it, stopping cron without a `runwisp reload` would leave the jobs held
+// by RunWisp and fired by nobody, with no run record to show it.
 //
 // It never reads runwisp.toml. Config reload stays explicit; this only refreshes
 // a fact about the machine.
 //
 // initial is the liveness answer the loaded config already holds, so the first
-// tick only reports a change if the machine has actually moved since boot — and
-// there is no boot pass, which would only exec systemctl to learn what is already
-// on Config.cronDaemon.
+// tick only reports a change if the machine has moved since boot. There is no
+// boot pass: it would only re-learn what Config.cronDaemon already says.
 func StartCronHoldWatcher(
 	probe func() cronprobe.State,
 	refresh func(cronprobe.State) CronHoldChange,
@@ -57,14 +51,11 @@ type cronHoldWatcher struct {
 	last    cronprobe.State
 }
 
-// tick performs one probe and applies it if the answer moved. It is the unit-test
-// seam for the loop above: the flip is the behaviour worth testing, the ticker is
-// not.
+// tick performs one probe and applies it if the answer moved.
 //
-// Only Live is compared, not the prose. A daemon going from active to
-// enabled-but-stopped is still live, still owns the jobs, and re-deriving the
-// same holds to rewrite one warning string would churn the live task set for
-// nothing.
+// Only Live is compared, not the prose: a daemon going from active to
+// enabled-but-stopped still owns the jobs, and re-deriving the same holds to
+// rewrite one warning string would churn the live task set for nothing.
 func (w *cronHoldWatcher) tick() {
 	state := w.probe()
 	if state.Live == w.last.Live {

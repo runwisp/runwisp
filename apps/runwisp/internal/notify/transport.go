@@ -20,9 +20,9 @@ type HTTPDoer interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// HTTPProvider wraps a HTTPDoer with backoff + Retry-After handling. Used by
-// Slack and Telegram channels. The 429 body inspector is provided by the
-// caller (Telegram exposes parameters.retry_after in JSON).
+// HTTPProvider wraps a HTTPDoer with backoff + Retry-After handling for the
+// HTTP-based channels. The 429 body inspector is provided by the caller
+// (Telegram exposes parameters.retry_after in JSON).
 type HTTPProvider struct {
 	Client    HTTPDoer
 	Backoff   BackoffConfig
@@ -96,10 +96,9 @@ func (p *HTTPProvider) handleRateLimit(ctx context.Context, statusCode int, head
 		d = p.Body429Fn(body)
 	}
 	d = clampRetryAfter(d, p.Backoff)
-	// Hand the server-supplied delay to the retry loop instead of sleeping it
-	// here ourselves: RetryWithBackoff's single wait (see
-	// SetNextRetryInterval) then honors ctx.Done() the same way the library's
-	// own backoff wait always has, without a redundant second wait on top.
+	// Hand the server-supplied delay to the retry loop rather than sleeping
+	// here, so there is a single wait and it honors ctx.Done() (see
+	// SetNextRetryInterval).
 	SetNextRetryInterval(ctx, d)
 	return fmt.Errorf("rate-limited: status=%d body=%s", statusCode, truncateBody(body))
 }

@@ -26,7 +26,7 @@ func openRaw(t *testing.T) *sql.DB {
 
 func headVersion(t *testing.T) int {
 	t.Helper()
-	migs, err := loadMigrations()
+	migs, err := parseMigrations(migrationsFS)
 	require.NoError(t, err)
 	require.NotEmpty(t, migs, "expected at least one embedded migration")
 	return migs[len(migs)-1].version
@@ -91,7 +91,7 @@ func TestRunMigrations_AdoptsPreexistingDB(t *testing.T) {
 	// place but user_version still 0. Materialize ONLY that baseline — not the
 	// full chain — so the forward migrations still see their pre-rename columns,
 	// exactly as they would against a real old database.
-	migs, err := loadMigrations()
+	migs, err := parseMigrations(migrationsFS)
 	require.NoError(t, err)
 	require.NoError(t, applyMigration(db, migs[0]))
 	_, err = db.Exec("PRAGMA user_version = 0")
@@ -108,7 +108,7 @@ func TestRunMigrations_AdoptsPreexistingDB(t *testing.T) {
 func TestMigration0002_RenamesTimestampColumns(t *testing.T) {
 	db := openRaw(t)
 
-	migs, err := loadMigrations()
+	migs, err := parseMigrations(migrationsFS)
 	require.NoError(t, err)
 	byVersion := make(map[int]migration, len(migs))
 	for _, m := range migs {
@@ -148,7 +148,7 @@ func TestMigration0002_RenamesTimestampColumns(t *testing.T) {
 }
 
 func TestLoadMigrations_OrderedAndWellFormed(t *testing.T) {
-	migs, err := loadMigrations()
+	migs, err := parseMigrations(migrationsFS)
 	require.NoError(t, err)
 	require.NotEmpty(t, migs)
 

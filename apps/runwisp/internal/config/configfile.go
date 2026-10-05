@@ -82,7 +82,7 @@ func CronIncludeArray(patterns []string) string {
 	return b.String()
 }
 
-// TwoTierRootConfig returns the root runwisp.toml `import`/`adopt` scaffold when
+// TwoTierRootConfig returns the root runwisp.toml `runwisp import` scaffold when
 // no config exists yet: it wires in the machine-owned runwisp.d staging directory
 // and explains the two-tier layout, while staying a file the operator owns and
 // keeps in git. Imported jobs land in runwisp.d/imported.toml; `runwisp promote`

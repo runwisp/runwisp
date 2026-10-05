@@ -281,8 +281,8 @@ func TestRestartDelay(t *testing.T) {
 			RestartDelay:   durPtr(time.Second),
 			RestartBackoff: model.BackoffExponential,
 		}
-		assert.Equal(t, ComputeRestartDelay(task, 2), RestartDelay(task, 2, &crashed))
-		assert.Equal(t, ComputeRestartDelay(task, 2), RestartDelay(task, 2, nil))
+		assert.Equal(t, computeRestartDelay(task, 2), RestartDelay(task, 2, &crashed))
+		assert.Equal(t, computeRestartDelay(task, 2), RestartDelay(task, 2, nil))
 	})
 }
 
@@ -292,7 +292,7 @@ func TestComputeRestartDelay(t *testing.T) {
 			RestartDelay:   durPtr(time.Second),
 			RestartBackoff: model.BackoffExponential,
 		}
-		assert.Equal(t, time.Second, ComputeRestartDelay(task, 0))
+		assert.Equal(t, time.Second, computeRestartDelay(task, 0))
 	})
 
 	t.Run("constant backoff stays at base", func(t *testing.T) {
@@ -301,7 +301,7 @@ func TestComputeRestartDelay(t *testing.T) {
 			RestartBackoff: model.BackoffConstant,
 		}
 		for attempt := 0; attempt < 10; attempt++ {
-			assert.Equalf(t, 500*time.Millisecond, ComputeRestartDelay(task, attempt),
+			assert.Equalf(t, 500*time.Millisecond, computeRestartDelay(task, attempt),
 				"attempt %d should stay at base delay", attempt)
 		}
 	})
@@ -311,7 +311,7 @@ func TestComputeRestartDelay(t *testing.T) {
 			RestartDelay:   durPtr(750 * time.Millisecond),
 			RestartBackoff: "",
 		}
-		assert.Equal(t, 750*time.Millisecond, ComputeRestartDelay(task, 5))
+		assert.Equal(t, 750*time.Millisecond, computeRestartDelay(task, 5))
 	})
 
 	t.Run("exponential doubles each attempt up to cap", func(t *testing.T) {
@@ -331,7 +331,7 @@ func TestComputeRestartDelay(t *testing.T) {
 			RestartBackoffCap, // 8
 		}
 		for attempt, expected := range want {
-			assert.Equalf(t, expected, ComputeRestartDelay(task, attempt),
+			assert.Equalf(t, expected, computeRestartDelay(task, attempt),
 				"attempt %d", attempt)
 		}
 	})
@@ -340,7 +340,7 @@ func TestComputeRestartDelay(t *testing.T) {
 		task := &model.Task{
 			RestartBackoff: model.BackoffExponential,
 		}
-		assert.Equal(t, config.DefaultRestartDelay, ComputeRestartDelay(task, 0))
+		assert.Equal(t, config.DefaultRestartDelay, computeRestartDelay(task, 0))
 	})
 
 	// Bug-first regression: an explicit restart_delay = "0s" must be preserved
@@ -352,8 +352,8 @@ func TestComputeRestartDelay(t *testing.T) {
 			RestartDelay:   durPtr(0),
 			RestartBackoff: model.BackoffExponential,
 		}
-		assert.Equal(t, time.Duration(0), ComputeRestartDelay(task, 0))
-		assert.Equal(t, time.Duration(0), ComputeRestartDelay(task, 5))
+		assert.Equal(t, time.Duration(0), computeRestartDelay(task, 0))
+		assert.Equal(t, time.Duration(0), computeRestartDelay(task, 5))
 	})
 
 	t.Run("large attempt clamps to cap", func(t *testing.T) {
@@ -361,7 +361,7 @@ func TestComputeRestartDelay(t *testing.T) {
 			RestartDelay:   durPtr(time.Second),
 			RestartBackoff: model.BackoffExponential,
 		}
-		assert.Equal(t, RestartBackoffCap, ComputeRestartDelay(task, 100))
+		assert.Equal(t, RestartBackoffCap, computeRestartDelay(task, 100))
 	})
 
 	t.Run("linear scales with attempt+1", func(t *testing.T) {
@@ -370,9 +370,9 @@ func TestComputeRestartDelay(t *testing.T) {
 			RestartBackoff: model.BackoffLinear,
 		}
 		// delay = base * (attempt+1)
-		assert.Equal(t, 4*time.Second, ComputeRestartDelay(task, 1)) // 2s * 2
-		assert.Equal(t, 6*time.Second, ComputeRestartDelay(task, 2)) // 2s * 3
-		assert.Equal(t, 8*time.Second, ComputeRestartDelay(task, 3)) // 2s * 4
+		assert.Equal(t, 4*time.Second, computeRestartDelay(task, 1)) // 2s * 2
+		assert.Equal(t, 6*time.Second, computeRestartDelay(task, 2)) // 2s * 3
+		assert.Equal(t, 8*time.Second, computeRestartDelay(task, 3)) // 2s * 4
 	})
 
 	t.Run("linear clamps to cap", func(t *testing.T) {
@@ -380,6 +380,6 @@ func TestComputeRestartDelay(t *testing.T) {
 			RestartDelay:   durPtr(time.Minute),
 			RestartBackoff: model.BackoffLinear,
 		}
-		assert.Equal(t, RestartBackoffCap, ComputeRestartDelay(task, 10))
+		assert.Equal(t, RestartBackoffCap, computeRestartDelay(task, 10))
 	})
 }

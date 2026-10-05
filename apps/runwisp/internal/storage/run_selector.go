@@ -12,23 +12,23 @@ import (
 )
 
 // runFilterArgs is the shared set of filter-gate parameters threaded through
-// every selector-driven sqlc query. Each filter field is an interface{} so
+// every selector-driven sqlc query. Each filter field is typed any so
 // it can hold either nil (gate open, predicate skipped via SQL IS NULL) or
 // a concrete value the gate compares against. Search additionally drives the
 // LIKE pattern via SearchPattern, which is pre-rendered here.
 type runFilterArgs struct {
 	// StatusSet is the pipe-delimited status haystack (|a|b|) the SQL
 	// set-membership gate matches a run's phase OR end reason against.
-	StatusSet         interface{}
-	TaskNameFilter    interface{}
-	SearchFilter      interface{}
+	StatusSet         any
+	TaskNameFilter    any
+	SearchFilter      any
 	SearchPattern     string
-	CreatedAfter      interface{}
-	CreatedBefore     interface{}
-	TriggeredByFilter interface{}
-	ExitCodeMin       interface{}
-	ExitCodeMax       interface{}
-	RetriesOnly       interface{}
+	CreatedAfter      any
+	CreatedBefore     any
+	TriggeredByFilter any
+	ExitCodeMin       any
+	ExitCodeMax       any
+	RetriesOnly       any
 	// MatchFailure is 0 or 1 (never nil): the SQL OR-branch `match_failure = 1
 	// AND is_failure = 1` widens the status gate to the run's failure
 	// classification. Distinct from a nullable gate because it composes with an
@@ -36,10 +36,10 @@ type runFilterArgs struct {
 	MatchFailure int64
 }
 
-// nullable maps the empty-string "no filter" convention to a nil interface{}
+// nullable maps the empty-string "no filter" convention to a nil any value
 // so the SQL gate `arg IS NULL OR field = arg` can short-circuit. Non-empty
 // values box into the interface unchanged.
-func nullable(v string) interface{} {
+func nullable(v string) any {
 	if v == "" {
 		return nil
 	}
@@ -53,14 +53,14 @@ func nullable(v string) interface{} {
 // converters.go's utcPtr — otherwise a filter bound built with a different
 // offset than the stored row could compare incorrectly even when the two
 // instants are correctly ordered.
-func nullableTime(t *time.Time) interface{} {
+func nullableTime(t *time.Time) any {
 	if t == nil {
 		return nil
 	}
 	return t.UTC()
 }
 
-func nullableInt(n *int) interface{} {
+func nullableInt(n *int) any {
 	if n == nil {
 		return nil
 	}
@@ -70,7 +70,7 @@ func nullableInt(n *int) interface{} {
 // nullableBool turns a boolean toggle into a gate: false leaves the gate open
 // (nil), true closes it with a non-nil sentinel so the predicate (which never
 // reads the value) takes effect.
-func nullableBool(b bool) interface{} {
+func nullableBool(b bool) any {
 	if !b {
 		return nil
 	}
@@ -83,7 +83,7 @@ func nullableBool(b bool) interface{} {
 // decoded into the separate match_failure gate); an all-blank/empty input
 // returns nil so the gate stays fully open. sawFailure reports whether the
 // failure token was present.
-func statusSet(csv string) (set interface{}, sawFailure bool) {
+func statusSet(csv string) (set any, sawFailure bool) {
 	var tokens []string
 	for _, tok := range strings.Split(csv, ",") {
 		switch tok = strings.TrimSpace(tok); tok {
@@ -144,7 +144,7 @@ func buildRunFilterArgs(f model.RunFilter) runFilterArgs {
 // list is empty. sqlc.slice on an empty []string renders `NOT IN (NULL)`,
 // which evaluates to NULL for every row — equivalent to "exclude
 // everything", the opposite of the intent. The empty-string sentinel never
-// matches a real ULID, so `NOT IN (”)` matches all rows; for non-empty
+// matches a real ULID, so the NOT IN then matches all rows; for non-empty
 // ExceptIDs the sentinel is harmless.
 func exceptIDsForSlice(ids []string) []string {
 	out := make([]string, 0, len(ids)+1)

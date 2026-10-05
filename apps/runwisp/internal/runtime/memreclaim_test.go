@@ -54,23 +54,23 @@ func TestMemoryReclaimer_StopEndsLoop(t *testing.T) {
 
 func TestResolveReclaimInterval(t *testing.T) {
 	t.Run("default when unset", func(t *testing.T) {
-		t.Setenv(MemReclaimIntervalEnv, "")
+		t.Setenv(memReclaimIntervalEnv, "")
 		// t.Setenv with "" still sets the key; treat empty as parse failure →
 		// default. Verify the unset path via a valid override below instead.
-		if got := resolveReclaimInterval(); got != DefaultMemReclaimInterval {
-			t.Fatalf("want default %v, got %v", DefaultMemReclaimInterval, got)
+		if got := resolveReclaimInterval(); got != defaultMemReclaimInterval {
+			t.Fatalf("want default %v, got %v", defaultMemReclaimInterval, got)
 		}
 	})
 	t.Run("valid override", func(t *testing.T) {
-		t.Setenv(MemReclaimIntervalEnv, "30s")
+		t.Setenv(memReclaimIntervalEnv, "30s")
 		if got := resolveReclaimInterval(); got != 30*time.Second {
 			t.Fatalf("want 30s, got %v", got)
 		}
 	})
 	t.Run("invalid falls back to default", func(t *testing.T) {
-		t.Setenv(MemReclaimIntervalEnv, "not-a-duration")
-		if got := resolveReclaimInterval(); got != DefaultMemReclaimInterval {
-			t.Fatalf("want default %v, got %v", DefaultMemReclaimInterval, got)
+		t.Setenv(memReclaimIntervalEnv, "not-a-duration")
+		if got := resolveReclaimInterval(); got != defaultMemReclaimInterval {
+			t.Fatalf("want default %v, got %v", defaultMemReclaimInterval, got)
 		}
 	})
 }

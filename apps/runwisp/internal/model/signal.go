@@ -3,7 +3,10 @@
 
 package model
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // StopSignals is the canonical allowlist of signal names accepted by the
 // stop_signal config key, in "SIGxxx" form. These are the only signals
@@ -24,10 +27,5 @@ func NormalizeSignalName(name string) (string, bool) {
 	if !strings.HasPrefix(up, "SIG") {
 		up = "SIG" + up
 	}
-	for _, s := range StopSignals {
-		if s == up {
-			return up, true
-		}
-	}
-	return up, false
+	return up, slices.Contains(StopSignals, up)
 }

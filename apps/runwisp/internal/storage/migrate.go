@@ -41,7 +41,7 @@ func runMigrations(db *sql.DB) error {
 		return err
 	}
 
-	migrations, err := loadMigrations()
+	migrations, err := parseMigrations(migrationsFS)
 	if err != nil {
 		return err
 	}
@@ -100,16 +100,11 @@ func userVersion(db *sql.DB) (int, error) {
 	return v, nil
 }
 
-// loadMigrations reads and parses every embedded migration.
-func loadMigrations() ([]migration, error) {
-	return parseMigrations(migrationsFS)
-}
-
 // parseMigrations reads and parses every migration under the "migrations"
 // directory of fsys, sorted ascending by version. It errors on a malformed
 // filename or duplicate version so a mis-added file fails loudly at startup
-// rather than silently reordering. Split from loadMigrations so tests can feed
-// a synthetic filesystem.
+// rather than silently reordering. Takes fsys so tests can feed a synthetic
+// filesystem.
 func parseMigrations(fsys fs.FS) ([]migration, error) {
 	entries, err := fs.ReadDir(fsys, "migrations")
 	if err != nil {

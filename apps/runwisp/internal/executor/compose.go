@@ -21,9 +21,7 @@ import (
 )
 
 // composeAvailableTimeout caps the `docker compose version` probe we use to
-// decide whether the backend is wired up at all. Short on purpose — when the
-// CLI is installed it answers in milliseconds, and when it isn't there's no
-// payoff to a longer wait.
+// decide whether the backend is wired up at all.
 const composeAvailableTimeout = 2 * time.Second
 
 // composeHousekeepingTimeout bounds the `docker ps`/`docker rm -f` calls made by
@@ -374,8 +372,7 @@ func buildComposeArgs(ce *model.ComposeExecution, task *model.Task, run *model.R
 // -T is explicit rather than implied. Compose does detect the absent TTY on its
 // own, but a RunWisp run has no terminal and we never want to depend on that
 // detection: with a TTY allocated, stderr folds into stdout and every captured
-// line gains a trailing \r, which would corrupt the run log the whole product
-// exists to make readable.
+// line gains a trailing \r, which would corrupt the run log.
 //
 // The command goes through `sh -e -c` for the same reason the host shell backend
 // does it (see executor.shellArgs): a multi-line script whose middle line fails
@@ -408,7 +405,7 @@ func appendComposeExecArgs(args []string, ce *model.ComposeExecution, task *mode
 // appendComposeRunArgs appends the `compose run`-specific flags (one-off
 // container): teardown, deps/pull policy, the daemon-owned container name and
 // ownership labels, per-execution env, the service, and the per-execution
-// arg/option/flag tokens. Split from buildComposeArgs to keep each readable.
+// arg/option/flag tokens.
 func appendComposeRunArgs(args []string, ce *model.ComposeExecution, task *model.Task, run *model.Run, fingerprint, containerName string) []string {
 	args = append(args, "run", "--rm", "--service-ports", "--use-aliases")
 	if !ce.WithDeps {
@@ -464,8 +461,7 @@ func composeManagedLabels(taskName string, instanceIndex int, instanceFP, runID 
 
 // composeContainerName mirrors docker compose's own naming (`<project>_<svc>_<index>`)
 // so `docker compose ps` shows each RunWisp instance as a separately named
-// container. Falls back to service-only names if the project/service is empty
-// (defensive — both should always be set by the time we get here).
+// container. Falls back to shorter names if the project or service is empty.
 func composeContainerName(project, service string, idx int) string {
 	switch {
 	case project == "" && service == "":
@@ -489,19 +485,13 @@ func composeMergedEnv(task *model.Task, run *model.Run, instanceIndex int) map[s
 	merged := map[string]string{
 		"RUNWISP_INSTANCE_INDEX": strconv.Itoa(instanceIndex),
 	}
-	for k, v := range task.Env {
-		merged[k] = v
-	}
-	for k, v := range task.Secrets {
-		merged[k] = v
-	}
+	maps.Copy(merged, task.Env)
+	maps.Copy(merged, task.Secrets)
 	var runParams map[string]string
 	if run != nil {
 		runParams = run.Params
 	}
-	for k, v := range model.ParamEnvLayer(task.Parameters, runParams) {
-		merged[k] = v
-	}
+	maps.Copy(merged, model.ParamEnvLayer(task.Parameters, runParams))
 	return merged
 }
 

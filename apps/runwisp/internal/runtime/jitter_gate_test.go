@@ -266,10 +266,9 @@ func TestJitterGate_ReleasesEarliestSlotFirst(t *testing.T) {
 // TestJitterGate_SameTickLateArrivalTakesOverSlot proves fires of one tick
 // start one at a time whatever order the cron loop hands them over in. The
 // later-slot fires arrive first and the first one finds the gate idle; the
-// slot-0 fire, arriving last with its deadline already due, used to breach at
-// once and run beside it. Now each late arrival takes over the deadline the
-// pulled-forward run no longer needs, so nothing breaches at the tick and the
-// deadlines stay spread across the window.
+// slot-0 fire arrives last with its deadline already due. Each late arrival
+// takes over the deadline the pulled-forward run no longer needs, so nothing
+// breaches at the tick and the deadlines stay spread across the window.
 func TestJitterGate_SameTickLateArrivalTakesOverSlot(t *testing.T) {
 	clk := testutil.NewClock(time.Date(2026, 6, 10, 3, 0, 0, 0, time.UTC))
 	jm, exec, mt, _ := newJitterTestManager(t, clk.Now)

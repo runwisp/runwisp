@@ -79,7 +79,7 @@ type NotifierSpec struct {
 }
 
 // Build turns a NotifierSpec into a notify.Channel. Inapp is built separately
-// by the Service since it needs the Coalescer/Hub deps.
+// since it needs the Coalescer/Hub deps.
 func Build(spec NotifierSpec) (notify.Channel, error) {
 	switch spec.Type {
 	case "slack":

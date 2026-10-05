@@ -145,13 +145,10 @@ func TestDispatcher_ContextCancelDoesNotSurfaceFailure(t *testing.T) {
 	assert.Empty(t, sink.Captured(), "ctx cancel must not be surfaced as a delivery failure")
 }
 
-// TestDispatcher_RedactErrorPreservesCancelDetection is the regression test
-// for the RedactError bug: channels used to build their returned error with
-// fmt.Errorf("%s: %s", ..., Redact(err.Error(), secret)), which stringifies
-// the cause and breaks the Unwrap() chain. errors.Is(err, context.Canceled)
-// then could never see through to the real cause, so a channel interrupted by
-// shutdown looked like a permanent failure. RedactError wraps with %w so the
-// chain survives redaction.
+// TestDispatcher_RedactErrorPreservesCancelDetection: redacting a secret by
+// stringifying the cause would break the Unwrap() chain, so errors.Is(err,
+// context.Canceled) could not see the real cause and a channel interrupted by
+// shutdown would look like a permanent failure. RedactError keeps the chain.
 func TestDispatcher_RedactErrorPreservesCancelDetection(t *testing.T) {
 	wrapped := RedactError(context.Canceled, "super-secret-token")
 	require.True(t, errors.Is(wrapped, context.Canceled),

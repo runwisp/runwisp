@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"sync"
 	"time"
 )
@@ -50,9 +49,9 @@ type Snapshot struct {
 // snapshotPins is the on-disk identity a snapshot was taken of. The two glob
 // sets are kept apart because they are expanded by different rules: an
 // include_cron glob only ever reads what crond itself would read
-// (partitionCrondEligible), and re-globbing it with a plain filepath.Glob is why
-// /etc/cron.d/.placeholder — a file the Debian cron package installs on every box
-// — made `status` report "config changed" forever after an untouched take-over.
+// (partitionCrondEligible). A plain filepath.Glob would count
+// /etc/cron.d/.placeholder (installed by Debian's cron package) and report
+// "config changed" forever after an untouched take-over.
 type snapshotPins struct {
 	files []fileDigest
 	root  string
@@ -160,10 +159,10 @@ func (s *Snapshot) Stale() bool {
 // globMatches expands the resolved include patterns and returns the
 // deduplicated, lexically sorted set of matched files, mirroring how
 // resolveIncludes computed bootMatched. A bad pattern yields no matches rather
-// than an error — Stale must never panic on a config edit.
+// than an error: Stale must never panic on a config edit.
 //
-// crond applies resolveCronIncludes' own eligibility filter, which is what
-// makes this comparable with an include_cron boot set: crond skips a
+// With crond set it applies resolveCronIncludes' eligibility filter, which is
+// what makes this comparable with an include_cron boot set: crond skips a
 // .placeholder or a .dpkg-old, so the loader skips them too, and a plain re-glob
 // that kept them would differ from the boot set forever. The filter is gated on
 // hasGlobMeta for the same reason there: a path the operator typed out is read
@@ -174,7 +173,7 @@ func globMatches(globs []string, root string, crond bool) []string {
 	for _, g := range globs {
 		matched = appendGlobHits(matched, globHits(g, crond), root, seen)
 	}
-	sort.Strings(matched)
+	slices.Sort(matched)
 	return matched
 }
 

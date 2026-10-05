@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,11 +24,11 @@ import (
 	"github.com/runwisp/runwisp/internal/runtime/services"
 )
 
-// PersistenceChannelSize bounds the run-persistence work queue. Sized for
-// realistic burst (pending-run replay on startup) while staying well below
-// 1 MB of reserved channel ring memory.
 const (
-	PersistenceChannelSize = 1024
+	// persistenceChannelSize bounds the run-persistence work queue. Sized for
+	// realistic burst (pending-run replay on startup) while staying well below
+	// 1 MB of reserved channel ring memory.
+	persistenceChannelSize = 1024
 	errTaskNotFoundFmt     = "task not found: %s"
 	errTaskNotServiceFmt   = "task %s is not a service"
 	errTaskIsServiceFmt    = "task %s is a service, not a task"
@@ -75,9 +77,9 @@ type defaultTaskManager struct {
 	// tasks is the name-resolvable live registry. Every lookup-by-name path
 	// (GetTask, TriggerRunWithOptions, the service-control methods, station's
 	// dispatch/service handlers via those) reads only this map, so a task
-	// dropped by RemoveTask becomes instantly unresolvable by name — a station
-	// peer (or REST/CLI restart) can no longer race the drain window to
-	// resurrect a task outside the current TOML set. See removedTasks.
+	// dropped by RemoveTask becomes instantly unresolvable by name, and a station
+	// peer (or REST/CLI restart) cannot race the drain window to resurrect a
+	// task outside the current TOML set. See removedTasks.
 	tasks map[string]*taskState
 	// removedTasks holds taskStates RemoveTask evicted from tasks while a run
 	// was still draining under its old definition — tracked here only so
@@ -90,10 +92,7 @@ type defaultTaskManager struct {
 	removedTasks map[string]*taskState
 	persistence  *PersistenceCoordinator
 	eventBus     *events.Bus
-	// clock is injected so tests can pin run timestamps deterministically and
-	// so the manager honours the project-wide invariant that wall-clock reads
-	// inside scheduling logic come through an injected source. Production
-	// wiring passes time.Now.
+	// clock is injected so wall-clock reads stay deterministic under test.
 	clock      func() time.Time
 	mu         sync.RWMutex
 	isShutdown atomic.Bool
@@ -142,7 +141,7 @@ func NewTaskManager(exec executor.Executor, bus *events.Bus, clock func() time.T
 		executor:       exec,
 		tasks:          make(map[string]*taskState),
 		removedTasks:   make(map[string]*taskState),
-		persistence:    NewPersistenceCoordinator(PersistenceChannelSize),
+		persistence:    NewPersistenceCoordinator(persistenceChannelSize),
 		eventBus:       bus,
 		clock:          clock,
 		shutdownCtx:    shutdownCtx,
@@ -199,14 +198,7 @@ func (m *defaultTaskManager) registerForceKill(runID string, forceKill func()) {
 // name-based resolution must not — it reads m.tasks alone so a removed task
 // is immediately unresolvable by name. Caller holds m.mu (either mode).
 func (m *defaultTaskManager) allTaskStates() []*taskState {
-	out := make([]*taskState, 0, len(m.tasks)+len(m.removedTasks))
-	for _, ts := range m.tasks {
-		out = append(out, ts)
-	}
-	for _, ts := range m.removedTasks {
-		out = append(out, ts)
-	}
-	return out
+	return slices.AppendSeq(slices.Collect(maps.Values(m.tasks)), maps.Values(m.removedTasks))
 }
 
 // taskStateFor looks up a taskState by name across both the live registry and
@@ -229,15 +221,11 @@ func (m *defaultTaskManager) UpsertTask(task *model.Task) {
 }
 
 // MutateTask atomically reads the named task's live definition, applies
-// mutate to a copy, and re-installs it — all under one lock acquisition. This
-// closes the lost-update race a separate GetTask-then-UpsertTask pair has
-// against a concurrent reload (or another MutateTask/UpsertTask call)
-// touching the same task in between: with two lock acquisitions, whichever
-// writer's UpsertTask lands last silently wins even if it started from a
-// definition the other writer had already changed. found is false (mutate is
-// never called) if the task is not currently registered by name — a task mid-
-// removal-drain (see RemoveTask) counts as not found, same as GetTask. A
-// non-nil error from mutate aborts the write; the task is left untouched.
+// mutate to a copy, and re-installs it under one lock acquisition, so a
+// concurrent reload or UpsertTask cannot land in between and be clobbered.
+// found is false (mutate is never called) if the task is not currently
+// registered by name; a task mid-removal-drain counts as not found, same as
+// GetTask. A non-nil error from mutate aborts the write.
 func (m *defaultTaskManager) MutateTask(taskName string, mutate func(*model.Task) error) (found bool, err error) {
 	var orphanedRuns []*model.Run
 	defer func() { m.retireOrphaned(orphanedRuns) }()
@@ -267,10 +255,9 @@ func (m *defaultTaskManager) upsertTaskLocked(task *model.Task) []*model.Run {
 	if !exists {
 		if draining, ok := m.removedTasks[task.Name]; ok {
 			// Reviving a task a prior reload removed while a run was still
-			// draining: reattach the same taskState (active list and all)
-			// instead of starting a fresh one, so the still-running instance
-			// keeps counting against this generation's concurrency/instance
-			// limits until it retires, exactly as it did before removal.
+			// draining: reattach the same taskState (active list and all) so
+			// the still-running instance keeps counting against concurrency and
+			// instance limits until it retires.
 			delete(m.removedTasks, task.Name)
 			ts = draining
 			ts.removed = false
@@ -309,14 +296,10 @@ func (m *defaultTaskManager) upsertTaskLocked(task *model.Task) []*model.Run {
 			go m.queueProcessLoop(ts)
 		}
 	} else if ts.cond != nil {
-		// A reload (or any other UpsertTask caller) just flipped this task off
-		// queue policy. queueProcessLoop only ever pops ts.queue for itself and
-		// only re-checks the policy around a cond.Wait() — with nothing left to
-		// signal it, a goroutine already parked there (or any run still waiting
-		// in ts.queue) would sit forever: the loop never gets a chance to observe
-		// the new policy and exit, and any queued runs would stay persisted as
-		// 'pending' with no goroutine left to start or finalize them. Finalize
-		// whatever is queued the same way RemoveTask does, then broadcast
+		// This task just flipped off queue policy. queueProcessLoop re-checks the
+		// policy only around cond.Wait(), so without a signal it would park
+		// forever and queued runs would stay 'pending' with nothing to start or
+		// finalize them. Finalize the queue as RemoveTask does, then broadcast
 		// unconditionally so a loop parked on an already-empty queue wakes too.
 		orphanedRuns = m.finalizeOrphanedQueue(ts)
 		ts.cond.Broadcast()
@@ -335,9 +318,8 @@ func (m *defaultTaskManager) upsertSupervisor(ts *taskState, task *model.Task) {
 	ts.supervisor.SetInstances(task.Instances)
 	ts.supervisor.SetHealthyAfter(healthyAfter)
 	// Reviving a service the daemon stopped only as bookkeeping (see
-	// bookkeepingStop's doc): resume it exactly as a brand-new
-	// supervisor would — i.e. per the revived definition's own Autostart —
-	// instead of leaving it permanently stopped with no error ever surfaced.
+	// bookkeepingStop): resume it per the revived definition's Autostart, as
+	// a brand-new supervisor would.
 	if ts.bookkeepingStop {
 		if task.Autostart {
 			ts.supervisor.MarkRunning()
@@ -348,11 +330,8 @@ func (m *defaultTaskManager) upsertSupervisor(ts *taskState, task *model.Task) {
 
 // finalizeOrphanedQueue ends every run still sitting in ts.queue (a policy
 // change or task removal left them with no drain loop to ever start them) and
-// returns them, so the caller can retire them from the jitter gate and publish
-// their terminal events once m.mu is released — a queued run can be one the
-// gate marked in-flight (see jitterGate.fire), and publishing a terminal event
-// while still holding the write lock risks deadlocking a re-entrant subscriber
-// (see TriggerRunWithOptions). Caller holds m.mu.
+// returns them for retireOrphaned, which must run once m.mu is released.
+// Caller holds m.mu.
 func (m *defaultTaskManager) finalizeOrphanedQueue(ts *taskState) []*model.Run {
 	if len(ts.queue) == 0 {
 		return nil
@@ -476,12 +455,9 @@ type PendingRunsResult struct {
 // the configured Instances count instead. Pending service rows are marked
 // failed so they don't linger in the database.
 func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult {
-	// A pending run this pass ends immediately (never resumed) gets its
-	// terminal event published after m.mu is released, same as every other
-	// path that can end a run without executing it (see TriggerRunWithOptions)
-	// — harmless this early in boot (nothing subscribes yet), but the run
-	// still deserves one instead of silently going straight from 'pending' to
-	// an ended row no live subscriber ever heard about.
+	// A pending run this pass ends without resuming gets its terminal event
+	// published after m.mu is released, like every other path that ends a run
+	// without executing it (see TriggerRunWithOptions).
 	var endedRuns []*model.Run
 	defer func() {
 		for _, r := range endedRuns {
@@ -492,8 +468,7 @@ func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult
 	defer m.mu.Unlock()
 
 	var result PendingRunsResult
-	for _, run := range runs {
-		r := run
+	for _, r := range runs {
 		ts, exists := m.tasks[r.TaskName]
 		if !exists {
 			m.endOrphanedPending(&r)
@@ -520,10 +495,9 @@ func (m *defaultTaskManager) endOrphanedPending(r *model.Run) {
 // resumePendingRun applies the per-run policy from LoadPendingRuns: services
 // are marked failed (the supervisor spawns fresh instances on boot), queued
 // tasks rejoin their queue (or fail when it is full), and concurrent tasks
-// either restart immediately or fail when capacity is exhausted.
-// resumePendingRun applies the per-run policy from LoadPendingRuns and
-// returns the run if it ended immediately (for the caller to publish once
-// m.mu is released), or nil if it started or joined the queue instead.
+// either restart immediately or fail when capacity is exhausted. It returns
+// the run if it ended immediately (for the caller to publish once m.mu is
+// released), or nil if it started or joined the queue instead.
 func (m *defaultTaskManager) resumePendingRun(ts *taskState, r *model.Run, result *PendingRunsResult) *model.Run {
 	if ts.task.Kind.IsService() {
 		r.End(ts.task, model.ReasonFailed, -1, m.clock())
@@ -587,12 +561,10 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 	}()
 	defer m.mu.Unlock()
 
-	// Refuse new runs once shutdown has begun. Shutdown sets isShutdown before
-	// taking m.mu for its cancel pass, so checking it here under the lock is
-	// race-free: a trigger either commits before Shutdown's pass (and gets
-	// cancelled by it) or observes the flag and bails. Without this, a restart
-	// that races shutdown could append a run after the cancel pass, leaving its
-	// context live forever — an orphaned process and a hung drain.
+	// Refuse new runs once shutdown has begun (see errShuttingDown). Shutdown
+	// sets isShutdown before taking m.mu for its cancel pass, so checking it
+	// here under the lock is race-free: a trigger either commits before
+	// Shutdown's pass (and gets cancelled by it) or observes the flag and bails.
 	if m.isShutdown.Load() {
 		return nil, errShuttingDown
 	}
@@ -725,16 +697,11 @@ func (m *defaultTaskManager) ScheduleJitteredRun(taskName string, tick, slot tim
 // never tracked. Called by the gate under its own lock; TriggerRunWithOptions
 // re-acquires the manager lock beneath it.
 //
-// A fire can sit in the gate's pending queue for a while (waiting for the gate
-// to free or for its slot to breach), and a cron hold can newly apply to the
-// task in that window: RefreshCronHolds unregisters the task from the live
-// scheduler, but has no way to reach into the gate and cancel a fire already
-// submitted for it. Without this check the stale fire runs anyway once the
-// gate frees up — starting a RunWisp-triggered run for a tick that a system
-// cron daemon, now live again, is also about to run itself, which is exactly
-// the double-execution the hold exists to prevent. Removed tasks are refused
-// the same way; only the automatic gate path is guarded — manual/API triggers
-// of a held task are still allowed by design.
+// A fire can wait in the gate while the task becomes held, removed, or
+// paused. RefreshCronHolds and reloads cannot reach into the gate to cancel it,
+// so it is refused here; otherwise a held task would run twice (once here, once
+// by the live system cron). Only this automatic path is guarded: manual/API
+// triggers of a held task are still allowed.
 func (m *defaultTaskManager) triggerJittered(taskName string, tick time.Time) (string, bool) {
 	m.mu.RLock()
 	ts, exists := m.tasks[taskName]
@@ -819,11 +786,10 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.E
 
 // RecordMissedRun persists a terminal end_reason = "missed" run that documents
 // a cron downtime gap, then publishes a failure-level event whose RunEvent.Error
-// carries the human sentence built by the catch-up detector. Modeled on
-// RecordSkippedFiring, with one deliberate difference: the run's instant is the
-// latest missed tick (scheduledAt) rather than now — so resolveCatchupAnchor
-// reads it back as the last-alerted point and the next restart counts only
-// ticks after it, never re-alerting.
+// carries the human sentence built by the catch-up detector. Unlike
+// RecordSkippedFiring, the run's instant is the latest missed tick
+// (scheduledAt), not now, so resolveCatchupAnchor reads it back as the
+// last-alerted point and the next restart never re-alerts.
 func (m *defaultTaskManager) RecordMissedRun(taskName string, scheduledAt time.Time, reason string) error {
 	m.mu.Lock()
 	var publishTerminal func()
@@ -861,8 +827,7 @@ func (m *defaultTaskManager) StartServiceInstances(taskName string, triggeredBy 
 	missing := ts.supervisor.MissingSlots()
 	m.mu.RUnlock()
 
-	for _, idx := range missing {
-		i := idx
+	for _, i := range missing {
 		if _, err := m.TriggerRunWithOptions(taskName, TriggerRunOptions{
 			TriggeredBy:   triggeredBy,
 			InstanceIndex: &i,
@@ -886,12 +851,9 @@ func (m *defaultTaskManager) serviceLocked(taskName string) (*taskState, error) 
 	return ts, nil
 }
 
-// StartService un-parks a service StopService stopped (or clears a FATAL
-// instance left over from a give-up) and brings it back up to its desired
-// instance count. Unlike StartServiceInstances alone — which no-ops on an
-// operator-stopped service by design — this clears the stop/FATAL flags
-// first, so it also covers "start" for a service that was never running.
-// Already-live instances are left untouched; nothing is cancelled.
+// StartService clears a service's stop and FATAL flags, then brings it up to
+// its desired instance count (StartServiceInstances alone no-ops on a stopped
+// service). Already-live instances are left untouched; nothing is cancelled.
 func (m *defaultTaskManager) StartService(taskName string) error {
 	m.mu.Lock()
 	ts, err := m.serviceLocked(taskName)
@@ -937,13 +899,10 @@ func (m *defaultTaskManager) RestartServiceInstances(taskName string) error {
 
 // RecycleServiceInstances lets a reload-changed service definition (new
 // command, env, or instance count) take effect without treating the reload
-// as an operator restart: a service the operator stopped, or one never
-// started because Autostart is false, is left exactly as it is — reload adds/
-// changes/removes tasks live, it is not a restart. A FATAL instance likewise
-// stays FATAL; only an explicit restart clears it. When the service is
-// running, every live instance is cancelled so the exit handler respawns it
-// under the new definition, and any slots freed by an instance-count increase
-// are filled.
+// as an operator restart: a stopped or never-autostarted service is left as
+// it is, and a FATAL instance stays FATAL. When the service is running, every
+// live instance is cancelled so the exit handler respawns it under the new
+// definition, and any slots added by an instance-count increase are filled.
 func (m *defaultTaskManager) RecycleServiceInstances(taskName string) error {
 	m.mu.Lock()
 	ts, err := m.serviceLocked(taskName)
@@ -1142,9 +1101,7 @@ func (m *defaultTaskManager) startRun(task *model.Task, run *model.Run) {
 }
 
 // execute drives one run through its lifecycle: mark running, hand off to the
-// executor, record the outcome, then schedule any policy-driven follow-up. The
-// three phases are split out so each reads as one concern and can be tested
-// without driving a full run.
+// executor, record the outcome, then schedule any policy-driven follow-up.
 func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run *model.Run, active *ActiveRun) {
 	// Under the manager lock: GetActiveRuns takes an RLock and copies these same
 	// run fields, so writing them unlocked races with a concurrent snapshot.
@@ -1162,12 +1119,9 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	m.mu.Unlock()
 	m.persistence.PersistExisting(run)
 	// Flush before the process spawns: LoadPendingRuns resumes any row still
-	// 'pending' at boot, while MarkCrashedRuns fails any row 'running'. Without
-	// this barrier the async write racing a crash could leave a row 'pending'
-	// even though its process had already started, and boot would spawn a
-	// second process for it. Blocking here guarantees the row is durably
-	// 'running' before the OS process exists, so a crash after this point is
-	// always caught by MarkCrashedRuns instead of double-executing on restart.
+	// 'pending' at boot, while MarkCrashedRuns fails any row 'running'. The row
+	// must be durably 'running' before the OS process exists, or a crash could
+	// leave it 'pending' and boot would spawn a second process for it.
 	m.persistence.Flush()
 	m.publishRun(events.EventRunStarted, run)
 
@@ -1245,14 +1199,10 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 func (m *defaultTaskManager) retireRun(task *model.Task, run *model.Run, runDuration time.Duration, endReason model.EndReason) (nextRestartAttempt int, serviceFatal bool, fatalAttempts int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// This run's presence in some taskState's active list means that state has
-	// not yet been reaped (reapRetiredTaskState only reaps at zero active), so
-	// it must still be in m.tasks or removedTasks — the nil guard is
-	// defensive, not an expected path.
+	// This run is still in its taskState's active list, so the state has not
+	// been reaped (reapRetiredTaskState only reaps at zero active) and is in
+	// m.tasks or removedTasks.
 	ts := m.taskStateFor(task.Name)
-	if ts == nil {
-		return nextRestartAttempt, serviceFatal, fatalAttempts
-	}
 	for i, ar := range ts.active {
 		if ar.Run.ID == run.ID {
 			ts.active = append(ts.active[:i], ts.active[i+1:]...)
@@ -1348,12 +1298,10 @@ func (m *defaultTaskManager) publishRun(eventType events.EventType, run *model.R
 //
 // Persistence is async (a buffered channel drained by one worker), so a bare
 // publish outruns its own DB write: a subscriber that reads storage on hearing
-// the event sees a stale non-terminal row. That is not hypothetical — the SSE
-// streamer sends `done` off this event and `runwisp run` then fetches the run,
-// so a lagging row made a failed run report status "running", end_reason nil,
-// and — because a nil end_reason reads as success — exit code 0. Flush is the
-// barrier. It costs one DB write on a goroutine whose process has already
-// exited, once per run.
+// the event sees a stale non-terminal row. The SSE streamer sends `done` off
+// this event and `runwisp run` then fetches the run, so a lagging row would
+// report a failed run as "running" with exit code 0. Flush is the barrier; it
+// costs one DB write per run, after the process has already exited.
 func (m *defaultTaskManager) publishTerminal(eventType events.EventType, run *model.Run) {
 	m.persistence.Flush()
 	m.publishRun(eventType, run)
@@ -1518,7 +1466,7 @@ func (m *defaultTaskManager) Shutdown() {
 // goroutines to exit cleanly, and on timeout SIGKILLs survivors so the
 // daemon can exit without leaving orphaned processes behind. Surviving runs
 // are recorded with ReasonDaemonStopped via the deadlineExceeded flag.
-// deadline <= 0 means "wait indefinitely" (matches old behaviour).
+// deadline <= 0 means "wait indefinitely".
 func (m *defaultTaskManager) ShutdownWithDeadline(deadline time.Duration) {
 	m.isShutdown.Store(true)
 	// Cancel before the wg drain so any goroutine parked in waitForDelay exits

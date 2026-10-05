@@ -59,12 +59,10 @@ type Config struct {
 	// the next boot", …). Probed once rather than per question: it costs a
 	// systemctl exec, and Warnings is answered on every /api/daemon request.
 	//
-	// Not fixed for the life of the config. The daemon re-probes on a timer and
-	// swaps in a re-derived config via WithCronHold, because the alternative — a
-	// hold that only lifts on an explicit reload — leaves an operator who retires
-	// cron and forgets to reload with jobs neither scheduler runs. Scheduling is
-	// still a pure function of the config the scheduler holds; what this field
-	// records is a fact about the machine, not a setting from runwisp.toml.
+	// Not fixed for the life of the config: the daemon re-probes on a timer and
+	// swaps in a re-derived config via WithCronHold, so an operator who retires
+	// cron without reloading isn't left with jobs neither scheduler runs.
+	// Scheduling is still a pure function of the config the scheduler holds.
 	cronDaemon cronprobe.State
 
 	// cronBlocks maps a cron-sourced task name to the TOML that produced it, so
@@ -233,31 +231,19 @@ type NotificationRoute struct {
 
 // Daemon holds daemon-wide toggles.
 //
-// ShutdownTimeout caps how long the daemon waits for in-flight tasks to drain
-// after SIGTERM before forcing exit. The default matches Docker's 10-second
-// stop-grace so a containerised daemon never leaves orphans.
+// ShutdownTimeout caps how long in-flight tasks may drain after SIGTERM. The
+// default matches Docker's 10-second stop-grace.
 //
-// ExternalURL is the operator-supplied public base URL of the embedded Web UI
-// (e.g. "https://runwisp.example.com"). When set, notification renderers
-// build deep-links into the dashboard; when empty, link lines are omitted
-// from outbound messages rather than rendered as broken URLs.
+// ExternalURL is the public base URL of the Web UI. When empty, notification
+// link lines are omitted rather than rendered as broken URLs.
 //
-// MetricsEnabled gates the OpenMetrics /metrics endpoint. Default off: the
-// per-task labels and the daemon version label are information disclosure
-// that a publicly-exposed daemon shouldn't leak by default. Operators who
-// scrape with Prometheus opt in. MetricsListen, when non-empty, binds the
-// metrics endpoint to a separate address (e.g. "127.0.0.1:9478") instead of
-// sharing the main UI/REST listener — useful when --host exposes the UI
-// publicly but the scrape surface should stay on loopback.
+// MetricsEnabled gates /metrics. Default off: task and version labels are
+// information disclosure on a publicly exposed daemon. MetricsListen, when
+// set, binds metrics to a separate address (e.g. "127.0.0.1:9478").
 //
-// TLS controls transport encryption for the main UI/REST listener. "off"
-// (the default) forces plain HTTP everywhere (the operator is terminating TLS
-// at a reverse proxy, trusts the network, or hasn't opted in yet); "auto"
-// serves plain HTTP on loopback but self-signs and serves HTTPS the moment
-// the bind host is non-loopback, so a network-exposed daemon can be encrypted
-// with zero further operator effort once opted in. TLSCert/TLSKey, when both
-// set, supply an operator-provided certificate and key that take precedence
-// over auto self-signing on any bind.
+// TLS is "off" (default, plain HTTP) or "auto" (plain HTTP on loopback,
+// self-signed HTTPS on a non-loopback bind). TLSCert/TLSKey, when both set,
+// take precedence over auto self-signing on any bind.
 type Daemon struct {
 	AllowStationDispatch bool
 	ShutdownTimeout      time.Duration
@@ -282,9 +268,8 @@ type Daemon struct {
 // "100mb") at config load time and stored as native Go types.
 //
 // HealthyAfter is the minimum service-instance run duration that marks an
-// instance as healthy: reaching it both resets the per-instance restart counter
-// and clears the failed-start streak. Instances that survive at least this long
-// are treated as healthy; the next failure starts the backoff curve over.
+// instance as healthy: reaching it resets the per-instance restart counter and
+// the failed-start streak, so the next failure starts the backoff curve over.
 type Defaults struct {
 	Timeout time.Duration
 	// Jitter is the [defaults] start-spread window inherited by cron tasks that

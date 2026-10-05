@@ -53,10 +53,6 @@ var defaultFailureReasons = func() map[EndReason]struct{} {
 	return spec.Resolve(FailureMatcher{}).Reasons
 }()
 
-func isKnownReason(r EndReason) bool {
-	return slices.Contains(AllEndReasons, r)
-}
-
 // outputTokenPrefix marks a `failures` token as an output pattern:
 // "output:<RE2 regex>" matches any captured stdout/stderr line.
 const outputTokenPrefix = "output:"
@@ -190,7 +186,7 @@ func (s *FailureSpec) addToken(tok, raw string, drop bool) error {
 	if reason == ReasonSuccess {
 		return fmt.Errorf("failures: %q cannot be treated as a failure", tok)
 	}
-	if !isKnownReason(reason) {
+	if !slices.Contains(AllEndReasons, reason) {
 		return fmt.Errorf("failures: %q is not a known end reason or exit-code token", tok)
 	}
 	if drop {

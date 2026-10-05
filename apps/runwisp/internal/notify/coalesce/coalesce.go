@@ -5,16 +5,15 @@
 // with fingerprint-based coalescing so a flapping task doesn't translate
 // to one outbound delivery per failure.
 //
-// Strategy, matching the design call in /concepts/concurrency:
+// Strategy:
 //
 //   - The first event seen in a window for a given fingerprint is forwarded
 //     immediately.
 //   - Subsequent events within the window are suppressed until either
-//     `coalesceEvery` accumulate (the Nth event is forwarded with a
+//     CoalesceLimit accumulate (the Nth event is forwarded with a
 //     coalesced_count marker), or the window expires while a pending event is
-//     still buffered
-//     (a "summary" event is forwarded carrying the count and the latest
-//     payload).
+//     still buffered (a "summary" event is forwarded carrying the count and
+//     the latest payload).
 //
 // In-app notifications go through inapp.Coalescer (which folds into a single
 // SQLite row); this wrapper is for outbound channels where each delivery is
@@ -24,6 +23,7 @@ package coalesce
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"sync"
 	"time"
 
@@ -156,10 +156,8 @@ func (c *Channel) Close(ctx context.Context) error {
 	c.mu.Unlock()
 
 	// Wait unconditionally: a window-close summary goroutine calls
-	// c.inner.Execute independently of ctx (see timerFlush), so racing this
-	// wait against ctx.Done() could return here while that goroutine is still
-	// calling Execute concurrently with the Close below — exactly what the
-	// doc comment above promises callers won't happen.
+	// c.inner.Execute independently of ctx (see timerFlush), so returning on
+	// ctx.Done() could let that Execute run concurrently with the Close below.
 	c.wg.Wait()
 	return c.inner.Close(ctx)
 }
@@ -306,11 +304,8 @@ func summarize(ev *notify.Event, count int, windowClose bool) *notify.Event {
 	if out.Extra == nil {
 		out.Extra = make(map[string]any, 2)
 	} else {
-		// shallow-copy the map so we don't mutate the caller's
 		dup := make(map[string]any, len(out.Extra)+2)
-		for k, v := range out.Extra {
-			dup[k] = v
-		}
+		maps.Copy(dup, out.Extra)
 		out.Extra = dup
 	}
 	out.Extra["coalesced_count"] = count

@@ -59,9 +59,9 @@ func cleanTailLines(lines []logutil.LogLineRecord) []string {
 }
 
 // truncateTail caps joined at maxBytes. When the budget is exceeded it keeps the
-// tail of the tail — the *last* maxBytes-1 bytes — and prefixes a single
-// character ellipsis so the reader sees the truncation marker. maxBytes <= 1
-// collapses to "…" with nothing else, which is honest enough.
+// tail of the tail (the *last* maxBytes-len(ellipsis) bytes) and prefixes an
+// ellipsis so the reader sees the truncation marker. A budget too small to fit
+// anything after the ellipsis collapses to the ellipsis alone.
 func truncateTail(joined string, maxBytes int) string {
 	if len(joined) <= maxBytes {
 		return joined

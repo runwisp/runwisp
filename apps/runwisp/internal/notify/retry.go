@@ -23,7 +23,7 @@ type BackoffConfig struct {
 	Multiplier      float64
 }
 
-// DefaultBackoff matches the values from the plan: 1s → 60s, 5m total budget.
+// DefaultBackoff is 1s → 60s per attempt with a 5m total budget.
 func DefaultBackoff() BackoffConfig {
 	return BackoffConfig{
 		InitialInterval: time.Second,
@@ -95,13 +95,8 @@ func clampRetryAfter(d time.Duration, cfg BackoffConfig) time.Duration {
 // IsPermanentHTTPStatus reports whether an HTTP response status should cause
 // the dispatcher to give up immediately (no further retries).
 func IsPermanentHTTPStatus(code int) bool {
-	if code == http.StatusRequestTimeout || code == http.StatusTooManyRequests {
-		return false
-	}
-	if code >= 500 && code < 600 {
-		return false
-	}
-	return code >= 400 && code < 500
+	return code >= 400 && code < 500 &&
+		code != http.StatusRequestTimeout && code != http.StatusTooManyRequests
 }
 
 // rateLimitAwareBackOff wraps a backoff.BackOff so a rate-limited HTTP
@@ -117,12 +112,9 @@ func (b *rateLimitAwareBackOff) NextBackOff() time.Duration {
 	if b.override > 0 {
 		d := b.override
 		b.override = 0
-		// Honor the server-supplied delay, but still enforce the overall
-		// MaxElapsedTime budget the exponential backoff would have applied.
-		// The library only checks that budget inside its own NextBackOff, which
-		// this branch skips — so without this an endpoint returning 429 +
-		// Retry-After on every call would retry forever instead of giving up
-		// after MaxElapsedTime.
+		// Honor the server-supplied delay, but still enforce MaxElapsedTime:
+		// the library only checks it inside its own NextBackOff, which this
+		// branch skips, so a 429 + Retry-After on every call would retry forever.
 		if b.MaxElapsedTime > 0 && b.GetElapsedTime()+d > b.MaxElapsedTime {
 			return backoff.Stop
 		}
@@ -158,7 +150,6 @@ func SetNextRetryInterval(ctx context.Context, d time.Duration) {
 // see SetNextRetryInterval.
 func RetryWithBackoff(ctx context.Context, cfg BackoffConfig, op func(ctx context.Context) error) error {
 	bo := &rateLimitAwareBackOff{ExponentialBackOff: cfg.NewExponential()}
-	bo.Reset()
 	rctx := context.WithValue(ctx, retryOverrideKey{}, bo)
 	if err := backoff.Retry(func() error { return op(rctx) }, backoff.WithContext(bo, rctx)); err != nil {
 		var perm *backoff.PermanentError
@@ -170,9 +161,8 @@ func RetryWithBackoff(ctx context.Context, cfg BackoffConfig, op func(ctx contex
 	return nil
 }
 
-// Redact replaces every occurrence of secret in s with "[redacted]". The
-// empty-secret guard prevents accidental full-string replacement when a
-// channel has no secret configured (e.g. auth-less SMTP relays).
+// Redact replaces every occurrence of secret in s with "[redacted]". An empty
+// secret (e.g. an auth-less SMTP relay) leaves s unchanged.
 func Redact(s, secret string) string {
 	if secret == "" {
 		return s
@@ -190,9 +180,7 @@ type redactedError struct {
 func (r *redactedError) Error() string { return Redact(r.err.Error(), r.secret) }
 func (r *redactedError) Unwrap() error { return r.err }
 
-// RedactError is the %w-safe replacement for
-// `fmt.Errorf("%s: %s", ..., Redact(err.Error(), secret))`. Using %s on
-// err.Error() breaks the Unwrap() chain, which hides context.Canceled /
-// context.DeadlineExceeded from errors.Is during shutdown. Wrap with %w and
-// this type instead so the chain survives while the message stays redacted.
+// RedactError redacts secret from err's message while keeping the Unwrap
+// chain, so errors.Is still sees context.Canceled / DeadlineExceeded during
+// shutdown.
 func RedactError(err error, secret string) error { return &redactedError{err: err, secret: secret} }

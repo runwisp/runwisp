@@ -155,15 +155,12 @@ func TestBuild_SmtpEmptyHostReturnsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "host is required")
 }
 
-// TestBuild_SmtpPropagatesBackoff guards against a wiring bug: unlike
-// Transport (Slack/Discord/Telegram/webhook), spec.Backoff used to never
-// reach smtp.Config, so a configured notify.retry_budget silently had no
-// effect on SMTP (and sendmail, which shares the same factory pattern) and
-// every failed send retried for the full 5-minute default instead. Dialing a
-// closed local port fails immediately, so a channel actually honoring a tiny
-// injected MaxElapsedTime gives up in well under a second; one still using
-// the 5-minute default would still be retrying when the safety-net deadline
-// below fires.
+// TestBuild_SmtpPropagatesBackoff pins that spec.Backoff reaches smtp.Config,
+// so a configured notify.retry_budget applies to SMTP rather than the 5-minute
+// default. Dialing a closed local port fails immediately, so a channel
+// honoring a tiny injected MaxElapsedTime gives up in well under a second; one
+// using the 5-minute default would still be retrying when the safety-net
+// deadline below fires.
 func TestBuild_SmtpPropagatesBackoff(t *testing.T) {
 	port := testutil.PickFreePort(t)
 	ch, err := Build(NotifierSpec{

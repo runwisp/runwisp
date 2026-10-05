@@ -4,6 +4,7 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"iter"
 	"strings"
@@ -67,8 +68,8 @@ func applyHealthCheckDefaults(svc *model.Task, d Defaults, schedulerTZ string) {
 	}
 	applyTaskDefaults(probe)
 	applyInheritedDefaults(probe, d)
-	probe.Cron = firstSet(probe.Cron, DefaultHealthCheckCron)
-	probe.Timezone = firstSet(probe.Timezone, schedulerTZ)
+	probe.Cron = cmp.Or(probe.Cron, DefaultHealthCheckCron)
+	probe.Timezone = cmp.Or(probe.Timezone, schedulerTZ)
 	if probe.Timeout == nil {
 		probe.Timeout = durationPtr(DefaultHealthCheckTimeout)
 	}

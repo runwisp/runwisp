@@ -237,12 +237,10 @@ func (s *recordingFailureSink) IngestSynthetic(ev *notify.Event) {
 	s.captured = append(s.captured, ev)
 }
 
-// TestCoalesce_WindowCloseFailureReportsInApp is the regression test for Bug 6:
-// the window-close summary is delivered on an async goroutine the dispatcher
-// never observes, so a permanent failure there used to be logged and forgotten —
-// a coalesced burst that failed at window close produced no in-app alert. The
-// coalescer must surface the failure itself via the SyntheticIngester, matching
-// the uncoalesced path.
+// TestCoalesce_WindowCloseFailureReportsInApp: the window-close summary is
+// delivered on an async goroutine the dispatcher never observes, so the
+// coalescer must surface a permanent failure there itself via the
+// SyntheticIngester, matching the uncoalesced path.
 func TestCoalesce_WindowCloseFailureReportsInApp(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	inner.Err = errors.New("webhook 500") // every delivery, including the summary, fails
@@ -266,12 +264,12 @@ func TestCoalesce_WindowCloseFailureReportsInApp(t *testing.T) {
 	assert.Equal(t, notify.KindNotifyDeliveryFailed, sink.captured[0].Kind)
 }
 
-// TestTimerFlush_ConcurrentWithCloseNoPanic pins the M2 fix: a window-close
-// timer that fires just as Close begins used to call wg.Add(1) concurrently
-// with Close's wg.Wait, panicking with "WaitGroup is reused before previous
-// Wait has returned". The fix checks timerDone under c.mu before the wg.Add, so
-// once Close has run timerCancel() (which it does before taking the lock) a
-// racing timerFlush skips the Add. This is fundamentally a data-race guard: its
+// TestTimerFlush_ConcurrentWithCloseNoPanic: a window-close timer that fires
+// just as Close begins must not call wg.Add(1) concurrently with Close's
+// wg.Wait ("WaitGroup is reused before previous Wait has returned"). timerFlush
+// checks timerDone under c.mu before the wg.Add, so once Close has run
+// timerCancel() (which it does before taking the lock) a racing timerFlush
+// skips the Add. This is fundamentally a data-race guard: its
 // only observable symptom is the panic under concurrency, so we stress the
 // interleaving over many iterations and fail on any panic. It is most powerful
 // under `go test -race`; without it the panic is timing-dependent, so this is a
@@ -377,13 +375,10 @@ func (b *blockingChannel) Closed() bool {
 	return b.closed
 }
 
-// TestCoalesce_CloseWaitsForSlowInFlightSummary is the regression test for the
-// Close-contract bug: Close's doc comment promises it "blocks until all
-// in-flight summary goroutines return", but the old implementation raced that
-// wait against ctx.Done() and could return while the window-close goroutine
-// was still calling inner.Execute — letting inner.Close run concurrently with
-// it and silently dropping the final summary. Close must wait for the slow
-// Execute to finish before returning, even under a tight ctx deadline.
+// TestCoalesce_CloseWaitsForSlowInFlightSummary: Close must wait for a slow
+// window-close Execute to finish before returning, even under a tight ctx
+// deadline; returning early would let inner.Close run concurrently with it and
+// drop the final summary.
 func TestCoalesce_CloseWaitsForSlowInFlightSummary(t *testing.T) {
 	inner := newBlockingChannel("slack-ops")
 	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, testutil.NewFakeClock(time.Unix(0, 0)), nil, nil)

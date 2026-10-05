@@ -3,8 +3,7 @@
 
 // Package notify is the in-process notification subsystem: it consumes run
 // lifecycle events from the daemon's event bus, routes them through
-// configurable predicates, renders provider-specific messages (Slack,
-// Telegram, in-app), and surfaces outbound delivery failures back as in-app
+// configurable predicates, renders provider-specific messages, and surfaces outbound delivery failures back as in-app
 // notifications. See notify.go's Service type for service-level lifecycle.
 package notify
 
@@ -106,9 +105,8 @@ func (ev *Event) Outcome() string {
 // failed channel + original kind). Two events that should fold together share
 // this key. Both coalescers — the in-app dispatcher's and the routing-action
 // window — derive their fold identity from this single function so their
-// semantics can never drift apart (they previously had to be edited in
-// lockstep). The in-app side hashes the bytes; the routing side uses the
-// string directly.
+// semantics can never drift apart. The in-app side hashes the bytes; the
+// routing side uses the string directly.
 func FingerprintKey(ev *Event) string {
 	if ev == nil {
 		return ""

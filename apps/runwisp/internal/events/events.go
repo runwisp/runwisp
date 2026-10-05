@@ -83,7 +83,7 @@ type SystemSampleEvent struct {
 
 // ConfigStaleEvent fires only when the daemon's config-staleness flips: a TOML
 // edit lands un-applied (true) or a reload clears it (false). Dashboards drive
-// the "restart to apply" banner off this instead of polling /api/daemon.
+// the reload banner off this instead of polling /api/daemon.
 type ConfigStaleEvent struct {
 	Stale bool
 }
@@ -198,7 +198,7 @@ type EventHandler func(event Event)
 //
 // Publish invokes each handler synchronously on the caller's goroutine; handlers
 // that need async fan-out (e.g. SSE streaming) must own their own buffered
-// channel. This keeps the bus allocation-free per publish.
+// channel.
 type Bus struct {
 	subscribers map[EventType]map[int]EventHandler
 	nextID      int

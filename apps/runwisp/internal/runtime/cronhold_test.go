@@ -14,13 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// These tests cover the half of the handover the hold gate used to leave to the
-// operator. The gate itself (hold_test.go) makes a double fire impossible; what
-// this file pins is that the hold does not outlive the cron daemon it was taken
-// out for. It used to: the liveness answer was probed once at config load, so
-// `systemctl disable --now cron` without a follow-up `runwisp reload` left the
-// jobs held by RunWisp and no longer run by cron — nothing fired them at all, and
-// with no runs there was no failure record to make that visible.
+// These tests pin that a hold does not outlive the cron daemon it was taken out
+// for: `systemctl disable --now cron` without a follow-up `runwisp reload` must
+// still hand the jobs to RunWisp. The gate itself (hold_test.go) makes a double
+// fire impossible.
 
 var cronLive = cronprobe.State{Live: true, State: "is running"}
 

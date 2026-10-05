@@ -5,12 +5,12 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"net/mail"
 	"net/url"
 	"path"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -46,10 +46,8 @@ const (
 
 // parseNotifyToken splits a notify destination token into its parent notifier
 // id and an optional inline target override. "slack-ops:#alerts" returns
-// ("slack-ops", "#alerts", true); "slack-ops" or "inapp" returns
-// ("slack-ops", "", false). The "inapp" literal is never treated as having an
-// override even if a colon appears, because the in-app channel has no target
-// to override.
+// ("slack-ops", "#alerts", true); "slack-ops" returns ("slack-ops", "", false).
+// An override on "inapp" is rejected later, by resolveInlineToken.
 func parseNotifyToken(s string) (parentID, override string, hasOverride bool) {
 	s = strings.TrimSpace(s)
 	before, after, found := strings.Cut(s, notifyTokenSeparator)
@@ -137,12 +135,7 @@ func (t *tomlConfig) applyNotifyDurations(out *NotifyConfig) error {
 // separator) are enforced here so the rest of the pipeline can trust the
 // result.
 func buildNotifierSpecs(notifiers map[string]*notifierWire, out *NotifyConfig) error {
-	ids := make([]string, 0, len(notifiers))
-	for id := range notifiers {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	for _, id := range ids {
+	for _, id := range slices.Sorted(maps.Keys(notifiers)) {
 		n := notifiers[id]
 		spec := NotifierSpec{
 			ID:           id,
@@ -392,7 +385,7 @@ func mergeWithAppended(explicit, appended []string) []string {
 
 // validateNotify enforces structural rules: unique IDs, correct types,
 // required per-type fields, route IDs reference a known notifier (or
-// "inapp"), kinds and severity are recognized, glob is well-formed.
+// "inapp"), kinds are recognized, glob is well-formed.
 func validateNotify(cfg *NotifyConfig) error {
 	if cfg == nil {
 		return nil

@@ -4,6 +4,7 @@
 package config
 
 import (
+	"cmp"
 	"fmt"
 	"strconv"
 	"strings"
@@ -391,14 +392,11 @@ func (w *taskServiceWireCore) applyComposeBackend(task *model.Task, name, label 
 		return err
 	}
 	command := ""
-	// Exec mode targets a container someone else created, so the project name
-	// has to be the one that container actually runs under — and RunWisp cannot
-	// know it. Using the task name (fine for `run`, which creates the container
-	// in its own namespace) would make `compose exec` search a project that does
-	// not exist and report the service as not running. Leaving it empty lets
-	// compose resolve the project exactly as a hand-typed `docker compose -f …
-	// exec` would: from the file's directory, its top-level `name:`, or
-	// COMPOSE_PROJECT_NAME.
+	// Exec mode targets a container someone else created, under a project name
+	// RunWisp cannot know; the task name would make `compose exec` search a
+	// project that does not exist. Leaving it empty lets compose resolve the
+	// project as a hand-typed `docker compose -f … exec` would: from the file's
+	// directory, its top-level `name:`, or COMPOSE_PROJECT_NAME.
 	projectName := name
 	if mode == model.ComposeModeExec {
 		command = w.Run
@@ -422,17 +420,10 @@ func (w *taskServiceWireCore) applyComposeBackend(task *model.Task, name, label 
 // resolveComposeMode decides between exec-into-the-running-container and
 // start-a-fresh-one for a compose-backed unit.
 //
-// The default is conditional, and deliberately so. `run` is what disambiguates:
-// supply a command and exec is what you almost always meant — the container is
-// already up, and starting a second copy of the image to run one command in it
-// is the surprising reading. Supply no command and exec is impossible (there is
-// nothing to execute), so the only coherent behaviour is a fresh container
-// running the service's own compose-declared command.
-//
-// Both are reachable explicitly, so "fresh container, my command" stays
-// expressible via compose_mode = "run" — that combination used to be a hard
-// error, which is why relaxing it needed a deliberate decision rather than a
-// silent precedence rule.
+// The default depends on `run`: with a command, exec into the already-running
+// container; without one there is nothing to exec, so start a fresh container
+// running the service's own compose-declared command. "Fresh container, my
+// command" is available explicitly via compose_mode = "run".
 func (w *taskServiceWireCore) resolveComposeMode(name, label string) (string, error) {
 	hasRun := strings.TrimSpace(w.Run) != ""
 
@@ -458,9 +449,7 @@ func (w *taskServiceWireCore) resolveComposeMode(name, label string) (string, er
 	}
 }
 
-// taskWire is the over-the-wire task shape used only during TOML decoding.
-// It exists so manual_trigger can be distinguished between "absent" (nil, default true)
-// and "explicitly false" (&false).
+// taskWire is the over-the-wire [tasks.*] shape used only during TOML decoding.
 type taskWire struct {
 	taskServiceWireCore
 
@@ -551,10 +540,10 @@ func parseRunOnStart(v any) (model.RunOnStartMode, error) {
 
 const runOnStartValid = `valid values are true, false, "daemon", and "boot"`
 
-// serviceWire is the over-the-wire shape for [services.*] entries. Cron and
-// catch_up are intentionally omitted — services are not cron-driven. Services
-// have no max_concurrent or max_queued: instance count is governed by `instances`
-// and overlap behaviour by `on_overlap`.
+// serviceWire is the over-the-wire shape for [services.*] entries. Services are
+// not cron-driven, so cron and catch_up are omitted, and they have no
+// on_overlap, max_concurrent or max_queued: instance count is governed by
+// `instances`.
 type serviceWire struct {
 	taskServiceWireCore
 	serviceSupervisionWire
@@ -639,11 +628,11 @@ func (w *serviceWire) healthCheckTask(name string) (*model.Task, error) {
 		Failures:       hc.Failures,
 	}
 	if hc.ComposeFile == "" {
-		core.WorkingDir = firstSet(hc.WorkingDir, w.WorkingDir)
-		core.Shell = firstSet(hc.Shell, w.Shell)
-		core.Umask = firstSet(hc.Umask, w.Umask)
-		core.EnvBase = firstSet(hc.EnvBase, w.EnvBase)
-		core.User = firstSet(hc.User, w.User)
+		core.WorkingDir = cmp.Or(hc.WorkingDir, w.WorkingDir)
+		core.Shell = cmp.Or(hc.Shell, w.Shell)
+		core.Umask = cmp.Or(hc.Umask, w.Umask)
+		core.EnvBase = cmp.Or(hc.EnvBase, w.EnvBase)
+		core.User = cmp.Or(hc.User, w.User)
 	}
 	retryAttempts := DefaultHealthCheckRetryAttempts
 	if hc.RetryAttempts != nil {
@@ -848,9 +837,8 @@ type daemonWire struct {
 	Include        []string `toml:"include,omitempty"`
 	IncludeCron    []string `toml:"include_cron,omitempty"`
 	// Timezone is the daemon-wide IANA zone used to evaluate cron expressions
-	// for any task that doesn't pin its own — formerly [scheduler] timezone.
-	// Non-reloadable, like every other [daemon] key, so it belongs here rather
-	// than in a single-key table of its own.
+	// for any task that doesn't pin its own. Non-reloadable, like every other
+	// [daemon] key.
 	Timezone string `toml:"timezone,omitempty"`
 }
 

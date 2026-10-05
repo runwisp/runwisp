@@ -10,13 +10,13 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// Backend executes a specific task execution type.
-// Implementations must write all output to the provided stdout/stderr writers
-// and return the process exit code (0 = success).
+// Backend executes a specific task execution type. Start launches the work and
+// returns a Process whose streams the executor drains and whose Wait reports
+// the exit code (0 = success).
 //
 // task carries the resolved task definition, including runtime knobs like
 // GracefulStop that backends use to wire the SIGTERM→wait→SIGKILL ladder.
-// run carries per-execution state — most backends ignore it, but service
+// run carries per-execution state: most backends ignore it, but service
 // backends use run.InstanceIndex to differentiate concurrent instances.
 type Backend interface {
 	Start(ctx context.Context, task *model.Task, run *model.Run, def model.ExecutionDef) (*Process, error)

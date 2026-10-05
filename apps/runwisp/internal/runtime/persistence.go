@@ -116,13 +116,11 @@ func (pc *PersistenceCoordinator) enqueue(task persistTask) {
 func (pc *PersistenceCoordinator) worker(ctx context.Context) {
 	defer crashguard.Guard()
 	defer pc.wg.Done()
-	// drainCtx is what a task applies under once ctx is already cancelled —
-	// whether because we're in the drain loop below, or because the select
-	// case that read a queued task happened to fire in the same instant
-	// ctx.Done() became ready (select picks between ready cases at random, so
-	// that queued task must not be at the mercy of the coin flip: it hasn't
-	// started applying yet, so cancelling it here would only drop data, never
-	// bound a hang).
+	// drainCtx is what a task applies under once ctx is already cancelled:
+	// in the drain loop below, or when select picked a queued task in the same
+	// instant ctx.Done() became ready. A task that has not started applying
+	// yet must not see a cancelled ctx; that would only drop data, never
+	// bound a hang.
 	drainCtx := context.WithoutCancel(ctx)
 	for {
 		select {

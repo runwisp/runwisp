@@ -4,7 +4,7 @@
 package notify
 
 // Rule binds a predicate to a list of channel IDs to invoke when the predicate
-// matches. ChannelIDs are resolved against the channel map at routing time;
+// matches. ActionIDs are resolved against the channel map at routing time;
 // unknown IDs are skipped (validation happens at config load).
 type Rule struct {
 	Match     Predicate
