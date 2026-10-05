@@ -263,6 +263,7 @@ func TestHandleServiceApply_MergesOntoExistingTOMLService(t *testing.T) {
 	existing := &model.Task{
 		Name:          "heartbeat",
 		Kind:          model.KindService,
+		ManualTrigger: true,
 		Restart:       model.RestartAlways,
 		Instances:     1,
 		MaxConcurrent: 1,
@@ -303,6 +304,7 @@ func TestHandleServiceApply_MergeKeepsCommandOnNullScript(t *testing.T) {
 	existing := &model.Task{
 		Name:          "heartbeat",
 		Kind:          model.KindService,
+		ManualTrigger: true,
 		Restart:       model.RestartAlways,
 		Instances:     1,
 		MaxConcurrent: 1,
@@ -332,6 +334,7 @@ func TestHandleServiceApply_MergeAppliesOverriddenScript(t *testing.T) {
 	existing := &model.Task{
 		Name:          "heartbeat",
 		Kind:          model.KindService,
+		ManualTrigger: true,
 		Restart:       model.RestartAlways,
 		Instances:     1,
 		MaxConcurrent: 1,
@@ -364,6 +367,7 @@ func TestHandleServiceApply_MergeOverlaysRestartFields(t *testing.T) {
 	existing := &model.Task{
 		Name:          "heartbeat",
 		Kind:          model.KindService,
+		ManualTrigger: true,
 		Restart:       model.RestartAlways,
 		Instances:     1,
 		MaxConcurrent: 1,
@@ -398,6 +402,7 @@ func TestHandleServiceApply_MergeInvalidScriptOverrideRejected(t *testing.T) {
 	existing := &model.Task{
 		Name:          "heartbeat",
 		Kind:          model.KindService,
+		ManualTrigger: true,
 		Restart:       model.RestartAlways,
 		Instances:     1,
 		MaxConcurrent: 1,
@@ -420,6 +425,7 @@ func TestHandleServiceApply_MergeUnavailableBackendRejected(t *testing.T) {
 	existing := &model.Task{
 		Name:          "heartbeat",
 		Kind:          model.KindService,
+		ManualTrigger: true,
 		Restart:       model.RestartAlways,
 		Instances:     1,
 		MaxConcurrent: 1,
@@ -453,6 +459,7 @@ func TestHandleServiceApply_MergeEnvGatedOnAvailability(t *testing.T) {
 	existing := &model.Task{
 		Name:          "web",
 		Kind:          model.KindService,
+		ManualTrigger: true,
 		Restart:       model.RestartAlways,
 		Instances:     1,
 		MaxConcurrent: 1,
@@ -487,6 +494,7 @@ func TestHandleServiceApply_MergeEnvAppliedWhenAvailable(t *testing.T) {
 	existing := &model.Task{
 		Name:          "web",
 		Kind:          model.KindService,
+		ManualTrigger: true,
 		Restart:       model.RestartAlways,
 		Instances:     1,
 		MaxConcurrent: 1,
@@ -515,6 +523,7 @@ func TestHandleServiceApply_MergeWithoutEnvNotGated(t *testing.T) {
 	existing := &model.Task{
 		Name:          "web",
 		Kind:          model.KindService,
+		ManualTrigger: true,
 		Restart:       model.RestartAlways,
 		Instances:     1,
 		MaxConcurrent: 1,
@@ -543,6 +552,7 @@ func TestHandleServiceApply_MergeEnvRefusedWithoutExecutionDefinition(t *testing
 	existing := &model.Task{
 		Name:          "web",
 		Kind:          model.KindService,
+		ManualTrigger: true,
 		Restart:       model.RestartAlways,
 		Instances:     1,
 		MaxConcurrent: 1,
@@ -641,6 +651,7 @@ func TestHandleServiceApply_MergeRejectsInstanceCountAboveCap(t *testing.T) {
 	existing := &model.Task{
 		Name:          "heartbeat",
 		Kind:          model.KindService,
+		ManualTrigger: true,
 		Restart:       model.RestartAlways,
 		Instances:     1,
 		MaxConcurrent: 1,
@@ -719,6 +730,32 @@ func TestHandleServiceRemove_UnknownTaskIsNoop(t *testing.T) {
 	err := h.HandleServiceRemove(protocol.ServiceRemoveMessage{TaskID: "01JMISSING0000000000000000"})
 	require.NoError(t, err)
 	assert.Empty(t, runner.removed)
+}
+
+// A manual_trigger = false service is locked to its TOML definition: the
+// control plane may not rescale or retune it through service:apply, just as
+// service:control refuses it.
+func TestHandleServiceApply_MergeRejectedWhenManualTriggerDisabled(t *testing.T) {
+	existing := &model.Task{
+		Name:          "locked",
+		Kind:          model.KindService,
+		Restart:       model.RestartAlways,
+		Instances:     1,
+		MaxConcurrent: 1,
+		ManualTrigger: false,
+		ExecutionDef:  &model.ShellExecution{Script: "run.sh"},
+	}
+	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"locked": existing})
+	runner := h.taskManager.(*fakeTaskRunner)
+
+	err := h.HandleServiceApply(protocol.ServiceApplyMessage{
+		Service: &protocol.Service{TaskID: "locked", TaskName: "locked", Instances: 5, RestartDelay: 1},
+	})
+	var stErr *StationError
+	require.ErrorAs(t, err, &stErr)
+	assert.Equal(t, StationErrorKindConflict, stErr.Kind)
+	assert.Empty(t, runner.upserted)
+	assert.Equal(t, 1, existing.Instances)
 }
 
 // HandleServiceControl resolves a synced TOML service by its bare name and a

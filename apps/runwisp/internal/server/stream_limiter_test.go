@@ -11,7 +11,8 @@ import (
 )
 
 func ctxWithPeer(addr string) context.Context {
-	return context.WithValue(context.Background(), peerAddrContextKey, addr)
+	ctx := context.WithValue(context.Background(), peerAddrContextKey, addr)
+	return context.WithValue(ctx, clientIPKey{}, hostFromAddr(addr))
 }
 
 func ctxLocalTrusted(addr string) context.Context {

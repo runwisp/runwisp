@@ -97,6 +97,25 @@ func TestServe(t *testing.T) {
 			wantStatus: http.StatusNotFound,
 		},
 		{
+			name:            "unknown API path is a JSON 404, not the SPA",
+			path:            "/api/nonexistent",
+			accept:          browserAccept,
+			wantStatus:      http.StatusNotFound,
+			wantContentType: "application/problem+json",
+		},
+		{
+			name:            "bare /api is a JSON 404",
+			path:            "/api",
+			wantStatus:      http.StatusNotFound,
+			wantContentType: "application/problem+json",
+		},
+		{
+			name:       "path merely starting with api is still SPA",
+			path:       "/apiary",
+			wantStatus: http.StatusOK,
+			wantBody:   indexBody,
+		},
+		{
 			name:       "traversal is collapsed and confined to the embedded FS",
 			path:       "/../../etc/passwd",
 			wantStatus: http.StatusOK,

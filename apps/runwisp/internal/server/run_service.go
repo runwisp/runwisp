@@ -486,6 +486,10 @@ func (s *runService) bulkCancel(ctx context.Context, sel model.RunSelector) (int
 	}
 	signalled := 0
 	for _, ref := range refs {
+		// Locked tasks are skipped, not failed: the rest of the selection still stops.
+		if s.checkRunStoppable(ref.TaskName) != nil {
+			continue
+		}
 		if err := s.taskManager.TerminateRun(ref.ID); err == nil {
 			signalled++
 		}
@@ -566,5 +570,19 @@ func (s *runService) StopRun(ctx context.Context, runID string) error {
 	if run.Status != model.PhaseRunning {
 		return ErrNotRunning
 	}
+	if err := s.checkRunStoppable(run.TaskName); err != nil {
+		return err
+	}
 	return s.taskManager.TerminateRun(runID)
+}
+
+// checkRunStoppable applies the manual_trigger lock that StopTask enforces to a
+// single run's task. A run whose task is no longer in the registry (ad-hoc
+// station run, or the task was removed by a reload) has no TOML lock to honor,
+// so the operator can still stop it.
+func (s *runService) checkRunStoppable(taskName string) error {
+	if task, ok := s.tasks.Get(taskName); ok && !task.ManuallyControllable() {
+		return ErrManualTriggerDisabled
+	}
+	return nil
 }

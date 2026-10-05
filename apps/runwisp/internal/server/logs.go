@@ -252,6 +252,8 @@ func (srv *Server) registerLogSSE(api huma.API) {
 		Summary:     "Stream a run's log lines as SSE",
 		Description: "Server-Sent Events stream of absolute-line-numbered log entries. Replays history starting at `from` (or `Last-Event-ID + 1`), then follows live output until the run terminates.",
 		Tags:        []string{"Logs"},
+		Errors:      []int{http.StatusNotFound, http.StatusServiceUnavailable},
+		Middlewares: srv.streamGate(api, srv.requireStreamableRun),
 	}, map[string]any{
 		"line":    LogLineSSEEvent{},
 		"region":  LogRegionSSEEvent{},
@@ -261,12 +263,6 @@ func (srv *Server) registerLogSSE(api huma.API) {
 	}, func(ctx context.Context, input *LogStreamInput, send sse.Sender) {
 		ctx, cancelShutdown := srv.withShutdown(ctx)
 		defer cancelShutdown()
-
-		release, ok := srv.streams.acquire(ctx)
-		if !ok {
-			return
-		}
-		defer release()
 
 		run, err := srv.getRunByID(ctx, input.RunID)
 		if err != nil {

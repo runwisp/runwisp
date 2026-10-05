@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Web UI pages now show loading skeletons while data arrives, instead of flashing a blank screen, a false "No runs yet", or the task you just left.
+- Stopping a run, or a selection of runs, now follows `manual_trigger = false` the same way stopping its task does.
+- `/metrics` follows `runwisp reload`, and answers `500` when the run totals can't be read instead of reporting zeros.
+- A log or event stream past the connection limit now gets `503`, and a log stream for an unknown run gets `404`.
+- Unknown `/api/` paths now return a JSON `404` instead of the web UI page.
+
+### Security
+
+- Behind `trusted_proxies`, the client IP is now the first address from the right of `X-Forwarded-For` that isn't a trusted proxy, so the login and hook rate limits apply per real client.
+- With `RUNWISP_AUTH=off`, state-changing requests that a browser marks as coming from another origin are now refused.
 - Compose-backed services no longer hang on start when the Docker engine stops responding; the leftover-container check now gives up after 10 seconds.
 
 ## [1.3.1] - 2026-10-01

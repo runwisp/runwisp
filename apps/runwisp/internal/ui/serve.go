@@ -48,6 +48,15 @@ func serve(stripped fs.FS, w http.ResponseWriter, req *http.Request) {
 		reqPath = indexHTML
 	}
 
+	// An unknown API path must answer like the API (a JSON error), not hand a
+	// client the SPA shell with a 200.
+	if reqPath == "api" || strings.HasPrefix(reqPath, "api/") {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"title":"Not Found","status":404,"detail":"No such API route"}`)
+		return
+	}
+
 	if tryServeFile(stripped, w, req, reqPath) {
 		return
 	}

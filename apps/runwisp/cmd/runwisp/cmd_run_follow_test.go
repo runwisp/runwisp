@@ -124,6 +124,68 @@ func TestFollowRun_RetriesEmptyStreamUntilRunIsStreamable(t *testing.T) {
 		"followRun must retry past the empty (not-yet-persisted) streams")
 }
 
+// The daemon answers 404 (not an empty 200) for a log stream whose run row has
+// not landed yet; followRun must treat that like the empty stream and retry
+// rather than abort with an open error.
+func TestFollowRun_RetriesNotFoundUntilRunIsStreamable(t *testing.T) {
+	var streamHits atomic.Int32
+	const notFoundBeforeReady = 2
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/log/stream"):
+			if int(streamHits.Add(1)) <= notFoundBeforeReady {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, "event: line\ndata: {\"n\":0,\"stream\":\"stdout\",\"text\":\"alpha-line-1\"}\n\n")
+			fmt.Fprint(w, "event: done\ndata: {\"final_line\":0,\"status\":\"ended\"}\n\n")
+
+		case strings.Contains(r.URL.Path, "/runs/"):
+			reason := model.ReasonSuccess
+			_ = json.NewEncoder(w).Encode(model.Run{ID: "run-1", TaskName: "alpha", Status: model.PhaseEnded, EndReason: &reason})
+
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	client := apiclient.New(srv.URL, "")
+
+	var code int
+	var err error
+	out := captureStdout(t, func() {
+		code, _, err = followRun(client, "alpha", "run-1", os.Stdout)
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, code)
+	assert.Contains(t, out, "alpha-line-1")
+	assert.Greater(t, streamHits.Load(), int32(notFoundBeforeReady))
+}
+
+// A refused stream (503 past the cap) is not retried as if the run were
+// pending: the open error reaches the caller.
+func TestFollowRun_StreamRefusalSurfaces(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "too many streams", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	client := apiclient.New(srv.URL, "")
+	var err error
+	captureStdout(t, func() {
+		_, _, err = followRun(client, "alpha", "run-1", os.Stdout)
+	})
+
+	var status *apiclient.HTTPStatusError
+	require.ErrorAs(t, err, &status)
+	assert.Equal(t, http.StatusServiceUnavailable, status.StatusCode)
+}
+
 // TestFollowRun_RereadsNonTerminalRowAfterDone is the regression test for the
 // exec --json stale-status bug seen from the client side: the stream says done
 // while the run row still reads "running". A non-terminal row means a write that

@@ -19,6 +19,8 @@ func (srv *Server) registerDaemonLogSSE(api huma.API) {
 		Summary:     "Stream the daemon's recent log output",
 		Description: "Server-Sent Events stream of daemon log lines. Replays the last 100 buffered lines, then emits new lines as they're written until the client disconnects.",
 		Tags:        []string{"System"},
+		Errors:      []int{http.StatusServiceUnavailable},
+		Middlewares: srv.streamGate(api, nil),
 	}, map[string]any{
 		"line": DaemonLogLineEvent{},
 	}, srv.sseDaemonLogHandler)
@@ -27,12 +29,6 @@ func (srv *Server) registerDaemonLogSSE(api huma.API) {
 func (srv *Server) sseDaemonLogHandler(ctx context.Context, _ *struct{}, send sse.Sender) {
 	ctx, cancelShutdown := srv.withShutdown(ctx)
 	defer cancelShutdown()
-
-	release, ok := srv.streams.acquire(ctx)
-	if !ok {
-		return
-	}
-	defer release()
 
 	if srv.daemonLogBuffer == nil {
 		return

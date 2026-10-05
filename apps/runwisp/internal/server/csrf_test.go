@@ -32,6 +32,12 @@ func TestCSRFGuard(t *testing.T) {
 	}{
 		{"safe GET passes", csrfReq(http.MethodGet, true, nil), true},
 		{"no cookie passes", csrfReq(http.MethodPost, false, nil), true},
+		{"no cookie same-origin passes", csrfReq(http.MethodPost, false, map[string]string{"Origin": "http://localhost:9477"}), true},
+		{"no cookie cross-origin blocked", csrfReq(http.MethodPost, false, map[string]string{"Origin": "https://evil.example"}), false},
+		{"no cookie opaque origin blocked", csrfReq(http.MethodPost, false, map[string]string{"Origin": "null"}), false},
+		{"no cookie sec-fetch cross-site blocked", csrfReq(http.MethodPost, false, map[string]string{"Sec-Fetch-Site": "cross-site"}), false},
+		{"no cookie sec-fetch same-origin passes", csrfReq(http.MethodPost, false, map[string]string{"Sec-Fetch-Site": "same-origin"}), true},
+		{"bearer cross-origin passes", csrfReq(http.MethodPost, false, map[string]string{"Authorization": "Bearer t", "Origin": "https://evil.example"}), true},
 		{"bearer passes", csrfReq(http.MethodPost, true, map[string]string{"Authorization": "Bearer t"}), true},
 		{"cookie same-origin passes", csrfReq(http.MethodPost, true, map[string]string{"Origin": "http://localhost:9477"}), true},
 		{"cookie cross-origin blocked", csrfReq(http.MethodPost, true, map[string]string{"Origin": "http://evil.localhost:6006"}), false},
