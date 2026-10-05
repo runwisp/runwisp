@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-05
+
 ### Changed
 
 - Quitting the TUI no longer asks about the daemon when it attached to one that was already running, such as a service or `runwisp tui`. The keep running / shut down choice only appears when the TUI started the daemon.
@@ -875,7 +877,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.3.1...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.4.0...main
+[1.4.0]: https://github.com/runwisp/runwisp/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/runwisp/runwisp/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/runwisp/runwisp/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/runwisp/runwisp/compare/v1.1.0...v1.2.0
