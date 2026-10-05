@@ -32,6 +32,16 @@ func TestValidate(t *testing.T) {
 		{name: "day-of-week range ending in 7", spec: "0 3 * * 5-7"},
 		{name: "six fields with day-of-week 7", spec: "0 47 6 * * 7"},
 		{name: "day-of-week 7 with a timezone", spec: "47 6 * * 7", timezone: "Europe/Bratislava"},
+		{name: "named day-of-week range ending in 7", spec: "0 3 * * sun-7"},
+		{name: "leap day", spec: "0 0 29 2 *"},
+		{name: "every one second", spec: "@every 1s"},
+		{name: "never fires feb 30", spec: "0 0 30 2 *", wantErr: true},
+		{name: "never fires apr 31", spec: "0 0 31 4 *", wantErr: true},
+		{name: "never fires with timezone", spec: "0 0 30 2 *", timezone: "Europe/Bratislava", wantErr: true},
+		{name: "every zero", spec: "@every 0s", wantErr: true},
+		{name: "every negative", spec: "@every -1s", wantErr: true},
+		{name: "every sub-second", spec: "@every 1ms", wantErr: true},
+		{name: "every sub-second with timezone", spec: "@every 500ms", timezone: "UTC", wantErr: true},
 		{name: "four fields", spec: "* * * *", wantErr: true},
 		{name: "seven fields", spec: "0 0 0 3 * * *", wantErr: true},
 		{name: "out of range minute", spec: "61 * * * *", wantErr: true},
@@ -48,6 +58,19 @@ func TestValidate(t *testing.T) {
 				assert.NoError(t, err)
 			}
 		})
+	}
+}
+
+// TestParsersRejectWhatValidateRejects: the never-fires and sub-second @every
+// checks live in the parser, so callers that parse without Validate (the
+// scheduler, the TUI's next-run hint, the demo seeder) never see a schedule
+// whose Next is the zero time.
+func TestParsersRejectWhatValidateRejects(t *testing.T) {
+	for _, spec := range []string{"0 0 30 2 *", "@every 1ms"} {
+		_, err := NewParser().Parse(spec)
+		assert.Error(t, err, spec)
+		_, err = NewScheduleParser().Parse(spec)
+		assert.Error(t, err, spec)
 	}
 }
 
@@ -72,6 +95,8 @@ func TestSundayIsSeven(t *testing.T) {
 		{name: "range starting at 7", spec: "0 3 * * 7-1", equiv: "0 3 * * 0-1"},
 		// vixie folds day 7 into day 0 after expanding the range, so 1-7 is the
 		// whole week — not an inverted range, and not Monday alone.
+		{name: "named range ending in 7", spec: "0 3 * * sun-7", equiv: "0 3 * * *"},
+		{name: "named range ending in 7 from friday", spec: "0 3 * * FRI-7", equiv: "0 3 * * 0,5,6"},
 		{name: "range 1-7 is every day", spec: "0 3 * * 1-7", equiv: "0 3 * * *"},
 		{name: "range 0-7 is every day", spec: "0 3 * * 0-7", equiv: "0 3 * * *"},
 		{name: "range with a step", spec: "0 3 * * 5-7/2", equiv: "0 3 * * 0,5"},
@@ -260,10 +285,14 @@ func TestScheduleParser_EveryPassesThrough(t *testing.T) {
 
 // TestScheduleParser_NeverMatchingSpecReturnsZero covers the IsZero short-circuit:
 // "Feb 30" never occurs, so the underlying Next returns the zero time and the
-// wrapper hands it straight back without DST math.
+// wrapper hands it straight back without DST math. Our parsers reject the spec,
+// so the wrapper is built around robfig's directly.
 func TestScheduleParser_NeverMatchingSpecReturnsZero(t *testing.T) {
-	sched, err := NewScheduleParser().Parse("0 0 30 2 *")
+	inner, err := cron.NewParser(ParseOptions).Parse("0 0 30 2 *")
 	require.NoError(t, err)
+	spec, ok := inner.(*cron.SpecSchedule)
+	require.True(t, ok)
+	sched := dstGapSchedule{inner: spec}
 
 	got := sched.Next(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
 	assert.True(t, got.IsZero(), "a spec that can never fire must yield the zero time")

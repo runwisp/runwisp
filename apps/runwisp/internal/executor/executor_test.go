@@ -5,6 +5,8 @@ package executor
 
 import (
 	"context"
+	"errors"
+	"math"
 	"os"
 	"os/exec"
 	"strings"
@@ -346,6 +348,44 @@ func TestLogFileCreationFailure(t *testing.T) {
 		assert.Contains(t, result.Error.Error(), "create task log dir")
 	}
 
+}
+
+// A run refused for low disk space still gets a log with the reason in it.
+func TestExecuteLowDiskReasonIsInLog(t *testing.T) {
+	eb := events.NewEventBus()
+	getLogPath := captureLogPath(eb)
+	exec := New(Options{LogDir: t.TempDir(), EventBus: eb, MinFreeDisk: math.MaxInt64, StationDispatchEnabled: true, HasLocalTasks: true})
+
+	result := exec.Execute(context.Background(), &model.Task{Name: "t", Run: "echo hi"}, &model.Run{ID: ulid.Make().String()})
+
+	assert.Equal(t, -1, result.ExitCode)
+	require.Error(t, result.Error)
+	logContent, err := os.ReadFile(getLogPath())
+	require.NoError(t, err)
+	assert.Contains(t, string(logContent), "insufficient disk space")
+	assert.NotContains(t, string(logContent), "hi")
+}
+
+// A process killed by a signal leaves its reason in the log, not just exit -1.
+func TestExecuteSignalDeathReasonIsInLog(t *testing.T) {
+	eb := events.NewEventBus()
+	getLogPath := captureLogPath(eb)
+	exec := New(Options{LogDir: t.TempDir(), EventBus: eb, StationDispatchEnabled: true, HasLocalTasks: true})
+
+	result := exec.Execute(context.Background(), &model.Task{Name: "t", Run: "kill -9 $$"}, &model.Run{ID: ulid.Make().String()})
+
+	assert.Equal(t, -1, result.ExitCode)
+	logContent, err := os.ReadFile(getLogPath())
+	require.NoError(t, err)
+	assert.Contains(t, string(logContent), "signal: killed")
+}
+
+// A plain non-zero exit is already shown as the exit code; no extra line.
+func TestAbnormalExitMessage(t *testing.T) {
+	assert.Empty(t, abnormalExitMessage(nil))
+	assert.Empty(t, abnormalExitMessage(exec.Command("sh", "-c", "exit 3").Run()))
+	assert.Equal(t, "Could not wait for the run to finish: docker gone",
+		abnormalExitMessage(errors.New("docker gone")), "a backend error is not a signal death")
 }
 
 func TestExecuteCommandStartFailure(t *testing.T) {

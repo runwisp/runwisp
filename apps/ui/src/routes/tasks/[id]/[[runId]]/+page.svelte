@@ -12,6 +12,7 @@
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import { createLogSession } from "$lib/utils/log-session";
     import { createRunsSource } from "$lib/utils/runs-source.svelte";
+    import { RunDeepLink } from "$lib/utils/run-deep-link.svelte";
     import { navigateToRun } from "$lib/utils/run-url";
     import { type Task } from "$lib/types";
     import { emptyRunFilters, type RunsListFilters } from "@runwisp/ui";
@@ -87,49 +88,14 @@
     // buffer — honest DB truth, not a mask over live counts.
     $effect(() => connectionStore.onReconnect(() => source.refresh()));
 
-    // Whether the deep-linked run id resolved to no run under this task. Surfaced
-    // to TaskPage so a dead permalink shows a "not found" panel instead of quietly
-    // selecting the running/newest run.
-    let runNotFound = $state(false);
-    let checkedMissingId = $state<string | null>(null);
-    // True while that lookup is in flight, so the detail panel shows a loading
-    // state instead of another run.
-    let runLookupPending = $state(false);
-
-    $effect(() => {
-        const initialRunId = runIdParam;
-        if (!initialRunId || !taskName) {
-            runNotFound = false;
-            checkedMissingId = null;
-            return;
-        }
-        if (source.items.length === 0) return;
-        if (source.items.some((r) => r.id === initialRunId)) {
-            runNotFound = false;
-            return;
-        }
-        if (checkedMissingId === initialRunId) return; // already resolved as missing
-        // A genuinely new id that isn't loaded yet: clear any stale not-found
-        // latched by a previous dead link so it doesn't flash "Run not found"
-        // for this (possibly valid) run while the fetch is in flight.
-        runNotFound = false;
-        runLookupPending = true;
-        void (async () => {
-            try {
-                const run = await tasksApi.getRun(taskName, initialRunId);
-                if (run) {
-                    source.upsert(run);
-                    return;
-                }
-            } catch {
-                // Fall through: not found / not authorized is treated as missing.
-            } finally {
-                runLookupPending = false;
-            }
-            checkedMissingId = initialRunId;
-            runNotFound = true;
-        })();
-    });
+    // Whether the deep-linked run is still loading or resolved to no run,
+    // surfaced so a dead permalink shows a "not found" panel instead of quietly
+    // selecting another run.
+    const deepLink = new RunDeepLink(
+        (id) => tasksApi.getRun(taskName, id),
+        (run) => source.upsert(run),
+    );
+    $effect(() => deepLink.resolve(taskName ? runIdParam : null, source.items));
 
     async function handleRun(params?: Record<string, string | null>) {
         if (!taskName) return;
@@ -225,8 +191,8 @@
                 return Number.isFinite(n) ? n : null;
             })()}
             {selectRunId}
-            {runNotFound}
-            runPending={runLookupPending}
+            runNotFound={deepLink.notFound}
+            runPending={deepLink.pending}
             onSelectRun={selectRun}
         />
     {:else}

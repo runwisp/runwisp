@@ -439,6 +439,25 @@ func TestReloadDropReAddRevivesQueueTask(t *testing.T) {
 	assert.True(t, ok, "retiring the old run must not delete the revived task")
 }
 
+// TestUpsertTask_ServiceBackAfterPlainTaskIsRunnable: reload 1 turns a service
+// into a scheduled task, reload 2 makes it a service again. The supervisor left
+// stopped by reload 1 must not outlive it, or the service never starts.
+func TestUpsertTask_ServiceBackAfterPlainTaskIsRunnable(t *testing.T) {
+	jm, _, _ := newGatedManager(t)
+
+	jm.UpsertTask(serviceTask("svc", 1))
+	require.NoError(t, jm.StopService("svc")) // what Reconciler.applyChanged does first
+	plain := serviceTask("svc", 1)
+	plain.Kind = model.KindTask
+	jm.UpsertTask(plain)
+	jm.UpsertTask(serviceTask("svc", 1))
+
+	jm.mu.Lock()
+	stopped := jm.tasks["svc"].supervisor.IsStopped()
+	jm.mu.Unlock()
+	assert.False(t, stopped, "a service revived from a plain task must start per Autostart")
+}
+
 // TestUpsertTask_RevivesServiceStoppedOnlyByRemoval guards against a reload
 // race: RemoveTask stops a service's supervisor as mechanical bookkeeping and
 // moves its taskState into removedTasks rather than deleting it outright when
@@ -466,7 +485,7 @@ func TestUpsertTask_RevivesServiceStoppedOnlyByRemoval(t *testing.T) {
 	delete(jm.tasks, "svc")
 	ts.removed = true
 	ts.supervisor.MarkStopped()
-	ts.stoppedByRemoval = true
+	ts.bookkeepingStop = true
 	jm.removedTasks["svc"] = ts
 	jm.mu.Unlock()
 

@@ -110,6 +110,10 @@ func requestSelfRestart(allowStationDispatch bool, fatalCh chan<- error) error {
 	return nil
 }
 
+// drainKillMargin is the safety-net slack added on top of the task manager's
+// own shutdown deadline, covering the force-kill and the reaping of survivors.
+const drainKillMargin = 5 * time.Second
+
 // gracefulShutdown tears down all daemon subsystems in two layers. The input
 // layer (HTTP server, station connection) drains under a short fixed deadline
 // so no new requests can enter; the worker layer (scheduler, notifications,
@@ -145,7 +149,11 @@ func gracefulShutdown(cancelStation context.CancelFunc, stationWG *sync.WaitGrou
 		// to keep developer setups responsive.
 		taskTimeout = 3 * time.Second
 	}
-	drainCtx, cancelDrain := context.WithTimeout(context.Background(), taskTimeout)
+	// The task manager enforces taskTimeout itself (SIGKILL on survivors, then
+	// it waits for them to be reaped). The outer wait only has to outlast
+	// that; a timer of the same length would fire first and let the daemon
+	// exit before the kill landed.
+	drainCtx, cancelDrain := context.WithTimeout(context.Background(), taskTimeout+drainKillMargin)
 	defer cancelDrain()
 	waitDrain(drainCtx, svc, taskTimeout)
 }

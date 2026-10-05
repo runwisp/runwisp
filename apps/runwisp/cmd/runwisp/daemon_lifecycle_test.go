@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -162,6 +163,34 @@ func TestWaitDrain_NilSchedulerAndNotifyReturnsPromptly(t *testing.T) {
 	waitDrain(ctx, svc, 100*time.Millisecond)
 	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
 		t.Fatalf("waitDrain took too long with empty TaskManager: %v", elapsed)
+	}
+}
+
+// slowShutdownManager finishes ShutdownWithDeadline a little after its own
+// deadline, like a manager that has to SIGKILL and reap a stuck run.
+type slowShutdownManager struct {
+	runtime.TaskManager
+	finished atomic.Bool
+}
+
+func (m *slowShutdownManager) ShutdownWithDeadline(deadline time.Duration) {
+	time.Sleep(deadline + 100*time.Millisecond)
+	m.finished.Store(true)
+}
+
+// TestGracefulShutdown_WaitsForTaskManagerKill: the manager's deadline and the
+// daemon's outer wait used to be the same length, so the daemon returned (and
+// exited) before the manager had force-killed its survivors.
+func TestGracefulShutdown_WaitsForTaskManagerKill(t *testing.T) {
+	svc := minimalServices(t)
+	slow := &slowShutdownManager{TaskManager: svc.TaskManager}
+	svc.TaskManager = slow
+
+	var stationWG sync.WaitGroup
+	gracefulShutdown(func() {}, &stationWG, svc, nil)
+
+	if !slow.finished.Load() {
+		t.Fatal("gracefulShutdown returned before the task manager finished its force-kill")
 	}
 }
 

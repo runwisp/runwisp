@@ -27,7 +27,7 @@ import (
 const composeAvailableTimeout = 2 * time.Second
 
 // composeHousekeepingTimeout bounds the `docker ps`/`docker rm -f` calls made by
-// reclaim-on-start and Process.Cleanup (both via removeManagedInstance). Without
+// reclaim-on-start and Process.Cleanup (both via removeManagedRun). Without
 // a deadline a hung (not merely unreachable, that fails fast) Docker/Podman
 // engine would stall a run before it launches, or stall shutdown: Cleanup runs
 // in the goroutine the shutdown coordinator waits on after ForceKill. A var (not
@@ -50,6 +50,7 @@ const (
 	labelTask       = "com.runwisp.task"
 	labelInstance   = "com.runwisp.instance"
 	labelInstanceFP = "com.runwisp.instance-fp"
+	labelRun        = "com.runwisp.run"
 )
 
 // ComposeBackend executes docker-compose-declared services by shelling out to
@@ -62,6 +63,25 @@ type ComposeBackend struct {
 	// fingerprint identifies this daemon instance; stamped on managed
 	// containers and used to scope reclaim/cleanup to our own containers.
 	fingerprint string
+
+	// mu guards the maps below, which are created lazily so a bare struct
+	// literal is usable.
+	mu sync.Mutex
+	// namesInUse holds the container names of runs this backend has started and
+	// not yet cleaned up, so an overlapping run of the same slot picks another.
+	namesInUse map[string]bool
+	// slots serialises each (task, instance) slot's reclaim of stale
+	// containers and tracks what is live and what is left to reclaim.
+	slots map[string]*composeSlot
+}
+
+// composeSlot counts a slot's runs between reclaim and cleanup, and holds the
+// runs whose cleanup failed to remove their container (run ID to the name the
+// container may still hold).
+type composeSlot struct {
+	mu      sync.Mutex
+	live    int
+	orphans map[string]string
 }
 
 // NewComposeBackend returns a ComposeBackend ready for use. Availability is
@@ -104,13 +124,20 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 	// daemon's fingerprint, so a user's unrelated same-named container is never
 	// touched. Stack mode lets compose own container lifecycle, and exec mode
 	// targets a container we never created, so both are exempt.
+	runID := ""
+	if run != nil {
+		runID = run.ID
+	}
+	containerName := ""
+	var slot *composeSlot
 	if ce.Mode == model.ComposeModeRun {
 		reclaimCtx, cancel := context.WithTimeout(ctx, composeHousekeepingTimeout)
-		b.removeManagedInstance(reclaimCtx, task.Name, instanceIndex)
+		slot = b.reclaim(reclaimCtx, task.Name, instanceIndex)
 		cancel()
+		containerName = b.claimName(composeContainerName(ce.ProjectName, ce.Service, instanceIndex), runID)
 	}
 
-	args := buildComposeArgs(ce, task, run, b.fingerprint)
+	args := buildComposeArgs(ce, task, run, b.fingerprint, containerName)
 	cmd := exec.CommandContext(ctx, b.dockerCmd, args...)
 	if ce.WorkingDir != "" {
 		cmd.Dir = ce.WorkingDir
@@ -130,6 +157,9 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 
 	proc, err := startCmd(cmd, task.GracefulStopValue(), signalFromName(task.StopSignal), nil, "start docker compose")
 	if err != nil {
+		if slot != nil {
+			b.finishRun(slot, runID, containerName, nil)
+		}
 		return nil, err
 	}
 
@@ -146,53 +176,151 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 	if ce.Mode == model.ComposeModeRun {
 		taskName := task.Name
 		proc.Cleanup = func() {
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), composeHousekeepingTimeout)
-			defer cancel()
-			b.removeManagedInstance(cleanupCtx, taskName, instanceIndex)
+			var err error
+			// Without a run ID the label filter would match the whole slot,
+			// overlapping runs included; production runs always carry one.
+			if runID != "" {
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), composeHousekeepingTimeout)
+				defer cancel()
+				err = b.removeManagedRun(cleanupCtx, taskName, instanceIndex, runID)
+			}
+			b.finishRun(slot, runID, containerName, err)
 		}
 	}
 
 	return proc, nil
 }
 
-// removeManagedInstance force-removes any container this daemon launched for
-// (task, instanceIndex). It backs both reclaim-on-start (clearing a prior
-// life's orphan before launch) and cleanup-on-exit (when `--rm` never fired).
-// The label filter — including this daemon's fingerprint — guarantees it only
-// ever removes RunWisp's own container for this very slot; a genuine name clash
-// with a non-managed container still fails loudly at create, which is correct.
-func (b *ComposeBackend) removeManagedInstance(ctx context.Context, taskName string, instanceIndex int) {
-	ids := b.listManagedContainers(ctx, taskName, instanceIndex)
-	if len(ids) == 0 {
+// claimName returns the --name for a run of one slot: the plain name unless an
+// earlier run of the slot still holds it (an overlapping run, or a retry that
+// starts before the previous attempt is reaped), in which case the run ID is
+// appended so the two never share, and never remove, one container.
+func (b *ComposeBackend) claimName(base, runID string) string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.namesInUse == nil {
+		b.namesInUse = make(map[string]bool)
+	}
+	name := base
+	if b.namesInUse[base] && runID != "" {
+		name = base + "_" + runID
+	}
+	b.namesInUse[name] = true
+	return name
+}
+
+func (b *ComposeBackend) releaseName(name string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.namesInUse, name)
+}
+
+func (b *ComposeBackend) slot(taskName string, instanceIndex int) *composeSlot {
+	key := taskName + "\x00" + strconv.Itoa(instanceIndex)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.slots == nil {
+		b.slots = make(map[string]*composeSlot)
+	}
+	slot := b.slots[key]
+	if slot == nil {
+		slot = &composeSlot{}
+		b.slots[key] = slot
+	}
+	return slot
+}
+
+// reclaim removes the slot's stale containers before a start and counts the
+// start as live. While no run of this process is live in the slot, every
+// container carrying its labels is stale (a prior daemon life's, or one whose
+// cleanup failed), so all go. Otherwise those may be live overlapping runs,
+// whose own Cleanup handles them, and only failed cleanups are retried. Docker
+// failures leave the work for the next start.
+func (b *ComposeBackend) reclaim(ctx context.Context, taskName string, instanceIndex int) *composeSlot {
+	slot := b.slot(taskName, instanceIndex)
+	// Held across the reclaim so a concurrent start of the same slot cannot
+	// launch its container while this one is still listing.
+	slot.mu.Lock()
+	defer slot.mu.Unlock()
+	if slot.live == 0 && b.removeManagedRun(ctx, taskName, instanceIndex, "") == nil {
+		for runID, name := range slot.orphans {
+			delete(slot.orphans, runID)
+			b.releaseName(name)
+		}
+	}
+	for runID, name := range slot.orphans {
+		if b.removeManagedRun(ctx, taskName, instanceIndex, runID) == nil {
+			delete(slot.orphans, runID)
+			b.releaseName(name)
+		}
+	}
+	slot.live++
+	return slot
+}
+
+// finishRun ends a run's hold on its slot. When removing its container failed,
+// the container may still hold the name, so the name stays claimed (the next
+// run picks another) until a later reclaim removes it.
+func (b *ComposeBackend) finishRun(slot *composeSlot, runID, containerName string, removeErr error) {
+	slot.mu.Lock()
+	defer slot.mu.Unlock()
+	slot.live--
+	if removeErr == nil {
+		b.releaseName(containerName)
 		return
 	}
-	b.removeContainers(ctx, ids)
+	if slot.orphans == nil {
+		slot.orphans = make(map[string]string)
+	}
+	slot.orphans[runID] = containerName
+}
+
+// removeManagedRun force-removes the containers this daemon launched for
+// (task, instanceIndex). With a runID it removes only that run's container
+// (cleanup-on-exit, when `--rm` never fired); with "" it removes every one of
+// the slot's containers (reclaim-on-start of a prior life's orphans). The label
+// filter, including this daemon's fingerprint, guarantees it only ever removes
+// RunWisp's own containers; a genuine name clash with a non-managed container
+// still fails loudly at create, which is correct. A docker failure is logged
+// and returned; reclaim is best-effort and must never block a run.
+func (b *ComposeBackend) removeManagedRun(ctx context.Context, taskName string, instanceIndex int, runID string) error {
+	ids, err := b.listManagedContainers(ctx, taskName, instanceIndex, runID)
+	if err != nil || len(ids) == 0 {
+		return err
+	}
+	return b.removeContainers(ctx, ids)
 }
 
 // listManagedContainers returns the IDs of containers carrying this daemon's
-// ownership labels for (task, instanceIndex). A docker failure is logged and
-// treated as "none found" — reclaim is best-effort and must never block a run.
-func (b *ComposeBackend) listManagedContainers(ctx context.Context, taskName string, instanceIndex int) []string {
-	out, err := exec.CommandContext(ctx, b.dockerCmd, "ps", "-aq",
-		"--filter", "label="+labelTask+"="+taskName,
-		"--filter", "label="+labelInstance+"="+strconv.Itoa(instanceIndex),
-		"--filter", "label="+labelInstanceFP+"="+b.fingerprint,
-	).Output()
+// ownership labels for (task, instanceIndex), narrowed to one run when runID is
+// set.
+func (b *ComposeBackend) listManagedContainers(ctx context.Context, taskName string, instanceIndex int, runID string) ([]string, error) {
+	args := []string{"ps", "-aq",
+		"--filter", "label=" + labelTask + "=" + taskName,
+		"--filter", "label=" + labelInstance + "=" + strconv.Itoa(instanceIndex),
+		"--filter", "label=" + labelInstanceFP + "=" + b.fingerprint,
+	}
+	if runID != "" {
+		args = append(args, "--filter", "label="+labelRun+"="+runID)
+	}
+	out, err := exec.CommandContext(ctx, b.dockerCmd, args...).Output()
 	if err != nil {
 		slog.Warn("compose: could not list managed containers for reclaim",
 			"task", taskName, "instance", instanceIndex, "err", err)
-		return nil
+		return nil, err
 	}
-	return parseContainerIDs(out)
+	return parseContainerIDs(out), nil
 }
 
 // removeContainers force-removes the given container IDs in one `docker rm -f`.
-func (b *ComposeBackend) removeContainers(ctx context.Context, ids []string) {
+func (b *ComposeBackend) removeContainers(ctx context.Context, ids []string) error {
 	args := append([]string{"rm", "-f"}, ids...)
-	if err := exec.CommandContext(ctx, b.dockerCmd, args...).Run(); err != nil {
+	err := exec.CommandContext(ctx, b.dockerCmd, args...).Run()
+	if err != nil {
 		slog.Warn("compose: could not remove managed container(s)",
 			"ids", strings.Join(ids, ","), "err", err)
 	}
+	return err
 }
 
 // parseContainerIDs splits `docker ps -aq` output (one ID per line) into a
@@ -213,8 +341,9 @@ func parseContainerIDs(out []byte) []string {
 // the target container via repeated value-less `-e KEY` flags, deterministically
 // ordered; docker resolves each value from the CLI's environment (injected in
 // Start), so no value ever appears on argv.
-// fingerprint scopes the ownership labels stamped on the container.
-func buildComposeArgs(ce *model.ComposeExecution, task *model.Task, run *model.Run, fingerprint string) []string {
+// fingerprint scopes the ownership labels stamped on the container, and
+// containerName is the --name used in run mode.
+func buildComposeArgs(ce *model.ComposeExecution, task *model.Task, run *model.Run, fingerprint, containerName string) []string {
 	args := []string{"compose", "-f", ce.File}
 	if ce.ProjectName != "" {
 		args = append(args, "-p", ce.ProjectName)
@@ -232,7 +361,7 @@ func buildComposeArgs(ce *model.ComposeExecution, task *model.Task, run *model.R
 	case model.ComposeModeExec:
 		args = appendComposeExecArgs(args, ce, task, run)
 	default:
-		args = appendComposeRunArgs(args, ce, task, run, fingerprint)
+		args = appendComposeRunArgs(args, ce, task, run, fingerprint, containerName)
 	}
 	return args
 }
@@ -280,7 +409,7 @@ func appendComposeExecArgs(args []string, ce *model.ComposeExecution, task *mode
 // container): teardown, deps/pull policy, the daemon-owned container name and
 // ownership labels, per-execution env, the service, and the per-execution
 // arg/option/flag tokens. Split from buildComposeArgs to keep each readable.
-func appendComposeRunArgs(args []string, ce *model.ComposeExecution, task *model.Task, run *model.Run, fingerprint string) []string {
+func appendComposeRunArgs(args []string, ce *model.ComposeExecution, task *model.Task, run *model.Run, fingerprint, containerName string) []string {
 	args = append(args, "run", "--rm", "--service-ports", "--use-aliases")
 	if !ce.WithDeps {
 		args = append(args, "--no-deps")
@@ -292,8 +421,12 @@ func appendComposeRunArgs(args []string, ce *model.ComposeExecution, task *model
 	if run != nil {
 		instanceIndex = run.InstanceIndex
 	}
-	args = append(args, "--name", composeContainerName(ce.ProjectName, ce.Service, instanceIndex))
-	for _, l := range composeManagedLabels(task.Name, instanceIndex, fingerprint) {
+	args = append(args, "--name", containerName)
+	runID := ""
+	if run != nil {
+		runID = run.ID
+	}
+	for _, l := range composeManagedLabels(task.Name, instanceIndex, fingerprint, runID) {
 		args = append(args, "--label", l)
 	}
 	for _, k := range composeEnvFlags(task, run, instanceIndex) {
@@ -316,13 +449,17 @@ func appendComposeRunArgs(args []string, ce *model.ComposeExecution, task *model
 // services-mode container. instanceFP scopes reclaim/cleanup to this daemon so
 // two daemons sharing a compose project never delete each other's containers.
 // Ordering is fixed so argv stays stable for tests.
-func composeManagedLabels(taskName string, instanceIndex int, instanceFP string) []string {
-	return []string{
+func composeManagedLabels(taskName string, instanceIndex int, instanceFP, runID string) []string {
+	labels := []string{
 		labelManaged + "=true",
 		labelTask + "=" + taskName,
 		labelInstance + "=" + strconv.Itoa(instanceIndex),
 		labelInstanceFP + "=" + instanceFP,
 	}
+	if runID != "" {
+		labels = append(labels, labelRun+"="+runID)
+	}
+	return labels
 }
 
 // composeContainerName mirrors docker compose's own naming (`<project>_<svc>_<index>`)
