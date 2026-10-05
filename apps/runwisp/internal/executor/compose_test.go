@@ -344,7 +344,7 @@ func TestComposeBackend_Start_CleanupRemovesInstance(t *testing.T) {
 	ce := &model.ComposeExecution{File: "/tmp/dc.yml", ProjectName: "demo", Service: "web", Mode: model.ComposeModeRun}
 	task := &model.Task{Name: "boxes.web"}
 
-	proc, err := b.Start(context.Background(), task, &model.Run{InstanceIndex: 2}, ce)
+	proc, err := b.Start(context.Background(), task, &model.Run{ID: "RUN1", InstanceIndex: 2}, ce)
 	require.NoError(t, err)
 	go drain(proc.Stdout)
 	go drain(proc.Stderr)
@@ -355,7 +355,7 @@ func TestComposeBackend_Start_CleanupRemovesInstance(t *testing.T) {
 	proc.Cleanup()
 
 	calls := readDockerCalls(t, logFile)
-	assert.Contains(t, calls, "ps -aq --filter label=com.runwisp.task=boxes.web --filter label=com.runwisp.instance=2 --filter label=com.runwisp.instance-fp=fp-test")
+	assert.Contains(t, calls, "ps -aq --filter label=com.runwisp.task=boxes.web --filter label=com.runwisp.instance=2 --filter label=com.runwisp.instance-fp=fp-test --filter label=com.runwisp.run=RUN1")
 	assert.Contains(t, calls, "rm -f live456")
 }
 
@@ -396,7 +396,7 @@ func TestComposeBackend_CleanupBoundedWhenDockerHangs(t *testing.T) {
 	ce := &model.ComposeExecution{File: "/tmp/dc.yml", ProjectName: "demo", Service: "web", Mode: model.ComposeModeRun}
 	task := &model.Task{Name: "boxes.web"}
 
-	proc, err := b.Start(context.Background(), task, &model.Run{InstanceIndex: 0}, ce)
+	proc, err := b.Start(context.Background(), task, &model.Run{ID: "RUN1"}, ce)
 	require.NoError(t, err)
 	go drain(proc.Stdout)
 	go drain(proc.Stderr)
@@ -476,7 +476,7 @@ func TestComposeBackend_OverlappingRunsKeepTheirOwnContainer(t *testing.T) {
 	calls := readDockerCalls(t, logFile)
 	assert.Contains(t, calls, "--name demo_web_0_RUN2", "an overlapping run needs its own container name")
 	assert.Contains(t, calls, "--label com.runwisp.run=RUN2")
-	assert.NotContains(t, calls, "ps -aq", "only the slot's first start reclaims; later ones would hit live containers")
+	assert.NotContains(t, calls, "ps -aq", "a live run in the slot means its containers are not stale")
 
 	require.NoError(t, os.WriteFile(logFile, nil, 0644))
 	first.Cleanup()
@@ -485,8 +485,56 @@ func TestComposeBackend_OverlappingRunsKeepTheirOwnContainer(t *testing.T) {
 
 	// With both released the plain name is free again.
 	require.NoError(t, os.WriteFile(logFile, nil, 0644))
-	start("RUN3")
+	start("RUN3").Cleanup()
 	assert.Contains(t, readDockerCalls(t, logFile), "--name demo_web_0 ")
+}
+
+// TestComposeBackend_FailedRemovalIsRetried: when docker fails during a
+// start's reclaim and the run's cleanup, later starts must not reuse the name
+// the leftover container may hold, and must retry the removal without touching
+// a live overlapping run.
+func TestComposeBackend_FailedRemovalIsRetried(t *testing.T) {
+	dir := t.TempDir()
+	logFile := filepath.Join(dir, "calls.log")
+	failFlag := filepath.Join(dir, "fail")
+	installDockerShimScript(t, dir, "#!/bin/sh\n"+
+		"echo \"$@\" >> '"+logFile+"'\n"+
+		"if [ \"$1\" = ps ] || [ \"$1\" = rm ]; then\n"+
+		"  [ -e '"+failFlag+"' ] && exit 1\n"+
+		"  [ \"$1\" = ps ] && printf 'abc123'\n"+
+		"fi\n"+
+		"exit 0\n")
+
+	b := &ComposeBackend{dockerCmd: "docker", fingerprint: "fp-test"}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", ProjectName: "demo", Service: "web", Mode: model.ComposeModeRun}
+	task := &model.Task{Name: "boxes.web"}
+	start := func(runID string) *Process {
+		proc, err := b.Start(context.Background(), task, &model.Run{ID: runID}, ce)
+		require.NoError(t, err)
+		go drain(proc.Stdout)
+		go drain(proc.Stderr)
+		proc.Wait()
+		return proc
+	}
+	const slotWide = "label=com.runwisp.instance-fp=fp-test\n"
+
+	require.NoError(t, os.WriteFile(failFlag, nil, 0644))
+	start("RUN1").Cleanup()
+	live := start("RUN2") // the docker hiccup is still on
+	require.NoError(t, os.Remove(failFlag))
+	assert.Contains(t, readDockerCalls(t, logFile), "--name demo_web_0_RUN2", "RUN1's leftover may still hold the plain name")
+
+	require.NoError(t, os.WriteFile(logFile, nil, 0644))
+	start("RUN3").Cleanup()
+	calls := readDockerCalls(t, logFile)
+	assert.NotContains(t, calls, slotWide, "RUN2 is live, so the slot must not be swept")
+	assert.Contains(t, calls, "label=com.runwisp.run=RUN1", "the failed cleanup is retried")
+	assert.Contains(t, calls, "--name demo_web_0 ", "RUN1's leftover is gone, so its name is free")
+
+	live.Cleanup()
+	require.NoError(t, os.WriteFile(logFile, nil, 0644))
+	start("RUN4")
+	assert.Contains(t, readDockerCalls(t, logFile), slotWide, "with nothing live the slot is swept again")
 }
 
 // TestComposeBackend_Start_StackModeNoReclaimOrCleanup confirms stack mode

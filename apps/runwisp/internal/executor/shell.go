@@ -200,7 +200,7 @@ func validateWorkingDir(dir, startErrPrefix string) error {
 // closeStdioAfterGrace is the manual equivalent for this pipe-pull style.
 //
 // A var (not const) so tests can shrink it instead of waiting out the real
-// delay, matching containerCleanupTimeout/composeCleanupTimeout.
+// delay, matching containerCleanupTimeout/composeHousekeepingTimeout.
 var stdioCloseGrace = 10 * time.Second
 
 // makeCancelFunc builds the cmd.Cancel callback that opens the stop ladder:
