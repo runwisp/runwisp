@@ -55,6 +55,7 @@ tasks:
       cache: false
 
   test:
+    # CI runs these as separate jobs (ci.yml test + test-ui); add new deps there too.
     deps:
       - 'runwisp:test'
       - 'web-ui:test'

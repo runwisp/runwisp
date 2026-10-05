@@ -1,0 +1,59 @@
+# Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: GPL-3.0-or-later
+
+name: Set up toolchains
+description: Go with a per-job cache, bun, and the installed JS dependencies.
+
+inputs:
+  go:
+    description: Set up Go and restore this job's Go caches.
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    # On PRs, moon diffs changed files against vcs.defaultBranch, but the
+    # checkout only has the merge ref, so give it a local `main` to resolve.
+    - name: Fetch base branch for moon
+      if: github.event_name == 'pull_request'
+      shell: bash
+      run: git fetch --no-tags --depth=1 origin main:main
+
+    # setup-go's own cache uses one key for every job, so whichever job ends
+    # first saves its cache and the rest only restore it. A 17s job used to
+    # save an almost empty 1 MB cache, so every Linux job compiled all of Go
+    # from scratch. Each job caches its own module + build + lint cache and the
+    # pinned tools in .bin (sqlc, golangci-lint, govulncheck: about 2 min to
+    # compile). restore-keys keeps a stale cache usable after a go.sum bump.
+    - uses: actions/setup-go@v6
+      if: inputs.go == 'true'
+      with:
+        go-version-file: apps/runwisp/go.mod
+        cache: false
+
+    - name: Locate Go caches
+      if: inputs.go == 'true'
+      id: go-env
+      shell: bash
+      run: |
+        echo "build=$(go env GOCACHE)" >>"$GITHUB_OUTPUT"
+        echo "mod=$(go env GOMODCACHE)" >>"$GITHUB_OUTPUT"
+
+    - name: Cache Go modules, build cache and pinned tools
+      if: inputs.go == 'true'
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ steps.go-env.outputs.build }}
+          ${{ steps.go-env.outputs.mod }}
+          ~/.cache/golangci-lint
+          .bin
+        key: go-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/runwisp/go.mod', 'apps/runwisp/go.sum', 'apps/runwisp/scripts/sqlc-generate.sh', 'apps/runwisp/scripts/lint-go.sh', 'apps/runwisp/scripts/check-go.sh') }}
+        restore-keys: go-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-
+
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      with:
+        bun-version-file: package.json
+
+    - name: Install JS dependencies
+      shell: bash
+      run: bun install --frozen-lockfile --ignore-scripts
