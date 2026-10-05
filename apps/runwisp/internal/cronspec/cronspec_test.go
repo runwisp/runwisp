@@ -61,6 +61,19 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+// TestParsersRejectWhatValidateRejects: the never-fires and sub-second @every
+// checks live in the parser, so callers that parse without Validate (the
+// scheduler, the TUI's next-run hint, the demo seeder) never see a schedule
+// whose Next is the zero time.
+func TestParsersRejectWhatValidateRejects(t *testing.T) {
+	for _, spec := range []string{"0 0 30 2 *", "@every 1ms"} {
+		_, err := NewParser().Parse(spec)
+		assert.Error(t, err, spec)
+		_, err = NewScheduleParser().Parse(spec)
+		assert.Error(t, err, spec)
+	}
+}
+
 // TestSundayIsSeven is the regression test for the day-of-week 7 rejection.
 // robfig/cron bounds dow at 0-6, so `47 6 * * 7` — the line Debian's and
 // Ubuntu's own /etc/crontab ships to run /etc/cron.weekly — was refused with
@@ -272,10 +285,14 @@ func TestScheduleParser_EveryPassesThrough(t *testing.T) {
 
 // TestScheduleParser_NeverMatchingSpecReturnsZero covers the IsZero short-circuit:
 // "Feb 30" never occurs, so the underlying Next returns the zero time and the
-// wrapper hands it straight back without DST math.
+// wrapper hands it straight back without DST math. Our parsers reject the spec,
+// so the wrapper is built around robfig's directly.
 func TestScheduleParser_NeverMatchingSpecReturnsZero(t *testing.T) {
-	sched, err := NewScheduleParser().Parse("0 0 30 2 *")
+	inner, err := cron.NewParser(ParseOptions).Parse("0 0 30 2 *")
 	require.NoError(t, err)
+	spec, ok := inner.(*cron.SpecSchedule)
+	require.True(t, ok)
+	sched := dstGapSchedule{inner: spec}
 
 	got := sched.Next(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
 	assert.True(t, got.IsZero(), "a spec that can never fire must yield the zero time")

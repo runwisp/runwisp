@@ -823,23 +823,3 @@ func TestCountMissedTicks_EveryNotDeduped(t *testing.T) {
 	assert.False(t, truncated)
 	assert.Equal(t, 4, got, "all four fixed-interval ticks were missed; none is a DST duplicate")
 }
-
-// TestCountMissedTicks_NeverFiringScheduleTerminates: a spec like "0 0 30 2 *"
-// parses but Next returns the zero time forever; counting must stop at once.
-func TestCountMissedTicks_NeverFiringScheduleTerminates(t *testing.T) {
-	sched, err := cronspec.NewScheduleParser().Parse("0 0 30 2 *")
-	assert.NoError(t, err)
-
-	lastRun := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	done := make(chan int, 1)
-	go func() {
-		got, _, _ := countMissedTicks(sched, lastRun, lastRun.Add(48*time.Hour), 1000)
-		done <- got
-	}()
-	select {
-	case got := <-done:
-		assert.Zero(t, got)
-	case <-time.After(5 * time.Second):
-		t.Fatal("countMissedTicks did not return for a schedule that never fires")
-	}
-}

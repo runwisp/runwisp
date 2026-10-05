@@ -274,9 +274,7 @@ func countMissedTicks(schedule cron.Schedule, lastRunTime, now time.Time, maxCou
 	fixedInterval := isFixedInterval(schedule)
 	var curHour wallHour
 	var seen map[wallSecond]struct{}
-	// A schedule that never fires makes Next return the zero time, which is
-	// never After(now); stop instead of spinning on it.
-	for !next.IsZero() && !next.After(now) {
+	for !next.After(now) {
 		if !fixedInterval {
 			wall := newWallSecond(next)
 			hour := wall.inHour()

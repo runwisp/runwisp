@@ -49,8 +49,17 @@ func (p specParser) Parse(spec string) (cron.Schedule, error) {
 	if err != nil {
 		return nil, err
 	}
+	if every, ok := everyDuration(spec); ok && every < time.Second {
+		return nil, fmt.Errorf("@every interval %s is below the 1s minimum", every)
+	}
 	if s, ok := sched.(*cron.SpecSchedule); ok {
 		markStarDays(s, spec)
+	}
+	// robfig parses specs like "0 0 30 2 *" happily but Next never finds a
+	// match and returns the zero time. Any fixed reference works: Next looks
+	// five years ahead, which covers every real calendar (leap days included).
+	if sched.Next(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)).IsZero() {
+		return nil, errors.New("schedule never fires (the day of month does not exist in the given months)")
 	}
 	return sched, nil
 }
@@ -200,20 +209,8 @@ func Validate(spec, timezone string) error {
 	if timezone != "" {
 		full = "CRON_TZ=" + timezone + " " + spec
 	}
-	sched, err := NewParser().Parse(full)
-	if err != nil {
-		return err
-	}
-	if every, ok := everyDuration(spec); ok && every < time.Second {
-		return fmt.Errorf("@every interval %s is below the 1s minimum", every)
-	}
-	// robfig parses specs like "0 0 30 2 *" happily but Next never finds a
-	// match and returns the zero time. Any fixed reference works: Next looks
-	// five years ahead, which covers every real calendar (leap days included).
-	if sched.Next(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)).IsZero() {
-		return errors.New("schedule never fires (the day of month does not exist in the given months)")
-	}
-	return nil
+	_, err := NewParser().Parse(full)
+	return err
 }
 
 // everyDuration returns the interval of an "@every <duration>" spec (after an
