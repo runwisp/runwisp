@@ -485,7 +485,7 @@ func TestUpsertTask_RevivesServiceStoppedOnlyByRemoval(t *testing.T) {
 	delete(jm.tasks, "svc")
 	ts.removed = true
 	ts.supervisor.MarkStopped()
-	ts.stoppedByRemoval = true
+	ts.bookkeepingStop = true
 	jm.removedTasks["svc"] = ts
 	jm.mu.Unlock()
 
