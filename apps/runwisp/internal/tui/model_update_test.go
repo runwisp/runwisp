@@ -1441,3 +1441,77 @@ func TestHandleExecWindowFetched_DropsPageFromOldFilter(t *testing.T) {
 		t.Fatalf("a page from the previous filter must not inflate the count, got %d", got.execWindow.TotalCount())
 	}
 }
+
+// ─── ctrl+c from every modal escalates to the quit flow ──────────────────────
+
+func TestModalCtrlC_DismissesAndOpensQuitConfirm(t *testing.T) {
+	ctrlC := tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
+	form := NewParamFormDialog("deploy", []model.TaskParam{{Kind: model.ParamArg, Key: "branch"}}, func(map[string]*string) tea.Cmd { return nil })
+
+	cases := []struct {
+		name      string
+		show      func(*Model)
+		intercept func(Model, tea.Msg) (tea.Model, tea.Cmd, bool)
+		open      func(Model) bool
+	}{
+		{"param form", func(m *Model) { m.dialogs.ShowParamForm(form) }, Model.interceptParamFormDialog, func(m Model) bool { return m.dialogs.HasParamForm() }},
+		{"run params", func(m *Model) { m.dialogs.ShowRunParams(NewRunParamsDialog("t", map[string]string{"k": "v"})) }, Model.interceptRunParamsDialog, func(m Model) bool { return m.dialogs.HasRunParams() }},
+		{"log history", func(m *Model) { m.dialogs.ShowLogHistory(NewLogHistoryDialog(0, [][]string{{"f"}}, "c")) }, Model.interceptLogHistoryDialog, func(m Model) bool { return m.dialogs.HasLogHistory() }},
+		{"task detail", func(m *Model) { m.dialogs.ShowTaskDetail("a", &model.Task{Name: "a"}, false, nil) }, Model.interceptTaskDetailDialog, func(m Model) bool { return m.dialogs.HasTaskDetail() }},
+		{"run detail", func(m *Model) { m.dialogs.ShowRunDetail(&model.Run{ID: "r1", TaskName: "t1"}, false, 1, nil) }, Model.interceptRunDetailDialog, func(m Model) bool { return m.dialogs.HasRunDetail() }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newTestModel(nil)
+			m.startedDaemon = true
+			tc.show(&m)
+
+			updated, _, intercepted := tc.intercept(m, ctrlC)
+			if !intercepted {
+				t.Fatal("expected ctrl+c to be intercepted")
+			}
+			got, ok := updated.(Model)
+			if !ok {
+				t.Fatal("expected Model")
+			}
+			if tc.open(got) {
+				t.Fatal("expected the dialog dismissed")
+			}
+			if !got.dialogs.HasConfirm() {
+				t.Fatal("expected the quit confirm to open")
+			}
+		})
+	}
+}
+
+func TestModalCtrlC_QuitsImmediatelyWhenDaemonNotStartedByTUI(t *testing.T) {
+	m := newTestModel(nil)
+	m.dialogs.ShowTaskDetail("a", &model.Task{Name: "a"}, false, nil)
+
+	updated, cmd, _ := m.interceptTaskDetailDialog(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatal("expected Model")
+	}
+	if got.dialogs.HasConfirm() {
+		t.Fatal("expected no quit confirm when the TUI did not start the daemon")
+	}
+	if msg, ok := cmd().(uikit.QuitMsg); !ok || msg.Action != uikit.QuitKeepDaemon {
+		t.Fatalf("expected QuitMsg{QuitKeepDaemon}, got %#v", msg)
+	}
+}
+
+func TestSidebarFilterCtrlC_OpensQuitConfirm(t *testing.T) {
+	m := newTestModel(nil)
+	m.startedDaemon = true
+	m.sidebar.StartFilter()
+
+	updated, _ := m.handleSidebarFilterKey(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	got, ok := updated.(Model)
+	if !ok {
+		t.Fatal("expected Model")
+	}
+	if !got.dialogs.HasConfirm() {
+		t.Fatal("expected ctrl+c in the sidebar filter to open the quit confirm")
+	}
+}
