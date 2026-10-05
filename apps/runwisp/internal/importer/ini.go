@@ -59,8 +59,12 @@ type iniParser struct {
 
 // feed classifies one raw line and folds it into the parser state.
 func (p *iniParser) feed(raw string) {
-	raw = stripInlineComment(raw)
 	trimmed := strings.TrimSpace(raw)
+	if strings.HasPrefix(trimmed, ";") || strings.HasPrefix(trimmed, "#") {
+		return // like ConfigParser, a comment line doesn't end a multi-line value
+	}
+	raw = stripInlineComment(raw)
+	trimmed = strings.TrimSpace(raw)
 	if trimmed == "" {
 		p.lastKey = ""
 		return
@@ -69,10 +73,6 @@ func (p *iniParser) feed(raw string) {
 	// key in flight.
 	if p.isContinuation(raw, trimmed) {
 		p.cur.values[p.lastKey] += "\n" + trimmed
-		return
-	}
-	if trimmed[0] == ';' || trimmed[0] == '#' {
-		p.lastKey = ""
 		return
 	}
 	if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {

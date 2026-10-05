@@ -160,20 +160,16 @@ func (m *defaultTaskManager) cancelExcessRuns(ts *taskState, concurrencyLimit in
 }
 
 // queueProcessLoop drains the per-task queue, starting runs as slots open.
-// Holds m.mu for its entire lifetime, releasing it only via cond.Wait.
-func (m *defaultTaskManager) queueProcessLoop(taskName string) {
+// Holds m.mu for its entire lifetime, releasing it only via cond.Wait. It takes
+// the taskState rather than looking it up by name: a reload that removes the
+// task before this goroutine first runs would otherwise make it exit without
+// clearing queueDraining, and a later revive would never respawn the drain.
+func (m *defaultTaskManager) queueProcessLoop(ts *taskState) {
 	defer crashguard.Guard()
 	defer m.wg.Done()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	ts := m.tasks[taskName]
-	if ts == nil {
-		// A reload removed the task before this loop acquired the lock: the
-		// taskState was deleted (it had nothing in flight), so there is nothing
-		// to drain. Exit rather than dereference a nil state.
-		return
-	}
 	// Clear the alive flag on exit (under m.mu) so a later UpsertTask revive can
 	// tell the drain is gone and spawn a fresh loop.
 	defer func() { ts.queueDraining = false }()

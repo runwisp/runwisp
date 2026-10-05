@@ -175,7 +175,7 @@ func TestSystemdRestartMapsToRestartPolicy(t *testing.T) {
 		{"on-failure", `restart = "on_failure"`, false},
 		{"no", `restart = "never"`, false},
 		{"", `restart = "never"`, false},
-		{"on-success", "", true},
+		{"on-success", `restart = "never"`, true},
 		{"on-abnormal", `restart = "on_failure"`, true},
 		{"on-abort", `restart = "on_failure"`, true},
 	}
@@ -241,16 +241,19 @@ func TestSystemdOptionalEnvironmentFileMustExist(t *testing.T) {
 // argument would be globbed or end the command.
 func TestSystemdExecStartShellMetacharactersAreQuoted(t *testing.T) {
 	cases := map[string]string{
-		`/bin/app --glob *.log`:    `/bin/app --glob '*.log'`,
-		`/bin/app a;b`:             `/bin/app 'a;b'`,
-		`/bin/app --x=$HOME/a`:     `/bin/app --x=$HOME/a`,
-		`/bin/app "a b;c" --y`:     `/bin/app "a b;c" --y`,
-		`/bin/app 'x*' $(id)`:      `/bin/app 'x*' '$(id)'`,
-		`/bin/a ; /bin/b`:          `/bin/a ; /bin/b`,
-		`/bin/app | tee`:           `/bin/app '|' tee`,
-		`-/bin/app plain`:          `/bin/app plain`,
-		`/bin/app --name=a\;b`:     `/bin/app --name=a\;b`,
-		`/bin/app   spaced   args`: `/bin/app   spaced   args`,
+		`/bin/app --glob *.log`:                `/bin/app --glob '*.log'`,
+		`/bin/app a;b`:                         `/bin/app 'a;b'`,
+		`/bin/app --x=$HOME/a`:                 `/bin/app --x=$HOME/a`,
+		`/bin/app "a b;c" --y`:                 `/bin/app "a b;c" --y`,
+		`/bin/app 'x*' $(id)`:                  `/bin/app 'x*' '$(id)'`,
+		`/bin/a ; /bin/b`:                      `/bin/a ; /bin/b`,
+		`/bin/app | tee`:                       `/bin/app '|' tee`,
+		`-/bin/app plain`:                      `/bin/app plain`,
+		`/bin/app --name=a\;b`:                 `/bin/app --name=a\;b`,
+		`/bin/app   spaced   args`:             `/bin/app   spaced   args`,
+		`/bin/x --port ${PORT} --a=$HOME/${X}`: `/bin/x --port ${PORT} --a=$HOME/${X}`,
+		`/bin/app a=${X}*`:                     `/bin/app 'a='"${X}"'*'`,
+		`/bin/sh -c "echo \" x* done"`:         `/bin/sh -c "echo \" x* done"`,
 	}
 	for in, want := range cases {
 		got, _ := stripExecPrefixes(in)

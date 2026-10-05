@@ -179,14 +179,10 @@ func runExec(ctx context.Context, taskName string, f Flags) (int, error) {
 
 // isDaemonRunning reports whether a daemon currently owns this data dir.
 // Two writers on one SQLite file would corrupt state, so the standalone
-// path must defer to the daemon when one is alive.
+// path must defer to the daemon when one is alive. It checks the lock, not the
+// PID, because a starting daemon holds the lock before it writes its PID.
 func isDaemonRunning(f Flags) bool {
-	pidPath := datadir.PidFilePath(f.DataDir)
-	pid, err := datadir.ReadPidFile(f.DataDir)
-	if err != nil {
-		return false
-	}
-	return processAlive(pid, pidPath)
+	return datadir.PidFileLocked(datadir.PidFilePath(f.DataDir))
 }
 
 // runExecViaDaemon dispatches the run through the running daemon's REST API
@@ -470,13 +466,13 @@ func responseNames(tasks []model.TaskResponse) []string {
 
 // exitCodeFromRun maps a finished run to the CLI exit code: the process's own
 // code when it failed, and 1 when RunWisp ended the run as unsuccessful even
-// though the process exited 0 (a `failures` pattern match, a timeout or stop
-// the task handled gracefully).
+// though the process exited 0 or never ran (a `failures` pattern match, a
+// timeout or stop the task handled gracefully, a skipped or rejected run).
 func exitCodeFromRun(run *model.Run) int {
 	if run == nil || run.EndReason == nil || *run.EndReason == model.ReasonSuccess {
 		return 0
 	}
-	if run.ExitCode == 0 {
+	if run.ExitCode <= 0 {
 		return 1
 	}
 	return run.ExitCode

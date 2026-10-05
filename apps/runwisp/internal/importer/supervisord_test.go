@@ -277,6 +277,15 @@ func TestSupervisordContinuationLines(t *testing.T) {
 	mustContain(t, out, `B = "2"`)
 }
 
+// A comment line inside a multi-line value is skipped, as ConfigParser does; it
+// used to end the value and drop everything after it.
+func TestSupervisordCommentInsideContinuation(t *testing.T) {
+	in := "[program:x]\ncommand=/bin/x\nenvironment=A=\"1\",\n    ; note\n    B=\"2\"\n"
+	out := parseSup(t, in).TOML()
+	mustContain(t, out, `A = "1"`)
+	mustContain(t, out, `B = "2"`)
+}
+
 func TestSupervisordExistingSkipsSameProgram(t *testing.T) {
 	// A program already promoted into the root TOML — same name, same kind, same
 	// command — is skipped on re-import rather than emitted a second time, which

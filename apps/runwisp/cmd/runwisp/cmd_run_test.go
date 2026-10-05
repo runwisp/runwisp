@@ -10,8 +10,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"syscall"
 	"testing"
 
+	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
@@ -43,6 +45,15 @@ func TestExitCodeFromRun_FailedWithZeroExitCodeIsNonZero(t *testing.T) {
 	}
 }
 
+// A run that never ran (skipped, rejected by the queue) carries ExitCode -1,
+// which os.Exit would turn into 255.
+func TestExitCodeFromRun_NegativeExitCodeIsOne(t *testing.T) {
+	for _, r := range []model.EndReason{model.ReasonSkipped, model.ReasonQueueFull} {
+		run := &model.Run{ExitCode: -1, EndReason: &r}
+		assert.Equal(t, 1, exitCodeFromRun(run), string(r))
+	}
+}
+
 func TestExitCodeFromRun_NoEndReason(t *testing.T) {
 	run := &model.Run{ExitCode: 99, EndReason: nil}
 	assert.Equal(t, 0, exitCodeFromRun(run))
@@ -69,6 +80,19 @@ func TestIsDaemonRunning_LivePid(t *testing.T) {
 	writeLivePidFile(t, dir)
 
 	assert.True(t, isDaemonRunning(Flags{DataDir: dir}), "PID file present and locked → running")
+}
+
+// A starting daemon holds the lock before it has written its PID; the CLI must
+// already treat it as running, or `run` would open the same SQLite file.
+func TestIsDaemonRunning_LockedEmptyPidFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	f, err := os.OpenFile(datadir.PidFilePath(dir), os.O_CREATE|os.O_RDWR, 0o600)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = f.Close() })
+	require.NoError(t, syscall.Flock(int(f.Fd()), syscall.LOCK_EX))
+
+	assert.True(t, isDaemonRunning(Flags{DataDir: dir}), "locked PID file with no PID yet → running")
 }
 
 func TestExecLogLineHandler_FiltersByTaskName(t *testing.T) {
