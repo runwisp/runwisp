@@ -5,6 +5,7 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"math"
 	"os"
 	"os/exec"
@@ -383,6 +384,8 @@ func TestExecuteSignalDeathReasonIsInLog(t *testing.T) {
 func TestAbnormalExitMessage(t *testing.T) {
 	assert.Empty(t, abnormalExitMessage(nil))
 	assert.Empty(t, abnormalExitMessage(exec.Command("sh", "-c", "exit 3").Run()))
+	assert.Equal(t, "Could not wait for the run to finish: docker gone",
+		abnormalExitMessage(errors.New("docker gone")), "a backend error is not a signal death")
 }
 
 func TestExecuteCommandStartFailure(t *testing.T) {

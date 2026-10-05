@@ -259,14 +259,18 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 }
 
 // abnormalExitMessage describes a wait error that the exit code alone does not
-// explain, such as death by signal (exit -1, "signal: killed"). A plain non-zero
-// exit is already shown as the exit code, so it returns "".
+// explain: death by signal (exit -1, "signal: killed"), or a backend failing to
+// wait at all (a lost Docker connection). A plain non-zero exit is already
+// shown as the exit code, so it returns "".
 func abnormalExitMessage(err error) string {
 	if err == nil {
 		return ""
 	}
 	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() >= 0 {
+	if !errors.As(err, &exitErr) {
+		return "Could not wait for the run to finish: " + err.Error()
+	}
+	if exitErr.ExitCode() >= 0 {
 		return ""
 	}
 	return "Process terminated abnormally: " + err.Error()
