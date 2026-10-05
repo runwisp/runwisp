@@ -6,7 +6,9 @@ package apiclient
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 )
 
 // doSSE performs a GET request expecting an SSE stream.
@@ -33,8 +35,9 @@ func (c *Client) doSSE(ctx context.Context, path string) (*http.Response, error)
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 		resp.Body.Close()
-		return nil, fmt.Errorf("SSE error %d", resp.StatusCode)
+		return nil, &HTTPStatusError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(errBody))}
 	}
 
 	return resp, nil

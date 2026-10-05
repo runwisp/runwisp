@@ -4,42 +4,94 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/proxycidr"
-	"github.com/sebest/xff"
 )
 
-// parseTrustedProxies parses RUNWISP_TRUSTED_PROXIES as a comma-separated list of CIDR ranges.
-// It converts it to xff.Options for the proxy middleware. CIDRs that effectively
-// trust the entire internet (0.0.0.0/0 or ::/0) are rejected to prevent silent
-// spoofing of X-Forwarded-For: any IP-based check (rate limiting, loopback
-// detection) would be bypassable when every client is "a trusted proxy".
-func parseTrustedProxies(env string) (*xff.Options, error) {
-	if env == "" {
-		return nil, nil
+// proxySet is the parsed RUNWISP_TRUSTED_PROXIES / [daemon] trusted_proxies
+// list. A nil set means no proxy is trusted.
+type proxySet []*net.IPNet
+
+func (p proxySet) contains(ip net.IP) bool {
+	for _, n := range p {
+		if n.Contains(ip) {
+			return true
+		}
 	}
-	var subnets []string
+	return false
+}
+
+// parseTrustedProxies parses RUNWISP_TRUSTED_PROXIES as a comma-separated list of CIDR ranges.
+// CIDRs that effectively trust the entire internet (0.0.0.0/0 or ::/0) are
+// rejected to prevent silent spoofing of X-Forwarded-For: any IP-based check
+// (rate limiting, loopback detection) would be bypassable when every client is
+// "a trusted proxy".
+func parseTrustedProxies(env string) (proxySet, error) {
+	var set proxySet
 	for raw := range strings.SplitSeq(env, ",") {
 		cidr, err := proxycidr.Normalize(raw)
 		if err != nil {
 			return nil, fmt.Errorf("RUNWISP_TRUSTED_PROXIES: %w", err)
 		}
-		if cidr != "" {
-			subnets = append(subnets, cidr)
+		if cidr == "" {
+			continue
+		}
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return nil, fmt.Errorf("RUNWISP_TRUSTED_PROXIES: %w", err)
+		}
+		set = append(set, ipNet)
+	}
+	return set, nil
+}
+
+// clientIPFromForwarded resolves the real client behind trusted proxies. It
+// walks X-Forwarded-For from the right (the hop the nearest proxy appended) and
+// returns the first address that is not itself a trusted proxy. The left end of
+// the header is whatever the client sent, so it is only reached when every
+// hop to its right is a trusted proxy. Private addresses count as clients:
+// a LAN host behind the proxy is not a proxy, so it gets its own identity.
+// It returns "" when the header carries nothing usable.
+func clientIPFromForwarded(xff []string, trusted proxySet) string {
+	var hops []string
+	for _, v := range xff {
+		hops = append(hops, strings.Split(v, ",")...)
+	}
+	for i := len(hops) - 1; i >= 0; i-- {
+		hop := strings.TrimSpace(hops[i])
+		ip := net.ParseIP(hop)
+		if ip == nil {
+			return "" // a malformed hop is untrustworthy: fall back to the peer
+		}
+		if !trusted.contains(ip) || i == 0 {
+			return ip.String()
 		}
 	}
+	return ""
+}
 
-	if len(subnets) == 0 {
-		return nil, nil
-	}
+type clientIPKey struct{}
 
-	return &xff.Options{
-		AllowedSubnets: subnets,
-	}, nil
+// resolveClientIP rewrites r.RemoteAddr to the real client address when the
+// TCP peer is a trusted proxy and stores the resolved host in the context.
+// Without a trusted peer the headers are ignored. savePeerAddr has already
+// captured the raw peer for the checks that must not trust any header.
+func (srv *Server) resolveClientIP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isFromTrustedProxy(r, srv.trustedProxies) {
+			if ip := clientIPFromForwarded(r.Header.Values("X-Forwarded-For"), srv.trustedProxies); ip != "" {
+				_, port, _ := net.SplitHostPort(r.RemoteAddr)
+				r.RemoteAddr = net.JoinHostPort(ip, port)
+			}
+		}
+		ctx := context.WithValue(r.Context(), clientIPKey{}, hostFromAddr(r.RemoteAddr))
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 // isProxiedRequest reports whether the request looks relayed rather than
@@ -55,7 +107,7 @@ func parseTrustedProxies(env string) (*xff.Options, error) {
 // proxy_set_header sends none of them — but every common proxy sets at least
 // one, and the local launcher probe sets none, so it closes the realistic cases
 // without costing the port-conflict UX.
-func isProxiedRequest(r *http.Request, trusted *xff.Options) bool {
+func isProxiedRequest(r *http.Request, trusted proxySet) bool {
 	for _, h := range forwardedHeaders {
 		if r.Header.Get(h) != "" {
 			return true
@@ -68,8 +120,8 @@ func isProxiedRequest(r *http.Request, trusted *xff.Options) bool {
 // configured trusted-proxy CIDR set. It uses the original peer address
 // (captured by savePeerAddr) so that an attacker cannot inject a header to
 // pretend to be a trusted proxy.
-func isFromTrustedProxy(r *http.Request, trusted *xff.Options) bool {
-	if trusted == nil || len(trusted.AllowedSubnets) == 0 {
+func isFromTrustedProxy(r *http.Request, trusted proxySet) bool {
+	if len(trusted) == 0 {
 		return false
 	}
 	addr := r.RemoteAddr
@@ -77,17 +129,5 @@ func isFromTrustedProxy(r *http.Request, trusted *xff.Options) bool {
 		addr = peer
 	}
 	ip := net.ParseIP(hostFromAddr(addr))
-	if ip == nil {
-		return false
-	}
-	for _, cidr := range trusted.AllowedSubnets {
-		_, ipNet, err := net.ParseCIDR(cidr)
-		if err != nil {
-			continue
-		}
-		if ipNet.Contains(ip) {
-			return true
-		}
-	}
-	return false
+	return ip != nil && trusted.contains(ip)
 }

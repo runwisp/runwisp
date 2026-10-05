@@ -36,6 +36,7 @@ import (
 // subtest is included as a sanity check that go-mail actually talks to a
 // standards-compliant server rather than just our hand-rolled fake.
 func TestSMTPPodman_DeliversAcrossTLSModes(t *testing.T) {
+	t.Parallel()
 	requirePodman(t)
 
 	cases := []struct {
@@ -111,6 +112,7 @@ notifiers = ["email-ops"]
 // synthesizer: wrong password → retries exhaust → notify.delivery_failed
 // in-app row. Mailpit must end up with zero accepted messages.
 func TestSMTPPodman_AuthFailureSurfacesDeliveryFailed(t *testing.T) {
+	t.Parallel()
 	requirePodman(t)
 
 	mp := startMailpit(t, mailpitOptions{

@@ -25,6 +25,7 @@ import (
 // The marker is visible in the quit dialog — a falsely-managed daemon drops the
 // "Shut Down" option and only offers "Quit TUI" with a `runwisp stop` hint.
 func TestSpawnedDaemonNotServiceManaged(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 	configDir := t.TempDir()

@@ -44,7 +44,10 @@ export function createSvelteConfig({ svelteConfig, extraIgnores = [] }) {
         {
             files: ["**/*.ts"],
             languageOptions: {
-                parserOptions: { projectService: true },
+                // extraFileExtensions must match the .svelte block below: the
+                // project service reloads every TS program whenever it changes
+                // between consecutive files, which made lint ~10x slower.
+                parserOptions: { projectService: true, extraFileExtensions: [".svelte"] },
             },
         },
         {

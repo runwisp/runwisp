@@ -23,6 +23,7 @@ import (
 // that the search query targets — passing the test means the on-demand scan
 // found that marker in the on-disk log of a finished run.
 func TestLogSearchEndpointFindsLine(t *testing.T) {
+	t.Parallel()
 	const (
 		taskName = "search-task"
 		marker   = "connection refused: 0xCAFEBEEF"

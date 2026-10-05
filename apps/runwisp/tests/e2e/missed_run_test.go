@@ -31,6 +31,7 @@ import (
 // rather than idling a real minute for a `* * * * *` tick to elapse; the daemon
 // reads that as a 15-tick downtime gap the instant it boots.
 func TestMissedRunDetectedAndAlertedOnRestart(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 

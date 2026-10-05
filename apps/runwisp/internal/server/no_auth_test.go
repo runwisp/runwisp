@@ -56,3 +56,27 @@ func TestProtectedRoute_NoAuth_TCPAllowed(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 }
+
+// With auth off there is no session cookie for the CSRF guard to key on, so a
+// cross-site page must still be refused on state-changing routes while headless
+// clients (no Origin) keep working.
+func TestNoAuth_CrossOriginUnsafeRequestRefused(t *testing.T) {
+	s := setupNoAuthServer(t)
+
+	post := func(headers map[string]string) int {
+		req := httptest.NewRequest(http.MethodPost, "/api/tasks/task1/pause", nil)
+		req.RemoteAddr = "192.0.2.10:54321"
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		s.router.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	assert.Equal(t, http.StatusForbidden, post(map[string]string{"Origin": "https://evil.example"}))
+	assert.Equal(t, http.StatusForbidden, post(map[string]string{"Sec-Fetch-Site": "cross-site"}))
+	assert.NotEqual(t, http.StatusForbidden, post(nil), "headless clients send no Origin")
+	assert.NotEqual(t, http.StatusForbidden, post(map[string]string{"Origin": "http://example.com"}),
+		"same-origin browser requests (Origin matches Host) pass")
+}

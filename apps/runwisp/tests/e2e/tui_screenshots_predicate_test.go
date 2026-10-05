@@ -51,6 +51,7 @@ const homeScreenLoading = `
 `
 
 func TestRecentActivityPopulated(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		screen string
@@ -74,6 +75,7 @@ func TestRecentActivityPopulated(t *testing.T) {
 // A row above the header must not count — the chrome above the table (the Web UI
 // URL, the fingerprint) is outside the region the predicate inspects.
 func TestRecentActivityPopulatedIgnoresRowsAboveHeader(t *testing.T) {
+	t.Parallel()
 	screen := `
  ▸ Home                       Last synced 4m ago
  Backups                      TASK          STATUS    STARTED    DURATION   TRIGGER

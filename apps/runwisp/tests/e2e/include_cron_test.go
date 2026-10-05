@@ -25,6 +25,7 @@ import (
 // RunWisp can't reproduce is reported rather than silently absent, and an edit
 // plus `runwisp reload` picks the file up.
 func TestIncludeCron_EndToEnd(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
@@ -92,6 +93,7 @@ include_cron = ["crontabs/*"]
 // what does is that no such account exists, which is the test cron applies too.
 // The daemon must not schedule it, and must say why.
 func TestIncludeCron_MissingUserColumnIsNotScheduled(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
