@@ -288,7 +288,7 @@ func TestScheduleParser_EveryPassesThrough(t *testing.T) {
 // wrapper hands it straight back without DST math. Our parsers reject the spec,
 // so the wrapper is built around robfig's directly.
 func TestScheduleParser_NeverMatchingSpecReturnsZero(t *testing.T) {
-	inner, err := cron.NewParser(ParseOptions).Parse("0 0 30 2 *")
+	inner, err := cron.NewParser(parseOptions).Parse("0 0 30 2 *")
 	require.NoError(t, err)
 	spec, ok := inner.(*cron.SpecSchedule)
 	require.True(t, ok)
