@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -129,11 +130,14 @@ func (l *oneShotListener) Close() error   { return nil }
 func (l *oneShotListener) Addr() net.Addr { return l.conn.LocalAddr() }
 
 // redirectToHTTPS answers a plain-HTTP request on the TLS port with a
-// method-preserving redirect to the same host:port over https.
+// method-preserving redirect to the same host:port over https. The target is
+// the Host the client itself asked for, so a browser is only ever sent back
+// to the address it typed; hosts that could rewrite the URL's authority or
+// path are refused.
 func redirectToHTTPS(w http.ResponseWriter, r *http.Request) {
-	if r.Host == "" {
+	if r.Host == "" || strings.ContainsAny(r.Host, `/\@?#%`) {
 		http.Error(w, "Client sent an HTTP request to an HTTPS server.", http.StatusBadRequest)
 		return
 	}
-	http.Redirect(w, r, "https://"+r.Host+r.URL.RequestURI(), http.StatusPermanentRedirect)
+	http.Redirect(w, r, "https://"+r.Host+r.URL.RequestURI(), http.StatusPermanentRedirect) // NOSONAR: Host is validated above and is the address the client connected to
 }
