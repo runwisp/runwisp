@@ -20,7 +20,6 @@
         class?: string;
     }
 
-    import { portal } from "../actions/portal.js";
     import { trapFocus } from "../actions/focusTrap.js";
 
     let {
@@ -36,6 +35,8 @@
         class: className = "",
     }: Props = $props();
 
+    const titleId = $props.id();
+
     const sizeClasses: Record<string, string> = {
         sm: "max-w-sm",
         md: "max-w-md",
@@ -49,35 +50,52 @@
         onClose?.();
     }
 
-    function handleKeydown(e: KeyboardEvent) {
-        if (e.key === "Escape" && closable) {
-            handleClose();
-        }
+    // showModal() puts the dialog in the top layer and makes the page behind it
+    // inert. The dialog stays open while mounted; `open` drives (un)mounting.
+    function showModal(node: HTMLDialogElement) {
+        node.showModal();
+    }
+
+    function handleCancel(e: Event) {
+        e.preventDefault();
+        if (closable) handleClose();
+    }
+
+    // Chrome ignores preventDefault() on a repeated Escape and closes anyway;
+    // reopen so a non-closable modal stays up while mounted.
+    function handleNativeClose(e: Event & { currentTarget: HTMLDialogElement }) {
+        if (open) e.currentTarget.showModal();
+    }
+
+    // Only a press that starts and ends on the backdrop closes the modal, so a
+    // text selection dragged out of the panel doesn't.
+    let pressedBackdrop = false;
+    function handlePointerDown(e: PointerEvent) {
+        pressedBackdrop = e.target === e.currentTarget;
+    }
+    function handleBackdropClick(e: MouseEvent) {
+        if (closable && pressedBackdrop && e.target === e.currentTarget) handleClose();
     }
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
-
 {#if open}
-    <div
-        use:portal
+    <dialog
+        use:showModal
+        oncancel={handleCancel}
+        onclose={handleNativeClose}
+        onpointerdown={handlePointerDown}
+        onclick={handleBackdropClick}
+        aria-labelledby={title ? titleId : undefined}
         class="
-			fixed inset-0
-			z-50 flex items-center justify-center
-			p-4
+			fixed inset-0 m-0 flex h-full max-h-none w-full max-w-none
+			items-center justify-center border-0 bg-transparent p-4
+			text-inherit backdrop:bg-transparent
 		"
     >
-        {#if closable}
-            <button
-                type="button"
-                class="absolute inset-0 z-0 bg-backdrop backdrop-blur-sm"
-                aria-label="Close modal"
-                tabindex="-1"
-                onclick={handleClose}
-            ></button>
-        {:else}
-            <div class="absolute inset-0 z-0 bg-backdrop backdrop-blur-sm"></div>
-        {/if}
+        <div
+            class="pointer-events-none absolute inset-0 z-0 bg-backdrop backdrop-blur-sm"
+            aria-hidden="true"
+        ></div>
 
         <div
             use:trapFocus
@@ -87,9 +105,6 @@
 				rounded-[4px] border border-outline bg-surface-overlay shadow-lg
 				{className}
 			"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={title ? "modal-title" : undefined}
         >
             {#if header}
                 <div class="border-b border-outline px-6 py-4">
@@ -102,7 +117,7 @@
                     <div>
                         {#if title}
                             <h2
-                                id="modal-title"
+                                id={titleId}
                                 class="font-mono text-lg font-semibold text-on-surface"
                             >
                                 {title}
@@ -136,5 +151,5 @@
                 </div>
             {/if}
         </div>
-    </div>
+    </dialog>
 {/if}

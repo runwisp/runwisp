@@ -4,9 +4,8 @@
 <script lang="ts">
     import type { Snippet } from "svelte";
     import type { Placement } from "@floating-ui/dom";
-    import { onDestroy } from "svelte";
-    import { computePosition, autoUpdate, flip, shift, offset } from "@floating-ui/dom";
     import { fade } from "svelte/transition";
+    import { floating, isOutsideClick } from "../actions/floating.js";
     import { portal } from "../actions/portal.js";
     import { trapFocus } from "../actions/focusTrap.js";
 
@@ -33,7 +32,6 @@
 
     let triggerEl = $state<HTMLElement | null>(null);
     let contentEl = $state<HTMLElement | null>(null);
-    let cleanupFloating = $state<(() => void) | null>(null);
 
     // Track the `md` breakpoint only when sheet mode is requested, so the
     // content can switch between floating (desktop) and bottom sheet (phone)
@@ -50,64 +48,17 @@
 
     const asSheet = $derived(mobileSheet && !isDesktop);
 
-    function teardown() {
-        cleanupFloating?.();
-        cleanupFloating = null;
-    }
-
-    function setupFloating() {
-        if (!triggerEl || !contentEl) return;
-        cleanupFloating = autoUpdate(triggerEl, contentEl, () => {
-            if (!triggerEl || !contentEl) return;
-            void computePosition(triggerEl, contentEl, {
-                placement,
-                middleware: [offset(8), flip(), shift({ padding: 8 })],
-            }).then(({ x, y }) => {
-                if (contentEl) {
-                    Object.assign(contentEl.style, {
-                        left: `${String(x)}px`,
-                        top: `${String(y)}px`,
-                        position: "absolute",
-                    });
-                }
-            });
-        });
-    }
-
-    // Position the content while open: float it on desktop, or pin it as a
-    // sheet on phone (clearing any inline coords floating-ui left behind).
-    $effect(() => {
-        if (!open || !contentEl) {
-            teardown();
-            return;
-        }
-        if (asSheet) {
-            teardown();
-            contentEl.style.removeProperty("left");
-            contentEl.style.removeProperty("top");
-            contentEl.style.removeProperty("position");
-            return;
-        }
-        setupFloating();
-        return teardown;
-    });
-
     function toggle() {
         open = !open;
     }
 
     function handleOutsideClick(e: MouseEvent) {
-        const path = e.composedPath();
-        if (triggerEl && path.includes(triggerEl)) return;
-        if (contentEl && path.includes(contentEl)) return;
-        if (open) open = false;
+        if (open && isOutsideClick(e, triggerEl, contentEl)) open = false;
     }
 
     function handleKeyDown(e: KeyboardEvent) {
         if (e.key === "Escape" && open) open = false;
     }
-
-    onDestroy(teardown);
 </script>
 
 <svelte:window onclick={handleOutsideClick} onkeydown={handleKeyDown} />
@@ -146,6 +97,13 @@
         <div
             use:portal
             use:trapFocus
+            use:floating={{
+                reference: triggerEl,
+                placement,
+                offset: 8,
+                padding: 8,
+                disabled: asSheet,
+            }}
             bind:this={contentEl}
             class="
                 z-[9999] max-h-[80vh] overflow-y-auto

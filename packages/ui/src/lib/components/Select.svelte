@@ -16,9 +16,11 @@
 </script>
 
 <script lang="ts">
-    import { tick, onDestroy } from "svelte";
+    import { tick } from "svelte";
     import { ChevronDown, Check, Search } from "@lucide/svelte";
-    import { computePosition, autoUpdate, flip, shift, offset } from "@floating-ui/dom";
+    import { floating, isOutsideClick } from "../actions/floating.js";
+    import { portal } from "../actions/portal.js";
+    import { trapFocus } from "../actions/focusTrap.js";
     import { generateUlid } from "@runwisp/common";
 
     type SelectSize = "sm" | "md" | "lg";
@@ -62,7 +64,6 @@
     let menuEl = $state<HTMLElement | null>(null);
     let searchInputEl = $state<HTMLInputElement | null>(null);
     let focusedIndex = $state(-1);
-    let cleanupFloating = $state<(() => void) | null>(null);
 
     $effect(() => {
         if (searchable && onsearch) {
@@ -107,31 +108,6 @@
         return list;
     });
 
-    import { portal } from "../actions/portal.js";
-    import { trapFocus } from "../actions/focusTrap.js";
-
-    async function setupFloating() {
-        if (!triggerEl || !menuEl) return;
-
-        menuEl.style.width = `${triggerEl.offsetWidth}px`;
-
-        cleanupFloating = autoUpdate(triggerEl, menuEl, () => {
-            if (!triggerEl || !menuEl) return;
-            void computePosition(triggerEl, menuEl, {
-                placement: "bottom-start",
-                middleware: [offset(6), flip(), shift({ padding: 10 })],
-            }).then(({ x, y }) => {
-                if (menuEl) {
-                    Object.assign(menuEl.style, {
-                        left: `${x}px`,
-                        top: `${y}px`,
-                        position: "absolute",
-                    });
-                }
-            });
-        });
-    }
-
     function toggle() {
         if (disabled) return;
         isOpen = !isOpen;
@@ -141,14 +117,10 @@
             if (focusedIndex === -1) focusedIndex = 0;
 
             void tick().then(() => {
-                void setupFloating();
                 if (searchable && searchInputEl) {
                     searchInputEl.focus();
                 }
             });
-        } else {
-            cleanupFloating?.();
-            cleanupFloating = null;
         }
     }
 
@@ -157,7 +129,6 @@
         value = option.value;
         onchange?.(value);
         isOpen = false;
-        cleanupFloating?.();
     }
 
     function handleKeydown(e: KeyboardEvent) {
@@ -172,7 +143,6 @@
         switch (e.key) {
             case "Escape":
                 isOpen = false;
-                cleanupFloating?.();
                 triggerEl?.focus();
                 break;
             case "ArrowDown":
@@ -212,17 +182,8 @@
     }
 
     function handleOutsideClick(e: MouseEvent) {
-        if (!isOpen) return;
-        const path = e.composedPath();
-        if (triggerEl && path.includes(triggerEl)) return;
-        if (menuEl && path.includes(menuEl)) return;
-        isOpen = false;
-        cleanupFloating?.();
+        if (isOpen && isOutsideClick(e, triggerEl, menuEl)) isOpen = false;
     }
-
-    onDestroy(() => {
-        cleanupFloating?.();
-    });
 
     const sizeClasses = {
         sm: "px-2.5 py-1.5 text-xs",
@@ -303,6 +264,13 @@
         <div
             use:portal
             use:trapFocus={{ autoFocus: false }}
+            use:floating={{
+                reference: triggerEl,
+                placement: "bottom-start",
+                offset: 6,
+                padding: 10,
+                matchWidth: true,
+            }}
             bind:this={menuEl}
             class="z-[9999] min-w-[200px]"
         >

@@ -4,9 +4,10 @@
 <script lang="ts">
     import type { Snippet } from "svelte";
     import type { Component } from "svelte";
-    import { tick, onDestroy } from "svelte";
     import { EllipsisVertical, Check } from "@lucide/svelte";
-    import { computePosition, autoUpdate, flip, shift, offset } from "@floating-ui/dom";
+    import { floating, isOutsideClick } from "../actions/floating.js";
+    import { portal } from "../actions/portal.js";
+    import { trapFocus } from "../actions/focusTrap.js";
 
     interface MenuItem {
         label?: string;
@@ -41,74 +42,27 @@
     let open = $state(false);
     let triggerEl = $state<HTMLElement | null>(null);
     let menuEl = $state<HTMLElement | null>(null);
-    let cleanupFloating = $state<(() => void) | null>(null);
     let transformOrigin = $state("top right");
 
-    import { portal } from "../actions/portal.js";
-    import { trapFocus } from "../actions/focusTrap.js";
-
-    async function setupFloating() {
-        if (!triggerEl || !menuEl) return;
-
-        cleanupFloating = autoUpdate(triggerEl, menuEl, () => {
-            if (!triggerEl || !menuEl) return;
-
-            const placement = align === "right" ? "bottom-end" : "bottom-start";
-
-            void computePosition(triggerEl, menuEl, {
-                placement,
-                middleware: [offset(4), flip(), shift({ padding: 8 })],
-            }).then(({ x, y, placement }) => {
-                if (menuEl) {
-                    Object.assign(menuEl.style, {
-                        left: `${x}px`,
-                        top: `${y}px`,
-                        position: "absolute",
-                    });
-
-                    // Flip transform origin vertically when the menu flips above the trigger
-                    const isTop = placement.startsWith("top");
-                    transformOrigin = `${isTop ? "bottom" : "top"} ${align}`;
-                }
-            });
-        });
+    // Flip the transform origin vertically when the menu flips above the trigger.
+    function placed(placement: string) {
+        transformOrigin = `${placement.startsWith("top") ? "bottom" : "top"} ${align}`;
     }
 
     function handleItemClick(item: MenuItem) {
         if (item.divider) return;
         if (item.disabled) return;
         item.onClick?.();
-        toggle(false);
-    }
-
-    function toggle(value: boolean) {
-        open = value;
-        if (open) {
-            void tick().then(() => {
-                void setupFloating();
-            });
-        } else {
-            cleanupFloating?.();
-            cleanupFloating = null;
-        }
+        open = false;
     }
 
     function handleOutsideClick(e: MouseEvent) {
-        const path = e.composedPath();
-        if (triggerEl && path.includes(triggerEl)) return;
-        if (menuEl && path.includes(menuEl)) return;
-        if (open) toggle(false);
+        if (open && isOutsideClick(e, triggerEl, menuEl)) open = false;
     }
 
     function handleKeyDown(e: KeyboardEvent) {
-        if (e.key === "Escape" && open) {
-            toggle(false);
-        }
+        if (e.key === "Escape" && open) open = false;
     }
-
-    onDestroy(() => {
-        cleanupFloating?.();
-    });
 </script>
 
 <svelte:window onclick={handleOutsideClick} onkeydown={handleKeyDown} />
@@ -117,7 +71,7 @@
     <button
         onclick={(e) => {
             e.stopPropagation();
-            toggle(!open);
+            open = !open;
         }}
         bind:this={triggerEl}
         aria-label={triggerLabel}
@@ -135,6 +89,13 @@
         <div
             use:portal
             use:trapFocus
+            use:floating={{
+                reference: triggerEl,
+                placement: align === "right" ? "bottom-end" : "bottom-start",
+                offset: 4,
+                padding: 8,
+                onPlace: placed,
+            }}
             bind:this={menuEl}
             role="menu"
             class="
