@@ -439,6 +439,28 @@ func TestReloadDropReAddRevivesQueueTask(t *testing.T) {
 	assert.True(t, ok, "retiring the old run must not delete the revived task")
 }
 
+// TestQueueDrainLoopClearsFlagWhenTaskRemovedBeforeItStarts: the drain
+// goroutine is spawned by UpsertTask but only runs once it wins m.mu. If the
+// task is removed in that window, the loop must still clear queueDraining on
+// its way out, or a later revive sees a drain that no longer exists and never
+// respawns it (queued runs then sit forever).
+func TestQueueDrainLoopClearsFlagWhenTaskRemovedBeforeItStarts(t *testing.T) {
+	jm, _, _ := newGatedManager(t)
+
+	jm.mu.Lock() // parks the drain goroutine until the removal below is done
+	jm.upsertTaskLocked(testTask("t", model.PolicyQueue, 1))
+	ts := jm.tasks["t"]
+	ts.removed = true
+	delete(jm.tasks, "t")
+	jm.mu.Unlock()
+
+	require.Eventually(t, func() bool {
+		jm.mu.Lock()
+		defer jm.mu.Unlock()
+		return !ts.queueDraining
+	}, 2*time.Second, time.Millisecond, "the drain loop must clear queueDraining when it exits")
+}
+
 // TestUpsertTask_ServiceBackAfterPlainTaskIsRunnable: reload 1 turns a service
 // into a scheduled task, reload 2 makes it a service again. The supervisor left
 // stopped by reload 1 must not outlive it, or the service never starts.

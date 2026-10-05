@@ -306,7 +306,7 @@ func (m *defaultTaskManager) upsertTaskLocked(task *model.Task) []*model.Run {
 		if !ts.queueDraining {
 			ts.queueDraining = true
 			m.wg.Add(1)
-			go m.queueProcessLoop(task.Name)
+			go m.queueProcessLoop(ts)
 		}
 	} else if ts.cond != nil {
 		// A reload (or any other UpsertTask caller) just flipped this task off

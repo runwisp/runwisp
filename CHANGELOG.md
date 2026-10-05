@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A run refused for low disk space, or killed by a signal, now says so in its log.
 - Overlapping runs of a compose task in run mode each get their own container, and one no longer removes the other's.
 - A run no longer fails to start when a cleanup pass removes its log directory at the same moment.
+- A queue-policy task that a reload removed and re-added while a run was still going could leave its queued runs waiting forever.
 
 ### Security
 
