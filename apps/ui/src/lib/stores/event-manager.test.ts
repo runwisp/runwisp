@@ -176,7 +176,6 @@ describe("EventManager reconnect backoff", () => {
                 streams.push(es);
                 return es;
             },
-            getApiUrl: () => "http://test",
         });
         mgr.subscribe("system", () => {});
         streams[0]?.error(); // stream dropped, reconnect timer now pending

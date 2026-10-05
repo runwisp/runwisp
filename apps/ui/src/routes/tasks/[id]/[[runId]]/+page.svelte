@@ -92,7 +92,7 @@
     // surfaced so a dead permalink shows a "not found" panel instead of quietly
     // selecting another run.
     const deepLink = new RunDeepLink(
-        (id) => tasksApi.getRun(taskName, id),
+        (id) => runsApi.getById(id),
         (run) => source.upsert(run),
     );
     $effect(() => deepLink.resolve(taskName ? runIdParam : null, source.items));
