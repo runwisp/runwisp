@@ -364,13 +364,13 @@ func TestComposeBackend_Start_CleanupRemovesInstance(t *testing.T) {
 // context.Background(), so a hung (not merely unreachable — that fails fast)
 // Docker/Podman engine could block the daemon shutdown coordinator's
 // ForceKill goroutine forever. Cleanup must bound those calls with
-// composeCleanupTimeout — shrunk here so the test doesn't wait out the real
+// composeHousekeepingTimeout — shrunk here so the test doesn't wait out the real
 // production duration — so a shim that never returns from `rm -f` still lets
 // Cleanup return promptly instead of blocking for the full hang.
 func TestComposeBackend_CleanupBoundedWhenDockerHangs(t *testing.T) {
-	original := composeCleanupTimeout
-	composeCleanupTimeout = 200 * time.Millisecond
-	t.Cleanup(func() { composeCleanupTimeout = original })
+	original := composeHousekeepingTimeout
+	composeHousekeepingTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { composeHousekeepingTimeout = original })
 
 	dir := t.TempDir()
 	counter := filepath.Join(dir, "ps.count")
@@ -414,6 +414,38 @@ func TestComposeBackend_CleanupBoundedWhenDockerHangs(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Cleanup blocked on a hung `docker rm -f` — the bounded context did not fire")
+	}
+}
+
+// TestComposeBackend_StartReclaimBoundedWhenDockerHangs is the start-side twin
+// of the cleanup test above: reclaim-on-start ran `docker ps` on the run's own
+// context, so a hung engine stalled the run before it ever launched.
+func TestComposeBackend_StartReclaimBoundedWhenDockerHangs(t *testing.T) {
+	original := composeHousekeepingTimeout
+	composeHousekeepingTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { composeHousekeepingTimeout = original })
+
+	dir := t.TempDir()
+	installDockerShimScript(t, dir, "#!/bin/sh\n[ \"$1\" = ps ] && exec sleep 30\nexit 0\n")
+
+	b := &ComposeBackend{dockerCmd: "docker", fingerprint: "fp-test"}
+	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeRun}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		proc, err := b.Start(context.Background(), &model.Task{Name: "boxes.web"}, &model.Run{}, ce)
+		if assert.NoError(t, err) {
+			go drain(proc.Stdout)
+			go drain(proc.Stderr)
+			proc.Wait()
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start blocked on a hung `docker ps` reclaim")
 	}
 }
 
@@ -492,6 +524,7 @@ func TestComposeBackend_ProcessGroupSIGTERMReapsChildren(t *testing.T) {
 	dir := t.TempDir()
 	pidFile := filepath.Join(dir, "child.pid")
 	body := "#!/bin/sh\n" +
+		"[ \"$1\" = ps ] && exit 0\n" + // reclaim probe in Start must not block
 		"sleep 30 &\n" +
 		"echo $! > '" + pidFile + "'\n" +
 		"wait\n"
@@ -531,7 +564,7 @@ func TestComposeBackend_ProcessGroupSIGTERMReapsChildren(t *testing.T) {
 // The shim traps SIGTERM so only SIGKILL can end it.
 func TestComposeBackend_ImmediateKillWhenGracefulStopZero(t *testing.T) {
 	dir := t.TempDir()
-	installDockerShimScript(t, dir, "#!/bin/sh\ntrap '' TERM\nsleep 30\n")
+	installDockerShimScript(t, dir, "#!/bin/sh\n[ \"$1\" = ps ] && exit 0\ntrap '' TERM\nsleep 30\n")
 
 	task := &model.Task{GracefulStop: durPtr(0)}
 	ce := &model.ComposeExecution{File: "/tmp/dc.yml", Service: "web", Mode: model.ComposeModeRun}

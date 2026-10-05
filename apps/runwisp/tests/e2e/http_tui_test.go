@@ -21,6 +21,7 @@ import (
 // task and watches its log lines stream in. Every byte the TUI shows here
 // arrived over the HTTP transport.
 func TestHTTPTUI_AuthenticatesAndStreamsLiveLogs(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 	configDir := t.TempDir()
@@ -61,6 +62,7 @@ func TestHTTPTUI_AuthenticatesAndStreamsLiveLogs(t *testing.T) {
 // /api/auth/status, sees auth isn't required, and connects with no password and
 // no prompt.
 func TestHTTPTUI_NoAuthConnectsWithoutPassword(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 	configDir := t.TempDir()
@@ -83,6 +85,7 @@ func TestHTTPTUI_NoAuthConnectsWithoutPassword(t *testing.T) {
 // to re-prompt, so the client fails fast with a human-readable auth error and
 // the process exits non-zero.
 func TestHTTPTUI_WrongPasswordFailsClearly(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 	configDir := t.TempDir()

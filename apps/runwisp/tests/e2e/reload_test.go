@@ -88,6 +88,7 @@ func waitForTaskNames(t *testing.T, client *apiclient.Client, want []string) {
 // TestReloadViaCLI exercises the full happy path through `runwisp reload`: an
 // add, a change, and a remove are all applied live and reported in the diff.
 func TestReloadViaCLI(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
@@ -119,6 +120,7 @@ func TestReloadViaCLI(t *testing.T) {
 // TestReloadViaSIGHUP proves SIGHUP drives the same reconcile as the CLI and
 // never tears the daemon down.
 func TestReloadViaSIGHUP(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
@@ -142,6 +144,7 @@ func TestReloadViaSIGHUP(t *testing.T) {
 // TestReloadRejectsInvalidConfig confirms validate-first atomicity: a config
 // that fails to parse is rejected and the live task set is left intact.
 func TestReloadRejectsInvalidConfig(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 
@@ -165,6 +168,7 @@ func TestReloadRejectsInvalidConfig(t *testing.T) {
 // TestReloadRejectsNonReloadableKey confirms a change to a restart-only setting
 // ([daemon] timezone here) is rejected with guidance, and nothing changes.
 func TestReloadRejectsNonReloadableKey(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 

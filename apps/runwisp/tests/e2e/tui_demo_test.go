@@ -32,6 +32,7 @@ import (
 //
 //	RUNWISP_TUI_CAST_FILE=/tmp/cast.json go test ./tests/e2e -run '^TestCaptureTUIDemo$' -count=1
 func TestCaptureTUIDemo(t *testing.T) {
+	t.Parallel()
 	castFile := os.Getenv("RUNWISP_TUI_CAST_FILE")
 	if castFile == "" {
 		t.Skip("set RUNWISP_TUI_CAST_FILE to record the animated TUI demo")

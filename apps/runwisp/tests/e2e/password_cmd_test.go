@@ -25,6 +25,7 @@ import (
 // invokes the built `runwisp password` binary against the same data dir and
 // asserts the printed value matches what the socket-mediated API returns.
 func TestPasswordCmd_PrintsEphemeralValue(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 	configDir := t.TempDir()
@@ -50,6 +51,7 @@ func TestPasswordCmd_PrintsEphemeralValue(t *testing.T) {
 // the CLI must surface that as a non-zero exit with the refusal copy on
 // stderr — never printing the value.
 func TestPasswordCmd_RefusesEnvVarPassword(t *testing.T) {
+	t.Parallel()
 	const operatorPassword = "operator-supplied-do-not-leak"
 
 	projectDir := runwispProjectDir(t)

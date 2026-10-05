@@ -21,6 +21,7 @@ import (
 // Each step is checked the way an operator would check it — `validate` and
 // `list --json`.
 func TestCLIImportThenPromote(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 

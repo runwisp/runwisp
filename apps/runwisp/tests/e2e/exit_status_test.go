@@ -27,6 +27,7 @@ import (
 // socket bind fail inside the running server (sun_path is ~108 bytes), which
 // is the self-triggered teardown path; it used to finish with exit 0.
 func TestDaemonExitStatus_FatalServerErrorExitsNonZero(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 	configPath := writeE2EConfig(t, t.TempDir())
@@ -54,6 +55,7 @@ func TestDaemonExitStatus_FatalServerErrorExitsNonZero(t *testing.T) {
 // An operator's SIGTERM (`runwisp stop`, `systemctl stop`) is a clean stop and
 // must stay exit 0, so a service manager does not treat it as a failure.
 func TestDaemonExitStatus_SignalExitsZero(t *testing.T) {
+	t.Parallel()
 	projectDir := runwispProjectDir(t)
 	binaryPath := buildRunwispBinary(t, projectDir)
 	daemon := startDaemon(t, projectDir, binaryPath, writeE2EConfig(t, t.TempDir()))

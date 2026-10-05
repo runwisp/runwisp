@@ -30,6 +30,7 @@ import (
 //
 //	RUNWISP_TUI_SHOOT_DIR=/tmp/frames go test ./tests/e2e -run '^TestCaptureTUIScreenshots$' -count=1
 func TestCaptureTUIScreenshots(t *testing.T) {
+	t.Parallel()
 	outDir := os.Getenv("RUNWISP_TUI_SHOOT_DIR")
 	if outDir == "" {
 		t.Skip("set RUNWISP_TUI_SHOOT_DIR to regenerate TUI screenshots")
