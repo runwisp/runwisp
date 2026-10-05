@@ -4,6 +4,7 @@
 [services.api]
 group = "site"
 run = "/srv/api/bin/serve --port 8080"
+restart = "on_failure"
 working_dir = "/srv/api"
 
 [tasks.batch]

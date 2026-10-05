@@ -36,6 +36,13 @@ func TestExitCodeFromRun_FailedPropagatesExitCode(t *testing.T) {
 	assert.Equal(t, 42, exitCodeFromRun(run))
 }
 
+func TestExitCodeFromRun_FailedWithZeroExitCodeIsNonZero(t *testing.T) {
+	for _, r := range []model.EndReason{model.ReasonFailed, model.ReasonTimeout, model.ReasonStopped} {
+		run := &model.Run{ExitCode: 0, EndReason: &r}
+		assert.Equal(t, 1, exitCodeFromRun(run), string(r))
+	}
+}
+
 func TestExitCodeFromRun_NoEndReason(t *testing.T) {
 	run := &model.Run{ExitCode: 99, EndReason: nil}
 	assert.Equal(t, 0, exitCodeFromRun(run))
@@ -59,10 +66,9 @@ func TestIsDaemonRunning_StalePidFile(t *testing.T) {
 func TestIsDaemonRunning_LivePid(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	pidPath := filepath.Join(dir, "daemon.pid")
-	require.NoError(t, os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o600))
+	writeLivePidFile(t, dir)
 
-	assert.True(t, isDaemonRunning(Flags{DataDir: dir}), "PID file present and live PID → running")
+	assert.True(t, isDaemonRunning(Flags{DataDir: dir}), "PID file present and locked → running")
 }
 
 func TestExecLogLineHandler_FiltersByTaskName(t *testing.T) {
@@ -158,9 +164,8 @@ func TestRunExec_DaemonFlagRequiresDaemon(t *testing.T) {
 
 func TestRunExec_StandaloneFlagForbidsDaemon(t *testing.T) {
 	dir := t.TempDir()
-	// Write the current PID — isDaemonRunning will see a live daemon.
-	pidPath := filepath.Join(dir, "daemon.pid")
-	require.NoError(t, os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o600))
+	// Hold the PID-file lock so isDaemonRunning sees a live daemon.
+	writeLivePidFile(t, dir)
 
 	origFlag := runFlags.Standalone
 	runFlags.Standalone = true

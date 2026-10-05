@@ -187,7 +187,9 @@ runwisp run backup --param source=/data --param dest=/mnt/backup
 runwisp run deploy --url https://runwisp.example.com
 ```
 
-Runs a task, streams its output, and exits with its exit code.
+Runs a task, streams its output, and exits with its exit code. If the run
+fails but the process exited 0 (for example a `failures` pattern matched, or a
+timeout), the exit code is 1.
 
 Without `--url`, it sends the run to the local daemon if one is running,
 otherwise it runs the task inside the CLI process.

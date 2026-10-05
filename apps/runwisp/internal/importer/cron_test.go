@@ -8,6 +8,8 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/pelletier/go-toml/v2"
+
 	"github.com/runwisp/runwisp/internal/model"
 )
 
@@ -859,5 +861,38 @@ func TestDetectCronFlavor(t *testing.T) {
 				t.Fatalf("DetectCronFlavor = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestCronEnvLineStripsOneMatchedQuotePair is the bug: strings.Trim removed every
+// leading and trailing quote, so `FOO=a "b"` became `a "b` and `BAZ='"x"'`
+// became `x`. cron strips one matched pair, and only when both ends match.
+func TestCronEnvLineStripsOneMatchedQuotePair(t *testing.T) {
+	cases := map[string]string{
+		`FOO=a "b"`:   `a "b"`,
+		`BAZ='"x"'`:   `"x"`,
+		`A="plain"`:   `plain`,
+		`B='single'`:  `single`,
+		`C="open`:     `"open`,
+		`D="mixed'`:   `"mixed'`,
+		`E=""`:        ``,
+		`F="`:         `"`,
+		`G=  "pad"  `: `pad`,
+	}
+	for line, want := range cases {
+		_, got, ok := cronEnvLine(line)
+		if !ok || got != want {
+			t.Errorf("cronEnvLine(%q) = %q, %v; want %q", line, got, ok, want)
+		}
+	}
+}
+
+// TestCronCommandControlCharsAreValidTOML covers the end-to-end shape of the
+// escape bug: a \v in a crontab command used to reach the TOML as \v.
+func TestCronCommandControlCharsAreValidTOML(t *testing.T) {
+	out := parseCron(t, "0 3 * * * printf 'a\vb'\x00\n", CronOptions{}).TOML()
+	var parsed map[string]any
+	if err := toml.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("generated TOML does not parse: %v\n%s", err, out)
 	}
 }

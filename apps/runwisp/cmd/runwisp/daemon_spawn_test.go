@@ -105,8 +105,12 @@ func TestProcessAlive_PresentAndAlive(t *testing.T) {
 	dir := t.TempDir()
 	pidPath := filepath.Join(dir, "pid")
 	require.NoError(t, os.WriteFile(pidPath, []byte("dummy"), 0o600))
-	// Use our own PID; we know it's alive.
-	assert.True(t, processAlive(os.Getpid(), pidPath))
+	// Our own PID is alive, but nobody holds the PID file's lock.
+	assert.False(t, processAlive(os.Getpid(), pidPath))
+
+	lockedDir := t.TempDir()
+	writeLivePidFile(t, lockedDir)
+	assert.True(t, processAlive(os.Getpid(), filepath.Join(lockedDir, "daemon.pid")))
 }
 
 func TestProcessAlive_PresentButDead(t *testing.T) {
@@ -120,31 +124,18 @@ func TestProcessAlive_PresentButDead(t *testing.T) {
 
 // TestProcessAlive_RejectsForeignProcess: a stale PID recycled by an unrelated
 // process must not be reported alive, so stop/restart never signal a bystander.
+// The PID is live (this test process), but no daemon holds the PID file's lock,
+// whatever this process or binary happens to be called.
 func TestProcessAlive_RejectsForeignProcess(t *testing.T) {
 	dir := t.TempDir()
-	pidPath := filepath.Join(dir, "pid")
-	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	pidPath := filepath.Join(dir, "daemon.pid")
+	require.NoError(t, os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o600))
+	assert.False(t, processAlive(os.Getpid(), pidPath), "stale PID file, live unrelated PID")
 
-	orig := lookupProcessName
-	t.Cleanup(func() { lookupProcessName = orig })
-
-	lookupProcessName = func(int) (string, bool) { return "sshd", true }
-	if processAlive(os.Getpid(), pidPath) {
-		t.Fatal("a live process not named runwisp must be treated as not-alive")
-	}
-
-	lookupProcessName = func(int) (string, bool) { return "runwisp", true }
-	if !processAlive(os.Getpid(), pidPath) {
-		t.Fatal("a live runwisp process must be treated as alive")
-	}
-
-	// Unknown name (e.g. macOS, no procfs) falls back to trusting liveness.
-	lookupProcessName = func(int) (string, bool) { return "", false }
-	if !processAlive(os.Getpid(), pidPath) {
-		t.Fatal("unresolvable process name must fall back to alive")
-	}
+	// A renamed daemon binary still holds the lock, so it is recognised.
+	lockedDir := t.TempDir()
+	writeLivePidFile(t, lockedDir)
+	assert.True(t, processAlive(os.Getpid(), filepath.Join(lockedDir, "daemon.pid")))
 }
 
 func TestDaemonLogDrainer_NoFileNoFatal(t *testing.T) {
@@ -169,7 +160,7 @@ func TestCheckPidAlive_LivePid(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	pidPath := filepath.Join(dir, "daemon.pid")
-	require.NoError(t, os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o600))
+	writeLivePidFile(t, dir)
 
 	pid, alive := checkPidAlive(pidPath, dir)
 	assert.Equal(t, os.Getpid(), pid)
@@ -209,8 +200,7 @@ func TestWaitForProcessExit_AlreadyDead(t *testing.T) {
 func TestWaitForProcessExit_TimesOutOnLivePid(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	pidPath := filepath.Join(dir, "daemon.pid")
-	require.NoError(t, os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o600))
+	writeLivePidFile(t, dir)
 
 	err := waitForProcessExit(os.Getpid(), 50*time.Millisecond, dir)
 	require.Error(t, err)

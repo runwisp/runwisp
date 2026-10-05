@@ -19,8 +19,8 @@ package importer
 import (
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // Result is the outcome of a conversion: the emitted TOML (built from blocks)
@@ -181,13 +181,52 @@ func tomlString(s string) string {
 // shell does its own expansion and an escaped `$${` would reach it literally.
 func tomlVerbatimString(s string) string {
 	if !strings.Contains(s, "\n") {
-		return strconv.Quote(s)
+		return `"` + tomlEscape(s, false) + `"`
 	}
-	// Multi-line basic string. Escape backslashes so the body is taken
-	// literally, and guard the rare case of an embedded `"""`.
-	body := strings.ReplaceAll(s, `\`, `\\`)
-	body = strings.ReplaceAll(body, `"""`, `""\"`)
+	// Multi-line basic string, with a guard for the rare embedded `"""`.
+	body := strings.ReplaceAll(tomlEscape(s, true), `"""`, `""\"`)
 	return "\"\"\"\n" + body + "\"\"\""
+}
+
+func invalidUTF8At(s string, i int) bool {
+	_, size := utf8.DecodeRuneInString(s[i:])
+	return size == 1
+}
+
+// tomlEscape escapes s for the inside of a TOML basic string. strconv.Quote
+// isn't usable here: it emits \a, \v, \x7f and \x00, none of which TOML
+// accepts, so every control character other than TOML's own short escapes goes
+// out as \uXXXX. multiline keeps tabs and newlines literal, as the body of a
+// """ string may.
+func tomlEscape(s string, multiline bool) string {
+	var sb strings.Builder
+	for i, r := range s {
+		switch {
+		case r == utf8.RuneError && invalidUTF8At(s, i):
+			sb.WriteString(`\uFFFD`) // TOML text must be valid UTF-8
+		case r == '\\':
+			sb.WriteString(`\\`)
+		case r == '\n' && multiline, r == '\t' && multiline:
+			sb.WriteRune(r)
+		case r == '"' && !multiline:
+			sb.WriteString(`\"`)
+		case r == '\b':
+			sb.WriteString(`\b`)
+		case r == '\t':
+			sb.WriteString(`\t`)
+		case r == '\n':
+			sb.WriteString(`\n`)
+		case r == '\f':
+			sb.WriteString(`\f`)
+		case r == '\r':
+			sb.WriteString(`\r`)
+		case r < 0x20 || r == 0x7f:
+			fmt.Fprintf(&sb, `\u%04X`, r)
+		default:
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
 }
 
 // envBlock builds a child table (e.g. "tasks.web.env") with keys sorted for

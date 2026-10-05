@@ -81,19 +81,20 @@ move a few units at a time; just never leave one enabled in both. There is no
 
 ## How the pieces map
 
-| systemd              | runwisp.toml                                                                      | Notes                                                                  |
-| -------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `Type=oneshot`       | `[tasks.NAME]` with [`run_on_start = "boot"`](/configuration/tasks/#run_on_start) | Runs once per boot.                                                    |
-| any other `Type`     | `[services.NAME]`                                                                 | See `Restart=` below.                                                  |
-| `ExecStart`          | [`run`](/configuration/services/#run)                                             | One command. `@ - + !` prefixes are removed, with a note.              |
-| `WorkingDirectory`   | [`working_dir`](/configuration/services/#working_dir)                             |                                                                        |
-| `User` (+ `Group`)   | [`user`](/configuration/services/#user)                                           | Combined as `user:group`. The daemon must run as root to switch users. |
-| `Environment`        | [`env`](/configuration/services/#env)                                             | Every line is kept.                                                    |
-| `EnvironmentFile`    | [`env_file`](/configuration/services/#env_file)                                   | Only the first file; a leading `-` is dropped.                         |
-| `TimeoutStopSec`     | [`graceful_stop`](/configuration/services/#graceful_stop)                         |                                                                        |
-| `KillSignal`         | [`stop_signal`](/configuration/services/#stop_signal)                             |                                                                        |
-| `[Unit] Description` | [`description`](/configuration/services/#description)                             |                                                                        |
-| `[Install]`          | _(not needed)_                                                                    | Services start with the daemon. See below.                             |
+| systemd              | runwisp.toml                                                                      | Notes                                                                                                                    |
+| -------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `Type=oneshot`       | `[tasks.NAME]` with [`run_on_start = "boot"`](/configuration/tasks/#run_on_start) | Runs once per boot.                                                                                                      |
+| any other `Type`     | `[services.NAME]`                                                                 | See `Restart=` below.                                                                                                    |
+| `ExecStart`          | [`run`](/configuration/services/#run)                                             | One command. `@ - + !` prefixes are removed, with a note. Arguments with shell characters such as `*` or `;` are quoted. |
+| `WorkingDirectory`   | [`working_dir`](/configuration/services/#working_dir)                             |                                                                                                                          |
+| `User` (+ `Group`)   | [`user`](/configuration/services/#user)                                           | Combined as `user:group`. The daemon must run as root to switch users.                                                   |
+| `Environment`        | [`env`](/configuration/services/#env)                                             | Every line is kept.                                                                                                      |
+| `EnvironmentFile`    | [`env_file`](/configuration/services/#env_file)                                   | Only the first file. A `-` file that doesn't exist is left out.                                                          |
+| `TimeoutStopSec`     | [`graceful_stop`](/configuration/services/#graceful_stop)                         | `0` (no timeout) is left out with a note.                                                                                |
+| `Restart`            | [`restart`](/configuration/services/#restart)                                     | See below.                                                                                                               |
+| `KillSignal`         | [`stop_signal`](/configuration/services/#stop_signal)                             |                                                                                                                          |
+| `[Unit] Description` | [`description`](/configuration/services/#description)                             |                                                                                                                          |
+| `[Install]`          | _(not needed)_                                                                    | Services start with the daemon. See below.                                                                               |
 
 RunWisp starts services when the daemon starts. To keep one stopped at boot,
 set [`autostart = false`](/configuration/services/#autostart). For start order,
@@ -104,10 +105,11 @@ use [`depends_on`](/configuration/services/#depends_on).
 Anything that can't be mapped gets a `# TODO` in the TOML and a note on the
 unit's row.
 
-- **`Restart=`.** Imported services use RunWisp's default
-  [`restart`](/configuration/services/#restart), which restarts after any exit.
-  For `Restart=on-failure`, set `restart = "on_failure"`. A unit with
-  `Restart=no` (or none) gets a note: if it should run once, make it a task.
+- **`Restart=`.** `always` is RunWisp's default
+  [`restart`](/configuration/services/#restart). `on-failure` becomes
+  `restart = "on_failure"`, and `no` (or none) becomes `restart = "never"`.
+  `on-success`, `on-abnormal`, `on-abort`, and `on-watchdog` have no exact
+  equal, so they land on the closest value with a note.
 - **More than one command.** RunWisp runs one `run` command. Only the first
   `ExecStart` is imported; other `ExecStart`, `ExecStartPre`, `ExecStartPost`,
   and `ExecStop` lines are flagged. Put them into the `run` script, or setup

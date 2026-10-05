@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `runwisp import` maps systemd `Restart=` and supervisord `autorestart` onto the `restart` key (`on-failure` and `unexpected` become `on_failure`, `no` becomes `never`), and reads `no`, `off` and `0` as supervisord's "don't restart".
+
+### Fixed
+
+- `runwisp run` exits 1 when a run is marked failed but the process exited 0, such as a `failures` output pattern match or a timeout the task handled.
+- `runwisp import` reads supervisord configs the way supervisord does (inline `;` and `#` comments are dropped), keeps matched quote pairs in crontab environment values, writes control characters in commands as valid TOML, and quotes systemd `ExecStart` arguments such as `*` and `;` so the shell doesn't act on them.
+- `runwisp import systemd` leaves out an `EnvironmentFile=-path` that doesn't exist yet (with a note) and no longer turns `TimeoutStopSec=0` into an immediate kill.
+- The systemd unit written by `runwisp service install` keeps a literal `$` in the binary, config or data path.
+- Two daemons can no longer end up sharing a data dir when one starts as another stops.
+- RunWisp starts when the data dir belongs to another user (a Kubernetes `fsGroup` volume, a group-writable bind mount) and warns that its permissions are looser than 0700.
+- `runwisp stop` and `restart` recognize a running daemon by its PID file lock, so a recycled PID or a renamed binary is no longer mistaken for the daemon.
+- Schedules that can never fire, such as `0 0 30 2 *`, and `@every` intervals under one second are now rejected by `runwisp validate` and on load or reload. Day-of-week ranges like `sun-7` are accepted.
+- On shutdown the daemon now waits until tasks that ignore the stop signal have been killed before it exits, so no child process is left running.
+- A service reloaded into a plain task and back to a service is started again.
+- A run refused for low disk space, or killed by a signal, now says so in its log.
+- Overlapping runs of a compose task in run mode each get their own container, and one no longer removes the other's.
+- A run no longer fails to start when a cleanup pass removes its log directory at the same moment.
+
+### Security
+
+- When one secret value is a prefix of another, the longer one is now always fully masked in run output.
+
 ## [1.4.0] - 2026-10-05
 
 ### Changed
@@ -25,19 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/metrics` follows `runwisp reload`, and answers `500` when the run totals can't be read instead of reporting zeros.
 - A log or event stream past the connection limit now gets `503`, and a log stream for an unknown run gets `404`.
 - Unknown `/api/` paths now return a JSON `404` instead of the web UI page.
-- Schedules that can never fire, such as `0 0 30 2 *`, and `@every` intervals under one second are now rejected by `runwisp validate` and on load or reload. Day-of-week ranges like `sun-7` are accepted.
-- On shutdown the daemon now waits until tasks that ignore the stop signal have been killed before it exits, so no child process is left running.
-- A service reloaded into a plain task and back to a service is started again.
-- A run refused for low disk space, or killed by a signal, now says so in its log.
-- Overlapping runs of a compose task in run mode each get their own container, and one no longer removes the other's.
-- A run no longer fails to start when a cleanup pass removes its log directory at the same moment.
 
 ### Security
 
 - Behind `trusted_proxies`, the client IP is now the first address from the right of `X-Forwarded-For` that isn't a trusted proxy, so the login and hook rate limits apply per real client.
 - With `RUNWISP_AUTH=off`, state-changing requests that a browser marks as coming from another origin are now refused.
 - Compose-backed services no longer hang on start when the Docker engine stops responding; the leftover-container check now gives up after 10 seconds.
-- When one secret value is a prefix of another, the longer one is now always fully masked in run output.
 
 ## [1.3.1] - 2026-10-01
 

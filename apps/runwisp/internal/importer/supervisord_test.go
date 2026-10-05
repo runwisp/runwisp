@@ -85,39 +85,11 @@ func TestSupervisordIncludeMergesSameProgram(t *testing.T) {
 	}
 }
 
-func TestSupervisordAutorestartService(t *testing.T) {
-	// true and unexpected (and an omitted value) are always-on services; a
-	// service is always-restart, so no restart key is emitted. Only
-	// "unexpected" is a genuine behavior change from what supervisord would
-	// have done, so only it (not "true", which already means "restart on any
-	// exit" in supervisord too) gets the explanatory note.
-	cases := []struct {
-		value     string
-		wantNoted bool
-	}{
-		{value: "true", wantNoted: false},
-		{value: "unexpected", wantNoted: true},
-	}
-	for _, tc := range cases {
-		res := parseSup(t, "[program:x]\ncommand=/bin/x\nautorestart="+tc.value+"\n")
-		out := res.TOML()
-		mustContain(t, out, "[services.x]")
-		mustNotContain(t, out, "restart =")
-		if tally := res.Tally(); tally.Tasks != 0 || tally.Services != 1 {
-			t.Fatalf("%s: counts %+v, want 0 tasks / 1 service", tc.value, tally)
-		}
-		if got := hasNoteKind(res, NoteAutorestartUnexpected); got != tc.wantNoted {
-			t.Fatalf("autorestart=%s: note present = %v, want %v (%+v)", tc.value, got, tc.wantNoted, allNotes(res))
-		}
-	}
-}
-
 // TestSupervisordAutorestartOmittedNotedAsService is the regression test for
 // the silent case: no autorestart= line at all — probably the single most
-// common real-world supervisord config — still imports as an always-on
-// service (supervisord's own default is "unexpected"), and that must now
-// come with the same explanatory note an explicit autorestart=unexpected
-// gets, not silence.
+// common real-world supervisord config — imports as a service (supervisord's
+// own default is "unexpected"), and must come with the same explanatory note an
+// explicit autorestart=unexpected gets, not silence.
 func TestSupervisordAutorestartOmittedNotedAsService(t *testing.T) {
 	res := parseSup(t, "[program:x]\ncommand=/bin/x\n")
 	out := res.TOML()
@@ -403,5 +375,76 @@ func TestParseSupervisordEnvQuotedValueWithLeadingSpace(t *testing.T) {
 		if got[k] != v {
 			t.Fatalf("parseSupervisordEnv(...) = %#v, want %#v", got, want)
 		}
+	}
+}
+
+// TestSupervisordInlineCommentsAreStripped is the bug: supervisord's parser drops
+// a `;` or `#` that follows whitespace, so `command=/bin/web ; the program` runs
+// /bin/web; the importer kept the comment and the shell would run `the program`.
+// A marker with no whitespace before it is part of the value, as in supervisord.
+func TestSupervisordInlineCommentsAreStripped(t *testing.T) {
+	res := parseSup(t, `[program:web] ; the web app
+command=/usr/bin/web --port 80   ; the program
+directory=/srv/app ; cwd
+autostart=false # not at boot
+stopsignal=INT ; polite
+startsecs=5	; tab before it
+environment=A="1;2",B=x ; env
+`)
+	out := res.TOML()
+	mustContain(t, out, "[services.web]")
+	mustContain(t, out, `run = "/usr/bin/web --port 80"`)
+	mustContain(t, out, `working_dir = "/srv/app"`)
+	mustContain(t, out, `autostart = false`)
+	mustContain(t, out, `stop_signal = "SIGINT"`)
+	mustContain(t, out, `healthy_after = "5s"`)
+	mustContain(t, out, `A = "1;2"`)
+	mustContain(t, out, `B = "x"`)
+	if hasNoteKind(res, NoteKeyUnreadable) {
+		t.Fatalf("unexpected unreadable-key notes: %+v", allNotes(res))
+	}
+
+	out = parseSup(t, "[program:x]\ncommand=/bin/x --a=b;c --d#e\n").TOML()
+	mustContain(t, out, `run = "/bin/x --a=b;c --d#e"`)
+}
+
+// TestSupervisordAutorestartMapsToRestartPolicy covers the restart key: true is
+// RunWisp's default (no key), unexpected and an omitted value restart only after
+// a failure, and every false spelling is a run-once task, not an always-on service.
+func TestSupervisordAutorestartMapsToRestartPolicy(t *testing.T) {
+	services := map[string]string{
+		"true": "", "yes": "", "on": "", "1": "",
+		"unexpected": `restart = "on_failure"`, "": `restart = "on_failure"`,
+	}
+	for value, want := range services {
+		in := "[program:x]\ncommand=/bin/x\n"
+		if value != "" {
+			in += "autorestart=" + value + "\n"
+		}
+		res := parseSup(t, in)
+		out := res.TOML()
+		mustContain(t, out, "[services.x]")
+		if want == "" {
+			mustNotContain(t, out, "restart =")
+		} else {
+			mustContain(t, out, want)
+			if !hasNoteKind(res, NoteAutorestartUnexpected) {
+				t.Errorf("autorestart=%q: missing note, got %+v", value, allNotes(res))
+			}
+		}
+	}
+	for _, value := range []string{"false", "no", "off", "0", "FALSE"} {
+		res := parseSup(t, "[program:x]\ncommand=/bin/x\nautorestart="+value+"\n")
+		out := res.TOML()
+		mustContain(t, out, "[tasks.x]")
+		mustContain(t, out, "run_on_start = true")
+		if hasNoteKind(res, NoteKeyUnreadable) {
+			t.Errorf("autorestart=%s: unexpected unreadable note: %+v", value, allNotes(res))
+		}
+	}
+	res := parseSup(t, "[program:x]\ncommand=/bin/x\nautorestart=sometimes\n")
+	mustNotContain(t, res.TOML(), "restart =")
+	if !hasNoteKind(res, NoteKeyUnreadable) {
+		t.Errorf("autorestart=sometimes should be reported, got %+v", allNotes(res))
 	}
 }

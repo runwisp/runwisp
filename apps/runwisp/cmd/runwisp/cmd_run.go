@@ -468,14 +468,18 @@ func responseNames(tasks []model.TaskResponse) []string {
 	return names
 }
 
+// exitCodeFromRun maps a finished run to the CLI exit code: the process's own
+// code when it failed, and 1 when RunWisp ended the run as unsuccessful even
+// though the process exited 0 (a `failures` pattern match, a timeout or stop
+// the task handled gracefully).
 func exitCodeFromRun(run *model.Run) int {
-	if run == nil {
+	if run == nil || run.EndReason == nil || *run.EndReason == model.ReasonSuccess {
 		return 0
 	}
-	if run.EndReason != nil && *run.EndReason != model.ReasonSuccess {
-		return run.ExitCode
+	if run.ExitCode == 0 {
+		return 1
 	}
-	return 0
+	return run.ExitCode
 }
 
 // runExecStandalone runs the task in this CLI process. The data dir must not
