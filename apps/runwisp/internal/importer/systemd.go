@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -301,6 +302,10 @@ func stripExecPrefixes(cmd string) (string, bool) {
 // systemd expands $VAR and ${VAR} itself, so the shell doing it is the same.
 const shellMeta = "*?[]{}~;|&<>()!#`"
 
+// shellVarRef matches a $VAR or ${VAR} reference. Its braces aren't shell
+// metacharacters, and a quoted word splices it back out so it still expands.
+var shellVarRef = regexp.MustCompile(`\$(\{[^}]*\}|[A-Za-z_][A-Za-z0-9_]*)`)
+
 // quoteExecForShell single-quotes each bare word of an ExecStart line that holds
 // a shell metacharacter, so `sh -c` passes it through the way systemd's direct
 // exec does. A word with quotes or backslashes is left as written (the shell
@@ -313,8 +318,8 @@ func quoteExecForShell(cmd string) string {
 	plain := true // the word so far has no quotes or backslashes
 	flush := func() {
 		w := word.String()
-		if plain && w != ";" && strings.ContainsAny(w, shellMeta) {
-			w = "'" + w + "'"
+		if plain && w != ";" && strings.ContainsAny(shellVarRef.ReplaceAllString(w, ""), shellMeta) {
+			w = "'" + shellVarRef.ReplaceAllString(w, `'"${0}"'`) + "'"
 		}
 		out.WriteString(w)
 		word.Reset()
@@ -325,7 +330,10 @@ func quoteExecForShell(cmd string) string {
 		switch {
 		case quote != 0:
 			word.WriteByte(c)
-			if c == quote {
+			if c == '\\' && quote == '"' && i+1 < len(cmd) {
+				i++ // \" doesn't close a double-quoted string
+				word.WriteByte(cmd[i])
+			} else if c == quote {
 				quote = 0
 			}
 		case c == '"' || c == '\'':
@@ -536,7 +544,8 @@ func systemdApplyType(svc *systemdSection, ref itemRef) {
 
 // systemdRestartPolicy maps Restart= onto a RunWisp restart value. exact is
 // false for the values RunWisp has no equal for (on-success, on-abnormal,
-// on-abort, on-watchdog), which land on the nearest policy with a note.
+// on-abort, on-watchdog), which land on the nearest policy with a note. None of
+// them restarts after a failure, so neither does the mapped policy.
 func systemdRestartPolicy(restart string) (policy model.RestartPolicy, exact bool) {
 	switch restart {
 	case "always":
@@ -546,7 +555,7 @@ func systemdRestartPolicy(restart string) (policy model.RestartPolicy, exact boo
 	case "on-failure":
 		return model.RestartOnFailure, true
 	case "on-success":
-		return model.RestartAlways, false
+		return model.RestartNever, false
 	default: // on-abnormal, on-abort, on-watchdog: restart after a bad ending only
 		return model.RestartOnFailure, false
 	}
