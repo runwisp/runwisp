@@ -153,7 +153,7 @@ func TestStockDebianWeeklyLineFiresOnSunday(t *testing.T) {
 // superset of robfig's standard parser — the one cron.New would use without an
 // explicit WithParser. Every spec the standard parser accepts, cronspec must
 // also accept (no 5-field regression); cronspec additionally accepts a leading
-// seconds field. If ParseOptions ever dropped a standard option, validation and
+// seconds field. If parseOptions ever dropped a standard option, validation and
 // scheduling would reject specs the userbase already relies on.
 func TestSupersetOfStandardParser(t *testing.T) {
 	specs := []string{
@@ -288,7 +288,7 @@ func TestScheduleParser_EveryPassesThrough(t *testing.T) {
 // wrapper hands it straight back without DST math. Our parsers reject the spec,
 // so the wrapper is built around robfig's directly.
 func TestScheduleParser_NeverMatchingSpecReturnsZero(t *testing.T) {
-	inner, err := cron.NewParser(ParseOptions).Parse("0 0 30 2 *")
+	inner, err := cron.NewParser(parseOptions).Parse("0 0 30 2 *")
 	require.NoError(t, err)
 	spec, ok := inner.(*cron.SpecSchedule)
 	require.True(t, ok)

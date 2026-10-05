@@ -575,12 +575,9 @@ func TestHandleServiceApply_MergeEnvRefusedWithoutExecutionDefinition(t *testing
 	assert.Empty(t, runner.upserted)
 }
 
-// Regression (Bug 1): a service:apply addressed by the bare name of a
-// *non-service* TOML task (a cron/one-shot) must be rejected outright and must
-// never overwrite that task's disk-defined run=. Before the fix, resolveServiceTarget
-// matched any task by name, so mergeServiceApply clobbered the ExecutionDef of an
-// ordinary task — a control-plane peer could rewrite what a task executes,
-// violating the "run= comes from disk only" invariant.
+// A service:apply addressed by the bare name of a *non-service* TOML task (a
+// cron/one-shot) must be rejected outright and must never overwrite that task's
+// disk-defined run=: a control-plane peer must not rewrite what a task executes.
 func TestHandleServiceApply_RejectsNonServiceTaskCollision(t *testing.T) {
 	origExec := &model.ShellExecution{Script: "backup.sh"}
 	cron := &model.Task{
@@ -607,8 +604,8 @@ func TestHandleServiceApply_RejectsNonServiceTaskCollision(t *testing.T) {
 	assert.Same(t, origExec, cron.ExecutionDef, "the cron task's run= must be left untouched")
 }
 
-// Regression (Bug 1): service:control must likewise refuse to target a
-// non-service task, so the control plane can't drive the lifecycle of a cron task.
+// service:control must likewise refuse to target a non-service task, so the
+// control plane can't drive the lifecycle of a cron task.
 func TestHandleServiceControl_RejectsNonServiceTaskCollision(t *testing.T) {
 	start := protocol.ActionStart
 	cron := &model.Task{Name: "backup", Kind: model.KindTask, ExecutionDef: &model.ShellExecution{Script: "backup.sh"}}
@@ -673,9 +670,9 @@ func TestHandleServiceApply_MergeRejectsInstanceCountAboveCap(t *testing.T) {
 	assert.Equal(t, 1, existing.Instances, "an over-cap merge must not rescale the live service")
 }
 
-// Regression (Bug 7): service:remove tears down a previously declared service by
-// dropping its task from the runner, so a station-managed service no longer leaks a
-// taskState + supervisor goroutine once the control plane retires it.
+// service:remove tears down a previously declared service by dropping its task
+// from the runner, so a station-managed service doesn't leak a taskState +
+// supervisor goroutine once the control plane retires it.
 func TestHandleServiceRemove_DropsExistingService(t *testing.T) {
 	existing := &model.Task{Name: "heartbeat", Kind: model.KindService, ExecutionDef: &model.ShellExecution{Script: "heartbeat.sh"}, StationDeclared: true}
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"heartbeat": existing})
@@ -706,8 +703,8 @@ func TestHandleServiceRemove_RejectsTOMLDefinedService(t *testing.T) {
 	assert.Empty(t, runner.removed, "a TOML-defined service must never be removed by the control plane")
 }
 
-// Regression (Bug 7 / Bug 1): service:remove must refuse to delete a non-service
-// TOML task even if its name is supplied.
+// service:remove must refuse to delete a non-service TOML task even if its name
+// is supplied.
 func TestHandleServiceRemove_RejectsNonServiceTask(t *testing.T) {
 	cron := &model.Task{Name: "backup", Kind: model.KindTask, ExecutionDef: &model.ShellExecution{Script: "backup.sh"}}
 	h := newDispatchHandler(shellAvailable(), map[string]*model.Task{"backup": cron})

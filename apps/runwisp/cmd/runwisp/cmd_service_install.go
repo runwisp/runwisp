@@ -21,11 +21,10 @@ import (
 )
 
 // installRequest is every decision an install needs that doesn't come from the
-// global --config/--data flags. A named type, and passed down rather than read
-// off the package global, because `service install` is no longer the only caller:
-// `runwisp takeover` and the first-run cutover build one of these too, and a
-// shared path that reached back into one command's flag block would silently pick
-// up whatever that command last parsed.
+// global --config/--data flags. It is passed down rather than read off a package
+// global because `runwisp takeover` and the first-run cutover build one too, and
+// a shared path that reached into one command's flag block would pick up
+// whatever that command last parsed.
 type installRequest struct {
 	Yes    bool
 	Print  bool
@@ -88,10 +87,9 @@ func runServiceInstall(cmd *cobra.Command, f Flags) error {
 // between attaching to the new service and spawning its own daemon) can tell a
 // real install from an abort, a no-op, or an inspect-only run.
 //
-// It installs a unit and nothing else. Retiring cron used to be a flag on this
-// path, which is why three commands each re-derived whether that was legal; the
-// decision now lives in internal/cutover, and all this does about cron is point
-// at `runwisp takeover` when one would help.
+// It installs a unit and nothing else. Retiring cron is decided in
+// internal/cutover; all this does about cron is point at `runwisp takeover`
+// when one would help.
 func installService(cmd *cobra.Command, f Flags, req installRequest) (installed bool, err error) {
 	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), os.Stdin, req.Yes)
 	if err != nil {
@@ -290,8 +288,8 @@ func ensureServicePasswordFallback(out io.Writer, installer autostart.Installer,
 // then refuse (no jobs to find, not root, wrong OS) is worse than silence, and
 // the only thing that reliably knows is the plan that command would compute.
 //
-// Prime directive #1 is why it exists at all: a box left with cron firing jobs
-// RunWisp also reads runs them twice, and nothing else on this path would say so.
+// A box left with cron firing jobs RunWisp also reads runs them twice, and
+// nothing else on this path would say so.
 func printCronStillOwnsNote(cmd *cobra.Command, f Flags, deps autostart.Deps, installer autostart.Installer, opts autostart.InstallOptions) {
 	plan, err := newCutover(f, deps, installer, opts, cutover.Options{}).Compute(context.Background())
 	if err != nil || plan.Blocked() || plan.NothingToDo() || !plan.MasksCron || !plan.Evidence.CronActive {

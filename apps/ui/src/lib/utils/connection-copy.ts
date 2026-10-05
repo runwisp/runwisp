@@ -14,7 +14,7 @@
  *   per-origin connection limit. Here, telling the operator to close tabs is
  *   the correct fix.
  */
-export interface StalledCopy {
+interface StalledCopy {
     /** Short label for the status chip. */
     label: string;
     /** One-line hint shown under the label. */

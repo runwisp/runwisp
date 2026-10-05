@@ -54,10 +54,8 @@ func AssertPrivilegedConfigTrust(cfg *Config, rootPath string) error {
 	return assertPrivilegedConfigTrust(cfg, rootPath, os.Geteuid())
 }
 
-// assertPrivilegedConfigTrust takes euid as a parameter, rather than reading
-// os.Geteuid() inline, so a test can exercise the root-privileged branch
-// without actually running as root — the same seam this codebase already uses
-// for euid-gated logic elsewhere (e.g. internal/autostart.Deps.Euid).
+// assertPrivilegedConfigTrust takes euid as a parameter so a test can exercise
+// the root-privileged branch without running as root.
 func assertPrivilegedConfigTrust(cfg *Config, rootPath string, euid int) error {
 	if euid != 0 || runningInContainer() {
 		return nil
@@ -89,23 +87,21 @@ var runningInContainer = func() bool {
 // assertCronFileTrusted refuses to take task definitions from a file that someone
 // other than the job's own identity could have written.
 //
-// This closes a hole include_cron opens by existing. Every other file that can
-// define a task is one the operator wrote or one `runwisp import` wrote into the
-// data dir; include_cron makes an arbitrary glob an author of shell that runs with
-// the daemon's privilege. A group-writable /etc/cron.d/backup is then a privilege
-// escalation for every member of that group — which is why crond applies
+// include_cron makes an arbitrary glob an author of shell that runs with the
+// daemon's privilege, so a group-writable /etc/cron.d/backup would be a
+// privilege escalation for every member of that group. crond applies
 // structurally the same check to its own spool.
 //
 // runAs is the account the file's jobs will run as, empty for a file whose jobs run
 // as the daemon. It widens the set of acceptable owners by exactly one: a spool
 // crontab belonging to alice is trustworthy *for running alice's jobs*, because
-// anything she could put in it she could already run herself. That is not a hole —
-// it is the corroboration that makes deriving her name from the filename safe in
-// the first place, and it is the same pairing crond makes.
+// anything she could put in it she could already run herself. That ownership is
+// also what makes deriving her name from the filename safe, the same pairing
+// crond makes.
 //
-// Both the file and its directory are checked: a writable directory lets an
-// attacker replace the file wholesale, which the file's own mode says nothing
-// about.
+// The file and every directory above it are checked: a writable directory lets
+// an attacker replace the file wholesale, which the file's own mode says
+// nothing about.
 func assertCronFileTrusted(path, runAs string) error {
 	extra, err := runAsUID(runAs)
 	if err != nil {
@@ -209,19 +205,12 @@ func assertAncestorsTrusted(path string, extraOwner int) error {
 // assertNotGroupOrWorldWritable rejects a path others can write, with one carve-out
 // crond itself relies on.
 //
-// A cron spool directory is group-writable *and sticky* by design — 1730
-// root:crontab is what lets the setgid crontab(1) binary drop a user's file in
-// there. Sticky is precisely what makes that safe: a group member can add their own
-// entry but cannot rename or delete anyone else's, so it buys no ability to replace
-// another user's crontab. Refusing it outright is why per-user crontabs were
-// unreadable rather than merely unmapped, and it refused the exact configuration
-// every Debian box ships.
-//
-// A sticky *directory* is the carve-out — for group- and world-writable alike:
+// A sticky *directory* is the carve-out, for group- and world-writable alike:
 // sticky means only a file's owner (or root) can rename or delete it, so a
 // group/world member can add their own entry but cannot replace someone else's.
-// That is exactly what makes /tmp (1777), /var/spool/cron (1730), and the like
-// safe as directory components. A writable regular *file* gets no such pass.
+// That is what makes /tmp (1777) and a cron spool directory (1730 root:crontab,
+// which lets the setgid crontab(1) binary drop a user's file in) safe as
+// directory components. A writable regular *file* gets no such pass.
 func assertNotGroupOrWorldWritable(info os.FileInfo, path, what string) error {
 	perm := info.Mode().Perm()
 	if perm&0o022 == 0 {

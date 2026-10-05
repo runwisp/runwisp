@@ -3,11 +3,10 @@
 
 // Package keys is the single source of truth for the TUI's keyboard help text.
 //
-// The same keybindings are surfaced in three places that used to spell them out
-// independently — and drift: the contextual help bar (tui/model_view.go), the
-// help overlay (tui/helpdialog.go), and the notifications panel header
-// (tui/views/notifications/panel.go). Defining each action once here means the
-// three can never again disagree about what a key does.
+// The same keybindings are surfaced in three places: the contextual help bar
+// (tui/model_view.go), the help overlay (tui/helpdialog.go), and the
+// notifications panel header (tui/views/notifications/panel.go). Defining each
+// action once here means the three can never disagree about what a key does.
 //
 // A Binding carries both renderings an action needs: the spaced Keys/Desc the
 // overlay table shows, and the compact Bar segment the width-constrained help

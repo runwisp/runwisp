@@ -72,14 +72,12 @@ type taskState struct {
 
 	// bookkeepingStop latches when the daemon, not the operator, stops a
 	// service's supervisor: RemoveTask stopping it while it drains, or a reload
-	// turning the service into a plain task. UpsertTask's revival branch
-	// consults it to decide whether the resulting stopped flag should clear:
-	// an operator's own StopService must still survive a reload, but a
-	// bookkeeping stop must not outlive the change it was for, or a revived
-	// service comes back registered with zero live instances and no error
-	// surfaced anywhere. Cleared by StopService/RestartServiceInstances too,
-	// since either one makes the stop (or lack of it) unambiguously
-	// operator-driven from that point on.
+	// turning the service into a plain task. UpsertTask's revival branch clears
+	// the stopped flag only when this is set: an operator's own StopService must
+	// survive a reload, but a bookkeeping stop must not outlive the change it
+	// was for, or a revived service comes back with zero live instances and no
+	// error anywhere. Cleared by StopService/RestartServiceInstances too, since
+	// either makes the stop state operator-driven from then on.
 	bookkeepingStop bool
 }
 
@@ -129,13 +127,11 @@ func (m *defaultTaskManager) evaluateConcurrency(ts *taskState, run *model.Run, 
 
 // cancelExcessRuns cancels the oldest not-yet-cancelled runs of ts until
 // enough are draining that active returns to concurrencyLimit once they exit.
-// Skipping already-cancelled runs is what bounds the live set: re-cancelling
-// the same dying run while spamming triggers used to let active grow without
-// limit.
+// Skipping already-cancelled runs bounds the live set: re-cancelling the same
+// dying run on every trigger would let active grow without limit.
 //
-// The cancel budget counts only live (not-yet-cancelled) runs. Basing it on
-// len(ts.active) would count still-draining victims from earlier triggers
-// too, inflating the budget and over-killing healthy runs when
+// The cancel budget counts only live (not-yet-cancelled) runs. Counting
+// still-draining victims too would over-kill healthy runs when
 // max_concurrent > 1 and triggers arrive faster than victims drain.
 func (m *defaultTaskManager) cancelExcessRuns(ts *taskState, concurrencyLimit int) {
 	live := 0

@@ -20,8 +20,7 @@ import (
 type Field int
 
 const (
-	FieldNone Field = iota
-	FieldOpenWebUI
+	FieldOpenWebUI Field = iota + 1
 	FieldWebUI
 	FieldPassword
 )

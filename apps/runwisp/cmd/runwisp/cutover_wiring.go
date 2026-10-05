@@ -53,10 +53,9 @@ func newCutover(f Flags, deps autostart.Deps, installer autostart.Installer, opt
 // resolveCutover builds the cutover for `runwisp takeover`.
 //
 // The scope is not negotiable here: retiring cron means masking a system unit, so
-// the install is system-wide and there is no --local. Neither the privilege check
-// nor the OS check happens at this layer any more — both are Blockers in the plan,
-// so `takeover --dry-run` on a non-root macOS box still prints what it found and
-// what would stop it, instead of dying before it can say anything.
+// the install is system-wide and there is no --local. The privilege and OS
+// checks are Blockers in the plan, not checks here, so `takeover --dry-run` on a
+// non-root macOS box still prints what it found and what would stop it.
 func resolveCutover(cmd *cobra.Command, f Flags, req takeoverRequest) (*cutover.Cutover, error) {
 	deps, err := autostart.DefaultDeps(cmd.OutOrStdout(), os.Stdin, req.Yes)
 	if err != nil {

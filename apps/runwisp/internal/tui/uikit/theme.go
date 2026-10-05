@@ -126,16 +126,12 @@ func StatusStyle(status string) lipgloss.Style {
 		return base.Background(ColorRunning).Foreground(ColorBg)
 	case "succeeded":
 		return base.Background(ColorSuccess).Foreground(ColorBg)
-	case "failed":
+	case "failed", "crashed":
 		return base.Background(ColorError).Foreground(ColorBg)
 	case "pending":
 		return base.Background(ColorPending).Foreground(ColorBg)
-	case "stopped":
+	case "stopped", "timeout":
 		return base.Background(ColorWarning).Foreground(ColorBg)
-	case "timeout":
-		return base.Background(ColorWarning).Foreground(ColorBg)
-	case "crashed":
-		return base.Background(ColorError).Foreground(ColorBg)
 	default:
 		return base.Background(ColorTextMuted).Foreground(ColorBg)
 	}

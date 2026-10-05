@@ -89,12 +89,6 @@ describe("themeStore", () => {
         expect(themeStore.resolved).toBe("dark");
     });
 
-    it("falls back to the legacy storage key", async () => {
-        stubBrowser({ storage: { "runwisp-theme": "light" } });
-        const { themeStore } = await import("./theme.svelte.js");
-        expect(themeStore.preference).toBe("light");
-    });
-
     it("ignores an invalid stored value", async () => {
         stubBrowser({ storage: { "runwisp:theme": "purple" } });
         const { themeStore } = await import("./theme.svelte.js");

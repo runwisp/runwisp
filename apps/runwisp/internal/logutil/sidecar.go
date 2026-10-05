@@ -13,17 +13,17 @@ import (
 
 // The sidecar container is a single hidden file per run holding everything that
 // is not the log body itself: rotation metadata, the line index and
-// progress-bar frame history. It replaces the old `.idx`, `.meta` and `.fhist`
-// files so a plain `ls` of a log directory shows only the `.log` files.
+// progress-bar frame history, so a plain `ls` of a log directory shows only the
+// `.log` files.
 //
 // The container is an append-only stream of typed records:
 //
 //	[type:1][length:uint32 LE][payload:length]
 //
 // Append-only matches the writer's incremental model (index entries are appended
-// as the log grows) and gives the same crash-safety as the old sidecars: a torn
-// trailing record after a kill -9 is silently ignored on read and never affects
-// the durable `.log`. Records of different types interleave freely; a reader
+// as the log grows) and is crash-safe: a torn trailing record after a kill -9
+// is silently ignored on read and never affects the durable `.log`. Records of
+// different types interleave freely; a reader
 // buckets them by type. For metadata the last `m` record wins, so the writer
 // "rewrites" meta by appending a fresh record.
 const (

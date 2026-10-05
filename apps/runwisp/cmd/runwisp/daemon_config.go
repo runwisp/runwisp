@@ -151,18 +151,12 @@ func resolvePassword() (password string, ephemeral bool, err error) {
 //   - Different per machine/cwd thanks to the fingerprint salt; the same
 //     password on another host does not yield the same signing key.
 //
-// It uses the SAME deliberately-expensive KDF (PBKDF2-HMAC-SHA256 at
-// chap.Iterations) as the CHAP login. This matters because the JWT is
-// transmitted in the same channel as the CHAP transcript — cleartext on the
-// TLS-less / trusted-LAN deployments the CHAP design explicitly supports. The
-// fingerprint salt is built from non-secret inputs (machine-id, cwd, exe,
-// hostname), so the signing key's resistance to recovery rests entirely on the
-// password's entropy plus the KDF cost. A cheap single-pass KDF here would hand
-// an eavesdropper who captured any JWT a fast offline oracle (~one hash per
-// guess) for a weak RUNWISP_PASSWORD, silently bypassing the 600k-iteration
-// PBKDF2 the CHAP transcript relies on for exactly that threat. Keeping the cost
-// at parity closes that shortcut; the one-time ~sub-second derivation at boot is
-// negligible.
+// It uses the same expensive KDF (PBKDF2-HMAC-SHA256 at chap.Iterations) as
+// the CHAP login. The JWT travels in the same channel as the CHAP transcript
+// (cleartext on TLS-less deployments) and the fingerprint salt is built from
+// non-secret inputs, so a cheaper KDF would give an eavesdropper holding any
+// JWT a fast offline oracle for a weak RUNWISP_PASSWORD, bypassing the CHAP
+// iteration cost.
 func deriveJWTSecret(password, fp string) (string, error) {
 	salt := []byte(jwtKDFInfo + "\x00" + fp)
 	key, err := pbkdf2.Key(sha256.New, password, salt, chap.Iterations, 32)

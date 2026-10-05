@@ -12,7 +12,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-// Default caps for concurrent SSE / log-stream connections. A browser tab now
+// Default caps for concurrent SSE / log-stream connections. A browser tab
 // holds a single unified app-event stream (/api/events/stream) plus an on-demand log
 // tail, so these caps leave generous headroom for a handful of tabs while still
 // bounding resource use under abuse.

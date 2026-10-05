@@ -306,8 +306,8 @@ func TestInitDaemonServices_StationModeResolvesPendingRuns(t *testing.T) {
 // TestBuildDaemonInfo_SchedulingActiveReflectsScheduler locks the wiring that
 // drives the Web UI's station-mode reframe: scheduling_active must be false when
 // the local scheduler is absent (e.g. `runwisp station`, where the station owns
-// scheduling) and true when it is present. Drift here makes a scheduled task
-// look unscheduled — a Prime-Directive-#1 ("nothing silently fails") violation.
+// scheduling) and true when it is present, so a scheduled task never looks
+// unscheduled.
 func TestBuildDaemonInfo_SchedulingActiveReflectsScheduler(t *testing.T) {
 	f, db := daemonServicesTestEnv(t)
 	cfg := &config.Config{

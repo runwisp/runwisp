@@ -3,7 +3,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { AuthRequiredError } from "$lib/api";
-import { createTaskStore, upsertRun, removeRun } from "./data.svelte";
+import { createTaskStore, removeRun } from "./data.svelte";
 import type { Run, Task } from "$lib/types";
 
 function makeRun(id: string, overrides: Partial<Run> = {}): Run {
@@ -20,38 +20,6 @@ function makeRun(id: string, overrides: Partial<Run> = {}): Run {
         ...overrides,
     };
 }
-
-describe("upsertRun", () => {
-    it("prepends a new run and keeps the list sorted by createdAt desc", () => {
-        const older = makeRun("a", { createdAt: "2026-05-05T11:00:00.000Z" });
-        const incoming = makeRun("b", { createdAt: "2026-05-05T13:00:00.000Z" });
-
-        const result = upsertRun([older], incoming);
-
-        expect(result.map((r) => r.id)).toEqual(["b", "a"]);
-    });
-
-    it("updates an existing run in place when its status advances", () => {
-        const existing = makeRun("a", { status: "running" });
-        const advanced = makeRun("a", { status: "ended", endReason: "succeeded" });
-
-        const result = upsertRun([existing], advanced);
-
-        expect(result).toHaveLength(1);
-        expect(result[0]?.status).toBe("ended");
-        expect(result[0]?.endReason).toBe("succeeded");
-    });
-
-    it("rejects a status regression (stale update arriving after a later phase)", () => {
-        const existing = makeRun("a", { status: "running" });
-        const stale = makeRun("a", { status: "pending" });
-
-        const result = upsertRun([existing], stale);
-
-        // The list is returned untouched: the running row must not regress to pending.
-        expect(result[0]?.status).toBe("running");
-    });
-});
 
 describe("removeRun", () => {
     it("drops the run whose id matches", () => {

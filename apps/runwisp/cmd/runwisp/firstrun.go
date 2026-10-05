@@ -123,10 +123,9 @@ func promptAndScaffold(f Flags, in io.Reader, out io.Writer) (installed bool, er
 	return false, nil
 }
 
-// heldNote is the truthful version of the offer for a host that cannot retire
-// cron itself — non-root, no systemd, macOS's SIP-protected cron, or any other
-// cutover blocker. Saying nothing here is what made the old prompt misleading:
-// RunWisp reads the jobs but cron keeps running them.
+// heldNote is the offer for a host that cannot retire cron itself (non-root,
+// no systemd, macOS's SIP-protected cron, or any other cutover blocker): RunWisp
+// reads the jobs but cron keeps running them, so the prompt has to say so.
 const heldNote = "cron keeps running them for now, so RunWisp holds those jobs — nothing fires twice.\n" +
 	"Run 'sudo runwisp takeover' when you want RunWisp to own them (needs root and systemd).\n"
 

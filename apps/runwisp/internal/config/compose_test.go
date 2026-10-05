@@ -299,9 +299,7 @@ pull = "sometimes"
 	assert.Contains(t, err.Error(), "pull")
 }
 
-// `run` alongside compose_file used to be a hard error. It now selects exec
-// mode, which is the whole point of the feature — so this pins the new
-// resolution rather than the old rejection.
+// `run` alongside compose_file selects exec mode by default.
 func TestComposeExpansion_RunWithComposeFileDefaultsToExec(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `[tasks.artisan]
 cron            = "* * * * *"
@@ -370,9 +368,8 @@ compose_service = "backup"
 	assert.Empty(t, ce.Command)
 }
 
-// The combination the old error existed to prevent is still rejected, but now
-// only when the operator explicitly asks for the mode that has nowhere to put a
-// command — and the message names the fix.
+// `run` with an explicit compose_mode = "run" is rejected, since that mode has
+// nowhere to put a command, and the message names the fix.
 func TestComposeExpansion_RunWithExplicitRunModeRejected(t *testing.T) {
 	_, err := Load(writeConfig(t, `[tasks.artisan]
 cron            = "* * * * *"
@@ -694,8 +691,8 @@ func findRoute(t *testing.T, cfg *Config, taskGlob, kind string) NotificationRou
 		if r.TaskGlob != taskGlob {
 			continue
 		}
-		// The failure route no longer enumerates kinds — it matches the
-		// classified is_failure bit. Treat a lookup for "run.failed" (the
+		// The failure route matches the classified is_failure bit rather than
+		// enumerating kinds. Treat a lookup for "run.failed" (the
 		// representative failure kind) as a request for that route.
 		if r.MatchFailure && kind == "run.failed" {
 			return r

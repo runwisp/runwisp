@@ -390,8 +390,8 @@ func (d *ParamFormDialog) handleFieldKey(keyMsg tea.KeyPressMsg) (tea.Cmd, bool)
 		f.toggleInclude()
 		return nil, false
 	}
-	// On the custom input stop every key edits text — ←/→ move the cursor like
-	// any other text field, the regression this model fixes.
+	// On the custom input stop every key edits text: ←/→ move the cursor like
+	// any other text field.
 	if d.part == focusCustom {
 		var cmd tea.Cmd
 		f.input, cmd = f.input.Update(keyMsg)
@@ -590,8 +590,8 @@ func (d *ParamFormDialog) View(screenWidth, screenHeight int) string {
 
 // footerHint builds the dialog's key legend, leading with the action that
 // applies to the focused field's active stop so the bar never advertises a key
-// that does nothing here (the static "←/→ choose" used to mislead on flags). The
-// always-present keys — move, run, cancel — trail every variant.
+// that does nothing here. The always-present keys (move, run, cancel) trail
+// every variant.
 func (d *ParamFormDialog) footerHint() string {
 	const tail = "↑/↓ move · enter run · esc cancel"
 	lead := ""

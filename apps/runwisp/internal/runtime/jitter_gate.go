@@ -103,14 +103,12 @@ func (g *jitterGate) submit(taskName string, tick, slot time.Time, window time.D
 // swapSlot fixes the arrival race between fires of the same tick. The cron
 // loop hands them to the gate in no particular order, so a later-slot fire can
 // find the gate idle and start first; an earlier-slot peer arriving after it
-// would then find its own deadline already due and breach at once, putting two
-// runs on the box at the tick. Had the peer arrived first, EDF would have run
-// it first and held the other until its slot. So the peer takes over the
-// deadline the pulled-forward run no longer needs (capped at its own window),
-// and hands it its own earlier one: the tick's deadlines stay spread across
-// the window, each used once. A fire from a later tick may take one over too;
-// it still starts within its own window, just less likely beside the run.
-// Assumes the lock is held.
+// would find its deadline already due and breach at once, putting two runs on
+// the box at the tick. So the peer takes over the deadline the pulled-forward
+// run no longer needs (capped at its own window) and hands it its own earlier
+// one: the tick's deadlines stay spread across the window, each used once. A
+// fire from a later tick may take one over too; it still starts within its own
+// window. Assumes the lock is held.
 func (g *jitterGate) swapSlot(h *heldRun) {
 	id := ""
 	for rid, r := range g.inflight {

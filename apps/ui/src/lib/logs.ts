@@ -2,11 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import type { LogEvent } from "@runwisp/ui";
-import { browser } from "$app/environment";
 import { z } from "zod";
-import { browserAuthEventSourceFactory } from "$lib/adapters/browser";
 import { connectSSE } from "$lib/utils/sse";
-import { getApiUrl } from "$lib/utils/env";
 import { createLogger } from "$lib/utils/logger";
 
 const logger = createLogger("LogStreamer");
@@ -48,7 +45,7 @@ const doneSchema = z.object({
     status: z.string(),
 });
 
-export type LogPageLine = z.infer<typeof logPageLineSchema>;
+type LogPageLine = z.infer<typeof logPageLineSchema>;
 export type LogPage = z.infer<typeof logPageSchema>;
 
 const logSearchHitSchema = z.object({
@@ -178,66 +175,61 @@ function handleDoneEvent(
     return true;
 }
 
-export function createLogStreamer(taskName: string) {
-    return (
-        runId: string,
-        onEvent: (event: LogEvent) => void,
-        initialState?: LogStreamInitialState,
-    ): (() => void) => {
-        if (!browser) return () => {};
+/** Stream a run's log over SSE, resuming after the last received line on
+ * reconnect. Returns a function that closes the stream. */
+export function streamRunLog(
+    taskName: string,
+    runId: string,
+    onEvent: (event: LogEvent) => void,
+    initialState?: LogStreamInitialState,
+): () => void {
+    const state: StreamerState = {
+        totalLines: 0,
+        firstAvailable: 0,
+        lastReceivedId: -1,
+        finished: false,
+    };
 
-        const state: StreamerState = {
-            totalLines: 0,
-            firstAvailable: 0,
-            lastReceivedId: -1,
-            finished: false,
-        };
-
-        const startFrom = initialState?.fromLine ?? -1000;
-        const base = `/api/runs/${runId}/log/stream`;
-        const connection = connectSSE({
-            path: () => {
-                const from = state.lastReceivedId >= 0 ? state.lastReceivedId + 1 : startFrom;
-                return base + "?from=" + String(from);
-            },
-            eventTypes: ["line", "region", "rotated", "dropped", "done"],
-            onOpen: () => {
-                logger.info(`Log stream connection opened: ${taskName}/${runId}`);
-            },
-            onError: (info) => {
-                if (state.finished) return;
-                logger.warn(
-                    "Log stream error for " + taskName + "/" + runId + ":",
-                    (info.message ?? "connection lost") +
-                        (info.status === undefined ? "" : " (HTTP " + String(info.status) + ")"),
-                );
-            },
-            onEvent: (eventType, data) => {
-                try {
-                    if (eventType === "line") {
-                        handleLineEvent(state, data, onEvent);
-                    } else if (eventType === "region") {
-                        handleRegionEvent(state, data, onEvent);
-                    } else if (eventType === "rotated") {
-                        handleRotatedEvent(state, data, onEvent);
-                    } else if (eventType === "dropped") {
-                        handleDroppedEvent(data);
-                    } else if (eventType === "done" && handleDoneEvent(state, data, onEvent)) {
-                        connection.disconnect();
-                    }
-                } catch (err) {
-                    logger.error(`Failed to parse SSE ${eventType} payload`, err);
+    const startFrom = initialState?.fromLine ?? -1000;
+    const base = `/api/runs/${runId}/log/stream`;
+    const connection = connectSSE({
+        path: () => {
+            const from = state.lastReceivedId >= 0 ? state.lastReceivedId + 1 : startFrom;
+            return base + "?from=" + String(from);
+        },
+        eventTypes: ["line", "region", "rotated", "dropped", "done"],
+        onOpen: () => {
+            logger.info(`Log stream connection opened: ${taskName}/${runId}`);
+        },
+        onError: (info) => {
+            if (state.finished) return;
+            logger.warn(
+                "Log stream error for " + taskName + "/" + runId + ":",
+                (info.message ?? "connection lost") +
+                    (info.status === undefined ? "" : " (HTTP " + String(info.status) + ")"),
+            );
+        },
+        onEvent: (eventType, data) => {
+            try {
+                if (eventType === "line") {
+                    handleLineEvent(state, data, onEvent);
+                } else if (eventType === "region") {
+                    handleRegionEvent(state, data, onEvent);
+                } else if (eventType === "rotated") {
+                    handleRotatedEvent(state, data, onEvent);
+                } else if (eventType === "dropped") {
+                    handleDroppedEvent(data);
+                } else if (eventType === "done" && handleDoneEvent(state, data, onEvent)) {
+                    connection.disconnect();
                 }
-            },
-            deps: {
-                createEventSource: browserAuthEventSourceFactory,
-                getApiUrl,
-            },
-        });
+            } catch (err) {
+                logger.error(`Failed to parse SSE ${eventType} payload`, err);
+            }
+        },
+    });
 
-        return () => {
-            state.finished = true;
-            connection.disconnect();
-        };
+    return () => {
+        state.finished = true;
+        connection.disconnect();
     };
 }

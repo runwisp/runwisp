@@ -66,8 +66,7 @@ func (cleaner *RetentionCleaner) publishDeleted(runID, taskName string) {
 }
 
 // deleteAndPublish removes the given run rows and, only once that succeeds,
-// fans out run.deleted for each — kept separate from cleanOldRuns to avoid
-// nesting the publish loop inside the delete's error branch.
+// fans out run.deleted for each.
 func (cleaner *RetentionCleaner) deleteAndPublish(ctx context.Context, ids []string, refs []storage.RunRef) {
 	if err := cleaner.db.DeleteRunsByIDs(ctx, ids); err != nil {
 		slog.Error("Failed to delete old run rows", "count", len(ids), "err", err)
@@ -116,9 +115,7 @@ func (cleaner *RetentionCleaner) cleanOldRuns(ctx context.Context) {
 		// crash in between leaves a harmless log-less row rather than an
 		// unreclaimable orphan log file — same policy as deleteRunBatch.
 		for _, run := range oldRuns {
-			logPath := logutil.ResolveRunLogPath(cleaner.logDir, run.TaskName, run.ID, run.CreatedAt)
-			logutil.RemoveLogFiles(logPath)
-			logutil.RemoveEmptyParents(logPath, cleaner.logDir)
+			logutil.RemoveRunLogs(cleaner.logDir, run.TaskName, run.ID, run.CreatedAt)
 			allIDs = append(allIDs, run.ID)
 			deletedRefs = append(deletedRefs, storage.RunRef{ID: run.ID, TaskName: run.TaskName})
 		}
@@ -213,8 +210,7 @@ func (cleaner *RetentionCleaner) deleteRunBatch(ctx context.Context, runs []mode
 		if info, statErr := os.Stat(logutil.PrevPath(logPath)); statErr == nil {
 			*totalSize -= info.Size()
 		}
-		logutil.RemoveLogFiles(logPath)
-		logutil.RemoveEmptyParents(logPath, cleaner.logDir)
+		logutil.RemoveRunLogs(cleaner.logDir, run.TaskName, run.ID, run.CreatedAt)
 		if err := cleaner.db.DeleteRun(ctx, run.ID); err != nil {
 			slog.Warn("Failed to delete run during size enforcement", "id", run.ID, "err", err)
 			continue

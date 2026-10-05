@@ -10,12 +10,10 @@
 
     let {
         data,
-        skeletonRows = 4,
         skeleton,
         children,
     }: {
         data: AsyncData<T>;
-        skeletonRows?: number;
         /** Page-shaped placeholder for the first load; generic rows otherwise. */
         skeleton?: Snippet;
         children: Snippet;
@@ -26,7 +24,7 @@
     {#if skeleton}
         {@render skeleton()}
     {:else}
-        <Skeleton rows={skeletonRows} />
+        <Skeleton rows={4} />
     {/if}
 {:else if connectionStore.status !== "connected" && typeof data.data === "undefined"}
     <ConnectionLostPanel />

@@ -39,8 +39,7 @@ type ScheduleResult struct {
 
 // Scheduler wraps robfig/cron to trigger tasks on a schedule. On fall-back
 // DST days, when the wall clock revisits a minute, the second firing is
-// suppressed and recorded with end_reason = "dst_skipped" — there's no warning
-// at boot.
+// suppressed and recorded with end_reason = "dst_skipped".
 type Scheduler struct {
 	cron        *cron.Cron
 	location    *time.Location
@@ -54,12 +53,10 @@ type Scheduler struct {
 	// schedule with several ticks in the rewound hour ("0,30 1 * * *") dedups
 	// every repeat, not just one, while staying bounded to an hour of ticks.
 	firedTicks map[string]*firedHour
-	// jitterPlans holds, for each jittered task, its resolved slot offset, its
-	// window length (the gate's free-check horizon), and the parsed schedule
-	// used to clamp both to the live gap before the next tick. Computed in Start
-	// and rebuilt by RecomputeJitter when a reload changes the task set, so a
-	// task lands at the same place every day between reloads. Tasks without a
-	// jitter window are absent and fire immediately.
+	// jitterPlans holds each jittered task's plan (see jitterPlan). Computed in
+	// Start and rebuilt by RecomputeJitter when a reload changes the task set,
+	// so a task lands at the same place every day between reloads. Tasks
+	// without a jitter window are absent and fire immediately.
 	jitterPlans map[string]jitterPlan
 	// paused maps each task whose schedule an operator paused to when. A paused
 	// task keeps its cron entry (so reloads, holds and jitter placement need no
@@ -195,11 +192,10 @@ func (scheduler *Scheduler) Start() (ScheduleResult, error) {
 
 // computeJitterPlans levels every jittered task against the others on a 24-hour
 // time-of-day dial and stores each task's resulting slot offset and window
-// length. Called under scheduler.mutex — from Start before the cron loop begins,
-// and from RecomputeJitter after a reload changes the task set. Determinism
-// holds: the dial positions come from scheduler.now() and the task set, both
-// injected, so the same TOML + clock yield the same slots — never rand, never an
-// inline wall-clock read.
+// length. Called under scheduler.mutex, from Start before the cron loop begins
+// and from RecomputeJitter after a reload. The dial positions come only from
+// the injected clock and the task set, so the same TOML + clock yield the same
+// slots.
 //
 // Every jittered task — including the one placed at offset 0 — gets a plan and
 // joins the work-conserving gate, so the earliest-slot task holds its peers
@@ -211,12 +207,11 @@ func (scheduler *Scheduler) Start() (ScheduleResult, error) {
 // Schedules that don't align to 24h (e.g. @every 7h) still spread within their
 // own window but coordinate only approximately.
 func (scheduler *Scheduler) computeJitterPlans() {
-	// Reproject into the configured daemon timezone before calling Next: a
-	// task with no per-task timezone parses to a bare schedule whose Location
-	// is time.Local, and robfig/cron's SpecSchedule.Next falls back to the
-	// input time's own Location() whenever it matches time.Local — silently
-	// evaluating against the host OS zone instead of scheduler.location if we
-	// pass the raw clock reading through. Mirrors catchup.go's now.In(loc).
+	// Reproject into the daemon timezone before calling Next: a task with no
+	// per-task timezone parses to a schedule whose Location is time.Local, and
+	// robfig/cron's SpecSchedule.Next then evaluates in the input time's own
+	// Location, so a raw clock reading would use the host OS zone instead of
+	// scheduler.location. Mirrors catchup.go's now.In(loc).
 	now := scheduler.now().In(scheduler.location)
 	var windows []jitter.Window
 	schedules := make(map[string]cron.Schedule)
@@ -264,12 +259,9 @@ func (scheduler *Scheduler) computeJitterPlans() {
 
 // RecomputeJitter rebuilds every jittered task's start-spread plan against the
 // given task set. The reconciler calls this after a reload changes the task set
-// so added and rescheduled tasks get their spread without a restart, rather than
-// firing at the raw tick until the daemon bounces. Because the leveling dial
-// coordinates all jittered tasks together, this re-places the whole set; offsets
-// stay within each task's window, so an unchanged task may shift within its
-// window but never onto another tick. Determinism holds: the placement is a pure
-// function of the injected clock and the task set.
+// so added and rescheduled tasks get their spread without a restart. The dial
+// coordinates all jittered tasks together, so this re-places the whole set; an
+// unchanged task may shift within its window but never onto another tick.
 func (scheduler *Scheduler) RecomputeJitter(tasks map[string]*model.Task) {
 	scheduler.mutex.Lock()
 	defer scheduler.mutex.Unlock()
@@ -321,11 +313,7 @@ func (scheduler *Scheduler) RemoveTask(name string) {
 	delete(scheduler.jitterPlans, name)
 }
 
-// effectiveSpec builds the cron spec actually fed to the parser — task.Cron
-// prefixed with CRON_TZ= when the task pins its own timezone — and the location
-// used as the reference for wall-clock dedup (the task TZ, else the scheduler
-// default). Shared by addTask and the jitter-plan computation so both interpret
-// a task's schedule identically.
+// effectiveSpec is resolveTaskSchedule against the scheduler's default location.
 func (scheduler *Scheduler) effectiveSpec(task *model.Task) (string, *time.Location) {
 	return resolveTaskSchedule(task, scheduler.location)
 }
@@ -436,17 +424,11 @@ func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location, fixedI
 	}
 
 	// Jitter applies only to genuine (non-DST-duplicate) firings. Clamp the
-	// stored offset and window to just under the live gap — computed from now,
-	// since the cron loop has already advanced entry.Next — so a misconfigured
-	// window can never push a slot onto or past the next tick. The fire is
-	// submitted to the gate, which starts it at min(when it frees, the slot).
-	// nowLocal (not now) feeds Next: a task with no per-task timezone parses to
-	// a bare schedule whose Location is time.Local, and robfig/cron's
-	// SpecSchedule.Next falls back to the input time's own Location() whenever
-	// it matches time.Local — the raw now carries the host OS zone, not the
-	// configured one, so passing it through would silently clamp against the
-	// wrong timezone. .Sub() is unaffected either way since both operands are
-	// the same absolute instant.
+	// stored offset and window to just under the live gap (computed from now,
+	// since the cron loop has already advanced entry.Next) so a misconfigured
+	// window can never push a slot onto or past the next tick. The gate starts
+	// the fire at min(when it frees, the slot). nowLocal, not now, feeds Next
+	// for the same timezone reason as in computeJitterPlans.
 	if hasJitter {
 		gapLive := plan.schedule.Next(nowLocal).Sub(nowLocal)
 		limit := max(gapLive-time.Second, 0)
@@ -477,12 +459,9 @@ func (scheduler *Scheduler) GetNextRun(taskName string) *time.Time {
 		return nil
 	}
 	entry := scheduler.cron.Entry(entryID)
-	// Surface the bare cron tick. Under the gate a jittered task starts at
-	// min(when the gate frees for it, its slot): with no contention that's the
-	// tick itself, and the slot is only the latest it could slip. Showing
-	// tick + slot would overstate the delay, so the API/TUI/UI display the tick
-	// (the earliest and most common actual start) for jittered and plain tasks
-	// alike.
+	// Surface the bare cron tick, even for jittered tasks: with no contention
+	// the gate starts them at the tick, and the slot is only the latest they
+	// could slip.
 	next := entry.Next
 	return &next
 }

@@ -74,8 +74,8 @@ func resolveInstallScope(local bool, euid int) (systemWide bool, err error) {
 // resolveManagedScope picks which installed unit the read/control commands
 // (status, uninstall, stop, restart) act on. --local pins the user scope;
 // otherwise we go looking for a unit rather than making the operator
-// remember how the install was run — a mismatched scope used to report
-// "nothing to do" while the real service stayed installed and running.
+// remember how the install was run, so a mismatched scope can't report
+// "nothing to do" while the real service stays installed and running.
 func resolveManagedScope(deps autostart.Deps, local bool) (systemWide bool, err error) {
 	if local {
 		return false, nil

@@ -63,7 +63,7 @@ type StartupInfo struct {
 	ServiceManaged bool
 	// ConfigStale is true when runwisp.toml (or an env_file) changed on disk
 	// after the daemon loaded it. Kept current by the TUI's periodic
-	// /api/daemon poll; renders as a "restart to apply" notice in the header.
+	// /api/daemon poll; renders as a "press R to reload" notice in the header.
 	ConfigStale bool
 	// ConfigWarnings holds the live config's non-fatal findings, chiefly crontab
 	// jobs [daemon] include_cron declined to schedule. Kept current by the same
@@ -78,7 +78,7 @@ type StartupInfo struct {
 
 	// Headless is set when the daemon runs without an interactive TUI. The
 	// startup banner renders one extra dim line ("Press Ctrl+C to stop.") in
-	// that case, replacing what used to be a separate timestamped slog INFO.
+	// that case.
 	Headless bool
 
 	ScheduleWarnings []string

@@ -32,11 +32,9 @@ run = "sleep 1"
 	assert.Equal(t, DefaultHealthyAfter, *findTask(t, cfg, "worker").HealthyAfter)
 }
 
-// TestHealthyAfter_ExplicitZeroPreserved is the bug-first guard for the
-// defaulting bug: an operator who writes `healthy_after = "0s"` (healthy the
-// instant it starts) must get literal zero back, not have it silently
-// overridden to DefaultHealthyAfter because 0 used to be indistinguishable
-// from "omitted".
+// TestHealthyAfter_ExplicitZeroPreserved: an operator who writes
+// `healthy_after = "0s"` (healthy the instant it starts) must get literal zero
+// back, not have it treated as "omitted" and overridden to DefaultHealthyAfter.
 func TestHealthyAfter_ExplicitZeroPreserved(t *testing.T) {
 	cfgPath, _ := writePlainConfig(t, `[services.worker]
 run = "sleep 1"
@@ -111,11 +109,10 @@ restart_attempts = 5
 	assert.Equal(t, 5, *findTask(t, cfg, "worker").RestartAttempts)
 }
 
-// TestStartRetries_ExplicitZeroPreserved is the bug-first guard for the
-// defaulting bug: an operator who writes `restart_attempts = 0` (give up on
-// the very first failure) must get literal zero back, not have it silently
-// overridden to DefaultStartRetries because 0 used to be indistinguishable
-// from "omitted".
+// TestStartRetries_ExplicitZeroPreserved: an operator who writes
+// `restart_attempts = 0` (give up on the very first failure) must get literal
+// zero back, not have it treated as "omitted" and overridden to
+// DefaultStartRetries.
 func TestStartRetries_ExplicitZeroPreserved(t *testing.T) {
 	cfgPath, _ := writePlainConfig(t, `[services.worker]
 run = "sleep 1"

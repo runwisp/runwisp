@@ -4,6 +4,7 @@
 package executor
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -13,31 +14,22 @@ import (
 )
 
 // TerminalRenderer interprets a single output stream's bytes as a simplified
-// terminal would, so that carriage-return overwrites (progress bars) and
-// multi-line ANSI redraws turn into clean, faithful log lines instead of raw
-// escape soup.
+// terminal would, so carriage-return overwrites (progress bars) and multi-line
+// ANSI redraws turn into clean log lines instead of raw escape soup.
 //
-// It is fed raw byte chunks via Write and emits two kinds of output through its
-// callbacks:
+// It is fed raw byte chunks via Write and emits through two callbacks:
 //
-//   - onCommit(lines, frames): a finalized commit group. lines are durable and
-//     each gets a permanent absolute line number from the caller. A plain
-//     forward line commits as a group of one on '\n'; a multi-line redraw
-//     commits all its region rows as one group when it settles (screen clear,
-//     EOF). frames is the throttled history of whole-region snapshots the group
-//     animated through before settling (nil for plain output) — the caller
-//     persists it keyed to the group's first line number so an operator can
-//     rewind a progress bar / redraw. The committed (final) state is not
-//     repeated in frames.
-//   - onProvisional(epoch, rows): the current state of the live region (the
-//     not-yet-finalized tail / redraw area) for in-place display. These are
-//     ephemeral, never written to disk. rows[i] is region row i; the whole
-//     snapshot replaces any previous one for the same epoch. epoch increments
-//     when the region is reset (screen clear / alt-screen), so a stale snapshot
-//     can never paint over a fresh region.
+//   - onCommit(lines, frames): a finalized commit group. A plain line commits as
+//     a group of one on '\n'; a multi-line redraw commits all its region rows
+//     when it settles (screen clear, EOF). frames is the throttled history of
+//     prior whole-region snapshots (nil for plain output), excluding the final
+//     state; the caller persists it keyed to the group's first line.
+//   - onProvisional(epoch, rows): the current live region for in-place display,
+//     never written to disk. Each snapshot replaces the previous one for the
+//     same epoch; epoch increments when the region is reset, so a stale
+//     snapshot never paints over a fresh region.
 //
-// One renderer instance handles one stream (stdout or stderr); they are
-// independent because RunWisp captures them as separate byte streams.
+// One renderer handles one stream (stdout or stderr).
 type TerminalRenderer struct {
 	onCommit      func(lines []committedLine, frames [][]string)
 	onProvisional func(epoch int, rows []string)
@@ -54,8 +46,8 @@ type TerminalRenderer struct {
 	hasSaved           bool
 
 	// screenLocked is true once the stream has moved the cursor up or addressed
-	// an absolute position — i.e. it is redrawing in place across multiple rows.
-	// While locked, '\n' no longer finalizes rows; the whole region is retained
+	// an absolute position, i.e. it is redrawing in place across multiple rows.
+	// While locked, '\n' does not finalize rows; the whole region is retained
 	// and rendered as a live overlay until it scrolls past maxRegionRows, the
 	// screen is cleared, or the stream ends.
 	screenLocked bool
@@ -68,8 +60,7 @@ type TerminalRenderer struct {
 	penIndex map[string]uint16
 
 	// pendingContinued marks that the next finalized line continues an oversized
-	// line that was force-committed without a newline (mirrors the old
-	// LineBuffer / events.Continued contract).
+	// line that was force-committed without a newline (events.Continued).
 	pendingContinued bool
 
 	epoch       int
@@ -106,7 +97,7 @@ const (
 	// multi-line redraw depth and the cap on uncommitted (in-memory) rows.
 	maxRegionRows = 64
 	// maxRowCells caps a single row before it is force-committed as an oversized
-	// split (mirrors MaxLineBufferSize for the old line buffer).
+	// split.
 	maxRowCells = MaxLineBufferSize
 	// maxPenLen bounds the accumulated SGR string so a stream that never resets
 	// its colours cannot grow it without limit.
@@ -317,10 +308,8 @@ func (tr *TerminalRenderer) handlePrivateMode(set bool) {
 			tr.screenLocked = true
 		case (p == 1049 || p == 47 || p == 1047) && !set:
 			// Exiting the alternate screen: finalize whatever it left showing
-			// and return to durable forward output on the main screen,
-			// symmetric with entry. Without this the region stays locked
-			// forever and everything printed afterwards is only ever
-			// ephemeral (provisional), never persisted.
+			// and return to durable forward output, or everything printed
+			// afterwards would stay provisional and never be persisted.
 			tr.resetScreen()
 		case p == 25 && !set:
 			// Hiding the cursor almost always precedes an in-place redraw.
@@ -604,7 +593,7 @@ func (tr *TerminalRenderer) recordRegionFrame() {
 	if len(snap) == 0 {
 		return
 	}
-	if n := len(tr.regionFrames); n > 0 && equalRows(tr.regionFrames[n-1], snap) {
+	if n := len(tr.regionFrames); n > 0 && slices.Equal(tr.regionFrames[n-1], snap) {
 		return
 	}
 	tr.lastFrameMs = now
@@ -641,31 +630,19 @@ func (tr *TerminalRenderer) decimateFrames() {
 
 // takeFrames returns the captured history for a settling commit group and resets
 // the capture state for the next group. The trailing frame(s) equal to the
-// committed final rows are dropped — the final state is not a "prior" state.
+// committed final rows are dropped: the final state is not a "prior" state.
 func (tr *TerminalRenderer) takeFrames(finalRows []string) [][]string {
 	frames := tr.regionFrames
 	tr.regionFrames = nil
 	tr.lastFrameMs = 0
 	tr.frameIntervalMs = defaultFrameIntervalMs
-	for len(frames) > 0 && equalRows(frames[len(frames)-1], finalRows) {
+	for len(frames) > 0 && slices.Equal(frames[len(frames)-1], finalRows) {
 		frames = frames[:len(frames)-1]
 	}
 	if len(frames) == 0 {
 		return nil
 	}
 	return frames
-}
-
-func equalRows(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func (tr *TerminalRenderer) renderRow(row *termRow) string {
@@ -702,15 +679,9 @@ func (tr *TerminalRenderer) emitProvisional() {
 		return
 	}
 	tr.dirty = false
-	snap := make([]string, 0, len(tr.rows))
-	for _, row := range tr.rows {
-		snap = append(snap, tr.renderRow(row))
-	}
-	// Drop a trailing empty tail row so a fully-committed forward line does not
-	// leave a blank overlay row.
-	for len(snap) > 0 && snap[len(snap)-1] == "" {
-		snap = snap[:len(snap)-1]
-	}
+	// snapshotRows drops the empty tail row, so a fully-committed forward line
+	// does not leave a blank overlay row.
+	snap := tr.snapshotRows()
 	if len(snap) == 0 && tr.lastSnapLen == 0 {
 		return
 	}

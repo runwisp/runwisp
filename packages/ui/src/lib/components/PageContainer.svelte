@@ -4,16 +4,7 @@
 <script lang="ts">
     import type { Snippet } from "svelte";
 
-    /**
-     * PageContainer — the single, standardized page-level wrapper.
-     *
-     * Variants:
-     *   "standard"   – Max-width + centering + padding + flex-col + min-h-full.
-     *   "full"       – Same as standard but h-full (fills viewport).
-     *   "wide"       – Max-width + centering only (consumer provides padding).
-     *   "narrow"     – Narrower max-width + centering.
-     *   "flush"      – Fills container height, no max-width.
-     */
+    /** The standard page-level wrapper. See variantClasses for each variant's layout. */
     let {
         children,
         variant = "standard",

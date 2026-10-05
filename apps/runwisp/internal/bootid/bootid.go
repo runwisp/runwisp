@@ -22,10 +22,8 @@ import (
 // and the container's entrypoint in a container, which a fresh `docker run`
 // or a `docker restart` replaces. Its start time (clock ticks since kernel
 // boot) therefore marks "this container started", and pairing it with boot_id
-// keeps it unique across host reboots. That makes a container start count as
-// a boot without having to detect containers at all. Container IDs from
-// cgroup/mountinfo were rejected: cgroup v2 hides them ("0::/"), the mountinfo
-// layout differs per runtime, and they survive `docker restart`.
+// keeps it unique across host reboots, so a container start counts as a boot
+// without having to detect containers at all.
 //
 // When /proc/1/stat is unreadable (hidepid) boot_id alone is used; that is
 // right on a host and only wrong in a container mounting /proc with hidepid.

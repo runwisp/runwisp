@@ -12,15 +12,15 @@ import (
 	"log/slog"
 )
 
-// DefaultMemReclaimInterval is how often the reclaimer returns freed heap to
+// defaultMemReclaimInterval is how often the reclaimer returns freed heap to
 // the OS at steady state. Decoupled from retention so RSS is reclaimed even
 // when retention is disabled or a sweep finds nothing to delete.
-const DefaultMemReclaimInterval = 10 * time.Minute
+const defaultMemReclaimInterval = 10 * time.Minute
 
-// MemReclaimIntervalEnv lets operators tune the cadence via a Go duration
+// memReclaimIntervalEnv lets operators tune the cadence via a Go duration
 // string (e.g. "5m"). Env-only by design — it is an operational knob, not part
 // of the TOML task surface.
-const MemReclaimIntervalEnv = "RUNWISP_MEM_RECLAIM_INTERVAL"
+const memReclaimIntervalEnv = "RUNWISP_MEM_RECLAIM_INTERVAL"
 
 // MemoryReclaimer periodically forces a GC + scavenge (debug.FreeOSMemory) and
 // runs an optional shrink hook (e.g. SQLite PRAGMA shrink_memory), so the
@@ -49,15 +49,15 @@ func NewMemoryReclaimer(shrink func(context.Context) error) *MemoryReclaimer {
 }
 
 func resolveReclaimInterval() time.Duration {
-	raw, ok := os.LookupEnv(MemReclaimIntervalEnv)
+	raw, ok := os.LookupEnv(memReclaimIntervalEnv)
 	if !ok {
-		return DefaultMemReclaimInterval
+		return defaultMemReclaimInterval
 	}
 	d, err := time.ParseDuration(raw)
 	if err != nil || d <= 0 {
-		slog.Warn("invalid "+MemReclaimIntervalEnv+"; using default",
-			"value", raw, "default", DefaultMemReclaimInterval)
-		return DefaultMemReclaimInterval
+		slog.Warn("invalid "+memReclaimIntervalEnv+"; using default",
+			"value", raw, "default", defaultMemReclaimInterval)
+		return defaultMemReclaimInterval
 	}
 	return d
 }

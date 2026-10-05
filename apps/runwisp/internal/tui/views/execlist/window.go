@@ -242,8 +242,7 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() (FetchResult, error)
 			offset = 0
 		}
 
-		// The list is always newest-first; sorting was removed as a user-facing
-		// feature, so the order is fixed here (keeps the API request unchanged).
+		// The list is always newest-first.
 		params := apiclient.RunsParams{
 			Limit:         windowSize,
 			Offset:        offset,

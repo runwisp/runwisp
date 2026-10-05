@@ -2,14 +2,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import type { SSEStream } from "$lib/adapters/browser";
+import { isRecord } from "$lib/utils/parse";
 
-export interface EventSourceErrorDetails {
+interface EventSourceErrorDetails {
     status?: number;
     message?: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && Boolean(value);
 }
 
 export function getEventSourceErrorDetails(event: Event): EventSourceErrorDetails {

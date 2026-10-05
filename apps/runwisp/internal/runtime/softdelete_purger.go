@@ -72,9 +72,7 @@ func (p *SoftDeletePurger) purge(ctx context.Context, ttl time.Duration) {
 	// orphan log file.
 	ids := make([]string, 0, len(refs))
 	for _, ref := range refs {
-		logPath := logutil.ResolveRunLogPath(p.logDir, ref.TaskName, ref.ID, ref.CreatedAt)
-		logutil.RemoveLogFiles(logPath)
-		logutil.RemoveEmptyParents(logPath, p.logDir)
+		logutil.RemoveRunLogs(p.logDir, ref.TaskName, ref.ID, ref.CreatedAt)
 		ids = append(ids, ref.ID)
 	}
 

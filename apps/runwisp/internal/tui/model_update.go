@@ -1065,9 +1065,7 @@ func (m *Model) maybeLoadOlderLogs() tea.Cmd {
 
 // handleSSEEvent processes a parsed event off the unified stream: run
 // lifecycle events (the default, handled below) and notification events
-// (created/updated/unreadCountChanged) share this one connection — the
-// dedicated /api/notifications/stream was retired since the web UI already
-// consumed notifications from this stream exclusively.
+// (created/updated/unreadCountChanged) share this one connection.
 func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 	if cmd, handled := m.handleNotificationSSEEvent(evt); handled {
 		return cmd

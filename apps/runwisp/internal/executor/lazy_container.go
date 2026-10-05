@@ -16,8 +16,7 @@ import (
 // pings the daemon). A hung engine — socket accepts but never answers — must
 // not block the probe indefinitely, because it runs under l.mu and would wedge
 // every other task's container start behind it. A var (not const) so tests can
-// shrink it. Kin to containerCleanupTimeout, which guards the same shared-lock
-// concern on the teardown side.
+// shrink it.
 var containerConnectTimeout = 10 * time.Second
 
 // LazyContainerBackend defers Docker daemon connection until the first
@@ -55,11 +54,8 @@ func (l *LazyContainerBackend) ensureConnected(ctx context.Context) (*ContainerB
 	if l.backend != nil {
 		return l.backend, nil
 	}
-	// Bound the probe: NewContainerBackend pings the daemon, and the run's ctx
-	// carries no deadline of its own (a service run outlives any timeout), so a
-	// hung engine would block here — and hold l.mu — forever, wedging every other
-	// container task's start behind it. The caller's ctx still cancels earlier if
-	// the run is stopped.
+	// The run's ctx carries no deadline of its own (a service run outlives any
+	// timeout); the caller's ctx still cancels earlier if the run is stopped.
 	probeCtx, cancel := context.WithTimeout(ctx, containerConnectTimeout)
 	defer cancel()
 	b, err := NewContainerBackend(probeCtx)

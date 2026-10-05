@@ -13,10 +13,7 @@ interface TriggeredRun {
     runId: string;
 }
 
-/**
- * Cancel a batch of runs. Closure-free (touches only the API + toasts), so it
- * lives at module scope rather than nested in `createRunActions`.
- */
+/** Cancel a batch of runs. */
 async function handleBulkCancel(selector: RunSelector, affected: Run[]) {
     if (affected.length === 0) return;
     try {
@@ -29,8 +26,7 @@ async function handleBulkCancel(selector: RunSelector, affected: Run[]) {
 
 /**
  * Re-run a batch of runs, with an Undo toast that cancels + deletes the
- * triggered runs. Closure-free (touches only the API + toasts + undoRerun), so
- * it lives at module scope rather than nested in `createRunActions`.
+ * triggered runs.
  */
 async function handleBulkRerun(selector: RunSelector, _affected: Run[]) {
     try {
@@ -54,7 +50,7 @@ async function handleBulkRerun(selector: RunSelector, _affected: Run[]) {
 
 /**
  * Undo a re-run: cancel any still-running triggered runs (best-effort), then
- * delete them. Closure-free, so it lives at module scope.
+ * delete them.
  */
 async function undoRerun(triggered: TriggeredRun[]) {
     const ids = triggered.map((t) => t.runId);
@@ -71,7 +67,7 @@ async function undoRerun(triggered: TriggeredRun[]) {
     }
 }
 
-export interface RunActionsOptions {
+interface RunActionsOptions {
     /** The current run list, read fresh at call time (snapshots, lookups). */
     getItems: () => Run[];
     /** Splice runs out of the local list immediately (optimistic). */

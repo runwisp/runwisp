@@ -18,7 +18,7 @@ type Channel struct {
 	coalescer *Coalescer
 }
 
-// New constructs the in-app channel with id "inapp".
+// New constructs the in-app channel.
 func New(id string, renderer render.Renderer, coalescer *Coalescer) *Channel {
 	return &Channel{id: id, renderer: renderer, coalescer: coalescer}
 }

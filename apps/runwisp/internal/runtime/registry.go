@@ -4,6 +4,7 @@
 package runtime
 
 import (
+	"maps"
 	"sync"
 
 	"github.com/runwisp/runwisp/internal/model"
@@ -11,11 +12,10 @@ import (
 
 // TaskRegistry is the single guarded owner of the daemon's in-memory task set.
 //
-// The task map is built once at boot and then read lock-free by the scheduler
-// (at start), the retention cleaner (background ticker), and the server's run
-// service (every HTTP request). Once `runwisp reload` can mutate the set while
-// the daemon runs, those reads become a data race — so every long-lived reader
-// goes through this RWMutex-guarded accessor instead of touching the bare map.
+// The task map is read by the scheduler, the retention cleaner, and the
+// server's run service while `runwisp reload` may mutate it, so every
+// long-lived reader goes through this RWMutex-guarded accessor instead of
+// touching the bare map.
 //
 // Reload never mutates a *model.Task in place: it Sets a fresh pointer. Runs
 // already in flight keep the old pointer they captured, preserving the
@@ -60,11 +60,7 @@ func (r *TaskRegistry) Range(fn func(name string, task *model.Task) bool) {
 func (r *TaskRegistry) Snapshot() map[string]*model.Task {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	out := make(map[string]*model.Task, len(r.tasks))
-	for name, task := range r.tasks {
-		out[name] = task
-	}
-	return out
+	return maps.Clone(r.tasks)
 }
 
 // Set inserts or replaces the task registered under task.Name.

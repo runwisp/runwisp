@@ -84,10 +84,7 @@ var newTakeover = resolveCutover
 // runTakeover computes one cutover plan, shows it, asks once, and performs it.
 //
 // Every branch below is a property of that one value: what it found, what it
-// would change, and what it cannot. That is the whole point — the three commands
-// that used to each re-derive whether retiring cron was legal disagreed about
-// what a refusal meant, and `takeover` on a box with cron jobs but no config drew
-// the shortest straw: it told the operator to go author one.
+// would change, and what it cannot.
 func runTakeover(cmd *cobra.Command, f Flags) error {
 	out := cmd.OutOrStdout()
 

@@ -81,14 +81,6 @@ type ExternalRunGetter interface {
 	GetRunByExecutionID(ctx context.Context, executionID string) (*model.Run, error)
 }
 
-// PendingLogUploadRepository persists dispatch metadata so the daemon can
-// resume terminal log archival after a crash.
-type PendingLogUploadRepository interface {
-	UpsertPendingLogUpload(ctx context.Context, rec model.PendingLogUpload) error
-	DeletePendingLogUpload(ctx context.Context, executionID string) error
-	ListPendingLogUploads(ctx context.Context) ([]model.PendingLogUpload, error)
-}
-
 // EventSubscriber is the subset of the in-process event hub the station bridge
 // consumes. Matches *events.Bus's Subscribe signature so the concrete
 // implementation satisfies this interface without an adapter.

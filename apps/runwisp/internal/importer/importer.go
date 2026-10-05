@@ -18,7 +18,8 @@ package importer
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -235,11 +236,7 @@ func envBlock(header string, env map[string]string) (block, bool) {
 	if len(env) == 0 {
 		return block{}, false
 	}
-	keys := make([]string, 0, len(env))
-	for k := range env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(env))
 	b := block{header: header}
 	for _, k := range keys {
 		b.set(k, tomlString(env[k]))

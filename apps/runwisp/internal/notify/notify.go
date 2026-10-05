@@ -17,8 +17,7 @@ import (
 // Service owns the entire notification subsystem: bus subscription, ingress
 // channel, dispatch goroutine, per-action workers, and the in-app pipeline
 // (Coalescer + Hub). It is constructed once at daemon startup and stopped
-// once at shutdown. A future SIGHUP-driven reload would simply call Stop and
-// then construct a fresh Service — no shared state survives the call.
+// once at shutdown.
 type Service struct {
 	bus *events.Bus
 	// ingressCh carries mapped events from the bus publisher goroutine to
@@ -32,10 +31,7 @@ type Service struct {
 	router   *Router
 	disp     *dispatcher
 	channels []Channel
-	failures SyntheticIngester
-
-	clock  Clocker
-	logger *slog.Logger
+	logger   *slog.Logger
 
 	retentionEvery time.Duration
 	retentionFn    func(context.Context)
@@ -55,7 +51,7 @@ type Service struct {
 // operators don't tune these.
 const DefaultActionQueueSize = 256
 
-// Config bundles everything Service.New needs that isn't already on the
+// Config bundles everything New needs that isn't already on the
 // dispatcher / router.
 type Config struct {
 	Bus            *events.Bus
@@ -91,19 +87,16 @@ func New(cfg Config) *Service {
 	router := NewRouter(cfg.Rules, channelByID)
 	disp := newDispatcher(router, channelByID, DefaultActionQueueSize, clock, cfg.FailureSink, logger)
 
-	s := &Service{
+	return &Service{
 		bus:            cfg.Bus,
 		ingressCh:      make(chan *Event, DefaultActionQueueSize),
 		router:         router,
 		disp:           disp,
 		channels:       cfg.Channels,
-		failures:       cfg.FailureSink,
-		clock:          clock,
 		logger:         logger,
 		retentionEvery: retentionEvery,
 		retentionFn:    cfg.RetentionFn,
 	}
-	return s
 }
 
 // Start subscribes to the event bus, launches the dispatch goroutine and the
@@ -128,9 +121,7 @@ func (s *Service) Start(ctx context.Context) error {
 	if s.retentionFn != nil {
 		// Retention runs on its own cancellable context so Stop can shut it
 		// down immediately without also tearing down the dispatch/worker
-		// drain path. Sharing workCtx here used to deadlock Stop: the
-		// retention ticker had no exit signal in the happy path, so wg.Wait
-		// blocked until the caller-supplied deadline fired.
+		// drain path; otherwise the ticker would gate wg.Wait.
 		retentionCtx, retentionCancel := context.WithCancel(ctx)
 		s.retentionCancel = retentionCancel
 		s.wg.Add(1)

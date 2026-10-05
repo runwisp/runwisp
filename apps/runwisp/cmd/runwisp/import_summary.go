@@ -20,9 +20,9 @@ import (
 
 // This file owns how an import *reads*: the counts, the per-job rows, the
 // file-level notes, the verdict, and the epilogue that tells the operator where
-// their jobs landed and what to do next. Directive #1 lives here as much as
-// anywhere — an import that silently drops a job is a bug, so every row the
-// parser opened has to reach this output. The layout itself lives in
+// their jobs landed and what to do next. An import that silently drops a job is
+// a bug, so every row the parser opened has to reach this output. The layout
+// itself lives in
 // import_report.go, which is pure; this file is the part that writes.
 
 // importStyles carries the small palette shared by the import summaries.

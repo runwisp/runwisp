@@ -3,16 +3,15 @@
 
 import { describe, expect, it } from "vitest";
 import type { Run, Task } from "@runwisp/common";
+import { formatTriggeredByLabel } from "@runwisp/ui";
 import type { TaskOverview, TaskWithId } from "./overview.js";
 import {
     formatCompactCount,
     formatRunDurationLabel,
-    formatTaskDescription,
     formatTaskLastResultLabel,
     formatTaskLastRunLabel,
     formatTaskNextRunLabel,
     formatTaskTriggerLabel,
-    formatTriggeredByLabel,
     taskTriggerIsHumanizedCron,
 } from "./overview-format";
 
@@ -53,20 +52,6 @@ function makeOverview(overrides: Partial<TaskOverview> = {}): TaskOverview {
         ...overrides,
     };
 }
-
-describe("formatTaskDescription", () => {
-    it("returns description when task has one", () => {
-        const task = makeTask({ description: "My custom description" });
-        expect(formatTaskDescription(task)).toBe("My custom description");
-    });
-
-    it("returns fallback when task has no description", () => {
-        const task = makeTask({});
-        expect(formatTaskDescription(task)).toBe(
-            "No description yet. Open the task to review its execution details.",
-        );
-    });
-});
 
 describe("formatTaskLastRunLabel", () => {
     it("returns 'No runs yet' when lastRun is undefined", () => {

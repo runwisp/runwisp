@@ -4,8 +4,9 @@
 package logsearch
 
 import (
+	"cmp"
 	"context"
-	"sort"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -152,10 +153,7 @@ func clampMaxHits(maxHits int) int {
 	if maxHits <= 0 {
 		return DefaultMaxHits
 	}
-	if maxHits > MaxHitsCeiling {
-		return MaxHitsCeiling
-	}
-	return maxHits
+	return min(maxHits, MaxHitsCeiling)
 }
 
 // runStartIndex returns the index of the run named by startAfterRunID, 0 when
@@ -176,17 +174,12 @@ func runStartIndex(runs []RunRef, startAfterRunID string) int {
 // returning per-run results in input order plus the count of runs scanned.
 // Only the first run honors firstN; later runs restart at line 0.
 //
-// A single hit budget (remaining) is shared across the scans instead of
-// handing every run the full maxHits independently: once ScanWorkers scans
-// are already in flight, the next one only starts by waiting for one of them
-// to finish and free a slot — so by the time it starts, remaining reflects
-// what those finished scans actually found, and a run starting once maxHits
-// is already satisfied is skipped outright instead of independently
-// re-scanning a full budget's worth for flattenResults to discard. The
-// initial wave of up to ScanWorkers runs still gets the full maxHits each —
-// they start together with no ordering between them, so there is no
-// meaningful "already found" state yet to share, and racing them against
-// each other would just make results depend on goroutine scheduling.
+// A single hit budget (remaining) is shared across the scans: a run beyond
+// the first ScanWorkers only starts once an earlier scan freed its slot, so
+// it caps itself at what is still missing, or skips entirely once maxHits is
+// satisfied. The initial wave each gets the full maxHits, since sharing a
+// budget between concurrent starts would make results depend on goroutine
+// scheduling.
 func scanPending(ctx context.Context, pending []RunRef, matcherFactory func() Matcher, maxHits int, firstN int64) ([]runResult, int, error) {
 	results := make([]runResult, len(pending))
 
@@ -200,7 +193,6 @@ func scanPending(ctx context.Context, pending []RunRef, matcherFactory func() Ma
 	)
 	remaining.Store(int64(maxHits))
 	for i, r := range pending {
-		i, r := i, r
 		var skipN int64
 		if i == 0 {
 			skipN = firstN
@@ -268,13 +260,11 @@ func flattenResults(results []runResult, pending []RunRef, maxHits int) ([]Hit, 
 // then ascending line within a run. Workers complete out of order, so append
 // order alone cannot be trusted.
 func sortHits(flat []Hit) {
-	sort.SliceStable(flat, func(a, b int) bool {
-		if flat[a].TS != flat[b].TS {
-			return flat[a].TS > flat[b].TS
-		}
-		if flat[a].RunID != flat[b].RunID {
-			return flat[a].RunID > flat[b].RunID
-		}
-		return flat[a].N < flat[b].N
+	slices.SortStableFunc(flat, func(a, b Hit) int {
+		return cmp.Or(
+			cmp.Compare(b.TS, a.TS),
+			cmp.Compare(b.RunID, a.RunID),
+			cmp.Compare(a.N, b.N),
+		)
 	})
 }

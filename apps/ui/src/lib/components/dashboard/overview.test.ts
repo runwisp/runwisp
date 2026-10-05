@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import type { Run } from "@runwisp/common";
 import {
     buildTaskOverviews,
-    buildOverviewSummary,
     countTaskOverviews,
     filterTaskOverviews,
     sortRunsByStartDesc,
@@ -157,30 +156,6 @@ describe("buildTaskOverviews", () => {
         const result = buildTaskOverviews(tasks, [older, newer], []);
         expect(result.at(0)?.lastRun?.id).toBe("r-new");
         expect(result.at(0)?.state).toBe("attention");
-    });
-});
-
-// ─── buildOverviewSummary ─────────────────────────────────────────────────────
-
-describe("buildOverviewSummary", () => {
-    it("counts running runs correctly", () => {
-        const tasks = [makeTask("a"), makeTask("b")];
-        const overviews = buildTaskOverviews(tasks, [], []);
-        const runningRuns = [
-            makeRun("a", { status: "running" }),
-            makeRun("b", { status: "running" }),
-        ];
-        const summary = buildOverviewSummary(overviews, runningRuns);
-        expect(summary.totalTasks).toBe(2);
-        expect(summary.activeRuns).toBe(2);
-    });
-
-    it("counts attention tasks", () => {
-        const tasks = [makeTask("a"), makeTask("b")];
-        const failedRun = makeRun("a", { status: "ended", endReason: "failed", isFailure: true });
-        const overviews = buildTaskOverviews(tasks, [failedRun], []);
-        const summary = buildOverviewSummary(overviews, []);
-        expect(summary.attentionTasks).toBe(1);
     });
 });
 
@@ -372,9 +347,8 @@ describe("buildTaskOverviews ?? branches", () => {
         // isApiOnly = manualTrigger && !cron = true && !undefined = true; state = "scheduled"
         expect(result.at(0)?.state).toBe("scheduled");
         expect(result.at(0)?.isApiOnly).toBe(true);
-        const summary = buildOverviewSummary(result, []);
-        // manualTasks = filter(isApiOnly && nextRunMs === undefined) → false since nextRunMs is set
-        expect(summary.manualTasks).toBe(0);
+        // manual = isApiOnly && nextRunMs === undefined → false since nextRunMs is set
+        expect(countTaskOverviews(result).manual).toBe(0);
     });
 });
 

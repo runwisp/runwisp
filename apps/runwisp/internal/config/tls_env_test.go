@@ -88,10 +88,10 @@ run = "/bin/true"
 // TestValidateTLSOffCertContradiction covers the tls = "off" + tls_cert/tls_key
 // combination: resolveTLS and tlsScheme (cmd/runwisp/daemon_tls.go) both decide
 // HTTPS purely from the cert/key being present, so an explicit tls = "off"
-// alongside them was previously silently overridden into HTTPS with no error.
-// validateTLS now rejects that contradiction outright, while leaving the
-// documented "just set tls_cert/tls_key, don't mention tls at all" flow (and
-// the redundant tls = "auto" + cert/key one) working as before.
+// alongside them would be silently overridden into HTTPS. validateTLS rejects
+// that contradiction, while the documented "just set tls_cert/tls_key, don't
+// mention tls at all" flow (and the redundant tls = "auto" + cert/key one) keep
+// working.
 func TestValidateTLSOffCertContradiction(t *testing.T) {
 	t.Run("explicit off with cert and key is rejected", func(t *testing.T) {
 		err := validateTLS(&Daemon{TLS: TLSModeOff, TLSCert: "/nonexistent/cert.pem", TLSKey: "/nonexistent/key.pem"})

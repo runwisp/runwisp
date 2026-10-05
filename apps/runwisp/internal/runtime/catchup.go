@@ -30,27 +30,20 @@ type CatchUpResult struct {
 // (never seen before and its registration couldn't be read back) and must be
 // skipped by RunMissedTickCatchUp. errs counts registration/lookup failures.
 //
-// Call this before the scheduler starts and before RunStartupTasks fires —
-// both can create a run for this boot, and if that happens before the anchor
-// is read, the boot's own run masquerades as "the last run", hiding the real
-// downtime gap it exists to detect. RunMissedTickCatchUp itself must still run
-// later, once notify has subscribed (see its own doc comment) — this split is
-// what lets detection happen at the right time while alerting still happens
-// after the right time.
+// Call this before the scheduler starts and before RunStartupTasks fires: both
+// can create a run for this boot, which would then masquerade as "the last run"
+// and hide the downtime gap. RunMissedTickCatchUp runs later, once notify has
+// subscribed, so the alert is not lost.
 func SnapshotCatchupAnchors(ctx context.Context, db storage.RunRepository, tasks map[string]*model.Task, now time.Time) (anchors map[string]time.Time, errs int) {
 	anchors = make(map[string]time.Time, len(tasks))
 	for _, task := range tasks {
-		// The re-run policy is not consulted: detection is independent of it, so
-		// even catch_up = 0 records and alerts on the gap. What is consulted
-		// is whether this task's schedule is ours at all — a service has none, and
-		// a held task's ticks belong to whatever is holding it.
+		// Detection ignores the re-run policy, so even catch_up = 0 records and
+		// alerts on the gap. Only tasks whose schedule is ours count: a service
+		// has none, and a held task's ticks belong to whatever is holding it.
 		//
-		// Skipping a held task also skips its EnsureTaskRegistered below, which is
-		// what keeps the hold window out of its history: it gets no first-seen
-		// anchor until the load where it becomes schedulable, so the first
-		// catch-up pass after cron is retired stamps the anchor at "now" and counts
-		// zero missed ticks. Anchoring while held would instead page the operator
-		// once for every tick cron had been running perfectly.
+		// Skipping a held task also skips EnsureTaskRegistered, so it gets no
+		// first-seen anchor until it becomes schedulable. Anchoring while held
+		// would page the operator for every tick cron ran perfectly well.
 		if !task.Schedulable() {
 			continue
 		}
@@ -146,11 +139,7 @@ func catchupOneTask(parser cron.ScheduleParser, task *model.Task, runner TaskRun
 			"dropped", missedCount-triggerCount,
 		)
 	} else {
-		// DEBUG, not INFO: per-task catch-up detail is operator-visible via
-		// --log-level=debug, but at the default INFO level the startup banner
-		// already shows the total ("Triggered N catch-up runs for missed cron
-		// ticks") — flooding stderr with one INFO per task fragments the
-		// banner for no extra signal.
+		// DEBUG, not INFO: the startup banner already reports the total.
 		slog.Debug("Recorded missed cron ticks",
 			"task", task.Name,
 			"missed", missedCount,
@@ -160,16 +149,13 @@ func catchupOneTask(parser cron.ScheduleParser, task *model.Task, runner TaskRun
 	}
 
 	// Record one browsable terminal "missed" row per task per downtime gap and
-	// raise a failure-level alert. This happens regardless of the re-run policy
-	// (including skip, which triggers nothing) — the detected total is reported
-	// even when catch_up drops older ticks from the re-run. firstTick is
-	// the first tick after the anchor; lastTick anchors the next restart.
+	// raise a failure-level alert, regardless of the re-run policy. The detected
+	// total is reported even when catch_up drops older ticks from the re-run.
 	firstTick := schedule.Next(anchor)
-	// lastTick anchors the next restart's catch-up counting. When counting was
-	// truncated, lastTick is only the maxCount-th tick, not the true latest tick
-	// before now — walking the rest would defeat the count bound. Anchoring at
-	// now instead prevents the next restart from re-counting (and re-alerting)
-	// this same gap, which is already reported as "at least N+".
+	// The recorded row's CreatedAt anchors the next restart's counting. When
+	// counting was truncated, lastTick is only the maxCount-th tick, so anchor
+	// at now instead: otherwise the next restart re-counts and re-alerts this
+	// gap, which is already reported as "at least N+".
 	anchorTick := lastTick
 	if truncated {
 		anchorTick = now
@@ -255,20 +241,14 @@ const catchupCountDisplayFloor = 1000
 // truncated=true so callers can report the gap as "at least N+" rather than
 // walking an unbounded per-second backlog.
 //
-// A tick whose wall-clock reading (year/month/day/hour/minute/second, per
-// robfig/cron.Schedule.Next returning ticks in lastRunTime's location) repeats
-// one already seen within the same wall-hour is the DST fall-back duplicate
-// fireOnce suppresses live as ReasonDSTSkipped: on a schedule with more than
-// one tick per hour (e.g. "0,30 2 * * *"), the rewound hour replays every one
-// of them — 02:00 CEST, 02:30 CEST, then 02:00 CET, 02:30 CET — so the
-// duplicate of a tick is not necessarily the one immediately before it. This
-// mirrors fireOnce's firedHour exactly (same wall-hour scoping, reset when the
-// hour changes) so catch-up and the live scheduler agree on what would have
-// fired. Even if the daemon had been running through the gap, a duplicate
-// firing would never have executed as a real run — it isn't a missed one, so
-// it is walked past without being counted or becoming lastTick. Fixed-interval
-// (@every) schedules are exempt from the dedup here too, for the same reason
-// fireOnce exempts them — see isFixedInterval.
+// A tick whose wall-clock reading (in lastRunTime's location) repeats one
+// already seen within the same wall-hour is a DST fall-back duplicate, which
+// fireOnce suppresses live as ReasonDSTSkipped. It would never have run, so it
+// is walked past without being counted or becoming lastTick. The rewound hour
+// replays every tick in it (02:00 CEST, 02:30 CEST, 02:00 CET, 02:30 CET), so a
+// duplicate is not necessarily adjacent. This mirrors fireOnce's firedHour
+// exactly so catch-up and the live scheduler agree. Fixed-interval (@every)
+// schedules are exempt, as in fireOnce (see isFixedInterval).
 func countMissedTicks(schedule cron.Schedule, lastRunTime, now time.Time, maxCount int) (count int, lastTick time.Time, truncated bool) {
 	next := schedule.Next(lastRunTime)
 	fixedInterval := isFixedInterval(schedule)

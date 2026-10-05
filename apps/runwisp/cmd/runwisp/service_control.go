@@ -200,11 +200,21 @@ func controlClient(ctx context.Context, f Flags, baseURL, password string) (*api
 	if !isDaemonRunning(f) {
 		return nil, fmt.Errorf("no daemon is running on data dir %q — %s", f.DataDir, daemonNotRunningHint)
 	}
+	return connectLocal(ctx, f)
+}
+
+// connectLocal returns a client for the local daemon socket after a health
+// check.
+func connectLocal(ctx context.Context, f Flags) (*apiclient.Client, error) {
 	client := apiclient.NewUnix(localAPISocketPath(f))
 	if err := client.HealthCheck(ctx); err != nil {
-		return nil, fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
+		return nil, localUnreachableError(f, err)
 	}
 	return client, nil
+}
+
+func localUnreachableError(f Flags, err error) error {
+	return fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
 }
 
 // controlError maps one target's dispatch error to a user-facing one.

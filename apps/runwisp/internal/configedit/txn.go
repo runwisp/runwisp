@@ -13,8 +13,8 @@
 //     temp+rename, and a caller-supplied gate (normally "does the merged config
 //     still load?") decides whether the write is accepted. If the gate refuses,
 //     every touched file is restored to its pre-write bytes. A half-applied
-//     multi-file edit would leave the daemon with a config it can't load, or —
-//     worse, per Prime Directive #1 — with tasks that load nowhere.
+//     multi-file edit would leave the daemon with a config it can't load, or
+//     with tasks that load nowhere.
 //
 //   - Surgical text edits: changes are made to the file's *bytes*, never by
 //     re-rendering a parsed document, so the operator's comments, key order and

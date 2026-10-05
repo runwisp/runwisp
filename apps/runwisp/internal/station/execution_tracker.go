@@ -75,7 +75,7 @@ func (t *ExecutionTracker) Remove(executionID string) {
 	delete(t.reserved, executionID)
 }
 
-func (t *ExecutionTracker) HasActive() bool {
+func (t *ExecutionTracker) hasActive() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return len(t.activeExecutions) > 0

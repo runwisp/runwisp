@@ -30,8 +30,8 @@ func NewFastBackoff() notify.BackoffConfig {
 }
 
 // NewFastTransport returns an HTTPProvider with a short client timeout and the
-// fast test backoff. Shared by every HTTP-backed channel test (slack,
-// telegram, discord, webhook) so the transport shape lives in one place.
+// fast test backoff. Shared by every HTTP-backed channel test so the
+// transport shape lives in one place.
 func NewFastTransport() *notify.HTTPProvider {
 	return &notify.HTTPProvider{
 		Client:    &http.Client{Timeout: 2 * time.Second},
@@ -132,7 +132,7 @@ type ManualTimers struct {
 }
 
 // ManualTimer is a cancellable handle returned by ManualTimers.After. It
-// satisfies any { Stop() bool } seam (e.g. coalesce's timerHandle).
+// satisfies any { Stop() bool } seam (e.g. coalesce's timerStopper).
 type ManualTimer struct {
 	fn      func()
 	stopped bool

@@ -7,7 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/events"
@@ -67,7 +68,7 @@ func (s *runService) ListTasks() []model.TaskResponse {
 		tasks = append(tasks, s.toTaskResponse(task))
 		return true
 	})
-	sort.Slice(tasks, func(i, j int) bool { return tasks[i].Name < tasks[j].Name })
+	slices.SortFunc(tasks, func(a, b model.TaskResponse) int { return strings.Compare(a.Name, b.Name) })
 	return tasks
 }
 
@@ -141,15 +142,11 @@ func viaToTriggeredBy(via string) model.TriggeredBy {
 	}
 }
 
-// The exported control methods (TriggerRun, StartTask, StopTask, RestartTask)
+// The exported control methods (TriggerRunAndWait, StartTask, StopTask, RestartTask)
 // are the session entry points: they resolve the unit by name and honor its
 // manual_trigger lock. Hooks resolve the unit by token instead and call the
 // unexported trigger/start/stop/restart below directly, because a hook token
 // is itself the TOML-declared grant and manual_trigger does not gate it.
-
-func (s *runService) TriggerRun(ctx context.Context, taskName string, params map[string]*string, triggeredBy model.TriggeredBy) (*model.Run, error) {
-	return s.TriggerRunAndWait(ctx, taskName, params, triggeredBy, 0)
-}
 
 // TriggerRunAndWait triggers a run and, when wait > 0, blocks until it reaches
 // a terminal state or wait elapses, returning the finished run (with
@@ -168,7 +165,7 @@ func (s *runService) TriggerRunAndWait(ctx context.Context, taskName string, par
 	return s.trigger(ctx, task, params, triggeredBy, wait)
 }
 
-// trigger starts one run of task, lock-free (see the note above TriggerRun).
+// trigger starts one run of task, lock-free (see the note above TriggerRunAndWait).
 func (s *runService) trigger(ctx context.Context, task *model.Task, params map[string]*string, triggeredBy model.TriggeredBy, wait time.Duration) (*model.Run, error) {
 	if task.Kind.IsService() {
 		return nil, ErrServiceNotRunnable
@@ -274,7 +271,7 @@ func (s *runService) resolveControllableTask(taskName string) (*model.Task, erro
 // operator-stopped) and fills empty instance slots; already-running instances
 // are left alone. A task with a run already active no-ops instead of piling up
 // a second execution; otherwise it triggers exactly one fresh run, identical
-// to TriggerRun. The returned run is the one started or already in flight (nil
+// to TriggerRunAndWait. The returned run is the one started or already in flight (nil
 // for a service); with wait > 0 it is returned once it ends.
 func (s *runService) StartTask(ctx context.Context, taskName string, triggeredBy model.TriggeredBy, wait time.Duration) (*model.Run, error) {
 	task, err := s.resolveControllableTask(taskName)
@@ -522,7 +519,7 @@ func (s *runService) bulkRerun(ctx context.Context, sel model.RunSelector) ([]Tr
 		repByTask[ref.TaskName] = ref.ID
 		taskNames = append(taskNames, ref.TaskName)
 	}
-	sort.Strings(taskNames)
+	slices.Sort(taskNames)
 	out := make([]TriggeredRunRef, 0, len(taskNames))
 	for _, name := range taskNames {
 		task, ok := s.tasks.Get(name)

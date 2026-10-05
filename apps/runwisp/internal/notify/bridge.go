@@ -13,7 +13,7 @@ import (
 
 // MapEvent converts an internal events.Event into a notify.Event. Returns nil
 // for events the notification subsystem ignores (log lines, run.created /
-// run.updated). Currently handles RunEvent and LogDiskPressureEvent payloads.
+// run.updated).
 func MapEvent(e events.Event) *Event {
 	switch d := e.Data.(type) {
 	case events.RunEvent:

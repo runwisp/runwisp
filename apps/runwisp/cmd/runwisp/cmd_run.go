@@ -189,9 +189,9 @@ func isDaemonRunning(f Flags) bool {
 // (via its local Unix socket) and follows its SSE log stream until the run
 // reaches a terminal state.
 func runExecViaDaemon(ctx context.Context, taskName string, f Flags, params map[string]*string) (int, error) {
-	client := apiclient.NewUnix(localAPISocketPath(f))
-	if err := client.HealthCheck(ctx); err != nil {
-		return 0, fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
+	client, err := connectLocal(ctx, f)
+	if err != nil {
+		return 0, err
 	}
 
 	run, err := client.TriggerRun(ctx, taskName, params, "cli")

@@ -43,6 +43,22 @@ func TestRemoveLogFiles(t *testing.T) {
 	}
 }
 
+func TestRemoveRunLogs(t *testing.T) {
+	root := t.TempDir()
+	createdAt := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	logPath := ResolveRunLogPath(root, "task1", "01ARZ3NDEKTSV4RRFFQ69G5FAA", createdAt)
+	require.NoError(t, os.MkdirAll(filepath.Dir(logPath), 0o755))
+	require.NoError(t, os.WriteFile(logPath, []byte("x"), 0o644))
+	require.NoError(t, os.WriteFile(MetaPath(logPath), []byte("x"), 0o644))
+
+	RemoveRunLogs(root, "task1", "01ARZ3NDEKTSV4RRFFQ69G5FAA", createdAt)
+
+	_, err := os.Stat(filepath.Dir(logPath))
+	assert.True(t, os.IsNotExist(err), "emptied task dir should be removed")
+	_, err = os.Stat(root)
+	assert.NoError(t, err, "log root should still exist")
+}
+
 func TestMetaAndPrevPathsAreHidden(t *testing.T) {
 	logPath := "/var/log/task/20240615_143022_a1b2.log"
 	assert.Equal(t, "/var/log/task/.20240615_143022_a1b2.log.meta", MetaPath(logPath))

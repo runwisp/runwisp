@@ -163,7 +163,6 @@ function makeWorld() {
                 return new EventManager({
                     path: "/api/events/stream",
                     createEventSource: () => es,
-                    getApiUrl: () => "http://test",
                 });
             },
         });
@@ -303,7 +302,6 @@ describe("SharedAppStream", () => {
                             connectUrls.push(url);
                             return es;
                         },
-                        getApiUrl: () => "http://test",
                     });
                 },
             });
@@ -328,7 +326,7 @@ describe("SharedAppStream", () => {
         unsubA();
 
         expect(b.leaderES()).not.toBeNull();
-        expect(connectUrls.at(-1)).toBe("http://test/api/events/stream?lastEventId=5");
+        expect(connectUrls.at(-1)).toBe("/api/events/stream?lastEventId=5");
     });
 
     it("syncs a late-joining follower to the current open state", () => {
@@ -553,7 +551,6 @@ describe("SharedAppStream", () => {
                     return new EventManager({
                         path: "/api/events/stream",
                         createEventSource: () => es,
-                        getApiUrl: () => "http://test",
                     });
                 },
             });
@@ -688,7 +685,6 @@ describe("SharedAppStream", () => {
                     return new EventManager({
                         path: "/api/events/stream",
                         createEventSource: () => es,
-                        getApiUrl: () => "http://test",
                     });
                 },
             });
@@ -723,7 +719,6 @@ describe("SharedAppStream", () => {
                     return new EventManager({
                         path: "/api/events/stream",
                         createEventSource: () => es,
-                        getApiUrl: () => "http://test",
                     });
                 },
             });

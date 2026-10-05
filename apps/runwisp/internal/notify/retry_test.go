@@ -17,9 +17,8 @@ import (
 
 // TestRetryWithBackoff_RateLimitOverrideHonorsMaxElapsedTime pins that a server
 // that returns a Retry-After delay on every attempt (simulated by op always
-// calling SetNextRetryInterval) still gives up after MaxElapsedTime. The
-// override path used to skip the library's own elapsed-time check entirely, so
-// the loop retried forever until the ctx deadline instead of the budget.
+// calling SetNextRetryInterval) still gives up after MaxElapsedTime, even
+// though the override path skips the library's own elapsed-time check.
 func TestRetryWithBackoff_RateLimitOverrideHonorsMaxElapsedTime(t *testing.T) {
 	cfg := BackoffConfig{
 		InitialInterval: time.Millisecond,
@@ -115,6 +114,17 @@ func TestNewExponential_ZeroMaxElapsedTimeUsesLibraryDefault(t *testing.T) {
 	cfg := BackoffConfig{InitialInterval: time.Second}
 	b := cfg.NewExponential()
 	assert.NotZero(t, b.MaxElapsedTime, "omitted MaxElapsedTime should fall back to the library default, not 0 (unbounded)")
+}
+
+func TestIsPermanentHTTPStatus(t *testing.T) {
+	for code, want := range map[int]bool{
+		200: false, 302: false, 399: false,
+		400: true, 401: true, 404: true, 499: true,
+		408: false, 429: false,
+		500: false, 503: false, 599: false, 600: false,
+	} {
+		assert.Equalf(t, want, IsPermanentHTTPStatus(code), "status %d", code)
+	}
 }
 
 func TestClampRetryAfter(t *testing.T) {

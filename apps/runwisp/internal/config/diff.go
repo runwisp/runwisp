@@ -4,9 +4,9 @@
 package config
 
 import (
+	"cmp"
 	"reflect"
 	"slices"
-	"sort"
 
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -90,10 +90,10 @@ func DiffTasks(old, updated map[string]*model.Task) Diff {
 		}
 	}
 
-	sort.Strings(d.Added)
-	sort.Strings(d.Removed)
-	sort.Strings(d.Restamped)
-	sort.Slice(d.Changed, func(i, j int) bool { return d.Changed[i].Name < d.Changed[j].Name })
+	slices.Sort(d.Added)
+	slices.Sort(d.Removed)
+	slices.Sort(d.Restamped)
+	slices.SortFunc(d.Changed, func(a, b TaskChange) int { return cmp.Compare(a.Name, b.Name) })
 	return d
 }
 

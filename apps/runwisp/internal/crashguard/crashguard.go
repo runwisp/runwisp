@@ -26,10 +26,8 @@ import (
 	"syscall"
 )
 
-// panicked holds the first panic Guard recovered. Package state on purpose:
-// like the SIGTERM Guard raises, it is a fact about the whole process, and
-// threading a reporter into every guarded goroutine's constructor would carry
-// the same one-way latch through a dozen signatures.
+// panicked holds the first panic Guard recovered. It is process-wide, like the
+// SIGTERM Guard raises.
 var panicked atomic.Pointer[error]
 
 // Panicked returns the first panic Guard recovered in this process, or nil if

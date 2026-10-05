@@ -5,8 +5,9 @@ package executor
 
 import (
 	"log/slog"
+	"maps"
 	"os/user"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -52,9 +53,6 @@ func cleanEnvBase(shellPath string) []string {
 // RUNWISP_*-prefixed keys are dropped from the parent base (daemon internals);
 // an overlay layer may still set one explicitly. Output is "KEY=VALUE" strings
 // sorted by key for deterministic process env.
-//
-// Variadic so a future per-run env layer (from the REST/UI trigger surface)
-// is a single extra argument: buildProcessEnv(os.Environ(), task.Env, task.Secrets, run.Env).
 func buildProcessEnv(parent []string, layers ...map[string]string) []string {
 	merged := make(map[string]string, len(parent))
 	for _, entry := range parent {
@@ -68,18 +66,11 @@ func buildProcessEnv(parent []string, layers ...map[string]string) []string {
 		merged[key] = value
 	}
 	for _, layer := range layers {
-		for key, value := range layer {
-			merged[key] = value
-		}
+		maps.Copy(merged, layer)
 	}
-	keys := make([]string, 0, len(merged))
-	for key := range merged {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	out := make([]string, len(keys))
-	for i, key := range keys {
-		out[i] = key + "=" + merged[key]
+	out := make([]string, 0, len(merged))
+	for _, key := range slices.Sorted(maps.Keys(merged)) {
+		out = append(out, key+"="+merged[key])
 	}
 	return out
 }

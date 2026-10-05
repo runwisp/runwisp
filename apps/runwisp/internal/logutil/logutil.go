@@ -54,6 +54,14 @@ func RemoveLogFiles(logPath string) {
 	}
 }
 
+// RemoveRunLogs removes a run's log files, then any task directories left
+// empty under logDir.
+func RemoveRunLogs(logDir, taskName, runID string, createdAt time.Time) {
+	logPath := ResolveRunLogPath(logDir, taskName, runID, createdAt)
+	RemoveLogFiles(logPath)
+	RemoveEmptyParents(logPath, logDir)
+}
+
 // RemoveEmptyParents removes empty directories between path's parent and
 // stopAt (exclusive). Stops at the first non-empty or non-removable directory.
 func RemoveEmptyParents(path, stopAt string) {

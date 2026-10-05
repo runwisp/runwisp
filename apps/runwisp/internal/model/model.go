@@ -70,11 +70,11 @@ type Task struct {
 	// in flight at a time: a task runs as soon as the gate frees (right at its
 	// tick when nothing contends) and slips up to this window only under
 	// contention, when each task is released on its own staggered slot. The
-	// slots are computed once at startup by leveling overlapping windows on a
-	// 24-hour time-of-day dial (reload is restart-only) — same TOML + clock
-	// yields the same slots — but actual start times depend on run durations,
-	// like the queue policy. Task-only (services start every instance at boot)
-	// and a no-op without a cron.
+	// slots are computed at startup and on reload by leveling overlapping
+	// windows on a 24-hour time-of-day dial (same TOML + clock yields the same
+	// slots), but actual start times depend on run durations, like the queue
+	// policy. Task-only (services start every instance at boot) and a no-op
+	// without a cron.
 	// A pointer so an explicit `jitter = "0s"` (opt out of an inherited
 	// [defaults] jitter) is distinguishable from an omitted key (nil, inherits
 	// [defaults]). nil and *0 both mean "no jitter". Read via JitterValue.
@@ -636,10 +636,9 @@ const (
 // that would desync the service manager.
 //
 // ConfigLoadedAt is when the daemon read runwisp.toml; ConfigStale flips to
-// true when the file (or a referenced env_file) has changed on disk since —
-// config reload is restart-only, so UIs surface a "restart to apply" hint.
+// true when the file (or a referenced env_file) has changed on disk since.
 // ConfigStale is recomputed per request, not cached. So is ConfigWarnings, which
-// carries what the daemon would print at boot — a skipped crontab job has no runs,
+// carries what the daemon would print at boot: a skipped crontab job has no runs,
 // so this is one of the few places it can be seen at all.
 //
 // SchedulingActive is false when the local scheduler is inactive — e.g.
@@ -710,7 +709,7 @@ type CapInfo struct {
 }
 
 // TaskRegistration is a one-to-one per-task record for metadata that has no
-// natural home in the run log (first-seen timestamp, future per-task flags, etc.).
+// natural home in the run log (first-seen timestamp, pause state).
 type TaskRegistration struct {
 	TaskName    string
 	FirstSeenAt time.Time

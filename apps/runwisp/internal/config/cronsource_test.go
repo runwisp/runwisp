@@ -192,9 +192,8 @@ include_cron = ["crontabs/*"]
 }
 
 // TestIncludeCron_SameCommandInTwoCrontabsBothRun: one command in two crontabs is
-// two crond jobs, whatever their schedules. A later file used to match the earlier
-// one on the command alone and drop its job with no finding, so it silently
-// stopped running after a takeover.
+// two crond jobs, whatever their schedules. A later file must not match the
+// earlier one on the command alone and drop its job with no finding.
 func TestIncludeCron_SameCommandInTwoCrontabsBothRun(t *testing.T) {
 	stubCronUsers(t, "root", "deploy")
 	dir := writeFileTree(t, map[string]string{
@@ -476,12 +475,10 @@ include_cron = ["crontabs/missing"]
 	assert.Contains(t, err.Error(), "missing")
 }
 
-// TestIncludeCron_OneBadFileDoesNotTakeDownTheRest is the fail-open guard.
-// Before this, one unreadable crontab rejected the whole config load — under
-// Restart=on-failure that is a five-second restart loop on a box that now
-// runs nothing at all, cron included, if an earlier boot already masked it.
-// The trigger is mundane (an account that got userdel'd, one file at the
-// wrong mode) and shouldn't be able to take every other task down with it.
+// TestIncludeCron_OneBadFileDoesNotTakeDownTheRest is the fail-open guard: one
+// unreadable crontab (an account that got userdel'd, one file at the wrong
+// mode) must not reject the whole config load and take every other task down
+// with it.
 func TestIncludeCron_OneBadFileDoesNotTakeDownTheRest(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root can read a 0000 file")
@@ -652,9 +649,9 @@ run = "echo hi"
 // mean something nobody wrote.
 //
 // include_cron names the file literally rather than globbing it, because a glob
-// can no longer reach a `.toml` at all — crond's naming rule filters dotted names
-// out of a glob's hits. A literal path is the operator overriding that, and so the
-// one route by which the same file can still arrive down both readings.
+// cannot reach a `.toml` at all: crond's naming rule filters dotted names out of
+// a glob's hits. A literal path is the one route by which the same file can
+// arrive down both readings.
 func TestIncludeCron_OverlapWithIncludeIsHardError(t *testing.T) {
 	dir := writeFileTree(t, map[string]string{
 		"runwisp.toml": `
@@ -1136,10 +1133,8 @@ func TestHeld(t *testing.T) {
 		assert.Empty(t, cfg.Tasks[0].HeldBy)
 	})
 
-	// A spool-only include used to never warn at all, because the old check
-	// filtered cronFiles down to system crontab paths before looking at any
-	// pidfile. A live crond reads /var/spool/cron just as much as
-	// /etc/cron.d, so it has to be held here too.
+	// A live crond reads /var/spool/cron just as much as /etc/cron.d, so a
+	// spool-only include has to be held too.
 	t.Run("systemctl unavailable, live pidfile holds a spool-only include", func(t *testing.T) {
 		stubCronServiceProbe(t, false, false, false)
 		cfg := cronHoldConfig(t, []string{"/var/spool/cron/crontabs/alice"}, []string{missingPid, livePid})
@@ -1149,9 +1144,9 @@ func TestHeld(t *testing.T) {
 		assert.Equal(t, model.HeldByCron, cfg.Tasks[0].HeldBy)
 	})
 
-	// The old version only checked that the pidfile existed, not that the pid
-	// inside it was still a live process — so a crond that crashed without
-	// cleaning up, or a stale file baked into an image, warned forever.
+	// A pidfile only counts when the pid inside it is a live process, so a
+	// crond that crashed without cleaning up, or a stale file baked into an
+	// image, holds nothing.
 	t.Run("systemctl unavailable, stale pidfile holds nothing", func(t *testing.T) {
 		stubCronServiceProbe(t, false, false, false)
 		cfg := cronHoldConfig(t, []string{"/etc/crontab"}, []string{deadPid})
@@ -1241,12 +1236,9 @@ func TestMarkCronHoldLeavesNonCronTasksAlone(t *testing.T) {
 	assert.Empty(t, cfg.Tasks[1].HeldBy)
 }
 
-// TestMarkCronHoldClearsAStaleHold is the bug the runtime watcher exists to
-// exploit. markCronHold used to return early when cron was not live, so it could
-// only ever stamp a hold, never clear one. That was invisible while the only
-// caller was a fresh load — every task starts unheld — and it meant the answer
-// could not be refreshed on a live config at all: the hold outlived the cron
-// daemon, and the jobs stopped running entirely.
+// TestMarkCronHoldClearsAStaleHold: markCronHold must clear a hold as well as
+// stamp one, or a hold refreshed on a live config outlives the cron daemon and
+// the jobs stop running entirely.
 func TestMarkCronHoldClearsAStaleHold(t *testing.T) {
 	cfg := &Config{Tasks: []model.Task{{
 		Name: "backup", Cron: "* * * * *", Run: "true",

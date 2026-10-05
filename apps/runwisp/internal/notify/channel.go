@@ -5,9 +5,8 @@ package notify
 
 import "context"
 
-// Channel is the unit the dispatcher pumps events through. Implementations:
-// slack, telegram, inapp. Filtering is the Router's job; channels only
-// execute and clean up.
+// Channel is the unit the dispatcher pumps events through. Filtering is the
+// Router's job; channels only execute and clean up.
 type Channel interface {
 	// ID is a stable, log-friendly identifier — the user-supplied notifier id.
 	ID() string

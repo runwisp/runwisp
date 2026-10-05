@@ -5,7 +5,8 @@ package tui
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -23,11 +24,7 @@ type RunParamsDialog struct {
 // NewRunParamsDialog builds the dialog from a run's resolved param map, sorting
 // by key so the list is stable across renders.
 func NewRunParamsDialog(taskName string, params map[string]string) RunParamsDialog {
-	keys := make([]string, 0, len(params))
-	for k := range params {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(params))
 	lines := make([]string, 0, len(keys))
 	for _, k := range keys {
 		lines = append(lines, fmt.Sprintf("%s = %s", k, params[k]))

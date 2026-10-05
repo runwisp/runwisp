@@ -40,9 +40,8 @@ func Mount(router chi.Router) error {
 }
 
 func serve(stripped fs.FS, w http.ResponseWriter, req *http.Request) {
-	// path.Clean collapses any ".." segments before we touch the FS.
-	// embed.FS.Open also rejects invalid paths, so traversal to real files is
-	// impossible, but being explicit keeps static analysis tools happy.
+	// path.Clean collapses any ".." segments before we touch the FS (embed.FS.Open
+	// also rejects invalid paths).
 	reqPath := strings.TrimPrefix(path.Clean("/"+req.URL.Path), "/")
 	if reqPath == "" || reqPath == "." {
 		reqPath = indexHTML

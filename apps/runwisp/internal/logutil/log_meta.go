@@ -22,9 +22,7 @@ type LogMeta struct {
 
 // MetaPath returns the consolidated sidecar container path for a log file. The
 // container is hidden (leading dot) so a plain `ls` of the log directory shows
-// only the `.log` files. It holds the metadata, line index, timestamp index and
-// frame history that used to live in separate `.meta`, `.idx`, `.tidx` and
-// `.fhist` sidecars.
+// only the `.log` files. It holds the metadata, line index and frame history.
 func MetaPath(logPath string) string {
 	return filepath.Join(filepath.Dir(logPath), "."+filepath.Base(logPath)+".meta")
 }

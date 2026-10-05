@@ -69,8 +69,6 @@ func (p *stdioPrompter) Confirm(question string, defaultYes bool) (bool, error) 
 		return defaultYes, nil
 	case "y", "yes":
 		return true, nil
-	case "n", "no":
-		return false, nil
 	default:
 		return false, nil
 	}

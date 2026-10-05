@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -96,19 +95,13 @@ func expandComposeBlocks(cfg *Config, dirs entrySources) error {
 		return nil
 	}
 
-	aliases := make([]string, 0, len(blocks))
-	for alias := range blocks {
-		aliases = append(aliases, alias)
-	}
-	sort.Strings(aliases)
-
 	existingNames := make(map[string]struct{}, len(cfg.Tasks))
 	for i := range cfg.Tasks {
 		existingNames[cfg.Tasks[i].Name] = struct{}{}
 	}
 
 	var notify []composeNotifySugar
-	for _, alias := range aliases {
+	for _, alias := range slices.Sorted(maps.Keys(blocks)) {
 		if err := model.ValidateTaskName(alias); err != nil {
 			return fmt.Errorf("invalid compose alias %q: %w", alias, err)
 		}
@@ -125,7 +118,7 @@ func expandComposeBlocks(cfg *Config, dirs entrySources) error {
 	}
 
 	// Compose blocks expand after toNotifyConfig has already built cfg.Notify,
-	// so their per-service notify_on_* sugar desugars into synthetic routes on
+	// so their per-service `notify` sugar desugars into synthetic routes on
 	// the finished config rather than through desugar{Task,Service}Notify.
 	return appendComposeNotify(&cfg.Notify, notify)
 }
@@ -189,10 +182,9 @@ type composeBlock struct {
 }
 
 // composeServiceOverrideWire is the per-service override surface inside a
-// [compose.<alias>.<svc>] sub-table. Like [services.*] it *excludes* Run /
-// ComposeFile / ComposeService (an override never specifies its own
-// execution backend; that comes from the parent compose block) and rejects
-// OnOverlap (a task-only concept, see applyComposeOverride). ManualTrigger is
+// [compose.<alias>.<svc>] sub-table. It excludes Run / ComposeFile /
+// ComposeService (the execution backend comes from the parent compose block)
+// and rejects OnOverlap (a task-only concept, see applyComposeOverride). ManualTrigger is
 // accepted: it locks the service against manual stop/restart/start the same
 // way it does on [services.*].
 type composeServiceOverrideWire struct {
@@ -721,10 +713,9 @@ func applyComposeOverrideSupervision(task *model.Task, w *composeServiceOverride
 }
 
 // applyComposeOverrideEnv copies the override's env / secrets fields onto the
-// task, leaving unset values at their compose-import default. The notify_on_*
-// lists are handled separately (see composeNotifySugar): they never land on the
-// Task — like [services.*] they desugar into synthetic notify routes keyed by
-// the generated task name.
+// task, leaving unset values at their compose-import default. The `notify`
+// list is handled separately (see composeNotifySugar): like [services.*] it
+// desugars into synthetic notify routes keyed by the generated task name.
 func applyComposeOverrideEnv(task *model.Task, w *composeServiceOverrideWire) {
 	if len(w.Env) > 0 {
 		task.Env = w.Env

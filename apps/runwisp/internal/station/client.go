@@ -7,16 +7,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync/atomic"
 	"time"
-
-	"log/slog"
 
 	"github.com/coder/websocket"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage"
 )
 
 const (
@@ -45,7 +45,7 @@ const maxInboundMessageSize int64 = 4 * 1024 * 1024 // 4 MiB
 type Dependencies struct {
 	TaskManager       TaskRunner
 	RunRepo           ExternalRunGetter
-	PendingUploadRepo PendingLogUploadRepository
+	PendingUploadRepo storage.PendingLogUploadRepository
 	EventBus          EventSubscriber
 	LocalTasks        TaskSnapshotter
 	LogDir            string

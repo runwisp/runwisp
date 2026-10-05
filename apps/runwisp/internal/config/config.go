@@ -5,14 +5,15 @@ package config
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -77,10 +78,9 @@ func applyTLSEnvOverride(cfg *Config) error {
 
 // collectWatchFiles resolves every on-disk input Snapshot should watch beyond
 // the root config: included TOML files plus each env_file, each against the dir
-// of the config that declared it, plus every crontab read via include_cron — so
+// of the config that declared it, plus every crontab read via include_cron, so
 // `crontab -e` makes Snapshot.Stale() report "config changed on disk" with no
-// machinery of its own. secrets_file is intentionally excluded, matching the
-// pre-include behavior.
+// machinery of its own. secrets_file is intentionally excluded.
 func collectWatchFiles(cfg *Config, dirs entrySources) []string {
 	files := append([]string(nil), cfg.includeFiles...)
 	files = append(files, cfg.cronFiles...)
@@ -98,10 +98,9 @@ func collectWatchFiles(cfg *Config, dirs entrySources) []string {
 // entrySources maps each task/service/compose-alias name to the absolute path of
 // the config file that defined it. It answers two questions with one map: which
 // directory an entry's relative paths (env_file, secrets_file, compose_file,
-// working_dir) resolve against, and which file an entry came from — the latter
-// being what Task.Staged is derived from and what `promote` needs to know.
-// Names with no recorded origin — compose-generated tasks — fall back to the
-// root config dir.
+// working_dir) resolve against, and which file an entry came from (what
+// Task.Source is derived from and what `promote` needs to know). Names with no
+// recorded origin (compose-generated tasks) fall back to the root config dir.
 type entrySources struct {
 	root   string
 	byName map[string]string
@@ -116,10 +115,10 @@ func (s entrySources) dir(name string) string {
 }
 
 // resolveEnvLayers reads each env_file / secrets_file referenced by the config
-// and merges the file's KEY=VALUE pairs beneath the corresponding inline map —
+// and merges the file's KEY=VALUE pairs beneath the corresponding inline map:
 // inline entries override file entries, docker-compose-style. Relative paths
-// are resolved against baseDir (the runwisp.toml directory). Dotenv file
-// contents are taken literally; ${...} substitution applies only to TOML.
+// resolve against the directory of the config file that declared them. Dotenv
+// file contents are taken literally; ${...} substitution applies only to TOML.
 func resolveEnvLayers(cfg *Config, dirs entrySources) error {
 	var err error
 	// [defaults] is root-only, so its env_file/secrets_file always resolve
@@ -180,10 +179,10 @@ func resolveComposePaths(cfg *Config, dirs entrySources) error {
 }
 
 // resolveWorkingDirs absolutizes the working_dir set on each task/service.
-// Relative paths resolve against baseDir (the runwisp.toml directory), matching
+// Relative paths resolve against the declaring config file's directory, matching
 // env_file / compose_file. For compose-backed tasks an explicit working_dir
 // overrides the compose file's directory default chosen in resolveComposePaths.
-// Existence is checked at run time, not load — like shell, host paths are
+// Existence is checked at run time, not load: like shell, host paths are
 // resolved against the daemon's namespace, which may differ from the one
 // `runwisp validate` runs in.
 //
@@ -235,16 +234,12 @@ func Warnings(cfg *Config) []string {
 }
 
 // composeExecServiceWarnings reports long-running services running in compose
-// exec mode. Docker offers no way to cancel an exec — the API has ExecCreate,
-// ExecStart, ExecAttach and ExecInspect, and nothing that stops one — so when
+// exec mode. Docker offers no way to cancel an exec (the API has ExecCreate,
+// ExecStart, ExecAttach and ExecInspect, and nothing that stops one), so when
 // RunWisp stops or restarts the unit it can only kill the local `docker compose
 // exec` client. The process inside the target container keeps running, and the
-// restart then starts a second copy alongside it.
-//
-// For a task that's a bounded annoyance the operator can solve with a `timeout`
-// inside the command. For a service it compounds on every restart, silently, so
-// it's worth saying out loud at boot rather than leaving them to find N copies
-// of their worker later.
+// restart then starts a second copy alongside it. For a service that compounds
+// on every restart, so it is reported at boot.
 func composeExecServiceWarnings(cfg *Config) []string {
 	var warnings []string
 	for i := range cfg.Tasks {
@@ -267,10 +262,9 @@ func composeExecServiceWarnings(cfg *Config) []string {
 // nonPosixShellWarnings reports units whose `shell` RunWisp cannot arm
 // fail-fast on. The executor passes `-e` only to interpreters it recognises as
 // POSIX shells, because handing the flag to something else can turn a loud
-// failure into a silent success (see model.ShellSupportsErrexit). That gate is
-// the right call, but a silent behaviour fork would be worse than the problem
-// it avoids — so the operator hears about it at boot and from `runwisp
-// validate` rather than discovering it via a run that passed when it shouldn't.
+// failure into a silent success (see model.ShellSupportsErrexit). The operator
+// hears about it at boot and from `runwisp validate` rather than via a run that
+// passed when it shouldn't.
 func nonPosixShellWarnings(cfg *Config) []string {
 	var warnings []string
 	for _, task := range cfg.units() {
@@ -396,7 +390,7 @@ func collectTaskNames(raw *tomlConfig) ([]string, error) {
 		}
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names, nil
 }
 
@@ -411,7 +405,7 @@ func collectServiceNames(raw *tomlConfig) ([]string, error) {
 		}
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names, nil
 }
 
@@ -483,11 +477,9 @@ func validateTLS(d *Daemon) error {
 	case d.TLSCert == "" || d.TLSKey == "":
 		return fmt.Errorf("invalid [daemon]: tls_cert and tls_key must be set together")
 	}
-	// tls = "off" explicitly disables TLS; a cert/key pair explicitly enables
-	// it. Both set at once is a contradiction the operator needs to resolve,
-	// not a silent "cert wins" fallback (an unset tls alongside a cert/key
-	// pair is fine, and stays ApplyDefaults'd to "" rather than "off"; see
-	// there).
+	// tls = "off" alongside a cert/key pair is a contradiction, not a silent
+	// "cert wins". An unset tls with a cert/key pair is fine: ApplyDefaults
+	// leaves it "" rather than "off".
 	if d.TLS == TLSModeOff {
 		return fmt.Errorf("invalid [daemon]: tls = \"off\" cannot be combined with tls_cert/tls_key; remove tls_cert and tls_key, or set tls to \"auto\" or leave it unset")
 	}
@@ -498,13 +490,12 @@ func validateTLS(d *Daemon) error {
 }
 
 // Validate checks for invalid configuration values. Durations and byte sizes
-// have already been parsed at this point — only enum membership, ranges, and
+// have already been parsed at this point; only enum membership, ranges, and
 // required fields remain.
-// Validate collects every configuration problem it can rather than returning at
-// the first, so `runwisp validate` reports them all in one pass (one entry per
-// offending task, plus each top-level check). Independent checks each contribute
-// at most one error; the result collapses to nil / a single error / a joined
-// error via errors.Join.
+//
+// It collects every problem rather than returning at the first, so `runwisp
+// validate` reports them all in one pass (one entry per offending task, plus
+// each top-level check), joined via errors.Join.
 func Validate(cfg *Config) error {
 	var errs []error
 	if err := validateDefaults(&cfg.Defaults); err != nil {
@@ -574,12 +565,7 @@ func detectDependencyCycle(byName map[string]*model.Task) error {
 
 	// Sort the roots so the reported cycle is deterministic regardless of map
 	// iteration order.
-	names := make([]string, 0, len(byName))
-	for name := range byName {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
+	for _, name := range slices.Sorted(maps.Keys(byName)) {
 		if walk.state[name] == depStateUnseen {
 			if err := walk.visit(name); err != nil {
 				return err
@@ -1007,10 +993,9 @@ func validateTaskCommand(task *model.Task) error {
 
 // validateTaskShell requires the resolved shell to be an absolute path. A
 // relative name would be resolved against the daemon's PATH at run time, which
-// is non-deterministic. Like working_dir, host paths and interpreters are
-// resolved at run time, not load, so `validate` stays namespace-independent —
-// the shell is never stat-ed here because the daemon may run in a different
-// mount namespace than `runwisp validate`.
+// is non-deterministic. Like working_dir, the shell is never stat-ed here
+// because the daemon may run in a different mount namespace than `runwisp
+// validate`.
 func validateTaskShell(task *model.Task) error {
 	if task.Shell == "" {
 		// Post-defaults this is always /bin/sh; the executor also falls back to
@@ -1036,8 +1021,8 @@ func validateTaskStopSignal(task *model.Task) error {
 
 // validateStopSignal is the shared check for per-task and defaults.stop_signal.
 // Only the canonical "SIGxxx" spelling is accepted (case-insensitively); a bare
-// name like "TERM" is rejected. The importer still converts foreign bare names
-// to canonical form via NormalizeSignalName before writing them.
+// name like "TERM" is rejected. The importer converts foreign bare names to
+// canonical form via NormalizeSignalName before writing them.
 func validateStopSignal(scope, signal string) error {
 	if signal == "" {
 		return nil
@@ -1052,9 +1037,8 @@ func validateStopSignal(scope, signal string) error {
 }
 
 // validateTaskRunUser checks the shape of the run-as `user` spec. Only the
-// `user` / `user:group` form is validated here — resolving the name to a uid/gid
-// is deferred to run time (the account may not exist when the config is loaded,
-// and reload is restart-only).
+// `user` / `user:group` form is validated here; resolving the name to a uid/gid
+// is deferred to run time (the account may not exist when the config is loaded).
 func validateTaskRunUser(task *model.Task) error {
 	if _, _, err := model.ParseRunUserSpec(task.RunUser); err != nil {
 		return fmt.Errorf("invalid user for %s %s: %w", unitKind(task), task.Name, err)
@@ -1070,7 +1054,7 @@ func validateTaskLimits(task *model.Task) error {
 		return err
 	}
 	// restart_attempts is service-only (validated in validateServiceTask); a
-	// [tasks.*] that sets it is already rejected in collectTaskNames.
+	// [tasks.*] that sets it is already rejected at strict decode.
 	return validateTaskDurations(task)
 }
 
@@ -1210,9 +1194,9 @@ func validateServiceTask(task *model.Task) error {
 }
 
 // validateRestartAttempts bounds restart_attempts the same way for services,
-// restarting tasks, and [defaults]: negative is meaningless (there's no
-// "tolerate a negative number of failures"), and StartRetriesCap keeps a
-// misconfigured value from disabling the give-up behaviour in practice. A nil
+// restarting tasks, and [defaults]: negative is meaningless, and
+// StartRetriesCap keeps a misconfigured value from disabling the give-up
+// behaviour in practice. A nil
 // pointer means the key was omitted (inherit/default); an explicit 0 means
 // "give up after the very first failure" and is accepted like any other
 // in-range value. Mirrors validateKeepRuns's nil-vs-zero shape.
@@ -1438,7 +1422,7 @@ func ApplyDefaults(cfg *Config) {
 
 // applyInheritedDefaults copies [defaults] values into unit fields that were
 // not explicitly set in TOML, then fills in absolute built-in fallbacks. Each
-// scalar cascade is one firstSet call (unit value, else [defaults], else
+// scalar cascade is one cmp.Or call (unit value, else [defaults], else
 // builtin); the pointer field (KeepRuns) and the two special cases (stop_signal
 // canonicalization, failures delta-resolution) keep their own helpers.
 func applyInheritedDefaults(task *model.Task, d Defaults) {
@@ -1454,14 +1438,14 @@ func applyInheritedDefaults(task *model.Task, d Defaults) {
 	if !task.Kind.IsService() && task.Jitter == nil && d.Jitter > 0 {
 		task.Jitter = durationPtr(d.Jitter)
 	}
-	task.Shell = firstSet(task.Shell, d.Shell, DefaultShell)
+	task.Shell = cmp.Or(task.Shell, d.Shell, DefaultShell)
 	applyInheritedStopSignal(task, d)
-	task.LogMaxSize = firstSet(task.LogMaxSize, d.LogMaxSize, defaultTaskLogMaxSize)
-	task.LogOnFull = firstSet(task.LogOnFull, d.LogOnFull, model.LogOverflowDropOld)
+	task.LogMaxSize = cmp.Or(task.LogMaxSize, d.LogMaxSize, defaultTaskLogMaxSize)
+	task.LogOnFull = cmp.Or(task.LogOnFull, d.LogOnFull, model.LogOverflowDropOld)
 	if task.KeepRuns == nil {
 		task.KeepRuns = d.KeepRuns
 	}
-	task.KeepFor = firstSet(task.KeepFor, d.KeepFor)
+	task.KeepFor = cmp.Or(task.KeepFor, d.KeepFor)
 	// catch_up is a cron-task concept; a service must not inherit a [defaults]
 	// catch_up (a multi-run value against its on_overlap = skip would then be
 	// rejected). Services still resolve to the builtin so the field is always set.
@@ -1481,7 +1465,7 @@ func applyInheritedDefaults(task *model.Task, d Defaults) {
 // as "SIGTERM"; a bare or unrecognised value survives unchanged so Validate can
 // reject it with a clear error.
 func applyInheritedStopSignal(task *model.Task, d Defaults) {
-	task.StopSignal = firstSet(task.StopSignal, d.StopSignal, DefaultStopSignal)
+	task.StopSignal = cmp.Or(task.StopSignal, d.StopSignal, DefaultStopSignal)
 	up := strings.ToUpper(strings.TrimSpace(task.StopSignal))
 	if canonical, ok := model.NormalizeSignalName(task.StopSignal); ok && up == canonical {
 		task.StopSignal = canonical
@@ -1515,23 +1499,19 @@ func mergeEnv(base, overlay map[string]string) map[string]string {
 		return nil
 	}
 	out := make(map[string]string, len(base)+len(overlay))
-	for k, v := range base {
-		out[k] = v
-	}
-	for k, v := range overlay {
-		out[k] = v
-	}
+	maps.Copy(out, base)
+	maps.Copy(out, overlay)
 	return out
 }
 
-// resolveDefault fills an unset (nil) unit-level pointer from [defaults], then
-// from a built-in fallback, without ever colliding an explicit zero at either
-// level with "unset" — the whole point of pointer fields like RestartAttempts.
-// Always returns non-nil.
 // durationPtr returns a pointer to d. Used when promoting a [defaults] scalar
 // into a pointer-typed unit field so an explicit unit-level zero stays distinct.
 func durationPtr(d time.Duration) *time.Duration { return &d }
 
+// resolveDefault fills an unset (nil) unit-level pointer from [defaults], then
+// from a built-in fallback, without ever colliding an explicit zero at either
+// level with "unset" (the whole point of pointer fields like RestartAttempts).
+// Always returns non-nil.
 func resolveDefault[T any](unit, fromDefaults *T, builtin T) *T {
 	if unit != nil {
 		return unit
@@ -1541,19 +1521,6 @@ func resolveDefault[T any](unit, fromDefaults *T, builtin T) *T {
 	}
 	v := builtin
 	return &v
-}
-
-// firstSet returns the first argument that is not the zero value of T, or the
-// zero value if all are zero. It expresses the "unit value, else [defaults],
-// else builtin" cascade used when applying defaults to non-pointer fields.
-func firstSet[T comparable](vals ...T) T {
-	var zero T
-	for _, v := range vals {
-		if v != zero {
-			return v
-		}
-	}
-	return zero
 }
 
 func applyTaskDefaults(task *model.Task) {
@@ -1585,9 +1552,7 @@ func applyServiceDefaults(task *model.Task, d Defaults) {
 		task.Instances = 1
 	}
 	task.RestartDelay = resolveDefault(task.RestartDelay, d.RestartDelay, DefaultRestartDelay)
-	task.RestartBackoff = firstSet(task.RestartBackoff, d.RestartBackoff, model.BackoffExponential)
+	task.RestartBackoff = cmp.Or(task.RestartBackoff, d.RestartBackoff, model.BackoffExponential)
 	task.HealthyAfter = resolveDefault(task.HealthyAfter, d.HealthyAfter, DefaultHealthyAfter)
-	// restart_attempts: explicit on the service wins; else [defaults]; else the
-	// built-in default.
 	task.RestartAttempts = resolveDefault(task.RestartAttempts, d.RestartAttempts, DefaultStartRetries)
 }

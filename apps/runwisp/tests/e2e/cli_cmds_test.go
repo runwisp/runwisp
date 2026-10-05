@@ -146,8 +146,8 @@ run = "echo changed"
 		"--data", daemon.dataDir,
 	)
 	require.NoError(t, err, "status should still succeed: %s", out)
-	require.Contains(t, out, "changed since the daemon started")
-	require.Contains(t, out, "runwisp restart")
+	require.Contains(t, out, "changed since it was loaded")
+	require.Contains(t, out, "runwisp reload")
 }
 
 func TestCLIOpenAPICmd(t *testing.T) {

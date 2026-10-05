@@ -11,7 +11,7 @@
     let dismissed = $state(false);
     let reloading = $state(false);
 
-    // Re-arm the banner once the daemon restarts (staleness clears), so the
+    // Re-arm the banner once staleness clears (a reload or restart), so the
     // next config edit shows it again even after a dismissal.
     $effect(() => {
         if (!systemStore.configStale) dismissed = false;
@@ -41,8 +41,8 @@
     >
         <TriangleAlert size={16} class="shrink-0" />
         <span class="flex-1">
-            <code class="font-semibold">runwisp.toml</code> has changed since the daemon started. The
-            UI never edits config; your file is the source of truth.
+            <code class="font-semibold">runwisp.toml</code> has changed since it was loaded. The UI never
+            edits config; your file is the source of truth.
         </span>
         <button
             type="button"

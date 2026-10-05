@@ -20,9 +20,8 @@ import (
 // read as one product. clilog stays independent of internal/tui (see the
 // package doc), so the few shared colors are redeclared here rather than imported.
 var (
-	prettyDim   = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")) // dim gray
+	prettyDim   = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")) // dim gray; also the DEBUG label
 	prettyMsg   = lipgloss.NewStyle().Bold(true)
-	prettyDebug = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")) // dim gray
 	prettyInfo  = lipgloss.NewStyle().Foreground(lipgloss.Color("#009371")) // green
 	prettyWarn  = lipgloss.NewStyle().Foreground(lipgloss.Color("#FBBF24")) // yellow
 	prettyError = lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")) // red
@@ -119,7 +118,7 @@ func (h *prettyHandler) levelLabel(l slog.Level) string {
 	label, st := "[INFO]", prettyInfo
 	switch {
 	case l < slog.LevelInfo:
-		label, st = "[DEBUG]", prettyDebug
+		label, st = "[DEBUG]", prettyDim
 	case l >= slog.LevelError:
 		label, st = "[ERROR]", prettyError
 	case l >= slog.LevelWarn:
@@ -176,30 +175,25 @@ func quoteIfNeeded(s string) string {
 	if s == "" {
 		return `""`
 	}
-	if strings.ContainsAny(s, " =\"\n\t\r") || hasControlRunes(s) {
+	if strings.ContainsAny(s, " =\"\n\t\r") || strings.ContainsFunc(s, isControlRune) {
 		return strconv.Quote(s)
 	}
 	return s
 }
 
-// hasControlRunes reports whether s contains any control rune (C0/C1, DEL) or
-// invalid UTF-8 — the bytes a terminal may interpret as escape sequences.
-func hasControlRunes(s string) bool {
-	for _, r := range s {
-		if r == utf8.RuneError || unicode.IsControl(r) {
-			return true
-		}
-	}
-	return false
+// isControlRune reports whether r is a control rune (C0/C1, DEL) or invalid
+// UTF-8: the bytes a terminal may interpret as escape sequences.
+func isControlRune(r rune) bool {
+	return r == utf8.RuneError || unicode.IsControl(r)
 }
 
-// escapeControl renders any control rune (or invalid UTF-8) in s as a visible
-// \xNN / \uNNNN escape, leaving printable text — including Unicode — untouched.
+// escapeControl renders any control rune in s as a visible \xNN escape and
+// invalid UTF-8 as U+FFFD, leaving printable text (including Unicode) untouched.
 // Used for the record message, which is painted inline (not quoted) but can
 // still carry untrusted data; a raw control byte there is the same terminal
 // escape-injection risk as in an attribute value.
 func escapeControl(s string) string {
-	if !hasControlRunes(s) {
+	if !strings.ContainsFunc(s, isControlRune) {
 		return s
 	}
 	const hex = "0123456789abcdef"

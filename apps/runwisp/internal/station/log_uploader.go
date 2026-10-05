@@ -15,6 +15,7 @@ import (
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/station/logarchive"
+	"github.com/runwisp/runwisp/internal/storage"
 )
 
 // archiveTimeout caps a single terminal archive operation. Daemon log files
@@ -35,7 +36,7 @@ type LogUploaderResult struct {
 // `pending_log_uploads` SQLite table written at dispatch time and removed
 // only on successful upload.
 type LogUploader struct {
-	repo       PendingLogUploadRepository
+	repo       storage.PendingLogUploadRepository
 	runRepo    ExternalRunGetter
 	logDir     string
 	httpClient *http.Client
@@ -54,7 +55,7 @@ type uploadEntry struct {
 // LogDir so file paths can be resolved on terminal. now is the wall-clock
 // source for persisted dispatch records; production passes time.Now, tests
 // inject a fixed clock to keep persistence fixtures deterministic.
-func NewLogUploader(repo PendingLogUploadRepository, runRepo ExternalRunGetter, logDir string, now func() time.Time) *LogUploader {
+func NewLogUploader(repo storage.PendingLogUploadRepository, runRepo ExternalRunGetter, logDir string, now func() time.Time) *LogUploader {
 	if now == nil {
 		now = time.Now
 	}

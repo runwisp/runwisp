@@ -5,7 +5,8 @@ package execlist
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -66,7 +67,7 @@ func (e *ExecList) SetSize(w, h int) {
 // SetFocused marks whether this panel has keyboard focus.
 func (e *ExecList) SetFocused(focused bool) {
 	e.focused = focused
-	if focused && e.cursor < 0 && e.totalCount() > 0 {
+	if focused && e.cursor < 0 && e.TotalCount() > 0 {
 		e.cursor = 0
 	}
 }
@@ -131,7 +132,7 @@ func (e *ExecList) SelectionActive() bool {
 // under select-all, otherwise the size of the explicit set.
 func (e *ExecList) SelectionCount() int {
 	if e.selectAll {
-		return e.totalCount()
+		return e.TotalCount()
 	}
 	return len(e.selected)
 }
@@ -156,11 +157,7 @@ func (e *ExecList) SelectionSelector() (model.RunSelector, bool) {
 	if len(e.selected) == 0 {
 		return model.RunSelector{}, false
 	}
-	ids := make([]string, 0, len(e.selected))
-	for id := range e.selected {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
+	ids := slices.Sorted(maps.Keys(e.selected))
 	return model.RunSelector{IDs: ids}, true
 }
 
@@ -183,7 +180,7 @@ func (e *ExecList) Update(msg tea.Msg) tea.Cmd {
 		e.ClearSelection()
 		return nil
 	}
-	n := e.totalCount()
+	n := e.TotalCount()
 	if n == 0 {
 		return nil
 	}
@@ -223,7 +220,7 @@ func (e *ExecList) SetHovered(row int) {
 
 // SetHoveredFromLocalY computes hover from a Y position relative to the exec list top.
 func (e *ExecList) SetHoveredFromLocalY(localY int) {
-	n := e.totalCount()
+	n := e.TotalCount()
 	if n == 0 {
 		e.hoveredRow = -1
 		return
@@ -244,7 +241,7 @@ func (e *ExecList) SetHoveredFromLocalY(localY int) {
 
 // HandleClick selects a row based on localY (relative to the ExecList top).
 func (e *ExecList) HandleClick(localY int) bool {
-	n := e.totalCount()
+	n := e.TotalCount()
 	if n == 0 {
 		return false
 	}
@@ -327,7 +324,9 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 		// task + four single-space separators + the four fixed columns.
 		return rowStyle.Render("  " + padCell("loading…", cw.task+4+cw.fixedSum()))
 	}
-	statusStr := truncCell(item.Run.DisplayStatus(), cw.status)
+	// Truncate without padding: the badge's trailing fill must take the row
+	// background, not the badge color.
+	statusStr := uikit.TruncateToWidth(item.Run.DisplayStatus(), cw.status)
 	statusBadge := uikit.StatusStyle(statusStr).Render(statusStr)
 	statPad := cw.status - uikit.VisibleWidth(statusBadge)
 	if statPad < 0 {
@@ -425,7 +424,7 @@ func (e *ExecList) renderEmptySection(b *strings.Builder, vpH, w int) {
 func (e *ExecList) View() string {
 	var b strings.Builder
 	w := e.width
-	n := e.totalCount()
+	n := e.TotalCount()
 	vpH := e.ViewportHeight()
 
 	sbState := e.computeScrollbar(vpH, n)
@@ -486,20 +485,8 @@ func (e *ExecList) View() string {
 	return b.String()
 }
 
-func (e *ExecList) totalCount() int {
-	return e.window.TotalCount()
-}
-
 // TotalCount returns the total number of executions known to the window.
-func (e *ExecList) TotalCount() int { return e.totalCount() }
-
-func (e *ExecList) taskColWidth() int {
-	return e.taskColWidthFor(e.width)
-}
-
-func (e *ExecList) taskColWidthFor(w int) int {
-	return computeColWidths(w).task
-}
+func (e *ExecList) TotalCount() int { return e.window.TotalCount() }
 
 // bannerLines is the number of rows the active-filter banner occupies: one
 // while a status filter is active, zero otherwise.
@@ -529,7 +516,7 @@ func (e *ExecList) ensureVisible() {
 	if vpH <= 0 {
 		return
 	}
-	n := e.totalCount()
+	n := e.TotalCount()
 	if e.cursor < e.Scroll {
 		e.Scroll = e.cursor
 	} else if e.cursor >= e.Scroll+vpH {
@@ -554,7 +541,7 @@ func (e *ExecList) ensureVisible() {
 // ScrollBy adjusts the scroll offset by delta lines, clamping to valid bounds.
 // The cursor is moved into the visible area if needed.
 func (e *ExecList) ScrollBy(delta int) {
-	n := e.totalCount()
+	n := e.TotalCount()
 	vpH := e.ViewportHeight()
 	if vpH <= 0 || n == 0 {
 		return
@@ -584,17 +571,9 @@ func (e *ExecList) NeedsFetch() bool {
 
 // padCell truncates or pads a string to exactly the given visible width.
 func padCell(s string, w int) string {
-	s = truncCell(s, w)
+	s = uikit.TruncateToWidth(s, w)
 	if vis := uikit.VisibleWidth(s); vis < w {
 		return s + strings.Repeat(" ", w-vis)
 	}
 	return s
-}
-
-// truncCell shortens a string to at most w visible cells, appending an ellipsis
-// when it has to cut. It never pads, so the caller controls trailing fill (used
-// for the status badge, whose padding must take the row background, not the
-// badge color).
-func truncCell(s string, w int) string {
-	return uikit.TruncateToWidth(s, w)
 }

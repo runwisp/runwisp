@@ -8,7 +8,6 @@ import {
     type SSEStream,
 } from "$lib/adapters/browser";
 import { type SSEErrorInfo, getMessageEventData } from "$lib/utils/event-source";
-import { getApiUrl as defaultGetApiUrl } from "$lib/utils/env";
 import { createLogger } from "$lib/utils/logger";
 import {
     createReconnectingConnection,
@@ -22,8 +21,6 @@ import {
     type ErrorHandler,
     type StallHandler,
 } from "./event-fanout";
-
-export type EventManagerErrorInfo = SSEErrorInfo;
 
 /**
  * The surface every app-event-stream source exposes to its consumers, whether
@@ -44,16 +41,14 @@ export interface AppEventStream {
     onStall(handler: StallHandler): () => void;
 }
 
-export interface EventManagerOptions {
-    /** SSE path relative to the API root, e.g. `/api/events/stream`. */
+interface EventManagerOptions {
+    /** SSE path, e.g. `/api/events/stream`. */
     path: string;
     /**
      * Factory for the underlying EventSource. Defaults to the auth-aware factory
      * (opens with withCredentials so the HttpOnly session cookie is sent).
      */
     createEventSource?: EventSourceFactory;
-    /** Resolves the API base URL at connection time. */
-    getApiUrl?: () => string;
     /**
      * Seeds the resume cursor for a freshly-opened connection, appended as
      * `?lastEventId=`. A same-EventSource reconnect resends `Last-Event-ID`
@@ -83,7 +78,7 @@ export class EventManager implements AppEventStream {
     // tick. Nothing reactively reads who is subscribed — keep these plain.
     readonly #handlers = new HandlerRegistry();
     readonly #open = new Signal<[]>(this.#logger, "onOpen");
-    readonly #error = new Signal<[EventManagerErrorInfo]>(this.#logger, "onError");
+    readonly #error = new Signal<[SSEErrorInfo]>(this.#logger, "onError");
     readonly #stall = new Signal<[]>(this.#logger, "onStall");
 
     #openTimer: ReturnType<typeof setTimeout> | null = null;
@@ -91,13 +86,12 @@ export class EventManager implements AppEventStream {
 
     constructor(options: EventManagerOptions) {
         this.#path = options.path;
-        const getApiUrl = options.getApiUrl ?? defaultGetApiUrl;
         const createEventSource = options.createEventSource ?? browserAuthEventSourceFactory;
         const initialLastEventId = options.initialLastEventId;
 
         this.#connection = createReconnectingConnection({
             resolve: () => {
-                const base = `${getApiUrl()}${this.#path}`;
+                const base = this.#path;
                 const id = initialLastEventId?.();
                 const url = id ? `${base}?lastEventId=${encodeURIComponent(id)}` : base;
                 return { url, label: this.#path };

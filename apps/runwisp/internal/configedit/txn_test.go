@@ -113,7 +113,7 @@ func TestTxn_RemoveOfAMissingFileIsNotAnError(t *testing.T) {
 
 // TestTxn_GateFailureRestoresARemovedFile is the rollback half of Remove: a
 // promote whose merged load fails must bring the staging file back, or the tasks
-// it held would vanish from the config entirely (Prime Directive #1).
+// it held would vanish from the config entirely.
 func TestTxn_GateFailureRestoresARemovedFile(t *testing.T) {
 	dir := writeFileTree(t, map[string]string{"staging.toml": "[tasks.a]\nrun = \"a\"\n"})
 	staging := filepath.Join(dir, "staging.toml")

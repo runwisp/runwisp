@@ -3,6 +3,7 @@
 
 import type { SSEErrorInfo } from "$lib/utils/event-source";
 import { createLogger } from "$lib/utils/logger";
+import { isRecord } from "$lib/utils/parse";
 import { EventManager, type AppEventStream } from "./event-manager";
 import {
     HandlerRegistry,
@@ -15,12 +16,12 @@ import {
 
 // Why this exists: a browser caps concurrent connections to one origin at ~6
 // over HTTP/1.1, and that pool is shared across every tab in the whole browser.
-// The daemon speaks plain HTTP, and each tab held its own long-lived SSE on
-// `/api/events/stream`, so ~6 open RunWisp tabs saturated the pool — the 7th tab's SSE
-// hung in CONNECTING forever, and even plain REST calls queued behind the live
-// streams. SharedAppStream fixes the root cause: across all tabs exactly one —
-// the elected leader — holds the real EventSource; every other tab (a follower)
-// rides a BroadcastChannel and consumes no connection of its own. N tabs → 1
+// The daemon speaks plain HTTP, so if each tab held its own long-lived SSE on
+// `/api/events/stream`, ~6 open RunWisp tabs would saturate the pool: the 7th
+// tab's SSE would hang in CONNECTING forever, and even plain REST calls would
+// queue behind the live streams. So across all tabs exactly one (the elected
+// leader) holds the real EventSource; every other tab (a follower) rides a
+// BroadcastChannel and consumes no connection of its own. N tabs → 1
 // connection, so the cap is never reached. When the leader tab closes, the Web
 // Lock it held is released and a follower is promoted, opening a fresh stream.
 //
@@ -61,7 +62,7 @@ export interface LeaderElector {
     campaign(onElected: () => void): () => void;
 }
 
-export interface SharedAppStreamOptions {
+interface SharedAppStreamOptions {
     /** SSE path the leader connects to, e.g. `/api/events/stream`. */
     path: string;
     channelName?: string;
@@ -403,10 +404,6 @@ export class SharedAppStream implements AppEventStream {
 
 // ─── message parsing (the bus delivers unknown structured-clone payloads) ─────
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && Boolean(value);
-}
-
 function parseSharedMessage(raw: unknown): SharedMessage | null {
     if (!isRecord(raw)) return null;
     switch (raw.t) {
@@ -451,9 +448,9 @@ function parseErrorInfo(value: unknown): SSEErrorInfo {
 // ─── default browser transports ──────────────────────────────────────────────
 
 // Cross-tab sharing needs BOTH primitives: BroadcastChannel to ferry events and
-// Web Locks to elect a single leader. If either is missing we degrade to the
-// old model — every tab is its own leader with its own EventSource — rather than
-// risk a follower that can never receive anything.
+// Web Locks to elect a single leader. If either is missing we degrade to
+// per-tab mode (every tab is its own leader with its own EventSource) rather
+// than risk a follower that can never receive anything.
 function canShare(): boolean {
     return (
         typeof BroadcastChannel !== "undefined" &&

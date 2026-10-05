@@ -33,12 +33,9 @@ var allowedVolumePrefixes = []string{
 // containerCleanupTimeout bounds every Docker SDK call issued outside a run's
 // own context: ContainerRemove/ImageRemove from Process.Cleanup, ContainerKill
 // from ForceKill, and ContainerStop from the graceful-stop watcher. ForceKill
-// in particular runs synchronously under the task manager's lock (see
-// forceKillSurvivors) while the daemon shutdown coordinator waits on it; a
-// hung (not merely unreachable — that fails fast) Docker/Podman engine would
-// otherwise freeze that lock, and with it every other task operation, not
-// just shutdown. A var (not const) so tests can shrink it instead of waiting
-// out the real 10s to prove the deadline fires.
+// runs under the task manager's lock (see forceKillSurvivors), so a hung
+// Docker/Podman engine would otherwise freeze every task operation, not just
+// shutdown. A var so tests can shrink it.
 var containerCleanupTimeout = 10 * time.Second
 
 // validateVolumeMount rejects host paths that are not under an allowed prefix.
@@ -185,30 +182,22 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, run *mod
 
 	stdoutPR, stderrPR := demuxAttachStream(attachResp)
 
-	// Capture the cleanup budget once, synchronously, at construction: the
-	// watcher and forceKill closures below outlive Start and must not re-read the
-	// package var later (tests mutate it, and a leaked watcher reading it then
-	// would race the next test's write). Threaded through every bounded call so
-	// one Process uses one consistent timeout.
+	// Capture the cleanup budget once: the closures below outlive Start and must
+	// not re-read the package var, which tests mutate.
 	cleanupTimeout := containerCleanupTimeout
 
 	// closeAttach severs our end of the hijacked attach connection, which makes
-	// the StdCopy pump in demuxAttachStream return and close the stdout/stderr
-	// pipes the executor's stream capture is blocked on. A wedged engine never
-	// EOFs that stream on its own — the container never actually dies — so
-	// without an explicit close here the run goroutine would hang in the
-	// stream-copy wait (which runs *before* Process.Wait) forever. Guarded so the
-	// give-up path and Cleanup can both call it.
+	// the StdCopy pump in demuxAttachStream close the stdout/stderr pipes the
+	// executor's stream capture is blocked on. A wedged engine never EOFs that
+	// stream, so without it the run would hang before reaching Process.Wait.
+	// Guarded so the give-up path and Cleanup can both call it.
 	var attachOnce sync.Once
 	closeAttach := func() { attachOnce.Do(func() { attachResp.Close() }) }
 
 	// waitCtx decouples ContainerWait from the run ctx so a stop/timeout runs the
-	// signal ladder below instead of an instant force-remove; the wait returns
-	// only when the container truly exits. cancelWait is the escape hatch: an
-	// engine that hangs — accepts the socket but never reports the exit, the
-	// class the cleanup bounds target — would otherwise pin ContainerWait, and
-	// with it Process.Wait, per-task stop, and daemon shutdown, forever. The
-	// give-up path cancels it so the run finalizes with a terminal status.
+	// signal ladder below instead of an instant force-remove. cancelWait is the
+	// escape hatch for an engine that never reports the exit: the give-up path
+	// cancels it so the run still finalizes with a terminal status.
 	waitCtx, cancelWait := context.WithCancel(context.WithoutCancel(ctx))
 	waitFn := b.waitFunc(waitCtx, containerID)
 
@@ -221,8 +210,7 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, run *mod
 	// kill. It is both the shutdown fast path (skips the graceful window) and the
 	// watcher's final escalation step; both may call it, so every step is
 	// idempotent. It runs under the task manager's lock via forceKillSurvivors,
-	// so it never blocks beyond the bounded ContainerKill — the stream/wait
-	// teardown is non-blocking.
+	// so it never blocks beyond the bounded ContainerKill.
 	forceKill := func() {
 		killCtx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 		defer cancel()
@@ -239,14 +227,9 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, run *mod
 		case <-done:
 			return
 		}
-		// The wake above can fire for ctx.Done() even when done was actually
-		// closed first: Execute cancels ctx unconditionally on return (after
-		// Wait closes done and Cleanup removes the container), so if this
-		// goroutine hasn't been scheduled since done closed, both channels
-		// are ready by the time it runs and select ties uniformly at random.
-		// Re-check done on its own before treating this as a stop/timeout —
-		// a run that already exited cleanly must never attempt a graceful
-		// stop against a container Cleanup has already removed.
+		// Execute cancels ctx on return after done is closed, so both channels
+		// can be ready and select picks at random. Re-check done so a run that
+		// already exited never stops a container Cleanup has already removed.
 		select {
 		case <-done:
 			return
@@ -254,10 +237,8 @@ func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, run *mod
 		}
 		// A stop/timeout/shutdown asked the run to end. Run Docker's native
 		// graceful ladder first (stop_signal, then SIGKILL after graceful_stop);
-		// if the container still hasn't exited afterwards — a wedged engine that
-		// ignored it — escalate to a direct kill plus local teardown so the run
-		// can't hang. A healthy engine exits inside ContainerStop, closing done
-		// before the check, so the escalation never fires for it.
+		// if the container still hasn't exited afterwards (a wedged engine),
+		// escalate to a direct kill plus local teardown so the run can't hang.
 		b.gracefulStopContainer(containerID, task, cleanupTimeout)
 		if waitClosed(done, cleanupTimeout) {
 			return
@@ -303,8 +284,7 @@ func waitClosed(done <-chan struct{}, d time.Duration) bool {
 // gracefulStopContainer sends the task's stop_signal to the container and lets
 // Docker force-kill it after the graceful_stop window (its native ladder:
 // signal, wait Timeout seconds, then SIGKILL). A non-positive graceful_stop maps
-// to Timeout=0 — no grace, immediate kill — matching the shell ladder's
-// "grace <= 0 goes straight to SIGKILL".
+// to Timeout=0 (immediate kill), matching the shell ladder.
 func (b *ContainerBackend) gracefulStopContainer(containerID string, task *model.Task, cleanupTimeout time.Duration) {
 	opts := client.ContainerStopOptions{}
 	if sig, ok := model.NormalizeSignalName(task.StopSignal); ok {
@@ -312,12 +292,9 @@ func (b *ContainerBackend) gracefulStopContainer(containerID string, task *model
 	}
 	secs := gracefulStopSeconds(task.GracefulStopValue())
 	opts.Timeout = &secs
-	// Docker's own wait (opts.Timeout) is the graceful window the operator
-	// configured via graceful_stop; the call is expected to block that long
-	// before Docker's native ladder falls back to SIGKILL. cleanupTimeout
-	// is added on top purely as a safety margin against an engine that never
-	// honours its own timeout — it must never cut the configured grace window
-	// short.
+	// The call blocks for the graceful_stop window by design; cleanupTimeout is
+	// added on top as a margin against an engine that never honours its own
+	// timeout, and must never cut the configured window short.
 	stopCtx, cancel := context.WithTimeout(context.Background(), time.Duration(secs)*time.Second+cleanupTimeout)
 	defer cancel()
 	if _, err := b.docker.ContainerStop(stopCtx, containerID, opts); err != nil {
@@ -427,19 +404,13 @@ func (b *ContainerBackend) buildContainerConfig(imageTag string, ctr *model.Cont
 	for _, kv := range ctr.Env {
 		ctrEnv[kv.Key] = kv.Value
 	}
-	// Overlay Task.Env then Task.Secrets then any env-kind per-run params on top
-	// of the container-execution env so task-level entries (defined alongside
-	// cron/run) win over container-specific defaults, matching the shell
-	// backend's precedence. arg/option/flag params have no seam here (the image
-	// entrypoint is a fixed script, not an argv we control), so only env params
-	// reach a container run — container/HTTP backends aren't built from
-	// [tasks.*] TOML today, so this is forward-safety, not a reachable path.
+	// Overlay Task.Env, Task.Secrets, then env-kind per-run params on top of the
+	// container-execution env, matching the shell backend's precedence. Only env
+	// params apply: the image entrypoint is not an argv we control.
 	//
-	// buildProcessEnv's first argument is meant to be the daemon's own OS
-	// environment, whose RUNWISP_-prefixed secrets it strips before a task
-	// inherits it. ctr.Env is a container execution's own declared vars, not
-	// the daemon's process env, so it must never go through that filter — it
-	// layers in as an ordinary map instead, same as the other layers.
+	// ctr.Env is the execution's own declared vars, not the daemon's process
+	// env, so it goes in as a layer rather than as buildProcessEnv's parent
+	// (which strips RUNWISP_* keys).
 	var paramEnv map[string]string
 	var taskEnv, taskSecrets map[string]string
 	if task != nil {

@@ -169,8 +169,8 @@ func (s *systemdInstaller) stopAndMaskCron(ctx context.Context, unit string, out
 // — it writes a /dev/null symlink without touching multi-user.target.wants,
 // so unmask alone restores whatever enablement state cron had before — but it
 // does not restart a unit that was stopped-then-masked, so prior decides
-// whether to also start it. An empty prior comes from a unit written before
-// the prior-state marker existed, and keeps the old unmask-and-start.
+// whether to also start it. An empty prior (a unit without the prior-state
+// marker) unmasks and starts.
 func (s *systemdInstaller) restoreCron(ctx context.Context, unit, prior string, out io.Writer) error {
 	if prior == cronPriorMasked {
 		fmt.Fprintf(out, "Leaving %s masked, as it was before the take-over\n", unit)

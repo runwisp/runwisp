@@ -5,26 +5,15 @@
     import { untrack } from "svelte";
     import { goto } from "$app/navigation";
     import { resolve } from "$app/paths";
-    import {
-        OverviewPage,
-        OverviewSkeleton,
-        type DaemonState,
-        type DaemonStats,
-    } from "$lib/components/dashboard";
-    import { formatBytes, RunMotion } from "@runwisp/ui";
+    import { OverviewPage, OverviewSkeleton, type DaemonStats } from "$lib/components/dashboard";
+    import { RunMotion } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { runsApi, tasksApi, systemApi, systemEventSchema, type MetricsSample } from "$lib/api";
-    import {
-        runUpdatesStore,
-        upsertRun,
-        removeRun,
-        connectionStore,
-        systemStore,
-        appEventStream,
-    } from "$lib/stores";
-    import { getApiUrl } from "$lib/utils/env";
+    import { runUpdatesStore, removeRun, systemStore, appEventStream } from "$lib/stores";
     import { toTaskPageId } from "$lib/utils/task-id";
-    import { mergeRecentRuns, mergeRunningRuns } from "$lib/utils/overview-runs";
+    import { mergeRecentRuns, mergeRunningRuns, upsertRun } from "$lib/utils/overview-runs";
+    import { sortByCreatedAtDesc } from "$lib/utils/sort";
+    import { safeParseJSON } from "$lib/utils/parse";
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import { type Run, type Task } from "$lib/types";
 
@@ -75,21 +64,6 @@
         };
     });
 
-    let daemonState = $derived<DaemonState>({
-        name: systemStore.name,
-        version: systemStore.version,
-        uptime: systemStore.uptime,
-        status: connectionStore.status === "connected" ? "connected" : "disconnected",
-        host: systemStore.host,
-        cpus: systemStore.cpus,
-        memory: formatBytes(systemStore.memTotal),
-        backendUrl: getApiUrl(),
-        os: systemStore.os,
-        arch: systemStore.arch,
-        workDir: systemStore.workDir,
-        fingerprint: systemStore.fingerprint,
-    });
-
     let stats = $derived.by<DaemonStats>(() => {
         let completed = 0;
         let successes = 0;
@@ -125,8 +99,12 @@
             const run = event.data.run;
             if (run.status === "ended") motion.markArrived(run.id);
 
-            dashState.recentRuns = upsertRun(dashState.recentRuns, run).slice(0, RECENT_RUN_LIMIT);
-            dashState.runningRuns = upsertRunningRun(dashState.runningRuns, run, RUNNING_RUN_LIMIT);
+            dashState.recentRuns = sortByCreatedAtDesc(
+                upsertRun(dashState.recentRuns, run, "start"),
+            ).slice(0, RECENT_RUN_LIMIT);
+            dashState.runningRuns = upsertRun(dashState.runningRuns, run, "start")
+                .filter((r) => r.status === "running")
+                .slice(0, RUNNING_RUN_LIMIT);
 
             // A new run means the scheduler advanced that task's nextRunAt —
             // refetch tasks so "Up next" and next-run columns stay current.
@@ -144,14 +122,12 @@
         // each onto the chart. The gauges themselves read systemStore, which is
         // push-fed by the same stream (seeded in the layout). No polling.
         const unsubscribeSystem = appEventStream.subscribe("system", (data) => {
-            try {
-                const { sample } = systemEventSchema.parse(JSON.parse(data));
-                dashState.metricsHistory = [...dashState.metricsHistory, sample].slice(
-                    -METRICS_HISTORY_LIMIT,
-                );
-            } catch {
-                // silent — the chart is secondary
-            }
+            // Invalid payloads are dropped silently: the chart is secondary.
+            const parsed = safeParseJSON(data, systemEventSchema);
+            if (!parsed.success) return;
+            dashState.metricsHistory = [...dashState.metricsHistory, parsed.data.sample].slice(
+                -METRICS_HISTORY_LIMIT,
+            );
         });
 
         // A reload or a schedule pause changes the task list without a run.
@@ -221,24 +197,14 @@
 
     async function loadMetricsHistory() {
         // No connection-status guard: this fires once at mount, and the status
-        // briefly reads "disconnected" before the SSE stream opens. Gating on it
-        // skipped the one-shot backfill entirely, so the chart only ever grew
-        // from live samples. The daemon serves this page, so it's reachable; a
-        // genuine failure is caught and swallowed below.
+        // briefly reads "disconnected" before the SSE stream opens, so gating on
+        // it would skip the one-shot backfill. The daemon serves this page, so
+        // it's reachable; a genuine failure is caught and swallowed below.
         try {
             dashState.metricsHistory = await systemApi.getMetricsHistory();
         } catch {
             // silent — metrics history is secondary
         }
-    }
-
-    function upsertRunningRun(list: Run[], next: Run, limit: number): Run[] {
-        const without = list.filter((run) => run.id !== next.id);
-        if (next.status !== "running") {
-            return without.slice(0, limit);
-        }
-
-        return [next, ...without].slice(0, limit);
     }
 
     async function handleTaskClick(taskName: string) {
@@ -253,7 +219,7 @@
 <AsyncDataView data={pageData}>
     {#snippet skeleton()}<OverviewSkeleton />{/snippet}
     <OverviewPage
-        state={daemonState}
+        uptime={systemStore.uptime}
         {stats}
         recentRuns={dashState.recentRuns}
         runningRuns={dashState.runningRuns}

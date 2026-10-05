@@ -4,7 +4,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { SSEStream } from "$lib/adapters/browser";
 import type { SSEErrorInfo } from "./event-source";
-import { buildSSEUrl, connectSSE } from "./sse";
+import { connectSSE } from "./sse";
 
 // ErrorEvent polyfill — not available in the Node test environment
 if (typeof Reflect.get(globalThis, "ErrorEvent") === "undefined") {
@@ -58,10 +58,6 @@ class FakeEventSource implements SSEStream {
         this.onerror?.(evt);
     }
 
-    fireMessage(data: string): void {
-        this.onmessage?.(new MessageEvent("message", { data }));
-    }
-
     fireNamedEvent(type: string, data: string): void {
         this.#target.dispatchEvent(new MessageEvent(type, { data }));
     }
@@ -71,99 +67,59 @@ class FakeEventSource implements SSEStream {
     }
 }
 
+const openConnections: { disconnect(): void }[] = [];
+
 afterEach(() => {
+    for (const conn of openConnections.splice(0)) conn.disconnect();
     vi.restoreAllMocks();
+    vi.useRealTimers();
 });
 
-// ─── buildSSEUrl ──────────────────────────────────────────────────────────────
-
-describe("buildSSEUrl", () => {
-    it("concatenates apiUrl and path", () => {
-        expect(buildSSEUrl("/api/events", "http://localhost:8080")).toBe(
-            "http://localhost:8080/api/events",
-        );
-    });
-
-    it("works with empty apiUrl prefix", () => {
-        expect(buildSSEUrl("/foo", "")).toBe("/foo");
-    });
-});
+function connect(options: Parameters<typeof connectSSE>[0]) {
+    const conn = connectSSE(options);
+    openConnections.push(conn);
+    return conn;
+}
 
 // ─── connectSSE ───────────────────────────────────────────────────────────────
 
 describe("connectSSE", () => {
     function makeConnection(
         opts: {
-            path?: string | (() => string);
             eventTypes?: string[];
-            reconnect?: boolean;
-            onEvent?: (type: string, data: string) => void;
             onOpen?: () => void;
-            onError?: (info: { message?: string; status?: number }) => void;
+            onError?: (info: SSEErrorInfo) => void;
         } = {},
     ) {
         const es = new FakeEventSource();
         const events: [string, string][] = [];
 
-        const conn = connectSSE({
-            path: opts.path ?? "/test",
-            ...(opts.eventTypes !== undefined ? { eventTypes: opts.eventTypes } : {}),
-            reconnect: opts.reconnect ?? false,
-            onEvent: opts.onEvent ?? ((t, d) => events.push([t, d])),
+        const conn = connect({
+            path: () => "/test",
+            eventTypes: opts.eventTypes ?? [],
+            onEvent: (t, d) => events.push([t, d]),
             ...(opts.onOpen !== undefined ? { onOpen: opts.onOpen } : {}),
             ...(opts.onError !== undefined ? { onError: opts.onError } : {}),
-            deps: {
-                createEventSource: () => es,
-                getApiUrl: () => "http://test",
-            },
+            createEventSource: () => es,
         });
 
         return { conn, es, events };
     }
 
-    it("uses default getApiUrl when deps.getApiUrl is not provided", () => {
-        let connectedUrl = "";
-        const conn = connectSSE({
-            path: "/path-check",
-            onEvent: () => {},
-            reconnect: false,
-            deps: {
-                createEventSource: (url) => {
-                    connectedUrl = url;
-                    return new FakeEventSource();
-                },
-            },
-        });
-        conn.disconnect();
-        // DEFAULT_API_URL="" in test env, so result = "" + "/path-check" = "/path-check"
-        expect(connectedUrl).toBe("/path-check");
-    });
-
-    it("calls createEventSource with the built URL", () => {
-        const factory = vi.fn().mockReturnValue(new FakeEventSource());
-        connectSSE({
-            path: "/events",
-            onEvent: () => {},
-            reconnect: false,
-            deps: { createEventSource: factory, getApiUrl: () => "http://api" },
-        }).disconnect();
-        expect(factory).toHaveBeenCalledWith("http://api/events");
-    });
-
-    it("calls path() when path is a function", () => {
+    it("calls path() and connects to the resolved path", () => {
         const pathFn = vi.fn().mockReturnValue("/dynamic-path");
         const factory = vi.fn().mockReturnValue(new FakeEventSource());
-        connectSSE({
+        connect({
             path: pathFn,
+            eventTypes: [],
             onEvent: () => {},
-            reconnect: false,
-            deps: { createEventSource: factory, getApiUrl: () => "" },
-        }).disconnect();
+            createEventSource: factory,
+        });
         expect(pathFn).toHaveBeenCalled();
         expect(factory).toHaveBeenCalledWith("/dynamic-path");
     });
 
-    it("onOpen resets reconnect delay", () => {
+    it("calls onOpen when the stream opens", () => {
         let openCalled = false;
         const { es } = makeConnection({
             onOpen: () => {
@@ -174,7 +130,7 @@ describe("connectSSE", () => {
         expect(openCalled).toBe(true);
     });
 
-    it("dispatches named events via addEventListener when eventTypes is provided", () => {
+    it("dispatches named events via addEventListener", () => {
         const { es, events } = makeConnection({ eventTypes: ["line", "done"] });
         es.fireNamedEvent("line", '{"text":"hello"}');
         es.fireNamedEvent("done", '{"status":"ok"}');
@@ -190,21 +146,8 @@ describe("connectSSE", () => {
         expect(events).toHaveLength(0);
     });
 
-    it("falls back to onmessage when eventTypes is empty", () => {
-        const { es, events } = makeConnection({ eventTypes: [] });
-        es.fireMessage('{"key":"val"}');
-        expect(events).toEqual([["message", '{"key":"val"}']]);
-    });
-
-    it("ignores default message with non-string data (onmessage data===undefined branch)", () => {
-        const { es, events } = makeConnection({ eventTypes: [] });
-        // Call onmessage directly with non-string data
-        es.onmessage?.(new MessageEvent("message", { data: 99 }));
-        expect(events).toHaveLength(0);
-    });
-
-    it("disconnect closes the EventSource and prevents reconnect", () => {
-        const { conn, es } = makeConnection({ reconnect: false });
+    it("disconnect closes the EventSource", () => {
+        const { conn, es } = makeConnection();
         conn.disconnect();
         expect(es.closed).toBe(true);
     });
@@ -214,14 +157,11 @@ describe("connectSSE", () => {
         const es1 = new FakeEventSource();
         const es2 = new FakeEventSource();
         let callCount = 0;
-        const conn = connectSSE({
-            path: "/test",
+        const conn = connect({
+            path: () => "/test",
+            eventTypes: [],
             onEvent: () => {},
-            reconnect: true,
-            deps: {
-                createEventSource: () => (callCount++ === 0 ? es1 : es2),
-                getApiUrl: () => "",
-            },
+            createEventSource: () => (callCount++ === 0 ? es1 : es2),
         });
         // Trigger error to schedule reconnect
         es1.fireError();
@@ -230,13 +170,11 @@ describe("connectSSE", () => {
         vi.runAllTimers();
         // es2 should NOT have been created (timeout was cancelled)
         expect(callCount).toBe(1);
-        vi.useRealTimers();
     });
 
     it("calls onError with extracted info when connection errors", () => {
         const errors: SSEErrorInfo[] = [];
         const { es } = makeConnection({
-            reconnect: false,
             onError: (info) => errors.push(info),
         });
         es.fireError(Object.assign(new Event("error"), { status: 503 }));
@@ -245,50 +183,42 @@ describe("connectSSE", () => {
     });
 
     it("onError is optional — no crash when not provided", () => {
-        const { es } = makeConnection({ reconnect: false });
+        const { es } = makeConnection();
         expect(() => {
             es.fireError();
         }).not.toThrow();
     });
 
-    it("schedules reconnect on error when reconnect=true", () => {
+    it("schedules reconnect on error", () => {
         vi.useFakeTimers();
         const esList: FakeEventSource[] = [];
-        const conn = connectSSE({
-            path: "/test",
+        connect({
+            path: () => "/test",
+            eventTypes: [],
             onEvent: () => {},
-            reconnect: true,
-            deps: {
-                createEventSource: () => {
-                    const es = new FakeEventSource();
-                    esList.push(es);
-                    return es;
-                },
-                getApiUrl: () => "",
+            createEventSource: () => {
+                const es = new FakeEventSource();
+                esList.push(es);
+                return es;
             },
         });
         esList[0]?.fireError();
         expect(esList).toHaveLength(1);
         vi.advanceTimersByTime(3001);
         expect(esList).toHaveLength(2);
-        conn.disconnect();
-        vi.useRealTimers();
     });
 
     it("caps reconnect delay at MAX_RECONNECT_DELAY", () => {
         vi.useFakeTimers();
         const esList: FakeEventSource[] = [];
-        const conn = connectSSE({
-            path: "/test",
+        connect({
+            path: () => "/test",
+            eventTypes: [],
             onEvent: () => {},
-            reconnect: true,
-            deps: {
-                createEventSource: () => {
-                    const es = new FakeEventSource();
-                    esList.push(es);
-                    return es;
-                },
-                getApiUrl: () => "",
+            createEventSource: () => {
+                const es = new FakeEventSource();
+                esList.push(es);
+                return es;
             },
         });
         // Trigger many errors to exhaust exponential backoff ceiling
@@ -296,34 +226,27 @@ describe("connectSSE", () => {
             esList[esList.length - 1]?.fireError();
             vi.advanceTimersByTime(60000);
         }
-        conn.disconnect();
         expect(esList.length).toBeGreaterThan(1);
-        vi.useRealTimers();
     });
 
     it("handles createEventSource throwing by calling onError and scheduling reconnect", () => {
         vi.useFakeTimers();
         const errors: SSEErrorInfo[] = [];
         let callCount = 0;
-        const conn = connectSSE({
-            path: "/test",
+        connect({
+            path: () => "/test",
+            eventTypes: [],
             onEvent: () => {},
-            reconnect: true,
             onError: (info) => errors.push(info),
-            deps: {
-                createEventSource: () => {
-                    callCount++;
-                    if (callCount === 1) throw new Error("network unavailable");
-                    return new FakeEventSource();
-                },
-                getApiUrl: () => "",
+            createEventSource: () => {
+                callCount++;
+                if (callCount === 1) throw new Error("network unavailable");
+                return new FakeEventSource();
             },
         });
         expect(errors).toHaveLength(1);
         expect(errors[0]?.message).toContain("network unavailable");
         vi.advanceTimersByTime(3001);
         expect(callCount).toBe(2);
-        conn.disconnect();
-        vi.useRealTimers();
     });
 });

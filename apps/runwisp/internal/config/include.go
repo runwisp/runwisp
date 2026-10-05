@@ -5,10 +5,11 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
+	"slices"
 
 	"github.com/runwisp/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/internal/importer"
@@ -62,8 +63,7 @@ func loadWithIncludes(path string) (*Config, entrySources, error) {
 
 	// Cron sources merge after the TOML includes and before buildConfig, so
 	// defaults, validation, and the reload diff treat a cron-sourced task exactly
-	// like a hand-written one. Doing it after buildConfig would need a second,
-	// differently-behaved path from crontab to running task.
+	// like a hand-written one.
 	cron, err := mergeCronSources(root, root.Daemon.IncludeCron, rootDir, path, src.byName, matched)
 	if err != nil {
 		return nil, entrySources{}, err
@@ -130,16 +130,14 @@ func markProvenance(cfg *Config, rootDir string, cronFiles map[string]bool) {
 // runs twice, and by then it has already happened.
 //
 // Per source file, not per machine. `include_cron` may legitimately point at a
-// crontab-format file cron never looks at (importer.CronOwnsPath) — those jobs are
+// crontab-format file cron never looks at (importer.CronOwnsPath); those jobs are
 // RunWisp's alone even while cron runs, and holding them would stop them for no
 // reason.
 //
-// Nothing persists a hold: it is re-derived from the machine like
-// markProvenance is re-derived from the origin files, so retiring cron is the
-// whole cure. Written as an idempotent assignment rather than a set-only pass
-// because WithCronHold runs it again against a fresh liveness answer on a live
-// config, where clearing a stale hold matters exactly as much as stamping a new
-// one. Returns the names whose held-ness actually changed.
+// Nothing persists a hold: it is re-derived from the machine every load, so
+// retiring cron is the whole cure. It assigns both ways (not set-only) because
+// WithCronHold re-runs it on a live config, where clearing a stale hold matters
+// as much as stamping a new one. Returns the names whose held-ness changed.
 func markCronHold(cfg *Config) (changed []string) {
 	for i := range cfg.Tasks {
 		task := &cfg.Tasks[i]
@@ -160,17 +158,14 @@ func markCronHold(cfg *Config) (changed []string) {
 // returns a new config plus the names whose held-ness flipped. Nil changed means
 // nothing moved and the returned config can be ignored.
 //
-// It never reads runwisp.toml. Config reload stays explicit — the operator's
-// declared task set is untouched, and the only thing re-derived is a fact about
-// the machine that RunWisp asked about once at load and would otherwise never
-// ask about again.
+// It never reads runwisp.toml, so config reload stays explicit: the only thing
+// re-derived is a fact about the machine.
 //
-// The copy is not an optimisation to skip. Reconciler hands &cfg.Tasks[i]
-// straight into the TaskRegistry, and those same *model.Task values are read
-// concurrently by the API, the TUI and the Web UI; flipping HeldBy in place
-// would be a data race with every one of them. Building a new Tasks slice is the
-// same shape a reload already produces, so the reconciler applies it the same
-// way.
+// The copy is required. Reconciler hands &cfg.Tasks[i] straight into the
+// TaskRegistry, and those *model.Task values are read concurrently by the API,
+// the TUI and the Web UI; flipping HeldBy in place would be a data race. A new
+// Tasks slice is the same shape a reload produces, so the reconciler applies it
+// the same way.
 func WithCronHold(cfg *Config, state cronprobe.State) (updated *Config, changed []string) {
 	if cfg == nil {
 		return nil, nil
@@ -212,17 +207,11 @@ func mergeIncludeFile(root *tomlConfig, incPath, rootPath string, byName map[str
 // entryNames returns the task, service, and compose-alias names declared in a
 // wire — the shared namespace that must stay collision-free across files.
 func entryNames(w *tomlConfig) []string {
-	names := make([]string, 0, len(w.Tasks)+len(w.Services)+len(w.Compose))
-	for n := range w.Tasks {
-		names = append(names, n)
-	}
-	for n := range w.Services {
-		names = append(names, n)
-	}
-	for n := range w.Compose {
-		names = append(names, n)
-	}
-	return names
+	return slices.Concat(
+		slices.Collect(maps.Keys(w.Tasks)),
+		slices.Collect(maps.Keys(w.Services)),
+		slices.Collect(maps.Keys(w.Compose)),
+	)
 }
 
 // resolveIncludes expands each include pattern against the root config dir and
@@ -244,7 +233,7 @@ func resolveIncludes(patterns []string, rootDir, rootPath string) (resolvedGlobs
 		}
 		matched = appendGlobHits(matched, hits, rootAbs, seen)
 	}
-	sort.Strings(matched)
+	slices.Sort(matched)
 	return resolvedGlobs, matched, nil
 }
 
@@ -352,24 +341,18 @@ func mergeEntryTables(root, inc *tomlConfig) {
 		if root.Tasks == nil {
 			root.Tasks = make(map[string]*taskWire, len(inc.Tasks))
 		}
-		for k, v := range inc.Tasks {
-			root.Tasks[k] = v
-		}
+		maps.Copy(root.Tasks, inc.Tasks)
 	}
 	if len(inc.Services) > 0 {
 		if root.Services == nil {
 			root.Services = make(map[string]*serviceWire, len(inc.Services))
 		}
-		for k, v := range inc.Services {
-			root.Services[k] = v
-		}
+		maps.Copy(root.Services, inc.Services)
 	}
 	if len(inc.Compose) > 0 {
 		if root.Compose == nil {
 			root.Compose = make(map[string]map[string]any, len(inc.Compose))
 		}
-		for k, v := range inc.Compose {
-			root.Compose[k] = v
-		}
+		maps.Copy(root.Compose, inc.Compose)
 	}
 }

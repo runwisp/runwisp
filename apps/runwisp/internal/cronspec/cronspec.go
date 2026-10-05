@@ -18,15 +18,12 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-// ParseOptions is the grammar accepted for task cron expressions: 5-field
+// parseOptions is the grammar accepted for task cron expressions: 5-field
 // specs (minute hour dom month dow) plus an optional leading seconds field
 // (6-field: second minute hour dom month dow) plus descriptors like @hourly,
-// @daily, and @every 1h30m. The seconds field is enabled via SecondOptional
-// rather than Second so existing 5-field specs keep parsing unchanged —
-// robfig prepends a "0" seconds field to them, firing at :00 exactly as
-// before. This is a superset of robfig/cron's standard parser; kept explicit
-// so the contract is load-bearing.
-const ParseOptions = cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor
+// @daily, and @every 1h30m. SecondOptional (not Second) keeps 5-field specs
+// valid: robfig prepends a "0" seconds field, so they fire at :00.
+const parseOptions = cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor
 
 // NewParser returns a parser for the RunWisp cron grammar.
 //
@@ -35,7 +32,7 @@ const ParseOptions = cron.SecondOptional | cron.Minute | cron.Hour | cron.Dom | 
 // 0-6, and traditional cron accepts 0-7 with both ends meaning Sunday. A
 // caller holding a bare cron.Parser would parse around that.
 func NewParser() cron.ScheduleParser {
-	return specParser{inner: cron.NewParser(ParseOptions)}
+	return specParser{inner: cron.NewParser(parseOptions)}
 }
 
 // specParser is the RunWisp grammar: robfig's parser with the day-of-week field

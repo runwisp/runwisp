@@ -16,8 +16,8 @@ func MatchAll() Predicate { return func(*Event) bool { return true } }
 
 // MatchFailure succeeds when the event is classified as a failure. It is the
 // single predicate behind the built-in failure route (catch-all and per-task
-// notify), replacing a hardcoded Kind list so per-task `failures`
-// promotions/demotions re-route without touching notify config.
+// notify), so per-task `failures` promotions/demotions re-route without
+// touching notify config.
 func MatchFailure() Predicate { return func(ev *Event) bool { return ev.IsFailure } }
 
 // MatchOutcomes succeeds when the event's Outcome() token is in the allowed

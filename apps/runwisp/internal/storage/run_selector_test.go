@@ -35,7 +35,7 @@ func TestBuildRunFilterArgs_StatusSetRendering(t *testing.T) {
 	cases := []struct {
 		name string
 		in   string
-		want interface{}
+		want any
 	}{
 		{"empty", "", nil},
 		{"all-blank", " , , ", nil},

@@ -73,12 +73,10 @@ type CronScan struct {
 	Blocked []string
 	// Skipped lists one reason per job that would not run inside a crontab
 	// RunWisp *did* read, plus the glob hits it passed over that crond itself
-	// would have run. It is the per-job half of Blocked — Jobs minus Live is
-	// its count — and it exists so a caller that has no config to load (a
-	// first `runwisp takeover` on a box with no runwisp.toml) sees the same
-	// skips a loaded config reports as CronFinding.Skipped. Rendered by the
-	// same CronFinding.String, so the two sets are comparable rather than
-	// merely similar.
+	// would have run. It lets a caller with no config to load (a first
+	// `runwisp takeover` on a box with no runwisp.toml) see the same skips a
+	// loaded config reports as CronFinding.Skipped, rendered by the same
+	// CronFinding.String.
 	Skipped []string
 	// Mails is true when some job runs under a MAILTO. RunWisp sends no such
 	// mail, so a cutover has to say so.

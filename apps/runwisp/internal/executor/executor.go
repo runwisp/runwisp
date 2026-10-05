@@ -166,12 +166,6 @@ func New(opts Options) Executor {
 	}
 }
 
-// now returns the executor's wall-clock instant. The constructor always sets
-// clock (defaulting to time.Now), so callers can rely on it being non-nil.
-func (r *RoutingExecutor) now() time.Time {
-	return r.clock()
-}
-
 func (r *RoutingExecutor) Availability() Availability {
 	return r.availability
 }
@@ -413,9 +407,6 @@ func (r *RoutingExecutor) prepareLogWriter(task *model.Task, run *model.Run, kil
 		return nil, "", fmt.Errorf("create task log dir: %w", err)
 	}
 
-	bus := r.eventBus
-	taskName := task.Name
-	runID := run.ID
 	writer, err := NewLogWriter(LogWriterOpts{
 		LogPath:     logPath,
 		MaxSize:     task.LogMaxSize,
@@ -423,14 +414,14 @@ func (r *RoutingExecutor) prepareLogWriter(task *model.Task, run *model.Run, kil
 		Kill:        func() { killer.kill(model.ReasonLogOverflow) },
 		MinFreeDisk: r.minFreeDisk,
 		LogDir:      r.logDir,
-		Now:         r.now,
+		Now:         r.clock,
 		OnDiskPressure: func(free, minFree int64, killed bool) {
-			if bus == nil {
+			if r.eventBus == nil {
 				return
 			}
-			bus.Publish(events.EventLogDiskPressure, events.LogDiskPressureEvent{
-				TaskName:     taskName,
-				RunID:        runID,
+			r.eventBus.Publish(events.EventLogDiskPressure, events.LogDiskPressureEvent{
+				TaskName:     task.Name,
+				RunID:        run.ID,
 				FreeBytes:    free,
 				MinFreeBytes: minFree,
 				KilledTask:   killed,
@@ -522,12 +513,8 @@ func writeCommittedLines(writer *LogWriter, stream string, texts []string) ([]in
 }
 
 func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task *model.Task, run *model.Run, matcher *outputMatcher, stream string) {
-	executionID := ""
-	if run.ExecutionID != nil {
-		executionID = *run.ExecutionID
-	}
-
-	nowMs := func() int64 { return r.now().UnixMilli() }
+	executionID := config.OrDefault(run.ExecutionID, "")
+	nowMs := func() int64 { return r.clock().UnixMilli() }
 
 	// publishCommitted sees each successfully written line's redacted text, so
 	// output patterns match exactly what the operator sees in the log.
@@ -607,16 +594,12 @@ func (r *RoutingExecutor) publishLine(task *model.Task, run *model.Run, stream, 
 	if r.eventBus == nil {
 		return
 	}
-	executionID := ""
-	if run.ExecutionID != nil {
-		executionID = *run.ExecutionID
-	}
 	r.eventBus.Publish(events.EventLogLine, events.LogLineEvent{
 		TaskName:    task.Name,
 		RunID:       run.ID,
-		ExecutionID: executionID,
+		ExecutionID: config.OrDefault(run.ExecutionID, ""),
 		LineNum:     lineNum,
-		Timestamp:   r.now().UnixMilli(),
+		Timestamp:   r.clock().UnixMilli(),
 		Stream:      stream,
 		Text:        text,
 		Continued:   continued,

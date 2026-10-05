@@ -382,7 +382,7 @@ func TestSchedulerWiresDSTGapRecovery(t *testing.T) {
 
 // TestSchedulerRecomputeJitterOnReload proves a reload gives a jittered task
 // its start-spread without a restart: a task added or rescheduled after Start
-// used to fire at the raw tick because only Start built jitter plans.
+// must not fire at the raw tick.
 func TestSchedulerRecomputeJitterOnReload(t *testing.T) {
 	runner := &fakeTaskRunner{}
 	now := time.Date(2024, 6, 10, 1, 0, 0, 0, time.UTC)
@@ -682,9 +682,9 @@ func TestSchedulerRemoveThenAddTaskReschedules(t *testing.T) {
 // TestSchedulerEveryFiresThroughDSTFallback proves an @every task keeps running
 // through the repeated hour. Its interval is real elapsed time, so every firing
 // in that hour is genuine — but an interval that divides an hour evenly lands
-// each one on a wall-clock time already seen an hour earlier, and the fall-back
-// dedup used to drop them as dst_skipped (silently, since that reason never
-// alerts). "@every 30m" lost 02:25 and 02:55 CET; "@every 5m" lost a whole hour.
+// each one on a wall-clock time already seen an hour earlier. The fall-back
+// dedup must not drop them as dst_skipped (silently, since that reason never
+// alerts).
 func TestSchedulerEveryFiresThroughDSTFallback(t *testing.T) {
 	runner := &fakeTaskRunner{}
 	task := &model.Task{

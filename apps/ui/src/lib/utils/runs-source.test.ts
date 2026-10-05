@@ -3,15 +3,14 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Run } from "@runwisp/common";
-import { FAILURE_STATUS_TOKEN } from "@runwisp/ui";
+import { FAILURE_STATUS_TOKEN, type RunsListFilters } from "@runwisp/ui";
 
 vi.mock("$lib/api", () => ({
     runsApi: { getAll: vi.fn() },
-    tasksApi: { getRuns: vi.fn() },
 }));
 
-import { runsApi, tasksApi } from "$lib/api";
-import { createRunsSource, type RunsFilters, type RunsSource } from "./runs-source.svelte";
+import { runsApi } from "$lib/api";
+import { createRunsSource, type RunsSource } from "./runs-source.svelte";
 
 function makeRun(id: string, overrides: Partial<Run> = {}): Run {
     return {
@@ -29,7 +28,7 @@ function makeRun(id: string, overrides: Partial<Run> = {}): Run {
     };
 }
 
-const baseFilters = (overrides: Partial<RunsFilters> = {}): RunsFilters => ({
+const baseFilters = (overrides: Partial<RunsListFilters> = {}): RunsListFilters => ({
     search: "",
     statuses: [],
     sortDirection: "desc",
@@ -59,17 +58,18 @@ describe("createRunsSource", () => {
         expect(src.error).toBeNull();
     });
 
-    it("fetches a task's own runs through tasksApi when taskName is set", async () => {
+    it("scopes the runs query to taskName when it is set", async () => {
         const src = createRunsSource();
-        vi.mocked(tasksApi.getRuns).mockResolvedValue({ runs: [], total: 0 });
+        vi.mocked(runsApi.getAll).mockResolvedValue({ runs: [], total: 0 });
 
         src.setFilters(baseFilters({ taskName: "backup-db" }));
 
         await vi.waitFor(() => {
             expect(src.loaded).toBe(true);
         });
-        expect(tasksApi.getRuns).toHaveBeenCalled();
-        expect(runsApi.getAll).not.toHaveBeenCalled();
+        expect(runsApi.getAll).toHaveBeenCalledWith(
+            expect.objectContaining({ taskName: "backup-db" }),
+        );
     });
 
     it("still latches `loaded` and records the error when the fetch rejects", async () => {
@@ -218,12 +218,12 @@ describe("createRunsSource", () => {
 // depend on. We drive `upsert` after an empty initial load and check whether
 // the row lands.
 describe("createRunsSource SSE filter parity (matchesFilters)", () => {
-    async function loadedWith(overrides: Partial<RunsFilters>): Promise<RunsSource> {
+    async function loadedWith(overrides: Partial<RunsListFilters>): Promise<RunsSource> {
         return loadedWithRuns(overrides, []);
     }
 
     async function loadedWithRuns(
-        overrides: Partial<RunsFilters>,
+        overrides: Partial<RunsListFilters>,
         runs: Run[],
     ): Promise<RunsSource> {
         const src = createRunsSource();
@@ -303,9 +303,9 @@ describe("createRunsSource SSE filter parity (matchesFilters)", () => {
         expect(src.items.map((r) => r.id)).toEqual(["retried"]);
     });
 
-    // Regression: ascending sort ("oldest first") previously bumped `total`
-    // for a new SSE row without ever splicing it into `items`, undercounting
-    // the visible list relative to `total` even though every earlier page was
+    // Regression: ascending sort ("oldest first") must not bump `total` for a
+    // new SSE row without splicing it into `items`, which would undercount the
+    // visible list relative to `total` even though every earlier page is
     // already loaded.
     it("appends a new run directly when ascending-sorted and every page is already loaded", async () => {
         const src = await loadedWithRuns({ sortDirection: "asc" }, [makeRun("a"), makeRun("b")]);
@@ -363,7 +363,7 @@ describe("createRunsSource SSE filter parity (matchesFilters)", () => {
         expect(src.motion.removed("refetched")).toBe(false);
     });
 
-    // Guards M3: the optimistic remove and the server's run.deleted SSE echo
+    // The optimistic remove and the server's run.deleted SSE echo
     // both call remove() for the same id. Only the call that actually removes a
     // row may decrement total, or the count drifts below the true value.
     it("decrements total once even when remove is called twice for one id", async () => {

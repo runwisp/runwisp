@@ -101,8 +101,7 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 	}
 
 	// The full demo runs against a throwaway temp dir it deletes on shutdown, so
-	// an explicit --config/--data can't be honored — silently overwriting them
-	// (as this used to) discards the operator's choice. Reject them and point at
+	// an explicit --config/--data can't be honored. Reject them and point at
 	// --seed-only, which does write to the supplied paths.
 	if err := demoPathFlagsRejection(cmd.Flags().Changed("config"), cmd.Flags().Changed("data")); err != nil {
 		return err
@@ -129,7 +128,7 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 	// Fail fast on a port conflict before spawning a daemon that can't bind.
 	if bindErr := probePortAvailable(f.Host, f.Port); bindErr != nil {
 		os.RemoveAll(tmp)
-		return nonInteractivePortConflict(f.Host, f.Port, bindErr)
+		return portConflictMessage(f.Host, f.Port, bindErr, probeRunwispInstance(f.Host, f.Port))
 	}
 
 	// Hand the temp dir to the spawned daemon; from here it owns cleanup.

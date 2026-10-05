@@ -7,8 +7,6 @@ export type ResolvedTheme = "light" | "dark";
 // Shared by every RunWisp surface. Keep byte-for-byte in sync with the
 // no-flash <head> scripts in each app's app.html / layout.
 export const THEME_STORAGE_KEY = "runwisp:theme";
-// The daemon dashboard used this key before the store moved here.
-const LEGACY_STORAGE_KEY = "runwisp-theme";
 
 function isPreference(value: string | null): value is ThemePreference {
     return value === "auto" || value === "light" || value === "dark";
@@ -16,7 +14,7 @@ function isPreference(value: string | null): value is ThemePreference {
 
 function readStored(): string | null {
     try {
-        return localStorage.getItem(THEME_STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
+        return localStorage.getItem(THEME_STORAGE_KEY);
     } catch {
         return null; // private mode / embedded contexts
     }

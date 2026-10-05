@@ -51,9 +51,9 @@ func TestRunStartupTasksCountsErrors(t *testing.T) {
 }
 
 // TestRunStartupTasksBootModeOncePerBoot is the RW-37 regression: an imported
-// @reboot job (run_on_start = "boot") used to fire on every daemon start, so a
-// restart, self-update re-exec, or takeover within one boot launched it again.
-// Each daemon start is one RunStartupTasks call against the same database.
+// @reboot job (run_on_start = "boot") must not fire again on a restart,
+// self-update re-exec, or takeover within one boot. Each daemon start is one
+// RunStartupTasks call against the same database.
 func TestRunStartupTasksBootModeOncePerBoot(t *testing.T) {
 	db, err := storage.New(":memory:")
 	require.NoError(t, err)
@@ -94,8 +94,8 @@ func TestRunStartupTasksBootModeFailedTriggerRetriesOnRestart(t *testing.T) {
 	assert.Equal(t, []string{"reboot"}, runner.triggers)
 }
 
-// With no boot identity the boot task keeps the old every-start behaviour and
-// the store is never touched (the mock has no expectations, so any call fails).
+// With no boot identity the boot task fires on every start and the store is
+// never touched (the mock has no expectations, so any call fails).
 func TestRunStartupTasksBootModeWithoutBootIDFiresEveryStart(t *testing.T) {
 	tasks := map[string]*model.Task{
 		"reboot": {Name: "reboot", Kind: model.KindTask, Run: "echo up",
