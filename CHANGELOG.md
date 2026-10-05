@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A plain-HTTP request to the HTTPS port is redirected to the `https://` URL instead of getting "Client sent an HTTP request to an HTTPS server.".
 - `runwisp import` maps systemd `Restart=` and supervisord `autorestart` onto the `restart` key (`on-failure` and `unexpected` become `on_failure`, `no` becomes `never`), and reads `no`, `off` and `0` as supervisord's "don't restart". `Restart=on-success` becomes `never`, since it never restarts after a failure.
 
 ### Fixed
