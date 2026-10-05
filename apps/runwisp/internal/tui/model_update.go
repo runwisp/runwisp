@@ -112,7 +112,7 @@ func (m Model) dispatchStreamMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		model, cmd := m.handleSSEEventMsg(msg)
 		return model, cmd, true
 	case uikit.SSEDisconnectedMsg:
-		model, cmd := m.handleSSEDisconnected()
+		model, cmd := m.handleSSEDisconnected(msg)
 		return model, cmd, true
 	}
 	return m, nil, false
@@ -572,6 +572,9 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleExecWindowFetched(msg uikit.ExecWindowFetchedMsg) (tea.Model, tea.Cmd) {
+	if !m.execWindow.IsCurrent(msg.Gen) {
+		return m, nil
+	}
 	m.execWindow.ApplyFetch(msg.Items, msg.Offset, msg.Total)
 	return m, nil
 }
@@ -586,8 +589,12 @@ func (m Model) handleSSEEventMsg(msg uikit.SSEEventMsg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmd, m.streams.ContinueListeningSSE())
 }
 
-func (m Model) handleSSEDisconnected() (tea.Model, tea.Cmd) {
-	m.debugView.AppendLine("Events stream disconnected. Reconnecting...")
+func (m Model) handleSSEDisconnected(msg uikit.SSEDisconnectedMsg) (tea.Model, tea.Cmd) {
+	if msg.Err != nil {
+		m.debugView.AppendLine("Events stream failed: " + msg.Err.Error() + ". Retrying...")
+	} else {
+		m.debugView.AppendLine("Events stream disconnected. Reconnecting...")
+	}
 	return m, m.streams.SubscribeEvents()
 }
 
@@ -602,7 +609,7 @@ func (m Model) handleLogTailLoaded(msg uikit.LogTailLoadedMsg) (tea.Model, tea.C
 	for _, l := range msg.Lines {
 		m.execView.Pane.AppendLogLine(l.N, l.Stream, l.Text, l.FrameCount)
 	}
-	if n := len(msg.Lines); m.pendingHighlight != 0 && m.pendingHighlightRun == msg.RunID && n > 0 && msg.Lines[n-1].N >= m.pendingHighlight {
+	if n := len(msg.Lines); m.pendingHighlight != 0 && m.pendingHighlightRun == msg.RunID && n > 0 && msg.Lines[n-1].N+1 >= m.pendingHighlight {
 		m.execView.Pane.JumpToLine(m.pendingHighlight)
 		m.pendingHighlight = 0
 		m.pendingHighlightRun = ""
@@ -640,7 +647,7 @@ func (m Model) handleLogLine(msg uikit.LogLineMsg) (tea.Model, tea.Cmd) {
 	// If a search hit selected this run, jump as soon as the target line
 	// lands in the buffer. The pending marker is cleared so subsequent
 	// scroll input isn't yanked back to the hit.
-	if m.pendingHighlight != 0 && m.pendingHighlightRun == msg.RunID && msg.Line.N >= m.pendingHighlight {
+	if m.pendingHighlight != 0 && m.pendingHighlightRun == msg.RunID && msg.Line.N+1 >= m.pendingHighlight {
 		m.execView.Pane.JumpToLine(m.pendingHighlight)
 		m.pendingHighlight = 0
 		m.pendingHighlightRun = ""
@@ -690,11 +697,21 @@ func (m Model) handleLogOlderLoaded(msg uikit.LogOlderLoadedMsg) (tea.Model, tea
 		return m, nil
 	}
 	m.execView.LoadingOlder = false
-	pane := make([]logpane.Line, len(msg.Lines))
-	for i, l := range msg.Lines {
-		pane[i] = logpane.Line{Stream: l.Stream, Text: l.Text}
+	m.execView.Pane.SetFirstAvailable(int(msg.FirstAvailable))
+	// On a rotated log the server clamps `from` up to FirstAvailable but keeps the
+	// requested limit, so the page can run past the lines already loaded. Keep only
+	// the lines below the loaded range, and anchor on the first one returned.
+	older := msg.Lines
+	for len(older) > 0 && older[len(older)-1].N >= int64(m.execView.Pane.FirstLoadedLineNum()) {
+		older = older[:len(older)-1]
 	}
-	m.execView.Pane.PrependLines(pane, int(msg.FirstLine))
+	if len(older) > 0 {
+		pane := make([]logpane.Line, len(older))
+		for i, l := range older {
+			pane[i] = logpane.Line{Stream: l.Stream, Text: l.Text}
+		}
+		m.execView.Pane.PrependLines(pane, int(older[0].N))
+	}
 	if msg.Total > 0 {
 		m.execView.Pane.SetTotalLines(int(msg.Total))
 	}
@@ -947,6 +964,12 @@ func (m Model) handleDaemonInfo(msg uikit.DaemonInfoMsg) (tea.Model, tea.Cmd) {
 		m.info.ConfigStale = msg.Info.ConfigStale
 		m.info.ConfigWarnings = msg.Info.ConfigWarnings
 		m.info.ServiceManaged = msg.Info.ServiceManaged
+		if msg.Info.ResolvedTimezone != m.info.Timezone {
+			m.info.Timezone = msg.Info.ResolvedTimezone
+			m.info.TimezoneSource = msg.Info.TimezoneSource
+			m.loc = uikit.ResolveLocation(m.info.Timezone)
+			m.execWindow.SetLocation(m.loc)
+		}
 		m.sidebar.SetUpdate(msg.Info.UpdateAvailable, msg.Info.LatestVersion)
 	}
 	return m, nil

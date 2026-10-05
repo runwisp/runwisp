@@ -466,10 +466,11 @@ func TestFetchAroundCmd_RunsRequest_ReturnsItemsAndTotal(t *testing.T) {
 	if fn == nil {
 		t.Fatal("expected non-nil closure")
 	}
-	items, offset, total, err := fn()
+	res, err := fn()
 	if err != nil {
 		t.Fatalf("FetchAroundCmd closure: %v", err)
 	}
+	items, offset, total := res.Items, res.Offset, res.Total
 	if total != 100 {
 		t.Fatalf("total = %d, want 100", total)
 	}
@@ -504,7 +505,7 @@ func TestFetchAroundCmd_AppliesFilterAndFixedSort(t *testing.T) {
 	if fn == nil {
 		t.Fatal("expected non-nil closure")
 	}
-	if _, _, _, err := fn(); err != nil {
+	if _, err := fn(); err != nil {
 		t.Fatalf("FetchAroundCmd closure: %v", err)
 	}
 
@@ -560,13 +561,41 @@ func TestFetchAroundCmd_ClientErrorResetsLoading(t *testing.T) {
 	if fn == nil {
 		t.Fatal("expected non-nil closure")
 	}
-	_, _, _, err := fn()
+	_, err := fn()
 	if err == nil {
 		t.Fatal("expected error from failing server")
 	}
 	// loading must have been reset so the next FetchAroundCmd returns non-nil.
 	if w.FetchAroundCmd(0, 10) == nil {
 		t.Fatal("expected non-nil closure after error reset loading")
+	}
+}
+
+// A page fetched under the old filter can land after the filter changed. It must
+// be reported stale (so the caller drops it) and must not block the new filter's
+// own fetch.
+func TestFetchAroundCmd_FilterChangeOrphansInFlightFetch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(server.RunsResponseBody{Items: []model.Run{{ID: "r-1"}}, Total: 1})
+	}))
+	defer srv.Close()
+
+	w := NewExecWindow(apiclient.New(srv.URL, ""))
+	stale, err := w.FetchAroundCmd(0, 10)()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !w.IsCurrent(stale.Gen) {
+		t.Fatal("a fetch is current until the filter changes")
+	}
+
+	w.CycleStatusFilter()
+
+	if w.IsCurrent(stale.Gen) {
+		t.Fatal("a fetch issued before a filter change must be stale")
+	}
+	if w.FetchAroundCmd(0, 10) == nil {
+		t.Fatal("the new filter must be able to fetch while an old page is outstanding")
 	}
 }
 

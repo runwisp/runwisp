@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -36,6 +38,8 @@ type TaskDetailDialog struct {
 	health   taskHealth
 	// paused reports that an operator paused the task's cron schedule.
 	paused bool
+	// loc is the zone the task's schedule is evaluated and shown in.
+	loc *time.Location
 }
 
 // NewTaskDetailDialog builds the inspector for a task. task may be nil when the
@@ -78,8 +82,11 @@ func (d *TaskDetailDialog) View(screenWidth, screenHeight int) string {
 	lines := []string{
 		modalEmptyLine(innerWidth),
 		modalSurfaceLine(d.taskName, innerWidth, uikit.ColorTextBright, true),
-		modalEmptyLine(innerWidth),
 	}
+	if desc := d.descriptionLines(innerWidth); len(desc) > 0 {
+		lines = append(lines, desc...)
+	}
+	lines = append(lines, modalEmptyLine(innerWidth))
 	lines = append(lines, d.definitionRows(row, innerWidth)...)
 	lines = append(lines,
 		modalEmptyLine(innerWidth),
@@ -94,6 +101,28 @@ func (d *TaskDetailDialog) View(screenWidth, screenHeight int) string {
 
 	box := renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorPrimary, lines)
 	return box.view
+}
+
+// maxDescriptionLines caps the wrapped description so a long one can't push the
+// health block off a short terminal.
+const maxDescriptionLines = 3
+
+// descriptionLines renders the task's description under its name, wrapped to the
+// modal width and clipped with an ellipsis past maxDescriptionLines.
+func (d *TaskDetailDialog) descriptionLines(innerWidth int) []string {
+	if d.task == nil || strings.TrimSpace(d.task.Description) == "" {
+		return nil
+	}
+	wrapped := strings.Split(ansi.Wrap(strings.TrimSpace(d.task.Description), innerWidth-4, ""), "\n")
+	if len(wrapped) > maxDescriptionLines {
+		wrapped = wrapped[:maxDescriptionLines]
+		wrapped[maxDescriptionLines-1] = uikit.TruncateToWidth(wrapped[maxDescriptionLines-1]+"…", innerWidth-4)
+	}
+	out := make([]string, len(wrapped))
+	for i, l := range wrapped {
+		out[i] = modalSurfaceLine(l, innerWidth, uikit.ColorTextMuted, false)
+	}
+	return out
 }
 
 // definitionRows renders the static task definition: kind, schedule, concurrency
@@ -165,7 +194,7 @@ func (d *TaskDetailDialog) kindRows(add func(label, value string)) {
 	if d.paused {
 		add("Next run", "paused")
 	} else {
-		add("Next run", home.NextCronRun(task.Cron))
+		add("Next run", home.NextCronRun(task.Cron, d.loc))
 	}
 	if task.MaxConcurrent > 0 {
 		add("Concurrency", fmt.Sprintf("max %d · %s", task.MaxConcurrent, overlapLabel(task.OnOverlap)))
@@ -212,7 +241,7 @@ func (d *TaskDetailDialog) healthRows(row func(label, value string, color color.
 		out = append(out, row("Success rate", rate, uikit.ColorText))
 	}
 	if s.LastFailure != nil {
-		out = append(out, row("Last failure", uikit.FormatTimeAgo(*s.LastFailure), uikit.ColorWarning))
+		out = append(out, row("Last failure", uikit.FormatTimeAgo(*s.LastFailure, d.loc), uikit.ColorWarning))
 	} else {
 		out = append(out, row("Last failure", "none", uikit.ColorSuccess))
 	}

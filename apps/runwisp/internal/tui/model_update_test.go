@@ -6,6 +6,7 @@ package tui
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -607,6 +608,47 @@ func TestHandleLogOlderLoaded_PrependsLinesAndUpdatesTotal(t *testing.T) {
 	}
 }
 
+// On a rotated log the server clamps `from` up to firstAvailable but keeps the
+// requested limit, so the page overlaps the lines already loaded. Only the lines
+// below the loaded range may be prepended, and once the oldest surviving line is
+// loaded the pane must stop asking for older ones.
+func TestHandleLogOlderLoaded_RotatedLogDoesNotDuplicateLines(t *testing.T) {
+	m := newTestModel(nil)
+	run := &model.Run{ID: "r-1", TaskName: "t1", Status: model.PhaseRunning}
+	ev := execlist.NewExecView(run)
+	m.execView = &ev
+	m.execView.LoadingOlder = true
+	for n := int64(300); n < 310; n++ {
+		m.execView.Pane.AppendLogLine(n, "stdout", fmt.Sprintf("l%d", n), 0)
+	}
+	m.execView.Pane.Scroll = 0
+
+	// Asked for [100,300); the server clamped to 250 and returned 100 lines.
+	page := make([]server.LogLineEntry, 0, 100)
+	for n := int64(250); n < 350; n++ {
+		page = append(page, server.LogLineEntry{N: n, Stream: "stdout", Text: fmt.Sprintf("l%d", n)})
+	}
+	updated, _ := m.handleLogOlderLoaded(uikit.LogOlderLoadedMsg{
+		RunID: "r-1", Lines: page, FirstLine: 250, Total: 350, FirstAvailable: 250,
+	})
+
+	pane := updated.(Model).execView.Pane
+	if pane.FirstLoadedLine != 250 {
+		t.Fatalf("FirstLoadedLine: want 250, got %d", pane.FirstLoadedLine)
+	}
+	if len(pane.Lines) != 60 {
+		t.Fatalf("buffer should hold lines 250..309 once (60), got %d", len(pane.Lines))
+	}
+	for i, l := range pane.Lines {
+		if want := fmt.Sprintf("l%d", 250+i); l.Text != want {
+			t.Fatalf("buffer[%d]: want %s, got %s (gutter would go non-monotonic)", i, want, l.Text)
+		}
+	}
+	if pane.NeedsOlder() {
+		t.Fatal("nothing older than the first available line exists; the pane must stop paging")
+	}
+}
+
 // ─── scheduleLogReconnect ────────────────────────────────────────────────────
 
 func TestScheduleLogReconnect_ProducesTickCmd(t *testing.T) {
@@ -725,6 +767,32 @@ func TestStartShutdownSpinner_KeepsExistingDialog(t *testing.T) {
 }
 
 // ─── handleLogTailLoaded ─────────────────────────────────────────────────────
+
+// A search hit carries the 0-based line index; the pane's gutter and
+// HighlightLine are 1-based. Selecting the hit on index 2 (text "l2") must
+// highlight the row the gutter numbers 3, not the one after it.
+func TestHandleLogTailLoaded_PendingHighlightLandsOnHitLine(t *testing.T) {
+	m := newTestModel(nil)
+	m.pendingHighlight = 3 // SelectMsg.Line for the hit on line index 2
+	m.pendingHighlightRun = "r-a"
+	run := &model.Run{ID: "r-a", TaskName: "t1", Status: model.PhaseEnded}
+	ev := execlist.NewExecView(run)
+	m.execView = &ev
+
+	updated, _ := m.handleLogTailLoaded(uikit.LogTailLoadedMsg{
+		RunID:     "r-a",
+		Lines:     []server.LogLineEntry{{N: 0, Text: "l0"}, {N: 1, Text: "l1"}, {N: 2, Text: "l2"}},
+		Finalized: true,
+	})
+	pane := updated.(Model).execView.Pane
+	if pane.HighlightLine == 0 {
+		t.Fatal("the highlight should apply once the hit's line is in the buffer")
+	}
+	idx := int(pane.HighlightLine) - pane.FirstLoadedLine - 1
+	if idx < 0 || idx >= len(pane.Lines) || pane.Lines[idx].Text != "l2" {
+		t.Fatalf("highlight on gutter line %d should be the hit line l2, lines=%+v", pane.HighlightLine, pane.Lines)
+	}
+}
 
 // TestHandleLogTailLoaded_PendingHighlightNotAppliedToDifferentRun mirrors
 // TestHandleLogLine_PendingHighlightNotAppliedToDifferentRun for the tail-load
@@ -1356,5 +1424,19 @@ func TestHandleOpenRun_OtherErrorFlashes(t *testing.T) {
 	newM, _ := m.handleOpenRun(uikit.OpenRunMsg{RunID: "r1", Err: errors.New("connection refused")})
 	if msg := newM.(Model).dialogs.flashMessage; !strings.HasPrefix(msg, "Couldn't open run") {
 		t.Fatalf("flash: got %q", msg)
+	}
+}
+
+func TestHandleExecWindowFetched_DropsPageFromOldFilter(t *testing.T) {
+	m := newTestModel(nil)
+	oldGen := uint64(0) // the window's generation before the filter change
+	m.execList.SetFilter("other-task")
+
+	items := []uikit.ExecListItem{{Run: model.Run{ID: "old-1", TaskName: "t1"}}}
+	updated, _ := m.handleExecWindowFetched(uikit.ExecWindowFetchedMsg{Items: items, Total: 99, Gen: oldGen})
+	got := updated.(Model)
+
+	if got.execWindow.TotalCount() != 0 {
+		t.Fatalf("a page from the previous filter must not inflate the count, got %d", got.execWindow.TotalCount())
 	}
 }

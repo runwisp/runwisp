@@ -63,13 +63,33 @@ func TestFormatDuration(t *testing.T) {
 func TestFormatTimeAgo(t *testing.T) {
 	now := time.Now()
 
-	assert.Equal(t, "just now", FormatTimeAgo(now))
-	assert.Contains(t, FormatTimeAgo(now.Add(-45*time.Second)), "s ago")
-	assert.Contains(t, FormatTimeAgo(now.Add(-30*time.Minute)), "m ago")
-	assert.Contains(t, FormatTimeAgo(now.Add(-3*time.Hour)), "h ago")
+	assert.Equal(t, "just now", FormatTimeAgo(now, nil))
+	assert.Contains(t, FormatTimeAgo(now.Add(-45*time.Second), nil), "s ago")
+	assert.Contains(t, FormatTimeAgo(now.Add(-30*time.Minute), nil), "m ago")
+	assert.Contains(t, FormatTimeAgo(now.Add(-3*time.Hour), nil), "h ago")
 	// Older than 24h → formatted date
-	old := FormatTimeAgo(now.Add(-48 * time.Hour))
+	old := FormatTimeAgo(now.Add(-48*time.Hour), nil)
 	assert.False(t, strings.Contains(old, "ago"), "expected absolute date for 48h, got %q", old)
+}
+
+func TestFormatTimestamp_UsesGivenZone(t *testing.T) {
+	at := time.Date(2026, 10, 4, 1, 15, 0, 0, time.UTC)
+	cest := time.FixedZone("CEST", 2*3600)
+
+	assert.Equal(t, "2026-10-04 03:15:00", FormatTimestamp(at, cest))
+	assert.Equal(t, "2026-10-04 01:15:00", FormatTimestamp(at, time.UTC))
+}
+
+func TestFormatTimeAgo_AbsoluteInGivenZone(t *testing.T) {
+	cest := time.FixedZone("CEST", 2*3600)
+	at := time.Now().Add(-48 * time.Hour)
+	assert.Equal(t, at.In(cest).Format("Jan 02 15:04"), FormatTimeAgo(at, cest))
+}
+
+func TestResolveLocation(t *testing.T) {
+	assert.Equal(t, "Europe/Bratislava", ResolveLocation("Europe/Bratislava").String())
+	assert.Equal(t, time.Local, ResolveLocation(""))
+	assert.Equal(t, time.Local, ResolveLocation("Not/AZone"))
 }
 
 func TestStatusStyle(t *testing.T) {

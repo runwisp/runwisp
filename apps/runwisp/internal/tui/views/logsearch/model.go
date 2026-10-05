@@ -24,7 +24,8 @@ const (
 )
 
 // SelectMsg fires when the user presses Enter on a hit. The parent model
-// opens the run and asks the pane to highlight the line.
+// opens the run and asks the pane to highlight the line. Line is the 1-based
+// number the log gutter shows (hits carry the 0-based line index).
 type SelectMsg struct {
 	TaskName string
 	RunID    string
@@ -168,7 +169,7 @@ func (m Model) handleEnter() (Model, tea.Cmd) {
 	}
 	if h := m.SelectedHit(); h != nil {
 		return m, func() tea.Msg {
-			return SelectMsg{TaskName: m.taskName, RunID: h.RunID, Line: h.N}
+			return SelectMsg{TaskName: m.taskName, RunID: h.RunID, Line: h.N + 1}
 		}
 	}
 	return m, nil

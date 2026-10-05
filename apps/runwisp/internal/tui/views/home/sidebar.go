@@ -4,6 +4,7 @@
 package home
 
 import (
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -114,6 +115,11 @@ func buildItems(tasks []model.Task) []sidebarItem {
 				groups = append(groups, task.Group)
 			}
 		}
+		// Tasks arrive sorted by task name, so first-seen order would sort the
+		// groups by their alphabetically-first task rather than by group name.
+		slices.SortStableFunc(groups, func(a, b string) int {
+			return strings.Compare(strings.ToLower(a), strings.ToLower(b))
+		})
 		items = append(items, buildGroupItems(tasks, groups)...)
 	} else {
 		for _, task := range tasks {

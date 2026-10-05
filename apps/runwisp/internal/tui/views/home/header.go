@@ -229,7 +229,7 @@ func renderActionRow(b *strings.Builder, label string, labelColor color.Color, w
 // reports that an operator paused the task's cron schedule.
 // The runNowBtnY output is the screen-relative Y offset of the Run Now button row
 // within this header (0-based from header start).
-func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered, paused bool) (string, int) {
+func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered, paused bool, loc *time.Location) (string, int) {
 	var b strings.Builder
 	lineCount := 0
 
@@ -256,7 +256,7 @@ func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered, p
 	held := task != nil && task.HeldBy != model.HeldByNothing
 	schedInfo := "  Schedule: " + schedule
 	if !held && !paused && task != nil && !task.Kind.IsService() {
-		if nextRun := NextCronRun(schedule); nextRun != "" {
+		if nextRun := NextCronRun(schedule, loc); nextRun != "" {
 			schedInfo += "  •  Next: " + nextRun
 		}
 	}
@@ -310,7 +310,9 @@ func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered, p
 
 // NextCronRun parses a cron schedule expression and returns the next run time
 // formatted as "HH:MM:SS (in Xm)" or empty if the schedule is invalid/empty.
-func NextCronRun(schedule string) string {
+// The schedule is evaluated, and the time shown, in loc (the zone the daemon
+// runs the task in); nil means the process zone.
+func NextCronRun(schedule string, loc *time.Location) string {
 	if schedule == "" {
 		return ""
 	}
@@ -318,7 +320,10 @@ func NextCronRun(schedule string) string {
 	if err != nil {
 		return ""
 	}
-	next := sched.Next(time.Now())
+	if loc == nil {
+		loc = time.Local
+	}
+	next := sched.Next(time.Now().In(loc))
 	dur := time.Until(next)
 
 	var relative string
@@ -345,7 +350,7 @@ func NextCronRun(schedule string) string {
 		}
 	}
 
-	return next.Format("15:04:05") + " (in " + relative + ")"
+	return next.In(loc).Format("15:04:05") + " (in " + relative + ")"
 }
 
 // HeldTaskCount counts the tasks a live cron daemon still owns, which the

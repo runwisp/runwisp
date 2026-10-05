@@ -4,6 +4,8 @@
 package execlist
 
 import (
+	"time"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/runwisp/runwisp/internal/model"
@@ -94,6 +96,9 @@ type ExecView struct {
 	// InstanceCount is the task's currently configured instance count. When it
 	// exceeds 1 the header shows a 1-based #N instance suffix.
 	InstanceCount int
+	// Loc is the daemon's timezone for the header's timestamps; nil means the
+	// process zone.
+	Loc *time.Location
 }
 
 // execHeaderHeight is the number of header lines drawn above the log in normal mode.
@@ -377,7 +382,7 @@ func (v *ExecView) CopyValueFor(f HeaderFocusItem) string {
 	}
 	switch f {
 	case HeaderFocusStarted:
-		return v.Run.CreatedAt.Local().Format("2006-01-02 15:04:05")
+		return uikit.FormatTimestamp(v.Run.CreatedAt, v.Loc)
 	case HeaderFocusDuration:
 		return uikit.FormatDuration(*v.Run)
 	case HeaderFocusID:

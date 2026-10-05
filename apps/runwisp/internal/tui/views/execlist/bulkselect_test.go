@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -123,6 +125,21 @@ func TestClearSelection_Empties(t *testing.T) {
 	}
 	if _, ok := l.SelectionSelector(); ok {
 		t.Fatal("a cleared selection must not produce a selector")
+	}
+}
+
+// Cycling the status filter changes which rows are visible, so a selection made
+// under the old filter must not survive to a bulk stop/kill.
+func TestStatusFilterChange_ClearsSelection(t *testing.T) {
+	l := selectList("a", "b")
+	l.cursor = 0
+	l.ToggleSelectCursor()
+	l.SelectAllMatching()
+
+	l.Update(tea.KeyPressMsg{Code: 'f', Text: "f"})
+
+	if l.SelectionActive() {
+		t.Fatal("changing the status filter must clear the selection")
 	}
 }
 

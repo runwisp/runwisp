@@ -203,6 +203,29 @@ func TestHandleMouse_WheelUpPress(t *testing.T) {
 	}
 }
 
+// Scrolling to the top of the loaded log with the wheel must fetch older lines,
+// the same as the keyboard path.
+func TestHandleMouse_WheelUpToTopLoadsOlderLogs(t *testing.T) {
+	m := newTestModelWithClient(nil)
+	run := &model.Run{ID: "r-1", TaskName: "t1", Status: model.PhaseEnded}
+	ev := execlist.NewExecView(run)
+	m.execView = &ev
+	for n := int64(300); n < 310; n++ {
+		m.execView.Pane.AppendLogLine(n, "stdout", "line", 0)
+	}
+	m.execView.Pane.Follow = false
+	m.execView.Pane.Scroll = 2
+
+	newM, _ := m.handleMouse(tea.MouseWheelMsg{Button: tea.MouseWheelUp, X: 100, Y: 5})
+	got := newM.(Model)
+	if got.execView.Pane.Scroll != 0 {
+		t.Fatalf("wheel should have scrolled to the top, got Scroll=%d", got.execView.Pane.Scroll)
+	}
+	if !got.execView.LoadingOlder {
+		t.Fatal("reaching the top by wheel should start loading older lines")
+	}
+}
+
 // TestHandleMouse_WheelDownPress covers the wheel-down press path.
 func TestHandleMouse_WheelDownPress(t *testing.T) {
 	m := newTestModel(nil)

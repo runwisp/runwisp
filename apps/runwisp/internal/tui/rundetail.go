@@ -23,6 +23,9 @@ type RunDetailDialog struct {
 	run           *model.Run
 	isService     bool
 	instanceCount int
+	// loc is the daemon's timezone, so timestamps match what the scheduler uses
+	// even when the TUI runs in a different zone.
+	loc *time.Location
 }
 
 // NewRunDetailDialog builds the inspector for a run. run is never nil here — the
@@ -116,9 +119,9 @@ func (d *RunDetailDialog) facts(row func(label, value string, color color.Color)
 	if started == nil {
 		started = &run.CreatedAt
 	}
-	out = append(out, row("Started", formatRunTime(started), uikit.ColorText))
+	out = append(out, row("Started", d.formatRunTime(started), uikit.ColorText))
 	if run.EndedAt != nil {
-		out = append(out, row("Ended", formatRunTime(run.EndedAt), uikit.ColorText))
+		out = append(out, row("Ended", d.formatRunTime(run.EndedAt), uikit.ColorText))
 	}
 	out = append(out, row("Duration", uikit.FormatDuration(*run), uikit.ColorText))
 	if len(run.Params) > 0 {
@@ -154,10 +157,10 @@ func exitCodeColor(code int) color.Color {
 	return uikit.ColorError
 }
 
-// formatRunTime renders a run timestamp in local time, or an em dash when unset.
-func formatRunTime(t *time.Time) string {
+// formatRunTime renders a run timestamp in the daemon's zone, or an em dash when unset.
+func (d *RunDetailDialog) formatRunTime(t *time.Time) string {
 	if t == nil {
 		return "—"
 	}
-	return t.Local().Format("2006-01-02 15:04:05")
+	return uikit.FormatTimestamp(*t, d.loc)
 }

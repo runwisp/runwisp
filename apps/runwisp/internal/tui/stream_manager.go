@@ -46,14 +46,23 @@ type StreamManager struct {
 	lastEventID string
 
 	daemonLogCh <-chan string
+
+	// eventsRetryDelay is how long a failed events subscribe waits before the
+	// model retries it, so a daemon that is still booting isn't hammered.
+	eventsRetryDelay time.Duration
 }
+
+// defaultEventsRetryDelay paces re-subscribing to the run-events stream after a
+// failed connect.
+const defaultEventsRetryDelay = 2 * time.Second
 
 func NewStreamManager(client *apiclient.Client) StreamManager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return StreamManager{
-		streamCtx: ctx,
-		cancel:    cancel,
-		client:    client,
+		streamCtx:        ctx,
+		cancel:           cancel,
+		client:           client,
+		eventsRetryDelay: defaultEventsRetryDelay,
 	}
 }
 
@@ -65,6 +74,9 @@ func (sm *StreamManager) Shutdown() {
 // SubscribeEvents connects to the SSE run-events stream, resuming from
 // lastEventID (set via RecordEventID) so a reconnect after a daemon restart
 // or network blip replays whatever fired during the gap instead of losing it.
+// A failed connect (e.g. the daemon is still booting after a restart) comes back
+// as SSEDisconnectedMsg after a short delay, which makes the model subscribe
+// again; without it nothing would ever retry and the TUI would sit on stale data.
 func (sm *StreamManager) SubscribeEvents() tea.Cmd {
 	return func() tea.Msg {
 		if sm.client == nil {
@@ -72,7 +84,12 @@ func (sm *StreamManager) SubscribeEvents() tea.Cmd {
 		}
 		ch, err := sm.client.StreamRunEvents(sm.streamCtx, sm.lastEventID)
 		if err != nil {
-			return uikit.DebugLogMsg{Message: "Events stream failed: " + err.Error()}
+			select {
+			case <-sm.streamCtx.Done():
+				return nil
+			case <-time.After(sm.eventsRetryDelay):
+			}
+			return uikit.SSEDisconnectedMsg{Err: err}
 		}
 		return uikit.SSEConnectedMsg{Ch: ch}
 	}
@@ -182,10 +199,11 @@ func (sm *StreamManager) FetchOlderLogs(runID string, beforeLine, count int64) t
 			first = page.Lines[0].N
 		}
 		return uikit.LogOlderLoadedMsg{
-			RunID:     runID,
-			Lines:     page.Lines,
-			FirstLine: first,
-			Total:     page.TotalLines,
+			RunID:          runID,
+			Lines:          page.Lines,
+			FirstLine:      first,
+			Total:          page.TotalLines,
+			FirstAvailable: page.FirstAvailable,
 		}
 	}
 }
@@ -246,11 +264,11 @@ func (sm *StreamManager) FetchExecWindow(window *execlist.ExecWindow, scroll, vp
 		return nil
 	}
 	return func() tea.Msg {
-		items, offset, total, err := fn()
+		res, err := fn()
 		if err != nil {
 			return uikit.DebugLogMsg{Message: "Failed to load runs: " + err.Error()}
 		}
-		return uikit.ExecWindowFetchedMsg{Items: items, Offset: offset, Total: total}
+		return uikit.ExecWindowFetchedMsg{Items: res.Items, Offset: res.Offset, Total: res.Total, Gen: res.Gen}
 	}
 }
 

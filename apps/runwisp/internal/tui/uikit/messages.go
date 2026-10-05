@@ -153,14 +153,18 @@ type SSEEventMsg struct {
 	Event apiclient.RunStreamEvent
 }
 
-// SSEDisconnectedMsg signals the SSE stream dropped.
-type SSEDisconnectedMsg struct{}
+// SSEDisconnectedMsg signals the SSE stream dropped, or that (re)connecting it
+// failed (Err). Either way the model schedules another subscribe.
+type SSEDisconnectedMsg struct{ Err error }
 
 // ExecWindowFetchedMsg delivers results from an execution window fetch.
 type ExecWindowFetchedMsg struct {
 	Items  []ExecListItem
 	Offset int
 	Total  int
+	// Gen is the window generation the page was fetched under; a page from
+	// before a filter change is dropped (see ExecWindow.IsCurrent).
+	Gen uint64
 }
 
 // LogOlderLoadedMsg delivers the result of a scroll-up REST page fetch.
@@ -169,6 +173,9 @@ type LogOlderLoadedMsg struct {
 	Lines     []server.LogLineEntry
 	FirstLine int64
 	Total     int64
+	// FirstAvailable is the lowest line the server still holds (a rotated log
+	// has dropped everything below it).
+	FirstAvailable int64
 }
 
 // LogTailLoadedMsg delivers the initial tail page for a run's log, fetched in

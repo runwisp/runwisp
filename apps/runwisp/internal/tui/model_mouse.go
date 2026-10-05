@@ -97,7 +97,8 @@ func (m *Model) scrollWheelUp(x int) tea.Cmd {
 	if m.execView != nil {
 		m.execView.Pane.ScrollUp(3)
 		m.execView.HeaderFocus = execlist.HeaderFocusNone
-		return nil
+		// Reaching the top by wheel must page in older lines like the keys do.
+		return m.maybeLoadOlderLogs()
 	}
 	if m.sidebar.ActivePage() == uikit.PageInfo && x >= uikit.SidebarWidth {
 		m.infoView.ScrollUp(3)

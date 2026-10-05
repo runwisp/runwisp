@@ -30,6 +30,7 @@ var sparklineBlocks = []rune("▁▂▃▄▅▆▇█")
 // InfoView displays live system information, metrics, and configuration.
 type InfoView struct {
 	info   uikit.StartupInfo
+	loc    *time.Location // the daemon's timezone
 	width  int
 	height int
 	scroll int
@@ -44,7 +45,7 @@ type InfoView struct {
 }
 
 func NewInfoView(info uikit.StartupInfo) InfoView {
-	return InfoView{info: info}
+	return InfoView{info: info, loc: uikit.ResolveLocation(info.Timezone)}
 }
 
 // SetSize updates dimensions and resets scroll if needed.
@@ -309,7 +310,7 @@ func (v *InfoView) renderActivitySection(w int) []string {
 
 	if s.LastFailure != nil {
 		failLine := bgSpace(2) + uikit.InfoStatLabelStyle.Render("Last failure  ") +
-			lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextMuted).Render(s.LastFailure.Format(time.RFC3339))
+			lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextMuted).Render(s.LastFailure.In(v.loc).Format(time.RFC3339))
 		lines = append(lines, uikit.PadLine(failLine, w, uikit.ColorBg))
 	}
 

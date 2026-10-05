@@ -60,6 +60,10 @@ type Pane struct {
 	Height          int
 	HeaderH         int
 	FirstLoadedLine int
+	// FirstAvailable is the lowest line number the server still holds; rotation
+	// drops everything below it. NeedsOlder stops at it, since there is nothing
+	// older to page in.
+	FirstAvailable int
 	// HighlightLine is the absolute line number to render in the highlight
 	// style after a search-result jump. 0 disables highlighting.
 	HighlightLine int64
@@ -264,6 +268,7 @@ func (p *Pane) AppendLogLine(n int64, stream, text string, frameCount int) {
 // EvictBelow drops cached lines whose absolute index is < firstAvailable.
 // Used when the streamer reports a server-side rotation.
 func (p *Pane) EvictBelow(firstAvailable int) {
+	p.SetFirstAvailable(firstAvailable)
 	if firstAvailable <= p.FirstLoadedLine {
 		return
 	}
@@ -563,7 +568,13 @@ func (p *Pane) PrependLines(lines []Line, firstLine int) {
 // NeedsOlder reports whether the user has scrolled to the top of the loaded
 // buffer and there are older lines on the server that haven't been fetched.
 func (p *Pane) NeedsOlder() bool {
-	return p.Scroll == 0 && p.FirstLoadedLine > 0
+	return p.Scroll == 0 && p.FirstLoadedLine > p.FirstAvailable
+}
+
+// SetFirstAvailable records the lowest line the server still holds. It only
+// ever moves up: rotation never brings old lines back.
+func (p *Pane) SetFirstAvailable(n int) {
+	p.FirstAvailable = max(p.FirstAvailable, n)
 }
 
 // FirstLoadedLineNum returns the absolute line number of lines[0].

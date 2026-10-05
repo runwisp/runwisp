@@ -406,14 +406,15 @@ func handleKeyU(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 // health fetch). With nothing inspectable it falls through.
 func handleKeyI(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.execView != nil && m.execView.Run != nil {
-		m.dialogs.ShowRunDetail(m.execView.Run, m.execView.TaskIsService, m.execView.InstanceCount)
+		m.dialogs.ShowRunDetail(m.execView.Run, m.execView.TaskIsService, m.execView.InstanceCount, m.loc)
 		return m, nil, true
 	}
 	taskName := m.inspectTaskName()
 	if taskName == "" {
 		return m, nil, false
 	}
-	m.dialogs.ShowTaskDetail(taskName, m.taskDisplayByName(taskName), m.isPaused(taskName))
+	task := m.taskDisplayByName(taskName)
+	m.dialogs.ShowTaskDetail(taskName, task, m.isPaused(taskName), m.taskLoc(task))
 	return m, m.streams.FetchTaskSummary(taskName), true
 }
 
