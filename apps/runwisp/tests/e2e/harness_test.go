@@ -563,23 +563,24 @@ func (s *tuiSession) exited() bool {
 	}
 }
 
-func (s *tuiSession) quitAndShutdown(t testing.TB) {
+// quit presses q in a TUI attached to the suite's already-running daemon. The
+// TUI didn't start that daemon, so it must exit without a quit dialog and leave
+// the daemon running.
+func (s *tuiSuite) quit(t testing.TB) {
 	t.Helper()
 
-	if s.exited() {
+	if s.tui.exited() {
 		return
 	}
 
-	s.press(t, "q")
-	s.waitForAll(t, 5*time.Second, "Quit", "Keep Running", "Shut Down")
-	s.press(t, "n")
+	s.tui.press(t, "q")
 
 	select {
-	case <-s.waitDone:
-		return
+	case <-s.tui.waitDone:
 	case <-time.After(processExitTimeout):
-		require.FailNowf(t, "tui did not exit after quit", "raw output:\n%s", s.output.Tail(16_000))
+		require.FailNowf(t, "tui did not exit after q", "raw output:\n%s", s.tui.output.Tail(16_000))
 	}
+	require.False(t, s.daemon.exited(), "quitting an attached TUI must leave the daemon running")
 }
 
 func (s *tuiSession) forceStop() {

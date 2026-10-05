@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"runtime"
 	"strings"
 	"time"
 
@@ -118,6 +117,10 @@ type Model struct {
 	height   int
 	ready    bool
 	isRemote bool
+	// startedDaemon is true when this TUI started the daemon it is attached to
+	// (spawned it, or runs it in-process). Only then does quitting ask whether
+	// to keep the daemon running.
+	startedDaemon bool
 }
 
 // TUIConfig holds the dependencies needed to start the interactive TUI.
@@ -125,6 +128,7 @@ type TUIConfig struct {
 	Info             uikit.StartupInfo
 	Client           *apiclient.Client
 	IsRemote         bool                   // true when connecting to a remote daemon (no local debug writer)
+	StartedDaemon    bool                   // true when this TUI started the daemon (see Model.startedDaemon)
 	ShutdownFunc     func() error           // if set, called inside the TUI to shut down the daemon
 	LaunchTicketFunc func() (string, error) // generates a single-use launch ticket for browser auth
 }
@@ -154,6 +158,7 @@ func NewModel(cfg TUIConfig) Model {
 		mouse:            mouseState{homeHover: -1},
 		frame:            new(string),
 		isRemote:         cfg.IsRemote,
+		startedDaemon:    cfg.StartedDaemon,
 		shutdownFunc:     cfg.ShutdownFunc,
 		launchTicketFunc: cfg.LaunchTicketFunc,
 	}
@@ -433,25 +438,14 @@ func (m Model) ShutdownErr() error {
 	return m.shutdownErr
 }
 
-// showQuitConfirm displays the quit dialog with keep-daemon/shutdown options.
-// A service-managed daemon (systemd / launchd) gets no "Shut Down" option —
-// SIGTERM from the TUI would desync the manager — just a `runwisp stop` hint.
-func (m *Model) showQuitConfirm() {
-	if m.info.ServiceManaged {
-		dialog := NewChoiceDialog(
-			"Quit",
-			"The daemon keeps running in the background.",
-			"Quit TUI",
-			"Cancel",
-			func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitKeepDaemon} },
-			nil,
-		).WithNote(
-			"",
-			"Managed by "+serviceManagerLabel()+" — to stop it, run:",
-			"runwisp stop",
-		)
-		m.dialogs.ShowConfirm(dialog)
-		return
+// requestQuit handles a quit key. Attached to a daemon the TUI didn't start
+// (a service, `runwisp tui`, --url) it quits right away and the daemon keeps
+// running. Only when this TUI started the daemon does it ask whether to keep it
+// running in the background or shut it down. A daemon that has since come
+// under systemd / launchd is no longer the TUI's to stop, so it quits too.
+func (m *Model) requestQuit() tea.Cmd {
+	if !m.startedDaemon || m.info.ServiceManaged {
+		return func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitKeepDaemon} }
 	}
 
 	dialog := NewChoiceDialog(
@@ -463,8 +457,7 @@ func (m *Model) showQuitConfirm() {
 		func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitShutdownDaemon} },
 	)
 	// Hint about autostart only in a fresh local session (the operator
-	// started this daemon by running ./runwisp). A `runwisp tui` client
-	// connected to an already-running daemon doesn't need the nudge.
+	// started this daemon by running ./runwisp).
 	if !m.isRemote {
 		dialog = dialog.WithNote(
 			"",
@@ -473,20 +466,7 @@ func (m *Model) showQuitConfirm() {
 		)
 	}
 	m.dialogs.ShowConfirm(dialog)
-}
-
-// serviceManagerLabel names the init system for dialog copy. The TUI talks
-// to the daemon over its local Unix socket, so GOOS here matches the host
-// the daemon runs under.
-func serviceManagerLabel() string {
-	switch runtime.GOOS {
-	case "linux":
-		return "systemd"
-	case "darwin":
-		return "launchd"
-	default:
-		return "a service manager"
-	}
+	return nil
 }
 
 // resolveTaskName determines which task to act on based on current focus. An

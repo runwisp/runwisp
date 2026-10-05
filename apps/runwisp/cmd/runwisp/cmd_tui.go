@@ -56,7 +56,7 @@ func runTUIClient(ctx context.Context, f Flags) error {
 		return fmt.Errorf("cannot reach daemon at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
 	}
 
-	err := runTUIConnect(ctx, client, f)
+	err := runTUIConnect(ctx, client, f, false)
 	if err != nil && errors.Is(err, apiclient.ErrRateLimited) {
 		return authRateLimitedError(f.Port)
 	}

@@ -127,12 +127,12 @@ connection drops. The TUI reconnects by itself.
 
 ## Quitting
 
-Press <kbd>q</kbd>. The TUI asks whether to keep the daemon running in the
+Press <kbd>q</kbd>. If the TUI started the daemon (you ran `runwisp` and no
+daemon was running yet), it asks whether to keep the daemon running in the
 background or shut it down. <kbd>Esc</kbd> cancels.
 
 ![TUI quit confirmation dialog: modal asking "Keep the daemon running in the background?" with Keep Running and Shut Down buttons.](../../../assets/screenshots/tui-quit-confirmation.png)
 
-- **Shut Down** stops the local daemon, also under `runwisp tui`. Connected
-  with `--url`, it only closes the TUI.
-- A daemon run by systemd or launchd has no **Shut Down** option. Use
-  `runwisp stop`.
+If the daemon was already running (a systemd or launchd service, `runwisp tui`,
+or `--url`), <kbd>q</kbd> closes the TUI right away and the daemon keeps
+running. Use `runwisp stop` to stop it.

@@ -51,7 +51,7 @@ func runStationInteractive(ctx context.Context, f Flags) error {
 
 	// A station daemon is already running on this data dir — just attach.
 	if client.HealthCheck(ctx) == nil {
-		return runTUIConnect(ctx, client, f)
+		return runTUIConnect(ctx, client, f, false)
 	}
 
 	if err := spawnDaemonProcess(daemonSpawnArgs([]string{"station", "--no-tui"}, f), f.DataDir); err != nil {
@@ -63,7 +63,7 @@ func runStationInteractive(ctx context.Context, f Flags) error {
 	if err := waitForDaemon(client, logPath, 10*time.Second, f); err != nil {
 		return err
 	}
-	return runTUIConnect(ctx, client, f)
+	return runTUIConnect(ctx, client, f, true)
 }
 
 // resolveStationEnv loads the .env file (if present) and applies the --token /

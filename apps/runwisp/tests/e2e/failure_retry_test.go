@@ -54,5 +54,5 @@ func TestTUIShowsRetryForFailedRunsAndRetryStartsANewExecution(t *testing.T) {
 	)
 	require.NotContains(t, secondFailureScreen, "■ Stop (s)")
 
-	suite.tui.quitAndShutdown(t)
+	suite.quit(t)
 }

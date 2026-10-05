@@ -393,8 +393,8 @@ func (m Model) interceptParamFormDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) 
 	case tea.KeyPressMsg:
 		if msg.String() == keyCtrlC {
 			m.dialogs.DismissParamForm()
-			m.showQuitConfirm()
-			return m, nil, true
+			cmd := m.requestQuit()
+			return m, cmd, true
 		}
 		cmd, _ := m.dialogs.UpdateParamForm(msg)
 		return m, cmd, true
@@ -414,8 +414,8 @@ func (m Model) interceptRunParamsDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) 
 		if msg.String() == keyCtrlC {
 			m.dialogs.DismissRunParams()
 			cmd := m.dialogs.SyncMouseState()
-			m.showQuitConfirm()
-			return m, cmd, true
+			quitCmd := m.requestQuit()
+			return m, tea.Batch(cmd, quitCmd), true
 		}
 		if m.dialogs.UpdateRunParams(msg) {
 			return m, m.dialogs.SyncMouseState(), true
@@ -437,8 +437,8 @@ func (m Model) interceptCopyDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if msg.String() == keyCtrlC {
 			m.dialogs.DismissCopy()
 			cmd := m.dialogs.SyncMouseState()
-			m.showQuitConfirm()
-			return m, cmd, true
+			quitCmd := m.requestQuit()
+			return m, tea.Batch(cmd, quitCmd), true
 		}
 		if m.dialogs.UpdateCopy(msg) {
 			return m, m.dialogs.SyncMouseState(), true
@@ -461,8 +461,8 @@ func (m Model) interceptLogHistoryDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool)
 	case tea.KeyPressMsg:
 		if msg.String() == keyCtrlC {
 			m.dialogs.DismissLogHistory()
-			m.showQuitConfirm()
-			return m, nil, true
+			cmd := m.requestQuit()
+			return m, cmd, true
 		}
 		m.dialogs.UpdateLogHistory(msg)
 		return m, nil, true
@@ -482,8 +482,8 @@ func (m Model) interceptNewReleaseDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool)
 	case tea.KeyPressMsg:
 		if msg.String() == keyCtrlC {
 			m.dialogs.DismissNewRelease()
-			m.showQuitConfirm()
-			return m, nil, true
+			cmd := m.requestQuit()
+			return m, cmd, true
 		}
 		cmd, _ := m.dialogs.UpdateNewRelease(msg)
 		return m, cmd, true
@@ -502,8 +502,8 @@ func (m Model) interceptTaskDetailDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool)
 	case tea.KeyPressMsg:
 		if msg.String() == keyCtrlC {
 			m.dialogs.DismissTaskDetail()
-			m.showQuitConfirm()
-			return m, nil, true
+			cmd := m.requestQuit()
+			return m, cmd, true
 		}
 		m.dialogs.UpdateTaskDetail(msg)
 		return m, nil, true
@@ -529,8 +529,8 @@ func (m Model) interceptRunDetailDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) 
 	switch keyMsg.String() {
 	case keyCtrlC:
 		m.dialogs.DismissRunDetail()
-		m.showQuitConfirm()
-		return m, nil, true
+		cmd := m.requestQuit()
+		return m, cmd, true
 	case "enter":
 		if taskName, runID, hasParent := m.dialogs.RunDetailParent(); hasParent {
 			m.dialogs.DismissRunDetail()
@@ -551,8 +551,8 @@ func (m Model) interceptHelpDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case tea.KeyPressMsg:
 		if msg.String() == keyCtrlC {
 			m.dialogs.DismissHelp()
-			m.showQuitConfirm()
-			return m, nil, true
+			cmd := m.requestQuit()
+			return m, cmd, true
 		}
 		m.dialogs.UpdateHelp(msg)
 		return m, nil, true

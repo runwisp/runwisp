@@ -76,9 +76,19 @@ func TestCaptureTUIScreenshots(t *testing.T) {
 			s.press(t, "f")
 			s.waitForAll(t, 5*time.Second, "[reindex]")
 		}},
-		// Quit confirmation: the keep-running / shut-down dialog (do NOT confirm,
-		// so the daemon survives for any later shot).
-		{name: "quit-confirmation", capture: func(t *testing.T, s *tuiSession) {
+		// Quit confirmation: the keep-running / shut-down dialog. It only shows
+		// when the TUI started the daemon, so this shot boots its own seeded
+		// daemon through the root command instead of attaching to the shared one.
+		{name: "quit-confirmation", launch: func(t *testing.T) *tuiSession {
+			dir := testutil.ShortTempDir(t)
+			cfg := filepath.Join(dir, "runwisp.toml")
+			seedDemoConfig(t, projectDir, binaryPath, cfg, dir)
+			t.Cleanup(func() {
+				_, _ = runCLI(t, projectDir, binaryPath, "stop", "--data", dir, "--config", cfg)
+			})
+			return startLocalTUI(t, projectDir, binaryPath, cfg, dir, reserveTCPPort(t),
+				"TERM=xterm-256color", "COLORTERM=truecolor")
+		}, capture: func(t *testing.T, s *tuiSession) {
 			s.press(t, "q")
 			s.waitForAll(t, 5*time.Second, "Keep Running", "Shut Down")
 		}},
@@ -86,8 +96,13 @@ func TestCaptureTUIScreenshots(t *testing.T) {
 
 	for _, shot := range shots {
 		t.Run(shot.name, func(t *testing.T) {
-			s := startRemoteTUIEnv(t, projectDir, binaryPath, configPath, daemon,
-				"TERM=xterm-256color", "COLORTERM=truecolor")
+			var s *tuiSession
+			if shot.launch != nil {
+				s = shot.launch(t)
+			} else {
+				s = startRemoteTUIEnv(t, projectDir, binaryPath, configPath, daemon,
+					"TERM=xterm-256color", "COLORTERM=truecolor")
+			}
 			shot.capture(t, s)
 			// Let the final frame settle (animations, late SSE rows) before
 			// grabbing the cumulative stream.
@@ -105,7 +120,9 @@ func TestCaptureTUIScreenshots(t *testing.T) {
 }
 
 type tuiShot struct {
-	name    string
+	name string
+	// launch starts the shot's TUI; nil attaches `runwisp tui` to the shared daemon.
+	launch  func(t *testing.T) *tuiSession
 	capture func(t *testing.T, s *tuiSession)
 }
 

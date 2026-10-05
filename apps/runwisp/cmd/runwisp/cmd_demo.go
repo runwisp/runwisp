@@ -156,7 +156,7 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 		}
 		return nil
 	}
-	return runTUIConnect(cmd.Context(), client, f)
+	return runTUIConnect(cmd.Context(), client, f, true)
 }
 
 // reportDemoNoTUI leaves the background daemon running and prints its Web UI password to stdout.

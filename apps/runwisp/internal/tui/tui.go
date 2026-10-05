@@ -44,14 +44,17 @@ var (
 // If debugWriter is non-nil, it is wired to the program so that writes to it
 // appear in the TUI's debug view.
 // launchTicketFunc, when non-nil, enables one-click "Open Web UI" via launch tickets.
+// startedDaemon is true when the caller started the daemon, so quitting asks
+// whether to keep it running.
 // It blocks until the user quits. Returns the chosen uikit.QuitAction and any error.
-func StartTUI(info uikit.StartupInfo, client *apiclient.Client, debugWriter *DebugLogWriter, shutdownFunc func() error, launchTicketFunc func() (string, error)) (uikit.QuitAction, error) {
+func StartTUI(info uikit.StartupInfo, client *apiclient.Client, debugWriter *DebugLogWriter, shutdownFunc func() error, launchTicketFunc func() (string, error), startedDaemon bool) (uikit.QuitAction, error) {
 	m := NewModel(TUIConfig{
 		Info:             info,
 		Client:           client,
 		IsRemote:         debugWriter == nil,
 		ShutdownFunc:     shutdownFunc,
 		LaunchTicketFunc: launchTicketFunc,
+		StartedDaemon:    startedDaemon,
 	})
 
 	p := tea.NewProgram(m)
