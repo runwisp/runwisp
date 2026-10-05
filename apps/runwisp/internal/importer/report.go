@@ -6,12 +6,9 @@ package importer
 import "github.com/runwisp/runwisp/internal/model"
 
 // This file owns the *report*: one row per job the source described, whatever
-// became of it. It is deliberately separate from the emitted TOML (blocks), and
-// that separation is the point — when "row in the report" and "table in the
-// TOML" were the same object, a job that produced no TOML produced no row, so
-// the jobs most in need of the operator's attention were the ones that
-// disappeared. Directive #1 says nothing silently fails; the report is where an
-// import keeps that promise.
+// became of it. It is deliberately separate from the emitted TOML (blocks), so
+// a job that produced no TOML still gets a row: the jobs most in need of the
+// operator's attention are exactly the ones that would otherwise disappear.
 
 // NoteKind identifies what a note is about. Severity is a property of the kind
 // (see info), not of the call site, so "this program has no command" cannot be

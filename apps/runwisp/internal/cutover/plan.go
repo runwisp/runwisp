@@ -14,7 +14,7 @@ type StepKind int
 
 const (
 	// StepWriteConfig scaffolds a runwisp.toml that reads the crontabs found on
-	// this box. This is the step that used to be a refusal.
+	// this box.
 	StepWriteConfig StepKind = iota + 1
 	// StepWireIncludeCron surgically adds include_cron to a config that already
 	// exists and declares none, leaving every other byte of it alone.
@@ -25,7 +25,7 @@ const (
 	// rendered verbatim, so the text an operator approves is the argv that runs.
 	StepInstallService
 	// StepReloadRunningDaemon lifts the hold on a daemon that was already up
-	// before the cutover. Absent otherwise — the daemon systemd just started read
+	// before the cutover. Absent otherwise: the daemon systemd just started read
 	// its config after cron was masked, so it is holding nothing.
 	StepReloadRunningDaemon
 )
@@ -36,9 +36,8 @@ type Step struct {
 	// Detail is the operator-facing summary, rendered verbatim.
 	Detail string
 	// Satisfied means this box is already in the desired end state for this
-	// step. Rendered as done and skipped by Execute — which is what makes
-	// re-running `takeover` after cron came back unmasked repair just the cron
-	// half instead of reporting "already installed" and returning.
+	// step. Rendered as done and skipped by Execute, so re-running `takeover`
+	// after cron came back unmasked repairs just the cron half.
 	Satisfied bool
 	// Install carries autostart's plan on StepInstallService, zero otherwise.
 	Install autostart.Plan
@@ -61,11 +60,9 @@ const (
 // Blocker is a reason the cutover cannot proceed. Unlike a step, nothing RunWisp
 // runs will clear it.
 //
-// A value rather than a *userFacingError because there are three audiences:
+// A value rather than an error type because there are three audiences:
 // `takeover` renders one as a fatal error, the first run as prose it carries on
-// past, and a plan listing as a bullet. The old gate returned a CLI error type,
-// which is why the first-run path had to reach into its title and details and
-// re-print them itself.
+// past, and a plan listing as a bullet.
 type Blocker struct {
 	Kind BlockerKind
 	// Title is one line, lower case, no trailing period.

@@ -269,9 +269,9 @@ func (b *EventBridge) flushLogBatches() {
 	}
 }
 
-// sendLogBatch pushes one coalesced frame. Best-effort like the old per-line
-// path: a full outbound queue drops the batch rather than blocking the run —
-// the viewer backfills the gap via log:replayRequest. Never a stalled run.
+// sendLogBatch pushes one coalesced frame. Best-effort: a full outbound queue
+// drops the batch rather than blocking the run, and the viewer backfills the
+// gap via log:replayRequest.
 func (b *EventBridge) sendLogBatch(execID string, lines []protocol.LinesItem) {
 	_ = b.sendReady(NewLogLinesMessage(execID, lines))
 }

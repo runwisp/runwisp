@@ -15,10 +15,9 @@ import (
 // slogAccessLogger is chi's middleware.LogFormatter routed through slog so HTTP
 // access lines share format, level handling, and destination with the rest of
 // the daemon's logging. Quiet requests (status < 500) emit at DEBUG so a
-// default INFO daemon stays silent under normal traffic — /health self-polls,
-// dashboard 401 polls, and SSE keepalives no longer fight the banner for
-// attention. 5xx is promoted to WARN so real failures surface without an
-// operator having to lower the log level.
+// default INFO daemon stays silent under normal traffic (/health self-polls,
+// dashboard 401 polls, SSE keepalives). 5xx is promoted to WARN so real
+// failures surface without an operator having to lower the log level.
 type slogAccessLogger struct{}
 
 // NewLogEntry snapshots the request fields we want to log at request-entry

@@ -156,14 +156,14 @@ func TestMapNotFound_NilPassesThrough(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// ---- TriggerRun ----
+// ---- TriggerRunAndWait ----
 
 func TestTriggerRun_TaskNotFound(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
 	runner := new(mockTaskRunner)
 	svc := makeRunService(map[string]*model.Task{}, repo, runner)
 
-	_, err := svc.TriggerRun(context.Background(), "missing", nil, model.TriggeredByAPI)
+	_, err := svc.TriggerRunAndWait(context.Background(), "missing", nil, model.TriggeredByAPI, 0)
 	assert.ErrorIs(t, err, ErrTaskNotFound)
 }
 
@@ -175,7 +175,7 @@ func TestTriggerRun_ServiceTask_ReturnsServiceNotRunnable(t *testing.T) {
 	}
 	svc := makeRunService(tasks, repo, runner)
 
-	_, err := svc.TriggerRun(context.Background(), "svc", nil, model.TriggeredByAPI)
+	_, err := svc.TriggerRunAndWait(context.Background(), "svc", nil, model.TriggeredByAPI, 0)
 	assert.ErrorIs(t, err, ErrServiceNotRunnable)
 }
 
@@ -192,7 +192,7 @@ func TestTriggerRun_InvalidParamsRejected(t *testing.T) {
 
 	// Missing required param surfaces as ErrInvalidParams (→ 400) without
 	// ever reaching the task manager.
-	_, err := svc.TriggerRun(context.Background(), "t", nil, model.TriggeredByAPI)
+	_, err := svc.TriggerRunAndWait(context.Background(), "t", nil, model.TriggeredByAPI, 0)
 	assert.ErrorIs(t, err, ErrInvalidParams)
 	runner.AssertNotCalled(t, "TriggerRunWithOptions")
 }
@@ -206,7 +206,7 @@ func TestTriggerRun_UnknownParamKeyRejected(t *testing.T) {
 	svc := makeRunService(tasks, repo, runner)
 
 	ghost := "1"
-	_, err := svc.TriggerRun(context.Background(), "t", map[string]*string{"ghost": &ghost}, model.TriggeredByAPI)
+	_, err := svc.TriggerRunAndWait(context.Background(), "t", map[string]*string{"ghost": &ghost}, model.TriggeredByAPI, 0)
 	assert.ErrorIs(t, err, ErrInvalidParams)
 }
 
@@ -218,7 +218,7 @@ func TestTriggerRun_ManualTriggerDisabled(t *testing.T) {
 	}
 	svc := makeRunService(tasks, repo, runner)
 
-	_, err := svc.TriggerRun(context.Background(), "t", nil, model.TriggeredByAPI)
+	_, err := svc.TriggerRunAndWait(context.Background(), "t", nil, model.TriggeredByAPI, 0)
 	assert.ErrorIs(t, err, ErrManualTriggerDisabled)
 }
 
@@ -233,13 +233,11 @@ func TestTriggerRun_Success(t *testing.T) {
 	expected := &model.Run{ID: "run-1", TaskName: "t"}
 	runner.On("TriggerRunWithOptions", "t", runtime.TriggerRunOptions{TriggeredBy: model.TriggeredByAPI}).Return(expected, nil)
 
-	run, err := svc.TriggerRun(context.Background(), "t", nil, model.TriggeredByAPI)
+	run, err := svc.TriggerRunAndWait(context.Background(), "t", nil, model.TriggeredByAPI, 0)
 	require.NoError(t, err)
 	assert.Equal(t, expected, run)
 	runner.AssertExpectations(t)
 }
-
-// ---- TriggerRunAndWait ----
 
 func TestTriggerRunAndWait_ReturnsTerminalRunFromEvent(t *testing.T) {
 	repo := new(testutil.MockRunRepository)
@@ -350,7 +348,7 @@ func TestTriggerRun_RunnerError(t *testing.T) {
 	runnerErr := errors.New("runner failed")
 	runner.On("TriggerRunWithOptions", "t", runtime.TriggerRunOptions{TriggeredBy: model.TriggeredByAPI}).Return(nil, runnerErr)
 
-	_, err := svc.TriggerRun(context.Background(), "t", nil, model.TriggeredByAPI)
+	_, err := svc.TriggerRunAndWait(context.Background(), "t", nil, model.TriggeredByAPI, 0)
 	assert.ErrorIs(t, err, runnerErr)
 	runner.AssertExpectations(t)
 }

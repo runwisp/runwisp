@@ -17,11 +17,10 @@ import (
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
-// TestStatusFilterBucketsMirrorWebUI is the regression test for Bug 2: cycling
-// the TUI's `f` filter to "failed" must send the same multi-status set the web
-// UI uses, not the literal token "failed". Before the fix the server saw only
-// Status="failed", silently dropping crashed/timeout/log_overflow/start_failed/
-// missed runs from the "Failed" view — disagreeing with the TUI's own tally.
+// TestStatusFilterBucketsMirrorWebUI: cycling the TUI's `f` filter to "failed"
+// must send the same multi-status set the web UI uses, not the literal token
+// "failed", so crashed/timeout/log_overflow/start_failed/missed runs stay in the
+// "Failed" view.
 func TestStatusFilterBucketsMirrorWebUI(t *testing.T) {
 	cases := map[string][]string{
 		"running": {"pending", "running"},

@@ -160,7 +160,7 @@ func (sm *StreamManager) FetchLogTail(run *model.Run, tail int64) tea.Cmd {
 		page, err := client.GetLogPage(ctx, runID, -tail, tail)
 		if err != nil {
 			// Degrade gracefully: an empty tail makes the handler open the live
-			// stream at the tail anchor, i.e. the old line-by-line backfill.
+			// stream at the tail anchor and backfill line by line.
 			return uikit.LogTailLoadedMsg{RunID: runID}
 		}
 		return uikit.LogTailLoadedMsg{
@@ -287,7 +287,7 @@ func (sm *StreamManager) FetchSystemStats() tea.Cmd {
 
 // FetchDaemonInfo returns a command that re-reads /api/daemon. The daemon
 // recomputes config_stale per request, so polling this keeps the
-// "restart to apply" notice live.
+// "press R to reload" notice live.
 func (sm *StreamManager) FetchDaemonInfo() tea.Cmd {
 	if sm.client == nil {
 		return nil

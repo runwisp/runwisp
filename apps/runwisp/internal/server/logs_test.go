@@ -227,14 +227,10 @@ func TestHumaGetLogRaw_MissingBothFilesIsEmpty(t *testing.T) {
 	assert.Empty(t, w.Body.String())
 }
 
-// TestHumaGetLogRaw_StreamsFullContent guards against the raw log endpoint
-// silently regressing to unbounded memory use: unlike the JSON page
-// (LogPageMaxLimit), the SSE replay (LogStreamReplayMax), or search
+// TestHumaGetLogRaw_StreamsFullContent: unlike the JSON page
+// (LogPageMaxLimit), the SSE replay (replayLimit), or search
 // (LogSearchMaxLimit), /log/raw has no size cap and must return the entire
-// file untruncated no matter how large it is. The handler now streams the
-// file straight to the response writer via io.Copy instead of buffering it
-// into a single []byte first (see streamRawLog), so this only asserts the
-// externally observable behavior is unchanged: full, untruncated content.
+// file untruncated no matter how large it is (see streamRawLog).
 func TestHumaGetLogRaw_StreamsFullContent(t *testing.T) {
 	srv, db, _ := logsTestServer(t)
 	run := seedTerminalRun(t, db, "task")

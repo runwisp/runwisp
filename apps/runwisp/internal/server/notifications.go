@@ -255,9 +255,7 @@ func (srv *Server) publishUnreadCountChanged(count int64) {
 }
 
 // notifyUpdateToPayload re-shapes a Hub Update into the JSON DTO clients
-// consume. Shared by the unified /api/events/stream (pumpAppStream in
-// runs.go) — the only stream Hub updates ride now that the dedicated
-// /api/notifications/stream has been retired.
+// consume on the unified /api/events/stream (pumpAppStream in runs.go).
 func notifyUpdateToPayload(u inapp.Update) any {
 	switch u.Type {
 	case inapp.UpdateTypeCreated:

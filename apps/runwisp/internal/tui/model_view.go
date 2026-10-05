@@ -29,7 +29,7 @@ func (m Model) View() tea.View {
 	}
 
 	// During a coalesced mouse-motion/wheel burst, reuse the last full frame
-	// instead of rebuilding the whole screen for every event (bug 2).
+	// instead of rebuilding the whole screen for every event.
 	if m.coalesce && m.frame != nil && *m.frame != "" {
 		v.SetContent(*m.frame)
 		return v

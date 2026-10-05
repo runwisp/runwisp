@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/metrics` follows `runwisp reload`, and answers `500` when the run totals can't be read instead of reporting zeros.
 - A log or event stream past the connection limit now gets `503`, and a log stream for an unknown run gets `404`.
 - Unknown `/api/` paths now return a JSON `404` instead of the web UI page.
+- When `runwisp.toml` has unapplied edits, `runwisp status` now points at `runwisp reload` instead of `runwisp restart`.
 
 ### Security
 

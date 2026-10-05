@@ -120,10 +120,9 @@ func TestRunValidate_MissingFileReturnsUserFacingError(t *testing.T) {
 	assert.Contains(t, ufe.title, "is not valid")
 }
 
-// Regression (Bug F): validate --json must report every configuration problem,
-// not just the first. A config with two unknown keys must yield two errors[]
-// entries, each with its own source location — before the fix the strict-decode
-// error collapsed to the first key alone.
+// validate --json must report every configuration problem, not just the first.
+// A config with two unknown keys must yield two errors[] entries, each with its
+// own source location.
 func TestRunValidate_JSONReportsEveryUnknownKey(t *testing.T) {
 	t.Parallel()
 	f := writeValidateConfig(t, `

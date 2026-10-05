@@ -165,10 +165,9 @@ func TestTotalCount_EmptyList(t *testing.T) {
 }
 
 func TestTaskColWidthFor_WideAbsorbsSurplus(t *testing.T) {
-	l := buildList(1)
 	// At width 100 the fixed columns sit at their caps and TASK takes the
 	// rest, so it should be far wider than any single fixed column.
-	got := l.taskColWidthFor(100)
+	got := computeColWidths(100).task
 	if got <= statusColCap {
 		t.Fatalf("expected TASK to absorb the surplus at width 100, got %d", got)
 	}
@@ -445,15 +444,6 @@ func TestUpdate_EmptyList_NoChange(t *testing.T) {
 	l.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	if l.Cursor() != 0 {
 		t.Fatalf("expected cursor=0 for empty list, got %d", l.Cursor())
-	}
-}
-
-func TestTaskColWidth_UsesSelfWidth(t *testing.T) {
-	l := buildList(1)
-	l.width = 100
-	got := l.taskColWidth()
-	if want := computeColWidths(100).task; got != want {
-		t.Fatalf("expected taskColWidth()=%d for width=100, got %d", want, got)
 	}
 }
 

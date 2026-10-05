@@ -137,8 +137,8 @@ func TestImportDryRunFailsOnAnUnparseableRoot(t *testing.T) {
 	assert.Equal(t, before, testutil.SnapshotTree(t, dir))
 }
 
-// TestImportDryRunStillReportsABrokenJob is directive #1 under the flag: a dry
-// run that hides the thing needing a fix is worse than no dry run, because the
+// TestImportDryRunStillReportsABrokenJob: a dry run that hides the thing
+// needing a fix is worse than no dry run, because the
 // operator drops the flag believing it's clean.
 func TestImportDryRunStillReportsABrokenJob(t *testing.T) {
 	dir := t.TempDir()

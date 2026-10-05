@@ -51,7 +51,7 @@ func runStatus(ctx context.Context, out io.Writer, f Flags, asJSON bool) error {
 				return werr
 			}
 		}
-		return fmt.Errorf("daemon is not reachable at %s (%w) — %s", localAPISocketPath(f), err, daemonNotRunningHint)
+		return localUnreachableError(f, err)
 	}
 
 	if asJSON {
@@ -70,7 +70,7 @@ func runStatus(ctx context.Context, out io.Writer, f Flags, asJSON bool) error {
 	}
 
 	if infoErr == nil && info.ConfigStale {
-		fmt.Fprintln(out, "\n⚠ runwisp.toml has changed since the daemon started — run 'runwisp restart' to apply")
+		fmt.Fprintln(out, "\n⚠ runwisp.toml has changed since it was loaded, run 'runwisp reload' to apply")
 	}
 	// Findings the daemon printed at boot, re-derived from the live config so a
 	// reload's are shown instead. Chiefly crontab jobs include_cron couldn't

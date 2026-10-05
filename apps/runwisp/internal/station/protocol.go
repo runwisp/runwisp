@@ -8,7 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/generated/protocol"
@@ -207,17 +208,6 @@ func serviceInstanceStateEnum(state string) protocol.ServiceInstanceState {
 	return protocol.ServiceInstanceStateRunning
 }
 
-func streamEnumFromString(stream string) protocol.Stream {
-	switch stream {
-	case "stderr":
-		return protocol.StreamStderr
-	case "system":
-		return protocol.StreamSystem
-	default:
-		return protocol.StreamStdout
-	}
-}
-
 func linesItemStreamFromString(stream string) protocol.LinesItemStream {
 	switch stream {
 	case "stderr":
@@ -271,11 +261,7 @@ var inboundDecoders = map[string]func([]byte) (any, error){
 // Deriving it from inboundDecoders (rather than a hand-kept list) guarantees the
 // advertisement can never drift from what handleInboundPayload actually handles.
 func supportedInboundTypes() []string {
-	types := make([]string, 0, len(inboundDecoders))
-	for messageType := range inboundDecoders {
-		types = append(types, messageType)
-	}
-	sort.Strings(types)
+	types := slices.Sorted(maps.Keys(inboundDecoders))
 	return types
 }
 

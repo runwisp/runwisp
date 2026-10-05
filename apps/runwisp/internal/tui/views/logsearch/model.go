@@ -76,9 +76,9 @@ func New(client *apiclient.Client, taskName string) Model {
 // TaskName returns the task the overlay is scoped to.
 func (m *Model) TaskName() string { return m.taskName }
 
-// Cursor returns the currently selected hit index, or -1 if there are no
-// hits.
-func (m *Model) Cursor() int {
+// selectedIndex returns the currently selected hit index, or -1 if there are
+// no hits.
+func (m *Model) selectedIndex() int {
 	if len(m.hits) == 0 {
 		return -1
 	}

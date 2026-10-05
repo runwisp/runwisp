@@ -24,9 +24,8 @@ const (
 // starts from fang's default scheme — which already resolves neutral
 // Base/Description/Codeblock colors for both light and dark terminals — and
 // overrides only the accents: titles and command names in brand blue, the
-// program name and flags in brand green. ErrorHeader is intentionally left as
-// fang's default: fang no longer renders errors (handleCLIError owns that), so
-// it would never be seen.
+// program name and flags in brand green. ErrorHeader is left as fang's
+// default: handleCLIError renders errors, not fang, so it would never be seen.
 func brandColorScheme(c lipglossv2.LightDarkFunc) fang.ColorScheme {
 	cs := fang.DefaultColorScheme(c)
 	cs.Title = lipglossv2.Color(brandPrimaryHex)

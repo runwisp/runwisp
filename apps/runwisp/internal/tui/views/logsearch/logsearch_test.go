@@ -26,8 +26,8 @@ func TestNew_InitializesFields(t *testing.T) {
 	if m.hits != nil {
 		t.Fatalf("Hits should be nil initially, got %#v", m.hits)
 	}
-	if m.Cursor() != -1 {
-		t.Fatalf("Cursor should be -1 when no hits, got %d", m.Cursor())
+	if m.selectedIndex() != -1 {
+		t.Fatalf("Cursor should be -1 when no hits, got %d", m.selectedIndex())
 	}
 	if m.SelectedHit() != nil {
 		t.Fatalf("SelectedHit should be nil initially")
@@ -80,26 +80,26 @@ func TestUpdate_CursorMovement(t *testing.T) {
 	// Use the "j"/"k" runes. Note: the Update switch on tea.KeyMsg.String()
 	// translates KeyRunes("j") to "j".
 	m2, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
-	if m2.Cursor() != 1 {
-		t.Fatalf("Cursor after j: got %d want 1", m2.Cursor())
+	if m2.selectedIndex() != 1 {
+		t.Fatalf("Cursor after j: got %d want 1", m2.selectedIndex())
 	}
 	m3, _ := m2.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
-	if m3.Cursor() != 2 {
-		t.Fatalf("Cursor after second j: got %d want 2", m3.Cursor())
+	if m3.selectedIndex() != 2 {
+		t.Fatalf("Cursor after second j: got %d want 2", m3.selectedIndex())
 	}
 	// At end — should clamp.
 	m4, _ := m3.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
-	if m4.Cursor() != 2 {
-		t.Fatalf("Cursor clamp at end: got %d want 2", m4.Cursor())
+	if m4.selectedIndex() != 2 {
+		t.Fatalf("Cursor clamp at end: got %d want 2", m4.selectedIndex())
 	}
 	m5, _ := m4.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
-	if m5.Cursor() != 1 {
-		t.Fatalf("Cursor after k: got %d want 1", m5.Cursor())
+	if m5.selectedIndex() != 1 {
+		t.Fatalf("Cursor after k: got %d want 1", m5.selectedIndex())
 	}
 	m6, _ := m5.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
 	m7, _ := m6.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
-	if m7.Cursor() != 0 {
-		t.Fatalf("Cursor clamp at start: got %d want 0", m7.Cursor())
+	if m7.selectedIndex() != 0 {
+		t.Fatalf("Cursor clamp at start: got %d want 0", m7.selectedIndex())
 	}
 }
 
@@ -110,12 +110,12 @@ func TestUpdate_ArrowKeys_AlsoMoveCursor(t *testing.T) {
 		{RunID: "r2", N: 2, Text: "two"},
 	}
 	m2, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
-	if m2.Cursor() != 1 {
-		t.Fatalf("Cursor after down: got %d want 1", m2.Cursor())
+	if m2.selectedIndex() != 1 {
+		t.Fatalf("Cursor after down: got %d want 1", m2.selectedIndex())
 	}
 	m3, _ := m2.Update(tea.KeyPressMsg{Code: tea.KeyUp})
-	if m3.Cursor() != 0 {
-		t.Fatalf("Cursor after up: got %d want 0", m3.Cursor())
+	if m3.selectedIndex() != 0 {
+		t.Fatalf("Cursor after up: got %d want 0", m3.selectedIndex())
 	}
 }
 
@@ -138,8 +138,8 @@ func TestUpdate_EnterOnHitEmitsSelectMsg(t *testing.T) {
 	if sel.TaskName != "task1" || sel.RunID != "rA" || sel.Line != 43 {
 		t.Fatalf("SelectMsg fields wrong: %+v", sel)
 	}
-	if m2.Cursor() != 0 {
-		t.Fatalf("Cursor should still be 0, got %d", m2.Cursor())
+	if m2.selectedIndex() != 0 {
+		t.Fatalf("Cursor should still be 0, got %d", m2.selectedIndex())
 	}
 }
 
@@ -192,8 +192,8 @@ func TestUpdate_ResultsMsg_Success(t *testing.T) {
 	if m2.errMsg != "" {
 		t.Fatalf("expected error cleared, got %q", m2.errMsg)
 	}
-	if len(m2.hits) != 1 || m2.Cursor() != 0 {
-		t.Fatalf("hits/cursor wrong: hits=%d cursor=%d", len(m2.hits), m2.Cursor())
+	if len(m2.hits) != 1 || m2.selectedIndex() != 0 {
+		t.Fatalf("hits/cursor wrong: hits=%d cursor=%d", len(m2.hits), m2.selectedIndex())
 	}
 }
 

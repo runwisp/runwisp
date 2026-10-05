@@ -78,10 +78,8 @@ func Probe() State {
 // the same double-fire risk with no process to see today.
 //
 // Both units and both questions go in one exec each rather than one exec per
-// pair. systemctl prints one state per line in the order it was asked, so the
-// output is just as informative — and this runs on a timer now, not only at
-// boot, where six short-lived processes a minute is not the "predictable
-// resource use" the daemon promises.
+// pair: systemctl prints one state per line in the order it was asked, and this
+// runs on a timer, where six short-lived processes a minute would be wasteful.
 //
 // The binary existing is not enough: WSL and most container images ship
 // systemctl without systemd running, and there it answers "inactive"/"offline"

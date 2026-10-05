@@ -97,14 +97,13 @@ func ScopeCandidates(deps Deps) (systemPath, userPath string) {
 }
 
 // systemctlInvocation is the one place that decides how a systemctl call is
-// scoped and privileged, replacing what used to be five hand-copied
-// sudo-vs-`--user` branches (install, uninstall, stop/restart, and each of
-// Status's four probes) that had already drifted out of sync with each
-// other. Element 0 of the result is the program to run.
+// scoped and privileged (sudo vs `--user`) for install, uninstall,
+// stop/restart, and Status's probes. Element 0 of the result is the program to
+// run.
 //
 // euid is a parameter rather than an inline os.Geteuid() call so a test can
-// describe a root-image machine — where "sudo" may not even be
-// installed — without the test process actually running as root.
+// describe a root-image machine (where "sudo" may not even be installed)
+// without the test process actually running as root.
 func systemctlInvocation(systemWide bool, euid int, args ...string) []string {
 	if !systemWide {
 		return append([]string{"systemctl", systemctlUserFlag}, args...)

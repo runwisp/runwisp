@@ -95,7 +95,7 @@ var cronInterpreters = map[string]bool{
 // location, whose lines carry a user column between the schedule and the command.
 //
 // It lives here rather than in a caller because it is a fact about the crontab
-// format, and two callers now need the same answer: `runwisp import cron`
+// format, and two callers need the same answer: `runwisp import cron`
 // choosing a default for one file, and the `[daemon] include_cron` loader
 // choosing per file for a whole glob. Two copies of this would be two answers.
 func IsSystemCrontabPath(path string) bool {
@@ -484,11 +484,9 @@ type cronJobLine struct {
 // run-on-start and @annually/@midnight normalize to their canonical names) and
 // the classic five-field schedule.
 //
-// In system mode it peels the user column off *both* forms — Vixie cron allows
-// `@reboot root /usr/bin/foo` in /etc/crontab and /etc/cron.d. Returning the
-// user from here is the point: it used to be recovered by a second,
-// differently-shaped split of the same line, which dropped it on a short
-// @reboot line and handed a command argument to `user =` on a long one.
+// In system mode it peels the user column off *both* forms: Vixie cron allows
+// `@reboot root /usr/bin/foo` in /etc/crontab and /etc/cron.d. The user comes
+// from this one split so a short @reboot line and a long one agree on it.
 func splitCronJobLine(line string, system bool) (cronJobLine, bool) {
 	if strings.HasPrefix(line, "@") {
 		return splitCronDescriptorLine(line, system)
@@ -573,24 +571,19 @@ func (cp *crontabParser) applyCommand(b *block, ref itemRef, cc cronCommand) {
 // noteSuspectUserColumn reports whether a system crontab line's sixth field is
 // too unlike a username to be treated as one, adding the row that says so.
 //
-// A /etc/cron.d line written without its user column — common enough that
-// Debian ships a warning about it — reads as `0 3 * * * /usr/bin/foo bar`, and a
-// six-field split hands `/usr/bin/foo` to `user =` and `bar` to `run =`.
-// model.ParseRunUserSpec accepts any string and config.Load passes, so the row
-// used to read clean and the job failed at run time as
-// `unknown user "/usr/bin/foo"` — once per firing, forever.
+// A /etc/cron.d line written without its user column reads as
+// `0 3 * * * /usr/bin/foo bar`, and a six-field split hands `/usr/bin/foo` to
+// `user =` and `bar` to `run =`. config.Load accepts that, so the job would
+// fail at run time as `unknown user "/usr/bin/foo"` on every firing.
 //
-// Nothing is emitted for such a line, the same treatment an unreadable line
-// gets: both halves of the split are wrong, so importing the truncated command
-// under a made-up identity would run something the crontab never asked for.
-// Skipping the entry and saying so loudly is also what crond itself does with a
-// malformed line, which keeps the rest of the file importable.
+// Nothing is emitted for such a line: both halves of the split are wrong, and
+// crond itself skips a malformed line, which keeps the rest of the file
+// importable.
 //
-// The shape sniff is only half the test, and on its own it is the weaker half:
-// `* * * * * echo "ticked"` in /etc/cron.d reads as user `echo` running `"ticked"`,
-// and `echo` is a flawless login name by shape. When the caller can look accounts
-// up (CronOptions.UserExists), the field also has to *be* an account — which is
-// exactly the rule crond applies before it declines the line.
+// The shape sniff alone misses `* * * * * echo "ticked"` (user `echo` is a
+// valid login name by shape). When the caller can look accounts up
+// (CronOptions.UserExists), the field also has to be an account, which is the
+// rule crond applies before it declines the line.
 func (cp *crontabParser) noteSuspectUserColumn(line, user string) bool {
 	if user == "" {
 		return false
@@ -621,13 +614,10 @@ func (cp *crontabParser) noteSuspectUserColumn(line, user string) bool {
 // entirely — the kind of difference that shows up as an empty output file
 // rather than an error.
 //
-// `~` says it for both crontab formats, because `~` is resolved against whoever
-// the task runs as: the daemon's own account for a per-user crontab that emits no
-// `user`, and the user column's account for a system crontab. The system case
-// used to be left unset with a note, because working_dir was resolved once at
-// config load against the daemon's home; the executor now resolves a `~` from the
-// credential it looked up for that task, so the rule holds either way without the
-// importer having to know who anyone is.
+// `~` says it for both crontab formats, because the executor resolves `~`
+// against whoever the task runs as: the daemon's own account for a per-user
+// crontab that emits no `user`, and the user column's account for a system
+// crontab.
 func (cp *crontabParser) applyWorkingDir(b *block) {
 	b.set("working_dir", tomlString("~"))
 }
@@ -648,22 +638,15 @@ func (cp *crontabParser) applyOwner(j cronJobLine) string {
 // not crond's. Both are about *when* a job runs, which is the one thing a
 // migration must not change quietly.
 //
-// catch_up: crond has no concept of a missed tick. A tick that arrives while
-// nothing is listening is simply gone. RunWisp defaults to 1 (re-run the most
-// recent missed tick), so a daemon started at 15:00 re-fires the 02:00 backup —
-// an extra run that looks entirely legitimate in the history and is impossible to
-// distinguish from a scheduled one. catch_up = 0 restores crond's rule and costs
-// nothing in visibility: the missed row is recorded either way (catch-up
-// detection is cap-independent — see runtime.computeCatchupTriggers), so RunWisp
-// still shows the gap crond dropped in silence.
+// catch_up: crond has no concept of a missed tick. RunWisp defaults to 1, so a
+// daemon started at 15:00 would re-fire the 02:00 backup. catch_up = 0 restores
+// crond's rule; the missed row is still recorded (see
+// runtime.computeCatchupTriggers).
 //
-// on_overlap: this one is emitted at its default value on purpose. crond runs
-// overlapping copies of a job that outlives its own interval; RunWisp queues
-// them. Queueing is the better behaviour — an unbounded pile-up is the reason
-// cron jobs get wrapped in flock — so we keep it rather than reproducing the
-// footgun, but an operator whose job relied on parallel firing has to be able to
-// find the knob. A key they can see and change beats a default they'd have to
-// know to go looking for.
+// on_overlap: emitted at its default value on purpose. crond runs overlapping
+// copies of a job that outlives its interval; RunWisp queues them. We keep
+// queueing but write the key so an operator whose job relied on parallel
+// firing can see the knob.
 func (cp *crontabParser) applyFiringPolicies(b *block, scheduled bool) {
 	if scheduled {
 		// Gated on having a schedule: a @reboot job has no ticks to miss, and a key

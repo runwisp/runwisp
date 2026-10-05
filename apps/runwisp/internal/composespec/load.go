@@ -6,8 +6,9 @@ package composespec
 import (
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/cli"
@@ -58,11 +59,7 @@ func Load(file string, profiles, envFiles []string, workingDir string) (*Project
 		return nil, fmt.Errorf("load compose file %s: %w", file, err)
 	}
 
-	names := make([]string, 0, len(project.Services))
-	for name := range project.Services {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(project.Services))
 
 	services := make([]Service, 0, len(names))
 	for _, name := range names {

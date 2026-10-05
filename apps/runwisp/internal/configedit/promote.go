@@ -10,35 +10,24 @@ import (
 	"github.com/runwisp/runwisp/internal/config"
 )
 
-// Promotion is the second half of both migration stories. `import` stages jobs in
-// the machine-owned runwisp.d/imported.toml and `[daemon] include_cron` reads them
-// straight out of a crontab; promoting one puts its block in the operator's own
-// runwisp.toml, where they own it outright — no more provenance marker, no more
-// risk of a re-import touching it.
+// Promotion moves a staged task (from runwisp.d/imported.toml, or read live
+// via `[daemon] include_cron`) into the operator's own runwisp.toml. The bytes
+// that leave the staging file are the bytes that arrive in the root (see
+// block.go), so nothing the daemon runs changes and `promote` is safe against a
+// live daemon.
 //
-// It is a move, not a conversion: the bytes that leave the staging file are the
-// bytes that arrive in the root (see block.go). Nothing about what the daemon
-// runs changes, which is why `promote` is safe to run against a live daemon.
+// A cron-sourced task has no TOML bytes to move, so promoting one copies the
+// block the live loader rendered (config.CronBlockTOML) into the root. Once
+// provenance flips to native, RunWisp no longer holds the task for cron
+// (markCronHold only holds a Source == SourceCron task), so the crontab line is
+// commented out in the same transaction or both would fire it. croncomment.go
+// verifies the line byte-for-byte first and refuses the whole promotion if it
+// moved or changed since load.
 //
-// A cron-sourced task is the one asymmetry. Its definition has no TOML bytes on
-// disk to move — the crontab is the definition — so promoting one *copies* the
-// block the live loader rendered (config.CronBlockTOML) into the root. The copy
-// alone isn't safe: once provenance flips to native RunWisp can no longer hold
-// the task for cron (markCronHold only holds a Source == SourceCron task), so a
-// crontab line left in place would be fired by both a still-live cron daemon and
-// RunWisp. So the source line is commented out in the same transaction —
-// croncomment.go verifies it byte-for-byte against the file first and refuses the
-// whole promotion, changing nothing, if it moved or changed since load. Cron
-// ignores a '#' line, so the job stops firing from cron; the line stays visible
-// (with a note pointing at the runwisp.toml it moved to) rather than vanishing.
-//
-// The crontab write is queued before the root write for a reason. There is no
-// cross-file atomic primitive: within one Apply a gate or write failure rolls
-// every touched file back to its pre-image (see Txn), but a hard kill between the
-// two renames can't be caught. Commenting the crontab first means such a crash
-// leaves the job commented-out (cron won't fire it) but not yet in root — a
-// recoverable state the operator can see and finish by hand — rather than firing
-// from both.
+// The crontab write is queued before the root write. A Txn rolls back on a gate
+// or write failure, but a hard kill between the two renames can't be caught;
+// this order means such a crash leaves the job commented out but not yet in
+// root (visible and recoverable by hand) rather than firing from both.
 
 // UnknownEntryError reports a requested name that the config doesn't define at
 // all.

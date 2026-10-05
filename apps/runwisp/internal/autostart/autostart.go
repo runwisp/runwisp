@@ -74,7 +74,6 @@ const (
 	ActionEnableLinger
 	ActionEnableService
 	ActionDisableService
-	ActionStartService
 	ActionStopService
 	ActionPrintWSLPostscript
 	ActionLaunchctlBootstrap

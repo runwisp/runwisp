@@ -57,13 +57,6 @@ func portConflictMessage(host string, port int, bindErr error, info *model.Insta
 	return runwispPortConflictError(host, port, info)
 }
 
-// nonInteractivePortConflict probes the port-holder and returns the best error
-// for callers that have no operator to prompt (background daemon spawn, service
-// install).
-func nonInteractivePortConflict(host string, port int, bindErr error) error {
-	return portConflictMessage(host, port, bindErr, probeRunwispInstance(host, port))
-}
-
 // resolvePortConflict decides what to do when host:port is already taken. info
 // is the identity of the RunWisp daemon holding it, or nil when the port-holder
 // is not an identifiable RunWisp daemon.

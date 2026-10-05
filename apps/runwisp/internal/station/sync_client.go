@@ -11,8 +11,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -178,11 +179,7 @@ func (client *TaskSyncClient) SyncTasks(ctx context.Context, token string, tasks
 }
 
 func buildSyncTasks(tasks map[string]*model.Task) []syncTask {
-	names := make([]string, 0, len(tasks))
-	for name := range tasks {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(tasks))
 
 	syncTasks := make([]syncTask, 0, len(names))
 	for _, name := range names {
@@ -341,7 +338,7 @@ func durationToMillis(d time.Duration) int {
 }
 
 // durationPtrToMillis is durationToMillis's pointer-typed sibling for
-// RestartDelay/HealthyAfter, which model.Task now carries as *time.Duration
+// RestartDelay/HealthyAfter, which model.Task carries as *time.Duration
 // so an explicit local "0s" override is distinguishable from "unconfigured".
 // That distinction is local-only: the outbound sync payload has no way to
 // represent "explicitly zero" separately from "not set" (both omit the

@@ -23,9 +23,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestFinishExecJSON_ReusesFetchedRunWithoutRefetch is the regression test for
-// Bug G: exec --json must report the exit code already captured during the
-// follow, not do a second GetRun that could fail and mask a real success as a
+// TestFinishExecJSON_ReusesFetchedRunWithoutRefetch: exec --json must report
+// the exit code already captured during the follow, not do a second GetRun that could fail and mask a real success as a
 // spurious failure. The client points at a daemon whose every GetRun 500s; a
 // provided terminal run must be reused so the doc still reports exit 0 / success.
 func TestFinishExecJSON_ReusesFetchedRunWithoutRefetch(t *testing.T) {

@@ -216,9 +216,8 @@ func wireError(path string, err error) error {
 	return err
 }
 
-// userError is this package's operator-facing error. It exists because
-// cmd/runwisp's userFacingError is private to package main, and a decision this
-// package makes has to be reportable without importing the CLI.
+// userError is this package's operator-facing error, so a decision made here
+// is reportable without importing the CLI.
 type userError struct {
 	title   string
 	details string

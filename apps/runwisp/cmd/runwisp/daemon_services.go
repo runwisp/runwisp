@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"time"
 
@@ -502,11 +504,7 @@ func resumePendingRuns(ctx context.Context, db storage.RunRepository, taskManage
 // config_stale flag is injected per request by the server, not stored here.
 func buildDaemonInfo(cfg *daemonConfig, svc *daemonServices, configLoadedAt time.Time, port int) *model.DaemonInfo {
 	snapshot := svc.Tasks.Snapshot()
-	taskNames := make([]string, 0, len(snapshot))
-	for name := range snapshot {
-		taskNames = append(taskNames, name)
-	}
-	sort.Strings(taskNames)
+	taskNames := slices.Sorted(maps.Keys(snapshot))
 
 	tasks := make([]model.Task, 0, len(taskNames))
 	for _, name := range taskNames {

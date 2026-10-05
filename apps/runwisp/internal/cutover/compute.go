@@ -21,9 +21,8 @@ import (
 // without touching anything.
 //
 // It returns an error only for a probe that genuinely failed. Every
-// operator-facing "no" is a Blocker inside the value — that is the property that
-// makes --dry-run total, and it is the fix for a dry run that used to exit with
-// the cron gate's error instead of printing a plan.
+// operator-facing "no" is a Blocker inside the value, so --dry-run always
+// prints a plan.
 //
 // Blockers accumulate rather than short-circuit: reporting one at a time turns a
 // migration into a guessing game.
@@ -192,10 +191,8 @@ func unsupportedOSBlocker(goos string) Blocker {
 	}
 }
 
-// noCronJobsBlocker is all that survives of the old "no cron jobs are being
-// read", and it now means something completely different: not "your config isn't
-// set up" — RunWisp fixes that itself — but "there is nothing on this box to
-// take over".
+// noCronJobsBlocker reports that there is nothing on this box to take over.
+// A missing config is not a blocker: RunWisp writes one itself.
 func noCronJobsBlocker(ev Evidence) Blocker {
 	where := "the usual cron paths"
 	if len(ev.Patterns) > 0 {
@@ -214,7 +211,7 @@ func noCronJobsBlocker(ev Evidence) Blocker {
 
 // configBlockers covers the two ways an existing config stops a cutover: it
 // won't load, or it isn't safe to bake into a root-run unit. A missing config is
-// not among them — that is StepWriteConfig's job now.
+// not among them: StepWriteConfig handles it.
 func (c *Cutover) configBlockers(ev Evidence) []Blocker {
 	if !ev.ConfigExists {
 		return nil
@@ -278,15 +275,13 @@ func includeCronMismatchBlocker(path string, ev Evidence) Blocker {
 // anyway?"
 //
 // Both halves come from the pre-config scan, which sees them whether or not a
-// runwisp.toml exists yet. Reading the per-job skips only off a loaded config was
-// why the first `takeover` on a bare box asked for nothing and the second one —
-// same box, nothing changed, and a re-run the command promises is safe — hard
-// blocked demanding --allow-skipped-cron-jobs.
+// runwisp.toml exists yet, so a first `takeover` on a bare box and a re-run
+// reach the same verdict.
 //
 // A loaded config is still consulted, for the skips in a crontab the operator's
 // own include_cron reaches and the machine sweep does not. Deduplicated by the
 // rendered reason: scan and config render the same finding identically, so the
-// same skip counted twice would make the gate disagree with itself again.
+// same skip counted twice would make the gate disagree with itself.
 func (c *Cutover) cronSourceBlockers(ev Evidence) []Blocker {
 	var out []Blocker
 
@@ -344,10 +339,9 @@ func (c *Cutover) configSteps(ev Evidence) []Step {
 // The install is one step carrying autostart's own Plan rather than a restatement
 // of it. A PlanNoop means the unit on disk already matches, which is satisfied
 // only if cron is also already retired: a marker-carrying unit whose cron came
-// back is not "done", it is the reassert case, and treating it as satisfied is
-// how re-running `takeover` used to print "Already installed ✓" and return on a
-// box that was double-firing. The same goes for a stopped service on a box whose
-// cron is masked: that box runs no jobs at all.
+// back is the reassert case, not "done" (the box would be double-firing). The
+// same goes for a stopped service on a box whose cron is masked: that box runs
+// no jobs at all.
 func (c *Cutover) installStep(ctx context.Context, p Plan) ([]Step, error) {
 	opts := p.Opts
 	opts.TakeOverCron = p.MasksCron

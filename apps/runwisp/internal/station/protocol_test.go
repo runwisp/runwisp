@@ -15,24 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStreamEnumFromString(t *testing.T) {
-	tests := []struct {
-		in   string
-		want protocol.Stream
-	}{
-		{"stdout", protocol.StreamStdout},
-		{"stderr", protocol.StreamStderr},
-		{"system", protocol.StreamSystem},
-		{"", protocol.StreamStdout}, // default fallback
-		{"unknown", protocol.StreamStdout},
-	}
-	for _, tt := range tests {
-		t.Run(tt.in, func(t *testing.T) {
-			assert.Equal(t, tt.want, streamEnumFromString(tt.in))
-		})
-	}
-}
-
 func TestLinesItemStreamFromString(t *testing.T) {
 	tests := []struct {
 		in   string

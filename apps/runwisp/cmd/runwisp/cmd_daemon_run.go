@@ -120,10 +120,8 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 
 	logSecurityWarnings(cfg, f, tlsCfg)
 
-	// Pin the on-disk identity of runwisp.toml + env_files. Reload is
-	// restart-only; the snapshot lets /api/daemon report config_stale so every
-	// surface can show a "restart to apply" hint instead of silently ignoring
-	// edits.
+	// Pin the on-disk identity of runwisp.toml + env_files so /api/daemon can
+	// report config_stale and every surface can prompt for a reload.
 	configSnap := config.NewSnapshot(f.CfgFile, cfg.Config, time.Now())
 
 	svc, err := initDaemonServices(context.Background(), cfg, db, mode, f)

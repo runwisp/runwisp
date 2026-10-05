@@ -91,7 +91,7 @@ func TestEventBridge_HandleRunEvent_RunningRun(t *testing.T) {
 		StartedAt:   &now,
 	}
 	b.handleRunEvent(context.Background(), events.Event{Data: events.RunEvent{Run: run}})
-	assert.True(t, b.tracker.HasActive())
+	assert.True(t, b.tracker.hasActive())
 }
 
 func TestEventBridge_HandleRunEvent_TerminalRun(t *testing.T) {
@@ -113,7 +113,7 @@ func TestEventBridge_HandleRunEvent_TerminalRun(t *testing.T) {
 		ExecutionID: &extID,
 	}
 	b.handleRunEvent(context.Background(), events.Event{Data: events.RunEvent{Run: run}})
-	assert.False(t, b.tracker.HasActive())
+	assert.False(t, b.tracker.hasActive())
 }
 
 // --- Start delivers events through the real bus ---

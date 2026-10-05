@@ -706,8 +706,8 @@ func uninstallSystem(t *testing.T, inst *systemdInstaller, cmd *FakeRunner) []st
 	return callsSince(cmd, n)
 }
 
-// Finding RW-37#13: an operator who had masked cron themselves before the
-// take-over must not get it back on uninstall; RunWisp never owned that mask.
+// An operator who had masked cron themselves before the take-over must not get
+// it back on uninstall; RunWisp never owned that mask.
 func TestTakeover_UninstallLeavesOperatorMaskedCronMasked(t *testing.T) {
 	inst, fs, cmd, prompter, binary := newFakeInstaller(t, false)
 	inst.deps.Euid = 0
@@ -740,7 +740,7 @@ func TestTakeover_UninstallRestartsCronThatWasRunning(t *testing.T) {
 	assert.Contains(t, calls, "start cron.service")
 }
 
-// The rollback half of RW-37#13: a failed `enable --now` must not unmask a
+// Rollback half of the test above: a failed `enable --now` must not unmask a
 // cron the operator had masked before RunWisp touched it.
 func TestTakeover_RollbackLeavesOperatorMaskedCronMasked(t *testing.T) {
 	inst, fs, cmd, prompter, binary := newFakeInstaller(t, false)
@@ -783,9 +783,9 @@ func TestTakeover_RerunKeepsTheOriginalCronState(t *testing.T) {
 
 const failsafePath = "/etc/systemd/system/runwisp-cron-failsafe.service"
 
-// Finding RW-37#12: a take-over leaves cron masked, so a RunWisp that keeps
-// crashing must eventually give up and hand the jobs back instead of
-// restarting forever with no scheduler on the box.
+// A take-over leaves cron masked, so a RunWisp that keeps crashing must
+// eventually give up and hand the jobs back instead of restarting forever with
+// no scheduler on the box.
 func TestTakeover_InstallsCronFailsafe(t *testing.T) {
 	inst, fs, cmd, prompter, binary := newFakeInstaller(t, false)
 	inst.deps.Euid = 0
