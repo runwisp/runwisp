@@ -79,6 +79,7 @@ class NotificationStore {
     #unsubscribes: (() => void)[] = [];
     #connected = $state(false);
     #loaded = $state(false);
+    #loadFailed = $state(false);
     #initInFlight: Promise<void> | null = null;
     #cursor: string | null = null;
     #hasMore = $state(false);
@@ -104,6 +105,10 @@ class NotificationStore {
     }
     get loaded(): boolean {
         return this.#loaded;
+    }
+    /** True when the last init() failed; calling init() again retries. */
+    get loadFailed(): boolean {
+        return this.#loadFailed;
     }
     get hasMore(): boolean {
         return this.#hasMore;
@@ -131,8 +136,10 @@ class NotificationStore {
             this.#hasMore = Boolean(page.nextCursor);
             this.#unread = await this.#fetchUnread();
             this.#loaded = true;
+            this.#loadFailed = false;
             this.#connect();
         } catch (e) {
+            this.#loadFailed = true;
             this.#logger.error("Failed to initialize notifications", e);
         }
     }

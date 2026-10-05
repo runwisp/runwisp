@@ -84,6 +84,8 @@ interface Harness {
     setMarkAllReadGate: (gate: Promise<void>) => void;
     /** Force the per-row mark-read/unread POST to fail with a 500. */
     setRowActionFails: (fail: boolean) => void;
+    /** Force the notifications list GET to fail with a 500. */
+    setPageFails: (fail: boolean) => void;
 }
 
 function setupHarness(opts: { unread?: number; items?: Notification[] }): Harness {
@@ -91,7 +93,16 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
     let unread = opts.unread ?? 0;
     let markAllReadGate: Promise<void> = Promise.resolve();
     let rowActionFails = false;
+    let pageFails = false;
     const requests: RecordedRequest[] = [];
+
+    const listResponse = (): Response =>
+        pageFails
+            ? new Response(null, { status: 500 })
+            : new Response(JSON.stringify({ items, nextCursor: undefined }), {
+                  status: 200,
+                  headers: { "content-type": "application/json" },
+              });
 
     const fakeFetch: typeof fetch = (input, init) => {
         const url =
@@ -113,14 +124,7 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
         if (url.endsWith("/api/notifications/read")) {
             return markAllReadGate.then(() => new Response(null, { status: 204 }));
         }
-        if (url.includes("/api/notifications")) {
-            return Promise.resolve(
-                new Response(JSON.stringify({ items, nextCursor: undefined }), {
-                    status: 200,
-                    headers: { "content-type": "application/json" },
-                }),
-            );
-        }
+        if (url.includes("/api/notifications")) return Promise.resolve(listResponse());
         return Promise.reject(new Error(`unexpected fetch ${url}`));
     };
 
@@ -151,10 +155,27 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
         setRowActionFails: (fail) => {
             rowActionFails = fail;
         },
+        setPageFails: (fail) => {
+            pageFails = fail;
+        },
     };
 }
 
 describe("NotificationStore", () => {
+    it("flags a failed init instead of loading forever, and init() retries", async () => {
+        const { store, setPageFails } = setupHarness({ items: [], unread: 0 });
+        setPageFails(true);
+        await store.init();
+        expect(store.loaded).toBe(false);
+        expect(store.loadFailed).toBe(true);
+
+        setPageFails(false);
+        await store.init();
+        expect(store.loaded).toBe(true);
+        expect(store.loadFailed).toBe(false);
+        store.disconnect();
+    });
+
     it("routes a 401 on the stream to the auth handler instead of reporting the source down", async () => {
         const { store, es } = setupHarness({ items: [], unread: 0 });
         await store.init();

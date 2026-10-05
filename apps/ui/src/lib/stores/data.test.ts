@@ -111,6 +111,23 @@ describe("TaskStore.loadIfNeeded", () => {
         expect(notifyError).toHaveBeenCalledWith("Connection lost");
     });
 
+    it("flags a failed first load so the UI can leave its loading state, and clears it on refresh", async () => {
+        let fail = true;
+        const store = createTaskStore({
+            getTasks: () => (fail ? Promise.reject(new Error("boom")) : Promise.resolve([])),
+            reportFetchError: () => false,
+            notifyError: vi.fn(),
+        });
+
+        await store.loadIfNeeded();
+        expect(store.loadFailed).toBe(true);
+
+        fail = false;
+        await store.refresh();
+        expect(store.loadFailed).toBe(false);
+        expect(store.loaded).toBe(true);
+    });
+
     it("surfaces the extracted error message for a non-connection failure", async () => {
         const notifyError = vi.fn();
         const store = createTaskStore({
