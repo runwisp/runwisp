@@ -19,32 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # On PRs, moon diffs changed files against vcs.defaultBranch, but the
-      # checkout only has the merge ref — give it a local `main` to resolve.
-      - name: Fetch base branch for moon
-        if: github.event_name == 'pull_request'
-        run: git fetch --no-tags --depth=1 origin main:main
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: apps/runwisp/go.mod
-          cache-dependency-path: apps/runwisp/go.sum
-
-      # sqlc, golangci-lint and govulncheck are pinned in apps/runwisp/scripts and
-      # compiled from source on a miss, which costs ~2 min. Keyed per job: each
-      # job installs a different subset, and a shared key would keep only the first.
-      - name: Cache pinned Go tools
-        uses: actions/cache@v4
-        with:
-          path: .bin
-          key: go-tools-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/runwisp/go.mod', 'apps/runwisp/scripts/sqlc-generate.sh', 'apps/runwisp/scripts/lint-go.sh', 'apps/runwisp/scripts/check-go.sh') }}
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version-file: package.json
-
-      - name: Install JS dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
+      - uses: ./.github/actions/setup
 
       - name: Regenerate all (sqlc, AsyncAPI, OpenAPI, common API types)
         run: bun run generate
@@ -58,30 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Fetch base branch for moon
-        if: github.event_name == 'pull_request'
-        run: git fetch --no-tags --depth=1 origin main:main
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: apps/runwisp/go.mod
-          cache-dependency-path: apps/runwisp/go.sum
-
-      # sqlc, golangci-lint and govulncheck are pinned in apps/runwisp/scripts and
-      # compiled from source on a miss, which costs ~2 min. Keyed per job: each
-      # job installs a different subset, and a shared key would keep only the first.
-      - name: Cache pinned Go tools
-        uses: actions/cache@v4
-        with:
-          path: .bin
-          key: go-tools-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/runwisp/go.mod', 'apps/runwisp/scripts/sqlc-generate.sh', 'apps/runwisp/scripts/lint-go.sh', 'apps/runwisp/scripts/check-go.sh') }}
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version-file: package.json
-
-      - name: Install JS dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
+      - uses: ./.github/actions/setup
 
       - name: Check
         run: bun run check
@@ -100,7 +52,7 @@ jobs:
         if: matrix.app == 'runwisp'
         with:
           go-version-file: apps/runwisp/go.mod
-          cache-dependency-path: apps/runwisp/go.sum
+          cache: false
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
@@ -109,111 +61,61 @@ jobs:
       - name: Check direct dependencies are on their latest release
         run: bun scripts/check-latest.ts ${{ matrix.app }}
 
-  build:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Fetch base branch for moon
-        if: github.event_name == 'pull_request'
-        run: git fetch --no-tags --depth=1 origin main:main
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: apps/runwisp/go.mod
-          cache-dependency-path: apps/runwisp/go.sum
-
-      # sqlc, golangci-lint and govulncheck are pinned in apps/runwisp/scripts and
-      # compiled from source on a miss, which costs ~2 min. Keyed per job: each
-      # job installs a different subset, and a shared key would keep only the first.
-      - name: Cache pinned Go tools
-        uses: actions/cache@v4
-        with:
-          path: .bin
-          key: go-tools-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/runwisp/go.mod', 'apps/runwisp/scripts/sqlc-generate.sh', 'apps/runwisp/scripts/lint-go.sh', 'apps/runwisp/scripts/check-go.sh') }}
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version-file: package.json
-
-      - name: Install JS dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
-
-      - name: Build
-        run: bun run build
-
-      - name: Upload binary
-        uses: actions/upload-artifact@v7
-        with:
-          name: runwisp-binary-${{ matrix.os }}
-          path: apps/runwisp/runwisp
-          retention-days: 1
-
   test:
-    name: Unit Tests (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    name: Unit Tests (ubuntu-latest)
+    runs-on: ubuntu-latest
     # The podman SMTP e2e tests pull a container image over the network, which
     # is non-hermetic and flaky in CI (and hung the ubuntu runner's `podman run`
     # for the full test timeout). ubuntu-latest ships podman, so requirePodman
     # would otherwise run them; skip them everywhere — the in-process SMTP fake
     # covers the no-deps path. Run them locally with podman to exercise real TLS.
-    env:
+    env: &test-env
       RUNWISP_SKIP_PODMAN_TESTS: '1'
-    steps:
+    steps: &test-steps
       - uses: actions/checkout@v6
 
-      - name: Fetch base branch for moon
-        if: github.event_name == 'pull_request'
-        run: git fetch --no-tags --depth=1 origin main:main
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: apps/runwisp/go.mod
-          cache-dependency-path: apps/runwisp/go.sum
-
-      # sqlc, golangci-lint and govulncheck are pinned in apps/runwisp/scripts and
-      # compiled from source on a miss, which costs ~2 min. Keyed per job: each
-      # job installs a different subset, and a shared key would keep only the first.
-      - name: Cache pinned Go tools
-        uses: actions/cache@v4
-        with:
-          path: .bin
-          key: go-tools-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/runwisp/go.mod', 'apps/runwisp/scripts/sqlc-generate.sh', 'apps/runwisp/scripts/lint-go.sh', 'apps/runwisp/scripts/check-go.sh') }}
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version-file: package.json
-
-      - name: Install JS dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
+      - uses: ./.github/actions/setup
 
       - name: Create UI placeholder for go:embed
         run: |
           mkdir -p apps/runwisp/internal/ui/dist
           echo '<!-- placeholder for go:embed -->' > apps/runwisp/internal/ui/dist/index.html
 
+      # root:test split across this job and test-ui: the race-enabled Go
+      # suite is CPU-bound and finishes sooner without vitest beside it.
       - name: Test
-        run: bun run test
+        run: ./node_modules/.bin/moon run runwisp:test
 
       - name: Upload Go coverage
-        if: matrix.os == 'ubuntu-latest'
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-go
           path: apps/runwisp/coverage.out
           retention-days: 1
 
+  # A separate job rather than a matrix leg, so Sonar (needs: test) doesn't
+  # wait on the slower macOS runner.
+  test-macos:
+    name: Unit Tests (macos-latest)
+    runs-on: macos-latest
+    env: *test-env
+    steps: *test-steps
+
+  test-ui:
+    name: UI Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup
+        with:
+          go: 'false'
+
+      - name: Test
+        run: ./node_modules/.bin/moon run web-ui:test
+
       - name: Upload UI coverage
-        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-ui
@@ -223,7 +125,7 @@ jobs:
   sonar:
     name: SonarCloud Scan
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, test-ui]
     # Forks and Dependabot PRs don't have access to SONAR_TOKEN; skip rather than fail noisily.
     if: (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) && github.actor != 'dependabot[bot]'
     steps:
@@ -255,12 +157,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # On PRs, moon diffs changed files against vcs.defaultBranch, but the
-      # checkout only has the merge ref — give it a local `main` to resolve.
-      - name: Fetch base branch for moon
-        if: github.event_name == 'pull_request'
-        run: git fetch --no-tags --depth=1 origin main:main
-
       # Lint and unit-test the shell first: these need no Go toolchain, no bun,
       # and no image, so a broken entrypoint fails the job in seconds instead of
       # after a multi-minute build.
@@ -283,17 +179,7 @@ jobs:
       - name: Release packaging unit tests
         run: apps/runwisp/scripts/tests/package-all_test.sh
 
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: apps/runwisp/go.mod
-          cache-dependency-path: apps/runwisp/go.sum
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version-file: package.json
-
-      - name: Install JS dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
+      - uses: ./.github/actions/setup
 
       - name: Build web UI and sync into Go embed directory
         run: ./node_modules/.bin/moon run runwisp:sync-ui-dist
@@ -375,7 +261,6 @@ jobs:
   e2e:
     name: Browser E2E Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    needs: build
     strategy:
       fail-fast: false
       matrix:
@@ -385,21 +270,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version-file: package.json
-
-      - name: Install JS dependencies
-        run: bun install --frozen-lockfile --ignore-scripts
-
-      - name: Download binary
-        uses: actions/download-artifact@v7
-        with:
-          name: runwisp-binary-${{ matrix.os }}
-          path: apps/runwisp
-
-      - name: Make binary executable
-        run: chmod +x apps/runwisp/runwisp
+      - uses: ./.github/actions/setup
 
       - name: Cache Playwright browsers
         id: playwright-cache
@@ -418,11 +289,9 @@ jobs:
         run: bunx playwright install-deps chromium
         working-directory: apps/ui
 
-      # Not moon's runwisp:test-e2e — that would rebuild the binary; this job
-      # runs against the one downloaded from the `build` job.
-      - name: Run E2E tests
-        run: bunx playwright test
-        working-directory: apps/ui
+      # Builds the binary (web UI embedded) first, so this is also the build check.
+      - name: Build and run E2E tests
+        run: bun run test:e2e
 
       - name: Upload test artifacts
         if: failure()
