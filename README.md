@@ -23,6 +23,8 @@ RunWisp is an open-source, self-hosted cron job manager and process supervisor. 
 
 RunWisp replaces `crond` and `supervisord` when you want scheduled jobs and long-running services in one place. You describe both in `runwisp.toml`; the daemon runs them without needing Python, Node.js or an external database.
 
+Want a look first? Run `bunx runwisp demo` to try RunWisp with demo data and nothing to configure.
+
 Every run leaves evidence behind: its exit code, duration, timestamps, and stdout/stderr. You can inspect history, follow logs, and trigger or stop tasks from the web dashboard, terminal UI, or REST API. Task definitions stay on disk in TOML.
 
 <div align="center">
