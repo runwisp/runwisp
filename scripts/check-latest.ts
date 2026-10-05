@@ -122,7 +122,7 @@ const proxyPath = (path: string) =>
 
 async function goDeps(dir: string): Promise<Dep[]> {
     const format =
-        '{{if not (or .Main .Indirect)}}{{.Path}} {{.Version}}{{with .Update}} {{.Version}} {{.Time.Format "2006-01-02T15:04:05Z07:00"}}{{end}}{{end}}';
+        '{{if not (or .Main .Indirect)}}{{.Path}} {{.Version}}{{with .Update}} {{.Version}}{{with .Time}} {{.Format "2006-01-02T15:04:05Z07:00"}}{{end}}{{end}}{{end}}';
     const list = Bun.spawnSync(
         ["go", "list", "-m", "-u", "-f", format, "all"],
         { cwd: dir, stderr: "inherit" },

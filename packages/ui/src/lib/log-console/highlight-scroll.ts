@@ -25,7 +25,8 @@ export function createHighlightScroll(options: HighlightScrollOptions): () => vo
     let revealed: number | null = null;
     return () => {
         const target = options.line();
-        if (target === null || target === undefined) {
+        // Not `!target`: line 0 is a valid highlight.
+        if (typeof target !== "number") {
             revealed = null;
             options.clear();
             return;
