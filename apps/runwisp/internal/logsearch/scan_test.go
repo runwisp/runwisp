@@ -75,12 +75,12 @@ func TestScanRun_RespectsMaxHits(t *testing.T) {
 	}
 }
 
-func TestScanRun_StartAfterN(t *testing.T) {
+func TestScanRun_FirstN(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "a.log")
 	writeLog(t, logPath, "foo", "foo", "foo")
 	m, _ := NewMatcher("foo", false, false)
-	hits, _, err := ScanRun(context.Background(), RunRef{LogPath: logPath}, m, 10, 1)
+	hits, _, err := ScanRun(context.Background(), RunRef{LogPath: logPath}, m, 10, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,6 +128,26 @@ func TestScanTask_NewestFirstAndCursor(t *testing.T) {
 	}
 	if cur.RunID != "01HRUNAAAAAAAAAAAAAAAAAAAA" {
 		t.Fatalf("cursor should point at run A, got %s", cur.RunID)
+	}
+}
+
+func TestScanTask_CursorRunGoneScansFromStart(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a.log")
+	writeLog(t, a, "foo", "foo", "foo")
+	runs := []RunRef{{ID: "R2", LogPath: a, CreatedAt: time.Unix(2, 0)}}
+	factory := func() Matcher {
+		m, _ := NewMatcher("foo", false, false)
+		return m
+	}
+	// The cursor names R1 at line 2, but retention deleted R1 before page 2.
+	// Its offset must not be applied to R2.
+	hits, _, _, err := ScanTask(context.Background(), runs, factory, ScanOpts{MaxHits: 10}, "R1", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 3 || hits[0].N != 0 {
+		t.Fatalf("want all 3 hits of R2 from line 0, got %+v", hits)
 	}
 }
 

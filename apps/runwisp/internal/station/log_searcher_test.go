@@ -54,17 +54,14 @@ func TestSearchExecutionLog_PaginatesViaNextLine(t *testing.T) {
 		{Stream: logutil.StreamStdout, Text: "hit c"}, // N=2
 	})
 
-	// Budget of 2 hits: not exhausted, nextLine = last emitted line (1). The
-	// cursor's "skip lines <= fromLine" matches ScanRun.startAfterN exactly.
-	// (A boundary exactly at line 0 cannot be expressed by that guard — the
-	// station aggregator dedupes by (executionId, n) to absorb that rare case.)
+	// Budget of 2 hits: not exhausted, nextLine = first line still to scan (2).
 	page1, nextLine, exhausted, err := searchExecutionLog(context.Background(), run, dir, logSearchParams{query: "hit", limit: 2})
 	require.NoError(t, err)
 	require.Len(t, page1, 2)
 	assert.Equal(t, "hit a", page1[0].Text)
 	assert.Equal(t, "hit b", page1[1].Text)
 	assert.False(t, exhausted)
-	assert.Equal(t, int64(1), nextLine, "resume after the last emitted line (N=1)")
+	assert.Equal(t, int64(2), nextLine, "resume after the last emitted line (N=1)")
 
 	// Resume from the cursor: only "hit c" remains, scan now exhausted.
 	page2, _, exhausted2, err := searchExecutionLog(context.Background(), run, dir, logSearchParams{query: "hit", limit: 2, fromLine: nextLine})
@@ -72,6 +69,23 @@ func TestSearchExecutionLog_PaginatesViaNextLine(t *testing.T) {
 	require.Len(t, page2, 1)
 	assert.Equal(t, "hit c", page2[0].Text)
 	assert.True(t, exhausted2)
+}
+
+func TestSearchExecutionLog_PagesPastAHitOnLineZero(t *testing.T) {
+	run := &model.Run{ID: testRunID, TaskName: "t1", Status: model.PhaseRunning, CreatedAt: time.Now()}
+	dir := t.TempDir()
+	writeRunLogRecords(t, dir, run, []logutil.LogLineRecord{
+		{Stream: logutil.StreamStdout, Text: "hit a"}, // N=0
+		{Stream: logutil.StreamStdout, Text: "hit b"}, // N=1
+	})
+
+	page1, nextLine, _, err := searchExecutionLog(context.Background(), run, dir, logSearchParams{query: "hit", limit: 1})
+	require.NoError(t, err)
+	require.Len(t, page1, 1)
+	page2, _, _, err := searchExecutionLog(context.Background(), run, dir, logSearchParams{query: "hit", limit: 1, fromLine: nextLine})
+	require.NoError(t, err)
+	require.Len(t, page2, 1)
+	assert.Equal(t, "hit b", page2[0].Text, "page 2 must not re-emit the line-0 hit")
 }
 
 func TestSearchExecutionLog_BadRegexValidationError(t *testing.T) {

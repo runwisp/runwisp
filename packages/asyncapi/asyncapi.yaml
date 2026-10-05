@@ -660,8 +660,9 @@ components:
           type: integer
           format: int64
           description: |
-            Resume cursor: skip lines with absolute number <= fromLine so a
-            paginated scan continues mid-run without re-emitting prior hits.
+            Resume cursor: the first absolute line to scan (0 scans the whole
+            log). Pass a previous chunk's nextLine to continue mid-run without
+            re-emitting prior hits.
       required:
         - type
         - requestId
@@ -1028,7 +1029,7 @@ components:
           type: integer
           format: int64
           description: |
-            Absolute line to resume after when exhausted=false; 0 and
+            First absolute line still to scan when exhausted=false; 0 and
             exhausted=true means the scan is complete.
         exhausted:
           type: boolean

@@ -68,22 +68,11 @@ type Cursor struct {
 // The returned slice is ordered by ascending line number — that's the order
 // emitted by logutil.ScanLines and is what the UI displays per-run.
 //
-// If startAfterN > 0, lines with absolute number <= startAfterN are skipped.
+// Lines numbered below firstN are skipped, so firstN=0 scans the whole run.
 // This is how a paginated cursor resumes mid-run without re-emitting hits
 // the previous page already returned. more=true means the run still has
-// unscanned bytes — the caller can resume from hits[last].N+1. A resume point
-// of line 0 cannot be expressed here; use scanRunFrom for that.
-func ScanRun(ctx context.Context, run RunRef, m Matcher, maxHits int, startAfterN int64) (hits []Hit, more bool, err error) {
-	var firstN int64
-	if startAfterN > 0 {
-		firstN = startAfterN + 1
-	}
-	return scanRunFrom(ctx, run, m, maxHits, firstN)
-}
-
-// scanRunFrom is ScanRun with an exclusive-free resume point: lines numbered
-// below firstN are skipped, so firstN=0 scans the whole run.
-func scanRunFrom(ctx context.Context, run RunRef, m Matcher, maxHits int, firstN int64) (hits []Hit, more bool, err error) {
+// unscanned bytes — the caller can resume from hits[last].N+1.
+func ScanRun(ctx context.Context, run RunRef, m Matcher, maxHits int, firstN int64) (hits []Hit, more bool, err error) {
 	// Clamp here (not only in ScanTask) so direct callers — the station
 	// log-search path reaches ScanRun without going through ScanTask — cannot
 	// ask for an unbounded in-memory result set.
@@ -129,7 +118,13 @@ func ScanTask(ctx context.Context, runs []RunRef, matcherFactory func() Matcher,
 	// Skip already-consumed runs from a previous page. The cursor's
 	// `firstN` only applies to the run it names; subsequent runs in
 	// the same page restart at line 0.
-	pending := runs[runStartIndex(runs, startAfterRunID):]
+	start := runStartIndex(runs, startAfterRunID)
+	if start < 0 {
+		// The cursor's run left the window (retention deleted it). Its line
+		// offset says nothing about runs[0], so scan that run from the start.
+		start, firstN = 0, 0
+	}
+	pending := runs[start:]
 	if len(pending) == 0 {
 		return nil, nil, 0, nil
 	}
@@ -163,8 +158,8 @@ func clampMaxHits(maxHits int) int {
 	return maxHits
 }
 
-// runStartIndex returns the index of the run named by startAfterRunID, or 0
-// when the ID is empty or absent.
+// runStartIndex returns the index of the run named by startAfterRunID, 0 when
+// the ID is empty, or -1 when it is absent from runs.
 func runStartIndex(runs []RunRef, startAfterRunID string) int {
 	if startAfterRunID == "" {
 		return 0
@@ -174,7 +169,7 @@ func runStartIndex(runs []RunRef, startAfterRunID string) int {
 			return i
 		}
 	}
-	return 0
+	return -1
 }
 
 // scanPending scans every pending run in parallel (bounded by ScanWorkers),
@@ -224,7 +219,7 @@ func scanPending(ctx context.Context, pending []RunRef, matcherFactory func() Ma
 				}
 				perRunMax = int(budget)
 			}
-			hits, more, err := scanRunFrom(gctx, r, matcherFactory(), perRunMax, skipN)
+			hits, more, err := ScanRun(gctx, r, matcherFactory(), perRunMax, skipN)
 			if err != nil {
 				return err
 			}
