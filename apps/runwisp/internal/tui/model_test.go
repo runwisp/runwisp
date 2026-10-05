@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -449,38 +448,50 @@ func TestResolveTaskName_PanelMainReturnsSidebarActive(t *testing.T) {
 	}
 }
 
-// ─── showQuitConfirm ─────────────────────────────────────────────────────────
+// ─── requestQuit ─────────────────────────────────────────────────────────────
 
-func TestShowQuitConfirm_OpensConfirmDialog(t *testing.T) {
+func TestRequestQuit_StartedDaemonOpensConfirmDialog(t *testing.T) {
 	m := newTestModel(nil)
-	if m.dialogs.HasConfirm() {
-		t.Fatal("no dialog expected initially")
+	m.startedDaemon = true
+	if cmd := m.requestQuit(); cmd != nil {
+		t.Fatal("expected no quit cmd while the dialog asks")
 	}
-	m.showQuitConfirm()
-	if !m.dialogs.HasConfirm() {
-		t.Fatal("expected confirm dialog after showQuitConfirm")
+	d := m.dialogs.confirmDialog
+	if d == nil {
+		t.Fatal("expected confirm dialog after requestQuit")
+	}
+	if d.onDeny == nil {
+		t.Fatal("expected a Shut Down action for a daemon the TUI started")
 	}
 }
 
-// A service-managed daemon must not be shut down from the TUI — the dialog
-// drops the "Shut Down" action and points at `runwisp stop` instead.
-func TestShowQuitConfirm_ServiceManagedDropsShutdownOption(t *testing.T) {
+// Attached to a daemon the TUI didn't start (a service, `runwisp tui`, --url)
+// quitting just closes the TUI: no dialog, the daemon keeps running.
+func TestRequestQuit_AttachedQuitsWithoutDialog(t *testing.T) {
 	m := newTestModel(nil)
-	m.info.ServiceManaged = true
-	m.showQuitConfirm()
+	assertQuitsKeepingDaemon(t, &m)
+}
 
-	d := m.dialogs.confirmDialog
-	if d == nil {
-		t.Fatal("expected confirm dialog after showQuitConfirm")
+// A daemon the TUI started but that has since come under systemd / launchd is
+// no longer the TUI's to stop.
+func TestRequestQuit_ServiceManagedQuitsWithoutDialog(t *testing.T) {
+	m := newTestModel(nil)
+	m.startedDaemon = true
+	m.info.ServiceManaged = true
+	assertQuitsKeepingDaemon(t, &m)
+}
+
+func assertQuitsKeepingDaemon(t *testing.T, m *Model) {
+	t.Helper()
+	cmd := m.requestQuit()
+	if m.dialogs.HasConfirm() {
+		t.Fatal("expected no quit dialog")
 	}
-	if d.yesLabel != "Quit TUI" {
-		t.Fatalf("expected Quit TUI option, got %q", d.yesLabel)
+	if cmd == nil {
+		t.Fatal("expected a quit cmd")
 	}
-	if d.onDeny != nil {
-		t.Fatal("service-managed quit dialog must not offer a shutdown action")
-	}
-	note := strings.Join(d.noteLines, "\n")
-	if !strings.Contains(note, "runwisp stop") {
-		t.Fatalf("expected `runwisp stop` hint in note, got %q", note)
+	msg, ok := cmd().(uikit.QuitMsg)
+	if !ok || msg.Action != uikit.QuitKeepDaemon {
+		t.Fatalf("expected QuitMsg{QuitKeepDaemon}, got %#v", msg)
 	}
 }

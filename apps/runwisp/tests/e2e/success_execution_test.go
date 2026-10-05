@@ -37,5 +37,5 @@ func TestTUIStreamsLiveLogsAndSettlesSuccessfulHeaderState(t *testing.T) {
 	require.NotContains(t, completedScreen, "■ Stop (s)")
 	require.NotContains(t, completedScreen, "↻ Retry (r)")
 
-	suite.tui.quitAndShutdown(t)
+	suite.quit(t)
 }

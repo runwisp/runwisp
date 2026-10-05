@@ -230,6 +230,7 @@ func TestInterceptConfirmDialog_RoutesToShuttingDown(t *testing.T) {
 
 func TestInterceptNewReleaseDialog_CtrlCEscalatesToQuitConfirm(t *testing.T) {
 	m := newTestModel(nil)
+	m.startedDaemon = true
 	m.dialogs.ShowNewRelease("1.0.0", "v2.0.0")
 
 	updated, _, intercepted := m.interceptNewReleaseDialog(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})

@@ -40,5 +40,5 @@ func TestRemoteTUINavigatesAcrossPrimaryScreens(t *testing.T) {
 	debugScreen := suite.selectDebugScreen(t)
 	require.Contains(t, debugScreen, "FOLLOW")
 
-	suite.tui.quitAndShutdown(t)
+	suite.quit(t)
 }

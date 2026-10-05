@@ -131,8 +131,8 @@ func delegateToExecList(m *Model, msg tea.KeyPressMsg) []tea.Cmd {
 // ---------- per-key handlers ----------
 
 func handleKeyQuit(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
-	m.showQuitConfirm()
-	return m, nil, true
+	cmd := m.requestQuit()
+	return m, cmd, true
 }
 
 // handleKeyHelp opens the keyboard-shortcut overlay. Confirm/copy dialogs and
@@ -643,8 +643,8 @@ func (m *Model) bulkRerunSelection() tea.Cmd {
 func (m Model) handleSidebarFilterKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case keyCtrlC:
-		m.showQuitConfirm()
-		return m, nil
+		cmd := m.requestQuit()
+		return m, cmd
 	case "esc":
 		m.sidebar.StopFilter()
 		return m, nil
