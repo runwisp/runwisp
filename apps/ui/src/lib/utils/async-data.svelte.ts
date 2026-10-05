@@ -5,7 +5,7 @@ import { toast, extractErrorMessage } from "@runwisp/ui";
 import { AuthRequiredError } from "$lib/api";
 import { connectionStore } from "$lib/stores/connection.svelte";
 
-export interface AsyncDataOptions {
+interface AsyncDataOptions {
     toastOnError?: boolean;
     reloadOnReconnect?: boolean;
 }

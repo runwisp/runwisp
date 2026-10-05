@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { Run } from "@runwisp/common";
-import { mergeRecentRuns, mergeRunningRuns } from "./overview-runs";
+import { mergeRecentRuns, mergeRunningRuns, upsertRun } from "./overview-runs";
 
 function makeRun(id: string, overrides: Partial<Run> = {}): Run {
     return {
@@ -22,7 +22,7 @@ function makeRun(id: string, overrides: Partial<Run> = {}): Run {
 }
 
 describe("mergeRecentRuns", () => {
-    // Guards M6: an SSE event advanced a run to "ended"; a snapshot fetched
+    // An SSE event advanced a run to "ended"; a snapshot fetched
     // before that landed still carries it as "running". Merging the snapshot
     // must not revert the run's phase.
     it("does not regress an SSE-advanced run to an older phase", () => {
@@ -59,5 +59,35 @@ describe("mergeRunningRuns", () => {
         const snapshot = [makeRun("r1", { status: "running" })];
         const merged = mergeRunningRuns(live, snapshot, 8);
         expect(merged.map((r) => r.id)).toEqual(["r1"]);
+    });
+});
+
+describe("upsertRun", () => {
+    it("inserts a new run at the requested end", () => {
+        const a = makeRun("a");
+        const b = makeRun("b");
+
+        expect(upsertRun([a], b, "start").map((r) => r.id)).toEqual(["b", "a"]);
+        expect(upsertRun([a], b, "end").map((r) => r.id)).toEqual(["a", "b"]);
+    });
+
+    it("updates an existing run in place when its status advances", () => {
+        const existing = makeRun("a", { status: "running" });
+        const advanced = makeRun("a", { status: "ended", endReason: "succeeded" });
+
+        const result = upsertRun([existing], advanced, "start");
+
+        expect(result).toHaveLength(1);
+        expect(result[0]?.status).toBe("ended");
+        expect(result[0]?.endReason).toBe("succeeded");
+    });
+
+    it("rejects a status regression (stale update arriving after a later phase)", () => {
+        const existing = makeRun("a", { status: "running" });
+        const stale = makeRun("a", { status: "pending" });
+
+        const result = upsertRun([existing], stale, "start");
+
+        expect(result[0]?.status).toBe("running");
     });
 });

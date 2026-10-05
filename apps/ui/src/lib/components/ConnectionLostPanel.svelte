@@ -7,10 +7,6 @@
     import { connectionStore } from "$lib/stores";
     import { appEventStream } from "$lib/stores/app-stream.svelte";
     import { stalledCopy } from "$lib/utils/connection-copy";
-    import { getApiUrl } from "$lib/utils/env";
-
-    const apiUrl = getApiUrl();
-    const endpoint = apiUrl.trim() === "" ? "this site's origin" : apiUrl;
 
     const c = connectionStore;
     // A stall is not a lost connection: the live stream was opened but isn't
@@ -71,7 +67,7 @@
             <p class="text-sm text-on-surface-muted">
                 The UI can't reach the runner API at <span
                     class="rounded-[3px] bg-surface-sunken px-1.5 py-0.5 font-mono text-xs text-on-surface"
-                    >{endpoint}</span
+                    >this site's origin</span
                 >. The daemon may be restarting or your network is down.
             </p>
         </div>

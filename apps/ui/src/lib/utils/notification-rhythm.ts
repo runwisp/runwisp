@@ -4,7 +4,7 @@
 // keep parity with apps/runwisp/internal/tui/rhythm/rhythm.go
 import { relative } from "./format-time";
 
-export interface RhythmInput {
+interface RhythmInput {
     count: number;
     createdAt: Date | string;
     lastOccurredAt: Date | string;

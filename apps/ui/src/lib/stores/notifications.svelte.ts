@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { z } from "zod";
-import { getApiUrl as defaultGetApiUrl } from "$lib/utils/env";
 import type { AppEventStream } from "./event-manager";
 import { appEventStream } from "./app-stream.svelte";
 import { createLogger } from "$lib/utils/logger";
 import { authFetch, handleUnauthorized } from "$lib/utils/auth-required";
 import { HTTP_STATUS } from "$lib/config/constants";
+import { safeParseJSON } from "$lib/utils/parse";
 import { connectionStore } from "./connection.svelte";
 
 const notificationSchema = z.object({
@@ -48,12 +48,11 @@ const streamEnvelopeSchema = z.object({
     unreadCount: z.number().int().nonnegative(),
 });
 
-export interface NotificationStoreDeps {
+interface NotificationStoreDeps {
     fetch?: typeof fetch;
     /** The shared app-event stream to ride. Defaults to the singleton; tests
      * pass an EventManager wired to a fake EventSource. */
     events?: AppEventStream;
-    getApiUrl?: () => string;
 }
 
 const PAGE_SIZE = 50;
@@ -69,15 +68,12 @@ class NotificationStore {
     // (notification.created/updated/unreadCountChanged) carries the
     // post-mutation count and we set it directly from that — never delta
     // math, since a row absent from our paginated #items would otherwise
-    // drift the count on every recurrence. Local mark-read/unread actions
-    // apply an optimistic delta until the server round-trip (and its own
-    // SSE echo) resolves it. We never recompute it from #items because
-    // items is paginated.
+    // drift the count on every recurrence. We never recompute it from
+    // #items because items is paginated.
     #unread = $state(0);
     readonly #events: AppEventStream;
     #subscribed = false;
     #unsubscribes: (() => void)[] = [];
-    #connected = $state(false);
     #loaded = $state(false);
     #loadFailed = $state(false);
     #initInFlight: Promise<void> | null = null;
@@ -86,11 +82,9 @@ class NotificationStore {
     readonly #logger = createLogger("NotificationStore");
 
     readonly #fetch: typeof fetch;
-    readonly #getApiUrl: () => string;
 
     constructor(deps: Required<NotificationStoreDeps>) {
         this.#fetch = deps.fetch;
-        this.#getApiUrl = deps.getApiUrl;
         this.#events = deps.events;
     }
 
@@ -99,9 +93,6 @@ class NotificationStore {
     }
     get unread(): number {
         return this.#unread;
-    }
-    get connected(): boolean {
-        return this.#connected;
     }
     get loaded(): boolean {
         return this.#loaded;
@@ -172,7 +163,7 @@ class NotificationStore {
         // unread in #items at response time.
         const unreadIds = new Set(this.#items.filter(isUnread).map((n) => n.id));
         try {
-            const res = await this.#fetch(`${this.#getApiUrl()}/api/notifications/read`, {
+            const res = await this.#fetch("/api/notifications/read", {
                 method: "POST",
                 credentials: "include",
             });
@@ -193,71 +184,10 @@ class NotificationStore {
         }
     }
 
-    /** Mark a single notification read. */
-    async markRead(id: string): Promise<void> {
-        await this.#setReadState(id, true);
-    }
-
-    /** Mark a single notification unread. */
-    async markUnread(id: string): Promise<void> {
-        await this.#setReadState(id, false);
-    }
-
-    async #setReadState(id: string, read: boolean): Promise<void> {
-        const idx = this.#items.findIndex((n) => n.id === id);
-        const previous = this.#items[idx];
-        if (!previous) return;
-        const wasUnread = isUnread(previous);
-        if (read === !wasUnread) return;
-
-        const optimistic: Notification = {
-            ...previous,
-            readAt: read ? new Date().toISOString() : undefined,
-        };
-        const next = this.#items.slice();
-        next[idx] = optimistic;
-        this.#items = next;
-        this.#unread = Math.max(0, this.#unread + (read ? -1 : 1));
-
-        const verb = read ? "read" : "unread";
-        try {
-            const url = `${this.#getApiUrl()}/api/notifications/${encodeURIComponent(id)}/${verb}`;
-            const res = await this.#fetch(url, {
-                method: "POST",
-                credentials: "include",
-            });
-            if (!res.ok) throw new Error(`Mark-${verb} returned ${res.status.toString()}`);
-        } catch (e) {
-            this.#logger.error(`Failed to mark notification ${verb}`, e);
-            // Roll back only the readAt field, against whatever is currently
-            // in #items — an SSE notification.updated for this same row may
-            // have landed while the request was in flight, and restoring the
-            // whole pre-optimistic `previous` snapshot would discard it.
-            const rollback = this.#items.slice();
-            const j = rollback.findIndex((n) => n.id === id);
-            const current = rollback[j];
-            if (current) {
-                rollback[j] = { ...current, readAt: previous.readAt };
-                this.#items = rollback;
-            }
-            // #unread is always the server's authoritative snapshot (see the
-            // field comment above) — re-fetch it instead of reapplying a
-            // relative delta, which would drift if an authoritative SSE
-            // update (e.g. from this same notification recurring) landed
-            // while the request was in flight.
-            try {
-                this.#unread = await this.#fetchUnread();
-            } catch (refetchErr) {
-                this.#logger.error("Failed to refresh unread count after rollback", refetchErr);
-            }
-        }
-    }
-
     disconnect(): void {
         for (const off of this.#unsubscribes) off();
         this.#unsubscribes = [];
         this.#subscribed = false;
-        this.#connected = false;
         connectionStore.releaseSource(SOURCE_ID);
     }
 
@@ -266,11 +196,9 @@ class NotificationStore {
         this.#subscribed = true;
         this.#unsubscribes.push(
             this.#events.onOpen(() => {
-                this.#connected = true;
                 connectionStore.reportSourceUp(SOURCE_ID);
             }),
             this.#events.onError((info) => {
-                this.#connected = false;
                 if (info.status === HTTP_STATUS.UNAUTHORIZED) {
                     handleUnauthorized();
                 } else {
@@ -281,7 +209,6 @@ class NotificationStore {
                 }
             }),
             this.#events.onStall(() => {
-                this.#connected = false;
                 connectionStore.reportSourceStalled(SOURCE_ID);
             }),
             // The notification hub has no replay of its own (unlike the
@@ -294,35 +221,25 @@ class NotificationStore {
             }),
         );
         const onNotification = (eventType: string) => (data: string) => {
-            try {
-                this.#logger.debug("SSE notification event", eventType);
-                const raw: unknown = JSON.parse(data);
-                const parsed = streamEnvelopeSchema.safeParse(raw);
-                if (!parsed.success) {
-                    this.#logger.warn("Invalid notification SSE payload", parsed.error.message);
-                    return;
-                }
-                this.#applyUpdate(parsed.data.notification);
-                this.#unread = parsed.data.unreadCount;
-            } catch (e) {
-                this.#logger.error("Malformed notification SSE event", e);
+            this.#logger.debug("SSE notification event", eventType);
+            const parsed = safeParseJSON(data, streamEnvelopeSchema);
+            if (!parsed.success) {
+                this.#logger.warn("Invalid notification SSE payload", parsed.error);
+                return;
             }
+            this.#applyUpdate(parsed.data.notification);
+            this.#unread = parsed.data.unreadCount;
         };
         this.#unsubscribes.push(
             this.#events.subscribe("notification.created", onNotification("notification.created")),
             this.#events.subscribe("notification.updated", onNotification("notification.updated")),
             this.#events.subscribe("notification.unreadCountChanged", (data: string) => {
-                try {
-                    const raw: unknown = JSON.parse(data);
-                    const parsed = unreadCountChangedSchema.safeParse(raw);
-                    if (!parsed.success) {
-                        this.#logger.warn("Invalid unread-count SSE payload", parsed.error.message);
-                        return;
-                    }
-                    this.#unread = parsed.data.unreadCount;
-                } catch (e) {
-                    this.#logger.error("Malformed unread-count SSE event", e);
+                const parsed = safeParseJSON(data, unreadCountChangedSchema);
+                if (!parsed.success) {
+                    this.#logger.warn("Invalid unread-count SSE payload", parsed.error);
+                    return;
                 }
+                this.#unread = parsed.data.unreadCount;
             }),
         );
     }
@@ -354,7 +271,7 @@ class NotificationStore {
     async #fetchPage(before?: string): Promise<z.infer<typeof listResponseSchema>> {
         let qs = `limit=${PAGE_SIZE.toString()}`;
         if (before) qs += `&before=${encodeURIComponent(before)}`;
-        const url = `${this.#getApiUrl()}/api/notifications?${qs}`;
+        const url = `/api/notifications?${qs}`;
         const res = await this.#fetch(url, {
             credentials: "include",
         });
@@ -364,7 +281,7 @@ class NotificationStore {
     }
 
     async #fetchUnread(): Promise<number> {
-        const res = await this.#fetch(`${this.#getApiUrl()}/api/notifications/unread-count`, {
+        const res = await this.#fetch("/api/notifications/unread-count", {
             credentials: "include",
         });
         if (!res.ok) throw new Error(`Unread returned ${res.status.toString()}`);
@@ -379,7 +296,6 @@ export function createNotificationStore(deps: NotificationStoreDeps = {}): Notif
     return new NotificationStore({
         fetch: deps.fetch ?? authFetch,
         events: deps.events ?? appEventStream,
-        getApiUrl: deps.getApiUrl ?? defaultGetApiUrl,
     });
 }
 

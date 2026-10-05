@@ -44,7 +44,6 @@
         xl: "h-4 w-4",
     };
 
-    // Generate a consistent color based on name
     const colors = [
         "bg-primary",
         "bg-info",

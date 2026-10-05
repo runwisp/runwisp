@@ -2,19 +2,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import {
-    formatRelativeTime,
     formatRelativeTimeWithAbsolute,
     humanizeCron,
     humanizeStatus,
     runDuration,
 } from "@runwisp/ui";
 import type { TaskOverview } from "./overview.js";
-import type { Run, Task } from "@runwisp/common";
-
-// formatTriggeredByLabel now lives in the shared @runwisp/ui lib (used by the
-// run list/detail components there too). Re-export so existing apps/ui imports
-// and tests keep resolving it from this module.
-export { formatTriggeredByLabel } from "@runwisp/ui";
+import type { Run } from "@runwisp/common";
 
 export function pluralize(count: number): string {
     return count === 1 ? "" : "s";
@@ -37,10 +31,6 @@ export function formatCompactCount(count: number): string {
         }
     }
     return String(count);
-}
-
-export function formatTaskDescription(task: Task): string {
-    return task.description ?? "No description yet. Open the task to review its execution details.";
 }
 
 export function formatTaskLastRunLabel(task: TaskOverview, now: Date = new Date()): string {
@@ -95,10 +85,6 @@ export function taskTriggerIsHumanizedCron(task: TaskOverview): boolean {
         return false;
     }
     return humanizeCron(task.task.cron).isHumanized;
-}
-
-export function formatRunStartedLabel(run: Run, now: Date = new Date()): string {
-    return formatRelativeTime(run.startedAt ?? run.createdAt, now);
 }
 
 export function formatRunDurationLabel(run: Run): string {

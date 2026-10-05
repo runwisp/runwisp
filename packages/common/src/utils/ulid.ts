@@ -5,7 +5,7 @@ import { monotonicFactory } from "ulidx";
 
 const monotonic = monotonicFactory();
 
-/** Generate a monotonic ULID. Thread-safe ordering within a single process. */
+/** Generate a monotonic ULID: IDs from one process sort in creation order. */
 export function generateUlid(): string {
   return monotonic();
 }

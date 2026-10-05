@@ -12,14 +12,12 @@
         instanceSuffix,
         Card,
         EmptyState,
+        formatRelativeTime,
+        formatTriggeredByLabel,
     } from "@runwisp/ui";
     import type { RunMotion } from "@runwisp/ui";
     import type { Run } from "@runwisp/common";
-    import {
-        formatRunDurationLabel,
-        formatRunStartedLabel,
-        formatTriggeredByLabel,
-    } from "./overview-format.js";
+    import { formatRunDurationLabel } from "./overview-format.js";
 
     let {
         recentActivity = [],
@@ -115,7 +113,7 @@
                         </div>
 
                         <p class="mt-0.5 font-mono text-xs text-on-surface-muted tabular-nums">
-                            {formatRunStartedLabel(run, now)} &middot;
+                            {formatRelativeTime(run.startedAt ?? run.createdAt, now)} &middot;
                             {formatRunDurationLabel(run)}
                             &middot; {formatTriggeredByLabel(run.triggeredBy)}
                             {#if run.isFailure}

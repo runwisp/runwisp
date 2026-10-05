@@ -5,13 +5,14 @@ import type { Run } from "@runwisp/common";
 import { runPhaseOrder } from "@runwisp/ui";
 import { sortByCreatedAtDesc } from "$lib/utils/sort";
 
-// upsertPhaseGuarded folds one snapshot run into the list without ever
-// regressing a run's phase. A snapshot fetched before an SSE `run.completed`
-// lands carries the run as still "running"; merging it through this guard keeps
-// the SSE-advanced "ended" row intact instead of reverting it.
-function upsertPhaseGuarded(list: Run[], run: Run): Run[] {
+// upsertRun folds one run into the list without ever regressing its phase. A
+// snapshot (or stale HTTP response) fetched before an SSE `run.completed` lands
+// carries the run as still "running"; the guard keeps the SSE-advanced "ended"
+// row intact instead of reverting it. A run not yet in the list is inserted at
+// `insertAt`.
+export function upsertRun(list: Run[], run: Run, insertAt: "start" | "end"): Run[] {
     const idx = list.findIndex((r) => r.id === run.id);
-    if (idx === -1) return [...list, run];
+    if (idx === -1) return insertAt === "start" ? [run, ...list] : [...list, run];
     const existing = list[idx];
     if (!existing) return list;
     if (runPhaseOrder(run.status) < runPhaseOrder(existing.status)) return list;
@@ -25,7 +26,7 @@ function upsertPhaseGuarded(list: Run[], run: Run): Run[] {
 // returns the newest `limit` runs.
 export function mergeRecentRuns(existing: Run[], snapshot: Run[], limit: number): Run[] {
     let merged = existing;
-    for (const run of snapshot) merged = upsertPhaseGuarded(merged, run);
+    for (const run of snapshot) merged = upsertRun(merged, run, "end");
     return sortByCreatedAtDesc(merged).slice(0, limit);
 }
 
@@ -35,7 +36,7 @@ export function mergeRecentRuns(existing: Run[], snapshot: Run[], limit: number)
 // still running.
 export function mergeRunningRuns(existing: Run[], snapshot: Run[], limit: number): Run[] {
     let merged = existing;
-    for (const run of snapshot) merged = upsertPhaseGuarded(merged, run);
+    for (const run of snapshot) merged = upsertRun(merged, run, "end");
     return sortByCreatedAtDesc(merged)
         .filter((run) => run.status === "running")
         .slice(0, limit);

@@ -22,15 +22,9 @@ export interface AuthState {
     authenticated: boolean;
 }
 
-// The auth endpoints are called via raw fetch (see api.ts) rather than the
-// shared openapi-fetch client, so a wrong-password 401 doesn't trip the
-// client's global "auth required" interceptor. That means their responses
-// arrive untyped, so each is validated against its shape and piped to the
-// server-generated type (not a hand-maintained duplicate) as the source of
-// truth. (Typing the schema itself as z.ZodType<T> instead would be the more
-// direct check, but Zod's `.optional()` types a field as `T | undefined`,
-// which this project's `exactOptionalPropertyTypes` then rejects against `T`'s
-// `field?: T` — run-schema.test.ts guards drift instead, see its comment.)
+// The auth endpoints use raw fetch (see api.ts) so a wrong-password 401 doesn't
+// trip the shared client's "auth required" middleware; each untyped response is
+// validated and piped to its server-generated type.
 export const authChallengeResponseSchema = z
     .object({ nonce: z.string() })
     .pipe(z.custom<AuthChallengeBody>());
@@ -88,8 +82,6 @@ const runDeletedEventSchema = z.object({
 
 export const runUpdateEventSchema = z.union([runMutationEventSchema, runDeletedEventSchema]);
 
-export type RunMutationEvent = z.infer<typeof runMutationEventSchema>;
-export type RunDeletedEvent = z.infer<typeof runDeletedEventSchema>;
 export type RunUpdateEvent = z.infer<typeof runUpdateEventSchema>;
 export type RunUpdateEventType = RunUpdateEvent["type"];
 export type RunUpdateHandler = (event: RunUpdateEvent) => void;

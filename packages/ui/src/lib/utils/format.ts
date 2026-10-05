@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Signed magnitude thresholds for Intl.RelativeTimeFormat, largest-first
-// division. Mirrors the buckets date-fns' formatDistance used to pick.
+// division. The buckets match date-fns' formatDistance.
 const RELATIVE_DIVISIONS: [amount: number, unit: Intl.RelativeTimeFormatUnit][] = [
     [60, "seconds"],
     [60, "minutes"],

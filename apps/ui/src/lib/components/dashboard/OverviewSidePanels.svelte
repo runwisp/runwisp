@@ -13,6 +13,7 @@
         StatusDot,
         Badge,
         Card,
+        formatTriggeredByLabel,
     } from "@runwisp/ui";
     import type { TaskOverview } from "./overview.js";
     import type { Run } from "@runwisp/common";
@@ -20,7 +21,6 @@
         formatRunDurationLabel,
         formatTaskLastRunLabel,
         formatTaskNextRunLabel,
-        formatTriggeredByLabel,
     } from "./overview-format.js";
 
     let {

@@ -165,7 +165,7 @@ describe("connectionStore.reportSourceStalled", () => {
         drain("a");
     });
 
-    // Regression (Bug 8): when the last live source goes down but a sibling is
+    // Regression: when the last live source goes down but a sibling is
     // still stalled (waiting for a connection slot), the store must reflect
     // "stalled" — not strand the UI on its prior "connected" status. Before the
     // fix reportSourceDown only handled the all-empty case, so this transition

@@ -8,13 +8,13 @@
     import TaskSourceBadge from "../TaskSourceBadge.svelte";
     import { getRunStatusConfig, Badge, EmptyState, Input, Select, Tooltip } from "@runwisp/ui";
     import type {
+        OverviewTaskCounts,
         OverviewTaskFilter,
         OverviewTaskSortKey,
         OverviewTaskState,
         TaskOverview,
     } from "./overview.js";
     import {
-        formatTaskDescription,
         formatTaskLastResultLabel,
         formatTaskNextRunLabel,
         formatTaskTriggerLabel,
@@ -22,7 +22,6 @@
     } from "./overview-format.js";
     import { taskIcon, taskTriggerTooltip } from "$lib/utils/task-icon";
 
-    type TaskCounts = Record<OverviewTaskFilter, number>;
     type BadgeTone = "default" | "primary" | "success" | "warning" | "danger" | "info";
 
     interface FilterOption {
@@ -41,17 +40,6 @@
         accentClass: string;
         toneClass: string;
     }
-
-    const EMPTY_TASKS: TaskOverview[] = [];
-    const EMPTY_COUNTS: TaskCounts = {
-        all: 0,
-        attention: 0,
-        running: 0,
-        scheduled: 0,
-        manual: 0,
-    };
-    const EMPTY_FILTERS: FilterOption[] = [];
-    const EMPTY_SORT_OPTIONS: SortOption[] = [];
 
     const TASK_STATE_CONFIG: Record<OverviewTaskState, TaskStateConfig> = {
         attention: {
@@ -93,37 +81,33 @@
     };
 
     let {
-        taskOverviews = EMPTY_TASKS,
-        filteredTasks = EMPTY_TASKS,
+        taskOverviews,
+        filteredTasks,
         searchQuery = $bindable(),
         taskFilter = $bindable(),
         sortBy = $bindable(),
-        taskCounts = EMPTY_COUNTS,
-        filterOptions = EMPTY_FILTERS,
-        sortOptions = EMPTY_SORT_OPTIONS,
-        now = new Date(),
-        schedulingActive = true,
+        taskCounts,
+        filterOptions,
+        sortOptions,
+        now,
+        schedulingActive,
         onTaskClick,
     } = $props<{
-        taskOverviews?: TaskOverview[];
-        filteredTasks?: TaskOverview[];
+        taskOverviews: TaskOverview[];
+        filteredTasks: TaskOverview[];
         searchQuery: string;
         taskFilter: OverviewTaskFilter;
         sortBy: OverviewTaskSortKey;
-        taskCounts?: TaskCounts;
-        filterOptions?: FilterOption[];
-        sortOptions?: SortOption[];
-        now?: Date;
-        schedulingActive?: boolean;
+        taskCounts: OverviewTaskCounts;
+        filterOptions: FilterOption[];
+        sortOptions: SortOption[];
+        now: Date;
+        schedulingActive: boolean;
         onTaskClick?: (taskName: string) => void;
     }>();
 
     function getTaskStateConfig(state: OverviewTaskState): TaskStateConfig {
         return TASK_STATE_CONFIG[state];
-    }
-
-    function viewTask(taskName: string): void {
-        onTaskClick?.(taskName);
     }
 </script>
 
@@ -224,7 +208,7 @@ run  = "echo hello"</pre>
 
                 <button
                     class="group w-full rounded-[4px] border border-l-4 border-outline bg-surface-raised px-4 py-3 text-left hover:border-outline-hover hover:shadow-sm {taskState.accentClass}"
-                    onclick={() => viewTask(task.task.name)}
+                    onclick={() => onTaskClick?.(task.task.name)}
                 >
                     <div class="flex items-center gap-4">
                         <div class="min-w-0 flex-1">
@@ -252,7 +236,7 @@ run  = "echo hello"</pre>
                                     />
                                 {/if}
                                 {#if task.task.heldBy}
-                                    <TaskHeldBadge heldBy={task.task.heldBy} />
+                                    <TaskHeldBadge />
                                 {/if}
                                 {#if task.task.source}
                                     <TaskSourceBadge
@@ -271,7 +255,8 @@ run  = "echo hello"</pre>
                             </div>
 
                             <p class="mt-1 truncate text-xs text-on-surface-muted">
-                                {formatTaskDescription(task.task)}
+                                {task.task.description ??
+                                    "No description yet. Open the task to review its execution details."}
                             </p>
                         </div>
 

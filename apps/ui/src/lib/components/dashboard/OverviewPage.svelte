@@ -9,7 +9,6 @@
     import RecentActivityPanel from "./RecentActivityPanel.svelte";
     import TaskOverviewList from "./TaskOverviewList.svelte";
     import {
-        buildOverviewSummary,
         buildTaskOverviews,
         countTaskOverviews,
         filterTaskOverviews,
@@ -20,7 +19,7 @@
     } from "./overview.js";
     import { instanceCountResolver } from "./instance-count.js";
     import { TickingNow, PageContainer, Card } from "@runwisp/ui";
-    import type { DaemonState, DaemonStats, RunMotion } from "@runwisp/ui";
+    import type { DaemonStats, RunMotion } from "@runwisp/ui";
     import type { Run, Task } from "@runwisp/common";
 
     const TASK_FILTERS: { value: OverviewTaskFilter; label: string }[] = [
@@ -48,7 +47,7 @@
     const RECENT_ACTIVITY_LIMIT = 6;
 
     let {
-        state: daemonState,
+        uptime,
         stats,
         recentRuns = [],
         runningRuns = [],
@@ -62,7 +61,7 @@
         onRunClick,
         motion,
     } = $props<{
-        state: DaemonState;
+        uptime: string;
         stats: DaemonStats;
         recentRuns?: Run[];
         runningRuns?: Run[];
@@ -109,7 +108,6 @@
 
     let getInstanceCount = $derived(instanceCountResolver(tasks));
     let taskOverviews = $derived(buildTaskOverviews(tasks, recentRuns, runningRuns));
-    let summary = $derived(buildOverviewSummary(taskOverviews, runningRuns));
     let taskCounts = $derived(countTaskOverviews(taskOverviews));
     let filteredTasks = $derived(
         filterTaskOverviews(taskOverviews, searchQuery, taskFilter, sortBy),
@@ -123,7 +121,7 @@
     );
     // Recent activity is for finished work; running runs have their own
     // "Running now" pane. Pending runs are excluded too: a scheduled run is
-    // pending for an instant, and listing it made the rows jump in and out.
+    // pending for an instant, and listing it would make rows jump in and out.
     let recentActivity = $derived(
         sortRunsByStartDesc(recentRuns.filter((run: Run) => run.status === "ended")).slice(
             0,
@@ -146,11 +144,11 @@
         <div class="flex flex-col gap-5">
             <OverviewHero
                 {stats}
-                {summary}
+                totalTasks={taskOverviews.length}
                 {totalRuns}
                 {completedRunsCount}
                 {healthyTasksCount}
-                uptime={daemonState.uptime}
+                {uptime}
                 {stationMode}
             />
 

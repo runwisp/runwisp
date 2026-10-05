@@ -3,7 +3,7 @@
 
 import { createLogger } from "$lib/utils/logger";
 import type { LogEvent } from "@runwisp/ui";
-import { parseLogPage, createLogStreamer, type LogStreamInitialState } from "$lib/logs";
+import { parseLogPage, streamRunLog, type LogStreamInitialState } from "$lib/logs";
 import { tasksApi } from "$lib/api";
 import type { Run } from "$lib/types";
 
@@ -16,20 +16,9 @@ interface LogSessionOptions {
 
 /**
  * Creates a reusable log session that provides fetchLogs/streamLogs callbacks
- * bound to a dynamic run lookup. Caches per-task streamers internally.
+ * bound to a dynamic run lookup.
  */
 export function createLogSession(options: LogSessionOptions) {
-    const streamerCache = new Map<string, ReturnType<typeof createLogStreamer>>();
-
-    function getStreamer(taskName: string) {
-        let streamer = streamerCache.get(taskName);
-        if (!streamer) {
-            streamer = createLogStreamer(taskName);
-            streamerCache.set(taskName, streamer);
-        }
-        return streamer;
-    }
-
     async function fetchLogs(runId: string, from: number, to: number): Promise<LogEvent> {
         const run = options.findRun(runId);
         const finished = run ? run.status === "ended" : true;
@@ -46,10 +35,10 @@ export function createLogSession(options: LogSessionOptions) {
             });
             return parseLogPage(page);
         } catch (err) {
-            // Log for diagnostics, then rethrow instead of swallowing into a
-            // benign empty LogEvent: callers (RunDetailPanel's seed fetch,
-            // LogConsole's internal LogFetcher) already catch this and must be
-            // able to tell "fetch failed" apart from "run produced no output".
+            // Log for diagnostics, then rethrow rather than return an empty
+            // LogEvent: callers (RunDetailPanel's seed fetch, LogConsole's
+            // internal LogFetcher) catch this and must be able to tell "fetch
+            // failed" apart from "run produced no output".
             logger.error("Failed to fetch logs", err);
             throw err;
         }
@@ -62,7 +51,7 @@ export function createLogSession(options: LogSessionOptions) {
     ): () => void {
         const run = options.findRun(runId);
         if (!run) return () => {};
-        return getStreamer(options.getTaskName(run))(runId, onEvent, initialState);
+        return streamRunLog(options.getTaskName(run), runId, onEvent, initialState);
     }
 
     async function fetchLineHistory(runId: string, lineNum: number): Promise<string[][]> {
@@ -71,9 +60,8 @@ export function createLogSession(options: LogSessionOptions) {
         try {
             return await tasksApi.getLogLineHistory(runId, lineNum);
         } catch (err) {
-            // LogConsole's frame-history toggle already catches this and
-            // renders "Failed to load frame history" — swallowing it here
-            // instead hid every failure behind a silent no-op.
+            // Rethrow: LogConsole's frame-history toggle catches this and
+            // renders "Failed to load frame history".
             logger.error("Failed to fetch log line history", err);
             throw err;
         }

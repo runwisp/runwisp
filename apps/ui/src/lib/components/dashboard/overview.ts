@@ -19,14 +19,6 @@ export interface TaskOverview {
     isApiOnly: boolean;
 }
 
-export interface OverviewSummary {
-    totalTasks: number;
-    activeRuns: number;
-    attentionTasks: number;
-    scheduledTasks: number;
-    manualTasks: number;
-}
-
 export type OverviewTaskCounts = Record<OverviewTaskFilter, number>;
 
 const TASK_STATE_ORDER: Record<OverviewTaskState, number> = {
@@ -79,20 +71,6 @@ export function buildTaskOverviews(
             isApiOnly,
         };
     });
-}
-
-export function buildOverviewSummary(
-    taskOverviews: TaskOverview[],
-    runningRuns: Run[],
-): OverviewSummary {
-    return {
-        totalTasks: taskOverviews.length,
-        activeRuns: runningRuns.length,
-        attentionTasks: taskOverviews.filter((task) => task.state === "attention").length,
-        scheduledTasks: taskOverviews.filter((task) => task.nextRunMs !== undefined).length,
-        manualTasks: taskOverviews.filter((task) => task.isApiOnly && task.nextRunMs === undefined)
-            .length,
-    };
 }
 
 export function countTaskOverviews(taskOverviews: TaskOverview[]): OverviewTaskCounts {

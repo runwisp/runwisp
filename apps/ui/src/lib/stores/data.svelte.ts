@@ -2,12 +2,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { tasksApi, AuthRequiredError } from "$lib/api";
-import { toast, extractErrorMessage, runPhaseOrder } from "@runwisp/ui";
+import { toast, extractErrorMessage } from "@runwisp/ui";
 import { connectionStore } from "$lib/stores/connection.svelte";
-import { sortByCreatedAtDesc } from "$lib/utils/sort";
 import type { Task, Run } from "$lib/types";
 
-export interface TaskStoreDeps {
+interface TaskStoreDeps {
     getTasks?: () => Promise<Task[]>;
     /** Reports a fetch failure to the connection tracker; returns true when the
      * error looks like a lost connection rather than a server-side error. */
@@ -92,23 +91,6 @@ export function createTaskStore(deps: TaskStoreDeps = {}): TaskStore {
 }
 
 export const taskStore = createTaskStore();
-
-export function upsertRun(list: Run[], run: Run): Run[] {
-    const idx = list.findIndex((r) => r.id === run.id);
-    if (idx !== -1) {
-        const existing = list[idx];
-        if (!existing) return list;
-        // Never regress a run's status (e.g. stale HTTP response arriving
-        // after an SSE event already advanced the status).
-        if (runPhaseOrder(run.status) < runPhaseOrder(existing.status)) {
-            return list;
-        }
-        const copy = [...list];
-        copy[idx] = run;
-        return copy;
-    }
-    return sortByCreatedAtDesc([run, ...list]);
-}
 
 export function removeRun(list: Run[], runId: string): Run[] {
     return list.filter((r) => r.id !== runId);

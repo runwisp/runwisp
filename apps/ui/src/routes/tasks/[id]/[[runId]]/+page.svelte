@@ -7,7 +7,7 @@
     import { TaskPage } from "$lib/components/dashboard";
     import { toast, ErrorState, RunsList, RunDetailPanel } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
-    import { tasksApi } from "$lib/api";
+    import { runsApi, tasksApi } from "$lib/api";
     import { runUpdatesStore, systemStore, connectionStore, appEventStream } from "$lib/stores";
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import { createLogSession } from "$lib/utils/log-session";

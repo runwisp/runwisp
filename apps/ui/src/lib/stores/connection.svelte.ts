@@ -4,6 +4,7 @@
 import { SvelteSet } from "svelte/reactivity";
 import { systemApi, AuthRequiredError } from "$lib/api";
 import { createLogger } from "$lib/utils/logger";
+import { isRecord } from "$lib/utils/parse";
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "stalled";
 
@@ -179,8 +180,8 @@ function createConnectionStore() {
 
     // A source the app closed on purpose (logout, unmount) is not a lost
     // connection: forget it without flipping status or scheduling a ping.
-    // Reporting it down instead made a logged-out page ping /api/system every
-    // 2 s, and each 401 re-opened the login modal (clearing the password field).
+    // Reporting it down instead would make a logged-out page ping /api/system every
+    // 2 s, and each 401 would re-open the login modal (clearing the password field).
     function releaseSource(id: string) {
         upSources.delete(id);
         stalledSources.delete(id);
@@ -250,10 +251,6 @@ function formatError(err: unknown): string | null {
     } catch {
         return "Unknown error";
     }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && Boolean(value);
 }
 
 export const connectionStore = createConnectionStore();

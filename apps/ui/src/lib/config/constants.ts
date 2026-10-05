@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-export const DEFAULT_API_URL = "";
-
 export const AUTH_EVENTS = {
     REQUIRED: "auth-required",
 } as const;

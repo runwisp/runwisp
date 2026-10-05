@@ -4,8 +4,6 @@
 import createClient, { type Middleware } from "openapi-fetch";
 import { z } from "zod";
 import type { APIPaths, APIOperations, RunSelector } from "@runwisp/common";
-import { browser } from "$app/environment";
-import { getApiUrl } from "./utils/env";
 import { chapResponse } from "./chap";
 import { HTTP_STATUS } from "./config/constants";
 import { authFetch, handleUnauthorized } from "./utils/auth-required";
@@ -25,8 +23,6 @@ import {
 } from "./types";
 
 export * from "./types";
-
-const API_BASE_URL = getApiUrl();
 
 export class AuthRequiredError extends Error {
     constructor() {
@@ -54,7 +50,7 @@ export class RateLimitedError extends Error {
 const errorMiddleware: Middleware = {
     onResponse({ response }) {
         if (response.ok) return response;
-        if (response.status === HTTP_STATUS.UNAUTHORIZED && browser) {
+        if (response.status === HTTP_STATUS.UNAUTHORIZED) {
             handleUnauthorized();
             throw new AuthRequiredError();
         }
@@ -62,7 +58,7 @@ const errorMiddleware: Middleware = {
     },
 };
 
-const apiClient = createClient<APIPaths>({ baseUrl: API_BASE_URL });
+const apiClient = createClient<APIPaths>();
 apiClient.use(errorMiddleware);
 
 // Narrows a generated-client response's `data` (typed possibly-undefined
@@ -75,22 +71,38 @@ function unwrap<T extends object>(data: T | undefined): T {
     return data;
 }
 
-// The one params shape shared by /api/runs and /api/tasks/{taskName}/runs —
-// sourced from the generated client so it can never drift from what the
-// server actually accepts (it used to be two hand-written copies, missing
-// the server's `isFailure` filter).
+// The /api/runs query shape, sourced from the generated client so it can never
+// drift from what the server actually accepts.
 type RunsQueryParams = NonNullable<APIOperations["listRuns"]["parameters"]["query"]>;
+
+// The bodiless per-task POST actions. errorMiddleware throws on any failure.
+type TaskActionPath =
+    | "/api/tasks/{taskName}/restart"
+    | "/api/tasks/{taskName}/stop"
+    | "/api/tasks/{taskName}/pause"
+    | "/api/tasks/{taskName}/resume";
+
+async function postTaskAction(path: TaskActionPath, taskName: string): Promise<void> {
+    await apiClient.POST(path, { params: { path: { taskName } } });
+}
+
+// GETs a JSON endpoint outside the generated client and validates the body.
+async function getJson<T>(url: string, schema: z.ZodType<T>, errorPrefix: string): Promise<T> {
+    const response = await authFetch(url, { headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error(errorPrefix + ": " + String(response.status));
+    return schema.parse(await response.json());
+}
 
 export const authApi = {
     login: async (password: string): Promise<AuthLoginResponse> => {
-        const challengeRes = await fetch(`${API_BASE_URL}/api/auth/challenge`);
+        const challengeRes = await fetch("/api/auth/challenge");
         if (challengeRes.status === HTTP_STATUS.TOO_MANY_REQUESTS) throw new RateLimitedError();
         if (!challengeRes.ok) throw new Error("Failed to get auth challenge");
         const { nonce } = authChallengeResponseSchema.parse(await challengeRes.json());
 
         const response = await chapResponse(password, nonce);
 
-        const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        const res = await fetch("/api/auth/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ nonce, response }),
@@ -102,7 +114,7 @@ export const authApi = {
     },
 
     status: async (): Promise<AuthStatusResponse> => {
-        const res = await fetch(`${API_BASE_URL}/api/auth/status`);
+        const res = await fetch("/api/auth/status");
         if (!res.ok) throw new Error("Failed to check auth status");
         return authStatusResponseSchema.parse(await res.json());
     },
@@ -114,14 +126,6 @@ export const tasksApi = {
         return unwrap(data).items ?? [];
     },
 
-    getRuns: async (taskName: string, params?: RunsQueryParams) => {
-        const { data } = await apiClient.GET("/api/runs", {
-            params: { query: { taskName, ...params } },
-        });
-        const runs = unwrap(data);
-        return { runs: runs.items ?? [], total: runs.total };
-    },
-
     triggerRun: async (taskName: string, params?: Record<string, string | null>) => {
         const { data } = await apiClient.POST("/api/tasks/{taskName}/run", {
             params: { path: { taskName }, query: { via: "ui" } },
@@ -130,36 +134,10 @@ export const tasksApi = {
         return unwrap(data);
     },
 
-    restartService: async (taskName: string): Promise<void> => {
-        await apiClient.POST("/api/tasks/{taskName}/restart", {
-            params: { path: { taskName } },
-        });
-    },
-
-    stopService: async (taskName: string): Promise<void> => {
-        await apiClient.POST("/api/tasks/{taskName}/stop", {
-            params: { path: { taskName } },
-        });
-    },
-
-    pauseSchedule: async (taskName: string): Promise<void> => {
-        await apiClient.POST("/api/tasks/{taskName}/pause", {
-            params: { path: { taskName } },
-        });
-    },
-
-    resumeSchedule: async (taskName: string): Promise<void> => {
-        await apiClient.POST("/api/tasks/{taskName}/resume", {
-            params: { path: { taskName } },
-        });
-    },
-
-    getRun: async (_taskName: string, runId: string) => {
-        const { data } = await apiClient.GET("/api/runs/{runId}", {
-            params: { path: { runId } },
-        });
-        return unwrap(data);
-    },
+    restartService: (taskName: string) => postTaskAction("/api/tasks/{taskName}/restart", taskName),
+    stopService: (taskName: string) => postTaskAction("/api/tasks/{taskName}/stop", taskName),
+    pauseSchedule: (taskName: string) => postTaskAction("/api/tasks/{taskName}/pause", taskName),
+    resumeSchedule: (taskName: string) => postTaskAction("/api/tasks/{taskName}/resume", taskName),
 
     stopRun: async (runId: string): Promise<void> => {
         await apiClient.POST("/api/runs/{runId}/stop", {
@@ -175,12 +153,8 @@ export const tasksApi = {
         if (options?.from !== undefined) params.set("from", String(options.from));
         if (options?.limit !== undefined) params.set("limit", String(options.limit));
         const qs = params.toString();
-        const url =
-            API_BASE_URL + "/api/runs/" + encodeURIComponent(runId) + "/log" + (qs ? "?" + qs : "");
-
-        const response = await authFetch(url, { headers: { Accept: "application/json" } });
-        if (!response.ok) throw new Error("Log page fetch failed: " + String(response.status));
-        return logPageSchema.parse(await response.json());
+        const url = "/api/runs/" + encodeURIComponent(runId) + "/log" + (qs ? "?" + qs : "");
+        return getJson(url, logPageSchema, "Log page fetch failed");
     },
 
     searchLogs: async (
@@ -203,38 +177,15 @@ export const tasksApi = {
         if (options.cursor) params.set("cursor", options.cursor);
 
         const url =
-            API_BASE_URL +
-            "/api/tasks/" +
-            encodeURIComponent(taskName) +
-            "/log/search?" +
-            params.toString();
-
-        const response = await authFetch(url, { headers: { Accept: "application/json" } });
-        if (!response.ok) throw new Error("Log search failed: " + String(response.status));
-        return logSearchResponseSchema.parse(await response.json());
+            "/api/tasks/" + encodeURIComponent(taskName) + "/log/search?" + params.toString();
+        return getJson(url, logSearchResponseSchema, "Log search failed");
     },
 
     getLogLineHistory: async (runId: string, lineNum: number): Promise<string[][]> => {
         const url =
-            API_BASE_URL +
-            "/api/runs/" +
-            encodeURIComponent(runId) +
-            "/log/line/" +
-            String(lineNum) +
-            "/history";
-
-        const response = await authFetch(url, { headers: { Accept: "application/json" } });
-        if (!response.ok)
-            throw new Error("Log line history fetch failed: " + String(response.status));
-        return logLineHistorySchema.parse(await response.json()).frames;
-    },
-
-    getLogRaw: async (runId: string): Promise<string> => {
-        const url = API_BASE_URL + "/api/runs/" + encodeURIComponent(runId) + "/log/raw";
-
-        const response = await authFetch(url);
-        if (!response.ok) throw new Error("Raw log fetch failed: " + String(response.status));
-        return await response.text();
+            "/api/runs/" + encodeURIComponent(runId) + "/log/line/" + String(lineNum) + "/history";
+        const history = await getJson(url, logLineHistorySchema, "Log line history fetch failed");
+        return history.frames;
     },
 };
 
@@ -304,12 +255,10 @@ export const systemApi = {
         return unwrap(data).items ?? [];
     },
 
-    // Reload re-reads runwisp.toml and reconciles the live task set — the one
-    // action REST and the TUI already exposed that the Web UI didn't (it only
-    // told the operator to run `runwisp reload`). Unlike this file's other
-    // methods, a rejected reload (parse error, a restart-only setting changed)
-    // carries an operator-actionable reason in `detail`, so that reason is
-    // surfaced instead of a generic fallback message.
+    // Reload re-reads runwisp.toml and reconciles the live task set. Unlike this
+    // file's other methods, a rejected reload (parse error, a restart-only
+    // setting changed) carries an operator-actionable reason in `detail`, so
+    // that reason is surfaced instead of a generic fallback message.
     reload: async () => {
         const { data, error } = await apiClient.POST("/api/daemon/reload");
         if (error) throw new Error(error.detail ?? "Failed to reload config");

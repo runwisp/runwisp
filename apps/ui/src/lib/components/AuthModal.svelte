@@ -3,7 +3,6 @@
 
 <script lang="ts">
     import { tick } from "svelte";
-    import { browser } from "$app/environment";
     import { Button, Input, Logo, Popover } from "@runwisp/ui";
     import { KeyRound, Lock } from "@lucide/svelte";
     import { authApi, RateLimitedError } from "$lib/api";
@@ -24,7 +23,6 @@
     let authRequired = $state(true);
 
     $effect(() => {
-        if (!browser) return;
         // Auth status is loaded once by the root layout; this modal only reacts
         // to authStore.current (see the effect below). Loading here too would
         // double the /api/auth/status hit and re-trigger the layout's auth

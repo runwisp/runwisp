@@ -60,10 +60,9 @@ class RunUpdateManager {
         );
 
         for (const eventType of RUN_EVENT_TYPES) {
-            const dispatchType: RunUpdateEventType = eventType;
             this.unsubscribes.push(
                 this.events.subscribe(eventType, (data) => {
-                    this.dispatch(dispatchType, data);
+                    this.dispatch(eventType, data);
                 }),
             );
         }
@@ -72,7 +71,6 @@ class RunUpdateManager {
     private dispatch(eventType: RunUpdateEventType, data: string): void {
         try {
             const parsed: unknown = JSON.parse(data);
-            this.logger.debug("SSE raw event", eventType, JSON.stringify(parsed, null, 2));
             const envelope = {
                 type: eventType,
                 timestamp: new Date().toISOString(),

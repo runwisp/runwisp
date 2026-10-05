@@ -50,7 +50,6 @@ describe("EventManager stall detection", () => {
         const mgr = new EventManager({
             path: "/api/events/stream",
             createEventSource: () => es,
-            getApiUrl: () => "http://test",
         });
         return { es, mgr };
     }
@@ -201,7 +200,6 @@ describe("EventManager subscription and dispatch", () => {
         const mgr = new EventManager({
             path: "/api/events/stream",
             createEventSource: () => es,
-            getApiUrl: () => "http://test",
         });
         return { es, mgr };
     }
@@ -295,7 +293,6 @@ describe("EventManager subscription and dispatch", () => {
                 created++;
                 return new FakeEventSource();
             },
-            getApiUrl: () => "http://test",
         });
         mgr2.close();
         mgr2.subscribe("system", () => {});
@@ -348,7 +345,6 @@ describe("EventManager errors and reconnect", () => {
                 sources.push(es);
                 return es;
             },
-            getApiUrl: () => "http://test",
         });
         const onError = vi.fn();
         mgr.onError(onError);
@@ -378,7 +374,6 @@ describe("EventManager errors and reconnect", () => {
                 if (calls === 1) throw new Error("construct failed");
                 return recovered;
             },
-            getApiUrl: () => "http://test",
         });
         const onError = vi.fn();
         mgr.onError(onError);
@@ -395,7 +390,6 @@ describe("EventManager errors and reconnect", () => {
         const mgr = new EventManager({
             path: "/api/events/stream",
             createEventSource: () => es,
-            getApiUrl: () => "http://test",
         });
         const second = vi.fn();
         mgr.onError(() => {
@@ -414,7 +408,6 @@ describe("EventManager errors and reconnect", () => {
         const mgr = new EventManager({
             path: "/api/events/stream",
             createEventSource: () => es,
-            getApiUrl: () => "http://test",
         });
         const second = vi.fn();
         mgr.onStall(() => {
@@ -439,7 +432,6 @@ describe("EventManager resume cursor", () => {
         const mgr = new EventManager({
             path: "/api/events/stream",
             createEventSource: () => es,
-            getApiUrl: () => "http://test",
         });
         let seenId: string | undefined;
         mgr.subscribe("run.created", (_d, id) => {
@@ -458,11 +450,10 @@ describe("EventManager resume cursor", () => {
                 captured = url;
                 return new FakeEventSource();
             },
-            getApiUrl: () => "http://test",
             initialLastEventId: () => "7",
         });
         mgr.subscribe("system", () => {});
-        expect(captured).toBe("http://test/api/events/stream?lastEventId=7");
+        expect(captured).toBe("/api/events/stream?lastEventId=7");
     });
 
     it("omits the query when there is no seed id (fresh client)", () => {
@@ -473,10 +464,9 @@ describe("EventManager resume cursor", () => {
                 captured = url;
                 return new FakeEventSource();
             },
-            getApiUrl: () => "http://test",
             initialLastEventId: () => null,
         });
         mgr.subscribe("system", () => {});
-        expect(captured).toBe("http://test/api/events/stream");
+        expect(captured).toBe("/api/events/stream");
     });
 });

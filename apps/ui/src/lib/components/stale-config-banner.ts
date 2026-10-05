@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 /** The added/removed/changed counts a reload reports; mirrors model.ReloadResult. */
-export interface ReloadCounts {
+interface ReloadCounts {
     added?: string[] | null;
     removed?: string[] | null;
     changed?: unknown[] | null;

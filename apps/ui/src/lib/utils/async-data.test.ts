@@ -12,7 +12,7 @@ vi.mock("$lib/api", () => ({
 import { AsyncData } from "./async-data.svelte";
 
 describe("AsyncData", () => {
-    // Guards M9: a fetcher that ignores its abort signal can still resolve after
+    // A fetcher that ignores its abort signal can still resolve after
     // a newer fetch() superseded it. The success path must drop the stale
     // result instead of overwriting fresher data.
     it("does not let an aborted fetch overwrite fresher data", async () => {

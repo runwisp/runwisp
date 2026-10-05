@@ -3,7 +3,6 @@
 
 <script lang="ts">
     import { Search, X, LoaderCircle } from "@lucide/svelte";
-    import { browser } from "$app/environment";
     import { headerSearchStore } from "$lib/stores";
 
     // Debounce typing before handing the query to the page, so a filter or a
@@ -15,7 +14,7 @@
     // ⌘ on Apple, Ctrl elsewhere — show the shortcut the operator actually
     // presses. navigator.userAgent never changes, so this is a one-time read,
     // not a reactive effect.
-    const isMac = browser && /mac|iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isMac = /mac|iphone|ipad|ipod/i.test(navigator.userAgent);
     const shortcut = isMac ? "⌘K" : "Ctrl K";
 
     // Debounced dispatch to the registered page. Re-runs on every keystroke;

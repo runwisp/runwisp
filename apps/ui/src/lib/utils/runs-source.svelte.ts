@@ -11,15 +11,9 @@ import {
     type ExitCodeRange,
     type RunsListFilters,
 } from "@runwisp/ui";
-import { runsApi, tasksApi } from "$lib/api";
+import { runsApi } from "$lib/api";
 
 const PAGE_SIZE = 50;
-
-export type RunsSortDirection = "asc" | "desc" | "";
-
-// One filter shape across the list, popover, source, and bulk selector — the
-// canonical definition lives in @runwisp/ui.
-export type RunsFilters = RunsListFilters;
 
 export interface RunsSource {
     readonly items: Run[];
@@ -28,9 +22,9 @@ export interface RunsSource {
     /** True once the first fetch has settled. Latches on; never resets. */
     readonly loaded: boolean;
     readonly error: Error | null;
-    readonly filters: RunsFilters | null;
+    readonly filters: RunsListFilters | null;
     readonly done: boolean;
-    setFilters(next: RunsFilters): void;
+    setFilters(next: RunsListFilters): void;
     loadMore(): void;
     /**
      * Re-fetch the first page with the current filters, replacing the list. For
@@ -56,7 +50,7 @@ function arraysEqual(a: string[], b: string[]): boolean {
     return a.every((v, i) => v === b[i]);
 }
 
-function filtersEqual(a: RunsFilters | null, b: RunsFilters): boolean {
+function filtersEqual(a: RunsListFilters | null, b: RunsListFilters): boolean {
     if (!a) return false;
     return (
         a.search === b.search &&
@@ -77,8 +71,9 @@ function asTrigger(value: string | undefined): Trigger | undefined {
     return TRIGGERS.find((t) => t === value);
 }
 
-function buildQuery(offset: number, f: RunsFilters): RunsQuery {
+function buildQuery(offset: number, f: RunsListFilters): RunsQuery {
     const params: RunsQuery = { limit: PAGE_SIZE, offset };
+    if (f.taskName) params.taskName = f.taskName;
     const search = f.search.trim();
     if (search) params.search = search;
     if (f.statuses.length > 0) params.status = f.statuses.join(",");
@@ -94,10 +89,9 @@ function buildQuery(offset: number, f: RunsFilters): RunsQuery {
     return params;
 }
 
-// Match a run's phase OR its end reason against the set — mirrors the server
-// gate. (The old code compared only the phase, so a "failed" filter never
-// matched an ended run; this fixes that.) The failure sentinel resolves to the
-// run's per-task `isFailure` classification, mirroring splitFailureToken +
+// Match a run's phase OR its end reason against the set, mirroring the server
+// gate, so a "failed" filter matches an ended run. The failure sentinel resolves
+// to the run's per-task `isFailure` classification, mirroring splitFailureToken +
 // the SQL is_failure OR-branch on the server.
 function matchesStatus(run: Run, statuses: string[]): boolean {
     if (statuses.length === 0) return true;
@@ -128,7 +122,7 @@ function matchesSearch(run: Run, search: string): boolean {
     return run.id.toLowerCase().includes(query) || run.taskName.toLowerCase().includes(query);
 }
 
-function matchesFilters(run: Run, f: RunsFilters): boolean {
+function matchesFilters(run: Run, f: RunsListFilters): boolean {
     if (f.taskName && run.taskName !== f.taskName) return false;
     if (!matchesStatus(run, f.statuses)) return false;
     if (!matchesTimeRange(run, f.createdAfter, f.createdBefore)) return false;
@@ -139,7 +133,7 @@ function matchesFilters(run: Run, f: RunsFilters): boolean {
 }
 
 /** True when filters use the server default sort (createdAt DESC). */
-function isCreatedAtDesc(f: RunsFilters): boolean {
+function isCreatedAtDesc(f: RunsListFilters): boolean {
     return f.sortDirection !== "asc";
 }
 
@@ -149,7 +143,7 @@ export function createRunsSource(): RunsSource {
     let loading = $state(false);
     let loaded = $state(false);
     let error = $state<Error | null>(null);
-    let currentFilters = $state<RunsFilters | null>(null);
+    let currentFilters = $state<RunsListFilters | null>(null);
     let fetchToken = 0;
     const motion = new RunMotion();
 
@@ -186,10 +180,7 @@ export function createRunsSource(): RunsSource {
         const token = ++fetchToken;
         loading = true;
         try {
-            const query = buildQuery(offset, f);
-            const res = f.taskName
-                ? await tasksApi.getRuns(f.taskName, query)
-                : await runsApi.getAll(query);
+            const res = await runsApi.getAll(buildQuery(offset, f));
             if (token !== fetchToken) return;
             resolvePage(res, replace, expectedLength);
             error = null;
@@ -204,7 +195,7 @@ export function createRunsSource(): RunsSource {
         }
     }
 
-    function setFilters(next: RunsFilters): void {
+    function setFilters(next: RunsListFilters): void {
         if (filtersEqual(currentFilters, next)) return;
         currentFilters = { ...next };
         motion.clear();
@@ -224,7 +215,7 @@ export function createRunsSource(): RunsSource {
         void fetchPage(0, true);
     }
 
-    function replaceExisting(idx: number, run: Run, f: RunsFilters): void {
+    function replaceExisting(idx: number, run: Run, f: RunsListFilters): void {
         const existing = items[idx];
         // Never regress a run's status (e.g. the pending HTTP response from
         // trigger arriving after SSE already advanced the row to succeeded).
@@ -243,7 +234,7 @@ export function createRunsSource(): RunsSource {
         items = next;
     }
 
-    function insertNew(run: Run, f: RunsFilters): void {
+    function insertNew(run: Run, f: RunsListFilters): void {
         if (!matchesFilters(run, f)) return;
         // Triggered and scheduled runs always arrive in flight. A terminal run
         // inserted here is a deep-link fetch or an undo restore, not news.

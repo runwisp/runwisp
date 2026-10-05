@@ -6,7 +6,7 @@ import { SSE_CONFIG } from "$lib/config/constants";
 import type { SSEStream } from "$lib/adapters/browser";
 import { type SSEErrorInfo, extractErrorInfo, formatErrorInfo } from "$lib/utils/event-source";
 
-export interface ReconnectingConnectionOptions {
+interface ReconnectingConnectionOptions {
     /**
      * Resolves the URL to connect to and the label used in log lines (e.g.
      * the bare path). Called once per (re)connect attempt — both values are

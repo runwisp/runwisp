@@ -82,8 +82,6 @@ interface Harness {
     setItems: (items: Notification[]) => void;
     /** Gate the /api/notifications/read response behind a caller-controlled promise. */
     setMarkAllReadGate: (gate: Promise<void>) => void;
-    /** Force the per-row mark-read/unread POST to fail with a 500. */
-    setRowActionFails: (fail: boolean) => void;
     /** Force the notifications list GET to fail with a 500. */
     setPageFails: (fail: boolean) => void;
 }
@@ -92,7 +90,6 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
     let items = opts.items ?? [];
     let unread = opts.unread ?? 0;
     let markAllReadGate: Promise<void> = Promise.resolve();
-    let rowActionFails = false;
     let pageFails = false;
     const requests: RecordedRequest[] = [];
 
@@ -118,9 +115,6 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
                 }),
             );
         }
-        if (url.match(/\/api\/notifications\/[^/]+\/(read|unread)$/)) {
-            return Promise.resolve(new Response(null, { status: rowActionFails ? 500 : 204 }));
-        }
         if (url.endsWith("/api/notifications/read")) {
             return markAllReadGate.then(() => new Response(null, { status: 204 }));
         }
@@ -132,12 +126,10 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
     const events = new EventManager({
         path: "/api/events/stream",
         createEventSource: () => fakeES,
-        getApiUrl: () => "http://test",
     });
     const store = createNotificationStore({
         fetch: fakeFetch,
         events,
-        getApiUrl: () => "http://test",
     });
     return {
         store,
@@ -151,9 +143,6 @@ function setupHarness(opts: { unread?: number; items?: Notification[] }): Harnes
         },
         setMarkAllReadGate: (gate) => {
             markAllReadGate = gate;
-        },
-        setRowActionFails: (fail) => {
-            rowActionFails = fail;
         },
         setPageFails: (fail) => {
             pageFails = fail;
@@ -233,9 +222,8 @@ describe("NotificationStore", () => {
         // Simulate a coalesced/recurring failure re-firing as `notification.updated`
         // whose row has scrolled off this tab's loaded page (or the tab opened
         // after it was first created): absent from #items, but the server ships
-        // the authoritative post-mutation count alongside it. Old delta math would
-        // have unconditionally bumped #unread to 6 here; the fix must land on the
-        // exact server value instead.
+        // the authoritative post-mutation count alongside it. Delta math would
+        // bump #unread to 6 here; the store must land on the exact server value.
         es.fire("notification.updated", {
             notification: makeNotification({
                 id: "01H000000000000000000OFF01",
@@ -303,34 +291,6 @@ describe("NotificationStore", () => {
         expect(markCall).toBeDefined();
     });
 
-    it("markRead() sets readAt locally and POSTs the per-row endpoint", async () => {
-        const id = "01H000000000000000000ROW01";
-        const { store, requests } = setupHarness({
-            items: [makeNotification({ id })],
-            unread: 1,
-        });
-        await store.init();
-        await store.markRead(id);
-        expect(store.items[0]?.readAt).not.toBeUndefined();
-        expect(store.unread).toBe(0);
-        const call = requests.find((r) => r.url.endsWith(`/api/notifications/${id}/read`));
-        expect(call?.method).toBe("POST");
-    });
-
-    it("markUnread() clears readAt locally and POSTs the per-row endpoint", async () => {
-        const id = "01H000000000000000000ROW02";
-        const { store, requests } = setupHarness({
-            items: [makeNotification({ id, readAt: "2026-05-05T12:00:00.000Z" })],
-            unread: 0,
-        });
-        await store.init();
-        await store.markUnread(id);
-        expect(store.items[0]?.readAt).toBeUndefined();
-        expect(store.unread).toBe(1);
-        const call = requests.find((r) => r.url.endsWith(`/api/notifications/${id}/unread`));
-        expect(call?.method).toBe("POST");
-    });
-
     it("does not sweep a notification created while markAllRead() is still in flight", async () => {
         const existingId = "01H000000000000000000EXIST1";
         const { store, es, setMarkAllReadGate } = setupHarness({
@@ -365,39 +325,6 @@ describe("NotificationStore", () => {
 
         expect(store.items.find((n) => n.id === existingId)?.readAt).not.toBeUndefined();
         expect(store.items.find((n) => n.id === newId)?.readAt).toBeUndefined();
-        expect(store.unread).toBe(1);
-    });
-
-    it("on markRead() failure, rolls back only readAt and keeps a newer SSE update", async () => {
-        const id = "01H000000000000000000RB0001";
-        const { store, es, setRowActionFails } = setupHarness({
-            items: [makeNotification({ id, count: 1 })],
-            unread: 1,
-        });
-        await store.init();
-        setRowActionFails(true);
-
-        const markReadPromise = store.markRead(id);
-
-        // The row is coalesced again (bumped count) while the failing POST is
-        // still in flight.
-        es.fire("notification.updated", {
-            notification: makeNotification({ id, count: 5, readAt: undefined }),
-            unreadCount: 1,
-        });
-        expect(store.items[0]?.count).toBe(5);
-
-        await markReadPromise;
-
-        // Rolled back to unread, but the SSE-delivered count bump survives —
-        // the old rollback restored the whole stale `previous` snapshot,
-        // which would have reverted count back to 1 here.
-        expect(store.items[0]?.readAt).toBeUndefined();
-        expect(store.items[0]?.count).toBe(5);
-        // The SSE update already set unread to its authoritative value (1)
-        // before the POST failed. The rollback must not layer another delta
-        // on top of that (the old code computed max(0, 1 + 1) = 2) — it
-        // re-fetches the authoritative count instead.
         expect(store.unread).toBe(1);
     });
 

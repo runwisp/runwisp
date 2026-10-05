@@ -6,6 +6,7 @@ import { systemApi, AuthRequiredError, systemEventSchema, configStaleEventSchema
 import { connectionStore } from "$lib/stores/connection.svelte";
 import { appEventStream } from "$lib/stores/app-stream.svelte";
 import { createLogger } from "$lib/utils/logger";
+import { safeParseJSON } from "$lib/utils/parse";
 
 function createSystemStore() {
     const logger = createLogger("SystemStore");
@@ -42,9 +43,9 @@ function createSystemStore() {
     let unsubscribes: (() => void)[] = [];
 
     // init seeds the store once from REST, then rides the shared app-event
-    // stream for live updates — replacing the old 2s/10s polling of
-    // /api/system + /api/daemon. Idempotent: the stream subscription is bound
-    // once and survives re-entrant init() calls on auth.
+    // stream for live updates instead of polling /api/system + /api/daemon.
+    // Idempotent: the stream subscription is bound once and survives
+    // re-entrant init() calls on auth.
     async function init() {
         await seed();
         subscribe();
@@ -95,22 +96,23 @@ function createSystemStore() {
         subscribed = true;
         unsubscribes.push(
             appEventStream.subscribe("system", (data) => {
-                try {
-                    const parsed = systemEventSchema.parse(JSON.parse(data));
-                    cpuUsage = parsed.sample.cpuUsage;
-                    memUsage = parsed.sample.memUsage;
-                    memTotal = parsed.sample.memTotal;
-                    uptime = parsed.uptime;
-                } catch (e) {
-                    logger.warn("Invalid system SSE payload", e);
+                const parsed = safeParseJSON(data, systemEventSchema);
+                if (!parsed.success) {
+                    logger.warn("Invalid system SSE payload", parsed.error);
+                    return;
                 }
+                cpuUsage = parsed.data.sample.cpuUsage;
+                memUsage = parsed.data.sample.memUsage;
+                memTotal = parsed.data.sample.memTotal;
+                uptime = parsed.data.uptime;
             }),
             appEventStream.subscribe("config.stale", (data) => {
-                try {
-                    configStale = configStaleEventSchema.parse(JSON.parse(data)).stale;
-                } catch (e) {
-                    logger.warn("Invalid config.stale SSE payload", e);
+                const parsed = safeParseJSON(data, configStaleEventSchema);
+                if (!parsed.success) {
+                    logger.warn("Invalid config.stale SSE payload", parsed.error);
+                    return;
                 }
+                configStale = parsed.data.stale;
             }),
         );
     }

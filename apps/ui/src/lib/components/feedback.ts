@@ -61,7 +61,7 @@ export function shouldAutoOpen(
 }
 
 export type FeedbackBody = { rating: number } | { message: string };
-export type SendResult = { ok: true } | { ok: false; error: string };
+type SendResult = { ok: true } | { ok: false; error: string };
 
 export async function sendFeedback(
     body: FeedbackBody,
