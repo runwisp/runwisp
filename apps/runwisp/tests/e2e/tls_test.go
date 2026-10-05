@@ -7,7 +7,6 @@ package e2e
 
 import (
 	"crypto/tls"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -145,15 +144,17 @@ func TestTLS_AutoHTTPSOnNonLoopbackBind(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.NotEmpty(t, resp.Header.Get("Strict-Transport-Security"), "HSTS must be set over TLS")
 
-	// Plain HTTP to the TLS port must not be served as HTTP. Go's TLS server
-	// answers a cleartext request with a 400 ("Client sent an HTTP request to
-	// an HTTPS server"), so assert that rather than a transport error.
-	httpResp, err := (&http.Client{Timeout: 5 * time.Second}).Get("http://127.0.0.1:" + strconv.Itoa(d.port) + "/health")
+	// Plain HTTP to the TLS port must not be served as HTTP: it gets a
+	// redirect to the https URL instead.
+	noFollow := &http.Client{
+		Timeout:       5 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	httpResp, err := noFollow.Get("http://127.0.0.1:" + strconv.Itoa(d.port) + "/health?x=1")
 	require.NoError(t, err)
 	defer httpResp.Body.Close()
-	require.Equal(t, http.StatusBadRequest, httpResp.StatusCode, "TLS port must reject plain HTTP, not serve it")
-	body, _ := io.ReadAll(httpResp.Body)
-	require.Contains(t, string(body), "HTTPS", "the TLS port should tell a plain-HTTP client it speaks HTTPS")
+	require.Equal(t, http.StatusPermanentRedirect, httpResp.StatusCode, "TLS port must redirect plain HTTP, not serve it")
+	require.Equal(t, "https://127.0.0.1:"+strconv.Itoa(d.port)+"/health?x=1", httpResp.Header.Get("Location"))
 }
 
 func TestTLS_PinMismatchFailsLoudly(t *testing.T) {

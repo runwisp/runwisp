@@ -275,14 +275,15 @@ func (srv *Server) signalReady() {
 
 // serveMain serves the primary listener, switching to TLS when a cert/key pair
 // is configured. ServeTLS sets up the *tls.Config from the files itself; we
-// only pin the minimum protocol version. The Unix and metrics listeners stay
+// only pin the minimum protocol version. Plain-HTTP requests on this port are
+// redirected to https (see sniffListener). The Unix and metrics listeners stay
 // on plain HTTP regardless — they are local-only / loopback-scrape surfaces.
 func (srv *Server) serveMain(ln net.Listener) error {
 	if srv.tlsCert == "" || srv.tlsKey == "" {
 		return srv.httpServer.Serve(ln)
 	}
 	srv.httpServer.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
-	return srv.httpServer.ServeTLS(ln, srv.tlsCert, srv.tlsKey)
+	return srv.httpServer.ServeTLS(newSniffListener(ln), srv.tlsCert, srv.tlsKey)
 }
 
 // schemeFor reports the advertised URL scheme for a cert/key configuration:
