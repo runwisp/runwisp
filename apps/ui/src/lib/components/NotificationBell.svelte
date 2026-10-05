@@ -40,7 +40,16 @@
     {/snippet}
 
     <div class="-mx-2 max-h-96 space-y-2 overflow-y-auto px-2">
-        {#if !notificationStore.loaded}
+        {#if notificationStore.loadFailed}
+            <p class="px-2 py-6 text-center text-xs text-on-surface-faint">
+                Couldn't load notifications.
+                <button
+                    type="button"
+                    class="text-primary-soft-text hover:underline"
+                    onclick={() => void notificationStore.init()}>Retry</button
+                >
+            </p>
+        {:else if !notificationStore.loaded}
             <p class="px-2 py-6 text-center text-xs text-on-surface-faint">Loading…</p>
         {:else if items.length === 0}
             <p class="px-2 py-6 text-center text-xs text-on-surface-faint">No notifications yet.</p>

@@ -103,6 +103,8 @@ func funcMap(ctx TemplateContext) template.FuncMap {
 		"htmlEsc":       html.EscapeString,
 		"jsonStr":       jsonEscape,
 		"tgEscape":      tgEscape,
+		"slackEsc":      slackEscape,
+		"slackCode":     slackCode,
 		"timeRFC":       func(t time.Time) string { return t.Format(time.RFC3339) },
 		"emoji":         severityEmoji,
 		"statusEmoji":   statusEmoji,
@@ -144,6 +146,20 @@ func tgEscape(s string) string {
 		`"`, "&quot;",
 	)
 	return r.Replace(s)
+}
+
+// slackEscape escapes the three characters Slack mrkdwn treats as control
+// characters (&, <, >) so user-provided text cannot form <!channel>-style
+// mentions or links. See https://api.slack.com/reference/surfaces/formatting.
+func slackEscape(s string) string {
+	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(s)
+}
+
+// slackCode escapes s for use inside a ``` block. Slack has no escape for a
+// backtick, so each one is followed by a zero-width space: no run of three can
+// close the block early.
+func slackCode(s string) string {
+	return strings.ReplaceAll(slackEscape(s), "`", "`\u200b")
 }
 
 func severityEmoji(s notify.Severity) string {

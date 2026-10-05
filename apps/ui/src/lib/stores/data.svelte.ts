@@ -18,6 +18,7 @@ export interface TaskStoreDeps {
 class TaskStore {
     #items = $state<Task[]>([]);
     #loaded = $state(false);
+    #loadFailed = $state(false);
 
     readonly #getTasks: () => Promise<Task[]>;
     readonly #reportFetchError: (err: unknown) => boolean;
@@ -41,14 +42,22 @@ class TaskStore {
         return this.#loaded;
     }
 
+    /** True when the first load failed and nothing has succeeded since, so the
+     * UI can stop showing a loading state. A later refresh() clears it. */
+    get loadFailed(): boolean {
+        return this.#loadFailed;
+    }
+
     async loadIfNeeded(): Promise<void> {
         if (this.#loaded) return;
         try {
             const list = await this.#getTasks();
             this.#items = list;
             this.#loaded = true;
+            this.#loadFailed = false;
         } catch (err) {
             if (err instanceof AuthRequiredError) return;
+            this.#loadFailed = true;
             const isConnectionErr = this.#reportFetchError(err);
             const message = isConnectionErr
                 ? "Connection lost"
@@ -64,6 +73,7 @@ class TaskStore {
         try {
             this.#items = await this.#getTasks();
             this.#loaded = true;
+            this.#loadFailed = false;
         } catch (err) {
             if (err instanceof AuthRequiredError) return;
             this.#reportFetchError(err);

@@ -14,8 +14,8 @@ import (
 
 // logSearchParams bundles the query options for searchExecutionLog.
 //
-// fromLine resumes a paginated scan: lines with absolute number <= fromLine are
-// skipped. limit caps hits per page.
+// fromLine resumes a paginated scan: it is the first line to scan, so 0 scans
+// the whole run. limit caps hits per page.
 type logSearchParams struct {
 	query         string
 	regex         bool
@@ -64,7 +64,7 @@ func searchExecutionLog(ctx context.Context, run *model.Run, logDir string, p lo
 	}
 	if more && len(found) > 0 {
 		// Resume after the last emitted hit so the next page never re-emits it.
-		nextLine = found[len(found)-1].N
+		nextLine = found[len(found)-1].N + 1
 	}
 	return hits, nextLine, !more, nil
 }

@@ -160,6 +160,37 @@ class FakeEventSource implements SSEStream {
     }
 }
 
+describe("EventManager reconnect backoff", () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it("does not open a second stream when a subscriber arrives during backoff", () => {
+        const streams: ControllableEventSource[] = [];
+        const mgr = new EventManager({
+            path: "/api/events/stream",
+            createEventSource: () => {
+                const es = new ControllableEventSource();
+                streams.push(es);
+                return es;
+            },
+            getApiUrl: () => "http://test",
+        });
+        mgr.subscribe("system", () => {});
+        streams[0]?.error(); // stream dropped, reconnect timer now pending
+        mgr.subscribe("run.created", () => {}); // arrives during backoff
+        vi.advanceTimersByTime(SSE_CONFIG.MAX_RECONNECT_DELAY * 2);
+
+        const live = streams.filter((es) => !es.closed);
+        expect(live).toHaveLength(1);
+        expect(streams).toHaveLength(2);
+        mgr.close();
+    });
+});
+
 describe("EventManager subscription and dispatch", () => {
     beforeEach(() => {
         vi.useRealTimers();

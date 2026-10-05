@@ -42,5 +42,5 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL);
 
 -- name: UpdateNotificationCoalesced :exec
 UPDATE notifications
-SET count = ?, occurrences_json = ?, last_occurred_at = ?, title = ?, body = ?, read_at = NULL
+SET count = ?, occurrences_json = ?, last_occurred_at = ?, title = ?, body = ?, run_id = ?, read_at = NULL
 WHERE id = ?;

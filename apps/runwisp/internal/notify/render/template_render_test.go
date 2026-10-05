@@ -476,3 +476,36 @@ func slackTexts(blocks []any) string {
 	}
 	return b.String()
 }
+
+// Task output goes into a Slack code block: a triple backtick must not close it
+// and <!channel> must not survive as a mention.
+func TestSlack_EscapesTailAndCannotBreakCodeBlock(t *testing.T) {
+	start := eventTime(t)
+	ev := &notify.Event{
+		Kind:      notify.KindRunFailed,
+		Severity:  notify.SevError,
+		Timestamp: start,
+		TaskName:  "t",
+		Run:       &model.Run{ID: "R", TaskName: "t", ExitCode: 1, StartedAt: &start, TriggeredBy: model.TriggeredByAPI},
+	}
+	ctx := TemplateContext{OutputTail: func(string, int, int) string { return "``` <!channel> a&b ````" }}
+	got := renderSlack(t, ctx, ev)
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal([]byte(got), &parsed), got)
+	blocks, ok := parsed["blocks"].([]any)
+	require.True(t, ok)
+	texts := slackTexts(blocks)
+
+	assert.NotContains(t, texts, "<!channel>")
+	assert.Contains(t, texts, "&lt;!channel&gt; a&amp;b")
+	_, afterOpen, ok := strings.Cut(texts, "```\n")
+	require.True(t, ok)
+	inner, _, ok := strings.Cut(afterOpen, "\n```")
+	require.True(t, ok, "code block must still close")
+	assert.NotContains(t, inner, "```", "tail must not close the code block")
+}
+
+func TestSlackEscape(t *testing.T) {
+	assert.Equal(t, "&lt;!here&gt; &amp;", slackEscape("<!here> &"))
+}

@@ -81,8 +81,9 @@ tail) and these helpers:
   `runDuration`, `triggerPhrase`, `eventSentence`, `eventTrigger`, `linkLabel`,
   `runURL`, `taskURL`, `outputTail`, `fingerprint`, and `emoji` (a Slack emoji
   code for the event's severity).
-- Escaping: `jsonStr` (for a JSON string), `htmlEsc` (for HTML), and `tgEscape`
-  (for Telegram HTML).
+- Escaping: `jsonStr` (for a JSON string), `htmlEsc` (for HTML), `tgEscape`
+  (for Telegram HTML), `slackEsc` (for Slack mrkdwn text), and `slackCode` (for
+  text inside a Slack code block).
 - Text: `upper`, `lower`, `trim`, and `timeRFC` (an RFC 3339 timestamp).
 
 Every template type gets the same helpers.

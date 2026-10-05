@@ -5,6 +5,7 @@ package logutil
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -113,14 +114,16 @@ func TestScanOffset_SkipBeyondEnd(t *testing.T) {
 func TestCalculateTotalLines_Finalized(t *testing.T) {
 	f := tempFileWithContent(t, "unused")
 	meta := LogMeta{Finalized: true, RotatedLines: 10, FinalLines: 5}
-	total := CalculateTotalLines(f, nil, 6, meta)
+	total, err := CalculateTotalLines(f, nil, 6, meta)
+	require.NoError(t, err)
 	assert.Equal(t, 15, total)
 }
 
 func TestCalculateTotalLines_NoIndex(t *testing.T) {
 	f := tempFileWithContent(t, "a\nb\nc\n")
 	meta := LogMeta{RotatedLines: 2}
-	total := CalculateTotalLines(f, nil, 6, meta)
+	total, err := CalculateTotalLines(f, nil, 6, meta)
+	require.NoError(t, err)
 	assert.Equal(t, 5, total) // 2 rotated + 3 current
 }
 
@@ -136,8 +139,26 @@ func TestCalculateTotalLines_WithIndex(t *testing.T) {
 	// Build a simple index: index[0] = 0, index[1] = offset of line 1024
 	// Each line is "x\n" = 2 bytes
 	indices := []int64{0, int64(1024 * 2)}
-	total := CalculateTotalLines(f, indices, int64(len(content)), LogMeta{})
+	total, err := CalculateTotalLines(f, indices, int64(len(content)), LogMeta{})
+	require.NoError(t, err)
 	assert.Equal(t, 2050, total)
+}
+
+// A line longer than bufio.Scanner's 64 KiB default token cap must not stop the
+// count: runs without final metadata (running, kill -9) rely on it for totals.
+func TestCalculateTotalLines_LongLine(t *testing.T) {
+	content := "a\n" + strings.Repeat("x", 200*1024) + "\nb\nc\n"
+	f := tempFileWithContent(t, content)
+	total, err := CalculateTotalLines(f, nil, int64(len(content)), LogMeta{})
+	require.NoError(t, err)
+	assert.Equal(t, 4, total)
+}
+
+func TestScanOffset_CountsUnterminatedLastLine(t *testing.T) {
+	f := tempFileWithContent(t, "one\ntwo")
+	_, lines, err := ScanOffset(f, 0, -1)
+	require.NoError(t, err)
+	assert.Equal(t, 2, lines)
 }
 
 func TestCalculateLineOffset_NoIndex(t *testing.T) {
@@ -324,4 +345,32 @@ func TestCalculateLineOffset_RotatedLinesExact(t *testing.T) {
 	meta := LogMeta{RotatedLines: 3}
 	offset := CalculateLineOffset(f, nil, 3, meta)
 	assert.Equal(t, int64(0), offset)
+}
+
+// failingReadSeeker fails Seek (seekErr) or, when Seek succeeds, every Read.
+type failingReadSeeker struct{ seekErr error }
+
+func (f failingReadSeeker) Seek(int64, int) (int64, error) { return 0, f.seekErr }
+func (failingReadSeeker) Read([]byte) (int, error)         { return 0, errors.New("read failed") }
+
+func TestScanOffset_ReadErrorIsReturned(t *testing.T) {
+	_, _, err := ScanOffset(failingReadSeeker{}, 0, -1)
+	assert.EqualError(t, err, "read failed")
+}
+
+func TestCalculateTotalLines_ReturnsScanErrors(t *testing.T) {
+	rs := failingReadSeeker{seekErr: errors.New("seek failed")}
+
+	_, err := CalculateTotalLines(rs, nil, 10, LogMeta{})
+	assert.EqualError(t, err, "seek failed", "no index")
+
+	_, err = CalculateTotalLines(rs, []int64{0}, 10, LogMeta{})
+	assert.EqualError(t, err, "seek failed", "with index")
+}
+
+// A log that cannot be read must surface an error instead of an empty (or
+// truncated) page: a directory opens fine but fails on read.
+func TestReadLineRange_ReturnsCountError(t *testing.T) {
+	_, _, _, err := ReadLineRange(t.TempDir(), 0, 10)
+	assert.Error(t, err)
 }

@@ -273,7 +273,7 @@ func (q *Queries) SelectExistingForFingerprint(ctx context.Context, arg SelectEx
 
 const updateNotificationCoalesced = `-- name: UpdateNotificationCoalesced :exec
 UPDATE notifications
-SET count = ?, occurrences_json = ?, last_occurred_at = ?, title = ?, body = ?, read_at = NULL
+SET count = ?, occurrences_json = ?, last_occurred_at = ?, title = ?, body = ?, run_id = ?, read_at = NULL
 WHERE id = ?
 `
 
@@ -283,6 +283,7 @@ type UpdateNotificationCoalescedParams struct {
 	LastOccurredAt  time.Time `json:"last_occurred_at"`
 	Title           string    `json:"title"`
 	Body            string    `json:"body"`
+	RunID           string    `json:"run_id"`
 	ID              string    `json:"id"`
 }
 
@@ -293,6 +294,7 @@ func (q *Queries) UpdateNotificationCoalesced(ctx context.Context, arg UpdateNot
 		arg.LastOccurredAt,
 		arg.Title,
 		arg.Body,
+		arg.RunID,
 		arg.ID,
 	)
 	return err

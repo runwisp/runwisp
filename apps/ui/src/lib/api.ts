@@ -8,8 +8,7 @@ import { browser } from "$app/environment";
 import { getApiUrl } from "./utils/env";
 import { chapResponse } from "./chap";
 import { HTTP_STATUS } from "./config/constants";
-import { browserAuthEventBus } from "$lib/adapters/browser";
-import { authStore } from "./stores/auth.svelte";
+import { authFetch, handleUnauthorized } from "./utils/auth-required";
 import {
     logPageSchema,
     type LogPage,
@@ -56,8 +55,7 @@ const errorMiddleware: Middleware = {
     onResponse({ response }) {
         if (response.ok) return response;
         if (response.status === HTTP_STATUS.UNAUTHORIZED && browser) {
-            authStore.markUnauthenticated();
-            browserAuthEventBus.emitAuthRequired();
+            handleUnauthorized();
             throw new AuthRequiredError();
         }
         throw new Error(`Request failed: ${String(response.status)} ${response.statusText}`);
@@ -180,7 +178,7 @@ export const tasksApi = {
         const url =
             API_BASE_URL + "/api/runs/" + encodeURIComponent(runId) + "/log" + (qs ? "?" + qs : "");
 
-        const response = await fetch(url, { headers: { Accept: "application/json" } });
+        const response = await authFetch(url, { headers: { Accept: "application/json" } });
         if (!response.ok) throw new Error("Log page fetch failed: " + String(response.status));
         return logPageSchema.parse(await response.json());
     },
@@ -211,7 +209,7 @@ export const tasksApi = {
             "/log/search?" +
             params.toString();
 
-        const response = await fetch(url, { headers: { Accept: "application/json" } });
+        const response = await authFetch(url, { headers: { Accept: "application/json" } });
         if (!response.ok) throw new Error("Log search failed: " + String(response.status));
         return logSearchResponseSchema.parse(await response.json());
     },
@@ -225,7 +223,7 @@ export const tasksApi = {
             String(lineNum) +
             "/history";
 
-        const response = await fetch(url, { headers: { Accept: "application/json" } });
+        const response = await authFetch(url, { headers: { Accept: "application/json" } });
         if (!response.ok)
             throw new Error("Log line history fetch failed: " + String(response.status));
         return logLineHistorySchema.parse(await response.json()).frames;
@@ -234,7 +232,7 @@ export const tasksApi = {
     getLogRaw: async (runId: string): Promise<string> => {
         const url = API_BASE_URL + "/api/runs/" + encodeURIComponent(runId) + "/log/raw";
 
-        const response = await fetch(url);
+        const response = await authFetch(url);
         if (!response.ok) throw new Error("Raw log fetch failed: " + String(response.status));
         return await response.text();
     },

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { createLogger } from "$lib/utils/logger";
+import { handleUnauthorized } from "$lib/utils/auth-required";
+import { HTTP_STATUS } from "$lib/config/constants";
 import { runUpdateEventSchema } from "$lib/types";
 import { appEventStream } from "./app-stream.svelte";
 import { connectionStore } from "./connection.svelte";
@@ -42,7 +44,9 @@ class RunUpdateManager {
                     info.status === undefined ? "" : `(HTTP ${info.status.toString()})`,
                 );
                 // 401 means the daemon is up but rejected our auth — not a connection loss.
-                if (info.status !== 401) {
+                if (info.status === HTTP_STATUS.UNAUTHORIZED) {
+                    handleUnauthorized();
+                } else {
                     connectionStore.reportSourceDown(
                         SOURCE_ID,
                         info.message ?? "SSE connection error",

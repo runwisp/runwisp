@@ -57,7 +57,8 @@ type ScanOpts struct {
 }
 
 // Cursor is an opaque continuation token. The endpoint encodes it as
-// base64-JSON; ScanTask does not care about the encoding.
+// base64-JSON; ScanTask does not care about the encoding. NextN is the first
+// line of RunID still to scan, so 0 unambiguously means "from the start".
 type Cursor struct {
 	RunID string `json:"run_id"`
 	NextN int64  `json:"next_n"`
@@ -67,11 +68,11 @@ type Cursor struct {
 // The returned slice is ordered by ascending line number — that's the order
 // emitted by logutil.ScanLines and is what the UI displays per-run.
 //
-// If startAfterN > 0, lines with absolute number <= startAfterN are skipped.
+// Lines numbered below firstN are skipped, so firstN=0 scans the whole run.
 // This is how a paginated cursor resumes mid-run without re-emitting hits
 // the previous page already returned. more=true means the run still has
 // unscanned bytes — the caller can resume from hits[last].N+1.
-func ScanRun(ctx context.Context, run RunRef, m Matcher, maxHits int, startAfterN int64) (hits []Hit, more bool, err error) {
+func ScanRun(ctx context.Context, run RunRef, m Matcher, maxHits int, firstN int64) (hits []Hit, more bool, err error) {
 	// Clamp here (not only in ScanTask) so direct callers — the station
 	// log-search path reaches ScanRun without going through ScanTask — cannot
 	// ask for an unbounded in-memory result set.
@@ -79,7 +80,7 @@ func ScanRun(ctx context.Context, run RunRef, m Matcher, maxHits int, startAfter
 	tsMs := run.CreatedAt.UnixMilli()
 	hits = make([]Hit, 0, min(maxHits, 16))
 	err = logutil.ScanLines(ctx, run.LogPath, func(rec logutil.LogLineRecord) bool {
-		if startAfterN > 0 && rec.LineNum <= startAfterN {
+		if rec.LineNum < firstN {
 			return true
 		}
 		if !m.Match([]byte(rec.Text)) {
@@ -108,21 +109,27 @@ func ScanRun(ctx context.Context, run RunRef, m Matcher, maxHits int, startAfter
 // When the result slice would exceed MaxHits, ScanTask stops scanning
 // further runs, truncates the slice, and emits a Cursor pointing at the
 // next run/line to resume from on the following request.
-func ScanTask(ctx context.Context, runs []RunRef, matcherFactory func() Matcher, opts ScanOpts, startAfterRunID string, startAfterN int64) ([]Hit, *Cursor, int, error) {
+func ScanTask(ctx context.Context, runs []RunRef, matcherFactory func() Matcher, opts ScanOpts, startAfterRunID string, firstN int64) ([]Hit, *Cursor, int, error) {
 	maxHits := clampMaxHits(opts.MaxHits)
 	if len(runs) == 0 {
 		return nil, nil, 0, nil
 	}
 
 	// Skip already-consumed runs from a previous page. The cursor's
-	// `startAfterN` only applies to the run it names; subsequent runs in
+	// `firstN` only applies to the run it names; subsequent runs in
 	// the same page restart at line 0.
-	pending := runs[runStartIndex(runs, startAfterRunID):]
+	start := runStartIndex(runs, startAfterRunID)
+	if start < 0 {
+		// The cursor's run left the window (retention deleted it). Its line
+		// offset says nothing about runs[0], so scan that run from the start.
+		start, firstN = 0, 0
+	}
+	pending := runs[start:]
 	if len(pending) == 0 {
 		return nil, nil, 0, nil
 	}
 
-	results, scanned, err := scanPending(ctx, pending, matcherFactory, maxHits, startAfterN)
+	results, scanned, err := scanPending(ctx, pending, matcherFactory, maxHits, firstN)
 	if err != nil {
 		return nil, nil, scanned, err
 	}
@@ -151,8 +158,8 @@ func clampMaxHits(maxHits int) int {
 	return maxHits
 }
 
-// runStartIndex returns the index of the run named by startAfterRunID, or 0
-// when the ID is empty or absent.
+// runStartIndex returns the index of the run named by startAfterRunID, 0 when
+// the ID is empty, or -1 when it is absent from runs.
 func runStartIndex(runs []RunRef, startAfterRunID string) int {
 	if startAfterRunID == "" {
 		return 0
@@ -162,12 +169,12 @@ func runStartIndex(runs []RunRef, startAfterRunID string) int {
 			return i
 		}
 	}
-	return 0
+	return -1
 }
 
 // scanPending scans every pending run in parallel (bounded by ScanWorkers),
 // returning per-run results in input order plus the count of runs scanned.
-// Only the first run honors startAfterN; later runs restart at line 0.
+// Only the first run honors firstN; later runs restart at line 0.
 //
 // A single hit budget (remaining) is shared across the scans instead of
 // handing every run the full maxHits independently: once ScanWorkers scans
@@ -180,7 +187,7 @@ func runStartIndex(runs []RunRef, startAfterRunID string) int {
 // they start together with no ordering between them, so there is no
 // meaningful "already found" state yet to share, and racing them against
 // each other would just make results depend on goroutine scheduling.
-func scanPending(ctx context.Context, pending []RunRef, matcherFactory func() Matcher, maxHits int, startAfterN int64) ([]runResult, int, error) {
+func scanPending(ctx context.Context, pending []RunRef, matcherFactory func() Matcher, maxHits int, firstN int64) ([]runResult, int, error) {
 	results := make([]runResult, len(pending))
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -196,7 +203,7 @@ func scanPending(ctx context.Context, pending []RunRef, matcherFactory func() Ma
 		i, r := i, r
 		var skipN int64
 		if i == 0 {
-			skipN = startAfterN
+			skipN = firstN
 		}
 		g.Go(func() error {
 			perRunMax := maxHits
@@ -247,12 +254,12 @@ func flattenResults(results []runResult, pending []RunRef, maxHits int) ([]Hit, 
 		if len(r.hits) <= room {
 			flat = append(flat, r.hits...)
 			if r.more {
-				return flat, &Cursor{RunID: pending[i].ID, NextN: r.hits[len(r.hits)-1].N}
+				return flat, &Cursor{RunID: pending[i].ID, NextN: r.hits[len(r.hits)-1].N + 1}
 			}
 			continue
 		}
 		flat = append(flat, r.hits[:room]...)
-		return flat, &Cursor{RunID: pending[i].ID, NextN: r.hits[room-1].N}
+		return flat, &Cursor{RunID: pending[i].ID, NextN: r.hits[room-1].N + 1}
 	}
 	return flat, nil
 }

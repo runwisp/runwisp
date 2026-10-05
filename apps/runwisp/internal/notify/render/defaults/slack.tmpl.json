@@ -16,14 +16,14 @@
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "{{ jsonStr (printf "%s\n%s · %s." (eventSentence .) (eventTrigger .) (humanTime .Timestamp)) }}"
+        "text": "{{ jsonStr (printf "%s\n%s · %s." (slackEsc (eventSentence .)) (slackEsc (eventTrigger .)) (humanTime .Timestamp)) }}"
       }
     }{{ if $tail }},
     {
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "{{ jsonStr (printf "```\n%s\n```" $tail) }}"
+        "text": "{{ jsonStr (printf "```\n%s\n```" (slackCode $tail)) }}"
       }
     }{{ end }}{{ if $url }},
     {
@@ -44,7 +44,7 @@
       "elements": [
         {
           "type": "mrkdwn",
-          "text": "{{ jsonStr $footer }}"
+          "text": "{{ jsonStr (slackEsc $footer) }}"
         }
       ]
     }

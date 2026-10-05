@@ -124,7 +124,7 @@
         {activePage}
         {activeTask}
         tasks={navTasks}
-        tasksLoading={!taskStore.loaded}
+        tasksLoading={!taskStore.loaded && !taskStore.loadFailed}
         urls={{ overview: "/", runs: "/runs" }}
     >
         {@render children()}
