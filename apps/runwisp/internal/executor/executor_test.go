@@ -438,8 +438,6 @@ func (b *recordingBackend) Start(_ context.Context, _ *model.Task, _ *model.Run,
 	}, nil
 }
 
-func (b *recordingBackend) Available(context.Context) bool { return true }
-
 func newComposeTask(name string) *model.Task {
 	return &model.Task{
 		Name:         name,

@@ -33,8 +33,6 @@ type scriptedBackend struct {
 	startErr error
 }
 
-func (b *scriptedBackend) Available(context.Context) bool { return true }
-
 func (b *scriptedBackend) Start(ctx context.Context, task *model.Task, _ *model.Run, _ model.ExecutionDef) (*Process, error) {
 	if task.Name == "svc" {
 		return &Process{
