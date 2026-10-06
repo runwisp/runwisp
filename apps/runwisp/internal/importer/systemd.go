@@ -167,10 +167,10 @@ func classifySystemdLine(sections *[]systemdSection, cur *systemdSection, logica
 	if cur == nil {
 		return nil // directive before any section header
 	}
-	if eq := strings.IndexByte(trimmed, '='); eq > 0 {
+	if key, value, ok := strings.Cut(trimmed, "="); ok && key != "" {
 		cur.kvs = append(cur.kvs, systemdKV{
-			key:   strings.TrimSpace(trimmed[:eq]),
-			value: strings.TrimSpace(trimmed[eq+1:]),
+			key:   strings.TrimSpace(key),
+			value: strings.TrimSpace(value),
 		})
 	}
 	return cur

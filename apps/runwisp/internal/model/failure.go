@@ -4,6 +4,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"regexp"
@@ -140,7 +141,7 @@ func ParseFailures(tokens []string) (*FailureSpec, error) {
 		}
 	}
 	if sawDelta && sawBare {
-		return nil, fmt.Errorf("failures: cannot mix bare tokens with +/- deltas — either replace the whole list or adjust it with + and -")
+		return nil, errors.New("failures: cannot mix bare tokens with +/- deltas — either replace the whole list or adjust it with + and -")
 	}
 	spec.Delta = sawDelta
 	return spec, nil

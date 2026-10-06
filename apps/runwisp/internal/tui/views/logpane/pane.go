@@ -7,8 +7,8 @@
 package logpane
 
 import (
-	"fmt"
-	"sort"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -201,7 +201,7 @@ func orderedStreams(regions map[string]regionFrame) []string {
 			rest = append(rest, s)
 		}
 	}
-	sort.Strings(rest)
+	slices.Sort(rest)
 	return append(out, rest...)
 }
 
@@ -553,12 +553,8 @@ func (p *Pane) absoluteLineNumber(bufIdx int) int {
 }
 
 func (p *Pane) lineNumWidth() int {
-	total := p.TotalLines
-	if total < p.FirstLoadedLine+len(p.Lines) {
-		total = p.FirstLoadedLine + len(p.Lines)
-	}
-	w := max(len(fmt.Sprintf("%d", total)), 3)
-	return w
+	total := max(p.TotalLines, p.FirstLoadedLine+len(p.Lines))
+	return max(len(strconv.Itoa(total)), 3)
 }
 
 func (p *Pane) LogContentWidth() int {

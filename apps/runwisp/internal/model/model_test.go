@@ -5,7 +5,7 @@ package model
 
 import (
 	"encoding/json"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -96,7 +96,7 @@ func TestDaemonInfo_JSONShapeIsLocked(t *testing.T) {
 	for k := range decoded {
 		got = append(got, k)
 	}
-	sort.Strings(got)
+	slices.Sort(got)
 	assert.Equal(t, want, got,
 		"DaemonInfo's marshaled top-level keys must match the documented /api/daemon shape exactly")
 

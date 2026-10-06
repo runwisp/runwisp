@@ -4,12 +4,13 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
-	"sort"
+	"strings"
 	"time"
 
 	"log/slog"
@@ -394,11 +395,8 @@ func orderServicesForStart(tasksMap map[string]*model.Task) []*model.Task {
 			services = append(services, task)
 		}
 	}
-	sort.SliceStable(services, func(i, j int) bool {
-		if services[i].Priority != services[j].Priority {
-			return services[i].Priority < services[j].Priority
-		}
-		return services[i].Name < services[j].Name
+	slices.SortStableFunc(services, func(a, b *model.Task) int {
+		return cmp.Or(cmp.Compare(a.Priority, b.Priority), strings.Compare(a.Name, b.Name))
 	})
 	return services
 }

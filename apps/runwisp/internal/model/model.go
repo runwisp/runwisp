@@ -5,6 +5,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -40,7 +41,7 @@ var TaskNamePattern = regexp.MustCompile(TaskNamePatternString)
 func ValidateTaskName(name string) error {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
-		return fmt.Errorf("task name is required")
+		return errors.New("task name is required")
 	}
 	if len(trimmed) > TaskNameMaxLength {
 		return fmt.Errorf("task name %q exceeds the %d-character limit", trimmed, TaskNameMaxLength)

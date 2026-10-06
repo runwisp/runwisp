@@ -509,10 +509,8 @@ func (sd *supervisordState) serviceOnly(key string, ref itemRef, isService bool)
 // splitSectionName splits "program:web" into ("program", "web"). A bare
 // section name like "supervisord" returns ("supervisord", "").
 func splitSectionName(s string) (kind, name string) {
-	if i := strings.IndexByte(s, ':'); i >= 0 {
-		return s[:i], strings.TrimSpace(s[i+1:])
-	}
-	return s, ""
+	kind, name, _ = strings.Cut(s, ":")
+	return kind, strings.TrimSpace(name)
 }
 
 func parseBool(value string) (bool, bool) {
