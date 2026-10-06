@@ -3,7 +3,7 @@
 
 import createClient, { type Middleware } from "openapi-fetch";
 import { z } from "zod";
-import type { APIPaths, APIOperations, RunSelector } from "@runwisp/common";
+import type { APIPaths, APIOperations, AuthStatusBody, RunSelector } from "@runwisp/common";
 import { chapResponse } from "./chap";
 import { HTTP_STATUS } from "./config/constants";
 import { authFetch, handleUnauthorized } from "./utils/auth-required";
@@ -14,15 +14,7 @@ import {
     type LogSearchResponse,
     logLineHistorySchema,
 } from "./logs";
-import {
-    authChallengeResponseSchema,
-    authLoginResponseSchema,
-    authStatusResponseSchema,
-    type AuthLoginResponse,
-    type AuthStatusResponse,
-} from "./types";
-
-export * from "./types";
+import { authChallengeResponseSchema, authStatusResponseSchema } from "./types";
 
 export class AuthRequiredError extends Error {
     constructor() {
@@ -94,7 +86,7 @@ async function getJson<T>(url: string, schema: z.ZodType<T>, errorPrefix: string
 }
 
 export const authApi = {
-    login: async (password: string): Promise<AuthLoginResponse> => {
+    login: async (password: string): Promise<void> => {
         const challengeRes = await fetch("/api/auth/challenge");
         if (challengeRes.status === HTTP_STATUS.TOO_MANY_REQUESTS) throw new RateLimitedError();
         if (!challengeRes.ok) throw new Error("Failed to get auth challenge");
@@ -108,12 +100,11 @@ export const authApi = {
             body: JSON.stringify({ nonce, response }),
         });
         if (res.status === HTTP_STATUS.TOO_MANY_REQUESTS) throw new RateLimitedError();
+        // The response sets the HttpOnly session cookie; the body isn't needed.
         if (!res.ok) throw new Error("Authentication failed");
-
-        return authLoginResponseSchema.parse(await res.json());
     },
 
-    status: async (): Promise<AuthStatusResponse> => {
+    status: async (): Promise<AuthStatusBody> => {
         const res = await fetch("/api/auth/status");
         if (!res.ok) throw new Error("Failed to check auth status");
         return authStatusResponseSchema.parse(await res.json());

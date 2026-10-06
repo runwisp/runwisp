@@ -15,7 +15,7 @@
     import { sortByCreatedAtDesc } from "$lib/utils/sort";
     import { safeParseJSON } from "$lib/utils/parse";
     import { AsyncData } from "$lib/utils/async-data.svelte";
-    import { type Run } from "$lib/types";
+    import type { Run } from "@runwisp/common";
 
     const RECENT_RUN_LIMIT = 16;
     const RUNNING_RUN_LIMIT = 8;

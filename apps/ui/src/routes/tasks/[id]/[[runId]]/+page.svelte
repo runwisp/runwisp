@@ -12,7 +12,7 @@
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import { createLiveRuns } from "$lib/utils/live-runs.svelte";
     import { navigateToRun } from "$lib/utils/run-url";
-    import { type Task } from "$lib/types";
+    import type { Task } from "@runwisp/common";
     import { emptyRunFilters, type RunsListFilters } from "@runwisp/ui";
 
     let taskName = $derived($page.params.id ?? "");
@@ -124,7 +124,7 @@
     {#snippet skeleton()}
         <!-- The task page's own rail and panel, in their loading states. -->
         <div class="-m-6 flex h-[calc(100%+3rem)] min-h-0 flex-col md:flex-row">
-            <RunsList flush items={[]} total={0} loading filters={emptyRunFilters()} />
+            <RunsList items={[]} total={0} loading filters={emptyRunFilters()} />
             <RunDetailPanel run={undefined} loading fetchLogs={() => undefined} />
         </div>
     {/snippet}
