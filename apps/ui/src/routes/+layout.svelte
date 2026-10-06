@@ -81,7 +81,6 @@
             id: toTaskPageId(t.name),
             name: t.name,
             group: t.group ?? "Tasks",
-            href: `/tasks/${t.name}`,
             icon: taskIcon(t),
         })),
     );
@@ -123,7 +122,6 @@
         {activeTask}
         tasks={navTasks}
         tasksLoading={!taskStore.loaded && !taskStore.loadFailed}
-        urls={{ overview: "/", runs: "/runs" }}
     >
         {@render children()}
     </AppLayout>
