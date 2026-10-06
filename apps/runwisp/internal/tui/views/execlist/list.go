@@ -195,9 +195,7 @@ func (e *ExecList) Update(msg tea.Msg) tea.Cmd {
 		}
 	case "pgup":
 		e.cursor -= e.ViewportHeight()
-		if e.cursor < 0 {
-			e.cursor = 0
-		}
+		e.cursor = max(e.cursor, 0)
 	case "pgdown":
 		e.cursor += e.ViewportHeight()
 		if e.cursor >= n {
@@ -276,22 +274,10 @@ func (e *ExecList) computeScrollbar(vpH, n int) scrollbarState {
 	if n <= vpH || vpH <= 0 {
 		return scrollbarState{}
 	}
-	maxScroll := n - vpH + 1
-	if maxScroll < 1 {
-		maxScroll = 1
-	}
-	thumbSize := vpH * vpH / n
-	if thumbSize < 1 {
-		thumbSize = 1
-	}
-	thumbStart := e.Scroll * (vpH - thumbSize) / maxScroll
-	if thumbStart < 0 {
-		thumbStart = 0
-	}
-	thumbEnd := thumbStart + thumbSize
-	if thumbEnd > vpH {
-		thumbEnd = vpH
-	}
+	maxScroll := max(n-vpH+1, 1)
+	thumbSize := max(vpH*vpH/n, 1)
+	thumbStart := max(e.Scroll*(vpH-thumbSize)/maxScroll, 0)
+	thumbEnd := min(thumbStart+thumbSize, vpH)
 	return scrollbarState{show: true, thumbStart: thumbStart, thumbEnd: thumbEnd}
 }
 
@@ -328,10 +314,7 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 	// background, not the badge color.
 	statusStr := uikit.TruncateToWidth(item.Run.DisplayStatus(), cw.status)
 	statusBadge := uikit.StatusStyle(statusStr).Render(statusStr)
-	statPad := cw.status - uikit.VisibleWidth(statusBadge)
-	if statPad < 0 {
-		statPad = 0
-	}
+	statPad := max(cw.status-uikit.VisibleWidth(statusBadge), 0)
 	statusCell := statusBadge + rowStyle.Render(strings.Repeat(" ", statPad))
 	count := 1
 	if e.instanceCount != nil {
@@ -347,10 +330,7 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 }
 
 func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, w, contentW int, cw colWidths, sb scrollbarRender) {
-	end := e.Scroll + vpH
-	if end > n {
-		end = n
-	}
+	end := min(e.Scroll+vpH, n)
 	// contentW is w when no scrollbar shows and w-1 when it does; the scrollbar
 	// glyph is exactly one cell. So a row padded to contentW plus the scrollbar
 	// is already exactly w cells — no second PadLine pass needed. Skipping it
@@ -466,10 +446,7 @@ func (e *ExecList) View() string {
 		footerText = fmt.Sprintf("  %d selected", e.SelectionCount())
 	case n > 0:
 		from := e.Scroll + 1
-		to := e.Scroll + vpH
-		if to > n {
-			to = n
-		}
+		to := min(e.Scroll+vpH, n)
 		footerText = fmt.Sprintf("  viewing %d–%d of %d", from, to, n)
 	}
 	b.WriteString(uikit.PadLine(uikit.TableFooterStyle.Render(footerText), w, uikit.ColorBgLight))
@@ -526,16 +503,8 @@ func (e *ExecList) ensureVisible() {
 	if n > vpH && e.cursor == n-1 {
 		e.Scroll = n - vpH + 1
 	}
-	maxScroll := n - vpH + 1
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
-	if e.Scroll > maxScroll {
-		e.Scroll = maxScroll
-	}
-	if e.Scroll < 0 {
-		e.Scroll = 0
-	}
+	maxScroll := max(n-vpH+1, 0)
+	e.Scroll = max(min(e.Scroll, maxScroll), 0)
 }
 
 // ScrollBy adjusts the scroll offset by delta lines, clamping to valid bounds.
@@ -546,17 +515,9 @@ func (e *ExecList) ScrollBy(delta int) {
 	if vpH <= 0 || n == 0 {
 		return
 	}
-	maxScroll := n - vpH + 1
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
+	maxScroll := max(n-vpH+1, 0)
 	e.Scroll += delta
-	if e.Scroll < 0 {
-		e.Scroll = 0
-	}
-	if e.Scroll > maxScroll {
-		e.Scroll = maxScroll
-	}
+	e.Scroll = min(max(e.Scroll, 0), maxScroll)
 	if e.cursor < e.Scroll {
 		e.cursor = e.Scroll
 	} else if e.cursor >= e.Scroll+vpH {

@@ -14,10 +14,7 @@ import (
 // View renders the overlay centred over (width × height). The caller is
 // responsible for compositing the result on top of the existing pane.
 func (m *Model) View(width, height int) string {
-	w := width - 8
-	if w < 40 {
-		w = 40
-	}
+	w := max(width-8, 40)
 
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(uikit.ColorPrimary)
 	mutedStyle := lipgloss.NewStyle().Foreground(uikit.ColorTextMuted)

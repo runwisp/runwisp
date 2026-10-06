@@ -361,9 +361,7 @@ func (m *Model) recalcExecListHeight() {
 	if m.sidebar.ActivePage() == uikit.PageHome {
 		listH -= m.notifications.PanelHeight()
 	}
-	if listH < 5 {
-		listH = 5
-	}
+	listH = max(listH, 5)
 	m.execList.SetSize(panelW, listH)
 }
 

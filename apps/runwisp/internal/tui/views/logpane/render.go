@@ -23,14 +23,8 @@ func (p *Pane) RenderLines(b *strings.Builder, dimContent, loadingOlder bool) {
 	overlay := p.overlayLines()
 	total := committed + len(overlay)
 
-	end := p.Scroll + visibleLines
-	if end > total {
-		end = total
-	}
-	start := p.Scroll
-	if start < 0 {
-		start = 0
-	}
+	end := min(p.Scroll+visibleLines, total)
+	start := max(p.Scroll, 0)
 
 	logFg := uikit.ColorText
 	if dimContent {
@@ -54,10 +48,7 @@ func (p *Pane) RenderLines(b *strings.Builder, dimContent, loadingOlder bool) {
 
 	// Committed lines occupy [start, committed); render only the part inside
 	// the scroll window.
-	cEnd := end
-	if cEnd > committed {
-		cEnd = committed
-	}
+	cEnd := min(end, committed)
 	opts := lineRenderOpts{
 		b: b, start: start, end: cEnd, w: w,
 		padStyle: padStyle, stdoutStyle: stdoutStyle,
@@ -79,10 +70,7 @@ func (p *Pane) RenderLines(b *strings.Builder, dimContent, loadingOlder bool) {
 	// Live overlay rows occupy [committed, total); render the windowed slice
 	// with a blank gutter so they read as an in-place animating tail.
 	if end > committed {
-		oStart := start - committed
-		if oStart < 0 {
-			oStart = 0
-		}
+		oStart := max(start-committed, 0)
 		p.renderOverlayRows(opts, overlay[oStart:end-committed])
 	}
 

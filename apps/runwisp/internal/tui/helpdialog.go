@@ -74,20 +74,11 @@ func (d *HelpDialog) handleMouse(msg tea.MouseMsg) bool {
 // scrollBy moves the viewport by delta rows, clamped to the scrollable range.
 func (d *HelpDialog) scrollBy(delta int) {
 	d.scroll += delta
-	if d.scroll < 0 {
-		d.scroll = 0
-	}
-	if d.scroll > d.maxScroll() {
-		d.scroll = d.maxScroll()
-	}
+	d.scroll = min(max(d.scroll, 0), d.maxScroll())
 }
 
 func (d *HelpDialog) maxScroll() int {
-	ms := d.total - d.viewport
-	if ms < 0 {
-		return 0
-	}
-	return ms
+	return max(d.total-d.viewport, 0)
 }
 
 func (d *HelpDialog) View(screenWidth, screenHeight int) string {
@@ -100,30 +91,20 @@ func (d *HelpDialog) View(screenWidth, screenHeight int) string {
 	// blank+title above, blank+hint+blank below. The rest is the viewport.
 	const chromeRows = 6
 	viewport := screenHeight - chromeRows - 2
-	if viewport < 3 {
-		viewport = 3
-	}
-	if viewport > len(content) {
-		viewport = len(content)
-	}
+	viewport = min(max(viewport, 3), len(content))
 	d.viewport = viewport
 	d.total = len(content)
-	if d.scroll > d.maxScroll() {
-		d.scroll = d.maxScroll()
-	}
+	d.scroll = min(d.scroll, d.maxScroll())
 
 	lines := []string{
 		modalEmptyLine(innerWidth),
 		modalSurfaceLine("Keyboard Shortcuts", innerWidth, uikit.ColorTextBright, true),
 	}
-	end := d.scroll + viewport
-	if end > len(content) {
-		end = len(content)
-	}
+	end := min(d.scroll+viewport, len(content))
 	lines = append(lines, content[d.scroll:end]...)
 	lines = append(lines,
 		modalEmptyLine(innerWidth),
-		modalSurfaceLine(helpScrollHint(d.maxScroll()), innerWidth, uikit.ColorTextMuted, false),
+		modalSurfaceLine(scrollHint(d.maxScroll(), "? / esc close"), innerWidth, uikit.ColorTextMuted, false),
 		modalEmptyLine(innerWidth),
 	)
 
@@ -145,13 +126,6 @@ func helpContentLines(innerWidth, keyColWidth int) []string {
 		}
 	}
 	return lines
-}
-
-func helpScrollHint(maxScroll int) string {
-	if maxScroll == 0 {
-		return "? / esc close"
-	}
-	return "↑/↓ scroll · ? / esc close"
 }
 
 // helpSectionLine renders a left-aligned bold section header.

@@ -312,12 +312,7 @@ func (s *Sidebar) MoveCursor(dir int) {
 func (s *Sidebar) PageCursor(dir int) {
 	last := len(s.items) - 1
 	s.cursor += dir * s.visibleHeight()
-	if s.cursor < 0 {
-		s.cursor = 0
-	}
-	if s.cursor > last {
-		s.cursor = last
-	}
+	s.cursor = min(max(s.cursor, 0), last)
 	// Nudge inward off a header: down-page skips forward, up-page skips back.
 	if dir < 0 {
 		s.skipGroupHeaders(1)
@@ -453,9 +448,7 @@ func (s *Sidebar) skipGroupHeaders(dir int) {
 	for s.cursor >= 0 && s.cursor < len(s.items) && s.items[s.cursor].kind == entryGroupHeader {
 		s.cursor += dir
 	}
-	if s.cursor < 0 {
-		s.cursor = 0
-	}
+	s.cursor = max(s.cursor, 0)
 	if s.cursor >= len(s.items) {
 		s.cursor = len(s.items) - 1
 	}
@@ -519,10 +512,7 @@ func (s *Sidebar) View() string {
 	}
 
 	start := s.scroll
-	end := start + s.visibleHeight()
-	if end > len(s.items) {
-		end = len(s.items)
-	}
+	end := min(start+s.visibleHeight(), len(s.items))
 	for i := start; i < end; i++ {
 		writeSidebarLine(&b, s.renderItem(i), w)
 		rendered++
@@ -640,9 +630,7 @@ func (s *Sidebar) ensureVisible() {
 		return
 	}
 
-	if s.cursor < 0 {
-		s.cursor = 0
-	}
+	s.cursor = max(s.cursor, 0)
 	if s.cursor >= len(s.items) {
 		s.cursor = len(s.items) - 1
 	}
@@ -654,16 +642,8 @@ func (s *Sidebar) ensureVisible() {
 		s.scroll = s.cursor - visibleHeight + 1
 	}
 
-	maxScroll := len(s.items) - visibleHeight
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
-	if s.scroll > maxScroll {
-		s.scroll = maxScroll
-	}
-	if s.scroll < 0 {
-		s.scroll = 0
-	}
+	maxScroll := max(len(s.items)-visibleHeight, 0)
+	s.scroll = max(min(s.scroll, maxScroll), 0)
 }
 
 func writeSidebarLine(b *strings.Builder, content string, width int) {

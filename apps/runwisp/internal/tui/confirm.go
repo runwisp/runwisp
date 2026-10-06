@@ -297,17 +297,9 @@ type modalBox struct {
 
 func modalDimensions(screenWidth, desiredWidth, minWidth int) (int, int) {
 	dialogWidth := max(desiredWidth, minWidth)
-	maxWidth := screenWidth - 4
-	if maxWidth < 4 {
-		maxWidth = 4
-	}
-	if dialogWidth > maxWidth {
-		dialogWidth = maxWidth
-	}
-	innerWidth := dialogWidth - 4
-	if innerWidth < 1 {
-		innerWidth = 1
-	}
+	maxWidth := max(screenWidth-4, 4)
+	dialogWidth = min(dialogWidth, maxWidth)
+	innerWidth := max(dialogWidth-4, 1)
 	return dialogWidth, innerWidth
 }
 

@@ -130,9 +130,7 @@ func (p *Panel) Unread() int { return p.unread }
 func (p *Panel) Toggle() {
 	p.expanded = !p.expanded
 	if p.expanded {
-		if p.cursor < 0 {
-			p.cursor = 0
-		}
+		p.cursor = max(p.cursor, 0)
 		if p.cursor >= len(p.ordered) && len(p.ordered) > 0 {
 			p.cursor = len(p.ordered) - 1
 		}
@@ -331,14 +329,9 @@ func (p *Panel) UnreadIDsForRun(runID string) []string {
 
 // SetWidth tells the panel how much horizontal space it has.
 func (p *Panel) SetWidth(w int) {
-	if w < 0 {
-		w = 0
-	}
+	w = max(w, 0)
 	p.width = w
-	inner := w
-	if inner < 1 {
-		inner = 1
-	}
+	inner := max(w, 1)
 	p.viewport.SetWidth(inner)
 	p.rebuildContent()
 }
@@ -420,10 +413,7 @@ func (p *Panel) renderExpanded() string {
 func joinHeaderLine(left, right string, width int) string {
 	lw := lipgloss.Width(left)
 	rw := lipgloss.Width(right)
-	gap := width - lw - rw
-	if gap < 1 {
-		gap = 1
-	}
+	gap := max(width-lw-rw, 1)
 	pad := lipgloss.NewStyle().Background(uikit.ColorBgLight).Render(strings.Repeat(" ", gap))
 	line := left + pad + right
 	if width > 0 {
@@ -436,10 +426,7 @@ func (p *Panel) rebuildContent() {
 	if !p.expanded {
 		return
 	}
-	rest := p.viewport.Width() - 1
-	if rest < 0 {
-		rest = 0
-	}
+	rest := max(p.viewport.Width()-1, 0)
 	if len(p.ordered) == 0 {
 		hint := lipgloss.NewStyle().
 			Background(uikit.ColorBg).
@@ -490,10 +477,7 @@ func (p *Panel) renderRow(n server.NotificationDTO, selected bool) string {
 	whenStyle := lipgloss.NewStyle().Background(bg).Foreground(uikit.ColorTextMuted)
 
 	line := indentStyle.Render(indicator) + sev + titleStyle.Render(" "+title) + whenStyle.Render("  "+when)
-	rest := p.viewport.Width() - 1
-	if rest < 0 {
-		rest = 0
-	}
+	rest := max(p.viewport.Width()-1, 0)
 	return stripeFocusLine(line, rest, bg)
 }
 
@@ -503,9 +487,7 @@ func (p *Panel) renderRow(n server.NotificationDTO, selected bool) string {
 // the same idea as RunsList' active-row stripe in the web UI.
 func stripeFocusLine(content string, restWidth int, restBg color.Color) string {
 	stripe := lipgloss.NewStyle().Background(uikit.ColorPrimary).Render(" ")
-	if restWidth < 0 {
-		restWidth = 0
-	}
+	restWidth = max(restWidth, 0)
 	return stripe + uikit.PadLine(content, restWidth, restBg)
 }
 
