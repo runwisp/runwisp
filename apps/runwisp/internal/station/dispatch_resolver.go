@@ -13,14 +13,13 @@ import (
 	"github.com/runwisp/runwisp/internal/model"
 )
 
-// resolveDispatchTask resolves a dispatch to a runnable task name. configBacked
-// reports whether the task is one of this daemon's TOML-defined tasks (whose
-// params come from runwisp.toml) as opposed to an inline ad-hoc execution
-// (whose params buildDynamicStationTask synthesizes from inputValues' keys).
-func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (taskName string, configBacked bool, err error) {
+// resolveDispatchTask resolves a dispatch to a runnable task name: one of this
+// daemon's TOML-defined tasks for a config execution, otherwise an ephemeral
+// task synthesized from the inline definition.
+func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (string, error) {
 	execDef, err := model.ParseExecutionDef(dispatch.Script)
 	if err != nil {
-		return "", false, &StationError{
+		return "", &StationError{
 			Kind:    StationErrorKindValidation,
 			Message: fmt.Sprintf("failed to parse execution def: %v", err),
 		}
@@ -29,7 +28,7 @@ func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (task
 	// Reject execution types the daemon doesn't allow for station dispatch.
 	status := h.availability.ForType(execDef.ExecType())
 	if !status.Available {
-		return "", false, &StationError{
+		return "", &StationError{
 			Kind:    StationErrorKindConflict,
 			Message: fmt.Sprintf("execution type %q not available: %s", execDef.ExecType(), status.Reason),
 		}
@@ -39,7 +38,7 @@ func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (task
 		// Config type means "resolve from this daemon's local tasks".
 		task, exists := h.taskManager.GetTask(cfg.TaskName)
 		if !exists {
-			return "", false, &StationError{Kind: StationErrorKindConflict, Message: fmt.Sprintf("config task '%s' not found", cfg.TaskName)}
+			return "", &StationError{Kind: StationErrorKindConflict, Message: fmt.Sprintf("config task '%s' not found", cfg.TaskName)}
 		}
 		// The control plane is an out-of-scheduler trigger like the REST surface,
 		// so it honors the same gates via the same rule (model.Task.CheckTrigger).
@@ -50,17 +49,17 @@ func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (task
 		// just over HTTP.
 		switch task.CheckTrigger() {
 		case model.TriggerBlockedService:
-			return "", false, &StationError{
+			return "", &StationError{
 				Kind:    StationErrorKindConflict,
 				Message: fmt.Sprintf("config task '%s' is a service and cannot be triggered by the control plane", cfg.TaskName),
 			}
 		case model.TriggerBlockedManualDisabled:
-			return "", false, &StationError{
+			return "", &StationError{
 				Kind:    StationErrorKindConflict,
 				Message: fmt.Sprintf("config task '%s' has manual_trigger disabled and cannot be triggered by the control plane", cfg.TaskName),
 			}
 		}
-		return cfg.TaskName, true, nil
+		return cfg.TaskName, nil
 	}
 
 	task := buildDynamicStationTask(dispatch, execDef)
@@ -71,13 +70,13 @@ func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (task
 	// violating "run= comes from disk only". resolveServiceTarget guards the
 	// service path the same way.
 	if existing, ok := h.taskManager.GetTask(task.Name); ok && !existing.Ephemeral {
-		return "", false, &StationError{
+		return "", &StationError{
 			Kind:    StationErrorKindConflict,
 			Message: fmt.Sprintf("task %q is defined locally; an inline station execution cannot overwrite it", task.Name),
 		}
 	}
 	h.taskManager.UpsertTask(task)
-	return task.Name, false, nil
+	return task.Name, nil
 }
 
 func buildDynamicStationTask(dispatch *protocol.Execution, execDef model.ExecutionDef) *model.Task {

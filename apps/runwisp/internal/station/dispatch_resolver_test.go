@@ -157,7 +157,7 @@ func httpScript(t *testing.T, url string) json.RawMessage {
 
 func TestResolveDispatchTask_InvalidJSON(t *testing.T) {
 	h := newDispatchHandler(executor.Availability{}, nil)
-	_, _, err := h.resolveDispatchTask(&protocol.Execution{Script: json.RawMessage(`not-json`)})
+	_, err := h.resolveDispatchTask(&protocol.Execution{Script: json.RawMessage(`not-json`)})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -169,7 +169,7 @@ func TestResolveDispatchTask_UnavailableBackend(t *testing.T) {
 		Shell: executor.BackendStatus{Available: false, Reason: "no shell"},
 	}
 	h := newDispatchHandler(avail, nil)
-	_, _, err := h.resolveDispatchTask(&protocol.Execution{Script: shellScript(t, "echo hi")})
+	_, err := h.resolveDispatchTask(&protocol.Execution{Script: shellScript(t, "echo hi")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -183,10 +183,9 @@ func TestResolveDispatchTask_ConfigTaskFound(t *testing.T) {
 	tasks := map[string]*model.Task{"mytask": {Name: "mytask", ManualTrigger: true}}
 	h := newDispatchHandler(avail, tasks)
 
-	name, configBacked, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "mytask")})
+	name, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "mytask")})
 	require.NoError(t, err)
 	assert.Equal(t, "mytask", name)
-	assert.True(t, configBacked)
 }
 
 // TestResolveDispatchTask_ConfigTaskManualTriggerDisabled: manual_trigger=false means
@@ -199,7 +198,7 @@ func TestResolveDispatchTask_ConfigTaskManualTriggerDisabled(t *testing.T) {
 	tasks := map[string]*model.Task{"mytask": {Name: "mytask", ManualTrigger: false}}
 	h := newDispatchHandler(avail, tasks)
 
-	_, _, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "mytask")})
+	_, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "mytask")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -218,7 +217,7 @@ func TestResolveDispatchTask_ConfigTaskIsService(t *testing.T) {
 	tasks := map[string]*model.Task{"myservice": {Name: "myservice", Kind: model.KindService, ManualTrigger: true}}
 	h := newDispatchHandler(avail, tasks)
 
-	_, _, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "myservice")})
+	_, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "myservice")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -232,7 +231,7 @@ func TestResolveDispatchTask_ConfigTaskNotFound(t *testing.T) {
 	}
 	h := newDispatchHandler(avail, nil)
 
-	_, _, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "missing")})
+	_, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "missing")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -252,13 +251,12 @@ func TestResolveDispatchTask_ShellInlineUpserted(t *testing.T) {
 		logListeners:    make(map[string]struct{}),
 	}
 
-	name, configBacked, err := h.resolveDispatchTask(&protocol.Execution{
+	name, err := h.resolveDispatchTask(&protocol.Execution{
 		TaskID: "my-task",
 		Script: shellScript(t, "echo hello"),
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, name)
-	assert.False(t, configBacked)
 	assert.Len(t, runner.upserted, 1)
 	assert.Equal(t, name, runner.upserted[0].Name)
 }
@@ -280,7 +278,7 @@ func TestResolveDispatchTask_ContainerRejectedWhenDispatchDisabled(t *testing.T)
 		logListeners:    make(map[string]struct{}),
 	}
 
-	_, _, err := h.resolveDispatchTask(&protocol.Execution{TaskID: "evil", Script: containerScript(t, "rm -rf /")})
+	_, err := h.resolveDispatchTask(&protocol.Execution{TaskID: "evil", Script: containerScript(t, "rm -rf /")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -301,10 +299,9 @@ func TestResolveDispatchTask_ContainerInlineUpsertedWhenEnabled(t *testing.T) {
 		logListeners:    make(map[string]struct{}),
 	}
 
-	name, configBacked, err := h.resolveDispatchTask(&protocol.Execution{TaskID: "build", Script: containerScript(t, "echo hi")})
+	name, err := h.resolveDispatchTask(&protocol.Execution{TaskID: "build", Script: containerScript(t, "echo hi")})
 	require.NoError(t, err)
 	assert.NotEmpty(t, name)
-	assert.False(t, configBacked)
 	assert.Len(t, runner.upserted, 1)
 }
 
@@ -324,7 +321,7 @@ func TestResolveDispatchTask_HTTPRejectedWithoutDispatch(t *testing.T) {
 		logListeners:    make(map[string]struct{}),
 	}
 
-	_, _, err := h.resolveDispatchTask(&protocol.Execution{TaskID: "probe", Script: httpScript(t, "https://example.com")})
+	_, err := h.resolveDispatchTask(&protocol.Execution{TaskID: "probe", Script: httpScript(t, "https://example.com")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -347,10 +344,9 @@ func TestResolveDispatchTask_HTTPAllowedWithDispatch(t *testing.T) {
 		logListeners:    make(map[string]struct{}),
 	}
 
-	name, configBacked, err := h.resolveDispatchTask(&protocol.Execution{TaskID: "probe", Script: httpScript(t, "https://example.com")})
+	name, err := h.resolveDispatchTask(&protocol.Execution{TaskID: "probe", Script: httpScript(t, "https://example.com")})
 	require.NoError(t, err)
 	assert.NotEmpty(t, name)
-	assert.False(t, configBacked)
 }
 
 // Regression: sanitizeStationTaskName only prefixes "station-", so a peer picks the
@@ -367,7 +363,7 @@ func TestResolveDispatchTask_RejectsConfigTaskNameCollision(t *testing.T) {
 		map[string]*model.Task{"station-sync": local})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	_, _, err := h.resolveDispatchTask(&protocol.Execution{
+	_, err := h.resolveDispatchTask(&protocol.Execution{
 		TaskID: "sync",
 		Script: httpScript(t, "https://attacker.example/p"),
 	})
@@ -387,13 +383,12 @@ func TestResolveDispatchTask_EphemeralNameCollisionAllowed(t *testing.T) {
 		map[string]*model.Task{"station-probe": prior})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	name, configBacked, err := h.resolveDispatchTask(&protocol.Execution{
+	name, err := h.resolveDispatchTask(&protocol.Execution{
 		TaskID: "probe",
 		Script: httpScript(t, "https://example.com"),
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "station-probe", name)
-	assert.False(t, configBacked)
 	assert.Len(t, runner.upserted, 1)
 }
 

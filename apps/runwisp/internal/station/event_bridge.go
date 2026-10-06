@@ -176,9 +176,6 @@ func (b *EventBridge) finalizeRun(ctx context.Context, run *model.Run, update pr
 // for a service that produces no lifecycle events. Best-effort like
 // emitServiceStatus: sendReady drops while no session is attached.
 func (b *EventBridge) EmitAllServiceStatus() {
-	if b.handler.taskManager == nil {
-		return
-	}
 	for _, svc := range b.handler.taskManager.ListServiceTasks() {
 		if svc == nil {
 			continue
@@ -192,9 +189,6 @@ func (b *EventBridge) EmitAllServiceStatus() {
 // outbound queue drops the snapshot rather than blocking the supervisor — the
 // next lifecycle change or resend-ticker tick corrects the view.
 func (b *EventBridge) emitServiceStatus(taskName string) {
-	if b.handler.taskManager == nil {
-		return
-	}
 	snapshot, ok := b.handler.taskManager.ServiceSnapshot(taskName)
 	if !ok {
 		return
@@ -210,7 +204,7 @@ func (b *EventBridge) handleLogLineEvent(event events.Event) {
 	if !b.handler.IsLogListener(logEvent.ExecutionID) {
 		return
 	}
-	stream := linesItemStreamFromString(logEvent.Stream)
+	stream := protocol.ValuesToLinesItemStream[logEvent.Stream]
 	item := protocol.LinesItem{
 		N:         logEvent.LineNum,
 		Ts:        logEvent.Timestamp,

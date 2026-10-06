@@ -17,8 +17,11 @@ import (
 
 func newTestInboundHandler() *InboundHandler {
 	return NewInboundHandler(InboundHandlerDeps{
+		TaskManager:     &fakeTaskRunner{tasks: make(map[string]*model.Task)},
+		RunRepo:         &stubRunRepo{},
 		LogDir:          "/tmp/logs",
 		QueueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
+		Tracker:         NewExecutionTracker(),
 	})
 }
 
@@ -45,6 +48,7 @@ func newDispatchInboundHandler(runner TaskRunner, repo ExternalRunGetter, avail 
 		logDir:          "/tmp/logs",
 		availability:    avail,
 		queueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
+		tracker:         NewExecutionTracker(),
 		logListeners:    make(map[string]struct{}),
 	}
 }
@@ -67,7 +71,7 @@ func TestHandleExecutionDispatch_EmptyExecutionID(t *testing.T) {
 func TestHandleExecutionDispatch_InvalidScript(t *testing.T) {
 	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
 	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
-	h := newDispatchInboundHandler(runner, nil, avail)
+	h := newDispatchInboundHandler(runner, &stubRunRepo{}, avail)
 
 	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
 		Execution: &protocol.Execution{
@@ -81,7 +85,7 @@ func TestHandleExecutionDispatch_InvalidScript(t *testing.T) {
 func TestHandleExecutionDispatch_Success(t *testing.T) {
 	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
 	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
-	h := newDispatchInboundHandler(runner, nil, avail)
+	h := newDispatchInboundHandler(runner, &stubRunRepo{}, avail)
 
 	script := shellScript(t, "echo hello")
 	acked := 0
@@ -104,7 +108,7 @@ func TestHandleExecutionDispatch_Success(t *testing.T) {
 func TestHandleExecutionDispatch_AdHocInputValuesForwarded(t *testing.T) {
 	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
 	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
-	h := newDispatchInboundHandler(runner, nil, avail)
+	h := newDispatchInboundHandler(runner, &stubRunRepo{}, avail)
 
 	script := shellScript(t, "echo hello")
 	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
@@ -130,7 +134,7 @@ func TestHandleExecutionDispatch_TriggerError_NilRun(t *testing.T) {
 		trigErr: errors.New("queue full"),
 		trigRun: nil,
 	}
-	h := newDispatchInboundHandler(runner, nil, avail)
+	h := newDispatchInboundHandler(runner, &stubRunRepo{}, avail)
 
 	script := shellScript(t, "echo hi")
 	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
@@ -154,7 +158,7 @@ func TestHandleExecutionDispatch_TriggerError_WithRun(t *testing.T) {
 		trigErr: errors.New("conflict"),
 		trigRun: run,
 	}
-	h := newDispatchInboundHandler(runner, nil, avail)
+	h := newDispatchInboundHandler(runner, &stubRunRepo{}, avail)
 
 	script := shellScript(t, "echo hi")
 	err := h.HandleExecutionDispatch(context.Background(), protocol.ExecutionDispatchMessage{
@@ -172,7 +176,7 @@ func TestHandleExecutionDispatch_DuplicateActive_ReAcksWithoutTrigger(t *testing
 	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
 	tracker := NewExecutionTracker()
 	tracker.TrackRunning("exec-dup", nil)
-	h := newDispatchInboundHandler(runner, nil, avail)
+	h := newDispatchInboundHandler(runner, &stubRunRepo{}, avail)
 	h.tracker = tracker
 
 	script := shellScript(t, "echo hi")
@@ -228,7 +232,7 @@ func TestHandleExecutionDispatch_DuplicateTerminal_ReQueuesTerminalUpdate(t *tes
 func TestHandleExecutionDispatch_DuplicateReserved_ReAcksBeforeRunning(t *testing.T) {
 	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
 	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task)}
-	h := newDispatchInboundHandler(runner, nil, avail)
+	h := newDispatchInboundHandler(runner, &stubRunRepo{}, avail)
 	h.tracker = NewExecutionTracker()
 
 	script := shellScript(t, "echo hi")
@@ -250,7 +254,7 @@ func TestHandleExecutionDispatch_DuplicateReserved_ReAcksBeforeRunning(t *testin
 func TestHandleExecutionDispatch_ReservationReleasedAfterTriggerError(t *testing.T) {
 	avail := executor.Availability{Shell: executor.BackendStatus{Available: true}}
 	runner := &fakeTaskRunner{tasks: make(map[string]*model.Task), trigErr: errors.New("boom")}
-	h := newDispatchInboundHandler(runner, nil, avail)
+	h := newDispatchInboundHandler(runner, &stubRunRepo{}, avail)
 	h.tracker = NewExecutionTracker()
 
 	script := shellScript(t, "echo hi")

@@ -259,7 +259,7 @@ func TestConnectionAuthSuccessReachesReady(t *testing.T) {
 	require.Eventually(t, func() bool {
 		env.client.conn.mu.Lock()
 		defer env.client.conn.mu.Unlock()
-		return env.client.conn.ready
+		return env.client.conn.session != nil
 	}, 3*time.Second, 50*time.Millisecond)
 
 	cancel()
@@ -513,13 +513,6 @@ func TestWebSocketURLDerivation(t *testing.T) {
 func TestRecoverArchiveBacklog_NilClientReturnsImmediately(t *testing.T) {
 	var c *Client
 	// Must not panic on a nil receiver — RecoverArchiveBacklog is safe before Run().
-	c.RecoverArchiveBacklog(context.Background())
-}
-
-func TestRecoverArchiveBacklog_NilUploaderReturnsImmediately(t *testing.T) {
-	// Uploader is nil when LogUploader bootstrapping skipped; the recovery
-	// path must short-circuit without panicking on the uploader field.
-	c := &Client{}
 	c.RecoverArchiveBacklog(context.Background())
 }
 
