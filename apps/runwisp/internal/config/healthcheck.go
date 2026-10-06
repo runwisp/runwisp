@@ -71,9 +71,9 @@ func applyHealthCheckDefaults(svc *model.Task, d Defaults, schedulerTZ string) {
 	probe.Cron = cmp.Or(probe.Cron, DefaultHealthCheckCron)
 	probe.Timezone = cmp.Or(probe.Timezone, schedulerTZ)
 	if probe.Timeout == nil {
-		probe.Timeout = durationPtr(DefaultHealthCheckTimeout)
+		probe.Timeout = new(DefaultHealthCheckTimeout)
 	}
-	probe.GracefulStop = durationPtr(0)
+	probe.GracefulStop = new(time.Duration(0))
 }
 
 // validateHealthCheck validates a service's probe with the same per-unit
