@@ -502,7 +502,7 @@ func (m *Model) requestQuit() tea.Cmd {
 			"survive a reboot (systemd / launchd).",
 		)
 	}
-	m.dialogs.ShowConfirm(dialog)
+	m.dialogs.Show(dlgConfirm, dialog)
 	return nil
 }
 
@@ -542,7 +542,7 @@ func (m *Model) showRunParams() tea.Cmd {
 		return nil
 	}
 	run := m.execView.Run
-	m.dialogs.ShowRunParams(NewRunParamsDialog(run.TaskName, run.Params))
+	m.dialogs.Show(dlgRunParams, NewRunParamsDialog(run.TaskName, run.Params))
 	return m.dialogs.SyncMouseState()
 }
 

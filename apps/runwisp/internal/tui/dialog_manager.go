@@ -8,22 +8,37 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/atotto/clipboard"
-	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
+)
+
+// dialog is a modal overlay. Update handles a key or mouse message and reports
+// a command to run and whether the dialog should close.
+type dialog interface {
+	Update(msg tea.Msg) (tea.Cmd, bool)
+	View(screenWidth, screenHeight int) string
+}
+
+// dialogKind names a dialog slot. The order is the precedence: when several
+// dialogs are open, the lowest kind renders and gets first claim on input.
+type dialogKind int
+
+const (
+	dlgConfirm dialogKind = iota
+	dlgParamForm
+	dlgRunParams
+	dlgCopy
+	dlgLogHistory
+	dlgNewRelease
+	dlgTaskDetail
+	dlgRunDetail
+	dlgHelp
+	dialogKinds
 )
 
 // DialogManager owns dialog lifecycle, flash messages, and mouse-state sync.
 // Extracted from Model to isolate modal overlay concerns.
 type DialogManager struct {
-	confirmDialog *ConfirmDialog
-	copyDialog    *CopyDialog
-	helpDialog    *HelpDialog
-	taskDetail    *TaskDetailDialog
-	runDetail     *RunDetailDialog
-	paramForm     *ParamFormDialog
-	runParams     *RunParamsDialog
-	logHistory    *LogHistoryDialog
-	newRelease    *NewReleaseDialog
+	open [dialogKinds]dialog
 
 	flashMessage string
 	flashExpiry  time.Time
@@ -49,260 +64,66 @@ func (dm *DialogManager) SetMouseHold(hold bool) {
 	dm.mouseHold = hold
 }
 
-// HasConfirm reports whether a confirm dialog is active.
-func (dm *DialogManager) HasConfirm() bool {
-	return dm.confirmDialog != nil
+// Has reports whether a dialog of the given kind is open.
+func (dm *DialogManager) Has(k dialogKind) bool {
+	return dm.open[k] != nil
 }
 
-// HasCopy reports whether a copy dialog is active.
-func (dm *DialogManager) HasCopy() bool {
-	return dm.copyDialog != nil
+// Show opens d in the given slot, replacing any dialog already there.
+func (dm *DialogManager) Show(k dialogKind, d dialog) {
+	dm.open[k] = d
 }
 
-// ShowConfirm activates a confirm dialog.
-func (dm *DialogManager) ShowConfirm(d ConfirmDialog) {
-	dm.confirmDialog = &d
+// Dismiss closes the dialog in the given slot (a no-op when none is open).
+func (dm *DialogManager) Dismiss(k dialogKind) {
+	dm.open[k] = nil
 }
 
-func (dm *DialogManager) DismissConfirm() {
-	dm.confirmDialog = nil
+// top returns the highest-precedence open dialog, or ok=false when none is.
+func (dm *DialogManager) top() (dialogKind, dialog, bool) {
+	for k, d := range dm.open {
+		if d != nil {
+			return dialogKind(k), d, true
+		}
+	}
+	return 0, nil, false
+}
+
+func (dm *DialogManager) confirm() *ConfirmDialog {
+	d, _ := dm.open[dlgConfirm].(*ConfirmDialog)
+	return d
 }
 
 // IsShuttingDown reports whether the confirm dialog is in the shutting-down state.
 func (dm *DialogManager) IsShuttingDown() bool {
-	return dm.confirmDialog != nil && dm.confirmDialog.shuttingDown
+	d := dm.confirm()
+	return d != nil && d.shuttingDown
 }
 
 // StartShutdown transitions the active confirm dialog into the spinner state.
 func (dm *DialogManager) StartShutdown() tea.Cmd {
-	if dm.confirmDialog == nil {
+	d := dm.confirm()
+	if d == nil {
 		return nil
 	}
-	return dm.confirmDialog.StartShutdown()
+	return d.StartShutdown()
 }
 
 // UpdateSpinner forwards a spinner tick to the active confirm dialog.
 func (dm *DialogManager) UpdateSpinner(innerMsg tea.Msg) tea.Cmd {
-	if dm.confirmDialog == nil {
+	d := dm.confirm()
+	if d == nil {
 		return nil
 	}
-	return dm.confirmDialog.UpdateSpinner(innerMsg)
-}
-
-// HasParamForm reports whether a parameter form dialog is active.
-func (dm *DialogManager) HasParamForm() bool {
-	return dm.paramForm != nil
-}
-
-// ShowParamForm activates a parameter form dialog.
-func (dm *DialogManager) ShowParamForm(d ParamFormDialog) {
-	dm.paramForm = &d
-}
-
-func (dm *DialogManager) DismissParamForm() {
-	dm.paramForm = nil
-}
-
-// UpdateParamForm dispatches input to the active param form. Returns the submit
-// command (when confirmed) and whether the dialog closed.
-func (dm *DialogManager) UpdateParamForm(msg tea.Msg) (tea.Cmd, bool) {
-	cmd, closed := dm.paramForm.Update(msg)
-	if closed {
-		dm.paramForm = nil
-	}
-	return cmd, closed
-}
-
-// HasRunParams reports whether the read-only run-params dialog is active.
-func (dm *DialogManager) HasRunParams() bool {
-	return dm.runParams != nil
-}
-
-// ShowRunParams activates the read-only run-params dialog.
-func (dm *DialogManager) ShowRunParams(d RunParamsDialog) {
-	dm.runParams = &d
-}
-
-func (dm *DialogManager) DismissRunParams() {
-	dm.runParams = nil
-}
-
-// UpdateRunParams dispatches input to the active run-params dialog.
-func (dm *DialogManager) UpdateRunParams(msg tea.Msg) bool {
-	if dm.runParams.Update(msg) {
-		dm.runParams = nil
-		return true
-	}
-	return false
-}
-
-// ShowCopy activates a copy dialog.
-func (dm *DialogManager) ShowCopy(title, value string) {
-	d := NewCopyDialog(title, value)
-	dm.copyDialog = &d
-}
-
-func (dm *DialogManager) DismissCopy() {
-	dm.copyDialog = nil
-}
-
-// HasHelp reports whether the help overlay is active.
-func (dm *DialogManager) HasHelp() bool {
-	return dm.helpDialog != nil
-}
-
-// ShowHelp activates the keyboard-shortcut overlay.
-func (dm *DialogManager) ShowHelp() {
-	d := NewHelpDialog()
-	dm.helpDialog = &d
-}
-
-func (dm *DialogManager) DismissHelp() {
-	dm.helpDialog = nil
-}
-
-// UpdateHelp dispatches input to the active help dialog.
-func (dm *DialogManager) UpdateHelp(msg tea.Msg) bool {
-	if dm.helpDialog.Update(msg) {
-		dm.helpDialog = nil
-		return true
-	}
-	return false
-}
-
-// HasNewRelease reports whether the update-details modal is active.
-func (dm *DialogManager) HasNewRelease() bool {
-	return dm.newRelease != nil
-}
-
-// ShowNewRelease opens the update-details modal for the given versions.
-func (dm *DialogManager) ShowNewRelease(current, latest string) {
-	d := NewNewReleaseDialog(current, latest)
-	dm.newRelease = &d
-}
-
-func (dm *DialogManager) DismissNewRelease() {
-	dm.newRelease = nil
-}
-
-// UpdateNewRelease dispatches input to the active update-details modal.
-// Returns a command to run (e.g. opening the release-notes link) and whether
-// the dialog closed.
-func (dm *DialogManager) UpdateNewRelease(msg tea.Msg) (tea.Cmd, bool) {
-	cmd, closed := dm.newRelease.Update(msg)
-	if closed {
-		dm.newRelease = nil
-	}
-	return cmd, closed
-}
-
-// HasTaskDetail reports whether the on-demand task inspector is active.
-func (dm *DialogManager) HasTaskDetail() bool {
-	return dm.taskDetail != nil
-}
-
-// ShowTaskDetail opens the task inspector for the named task. Health figures
-// arrive asynchronously and are applied via ApplyTaskSummary.
-func (dm *DialogManager) ShowTaskDetail(taskName string, task *model.Task, paused bool, loc *time.Location) {
-	d := NewTaskDetailDialog(taskName, task)
-	d.paused = paused
-	d.loc = loc
-	dm.taskDetail = &d
-}
-
-func (dm *DialogManager) DismissTaskDetail() {
-	dm.taskDetail = nil
-}
-
-// UpdateTaskDetail dispatches input to the active task inspector.
-func (dm *DialogManager) UpdateTaskDetail(msg tea.Msg) bool {
-	if dm.taskDetail.Update(msg) {
-		dm.taskDetail = nil
-		return true
-	}
-	return false
+	return d.UpdateSpinner(innerMsg)
 }
 
 // ApplyTaskSummary feeds async health figures to the open inspector. A no-op
 // when the inspector has since closed or the message is for another task.
 func (dm *DialogManager) ApplyTaskSummary(msg uikit.TaskSummaryMsg) {
-	if dm.taskDetail == nil {
-		return
+	if d, ok := dm.open[dlgTaskDetail].(*TaskDetailDialog); ok {
+		d.ApplySummary(msg)
 	}
-	dm.taskDetail.ApplySummary(msg)
-}
-
-// HasRunDetail reports whether the on-demand run inspector is active.
-func (dm *DialogManager) HasRunDetail() bool {
-	return dm.runDetail != nil
-}
-
-// ShowRunDetail opens the run inspector for the given run.
-func (dm *DialogManager) ShowRunDetail(run *model.Run, isService bool, instanceCount int, loc *time.Location) {
-	d := NewRunDetailDialog(run, isService, instanceCount)
-	d.loc = loc
-	dm.runDetail = &d
-}
-
-func (dm *DialogManager) DismissRunDetail() {
-	dm.runDetail = nil
-}
-
-// RunDetailParent returns the parent-run reference of the open run inspector
-// (set only when the run is a retry), so the interceptor can open it on enter.
-func (dm *DialogManager) RunDetailParent() (taskName, runID string, ok bool) {
-	if dm.runDetail == nil {
-		return "", "", false
-	}
-	return dm.runDetail.ParentRef()
-}
-
-// UpdateRunDetail dispatches input to the active run inspector.
-func (dm *DialogManager) UpdateRunDetail(msg tea.Msg) bool {
-	if dm.runDetail.Update(msg) {
-		dm.runDetail = nil
-		return true
-	}
-	return false
-}
-
-// HasLogHistory reports whether the frame-history viewer is active.
-func (dm *DialogManager) HasLogHistory() bool {
-	return dm.logHistory != nil
-}
-
-// ShowLogHistory activates the frame-history viewer.
-func (dm *DialogManager) ShowLogHistory(d LogHistoryDialog) {
-	dm.logHistory = &d
-}
-
-func (dm *DialogManager) DismissLogHistory() {
-	dm.logHistory = nil
-}
-
-// UpdateLogHistory dispatches input to the active frame-history viewer.
-func (dm *DialogManager) UpdateLogHistory(msg tea.Msg) bool {
-	if dm.logHistory.Update(msg) {
-		dm.logHistory = nil
-		return true
-	}
-	return false
-}
-
-// UpdateConfirmKeep dispatches input to the active confirm dialog but does NOT
-// dismiss it when closed. The caller is responsible for calling DismissConfirm
-// after inspecting the returned command.
-func (dm *DialogManager) UpdateConfirmKeep(msg tea.Msg) (tea.Cmd, bool) {
-	return dm.confirmDialog.Update(msg)
-}
-
-// UpdateCopy dispatches input to the active copy dialog.
-func (dm *DialogManager) UpdateCopy(msg tea.Msg) bool {
-	if dm.copyDialog.Update(msg) {
-		dm.copyDialog = nil
-		return true
-	}
-	return false
 }
 
 // clipboardWriteAll is the seam tests use to deterministically force the
@@ -315,7 +136,7 @@ func (dm *DialogManager) CopyToClipboard(value string) tea.Cmd {
 	if err := clipboardWriteAll(value); err == nil {
 		return dm.Flash("Copied", 2*time.Second)
 	}
-	dm.ShowCopy("Copy", value)
+	dm.Show(dlgCopy, NewCopyDialog("Copy", value))
 	return dm.SyncMouseState()
 }
 
@@ -391,13 +212,13 @@ func (dm *DialogManager) MouseDisabled() bool {
 	return dm.mouseDisabled
 }
 
-// SyncMouseState disables terminal mouse tracking when the copy dialog is
-// visible (or any mouse-hold is active) and re-enables it otherwise. The
-// actual mode switch happens in View() via MouseDisabled; the non-nil
-// return here only signals that a transition occurred, for callers that
-// batch it alongside other commands.
+// SyncMouseState disables terminal mouse tracking while a dialog that shows
+// selectable text is open (copy, run params) or any mouse-hold is active,
+// and re-enables it otherwise. The actual mode switch happens in View() via
+// MouseDisabled; the non-nil return here only signals that a transition
+// occurred, for callers that batch it alongside other commands.
 func (dm *DialogManager) SyncMouseState() tea.Cmd {
-	wantDisabled := dm.copyDialog != nil || dm.runParams != nil || dm.mouseHold
+	wantDisabled := dm.Has(dlgCopy) || dm.Has(dlgRunParams) || dm.mouseHold
 
 	if wantDisabled == dm.mouseDisabled {
 		return nil
@@ -406,35 +227,11 @@ func (dm *DialogManager) SyncMouseState() tea.Cmd {
 	return func() tea.Msg { return nil }
 }
 
-// RenderOverlays renders confirm/copy/help dialogs on top of the base output
-// if active. Confirm and copy take precedence over help.
+// RenderOverlays renders the highest-precedence open dialog over the base
+// output, or returns base unchanged when no dialog is open.
 func (dm *DialogManager) RenderOverlays(base string, width, height int) string {
-	if dm.confirmDialog != nil {
-		return dm.confirmDialog.View(width, height)
-	}
-	if dm.paramForm != nil {
-		return dm.paramForm.View(width, height)
-	}
-	if dm.runParams != nil {
-		return dm.runParams.View(width, height)
-	}
-	if dm.copyDialog != nil {
-		return dm.copyDialog.View(width, height)
-	}
-	if dm.logHistory != nil {
-		return dm.logHistory.View(width, height)
-	}
-	if dm.newRelease != nil {
-		return dm.newRelease.View(width, height)
-	}
-	if dm.taskDetail != nil {
-		return dm.taskDetail.View(width, height)
-	}
-	if dm.runDetail != nil {
-		return dm.runDetail.View(width, height)
-	}
-	if dm.helpDialog != nil {
-		return dm.helpDialog.View(width, height)
+	if _, d, ok := dm.top(); ok {
+		return d.View(width, height)
 	}
 	return base
 }

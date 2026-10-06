@@ -37,13 +37,13 @@ type ConfirmDialog struct {
 // WithNote attaches one or more muted lines rendered below the
 // message. Empty strings render as visual spacers. Returns the dialog
 // for chained construction.
-func (d ConfirmDialog) WithNote(lines ...string) ConfirmDialog {
+func (d *ConfirmDialog) WithNote(lines ...string) *ConfirmDialog {
 	d.noteLines = lines
 	return d
 }
 
-func NewConfirmDialog(title, message string, onConfirm tea.Cmd) ConfirmDialog {
-	return ConfirmDialog{
+func NewConfirmDialog(title, message string, onConfirm tea.Cmd) *ConfirmDialog {
+	return &ConfirmDialog{
 		title:     title,
 		message:   message,
 		yesLabel:  "Yes",
@@ -55,8 +55,8 @@ func NewConfirmDialog(title, message string, onConfirm tea.Cmd) ConfirmDialog {
 }
 
 // Both choices trigger a callback; only Esc cancels without action.
-func NewChoiceDialog(title, message, yesLabel, noLabel string, onConfirm, onDeny tea.Cmd) ConfirmDialog {
-	return ConfirmDialog{
+func NewChoiceDialog(title, message, yesLabel, noLabel string, onConfirm, onDeny tea.Cmd) *ConfirmDialog {
+	return &ConfirmDialog{
 		title:     title,
 		message:   message,
 		yesLabel:  yesLabel,

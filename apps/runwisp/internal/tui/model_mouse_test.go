@@ -297,7 +297,7 @@ func TestHandleMouse_ClickVersionIndicator_ShowsNewReleaseDialog(t *testing.T) {
 	if !got.sidebar.VersionFocused() {
 		t.Fatal("expected the version indicator to be focused after the click")
 	}
-	if !got.dialogs.HasNewRelease() {
+	if !got.dialogs.Has(dlgNewRelease) {
 		t.Fatal("expected the new-release dialog to open")
 	}
 }
@@ -436,7 +436,7 @@ func TestHandleExecViewClick_ActionStop(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected Model, got %T", updated)
 	}
-	if !got.dialogs.HasConfirm() {
+	if !got.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected stop confirm dialog after action click")
 	}
 }
@@ -482,7 +482,7 @@ func assertDeleteClick(t *testing.T, reason model.EndReason) {
 	if cmd == nil {
 		t.Fatal("expected a delete command after action click")
 	}
-	if got.dialogs.HasConfirm() {
+	if got.dialogs.Has(dlgConfirm) {
 		t.Fatal("delete must act immediately, not open a confirm dialog")
 	}
 }

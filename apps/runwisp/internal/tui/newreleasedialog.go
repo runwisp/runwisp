@@ -31,8 +31,8 @@ type NewReleaseDialog struct {
 	linkX1, linkX2, linkY int
 }
 
-func NewNewReleaseDialog(current, latest string) NewReleaseDialog {
-	return NewReleaseDialog{current: current, latest: latest}
+func NewNewReleaseDialog(current, latest string) *NewReleaseDialog {
+	return &NewReleaseDialog{current: current, latest: latest}
 }
 
 // Update handles input while the dialog is open. Returns a command to run

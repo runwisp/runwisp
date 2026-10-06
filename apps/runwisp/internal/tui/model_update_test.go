@@ -94,32 +94,32 @@ func TestUpdateHandlers_EarlyReturns(t *testing.T) {
 	})
 }
 
-// ─── interceptCopyDialog ─────────────────────────────────────────────────────
+// ─── copy dialog interception ────────────────────────────────────────────────
 
 func TestInterceptCopyDialog_CtrlCDismissesAndShowsQuit(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowCopy("title", "value")
-	if !m.dialogs.HasCopy() {
+	m.dialogs.Show(dlgCopy, NewCopyDialog("title", "value"))
+	if !m.dialogs.Has(dlgCopy) {
 		t.Fatal("expected copy dialog to be active")
 	}
 
 	msg := tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
-	newModelIface, _, intercepted := m.interceptCopyDialog(msg)
+	newModelIface, _, intercepted := m.interceptActiveDialog(msg)
 	if !intercepted {
 		t.Fatal("expected intercepted=true for ctrl+c")
 	}
 	newM := newModelIface.(Model)
-	if newM.dialogs.HasCopy() {
+	if newM.dialogs.Has(dlgCopy) {
 		t.Fatal("expected copy dialog dismissed after ctrl+c")
 	}
 }
 
 func TestInterceptCopyDialog_AnyKeyWhileVisibleIsIntercepted(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowCopy("title", "value")
+	m.dialogs.Show(dlgCopy, NewCopyDialog("title", "value"))
 
 	msg := tea.KeyPressMsg{Code: 'x', Text: "x"}
-	_, _, intercepted := m.interceptCopyDialog(msg)
+	_, _, intercepted := m.interceptActiveDialog(msg)
 	if !intercepted {
 		t.Fatal("expected intercepted=true for any key while copy dialog is visible")
 	}
@@ -181,13 +181,13 @@ func TestHandleQuit_ShutdownDaemonNoShutdownFunc(t *testing.T) {
 	}
 }
 
-// ─── interceptConfirmDialog ──────────────────────────────────────────────────
+// ─── confirm dialog interception ─────────────────────────────────────────────
 
 func TestInterceptConfirmDialog_CtrlC(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowConfirm(NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
+	m.dialogs.Show(dlgConfirm, NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
 
-	_, _, intercepted := m.interceptConfirmDialog(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	_, _, intercepted := m.interceptActiveDialog(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	if !intercepted {
 		t.Fatal("expected intercepted=true for ctrl+c")
 	}
@@ -195,9 +195,9 @@ func TestInterceptConfirmDialog_CtrlC(t *testing.T) {
 
 func TestInterceptConfirmDialog_MouseMsg(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowConfirm(NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
+	m.dialogs.Show(dlgConfirm, NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
 
-	_, _, intercepted := m.interceptConfirmDialog(tea.MouseClickMsg{})
+	_, _, intercepted := m.interceptActiveDialog(tea.MouseClickMsg{})
 	if !intercepted {
 		t.Fatal("expected intercepted=true for mouse msg with confirm dialog")
 	}
@@ -205,9 +205,9 @@ func TestInterceptConfirmDialog_MouseMsg(t *testing.T) {
 
 func TestInterceptConfirmDialog_OtherMsg(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowConfirm(NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
+	m.dialogs.Show(dlgConfirm, NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
 
-	_, _, intercepted := m.interceptConfirmDialog(uikit.TickMsg{})
+	_, _, intercepted := m.interceptActiveDialog(uikit.TickMsg{})
 	if intercepted {
 		t.Fatal("expected intercepted=false for non-key/mouse msg")
 	}
@@ -215,25 +215,25 @@ func TestInterceptConfirmDialog_OtherMsg(t *testing.T) {
 
 func TestInterceptConfirmDialog_RoutesToShuttingDown(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowConfirm(NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
+	m.dialogs.Show(dlgConfirm, NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
 	_ = m.dialogs.StartShutdown()
 
-	// While shutting down, interceptConfirmDialog should defer to
+	// While shutting down, interceptActiveDialog should defer to
 	// interceptShuttingDownDialog — ShutdownDoneMsg is only handled there.
-	_, _, intercepted := m.interceptConfirmDialog(uikit.ShutdownDoneMsg{})
+	_, _, intercepted := m.interceptActiveDialog(uikit.ShutdownDoneMsg{})
 	if !intercepted {
 		t.Fatal("expected intercepted=true when shutting-down dialog handles the msg")
 	}
 }
 
-// ─── interceptNewReleaseDialog ───────────────────────────────────────────────
+// ─── new-release dialog interception ─────────────────────────────────────────
 
 func TestInterceptNewReleaseDialog_CtrlCEscalatesToQuitConfirm(t *testing.T) {
 	m := newTestModel(nil)
 	m.daemon = DaemonStarted
-	m.dialogs.ShowNewRelease("1.0.0", "v2.0.0")
+	m.dialogs.Show(dlgNewRelease, NewNewReleaseDialog("1.0.0", "v2.0.0"))
 
-	updated, _, intercepted := m.interceptNewReleaseDialog(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	updated, _, intercepted := m.interceptActiveDialog(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	if !intercepted {
 		t.Fatal("expected intercepted=true for ctrl+c")
 	}
@@ -241,19 +241,19 @@ func TestInterceptNewReleaseDialog_CtrlCEscalatesToQuitConfirm(t *testing.T) {
 	if !ok {
 		t.Fatal("expected Model")
 	}
-	if got.dialogs.HasNewRelease() {
+	if got.dialogs.Has(dlgNewRelease) {
 		t.Fatal("expected new-release dialog dismissed on ctrl+c")
 	}
-	if !got.dialogs.HasConfirm() {
+	if !got.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected ctrl+c to escalate to the quit-confirm dialog")
 	}
 }
 
 func TestInterceptNewReleaseDialog_KeyMsgRoutesToDialog(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowNewRelease("1.0.0", "v2.0.0")
+	m.dialogs.Show(dlgNewRelease, NewNewReleaseDialog("1.0.0", "v2.0.0"))
 
-	updated, _, intercepted := m.interceptNewReleaseDialog(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	updated, _, intercepted := m.interceptActiveDialog(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	if !intercepted {
 		t.Fatal("expected intercepted=true for a key while the dialog is open")
 	}
@@ -261,16 +261,16 @@ func TestInterceptNewReleaseDialog_KeyMsgRoutesToDialog(t *testing.T) {
 	if !ok {
 		t.Fatal("expected Model")
 	}
-	if got.dialogs.HasNewRelease() {
+	if got.dialogs.Has(dlgNewRelease) {
 		t.Fatal("expected an unrecognized key to close the dialog")
 	}
 }
 
 func TestInterceptNewReleaseDialog_MouseMsgRoutesToDialog(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowNewRelease("1.0.0", "v2.0.0")
+	m.dialogs.Show(dlgNewRelease, NewNewReleaseDialog("1.0.0", "v2.0.0"))
 
-	_, _, intercepted := m.interceptNewReleaseDialog(tea.MouseClickMsg{})
+	_, _, intercepted := m.interceptActiveDialog(tea.MouseClickMsg{})
 	if !intercepted {
 		t.Fatal("expected intercepted=true for mouse msg with new-release dialog open")
 	}
@@ -278,9 +278,9 @@ func TestInterceptNewReleaseDialog_MouseMsgRoutesToDialog(t *testing.T) {
 
 func TestInterceptNewReleaseDialog_OtherMsgNotIntercepted(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowNewRelease("1.0.0", "v2.0.0")
+	m.dialogs.Show(dlgNewRelease, NewNewReleaseDialog("1.0.0", "v2.0.0"))
 
-	_, _, intercepted := m.interceptNewReleaseDialog(uikit.TickMsg{})
+	_, _, intercepted := m.interceptActiveDialog(uikit.TickMsg{})
 	if intercepted {
 		t.Fatal("expected intercepted=false for non-key/mouse msg")
 	}
@@ -290,7 +290,7 @@ func TestInterceptNewReleaseDialog_OtherMsgNotIntercepted(t *testing.T) {
 
 func TestInterceptShuttingDownDialog_CtrlC(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowConfirm(NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
+	m.dialogs.Show(dlgConfirm, NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
 	_ = m.dialogs.StartShutdown()
 
 	_, _, intercepted := m.interceptShuttingDownDialog(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
@@ -301,7 +301,7 @@ func TestInterceptShuttingDownDialog_CtrlC(t *testing.T) {
 
 func TestInterceptShuttingDownDialog_ShutdownDone(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowConfirm(NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
+	m.dialogs.Show(dlgConfirm, NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
 	_ = m.dialogs.StartShutdown()
 
 	_, _, intercepted := m.interceptShuttingDownDialog(uikit.ShutdownDoneMsg{})
@@ -315,7 +315,7 @@ func TestInterceptShuttingDownDialog_ShutdownDone(t *testing.T) {
 // as if the daemon had stopped when it is still running.
 func TestInterceptShuttingDownDialog_ShutdownError(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowConfirm(NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
+	m.dialogs.Show(dlgConfirm, NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
 	_ = m.dialogs.StartShutdown()
 
 	wantErr := errors.New("could not signal daemon")
@@ -334,7 +334,7 @@ func TestInterceptShuttingDownDialog_ShutdownError(t *testing.T) {
 
 func TestInterceptShuttingDownDialog_OtherKey(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowConfirm(NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
+	m.dialogs.Show(dlgConfirm, NewConfirmDialog("Test", "msg", func() tea.Msg { return nil }))
 	_ = m.dialogs.StartShutdown()
 
 	_, _, intercepted := m.interceptShuttingDownDialog(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -679,27 +679,31 @@ func TestScheduleLogReconnect_ProducesTickCmd(t *testing.T) {
 	}
 }
 
-// ─── execConfirmCmd ──────────────────────────────────────────────────────────
+// ─── confirm callbacks ───────────────────────────────────────────────────────
 
-// TestExecConfirmCmd_DoesNotInvokeCmdSynchronously is the regression test for
-// the TUI-freeze bug: execConfirmCmd used to call cmd() inline on the Update
+var keyYes = tea.KeyPressMsg{Code: 'y', Text: "y"}
+
+// TestConfirmCallback_NotInvokedSynchronously is the regression test for the
+// TUI-freeze bug: the confirm callback used to be called inline on the Update
 // goroutine to inspect its result, which blocks the whole event loop (no
 // repaint, no key handling) for as long as a network-calling confirm callback
-// (trigger/restart/stop run, ...) takes. It must now hand the cmd back
-// untouched for Bubble Tea to run asynchronously.
-func TestExecConfirmCmd_DoesNotInvokeCmdSynchronously(t *testing.T) {
+// (trigger/restart/stop run, ...) takes. It must be handed back untouched for
+// Bubble Tea to run asynchronously.
+func TestConfirmCallback_NotInvokedSynchronously(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowConfirm(NewConfirmDialog("t", "msg", func() tea.Msg { return nil }))
-
 	invoked := false
 	slowCmd := func() tea.Msg {
 		invoked = true
 		return uikit.DebugLogMsg{Message: "hello"}
 	}
+	m.dialogs.Show(dlgConfirm, NewConfirmDialog("t", "msg", slowCmd))
 
-	out := m.execConfirmCmd(slowCmd, true)
+	_, out, intercepted := m.interceptActiveDialog(keyYes)
+	if !intercepted {
+		t.Fatal("expected the confirm dialog to intercept the key")
+	}
 	if invoked {
-		t.Fatal("execConfirmCmd must not invoke cmd() synchronously")
+		t.Fatal("the confirm callback must not be invoked synchronously")
 	}
 	if out == nil {
 		t.Fatal("expected the cmd to be handed back for async execution")
@@ -713,38 +717,36 @@ func TestExecConfirmCmd_DoesNotInvokeCmdSynchronously(t *testing.T) {
 	}
 }
 
-func TestExecConfirmCmd_ClosedDismissesDialogImmediately(t *testing.T) {
+func TestConfirmCallback_ClosedDismissesDialogImmediately(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowConfirm(NewConfirmDialog("t", "msg", func() tea.Msg { return nil }))
-	if !m.dialogs.HasConfirm() {
-		t.Fatal("precondition: confirm dialog must be open")
-	}
-	m.execConfirmCmd(func() tea.Msg { return nil }, true)
-	if m.dialogs.HasConfirm() {
-		t.Fatal("expected dialog dismissed immediately when closed=true")
+	m.dialogs.Show(dlgConfirm, NewConfirmDialog("t", "msg", func() tea.Msg { return nil }))
+	updated, _, _ := m.interceptActiveDialog(keyYes)
+	if got := updated.(Model); got.dialogs.Has(dlgConfirm) {
+		t.Fatal("expected dialog dismissed immediately on confirm")
 	}
 }
 
-func TestExecConfirmCmd_NotClosedKeepsDialogOpen(t *testing.T) {
+func TestConfirmCallback_NotClosedKeepsDialogOpen(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowConfirm(NewConfirmDialog("t", "msg", func() tea.Msg { return nil }))
-	m.execConfirmCmd(func() tea.Msg { return nil }, false)
-	if !m.dialogs.HasConfirm() {
-		t.Fatal("dialog must stay open when closed=false")
+	m.dialogs.Show(dlgConfirm, NewConfirmDialog("t", "msg", func() tea.Msg { return nil }))
+	updated, _, _ := m.interceptActiveDialog(tea.KeyPressMsg{Code: tea.KeyTab})
+	if got := updated.(Model); !got.dialogs.Has(dlgConfirm) {
+		t.Fatal("dialog must stay open on a non-closing key")
 	}
 }
 
-// TestExecConfirmCmd_QuitMsgFlowsThroughNormalDispatch confirms that a
-// QuitMsg produced by the (now async) confirm callback is handled correctly
-// once it re-enters Update via the ordinary dispatch tables, with no
-// special-casing left in execConfirmCmd itself.
-func TestExecConfirmCmd_QuitMsgFlowsThroughNormalDispatch(t *testing.T) {
+// TestConfirmCallback_QuitMsgFlowsThroughNormalDispatch confirms that a
+// QuitMsg produced by the (async) confirm callback is handled correctly once
+// it re-enters Update via the ordinary dispatch tables, with no special-casing
+// in the dialog interceptor.
+func TestConfirmCallback_QuitMsgFlowsThroughNormalDispatch(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowConfirm(NewConfirmDialog("Quit", "msg", nil))
-	cmd := m.execConfirmCmd(func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitKeepDaemon} }, true)
+	m.dialogs.Show(dlgConfirm, NewConfirmDialog("Quit", "msg", func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitKeepDaemon} }))
+	updated, cmd, _ := m.interceptActiveDialog(keyYes)
 	if cmd == nil {
 		t.Fatal("expected the QuitMsg-producing cmd to be handed back")
 	}
+	m = updated.(Model)
 	msg := cmd()
 	quitMsg, ok := msg.(uikit.QuitMsg)
 	if !ok {
@@ -764,14 +766,14 @@ func TestExecConfirmCmd_QuitMsgFlowsThroughNormalDispatch(t *testing.T) {
 func TestStartShutdownSpinner_OpensDialogWhenNoneExists(t *testing.T) {
 	m := newTestModel(nil)
 	m.shutdownFunc = func() error { return nil }
-	if m.dialogs.HasConfirm() {
+	if m.dialogs.Has(dlgConfirm) {
 		t.Fatal("precondition: no dialog expected")
 	}
 	cmd := m.startShutdownSpinner()
 	if cmd == nil {
 		t.Fatal("expected non-nil batched cmd")
 	}
-	if !m.dialogs.HasConfirm() {
+	if !m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected a spinner dialog to be created")
 	}
 }
@@ -779,7 +781,7 @@ func TestStartShutdownSpinner_OpensDialogWhenNoneExists(t *testing.T) {
 func TestStartShutdownSpinner_KeepsExistingDialog(t *testing.T) {
 	m := newTestModel(nil)
 	m.shutdownFunc = func() error { return nil }
-	m.dialogs.ShowConfirm(NewConfirmDialog("Quit", "msg", nil))
+	m.dialogs.Show(dlgConfirm, NewConfirmDialog("Quit", "msg", nil))
 	cmd := m.startShutdownSpinner()
 	if cmd == nil {
 		t.Fatal("expected non-nil batched cmd")
@@ -1393,7 +1395,7 @@ func TestHandleOpenBrowser_URLNoBrowserOpensCopyDialog(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected Model, got %T", updated)
 	}
-	if !got.dialogs.HasCopy() {
+	if !got.dialogs.Has(dlgCopy) {
 		t.Fatal("expected copy dialog set when URL falls back from browser")
 	}
 }
@@ -1465,27 +1467,15 @@ func TestHandleExecWindowFetched_DropsPageFromOldFilter(t *testing.T) {
 
 func TestModalCtrlC_DismissesAndOpensQuitConfirm(t *testing.T) {
 	ctrlC := tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
-	form := NewParamFormDialog("deploy", []model.TaskParam{{Kind: model.ParamArg, Key: "branch"}}, func(map[string]*string) tea.Cmd { return nil })
-
-	cases := []struct {
-		name      string
-		show      func(*Model)
-		intercept func(Model, tea.Msg) (tea.Model, tea.Cmd, bool)
-		open      func(Model) bool
-	}{
-		{"param form", func(m *Model) { m.dialogs.ShowParamForm(form) }, Model.interceptParamFormDialog, func(m Model) bool { return m.dialogs.HasParamForm() }},
-		{"run params", func(m *Model) { m.dialogs.ShowRunParams(NewRunParamsDialog("t", map[string]string{"k": "v"})) }, Model.interceptRunParamsDialog, func(m Model) bool { return m.dialogs.HasRunParams() }},
-		{"log history", func(m *Model) { m.dialogs.ShowLogHistory(NewLogHistoryDialog(0, [][]string{{"f"}}, "c")) }, Model.interceptLogHistoryDialog, func(m Model) bool { return m.dialogs.HasLogHistory() }},
-		{"task detail", func(m *Model) { m.dialogs.ShowTaskDetail("a", &model.Task{Name: "a"}, false, nil) }, Model.interceptTaskDetailDialog, func(m Model) bool { return m.dialogs.HasTaskDetail() }},
-		{"run detail", func(m *Model) { m.dialogs.ShowRunDetail(&model.Run{ID: "r1", TaskName: "t1"}, false, 1, nil) }, Model.interceptRunDetailDialog, func(m Model) bool { return m.dialogs.HasRunDetail() }},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	// Every dialog except the quit confirm itself.
+	for kind, d := range oneOfEachDialog()[dlgConfirm+1:] {
+		k := dialogKind(kind) + dlgConfirm + 1
+		t.Run(fmt.Sprintf("kind %d", k), func(t *testing.T) {
 			m := newTestModel(nil)
 			m.daemon = DaemonStarted
-			tc.show(&m)
+			m.dialogs.Show(k, d)
 
-			updated, _, intercepted := tc.intercept(m, ctrlC)
+			updated, _, intercepted := m.interceptActiveDialog(ctrlC)
 			if !intercepted {
 				t.Fatal("expected ctrl+c to be intercepted")
 			}
@@ -1493,10 +1483,10 @@ func TestModalCtrlC_DismissesAndOpensQuitConfirm(t *testing.T) {
 			if !ok {
 				t.Fatal("expected Model")
 			}
-			if tc.open(got) {
+			if got.dialogs.Has(k) {
 				t.Fatal("expected the dialog dismissed")
 			}
-			if !got.dialogs.HasConfirm() {
+			if !got.dialogs.Has(dlgConfirm) {
 				t.Fatal("expected the quit confirm to open")
 			}
 		})
@@ -1505,14 +1495,14 @@ func TestModalCtrlC_DismissesAndOpensQuitConfirm(t *testing.T) {
 
 func TestModalCtrlC_QuitsImmediatelyWhenDaemonNotStartedByTUI(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowTaskDetail("a", &model.Task{Name: "a"}, false, nil)
+	m.dialogs.Show(dlgTaskDetail, NewTaskDetailDialog("a", &model.Task{Name: "a"}))
 
-	updated, cmd, _ := m.interceptTaskDetailDialog(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	updated, cmd, _ := m.interceptActiveDialog(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatal("expected Model")
 	}
-	if got.dialogs.HasConfirm() {
+	if got.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected no quit confirm when the TUI did not start the daemon")
 	}
 	if msg, ok := cmd().(uikit.QuitMsg); !ok || msg.Action != uikit.QuitKeepDaemon {
@@ -1530,7 +1520,7 @@ func TestSidebarFilterCtrlC_OpensQuitConfirm(t *testing.T) {
 	if !ok {
 		t.Fatal("expected Model")
 	}
-	if !got.dialogs.HasConfirm() {
+	if !got.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected ctrl+c in the sidebar filter to open the quit confirm")
 	}
 }

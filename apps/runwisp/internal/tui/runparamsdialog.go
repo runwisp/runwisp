@@ -23,30 +23,30 @@ type RunParamsDialog struct {
 
 // NewRunParamsDialog builds the dialog from a run's resolved param map, sorting
 // by key so the list is stable across renders.
-func NewRunParamsDialog(taskName string, params map[string]string) RunParamsDialog {
+func NewRunParamsDialog(taskName string, params map[string]string) *RunParamsDialog {
 	keys := slices.Sorted(maps.Keys(params))
 	lines := make([]string, 0, len(keys))
 	for _, k := range keys {
 		lines = append(lines, fmt.Sprintf("%s = %s", k, params[k]))
 	}
-	return RunParamsDialog{taskName: taskName, lines: lines}
+	return &RunParamsDialog{taskName: taskName, lines: lines}
 }
 
 // Update reports whether the dialog should close.
-func (d *RunParamsDialog) Update(msg tea.Msg) bool {
+func (d *RunParamsDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "esc", "enter", "backspace", "q":
-			return true
+			return nil, true
 		}
 	case tea.MouseClickMsg:
 		// Right-click closes; left-click is reserved for terminal text selection.
 		if msg.Button == tea.MouseRight {
-			return true
+			return nil, true
 		}
 	}
-	return false
+	return nil, false
 }
 
 func (d *RunParamsDialog) View(screenWidth, screenHeight int) string {

@@ -139,7 +139,7 @@ func handleKeyQuit(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 // the log-search overlay intercept keys before this handler runs, so no extra
 // guards are needed here.
 func handleKeyHelp(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
-	m.dialogs.ShowHelp()
+	m.dialogs.Show(dlgHelp, &HelpDialog{})
 	return m, nil, true
 }
 
@@ -253,7 +253,7 @@ func handleKeyEnter(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 		return handleKeyEnterNotifications(m)
 	}
 	if m.panelFocus == uikit.PanelSidebar && m.sidebar.VersionFocused() {
-		m.dialogs.ShowNewRelease(m.info.Version, m.sidebar.LatestVersion())
+		m.dialogs.Show(dlgNewRelease, NewNewReleaseDialog(m.info.Version, m.sidebar.LatestVersion()))
 		return m, nil, true
 	}
 	if m.execView != nil && m.panelFocus == uikit.PanelMain && m.execView.HeaderFocus != execlist.HeaderFocusNone {
@@ -406,7 +406,9 @@ func handleKeyU(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 // health fetch). With nothing inspectable it falls through.
 func handleKeyI(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 	if m.execView != nil && m.execView.Run != nil {
-		m.dialogs.ShowRunDetail(m.execView.Run, m.execView.TaskIsService, m.execView.InstanceCount, m.loc)
+		d := NewRunDetailDialog(m.execView.Run, m.execView.TaskIsService, m.execView.InstanceCount)
+		d.loc = m.loc
+		m.dialogs.Show(dlgRunDetail, d)
 		return m, nil, true
 	}
 	taskName := m.inspectTaskName()
@@ -414,7 +416,10 @@ func handleKeyI(m Model, msg tea.KeyPressMsg) (Model, tea.Cmd, bool) {
 		return m, nil, false
 	}
 	task := m.taskDisplayByName(taskName)
-	m.dialogs.ShowTaskDetail(taskName, task, m.isPaused(taskName), m.taskLoc(task))
+	d := NewTaskDetailDialog(taskName, task)
+	d.paused = m.isPaused(taskName)
+	d.loc = m.taskLoc(task)
+	m.dialogs.Show(dlgTaskDetail, d)
 	return m, m.streams.FetchTaskSummary(taskName), true
 }
 

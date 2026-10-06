@@ -44,8 +44,8 @@ type TaskDetailDialog struct {
 
 // NewTaskDetailDialog builds the inspector for a task. task may be nil when the
 // definition isn't in the local cache; the panel degrades to name + health.
-func NewTaskDetailDialog(taskName string, task *model.Task) TaskDetailDialog {
-	return TaskDetailDialog{taskName: taskName, task: task}
+func NewTaskDetailDialog(taskName string, task *model.Task) *TaskDetailDialog {
+	return &TaskDetailDialog{taskName: taskName, task: task}
 }
 
 // ApplySummary stores health figures delivered for this task. A message for a
@@ -58,17 +58,17 @@ func (d *TaskDetailDialog) ApplySummary(msg uikit.TaskSummaryMsg) {
 }
 
 // Update reports true when the dialog should close.
-func (d *TaskDetailDialog) Update(msg tea.Msg) bool {
+func (d *TaskDetailDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "i", "esc", "enter", "q":
-			return true
+			return nil, true
 		}
 	case tea.MouseClickMsg:
-		return true
+		return nil, true
 	}
-	return false
+	return nil, false
 }
 
 func (d *TaskDetailDialog) View(screenWidth, screenHeight int) string {
