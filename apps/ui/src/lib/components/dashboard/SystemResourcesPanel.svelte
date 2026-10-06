@@ -13,10 +13,13 @@
 
     const CHART_POINTS = 32;
 
-    let { stats, metricsHistory = [] } = $props<{
+    let {
+        stats,
+        metricsHistory = [],
+    }: {
         stats: DaemonStats;
         metricsHistory?: MetricsSample[];
-    }>();
+    } = $props();
 
     let resourcePoints = $derived(metricsHistory.map(toResourcePoint));
     let latestSample = $derived(metricsHistory[metricsHistory.length - 1]);
