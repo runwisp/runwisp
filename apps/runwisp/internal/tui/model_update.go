@@ -55,6 +55,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handled adapts a handler's (model, cmd) result to a dispatcher's
+// "claimed" return: `return handled(m.handleX(msg))`.
+func handled(model tea.Model, cmd tea.Cmd) (tea.Model, tea.Cmd, bool) {
+	return model, cmd, true
+}
+
 // interceptActiveDialog gives the topmost open dialog first claim on the
 // message. Dialogs consume only key and mouse input (plus the shutdown
 // spinner's own messages); everything else falls through to the dispatchers,
@@ -107,14 +113,11 @@ func (m Model) interceptActiveDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 func (m Model) dispatchInputMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		model, cmd := m.handleWindowSize(msg)
-		return model, cmd, true
+		return handled(m.handleWindowSize(msg))
 	case tea.MouseMsg:
-		model, cmd := m.handleMouse(msg)
-		return model, cmd, true
+		return handled(m.handleMouse(msg))
 	case tea.KeyPressMsg:
-		model, cmd := m.handleKey(msg)
-		return model, cmd, true
+		return handled(m.handleKey(msg))
 	}
 	return m, nil, false
 }
@@ -122,17 +125,13 @@ func (m Model) dispatchInputMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 func (m Model) dispatchStreamMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case uikit.ExecWindowFetchedMsg:
-		model, cmd := m.handleExecWindowFetched(msg)
-		return model, cmd, true
+		return handled(m.handleExecWindowFetched(msg))
 	case uikit.SSEConnectedMsg:
-		model, cmd := m.handleSSEConnected(msg)
-		return model, cmd, true
+		return handled(m.handleSSEConnected(msg))
 	case uikit.SSEEventMsg:
-		model, cmd := m.handleSSEEventMsg(msg)
-		return model, cmd, true
+		return handled(m.handleSSEEventMsg(msg))
 	case uikit.SSEDisconnectedMsg:
-		model, cmd := m.handleSSEDisconnected(msg)
-		return model, cmd, true
+		return handled(m.handleSSEDisconnected(msg))
 	}
 	return m, nil, false
 }
@@ -140,47 +139,33 @@ func (m Model) dispatchStreamMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 func (m Model) dispatchLogMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case uikit.LogOlderLoadedMsg:
-		model, cmd := m.handleLogOlderLoaded(msg)
-		return model, cmd, true
+		return handled(m.handleLogOlderLoaded(msg))
 	case uikit.LogTailLoadedMsg:
-		model, cmd := m.handleLogTailLoaded(msg)
-		return model, cmd, true
+		return handled(m.handleLogTailLoaded(msg))
 	case uikit.LogStreamConnectedMsg:
-		model, cmd := m.handleLogStreamConnected(msg)
-		return model, cmd, true
+		return handled(m.handleLogStreamConnected(msg))
 	case uikit.LogLineMsg:
-		model, cmd := m.handleLogLine(msg)
-		return model, cmd, true
+		return handled(m.handleLogLine(msg))
 	case uikit.LogRegionMsg:
-		model, cmd := m.handleLogRegion(msg)
-		return model, cmd, true
+		return handled(m.handleLogRegion(msg))
 	case uikit.LogRotatedMsg:
-		model, cmd := m.handleLogRotated(msg)
-		return model, cmd, true
+		return handled(m.handleLogRotated(msg))
 	case uikit.LogDroppedMsg:
-		model, cmd := m.handleLogDropped(msg)
-		return model, cmd, true
+		return handled(m.handleLogDropped(msg))
 	case uikit.LogDoneMsg:
-		model, cmd := m.handleLogDone(msg)
-		return model, cmd, true
+		return handled(m.handleLogDone(msg))
 	case uikit.DebugLogMsg:
-		model, cmd := m.handleDebugLog(msg)
-		return model, cmd, true
+		return handled(m.handleDebugLog(msg))
 	case uikit.ReconnectLogMsg:
-		model, cmd := m.handleReconnectLog(msg)
-		return model, cmd, true
+		return handled(m.handleReconnectLog(msg))
 	case uikit.LogLineHistoryMsg:
-		model, cmd := m.handleLogLineHistory(msg)
-		return model, cmd, true
+		return handled(m.handleLogLineHistory(msg))
 	case uikit.DaemonLogConnectedMsg:
-		model, cmd := m.handleDaemonLogConnected(msg)
-		return model, cmd, true
+		return handled(m.handleDaemonLogConnected(msg))
 	case uikit.DaemonLogLineMsg:
-		model, cmd := m.handleDaemonLogLine(msg)
-		return model, cmd, true
+		return handled(m.handleDaemonLogLine(msg))
 	case uikit.DaemonLogDisconnectedMsg:
-		model, cmd := m.handleDaemonLogDisconnected()
-		return model, cmd, true
+		return handled(m.handleDaemonLogDisconnected())
 	}
 	return m, nil, false
 }
@@ -188,14 +173,11 @@ func (m Model) dispatchLogMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 func (m Model) dispatchNotificationMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case uikit.NotificationUnreadCountMsg:
-		model, cmd := m.handleNotificationUnreadCount(msg)
-		return model, cmd, true
+		return handled(m.handleNotificationUnreadCount(msg))
 	case uikit.NotificationsLoadedMsg:
-		model, cmd := m.handleNotificationsLoaded(msg)
-		return model, cmd, true
+		return handled(m.handleNotificationsLoaded(msg))
 	case uikit.NotificationReadStateMsg:
-		model, cmd := m.handleNotificationReadState(msg)
-		return model, cmd, true
+		return handled(m.handleNotificationReadState(msg))
 	case uikit.NotificationBoundaryFlashClearedMsg:
 		m.notifications.ClearBoundaryFlash()
 		return m, nil, true
@@ -206,34 +188,26 @@ func (m Model) dispatchNotificationMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 func (m Model) dispatchActionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case uikit.TriggerRunMsg:
-		model, cmd := m.handleTriggerRun(msg)
-		return model, cmd, true
+		return handled(m.handleTriggerRun(msg))
 	case uikit.StopRunMsg:
-		model, cmd := m.handleStopRun(msg)
-		return model, cmd, true
+		return handled(m.handleStopRun(msg))
 	case uikit.RestartServiceMsg:
-		model, cmd := m.handleRestartService(msg)
-		return model, cmd, true
+		return handled(m.handleRestartService(msg))
 	case uikit.StopServiceMsg:
-		model, cmd := m.handleStopService(msg)
-		return model, cmd, true
+		return handled(m.handleStopService(msg))
 	case uikit.DeleteRunMsg:
-		model, cmd := m.handleDeleteRun(msg)
-		return model, cmd, true
+		return handled(m.handleDeleteRun(msg))
 	case uikit.SchedulePauseMsg:
-		model, cmd := m.handleSchedulePause(msg)
-		return model, cmd, true
+		return handled(m.handleSchedulePause(msg))
 	case uikit.PausedTasksMsg:
 		if msg.Err == nil {
 			m.info.PausedTasks = msg.Paused
 		}
 		return m, nil, true
 	case uikit.BulkActionMsg:
-		model, cmd := m.handleBulkAction(msg)
-		return model, cmd, true
+		return handled(m.handleBulkAction(msg))
 	case uikit.BulkDeleteResultMsg:
-		model, cmd := m.handleBulkDeleteResult(msg)
-		return model, cmd, true
+		return handled(m.handleBulkDeleteResult(msg))
 	}
 	return m, nil, false
 }
@@ -241,11 +215,9 @@ func (m Model) dispatchActionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 func (m Model) dispatchLifecycleMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case logsearch.SelectMsg:
-		model, cmd := m.handleLogSearchSelect(msg)
-		return model, cmd, true
+		return handled(m.handleLogSearchSelect(msg))
 	case uikit.TickMsg:
-		model, cmd := m.handleTick()
-		return model, cmd, true
+		return handled(m.handleTick())
 	case coalesceFlushMsg:
 		// The coalesce window elapsed; the reset at the top of Update already
 		// cleared m.coalesce, so this frame rebuilds fresh. Record it as the last
@@ -254,32 +226,23 @@ func (m Model) dispatchLifecycleMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.lastRenderAt = time.Now()
 		return m, nil, true
 	case uikit.QuitMsg:
-		model, cmd := m.handleQuit(msg)
-		return model, cmd, true
+		return handled(m.handleQuit(msg))
 	case uikit.FlashExpiredMsg:
-		model, cmd := m.handleFlashExpired()
-		return model, cmd, true
+		return handled(m.handleFlashExpired())
 	case uikit.OpenBrowserMsg:
-		model, cmd := m.handleOpenBrowser(msg)
-		return model, cmd, true
+		return handled(m.handleOpenBrowser(msg))
 	case uikit.OpenRunMsg:
-		model, cmd := m.handleOpenRun(msg)
-		return model, cmd, true
+		return handled(m.handleOpenRun(msg))
 	case uikit.SystemStatsMsg:
-		model, cmd := m.handleSystemStats(msg)
-		return model, cmd, true
+		return handled(m.handleSystemStats(msg))
 	case uikit.DaemonInfoMsg:
-		model, cmd := m.handleDaemonInfo(msg)
-		return model, cmd, true
+		return handled(m.handleDaemonInfo(msg))
 	case uikit.ReloadResultMsg:
-		model, cmd := m.handleReloadResult(msg)
-		return model, cmd, true
+		return handled(m.handleReloadResult(msg))
 	case uikit.MetricsHistoryMsg:
-		model, cmd := m.handleMetricsHistory(msg)
-		return model, cmd, true
+		return handled(m.handleMetricsHistory(msg))
 	case uikit.RunSummaryMsg:
-		model, cmd := m.handleRunSummary(msg)
-		return model, cmd, true
+		return handled(m.handleRunSummary(msg))
 	case uikit.TaskSummaryMsg:
 		m.dialogs.ApplyTaskSummary(msg)
 		return m, nil, true
