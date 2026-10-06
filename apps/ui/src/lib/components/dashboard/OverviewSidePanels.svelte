@@ -14,6 +14,7 @@
         Badge,
         Card,
         formatTriggeredByLabel,
+        Heading,
     } from "@runwisp/ui";
     import type { TaskOverview } from "./overview.js";
     import type { Run } from "@runwisp/common";
@@ -66,7 +67,7 @@
 >
     <Card>
         <div class="flex items-center justify-between gap-3">
-            <h3 class="text-sm font-semibold text-on-surface">Needs attention</h3>
+            <Heading level={3} size="sm">Needs attention</Heading>
             <Badge variant={attentionTasks.length > 0 ? "danger" : "success"}>
                 {attentionTasks.length}
             </Badge>
@@ -124,7 +125,7 @@
 
     <Card>
         <div class="flex items-center justify-between gap-3">
-            <h3 class="text-sm font-semibold text-on-surface">Running now</h3>
+            <Heading level={3} size="sm">Running now</Heading>
             <Badge variant={runningNow.length > 0 ? "primary" : "default"}>
                 {runningNow.length}
             </Badge>
@@ -177,7 +178,7 @@
     {#if showUpcoming}
         <Card>
             <div class="flex items-center justify-between gap-3">
-                <h3 class="text-sm font-semibold text-on-surface">Up next</h3>
+                <Heading level={3} size="sm">Up next</Heading>
                 <Badge variant="info">{upcomingTasks.length}</Badge>
             </div>
 

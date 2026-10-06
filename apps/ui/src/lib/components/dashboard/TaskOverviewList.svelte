@@ -12,6 +12,7 @@
         Badge,
         CodeBlock,
         EmptyState,
+        Heading,
         Input,
         Link,
         Select,
@@ -128,7 +129,7 @@
 <div class="space-y-4">
     <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div class="flex items-center gap-3">
-            <h2 class="text-sm font-semibold text-on-surface">Tasks</h2>
+            <Heading level={2} size="sm">Tasks</Heading>
             <span class="font-mono text-xs text-on-surface-muted tabular-nums">
                 {taskOverviews.length} total
             </span>

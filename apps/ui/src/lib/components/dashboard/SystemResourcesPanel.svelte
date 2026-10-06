@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import { formatBytes, Sparkline, Badge, Card } from "@runwisp/ui";
+    import { formatBytes, Sparkline, Badge, Card, Heading } from "@runwisp/ui";
     import type { MetricsSample } from "$lib/api";
     import type { DaemonStats } from "@runwisp/ui";
 
@@ -64,7 +64,7 @@
 
 <Card padding="lg">
     <div class="flex items-center justify-between gap-3">
-        <h2 class="text-sm font-semibold text-on-surface">System resources</h2>
+        <Heading level={2} size="sm">System resources</Heading>
         <Badge variant={stats.cpuUsage >= 85 || stats.memUsage >= 85 ? "warning" : "success"}>
             {stats.cpuUsage >= 85 || stats.memUsage >= 85 ? "High load" : "Steady"}
         </Badge>

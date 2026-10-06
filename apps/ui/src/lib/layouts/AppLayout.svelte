@@ -27,7 +27,7 @@
     import { headerSearchStore, systemStore } from "$lib/stores";
     import { showScheduleChip } from "$lib/utils/task-schedule";
     import { StoredFlag } from "$lib/utils/stored-flag.svelte";
-    import { ThemeToggle, Logo } from "@runwisp/ui";
+    import { ThemeToggle, Logo, Heading } from "@runwisp/ui";
     import type { Task } from "@runwisp/common";
 
     let {
@@ -306,9 +306,9 @@
                 {#if activeTask}
                     <!-- On a task page the breadcrumb is the page's primary heading:
                          the task name appears here and nowhere else. -->
-                    <h1 class="min-w-0 truncate font-mono text-base font-extrabold text-on-surface">
+                    <Heading level={1} size="md" class="min-w-0 truncate">
                         {activeTask.name}
-                    </h1>
+                    </Heading>
                     {#if showScheduleChip(activeTask, systemStore.schedulingActive)}
                         <TaskScheduleChip task={activeTask} />
                     {/if}

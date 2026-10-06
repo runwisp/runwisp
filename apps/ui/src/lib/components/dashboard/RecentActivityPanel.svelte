@@ -13,6 +13,7 @@
         EmptyState,
         formatRelativeTime,
         formatTriggeredByLabel,
+        Heading,
     } from "@runwisp/ui";
     import type { RunMotion } from "@runwisp/ui";
     import { displayStatus, type Run } from "@runwisp/common";
@@ -44,7 +45,7 @@
 
 <Card padding="lg">
     <div class="flex items-center justify-between gap-3">
-        <h2 class="text-sm font-semibold text-on-surface">Recent activity</h2>
+        <Heading level={2} size="sm">Recent activity</Heading>
         <button
             class="inline-flex items-center gap-1 font-mono text-xs font-medium text-on-surface-muted hover:text-primary"
             onclick={() => onViewAllRuns?.()}
