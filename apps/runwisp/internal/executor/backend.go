@@ -21,7 +21,6 @@ import (
 // backends use run.InstanceIndex to differentiate concurrent instances.
 type Backend interface {
 	Start(ctx context.Context, task *model.Task, run *model.Run, def model.ExecutionDef) (*Process, error)
-	Available(ctx context.Context) bool
 }
 
 // Process represents a running execution whose output can be streamed.

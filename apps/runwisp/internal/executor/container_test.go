@@ -86,7 +86,6 @@ func TestNewContainerBackend_NoDockerNoPodmanSurfacesHelpMessage(t *testing.T) {
 // --- Mock Docker client ---
 
 type mockDockerClient struct {
-	pingFunc            func(ctx context.Context, options client.PingOptions) (client.PingResult, error)
 	imageBuildFunc      func(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error)
 	containerCreateFunc func(ctx context.Context, options client.ContainerCreateOptions) (client.ContainerCreateResult, error)
 	containerAttachFunc func(ctx context.Context, ctr string, options client.ContainerAttachOptions) (client.ContainerAttachResult, error)
@@ -96,13 +95,6 @@ type mockDockerClient struct {
 	containerKillFunc   func(ctx context.Context, ctr string, options client.ContainerKillOptions) (client.ContainerKillResult, error)
 	containerRemoveFunc func(ctx context.Context, ctr string, options client.ContainerRemoveOptions) (client.ContainerRemoveResult, error)
 	imageRemoveFunc     func(ctx context.Context, imageRef string, options client.ImageRemoveOptions) (client.ImageRemoveResult, error)
-}
-
-func (m *mockDockerClient) Ping(ctx context.Context, options client.PingOptions) (client.PingResult, error) {
-	if m.pingFunc != nil {
-		return m.pingFunc(ctx, options)
-	}
-	return client.PingResult{}, nil
 }
 
 func (m *mockDockerClient) ImageBuild(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error) {
@@ -313,32 +305,6 @@ func TestBuildContainerConfig_CtrEnvNotFilteredAsDaemonEnv(t *testing.T) {
 	containerCfg, _ := b.buildContainerConfig("img", ctr, task, nil)
 
 	assert.ElementsMatch(t, []string{"RUNWISP_CONFIG_PATH=/etc/myapp/config", "DEBUG=1"}, containerCfg.Env)
-}
-
-func TestAvailable(t *testing.T) {
-	t.Run("nil backend", func(t *testing.T) {
-		var b *ContainerBackend
-		assert.False(t, b.Available(context.Background()))
-	})
-
-	t.Run("nil docker client", func(t *testing.T) {
-		b := &ContainerBackend{}
-		assert.False(t, b.Available(context.Background()))
-	})
-
-	t.Run("ping succeeds", func(t *testing.T) {
-		b := NewContainerBackendFromClient(&mockDockerClient{})
-		assert.True(t, b.Available(context.Background()))
-	})
-
-	t.Run("ping fails", func(t *testing.T) {
-		b := NewContainerBackendFromClient(&mockDockerClient{
-			pingFunc: func(ctx context.Context, options client.PingOptions) (client.PingResult, error) {
-				return client.PingResult{}, fmt.Errorf("connection refused")
-			},
-		})
-		assert.False(t, b.Available(context.Background()))
-	})
 }
 
 func TestStartRejectsNonContainerExecution(t *testing.T) {

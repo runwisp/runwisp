@@ -40,14 +40,6 @@ func (l *LazyContainerBackend) Start(ctx context.Context, task *model.Task, run 
 	return b.Start(ctx, task, run, def)
 }
 
-func (l *LazyContainerBackend) Available(ctx context.Context) bool {
-	b, err := l.ensureConnected(ctx)
-	if err != nil {
-		return false
-	}
-	return b.Available(ctx)
-}
-
 func (l *LazyContainerBackend) ensureConnected(ctx context.Context) (*ContainerBackend, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

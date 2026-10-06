@@ -62,7 +62,6 @@ func validateVolumeMount(hostPath string) error {
 
 // dockerClient abstracts the Docker SDK methods used by ContainerBackend for testability.
 type dockerClient interface {
-	Ping(ctx context.Context, options client.PingOptions) (client.PingResult, error)
 	ImageBuild(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error)
 	ContainerCreate(ctx context.Context, options client.ContainerCreateOptions) (client.ContainerCreateResult, error)
 	ContainerAttach(ctx context.Context, containerID string, options client.ContainerAttachOptions) (client.ContainerAttachResult, error)
@@ -147,15 +146,6 @@ func tryDockerClient(ctx context.Context) (*ContainerBackend, error) {
 // Primarily useful in tests.
 func NewContainerBackendFromClient(docker dockerClient) *ContainerBackend {
 	return &ContainerBackend{docker: docker, builder: &ImageBuilder{docker: docker}}
-}
-
-// Available reports whether the Docker daemon is reachable.
-func (b *ContainerBackend) Available(ctx context.Context) bool {
-	if b == nil || b.docker == nil {
-		return false
-	}
-	_, err := b.docker.Ping(ctx, client.PingOptions{})
-	return err == nil
 }
 
 func (b *ContainerBackend) Start(ctx context.Context, task *model.Task, run *model.Run, def model.ExecutionDef) (*Process, error) {

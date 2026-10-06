@@ -591,7 +591,7 @@ func TestComposeBackend_Available_TrueWhenShimPresent(t *testing.T) {
 	installDockerShim(t, dir, filepath.Join(dir, "args.txt"), 0)
 
 	b := &ComposeBackend{dockerCmd: "docker"}
-	assert.True(t, b.Available(context.Background()))
+	assert.True(t, b.available(context.Background()))
 }
 
 func TestComposeBackend_Available_FalseWhenAbsent(t *testing.T) {
@@ -600,7 +600,7 @@ func TestComposeBackend_Available_FalseWhenAbsent(t *testing.T) {
 	// CommandContext will fail to start the process.
 	t.Setenv("PATH", "")
 	b := &ComposeBackend{dockerCmd: "docker-does-not-exist"}
-	assert.False(t, b.Available(context.Background()))
+	assert.False(t, b.available(context.Background()))
 }
 
 // TestComposeBackend_ProcessGroupSIGTERMReapsChildren mirrors the ShellBackend
