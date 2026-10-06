@@ -46,7 +46,7 @@ func TestStreamManager_FetchTaskState(t *testing.T) {
 
 // The /api/tasks poll feeds live usage to both the task header and the Info page.
 func TestTaskStateMsg_StoresUsage(t *testing.T) {
-	m := newTestModelWithClient(pauseTestTasks())
+	m := newTestModel(pauseTestTasks())
 	usage := map[string]model.ResourceUsage{"web": {CPUPercent: 5, MemoryBytes: 1 << 20}}
 
 	updated, _, handled := m.dispatchActionMsg(uikit.TaskStateMsg{Paused: map[string]time.Time{}, Usage: usage})

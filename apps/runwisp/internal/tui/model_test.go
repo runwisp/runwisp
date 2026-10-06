@@ -480,7 +480,7 @@ func TestRequestQuit_ThrowawayShutsDownWithoutDialog(t *testing.T) {
 	m := newTestModel(nil)
 	m.daemon = DaemonThrowaway
 	cmd := m.requestQuit()
-	if m.dialogs.HasConfirm() {
+	if m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected no quit dialog")
 	}
 	if cmd == nil {

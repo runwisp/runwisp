@@ -88,6 +88,9 @@ type queryRunsRow interface {
 		InstanceIndex int               `json:"instance_index"`
 		ParamsJson    *string           `json:"params_json"` //nolint:revive // must match sqlc's generated field name
 		IsFailure     int64             `json:"is_failure"`
+
+		PeakMemoryBytes *int64 `json:"peak_memory_bytes"`
+		CpuTimeMs       *int64 `json:"cpu_time_ms"` //nolint:revive // must match sqlc's generated field name
 	}
 }
 
