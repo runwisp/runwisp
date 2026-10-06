@@ -378,6 +378,25 @@ func TestHandleSSEEvent_UpdatesExecViewWhenWatching(t *testing.T) {
 	}
 }
 
+// A system sample updates the open run's header and the task header live.
+func TestHandleSSEEvent_SystemSampleUpdatesLiveUsage(t *testing.T) {
+	m := newTestModel(nil)
+	ev := execlist.NewExecView(&model.Run{ID: "r-1", TaskName: "t1", Status: model.PhaseRunning})
+	m.execView = &ev
+
+	payload := []byte(`{"tasks":{"t1":{"cpuPercent":12,"memoryBytes":2048}},"runs":{"r-1":{"cpuPercent":12,"memoryBytes":2048}}}`)
+	_ = m.handleSSEEvent(apiclient.RunStreamEvent{Type: "system", Data: payload})
+	want := &model.ResourceUsage{CPUPercent: 12, MemoryBytes: 2048}
+	if *m.execView.Usage != *want || *m.taskUsage("t1") != *want {
+		t.Fatalf("usage not applied: run=%v task=%v", m.execView.Usage, m.taskUsage("t1"))
+	}
+
+	_ = m.handleSSEEvent(apiclient.RunStreamEvent{Type: "system", Data: []byte(`{}`)})
+	if m.execView.Usage != nil || m.taskUsage("t1") != nil {
+		t.Fatal("a sample without the run clears its usage")
+	}
+}
+
 func TestHandleSSEEventMsg_DispatchesViaHandleSSEEvent(t *testing.T) {
 	m := newTestModel(nil)
 	evt := apiclient.RunStreamEvent{Type: "run.created", Data: json.RawMessage(`{"run":{"id":"r-x","task_name":"t","status":"running"}}`)}

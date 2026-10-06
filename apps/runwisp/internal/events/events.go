@@ -79,6 +79,8 @@ func (TasksChangedEvent) eventData()    { /* sealed-type marker */ }
 type SystemSampleEvent struct {
 	Sample model.MetricsSample
 	Uptime string
+	Tasks  map[string]model.ResourceUsage // live usage per task; empty when nothing is measured
+	Runs   map[string]model.ResourceUsage // live usage per running run, by run ID
 }
 
 // ConfigStaleEvent fires only when the daemon's config-staleness flips: a TOML

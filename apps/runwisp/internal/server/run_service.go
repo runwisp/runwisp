@@ -56,6 +56,9 @@ type runService struct {
 	scheduler   *runtime.Scheduler // nil when scheduling is inactive (station mode)
 	logDir      string
 	eventBus    *events.Bus
+	// taskUsage reports live CPU/memory per task from the run sampler; nil in
+	// modes that don't sample.
+	taskUsage func() map[string]model.ResourceUsage
 }
 
 func newRunService(db storage.RunRepository, jm runtime.TaskRunner, tasks *runtime.TaskRegistry, sched *runtime.Scheduler, logDir string, bus *events.Bus) *runService {
@@ -64,8 +67,9 @@ func newRunService(db storage.RunRepository, jm runtime.TaskRunner, tasks *runti
 
 func (s *runService) ListTasks() []model.TaskResponse {
 	tasks := make([]model.TaskResponse, 0, s.tasks.Len())
+	usage := s.usage()
 	s.tasks.Range(func(_ string, task *model.Task) bool {
-		tasks = append(tasks, s.toTaskResponse(task))
+		tasks = append(tasks, s.toTaskResponse(task, usage))
 		return true
 	})
 	slices.SortFunc(tasks, func(a, b model.TaskResponse) int { return strings.Compare(a.Name, b.Name) })
@@ -77,12 +81,23 @@ func (s *runService) GetTask(name string) (*model.TaskResponse, error) {
 	if !ok {
 		return nil, ErrTaskNotFound
 	}
-	tr := s.toTaskResponse(task)
+	tr := s.toTaskResponse(task, s.usage())
 	return &tr, nil
 }
 
-func (s *runService) toTaskResponse(task *model.Task) model.TaskResponse {
+// usage is the live per-task CPU/memory snapshot, or nil when not measured.
+func (s *runService) usage() map[string]model.ResourceUsage {
+	if s == nil || s.taskUsage == nil {
+		return nil
+	}
+	return s.taskUsage()
+}
+
+func (s *runService) toTaskResponse(task *model.Task, usage map[string]model.ResourceUsage) model.TaskResponse {
 	tr := model.TaskResponse{Task: *task}
+	if u, ok := usage[task.Name]; ok {
+		tr.Usage = &u
+	}
 	if task.Cron != "" && s.scheduler != nil {
 		tr.NextRunAt = s.scheduler.GetNextRun(task.Name)
 		tr.PausedAt = s.scheduler.PausedAt(task.Name)

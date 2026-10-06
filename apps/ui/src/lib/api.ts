@@ -279,9 +279,16 @@ export type MetricsSample = z.infer<typeof metricsSampleSchema>;
 // Payloads pushed over the unified /api/events/stream feed (mirrors the server's
 // SystemSampleSSEEvent / ConfigStaleSSEEvent), so dashboards never poll
 // /api/system or /api/daemon on a timer.
+const resourceUsageSchema = z.object({
+    cpuPercent: z.number(),
+    memoryBytes: z.number(),
+});
+
 export const systemEventSchema = z.object({
     sample: metricsSampleSchema,
     uptime: z.string(),
+    tasks: z.record(z.string(), resourceUsageSchema).optional(),
+    runs: z.record(z.string(), resourceUsageSchema).optional(),
 });
 
 export const configStaleEventSchema = z.object({

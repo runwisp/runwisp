@@ -1193,3 +1193,20 @@ func TestListTasks_NilSchedulerWithCronTask(t *testing.T) {
 	assert.Nil(t, got[0].NextRunAt)
 	assert.Nil(t, got[0].PausedAt)
 }
+
+func TestListTasks_AttachesLiveUsage(t *testing.T) {
+	tasks := map[string]*model.Task{"busy": {Name: "busy"}, "idle": {Name: "idle"}}
+	svc := newRunService(nil, nil, runtime.NewTaskRegistry(tasks), nil, "", nil)
+	svc.taskUsage = func() map[string]model.ResourceUsage {
+		return map[string]model.ResourceUsage{"busy": {CPUPercent: 50, MemoryBytes: 2048}}
+	}
+
+	got := svc.ListTasks()
+	require.Len(t, got, 2)
+	assert.Equal(t, &model.ResourceUsage{CPUPercent: 50, MemoryBytes: 2048}, got[0].Usage)
+	assert.Nil(t, got[1].Usage)
+
+	one, err := svc.GetTask("busy")
+	require.NoError(t, err)
+	assert.Equal(t, int64(2048), one.Usage.MemoryBytes)
+}

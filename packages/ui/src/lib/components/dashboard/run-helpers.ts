@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Run, RunStatus } from "@runwisp/common";
-import { formatDuration } from "../../utils/format.js";
+import { formatBytes, formatDuration } from "../../utils/format.js";
 
 export interface RunVerdict {
     /** Verb phrase for the outcome, ending in its preposition when `timed`. */
@@ -105,6 +105,17 @@ export function runRetryLabel(run: Pick<Run, "retryAttempt" | "retryOfRunId">): 
         return `retry #${String(run.retryAttempt)}`;
     }
     return undefined;
+}
+
+/**
+ * "peak 48 MB · CPU 1s" for a run whose resources were measured (shell runs
+ * only), else undefined.
+ */
+export function runUsageLabel(run: Pick<Run, "peakMemoryBytes" | "cpuTimeMs">): string | undefined {
+    const parts: string[] = [];
+    if (run.peakMemoryBytes !== undefined) parts.push("peak " + formatBytes(run.peakMemoryBytes));
+    if (run.cpuTimeMs !== undefined) parts.push("CPU " + formatDuration(run.cpuTimeMs));
+    return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
 /**

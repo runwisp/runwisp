@@ -139,6 +139,9 @@ func finishQueryRuns(rows []sqlcdb.QueryRunsCreatedAtAscRow, err error) ([]model
 			InstanceIndex: r.InstanceIndex,
 			IsFailure:     r.IsFailure != 0,
 			Params:        decodeParams(r.ParamsJson, r.ID),
+
+			PeakMemoryBytes: r.PeakMemoryBytes,
+			CPUTimeMs:       r.CpuTimeMs,
 		}
 	}
 	return out, nil

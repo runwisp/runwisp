@@ -6,6 +6,7 @@ package demo
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"math/rand"
 	"runtime"
@@ -409,7 +410,25 @@ func (s *seeder) execOne(ctx context.Context, spec *runSpec) error {
 		}
 	}
 	spec.run.End(spec.task, reason, res.ExitCode, end)
+	spec.run.PeakMemoryBytes, spec.run.CPUTimeMs = seedUsage(spec.run.TaskName, start, end)
 	return s.db.CreateRun(ctx, spec.run)
+}
+
+// seedUsage gives a seeded run believable resource totals. The demo commands
+// are sleeps and echoes whose real usage rounds to nothing, so each task gets
+// a stable profile from its name (16-255 MB peak, 5-64% of one core) that
+// every run jitters from its start (no rng: execOne runs in parallel).
+func seedUsage(taskName string, start, end time.Time) (peakMemoryBytes, cpuTimeMs *int64) {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(taskName))
+	profile := int64(h.Sum32())
+	jitter := int64(uint64(start.UnixNano()) % 40) // 0-39%
+
+	peak := (16 + profile%240) << 20
+	peak += peak * jitter / 100
+	share := 5 + (profile>>8)%60
+	cpu := end.Sub(start).Milliseconds() * share * (80 + jitter) / 10000
+	return &peak, &cpu
 }
 
 // runContext bounds a run the way the manager does: non-services get

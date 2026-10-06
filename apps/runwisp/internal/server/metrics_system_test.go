@@ -124,3 +124,23 @@ func TestBroadcastSample(t *testing.T) {
 	assert.Equal(t, 2, staleCount, "flipping back publishes again")
 	assert.False(t, lastStale)
 }
+
+// The system event carries live usage per run, so a run's detail header can
+// show its own CPU and memory rather than its task's total.
+func TestBroadcastSample_CarriesRunUsage(t *testing.T) {
+	bus := events.NewEventBus()
+	runs := map[string]model.ResourceUsage{"run1": {CPUPercent: 12, MemoryBytes: 48 << 20}}
+	srv := &Server{
+		eventBus: bus,
+		stats:    newStatsProvider(nil, time.Now()),
+		runUsage: func() map[string]model.ResourceUsage { return runs },
+	}
+	var got map[string]model.ResourceUsage
+	bus.Subscribe(events.EventSystemSample, func(e events.Event) {
+		if s, ok := e.Data.(events.SystemSampleEvent); ok {
+			got = s.Runs
+		}
+	})
+	srv.broadcastSample(model.MetricsSample{})
+	assert.Equal(t, runs, got)
+}

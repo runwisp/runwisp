@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The Web UI and the TUI show live CPU and memory use for running tasks and services, and each run records its peak memory and CPU time. Live use is also exported as the `runwisp_task_cpu_percent` and `runwisp_task_memory_bytes` metrics.
+
 ### Changed
 
 - The update check also reports how RunWisp was installed (`docker`, `npm`, `npx`, `script` or `other`), nothing else is added. `check_updates = false` still turns it off.

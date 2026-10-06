@@ -14,6 +14,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/textutil"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -204,9 +205,11 @@ func (m Model) dispatchActionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case uikit.SchedulePauseMsg:
 		model, cmd := m.handleSchedulePause(msg)
 		return model, cmd, true
-	case uikit.PausedTasksMsg:
+	case uikit.TaskStateMsg:
 		if msg.Err == nil {
 			m.info.PausedTasks = msg.Paused
+			m.info.TaskUsage = msg.Usage
+			m.infoView.SetTaskUsage(msg.Usage)
 		}
 		return m, nil, true
 	case uikit.BulkActionMsg:
@@ -857,7 +860,7 @@ func (m Model) handleSchedulePause(msg uikit.SchedulePauseMsg) (tea.Model, tea.C
 	m.info.PausedTasks = paused
 	undo := m.streams.SetSchedulePaused(msg.TaskName, !msg.Paused)
 	label := fmt.Sprintf("%s the schedule of '%s' · press u to undo", verb, msg.TaskName)
-	return m, tea.Batch(m.streams.FetchPausedTasks(), m.dialogs.FlashUndo(label, undo, 6*time.Second))
+	return m, tea.Batch(m.streams.FetchTaskState(), m.dialogs.FlashUndo(label, undo, 6*time.Second))
 }
 
 func (m Model) handleRestartService(msg uikit.RestartServiceMsg) (tea.Model, tea.Cmd) {
@@ -926,7 +929,7 @@ func (m Model) handleTick() (tea.Model, tea.Cmd) {
 	}
 	if time.Since(m.lastInfoFetch) >= infoPollInterval {
 		m.lastInfoFetch = time.Now()
-		cmds = append(cmds, m.streams.FetchDaemonInfo(), m.streams.FetchPausedTasks())
+		cmds = append(cmds, m.streams.FetchDaemonInfo(), m.streams.FetchTaskState())
 	}
 	if m.notifications.PanelHeight() > 0 {
 		m.notifications.RefreshLabels()
@@ -1003,7 +1006,7 @@ func (m Model) handleReloadResult(msg uikit.ReloadResultMsg) (tea.Model, tea.Cmd
 		m.recalcExecListHeight()
 		m.updateLayout()
 		// A reload clears the pause of a task it made unpausable.
-		cmds = append(cmds, m.fetchExecWindow(), m.streams.FetchPausedTasks())
+		cmds = append(cmds, m.fetchExecWindow(), m.streams.FetchTaskState())
 	}
 	cmds = append(cmds, m.dialogs.Flash(reloadSummary(msg.Result), 5*time.Second))
 	return m, tea.Batch(cmds...)
@@ -1070,6 +1073,10 @@ func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 	if cmd, handled := m.handleNotificationSSEEvent(evt); handled {
 		return cmd
 	}
+	if evt.Type == string(events.EventSystemSample) {
+		m.handleSystemSample(evt)
+		return nil
+	}
 
 	var runEvt struct {
 		Run      *model.Run     `json:"run"`
@@ -1102,6 +1109,26 @@ func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 	}
 
 	return nil
+}
+
+// handleSystemSample takes the live CPU and memory use off a system sample, so
+// the task header, the Info page and an open run's header follow it as it
+// changes.
+func (m *Model) handleSystemSample(evt apiclient.RunStreamEvent) {
+	var sample struct {
+		Tasks map[string]model.ResourceUsage `json:"tasks"`
+		Runs  map[string]model.ResourceUsage `json:"runs"`
+	}
+	if err := json.Unmarshal(evt.Data, &sample); err != nil {
+		m.debugView.AppendLine("Failed to parse system sample: " + err.Error())
+		return
+	}
+	m.info.TaskUsage = sample.Tasks
+	m.info.RunUsage = sample.Runs
+	m.infoView.SetTaskUsage(sample.Tasks)
+	if m.execView != nil {
+		m.execView.Usage = m.runUsage(m.execView.RunID())
+	}
 }
 
 // handleNotificationSSEEvent handles the notification.* event types that

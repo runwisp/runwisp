@@ -64,15 +64,24 @@ func (srv *Server) handleOpenMetrics(w http.ResponseWriter, r *http.Request) {
 
 	writeHelpType(w, "runwisp_task_active_runs", "gauge", "Currently active runs per task.")
 	for _, task := range tasks {
-		kind := string(task.Kind)
-		if kind == "" {
-			kind = "task"
-		}
 		count := srv.taskManager.GetActiveRunCount(task.Name)
-		writeSample(w, "runwisp_task_active_runs", []labelPair{
-			{"task", task.Name},
-			{"kind", kind},
-		}, float64(count))
+		writeSample(w, "runwisp_task_active_runs", taskLabels(task), float64(count))
+	}
+
+	// Only tasks with a measured running shell run appear: an absent series
+	// means "not running", not "using nothing".
+	usage := srv.runService.usage()
+	writeHelpType(w, "runwisp_task_cpu_percent", "gauge", "Live CPU use of a task's running processes, in percent of one core.")
+	for _, task := range tasks {
+		if u, ok := usage[task.Name]; ok {
+			writeSample(w, "runwisp_task_cpu_percent", taskLabels(task), u.CPUPercent)
+		}
+	}
+	writeHelpType(w, "runwisp_task_memory_bytes", "gauge", "Live resident memory of a task's running processes, in bytes.")
+	for _, task := range tasks {
+		if u, ok := usage[task.Name]; ok {
+			writeSample(w, "runwisp_task_memory_bytes", taskLabels(task), float64(u.MemoryBytes))
+		}
 	}
 
 	writeHelpType(w, "runwisp_daemon_cpu_percent", "gauge", "Host CPU usage as seen by the daemon (0-100).")
@@ -95,6 +104,15 @@ func (srv *Server) handleOpenMetrics(w http.ResponseWriter, r *http.Request) {
 
 type labelPair struct {
 	name, value string
+}
+
+// taskLabels identifies a task series; kind defaults to "task" like the TOML.
+func taskLabels(task model.Task) []labelPair {
+	kind := string(task.Kind)
+	if kind == "" {
+		kind = "task"
+	}
+	return []labelPair{{"task", task.Name}, {"kind", kind}}
 }
 
 func writeHelpType(w io.Writer, name, metricType, help string) {

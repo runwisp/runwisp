@@ -1295,6 +1295,18 @@ export interface components {
             /** @description Why the task is considered changed */
             reasons: string[] | null;
         };
+        ResourceUsage: {
+            /**
+             * Format: double
+             * @description CPU use in percent of one core (200 = two full cores)
+             */
+            cpuPercent: number;
+            /**
+             * Format: int64
+             * @description Resident memory in bytes
+             */
+            memoryBytes: number;
+        };
         Run: {
             /**
              * Format: uri
@@ -1302,6 +1314,11 @@ export interface components {
              * @example http://localhost:9477/schemas/Run.json
              */
             readonly $schema?: string;
+            /**
+             * Format: int64
+             * @description User plus system CPU time of the run's processes, in milliseconds. Shell runs only; absent when not measured.
+             */
+            cpuTimeMs?: number;
             /** Format: date-time */
             createdAt: string;
             endReason?: components["schemas"]["EndReason"];
@@ -1317,6 +1334,11 @@ export interface components {
             params?: {
                 [key: string]: string;
             };
+            /**
+             * Format: int64
+             * @description Highest resident memory of the run's process group, in bytes. Shell runs only; absent when not measured.
+             */
+            peakMemoryBytes?: number;
             /** Format: int64 */
             retryAttempt: number;
             retryOfRunId?: string;
@@ -1457,8 +1479,16 @@ export interface components {
             total: number;
         };
         SystemSampleSSEEvent: {
+            /** @description Live CPU and memory use per running run, keyed by run ID; only measured shell runs appear */
+            runs?: {
+                [key: string]: components["schemas"]["ResourceUsage"];
+            };
             /** @description Resource snapshot, same shape as a metrics-history entry */
             sample: components["schemas"]["MetricsSample"];
+            /** @description Live CPU and memory use per task, keyed by task name; only tasks with a measured running shell run appear */
+            tasks?: {
+                [key: string]: components["schemas"]["ResourceUsage"];
+            };
             /** @description Human-readable daemon uptime */
             uptime: string;
         };
@@ -1878,6 +1908,8 @@ export interface components {
             timezone?: string;
             /** @description Octal file-creation mask applied to the run's process; empty inherits the daemon's umask */
             umask?: string;
+            /** @description Live CPU and memory use of the task's running shell runs; absent when none is running or measured. */
+            usage?: components["schemas"]["ResourceUsage"];
             /** @description Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root. */
             user?: string;
             /** @description Resolved working directory for the task's process; empty inherits the daemon's working directory. A literal "~" means the run-as user's home, resolved at run time */

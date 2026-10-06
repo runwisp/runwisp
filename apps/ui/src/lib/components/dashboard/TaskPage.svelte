@@ -14,7 +14,7 @@
     } from "@runwisp/ui";
     import { RunsList, RunDetailPanel, Button, Modal, Alert, AlertDialog } from "@runwisp/ui";
     import { tasksApi } from "$lib/api";
-    import { headerSearchStore } from "$lib/stores";
+    import { headerSearchStore, systemStore } from "$lib/stores";
     import { createRunActions } from "$lib/utils/run-actions";
     import ParamForm from "./ParamForm.svelte";
 
@@ -380,6 +380,7 @@
             historyVisible={historyExpanded}
             {highlightLine}
             getInstanceCount={() => instanceCount}
+            getLiveUsage={(id) => systemStore.runUsage(id)}
             {motion}
             notFound={deepLinkMissing}
             loading={(loading && items.length === 0) || deepLinkPending}

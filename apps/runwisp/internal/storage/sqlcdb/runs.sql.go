@@ -66,26 +66,29 @@ const createRun = `-- name: CreateRun :exec
 
 INSERT INTO runs (id, execution_id, task_name, status, end_reason,
   exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt,
-  retry_of_run_id, instance_index, params_json, is_failure)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  retry_of_run_id, instance_index, params_json, is_failure, peak_memory_bytes,
+  cpu_time_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateRunParams struct {
-	ID            string            `json:"id"`
-	ExecutionID   *string           `json:"execution_id"`
-	TaskName      string            `json:"task_name"`
-	Status        model.RunPhase    `json:"status"`
-	EndReason     *model.EndReason  `json:"end_reason"`
-	ExitCode      int               `json:"exit_code"`
-	StartedAt     *time.Time        `json:"started_at"`
-	EndedAt       *time.Time        `json:"ended_at"`
-	TriggeredBy   model.TriggeredBy `json:"triggered_by"`
-	CreatedAt     time.Time         `json:"created_at"`
-	RetryAttempt  int               `json:"retry_attempt"`
-	RetryOfRunID  *string           `json:"retry_of_run_id"`
-	InstanceIndex int               `json:"instance_index"`
-	ParamsJson    *string           `json:"params_json"`
-	IsFailure     int64             `json:"is_failure"`
+	ID              string            `json:"id"`
+	ExecutionID     *string           `json:"execution_id"`
+	TaskName        string            `json:"task_name"`
+	Status          model.RunPhase    `json:"status"`
+	EndReason       *model.EndReason  `json:"end_reason"`
+	ExitCode        int               `json:"exit_code"`
+	StartedAt       *time.Time        `json:"started_at"`
+	EndedAt         *time.Time        `json:"ended_at"`
+	TriggeredBy     model.TriggeredBy `json:"triggered_by"`
+	CreatedAt       time.Time         `json:"created_at"`
+	RetryAttempt    int               `json:"retry_attempt"`
+	RetryOfRunID    *string           `json:"retry_of_run_id"`
+	InstanceIndex   int               `json:"instance_index"`
+	ParamsJson      *string           `json:"params_json"`
+	IsFailure       int64             `json:"is_failure"`
+	PeakMemoryBytes *int64            `json:"peak_memory_bytes"`
+	CpuTimeMs       *int64            `json:"cpu_time_ms"`
 }
 
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
@@ -107,6 +110,8 @@ func (q *Queries) CreateRun(ctx context.Context, arg CreateRunParams) error {
 		arg.InstanceIndex,
 		arg.ParamsJson,
 		arg.IsFailure,
+		arg.PeakMemoryBytes,
+		arg.CpuTimeMs,
 	)
 	return err
 }
@@ -140,7 +145,7 @@ func (q *Queries) DeleteRunsByIDs(ctx context.Context, ids []string) error {
 }
 
 const getLastRunByTask = `-- name: GetLastRunByTask :one
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure FROM runs WHERE task_name = ? AND deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms FROM runs WHERE task_name = ? AND deleted_at IS NULL
 ORDER BY created_at DESC LIMIT 1
 `
 
@@ -164,20 +169,17 @@ func (q *Queries) GetLastRunByTask(ctx context.Context, taskName string) (Run, e
 		&i.ParamsJson,
 		&i.DeletedAt,
 		&i.IsFailure,
+		&i.PeakMemoryBytes,
+		&i.CpuTimeMs,
 	)
 	return i, err
 }
 
 const getPendingRuns = `-- name: GetPendingRuns :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id,
-  instance_index, params_json, deleted_at, is_failure
-FROM runs WHERE status = 'pending' AND deleted_at IS NULL
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms FROM runs WHERE status = 'pending' AND deleted_at IS NULL
 ORDER BY created_at ASC
 `
 
-// Full table projection in column order so sqlc reuses the Run model struct
-// (is_failure is last because the migration appended the column).
 func (q *Queries) GetPendingRuns(ctx context.Context) ([]Run, error) {
 	rows, err := q.db.QueryContext(ctx, getPendingRuns)
 	if err != nil {
@@ -204,6 +206,8 @@ func (q *Queries) GetPendingRuns(ctx context.Context) ([]Run, error) {
 			&i.ParamsJson,
 			&i.DeletedAt,
 			&i.IsFailure,
+			&i.PeakMemoryBytes,
+			&i.CpuTimeMs,
 		); err != nil {
 			return nil, err
 		}
@@ -219,7 +223,7 @@ func (q *Queries) GetPendingRuns(ctx context.Context) ([]Run, error) {
 }
 
 const getRun = `-- name: GetRun :one
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure FROM runs WHERE id = ? AND deleted_at IS NULL LIMIT 1
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms FROM runs WHERE id = ? AND deleted_at IS NULL LIMIT 1
 `
 
 func (q *Queries) GetRun(ctx context.Context, id string) (Run, error) {
@@ -242,12 +246,14 @@ func (q *Queries) GetRun(ctx context.Context, id string) (Run, error) {
 		&i.ParamsJson,
 		&i.DeletedAt,
 		&i.IsFailure,
+		&i.PeakMemoryBytes,
+		&i.CpuTimeMs,
 	)
 	return i, err
 }
 
 const getRunByExecutionID = `-- name: GetRunByExecutionID :one
-SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure FROM runs WHERE execution_id = ? AND deleted_at IS NULL LIMIT 1
+SELECT id, execution_id, task_name, status, end_reason, exit_code, started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, deleted_at, is_failure, peak_memory_bytes, cpu_time_ms FROM runs WHERE execution_id = ? AND deleted_at IS NULL LIMIT 1
 `
 
 func (q *Queries) GetRunByExecutionID(ctx context.Context, executionID *string) (Run, error) {
@@ -270,6 +276,8 @@ func (q *Queries) GetRunByExecutionID(ctx context.Context, executionID *string) 
 		&i.ParamsJson,
 		&i.DeletedAt,
 		&i.IsFailure,
+		&i.PeakMemoryBytes,
+		&i.CpuTimeMs,
 	)
 	return i, err
 }
@@ -334,7 +342,8 @@ func (q *Queries) MarkCrashedRuns(ctx context.Context, endedAt *time.Time) (int6
 
 const queryRunsCreatedAtAsc = `-- name: QueryRunsCreatedAtAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
+  peak_memory_bytes, cpu_time_ms
 FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
@@ -368,21 +377,23 @@ type QueryRunsCreatedAtAscParams struct {
 }
 
 type QueryRunsCreatedAtAscRow struct {
-	ID            string            `json:"id"`
-	ExecutionID   *string           `json:"execution_id"`
-	TaskName      string            `json:"task_name"`
-	Status        model.RunPhase    `json:"status"`
-	EndReason     *model.EndReason  `json:"end_reason"`
-	ExitCode      int               `json:"exit_code"`
-	StartedAt     *time.Time        `json:"started_at"`
-	EndedAt       *time.Time        `json:"ended_at"`
-	TriggeredBy   model.TriggeredBy `json:"triggered_by"`
-	CreatedAt     time.Time         `json:"created_at"`
-	RetryAttempt  int               `json:"retry_attempt"`
-	RetryOfRunID  *string           `json:"retry_of_run_id"`
-	InstanceIndex int               `json:"instance_index"`
-	ParamsJson    *string           `json:"params_json"`
-	IsFailure     int64             `json:"is_failure"`
+	ID              string            `json:"id"`
+	ExecutionID     *string           `json:"execution_id"`
+	TaskName        string            `json:"task_name"`
+	Status          model.RunPhase    `json:"status"`
+	EndReason       *model.EndReason  `json:"end_reason"`
+	ExitCode        int               `json:"exit_code"`
+	StartedAt       *time.Time        `json:"started_at"`
+	EndedAt         *time.Time        `json:"ended_at"`
+	TriggeredBy     model.TriggeredBy `json:"triggered_by"`
+	CreatedAt       time.Time         `json:"created_at"`
+	RetryAttempt    int               `json:"retry_attempt"`
+	RetryOfRunID    *string           `json:"retry_of_run_id"`
+	InstanceIndex   int               `json:"instance_index"`
+	ParamsJson      *string           `json:"params_json"`
+	IsFailure       int64             `json:"is_failure"`
+	PeakMemoryBytes *int64            `json:"peak_memory_bytes"`
+	CpuTimeMs       *int64            `json:"cpu_time_ms"`
 }
 
 func (q *Queries) QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreatedAtAscParams) ([]QueryRunsCreatedAtAscRow, error) {
@@ -424,6 +435,8 @@ func (q *Queries) QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreate
 			&i.InstanceIndex,
 			&i.ParamsJson,
 			&i.IsFailure,
+			&i.PeakMemoryBytes,
+			&i.CpuTimeMs,
 		); err != nil {
 			return nil, err
 		}
@@ -440,7 +453,8 @@ func (q *Queries) QueryRunsCreatedAtAsc(ctx context.Context, arg QueryRunsCreate
 
 const queryRunsCreatedAtDesc = `-- name: QueryRunsCreatedAtDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
+  peak_memory_bytes, cpu_time_ms
 FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
@@ -474,21 +488,23 @@ type QueryRunsCreatedAtDescParams struct {
 }
 
 type QueryRunsCreatedAtDescRow struct {
-	ID            string            `json:"id"`
-	ExecutionID   *string           `json:"execution_id"`
-	TaskName      string            `json:"task_name"`
-	Status        model.RunPhase    `json:"status"`
-	EndReason     *model.EndReason  `json:"end_reason"`
-	ExitCode      int               `json:"exit_code"`
-	StartedAt     *time.Time        `json:"started_at"`
-	EndedAt       *time.Time        `json:"ended_at"`
-	TriggeredBy   model.TriggeredBy `json:"triggered_by"`
-	CreatedAt     time.Time         `json:"created_at"`
-	RetryAttempt  int               `json:"retry_attempt"`
-	RetryOfRunID  *string           `json:"retry_of_run_id"`
-	InstanceIndex int               `json:"instance_index"`
-	ParamsJson    *string           `json:"params_json"`
-	IsFailure     int64             `json:"is_failure"`
+	ID              string            `json:"id"`
+	ExecutionID     *string           `json:"execution_id"`
+	TaskName        string            `json:"task_name"`
+	Status          model.RunPhase    `json:"status"`
+	EndReason       *model.EndReason  `json:"end_reason"`
+	ExitCode        int               `json:"exit_code"`
+	StartedAt       *time.Time        `json:"started_at"`
+	EndedAt         *time.Time        `json:"ended_at"`
+	TriggeredBy     model.TriggeredBy `json:"triggered_by"`
+	CreatedAt       time.Time         `json:"created_at"`
+	RetryAttempt    int               `json:"retry_attempt"`
+	RetryOfRunID    *string           `json:"retry_of_run_id"`
+	InstanceIndex   int               `json:"instance_index"`
+	ParamsJson      *string           `json:"params_json"`
+	IsFailure       int64             `json:"is_failure"`
+	PeakMemoryBytes *int64            `json:"peak_memory_bytes"`
+	CpuTimeMs       *int64            `json:"cpu_time_ms"`
 }
 
 func (q *Queries) QueryRunsCreatedAtDesc(ctx context.Context, arg QueryRunsCreatedAtDescParams) ([]QueryRunsCreatedAtDescRow, error) {
@@ -530,6 +546,8 @@ func (q *Queries) QueryRunsCreatedAtDesc(ctx context.Context, arg QueryRunsCreat
 			&i.InstanceIndex,
 			&i.ParamsJson,
 			&i.IsFailure,
+			&i.PeakMemoryBytes,
+			&i.CpuTimeMs,
 		); err != nil {
 			return nil, err
 		}
@@ -546,7 +564,8 @@ func (q *Queries) QueryRunsCreatedAtDesc(ctx context.Context, arg QueryRunsCreat
 
 const queryRunsDurationAsc = `-- name: QueryRunsDurationAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
+  peak_memory_bytes, cpu_time_ms
 FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
@@ -580,21 +599,23 @@ type QueryRunsDurationAscParams struct {
 }
 
 type QueryRunsDurationAscRow struct {
-	ID            string            `json:"id"`
-	ExecutionID   *string           `json:"execution_id"`
-	TaskName      string            `json:"task_name"`
-	Status        model.RunPhase    `json:"status"`
-	EndReason     *model.EndReason  `json:"end_reason"`
-	ExitCode      int               `json:"exit_code"`
-	StartedAt     *time.Time        `json:"started_at"`
-	EndedAt       *time.Time        `json:"ended_at"`
-	TriggeredBy   model.TriggeredBy `json:"triggered_by"`
-	CreatedAt     time.Time         `json:"created_at"`
-	RetryAttempt  int               `json:"retry_attempt"`
-	RetryOfRunID  *string           `json:"retry_of_run_id"`
-	InstanceIndex int               `json:"instance_index"`
-	ParamsJson    *string           `json:"params_json"`
-	IsFailure     int64             `json:"is_failure"`
+	ID              string            `json:"id"`
+	ExecutionID     *string           `json:"execution_id"`
+	TaskName        string            `json:"task_name"`
+	Status          model.RunPhase    `json:"status"`
+	EndReason       *model.EndReason  `json:"end_reason"`
+	ExitCode        int               `json:"exit_code"`
+	StartedAt       *time.Time        `json:"started_at"`
+	EndedAt         *time.Time        `json:"ended_at"`
+	TriggeredBy     model.TriggeredBy `json:"triggered_by"`
+	CreatedAt       time.Time         `json:"created_at"`
+	RetryAttempt    int               `json:"retry_attempt"`
+	RetryOfRunID    *string           `json:"retry_of_run_id"`
+	InstanceIndex   int               `json:"instance_index"`
+	ParamsJson      *string           `json:"params_json"`
+	IsFailure       int64             `json:"is_failure"`
+	PeakMemoryBytes *int64            `json:"peak_memory_bytes"`
+	CpuTimeMs       *int64            `json:"cpu_time_ms"`
 }
 
 func (q *Queries) QueryRunsDurationAsc(ctx context.Context, arg QueryRunsDurationAscParams) ([]QueryRunsDurationAscRow, error) {
@@ -636,6 +657,8 @@ func (q *Queries) QueryRunsDurationAsc(ctx context.Context, arg QueryRunsDuratio
 			&i.InstanceIndex,
 			&i.ParamsJson,
 			&i.IsFailure,
+			&i.PeakMemoryBytes,
+			&i.CpuTimeMs,
 		); err != nil {
 			return nil, err
 		}
@@ -652,7 +675,8 @@ func (q *Queries) QueryRunsDurationAsc(ctx context.Context, arg QueryRunsDuratio
 
 const queryRunsDurationDesc = `-- name: QueryRunsDurationDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
+  peak_memory_bytes, cpu_time_ms
 FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
@@ -686,21 +710,23 @@ type QueryRunsDurationDescParams struct {
 }
 
 type QueryRunsDurationDescRow struct {
-	ID            string            `json:"id"`
-	ExecutionID   *string           `json:"execution_id"`
-	TaskName      string            `json:"task_name"`
-	Status        model.RunPhase    `json:"status"`
-	EndReason     *model.EndReason  `json:"end_reason"`
-	ExitCode      int               `json:"exit_code"`
-	StartedAt     *time.Time        `json:"started_at"`
-	EndedAt       *time.Time        `json:"ended_at"`
-	TriggeredBy   model.TriggeredBy `json:"triggered_by"`
-	CreatedAt     time.Time         `json:"created_at"`
-	RetryAttempt  int               `json:"retry_attempt"`
-	RetryOfRunID  *string           `json:"retry_of_run_id"`
-	InstanceIndex int               `json:"instance_index"`
-	ParamsJson    *string           `json:"params_json"`
-	IsFailure     int64             `json:"is_failure"`
+	ID              string            `json:"id"`
+	ExecutionID     *string           `json:"execution_id"`
+	TaskName        string            `json:"task_name"`
+	Status          model.RunPhase    `json:"status"`
+	EndReason       *model.EndReason  `json:"end_reason"`
+	ExitCode        int               `json:"exit_code"`
+	StartedAt       *time.Time        `json:"started_at"`
+	EndedAt         *time.Time        `json:"ended_at"`
+	TriggeredBy     model.TriggeredBy `json:"triggered_by"`
+	CreatedAt       time.Time         `json:"created_at"`
+	RetryAttempt    int               `json:"retry_attempt"`
+	RetryOfRunID    *string           `json:"retry_of_run_id"`
+	InstanceIndex   int               `json:"instance_index"`
+	ParamsJson      *string           `json:"params_json"`
+	IsFailure       int64             `json:"is_failure"`
+	PeakMemoryBytes *int64            `json:"peak_memory_bytes"`
+	CpuTimeMs       *int64            `json:"cpu_time_ms"`
 }
 
 func (q *Queries) QueryRunsDurationDesc(ctx context.Context, arg QueryRunsDurationDescParams) ([]QueryRunsDurationDescRow, error) {
@@ -742,6 +768,8 @@ func (q *Queries) QueryRunsDurationDesc(ctx context.Context, arg QueryRunsDurati
 			&i.InstanceIndex,
 			&i.ParamsJson,
 			&i.IsFailure,
+			&i.PeakMemoryBytes,
+			&i.CpuTimeMs,
 		); err != nil {
 			return nil, err
 		}
@@ -758,7 +786,8 @@ func (q *Queries) QueryRunsDurationDesc(ctx context.Context, arg QueryRunsDurati
 
 const queryRunsExitCodeAsc = `-- name: QueryRunsExitCodeAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
+  peak_memory_bytes, cpu_time_ms
 FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
@@ -792,21 +821,23 @@ type QueryRunsExitCodeAscParams struct {
 }
 
 type QueryRunsExitCodeAscRow struct {
-	ID            string            `json:"id"`
-	ExecutionID   *string           `json:"execution_id"`
-	TaskName      string            `json:"task_name"`
-	Status        model.RunPhase    `json:"status"`
-	EndReason     *model.EndReason  `json:"end_reason"`
-	ExitCode      int               `json:"exit_code"`
-	StartedAt     *time.Time        `json:"started_at"`
-	EndedAt       *time.Time        `json:"ended_at"`
-	TriggeredBy   model.TriggeredBy `json:"triggered_by"`
-	CreatedAt     time.Time         `json:"created_at"`
-	RetryAttempt  int               `json:"retry_attempt"`
-	RetryOfRunID  *string           `json:"retry_of_run_id"`
-	InstanceIndex int               `json:"instance_index"`
-	ParamsJson    *string           `json:"params_json"`
-	IsFailure     int64             `json:"is_failure"`
+	ID              string            `json:"id"`
+	ExecutionID     *string           `json:"execution_id"`
+	TaskName        string            `json:"task_name"`
+	Status          model.RunPhase    `json:"status"`
+	EndReason       *model.EndReason  `json:"end_reason"`
+	ExitCode        int               `json:"exit_code"`
+	StartedAt       *time.Time        `json:"started_at"`
+	EndedAt         *time.Time        `json:"ended_at"`
+	TriggeredBy     model.TriggeredBy `json:"triggered_by"`
+	CreatedAt       time.Time         `json:"created_at"`
+	RetryAttempt    int               `json:"retry_attempt"`
+	RetryOfRunID    *string           `json:"retry_of_run_id"`
+	InstanceIndex   int               `json:"instance_index"`
+	ParamsJson      *string           `json:"params_json"`
+	IsFailure       int64             `json:"is_failure"`
+	PeakMemoryBytes *int64            `json:"peak_memory_bytes"`
+	CpuTimeMs       *int64            `json:"cpu_time_ms"`
 }
 
 func (q *Queries) QueryRunsExitCodeAsc(ctx context.Context, arg QueryRunsExitCodeAscParams) ([]QueryRunsExitCodeAscRow, error) {
@@ -848,6 +879,8 @@ func (q *Queries) QueryRunsExitCodeAsc(ctx context.Context, arg QueryRunsExitCod
 			&i.InstanceIndex,
 			&i.ParamsJson,
 			&i.IsFailure,
+			&i.PeakMemoryBytes,
+			&i.CpuTimeMs,
 		); err != nil {
 			return nil, err
 		}
@@ -864,7 +897,8 @@ func (q *Queries) QueryRunsExitCodeAsc(ctx context.Context, arg QueryRunsExitCod
 
 const queryRunsExitCodeDesc = `-- name: QueryRunsExitCodeDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
+  peak_memory_bytes, cpu_time_ms
 FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
@@ -898,21 +932,23 @@ type QueryRunsExitCodeDescParams struct {
 }
 
 type QueryRunsExitCodeDescRow struct {
-	ID            string            `json:"id"`
-	ExecutionID   *string           `json:"execution_id"`
-	TaskName      string            `json:"task_name"`
-	Status        model.RunPhase    `json:"status"`
-	EndReason     *model.EndReason  `json:"end_reason"`
-	ExitCode      int               `json:"exit_code"`
-	StartedAt     *time.Time        `json:"started_at"`
-	EndedAt       *time.Time        `json:"ended_at"`
-	TriggeredBy   model.TriggeredBy `json:"triggered_by"`
-	CreatedAt     time.Time         `json:"created_at"`
-	RetryAttempt  int               `json:"retry_attempt"`
-	RetryOfRunID  *string           `json:"retry_of_run_id"`
-	InstanceIndex int               `json:"instance_index"`
-	ParamsJson    *string           `json:"params_json"`
-	IsFailure     int64             `json:"is_failure"`
+	ID              string            `json:"id"`
+	ExecutionID     *string           `json:"execution_id"`
+	TaskName        string            `json:"task_name"`
+	Status          model.RunPhase    `json:"status"`
+	EndReason       *model.EndReason  `json:"end_reason"`
+	ExitCode        int               `json:"exit_code"`
+	StartedAt       *time.Time        `json:"started_at"`
+	EndedAt         *time.Time        `json:"ended_at"`
+	TriggeredBy     model.TriggeredBy `json:"triggered_by"`
+	CreatedAt       time.Time         `json:"created_at"`
+	RetryAttempt    int               `json:"retry_attempt"`
+	RetryOfRunID    *string           `json:"retry_of_run_id"`
+	InstanceIndex   int               `json:"instance_index"`
+	ParamsJson      *string           `json:"params_json"`
+	IsFailure       int64             `json:"is_failure"`
+	PeakMemoryBytes *int64            `json:"peak_memory_bytes"`
+	CpuTimeMs       *int64            `json:"cpu_time_ms"`
 }
 
 func (q *Queries) QueryRunsExitCodeDesc(ctx context.Context, arg QueryRunsExitCodeDescParams) ([]QueryRunsExitCodeDescRow, error) {
@@ -954,6 +990,8 @@ func (q *Queries) QueryRunsExitCodeDesc(ctx context.Context, arg QueryRunsExitCo
 			&i.InstanceIndex,
 			&i.ParamsJson,
 			&i.IsFailure,
+			&i.PeakMemoryBytes,
+			&i.CpuTimeMs,
 		); err != nil {
 			return nil, err
 		}
@@ -970,7 +1008,8 @@ func (q *Queries) QueryRunsExitCodeDesc(ctx context.Context, arg QueryRunsExitCo
 
 const queryRunsStartAtAsc = `-- name: QueryRunsStartAtAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
+  peak_memory_bytes, cpu_time_ms
 FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
@@ -1004,21 +1043,23 @@ type QueryRunsStartAtAscParams struct {
 }
 
 type QueryRunsStartAtAscRow struct {
-	ID            string            `json:"id"`
-	ExecutionID   *string           `json:"execution_id"`
-	TaskName      string            `json:"task_name"`
-	Status        model.RunPhase    `json:"status"`
-	EndReason     *model.EndReason  `json:"end_reason"`
-	ExitCode      int               `json:"exit_code"`
-	StartedAt     *time.Time        `json:"started_at"`
-	EndedAt       *time.Time        `json:"ended_at"`
-	TriggeredBy   model.TriggeredBy `json:"triggered_by"`
-	CreatedAt     time.Time         `json:"created_at"`
-	RetryAttempt  int               `json:"retry_attempt"`
-	RetryOfRunID  *string           `json:"retry_of_run_id"`
-	InstanceIndex int               `json:"instance_index"`
-	ParamsJson    *string           `json:"params_json"`
-	IsFailure     int64             `json:"is_failure"`
+	ID              string            `json:"id"`
+	ExecutionID     *string           `json:"execution_id"`
+	TaskName        string            `json:"task_name"`
+	Status          model.RunPhase    `json:"status"`
+	EndReason       *model.EndReason  `json:"end_reason"`
+	ExitCode        int               `json:"exit_code"`
+	StartedAt       *time.Time        `json:"started_at"`
+	EndedAt         *time.Time        `json:"ended_at"`
+	TriggeredBy     model.TriggeredBy `json:"triggered_by"`
+	CreatedAt       time.Time         `json:"created_at"`
+	RetryAttempt    int               `json:"retry_attempt"`
+	RetryOfRunID    *string           `json:"retry_of_run_id"`
+	InstanceIndex   int               `json:"instance_index"`
+	ParamsJson      *string           `json:"params_json"`
+	IsFailure       int64             `json:"is_failure"`
+	PeakMemoryBytes *int64            `json:"peak_memory_bytes"`
+	CpuTimeMs       *int64            `json:"cpu_time_ms"`
 }
 
 func (q *Queries) QueryRunsStartAtAsc(ctx context.Context, arg QueryRunsStartAtAscParams) ([]QueryRunsStartAtAscRow, error) {
@@ -1060,6 +1101,8 @@ func (q *Queries) QueryRunsStartAtAsc(ctx context.Context, arg QueryRunsStartAtA
 			&i.InstanceIndex,
 			&i.ParamsJson,
 			&i.IsFailure,
+			&i.PeakMemoryBytes,
+			&i.CpuTimeMs,
 		); err != nil {
 			return nil, err
 		}
@@ -1076,7 +1119,8 @@ func (q *Queries) QueryRunsStartAtAsc(ctx context.Context, arg QueryRunsStartAtA
 
 const queryRunsStartAtDesc = `-- name: QueryRunsStartAtDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
+  peak_memory_bytes, cpu_time_ms
 FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
@@ -1110,21 +1154,23 @@ type QueryRunsStartAtDescParams struct {
 }
 
 type QueryRunsStartAtDescRow struct {
-	ID            string            `json:"id"`
-	ExecutionID   *string           `json:"execution_id"`
-	TaskName      string            `json:"task_name"`
-	Status        model.RunPhase    `json:"status"`
-	EndReason     *model.EndReason  `json:"end_reason"`
-	ExitCode      int               `json:"exit_code"`
-	StartedAt     *time.Time        `json:"started_at"`
-	EndedAt       *time.Time        `json:"ended_at"`
-	TriggeredBy   model.TriggeredBy `json:"triggered_by"`
-	CreatedAt     time.Time         `json:"created_at"`
-	RetryAttempt  int               `json:"retry_attempt"`
-	RetryOfRunID  *string           `json:"retry_of_run_id"`
-	InstanceIndex int               `json:"instance_index"`
-	ParamsJson    *string           `json:"params_json"`
-	IsFailure     int64             `json:"is_failure"`
+	ID              string            `json:"id"`
+	ExecutionID     *string           `json:"execution_id"`
+	TaskName        string            `json:"task_name"`
+	Status          model.RunPhase    `json:"status"`
+	EndReason       *model.EndReason  `json:"end_reason"`
+	ExitCode        int               `json:"exit_code"`
+	StartedAt       *time.Time        `json:"started_at"`
+	EndedAt         *time.Time        `json:"ended_at"`
+	TriggeredBy     model.TriggeredBy `json:"triggered_by"`
+	CreatedAt       time.Time         `json:"created_at"`
+	RetryAttempt    int               `json:"retry_attempt"`
+	RetryOfRunID    *string           `json:"retry_of_run_id"`
+	InstanceIndex   int               `json:"instance_index"`
+	ParamsJson      *string           `json:"params_json"`
+	IsFailure       int64             `json:"is_failure"`
+	PeakMemoryBytes *int64            `json:"peak_memory_bytes"`
+	CpuTimeMs       *int64            `json:"cpu_time_ms"`
 }
 
 func (q *Queries) QueryRunsStartAtDesc(ctx context.Context, arg QueryRunsStartAtDescParams) ([]QueryRunsStartAtDescRow, error) {
@@ -1166,6 +1212,8 @@ func (q *Queries) QueryRunsStartAtDesc(ctx context.Context, arg QueryRunsStartAt
 			&i.InstanceIndex,
 			&i.ParamsJson,
 			&i.IsFailure,
+			&i.PeakMemoryBytes,
+			&i.CpuTimeMs,
 		); err != nil {
 			return nil, err
 		}
@@ -1182,7 +1230,8 @@ func (q *Queries) QueryRunsStartAtDesc(ctx context.Context, arg QueryRunsStartAt
 
 const queryRunsStatusAsc = `-- name: QueryRunsStatusAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
+  peak_memory_bytes, cpu_time_ms
 FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
@@ -1216,21 +1265,23 @@ type QueryRunsStatusAscParams struct {
 }
 
 type QueryRunsStatusAscRow struct {
-	ID            string            `json:"id"`
-	ExecutionID   *string           `json:"execution_id"`
-	TaskName      string            `json:"task_name"`
-	Status        model.RunPhase    `json:"status"`
-	EndReason     *model.EndReason  `json:"end_reason"`
-	ExitCode      int               `json:"exit_code"`
-	StartedAt     *time.Time        `json:"started_at"`
-	EndedAt       *time.Time        `json:"ended_at"`
-	TriggeredBy   model.TriggeredBy `json:"triggered_by"`
-	CreatedAt     time.Time         `json:"created_at"`
-	RetryAttempt  int               `json:"retry_attempt"`
-	RetryOfRunID  *string           `json:"retry_of_run_id"`
-	InstanceIndex int               `json:"instance_index"`
-	ParamsJson    *string           `json:"params_json"`
-	IsFailure     int64             `json:"is_failure"`
+	ID              string            `json:"id"`
+	ExecutionID     *string           `json:"execution_id"`
+	TaskName        string            `json:"task_name"`
+	Status          model.RunPhase    `json:"status"`
+	EndReason       *model.EndReason  `json:"end_reason"`
+	ExitCode        int               `json:"exit_code"`
+	StartedAt       *time.Time        `json:"started_at"`
+	EndedAt         *time.Time        `json:"ended_at"`
+	TriggeredBy     model.TriggeredBy `json:"triggered_by"`
+	CreatedAt       time.Time         `json:"created_at"`
+	RetryAttempt    int               `json:"retry_attempt"`
+	RetryOfRunID    *string           `json:"retry_of_run_id"`
+	InstanceIndex   int               `json:"instance_index"`
+	ParamsJson      *string           `json:"params_json"`
+	IsFailure       int64             `json:"is_failure"`
+	PeakMemoryBytes *int64            `json:"peak_memory_bytes"`
+	CpuTimeMs       *int64            `json:"cpu_time_ms"`
 }
 
 func (q *Queries) QueryRunsStatusAsc(ctx context.Context, arg QueryRunsStatusAscParams) ([]QueryRunsStatusAscRow, error) {
@@ -1272,6 +1323,8 @@ func (q *Queries) QueryRunsStatusAsc(ctx context.Context, arg QueryRunsStatusAsc
 			&i.InstanceIndex,
 			&i.ParamsJson,
 			&i.IsFailure,
+			&i.PeakMemoryBytes,
+			&i.CpuTimeMs,
 		); err != nil {
 			return nil, err
 		}
@@ -1288,7 +1341,8 @@ func (q *Queries) QueryRunsStatusAsc(ctx context.Context, arg QueryRunsStatusAsc
 
 const queryRunsStatusDesc = `-- name: QueryRunsStatusDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
+  peak_memory_bytes, cpu_time_ms
 FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
@@ -1322,21 +1376,23 @@ type QueryRunsStatusDescParams struct {
 }
 
 type QueryRunsStatusDescRow struct {
-	ID            string            `json:"id"`
-	ExecutionID   *string           `json:"execution_id"`
-	TaskName      string            `json:"task_name"`
-	Status        model.RunPhase    `json:"status"`
-	EndReason     *model.EndReason  `json:"end_reason"`
-	ExitCode      int               `json:"exit_code"`
-	StartedAt     *time.Time        `json:"started_at"`
-	EndedAt       *time.Time        `json:"ended_at"`
-	TriggeredBy   model.TriggeredBy `json:"triggered_by"`
-	CreatedAt     time.Time         `json:"created_at"`
-	RetryAttempt  int               `json:"retry_attempt"`
-	RetryOfRunID  *string           `json:"retry_of_run_id"`
-	InstanceIndex int               `json:"instance_index"`
-	ParamsJson    *string           `json:"params_json"`
-	IsFailure     int64             `json:"is_failure"`
+	ID              string            `json:"id"`
+	ExecutionID     *string           `json:"execution_id"`
+	TaskName        string            `json:"task_name"`
+	Status          model.RunPhase    `json:"status"`
+	EndReason       *model.EndReason  `json:"end_reason"`
+	ExitCode        int               `json:"exit_code"`
+	StartedAt       *time.Time        `json:"started_at"`
+	EndedAt         *time.Time        `json:"ended_at"`
+	TriggeredBy     model.TriggeredBy `json:"triggered_by"`
+	CreatedAt       time.Time         `json:"created_at"`
+	RetryAttempt    int               `json:"retry_attempt"`
+	RetryOfRunID    *string           `json:"retry_of_run_id"`
+	InstanceIndex   int               `json:"instance_index"`
+	ParamsJson      *string           `json:"params_json"`
+	IsFailure       int64             `json:"is_failure"`
+	PeakMemoryBytes *int64            `json:"peak_memory_bytes"`
+	CpuTimeMs       *int64            `json:"cpu_time_ms"`
 }
 
 func (q *Queries) QueryRunsStatusDesc(ctx context.Context, arg QueryRunsStatusDescParams) ([]QueryRunsStatusDescRow, error) {
@@ -1378,6 +1434,8 @@ func (q *Queries) QueryRunsStatusDesc(ctx context.Context, arg QueryRunsStatusDe
 			&i.InstanceIndex,
 			&i.ParamsJson,
 			&i.IsFailure,
+			&i.PeakMemoryBytes,
+			&i.CpuTimeMs,
 		); err != nil {
 			return nil, err
 		}
@@ -1394,7 +1452,8 @@ func (q *Queries) QueryRunsStatusDesc(ctx context.Context, arg QueryRunsStatusDe
 
 const queryRunsTaskNameAsc = `-- name: QueryRunsTaskNameAsc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
+  peak_memory_bytes, cpu_time_ms
 FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
@@ -1428,21 +1487,23 @@ type QueryRunsTaskNameAscParams struct {
 }
 
 type QueryRunsTaskNameAscRow struct {
-	ID            string            `json:"id"`
-	ExecutionID   *string           `json:"execution_id"`
-	TaskName      string            `json:"task_name"`
-	Status        model.RunPhase    `json:"status"`
-	EndReason     *model.EndReason  `json:"end_reason"`
-	ExitCode      int               `json:"exit_code"`
-	StartedAt     *time.Time        `json:"started_at"`
-	EndedAt       *time.Time        `json:"ended_at"`
-	TriggeredBy   model.TriggeredBy `json:"triggered_by"`
-	CreatedAt     time.Time         `json:"created_at"`
-	RetryAttempt  int               `json:"retry_attempt"`
-	RetryOfRunID  *string           `json:"retry_of_run_id"`
-	InstanceIndex int               `json:"instance_index"`
-	ParamsJson    *string           `json:"params_json"`
-	IsFailure     int64             `json:"is_failure"`
+	ID              string            `json:"id"`
+	ExecutionID     *string           `json:"execution_id"`
+	TaskName        string            `json:"task_name"`
+	Status          model.RunPhase    `json:"status"`
+	EndReason       *model.EndReason  `json:"end_reason"`
+	ExitCode        int               `json:"exit_code"`
+	StartedAt       *time.Time        `json:"started_at"`
+	EndedAt         *time.Time        `json:"ended_at"`
+	TriggeredBy     model.TriggeredBy `json:"triggered_by"`
+	CreatedAt       time.Time         `json:"created_at"`
+	RetryAttempt    int               `json:"retry_attempt"`
+	RetryOfRunID    *string           `json:"retry_of_run_id"`
+	InstanceIndex   int               `json:"instance_index"`
+	ParamsJson      *string           `json:"params_json"`
+	IsFailure       int64             `json:"is_failure"`
+	PeakMemoryBytes *int64            `json:"peak_memory_bytes"`
+	CpuTimeMs       *int64            `json:"cpu_time_ms"`
 }
 
 func (q *Queries) QueryRunsTaskNameAsc(ctx context.Context, arg QueryRunsTaskNameAscParams) ([]QueryRunsTaskNameAscRow, error) {
@@ -1484,6 +1545,8 @@ func (q *Queries) QueryRunsTaskNameAsc(ctx context.Context, arg QueryRunsTaskNam
 			&i.InstanceIndex,
 			&i.ParamsJson,
 			&i.IsFailure,
+			&i.PeakMemoryBytes,
+			&i.CpuTimeMs,
 		); err != nil {
 			return nil, err
 		}
@@ -1500,7 +1563,8 @@ func (q *Queries) QueryRunsTaskNameAsc(ctx context.Context, arg QueryRunsTaskNam
 
 const queryRunsTaskNameDesc = `-- name: QueryRunsTaskNameDesc :many
 SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure
+  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
+  peak_memory_bytes, cpu_time_ms
 FROM runs WHERE deleted_at IS NULL
   AND ((?1 IS NULL AND ?2 = 0)
        OR instr(?1, '|' || status || '|') > 0
@@ -1534,21 +1598,23 @@ type QueryRunsTaskNameDescParams struct {
 }
 
 type QueryRunsTaskNameDescRow struct {
-	ID            string            `json:"id"`
-	ExecutionID   *string           `json:"execution_id"`
-	TaskName      string            `json:"task_name"`
-	Status        model.RunPhase    `json:"status"`
-	EndReason     *model.EndReason  `json:"end_reason"`
-	ExitCode      int               `json:"exit_code"`
-	StartedAt     *time.Time        `json:"started_at"`
-	EndedAt       *time.Time        `json:"ended_at"`
-	TriggeredBy   model.TriggeredBy `json:"triggered_by"`
-	CreatedAt     time.Time         `json:"created_at"`
-	RetryAttempt  int               `json:"retry_attempt"`
-	RetryOfRunID  *string           `json:"retry_of_run_id"`
-	InstanceIndex int               `json:"instance_index"`
-	ParamsJson    *string           `json:"params_json"`
-	IsFailure     int64             `json:"is_failure"`
+	ID              string            `json:"id"`
+	ExecutionID     *string           `json:"execution_id"`
+	TaskName        string            `json:"task_name"`
+	Status          model.RunPhase    `json:"status"`
+	EndReason       *model.EndReason  `json:"end_reason"`
+	ExitCode        int               `json:"exit_code"`
+	StartedAt       *time.Time        `json:"started_at"`
+	EndedAt         *time.Time        `json:"ended_at"`
+	TriggeredBy     model.TriggeredBy `json:"triggered_by"`
+	CreatedAt       time.Time         `json:"created_at"`
+	RetryAttempt    int               `json:"retry_attempt"`
+	RetryOfRunID    *string           `json:"retry_of_run_id"`
+	InstanceIndex   int               `json:"instance_index"`
+	ParamsJson      *string           `json:"params_json"`
+	IsFailure       int64             `json:"is_failure"`
+	PeakMemoryBytes *int64            `json:"peak_memory_bytes"`
+	CpuTimeMs       *int64            `json:"cpu_time_ms"`
 }
 
 func (q *Queries) QueryRunsTaskNameDesc(ctx context.Context, arg QueryRunsTaskNameDescParams) ([]QueryRunsTaskNameDescRow, error) {
@@ -1590,6 +1656,8 @@ func (q *Queries) QueryRunsTaskNameDesc(ctx context.Context, arg QueryRunsTaskNa
 			&i.InstanceIndex,
 			&i.ParamsJson,
 			&i.IsFailure,
+			&i.PeakMemoryBytes,
+			&i.CpuTimeMs,
 		); err != nil {
 			return nil, err
 		}
@@ -1608,26 +1676,28 @@ const updateRun = `-- name: UpdateRun :execrows
 UPDATE runs SET execution_id = ?, task_name = ?, status = ?,
   end_reason = ?, exit_code = ?, started_at = ?, ended_at = ?, triggered_by = ?,
   created_at = ?, retry_attempt = ?, retry_of_run_id = ?, instance_index = ?,
-  params_json = ?, is_failure = ?
+  params_json = ?, is_failure = ?, peak_memory_bytes = ?, cpu_time_ms = ?
 WHERE id = ?
 `
 
 type UpdateRunParams struct {
-	ExecutionID   *string           `json:"execution_id"`
-	TaskName      string            `json:"task_name"`
-	Status        model.RunPhase    `json:"status"`
-	EndReason     *model.EndReason  `json:"end_reason"`
-	ExitCode      int               `json:"exit_code"`
-	StartedAt     *time.Time        `json:"started_at"`
-	EndedAt       *time.Time        `json:"ended_at"`
-	TriggeredBy   model.TriggeredBy `json:"triggered_by"`
-	CreatedAt     time.Time         `json:"created_at"`
-	RetryAttempt  int               `json:"retry_attempt"`
-	RetryOfRunID  *string           `json:"retry_of_run_id"`
-	InstanceIndex int               `json:"instance_index"`
-	ParamsJson    *string           `json:"params_json"`
-	IsFailure     int64             `json:"is_failure"`
-	ID            string            `json:"id"`
+	ExecutionID     *string           `json:"execution_id"`
+	TaskName        string            `json:"task_name"`
+	Status          model.RunPhase    `json:"status"`
+	EndReason       *model.EndReason  `json:"end_reason"`
+	ExitCode        int               `json:"exit_code"`
+	StartedAt       *time.Time        `json:"started_at"`
+	EndedAt         *time.Time        `json:"ended_at"`
+	TriggeredBy     model.TriggeredBy `json:"triggered_by"`
+	CreatedAt       time.Time         `json:"created_at"`
+	RetryAttempt    int               `json:"retry_attempt"`
+	RetryOfRunID    *string           `json:"retry_of_run_id"`
+	InstanceIndex   int               `json:"instance_index"`
+	ParamsJson      *string           `json:"params_json"`
+	IsFailure       int64             `json:"is_failure"`
+	PeakMemoryBytes *int64            `json:"peak_memory_bytes"`
+	CpuTimeMs       *int64            `json:"cpu_time_ms"`
+	ID              string            `json:"id"`
 }
 
 func (q *Queries) UpdateRun(ctx context.Context, arg UpdateRunParams) (int64, error) {
@@ -1646,6 +1716,8 @@ func (q *Queries) UpdateRun(ctx context.Context, arg UpdateRunParams) (int64, er
 		arg.InstanceIndex,
 		arg.ParamsJson,
 		arg.IsFailure,
+		arg.PeakMemoryBytes,
+		arg.CpuTimeMs,
 		arg.ID,
 	)
 	if err != nil {

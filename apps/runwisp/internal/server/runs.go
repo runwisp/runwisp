@@ -587,7 +587,7 @@ func toSSEEventData(event events.Event) any {
 		return RunDeletedSSEEvent{}
 	case events.EventSystemSample:
 		if s, ok := event.Data.(events.SystemSampleEvent); ok {
-			return SystemSampleSSEEvent{Sample: s.Sample, Uptime: s.Uptime}
+			return SystemSampleSSEEvent{Sample: s.Sample, Uptime: s.Uptime, Tasks: s.Tasks, Runs: s.Runs}
 		}
 		return SystemSampleSSEEvent{}
 	case events.EventConfigStale:

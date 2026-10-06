@@ -75,6 +75,12 @@ type StartupInfo struct {
 	// it was paused. Kept current by polling /api/tasks next to /api/daemon,
 	// which has no pause state of its own.
 	PausedTasks map[string]time.Time
+	// TaskUsage maps each task with a measured running process to its live
+	// CPU and memory use. Kept current by the same /api/tasks poll.
+	TaskUsage map[string]model.ResourceUsage
+	// RunUsage maps each measured running run (by ID) to its live CPU and
+	// memory use. Fed by the event stream's system samples.
+	RunUsage map[string]model.ResourceUsage
 
 	// Headless is set when the daemon runs without an interactive TUI. The
 	// startup banner renders one extra dim line ("Press Ctrl+C to stop.") in

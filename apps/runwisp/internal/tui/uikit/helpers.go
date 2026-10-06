@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"time"
 
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
 )
 
@@ -55,6 +56,11 @@ func FormatDuration(run model.Run) string {
 	hrs := int(d.Hours())
 	mins := int(d.Minutes()) % 60
 	return fmt.Sprintf("%dh%dm", hrs, mins)
+}
+
+// FormatUsage renders live usage as "CPU 12% · 48 MB" (100% is one core).
+func FormatUsage(u model.ResourceUsage) string {
+	return fmt.Sprintf("CPU %.0f%% · %s", u.CPUPercent, config.FormatByteSize(u.MemoryBytes))
 }
 
 // ResolveLocation returns the zone for an IANA name (the daemon's resolved

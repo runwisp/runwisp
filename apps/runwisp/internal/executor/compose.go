@@ -160,6 +160,9 @@ func (b *ComposeBackend) Start(ctx context.Context, task *model.Task, run *model
 		}
 		return nil, err
 	}
+	// The process tree here is only the compose CLI; the workload lives in the
+	// container, so there is nothing meaningful to measure.
+	proc.Pid, proc.Rusage = 0, nil
 
 	// Force-remove the container on exit, mirroring ContainerBackend's cleanup.
 	// `--rm` already covers the clean-exit case; this catches the SIGKILL /

@@ -9,8 +9,16 @@ import "time"
 // run time, and when an operator paused the cron schedule (if they did).
 type TaskResponse struct {
 	Task
-	NextRunAt *time.Time `json:"nextRunAt,omitempty"`
-	PausedAt  *time.Time `json:"pausedAt,omitempty" doc:"When an operator paused this task's cron schedule (POST /api/tasks/{taskName}/pause); absent when not paused. A paused task has no nextRunAt."`
+	NextRunAt *time.Time     `json:"nextRunAt,omitempty"`
+	PausedAt  *time.Time     `json:"pausedAt,omitempty" doc:"When an operator paused this task's cron schedule (POST /api/tasks/{taskName}/pause); absent when not paused. A paused task has no nextRunAt."`
+	Usage     *ResourceUsage `json:"usage,omitempty" doc:"Live CPU and memory use of the task's running shell runs; absent when none is running or measured."`
+}
+
+// ResourceUsage is the live CPU and memory use of a task's running processes,
+// summed over its active runs.
+type ResourceUsage struct {
+	CPUPercent  float64 `json:"cpuPercent" doc:"CPU use in percent of one core (200 = two full cores)"`
+	MemoryBytes int64   `json:"memoryBytes" doc:"Resident memory in bytes"`
 }
 
 // ReloadResult is the diff produced by an explicit config reload: which tasks

@@ -45,6 +45,8 @@ Values are computed on every scrape; there's no cache.
 | `runwisp_runs_total`                          | counter | `status`       | Stored runs by outcome: `success`, `failed`, or `missed`        |
 | `runwisp_runs_last_failure_timestamp_seconds` | gauge   |                | Unix time of the latest failed run; absent if no run has failed |
 | `runwisp_task_active_runs`                    | gauge   | `task`, `kind` | Runs in progress per task; `kind` is `task` or `service`        |
+| `runwisp_task_cpu_percent`                    | gauge   | `task`, `kind` | Live CPU use of a task's running processes; 100 is one core     |
+| `runwisp_task_memory_bytes`                   | gauge   | `task`, `kind` | Live resident memory of a task's running processes              |
 | `runwisp_daemon_cpu_percent`                  | gauge   |                | Host CPU use as seen by the daemon (0 to 100)                   |
 | `runwisp_daemon_memory_used_bytes`            | gauge   |                | Host memory in use                                              |
 | `runwisp_daemon_memory_total_bytes`           | gauge   |                | Total host memory                                               |
@@ -58,6 +60,22 @@ Values are computed on every scrape; there's no cache.
 - To alert on any failure in the last ten minutes:
   `time() - runwisp_runs_last_failure_timestamp_seconds < 600`. The metric is
   absent until the first failure, so the alert stays quiet until then.
+
+## Task CPU and memory
+
+RunWisp measures the CPU and memory of every `run` command while it runs. The
+web UI shows the live values next to each running task. The TUI shows them in
+the task header and in the task list on the Info page. The per-task gauges above
+export them too. Each finished run also records its peak memory and total CPU
+time, shown in the run's details in the web UI and the TUI.
+
+- RunWisp counts every process in the run's process group. A process that leaves
+  the group (for example with `setsid`) is not counted.
+- `container`, `compose`, and `http` tasks are not measured; their work runs
+  outside the daemon's process tree.
+- Memory is sampled, so a run that finishes in well under a second may have no
+  peak memory. Its CPU time is always recorded.
+- The per-task gauges only appear while the task has a running process.
 
 ## Keeping it private
 

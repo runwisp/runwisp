@@ -390,8 +390,10 @@ type PingEvent struct{}
 // stream. Mirrors events.SystemSampleEvent; aliased so huma/sse's reverse-type
 // lookup maps it to the `system` event name.
 type SystemSampleSSEEvent struct {
-	Sample model.MetricsSample `json:"sample" doc:"Resource snapshot, same shape as a metrics-history entry"`
-	Uptime string              `json:"uptime" doc:"Human-readable daemon uptime"`
+	Sample model.MetricsSample            `json:"sample" doc:"Resource snapshot, same shape as a metrics-history entry"`
+	Uptime string                         `json:"uptime" doc:"Human-readable daemon uptime"`
+	Tasks  map[string]model.ResourceUsage `json:"tasks,omitempty" doc:"Live CPU and memory use per task, keyed by task name; only tasks with a measured running shell run appear"`
+	Runs   map[string]model.ResourceUsage `json:"runs,omitempty" doc:"Live CPU and memory use per running run, keyed by run ID; only measured shell runs appear"`
 }
 
 // ConfigStaleSSEEvent fires when config-staleness flips; maps to the

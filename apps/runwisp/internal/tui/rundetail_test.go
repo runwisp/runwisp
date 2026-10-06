@@ -40,6 +40,23 @@ func TestRunDetailDialog_View_RendersFacts(t *testing.T) {
 	}
 }
 
+func TestRunDetailDialog_View_ResourceUsage(t *testing.T) {
+	run := endedRun()
+	d := NewRunDetailDialog(run, false, 1)
+	if out := d.View(80, 30); strings.Contains(out, "Peak memory") {
+		t.Fatal("an unmeasured run should not show resource rows")
+	}
+	peak, cpu := int64(48<<20), int64(1250)
+	run.PeakMemoryBytes, run.CPUTimeMs = &peak, &cpu
+	d = NewRunDetailDialog(run, false, 1)
+	out := d.View(80, 34)
+	for _, want := range []string{"Peak memory", "48 MB", "CPU time", "1.25s"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("run detail view missing %q\n%s", want, out)
+		}
+	}
+}
+
 func TestRunDetailDialog_View_FirstAttemptHasNoLineage(t *testing.T) {
 	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning, TriggeredBy: model.TriggeredByAPI}
 	d := NewRunDetailDialog(run, false, 1)

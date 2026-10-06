@@ -61,6 +61,8 @@ type Server struct {
 	// updateStatus reports (available, latestVersion) from the background update
 	// checker. nil (station mode, or check disabled) reports never-available.
 	updateStatus func() (bool, string)
+	// runUsage reports live CPU/memory per running run; nil reports none.
+	runUsage func() map[string]model.ResourceUsage
 	// configStaleLast tracks the last staleness value broadcast over the event
 	// bus so the collector goroutine only emits an EventConfigStale when it
 	// flips. Touched solely by the metrics onSample callback (single goroutine).
@@ -118,21 +120,23 @@ type Options struct {
 	SocketPath        string // Unix socket path for local CLI/TUI; empty disables socket listener
 	LogDir            string
 	EventBus          *events.Bus
-	Password          string                             // Authentication password (required even with NoAuth — keeps the cookie/launch-ticket machinery alive)
-	PasswordEphemeral bool                               // True when the daemon minted Password in memory at boot (no RUNWISP_PASSWORD)
-	JWTSecret         string                             // JWT signing secret (derived in-memory)
-	NoAuth            bool                               // RUNWISP_AUTH=off: serve all /api/* routes over TCP without JWT/CHAP
-	TrustedProxies    string                             // RUNWISP_TRUSTED_PROXIES value (comma-separated CIDRs/IPs); read by the caller, parsed here
-	DaemonInfo        *model.DaemonInfo                  // Static identity/config info for /api/daemon
-	ConfigStale       func() bool                        // Per-request staleness probe for /api/daemon (optional; nil reports never-stale)
-	ConfigWarnings    func() []string                    // Per-request live-config warnings for /api/daemon (optional; nil reports none)
-	UpdateStatus      func() (bool, string)              // Per-request update-availability probe for /api/daemon (optional; nil reports never-available)
-	DaemonLogBuffer   *DaemonLogBuffer                   // Ring buffer for daemon log streaming (optional)
-	MetricsEnabled    bool                               // When false, /metrics is not mounted anywhere
-	MetricsListen     string                             // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
-	TLSCert           string                             // PEM cert path; when set with TLSKey the main listener serves HTTPS
-	TLSKey            string                             // PEM key path; paired with TLSCert
-	Reload            func() (model.ReloadResult, error) // Reconciles the live task set against runwisp.toml; nil disables POST /api/daemon/reload
+	Password          string                                // Authentication password (required even with NoAuth — keeps the cookie/launch-ticket machinery alive)
+	PasswordEphemeral bool                                  // True when the daemon minted Password in memory at boot (no RUNWISP_PASSWORD)
+	JWTSecret         string                                // JWT signing secret (derived in-memory)
+	NoAuth            bool                                  // RUNWISP_AUTH=off: serve all /api/* routes over TCP without JWT/CHAP
+	TrustedProxies    string                                // RUNWISP_TRUSTED_PROXIES value (comma-separated CIDRs/IPs); read by the caller, parsed here
+	DaemonInfo        *model.DaemonInfo                     // Static identity/config info for /api/daemon
+	ConfigStale       func() bool                           // Per-request staleness probe for /api/daemon (optional; nil reports never-stale)
+	ConfigWarnings    func() []string                       // Per-request live-config warnings for /api/daemon (optional; nil reports none)
+	UpdateStatus      func() (bool, string)                 // Per-request update-availability probe for /api/daemon (optional; nil reports never-available)
+	TaskUsage         func() map[string]model.ResourceUsage // Live CPU/memory per task (optional; nil reports none)
+	RunUsage          func() map[string]model.ResourceUsage // Live CPU/memory per running run, by run ID (optional; nil reports none)
+	DaemonLogBuffer   *DaemonLogBuffer                      // Ring buffer for daemon log streaming (optional)
+	MetricsEnabled    bool                                  // When false, /metrics is not mounted anywhere
+	MetricsListen     string                                // When non-empty, bind /metrics on a separate listener (e.g. "127.0.0.1:9478")
+	TLSCert           string                                // PEM cert path; when set with TLSKey the main listener serves HTTPS
+	TLSKey            string                                // PEM key path; paired with TLSCert
+	Reload            func() (model.ReloadResult, error)    // Reconciles the live task set against runwisp.toml; nil disables POST /api/daemon/reload
 }
 
 func New(opts Options) (*Server, error) {
@@ -201,10 +205,12 @@ func New(opts Options) (*Server, error) {
 	}
 
 	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.LogDir, opts.EventBus)
+	s.runService.taskUsage = opts.TaskUsage
 	s.stats = newStatsProvider(opts.DaemonInfo, time.Now())
 	s.configStale = opts.ConfigStale
 	s.configWarnings = opts.ConfigWarnings
 	s.updateStatus = opts.UpdateStatus
+	s.runUsage = opts.RunUsage
 	s.metrics = NewMetricsCollector(32) // ~2.5 min at 5s intervals; sampling starts in Start()
 	s.daemonLogBuffer = opts.DaemonLogBuffer
 	s.streams = newStreamLimiter(maxConcurrentStreams, maxStreamsPerIP)

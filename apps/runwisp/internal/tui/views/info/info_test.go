@@ -4,6 +4,7 @@
 package info
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -138,6 +139,15 @@ func TestInfoView_SetSize_ClampsScroll(t *testing.T) {
 
 	v.SetSize(80, 20)
 	assert.GreaterOrEqual(t, v.scroll, 0)
+}
+
+func TestInfoView_RenderTasksSection_ShowsLiveUsage(t *testing.T) {
+	v := NewInfoView(uikit.StartupInfo{Tasks: []model.Task{{Name: "web", Kind: model.KindService, Instances: 1}, {Name: "idle"}}})
+	v.SetTaskUsage(map[string]model.ResourceUsage{"web": {CPUPercent: 12.4, MemoryBytes: 48 << 20}})
+
+	full := strings.Join(v.renderTasksSection(100), "\n")
+	assert.Contains(t, full, "CPU 12% · 48 MB")
+	assert.Equal(t, 1, strings.Count(full, "CPU "), "a task with nothing running shows no usage")
 }
 
 func TestInfoView_RenderWarningsSection_Empty(t *testing.T) {

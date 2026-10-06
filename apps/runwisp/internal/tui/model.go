@@ -188,7 +188,7 @@ func (m Model) Init() tea.Cmd {
 		m.streams.SubscribeEvents(),
 		m.streams.FetchUnreadCount(),
 		m.streams.FetchNotifications(),
-		m.streams.FetchPausedTasks(),
+		m.streams.FetchTaskState(),
 		m.tickCmd(),
 	}
 	if m.isRemote {
@@ -222,6 +222,7 @@ func (m *Model) openExecView(run *model.Run) tea.Cmd {
 	ev.Loc = m.loc
 	ev.TaskIsService = m.isService(run.TaskName)
 	ev.InstanceCount = m.serviceInstances(run.TaskName)
+	ev.Usage = m.runUsage(run.ID)
 	mainW, mainH := m.mainSize()
 	ev.SetSize(mainW, mainH)
 	ev.SetFocused(true)
@@ -344,7 +345,7 @@ func (m *Model) recalcExecListHeight() {
 	listH := mainH
 	if m.sidebar.ActivePage() == uikit.PageHome || m.sidebar.ActiveTask() != "" {
 		if m.sidebar.ActiveTask() != "" {
-			header, btnY := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), mainW, false, m.isPaused(m.sidebar.ActiveTask()), m.taskLoc(m.taskDisplayByName(m.sidebar.ActiveTask())))
+			header, btnY := home.RenderTaskHeader(m.sidebar.ActiveTask(), m.taskDisplayByName(m.sidebar.ActiveTask()), mainW, false, m.isPaused(m.sidebar.ActiveTask()), m.taskUsage(m.sidebar.ActiveTask()), m.taskLoc(m.taskDisplayByName(m.sidebar.ActiveTask())))
 			m.layout.taskBtnY = btnY
 			m.layout.taskH = strings.Count(header, "\n")
 			listH -= m.layout.taskH
@@ -395,6 +396,26 @@ func (m *Model) taskLoc(task *model.Task) *time.Location {
 func (m *Model) isPaused(name string) bool {
 	_, ok := m.info.PausedTasks[name]
 	return ok
+}
+
+// taskUsage is the named task's live CPU and memory use, or nil when nothing
+// of it is running or measured.
+func (m *Model) taskUsage(name string) *model.ResourceUsage {
+	u, ok := m.info.TaskUsage[name]
+	if !ok {
+		return nil
+	}
+	return &u
+}
+
+// runUsage is a running run's live CPU and memory use, or nil when it isn't
+// running or measured.
+func (m *Model) runUsage(id string) *model.ResourceUsage {
+	u, ok := m.info.RunUsage[id]
+	if !ok {
+		return nil
+	}
+	return &u
 }
 
 // isSingleInstanceService reports whether the task is a service with exactly one instance.

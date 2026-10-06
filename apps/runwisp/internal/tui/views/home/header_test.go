@@ -183,7 +183,7 @@ func TestRenderTaskHeader_ServiceTask(t *testing.T) {
 		Kind:      model.KindService,
 		Instances: 3,
 	}
-	out, _ := RenderTaskHeader("my-service", task, 80, false, false, nil)
+	out, _ := RenderTaskHeader("my-service", task, 80, false, false, nil, nil)
 	assert.Contains(t, out, "my-service")
 	assert.Contains(t, out, "service x3")
 }
@@ -193,7 +193,7 @@ func TestRenderTaskHeader_CronTask(t *testing.T) {
 		Kind: model.KindTask,
 		Cron: "*/5 * * * *",
 	}
-	out, _ := RenderTaskHeader("my-task", task, 80, false, false, nil)
+	out, _ := RenderTaskHeader("my-task", task, 80, false, false, nil, nil)
 	assert.Contains(t, out, "my-task")
 	assert.Contains(t, out, "*/5 * * * *")
 	assert.Contains(t, out, "Next:")
@@ -204,27 +204,27 @@ func TestRenderTaskHeader_ManualTask(t *testing.T) {
 		Kind: model.KindTask,
 		Cron: "",
 	}
-	out, _ := RenderTaskHeader("manual-task", task, 80, false, false, nil)
+	out, _ := RenderTaskHeader("manual-task", task, 80, false, false, nil, nil)
 	assert.Contains(t, out, "manual-task")
 	assert.Contains(t, out, "manual")
 }
 
 func TestRenderTaskHeader_NilTask(t *testing.T) {
-	out, _ := RenderTaskHeader("task-name", nil, 80, false, false, nil)
+	out, _ := RenderTaskHeader("task-name", nil, 80, false, false, nil, nil)
 	assert.Contains(t, out, "task-name")
 	assert.Contains(t, out, "manual")
 }
 
 func TestRenderTaskHeader_RunNowButtonLineY(t *testing.T) {
 	task := &model.Task{Kind: model.KindTask, Cron: "*/5 * * * *"}
-	_, btnY := RenderTaskHeader("my-task", task, 80, false, false, nil)
+	_, btnY := RenderTaskHeader("my-task", task, 80, false, false, nil, nil)
 	assert.Equal(t, 2, btnY)
 }
 
 func TestRenderTaskHeader_HoveredButton(t *testing.T) {
 	task := &model.Task{Kind: model.KindTask}
-	outHovered, _ := RenderTaskHeader("t", task, 80, true, false, nil)
-	outNormal, _ := RenderTaskHeader("t", task, 80, false, false, nil)
+	outHovered, _ := RenderTaskHeader("t", task, 80, true, false, nil, nil)
+	outNormal, _ := RenderTaskHeader("t", task, 80, false, false, nil, nil)
 	assert.NotEmpty(t, outHovered)
 	assert.NotEmpty(t, outNormal)
 }
@@ -322,7 +322,7 @@ func TestRenderHeader_NoHeldChipWhenNothingIsHeld(t *testing.T) {
 // RunWisp firing anything, because the scheduler stood down for cron.
 func TestRenderTaskHeader_HeldTaskReplacesNextRunWithTheReason(t *testing.T) {
 	task := &model.Task{Kind: model.KindTask, Cron: "*/5 * * * *", HeldBy: model.HeldByCron}
-	out, _ := RenderTaskHeader("backup", task, 100, false, false, nil)
+	out, _ := RenderTaskHeader("backup", task, 100, false, false, nil, nil)
 	assert.Contains(t, out, "*/5 * * * *", "the schedule is still real and still shown")
 	assert.Contains(t, out, "held")
 	assert.Contains(t, out, "cron still owns this job")
@@ -332,10 +332,19 @@ func TestRenderTaskHeader_HeldTaskReplacesNextRunWithTheReason(t *testing.T) {
 // A paused schedule has no next run; the header says so and names the key.
 func TestRenderTaskHeader_PausedTaskReplacesNextRun(t *testing.T) {
 	task := &model.Task{Kind: model.KindTask, Cron: "*/5 * * * *", ManualTrigger: true}
-	out, _ := RenderTaskHeader("backup", task, 100, false, true, nil)
+	out, _ := RenderTaskHeader("backup", task, 100, false, true, nil, nil)
 	assert.Contains(t, out, "*/5 * * * *")
 	assert.Contains(t, out, "paused, p resumes")
 	assert.NotContains(t, out, "Next:")
+}
+
+func TestRenderTaskHeader_ShowsLiveUsage(t *testing.T) {
+	task := &model.Task{Kind: model.KindService, Instances: 1}
+	out, _ := RenderTaskHeader("web", task, 100, false, false, &model.ResourceUsage{CPUPercent: 150, MemoryBytes: 1 << 30}, nil)
+	assert.Contains(t, out, "CPU 150% · 1 GB")
+
+	out, _ = RenderTaskHeader("web", task, 100, false, false, nil, nil)
+	assert.NotContains(t, out, "CPU ", "no usage line while nothing runs")
 }
 
 func TestRenderHeader_ShowsPausedChip(t *testing.T) {

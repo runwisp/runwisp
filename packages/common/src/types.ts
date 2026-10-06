@@ -15,6 +15,9 @@ import type { components } from "./generated/api.js";
 
 export type RunSelector = components["schemas"]["RunSelector"];
 
+/** Live CPU and memory use of a task's running processes. */
+export type ResourceUsage = components["schemas"]["ResourceUsage"];
+
 /** A per-execution parameter an operator may supply at manual trigger time. */
 export type TaskParam = components["schemas"]["TaskParam"];
 

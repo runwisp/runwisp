@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"log/slog"
@@ -22,6 +23,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/logutil"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/procstat"
 )
 
 const (
@@ -43,6 +45,10 @@ type ExecuteResult struct {
 	// log_overflow, a failing health check → unhealthy); empty when none did.
 	KillReason    model.EndReason
 	OutputMatched bool // an output line matched a `failures` output pattern
+	// PeakMemoryBytes and CPUTimeMs are the run's resource totals; nil when
+	// the backend has no measurable process or the value is unknown.
+	PeakMemoryBytes *int64
+	CPUTimeMs       *int64
 }
 
 // EndReason maps the raw process outcome to a terminal reason. Exit 0 is the sole
@@ -77,6 +83,7 @@ type RoutingExecutor struct {
 	availability     Availability
 	minFreeDisk      int64
 	clock            func() time.Time
+	sampler          *procstat.Sampler
 }
 
 type Options struct {
@@ -92,6 +99,9 @@ type Options struct {
 	// the demo seeder injects a backdated clock so historical runs carry
 	// their original date.
 	Clock func() time.Time
+	// Sampler measures the CPU and memory of shell runs while they are alive.
+	// nil disables live usage and sampled peaks (rusage CPU time still lands).
+	Sampler *procstat.Sampler
 }
 
 // New creates a routing executor with available backends.
@@ -163,6 +173,7 @@ func New(opts Options) Executor {
 		availability: avail,
 		minFreeDisk:  opts.MinFreeDisk,
 		clock:        clock,
+		sampler:      opts.Sampler,
 	}
 }
 
@@ -231,6 +242,7 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 		r.onProcessStarted(run.ID, proc.ForceKill)
 	}
 	stopWatcher := r.startWatcher(task, run, writer, killer)
+	stopSampling := r.track(task, run, proc)
 
 	matcher := &outputMatcher{res: task.Failures.OutputRegexps()}
 	r.streamProcessOutput(proc, writer, task, run, matcher)
@@ -249,7 +261,22 @@ func (r *RoutingExecutor) Execute(ctx context.Context, task *model.Task, run *mo
 		r.systemLine(writer, task, run, msg)
 	}
 	result.OutputMatched = matcher.pattern() != ""
+	peak, sampled := stopSampling()
+	var ru *syscall.Rusage
+	if proc.Rusage != nil {
+		ru = proc.Rusage()
+	}
+	result.PeakMemoryBytes, result.CPUTimeMs = runUsage(ru, peak, sampled)
 	return result
+}
+
+// track starts sampling the run's process group when the backend exposes one.
+// The returned stop reports the sampled peak and is a no-op otherwise.
+func (r *RoutingExecutor) track(task *model.Task, run *model.Run, proc *Process) (stop func() (int64, bool)) {
+	if r.sampler == nil || proc.Pid <= 0 {
+		return func() (int64, bool) { return 0, false }
+	}
+	return r.sampler.Track(task.Name, run.ID, proc.Pid)
 }
 
 // abnormalExitMessage describes a wait error that the exit code alone does not
