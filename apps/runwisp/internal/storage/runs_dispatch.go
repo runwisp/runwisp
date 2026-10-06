@@ -6,6 +6,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
@@ -29,10 +30,8 @@ func queryRunsSortKey(col SortColumn, dir SortDirection) string {
 }
 
 // dispatchQueryRuns picks one of the 12 sqlc-generated QueryRuns variants
-// keyed by the sort tuple. The 12 row types are structurally identical
-// (the SELECT list is shared); each case casts its row slice onto the
-// shared QueryRunsCreatedAtAscRow type so a single conversion path produces
-// the domain rows.
+// keyed by the sort tuple. The variants differ only in ORDER BY, so their
+// param types all convert from the shared QueryRunsCreatedAtAscParams.
 func dispatchQueryRuns(
 	ctx context.Context,
 	q *sqlcdb.Queries,
@@ -44,85 +43,63 @@ func dispatchQueryRuns(
 	case "createdAt_asc":
 		return finishQueryRuns(q.QueryRunsCreatedAtAsc(ctx, params))
 	case "createdAt_desc":
-		rows, err := q.QueryRunsCreatedAtDesc(ctx, sqlcdb.QueryRunsCreatedAtDescParams(params))
-		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsCreatedAtDescRow) sqlcdb.QueryRunsCreatedAtAscRow {
-			return sqlcdb.QueryRunsCreatedAtAscRow(r)
-		}), err)
+		return finishQueryRuns(q.QueryRunsCreatedAtDesc(ctx, sqlcdb.QueryRunsCreatedAtDescParams(params)))
 	case "startedAt_asc":
-		rows, err := q.QueryRunsStartAtAsc(ctx, sqlcdb.QueryRunsStartAtAscParams(params))
-		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsStartAtAscRow) sqlcdb.QueryRunsCreatedAtAscRow {
-			return sqlcdb.QueryRunsCreatedAtAscRow(r)
-		}), err)
+		return finishQueryRuns(q.QueryRunsStartAtAsc(ctx, sqlcdb.QueryRunsStartAtAscParams(params)))
 	case "startedAt_desc":
-		rows, err := q.QueryRunsStartAtDesc(ctx, sqlcdb.QueryRunsStartAtDescParams(params))
-		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsStartAtDescRow) sqlcdb.QueryRunsCreatedAtAscRow {
-			return sqlcdb.QueryRunsCreatedAtAscRow(r)
-		}), err)
+		return finishQueryRuns(q.QueryRunsStartAtDesc(ctx, sqlcdb.QueryRunsStartAtDescParams(params)))
 	case "taskName_asc":
-		rows, err := q.QueryRunsTaskNameAsc(ctx, sqlcdb.QueryRunsTaskNameAscParams(params))
-		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsTaskNameAscRow) sqlcdb.QueryRunsCreatedAtAscRow {
-			return sqlcdb.QueryRunsCreatedAtAscRow(r)
-		}), err)
+		return finishQueryRuns(q.QueryRunsTaskNameAsc(ctx, sqlcdb.QueryRunsTaskNameAscParams(params)))
 	case "taskName_desc":
-		rows, err := q.QueryRunsTaskNameDesc(ctx, sqlcdb.QueryRunsTaskNameDescParams(params))
-		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsTaskNameDescRow) sqlcdb.QueryRunsCreatedAtAscRow {
-			return sqlcdb.QueryRunsCreatedAtAscRow(r)
-		}), err)
+		return finishQueryRuns(q.QueryRunsTaskNameDesc(ctx, sqlcdb.QueryRunsTaskNameDescParams(params)))
 	case "status_asc":
-		rows, err := q.QueryRunsStatusAsc(ctx, sqlcdb.QueryRunsStatusAscParams(params))
-		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsStatusAscRow) sqlcdb.QueryRunsCreatedAtAscRow {
-			return sqlcdb.QueryRunsCreatedAtAscRow(r)
-		}), err)
+		return finishQueryRuns(q.QueryRunsStatusAsc(ctx, sqlcdb.QueryRunsStatusAscParams(params)))
 	case "status_desc":
-		rows, err := q.QueryRunsStatusDesc(ctx, sqlcdb.QueryRunsStatusDescParams(params))
-		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsStatusDescRow) sqlcdb.QueryRunsCreatedAtAscRow {
-			return sqlcdb.QueryRunsCreatedAtAscRow(r)
-		}), err)
+		return finishQueryRuns(q.QueryRunsStatusDesc(ctx, sqlcdb.QueryRunsStatusDescParams(params)))
 	case "exitCode_asc":
-		rows, err := q.QueryRunsExitCodeAsc(ctx, sqlcdb.QueryRunsExitCodeAscParams(params))
-		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsExitCodeAscRow) sqlcdb.QueryRunsCreatedAtAscRow {
-			return sqlcdb.QueryRunsCreatedAtAscRow(r)
-		}), err)
+		return finishQueryRuns(q.QueryRunsExitCodeAsc(ctx, sqlcdb.QueryRunsExitCodeAscParams(params)))
 	case "exitCode_desc":
-		rows, err := q.QueryRunsExitCodeDesc(ctx, sqlcdb.QueryRunsExitCodeDescParams(params))
-		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsExitCodeDescRow) sqlcdb.QueryRunsCreatedAtAscRow {
-			return sqlcdb.QueryRunsCreatedAtAscRow(r)
-		}), err)
+		return finishQueryRuns(q.QueryRunsExitCodeDesc(ctx, sqlcdb.QueryRunsExitCodeDescParams(params)))
 	case "duration_asc":
-		rows, err := q.QueryRunsDurationAsc(ctx, sqlcdb.QueryRunsDurationAscParams(params))
-		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsDurationAscRow) sqlcdb.QueryRunsCreatedAtAscRow {
-			return sqlcdb.QueryRunsCreatedAtAscRow(r)
-		}), err)
+		return finishQueryRuns(q.QueryRunsDurationAsc(ctx, sqlcdb.QueryRunsDurationAscParams(params)))
 	case "duration_desc":
-		rows, err := q.QueryRunsDurationDesc(ctx, sqlcdb.QueryRunsDurationDescParams(params))
-		return finishQueryRuns(castQueryRunsRows(rows, func(r sqlcdb.QueryRunsDurationDescRow) sqlcdb.QueryRunsCreatedAtAscRow {
-			return sqlcdb.QueryRunsCreatedAtAscRow(r)
-		}), err)
+		return finishQueryRuns(q.QueryRunsDurationDesc(ctx, sqlcdb.QueryRunsDurationDescParams(params)))
 	}
 	return nil, fmt.Errorf("unknown sort column %q", col)
 }
 
-// castQueryRunsRows applies a per-element conversion to a sqlc row slice,
-// projecting every variant onto the shared QueryRunsCreatedAtAscRow type.
-// Each callsite passes a Go struct conversion, which compiles to a copy with
-// no field-by-field work — the 12 row types share underlying layout.
-func castQueryRunsRows[From any](rows []From, conv func(From) sqlcdb.QueryRunsCreatedAtAscRow) []sqlcdb.QueryRunsCreatedAtAscRow {
-	out := make([]sqlcdb.QueryRunsCreatedAtAscRow, len(rows))
-	for i, r := range rows {
-		out[i] = conv(r)
+// queryRunsRow is the row type of every QueryRuns variant: they share one
+// SELECT list, so sqlc emits structurally identical row structs. Keep in
+// sync with sqlcdb.QueryRunsCreatedAtAscRow (the compiler flags drift).
+type queryRunsRow interface {
+	~struct {
+		ID            string            `json:"id"`
+		ExecutionID   *string           `json:"execution_id"`
+		TaskName      string            `json:"task_name"`
+		Status        model.RunPhase    `json:"status"`
+		EndReason     *model.EndReason  `json:"end_reason"`
+		ExitCode      int               `json:"exit_code"`
+		StartedAt     *time.Time        `json:"started_at"`
+		EndedAt       *time.Time        `json:"ended_at"`
+		TriggeredBy   model.TriggeredBy `json:"triggered_by"`
+		CreatedAt     time.Time         `json:"created_at"`
+		RetryAttempt  int               `json:"retry_attempt"`
+		RetryOfRunID  *string           `json:"retry_of_run_id"`
+		InstanceIndex int               `json:"instance_index"`
+		ParamsJson    *string           `json:"params_json"`
+		IsFailure     int64             `json:"is_failure"`
 	}
-	return out
 }
 
 // finishQueryRuns turns a sqlc row slice and the call's error into the
-// domain row type. Centralising the loop and the model mapping keeps the
-// dispatcher shallow even with 12 sort variants.
-func finishQueryRuns(rows []sqlcdb.QueryRunsCreatedAtAscRow, err error) ([]model.Run, error) {
+// domain row type.
+func finishQueryRuns[R queryRunsRow](rows []R, err error) ([]model.Run, error) {
 	if err != nil {
 		return nil, err
 	}
 	out := make([]model.Run, len(rows))
-	for i, r := range rows {
+	for i, row := range rows {
+		r := sqlcdb.QueryRunsCreatedAtAscRow(row)
 		out[i] = model.Run{
 			ID:            r.ID,
 			ExecutionID:   r.ExecutionID,
