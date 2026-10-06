@@ -17,7 +17,7 @@ import (
 // run IDs seeded into the window.
 func runListModel(t *testing.T, ids ...string) Model {
 	t.Helper()
-	m := newTestModelWithClient(nil)
+	m := newTestModel(nil)
 	m.focusMainPanel() // PanelMain + homeCursor = -1
 	items := make([]uikit.ExecListItem, len(ids))
 	for i, id := range ids {
@@ -131,7 +131,7 @@ func TestHandleKeyRoutesSelectionKeysWhenRunListFocused(t *testing.T) {
 }
 
 func TestHandleBulkDeleteResult_IDsArmsUndo(t *testing.T) {
-	m := newTestModelWithClient(nil)
+	m := newTestModel(nil)
 	updated, cmd := m.handleBulkDeleteResult(uikit.BulkDeleteResultMsg{
 		Affected: 2,
 		Restore:  model.RunSelector{IDs: []string{"a", "b"}},
@@ -146,7 +146,7 @@ func TestHandleBulkDeleteResult_IDsArmsUndo(t *testing.T) {
 }
 
 func TestHandleBulkDeleteResult_MatchAllHasNoUndo(t *testing.T) {
-	m := newTestModelWithClient(nil)
+	m := newTestModel(nil)
 	updated, _ := m.handleBulkDeleteResult(uikit.BulkDeleteResultMsg{
 		Affected: 5,
 		Restore:  model.RunSelector{MatchAll: true},
@@ -158,7 +158,7 @@ func TestHandleBulkDeleteResult_MatchAllHasNoUndo(t *testing.T) {
 }
 
 func TestHandleBulkDeleteResult_ErrorFlashesNoUndo(t *testing.T) {
-	m := newTestModelWithClient(nil)
+	m := newTestModel(nil)
 	updated, _ := m.handleBulkDeleteResult(uikit.BulkDeleteResultMsg{
 		Restore: model.RunSelector{IDs: []string{"a"}},
 		Err:     errors.New("boom"),

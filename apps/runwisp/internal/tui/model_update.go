@@ -753,9 +753,6 @@ func (m Model) handleDaemonInfo(msg uikit.DaemonInfoMsg) (tea.Model, tea.Cmd) {
 // reloadConfig triggers an explicit config reload from inside the TUI. The
 // result arrives as a ReloadResultMsg.
 func (m *Model) reloadConfig() tea.Cmd {
-	if m.client == nil {
-		return nil
-	}
 	return tea.Batch(m.dialogs.Flash("Reloading config…", 3*time.Second), m.streams.Reload())
 }
 

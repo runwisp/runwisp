@@ -532,9 +532,6 @@ func handleKeyDownHome(m Model) (Model, tea.Cmd, bool) {
 // overlay. The feature is scoped to a task — the user must either be
 // looking at an exec view or have a task selected in the sidebar.
 func (m Model) canOpenLogSearch() bool {
-	if m.client == nil {
-		return false
-	}
 	if m.execView != nil && m.execView.Run != nil {
 		return true
 	}

@@ -20,7 +20,7 @@ import (
 func errBoom() error { return errors.New("boom") }
 
 // TestModel_Guards covers the early-return / no-op branches of helpers that
-// short-circuit on empty selections, nil execView, nil clients, or out-of-range
+// short-circuit on empty selections, nil execView, or out-of-range
 // cursors. These exist as individual blocks in Go's coverage profile, so the
 // table preserves block coverage while removing per-case boilerplate.
 func TestModel_Guards(t *testing.T) {
@@ -55,13 +55,6 @@ func TestModel_Guards(t *testing.T) {
 		m := newTestModel(nil)
 		if m.copyExecField() != nil {
 			t.Fatal("expected nil cmd when no execView")
-		}
-	})
-
-	t.Run("openRunByID with nil client and run not in window returns nil", func(t *testing.T) {
-		m := newTestModel(nil)
-		if m.openRunByID("task", "run-id-123") != nil {
-			t.Fatal("expected nil cmd when client is nil and run not in window")
 		}
 	})
 

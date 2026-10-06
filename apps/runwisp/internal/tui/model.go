@@ -557,9 +557,6 @@ func (m *Model) openRunByID(taskName, runID string) tea.Cmd {
 	if run := m.execWindow.FindRun(runID); run != nil {
 		return m.openExecView(run)
 	}
-	if m.client == nil {
-		return nil
-	}
 	client := m.client
 	ctx := m.streams.streamCtx
 	return func() tea.Msg {

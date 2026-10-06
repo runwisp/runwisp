@@ -61,23 +61,10 @@ func newDummyClient() *apiclient.Client {
 	return apiclient.New("http://127.0.0.1:1", "")
 }
 
-// newTestModel builds a minimal Model suitable for unit-testing helper methods
-// that don't touch the network or real storage. A nil client is fine for these
-// tests.
+// newTestModel builds a minimal Model suitable for unit-testing helper methods.
+// The client points at a dead address; tests only check that commands are
+// produced, not that they succeed over the wire.
 func newTestModel(tasks []model.Task) Model {
-	return NewModel(TUIConfig{
-		Info: uikit.StartupInfo{
-			Version: "0.0.0-test",
-			Tasks:   tasks,
-		},
-	})
-}
-
-// newTestModelWithClient is newTestModel but wires a dummy client through the
-// constructor so the stream manager's client (used by bulk/undo commands) is
-// non-nil. The client points at a dead address; tests only check that commands
-// are produced, not that they succeed over the wire.
-func newTestModelWithClient(tasks []model.Task) Model {
 	return NewModel(TUIConfig{
 		Client: newDummyClient(),
 		Info: uikit.StartupInfo{
@@ -313,17 +300,10 @@ func TestFocusHomeField_SetsHomeCursor(t *testing.T) {
 // ─── confirm* helpers: nil-guard + happy-path coverage ────────────────────────
 
 // TestConfirmHelpers_Guards covers the early-return branches of every confirm*
-// helper (nil client / empty task / nil-or-non-running run) and the happy path
+// helper (empty task / nil-or-non-running run) and the happy path
 // where a task name is resolved and showConfirmDialog returns a non-nil cmd.
 func TestConfirmHelpers_Guards(t *testing.T) {
 	svc := []model.Task{{Name: "svc", Kind: model.KindService}}
-
-	t.Run("confirmAction with nil client returns nil", func(t *testing.T) {
-		m := newTestModel(nil)
-		if m.confirmAction(confirmActionTrigger) != nil {
-			t.Fatal("expected nil cmd when client is nil")
-		}
-	})
 
 	t.Run("confirmRestartService with empty task returns nil", func(t *testing.T) {
 		m := newTestModel(nil)
@@ -390,7 +370,6 @@ func TestTriggerRun_ShowsConfirmDialog(t *testing.T) {
 	tasks := []model.Task{{Name: "backup"}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
-	m.client = newDummyClient()
 
 	m.triggerRun()
 	if !m.dialogs.Has(dlgConfirm) {
@@ -404,7 +383,6 @@ func TestTriggerRun_ServiceDelegatesToRestart(t *testing.T) {
 	tasks := []model.Task{{Name: "svc", Kind: model.KindService}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
-	m.client = newDummyClient()
 
 	m.triggerRun()
 	if !m.dialogs.Has(dlgConfirm) {
@@ -417,7 +395,6 @@ func TestTriggerRun_ServiceDelegatesToRestart(t *testing.T) {
 // delete is reversible via the undo toast).
 func TestDeleteCurrentRun_ActsImmediately(t *testing.T) {
 	m := newTestModel(nil)
-	m.client = newDummyClient()
 	r := model.ReasonSuccess
 	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &r}
 	ev := execlist.NewExecView(run)
@@ -463,7 +440,6 @@ func TestShowRunParams_NoopWhenNoParams(t *testing.T) {
 // CanDelete() rejects) produce no command.
 func TestDeleteCurrentRun_GuardsAgainstRunning(t *testing.T) {
 	m := newTestModel(nil)
-	m.client = newDummyClient()
 	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
@@ -601,7 +577,6 @@ func TestActionConfirm(t *testing.T) {
 // the showConfirmDialog call site is covered.
 func TestConfirmStop_HappyPath(t *testing.T) {
 	m := newTestModel(nil)
-	m.client = newDummyClient()
 	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseRunning}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
@@ -615,7 +590,6 @@ func TestConfirmStop_HappyPath(t *testing.T) {
 // dialog rather than firing immediately.
 func TestRetryRun_HappyPath(t *testing.T) {
 	m := newTestModel(nil)
-	m.client = newDummyClient()
 	r := model.ReasonFailed
 	run := &model.Run{ID: "r1", TaskName: "t1", Status: model.PhaseEnded, EndReason: &r}
 	ev := execlist.NewExecView(run)
@@ -632,7 +606,6 @@ func TestConfirmRestartService_MultipleInstancesUsesPluralPrompt(t *testing.T) {
 	tasks := []model.Task{{Name: "svc", Kind: model.KindService, Instances: 3}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
-	m.client = newDummyClient()
 	m.confirmRestartService()
 	if !m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected restart-service dialog")
@@ -742,7 +715,7 @@ func TestApplySidebarSelectionChange_ToPageInfoQueuesMetricsFetch(t *testing.T) 
 		t.Fatalf("precondition: expected PageInfo after navigation, got %v", m.sidebar.ActivePage())
 	}
 
-	// fetchMetricsHistory etc. return nil with a nil client, but exercising
+	// The fetch commands are never run here, but exercising
 	// the branch still counts toward coverage. Just call and ensure no panic.
 	m.applySidebarSelectionChange(prevPage, prevTask)
 }
@@ -772,7 +745,6 @@ func TestConfirmStopService_HappyPath(t *testing.T) {
 	tasks := []model.Task{{Name: "svc", Kind: model.KindService}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
-	m.client = newDummyClient()
 	m.confirmStopService()
 	if !m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected stop-service dialog to be queued")
@@ -784,7 +756,6 @@ func TestConfirmStopService_HappyPath(t *testing.T) {
 // stop resolved to "" and silently did nothing.
 func TestConfirmStopService_FromHome(t *testing.T) {
 	m := newTestModel([]model.Task{{Name: "svc", Kind: model.KindService}})
-	m.client = newDummyClient()
 	m.openExecView(&model.Run{ID: "r-svc", TaskName: "svc", Status: model.PhaseRunning})
 	m.panelFocus = uikit.PanelMain
 	m.confirmStopService()
@@ -796,7 +767,6 @@ func TestConfirmStopService_FromHome(t *testing.T) {
 // TestTriggerRun_EmptyTaskNameReturnsNil covers the empty-task guard.
 func TestTriggerRun_EmptyTaskNameReturnsNil(t *testing.T) {
 	m := newTestModel(nil)
-	m.client = newDummyClient()
 	// No active task in sidebar → resolveTaskName returns ""
 	if cmd := m.triggerRun(); cmd != nil {
 		t.Fatalf("expected nil when no task is active, got %v", cmd)
@@ -974,7 +944,6 @@ func TestCopyExecField_WithFocusedIDReturnsCmd(t *testing.T) {
 // not invoked so no network call happens.
 func TestOpenRunByID_NotInWindowWithClientReturnsCmd(t *testing.T) {
 	m := newTestModel(nil)
-	m.client = newDummyClient()
 	cmd := m.openRunByID("task-A", "run-missing")
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd when run not in window and client present")

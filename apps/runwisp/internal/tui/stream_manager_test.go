@@ -20,58 +20,33 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newNilClientSM returns a StreamManager whose underlying client is nil; the
-// command-returning methods all early-return nil on this branch so the tests
-// don't need to spin up a real HTTP client.
-func newNilClientSM() StreamManager { return NewStreamManager(nil) }
+// newTestSM returns a StreamManager wired to a client at a dead address, for
+// tests that never run the commands it returns.
+func newTestSM() StreamManager { return NewStreamManager(newDummyClient()) }
 
 func TestStreamManager_ShutdownCancelsContext(t *testing.T) {
-	sm := newNilClientSM()
+	sm := newTestSM()
 	require.NoError(t, sm.streamCtx.Err(), "fresh ctx is alive")
 	sm.Shutdown()
 	assert.Error(t, sm.streamCtx.Err(), "ctx cancelled after Shutdown")
 }
 
-func TestStreamManager_NilClientReturnsNilCommands(t *testing.T) {
-	sm := newNilClientSM()
+func TestStreamManager_MarkNotification_EmptyIDReturnsNil(t *testing.T) {
+	sm := newTestSM()
 	t.Cleanup(sm.Shutdown)
-
-	// Each of these short-circuits to nil when the client is nil. We exercise
-	// every method to lock in that contract.
-	assert.Nil(t, sm.StartLogStream(&model.Run{ID: "r"}, 0))
-	assert.Nil(t, sm.FetchOlderLogs("r", 100, 50))
-	assert.Nil(t, sm.FetchSystemStats())
-	assert.Nil(t, sm.FetchRunSummary())
-	assert.Nil(t, sm.FetchMetricsHistory())
-	assert.Nil(t, sm.SubscribeDaemonLogs())
-	assert.Nil(t, sm.FetchUnreadCount())
-	assert.Nil(t, sm.FetchNotifications())
 	assert.Nil(t, sm.MarkNotificationRead(""))
-	assert.Nil(t, sm.MarkNotificationRead("id"))
 	assert.Nil(t, sm.MarkNotificationUnread(""))
-	assert.Nil(t, sm.MarkNotificationUnread("id"))
-}
-
-func TestStreamManager_SubscribeEventsNilReturnsNil(t *testing.T) {
-	sm := newNilClientSM()
-	t.Cleanup(sm.Shutdown)
-
-	cmd := sm.SubscribeEvents()
-	require.NotNil(t, cmd, "non-nil tea.Cmd is returned even with nil client")
-	assert.Nil(t, cmd(), "running the cmd returns nil tea.Msg for a nil client")
 }
 
 func TestStreamManager_FetchOlderLogs_LimitZeroReturnsNil(t *testing.T) {
-	// Use a non-nil client so we get past the nil-client guard but exit at the
-	// limit guard. NewStreamManager initialises the context so Shutdown is safe.
-	sm := NewStreamManager(&apiclient.Client{})
+	sm := newTestSM()
 	t.Cleanup(sm.Shutdown)
 	// beforeLine == 0 → startLine == 0 → limit == 0 → cmd is nil.
 	assert.Nil(t, sm.FetchOlderLogs("r", 0, 50))
 }
 
 func TestStreamManager_ContinueListeningSSE(t *testing.T) {
-	sm := newNilClientSM()
+	sm := newTestSM()
 	t.Cleanup(sm.Shutdown)
 	assert.Nil(t, sm.ContinueListeningSSE(), "no stored channel → nil")
 
@@ -82,7 +57,7 @@ func TestStreamManager_ContinueListeningSSE(t *testing.T) {
 }
 
 func TestStreamManager_ContinueListeningLog(t *testing.T) {
-	sm := newNilClientSM()
+	sm := newTestSM()
 	t.Cleanup(sm.Shutdown)
 	assert.Nil(t, sm.ContinueListeningLog("r"))
 
@@ -98,7 +73,7 @@ func TestStreamManager_ContinueListeningLog(t *testing.T) {
 // currently holds — otherwise it would keep tagging the CURRENT run's log
 // lines with the OLD run's ID, silently misattributing (and dropping) them.
 func TestStreamManager_ContinueListeningLog_StaleRunIDReturnsNil(t *testing.T) {
-	sm := newNilClientSM()
+	sm := newTestSM()
 	t.Cleanup(sm.Shutdown)
 
 	ch := make(chan apiclient.LogStreamMsg, 1)
@@ -149,7 +124,7 @@ func TestStreamManager_FetchOlderLogs_ServerErrorReturnsDebugMsg(t *testing.T) {
 }
 
 func TestStreamManager_CancelLogStream_Idempotent(t *testing.T) {
-	sm := newNilClientSM()
+	sm := newTestSM()
 	t.Cleanup(sm.Shutdown)
 	// Cancelling twice (no stream open) is a no-op.
 	sm.CancelLogStream()
@@ -157,7 +132,7 @@ func TestStreamManager_CancelLogStream_Idempotent(t *testing.T) {
 }
 
 func TestStreamManager_CancelLogStreamResetsChannel(t *testing.T) {
-	sm := newNilClientSM()
+	sm := newTestSM()
 	t.Cleanup(sm.Shutdown)
 
 	ch := make(chan apiclient.LogStreamMsg, 1)
@@ -169,7 +144,7 @@ func TestStreamManager_CancelLogStreamResetsChannel(t *testing.T) {
 }
 
 func TestStreamManager_ContinueListeningDaemonLog(t *testing.T) {
-	sm := newNilClientSM()
+	sm := newTestSM()
 	t.Cleanup(sm.Shutdown)
 	assert.Nil(t, sm.ContinueListeningDaemonLog())
 
@@ -506,7 +481,7 @@ func TestStreamManager_SubscribeEvents_ShutdownDuringRetryDelayStops(t *testing.
 }
 
 func TestStreamManager_RecordEventID_IgnoresEmpty(t *testing.T) {
-	sm := newNilClientSM()
+	sm := newTestSM()
 	t.Cleanup(sm.Shutdown)
 
 	sm.RecordEventID("7")
@@ -579,7 +554,7 @@ func TestStreamManager_StartLogStream_CancelsPreviousStream(t *testing.T) {
 }
 
 func TestStreamManager_CancelLogStream_NoOpWhenIdle(t *testing.T) {
-	sm := newNilClientSM()
+	sm := newTestSM()
 	t.Cleanup(sm.Shutdown)
 
 	// No active stream — Cancel must be a no-op (not panic, no state set).
@@ -589,7 +564,7 @@ func TestStreamManager_CancelLogStream_NoOpWhenIdle(t *testing.T) {
 }
 
 func TestStreamManager_FetchExecWindow_NilFnReturnsNilWhenLoading(t *testing.T) {
-	sm := newNilClientSM()
+	sm := newTestSM()
 	t.Cleanup(sm.Shutdown)
 
 	// First call seeds w.loading=true; second call hits the early-return path.

@@ -79,9 +79,6 @@ func (sm *StreamManager) Shutdown() {
 // again; without it nothing would ever retry and the TUI would sit on stale data.
 func (sm *StreamManager) SubscribeEvents() tea.Cmd {
 	return func() tea.Msg {
-		if sm.client == nil {
-			return nil
-		}
 		ch, err := sm.client.StreamRunEvents(sm.streamCtx, sm.lastEventID)
 		if err != nil {
 			select {
@@ -123,10 +120,6 @@ func (sm *StreamManager) ContinueListeningSSE() tea.Cmd {
 // land at the end of the log immediately. Cancels any previous stream owned
 // by this manager.
 func (sm *StreamManager) StartLogStream(run *model.Run, fromLine int64) tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
-
 	if sm.logCancel != nil {
 		sm.logCancel()
 	}
@@ -150,9 +143,6 @@ func (sm *StreamManager) StartLogStream(run *model.Run, fromLine int64) tea.Cmd 
 // tail window line-by-line over SSE. The caller then opens the live stream for
 // just the lines after this page.
 func (sm *StreamManager) FetchLogTail(run *model.Run, tail int64) tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
 	client := sm.client
 	runID := run.ID
 	ctx := sm.streamCtx
@@ -177,10 +167,6 @@ func (sm *StreamManager) FetchLogTail(run *model.Run, tail int64) tea.Cmd {
 // first currently-loaded entry; the returned page covers
 // [max(0, beforeLine-count), beforeLine).
 func (sm *StreamManager) FetchOlderLogs(runID string, beforeLine, count int64) tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
-
 	client := sm.client
 	startLine := max(beforeLine-count, 0)
 	limit := beforeLine - startLine
@@ -212,9 +198,6 @@ func (sm *StreamManager) FetchOlderLogs(runID string, beforeLine, count int64) t
 // through. committed is the line's final on-disk text, passed through so the
 // viewer can label where the animation settled.
 func (sm *StreamManager) FetchLineHistory(runID string, lineNum int64, committed string) tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
 	client := sm.client
 	ctx := sm.streamCtx
 	return func() tea.Msg {
@@ -274,9 +257,6 @@ func (sm *StreamManager) FetchExecWindow(window *execlist.ExecWindow, scroll, vp
 
 // FetchSystemStats returns a command that polls live system metrics.
 func (sm *StreamManager) FetchSystemStats() tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
 	client := sm.client
 	ctx := sm.streamCtx
 	return func() tea.Msg {
@@ -289,9 +269,6 @@ func (sm *StreamManager) FetchSystemStats() tea.Cmd {
 // recomputes config_stale per request, so polling this keeps the
 // "press R to reload" notice live.
 func (sm *StreamManager) FetchDaemonInfo() tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
 	client := sm.client
 	ctx := sm.streamCtx
 	return func() tea.Msg {
@@ -304,9 +281,6 @@ func (sm *StreamManager) FetchDaemonInfo() tea.Cmd {
 // /api/daemon doesn't carry: which cron schedules are paused (from the CLI or
 // the Web UI too) and each running task's CPU and memory use.
 func (sm *StreamManager) FetchTaskState() tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
 	client := sm.client
 	ctx := sm.streamCtx
 	return func() tea.Msg {
@@ -330,9 +304,6 @@ func (sm *StreamManager) FetchTaskState() tea.Cmd {
 
 // SetSchedulePaused pauses (pause=true) or resumes a task's cron schedule.
 func (sm *StreamManager) SetSchedulePaused(taskName string, pause bool) tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
 	client := sm.client
 	ctx := sm.streamCtx
 	return func() tea.Msg {
@@ -350,9 +321,6 @@ func (sm *StreamManager) SetSchedulePaused(taskName string, pause bool) tea.Cmd 
 // restart-only setting changed) is reported as-is — the running task set is
 // untouched by the daemon.
 func (sm *StreamManager) Reload() tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
 	client := sm.client
 	ctx := sm.streamCtx
 	return func() tea.Msg {
@@ -400,9 +368,6 @@ func (sm *StreamManager) RerunRuns(sel model.RunSelector) tea.Cmd {
 // DeleteRuns, whose generic BulkActionMsg only flashes a count and would clobber
 // an undo toast.
 func (sm *StreamManager) DeleteRunsUndoable(sel model.RunSelector) tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
 	client := sm.client
 	ctx := sm.streamCtx
 	return func() tea.Msg {
@@ -413,9 +378,6 @@ func (sm *StreamManager) DeleteRunsUndoable(sel model.RunSelector) tea.Cmd {
 
 // bulkAction wraps a bulk client call as a tea.Cmd yielding a BulkActionMsg.
 func (sm *StreamManager) bulkAction(verb string, fn func(*apiclient.Client) (int, error)) tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
 	client := sm.client
 	return func() tea.Msg {
 		n, err := fn(client)
@@ -425,9 +387,6 @@ func (sm *StreamManager) bulkAction(verb string, fn func(*apiclient.Client) (int
 
 // FetchRunSummary returns a command that fetches aggregate run statistics.
 func (sm *StreamManager) FetchRunSummary() tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
 	client := sm.client
 	ctx := sm.streamCtx
 	return func() tea.Msg {
@@ -449,7 +408,7 @@ const taskSummaryWindow = 100
 // endpoint rather than a dedicated aggregate, so no new server surface is
 // needed.
 func (sm *StreamManager) FetchTaskSummary(taskName string) tea.Cmd {
-	if sm.client == nil || taskName == "" {
+	if taskName == "" {
 		return nil
 	}
 	client := sm.client
@@ -494,9 +453,6 @@ func summarizeTaskRuns(taskName string, runs []model.Run, total int64) uikit.Tas
 
 // FetchMetricsHistory returns a command that fetches historical system metrics.
 func (sm *StreamManager) FetchMetricsHistory() tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
 	client := sm.client
 	ctx := sm.streamCtx
 	return func() tea.Msg {
@@ -536,9 +492,6 @@ func listenLogStream(runID string, ch <-chan apiclient.LogStreamMsg) tea.Cmd {
 
 // SubscribeDaemonLogs connects to the daemon log SSE stream.
 func (sm *StreamManager) SubscribeDaemonLogs() tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
 	client := sm.client
 	ctx := sm.streamCtx
 	return func() tea.Msg {
@@ -566,9 +519,6 @@ func (sm *StreamManager) ContinueListeningDaemonLog() tea.Cmd {
 
 // FetchUnreadCount returns a command that loads the snapshot unread count.
 func (sm *StreamManager) FetchUnreadCount() tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
 	client := sm.client
 	ctx := sm.streamCtx
 	return func() tea.Msg {
@@ -581,9 +531,6 @@ func (sm *StreamManager) FetchUnreadCount() tea.Cmd {
 // notifications. The result seeds the panel so the expanded view isn't empty
 // while the SSE stream waits for new events.
 func (sm *StreamManager) FetchNotifications() tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
 	client := sm.client
 	ctx := sm.streamCtx
 	return func() tea.Msg {
@@ -597,7 +544,7 @@ func (sm *StreamManager) FetchNotifications() tea.Cmd {
 
 // MarkNotificationRead persists a single notification's read state.
 func (sm *StreamManager) MarkNotificationRead(id string) tea.Cmd {
-	if sm.client == nil || id == "" {
+	if id == "" {
 		return nil
 	}
 	client := sm.client
@@ -612,9 +559,6 @@ func (sm *StreamManager) MarkNotificationRead(id string) tea.Cmd {
 // panel clears its badge optimistically; on failure the next SSE unread-count
 // event re-syncs, so this only surfaces an error to the debug log.
 func (sm *StreamManager) MarkAllNotificationsRead() tea.Cmd {
-	if sm.client == nil {
-		return nil
-	}
 	client := sm.client
 	ctx := sm.streamCtx
 	return func() tea.Msg {
@@ -627,7 +571,7 @@ func (sm *StreamManager) MarkAllNotificationsRead() tea.Cmd {
 
 // MarkNotificationUnread clears a single notification's read state.
 func (sm *StreamManager) MarkNotificationUnread(id string) tea.Cmd {
-	if sm.client == nil || id == "" {
+	if id == "" {
 		return nil
 	}
 	client := sm.client

@@ -247,7 +247,7 @@ func TestTaskDetailDialog_Update_ClosesOnKeys(t *testing.T) {
 }
 
 func TestHandleKeyI_OpensInspectorForCursorTask(t *testing.T) {
-	m := newTestModelWithClient([]model.Task{{Name: "alpha"}})
+	m := newTestModel([]model.Task{{Name: "alpha"}})
 	// Sidebar items: [Home(0), alpha(1), Info(2), Debug(3)] — put the cursor on alpha.
 	selectSidebarItem(&m, 1)
 
@@ -265,7 +265,7 @@ func TestHandleKeyI_OpensInspectorForCursorTask(t *testing.T) {
 }
 
 func TestHandleKeyI_FallsThroughWithoutTask(t *testing.T) {
-	m := newTestModelWithClient(nil)
+	m := newTestModel(nil)
 	// Default cursor is on Home — no task in focus.
 	updated, _ := m.handleKey(tea.KeyPressMsg{Code: 'i', Text: "i"})
 	got, ok := updated.(Model)
