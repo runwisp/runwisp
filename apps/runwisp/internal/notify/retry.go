@@ -161,15 +161,6 @@ func RetryWithBackoff(ctx context.Context, cfg BackoffConfig, op func(ctx contex
 	return nil
 }
 
-// Redact replaces every occurrence of secret in s with "[redacted]". An empty
-// secret (e.g. an auth-less SMTP relay) leaves s unchanged.
-func Redact(s, secret string) string {
-	if secret == "" {
-		return s
-	}
-	return strings.ReplaceAll(s, secret, "[redacted]")
-}
-
 // redactedError wraps err so Error() has secrets redacted from its message
 // while Unwrap() still exposes the original error for errors.Is/As.
 type redactedError struct {
@@ -177,7 +168,14 @@ type redactedError struct {
 	secret string
 }
 
-func (r *redactedError) Error() string { return Redact(r.err.Error(), r.secret) }
+// Error replaces every occurrence of the secret with "[redacted]". An empty
+// secret (e.g. an auth-less SMTP relay) leaves the message unchanged.
+func (r *redactedError) Error() string {
+	if r.secret == "" {
+		return r.err.Error()
+	}
+	return strings.ReplaceAll(r.err.Error(), r.secret, "[redacted]")
+}
 func (r *redactedError) Unwrap() error { return r.err }
 
 // RedactError redacts secret from err's message while keeping the Unwrap

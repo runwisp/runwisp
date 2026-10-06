@@ -97,7 +97,7 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 			return fmt.Errorf("%s: inject fields: %w", c, err)
 		}
 	}
-	if err := c.transport.PostJSONWithHeaders(ctx, c.url, "application/json", body, c.headers); err != nil {
+	if err := c.transport.Post(ctx, c.url, "application/json", body, c.headers); err != nil {
 		return fmt.Errorf("%s: %w", c, notify.RedactError(err, c.url))
 	}
 	return nil

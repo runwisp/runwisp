@@ -95,7 +95,7 @@ func TestToSSEEventData_DispatchesByEventType(t *testing.T) {
 // confirms the update still reaches the stream once the loop resumes.
 func TestAppStreamHandler_NotifyHubSubscribedBeforeReplayFlush(t *testing.T) {
 	s, _, _, _ := setupServer(t)
-	hub := inapp.NewHub(0)
+	hub := inapp.NewHub(32)
 	s.notifyHub = hub
 
 	// Two ring events give the replay loop below a non-empty backlog: an

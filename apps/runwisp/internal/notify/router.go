@@ -28,9 +28,6 @@ func NewRouter(rules []Rule, channels map[string]Channel) *Router {
 // in-app channel by the dispatcher and never reaches Route — that's the cycle
 // guard.
 func (r *Router) Route(ev *Event) []Channel {
-	if r == nil || ev == nil {
-		return nil
-	}
 	seen := make(map[string]struct{}, len(r.rules))
 	out := make([]Channel, 0, len(r.rules))
 	for _, rule := range r.rules {

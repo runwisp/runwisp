@@ -59,17 +59,11 @@ type TemplateRenderer struct {
 
 // NewTemplateRenderer parses src under name and returns a Renderer using the
 // shared FuncMap. titleFn produces the notification title (used by inapp and
-// surfaced as Telegram preview / Slack header in defaults). The in-app
-// renderer uses this form — it needs no external URL, fingerprint, or tail
-// reader.
-func NewTemplateRenderer(name, src, contentType string, titleFn func(*notify.Event) string) (*TemplateRenderer, error) {
-	return NewTemplateRendererWithContext(name, src, contentType, titleFn, TemplateContext{})
-}
-
-// NewTemplateRendererWithContext is like NewTemplateRenderer but binds the
-// given TemplateContext into the funcMap closures, exposing per-daemon
-// helpers (runURL, taskURL, outputTail, fingerprint) to the template.
-func NewTemplateRendererWithContext(name, src, contentType string, titleFn func(*notify.Event) string, ctx TemplateContext) (*TemplateRenderer, error) {
+// surfaced as Telegram preview / Slack header in defaults). ctx is bound into
+// the funcMap closures, exposing per-daemon helpers (runURL, taskURL,
+// outputTail, fingerprint) to the template; the in-app renderer passes the
+// zero TemplateContext.
+func NewTemplateRenderer(name, src, contentType string, titleFn func(*notify.Event) string, ctx TemplateContext) (*TemplateRenderer, error) {
 	t, err := template.New(name).Funcs(funcMap(ctx)).Parse(src)
 	if err != nil {
 		return nil, fmt.Errorf("parse template %q: %w", name, err)

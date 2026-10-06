@@ -28,7 +28,6 @@ type Service struct {
 	ingressCh     chan *Event
 	ingressClosed bool
 
-	router   *Router
 	disp     *dispatcher
 	channels []Channel
 	logger   *slog.Logger
@@ -58,7 +57,7 @@ type Config struct {
 	Channels       []Channel             // includes inapp + each configured provider
 	Rules          []Rule                // routing predicates
 	FailureSink    SyntheticIngester     // typically the inapp.Channel
-	Clock          Clocker               // 0 → RealClock
+	Clock          func() time.Time      // nil → time.Now
 	Logger         *slog.Logger          // 0 → slog.Default
 	RetentionEvery time.Duration         // 0 → 5min
 	RetentionFn    func(context.Context) // executed on each tick; injected by Service builder
@@ -69,7 +68,7 @@ type Config struct {
 func New(cfg Config) *Service {
 	clock := cfg.Clock
 	if clock == nil {
-		clock = RealClock()
+		clock = time.Now
 	}
 	logger := cfg.Logger
 	if logger == nil {
@@ -90,7 +89,6 @@ func New(cfg Config) *Service {
 	return &Service{
 		bus:            cfg.Bus,
 		ingressCh:      make(chan *Event, DefaultActionQueueSize),
-		router:         router,
 		disp:           disp,
 		channels:       cfg.Channels,
 		logger:         logger,
@@ -104,10 +102,6 @@ func New(cfg Config) *Service {
 // repeated Start calls are no-ops.
 func (s *Service) Start(ctx context.Context) error {
 	if !s.started.CompareAndSwap(false, true) {
-		return nil
-	}
-	if s.bus == nil {
-		s.logger.Warn("notify: started without an event bus; running in stopped state")
 		return nil
 	}
 
@@ -131,7 +125,7 @@ func (s *Service) Start(ctx context.Context) error {
 	s.unsubscribe = s.bus.SubscribeAll(s.onBusEvent)
 	s.logger.Info("notify started",
 		"channels", len(s.channels),
-		"rules", len(s.router.rules),
+		"rules", len(s.disp.router.rules),
 		"ingress_size", DefaultActionQueueSize)
 	return nil
 }
@@ -172,7 +166,7 @@ func (s *Service) Stop(ctx context.Context) error {
 	go func() {
 		s.wg.Wait()
 		s.disp.closeQueues()
-		s.disp.waitWorkers()
+		s.disp.workers.Wait()
 		close(done)
 	}()
 

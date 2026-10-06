@@ -47,7 +47,7 @@ func NewTestRenderer(t *testing.T, kind, contentType string) render.Renderer {
 	t.Helper()
 	body, err := render.LoadDefaultTemplate(kind)
 	require.NoError(t, err)
-	r, err := render.NewTemplateRenderer(kind+":test", body, contentType, render.DefaultTitle)
+	r, err := render.NewTemplateRenderer(kind+":test", body, contentType, render.DefaultTitle, render.TemplateContext{})
 	require.NoError(t, err)
 	return r
 }
