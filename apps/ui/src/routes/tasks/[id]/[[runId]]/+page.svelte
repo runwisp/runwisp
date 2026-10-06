@@ -12,7 +12,7 @@
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import { createLiveRuns } from "$lib/utils/live-runs.svelte";
     import { navigateToRun } from "$lib/utils/run-url";
-    import { type Task } from "$lib/types";
+    import type { Task } from "@runwisp/common";
     import { emptyRunFilters, type RunsListFilters } from "@runwisp/ui";
 
     let taskName = $derived($page.params.id ?? "");

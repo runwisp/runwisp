@@ -7,7 +7,7 @@ import { connectionStore } from "$lib/stores/connection.svelte";
 import { appEventStream } from "$lib/stores/app-stream";
 import { createLogger } from "@runwisp/common";
 import { safeParseJSON } from "$lib/utils/parse";
-import type { ResourceUsage, Task } from "$lib/types";
+import type { ResourceUsage, Task } from "@runwisp/common";
 
 function createSystemStore() {
     const logger = createLogger("SystemStore");

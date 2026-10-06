@@ -4,7 +4,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { AuthRequiredError } from "$lib/api";
 import { createTaskStore } from "./data.svelte";
-import type { Task } from "$lib/types";
+import type { Task } from "@runwisp/common";
 
 describe("TaskStore.loadIfNeeded", () => {
     const tasks: Task[] = [

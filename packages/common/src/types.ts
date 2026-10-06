@@ -20,7 +20,6 @@ export type TaskParam = components["schemas"]["TaskParam"];
 
 export type AuthChallengeBody = components["schemas"]["AuthChallengeBody"];
 export type AuthStatusBody = components["schemas"]["AuthStatusBody"];
-export type AuthLoginBody = components["schemas"]["AuthLoginBody"];
 
 /**
  * EndReason is the union of all reasons a run can end. The single source of
