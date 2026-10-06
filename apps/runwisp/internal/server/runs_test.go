@@ -40,20 +40,9 @@ func TestToSSEEventData_RunDeletedHappyPath(t *testing.T) {
 	assert.Equal(t, "t", d.TaskName)
 }
 
-func TestToSSEEventData_RunDeletedMismatchedDataReturnsEmpty(t *testing.T) {
-	// Wrong concrete type in Data — fallback to zero RunDeletedSSEEvent.
-	in := events.Event{Type: events.EventRunDeleted, Data: events.RunEvent{}}
-	got := toSSEEventData(in)
-	d, ok := got.(RunDeletedSSEEvent)
-	if !ok {
-		t.Fatalf("type = %T, want RunDeletedSSEEvent", got)
-	}
-	assert.Equal(t, "", d.RunID)
-}
-
-func TestToSSEEventData_NonRunEventDataFallsBackToUpdated(t *testing.T) {
-	// For non-deleted types, if Data isn't RunEvent we return zero RunUpdatedEvent.
-	in := events.Event{Type: events.EventRunCreated, Data: events.RunDeletedEvent{}}
+func TestToSSEEventData_UnmappedDataFallsBackToUpdated(t *testing.T) {
+	// Data with no SSE wrapper of its own falls back to a zero RunUpdatedEvent.
+	in := events.Event{Type: events.EventLogDiskPressure, Data: events.LogDiskPressureEvent{}}
 	got := toSSEEventData(in)
 	if _, ok := got.(RunUpdatedEvent); !ok {
 		t.Fatalf("type = %T, want RunUpdatedEvent", got)

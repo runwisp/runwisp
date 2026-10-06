@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/proxycidr"
@@ -108,12 +109,8 @@ func (srv *Server) resolveClientIP(next http.Handler) http.Handler {
 // one, and the local launcher probe sets none, so it closes the realistic cases
 // without costing the port-conflict UX.
 func isProxiedRequest(r *http.Request, trusted proxySet) bool {
-	for _, h := range forwardedHeaders {
-		if r.Header.Get(h) != "" {
-			return true
-		}
-	}
-	return isFromTrustedProxy(r, trusted)
+	return slices.ContainsFunc(forwardedHeaders, func(h string) bool { return r.Header.Get(h) != "" }) ||
+		isFromTrustedProxy(r, trusted)
 }
 
 // isFromTrustedProxy reports whether the request's TCP peer is within the
