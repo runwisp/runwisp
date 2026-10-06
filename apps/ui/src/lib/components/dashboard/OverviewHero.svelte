@@ -5,6 +5,7 @@
     import { RadioTower } from "@lucide/svelte";
     import { formatCompactCount, pluralize } from "./overview-format.js";
     import type { DaemonStats } from "@runwisp/ui";
+    import { systemStore } from "$lib/stores";
 
     // A stat pane, in the website's tmux-pane language: the label rides the top
     // hairline as a lowercase tab. State is carried by the number itself — it
@@ -24,17 +25,13 @@
         totalRuns,
         completedRunsCount,
         healthyTasksCount,
-        uptime,
-        stationMode = false,
-    } = $props<{
+    }: {
         stats: DaemonStats;
         totalTasks: number;
         totalRuns: number;
         completedRunsCount: number;
         healthyTasksCount: number;
-        uptime: string;
-        stationMode?: boolean;
-    }>();
+    } = $props();
 
     const NEUTRAL_VALUE = "text-on-surface";
     const IDLE_VALUE = "text-on-surface-faint";
@@ -44,7 +41,7 @@
         healthyTasksCard(),
         {
             label: "uptime",
-            value: uptime,
+            value: systemStore.uptime,
             detail: "Since the daemon last started",
             valueClass: NEUTRAL_VALUE,
         },
@@ -98,7 +95,7 @@
 </script>
 
 <div class="flex flex-col gap-5">
-    {#if stationMode}
+    {#if systemStore.stationEnabled}
         <p class="flex items-center gap-1.5 text-xs text-on-surface-muted">
             <RadioTower size={12} class="shrink-0 text-info" />
             Managed by RunWisp Station · scheduling handled in the station.
