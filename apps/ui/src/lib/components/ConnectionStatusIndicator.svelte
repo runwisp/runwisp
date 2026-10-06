@@ -10,7 +10,7 @@
         systemStore,
         type ConnectionStatus,
     } from "$lib/stores";
-    import { appEventStream } from "$lib/stores/app-stream.svelte";
+    import { appEventStream } from "$lib/stores/app-stream";
     import { stalledCopy } from "$lib/utils/connection-copy";
 
     interface Theme {

@@ -116,7 +116,6 @@ export class EventManager implements AppEventStream {
         });
     }
 
-    /** Subscribe to a named SSE event type. Returns an unsubscribe function. */
     subscribe(eventType: string, handler: EventHandler): () => void {
         const isFirst = this.#handlers.add(eventType, handler);
         if (isFirst) {
@@ -131,12 +130,11 @@ export class EventManager implements AppEventStream {
         this.#ensureConnected();
 
         return () => {
-            this.unsubscribe(eventType, handler);
+            this.#unsubscribe(eventType, handler);
         };
     }
 
-    /** Remove a previously registered handler. */
-    unsubscribe(eventType: string, handler: EventHandler): void {
+    #unsubscribe(eventType: string, handler: EventHandler): void {
         this.#handlers.remove(eventType, handler);
         if (this.#handlers.totalSize() === 0) {
             this.#clearOpenTimer();
@@ -159,7 +157,6 @@ export class EventManager implements AppEventStream {
         return this.#stall.add(handler);
     }
 
-    /** Tear down the connection and clear all subscribers. */
     close(): void {
         this.#closed = true;
         this.#handlers.clear();
