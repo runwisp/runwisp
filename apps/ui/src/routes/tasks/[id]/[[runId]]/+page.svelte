@@ -7,12 +7,10 @@
     import { TaskPage } from "$lib/components/dashboard";
     import { toast, ErrorState, RunsList, RunDetailPanel } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
-    import { runsApi, tasksApi } from "$lib/api";
-    import { runUpdatesStore, systemStore, connectionStore, appEventStream } from "$lib/stores";
+    import { tasksApi } from "$lib/api";
+    import { appEventStream } from "$lib/stores";
     import { AsyncData } from "$lib/utils/async-data.svelte";
-    import { createLogSession } from "$lib/utils/log-session";
-    import { createRunsSource } from "$lib/utils/runs-source.svelte";
-    import { RunDeepLink } from "$lib/utils/run-deep-link.svelte";
+    import { createLiveRuns } from "$lib/utils/live-runs.svelte";
     import { navigateToRun } from "$lib/utils/run-url";
     import { type Task } from "$lib/types";
     import { emptyRunFilters, type RunsListFilters } from "@runwisp/ui";
@@ -36,7 +34,7 @@
     let serviceStopped = $state(false);
     let selectRunId = $state<string | null>(null);
 
-    const source = createRunsSource();
+    const { source, logSession, deepLink } = createLiveRuns(() => taskName);
 
     let filters = $state<RunsListFilters>(emptyRunFilters());
 
@@ -58,23 +56,6 @@
     let concurrencyLimit = $derived(task?.maxConcurrent ?? DEFAULT_CONCURRENCY_LIMIT);
     let concurrencyReached = $derived(triggering || activeRunCount >= concurrencyLimit);
 
-    const logSession = createLogSession({
-        findRun: (runId) => source.items.find((r) => r.id === runId),
-        getTaskName: (_run) => taskName,
-    });
-
-    $effect(() => {
-        return runUpdatesStore.subscribeToUpdates((event) => {
-            if (event.type === "run.deleted") {
-                if (event.data.taskName !== taskName) return;
-                source.remove(event.data.runId);
-                return;
-            }
-            if (event.data.run.taskName !== taskName) return;
-            source.upsert(event.data.run);
-        });
-    });
-
     $effect(() => {
         if (taskName) void taskData.fetch();
         return () => taskData.abort();
@@ -83,18 +64,6 @@
     // A reload can change this task's definition without touching its runs.
     $effect(() => appEventStream.subscribe("tasks.changed", () => void taskData.fetch()));
 
-    // Resync the list after a genuine SSE reconnect (fires only on recovery from
-    // a prior connection). Covers the rare gap that outlived the server's replay
-    // buffer — honest DB truth, not a mask over live counts.
-    $effect(() => connectionStore.onReconnect(() => source.refresh()));
-
-    // Whether the deep-linked run is still loading or resolved to no run,
-    // surfaced so a dead permalink shows a "not found" panel instead of quietly
-    // selecting another run.
-    const deepLink = new RunDeepLink(
-        (id) => runsApi.getById(id),
-        (run) => source.upsert(run),
-    );
     $effect(() => deepLink.resolve(taskName ? runIdParam : null, source.items));
 
     async function handleRun(params?: Record<string, string | null>) {
@@ -162,7 +131,6 @@
     {#if task}
         <TaskPage
             {task}
-            stationMode={systemStore.stationEnabled}
             items={source.items}
             total={source.total}
             loading={source.loading || !source.loaded}

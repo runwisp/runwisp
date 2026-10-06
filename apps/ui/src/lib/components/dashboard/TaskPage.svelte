@@ -6,23 +6,16 @@
     import { untrack } from "svelte";
     import { SvelteMap } from "svelte/reactivity";
     import { isService, type Task, type Run } from "@runwisp/common";
-    import type {
-        LogEvent,
-        LogSlice,
-        RunMotion,
-        RunsListFilters,
-        RunOutputMatch,
-    } from "@runwisp/ui";
+    import type { LogEvent, RunMotion, RunsListFilters, RunOutputMatch } from "@runwisp/ui";
     import { RunsList, RunDetailPanel, Button, Modal, Alert, AlertDialog } from "@runwisp/ui";
     import { tasksApi } from "$lib/api";
     import { headerSearchStore, systemStore } from "$lib/stores";
-    import { createRunActions } from "$lib/utils/run-actions";
+    import { createRunSelection } from "$lib/utils/run-selection.svelte";
     import { HistoryRail } from "$lib/utils/history-rail.svelte";
     import ParamForm from "./ParamForm.svelte";
 
     let {
         task,
-        stationMode = false,
         items,
         total,
         loading = false,
@@ -49,9 +42,8 @@
         runNotFound = false,
         runPending = false,
         onSelectRun,
-    } = $props<{
+    }: {
         task: Task;
-        stationMode?: boolean;
         items: Run[];
         total: number;
         loading?: boolean;
@@ -68,19 +60,15 @@
         onStop?: (runId: string) => void;
         onRestart?: () => void;
         onStopService?: () => void;
-        fetchLogs: (
-            runId: string,
-            from: number,
-            to: number,
-        ) => Promise<LogSlice | LogEvent | void> | LogSlice | LogEvent | void;
-        streamLogs?: (
+        fetchLogs: (runId: string, from: number, to: number) => Promise<LogEvent>;
+        streamLogs: (
             runId: string,
             onEvent: (event: LogEvent) => void,
             initialState?: { fromLine: number },
         ) => () => void;
-        fetchLineHistory?: (runId: string, lineNum: number) => Promise<string[][]>;
+        fetchLineHistory: (runId: string, lineNum: number) => Promise<string[][]>;
         // Runs that arrived or were removed live moments ago; they animate.
-        motion?: RunMotion;
+        motion: RunMotion;
         initialRunId?: string | null;
         initialHighlightLine?: number | null;
         selectRunId?: string | null;
@@ -96,7 +84,7 @@
         // so the route can mirror it into the address bar. The auto-fallback
         // selection (newest/running) is deliberately not reported.
         onSelectRun?: (runId: string | null) => void;
-    }>();
+    } = $props();
 
     const taskIsService = $derived(isService(task.kind));
     const instanceCount = $derived(taskIsService ? Math.max(1, task.instances ?? 1) : 0);
@@ -131,7 +119,7 @@
     }
 
     function openRunAgain() {
-        runSeed = selectedRun?.params ?? null;
+        runSeed = selection.selectedRun?.params ?? null;
         runFormSeq++;
         confirmOpen = true;
     }
@@ -220,15 +208,14 @@
         headerSearchStore.setLoading(outputSearchLoading);
     });
 
-    let userSelectedRunId = $state<string | null>(null);
-
-    const { handleBulkDelete, handleBulkCancel, handleBulkRerun, deleteSingle } = createRunActions({
+    const selection = createRunSelection({
         getItems: () => items,
+        getInitialRunId: () => initialRunId,
+        getRunNotFound: () => runNotFound,
+        getRunPending: () => runPending,
         onOptimisticRemove: (ids) => onOptimisticRemove(ids),
         onOptimisticRestore: (runs) => onOptimisticRestore(runs),
-        onRemoved: (ids) => {
-            if (userSelectedRunId && ids.has(userSelectedRunId)) userSelectedRunId = null;
-        },
+        preferRunning: true,
     });
 
     // A run can always be *triggered* — at max concurrency it queues (the modal
@@ -244,6 +231,7 @@
     // In station mode the station owns scheduling/dispatch; triggering here is the
     // operator's "run it here, now" escape hatch against the local runner.
     // Frame the confirm honestly rather than implying it's the canonical trigger.
+    const stationMode = $derived(systemStore.stationEnabled);
     const runConfirmLabel = $derived(stationMode ? "Run Here" : "Run Now");
     const runModalTitle = $derived(stationMode ? "Run on this runner" : "Run Task");
     const runModalDescription = $derived(
@@ -261,11 +249,11 @@
     });
 
     $effect(() => {
-        if (initialRunId) userSelectedRunId = initialRunId;
+        if (initialRunId) selection.userSelectedRunId = initialRunId;
     });
 
     $effect(() => {
-        if (selectRunId) userSelectedRunId = selectRunId;
+        if (selectRunId) selection.userSelectedRunId = selectRunId;
     });
 
     // Report explicit selections upward so the URL can mirror the run on screen.
@@ -273,34 +261,10 @@
     // declaration order, so userSelectedRunId is already seeded from the deep
     // link when this reports — otherwise the initial null would clobber it.
     $effect(() => {
-        onSelectRun?.(userSelectedRunId);
+        onSelectRun?.(selection.userSelectedRunId);
     });
 
-    // The deep-linked run genuinely doesn't exist under this task: its id is the
-    // current URL selection, the fetch confirmed it missing, and it isn't in the
-    // list. Show a "not found" panel rather than silently falling back to the
-    // running/newest run while the URL still points at the dead id.
-    let deepLinkMissing = $derived(
-        runNotFound &&
-            userSelectedRunId !== null &&
-            userSelectedRunId === initialRunId &&
-            !items.some((r: Run) => r.id === userSelectedRunId),
-    );
-
-    let deepLinkPending = $derived(runPending && userSelectedRunId === initialRunId);
-
-    let selectedRunId = $derived.by(() => {
-        if (userSelectedRunId && items.some((r: Run) => r.id === userSelectedRunId)) {
-            return userSelectedRunId;
-        }
-        if (deepLinkMissing || deepLinkPending) return null;
-        const running = items.find((r: Run) => r.status === "running");
-        if (running) return running.id;
-        return items[0]?.id ?? null;
-    });
-
-    let selectedRun = $derived(items.find((r: Run) => r.id === selectedRunId));
-    let panes = $derived(rail.panes(!!selectedRun, !loading && items.length === 0));
+    let panes = $derived(rail.panes(!!selection.selectedRun, !loading && items.length === 0));
 
     const envEntries = $derived(
         task.env ? Object.entries(task.env).sort(([a], [b]) => a.localeCompare(b)) : [],
@@ -350,18 +314,18 @@
                 {loading}
                 bind:filters
                 {onLoadMore}
-                {selectedRunId}
+                selectedRunId={selection.selectedRunId}
                 onselect={(id) => {
-                    userSelectedRunId = id;
+                    selection.userSelectedRunId = id;
                     rail.picked();
                 }}
                 showFilters
                 emptyText="No runs yet"
                 bulkActions
                 taskNameFilter={task.name}
-                onBulkCancel={handleBulkCancel}
-                onBulkDelete={handleBulkDelete}
-                onBulkRerun={handleBulkRerun}
+                onBulkCancel={selection.handleBulkCancel}
+                onBulkDelete={selection.handleBulkDelete}
+                onBulkRerun={selection.handleBulkRerun}
                 getInstanceCount={() => instanceCount}
                 {motion}
                 outputSearch
@@ -373,11 +337,11 @@
 
         {#if panes.detail}
             <RunDetailPanel
-                run={selectedRun}
+                run={selection.selectedRun}
                 {fetchLogs}
                 {streamLogs}
                 {fetchLineHistory}
-                onDelete={deleteSingle}
+                onDelete={selection.deleteSingle}
                 onRun={runTriggerable ? openRun : undefined}
                 onRunAgain={runTriggerable && hasParams ? openRunAgain : undefined}
                 onRunTask={runTriggerable ? openRun : undefined}
@@ -397,8 +361,8 @@
                 getInstanceCount={() => instanceCount}
                 getLiveUsage={(id) => systemStore.runUsage(id)}
                 {motion}
-                notFound={deepLinkMissing}
-                loading={(loading && items.length === 0) || deepLinkPending}
+                notFound={selection.deepLinkMissing}
+                loading={(loading && items.length === 0) || selection.deepLinkPending}
             />
         {/if}
     </div>
@@ -440,7 +404,7 @@
     confirmVariant="danger"
     confirmIcon={Square}
     onConfirm={() => {
-        if (onStop && selectedRun) onStop(selectedRun.id);
+        if (onStop && selection.selectedRun) onStop(selection.selectedRun.id);
     }}
 />
 
