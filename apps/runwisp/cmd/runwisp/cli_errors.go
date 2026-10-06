@@ -177,7 +177,7 @@ func runwispPortConflictError(host string, port int, info *model.InstanceInfo) e
 	fmt.Fprintf(&b, "  - Stop it:              runwisp stop --data %s\n", info.DataDir)
 	b.WriteString("  - Or run on a different port:  runwisp --port <PORT>")
 	return &userFacingError{
-		title:   fmt.Sprintf("another RunWisp daemon (v%s, pid %d) is already running on %s:%d", info.Version, info.Pid, displayHost(host), port),
+		title:   fmt.Sprintf("another RunWisp daemon (v%s, pid %d) is already running on %s:%d", info.Version, info.Pid, bindHost(host), port),
 		details: b.String(),
 	}
 }
