@@ -64,7 +64,6 @@ func (f *fakeInstaller) Install(_ context.Context, opts autostart.InstallOptions
 	return f.installErr
 }
 
-
 func (f *fakeInstaller) Uninstall(context.Context, autostart.UninstallOptions, io.Writer) error {
 	return nil
 }

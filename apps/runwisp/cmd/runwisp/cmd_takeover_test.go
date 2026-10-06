@@ -67,7 +67,6 @@ func (f *fakeTakeoverInstaller) Install(_ context.Context, opts autostart.Instal
 	return nil
 }
 
-
 func (f *fakeTakeoverInstaller) Uninstall(context.Context, autostart.UninstallOptions, io.Writer) error {
 	return nil
 }
