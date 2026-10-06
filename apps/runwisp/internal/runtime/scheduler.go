@@ -441,7 +441,7 @@ func (scheduler *Scheduler) fireOnce(taskName string, loc *time.Location, fixedI
 	}
 
 	slog.Debug("Cron triggering task", "name", taskName)
-	if _, err := scheduler.taskManager.TriggerRun(taskName, model.TriggeredByCron); err != nil {
+	if _, err := scheduler.taskManager.TriggerRunWithOptions(taskName, TriggerRunOptions{TriggeredBy: model.TriggeredByCron}); err != nil {
 		slog.Error("Failed to trigger task", "name", taskName, "err", err)
 	}
 }

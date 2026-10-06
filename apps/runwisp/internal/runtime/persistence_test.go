@@ -7,10 +7,8 @@ import (
 	"context"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -127,11 +125,4 @@ func TestPersistenceCoordinatorShutdownDoesNotCancelAlreadyQueuedTask(t *testing
 			t.Fatalf("iteration %d: a task queued before Shutdown was applied with an already-cancelled context", i)
 		}
 	}
-}
-
-func TestPublishRunNilBus(t *testing.T) {
-	jm := NewTaskManager(new(testutil.MockExecutor), nil, time.Now).(*defaultTaskManager)
-	assert.NotPanics(t, func() {
-		jm.publishRun("test", &model.Run{})
-	})
 }

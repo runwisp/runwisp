@@ -156,7 +156,7 @@ func TestSnapshotCatchupAnchors_FreezesBeforeContaminatingWrites(t *testing.T) {
 
 	runner := new(mockTaskRunner)
 	runner.On("RecordMissedRun", task.Name, mock.Anything, mock.Anything).Return(nil)
-	runner.On("TriggerRun", task.Name, model.TriggeredByCron).Return(&model.Run{}, nil)
+	runner.On("TriggerRunWithOptions", task.Name, TriggerRunOptions{TriggeredBy: model.TriggeredByCron}).Return(&model.Run{}, nil)
 
 	result := RunMissedTickCatchUp(tasks, runner, now, time.UTC, anchors, errs)
 
