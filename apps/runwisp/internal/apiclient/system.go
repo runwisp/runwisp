@@ -6,17 +6,15 @@ package apiclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
 )
 
 func (c *Client) GetSystemStats(ctx context.Context) (*model.SystemStats, error) {
-	var stats model.SystemStats
-	if err := c.doJSON(ctx, "GET", "/api/system", nil, &stats); err != nil {
-		return nil, err
-	}
-	return &stats, nil
+	return doJSONAs[model.SystemStats](ctx, c, "GET", "/api/system", nil)
 }
 
 // GetMetricsHistory fetches historical system metrics from the ring buffer.
@@ -29,19 +27,11 @@ func (c *Client) GetMetricsHistory(ctx context.Context) ([]model.MetricsSample, 
 }
 
 func (c *Client) GetRunSummary(ctx context.Context) (*model.RunSummary, error) {
-	var summary model.RunSummary
-	if err := c.doJSON(ctx, "GET", "/api/runs/summary", nil, &summary); err != nil {
-		return nil, err
-	}
-	return &summary, nil
+	return doJSONAs[model.RunSummary](ctx, c, "GET", "/api/runs/summary", nil)
 }
 
 func (c *Client) GetDaemonInfo(ctx context.Context) (*model.DaemonInfo, error) {
-	var info model.DaemonInfo
-	if err := c.doJSON(ctx, "GET", "/api/daemon", nil, &info); err != nil {
-		return nil, err
-	}
-	return &info, nil
+	return doJSONAs[model.DaemonInfo](ctx, c, "GET", "/api/daemon", nil)
 }
 
 // GetInstanceInfo fetches the daemon's local identity (datadir, config, socket,
@@ -51,22 +41,14 @@ func (c *Client) GetDaemonInfo(ctx context.Context) (*model.DaemonInfo, error) {
 // reaches it over loopback; a non-RunWisp port-holder yields a transport or
 // decode error, which the caller treats as "not a discoverable daemon".
 func (c *Client) GetInstanceInfo(ctx context.Context) (*model.InstanceInfo, error) {
-	var info model.InstanceInfo
-	if err := c.doJSON(ctx, "GET", "/api/daemon/identity", nil, &info); err != nil {
-		return nil, err
-	}
-	return &info, nil
+	return doJSONAs[model.InstanceInfo](ctx, c, "GET", "/api/daemon/identity", nil)
 }
 
 // Reload asks the daemon to re-read runwisp.toml and reconcile its live task
 // set, returning the applied diff. A rejected reload (bad config or a
 // restart-only change) comes back as an error from the daemon.
 func (c *Client) Reload(ctx context.Context) (*model.ReloadResult, error) {
-	var result model.ReloadResult
-	if err := c.doJSON(ctx, "POST", "/api/daemon/reload", nil, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
+	return doJSONAs[model.ReloadResult](ctx, c, "POST", "/api/daemon/reload", nil)
 }
 
 // AuthStatus reports whether the daemon requires authentication, via the public
@@ -81,7 +63,7 @@ func (c *Client) AuthStatus(ctx context.Context) (server.AuthStatusBody, error) 
 }
 
 func (c *Client) HealthCheck(ctx context.Context) error {
-	resp, err := c.doRaw(ctx, "/health")
+	resp, err := c.doRequest(ctx, http.MethodGet, "/health", nil)
 	if err != nil {
 		return err
 	}
@@ -120,4 +102,35 @@ func (c *Client) StreamDaemonLogs(ctx context.Context) (<-chan string, error) {
 	}()
 
 	return ch, nil
+}
+
+// ErrLocalCredentialsUnavailable signals the daemon is configured with
+// RUNWISP_PASSWORD and refuses to disclose it. Distinct from ErrUnauthorized
+// so callers can render a useful "ask the operator" message instead of
+// treating it as a generic auth failure.
+var ErrLocalCredentialsUnavailable = errors.New("no ephemeral password to disclose")
+
+// ErrAuthDisabled signals the daemon runs with RUNWISP_AUTH=off — there is no
+// password in play at all. Distinct from ErrLocalCredentialsUnavailable so
+// callers don't mislead the operator into hunting for an env-var value.
+var ErrAuthDisabled = errors.New("daemon runs with authentication disabled")
+
+// GetLocalCredentials fetches the ephemeral password over the local socket.
+// Returns ErrLocalCredentialsUnavailable when the daemon refuses disclosure
+// (env-var case) and ErrAuthDisabled when the daemon runs with
+// RUNWISP_AUTH=off. Any other non-2xx surfaces as the underlying HTTP error so
+// the caller can distinguish "not on a socket" (403) from real transport
+// failures.
+func (c *Client) GetLocalCredentials(ctx context.Context) (*server.LocalCredentialsBody, error) {
+	var body server.LocalCredentialsBody
+	if err := c.doJSON(ctx, "GET", "/api/local/credentials", nil, &body); err != nil {
+		if IsHTTPStatus(err, http.StatusNotFound) {
+			return nil, ErrLocalCredentialsUnavailable
+		}
+		if IsHTTPStatus(err, http.StatusConflict) {
+			return nil, ErrAuthDisabled
+		}
+		return nil, err
+	}
+	return &body, nil
 }

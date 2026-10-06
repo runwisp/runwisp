@@ -130,7 +130,7 @@ func (sm *StreamManager) StartLogStream(run *model.Run, fromLine int64) tea.Cmd 
 	client := sm.client
 
 	return func() tea.Msg {
-		ch, err := client.StreamLogLines(ctx, runID, apiclient.StreamLogOpts{FromLine: fromLine})
+		ch, err := client.StreamLogLines(ctx, runID, fromLine)
 		if err != nil {
 			return uikit.LogDoneMsg{RunID: runID}
 		}

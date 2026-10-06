@@ -71,24 +71,13 @@ type LogStreamMsg struct {
 	ErrValue error
 }
 
-// StreamLogOpts tunes the line-stream subscription.
-type StreamLogOpts struct {
-	// FromLine is the absolute line anchor; negative values count from end
-	// (e.g. -1000 returns the last 1000 lines as backfill).
-	FromLine int64
-	// ReplayLimit caps the backfill page size; 0 lets the server pick.
-	ReplayLimit int64
-}
-
 // StreamLogLines opens the line-based SSE log stream. Each delivered message
 // is one of the documented kinds (line / rotated / dropped / done / err).
 // The channel is closed after a Done message, after Err, or after ctx is
-// cancelled.
-func (c *Client) StreamLogLines(ctx context.Context, runID string, opts StreamLogOpts) (<-chan LogStreamMsg, error) {
-	path := fmt.Sprintf("/api/runs/%s/log/stream?from=%d", runID, opts.FromLine)
-	if opts.ReplayLimit > 0 {
-		path += fmt.Sprintf("&replayLimit=%d", opts.ReplayLimit)
-	}
+// cancelled. fromLine is the absolute line anchor; negative values count
+// from the end (e.g. -1000 returns the last 1000 lines as backfill).
+func (c *Client) StreamLogLines(ctx context.Context, runID string, fromLine int64) (<-chan LogStreamMsg, error) {
+	path := fmt.Sprintf("/api/runs/%s/log/stream?from=%d", runID, fromLine)
 	resp, err := c.doSSE(ctx, path)
 	if err != nil {
 		return nil, err

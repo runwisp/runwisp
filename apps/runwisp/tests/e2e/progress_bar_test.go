@@ -48,7 +48,7 @@ func TestProgressBarCommitsFinalFrameAndStreamsRegion(t *testing.T) {
 	// task spreads its frames over ~0.8s) so we observe a region snapshot.
 	streamCtx, cancelStream := context.WithCancel(context.Background())
 	t.Cleanup(cancelStream)
-	msgs, err := client.StreamLogLines(streamCtx, run.ID, apiclient.StreamLogOpts{FromLine: -100})
+	msgs, err := client.StreamLogLines(streamCtx, run.ID, -100)
 	require.NoError(t, err, "StreamLogLines should connect")
 
 	sawRegion := waitForRegionFrame(t, msgs, "progress:", 10*time.Second)

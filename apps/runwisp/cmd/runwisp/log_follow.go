@@ -97,7 +97,7 @@ func followRunLog(ctx context.Context, client *apiclient.Client, taskName, runID
 // stream could not be opened. A 404 is not an error here: the run's row has not
 // landed yet, which counts as a stall (nothing streamed, not done).
 func followOnce(ctx context.Context, client *apiclient.Client, taskName, runID string, from int64, onLine func(server.LogLineEntry)) (highest int64, done bool, err error) {
-	ch, err := client.StreamLogLines(ctx, runID, apiclient.StreamLogOpts{FromLine: from})
+	ch, err := client.StreamLogLines(ctx, runID, from)
 	if runNotPersistedYet(err) {
 		return from - 1, false, nil
 	}
