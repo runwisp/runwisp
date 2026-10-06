@@ -417,7 +417,7 @@ func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo, f Flags) error {
 		}
 	}
 
-	quitAction, tuiErr := tui.StartTUI(info, client, rt.debugWriter, shutdownFunc, launchTicketFunc, true)
+	quitAction, tuiErr := tui.StartTUI(info, client, rt.debugWriter, shutdownFunc, launchTicketFunc, tui.DaemonStarted)
 	clilog.SetOutput(io.MultiWriter(os.Stderr, rt.logBuffer))
 	if tuiErr != nil {
 		slog.Warn("TUI exited with error", "err", tuiErr)

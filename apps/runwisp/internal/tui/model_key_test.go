@@ -846,7 +846,7 @@ func TestHandleKeyHelp_SecondQuestionMarkCloses(t *testing.T) {
 
 func TestHandleKeyHelp_CtrlCEscalatesToQuitConfirm(t *testing.T) {
 	m := newTestModel(nil)
-	m.startedDaemon = true
+	m.daemon = DaemonStarted
 	m.dialogs.ShowHelp()
 
 	updated, _ := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
@@ -902,7 +902,7 @@ func TestInterceptHelpDialog_CloseKeysIntercept(t *testing.T) {
 
 func TestHandleKeyQuit_OpensQuitConfirmDialog(t *testing.T) {
 	m := newTestModel(nil)
-	m.startedDaemon = true
+	m.daemon = DaemonStarted
 	if m.dialogs.HasConfirm() {
 		t.Fatal("precondition: no dialog expected")
 	}
@@ -948,7 +948,7 @@ func TestHandleKey_UnknownKeyDelegates(t *testing.T) {
 // `handled=true` branch and returns early.
 func TestHandleKey_GlobalHandledKey(t *testing.T) {
 	m := newTestModel(nil)
-	m.startedDaemon = true
+	m.daemon = DaemonStarted
 	newM, _ := m.handleKey(keyMsg("q"))
 	got, ok := newM.(Model)
 	if !ok {

@@ -18,11 +18,12 @@ import (
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/internal/demo"
 	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/internal/tui"
 )
 
 // envDemoTempDir hands a spawned daemon the path of the throwaway demo directory
 // it should delete on shutdown. Cleanup is bound to the daemon's lifecycle (see
-// runDaemon), not the TUI's, so the dir survives a "Keep Running" quit.
+// runDaemon), not the TUI's, so the dir survives a --no-tui run.
 const envDemoTempDir = "RUNWISP_DEMO_TEMP"
 
 var demoFlags struct {
@@ -43,12 +44,9 @@ explore the TUI and Web UI without writing a runwisp.toml.
 The demo loads a realistic "Acme Notes" config (scheduled backups and health
 checks, background services, manual deploy/import tasks) and — in standalone
 mode — pre-seeds hundreds of historical runs with real captured logs, timed to
-match each task's cron schedule. The daemon runs in the background just like
-plain ` + "`runwisp`" + `; quit the TUI and choose "Shut Down" to stop it. Choose
-"Keep Running" instead and the daemon stays up, reachable in your browser at the
-bound port — but not via ` + "`runwisp tui`" + `, which looks in the default data
-dir, not the demo's throwaway one. Everything lives under a temp directory that
-is deleted when the daemon shuts down.
+match each task's cron schedule. Quitting the TUI shuts the demo daemon down.
+Everything lives under a temp directory that is deleted when the daemon shuts
+down.
 
 With --station the daemon connects to the control plane instead and no history is
 seeded (the Station owns it); RUNWISP_STATION_TOKEN is required, as for ` + "`runwisp station`" + `.
@@ -155,11 +153,11 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 		}
 		return nil
 	}
-	return runTUIConnect(cmd.Context(), client, f, true)
+	return runTUIConnect(cmd.Context(), client, f, tui.DaemonThrowaway)
 }
 
 // reportDemoNoTUI leaves the background daemon running and prints its Web UI password to stdout.
-// This is the --no-tui path that mirrors the TUI's "Keep Running" quit. Returns a passwordExit* code.
+// This is the --no-tui path, the only way to keep the demo running without the TUI. Returns a passwordExit* code.
 func reportDemoNoTUI(ctx context.Context, stdout, stderr io.Writer, client credentialsFetcher, f Flags) int {
 	fmt.Fprintf(stderr, "RunWisp demo is running at %s\n", localBindURL(tlsScheme(config.Daemon{TLS: config.TLSModeOff}, f.Host), f.Host, f.Port))
 	fmt.Fprintf(stderr, "Stop it with: runwisp stop --data %s\n", f.DataDir)

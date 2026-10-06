@@ -452,7 +452,7 @@ func TestResolveTaskName_PanelMainReturnsSidebarActive(t *testing.T) {
 
 func TestRequestQuit_StartedDaemonOpensConfirmDialog(t *testing.T) {
 	m := newTestModel(nil)
-	m.startedDaemon = true
+	m.daemon = DaemonStarted
 	if cmd := m.requestQuit(); cmd != nil {
 		t.Fatal("expected no quit cmd while the dialog asks")
 	}
@@ -476,9 +476,27 @@ func TestRequestQuit_AttachedQuitsWithoutDialog(t *testing.T) {
 // no longer the TUI's to stop.
 func TestRequestQuit_ServiceManagedQuitsWithoutDialog(t *testing.T) {
 	m := newTestModel(nil)
-	m.startedDaemon = true
+	m.daemon = DaemonStarted
 	m.info.ServiceManaged = true
 	assertQuitsKeepingDaemon(t, &m)
+}
+
+// A throwaway demo daemon has no life after the TUI, so quitting shuts it down
+// without offering to keep it running.
+func TestRequestQuit_ThrowawayShutsDownWithoutDialog(t *testing.T) {
+	m := newTestModel(nil)
+	m.daemon = DaemonThrowaway
+	cmd := m.requestQuit()
+	if m.dialogs.HasConfirm() {
+		t.Fatal("expected no quit dialog")
+	}
+	if cmd == nil {
+		t.Fatal("expected a quit cmd")
+	}
+	msg, ok := cmd().(uikit.QuitMsg)
+	if !ok || msg.Action != uikit.QuitShutdownDaemon {
+		t.Fatalf("expected QuitMsg{QuitShutdownDaemon}, got %#v", msg)
+	}
 }
 
 func assertQuitsKeepingDaemon(t *testing.T, m *Model) {
