@@ -127,6 +127,14 @@ func (srv *Server) currentConfigStale() bool {
 	return srv.configStale()
 }
 
+// currentRunUsage is the live per-run usage, or nil when nothing samples runs.
+func (srv *Server) currentRunUsage() map[string]model.ResourceUsage {
+	if srv.runUsage == nil {
+		return nil
+	}
+	return srv.runUsage()
+}
+
 // broadcastSample fans a freshly collected metrics sample out over the event
 // bus as a system event, and — only when staleness has flipped since the last
 // tick — a config.stale event. It runs on the metrics collector goroutine, so
@@ -139,6 +147,8 @@ func (srv *Server) broadcastSample(sample model.MetricsSample) {
 	srv.eventBus.Publish(events.EventSystemSample, events.SystemSampleEvent{
 		Sample: sample,
 		Uptime: formatUptime(time.Since(srv.stats.startTime)),
+		Tasks:  srv.runService.usage(),
+		Runs:   srv.currentRunUsage(),
 	})
 
 	stale := srv.currentConfigStale()

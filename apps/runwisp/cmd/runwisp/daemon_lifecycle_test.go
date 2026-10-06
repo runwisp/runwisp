@@ -132,7 +132,7 @@ func minimalServices(t *testing.T) *daemonServices {
 	cfg := &config.Config{}
 	config.ApplyDefaults(cfg)
 	bus := events.NewEventBus()
-	exec := initExecutor(cfg, bus, f.LogDir(), "")
+	exec := initExecutor(cfg, bus, f.LogDir(), "", nil)
 	dc := &daemonConfig{Config: cfg}
 	tm, tasksMap := initTaskManager(dc, db, exec, bus)
 	tasks := runtime.NewTaskRegistry(tasksMap)
@@ -223,7 +223,7 @@ func TestGracefulShutdown_WithScheduler(t *testing.T) {
 	cfg := &config.Config{}
 	config.ApplyDefaults(cfg)
 	bus := events.NewEventBus()
-	exec := initExecutor(cfg, bus, f.LogDir(), "")
+	exec := initExecutor(cfg, bus, f.LogDir(), "", nil)
 	dc := &daemonConfig{Config: cfg}
 	tm, tasksMap := initTaskManager(dc, db, exec, bus)
 	tasks := runtime.NewTaskRegistry(tasksMap)

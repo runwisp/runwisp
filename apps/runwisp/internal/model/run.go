@@ -170,6 +170,11 @@ type Run struct {
 	// run (identity key → value). Nil for tasks without declared parameters, so
 	// it is omitted from JSON/storage and adds no behaviour for the common case.
 	Params map[string]string `json:"params,omitempty"`
+	// PeakMemoryBytes and CPUTimeMs are measured for shell runs only (one
+	// process group); nil for other backends, for runs too short to sample,
+	// and for runs recorded before they existed.
+	PeakMemoryBytes *int64 `json:"peakMemoryBytes,omitempty" doc:"Highest resident memory of the run's process group, in bytes. Shell runs only; absent when not measured."`
+	CPUTimeMs       *int64 `json:"cpuTimeMs,omitempty" doc:"User plus system CPU time of the run's processes, in milliseconds. Shell runs only; absent when not measured."`
 	// OutputMatched records that a captured output line matched one of the
 	// task's `failures` output patterns. Transient: set by the run manager from
 	// the executor result just before End, which folds it into the persisted
@@ -202,6 +207,14 @@ func (r *Run) Copy() *Run {
 	if r.RetryOfRunID != nil {
 		rid := *r.RetryOfRunID
 		cpy.RetryOfRunID = &rid
+	}
+	if r.PeakMemoryBytes != nil {
+		pm := *r.PeakMemoryBytes
+		cpy.PeakMemoryBytes = &pm
+	}
+	if r.CPUTimeMs != nil {
+		ct := *r.CPUTimeMs
+		cpy.CPUTimeMs = &ct
 	}
 	if r.Params != nil {
 		params := make(map[string]string, len(r.Params))

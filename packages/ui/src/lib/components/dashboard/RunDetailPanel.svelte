@@ -32,8 +32,9 @@
     import { prefersReducedMotion } from "../../actions/row-motion.js";
     import type { RunMotion } from "../../utils/run-motion.js";
     import type { Run } from "./types.js";
+    import type { ResourceUsage } from "@runwisp/common";
     import { isLogEvent, type LogEvent, type LogSlice } from "../../log-console/types.js";
-    import { formatClockTime, formatCalendarDate } from "../../utils/format.js";
+    import { formatBytes, formatClockTime, formatCalendarDate } from "../../utils/format.js";
     import { formatShortId } from "../../utils/id.js";
     import { TickingNow } from "../../utils/ticking-now.svelte.js";
     import { getRunStatusConfig, runDisplayStatus } from "./status-config.js";
@@ -43,6 +44,7 @@
         runVerdict,
         formatTriggeredByLabel,
         runRetryLabel,
+        runUsageLabel,
         instanceSuffix,
     } from "./run-helpers.js";
 
@@ -65,6 +67,7 @@
         historyVisible = false,
         highlightLine = null,
         getInstanceCount = () => 1,
+        getLiveUsage = () => undefined,
         motion,
         notFound = false,
         loading = false,
@@ -113,6 +116,9 @@
         // Resolves a task's currently configured instance count so multi-instance
         // services render a 1-based #N suffix. Defaults to single-instance.
         getInstanceCount?: (taskName: string) => number;
+        // Live CPU and memory of a running run, by run ID; undefined when it
+        // isn't measured. Shown in the header while the run is running.
+        getLiveUsage?: (runId: string) => ResourceUsage | undefined;
         // Which runs arrived or were removed live moments ago. The panel eases in
         // when a new run takes it (triggered, or a scheduled run auto-selected)
         // or when its run was deleted and another takes its place; picking a
@@ -372,6 +378,8 @@
     {@const startDelay = runStartDelay(run)}
     {@const startedAt = run.startedAt ?? run.createdAt}
     {@const retry = runRetryLabel(run)}
+    {@const usage = runUsageLabel(run)}
+    {@const live = run.status === "running" ? getLiveUsage(run.id) : undefined}
     {@const paramEntries = run.params ? Object.entries(run.params) : []}
     {@const suffix = instanceSuffix(run.instanceIndex, getInstanceCount(run.taskName))}
     {@const spine = config.dot.replace(" animate-pulse", "")}
@@ -543,6 +551,25 @@
                                         </dl>
                                     </div>
                                 </Popover>
+                            {/if}
+                            {#if live}
+                                <span class="text-outline-hover" aria-hidden="true">·</span>
+                                <span
+                                    data-testid="run-live-usage"
+                                    class="text-on-surface-muted"
+                                    title="Live CPU (100% = one core) and memory of the run's processes"
+                                    >CPU {Math.round(live.cpuPercent)}% · {formatBytes(
+                                        live.memoryBytes,
+                                    )}</span
+                                >
+                            {/if}
+                            {#if usage}
+                                <span class="text-outline-hover" aria-hidden="true">·</span>
+                                <span
+                                    data-testid="run-usage"
+                                    title="Peak memory and CPU time of the run's processes"
+                                    >{usage}</span
+                                >
                             {/if}
                             <!-- Run-id chip: click to copy the full ULID. Last, because
                              it is the fact you reach for least and the only one you

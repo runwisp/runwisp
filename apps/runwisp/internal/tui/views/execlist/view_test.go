@@ -1239,3 +1239,23 @@ func TestExecView_HiddenParamsSkippedByNavigation(t *testing.T) {
 		t.Fatalf("expected Duration (Params hidden), got %d", ev.HeaderFocus)
 	}
 }
+
+// The header shows live CPU and memory while running and the peak after.
+func TestExecView_HeaderShowsUsage(t *testing.T) {
+	ev := newSizedExecView(100, 20)
+	assert := func(want string) {
+		t.Helper()
+		if out := ansi.Strip(ev.View()); !strings.Contains(out, want) {
+			t.Fatalf("header missing %q\n%s", want, out)
+		}
+	}
+	if strings.Contains(ansi.Strip(ev.View()), "CPU") {
+		t.Fatal("no usage line before the first sample")
+	}
+	ev.Usage = &model.ResourceUsage{CPUPercent: 37.6, MemoryBytes: 48 << 20}
+	assert("CPU 38% · 48 MB")
+
+	peak := int64(64 << 20)
+	ev.Run.Status, ev.Run.PeakMemoryBytes = model.PhaseEnded, &peak
+	assert("peak 64 MB")
+}

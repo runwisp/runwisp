@@ -5,7 +5,7 @@
     import type { Run } from "@runwisp/common";
     import type { LogEvent, LogSlice, RunMotion, RunsListFilters } from "@runwisp/ui";
     import { RunsList, RunDetailPanel } from "@runwisp/ui";
-    import { headerSearchStore, taskStore } from "$lib/stores";
+    import { headerSearchStore, systemStore, taskStore } from "$lib/stores";
     import { createRunActions } from "$lib/utils/run-actions";
 
     let {
@@ -153,6 +153,7 @@
         showTaskName
         onDelete={deleteSingle}
         {getInstanceCount}
+        getLiveUsage={(id) => systemStore.runUsage(id)}
         {motion}
         notFound={deepLinkMissing}
         loading={(loading && items.length === 0) || deepLinkPending}

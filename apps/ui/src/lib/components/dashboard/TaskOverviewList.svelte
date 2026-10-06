@@ -6,6 +6,7 @@
     import ComposeBadge from "../ComposeBadge.svelte";
     import TaskHeldBadge from "../TaskHeldBadge.svelte";
     import TaskSourceBadge from "../TaskSourceBadge.svelte";
+    import TaskUsage from "../TaskUsage.svelte";
     import { getRunStatusConfig, Badge, EmptyState, Input, Select, Tooltip } from "@runwisp/ui";
     import type {
         OverviewTaskCounts,
@@ -252,6 +253,7 @@ run  = "echo hello"</pre>
                                             : "Service"}
                                     </Badge>
                                 {/if}
+                                <TaskUsage task={task.task} />
                             </div>
 
                             <p class="mt-1 truncate text-xs text-on-surface-muted">

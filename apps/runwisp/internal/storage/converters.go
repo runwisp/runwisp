@@ -36,6 +36,9 @@ func runFromRow(s sqlcdb.Run) model.Run {
 		InstanceIndex: s.InstanceIndex,
 		IsFailure:     s.IsFailure != 0,
 		Params:        decodeParams(s.ParamsJson, s.ID),
+
+		PeakMemoryBytes: s.PeakMemoryBytes,
+		CPUTimeMs:       s.CpuTimeMs,
 	}
 }
 
@@ -79,6 +82,9 @@ func runToCreateParams(r *model.Run) sqlcdb.CreateRunParams {
 		InstanceIndex: r.InstanceIndex,
 		ParamsJson:    encodeParams(r.Params),
 		IsFailure:     boolToInt64(r.IsFailure),
+
+		PeakMemoryBytes: r.PeakMemoryBytes,
+		CpuTimeMs:       r.CPUTimeMs,
 	}
 }
 
@@ -100,6 +106,9 @@ func runToUpdateParams(r *model.Run) sqlcdb.UpdateRunParams {
 		ParamsJson:    encodeParams(r.Params),
 		IsFailure:     boolToInt64(r.IsFailure),
 		ID:            r.ID,
+
+		PeakMemoryBytes: r.PeakMemoryBytes,
+		CpuTimeMs:       r.CPUTimeMs,
 	}
 }
 

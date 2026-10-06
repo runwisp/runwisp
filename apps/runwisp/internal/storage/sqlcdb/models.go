@@ -39,22 +39,24 @@ type PendingLogUpload struct {
 }
 
 type Run struct {
-	ID            string            `json:"id"`
-	ExecutionID   *string           `json:"execution_id"`
-	TaskName      string            `json:"task_name"`
-	Status        model.RunPhase    `json:"status"`
-	EndReason     *model.EndReason  `json:"end_reason"`
-	ExitCode      int               `json:"exit_code"`
-	StartedAt     *time.Time        `json:"started_at"`
-	EndedAt       *time.Time        `json:"ended_at"`
-	TriggeredBy   model.TriggeredBy `json:"triggered_by"`
-	CreatedAt     time.Time         `json:"created_at"`
-	RetryAttempt  int               `json:"retry_attempt"`
-	RetryOfRunID  *string           `json:"retry_of_run_id"`
-	InstanceIndex int               `json:"instance_index"`
-	ParamsJson    *string           `json:"params_json"`
-	DeletedAt     *time.Time        `json:"deleted_at"`
-	IsFailure     int64             `json:"is_failure"`
+	ID              string            `json:"id"`
+	ExecutionID     *string           `json:"execution_id"`
+	TaskName        string            `json:"task_name"`
+	Status          model.RunPhase    `json:"status"`
+	EndReason       *model.EndReason  `json:"end_reason"`
+	ExitCode        int               `json:"exit_code"`
+	StartedAt       *time.Time        `json:"started_at"`
+	EndedAt         *time.Time        `json:"ended_at"`
+	TriggeredBy     model.TriggeredBy `json:"triggered_by"`
+	CreatedAt       time.Time         `json:"created_at"`
+	RetryAttempt    int               `json:"retry_attempt"`
+	RetryOfRunID    *string           `json:"retry_of_run_id"`
+	InstanceIndex   int               `json:"instance_index"`
+	ParamsJson      *string           `json:"params_json"`
+	DeletedAt       *time.Time        `json:"deleted_at"`
+	IsFailure       int64             `json:"is_failure"`
+	PeakMemoryBytes *int64            `json:"peak_memory_bytes"`
+	CpuTimeMs       *int64            `json:"cpu_time_ms"`
 }
 
 type TaskBootID struct {

@@ -125,6 +125,14 @@ func TestSeed(t *testing.T) {
 		t.Fatalf("summary total = %d, want %d", sum.Total, n)
 	}
 
+	t.Run("every run carries seeded resource usage", func(t *testing.T) {
+		for _, r := range queryAll(t, db, "tick") {
+			if r.PeakMemoryBytes == nil || *r.PeakMemoryBytes < 16<<20 || r.CPUTimeMs == nil {
+				t.Fatalf("run %s usage = %v / %v, want a seeded peak and CPU time", r.ID, r.PeakMemoryBytes, r.CPUTimeMs)
+			}
+		}
+	})
+
 	t.Run("scheduled runs align to cron, are cron-triggered, and log for real", func(t *testing.T) {
 		// "15 * * * *" fires hourly on minute 15.
 		runs := queryAll(t, db, "tick")

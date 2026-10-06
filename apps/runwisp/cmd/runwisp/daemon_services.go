@@ -20,6 +20,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/procstat"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -31,6 +32,7 @@ type daemonServices struct {
 	DB                  storage.Database
 	EventBus            *events.Bus
 	Executor            executor.Executor
+	Usage               *procstat.Sampler
 	TaskManager         runtime.TaskManager
 	Tasks               *runtime.TaskRegistry
 	Scheduler           *runtime.Scheduler
@@ -76,7 +78,8 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 
 	eventBus := events.NewEventBus()
 
-	exec := initExecutor(cfg.Config, eventBus, f.LogDir(), cfg.Fingerprint)
+	usage := procstat.New()
+	exec := initExecutor(cfg.Config, eventBus, f.LogDir(), cfg.Fingerprint, usage)
 
 	taskManager, tasksMap := initTaskManager(cfg, db, exec, eventBus)
 	// Single guarded owner of the live task set. Boot-only helpers below still
@@ -132,6 +135,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		DB:                  db,
 		EventBus:            eventBus,
 		Executor:            exec,
+		Usage:               usage,
 		TaskManager:         taskManager,
 		Tasks:               tasks,
 		Scheduler:           boot.scheduler,
@@ -262,7 +266,9 @@ func runMissedTickCatchUp(tasksMap map[string]*model.Task, taskManager runtime.T
 	return catchUpResult
 }
 
-func initExecutor(cfg *config.Config, eventBus *events.Bus, logDir, fingerprint string) executor.Executor {
+// initExecutor builds the routing executor. sampler may be nil (one-shot CLI
+// runs, which display no resource usage).
+func initExecutor(cfg *config.Config, eventBus *events.Bus, logDir, fingerprint string, sampler *procstat.Sampler) executor.Executor {
 	dockerBackend := executor.NewLazyContainerBackend()
 	composeBackend := executor.NewLazyComposeBackend(fingerprint)
 
@@ -276,6 +282,7 @@ func initExecutor(cfg *config.Config, eventBus *events.Bus, logDir, fingerprint 
 		Docker:                 dockerBackend,
 		Compose:                composeBackend,
 		MinFreeDisk:            minFreeDisk,
+		Sampler:                sampler,
 	})
 }
 

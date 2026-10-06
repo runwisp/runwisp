@@ -101,6 +101,24 @@ func TestOpenMetrics_HappyPath(t *testing.T) {
 	runner.AssertExpectations(t)
 }
 
+func TestOpenMetrics_TaskUsage(t *testing.T) {
+	info := &model.DaemonInfo{Tasks: []model.Task{
+		{Name: "api-server", Kind: model.KindService},
+		{Name: "idle"},
+	}}
+	srv, repo, runner := buildOpenMetricsServer(t, info)
+	srv.runService = &runService{taskUsage: func() map[string]model.ResourceUsage {
+		return map[string]model.ResourceUsage{"api-server": {CPUPercent: 12.5, MemoryBytes: 1024}}
+	}}
+	repo.On("GetRunSummary", mock.Anything).Return(&model.RunSummary{}, nil)
+	runner.On("GetActiveRunCount", mock.Anything).Return(0)
+
+	_, body, _ := scrapeMetrics(t, srv)
+	assert.Contains(t, body, `runwisp_task_cpu_percent{task="api-server",kind="service"} 12.5`)
+	assert.Contains(t, body, `runwisp_task_memory_bytes{task="api-server",kind="service"} 1024`)
+	assert.NotContains(t, body, `runwisp_task_memory_bytes{task="idle"`, "a task with nothing running has no series")
+}
+
 func TestOpenMetrics_OmitsLastFailureWhenNil(t *testing.T) {
 	srv, repo, _ := buildOpenMetricsServer(t, &model.DaemonInfo{})
 	repo.On("GetRunSummary", mock.Anything).Return(&model.RunSummary{

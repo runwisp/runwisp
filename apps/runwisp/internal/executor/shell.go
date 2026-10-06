@@ -160,6 +160,14 @@ func startCmd(cmd *exec.Cmd, grace time.Duration, stopSig syscall.Signal, cred *
 				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 			}
 		},
+		Pid: cmd.Process.Pid,
+		Rusage: func() *syscall.Rusage {
+			if cmd.ProcessState == nil {
+				return nil
+			}
+			ru, _ := cmd.ProcessState.SysUsage().(*syscall.Rusage)
+			return ru
+		},
 	}, nil
 }
 

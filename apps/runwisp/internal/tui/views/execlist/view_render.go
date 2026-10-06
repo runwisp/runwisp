@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -125,11 +126,33 @@ func (v *ExecView) renderTitleRow(w int) string {
 	idX1 := uikit.SidebarWidth + lipgloss.Width(headerLeft)
 	v.headerLayout.add(HeaderFocusID, idX0, idX1, 1)
 	headerRight := statusBadge + bgLight.Render("  ")
+	// Resource use sits beside the status, dropped when the row is too narrow.
+	if usage := v.usageText(); usage != "" {
+		withUsage := bgLight.Foreground(uikit.ColorTextMuted).Render(usage+"  ") + headerRight
+		if lipgloss.Width(headerLeft)+lipgloss.Width(withUsage)+1 <= w {
+			headerRight = withUsage
+		}
+	}
 	headerGap := w - lipgloss.Width(headerLeft) - lipgloss.Width(headerRight)
 	if headerGap < 1 {
 		headerGap = 1
 	}
 	return headerLeft + bgLight.Render(strings.Repeat(" ", headerGap)) + headerRight
+}
+
+// usageText is the live CPU and memory while the run is running, its peak
+// memory once it has ended, or "" when neither was measured.
+func (v *ExecView) usageText() string {
+	if v.Run.Status == model.PhaseRunning {
+		if v.Usage == nil {
+			return ""
+		}
+		return uikit.FormatUsage(*v.Usage)
+	}
+	if v.Run.PeakMemoryBytes == nil {
+		return ""
+	}
+	return "peak " + config.FormatByteSize(*v.Run.PeakMemoryBytes)
 }
 
 // renderMetaRow draws header row 2's meta fields (without the buttons) and

@@ -7,6 +7,7 @@ import { connectionStore } from "$lib/stores/connection.svelte";
 import { appEventStream } from "$lib/stores/app-stream.svelte";
 import { createLogger } from "$lib/utils/logger";
 import { safeParseJSON } from "$lib/utils/parse";
+import type { ResourceUsage, Task } from "$lib/types";
 
 function createSystemStore() {
     const logger = createLogger("SystemStore");
@@ -38,6 +39,11 @@ function createSystemStore() {
     // to concierge at all; startedAt (epoch ms) drives its one-hour uptime wait.
     let checkUpdates = $state(false);
     let startedAt = $state(0);
+    // Live CPU/memory per task from the system event. null until the first one
+    // lands, so usageFor falls back to the usage the task was fetched with.
+    let taskUsage = $state<Record<string, ResourceUsage> | null>(null);
+    // Live CPU/memory per running run, by run ID, from the same event.
+    let runUsage = $state<Record<string, ResourceUsage>>({});
 
     let subscribed = false;
     let unsubscribes: (() => void)[] = [];
@@ -105,6 +111,8 @@ function createSystemStore() {
                 memUsage = parsed.data.sample.memUsage;
                 memTotal = parsed.data.sample.memTotal;
                 uptime = parsed.data.uptime;
+                taskUsage = parsed.data.tasks ?? {};
+                runUsage = parsed.data.runs ?? {};
             }),
             appEventStream.subscribe("config.stale", (data) => {
                 const parsed = safeParseJSON(data, configStaleEventSchema);
@@ -186,6 +194,12 @@ function createSystemStore() {
         },
         get startedAt() {
             return startedAt;
+        },
+        usageFor(task: Task): ResourceUsage | undefined {
+            return taskUsage ? taskUsage[task.name] : task.usage;
+        },
+        runUsage(runId: string): ResourceUsage | undefined {
+            return runUsage[runId];
         },
         init,
         disconnect,

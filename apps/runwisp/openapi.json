@@ -1179,6 +1179,26 @@
         ],
         "type": "object"
       },
+      "ResourceUsage": {
+        "additionalProperties": false,
+        "properties": {
+          "cpuPercent": {
+            "description": "CPU use in percent of one core (200 = two full cores)",
+            "format": "double",
+            "type": "number"
+          },
+          "memoryBytes": {
+            "description": "Resident memory in bytes",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cpuPercent",
+          "memoryBytes"
+        ],
+        "type": "object"
+      },
       "Run": {
         "additionalProperties": false,
         "properties": {
@@ -1190,6 +1210,11 @@
             "format": "uri",
             "readOnly": true,
             "type": "string"
+          },
+          "cpuTimeMs": {
+            "description": "User plus system CPU time of the run's processes, in milliseconds. Shell runs only; absent when not measured.",
+            "format": "int64",
+            "type": "integer"
           },
           "createdAt": {
             "format": "date-time",
@@ -1224,6 +1249,11 @@
               "type": "string"
             },
             "type": "object"
+          },
+          "peakMemoryBytes": {
+            "description": "Highest resident memory of the run's process group, in bytes. Shell runs only; absent when not measured.",
+            "format": "int64",
+            "type": "integer"
           },
           "retryAttempt": {
             "format": "int64",
@@ -1543,9 +1573,23 @@
       "SystemSampleSSEEvent": {
         "additionalProperties": false,
         "properties": {
+          "runs": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ResourceUsage"
+            },
+            "description": "Live CPU and memory use per running run, keyed by run ID; only measured shell runs appear",
+            "type": "object"
+          },
           "sample": {
             "$ref": "#/components/schemas/MetricsSample",
             "description": "Resource snapshot, same shape as a metrics-history entry"
+          },
+          "tasks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ResourceUsage"
+            },
+            "description": "Live CPU and memory use per task, keyed by task name; only tasks with a measured running shell run appear",
+            "type": "object"
           },
           "uptime": {
             "description": "Human-readable daemon uptime",
@@ -2259,6 +2303,10 @@
           "umask": {
             "description": "Octal file-creation mask applied to the run's process; empty inherits the daemon's umask",
             "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/ResourceUsage",
+            "description": "Live CPU and memory use of the task's running shell runs; absent when none is running or measured."
           },
           "user": {
             "description": "Run the process as this OS user, in 'user' or 'user:group' form (name or numeric id). Empty runs as the daemon's user; switching users needs the daemon running as root.",

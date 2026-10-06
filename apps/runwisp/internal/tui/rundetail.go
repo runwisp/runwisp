@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -124,6 +125,12 @@ func (d *RunDetailDialog) facts(row func(label, value string, color color.Color)
 		out = append(out, row("Ended", d.formatRunTime(run.EndedAt), uikit.ColorText))
 	}
 	out = append(out, row("Duration", uikit.FormatDuration(*run), uikit.ColorText))
+	if run.PeakMemoryBytes != nil {
+		out = append(out, row("Peak memory", config.FormatByteSize(*run.PeakMemoryBytes), uikit.ColorText))
+	}
+	if run.CPUTimeMs != nil {
+		out = append(out, row("CPU time", (time.Duration(*run.CPUTimeMs)*time.Millisecond).String(), uikit.ColorText))
+	}
 	if len(run.Params) > 0 {
 		out = append(out, row("Params", strconv.Itoa(len(run.Params)), uikit.ColorTextMuted))
 	}

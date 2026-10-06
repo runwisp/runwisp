@@ -225,10 +225,11 @@ func renderActionRow(b *strings.Builder, label string, labelColor color.Color, w
 }
 
 // RenderTaskHeader renders the task info header with a Run Now button. paused
-// reports that an operator paused the task's cron schedule.
+// reports that an operator paused the task's cron schedule; usage, when
+// non-nil, is the live CPU and memory of the task's running processes.
 // The runNowBtnY output is the screen-relative Y offset of the Run Now button row
 // within this header (0-based from header start).
-func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered, paused bool, loc *time.Location) (string, int) {
+func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered, paused bool, usage *model.ResourceUsage, loc *time.Location) (string, int) {
 	var b strings.Builder
 	lineCount := 0
 
@@ -258,6 +259,9 @@ func RenderTaskHeader(taskName string, task *model.Task, w int, runNowHovered, p
 		if nextRun := NextCronRun(schedule, loc); nextRun != "" {
 			schedInfo += "  •  Next: " + nextRun
 		}
+	}
+	if usage != nil {
+		schedInfo += "  •  " + uikit.FormatUsage(*usage)
 	}
 	schedText := lipgloss.NewStyle().
 		Background(uikit.ColorBgLight).

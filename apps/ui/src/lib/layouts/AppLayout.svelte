@@ -14,6 +14,7 @@
     import NotificationBell from "$lib/components/NotificationBell.svelte";
     import StaleConfigBanner from "$lib/components/StaleConfigBanner.svelte";
     import TaskScheduleChip from "$lib/components/TaskScheduleChip.svelte";
+    import TaskUsage from "$lib/components/TaskUsage.svelte";
     import { systemStore } from "$lib/stores";
     import { showScheduleChip } from "$lib/utils/task-schedule";
     import { ThemeToggle, Logo } from "@runwisp/ui";
@@ -258,6 +259,9 @@
                     {#if showScheduleChip(activeTask, systemStore.schedulingActive)}
                         <TaskScheduleChip task={activeTask} />
                     {/if}
+                    <span class="hidden shrink-0 @2xl:inline">
+                        <TaskUsage task={activeTask} />
+                    </span>
                 {:else}
                     <span class="font-mono font-semibold text-on-surface capitalize"
                         >{activePage.replace("task_", "").replace(/_/g, " ")}</span

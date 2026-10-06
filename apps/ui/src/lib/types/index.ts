@@ -8,6 +8,7 @@ import {
     TRIGGERS,
     type Run as CommonRun,
     type Task as CommonTask,
+    type ResourceUsage,
     type AuthChallengeBody,
     type AuthStatusBody,
     type AuthLoginBody,
@@ -15,6 +16,7 @@ import {
 
 export type Task = CommonTask;
 export type Run = CommonRun;
+export type { ResourceUsage };
 
 export interface AuthState {
     required: boolean;
@@ -59,6 +61,8 @@ const runSchema = z
         params: z.record(z.string(), z.string()).optional(),
         isFailure: z.boolean(),
         instanceIndex: z.number().int(),
+        peakMemoryBytes: z.number().optional(),
+        cpuTimeMs: z.number().optional(),
     })
     .pipe(z.custom<Run>());
 

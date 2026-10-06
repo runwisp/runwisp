@@ -6,6 +6,7 @@ package executor
 import (
 	"context"
 	"io"
+	"syscall"
 
 	"github.com/runwisp/runwisp/internal/model"
 )
@@ -34,4 +35,9 @@ type Process struct {
 	// the per-task graceful_stop window — used by the daemon shutdown
 	// coordinator to bound total shutdown time.
 	ForceKill func()
+	// Pid is the process-group leader whose group procstat samples, and Rusage
+	// returns the kernel's accounting once Wait has returned. Both are set only
+	// by backends whose workload is that process tree (shell); 0/nil otherwise.
+	Pid    int
+	Rusage func() *syscall.Rusage
 }

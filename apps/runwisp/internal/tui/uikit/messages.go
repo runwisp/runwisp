@@ -118,10 +118,12 @@ type SchedulePauseMsg struct {
 	Err      error
 }
 
-// PausedTasksMsg delivers the tasks whose cron schedule is paused, keyed by
-// name, from a fresh /api/tasks read.
-type PausedTasksMsg struct {
+// TaskStateMsg delivers live per-task state from a fresh /api/tasks read:
+// the tasks whose cron schedule is paused and the live usage of running ones,
+// both keyed by name.
+type TaskStateMsg struct {
 	Paused map[string]time.Time
+	Usage  map[string]model.ResourceUsage
 	Err    error
 }
 

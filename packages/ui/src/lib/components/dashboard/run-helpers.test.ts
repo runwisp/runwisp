@@ -9,6 +9,7 @@ import {
     runVerdict,
     formatTriggeredByLabel,
     runRetryLabel,
+    runUsageLabel,
     instanceSuffix,
 } from "./run-helpers.js";
 
@@ -113,6 +114,22 @@ describe("formatTriggeredByLabel", () => {
         expect(formatTriggeredByLabel("service")).toBe("Service");
         expect(formatTriggeredByLabel("startup")).toBe("Startup");
         expect(formatTriggeredByLabel("station")).toBe("Station");
+    });
+});
+
+describe("runUsageLabel", () => {
+    it("is undefined for an unmeasured run", () => {
+        expect(runUsageLabel({})).toBeUndefined();
+    });
+
+    it("joins peak memory and CPU time", () => {
+        expect(runUsageLabel({ peakMemoryBytes: 48 * 1024 * 1024, cpuTimeMs: 1500 })).toBe(
+            "peak 48 MB · CPU 1s",
+        );
+    });
+
+    it("shows whichever was measured", () => {
+        expect(runUsageLabel({ cpuTimeMs: 0 })).toBe("CPU 0ms");
     });
 });
 

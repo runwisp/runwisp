@@ -37,6 +37,7 @@ type InfoView struct {
 
 	stats      *model.SystemStats
 	runSummary *model.RunSummary
+	taskUsage  map[string]model.ResourceUsage
 
 	cpuHistory []float64
 	memHistory []float64
@@ -62,6 +63,11 @@ func (v *InfoView) UpdateStats(stats *model.SystemStats) {
 	v.stats = stats
 	v.cpuHistory = appendCapped(v.cpuHistory, stats.CPUUsage, maxHistorySamples)
 	v.memHistory = appendCapped(v.memHistory, stats.MemUsage, maxHistorySamples)
+}
+
+// SetTaskUsage replaces the live per-task CPU and memory shown in the task list.
+func (v *InfoView) SetTaskUsage(usage map[string]model.ResourceUsage) {
+	v.taskUsage = usage
 }
 
 // LoadHistory pre-fills sparklines from historical samples (oldest first).
@@ -418,7 +424,11 @@ func (v *InfoView) renderTasksSection(w int) []string {
 		}
 		name := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextBright).Bold(true).Render(task.Name)
 		schedStyle := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextMuted).Render(sched)
-		lines = append(lines, uikit.PadLine(bgSpace(2)+name+bgSpace(2)+schedStyle, w, uikit.ColorBg))
+		line := bgSpace(2) + name + bgSpace(2) + schedStyle
+		if u, ok := v.taskUsage[task.Name]; ok {
+			line += bgSpace(2) + lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorRunning).Render(uikit.FormatUsage(u))
+		}
+		lines = append(lines, uikit.PadLine(line, w, uikit.ColorBg))
 	}
 
 	return lines

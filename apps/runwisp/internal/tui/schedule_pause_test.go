@@ -28,19 +28,32 @@ func pauseTestTasks() []model.Task {
 	}
 }
 
-func TestStreamManager_FetchPausedTasks(t *testing.T) {
+func TestStreamManager_FetchTaskState(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"items":[{"name":"backup","pausedAt":"2026-09-29T10:00:00Z"},{"name":"other"}]}`))
+		_, _ = w.Write([]byte(`{"items":[{"name":"backup","pausedAt":"2026-09-29T10:00:00Z"},{"name":"other","usage":{"cpuPercent":50,"memoryBytes":2048}}]}`))
 	}))
 	defer srv.Close()
 	sm := NewStreamManager(apiclient.New(srv.URL, ""))
 	t.Cleanup(sm.Shutdown)
 
-	msg, ok := sm.FetchPausedTasks()().(uikit.PausedTasksMsg)
+	msg, ok := sm.FetchTaskState()().(uikit.TaskStateMsg)
 	require.True(t, ok)
 	require.NoError(t, msg.Err)
 	assert.Equal(t, map[string]time.Time{"backup": time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)}, msg.Paused)
+	assert.Equal(t, map[string]model.ResourceUsage{"other": {CPUPercent: 50, MemoryBytes: 2048}}, msg.Usage)
+}
+
+// The /api/tasks poll feeds live usage to both the task header and the Info page.
+func TestTaskStateMsg_StoresUsage(t *testing.T) {
+	m := newTestModelWithClient(pauseTestTasks())
+	usage := map[string]model.ResourceUsage{"web": {CPUPercent: 5, MemoryBytes: 1 << 20}}
+
+	updated, _, handled := m.dispatchActionMsg(uikit.TaskStateMsg{Paused: map[string]time.Time{}, Usage: usage})
+	require.True(t, handled)
+	got := updated.(Model)
+	assert.Equal(t, &model.ResourceUsage{CPUPercent: 5, MemoryBytes: 1 << 20}, got.taskUsage("web"))
+	assert.Nil(t, got.taskUsage("backup"))
 }
 
 func TestStreamManager_SetSchedulePaused(t *testing.T) {

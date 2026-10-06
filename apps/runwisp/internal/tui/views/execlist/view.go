@@ -99,6 +99,9 @@ type ExecView struct {
 	// Loc is the daemon's timezone for the header's timestamps; nil means the
 	// process zone.
 	Loc *time.Location
+	// Usage is the run's live CPU and memory use while it runs; nil when it
+	// isn't running or measured.
+	Usage *model.ResourceUsage
 }
 
 // execHeaderHeight is the number of header lines drawn above the log in normal mode.

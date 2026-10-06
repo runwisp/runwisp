@@ -26,8 +26,6 @@ type Querier interface {
 	GetConfigValue(ctx context.Context, key string) (string, error)
 	GetLastRunByTask(ctx context.Context, taskName string) (Run, error)
 	GetNotificationByID(ctx context.Context, id string) (Notification, error)
-	// Full table projection in column order so sqlc reuses the Run model struct
-	// (is_failure is last because the migration appended the column).
 	GetPendingRuns(ctx context.Context) ([]Run, error)
 	GetRun(ctx context.Context, id string) (Run, error)
 	GetRunByExecutionID(ctx context.Context, executionID *string) (Run, error)
