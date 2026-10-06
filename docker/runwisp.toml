@@ -1,0 +1,17 @@
+#:schema https://docs.runwisp.com/config.schema.json
+# runwisp.toml
+# Docs: https://docs.runwisp.com/configuration/overview/
+
+[tasks.hello]
+description = "Example task. Trigger it from the TUI (press r) or the Web UI."
+run = "echo hello from runwisp"
+
+# Schedule a task with cron:
+# [tasks.heartbeat]
+# cron = "* * * * *"
+# run  = "date"
+
+# Long-running service (auto-restart, supports multiple instances):
+# [services.worker]
+# instances = 1
+# run       = "node ./worker.js"

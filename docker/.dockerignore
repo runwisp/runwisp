@@ -1,3 +1,4 @@
 *
 !context
 !docker-entrypoint.sh
+!runwisp.toml

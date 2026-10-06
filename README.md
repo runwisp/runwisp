@@ -52,12 +52,12 @@ Tarballs are available from [GitHub Releases](https://github.com/runwisp/runwisp
 ```bash
 docker run -d --name runwisp -p 9477:9477 \
   -e RUNWISP_PASSWORD=change-me \
-  -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro \
+  -v ./runwisp:/etc/runwisp \
   -v runwisp-data:/var/lib/runwisp \
   runwisp/runwisp:latest
 ```
 
-The image supports amd64 and arm64, with Alpine and Debian variants. See the [Docker guide](https://docs.runwisp.com/getting-started/docker/) for tags, environment variables, and volumes.
+On first start, RunWisp writes a starter config to `./runwisp/runwisp.toml`. The image supports amd64 and arm64, with Alpine and Debian variants. See the [Docker guide](https://docs.runwisp.com/getting-started/docker/) for tags, environment variables, and volumes.
 
 ## Quick Start
 

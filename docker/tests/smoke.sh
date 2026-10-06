@@ -191,6 +191,33 @@ else
 	fail "unexpected ephemeral warning with RUNWISP_PASSWORD set"
 fi
 
+echo "== an empty config directory gets a starter on first start =="
+mkdir "$work/fresh"
+fresh_ct="runwisp-smoke-fresh-$$"
+docker run -d --name "$fresh_ct" \
+	-e RUNWISP_PASSWORD=smoke-test-password \
+	-v "$work/fresh:/etc/runwisp" \
+	"$image" >/dev/null
+fresh_log=$(wait_for_log "$fresh_ct" "listening" 30 || true)
+fresh_run=$(docker exec "$fresh_ct" runwisp run hello 2>&1 || true)
+docker rm -f "$fresh_ct" >/dev/null 2>&1 || true
+
+if [[ "$fresh_log" == *"Wrote a starter config"* && -f "$work/fresh/runwisp.toml" ]]; then
+	pass "starter runwisp.toml written into the mounted directory"
+else
+	fail "first-start starter" "logs: $(printf '%s' "$fresh_log" | tail -20)"
+fi
+if [[ -O "$work/fresh/runwisp.toml" ]]; then
+	pass "starter is owned by the host directory's owner"
+else
+	fail "starter ownership" "$(ls -ln "$work/fresh")"
+fi
+if [[ "$fresh_run" == *"hello from runwisp"* ]]; then
+	pass "the starter's hello task runs"
+else
+	fail "starter hello task" "$fresh_run"
+fi
+
 echo "== a compose-backed unit fails loudly (the image ships no docker CLI) =="
 # The image deliberately has no docker binary, so [compose.*] can never run in
 # it. What matters is that this surfaces as a visible failed run rather than a

@@ -14,8 +14,8 @@
 #   ENTRYPOINT_SH="busybox sh" docker/tests/entrypoint_test.sh
 #
 # Not part of the image: docker/.dockerignore excludes everything except
-# `context` and `docker-entrypoint.sh`, so this directory never enters the
-# build context.
+# `context`, `docker-entrypoint.sh` and `runwisp.toml`, so this directory never
+# enters the build context.
 set -eu
 
 # shellcheck disable=SC1007 # `CDPATH= cd` clears CDPATH for this command only
@@ -30,10 +30,22 @@ ENTRYPOINT_SH=${ENTRYPOINT_SH:-sh}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT INT TERM
 
+# Lay the entrypoint and starter out as the image does, since the entrypoint
+# finds the starter relative to itself.
+mkdir -p "$work/bin" "$work/share/runwisp"
+cp "$entrypoint" "$work/bin/docker-entrypoint.sh"
+cp "$here/../runwisp.toml" "$work/share/runwisp/runwisp.toml"
+entrypoint="$work/bin/docker-entrypoint.sh"
+
 # Stub binary: echoes its own argv so we can assert on the exec'd command.
-mkdir -p "$work/bin"
 printf '#!/bin/sh\necho "ARGV: runwisp $*"\n' >"$work/bin/runwisp"
-chmod +x "$work/bin/runwisp"
+# Stub mountpoint: a directory counts as mounted when it's listed in $work/mounts.
+cat >"$work/bin/mountpoint" <<EOF
+#!/bin/sh
+grep -qxF "\$2" "$work/mounts"
+EOF
+: >"$work/mounts"
+chmod +x "$work/bin/runwisp" "$work/bin/mountpoint"
 PATH="$work/bin:$PATH"
 export PATH
 
@@ -140,9 +152,11 @@ expect "auth gate: fails closed on an unknown subcommand" 1 "explicit auth setti
 # ---------------------------------------------------------------------------
 expect "config: missing file" 1 "no runwisp.toml found" \
 	-- "$auth" "RUNWISP_CONFIG=$work/nope.toml" -- runwisp daemon
+expect "config: missing file message suggests a directory mount" 1 "-v ./runwisp:$work" \
+	-- "$auth" "RUNWISP_CONFIG=$work/nope.toml" -- runwisp daemon
 expect "config: a directory gets its own message" 1 "is a directory" \
 	-- "$auth" "RUNWISP_CONFIG=$config_dir" -- runwisp daemon
-expect "config: directory message suggests include" 1 'include = ["conf.d/*.toml"]' \
+expect "config: directory message suggests a directory mount" 1 "-v ./runwisp:$work" \
 	-- "$auth" "RUNWISP_CONFIG=$config_dir" -- runwisp daemon
 expect "config: empty RUNWISP_CONFIG falls back to the image default" 1 "/etc/runwisp/runwisp.toml" \
 	-- "$auth" "RUNWISP_CONFIG=" -- runwisp daemon
@@ -181,6 +195,61 @@ expect "daemon: RUNWISP_PASSWORD also satisfies the gate" 0 "ARGV: runwisp daemo
 	-- "RUNWISP_PASSWORD=hunter2" "$cfg" "$data" -- runwisp daemon
 expect "daemon: --data warns about the healthcheck" 0 "HEALTHCHECK" \
 	-- "$auth" "$cfg" "$data" -- runwisp daemon --data "$work/other"
+
+# ---------------------------------------------------------------------------
+# First start: a starter config is written only into a mounted, writable,
+# config-less directory. Anything else falls through to the errors above.
+# ---------------------------------------------------------------------------
+# check <name> <command...>: records a pass when the command succeeds.
+check() {
+	name=$1
+	shift
+	if "$@"; then
+		passed=$((passed + 1))
+	else
+		failed=$((failed + 1))
+		printf 'FAIL %s\n' "$name"
+	fi
+}
+
+mounted="$work/mounted"
+mkdir -p "$mounted"
+echo "$mounted" >>"$work/mounts"
+expect "scaffold: mounted empty dir gets a starter" 0 "Wrote a starter config" \
+	-- "$auth" "RUNWISP_CONFIG=$mounted/runwisp.toml" "$data" -- runwisp daemon
+check "scaffold: the image's starter is on disk" cmp -s "$work/share/runwisp/runwisp.toml" "$mounted/runwisp.toml"
+
+printf '# mine\n' >"$mounted/runwisp.toml"
+expect "scaffold: existing config is used as is" 0 "ARGV: runwisp daemon" \
+	-- "$auth" "RUNWISP_CONFIG=$mounted/runwisp.toml" "$data" -- runwisp daemon
+check "scaffold: existing config is untouched" grep -qx '# mine' "$mounted/runwisp.toml"
+
+unmounted="$work/unmounted"
+mkdir -p "$unmounted"
+expect "scaffold: not a mount point, no starter" 1 "no runwisp.toml found" \
+	-- "$auth" "RUNWISP_CONFIG=$unmounted/runwisp.toml" "$data" -- runwisp daemon
+check "scaffold: nothing written outside a mount" test ! -e "$unmounted/runwisp.toml"
+
+# A data dir with a database means this daemon ran before: a missing config is a
+# misplaced mount, never a first start.
+used_data="$work/used-data"
+mkdir -p "$used_data" "$work/remounted"
+: >"$used_data/runwisp.db"
+echo "$work/remounted" >>"$work/mounts"
+expect "scaffold: existing database, no starter" 1 "already holds a RunWisp database" \
+	-- "$auth" "RUNWISP_CONFIG=$work/remounted/runwisp.toml" "RUNWISP_DATA=$used_data" -- runwisp daemon
+check "scaffold: nothing written next to an existing database" test ! -e "$work/remounted/runwisp.toml"
+
+# root ignores directory permissions, so this case only means something unprivileged.
+if [ "$(id -u)" -ne 0 ]; then
+	readonly_dir="$work/readonly"
+	mkdir -p "$readonly_dir"
+	echo "$readonly_dir" >>"$work/mounts"
+	chmod 555 "$readonly_dir"
+	expect "scaffold: read-only mount, no starter" 1 "no runwisp.toml found" \
+		-- "$auth" "RUNWISP_CONFIG=$readonly_dir/runwisp.toml" "$data" -- runwisp daemon
+	chmod 755 "$readonly_dir"
+fi
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]
