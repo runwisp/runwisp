@@ -17,10 +17,6 @@ const DAY_MS = 24 * HOUR_MS;
 const WEEK_MS = 7 * DAY_MS;
 const MONTH_MS = 30 * DAY_MS;
 
-function toDate(v: Date | string): Date {
-    return typeof v === "string" ? new Date(v) : v;
-}
-
 /**
  * Mirrors `Phrase()` in `internal/notify/render/rhythm.go`. Order of rules
  * matters; the first match wins. Keep the two implementations in sync — the
@@ -29,13 +25,13 @@ function toDate(v: Date | string): Date {
  */
 export function phrase(input: RhythmInput): string {
     const now = input.now ?? new Date();
-    const last = toDate(input.lastOccurredAt);
+    const last = new Date(input.lastOccurredAt);
 
     if (input.count <= 1) {
         return relative(last, now);
     }
 
-    const occ = input.occurrences.map(toDate);
+    const occ = input.occurrences.map((v) => new Date(v));
     if (allWithin(occ, now, HOUR_MS)) {
         return `${input.count.toString()}× in the last hour, latest ${relative(last, now)}`;
     }
@@ -43,7 +39,7 @@ export function phrase(input: RhythmInput): string {
         return `${input.count.toString()}× today, latest ${relative(last, now)}`;
     }
 
-    const created = toDate(input.createdAt);
+    const created = new Date(input.createdAt);
     const span = now.getTime() - created.getTime();
     if (span >= WEEK_MS) {
         return `${input.count.toString()}× since ${relative(created, now)}, latest ${relative(last, now)}`;
@@ -81,7 +77,7 @@ function bucketOccurrences(
 ): number[] {
     const buckets = new Array<number>(cells).fill(0);
     for (const raw of occurrences) {
-        const age = Math.max(0, now.getTime() - toDate(raw).getTime());
+        const age = Math.max(0, now.getTime() - new Date(raw).getTime());
         if (age >= windowMs) continue;
         const idx = clamp(cells - 1 - Math.floor((age / windowMs) * cells), 0, cells - 1);
         buckets[idx] = (buckets[idx] ?? 0) + 1;

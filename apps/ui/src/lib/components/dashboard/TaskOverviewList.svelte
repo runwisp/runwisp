@@ -250,9 +250,7 @@ run  = "echo hello"</pre>
                                 {/if}
                                 {#if task.task.kind === "service"}
                                     <Badge variant="info" size="sm">
-                                        {(task.task.instances ?? 1) > 1
-                                            ? `Service ×${task.task.instances}`
-                                            : "Service"}
+                                        {formatTaskTriggerLabel(task)}
                                     </Badge>
                                 {/if}
                                 <TaskUsage task={task.task} />

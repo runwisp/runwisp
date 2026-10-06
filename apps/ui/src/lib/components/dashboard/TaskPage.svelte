@@ -13,6 +13,7 @@
     import { createRunSelection } from "$lib/utils/run-selection.svelte";
     import { HistoryRail } from "$lib/utils/history-rail.svelte";
     import ParamForm from "./ParamForm.svelte";
+    import { taskInstanceCount } from "./instance-count";
 
     let {
         task,
@@ -87,7 +88,7 @@
     } = $props();
 
     const taskIsService = $derived(isService(task.kind));
-    const instanceCount = $derived(taskIsService ? Math.max(1, task.instances ?? 1) : 0);
+    const instanceCount = $derived(taskIsService ? taskInstanceCount(task) : 0);
     // The page stays mounted across tasks, so a phone opens each task on its
     // run list (or on the run its URL names).
     const rail = new HistoryRail();
