@@ -42,6 +42,12 @@
             return;
         }
         e.preventDefault();
+        focus();
+    }
+
+    /** Focus the field and select its text. Exported so the phone layout's
+     *  search button can open the keyboard inside its own tap handler. */
+    export function focus() {
         inputEl?.focus();
         inputEl?.select();
     }
@@ -65,7 +71,7 @@
          bar, and the icon tints to primary. The input's own focus outline is
          suppressed (below) so the pill reads as one control, not two rings. -->
     <div
-        class="group/search relative flex h-9 w-full max-w-md items-center gap-2.5 rounded-[3px] border border-outline bg-surface-sunken/60 px-3 font-mono text-sm shadow-sm focus-within:border-ring focus-within:bg-surface-raised focus-within:shadow-md focus-within:ring-2 focus-within:ring-ring/35"
+        class="group/search relative flex h-9 w-full items-center gap-2.5 rounded-[3px] border border-outline bg-surface-sunken/60 px-3 font-mono text-sm shadow-sm focus-within:border-ring focus-within:bg-surface-raised focus-within:shadow-md focus-within:ring-2 focus-within:ring-ring/35 md:max-w-md"
     >
         <Search
             size={15}

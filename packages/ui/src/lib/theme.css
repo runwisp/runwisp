@@ -19,6 +19,10 @@
 @plugin "@tailwindcss/typography";
 
 @theme {
+    /* Wide enough for the sidebar, run list and run detail to stay side by
+     * side for good; below it the operator can fold the first two away. */
+    --breakpoint-3xl: 100rem;
+
     /* Palette aliases — Tailwind utilities (bg-wisp-500, text-mist-900, …)
      * resolve through to --rw-color-* declared in theme-tokens.css. */
     --color-wisp-50: var(--rw-color-wisp-50);

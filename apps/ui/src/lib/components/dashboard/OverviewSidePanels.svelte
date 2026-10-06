@@ -58,11 +58,11 @@
     let upcomingOverflow = $derived(Math.max(0, upcomingTasks.length - UPCOMING_LIMIT));
 </script>
 
-<!-- flex-1 lets the panels fill the left column's leftover height; the lg:grid-rows-1
+<!-- flex-1 lets the panels fill the left column's leftover height; the md:grid-rows-1
      1fr track then stretches each card to the full height so their ends line up
      with the taller Recent activity rail beside them. -->
 <div
-    class={["grid flex-1 gap-4 lg:grid-rows-1", showUpcoming ? "lg:grid-cols-3" : "lg:grid-cols-2"]}
+    class={["grid flex-1 gap-4 md:grid-rows-1", showUpcoming ? "md:grid-cols-3" : "md:grid-cols-2"]}
 >
     <Card>
         <div class="flex items-center justify-between gap-3">

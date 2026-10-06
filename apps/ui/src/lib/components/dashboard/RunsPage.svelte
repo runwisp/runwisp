@@ -2,11 +2,13 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
+    import { untrack } from "svelte";
     import type { Run } from "@runwisp/common";
     import type { LogEvent, LogSlice, RunMotion, RunsListFilters } from "@runwisp/ui";
     import { RunsList, RunDetailPanel } from "@runwisp/ui";
     import { headerSearchStore, systemStore, taskStore } from "$lib/stores";
     import { createRunActions } from "$lib/utils/run-actions";
+    import { HistoryRail } from "$lib/utils/history-rail.svelte";
 
     let {
         items,
@@ -62,6 +64,7 @@
     }>();
 
     let userSelectedRunId = $state<string | null>(null);
+    const rail = new HistoryRail(untrack(() => !!initialRunId));
 
     // Seed the selection from a deep link (the run-id path segment), on load and
     // on later URL changes. Declared before the emit effect below so the first
@@ -79,7 +82,10 @@
     $effect(() => {
         headerSearchStore.register({
             placeholder: "Search runs by task or ID…",
-            onSearch: (q) => (filters.search = q),
+            onSearch: (q) => {
+                filters.search = q;
+                rail.searched(q);
+            },
         });
         return () => headerSearchStore.unregister();
     });
@@ -115,47 +121,58 @@
     });
 
     let selectedRun = $derived(items.find((r: Run) => r.id === selectedRunId));
+    let panes = $derived(rail.panes(!!selectedRun, false));
 </script>
 
 <!-- Card-less, full-bleed: the history rail and detail panel fill the content
      area edge-to-edge (cancelling AppLayout's p-6), divided only by the rail's
      right border — the same chrome-less frame as a task's detail page. -->
 <div class="-m-6 flex h-[calc(100%+3rem)] min-h-0 flex-col md:flex-row">
-    <RunsList
-        flush
-        {items}
-        {total}
-        {loading}
-        bind:filters
-        {onLoadMore}
-        {selectedRunId}
-        onselect={(id) => (userSelectedRunId = id)}
-        showFilters
-        showTask
-        tasks={taskStore.items}
-        showTaskName
-        headerLabel="Runs"
-        emptyText="No runs found"
-        emptyDescription="Trigger a task manually with Re-run, or wait for a schedule to fire."
-        bulkActions
-        onBulkCancel={handleBulkCancel}
-        onBulkDelete={handleBulkDelete}
-        onBulkRerun={handleBulkRerun}
-        {getInstanceCount}
-        {motion}
-    />
+    {#if panes.list}
+        <RunsList
+            flush
+            {items}
+            {total}
+            {loading}
+            bind:filters
+            {onLoadMore}
+            {selectedRunId}
+            onselect={(id) => {
+                userSelectedRunId = id;
+                rail.picked();
+            }}
+            showFilters
+            showTask
+            tasks={taskStore.items}
+            showTaskName
+            headerLabel="Runs"
+            emptyText="No runs found"
+            emptyDescription="Trigger a task manually with Re-run, or wait for a schedule to fire."
+            bulkActions
+            onBulkCancel={handleBulkCancel}
+            onBulkDelete={handleBulkDelete}
+            onBulkRerun={handleBulkRerun}
+            {getInstanceCount}
+            {motion}
+        />
+    {/if}
 
-    <RunDetailPanel
-        run={selectedRun}
-        {fetchLogs}
-        {streamLogs}
-        {fetchLineHistory}
-        showTaskName
-        onDelete={deleteSingle}
-        {getInstanceCount}
-        getLiveUsage={(id) => systemStore.runUsage(id)}
-        {motion}
-        notFound={deepLinkMissing}
-        loading={(loading && items.length === 0) || deepLinkPending}
-    />
+    {#if panes.detail}
+        <RunDetailPanel
+            run={selectedRun}
+            {fetchLogs}
+            {streamLogs}
+            {fetchLineHistory}
+            showTaskName
+            onDelete={deleteSingle}
+            onBack={rail.phone ? rail.back : undefined}
+            onToggleList={rail.collapsible ? rail.toggleList : undefined}
+            listVisible={panes.list}
+            {getInstanceCount}
+            getLiveUsage={(id) => systemStore.runUsage(id)}
+            {motion}
+            notFound={deepLinkMissing}
+            loading={(loading && items.length === 0) || deepLinkPending}
+        />
+    {/if}
 </div>

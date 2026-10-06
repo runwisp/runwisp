@@ -9,11 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The Web UI works on your phone**: check why a job failed without reaching for a laptop. Tap a run and its log fills the screen, the back arrow takes you to the list. On narrow windows the sidebar tucks into a menu, and up to 1600px wide you can fold the sidebar and run list away to give the log more room.
 - The Web UI and the TUI show live CPU and memory use for running tasks and services, and each run records its peak memory and CPU time. Live use is also exported as the `runwisp_task_cpu_percent` and `runwisp_task_memory_bytes` metrics.
 - The Docker image writes a starter `runwisp.toml` on first start when you mount an empty config directory at `/etc/runwisp`.
 
 ### Changed
 
+- Single-instance services show their run history beside the log like every other task, and **Stop Service** is now **Stop**.
 - The update check also reports how RunWisp was installed (`docker`, `npm`, `npx`, `script` or `other`), nothing else is added. `check_updates = false` still turns it off.
 - A plain-HTTP request to the HTTPS port is redirected to the `https://` URL instead of getting "Client sent an HTTP request to an HTTPS server.".
 - Quitting the `runwisp demo` TUI shuts the demo daemon down instead of asking whether to keep it running. Use `runwisp demo --no-tui` to keep it in the background.
