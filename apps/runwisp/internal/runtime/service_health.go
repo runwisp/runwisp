@@ -6,6 +6,7 @@ package runtime
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/cronspec"
@@ -26,7 +27,16 @@ func (m *defaultTaskManager) watchRun(ctx context.Context, task *model.Task, run
 	if !task.Kind.IsService() || probe == nil || run.StartedAt == nil {
 		return
 	}
-	spec, _ := resolveTaskSchedule(probe, nil)
+	m.mu.RLock()
+	daemonLocation := m.daemonLocation
+	m.mu.RUnlock()
+	var loc *time.Location
+	if daemonLocation != nil {
+		// Read at watch time, not stamped into the probe by config, so a
+		// [daemon] timezone reload leaves the service definition unchanged.
+		loc = daemonLocation()
+	}
+	spec, loc := resolveTaskSchedule(probe, loc)
 	schedule, err := cronspec.NewScheduleParser().Parse(spec)
 	if err != nil {
 		// Load validated this exact spec, so this is unreachable short of a
@@ -38,7 +48,7 @@ func (m *defaultTaskManager) watchRun(ctx context.Context, task *model.Task, run
 	}
 	w := &health.Watcher{
 		Probe:        probe,
-		Schedule:     schedule,
+		Schedule:     zonedSchedule{schedule, loc},
 		Started:      *run.StartedAt,
 		HealthyAfter: config.OrDefault(task.HealthyAfter, config.DefaultHealthyAfter),
 		Now:          m.clock,

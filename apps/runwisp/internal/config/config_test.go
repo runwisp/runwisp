@@ -96,6 +96,30 @@ run = "echo hi"
 		assert.Equal(t, []string{"10.0.0.0/8", "127.0.0.1/32"}, cfg.Daemon.TrustedProxies)
 	})
 
+	t.Run("RUNWISP_TRUSTED_PROXIES overrides trusted_proxies for the daemon only", func(t *testing.T) {
+		t.Setenv("RUNWISP_TRUSTED_PROXIES", "192.168.1.1, 10.0.0.0/8")
+		path := writeTOML(t, `
+[daemon]
+trusted_proxies = ["172.16.0.0/12"]
+
+[tasks.t]
+run = "echo hi"
+`)
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"172.16.0.0/12"}, cfg.Daemon.TrustedProxies, "Load alone ignores the env var")
+		require.NoError(t, ApplyTrustedProxiesEnv(cfg))
+		assert.Equal(t, []string{"192.168.1.1/32", "10.0.0.0/8"}, cfg.Daemon.TrustedProxies,
+			"a reload must see the env list, not a TOML edit that can't take effect")
+
+		t.Setenv("RUNWISP_TRUSTED_PROXIES", "0.0.0.0/0")
+		_, err = Load(path)
+		require.NoError(t, err, "a bad env value must not fail commands that only read the config")
+		err = ApplyTrustedProxiesEnv(cfg)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "RUNWISP_TRUSTED_PROXIES")
+	})
+
 	t.Run("trusted_proxies catch-all rejected at load", func(t *testing.T) {
 		path := writeTOML(t, `
 [daemon]

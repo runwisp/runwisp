@@ -722,3 +722,40 @@ func TestSchedulerEveryFiresThroughDSTFallback(t *testing.T) {
 	assert.Len(t, runner.triggers, 4, "every @every firing in the rewound hour is a real run")
 	assert.Empty(t, runner.skips, "a fixed-interval schedule has no wall-clock time to repeat")
 }
+
+// TestSchedulerSetLocationRebasesOnlyDaemonZoneTasks proves a [daemon]
+// timezone reload moves only the wall-clock tasks that follow the daemon zone:
+// an @every interval and a task that pins its own zone keep their next tick.
+func TestSchedulerSetLocationRebasesOnlyDaemonZoneTasks(t *testing.T) {
+	tasks := map[string]*model.Task{
+		"wall":   {Name: "wall", Cron: "0 3 * * *"},
+		"pinned": {Name: "pinned", Cron: "0 3 * * *", Timezone: "America/New_York"},
+		"every":  {Name: "every", Cron: "@every 24h"},
+	}
+	sched := NewScheduler(&fakeTaskRunner{}, tasks, time.UTC, nil)
+	_, err := sched.Start()
+	require.NoError(t, err)
+	defer sched.Stop()
+
+	next := func(name string) time.Time {
+		var at time.Time
+		require.Eventually(t, func() bool {
+			n := sched.GetNextRun(name)
+			if n == nil || n.IsZero() {
+				return false
+			}
+			at = *n
+			return true
+		}, time.Second, 5*time.Millisecond)
+		return at
+	}
+	pinned, every := next("pinned"), next("every")
+
+	tokyo, err := time.LoadLocation("Asia/Tokyo") // UTC+9, no DST
+	require.NoError(t, err)
+	assert.Empty(t, sched.SetLocation(tokyo, tasks))
+
+	assert.Equal(t, 18, next("wall").UTC().Hour(), "03:00 Tokyo is 18:00 UTC")
+	assert.True(t, pinned.Equal(next("pinned")), "a pinned-zone task keeps its tick")
+	assert.True(t, every.Equal(next("every")), "an @every interval keeps its tick")
+}

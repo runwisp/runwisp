@@ -50,8 +50,8 @@ If a manual trigger is refused, the task has
 The daemon never watches the file. Apply edits yourself:
 
 ```bash
-runwisp reload    # tasks, services, [defaults]
-runwisp restart   # [daemon], [storage], [notify]
+runwisp reload    # everything else
+runwisp restart   # [daemon] TLS, metrics, allow_station_dispatch
 ```
 
 If the reload is rejected, nothing changed at all. The error tells you why: a

@@ -200,10 +200,9 @@ func TestBuildDaemonInfo_PopulatesTaskList(t *testing.T) {
 	tm, tasksMap := initTaskManager(dc, db, exec, bus)
 
 	svc := &daemonServices{
-		Executor:            exec,
-		TaskManager:         tm,
-		Tasks:               runtime.NewTaskRegistry(tasksMap),
-		TaskShutdownTimeout: 5 * time.Second,
+		Executor:    exec,
+		TaskManager: tm,
+		Tasks:       runtime.NewTaskRegistry(tasksMap),
 	}
 	info := buildDaemonInfo(dc, svc, time.Time{}, f.Port)
 	require.NotNil(t, info)

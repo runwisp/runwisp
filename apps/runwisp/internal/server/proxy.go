@@ -5,7 +5,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"slices"
@@ -14,9 +13,28 @@ import (
 	"github.com/runwisp/runwisp/internal/proxycidr"
 )
 
-// proxySet is the parsed RUNWISP_TRUSTED_PROXIES / [daemon] trusted_proxies
-// list. A nil set means no proxy is trusted.
+// proxySet is the parsed [daemon] trusted_proxies list (RUNWISP_TRUSTED_PROXIES
+// already applied by config). A nil set means no proxy is trusted.
 type proxySet []*net.IPNet
+
+// proxies returns the trusted-proxy set currently in force.
+func (srv *Server) proxies() proxySet {
+	if p := srv.trustedProxies.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+// SetTrustedProxies replaces the trusted-proxy set. A parse error leaves the
+// current set in force.
+func (srv *Server) SetTrustedProxies(cidrs []string) error {
+	p, err := parseTrustedProxies(cidrs)
+	if err != nil {
+		return err
+	}
+	srv.trustedProxies.Store(&p)
+	return nil
+}
 
 func (p proxySet) contains(ip net.IP) bool {
 	for _, n := range p {
@@ -27,24 +45,24 @@ func (p proxySet) contains(ip net.IP) bool {
 	return false
 }
 
-// parseTrustedProxies parses RUNWISP_TRUSTED_PROXIES as a comma-separated list of CIDR ranges.
-// CIDRs that effectively trust the entire internet (0.0.0.0/0 or ::/0) are
-// rejected to prevent silent spoofing of X-Forwarded-For: any IP-based check
-// (rate limiting, loopback detection) would be bypassable when every client is
-// "a trusted proxy".
-func parseTrustedProxies(env string) (proxySet, error) {
+// parseTrustedProxies turns CIDR ranges (or bare IPs) into a proxySet. Config
+// has already validated them through the same proxycidr.Normalize; it runs again
+// here so a hand-built list can't slip in a catch-all (0.0.0.0/0 or ::/0), which
+// would let any client spoof X-Forwarded-For past every IP-based check (rate
+// limiting, loopback detection).
+func parseTrustedProxies(cidrs []string) (proxySet, error) {
 	var set proxySet
-	for raw := range strings.SplitSeq(env, ",") {
+	for _, raw := range cidrs {
 		cidr, err := proxycidr.Normalize(raw)
 		if err != nil {
-			return nil, fmt.Errorf("RUNWISP_TRUSTED_PROXIES: %w", err)
+			return nil, err
 		}
 		if cidr == "" {
 			continue
 		}
 		_, ipNet, err := net.ParseCIDR(cidr)
 		if err != nil {
-			return nil, fmt.Errorf("RUNWISP_TRUSTED_PROXIES: %w", err)
+			return nil, err
 		}
 		set = append(set, ipNet)
 	}
@@ -84,8 +102,8 @@ type clientIPKey struct{}
 // captured the raw peer for the checks that must not trust any header.
 func (srv *Server) resolveClientIP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if isFromTrustedProxy(r, srv.trustedProxies) {
-			if ip := clientIPFromForwarded(r.Header.Values("X-Forwarded-For"), srv.trustedProxies); ip != "" {
+		if trusted := srv.proxies(); isFromTrustedProxy(r, trusted) {
+			if ip := clientIPFromForwarded(r.Header.Values("X-Forwarded-For"), trusted); ip != "" {
 				_, port, _ := net.SplitHostPort(r.RemoteAddr)
 				r.RemoteAddr = net.JoinHostPort(ip, port)
 			}

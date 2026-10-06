@@ -67,7 +67,7 @@ func (srv *Server) registerProtectedHumaRoutes(r chi.Router) {
 		Method:      http.MethodPost,
 		Path:        "/api/daemon/reload",
 		Summary:     "Reload runwisp.toml",
-		Description: "Re-reads the config file and reconciles the live task set (added/changed/removed). Validate-first: a config that fails to load or changes a restart-only setting is rejected and nothing is applied.",
+		Description: "Re-reads the config file, reconciles the live task set (added/changed/removed) and applies changed daemon-wide settings. Validate-first: a config that fails to load or changes a restart-only setting is rejected and nothing is applied.",
 		Tags:        []string{"System"},
 	}, srv.humaReload)
 

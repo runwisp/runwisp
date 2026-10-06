@@ -5,9 +5,9 @@ title: "[daemon]"
 description: "Daemon-wide settings: shutdown_timeout, timezone, external_url, TLS, metrics, trusted proxies, include, and include_cron."
 ---
 
-`[daemon]` holds settings for the whole daemon. The table is optional. A change
-to any `[daemon]` key except `include` and `include_cron` needs
-`runwisp restart`; [`runwisp reload`](/operations/reload/) rejects it.
+`[daemon]` holds settings for the whole daemon. The table is optional.
+[`runwisp reload`](/operations/reload/) applies a change to any key except the
+TLS, metrics, and `allow_station_dispatch` ones, which need `runwisp restart`.
 
 The config path, data directory, and listen address are
 [command-line flags](/reference/cli/#global-options), because they are needed

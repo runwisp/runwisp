@@ -7,9 +7,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/crashguard"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/notify/channel"
@@ -17,58 +19,114 @@ import (
 	"github.com/runwisp/runwisp/internal/notify/coalesce"
 	"github.com/runwisp/runwisp/internal/notify/configload"
 	"github.com/runwisp/runwisp/internal/notify/render"
-	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/storage"
 )
 
-// notifyBundle owns the runtime objects the rest of the daemon needs after
-// notify is wired: the Service (for lifecycle) and the inapp Hub (for the SSE
-// handler in internal/server). Hub may be nil when no route targets the
-// inapp channel.
-type notifyBundle struct {
-	Service *notify.Service
-	Hub     *inapp.Hub
+// liveNotify owns the running notify.Service and swaps it when a reload changes
+// the notification settings. The in-app Hub is created once and outlives every
+// swap, so open notification streams stay attached across reloads.
+type liveNotify struct {
+	Hub *inapp.Hub
+
+	mu      sync.Mutex
+	service *notify.Service // nil when nothing is configured
+	stopped bool
+
+	// retiring tracks services a swap replaced that are still draining, so Stop
+	// can wait for them. cancelRetire cuts their drain short when the shutdown
+	// deadline passes.
+	retiring     sync.WaitGroup
+	retireCtx    context.Context
+	cancelRetire context.CancelFunc
 }
 
-// serverHub exposes the in-app Hub as the server's NotificationHub, returning an
-// explicit nil interface when no Hub was built. This avoids the typed-nil
-// footgun: a nil *inapp.Hub assigned straight into the interface wraps a nil
-// pointer in a non-nil interface, slipping past the server's `notifyHub == nil`
-// check and panicking the notifications SSE stream when it calls Subscribe().
-func (b notifyBundle) serverHub() server.NotificationHub {
-	if b.Hub == nil {
+func newLiveNotify() *liveNotify {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &liveNotify{Hub: inapp.NewHub(32), retireCtx: ctx, cancelRetire: cancel}
+}
+
+// swap starts next (nil means no notifications) and retires the service it
+// replaces. next subscribes before the old one detaches, both here, so only an
+// event published between those two calls can be delivered twice, and none is
+// dropped. The old service drains what it already accepted in the background
+// under its own retry budget, sending any coalescing window it still holds as
+// an early summary, and Stop waits for that. After Stop, swap is a
+// no-op.
+func (l *liveNotify) swap(next *notify.Service) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.stopped {
+		return
+	}
+	if next != nil {
+		next.Start(context.Background())
+	}
+	old := l.service
+	l.service = next
+	if old != nil {
+		old.Detach()
+		l.retiring.Add(1)
+		go func() {
+			defer l.retiring.Done()
+			defer crashguard.Guard()
+			if err := old.Stop(l.retireCtx); err != nil {
+				slog.Warn("retired notification service shutdown error", "err", err)
+			}
+		}()
+	}
+}
+
+// Stop shuts the current service down for daemon exit and waits for any
+// service a reload replaced to finish draining. Both are bounded by ctx: at its
+// deadline, pending deliveries are cancelled. Nil-safe so callers that never
+// wired notify can call it unconditionally.
+func (l *liveNotify) Stop(ctx context.Context) error {
+	if l == nil {
 		return nil
 	}
-	return b.Hub
+	l.mu.Lock()
+	l.stopped = true
+	svc := l.service
+	l.mu.Unlock()
+
+	defer context.AfterFunc(ctx, l.cancelRetire)()
+	var err error
+	if svc != nil {
+		err = svc.Stop(ctx)
+	}
+	l.retiring.Wait()
+	return err
 }
 
-// initNotify constructs the notification subsystem from the daemon config.
-// Returns a zero bundle (Service nil) when there are no notifiers and no
-// routes — the daemon then runs without notifications wired at all.
+// initNotify builds (but does not start) the notification service for cfg,
+// delivering in-app notifications to hub. Returns nil when there are no
+// notifiers and no routes; the daemon then runs without notifications wired.
 func initNotify(
-	cfg *daemonConfig,
+	cfg *config.Config,
+	fingerprint string,
+	hub *inapp.Hub,
 	db storage.Database,
 	bus *events.Bus,
 	logger *slog.Logger,
-) (notifyBundle, error) {
-	notifyCfg := cfg.Config.Notify
+) (*notify.Service, error) {
+	notifyCfg := cfg.Notify
 	inappWanted := routesReferenceInapp(notifyCfg.Routes)
 	if len(notifyCfg.Notifiers) == 0 && len(notifyCfg.Routes) == 0 && !inappWanted {
-		return notifyBundle{}, nil
+		return nil, nil
 	}
 
 	renderCtx := render.TemplateContext{
-		ExternalURL: cfg.Config.Daemon.ExternalURL,
-		Fingerprint: cfg.Fingerprint,
+		ExternalURL: cfg.Daemon.ExternalURL,
+		Fingerprint: fingerprint,
 		OutputTail:  render.NewOutputTail(),
 	}
 	resolved := configload.Resolve(notifyCfg, renderCtx)
 
 	// No notifiers and no rules: nothing to do. Skip every goroutine and the
 	// bus subscription. The server's notification routes still respond from
-	// the persistent repo; the SSE stream falls back to ping-only.
+	// the persistent repo, and the Hub stays attached for a later reload.
 	if len(resolved.Notifiers) == 0 && len(resolved.Rules) == 0 {
-		return notifyBundle{}, nil
+		return nil, nil
 	}
 
 	if override := backoffOverride(notifyCfg.RetryBudget, logger); override != nil {
@@ -84,11 +142,8 @@ func initNotify(
 
 	channels := make([]notify.Channel, 0, len(resolved.Notifiers)+1)
 
-	var hub *inapp.Hub
 	var inappCh *inapp.Channel
 	if inappWanted {
-		hub = inapp.NewHub(32)
-
 		coalescerCfg := inapp.CoalescerConfig{
 			// The in-app coalescer always applies a window: nil/zero falls back to
 			// its built-in default. coalesce_window = "0s" only disables outbound.
@@ -99,7 +154,7 @@ func initNotify(
 
 		inappRenderer, err := buildInappRenderer()
 		if err != nil {
-			return notifyBundle{}, err
+			return nil, err
 		}
 
 		inappCh = inapp.New("inapp", inappRenderer, coalescer)
@@ -126,22 +181,20 @@ func initNotify(
 
 	outbound, err := buildOutboundChannels(resolved.Notifiers, outboundCoalesce, coalesceCfg, logger, failureSink)
 	if err != nil {
-		return notifyBundle{}, err
+		return nil, err
 	}
 	channels = append(channels, outbound...)
 
 	retentionFn := buildRetentionFn(db, notifyCfg, logger)
 
-	svc := notify.New(notify.Config{
+	return notify.New(notify.Config{
 		Bus:         bus,
 		Channels:    channels,
 		Rules:       resolved.Rules,
 		FailureSink: failureSink,
 		Logger:      logger,
 		RetentionFn: retentionFn,
-	})
-
-	return notifyBundle{Service: svc, Hub: hub}, nil
+	}), nil
 }
 
 // backoffOverride returns a transport-builder that shrinks the outbound retry

@@ -36,6 +36,7 @@ type Service struct {
 	retentionFn    func(context.Context)
 
 	unsubscribe     func()
+	detachOnce      sync.Once
 	cancel          context.CancelFunc // cancels workCtx — workers + runDispatch
 	retentionCancel context.CancelFunc // cancels the retention loop; fired upfront in Stop so it never gates wg.Wait
 	wg              sync.WaitGroup
@@ -100,9 +101,9 @@ func New(cfg Config) *Service {
 // Start subscribes to the event bus, launches the dispatch goroutine and the
 // per-action workers, and (if configured) the retention ticker. Idempotent:
 // repeated Start calls are no-ops.
-func (s *Service) Start(ctx context.Context) error {
+func (s *Service) Start(ctx context.Context) {
 	if !s.started.CompareAndSwap(false, true) {
-		return nil
+		return
 	}
 
 	workCtx, cancel := context.WithCancel(ctx)
@@ -127,7 +128,6 @@ func (s *Service) Start(ctx context.Context) error {
 		"channels", len(s.channels),
 		"rules", len(s.disp.router.rules),
 		"ingress_size", DefaultActionQueueSize)
-	return nil
 }
 
 // Stop tears the service down in this order: detach from bus, drain ingress,
@@ -142,10 +142,7 @@ func (s *Service) Stop(ctx context.Context) error {
 		return nil
 	}
 
-	if s.unsubscribe != nil {
-		s.unsubscribe()
-		s.unsubscribe = nil
-	}
+	s.Detach()
 
 	// Retention has nothing to drain — stop it before waiting on wg so it
 	// doesn't gate Stop's bounded wait.
@@ -195,6 +192,17 @@ func (s *Service) Stop(ctx context.Context) error {
 		"dropped_ingress", s.droppedIngress.Load(),
 		"dropped_action", s.disp.DroppedActionCount())
 	return nil
+}
+
+// Detach unsubscribes from the event bus without draining, so a replacement
+// service can take over delivery at once. Events already accepted stay queued
+// for Stop to drain. Idempotent; Stop calls it too.
+func (s *Service) Detach() {
+	s.detachOnce.Do(func() {
+		if s.unsubscribe != nil {
+			s.unsubscribe()
+		}
+	})
 }
 
 // onBusEvent is invoked synchronously from the bus publisher's goroutine. The

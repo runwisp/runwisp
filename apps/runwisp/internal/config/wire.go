@@ -837,8 +837,8 @@ type daemonWire struct {
 	Include        []string `toml:"include,omitempty"`
 	IncludeCron    []string `toml:"include_cron,omitempty"`
 	// Timezone is the daemon-wide IANA zone used to evaluate cron expressions
-	// for any task that doesn't pin its own. Non-reloadable, like every other
-	// [daemon] key.
+	// for any task that doesn't pin its own. A reload re-bases the schedules
+	// onto a new zone (Scheduler.SetLocation).
 	Timezone string `toml:"timezone,omitempty"`
 }
 
@@ -872,7 +872,7 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 	}
 	trustedProxies, err := parseTrustedProxies(w.TrustedProxies)
 	if err != nil {
-		return Daemon{}, err
+		return Daemon{}, fmt.Errorf("invalid daemon.trusted_proxies: %w", err)
 	}
 	checkUpdates := true
 	if w.CheckUpdates != nil {
@@ -892,10 +892,10 @@ func (w *daemonWire) toDaemon() (Daemon, error) {
 	}, nil
 }
 
-// parseTrustedProxies validates each [daemon] trusted_proxies entry and returns
-// the normalised CIDRs, dropping blanks. Catch-all ranges are rejected here so
-// `runwisp validate` catches them before a restart — the same rule the
-// RUNWISP_TRUSTED_PROXIES env var enforces at daemon start.
+// parseTrustedProxies validates each trusted-proxy entry ([daemon]
+// trusted_proxies or RUNWISP_TRUSTED_PROXIES) and returns the normalised CIDRs,
+// dropping blanks. Catch-all ranges are rejected here so `runwisp validate`
+// catches them before a restart.
 func parseTrustedProxies(entries []string) ([]string, error) {
 	if len(entries) == 0 {
 		return nil, nil
@@ -904,7 +904,7 @@ func parseTrustedProxies(entries []string) ([]string, error) {
 	for _, raw := range entries {
 		cidr, err := proxycidr.Normalize(raw)
 		if err != nil {
-			return nil, fmt.Errorf("invalid daemon.trusted_proxies: %w", err)
+			return nil, err
 		}
 		if cidr != "" {
 			out = append(out, cidr)

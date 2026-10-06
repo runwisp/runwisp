@@ -148,13 +148,14 @@ func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location
 		now:         clock,
 	}
 	// A jittered fire can wait in the manager's gate past the moment its task
-	// is paused; the manager asks back before starting it. Optional so the
+	// is paused, so the manager asks back before starting it; and it evaluates
+	// health check crons in the live daemon timezone. Optional so the
 	// TaskRunner interface (and every fake of it) stays unchanged.
-	type pauseGuardSetter interface {
-		setSchedulePaused(func(string) bool)
+	type schedulerBinder interface {
+		bindScheduler(paused func(string) bool, location func() *time.Location)
 	}
-	if setter, ok := taskManager.(pauseGuardSetter); ok {
-		setter.setSchedulePaused(scheduler.IsPaused)
+	if binder, ok := taskManager.(schedulerBinder); ok {
+		binder.bindScheduler(scheduler.IsPaused, scheduler.Location)
 	}
 	return scheduler
 }
@@ -270,6 +271,44 @@ func (scheduler *Scheduler) RecomputeJitter(tasks map[string]*model.Task) {
 	scheduler.computeJitterPlans()
 }
 
+// SetLocation re-bases the schedules that follow the daemon timezone, for a
+// reload that changes [daemon] timezone. Only wall-clock tasks with no timezone
+// of their own are re-added, with their DST dedup state dropped since it is
+// wall-clock in the old zone; @every intervals and tasks that pin a timezone
+// keep their entry and their next tick. tasks is the live task set, as for
+// RecomputeJitter. Returns a warning per task that failed to re-schedule.
+func (scheduler *Scheduler) SetLocation(location *time.Location, tasks map[string]*model.Task) []string {
+	scheduler.mutex.Lock()
+	defer scheduler.mutex.Unlock()
+
+	scheduler.location = location
+	scheduler.tasks = tasks
+	var warnings []string
+	for _, name := range slices.Sorted(maps.Keys(scheduler.entryIDs)) {
+		entryID, task := scheduler.entryIDs[name], tasks[name]
+		zoned, ok := scheduler.cron.Entry(entryID).Schedule.(zonedSchedule)
+		if task == nil || task.Timezone != "" || !ok || isFixedInterval(zoned.Schedule) {
+			continue
+		}
+		scheduler.cron.Remove(entryID)
+		delete(scheduler.entryIDs, name)
+		delete(scheduler.firedTicks, name)
+		if err := scheduler.addTask(task); err != nil {
+			warnings = append(warnings, fmt.Sprintf("failed to schedule %s: %v", name, err))
+		}
+	}
+	scheduler.jitterPlans = make(map[string]jitterPlan)
+	scheduler.computeJitterPlans()
+	return warnings
+}
+
+// Location is the daemon timezone schedules without their own are read in.
+func (scheduler *Scheduler) Location() *time.Location {
+	scheduler.mutex.Lock()
+	defer scheduler.mutex.Unlock()
+	return scheduler.location
+}
+
 func (scheduler *Scheduler) Stop() {
 	scheduler.mutex.Lock()
 	if !scheduler.started {
@@ -356,11 +395,23 @@ func (scheduler *Scheduler) addTask(task *model.Task) error {
 		return err
 	}
 	fixedInterval := isFixedInterval(schedule)
-	scheduler.entryIDs[taskName] = scheduler.cron.Schedule(schedule, cron.FuncJob(func() {
+	scheduler.entryIDs[taskName] = scheduler.cron.Schedule(zonedSchedule{schedule, loc}, cron.FuncJob(func() {
 		scheduler.fireOnce(taskName, loc, fixedInterval)
 	}))
 	return nil
 }
+
+// zonedSchedule evaluates a schedule in loc whatever zone the caller's clock
+// reads in. robfig/cron fixes its own location at construction, so pinning the
+// zone per entry is what lets SetLocation re-base one entry without rebuilding
+// the cron. A schedule with no timezone of its own otherwise follows the zone
+// of the time handed to Next.
+type zonedSchedule struct {
+	cron.Schedule
+	loc *time.Location
+}
+
+func (z zonedSchedule) Next(t time.Time) time.Time { return z.Schedule.Next(t.In(z.loc)) }
 
 // isFixedInterval reports whether a schedule fires on a fixed duration
 // (@every) instead of matching wall-clock fields. Such a schedule has no
@@ -462,7 +513,7 @@ func (scheduler *Scheduler) GetNextRun(taskName string) *time.Time {
 	// Surface the bare cron tick, even for jittered tasks: with no contention
 	// the gate starts them at the tick, and the slot is only the latest they
 	// could slip.
-	next := entry.Next
+	next := entry.Next.In(scheduler.location)
 	return &next
 }
 

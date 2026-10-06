@@ -142,7 +142,7 @@ export interface paths {
         put?: never;
         /**
          * Reload runwisp.toml
-         * @description Re-reads the config file and reconciles the live task set (added/changed/removed). Validate-first: a config that fails to load or changes a restart-only setting is rejected and nothing is applied.
+         * @description Re-reads the config file, reconciles the live task set (added/changed/removed) and applies changed daemon-wide settings. Validate-first: a config that fails to load or changes a restart-only setting is rejected and nothing is applied.
          */
         post: operations["reload"];
         delete?: never;
@@ -1286,6 +1286,8 @@ export interface components {
             changed: components["schemas"]["ReloadTaskChange"][] | null;
             /** @description Names of tasks removed by the reload */
             removed: string[] | null;
+            /** @description Daemon-wide settings the reload applied, as TOML keys; notifications covers [notify], [notifiers.*] and [[route]] */
+            settings?: string[] | null;
             /** @description Non-fatal findings in the newly-live config, e.g. crontab jobs that could not be scheduled */
             warnings?: string[] | null;
         };

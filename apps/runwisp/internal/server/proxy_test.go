@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,13 +17,13 @@ import (
 // --- parseTrustedProxies ---
 
 func TestParseTrustedProxies_EmptyStringReturnsNil(t *testing.T) {
-	opts, err := parseTrustedProxies("")
+	opts, err := parseTrustedProxies([]string{""})
 	require.NoError(t, err)
 	assert.Nil(t, opts)
 }
 
 func TestParseTrustedProxies_ValidCommaSeparatedCIDRs(t *testing.T) {
-	opts, err := parseTrustedProxies("10.0.0.0/8,172.16.0.1")
+	opts, err := parseTrustedProxies([]string{"10.0.0.0/8", "172.16.0.1"})
 	require.NoError(t, err)
 	require.Len(t, opts, 2)
 	assert.Equal(t, "10.0.0.0/8", opts[0].String())
@@ -30,12 +31,12 @@ func TestParseTrustedProxies_ValidCommaSeparatedCIDRs(t *testing.T) {
 }
 
 func TestParseTrustedProxies_InvalidCIDRPropagatesError(t *testing.T) {
-	_, err := parseTrustedProxies("10.0.0.0/8,bad-entry")
+	_, err := parseTrustedProxies([]string{"10.0.0.0/8", "bad-entry"})
 	assert.Error(t, err)
 }
 
 func TestParseTrustedProxies_OnlyBlankEntriesReturnsNil(t *testing.T) {
-	opts, err := parseTrustedProxies("  ,  ")
+	opts, err := parseTrustedProxies([]string{"  ", "  "})
 	require.NoError(t, err)
 	assert.Nil(t, opts)
 }
@@ -88,7 +89,7 @@ func TestIsFromTrustedProxy_ContextAddrTakesPrecedenceOverRemoteAddr(t *testing.
 
 func mustProxies(t *testing.T, cidrs string) proxySet {
 	t.Helper()
-	p, err := parseTrustedProxies(cidrs)
+	p, err := parseTrustedProxies(strings.Split(cidrs, ","))
 	require.NoError(t, err)
 	return p
 }
@@ -120,7 +121,8 @@ func TestClientIPFromForwarded(t *testing.T) {
 
 // resolveClientIP must not let a client pick its own rate-limit identity.
 func TestResolveClientIP(t *testing.T) {
-	srv := &Server{trustedProxies: mustProxies(t, "10.0.0.0/8")}
+	srv := &Server{}
+	require.NoError(t, srv.SetTrustedProxies([]string{"10.0.0.0/8"}))
 	var got string
 	h := srv.resolveClientIP(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got = r.RemoteAddr

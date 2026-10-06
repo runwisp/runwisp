@@ -85,7 +85,8 @@ back:
 2. Repeats are held. Every [`coalesce_limit`](#coalesce_limit)-th repeat goes
    out as a **check-in** with a count.
 3. When the window ends, one **summary** covers what was held since the last
-   check-in.
+   check-in. A reload that changes notifications, or a daemon stop, sends the
+   summary early.
 
 A task failing every minute with the defaults sends one message about every ten
 minutes (a check-in every 10th repeat).

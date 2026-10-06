@@ -11,6 +11,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"log/slog"
@@ -30,24 +31,26 @@ import (
 
 // daemonServices holds all long-lived services created during daemon startup.
 type daemonServices struct {
-	DB                  storage.Database
-	EventBus            *events.Bus
-	Executor            executor.Executor
-	Usage               *procstat.Sampler
-	TaskManager         runtime.TaskManager
-	Tasks               *runtime.TaskRegistry
-	Scheduler           *runtime.Scheduler
-	RetentionCleaner    *runtime.RetentionCleaner
-	SoftDeletePurger    *runtime.SoftDeletePurger
-	MemoryReclaimer     *runtime.MemoryReclaimer
-	DebugServer         *debugServer
-	Notify              notifyBundle
-	ScheduleResult      runtime.ScheduleResult
-	CrashedRuns         int64
-	PendingSummary      uikit.PendingRunsSummary
-	CatchUpResult       runtime.CatchUpResult
-	RunOnStartResult    runtime.RunOnStartResult
-	TaskShutdownTimeout time.Duration
+	DB               storage.Database
+	EventBus         *events.Bus
+	Executor         *executor.RoutingExecutor
+	Usage            *procstat.Sampler
+	TaskManager      runtime.TaskManager
+	Tasks            *runtime.TaskRegistry
+	Scheduler        *runtime.Scheduler
+	RetentionCleaner *runtime.RetentionCleaner
+	SoftDeletePurger *runtime.SoftDeletePurger
+	MemoryReclaimer  *runtime.MemoryReclaimer
+	DebugServer      *debugServer
+	Notify           *liveNotify
+	ScheduleResult   runtime.ScheduleResult
+	CrashedRuns      int64
+	PendingSummary   uikit.PendingRunsSummary
+	CatchUpResult    runtime.CatchUpResult
+	RunOnStartResult runtime.RunOnStartResult
+	// TaskShutdownTimeout is [daemon] shutdown_timeout, read at shutdown. Atomic
+	// because a reload can change it from another goroutine.
+	TaskShutdownTimeout atomic.Int64
 	// ServiceLaunchCancel aborts the background depends_on launcher goroutines.
 	// Called at the start of graceful shutdown so a dependent still waiting on a
 	// dependency doesn't start mid-teardown. Services are supervised in both
@@ -122,7 +125,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 
 	debugSrv := startDebugServer()
 
-	notifyB := startNotify(ctx, cfg, db, eventBus, addWarning)
+	notifyLive := startNotify(cfg, db, eventBus, addWarning)
 
 	if mode == modeStandalone {
 		// Run catch-up now that notify is subscribed, so a missed-run gap
@@ -132,7 +135,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		boot.catchUpResult = runMissedTickCatchUp(tasksMap, taskManager, boot.catchUpNow, boot.schedLoc, boot.catchUpAnchors, boot.catchUpSnapshotErrors)
 	}
 
-	return &daemonServices{
+	svc := &daemonServices{
 		DB:                  db,
 		EventBus:            eventBus,
 		Executor:            exec,
@@ -144,16 +147,17 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		SoftDeletePurger:    softDeletePurger,
 		MemoryReclaimer:     memoryReclaimer,
 		DebugServer:         debugSrv,
-		Notify:              notifyB,
+		Notify:              notifyLive,
 		ScheduleResult:      boot.schedResult,
 		CrashedRuns:         crashed,
 		PendingSummary:      pendingSummary,
 		CatchUpResult:       boot.catchUpResult,
 		RunOnStartResult:    boot.runOnStartResult,
-		TaskShutdownTimeout: cfg.Config.Daemon.ShutdownTimeout,
 		ServiceLaunchCancel: serviceLaunchCancel,
 		InitWarnings:        initWarnings,
-	}, nil
+	}
+	svc.TaskShutdownTimeout.Store(int64(cfg.Config.Daemon.ShutdownTimeout))
+	return svc, nil
 }
 
 // standaloneBoot collects the per-boot results produced only in standalone
@@ -235,19 +239,16 @@ func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storag
 }
 
 // startNotify initializes the notify subsystem and starts its service, routing
-// both the init failure and the start failure to warnings (non-fatal: the
-// daemon must boot even when notify is misconfigured or unavailable).
-func startNotify(ctx context.Context, cfg *daemonConfig, db storage.Database, eventBus *events.Bus, addWarning func(string, ...any)) notifyBundle {
-	notifyB, err := initNotify(cfg, db, eventBus, slog.Default())
+// an init failure to a warning (non-fatal: the daemon must boot even when
+// notify is misconfigured).
+func startNotify(cfg *daemonConfig, db storage.Database, eventBus *events.Bus, addWarning func(string, ...any)) *liveNotify {
+	live := newLiveNotify()
+	svc, err := initNotify(cfg.Config, cfg.Fingerprint, live.Hub, db, eventBus, slog.Default())
 	if err != nil {
 		addWarning("Failed to initialize notify subsystem: %v", err)
 	}
-	if notifyB.Service != nil {
-		if startErr := notifyB.Service.Start(ctx); startErr != nil {
-			addWarning("Failed to start notify subsystem: %v", startErr)
-		}
-	}
-	return notifyB
+	live.swap(svc)
+	return live
 }
 
 // runMissedTickCatchUp runs missed-tick catch-up and narrates the outcome via
@@ -269,7 +270,7 @@ func runMissedTickCatchUp(tasksMap map[string]*model.Task, taskManager runtime.T
 
 // initExecutor builds the routing executor. sampler may be nil (one-shot CLI
 // runs, which display no resource usage).
-func initExecutor(cfg *config.Config, eventBus *events.Bus, logDir, fingerprint string, sampler *procstat.Sampler) executor.Executor {
+func initExecutor(cfg *config.Config, eventBus *events.Bus, logDir, fingerprint string, sampler *procstat.Sampler) *executor.RoutingExecutor {
 	dockerBackend := executor.NewLazyContainerBackend()
 	composeBackend := executor.NewLazyComposeBackend(fingerprint)
 

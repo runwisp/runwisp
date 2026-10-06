@@ -138,20 +138,35 @@ func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
 	}
 }
 
-// Close stops the timer goroutines and closes the wrapped channel.
+// Close stops the timer goroutines, sends every still-open window's summary
+// early (bounded by ctx) so suppressed events are not lost when the channel is
+// replaced or the daemon stops, and closes the wrapped channel.
 func (c *Channel) Close(ctx context.Context) error {
 	c.timerCancel()
 
-	c.mu.Lock()
-	for _, st := range c.state {
-		st.stopTimer()
+	type held struct {
+		fp    string
+		ev    *notify.Event
+		count int
 	}
+	var flush []held
+	c.mu.Lock()
+	for fp, st := range c.state {
+		st.stopTimer()
+		if st.pending > 0 && st.lastEvent != nil {
+			flush = append(flush, held{fp, st.lastEvent, st.pending})
+		}
+	}
+	clear(c.state)
 	c.mu.Unlock()
 
 	// Wait unconditionally: a window-close summary goroutine calls
 	// c.inner.Execute independently of ctx (see timerFlush), so returning on
 	// ctx.Done() could let that Execute run concurrently with the Close below.
 	c.wg.Wait()
+	for _, h := range flush {
+		c.sendSummary(ctx, h.fp, h.ev, h.count)
+	}
 	return c.inner.Close(ctx)
 }
 
@@ -267,17 +282,22 @@ func (c *Channel) timerFlush(fp string) {
 			return
 		default:
 		}
-		if err := c.inner.Execute(context.Background(), summarize(ev, count, true)); err != nil {
-			c.logger.Error("notify outbound coalesce: window-close summary delivery failed",
-				"channel", c.inner.ID(), "fingerprint", fp, "err", err)
-			// Async path the dispatcher never observes: surface the permanent
-			// failure in-app ourselves, matching the uncoalesced path, so a
-			// coalesced burst that fails at window close is not silent.
-			if c.failures != nil {
-				notify.ReportDeliveryFailure(c.failures, c.clock, c.inner.ID(), ev, err)
-			}
-		}
+		c.sendSummary(context.Background(), fp, ev, count)
 	}()
+}
+
+// sendSummary delivers a window-close summary of count suppressed events.
+func (c *Channel) sendSummary(ctx context.Context, fp string, ev *notify.Event, count int) {
+	if err := c.inner.Execute(ctx, summarize(ev, count, true)); err != nil {
+		c.logger.Error("notify outbound coalesce: window-close summary delivery failed",
+			"channel", c.inner.ID(), "fingerprint", fp, "err", err)
+		// Async path the dispatcher never observes: surface the permanent
+		// failure in-app ourselves, matching the uncoalesced path, so a
+		// coalesced burst that fails at window close is not silent.
+		if c.failures != nil {
+			notify.ReportDeliveryFailure(c.failures, c.clock, c.inner.ID(), ev, err)
+		}
+	}
 }
 
 // summarize annotates ev with coalesced metadata so renderers can append a

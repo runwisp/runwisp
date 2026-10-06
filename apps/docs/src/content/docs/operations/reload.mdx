@@ -16,6 +16,7 @@ Configuration reloaded.
   + added   nightly-backup
   ~ changed report (schedule)
   - removed old-cleanup
+  ~ setting notifications
 ```
 
 The daemon never watches the file. It reloads only when you ask, and every way
@@ -38,7 +39,7 @@ restart, the reload is rejected and the running tasks stay exactly as they were.
 
 ```console
 $ runwisp reload
-Error: reload rejected: [storage] changed; requires `runwisp restart`
+Error: reload rejected: [daemon] tls changed; requires `runwisp restart`
 ```
 
 Fix the file and reload again. To check a file without involving the daemon,
@@ -53,15 +54,26 @@ run [`runwisp validate`](/reference/cli/#runwisp-validate).
 - [`include`](/configuration/daemon/#include) and
   [`include_cron`](/configuration/daemon/#include_cron), and the files they pull
   in.
+- [`[notify]`](/configuration/notify/), `[notifiers.*]`, and
+  [`[[route]]`](/configuration/routes/), and the files `template_path` points
+  to. Notifications sent after the reload use the new settings. Deliveries
+  already being retried finish under the old ones.
+- [`[storage]`](/configuration/storage/).
+- [`timezone`](/configuration/daemon/#timezone). Every cron schedule that doesn't
+  set its own timezone moves to the new zone from now on. Ticks the move skips
+  over are not caught up.
+- Every other [`[daemon]`](/configuration/daemon/) key, except the ones below.
+
+`runwisp reload` lists the changed settings on `~ setting` lines.
 
 ## What needs a restart
 
 A reload that changes any of these is rejected:
 
-- `[daemon]`, every key except `include` and `include_cron`. This includes
-  [`timezone`](/configuration/daemon/#timezone).
-- `[storage]`.
-- `[notify]`, `[notifiers.*]`, and `[[route]]`.
+- [`tls`, `tls_cert`, and `tls_key`](/configuration/daemon/#tls-tls_cert-tls_key).
+- [`metrics_enabled`](/configuration/daemon/#metrics_enabled) and
+  `metrics_listen`.
+- [`allow_station_dispatch`](/configuration/daemon/#allow_station_dispatch).
 
 The bind address and port are [command-line flags](/reference/cli/#global-options),
 and `RUNWISP_*` environment variables are read at startup. Both change only on a

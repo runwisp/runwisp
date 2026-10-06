@@ -61,8 +61,7 @@ func (b *scriptedBackend) Start(ctx context.Context, task *model.Task, _ *model.
 func newScriptedExecutor(t *testing.T, backend *scriptedBackend) (*RoutingExecutor, *events.Bus) {
 	t.Helper()
 	eb := events.NewEventBus()
-	r, ok := New(Options{LogDir: t.TempDir(), EventBus: eb, HasLocalTasks: true}).(*RoutingExecutor)
-	require.True(t, ok)
+	r := New(Options{LogDir: t.TempDir(), EventBus: eb, HasLocalTasks: true})
 	r.backends["shell"] = backend
 	return r, eb
 }

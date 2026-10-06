@@ -69,14 +69,13 @@ func TestOnBusEvent_MissedReachesIngress(t *testing.T) {
 // called twice in a row.
 func TestServiceStart_IsIdempotent(t *testing.T) {
 	svc := New(Config{Bus: events.NewEventBus()})
-	require.NoError(t, svc.Start(context.Background()))
+	svc.Start(context.Background())
 	t.Cleanup(func() {
 		stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		_ = svc.Stop(stopCtx)
 	})
-	require.NoError(t, svc.Start(context.Background()),
-		"second Start must be a no-op, not an error")
+	svc.Start(context.Background()) // must be a no-op, not a second set of workers
 }
 
 // TestServiceStop_NotStartedReturnsNil covers the "not started" early-return.
@@ -89,7 +88,7 @@ func TestServiceStop_NotStartedReturnsNil(t *testing.T) {
 // branch in Stop.
 func TestServiceStop_DoubleStopReturnsNil(t *testing.T) {
 	svc := New(Config{Bus: events.NewEventBus()})
-	require.NoError(t, svc.Start(context.Background()))
+	svc.Start(context.Background())
 	stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, svc.Stop(stopCtx))
@@ -112,7 +111,7 @@ func TestServiceStop_FastWhenIdle(t *testing.T) {
 		RetentionFn:    func(context.Context) {},
 	})
 
-	require.NoError(t, svc.Start(context.Background()))
+	svc.Start(context.Background())
 
 	deadline := 2 * time.Second
 	stopCtx, cancel := context.WithTimeout(context.Background(), deadline)
@@ -181,7 +180,7 @@ func TestOnBusEvent_IgnoresUnknownEvents(t *testing.T) {
 // at risk.
 func TestOnBusEvent_AfterStopDropsWithoutPanic(t *testing.T) {
 	svc := New(Config{Bus: events.NewEventBus()})
-	require.NoError(t, svc.Start(context.Background()))
+	svc.Start(context.Background())
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -220,7 +219,7 @@ func TestServiceStop_RetentionTickerExits(t *testing.T) {
 		RetentionFn:    func(context.Context) { ticks.Add(1) },
 	})
 
-	require.NoError(t, svc.Start(context.Background()))
+	svc.Start(context.Background())
 
 	require.Eventually(t, func() bool { return ticks.Load() > 0 }, time.Second, 5*time.Millisecond,
 		"retention loop should fire while the service is running")

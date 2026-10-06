@@ -17,13 +17,15 @@ import (
 var reloadCmd = &cobra.Command{
 	Use:   "reload",
 	Short: "Reload runwisp.toml into the running daemon",
-	Long: `Re-read runwisp.toml and reconcile the running daemon's task set —
-adding, changing, and removing tasks without a full restart.
+	Long: `Re-read runwisp.toml and apply it to the running daemon: add, change,
+and remove tasks, and apply daemon-wide settings ([notify], notifiers, routes,
+[storage], [daemon] including timezone) without a full restart.
 
 Reload is validate-first: the whole config is loaded and validated before
 anything live is touched. If it fails to parse/validate, or changes a
-restart-only setting ([daemon], [storage], [notify]), the reload is rejected
-and the running task set is left exactly as it was.
+restart-only setting ([daemon] tls, tls_cert, tls_key, metrics_enabled,
+metrics_listen, allow_station_dispatch), the reload is rejected and the daemon
+is left exactly as it was.
 
 Added tasks do not fire run_on_start and are not caught up for ticks they
 "missed" before existing — reload is not a restart. In-flight cron runs finish
@@ -74,6 +76,9 @@ func printReloadResult(out io.Writer, result *model.ReloadResult) {
 		}
 		for _, name := range result.Removed {
 			fmt.Fprintf(out, "  - removed %s\n", name)
+		}
+		for _, key := range result.Settings {
+			fmt.Fprintf(out, "  ~ setting %s\n", key)
 		}
 	}
 	for _, w := range result.Warnings {

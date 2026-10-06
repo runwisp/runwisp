@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -21,15 +22,16 @@ import (
 const AppName = "runwisp"
 
 type statsProvider struct {
-	daemonInfo *model.DaemonInfo
+	// daemonInfo is replaced whole (never mutated) when a reload changes a
+	// daemon-wide setting it reports.
+	daemonInfo atomic.Pointer[model.DaemonInfo]
 	startTime  time.Time
 }
 
 func newStatsProvider(daemonInfo *model.DaemonInfo, startTime time.Time) *statsProvider {
-	return &statsProvider{
-		daemonInfo: daemonInfo,
-		startTime:  startTime,
-	}
+	p := &statsProvider{startTime: startTime}
+	p.daemonInfo.Store(daemonInfo)
+	return p
 }
 
 func (p *statsProvider) GetSystemStats() model.SystemStats {
@@ -61,11 +63,22 @@ func (p *statsProvider) GetSystemStats() model.SystemStats {
 	return stats
 }
 
+// GetDaemonInfo returns the current DaemonInfo. Callers must treat it as
+// read-only: it is shared with every concurrent request.
 func (p *statsProvider) GetDaemonInfo() *model.DaemonInfo {
-	if p.daemonInfo == nil {
-		return &model.DaemonInfo{}
+	if info := p.daemonInfo.Load(); info != nil {
+		return info
 	}
-	return p.daemonInfo
+	return &model.DaemonInfo{}
+}
+
+// UpdateDaemonInfo applies edit to a copy of the current DaemonInfo and swaps
+// the copy in, so a reload can change what /api/daemon reports without racing
+// a request that is reading it.
+func (srv *Server) UpdateDaemonInfo(edit func(*model.DaemonInfo)) {
+	info := *srv.stats.GetDaemonInfo()
+	edit(&info)
+	srv.stats.daemonInfo.Store(&info)
 }
 
 func (srv *Server) humaGetInfo(ctx context.Context, input *struct{}) (*DaemonInfoOutput, error) {

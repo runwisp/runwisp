@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-/** The added/removed/changed counts a reload reports; mirrors model.ReloadResult. */
+/** What a reload reports; mirrors model.ReloadResult. */
 interface ReloadCounts {
     added?: string[] | null;
     removed?: string[] | null;
     changed?: unknown[] | null;
+    settings?: string[] | null;
 }
 
 // reloadSummary renders a one-line summary of what a reload changed, mirroring
@@ -19,6 +20,7 @@ export function reloadSummary(result: ReloadCounts): string {
     if (added > 0) parts.push(`+${String(added)} added`);
     if (removed > 0) parts.push(`-${String(removed)} removed`);
     if (changed > 0) parts.push(`~${String(changed)} changed`);
+    if ((result.settings?.length ?? 0) > 0) parts.push("settings updated");
     return parts.length === 0
         ? "Config reloaded — no changes"
         : `Config reloaded: ${parts.join(", ")}`;

@@ -24,22 +24,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestServerHub(t *testing.T) {
-	// Regression: a nil Hub must come back as a true-nil interface, not a
-	// typed-nil that slips past the server's `notifyHub == nil` guard and
-	// panics the notifications stream. See serverHub.
-	t.Run("nil hub yields nil interface", func(t *testing.T) {
-		var b notifyBundle
-		assert.Nil(t, b.serverHub(), "serverHub() leaked a typed-nil interface")
-	})
-	t.Run("real hub passes through", func(t *testing.T) {
-		b := notifyBundle{Hub: inapp.NewHub(32)}
-		got := b.serverHub()
-		require.NotNil(t, got)
-		assert.Same(t, b.Hub, got)
-	})
-}
-
 func TestBackoffOverride(t *testing.T) {
 	t.Run("nil when zero", func(t *testing.T) {
 		assert.Nil(t, backoffOverride(0, slog.Default()))
@@ -211,52 +195,41 @@ func TestBuildRetentionFn_LogsButDoesNotPanicOnPruneError(t *testing.T) {
 }
 
 // TestInitNotify_NoNotifiersNoRoutesReturnsZero exercises the early-return
-// branch where there's nothing to wire — initNotify must hand back an empty
-// bundle without touching the DB or starting any goroutines.
+// branch where there's nothing to wire — initNotify must hand back no service
+// without touching the DB or starting any goroutines.
 func TestInitNotify_NoNotifiersNoRoutesReturnsZero(t *testing.T) {
 	db, err := storage.New(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	cfg := &daemonConfig{
-		Fingerprint: "fp",
-		Config: &config.Config{
-			Notify: config.NotifyConfig{},
-		},
-	}
+	cfg := &config.Config{Notify: config.NotifyConfig{}}
 
-	bundle, err := initNotify(cfg, db, events.NewEventBus(), slog.Default())
+	svc, err := initNotify(cfg, "fp", inapp.NewHub(32), db, events.NewEventBus(), slog.Default())
 	require.NoError(t, err)
-	assert.Nil(t, bundle.Service, "expected zero bundle when nothing is configured")
-	assert.Nil(t, bundle.Hub)
+	assert.Nil(t, svc, "expected no service when nothing is configured")
 }
 
-// TestInitNotify_InappRouteWiresHubAndService exercises the happy path:
-// a route targets the special "inapp" channel, so initNotify must build a Hub
-// and a Service.
-func TestInitNotify_InappRouteWiresHubAndService(t *testing.T) {
+// TestInitNotify_InappRouteWiresService exercises the happy path: a route
+// targets the special "inapp" channel, so initNotify must build a Service.
+func TestInitNotify_InappRouteWiresService(t *testing.T) {
 	db, err := storage.New(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
 	window := time.Minute
-	cfg := &daemonConfig{
-		Fingerprint: "fp",
-		Config: &config.Config{
-			Notify: config.NotifyConfig{
-				Routes: []config.NotificationRoute{
-					{Kinds: []string{"run.failed"}, NotifierID: []string{"inapp"}},
-				},
-				CoalesceWindow: &window,
-				CoalesceLimit:  5,
+	cfg := &config.Config{
+		Notify: config.NotifyConfig{
+			Routes: []config.NotificationRoute{
+				{Kinds: []string{"run.failed"}, NotifierID: []string{"inapp"}},
 			},
+			CoalesceWindow: &window,
+			CoalesceLimit:  5,
 		},
 	}
 
-	bundle, err := initNotify(cfg, db, events.NewEventBus(), slog.Default())
+	svc, err := initNotify(cfg, "fp", inapp.NewHub(32), db, events.NewEventBus(), slog.Default())
 	require.NoError(t, err)
-	require.NotNil(t, bundle.Service, "expected Service when inapp route is wired")
-	require.NotNil(t, bundle.Hub, "expected Hub when inapp route is wired")
+	require.NotNil(t, svc, "expected Service when inapp route is wired")
 }
 
 func TestRoutesReferenceInapp(t *testing.T) {
@@ -323,7 +296,7 @@ func TestNotifyService_RoutesOnClassifiedFailureBit(t *testing.T) {
 			ActionIDs: []string{recorder.ID()},
 		}},
 	})
-	require.NoError(t, svc.Start(context.Background()))
+	svc.Start(context.Background())
 	t.Cleanup(func() { _ = svc.Stop(context.Background()) })
 
 	publishRun(bus, "promoted", true)
@@ -334,4 +307,112 @@ func TestNotifyService_RoutesOnClassifiedFailureBit(t *testing.T) {
 	time.Sleep(50 * time.Millisecond) // let the async dispatch settle
 	assert.Equal(t, int64(1), recorder.delivered.Load(),
 		"a run not classified as a failure must not page")
+}
+
+// TestLiveNotify_SwapRetiresOldService covers a reload rebuilding notify: once
+// swapped, events reach only the new service's channels; after Stop, a late
+// swap (a reload racing shutdown) starts nothing.
+func TestLiveNotify_SwapRetiresOldService(t *testing.T) {
+	bus := events.NewEventBus()
+	build := func(ch *recordingChannel) *notify.Service {
+		return notify.New(notify.Config{
+			Bus:      bus,
+			Channels: []notify.Channel{ch},
+			Rules:    []notify.Rule{{Match: notify.MatchFailure(), ActionIDs: []string{ch.ID()}}},
+		})
+	}
+	first, second, late := &recordingChannel{}, &recordingChannel{}, &recordingChannel{}
+	live := newLiveNotify()
+
+	live.swap(build(first))
+	publishRun(bus, "a", true)
+	require.Eventually(t, func() bool { return first.delivered.Load() == 1 }, time.Second, time.Millisecond)
+
+	live.swap(build(second))
+	publishRun(bus, "b", true)
+	require.Eventually(t, func() bool { return second.delivered.Load() == 1 }, time.Second, time.Millisecond)
+	assert.Equal(t, int64(1), first.delivered.Load(), "the retired service must stop delivering")
+
+	require.NoError(t, live.Stop(context.Background()))
+	live.swap(build(late))
+	publishRun(bus, "c", true)
+	time.Sleep(50 * time.Millisecond) // let any async dispatch settle
+	assert.Equal(t, int64(0), late.delivered.Load(), "swap after Stop must not start a service")
+	assert.Equal(t, int64(1), second.delivered.Load(), "Stop must detach the current service")
+}
+
+// blockingChannel holds every delivery until release closes or ctx ends, to
+// keep a notify service draining on demand.
+type blockingChannel struct {
+	release chan struct{}
+	entered chan struct{}
+}
+
+func (c *blockingChannel) ID() string { return "blocking" }
+func (c *blockingChannel) Execute(ctx context.Context, _ *notify.Event) error {
+	select {
+	case c.entered <- struct{}{}:
+	default:
+	}
+	select {
+	case <-c.release:
+	case <-ctx.Done():
+	}
+	return nil
+}
+func (c *blockingChannel) Close(context.Context) error { return nil }
+
+// TestLiveNotify_StopWaitsForRetiredService covers shutdown right after a
+// reload: a service the reload replaced is still delivering, and Stop must wait
+// for it rather than let the process exit under it. At the shutdown deadline
+// the wait is cut short.
+func TestLiveNotify_StopWaitsForRetiredService(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		deadline bool
+	}{{"waits for drain", false}, {"gives up at deadline", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			bus := events.NewEventBus()
+			slow := &blockingChannel{release: make(chan struct{}), entered: make(chan struct{}, 1)}
+			live := newLiveNotify()
+			live.swap(notify.New(notify.Config{
+				Bus:      bus,
+				Channels: []notify.Channel{slow},
+				Rules:    []notify.Rule{{Match: notify.MatchFailure(), ActionIDs: []string{slow.ID()}}},
+			}))
+			publishRun(bus, "a", true)
+			<-slow.entered // the delivery is in flight
+
+			live.swap(nil) // a reload that drops notifications
+
+			ctx := context.Background()
+			if tc.deadline {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 50*time.Millisecond)
+				defer cancel()
+			}
+			stopped := make(chan struct{})
+			go func() { _ = live.Stop(ctx); close(stopped) }()
+
+			if tc.deadline {
+				select {
+				case <-stopped:
+				case <-time.After(2 * time.Second):
+					t.Fatal("Stop ignored its deadline")
+				}
+				return
+			}
+			select {
+			case <-stopped:
+				t.Fatal("Stop returned while a retired service was still delivering")
+			case <-time.After(50 * time.Millisecond):
+			}
+			close(slow.release)
+			select {
+			case <-stopped:
+			case <-time.After(2 * time.Second):
+				t.Fatal("Stop did not return after the retired service drained")
+			}
+		})
+	}
 }

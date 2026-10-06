@@ -120,13 +120,18 @@ type defaultTaskManager struct {
 	// schedule; set by NewScheduler (nil until then). Consulted only for a
 	// jittered fire already waiting in the gate (see triggerJittered).
 	schedulePaused func(string) bool
+	// daemonLocation is the scheduler's live daemon timezone, which a health
+	// check cron with no timezone of its own runs in; set by NewScheduler (nil
+	// until then, meaning time.Local).
+	daemonLocation func() *time.Location
 }
 
-// setSchedulePaused wires the scheduler's pause check; see NewScheduler.
-func (m *defaultTaskManager) setSchedulePaused(fn func(string) bool) {
+// bindScheduler wires the scheduler's pause check and timezone; see NewScheduler.
+func (m *defaultTaskManager) bindScheduler(paused func(string) bool, location func() *time.Location) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.schedulePaused = fn
+	m.schedulePaused = paused
+	m.daemonLocation = location
 }
 
 // NewTaskManager constructs the default run-manager. clock must not be nil;

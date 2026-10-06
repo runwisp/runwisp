@@ -5,52 +5,106 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/cronprobe"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestCheckNonReloadable_AcceptsTaskOnlyChanges proves the gate ignores the
-// reloadable surface: differing [defaults]/tasks must not trip it (the task
-// diff handles those), only daemon-wide settings do.
-func TestCheckNonReloadable_AcceptsTaskOnlyChanges(t *testing.T) {
+// TestCheckNonReloadable_AcceptsLiveSettings proves the gate lets through
+// everything a reload applies live: tasks, [defaults], storage, notifications,
+// the timezone and the live [daemon] keys.
+func TestCheckNonReloadable_AcceptsLiveSettings(t *testing.T) {
 	old := &config.Config{Scheduler: config.Scheduler{Timezone: "UTC"}}
-	updated := &config.Config{Scheduler: config.Scheduler{Timezone: "UTC"}}
+	updated := &config.Config{
+		Scheduler: config.Scheduler{Timezone: "Europe/Bratislava"},
+		Storage:   config.Storage{MaxSize: 1 << 20, MinFreeSpace: 1 << 10},
+		Notify:    config.NotifyConfig{GlobalNotifiers: []string{"slack"}},
+		Daemon: config.Daemon{
+			ShutdownTimeout: time.Minute,
+			ExternalURL:     "https://x",
+			CheckUpdates:    true,
+			TrustedProxies:  []string{"10.0.0.0/8"},
+		},
+	}
 	assert.NoError(t, checkNonReloadable(old, updated))
 }
 
-func TestCheckNonReloadable_RejectsEachSection(t *testing.T) {
-	base := func() *config.Config {
-		return &config.Config{Scheduler: config.Scheduler{Timezone: "UTC"}}
-	}
-
+func TestCheckNonReloadable_RejectsRestartOnlySettings(t *testing.T) {
 	cases := []struct {
 		name   string
-		mutate func(*config.Config)
+		mutate func(*config.Daemon)
 		want   string
 	}{
-		{"daemon", func(c *config.Config) { c.Daemon.ExternalURL = "https://x" }, "[daemon]"},
-		{"timezone", func(c *config.Config) { c.Scheduler.Timezone = "America/New_York" }, "[daemon] timezone"},
-		{"storage", func(c *config.Config) { c.Storage.MaxSize = 1 << 20 }, "[storage]"},
-		{"notify", func(c *config.Config) { c.Notify.GlobalNotifiers = []string{"slack"} }, "[notify]"},
+		{"tls", func(d *config.Daemon) { d.TLS = "off" }, "[daemon] tls"},
+		{"tls_cert", func(d *config.Daemon) { d.TLSCert = "/c.pem" }, "[daemon] tls"},
+		{"tls_key", func(d *config.Daemon) { d.TLSKey = "/k.pem" }, "[daemon] tls"},
+		{"metrics_enabled", func(d *config.Daemon) { d.MetricsEnabled = true }, "[daemon] metrics"},
+		{"metrics_listen", func(d *config.Daemon) { d.MetricsListen = "127.0.0.1:9478" }, "[daemon] metrics"},
+		{"allow_station_dispatch", func(d *config.Daemon) { d.AllowStationDispatch = true }, "[daemon] allow_station_dispatch"},
 	}
-
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			updated := base()
-			tc.mutate(updated)
-			err := checkNonReloadable(base(), updated)
+			updated := &config.Config{}
+			tc.mutate(&updated.Daemon)
+			err := checkNonReloadable(&config.Config{}, updated)
 			require.Error(t, err, "%s change must be rejected", tc.name)
 			assert.Contains(t, err.Error(), tc.want)
 			assert.Contains(t, err.Error(), "runwisp restart")
 		})
 	}
+}
+
+// TestReloadCoversEveryDaemonKey guards config.Daemon growing a field nobody
+// classified: every field must either be rejected as restart-only or be
+// reported by changedSettings (and so applied by the settings hook). A field
+// that is neither would be silently accepted by reload and never take effect.
+func TestReloadCoversEveryDaemonKey(t *testing.T) {
+	typ := reflect.TypeFor[config.Daemon]()
+	for i := range typ.NumField() {
+		field := typ.Field(i)
+		t.Run(field.Name, func(t *testing.T) {
+			updated := &config.Config{}
+			v := reflect.ValueOf(&updated.Daemon).Elem().Field(i)
+			switch v.Kind() {
+			case reflect.Bool:
+				v.SetBool(true)
+			case reflect.String:
+				v.SetString("x")
+			case reflect.Int64:
+				v.SetInt(1)
+			case reflect.Slice:
+				v.Set(reflect.Append(v, reflect.ValueOf("x")))
+			default:
+				t.Fatalf("unhandled kind %s; extend this test", v.Kind())
+			}
+			rejected := checkNonReloadable(&config.Config{}, updated) != nil
+			reported := len(changedSettings(&config.Config{}, updated)) > 0
+			assert.True(t, rejected != reported,
+				"[daemon] %s must be exactly one of restart-only or reported live (rejected=%v reported=%v)",
+				field.Name, rejected, reported)
+		})
+	}
+}
+
+func TestChangedSettings(t *testing.T) {
+	old := &config.Config{Scheduler: config.Scheduler{Timezone: "UTC"}}
+	assert.Empty(t, changedSettings(old, old))
+
+	updated := &config.Config{
+		Scheduler: config.Scheduler{Timezone: "Asia/Tokyo"},
+		Storage:   config.Storage{MaxSize: 1},
+		Notify:    config.NotifyConfig{Routes: []config.NotificationRoute{{NotifierID: []string{"inapp"}}}},
+	}
+	assert.Equal(t, []string{"daemon.timezone", "storage.max_size", "notifications"}, changedSettings(old, updated))
 }
 
 // TestCheckNonReloadable_RUNWISPTLSDoesNotFlapReload proves reload survives
@@ -301,4 +355,137 @@ func TestReconcile_ClearsPauseTheConfigNoLongerAllows(t *testing.T) {
 	assert.Nil(t, sched.PausedAt("locked"))
 	assert.NotNil(t, sched.PausedAt("kept"), "a cron change keeps the pause")
 	assert.Nil(t, sched.GetNextRun("kept"))
+}
+
+// TestReconcile_SettingsHookGatesTimezoneAndCommit proves the settings hook is
+// part of validate-first: when it fails, the reload is rejected and nothing
+// moves (the schedule keeps its zone, the commit never runs). When it passes, a
+// timezone change re-bases the schedule and the commit runs.
+func TestReconcile_SettingsHookGatesTimezoneAndCommit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runwisp.toml")
+	write := func(tz string) {
+		body := "[daemon]\ntimezone = \"" + tz + "\"\n\n[tasks.t]\nrun = \"/bin/true\"\ncron = \"0 3 * * *\"\n"
+		require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+	}
+	write("UTC")
+	base, err := config.Load(path)
+	require.NoError(t, err)
+
+	tasks := tasksByName(base)
+	sched := NewScheduler(&fakeTaskRunner{}, tasks, time.UTC, nil)
+	_, err = sched.Start()
+	require.NoError(t, err)
+	defer sched.Stop()
+
+	hourOfNextRun := func() int {
+		var hour int
+		require.Eventually(t, func() bool {
+			next := sched.GetNextRun("t")
+			if next == nil || next.IsZero() {
+				return false
+			}
+			hour = next.UTC().Hour()
+			return true
+		}, time.Second, 5*time.Millisecond)
+		return hour
+	}
+	require.Equal(t, 3, hourOfNextRun())
+
+	hookErr := errors.New("bad notifier")
+	committed := false
+	r := NewReconciler(ReconcilerDeps{
+		ConfigPath: path,
+		Baseline:   base,
+		Registry:   NewTaskRegistry(tasks),
+		Scheduler:  sched,
+		Manager:    &recordingManager{},
+		Snapshot:   config.NewSnapshot(path, base, time.Now()),
+		Settings: func(_, _ *config.Config) (func(), error) {
+			if hookErr != nil {
+				return nil, hookErr
+			}
+			return func() { committed = true }, nil
+		},
+	})
+
+	write("Asia/Tokyo") // UTC+9, no DST: 03:00 Tokyo is 18:00 UTC
+	_, err = r.Reconcile()
+	require.ErrorContains(t, err, "bad notifier")
+	assert.False(t, committed)
+	assert.Equal(t, 3, hourOfNextRun(), "a rejected reload must not move the schedule")
+
+	hookErr = nil
+	result, err := r.Reconcile()
+	require.NoError(t, err)
+	assert.True(t, committed)
+	assert.Equal(t, []string{"daemon.timezone"}, result.Settings)
+	assert.Equal(t, 18, hourOfNextRun())
+}
+
+// TestReconcile_CronHoldWatcherFollowsIncludeCron proves the cron-hold watcher
+// tracks the live config, not the boot one: a reload that adds include_cron
+// starts it, a reload that drops the last crontab stops it, a reload that keeps
+// it reseeds it, and the stop func WatchCronHolds returns shuts it down for good.
+func TestReconcile_CronHoldWatcherFollowsIncludeCron(t *testing.T) {
+	dir := t.TempDir()
+	// include_cron refuses crontabs under a group/world-writable directory, and
+	// t.TempDir follows the umask.
+	require.NoError(t, os.Chmod(dir, 0o755))
+	path := filepath.Join(dir, "runwisp.toml")
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "crontabs"), 0o755))
+	require.NoError(t, os.Chmod(filepath.Join(dir, "crontabs"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "crontabs", "backup"),
+		[]byte("0 3 * * * /usr/local/bin/backup.sh\n"), 0o600))
+	plain := "[tasks.t]\nrun = \"/bin/true\"\n"
+	withCron := "[daemon]\ninclude_cron = [\"crontabs/*\"]\n\n" + plain
+	write := func(body string) { require.NoError(t, os.WriteFile(path, []byte(body), 0o600)) }
+
+	write(plain)
+	base, err := config.Load(path)
+	require.NoError(t, err)
+	r := NewReconciler(ReconcilerDeps{
+		ConfigPath: path,
+		Baseline:   base,
+		Registry:   NewTaskRegistry(tasksByName(base)),
+		Manager:    &recordingManager{},
+		DB:         newHoldCatchupDB(),
+		Snapshot:   config.NewSnapshot(path, base, time.Now()),
+	})
+	watching := func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.stopCronWatcher != nil
+	}
+
+	stop := r.WatchCronHolds(func() cronprobe.State { return cronprobe.State{} })
+	assert.False(t, watching(), "no crontab, no watcher")
+
+	write(withCron)
+	_, err = r.Reconcile()
+	require.NoError(t, err)
+	assert.True(t, watching(), "a reload adding include_cron must start the watcher")
+
+	write(plain)
+	_, err = r.Reconcile()
+	require.NoError(t, err)
+	assert.False(t, watching(), "a reload dropping the last crontab must stop the watcher")
+
+	write(withCron)
+	_, err = r.Reconcile()
+	require.NoError(t, err)
+
+	// A reload re-probes cron, so the running watcher must be reseeded with that
+	// answer. One that kept its old remembered liveness would miss cron flipping
+	// back to it and never re-hold the tasks.
+	r.mu.Lock()
+	replaced, prev := false, r.stopCronWatcher
+	r.stopCronWatcher = func() { replaced = true; prev() }
+	r.mu.Unlock()
+	_, err = r.Reconcile()
+	require.NoError(t, err)
+	assert.True(t, replaced, "a reload must replace the running watcher")
+	assert.True(t, watching())
+
+	stop()
+	assert.False(t, watching(), "stop must shut the watcher down")
 }

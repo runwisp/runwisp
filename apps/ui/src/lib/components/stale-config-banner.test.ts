@@ -17,6 +17,12 @@ describe("reloadSummary", () => {
         );
     });
 
+    it("reports changed settings", () => {
+        expect(
+            reloadSummary({ added: [], removed: [], changed: [], settings: ["notifications"] }),
+        ).toBe("Config reloaded: settings updated");
+    });
+
     it("omits zero counts", () => {
         expect(reloadSummary({ added: ["a"], removed: [], changed: [] })).toBe(
             "Config reloaded: +1 added",

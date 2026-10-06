@@ -52,10 +52,10 @@ func (c *Config) units() iter.Seq2[string, *model.Task] {
 // applyHealthCheckDefaults resolves a service's probe once the service itself
 // is resolved. The probe takes the task defaulting path wholesale, plus what
 // only a probe has: the service's env/secrets beneath its own (a host probe
-// only — see serviceWire.healthCheckTask), the probe built-ins, the
-// daemon timezone for its cron, and no graceful stop — a probe past its
-// timeout is killed outright, not asked to wind down.
-func applyHealthCheckDefaults(svc *model.Task, d Defaults, schedulerTZ string) {
+// only — see serviceWire.healthCheckTask), the probe built-ins, and no
+// graceful stop — a probe past its timeout is killed outright, not asked to
+// wind down.
+func applyHealthCheckDefaults(svc *model.Task, d Defaults) {
 	probe := svc.HealthCheck
 	if probe == nil {
 		return
@@ -68,8 +68,10 @@ func applyHealthCheckDefaults(svc *model.Task, d Defaults, schedulerTZ string) {
 	}
 	applyTaskDefaults(probe)
 	applyInheritedDefaults(probe, d)
+	// A probe with no timezone of its own runs in the daemon zone, which the
+	// health watcher reads live; it is not copied in here, so a [daemon]
+	// timezone reload doesn't count as a probe change and recycle the service.
 	probe.Cron = cmp.Or(probe.Cron, DefaultHealthCheckCron)
-	probe.Timezone = cmp.Or(probe.Timezone, schedulerTZ)
 	if probe.Timeout == nil {
 		probe.Timeout = new(DefaultHealthCheckTimeout)
 	}

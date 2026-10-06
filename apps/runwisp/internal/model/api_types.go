@@ -28,6 +28,10 @@ type ReloadResult struct {
 	Added   []string           `json:"added" doc:"Names of tasks added by the reload"`
 	Removed []string           `json:"removed" doc:"Names of tasks removed by the reload"`
 	Changed []ReloadTaskChange `json:"changed" doc:"Tasks whose definition changed, with the reasons"`
+	// Settings names the daemon-wide settings the reload applied, as TOML keys
+	// (e.g. "daemon.timezone", "storage.max_size"); "notifications" covers
+	// [notify], [notifiers.*] and [[route]].
+	Settings []string `json:"settings,omitempty" doc:"Daemon-wide settings the reload applied, as TOML keys; notifications covers [notify], [notifiers.*] and [[route]]"`
 	// Warnings carries the newly-live config's non-fatal findings — chiefly the
 	// crontab jobs include_cron declined to schedule. Without it a `crontab -e`
 	// followed by `runwisp reload` would report nothing about the job that didn't
@@ -44,7 +48,7 @@ type ReloadTaskChange struct {
 
 // IsEmpty reports whether the reload changed nothing.
 func (r ReloadResult) IsEmpty() bool {
-	return len(r.Added) == 0 && len(r.Removed) == 0 && len(r.Changed) == 0
+	return len(r.Added) == 0 && len(r.Removed) == 0 && len(r.Changed) == 0 && len(r.Settings) == 0
 }
 
 // SystemStats holds live system resource and identity information.

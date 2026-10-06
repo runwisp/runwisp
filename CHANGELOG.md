@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `runwisp reload` now applies notifiers, routes, `[notify]`, `[storage]`, and `[daemon]` settings including `timezone`, and lists them on `~ setting` lines. Only a few `[daemon]` keys, such as the TLS and metrics settings, still need `runwisp restart`.
 - Single-instance services show their run history beside the log like every other task, and **Stop Service** is now **Stop**.
 - The update check also reports how RunWisp was installed (`docker`, `npm`, `npx`, `script` or `other`), nothing else is added. `check_updates = false` still turns it off.
 - A plain-HTTP request to the HTTPS port is redirected to the `https://` URL instead of getting "Client sent an HTTP request to an HTTPS server.".
@@ -36,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runwisp import systemd` leaves out an `EnvironmentFile=-path` that doesn't exist yet (with a note) and no longer turns `TimeoutStopSec=0` into an immediate kill.
 - The systemd unit written by `runwisp service install` keeps a literal `$` in the binary, config or data path.
 - Two daemons can no longer end up sharing a data dir when one starts as another stops.
+- Failures held back by notification coalescing are sent as a summary when the daemon stops, instead of being dropped.
 - RunWisp starts when the data dir belongs to another user (a Kubernetes `fsGroup` volume, a group-writable bind mount) and warns that its permissions are looser than 0700.
 - `runwisp stop` and `restart` recognize a running daemon by its PID file lock, so a recycled PID or a renamed binary is no longer mistaken for the daemon.
 - Schedules that can never fire, such as `0 0 30 2 *`, and `@every` intervals under one second are now rejected by `runwisp validate` and on load or reload. Day-of-week ranges like `sun-7` are accepted.
