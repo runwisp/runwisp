@@ -656,7 +656,7 @@ const staleSettingsNote = "Note: the running daemon keeps the settings it starte
 // starts the same daemon back up under systemd.
 func handStartedDaemonError(info *model.InstanceInfo, host string, port int) error {
 	return &userFacingError{
-		title: fmt.Sprintf("a RunWisp daemon started by hand (pid %d) is holding %s:%d", info.Pid, displayHost(host), port),
+		title: fmt.Sprintf("a RunWisp daemon started by hand (pid %d) is holding %s:%d", info.Pid, bindHost(host), port),
 		details: fmt.Sprintf(
 			"It owns the data dir this service would own (%s), so the unit could not start while it runs.\n\n"+
 				"  1. Stop it:  runwisp stop --data %s\n"+
