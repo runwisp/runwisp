@@ -115,7 +115,7 @@ func TestRunDetailDialog_Update_CloseKeys(t *testing.T) {
 }
 
 func TestHandleKeyI_ExecViewOpensRunDetail(t *testing.T) {
-	m := newTestModelWithClient([]model.Task{{Name: "backup-db"}})
+	m := newTestModel([]model.Task{{Name: "backup-db"}})
 	ev := execlist.NewExecView(endedRun())
 	m.execView = &ev
 
@@ -133,7 +133,7 @@ func TestHandleKeyI_ExecViewOpensRunDetail(t *testing.T) {
 }
 
 func TestInterceptRunDetail_EnterOpensParent(t *testing.T) {
-	m := newTestModelWithClient([]model.Task{{Name: "backup-db"}})
+	m := newTestModel([]model.Task{{Name: "backup-db"}})
 	m.dialogs.Show(dlgRunDetail, NewRunDetailDialog(endedRun(), false, 1))
 
 	updated, cmd, intercepted := m.interceptActiveDialog(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -176,7 +176,7 @@ func TestRunDetailDialog_ShowsTimesInDaemonZone(t *testing.T) {
 }
 
 func TestHandleDaemonInfo_AdoptsTimezoneChange(t *testing.T) {
-	m := newTestModelWithClient(nil)
+	m := newTestModel(nil)
 	updated, _ := m.handleDaemonInfo(uikit.DaemonInfoMsg{Info: &model.DaemonInfo{ResolvedTimezone: "Etc/GMT-2", TimezoneSource: "config"}})
 	got, ok := updated.(Model)
 	if !ok {

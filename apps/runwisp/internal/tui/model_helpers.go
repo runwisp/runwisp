@@ -138,9 +138,6 @@ func (m *Model) showConfirmDialog(title, message string, onConfirm tea.Cmd) tea.
 }
 
 func (m *Model) confirmAction(action confirmAction) tea.Cmd {
-	if m.client == nil {
-		return nil
-	}
 	switch action {
 	case confirmActionTrigger:
 		return m.triggerRun()

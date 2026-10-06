@@ -1039,7 +1039,7 @@ func TestHandleTriggerRun_RetrySuccessUsesRetryAction(t *testing.T) {
 // result and does NOT arm an undo — run/retry is confirmed up front, so undo is
 // reserved for delete.
 func TestHandleTriggerRun_FlashesNoUndo(t *testing.T) {
-	m := newTestModelWithClient(nil)
+	m := newTestModel(nil)
 	newRun := &model.Run{ID: "r-new", TaskName: "task-x", Status: model.PhaseRunning}
 	updated, _ := m.handleTriggerRun(uikit.TriggerRunMsg{TaskName: "task-x", Run: newRun})
 	got, ok := updated.(Model)
@@ -1058,7 +1058,7 @@ func TestHandleTriggerRun_FlashesNoUndo(t *testing.T) {
 // TestHandleTriggerRun_FailureFlashesError verifies a failed trigger shows an
 // error-styled toast, so it can't be mistaken for a success.
 func TestHandleTriggerRun_FailureFlashesError(t *testing.T) {
-	m := newTestModelWithClient(nil)
+	m := newTestModel(nil)
 	updated, _ := m.handleTriggerRun(uikit.TriggerRunMsg{TaskName: "task-x", Err: errors.New("concurrency limit")})
 	got, ok := updated.(Model)
 	if !ok {
@@ -1072,7 +1072,7 @@ func TestHandleTriggerRun_FailureFlashesError(t *testing.T) {
 
 // TestHandleDeleteRun_ArmsUndo verifies a successful delete arms a restore undo.
 func TestHandleDeleteRun_ArmsUndo(t *testing.T) {
-	m := newTestModelWithClient(nil)
+	m := newTestModel(nil)
 	updated, _ := m.handleDeleteRun(uikit.DeleteRunMsg{TaskName: "t1", RunID: "r-gone"})
 	got, ok := updated.(Model)
 	if !ok {
