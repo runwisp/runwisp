@@ -28,7 +28,7 @@ func TestLinesItemStreamFromString(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
-			assert.Equal(t, tt.want, linesItemStreamFromString(tt.in))
+			assert.Equal(t, tt.want, protocol.ValuesToLinesItemStream[tt.in])
 		})
 	}
 }
@@ -213,7 +213,7 @@ func TestHitsItemStreamFromString(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
-			assert.Equal(t, tt.want, hitsItemStreamFromString(tt.in))
+			assert.Equal(t, tt.want, protocol.ValuesToHitsItemStream[tt.in])
 		})
 	}
 }

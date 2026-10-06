@@ -15,30 +15,27 @@ type connectionManager struct {
 	tracker *ExecutionTracker
 
 	mu      sync.Mutex
-	session *wsSession
-	ready   bool
+	session *wsSession // nil while disconnected
 }
 
 func newConnectionManager(tracker *ExecutionTracker) *connectionManager {
 	return &connectionManager{tracker: tracker}
 }
 
-// attachSession sets the active session and marks the connection ready,
-// reporting whether this is the first time the session has gone ready.
+// attachSession sets the active session, reporting whether the connection was
+// previously detached.
 func (cm *connectionManager) attachSession(s *wsSession) (isFirstConnect bool) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	isFirstConnect = !cm.ready
+	isFirstConnect = cm.session == nil
 	cm.session = s
-	cm.ready = true
 	return isFirstConnect
 }
 
 func (cm *connectionManager) detachSession() {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	cm.ready = false
 	cm.session = nil
 }
 
@@ -46,10 +43,9 @@ func (cm *connectionManager) detachSession() {
 func (cm *connectionManager) sendIfReady(message any) error {
 	cm.mu.Lock()
 	s := cm.session
-	r := cm.ready
 	cm.mu.Unlock()
 
-	if !r || s == nil {
+	if s == nil {
 		return fmt.Errorf("not connected")
 	}
 	return sendMessage(s, message)
@@ -58,10 +54,9 @@ func (cm *connectionManager) sendIfReady(message any) error {
 func (cm *connectionManager) flushPendingUpdates() {
 	cm.mu.Lock()
 	s := cm.session
-	r := cm.ready
 	cm.mu.Unlock()
 
-	if !r || s == nil {
+	if s == nil {
 		return
 	}
 

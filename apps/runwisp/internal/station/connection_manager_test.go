@@ -25,7 +25,7 @@ func TestConnectionManager_ReadyLifecycle(t *testing.T) {
 		cm := newConnectionManager(NewExecutionTracker())
 		isFirstConnect := cm.attachSession(&wsSession{outbound: make(chan []byte, 1)})
 		assert.True(t, isFirstConnect)
-		assert.True(t, cm.ready)
+		assert.NotNil(t, cm.session)
 		require.NoError(t, cm.sendIfReady("x"))
 	})
 
