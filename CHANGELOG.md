@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The update check also reports how RunWisp was installed (`docker`, `npm`, `npx`, `script` or `other`), nothing else is added. `check_updates = false` still turns it off.
 - A plain-HTTP request to the HTTPS port is redirected to the `https://` URL instead of getting "Client sent an HTTP request to an HTTPS server.".
 - Quitting the `runwisp demo` TUI shuts the demo daemon down instead of asking whether to keep it running. Use `runwisp demo --no-tui` to keep it in the background.
 - `runwisp import` maps systemd `Restart=` and supervisord `autorestart` onto the `restart` key (`on-failure` and `unexpected` become `on_failure`, `no` becomes `never`), and reads `no`, `off` and `0` as supervisord's "don't restart". `Restart=on-success` becomes `never`, since it never restarts after a failure.

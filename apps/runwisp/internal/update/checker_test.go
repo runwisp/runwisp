@@ -7,6 +7,8 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -127,3 +129,38 @@ func TestRunSkipsDevBuild(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestCheckOnceSendsInstallSource(t *testing.T) {
+	t.Setenv("RUNWISP_INSTALL_SOURCE", "npx")
+	var got string
+	c := newTestChecker("0.2.0", roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		got = r.URL.Query().Get("source")
+		return stubRT{status: 200, body: `{"version":"v0.3.0"}`}.RoundTrip(r)
+	}))
+	c.checkOnce(context.Background())
+	if got != "npx" {
+		t.Fatalf("source = %q, want \"npx\"", got)
+	}
+}
+
+func TestInstallSourceMarkerAndFallback(t *testing.T) {
+	t.Setenv("RUNWISP_INSTALL_SOURCE", "")
+	if got := installSource(); got != "other" {
+		t.Fatalf("no env, no marker: installSource() = %q, want \"other\"", got)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exe, err = filepath.EvalSymlinks(exe); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(filepath.Dir(exe), ".runwisp-source")
+	if err := os.WriteFile(marker, []byte("script\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(marker) })
+	if got := installSource(); got != "script" {
+		t.Fatalf("marker: installSource() = %q, want \"script\"", got)
+	}
+}
