@@ -12,8 +12,6 @@
 
     interface Props {
         fetchLogs?: FetchLogsFn;
-        chunkSize?: number;
-        lineHeight?: number;
         class?: string;
         // highlightLine, when set, scrolls the console so the given absolute
         // line number is visible and pulses a short-lived flash on that row.
@@ -52,8 +50,6 @@
 
     let {
         fetchLogs,
-        chunkSize = 4096,
-        lineHeight = 20,
         class: className = "",
         highlightLine = null,
         fetchLineHistory,
@@ -63,6 +59,8 @@
         loading = false,
         wrap = $bindable(false),
     }: Props = $props();
+
+    const lineHeight = 20; // px per rendered row
 
     // --- Frame-history inline expansion (single expansion at a time) ---
     // expandedLine is the absolute line number whose history block is open;
@@ -272,7 +270,7 @@
         const i = lineNum - cache.firstAvailableLine;
         if (i <= 0) return base;
         if (i >= prefixSums.length) {
-            const last = prefixSums.length > 0 ? (prefixSums[prefixSums.length - 1] ?? 0) : 0;
+            const last = prefixSums.at(-1) ?? 0;
             return last * lineHeight + base;
         }
         return (prefixSums[i] ?? 0) * lineHeight + base;
@@ -346,11 +344,8 @@
     let overlayRows = $derived(cache.overlayRows);
 
     let totalHeight = $derived.by(() => {
-        const truncationBannerHeight = cache.firstAvailableLine > 0 ? lineHeight : 0;
         const linesHeight = wrap
-            ? (prefixSums.length > 0
-                  ? (prefixSums[prefixSums.length - 1] ?? 0)
-                  : Math.max(0, cache.totalLines - cache.firstAvailableLine)) *
+            ? (prefixSums.at(-1) ?? Math.max(0, cache.totalLines - cache.firstAvailableLine)) *
                   lineHeight +
               truncationBannerHeight
             : (cache.totalLines - cache.firstAvailableLine) * lineHeight + truncationBannerHeight;
@@ -411,8 +406,7 @@
     // viewport lands at the end of the log without racing the auto-scroll.
     $effect(() => {
         const fn = fetchLogs;
-        const cs = chunkSize;
-        fetcher = new LogFetcher(cache, fn, cs, (min, max) => {
+        fetcher = new LogFetcher(cache, fn, (min, max) => {
             measureRange(min, max);
             if (isAutoScroll && !userScrolledUp) {
                 requestAnimationFrame(() => scrollToBottom());

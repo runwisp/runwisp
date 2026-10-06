@@ -19,8 +19,8 @@ const logger = createLogger("LogFetcher");
  */
 export class LogFetcher {
     private readonly cache: LogCache;
-    private fetchLogsFn: FetchLogsFn | undefined;
-    private chunkSize: number;
+    private readonly fetchLogsFn: FetchLogsFn | undefined;
+    private readonly chunkSize = 4096;
 
     readonly MAX_INFLIGHT = 2;
     readonly MIN_REQUEST_INTERVAL_MS = 140;
@@ -37,21 +37,11 @@ export class LogFetcher {
     constructor(
         cache: LogCache,
         fetchLogsFn: FetchLogsFn | undefined,
-        chunkSize: number = 4096,
         onDataLoaded?: (min: number, max: number) => void,
     ) {
         this.cache = cache;
         this.fetchLogsFn = fetchLogsFn;
-        this.chunkSize = Math.max(1, Math.floor(chunkSize));
         this.onDataLoaded = onDataLoaded;
-    }
-
-    setFetchLogsFn(fn: FetchLogsFn | undefined) {
-        this.fetchLogsFn = fn;
-    }
-
-    setChunkSize(size: number) {
-        this.chunkSize = Math.max(1, Math.floor(size));
     }
 
     enqueue(from: number, to: number) {

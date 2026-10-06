@@ -297,7 +297,6 @@
     <div class="flex min-h-0 flex-1 flex-col md:flex-row">
         {#if !hideHistory || historyExpanded}
             <RunsList
-                flush
                 {items}
                 {total}
                 {loading}
@@ -306,7 +305,6 @@
                 selectedRunId={selection.selectedRunId}
                 onselect={(id) => (selection.userSelectedRunId = id)}
                 showFilters
-                emptyText="No runs yet"
                 bulkActions
                 taskNameFilter={task.name}
                 onBulkCancel={selection.handleBulkCancel}

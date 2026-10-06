@@ -93,7 +93,6 @@
      right border — the same chrome-less frame as a task's detail page. -->
 <div class="-m-6 flex h-[calc(100%+3rem)] min-h-0 flex-col md:flex-row">
     <RunsList
-        flush
         {items}
         {total}
         {loading}
