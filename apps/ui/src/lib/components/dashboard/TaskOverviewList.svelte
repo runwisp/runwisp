@@ -6,7 +6,7 @@
     import ComposeBadge from "../ComposeBadge.svelte";
     import TaskHeldBadge from "../TaskHeldBadge.svelte";
     import TaskSourceBadge from "../TaskSourceBadge.svelte";
-    import { getRunStatusConfig, Badge, EmptyState, Input, Select, Tooltip } from "@runwisp/ui";
+    import { RUN_STATUS_CONFIG, Badge, EmptyState, Input, Select, Tooltip } from "@runwisp/ui";
     import type {
         OverviewTaskCounts,
         OverviewTaskFilter,
@@ -29,10 +29,12 @@
         label: string;
     }
 
-    interface SortOption {
+    // A type alias (not an interface) so it stays assignable to Select's
+    // index-signatured SelectOption.
+    type SortOption = {
         value: OverviewTaskSortKey;
         label: string;
-    }
+    };
 
     interface TaskStateConfig {
         label: string;
@@ -92,7 +94,7 @@
         now,
         schedulingActive,
         onTaskClick,
-    } = $props<{
+    }: {
         taskOverviews: TaskOverview[];
         filteredTasks: TaskOverview[];
         searchQuery: string;
@@ -104,7 +106,7 @@
         now: Date;
         schedulingActive: boolean;
         onTaskClick?: (taskName: string) => void;
-    }>();
+    } = $props();
 
     function getTaskStateConfig(state: OverviewTaskState): TaskStateConfig {
         return TASK_STATE_CONFIG[state];
@@ -202,7 +204,7 @@ run  = "echo hello"</pre>
             {#each filteredTasks as task (task.task.id)}
                 {@const taskState = getTaskStateConfig(task.state)}
                 {@const lastStatusConfig = task.lastStatus
-                    ? getRunStatusConfig(task.lastStatus)
+                    ? RUN_STATUS_CONFIG[task.lastStatus]
                     : undefined}
                 {@const TaskIcon = taskIcon(task.task)}
 

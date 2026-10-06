@@ -4,7 +4,7 @@
 <script lang="ts">
     import type { Snippet } from "svelte";
 
-    export type TaskCardAccent = "danger" | "wisp" | "aurora";
+    type TaskCardAccent = "danger" | "wisp" | "aurora";
 
     interface Props {
         accent?: TaskCardAccent;

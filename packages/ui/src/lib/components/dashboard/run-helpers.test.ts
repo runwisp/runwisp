@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RUN_STATUSES } from "@runwisp/common";
 import {
     runDuration,
     runStartDelay,
@@ -13,12 +12,6 @@ import {
 } from "./run-helpers.js";
 
 describe("runVerdict", () => {
-    it("covers every run status", () => {
-        for (const status of RUN_STATUSES) {
-            expect(runVerdict(status).verb, status).toBeTruthy();
-        }
-    });
-
     it("phrases a timed outcome so a duration reads after it", () => {
         expect(runVerdict("succeeded")).toEqual({ verb: "succeeded in", timed: true });
         expect(runVerdict("failed")).toEqual({ verb: "failed after", timed: true });

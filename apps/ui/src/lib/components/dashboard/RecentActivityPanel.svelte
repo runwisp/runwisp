@@ -7,8 +7,7 @@
         arrival,
         leave,
         shift,
-        getRunStatusConfig,
-        runDisplayStatus,
+        RUN_STATUS_CONFIG,
         instanceSuffix,
         Card,
         EmptyState,
@@ -16,7 +15,7 @@
         formatTriggeredByLabel,
     } from "@runwisp/ui";
     import type { RunMotion } from "@runwisp/ui";
-    import type { Run } from "@runwisp/common";
+    import { displayStatus, type Run } from "@runwisp/common";
     import { formatRunDurationLabel } from "./overview-format.js";
 
     let {
@@ -66,8 +65,8 @@
     {:else}
         <div class="mt-4 space-y-1.5">
             {#each recentActivity as run (run.id)}
-                {@const status = runDisplayStatus(run)}
-                {@const statusConfig = getRunStatusConfig(status)}
+                {@const status = displayStatus(run.status, run.endReason)}
+                {@const statusConfig = RUN_STATUS_CONFIG[status]}
                 {@const StatusIcon = statusConfig.icon}
                 {@const suffix = instanceSuffix(run.instanceIndex, getInstanceCount(run.taskName))}
 

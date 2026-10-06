@@ -4,10 +4,7 @@
 export type {
   Task,
   Run,
-  DaemonInfo,
-  SystemStats,
   paths as APIPaths,
-  components as APIComponents,
   operations as APIOperations,
 } from "./generated/api.js";
 
@@ -71,9 +68,7 @@ type _EndReasonsExhaustive = Exclude<
 true satisfies _EndReasonsExhaustive;
 
 /** Union of phases and end-reasons for UI display/filtering. */
-export const RUN_STATUSES = [...RUN_PHASES, ...END_REASONS] as const;
-
-export type RunStatus = (typeof RUN_STATUSES)[number];
+export type RunStatus = RunPhase | EndReason;
 
 export const TRIGGERS = ["cron", "api", "ui", "cli", "station", "service", "startup", "hook"] as const;
 
