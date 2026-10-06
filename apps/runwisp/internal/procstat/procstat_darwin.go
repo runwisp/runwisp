@@ -15,7 +15,7 @@ const fastInterval = time.Second
 
 func platformReader() reader {
 	return func(pgids map[int]struct{}) map[int]groupStat {
-		out, err := exec.Command("ps", "-A", "-o", "pgid=,rss=,time=").Output()
+		out, err := exec.Command("/bin/ps", "-A", "-o", "pgid=,rss=,time=").Output()
 		if err != nil {
 			return nil
 		}
