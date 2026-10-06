@@ -60,7 +60,7 @@ type afterFunc func(d time.Duration, fn func()) timerStopper
 type Channel struct {
 	inner  notify.Channel
 	cfg    Config
-	clock  notify.Clocker
+	clock  func() time.Time
 	logger *slog.Logger
 	after  afterFunc
 	// failures surfaces a permanently-failed window-close summary as an in-app
@@ -88,19 +88,20 @@ type fpState struct {
 	timer     timerStopper
 }
 
+func (st *fpState) stopTimer() {
+	if st.timer != nil {
+		st.timer.Stop()
+		st.timer = nil
+	}
+}
+
 // New wraps inner. The returned Channel must be Closed; otherwise pending
 // timer goroutines will leak. failures (typically the in-app channel) receives
 // a synthetic delivery-failure event when a window-close summary permanently
 // fails; pass nil to log only.
-func New(inner notify.Channel, cfg Config, clock notify.Clocker, logger *slog.Logger, failures notify.SyntheticIngester) *Channel {
+func New(inner notify.Channel, cfg Config, clock func() time.Time, logger *slog.Logger, failures notify.SyntheticIngester) *Channel {
 	if cfg.Window <= 0 {
 		cfg.Window = DefaultWindow
-	}
-	if cfg.CoalesceLimit < 0 {
-		cfg.CoalesceLimit = 0
-	}
-	if clock == nil {
-		clock = notify.RealClock()
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -126,18 +127,13 @@ func (c *Channel) ID() string { return c.inner.ID() }
 // Execute decides whether to forward, forward-as-summary, or suppress the
 // event. Suppressed events are released later by the window-close timer.
 func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
-	if ev == nil {
-		return nil
-	}
 	d := c.decide(ev)
 	switch d.action {
 	case actionForward:
 		return c.inner.Execute(ctx, ev)
 	case actionForwardSummary:
 		return c.inner.Execute(ctx, summarize(ev, d.count, false))
-	case actionSuppress:
-		return nil
-	default:
+	default: // actionSuppress
 		return nil
 	}
 }
@@ -148,10 +144,7 @@ func (c *Channel) Close(ctx context.Context) error {
 
 	c.mu.Lock()
 	for _, st := range c.state {
-		if st.timer != nil {
-			st.timer.Stop()
-			st.timer = nil
-		}
+		st.stopTimer()
 	}
 	c.mu.Unlock()
 
@@ -180,7 +173,7 @@ func (c *Channel) decide(ev *notify.Event) decision {
 	defer c.mu.Unlock()
 
 	fp := notify.FingerprintKey(ev)
-	now := c.clock.Now()
+	now := c.clock()
 	st, ok := c.state[fp]
 
 	if !ok {
@@ -198,10 +191,7 @@ func (c *Channel) decide(ev *notify.Event) decision {
 		st.lastSent = now
 		st.pending = 0
 		st.lastEvent = nil
-		if st.timer != nil {
-			st.timer.Stop()
-			st.timer = nil
-		}
+		st.stopTimer()
 		return decision{action: actionForward}
 	}
 
@@ -217,18 +207,12 @@ func (c *Channel) decide(ev *notify.Event) decision {
 		st.pending = 0
 		st.lastSent = now
 		st.lastEvent = nil
-		if st.timer != nil {
-			st.timer.Stop()
-			st.timer = nil
-		}
+		st.stopTimer()
 		return decision{action: actionForwardSummary, count: count}
 	}
 
 	if st.timer == nil {
-		deadline := st.lastSent.Add(c.cfg.Window).Sub(now)
-		if deadline < 0 {
-			deadline = 0
-		}
+		deadline := max(0, st.lastSent.Add(c.cfg.Window).Sub(now))
 		st.timer = c.after(deadline, func() {
 			c.timerFlush(fp)
 		})
@@ -301,12 +285,9 @@ func (c *Channel) timerFlush(fp string) {
 // caller's Event is not modified.
 func summarize(ev *notify.Event, count int, windowClose bool) *notify.Event {
 	out := *ev
+	out.Extra = maps.Clone(out.Extra)
 	if out.Extra == nil {
 		out.Extra = make(map[string]any, 2)
-	} else {
-		dup := make(map[string]any, len(out.Extra)+2)
-		maps.Copy(dup, out.Extra)
-		out.Extra = dup
 	}
 	out.Extra["coalesced_count"] = count
 	if windowClose {

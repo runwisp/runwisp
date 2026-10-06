@@ -10,6 +10,7 @@ package inapp
 import (
 	"sync"
 
+	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/storage"
 )
 
@@ -54,9 +55,6 @@ type Hub struct {
 // NewHub constructs a Hub. bufSize is the per-subscriber channel capacity;
 // 32 is a sensible default for the SSE handler.
 func NewHub(bufSize int) *Hub {
-	if bufSize <= 0 {
-		bufSize = 32
-	}
 	return &Hub{
 		subs:    make(map[*Subscriber]struct{}),
 		bufSize: bufSize,
@@ -92,24 +90,6 @@ func (h *Hub) Publish(u Update) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for s := range h.subs {
-		sendDropOldest(s.ch, u)
-	}
-}
-
-// sendDropOldest delivers u on ch, evicting the oldest buffered update when ch
-// is full so the freshest state always reaches the subscriber. Mirrors the
-// dispatcher's enqueueDropOldest. Every step is non-blocking; the loop retries
-// only when a racing receiver drained ch between the send and the eviction.
-func sendDropOldest(ch chan Update, u Update) {
-	for {
-		select {
-		case ch <- u:
-			return
-		default:
-		}
-		select {
-		case <-ch:
-		default:
-		}
+		notify.SendDropOldest(s.ch, u, nil)
 	}
 }

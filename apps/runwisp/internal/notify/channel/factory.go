@@ -103,7 +103,7 @@ func Build(spec NotifierSpec) (notify.Channel, error) {
 	if err != nil {
 		return nil, err
 	}
-	r, err := render.NewTemplateRendererWithContext(spec.Type+":"+spec.ID, body, contentType, render.DefaultTitle, spec.RenderContext)
+	r, err := render.NewTemplateRenderer(spec.Type+":"+spec.ID, body, contentType, render.DefaultTitle, spec.RenderContext)
 	if err != nil {
 		return nil, err
 	}

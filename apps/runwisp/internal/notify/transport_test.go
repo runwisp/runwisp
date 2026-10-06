@@ -51,7 +51,7 @@ func TestHTTPProvider_RateLimitDoesNotDoubleWait(t *testing.T) {
 		Body429Fn: func([]byte) time.Duration { return retryAfter },
 	}
 
-	require.NoError(t, p.PostJSON(context.Background(), srv.URL, "application/json", []byte("{}")))
+	require.NoError(t, p.Post(context.Background(), srv.URL, "application/json", []byte("{}"), nil))
 	require.EqualValues(t, 2, hits.Load())
 
 	elapsed := time.Duration(secondAttemptAt.Load())
@@ -85,7 +85,7 @@ func TestHTTPProvider_RateLimitRespectsContextCancel(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	err := p.PostJSON(ctx, srv.URL, "application/json", []byte("{}"))
+	err := p.Post(ctx, srv.URL, "application/json", []byte("{}"), nil)
 	elapsed := time.Since(start)
 
 	require.Error(t, err)
@@ -118,6 +118,6 @@ func TestHTTPProvider_RateLimitZeroDelayFallsBackToNormalBackoff(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, p.PostJSON(context.Background(), srv.URL, "application/json", []byte("{}")))
+	require.NoError(t, p.Post(context.Background(), srv.URL, "application/json", []byte("{}"), nil))
 	assert.EqualValues(t, 2, hits.Load())
 }

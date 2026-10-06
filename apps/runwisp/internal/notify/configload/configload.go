@@ -9,6 +9,7 @@ package configload
 
 import (
 	"maps"
+	"slices"
 
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/notify"
@@ -27,9 +28,9 @@ type ResolvedNotify struct {
 // ResolvedNotify. Secret values (webhook URLs, tokens, passwords) arrive
 // final — ${VAR} / ${file:...} substitution already ran at config load. The
 // renderCtx carries per-daemon values (external URL, fingerprint, output-tail
-// reader) that bind into each channel's template func map. Returns an error
-// when a route refers to an unknown notifier.
-func Resolve(cfg config.NotifyConfig, renderCtx render.TemplateContext) (ResolvedNotify, error) {
+// reader) that bind into each channel's template func map. Route-to-notifier
+// references were already validated at config load.
+func Resolve(cfg config.NotifyConfig, renderCtx render.TemplateContext) ResolvedNotify {
 	specs := make([]channel.NotifierSpec, 0, len(cfg.Notifiers))
 	for _, n := range cfg.Notifiers {
 		specs = append(specs, resolveNotifier(n, renderCtx))
@@ -43,7 +44,7 @@ func Resolve(cfg config.NotifyConfig, renderCtx render.TemplateContext) (Resolve
 	return ResolvedNotify{
 		Notifiers: specs,
 		Rules:     rules,
-	}, nil
+	}
 }
 
 func resolveNotifier(n config.NotifierSpec, renderCtx render.TemplateContext) channel.NotifierSpec {
@@ -64,9 +65,20 @@ func resolveNotifier(n config.NotifierSpec, renderCtx render.TemplateContext) ch
 	case "telegram":
 		spec.BotToken = n.BotToken
 	case "smtp":
-		fillSMTPSpec(&spec, n)
+		spec.Host = n.Host
+		spec.Port = n.Port
+		spec.TLSMode = n.TLSMode
+		spec.TLSSkipVerify = n.TLSSkipVerify
+		spec.Username = n.Username
+		// Empty Password means an auth-less local relay (e.g. Postfix on
+		// 127.0.0.1:25); validation guarantees username/password come together.
+		spec.Password = n.Password
+		fillMailAddressing(&spec, n)
 	case "sendmail":
-		fillSendmailSpec(&spec, n)
+		// A local MTA takes none of the relay settings: it already knows where
+		// to relay, which is the point of using it.
+		spec.SendmailPath = n.SendmailPath
+		fillMailAddressing(&spec, n)
 	case "ntfy":
 		spec.URL = n.URL
 		spec.Topic = n.Topic
@@ -84,32 +96,14 @@ func resolveNotifier(n config.NotifierSpec, renderCtx render.TemplateContext) ch
 	return spec
 }
 
-// fillSendmailSpec copies the addressing a local-MTA notifier needs. It shares
-// From/To/CC/BCC with SMTP and takes none of the relay settings: the MTA
-// already knows where to relay, which is the point of using it.
-func fillSendmailSpec(spec *channel.NotifierSpec, n config.NotifierSpec) {
-	spec.SendmailPath = n.SendmailPath
+// fillMailAddressing copies the From/To/CC/BCC addressing smtp and sendmail
+// share.
+func fillMailAddressing(spec *channel.NotifierSpec, n config.NotifierSpec) {
 	spec.From = n.From
 	spec.ReplyTo = n.ReplyTo
-	spec.Recipients = append([]string(nil), n.Recipients...)
-	spec.CC = append([]string(nil), n.CC...)
-	spec.BCC = append([]string(nil), n.BCC...)
-}
-
-func fillSMTPSpec(spec *channel.NotifierSpec, n config.NotifierSpec) {
-	spec.Host = n.Host
-	spec.Port = n.Port
-	spec.TLSMode = n.TLSMode
-	spec.TLSSkipVerify = n.TLSSkipVerify
-	spec.Username = n.Username
-	// Empty Password means an auth-less local relay (e.g. Postfix on
-	// 127.0.0.1:25); validation guarantees username/password come together.
-	spec.Password = n.Password
-	spec.From = n.From
-	spec.ReplyTo = n.ReplyTo
-	spec.Recipients = append([]string(nil), n.Recipients...)
-	spec.CC = append([]string(nil), n.CC...)
-	spec.BCC = append([]string(nil), n.BCC...)
+	spec.Recipients = slices.Clone(n.Recipients)
+	spec.CC = slices.Clone(n.CC)
+	spec.BCC = slices.Clone(n.BCC)
 }
 
 func compileRoute(r config.NotificationRoute) notify.Rule {
@@ -125,6 +119,6 @@ func compileRoute(r config.NotificationRoute) notify.Rule {
 	}
 	return notify.Rule{
 		Match:     notify.And(preds...),
-		ActionIDs: append([]string(nil), r.NotifierID...),
+		ActionIDs: slices.Clone(r.NotifierID),
 	}
 }

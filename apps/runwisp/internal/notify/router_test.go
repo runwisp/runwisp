@@ -36,8 +36,8 @@ func TestRouter_SkipsUnknownActions(t *testing.T) {
 }
 
 func TestPredicate_TaskGlob(t *testing.T) {
-	p := notify.MatchTaskGlob("backup-*", "etl-?")
+	p := notify.MatchTaskGlob("backup-*")
 	assert.True(t, p(&notify.Event{TaskName: "backup-db"}))
-	assert.True(t, p(&notify.Event{TaskName: "etl-1"}))
 	assert.False(t, p(&notify.Event{TaskName: "cleanup"}))
+	assert.True(t, notify.MatchTaskGlob(" ")(&notify.Event{TaskName: "cleanup"}), "blank glob matches all")
 }

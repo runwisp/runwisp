@@ -34,13 +34,13 @@ const (
 type Coalescer struct {
 	repo  storage.NotificationRepository
 	hub   *Hub
-	clock notify.Clocker
+	clock func() time.Time
 	cfg   CoalescerConfig
 	log   *slog.Logger
 }
 
 // NewCoalescer constructs a coalescer.
-func NewCoalescer(repo storage.NotificationRepository, hub *Hub, clock notify.Clocker, cfg CoalescerConfig, log *slog.Logger) *Coalescer {
+func NewCoalescer(repo storage.NotificationRepository, hub *Hub, clock func() time.Time, cfg CoalescerConfig, log *slog.Logger) *Coalescer {
 	if cfg.Window == 0 {
 		cfg.Window = DefaultWindow
 	}
@@ -49,9 +49,6 @@ func NewCoalescer(repo storage.NotificationRepository, hub *Hub, clock notify.Cl
 	}
 	if log == nil {
 		log = slog.Default()
-	}
-	if clock == nil {
-		clock = notify.RealClock()
 	}
 	return &Coalescer{
 		repo:  repo,
@@ -65,10 +62,7 @@ func NewCoalescer(repo storage.NotificationRepository, hub *Hub, clock notify.Cl
 // Receive folds the (rendered, ev) pair into the persistent store and
 // publishes the resulting Update on the hub.
 func (c *Coalescer) Receive(ctx context.Context, title, body string, ev *notify.Event) {
-	if ev == nil {
-		return
-	}
-	now := c.clock.Now()
+	now := c.clock()
 	fp := hashFingerprint([]byte(notify.FingerprintKey(ev)))
 	n := &storage.Notification{
 		ID:             ulid.Make().String(),

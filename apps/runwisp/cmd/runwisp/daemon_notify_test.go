@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net/http"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -78,9 +77,7 @@ func TestBackoffOverride(t *testing.T) {
 		require.NotNil(t, fn)
 		provider := fn()
 		require.NotNil(t, provider)
-		client, ok := provider.Client.(*http.Client)
-		require.True(t, ok)
-		assert.LessOrEqual(t, client.Timeout, capDuration,
+		assert.LessOrEqual(t, provider.Client.Timeout, capDuration,
 			"a single request must not be able to outlive retry_budget")
 	})
 	t.Run("leaves the client timeout alone when the budget is larger", func(t *testing.T) {
@@ -89,9 +86,7 @@ func TestBackoffOverride(t *testing.T) {
 		require.NotNil(t, fn)
 		provider := fn()
 		require.NotNil(t, provider)
-		client, ok := provider.Client.(*http.Client)
-		require.True(t, ok)
-		assert.Equal(t, 15*time.Second, client.Timeout)
+		assert.Equal(t, 15*time.Second, provider.Client.Timeout)
 	})
 }
 

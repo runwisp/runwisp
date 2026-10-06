@@ -14,20 +14,6 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-// Clocker is the time source used by the dispatcher and coalescer. The
-// production wire is time.Now; unit tests use testutil.FakeClock.
-type Clocker interface {
-	Now() time.Time
-}
-
-type realClock struct{}
-
-func (realClock) Now() time.Time { return time.Now() }
-
-// RealClock returns the production clock implementation. Convenience to avoid
-// callers stating their own.
-func RealClock() Clocker { return realClock{} }
-
 // SyntheticIngester receives synthetic delivery-failure events. The in-app channel's
 // Coalescer fits this shape; bypassing the router is what prevents cycles
 // (a Slack failure must never re-route as a Slack notification).
@@ -41,7 +27,7 @@ type SyntheticIngester interface {
 type dispatcher struct {
 	router   *Router
 	channels map[string]Channel
-	clock    Clocker
+	clock    func() time.Time
 	failures SyntheticIngester
 	logger   *slog.Logger
 
@@ -51,7 +37,7 @@ type dispatcher struct {
 	droppedAction atomic.Uint64
 }
 
-func newDispatcher(router *Router, channels map[string]Channel, queueSize int, clock Clocker, failures SyntheticIngester, logger *slog.Logger) *dispatcher {
+func newDispatcher(router *Router, channels map[string]Channel, queueSize int, clock func() time.Time, failures SyntheticIngester, logger *slog.Logger) *dispatcher {
 	if queueSize <= 0 {
 		queueSize = DefaultActionQueueSize
 	}
@@ -86,34 +72,36 @@ func (d *dispatcher) startWorkers(ctx context.Context) {
 // Drop-oldest under pressure: when the queue is full we drain one slot
 // (the oldest waiting event) before retrying the send.
 func (d *dispatcher) dispatch(ev *Event) {
-	if ev == nil {
-		return
-	}
 	for _, c := range d.router.Route(ev) {
 		queue, ok := d.queues[c.ID()]
 		if !ok {
 			continue
 		}
-		d.enqueueDropOldest(c.ID(), queue, ev)
+		SendDropOldest(queue, ev, func() {
+			d.droppedAction.Add(1)
+			d.logger.Warn("notify dispatcher queue full; dropping oldest",
+				"action", c.ID(), "kind", string(ev.Kind))
+		})
 	}
 }
 
-// enqueueDropOldest sends ev to queue, evicting the oldest queued event under
-// sustained pressure so the freshest signal always reaches the worker.
-func (d *dispatcher) enqueueDropOldest(actionID string, queue chan *Event, ev *Event) {
+// SendDropOldest delivers v on ch, evicting the oldest buffered value when ch
+// is full so the freshest signal always reaches the receiver. onEvict (may be
+// nil) runs once per eviction. Every step is non-blocking; the loop retries
+// only when a racing receiver drained ch between the send and the eviction.
+func SendDropOldest[T any](ch chan T, v T, onEvict func()) {
 	for {
 		select {
-		case queue <- ev:
+		case ch <- v:
 			return
 		default:
 		}
 		select {
-		case <-queue:
-			d.droppedAction.Add(1)
-			d.logger.Warn("notify dispatcher queue full; dropping oldest",
-				"action", actionID, "kind", string(ev.Kind))
+		case <-ch:
+			if onEvict != nil {
+				onEvict()
+			}
 		default:
-			// Worker drained between the two selects; loop back and try the send.
 		}
 	}
 }
@@ -122,10 +110,6 @@ func (d *dispatcher) closeQueues() {
 	for _, q := range d.queues {
 		close(q)
 	}
-}
-
-func (d *dispatcher) waitWorkers() {
-	d.workers.Wait()
 }
 
 func (d *dispatcher) worker(ctx context.Context, id string, ch Channel, queue <-chan *Event) {
@@ -181,12 +165,12 @@ func (d *dispatcher) DroppedActionCount() uint64 {
 // wrapper (internal/notify/coalesce), whose window-close summary delivers
 // asynchronously outside the dispatcher's synchronous Execute path, can surface
 // its own permanent failures through the identical event shape and in-app sink.
-func ReportDeliveryFailure(sink SyntheticIngester, clock Clocker, actionID string, original *Event, cause error) {
+func ReportDeliveryFailure(sink SyntheticIngester, clock func() time.Time, actionID string, original *Event, cause error) {
 	syn := &Event{
 		ID:        ulid.Make().String(),
 		Kind:      KindNotifyDeliveryFailed,
 		Severity:  SevWarn,
-		Timestamp: clock.Now(),
+		Timestamp: clock(),
 		Reason:    cause.Error(),
 		Extra: map[string]any{
 			"channel": actionID,

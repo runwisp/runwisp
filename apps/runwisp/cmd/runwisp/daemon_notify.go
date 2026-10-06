@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"time"
 
 	"github.com/runwisp/runwisp/internal/config"
@@ -63,10 +62,7 @@ func initNotify(
 		Fingerprint: cfg.Fingerprint,
 		OutputTail:  render.NewOutputTail(),
 	}
-	resolved, err := configload.Resolve(notifyCfg, renderCtx)
-	if err != nil {
-		return notifyBundle{}, fmt.Errorf("resolve notify config: %w", err)
-	}
+	resolved := configload.Resolve(notifyCfg, renderCtx)
 
 	// No notifiers and no rules: nothing to do. Skip every goroutine and the
 	// bus subscription. The server's notification routes still respond from
@@ -99,7 +95,7 @@ func initNotify(
 			Window:        config.OrDefault(notifyCfg.CoalesceWindow, 0),
 			CoalesceLimit: notifyCfg.CoalesceLimit,
 		}
-		coalescer := inapp.NewCoalescer(db, hub, notify.RealClock(), coalescerCfg, logger)
+		coalescer := inapp.NewCoalescer(db, hub, time.Now, coalescerCfg, logger)
 
 		inappRenderer, err := buildInappRenderer()
 		if err != nil {
@@ -137,13 +133,12 @@ func initNotify(
 	retentionFn := buildRetentionFn(db, notifyCfg, logger)
 
 	svc := notify.New(notify.Config{
-		Bus:            bus,
-		Channels:       channels,
-		Rules:          resolved.Rules,
-		FailureSink:    failureSink,
-		Logger:         logger,
-		RetentionEvery: 5 * time.Minute,
-		RetentionFn:    retentionFn,
+		Bus:         bus,
+		Channels:    channels,
+		Rules:       resolved.Rules,
+		FailureSink: failureSink,
+		Logger:      logger,
+		RetentionFn: retentionFn,
 	})
 
 	return notifyBundle{Service: svc, Hub: hub}, nil
@@ -172,8 +167,8 @@ func backoffOverride(d time.Duration, logger *slog.Logger) func() *notify.HTTPPr
 		// backoff only checks MaxElapsedTime between attempts, so an unbounded (or
 		// merely larger) per-request timeout lets one hanging request alone block
 		// past a budget the operator asked for.
-		if client, ok := t.Client.(*http.Client); ok && client.Timeout > d {
-			client.Timeout = d
+		if t.Client.Timeout > d {
+			t.Client.Timeout = d
 		}
 		return t
 	}
@@ -198,7 +193,7 @@ func buildInappRenderer() (render.Renderer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load inapp template: %w", err)
 	}
-	return render.NewTemplateRenderer("inapp", body, "text/plain", render.DefaultTitle)
+	return render.NewTemplateRenderer("inapp", body, "text/plain", render.DefaultTitle, render.TemplateContext{})
 }
 
 func buildOutboundChannels(specs []channel.NotifierSpec, outboundCoalesce bool, coalesceCfg coalesce.Config, logger *slog.Logger, failureSink notify.SyntheticIngester) ([]notify.Channel, error) {
@@ -209,7 +204,7 @@ func buildOutboundChannels(specs []channel.NotifierSpec, outboundCoalesce bool, 
 			return nil, fmt.Errorf("build notifier %q: %w", spec.ID, err)
 		}
 		if outboundCoalesce {
-			ch = coalesce.New(ch, coalesceCfg, notify.RealClock(), logger, failureSink)
+			ch = coalesce.New(ch, coalesceCfg, time.Now, logger, failureSink)
 		}
 		channels = append(channels, ch)
 	}

@@ -39,28 +39,16 @@ func MatchOutcomes(tokens ...string) Predicate {
 	}
 }
 
-// MatchTaskGlob succeeds when the event's task name matches any of the
-// supplied shell-style globs. Globs use path.Match semantics.
-func MatchTaskGlob(patterns ...string) Predicate {
-	clean := make([]string, 0, len(patterns))
-	for _, p := range patterns {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		clean = append(clean, p)
-	}
-	if len(clean) == 0 {
+// MatchTaskGlob succeeds when the event's task name matches the shell-style
+// glob (path.Match semantics). A blank pattern matches everything.
+func MatchTaskGlob(pattern string) Predicate {
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" {
 		return MatchAll()
 	}
 	return func(ev *Event) bool {
-		for _, p := range clean {
-			ok, err := path.Match(p, ev.TaskName)
-			if err == nil && ok {
-				return true
-			}
-		}
-		return false
+		ok, err := path.Match(pattern, ev.TaskName)
+		return err == nil && ok
 	}
 }
 
