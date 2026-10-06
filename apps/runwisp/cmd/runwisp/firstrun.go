@@ -235,16 +235,16 @@ func cronScaffoldWriter(composeFile, composeAlias string, hasCompose bool) func(
 // Compose and cron are not exclusive — a directory can have both an adjacent
 // compose file and readable crontabs — so all four combinations get a path.
 func writeScaffold(path, composeFile, composeAlias string, hasCompose bool, cronPatterns []string, hasCron bool) error {
+	contents := config.StarterConfig
 	switch {
 	case hasCompose && hasCron:
-		return configedit.WriteInitWithComposeAndCron(path, composeFile, composeAlias, cronPatterns)
+		contents = config.ComposeAndCronStarterConfig(composeFile, composeAlias, cronPatterns)
 	case hasCron:
-		return configedit.WriteInitWithCron(path, cronPatterns)
+		contents = config.CronStarterConfig(cronPatterns)
 	case hasCompose:
-		return configedit.WriteInitWithCompose(path, composeFile, composeAlias)
-	default:
-		return configedit.WriteInit(path)
+		contents = config.ComposeStarterConfig(composeFile, composeAlias)
 	}
+	return configedit.WriteNew(path, contents)
 }
 
 // detectAdjacentCompose searches the directory containing path for the

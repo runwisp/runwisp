@@ -18,7 +18,7 @@ func TestWriteInit(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "runwisp.toml")
 
-	require.NoError(t, WriteInit(path))
+	require.NoError(t, WriteNew(path, config.StarterConfig))
 
 	cfg, err := config.Load(path)
 	require.NoError(t, err)
@@ -30,8 +30,8 @@ func TestWriteInitRefusesOverwrite(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "runwisp.toml")
 
-	require.NoError(t, WriteInit(path))
-	err := WriteInit(path)
+	require.NoError(t, WriteNew(path, config.StarterConfig))
+	err := WriteNew(path, config.StarterConfig)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already exists")
 }
@@ -46,7 +46,7 @@ func TestWriteInitWithCompose(t *testing.T) {
 		0644))
 	path := filepath.Join(dir, "runwisp.toml")
 
-	require.NoError(t, WriteInitWithCompose(path, "docker-compose.yml", "myapp"))
+	require.NoError(t, WriteNew(path, config.ComposeStarterConfig("docker-compose.yml", "myapp")))
 
 	cfg, err := config.Load(path)
 	require.NoError(t, err)
@@ -67,7 +67,7 @@ func TestWriteInitWithCron(t *testing.T) {
 		[]byte("0 3 * * * /usr/local/bin/backup.sh\n"), 0644))
 	path := filepath.Join(dir, "runwisp.toml")
 
-	require.NoError(t, WriteInitWithCron(path, []string{"crontab"}))
+	require.NoError(t, WriteNew(path, config.CronStarterConfig([]string{"crontab"})))
 
 	cfg, err := config.Load(path)
 	require.NoError(t, err)
@@ -84,7 +84,7 @@ func TestWriteInitWithComposeAndCron(t *testing.T) {
 		[]byte("0 3 * * * /usr/local/bin/backup.sh\n"), 0644))
 	path := filepath.Join(dir, "runwisp.toml")
 
-	require.NoError(t, WriteInitWithComposeAndCron(path, "docker-compose.yml", "myapp", []string{"crontab"}))
+	require.NoError(t, WriteNew(path, config.ComposeAndCronStarterConfig("docker-compose.yml", "myapp", []string{"crontab"})))
 
 	cfg, err := config.Load(path)
 	require.NoError(t, err)
@@ -102,7 +102,7 @@ func TestWriteInitWithComposeAndCron(t *testing.T) {
 func TestWriteInit_ScaffoldIsNotStaged(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "runwisp.toml")
-	require.NoError(t, WriteInit(path))
+	require.NoError(t, WriteNew(path, config.StarterConfig))
 
 	cfg, err := config.Load(path)
 	require.NoError(t, err)

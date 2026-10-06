@@ -1267,10 +1267,8 @@ func requireOneOf(scope, value string, allowed []string, emptyOK bool) error {
 		}
 		return fmt.Errorf("invalid %s: required, must be one of %s", scope, strings.Join(allowed, ", "))
 	}
-	for _, candidate := range allowed {
-		if value == candidate {
-			return nil
-		}
+	if slices.Contains(allowed, value) {
+		return nil
 	}
 	return fmt.Errorf("invalid %s: %q (must be one of %s)", scope, value, strings.Join(allowed, ", "))
 }
@@ -1430,13 +1428,13 @@ func applyInheritedDefaults(task *model.Task, d Defaults) {
 	// no jitter) is distinguishable from an omitted key. Only a nil (omitted)
 	// unit value inherits the [defaults]; an explicit value, including 0, wins.
 	if task.Timeout == nil && d.Timeout > 0 {
-		task.Timeout = durationPtr(d.Timeout)
+		task.Timeout = new(d.Timeout)
 	}
 	// Jitter is task-only: a service never inherits [defaults] jitter (it starts
 	// every instance at boot, so there's no fire time to spread). An explicit
 	// [services.x] jitter is rejected earlier by DisallowUnknownFields.
 	if !task.Kind.IsService() && task.Jitter == nil && d.Jitter > 0 {
-		task.Jitter = durationPtr(d.Jitter)
+		task.Jitter = new(d.Jitter)
 	}
 	task.Shell = cmp.Or(task.Shell, d.Shell, DefaultShell)
 	applyInheritedStopSignal(task, d)
@@ -1503,10 +1501,6 @@ func mergeEnv(base, overlay map[string]string) map[string]string {
 	maps.Copy(out, overlay)
 	return out
 }
-
-// durationPtr returns a pointer to d. Used when promoting a [defaults] scalar
-// into a pointer-typed unit field so an explicit unit-level zero stays distinct.
-func durationPtr(d time.Duration) *time.Duration { return &d }
 
 // resolveDefault fills an unset (nil) unit-level pointer from [defaults], then
 // from a built-in fallback, without ever colliding an explicit zero at either
