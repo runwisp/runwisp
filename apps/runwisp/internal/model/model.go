@@ -56,6 +56,11 @@ func ValidateTaskName(name string) error {
 // Duration and size fields are parsed from their human-readable TOML form
 // (e.g. "30m", "100mb") at config load time and stored as native Go types.
 // JSON output therefore renders them as integer nanoseconds / bytes.
+//
+// Pointer-typed knobs (Jitter, CatchUp, Timeout, GracefulStop, RestartDelay,
+// HealthyAfter, RestartAttempts, RetryDelay, KeepRuns) tell an explicit zero
+// such as `timeout = "0s"` apart from an omitted key: nil inherits [defaults]
+// and then the built-in default, while an explicit zero overrides both.
 type Task struct {
 	Name        string   `toml:"-"                     json:"name"`
 	Kind        TaskKind `toml:"-"                     json:"kind,omitempty" enum:"task,service" doc:"Whether this is a scheduled task or an always-on service"`
@@ -74,10 +79,7 @@ type Task struct {
 	// windows on a 24-hour time-of-day dial (same TOML + clock yields the same
 	// slots), but actual start times depend on run durations, like the queue
 	// policy. Task-only (services start every instance at boot) and a no-op
-	// without a cron.
-	// A pointer so an explicit `jitter = "0s"` (opt out of an inherited
-	// [defaults] jitter) is distinguishable from an omitted key (nil, inherits
-	// [defaults]). nil and *0 both mean "no jitter". Read via JitterValue.
+	// without a cron. nil and *0 both mean "no jitter". Read via JitterValue.
 	Jitter *time.Duration `toml:"-" json:"jitter,omitempty" doc:"Cap how far a cron task's start may slip so tasks sharing a fire time take turns through a daemon-wide one-at-a-time gate instead of stampeding; a run starts as soon as the gate frees and slips up to this window only under contention, in nanoseconds"`
 	// ManualTrigger means different things by Kind: on a task, whether it can
 	// be run outside its cron schedule (see Triggerable). On a service,
@@ -88,10 +90,8 @@ type Task struct {
 	// CatchUp is the maximum number of missed cron ticks to re-run at startup
 	// after downtime: 0 skips (re-run none), 1 re-runs only the most recent, N
 	// re-runs up to the N most recent (older ticks are recorded as missed but not
-	// re-fired). A pointer so an explicit `catch_up = 0` (skip) is distinguishable
-	// from an omitted key (nil, inherits [defaults] then the built-in default of
-	// 1). Cron-task concept; resolved to non-nil by the config loader. Read via
-	// CatchUpValue, which falls back to the default of 1 when nil.
+	// re-fired). Cron-task concept; resolved to non-nil by the config loader.
+	// Read via CatchUpValue, which falls back to DefaultCatchUp when nil.
 	CatchUp *int `toml:"catch_up,omitempty" json:"catchUp,omitempty" doc:"Max missed cron ticks to re-run at startup after downtime: 0 skips, 1 re-runs only the most recent, N re-runs up to the N most recent"`
 	// RunOnStart fires the task once at daemon boot, independent of cron and
 	// catch-up. Task-only — services already start every instance at boot.
@@ -100,15 +100,10 @@ type Task struct {
 	RunOnStart     bool           `toml:"-" json:"runOnStart" doc:"For tasks: fire once at daemon startup, in addition to any cron schedule"`
 	RunOnStartMode RunOnStartMode `toml:"-" json:"runOnStartMode,omitempty" enum:"daemon,boot" doc:"For run_on_start tasks: daemon fires on every daemon start, boot once per machine (or container) boot"`
 
-	// A pointer so an explicit `timeout = "0s"` (opt out of an inherited
-	// [defaults] timeout — run with no timeout) is distinguishable from an
-	// omitted key (nil, inherits [defaults]). nil and *0 both mean "no timeout".
-	// Read via TimeoutValue.
+	// Timeout: nil and *0 both mean "no timeout". Read via TimeoutValue.
 	Timeout *time.Duration `toml:"-"                       json:"timeout,omitempty" doc:"Per-run timeout in nanoseconds"`
-	// GracefulStop is a pointer so an explicit `graceful_stop = "0s"` (kill
-	// immediately, no grace window) is distinguishable from an omitted key (nil,
-	// inherits [defaults] then the built-in default). Applies to tasks and
-	// services. Config-loaded tasks always have it resolved to non-nil; nil only
+	// GracefulStop of 0 kills immediately, with no grace window. Applies to
+	// tasks and services. Config-loaded tasks always have it resolved; nil only
 	// occurs for tasks built outside config.Load (station dispatch, tests) and is
 	// read as 0 (immediate SIGKILL) via GracefulStopValue.
 	GracefulStop  *time.Duration    `toml:"-"                       json:"gracefulStop,omitempty" doc:"Window between the stop signal and SIGKILL when a run is stopped, in nanoseconds; 0 means kill immediately"`
@@ -119,27 +114,21 @@ type Task struct {
 	OnOverlap     ConcurrencyPolicy `toml:"on_overlap,omitempty"    json:"onOverlap,omitempty" enum:"queue,skip,kill" doc:"How overlapping runs are handled"`
 
 	Instances int `toml:"instances,omitempty"      json:"instances,omitempty" doc:"For services: number of always-running instances"`
-	// RestartDelay is a pointer so an explicit `restart_delay = "0s"` (restart
-	// instantly, no delay) is distinguishable from an omitted key (nil, inherits
-	// the built-in default). Service-only; always resolved to non-nil by the
-	// config loader's defaulting pass.
+	// RestartDelay of 0 restarts instantly. Service-only; always resolved to
+	// non-nil by the config loader's defaulting pass.
 	RestartDelay   *time.Duration `toml:"-"                        json:"restartDelay,omitempty" doc:"For services: base delay before each restart, in nanoseconds; 0 means restart instantly"`
 	RestartBackoff BackoffCurve   `toml:"restart_backoff,omitempty" json:"restartBackoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive restarts"`
 	// HealthyAfter is the uptime an instance must reach to count as healthy.
 	// Reaching it both resets the restart-backoff counter and clears the
 	// failed-start streak; fast failures below it accrue toward RestartAttempts.
 	// With a HealthCheck it is instead the deadline for the first passing probe.
-	// Service-only. A pointer so an explicit `healthy_after = "0s"` (healthy the
-	// instant it starts) is distinguishable from an omitted key (nil, inherits
-	// [defaults] then the built-in default). Always resolved to non-nil by the
-	// config loader's defaulting pass.
+	// 0 means healthy the instant it starts. Service-only; always resolved to
+	// non-nil by the config loader's defaulting pass.
 	HealthyAfter *time.Duration `toml:"-" json:"healthyAfter,omitempty" doc:"For services: an instance that runs at least this long counts as healthy — resets the restart counter and clears the failed-start streak; fast exits below it count toward restart_attempts, in nanoseconds; 0 means healthy immediately on start. With a health_check, the deadline for its first pass instead."`
 	// RestartAttempts is the number of consecutive fast failures a service
 	// instance is allowed before the supervisor marks it FATAL. Service-only
-	// (tasks re-run via retry_*). A pointer so an explicit `restart_attempts = 0`
-	// (give up on the very first failure) is distinguishable from an omitted key
-	// (nil, inherits [defaults] then the built-in default). Resolved to non-nil
-	// for services by the config loader's defaulting pass.
+	// (tasks re-run via retry_*). 0 gives up on the very first failure. Resolved
+	// to non-nil for services by the config loader's defaulting pass.
 	RestartAttempts *int `toml:"-" json:"restartAttempts,omitempty" doc:"For services: consecutive fast failures tolerated before the instance is marked FATAL; 0 means give up after the very first failure"`
 	// Priority orders service start at boot only (lower starts first; ties break
 	// on name). It is not a dependency or readiness gate. Service-only.
@@ -162,9 +151,8 @@ type Task struct {
 	HealthCheck *Task `toml:"-" json:"-"`
 
 	RetryAttempts int `toml:"retry_attempts,omitempty" json:"retryAttempts,omitempty"`
-	// RetryDelay is a pointer so an explicit `retry_delay = "0s"` (retry with no
-	// delay) is distinguishable from an omitted key (nil, falls back to
-	// config.DefaultRetryDelay in ComputeRetryDelay). Task-only.
+	// RetryDelay of 0 retries with no delay; nil falls back to
+	// config.DefaultRetryDelay in ComputeRetryDelay. Task-only.
 	RetryDelay   *time.Duration `toml:"-"                        json:"retryDelay,omitempty" doc:"Base delay before each retry, in nanoseconds; 0 retries with no delay"`
 	RetryBackoff BackoffCurve   `toml:"retry_backoff,omitempty"  json:"retryBackoff,omitempty" enum:"constant,linear,exponential" doc:"Backoff curve between consecutive retries"`
 
@@ -291,22 +279,12 @@ func (t *Task) Held() bool { return t.HeldBy != HeldByNothing }
 // GracefulStopValue returns the configured stop-signal-to-SIGKILL window, or 0
 // (kill immediately) when unset. Config-loaded tasks always have it resolved by
 // ApplyDefaults; nil only occurs for tasks built outside config.Load.
-func (t *Task) GracefulStopValue() time.Duration {
-	if t.GracefulStop == nil {
-		return 0
-	}
-	return *t.GracefulStop
-}
+func (t *Task) GracefulStopValue() time.Duration { return derefOr(t.GracefulStop, 0) }
 
 // TimeoutValue returns the configured per-run timeout, or 0 ("no timeout") when
 // unset or explicitly disabled with `timeout = "0s"`. Both nil and *0 mean the
 // run manager arms no timeout timer.
-func (t *Task) TimeoutValue() time.Duration {
-	if t.Timeout == nil {
-		return 0
-	}
-	return *t.Timeout
-}
+func (t *Task) TimeoutValue() time.Duration { return derefOr(t.Timeout, 0) }
 
 // WithTimeout derives the context one execution of the task runs under: bounded
 // by its timeout when one is set, otherwise only cancellable. The single place
@@ -320,12 +298,7 @@ func (t *Task) WithTimeout(parent context.Context) (context.Context, context.Can
 
 // JitterValue returns the configured start-spread window, or 0 ("no jitter")
 // when unset or explicitly disabled with `jitter = "0s"`.
-func (t *Task) JitterValue() time.Duration {
-	if t.Jitter == nil {
-		return 0
-	}
-	return *t.Jitter
-}
+func (t *Task) JitterValue() time.Duration { return derefOr(t.Jitter, 0) }
 
 // DefaultCatchUp is the built-in catch_up value applied when the key is omitted:
 // re-run only the most recent missed cron tick after downtime.
@@ -334,21 +307,19 @@ const DefaultCatchUp = 1
 // CatchUpValue returns the maximum number of missed cron ticks to re-run, falling
 // back to DefaultCatchUp when unset. Config-loaded tasks always have it resolved
 // by ApplyDefaults; nil only occurs for tasks built outside config.Load.
-func (t *Task) CatchUpValue() int {
-	if t.CatchUp == nil {
-		return DefaultCatchUp
-	}
-	return *t.CatchUp
-}
+func (t *Task) CatchUpValue() int { return derefOr(t.CatchUp, DefaultCatchUp) }
 
 // RetryDelayValue returns the configured base retry delay, or 0 when unset. Note
 // the 5s builtin fallback lives in retry.ComputeRetryDelay, which reads the
 // pointer directly so an explicit "0s" stays 0.
-func (t *Task) RetryDelayValue() time.Duration {
-	if t.RetryDelay == nil {
-		return 0
+func (t *Task) RetryDelayValue() time.Duration { return derefOr(t.RetryDelay, 0) }
+
+// derefOr returns *p, or def when p is nil.
+func derefOr[T any](p *T, def T) T {
+	if p == nil {
+		return def
 	}
-	return *t.RetryDelay
+	return *p
 }
 
 // Schedulable reports whether the scheduler should fire this task on a clock.
@@ -451,7 +422,6 @@ func (t *Task) ResolvedExecutionDef() ExecutionDef {
 	return &ShellExecution{Script: t.Run, Shell: t.Shell, WorkingDir: t.WorkingDir, Umask: t.Umask, EnvBase: t.EnvBase}
 }
 
-// ConcurrencyPolicy controls how overlapping runs are handled.
 // RunOnStartMode selects which start fires a run_on_start task.
 type RunOnStartMode string
 
@@ -463,6 +433,7 @@ const (
 	RunOnStartBoot RunOnStartMode = "boot"
 )
 
+// ConcurrencyPolicy controls how overlapping runs are handled.
 type ConcurrencyPolicy string
 
 const (
