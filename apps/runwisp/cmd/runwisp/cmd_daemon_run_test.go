@@ -20,6 +20,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/clilog"
 	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/station"
 	"github.com/runwisp/runwisp/internal/testutil"
@@ -306,6 +307,7 @@ func TestSuperviseServerStart_SelfSignalsOnStartError(t *testing.T) {
 		Password:   "x",
 		JWTSecret:  "test-secret-test-secret-test-1234",
 		SocketPath: "",
+		EventBus:   events.NewEventBus(),
 	})
 	require.NoError(t, err)
 

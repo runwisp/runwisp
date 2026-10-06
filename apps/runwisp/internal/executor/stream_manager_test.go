@@ -188,7 +188,7 @@ func TestStreamManager_NonEOFReadErrorIsSurfaced(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	sm := &RoutingExecutor{clock: time.Now}
+	sm := &RoutingExecutor{eventBus: events.NewEventBus(), clock: time.Now}
 	task := &model.Task{Name: "t"}
 	run := &model.Run{ID: "r1"}
 

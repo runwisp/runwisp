@@ -133,9 +133,6 @@ func (srv *Server) currentConfigStale() bool {
 // it owns configStaleLast exclusively (no lock needed). This is the single
 // server-side replacement for every dashboard polling /api/system + /api/daemon.
 func (srv *Server) broadcastSample(sample model.MetricsSample) {
-	if srv.eventBus == nil {
-		return
-	}
 	srv.eventBus.Publish(events.EventSystemSample, events.SystemSampleEvent{
 		Sample: sample,
 		Uptime: formatUptime(time.Since(srv.stats.startTime)),
