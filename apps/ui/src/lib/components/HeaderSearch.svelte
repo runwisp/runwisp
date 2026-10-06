@@ -3,6 +3,7 @@
 
 <script lang="ts">
     import { Search, X, LoaderCircle } from "@lucide/svelte";
+    import { Kbd } from "@runwisp/ui";
     import { headerSearchStore } from "$lib/stores";
 
     // Debounce typing before handing the query to the page, so a filter or a
@@ -106,11 +107,9 @@
                 <X size={14} />
             </button>
         {:else}
-            <kbd
-                class="pointer-events-none hidden shrink-0 items-center rounded-[3px] border border-outline-faint bg-surface-raised px-1.5 py-0.5 font-mono text-2xs font-medium text-on-surface-faint shadow-sm @2xl:flex"
-            >
-                {shortcut}
-            </kbd>
+            <span class="pointer-events-none hidden shrink-0 @2xl:flex">
+                <Kbd keys={shortcut} size="xs" tone="faint" />
+            </span>
         {/if}
     </div>
 {/if}

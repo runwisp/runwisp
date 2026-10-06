@@ -26,6 +26,7 @@
     } from "@lucide/svelte";
     import Button from "../Button.svelte";
     import EmptyState from "../EmptyState.svelte";
+    import Kbd from "../Kbd.svelte";
     import LogConsole from "../LogConsole.svelte";
     import Popover from "../Popover.svelte";
     import Tooltip from "../Tooltip.svelte";
@@ -836,10 +837,7 @@
                     >
                         {#if consoleMaximized}
                             <Minimize2 size={13} />
-                            <span
-                                class="rounded-[3px] border border-[var(--rw-con-gutter)] px-1.5 text-[10px] tracking-wide"
-                                >Esc</span
-                            >
+                            <Kbd keys="Esc" size="xs" tone="console" />
                         {:else}
                             <Maximize2 size={13} />
                             Expand
