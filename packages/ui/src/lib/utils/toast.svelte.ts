@@ -3,9 +3,9 @@
 
 import { generateUlid } from "@runwisp/common";
 
-export type ToastType = "success" | "error" | "warning" | "info";
+type ToastType = "success" | "error" | "warning" | "info";
 
-export interface ToastAction {
+interface ToastAction {
     label: string;
     onClick: () => void;
 }
@@ -18,7 +18,7 @@ export interface Toast {
     action?: ToastAction;
 }
 
-export interface ToastOptions {
+interface ToastOptions {
     duration?: number;
     action?: ToastAction;
 }
@@ -87,14 +87,6 @@ class ToastStore {
 
     info(message: string, opts?: ToastOptions): string {
         return this.add("info", message, opts);
-    }
-
-    clear() {
-        for (const timer of this.timers.values()) {
-            clearTimeout(timer);
-        }
-        this.timers.clear();
-        this.items = [];
     }
 }
 

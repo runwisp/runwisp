@@ -6,13 +6,10 @@ import { END_REASONS } from "@runwisp/common";
 import {
     emptyRunFilters,
     FAILURE_STATUS_TOKEN,
-    NEEDS_ATTENTION_STATUSES,
-    isNeedsAttention,
     dimensionActive,
     activeDimensions,
     activeFilterCount,
     clearDimension,
-    clearPopoverFilters,
     humanizeStatus,
     triggerDescription,
     FILTERABLE_TRIGGERS,
@@ -29,7 +26,6 @@ import {
     exitCodeRangeActive,
     isExitCodeExprValid,
     exitCodeChipLabel,
-    exitCodePropChanged,
     type StatusBucket,
     type RunsListFilters,
 } from "./run-filters.js";
@@ -51,23 +47,6 @@ describe("emptyRunFilters", () => {
         expect(f.statuses).toEqual([]);
         expect(f.sortDirection).toBe("desc");
         expect(activeFilterCount(f)).toBe(0);
-    });
-});
-
-describe("isNeedsAttention", () => {
-    it("is true for exactly the attention set, order-insensitive", () => {
-        expect(isNeedsAttention([...NEEDS_ATTENTION_STATUSES])).toBe(true);
-        expect(isNeedsAttention([...NEEDS_ATTENTION_STATUSES].reverse())).toBe(true);
-    });
-
-    it("is exactly the failure sentinel (server resolves it to is_failure)", () => {
-        expect(NEEDS_ATTENTION_STATUSES).toEqual([FAILURE_STATUS_TOKEN]);
-    });
-
-    it("is false for a raw end reason or a different set", () => {
-        expect(isNeedsAttention(["failed"])).toBe(false);
-        expect(isNeedsAttention(["succeeded"])).toBe(false);
-        expect(isNeedsAttention([])).toBe(false);
     });
 });
 
@@ -125,25 +104,6 @@ describe("clearDimension", () => {
     });
 });
 
-describe("clearPopoverFilters", () => {
-    it("clears every popover dimension but keeps search and sort", () => {
-        const f = base({
-            search: "nightly",
-            sortDirection: "asc",
-            statuses: ["failed"],
-            taskName: "backup",
-            triggeredBy: "cron",
-            exitCode: "1",
-            retriesOnly: true,
-            createdAfter: "2026-01-01T00:00:00Z",
-        });
-        const cleared = clearPopoverFilters(f);
-        expect(activeFilterCount(cleared)).toBe(0);
-        expect(cleared.search).toBe("nightly");
-        expect(cleared.sortDirection).toBe("asc");
-    });
-});
-
 describe("humanizeStatus", () => {
     it("title-cases and de-snakes a status token", () => {
         expect(humanizeStatus("log_overflow")).toBe("Log overflow");
@@ -154,8 +114,8 @@ describe("humanizeStatus", () => {
 
 describe("statusChipLabel", () => {
     it("names a bucket when the selection matches one exactly", () => {
-        // The Failed bucket is the needs-attention set.
-        expect(statusChipLabel([...NEEDS_ATTENTION_STATUSES])).toBe("Failed");
+        // The Failed bucket is the failure sentinel.
+        expect(statusChipLabel([FAILURE_STATUS_TOKEN])).toBe("Failed");
         expect(statusChipLabel(["pending", "running"])).toBe("Running");
         expect(statusChipLabel(["succeeded"])).toBe("Succeeded");
     });
@@ -330,21 +290,5 @@ describe("exit-code expression", () => {
     it("labels the chip with the raw expression", () => {
         expect(exitCodeChipLabel(">100 <150")).toBe("Exit >100 <150");
         expect(exitCodeChipLabel(" 137 ")).toBe("Exit 137");
-    });
-});
-
-describe("exitCodePropChanged", () => {
-    it("is false when the committed value is unchanged (unrelated filters update)", () => {
-        expect(exitCodePropChanged("137", "137")).toBe(false);
-        expect(exitCodePropChanged(undefined, undefined)).toBe(false);
-    });
-
-    it("is true when the exit-code filter was cleared externally (chip removed)", () => {
-        expect(exitCodePropChanged("137", undefined)).toBe(true);
-    });
-
-    it("is true when the exit-code filter was set to a new committed value", () => {
-        expect(exitCodePropChanged(undefined, "200")).toBe(true);
-        expect(exitCodePropChanged("137", "200")).toBe(true);
     });
 });

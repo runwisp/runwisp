@@ -32,13 +32,12 @@
     import { portal } from "../../actions/portal.js";
     import { prefersReducedMotion } from "../../actions/row-motion.js";
     import type { RunMotion } from "../../utils/run-motion.js";
-    import type { Run } from "./types.js";
-    import type { ResourceUsage } from "@runwisp/common";
     import { isLogEvent, type LogEvent, type LogSlice } from "../../log-console/types.js";
     import { formatBytes, formatClockTime, formatCalendarDate } from "../../utils/format.js";
     import { formatShortId } from "../../utils/id.js";
     import { TickingNow } from "../../utils/ticking-now.svelte.js";
-    import { getRunStatusConfig, runDisplayStatus } from "./status-config.js";
+    import { displayStatus, type ResourceUsage, type Run } from "@runwisp/common";
+    import { RUN_STATUS_CONFIG } from "./status-config.js";
     import {
         runDuration,
         runStartDelay,
@@ -159,7 +158,7 @@
 
     let canDelete = $derived.by(() => {
         if (!run || !onDelete) return false;
-        const status = runDisplayStatus(run);
+        const status = displayStatus(run.status, run.endReason);
         return status !== "running" && status !== "pending";
     });
 
@@ -373,8 +372,8 @@
 <svelte:window onkeydown={handleConsoleKeydown} />
 
 {#if run}
-    {@const status = runDisplayStatus(run)}
-    {@const config = getRunStatusConfig(status)}
+    {@const status = displayStatus(run.status, run.endReason)}
+    {@const config = RUN_STATUS_CONFIG[status]}
     {@const DetailIcon = config.icon}
     {@const duration = runDuration(
         run,

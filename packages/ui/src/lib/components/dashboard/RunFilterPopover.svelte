@@ -40,7 +40,6 @@
         dayStartIso,
         dayEndIso,
         isExitCodeExprValid,
-        exitCodePropChanged,
         type RunsListFilters,
     } from "./run-filters.js";
 
@@ -121,18 +120,14 @@
         filters = { ...filters, triggeredBy: value || undefined };
     }
 
-    // Exit code: a free-form expression (`137`, `>100`, `>100 <150`) normalized
-    // to an inclusive range at the wire. Edited in a local buffer for smooth
-    // typing and committed on change. `RunFilterPopover` itself is long-lived
-    // (its trigger button stays mounted while the popover is closed), so the
-    // buffer does NOT re-seed on its own — it must explicitly resync whenever
-    // `filters.exitCode` changes from outside (a chip removal, "clear
-    // filters"), without clobbering in-progress typing when some unrelated
-    // filter dimension changes instead.
+    // Exit-code text is edited in a local buffer and committed on change. The
+    // component outlives the popover, so the buffer resyncs only when the
+    // committed `exitCode` itself moves (chip removed, filters cleared); an
+    // update to another dimension must not clobber in-progress typing.
     let exitCodeInput = $state(filters.exitCode ?? "");
     let lastExitCode = filters.exitCode;
     $effect(() => {
-        if (exitCodePropChanged(lastExitCode, filters.exitCode)) {
+        if (lastExitCode !== filters.exitCode) {
             exitCodeInput = filters.exitCode ?? "";
         }
         lastExitCode = filters.exitCode;

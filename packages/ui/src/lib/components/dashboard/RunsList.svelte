@@ -19,9 +19,8 @@
     import type { RunMotion } from "../../utils/run-motion.js";
     import EmptyState from "../EmptyState.svelte";
     import RunFilterPopover from "./RunFilterPopover.svelte";
-    import type { Run } from "./types.js";
-    import type { RunSelector, RunStatus } from "@runwisp/common";
-    import { getRunStatusConfig, runDisplayStatus } from "./status-config.js";
+    import { displayStatus, type Run, type RunSelector, type RunStatus } from "@runwisp/common";
+    import { RUN_STATUS_CONFIG } from "./status-config.js";
     import {
         activeDimensions,
         clearDimension,
@@ -688,8 +687,8 @@
 {/snippet}
 
 {#snippet runRowButton(run: Run, isActive: boolean, match: RunOutputMatch | undefined)}
-    {@const dstatus = runDisplayStatus(run)}
-    {@const config = getRunStatusConfig(dstatus)}
+    {@const dstatus = displayStatus(run.status, run.endReason)}
+    {@const config = RUN_STATUS_CONFIG[dstatus]}
     {@const running = run.status === "running"}
     {@const spine = config.dot.replace(" animate-pulse", "")}
     {@const startedAt = run.startedAt ?? run.createdAt}

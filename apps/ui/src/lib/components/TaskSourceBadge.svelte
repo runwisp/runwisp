@@ -8,7 +8,7 @@
         name: string;
         source: "staged" | "cron";
         /** Absolute path of the crontab or staging file the definition came from. */
-        sourceFile?: string;
+        sourceFile?: string | undefined;
     }
 
     let { name, source, sourceFile }: Props = $props();

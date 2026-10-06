@@ -6,7 +6,7 @@
     import ComposeBadge from "../ComposeBadge.svelte";
     import TaskSourceBadge from "../TaskSourceBadge.svelte";
     import {
-        getRunStatusConfig,
+        RUN_STATUS_CONFIG,
         TaskCard,
         instanceSuffix,
         humanizeStatus,
@@ -32,7 +32,7 @@
         onTaskClick,
         onRunClick,
         getInstanceCount = () => 1,
-    } = $props<{
+    }: {
         attentionTasks?: TaskOverview[];
         runningNow?: Run[];
         upcomingTasks?: TaskOverview[];
@@ -41,7 +41,7 @@
         onTaskClick?: (taskName: string) => void;
         onRunClick?: (taskName: string, runId: string) => void;
         getInstanceCount?: (taskName: string) => number;
-    }>();
+    } = $props();
 
     function viewTask(taskName: string): void {
         onTaskClick?.(taskName);
@@ -80,9 +80,7 @@
         {:else}
             <div class="mt-4 space-y-2">
                 {#each attentionTasks as task (task.task.id)}
-                    {@const statusConfig = task.lastStatus
-                        ? getRunStatusConfig(task.lastStatus)
-                        : undefined}
+                    {@const statusConfig = task.lastStatus && RUN_STATUS_CONFIG[task.lastStatus]}
 
                     <TaskCard accent="danger" onclick={() => viewTask(task.task.name)}>
                         <div class="flex items-start justify-between gap-2">

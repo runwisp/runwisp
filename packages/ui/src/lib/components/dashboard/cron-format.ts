@@ -2,7 +2,7 @@
 
 import cronstrue from "cronstrue";
 
-export interface HumanizedCron {
+interface HumanizedCron {
     /** Display text — humanized when possible, otherwise the raw expression. */
     humanized: string;
     /** The original cron expression, for tooltips. */
