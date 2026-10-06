@@ -15,7 +15,7 @@
         "js-yaml": "^4.3.2",
         "sharp": "^0.35.5",
         "starlight-openapi": "^0.26.3",
-        "svelte": "^5.57.1"
+        "svelte": "^5.57.2"
     },
     "devDependencies": {
         "@astrojs/check": "^0.9.10",
