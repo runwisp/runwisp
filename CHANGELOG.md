@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Log search paging moves past a hit on the first line of a log instead of returning it again.
 - Line counts and tail views stay correct for running or killed runs whose log has a line of 64 KiB or more.
 - A notification that groups repeated failures now links to the latest run.
+- Copying a run ID in the Web UI works when the dashboard is served over plain HTTP.
 - A search hit opened in a running run's log is scrolled to once, so new output doesn't pull the view back.
 - `runwisp run` exits 1 when a run is marked failed but the process exited 0 or never started, such as a `failures` output pattern match, a timeout the task handled, or a skipped run.
 - `runwisp import` reads supervisord configs the way supervisord does (inline `;` and `#` comments are dropped, and a comment line doesn't end a multi-line value), keeps matched quote pairs in crontab environment values, writes control characters in commands as valid TOML, and quotes systemd `ExecStart` arguments such as `*` and `;` so the shell doesn't act on them while `$VAR` and `${VAR}` still expand.
