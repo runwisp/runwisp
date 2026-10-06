@@ -579,42 +579,29 @@ func (srv *Server) pumpAppStream(ctx context.Context, sub *appSub, notifyCh <-ch
 // from model.Run onto model.Run so the SSE wire shape matches the REST
 // response (row-internal fields like deleted_at stay invisible).
 func toSSEEventData(event events.Event) any {
-	switch event.Type {
-	case events.EventRunDeleted:
-		if de, ok := event.Data.(events.RunDeletedEvent); ok {
-			return RunDeletedSSEEvent(de)
-		}
-		return RunDeletedSSEEvent{}
-	case events.EventSystemSample:
-		if s, ok := event.Data.(events.SystemSampleEvent); ok {
-			return SystemSampleSSEEvent{Sample: s.Sample, Uptime: s.Uptime}
-		}
-		return SystemSampleSSEEvent{}
-	case events.EventConfigStale:
-		if c, ok := event.Data.(events.ConfigStaleEvent); ok {
-			return ConfigStaleSSEEvent{Stale: c.Stale}
-		}
-		return ConfigStaleSSEEvent{}
-	case events.EventTasksChanged:
+	switch d := event.Data.(type) {
+	case events.RunDeletedEvent:
+		return RunDeletedSSEEvent(d)
+	case events.SystemSampleEvent:
+		return SystemSampleSSEEvent{Sample: d.Sample, Uptime: d.Uptime}
+	case events.ConfigStaleEvent:
+		return ConfigStaleSSEEvent{Stale: d.Stale}
+	case events.TasksChangedEvent:
 		return TasksChangedSSEEvent{}
+	case events.RunEvent:
+		body := RunEventBody{Run: d.Run, Error: d.Error}
+		switch event.Type {
+		case events.EventRunCreated:
+			return RunCreatedEvent(body)
+		case events.EventRunStarted:
+			return RunStartedEvent(body)
+		case events.EventRunCompleted:
+			return RunCompletedEvent(body)
+		case events.EventRunFailed:
+			return RunFailedEvent(body)
+		default:
+			return RunUpdatedEvent(body)
+		}
 	}
-	re, ok := event.Data.(events.RunEvent)
-	if !ok {
-		return RunUpdatedEvent{}
-	}
-	body := RunEventBody{Run: re.Run, Error: re.Error}
-	switch event.Type {
-	case events.EventRunCreated:
-		return RunCreatedEvent(body)
-	case events.EventRunStarted:
-		return RunStartedEvent(body)
-	case events.EventRunCompleted:
-		return RunCompletedEvent(body)
-	case events.EventRunFailed:
-		return RunFailedEvent(body)
-	case events.EventRunUpdated:
-		return RunUpdatedEvent(body)
-	default:
-		return RunUpdatedEvent(body)
-	}
+	return RunUpdatedEvent{}
 }

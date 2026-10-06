@@ -5,6 +5,8 @@ package events
 
 import (
 	"log/slog"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -276,11 +278,7 @@ func (eBus *Bus) copyHandlers(eventType EventType) []EventHandler {
 	eBus.mu.RLock()
 	defer eBus.mu.RUnlock()
 
-	handlers := make([]EventHandler, 0, len(eBus.subscribers[eventType]))
-	for _, handler := range eBus.subscribers[eventType] {
-		handlers = append(handlers, handler)
-	}
-	return handlers
+	return slices.Collect(maps.Values(eBus.subscribers[eventType]))
 }
 
 func (eBus *Bus) remove(eventType EventType, id int) {

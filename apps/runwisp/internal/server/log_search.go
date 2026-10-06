@@ -8,9 +8,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"time"
-
 	"log/slog"
+	"slices"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/runwisp/runwisp/internal/logsearch"
@@ -144,7 +144,9 @@ func (srv *Server) humaSearchLogs(ctx context.Context, input *LogSearchInput) (*
 	switch {
 	case scanCursor != nil:
 		next = &searchCursor{
-			RunOffset: baseOffset + indexOfRun(runs, scanCursor.RunID),
+			// A run absent from the window dropped out between requests: resume
+			// from the window start.
+			RunOffset: baseOffset + max(0, slices.IndexFunc(runs, func(r logsearch.RunRef) bool { return r.ID == scanCursor.RunID })),
 			RunID:     scanCursor.RunID,
 			NextN:     scanCursor.NextN,
 		}
@@ -163,17 +165,6 @@ func (srv *Server) humaSearchLogs(ctx context.Context, input *LogSearchInput) (*
 		Exhausted:   next == nil,
 		ScannedRuns: scanned,
 	}}, nil
-}
-
-// indexOfRun returns the position of id within runs, or 0 when absent (the run
-// dropped out of the window between requests — resume from the window start).
-func indexOfRun(runs []logsearch.RunRef, id string) int {
-	for i, r := range runs {
-		if r.ID == id {
-			return i
-		}
-	}
-	return 0
 }
 
 // resolveSearchRuns returns the runs to scan in newest-first order. When
