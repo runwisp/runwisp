@@ -48,9 +48,14 @@ func pollHealth(client *apiclient.Client, timeout time.Duration) error {
 }
 
 // spawnDaemon starts a new daemon process in the background, detached from the
-// current terminal session so it survives after the TUI exits.
-func spawnDaemon(f Flags) error {
-	return spawnDaemonProcess(daemonSpawnArgs([]string{"daemon"}, f), f.DataDir)
+// current terminal session so it survives after the TUI exits. station spawns
+// the headless `station` subcommand instead of the standalone daemon.
+func spawnDaemon(f Flags, station bool) error {
+	subcommand := []string{"daemon"}
+	if station {
+		subcommand = []string{"station", "--no-tui"}
+	}
+	return spawnDaemonProcess(daemonSpawnArgs(subcommand, f), f.DataDir)
 }
 
 // daemonSpawnArgs builds the argument list for a spawned daemon, prefixed by

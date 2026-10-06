@@ -46,7 +46,7 @@ func TestModel_Guards(t *testing.T) {
 
 	t.Run("latestRunningExec on empty window returns nil", func(t *testing.T) {
 		m := newTestModel(nil)
-		if m.latestRunningExec("t1") != nil {
+		if m.execWindow.LatestRunning("t1") != nil {
 			t.Fatal("expected nil for empty window")
 		}
 	})

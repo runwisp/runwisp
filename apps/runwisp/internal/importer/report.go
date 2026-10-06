@@ -446,11 +446,6 @@ type itemRef struct {
 	i   int
 }
 
-// addItem opens a report row for a job the source described.
-func (r *Result) addItem(source string) itemRef {
-	return r.addItemAt(source, 0)
-}
-
 // addItemAt opens a row for a job that came from a known line of the source.
 func (r *Result) addItemAt(source string, line int) itemRef {
 	r.items = append(r.items, Item{Source: source, Line: line})

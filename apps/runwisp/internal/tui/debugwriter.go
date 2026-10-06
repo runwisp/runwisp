@@ -12,7 +12,7 @@ import (
 )
 
 // programMessenger is the subset of *tea.Program that DebugLogWriter needs.
-// Letting tests substitute a fake without spinning up a real Bubble Tea loop.
+// Tests substitute a fake without spinning up a real Bubble Tea loop.
 type programMessenger interface {
 	Send(msg tea.Msg)
 }
@@ -37,12 +37,7 @@ func NewDebugLogWriter() *DebugLogWriter {
 }
 
 // SetProgram attaches the Bubble Tea program and flushes buffered messages.
-func (w *DebugLogWriter) SetProgram(p *tea.Program) {
-	w.attach(p)
-}
-
-// attach is the unexported form of SetProgram that accepts any message sink.
-func (w *DebugLogWriter) attach(p programMessenger) {
+func (w *DebugLogWriter) SetProgram(p programMessenger) {
 	w.mu.Lock()
 	w.program = p
 	pending := w.buf
