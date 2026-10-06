@@ -7,16 +7,16 @@
         arrival,
         leave,
         shift,
-        getRunStatusConfig,
-        runDisplayStatus,
+        RUN_STATUS_CONFIG,
         instanceSuffix,
         Card,
         EmptyState,
         formatRelativeTime,
         formatTriggeredByLabel,
+        Heading,
     } from "@runwisp/ui";
     import type { RunMotion } from "@runwisp/ui";
-    import type { Run } from "@runwisp/common";
+    import { displayStatus, type Run } from "@runwisp/common";
     import { formatRunDurationLabel } from "./overview-format.js";
 
     let {
@@ -26,7 +26,7 @@
         onViewAllRuns,
         getInstanceCount = () => 1,
         motion,
-    } = $props<{
+    }: {
         recentActivity?: Run[];
         now?: Date;
         onRunClick?: (taskName: string, runId: string) => void;
@@ -36,7 +36,7 @@
         // cue. Rows only ever leave this list live (deleted, or pushed off the
         // bottom), so they always sweep out.
         motion?: RunMotion;
-    }>();
+    } = $props();
 
     function viewRun(run: Run): void {
         onRunClick?.(run.taskName, run.id);
@@ -45,7 +45,7 @@
 
 <Card padding="lg">
     <div class="flex items-center justify-between gap-3">
-        <h2 class="text-sm font-semibold text-on-surface">Recent activity</h2>
+        <Heading level={2} size="sm">Recent activity</Heading>
         <button
             class="inline-flex items-center gap-1 font-mono text-xs font-medium text-on-surface-muted hover:text-primary"
             onclick={() => onViewAllRuns?.()}
@@ -66,8 +66,8 @@
     {:else}
         <div class="mt-4 space-y-1.5">
             {#each recentActivity as run (run.id)}
-                {@const status = runDisplayStatus(run)}
-                {@const statusConfig = getRunStatusConfig(status)}
+                {@const status = displayStatus(run.status, run.endReason)}
+                {@const statusConfig = RUN_STATUS_CONFIG[status]}
                 {@const StatusIcon = statusConfig.icon}
                 {@const suffix = instanceSuffix(run.instanceIndex, getInstanceCount(run.taskName))}
 

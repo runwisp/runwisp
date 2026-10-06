@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/runwisp/runwisp/internal/autostart/autostarttest"
 	"github.com/runwisp/runwisp/internal/importer"
 )
 
@@ -450,7 +451,7 @@ func TestInstall_NoopReassertNoRollbackOnProbeFailure(t *testing.T) {
 // takenOverUnitOnDisk writes the unit a completed take-over leaves behind, so
 // ComputePlan sees no drift and returns PlanNoop — the state `runwisp takeover`
 // finds on a box it has already been run on.
-func takenOverUnitOnDisk(t *testing.T, inst *systemdInstaller, fs *FakeFS, opts InstallOptions) {
+func takenOverUnitOnDisk(t *testing.T, inst *systemdInstaller, fs *autostarttest.FakeFS, opts InstallOptions) {
 	t.Helper()
 	recorded := opts
 	recorded.maskedCronUnit = "cron.service"
@@ -566,7 +567,7 @@ func TestComputeUninstallPlan_UnmasksOnlyOwnMarker(t *testing.T) {
 	unitPath := inst.unitPath(true)
 	require.NoError(t, fs.WriteFile(unitPath, body, 0644))
 
-	plan, err := inst.ComputeUninstallPlan(context.Background(), UninstallOptions{System: true})
+	plan, err := inst.computeUninstallPlan(context.Background(), UninstallOptions{System: true})
 	require.NoError(t, err)
 	assert.Equal(t, "cron.service", plan.CronUnit)
 	assert.Contains(t, stepActions(plan.Steps), ActionUnmaskCron)
@@ -581,7 +582,7 @@ func TestComputeUninstallPlan_NoMarkerMeansNoUnmaskStep(t *testing.T) {
 	unitPath := inst.unitPath(true)
 	require.NoError(t, fs.WriteFile(unitPath, body, 0644))
 
-	plan, err := inst.ComputeUninstallPlan(context.Background(), UninstallOptions{System: true})
+	plan, err := inst.computeUninstallPlan(context.Background(), UninstallOptions{System: true})
 	require.NoError(t, err)
 	assert.Empty(t, plan.CronUnit)
 	assert.NotContains(t, stepActions(plan.Steps), ActionUnmaskCron)
@@ -603,7 +604,7 @@ func TestApplyUninstall_UnmasksAndRestartsCron(t *testing.T) {
 	cmd.Expect("systemctl", []string{"unmask", "cron.service"}, nil, nil, nil)
 	cmd.Expect("systemctl", []string{"start", "cron.service"}, nil, nil, nil)
 
-	plan, err := inst.ComputeUninstallPlan(context.Background(), UninstallOptions{System: true})
+	plan, err := inst.computeUninstallPlan(context.Background(), UninstallOptions{System: true})
 	require.NoError(t, err)
 
 	out := &bytes.Buffer{}
@@ -669,7 +670,7 @@ const cronShowState = "show -p LoadState,ActiveState,UnitFileState --value cron.
 
 // installTakeover runs a take-over install that succeeds, with cron probed as
 // "<ActiveState>\n<UnitFileState>" before RunWisp touched it.
-func installTakeover(t *testing.T, inst *systemdInstaller, fs *FakeFS, cmd *FakeRunner, prompter *ScriptedPrompter, opts InstallOptions, cronState string) {
+func installTakeover(t *testing.T, inst *systemdInstaller, fs *autostarttest.FakeFS, cmd *FakeRunner, prompter *ScriptedPrompter, opts InstallOptions, cronState string) {
 	t.Helper()
 	opts.TakeOverCron = true
 	prompter.YesNo = []bool{true}
@@ -696,7 +697,7 @@ func callsSince(cmd *FakeRunner, n int) []string {
 
 func uninstallSystem(t *testing.T, inst *systemdInstaller, cmd *FakeRunner) []string {
 	t.Helper()
-	plan, err := inst.ComputeUninstallPlan(context.Background(), UninstallOptions{System: true})
+	plan, err := inst.computeUninstallPlan(context.Background(), UninstallOptions{System: true})
 	require.NoError(t, err)
 	// Scripted so they succeed if called; the caller asserts whether they were.
 	cmd.Expect("systemctl", []string{"unmask", "cron.service"}, nil, nil, nil)

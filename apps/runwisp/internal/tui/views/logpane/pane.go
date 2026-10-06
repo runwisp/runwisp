@@ -7,8 +7,8 @@
 package logpane
 
 import (
-	"fmt"
-	"sort"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/runwisp/runwisp/internal/tui/uikit"
@@ -100,9 +100,7 @@ func (p *Pane) clampScroll() {
 	if ms := p.maxScroll(); p.Scroll > ms {
 		p.Scroll = ms
 	}
-	if p.Scroll < 0 {
-		p.Scroll = 0
-	}
+	p.Scroll = max(p.Scroll, 0)
 }
 
 // SetHeaderHeight tells the pane how many lines the caller's header occupies.
@@ -135,11 +133,7 @@ func (p *Pane) effectiveEndPadding() int {
 }
 
 func (p *Pane) maxScroll() int {
-	ms := p.renderableLen() - p.VisibleLines() + p.effectiveEndPadding()
-	if ms < 0 {
-		return 0
-	}
-	return ms
+	return max(p.renderableLen()-p.VisibleLines()+p.effectiveEndPadding(), 0)
 }
 
 // SetRegion replaces the live overlay frame for one stream. Empty rows clears
@@ -207,7 +201,7 @@ func orderedStreams(regions map[string]regionFrame) []string {
 			rest = append(rest, s)
 		}
 	}
-	sort.Strings(rest)
+	slices.Sort(rest)
 	return append(out, rest...)
 }
 
@@ -234,9 +228,7 @@ func (p *Pane) evictAndFollow() {
 		p.Lines = p.Lines[excess:]
 		p.FirstLoadedLine += excess
 		p.Scroll -= excess
-		if p.Scroll < 0 {
-			p.Scroll = 0
-		}
+		p.Scroll = max(p.Scroll, 0)
 		p.shiftCursor(-excess)
 	}
 	if p.Follow {
@@ -280,18 +272,14 @@ func (p *Pane) EvictBelow(firstAvailable int) {
 	}
 	p.FirstLoadedLine = firstAvailable
 	p.Scroll -= skip
-	if p.Scroll < 0 {
-		p.Scroll = 0
-	}
+	p.Scroll = max(p.Scroll, 0)
 	p.shiftCursor(-skip)
 }
 
 func (p *Pane) ScrollUp(n int) {
 	if p.Scroll > 0 {
 		p.Scroll -= n
-		if p.Scroll < 0 {
-			p.Scroll = 0
-		}
+		p.Scroll = max(p.Scroll, 0)
 		p.Follow = false
 	}
 }
@@ -307,14 +295,9 @@ func (p *Pane) JumpToLine(absLine int64) {
 	if bufIdx < 0 || bufIdx >= len(p.Lines) {
 		return
 	}
-	target := bufIdx - p.VisibleLines()/2
-	if target < 0 {
-		target = 0
-	}
+	target := max(bufIdx-p.VisibleLines()/2, 0)
 	ms := p.maxScroll()
-	if target > ms {
-		target = ms
-	}
+	target = min(target, ms)
 	p.Scroll = target
 	p.Follow = false
 }
@@ -385,9 +368,7 @@ func (p *Pane) scrollCursorIntoView() {
 	if ms := p.maxScroll(); p.Scroll > ms {
 		p.Scroll = ms
 	}
-	if p.Scroll < 0 {
-		p.Scroll = 0
-	}
+	p.Scroll = max(p.Scroll, 0)
 }
 
 // CursorAnchor returns the absolute (0-based) line number and frame count of the
@@ -406,9 +387,7 @@ func (p *Pane) CursorAnchor() (absLine int64, frameCount int, ok bool) {
 func (p *Pane) ScrollDown(n int) {
 	ms := p.maxScroll()
 	p.Scroll += n
-	if p.Scroll > ms {
-		p.Scroll = ms
-	}
+	p.Scroll = min(p.Scroll, ms)
 	if p.Scroll >= ms {
 		p.Follow = true
 	}
@@ -440,9 +419,7 @@ func (p *Pane) handleVScrollKey(key string) (handled, result bool) {
 		return true, true
 	case "pgup":
 		p.Scroll -= p.VisibleLines()
-		if p.Scroll < 0 {
-			p.Scroll = 0
-		}
+		p.Scroll = max(p.Scroll, 0)
 		p.Follow = false
 		return true, true
 	case "pgdown":
@@ -472,9 +449,7 @@ func (p *Pane) scrollDown(ms int) {
 
 func (p *Pane) scrollPageDown(ms int) {
 	p.Scroll += p.VisibleLines()
-	if p.Scroll > ms {
-		p.Scroll = ms
-	}
+	p.Scroll = min(p.Scroll, ms)
 	if p.Scroll >= ms {
 		p.Follow = true
 	}
@@ -494,9 +469,7 @@ func (p *Pane) handleHScrollKey(key string) bool {
 	case "shift+right":
 		maxH := p.MaxHScroll()
 		p.HScroll += p.LogContentWidth() / 2
-		if p.HScroll > maxH {
-			p.HScroll = maxH
-		}
+		p.HScroll = min(p.HScroll, maxH)
 		return true
 	}
 	return false
@@ -505,9 +478,7 @@ func (p *Pane) handleHScrollKey(key string) bool {
 func (p *Pane) scrollLeft() {
 	if p.HScroll > 0 {
 		p.HScroll -= HScrollStep
-		if p.HScroll < 0 {
-			p.HScroll = 0
-		}
+		p.HScroll = max(p.HScroll, 0)
 	}
 }
 
@@ -515,9 +486,7 @@ func (p *Pane) scrollRight() {
 	maxH := p.MaxHScroll()
 	if p.HScroll < maxH {
 		p.HScroll += HScrollStep
-		if p.HScroll > maxH {
-			p.HScroll = maxH
-		}
+		p.HScroll = min(p.HScroll, maxH)
 	}
 }
 
@@ -525,10 +494,7 @@ func (p *Pane) scrollRight() {
 // computed from the widest visible line.
 func (p *Pane) MaxHScroll() int {
 	visLines := p.VisibleLines()
-	end := p.Scroll + visLines
-	if end > len(p.Lines) {
-		end = len(p.Lines)
-	}
+	end := min(p.Scroll+visLines, len(p.Lines))
 	maxWidth := 0
 	for i := p.Scroll; i < end; i++ {
 		expanded := strings.ReplaceAll(p.Lines[i].Text, "\t", "    ")
@@ -558,9 +524,7 @@ func (p *Pane) PrependLines(lines []Line, firstLine int) {
 	}
 	p.Lines = append(sanitized, p.Lines...)
 	p.FirstLoadedLine = firstLine
-	if p.FirstLoadedLine < 0 {
-		p.FirstLoadedLine = 0
-	}
+	p.FirstLoadedLine = max(p.FirstLoadedLine, 0)
 	p.Scroll += len(lines)
 	p.shiftCursor(len(lines))
 }
@@ -589,29 +553,16 @@ func (p *Pane) absoluteLineNumber(bufIdx int) int {
 }
 
 func (p *Pane) lineNumWidth() int {
-	total := p.TotalLines
-	if total < p.FirstLoadedLine+len(p.Lines) {
-		total = p.FirstLoadedLine + len(p.Lines)
-	}
-	w := len(fmt.Sprintf("%d", total))
-	if w < 3 {
-		w = 3
-	}
-	return w
+	total := max(p.TotalLines, p.FirstLoadedLine+len(p.Lines))
+	return max(len(strconv.Itoa(total)), 3)
 }
 
 func (p *Pane) LogContentWidth() int {
 	if !p.Cfg.LineNumbers {
-		w := p.Width - 2
-		if w < 10 {
-			w = 10
-		}
+		w := max(p.Width-2, 10)
 		return w
 	}
-	w := p.Width - p.lineNumWidth() - 1
-	if w < 10 {
-		w = 10
-	}
+	w := max(p.Width-p.lineNumWidth()-1, 10)
 	return w
 }
 

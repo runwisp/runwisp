@@ -9,6 +9,7 @@
 <script lang="ts">
     import type { Snippet } from "svelte";
     import { Bell } from "@lucide/svelte";
+    import Heading from "./Heading.svelte";
     import Popover from "./Popover.svelte";
 
     interface Props {
@@ -60,7 +61,7 @@
 
     <div role="dialog" aria-label={title} class="w-96 max-w-[90vw]">
         <div class="mb-2 flex items-center justify-between gap-2">
-            <h2 class="font-mono text-sm font-semibold text-on-surface">{title}</h2>
+            <Heading level={2} size="sm">{title}</Heading>
             {#if actions}
                 <div class="flex items-center gap-3 text-xs">{@render actions()}</div>
             {/if}

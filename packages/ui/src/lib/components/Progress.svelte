@@ -12,6 +12,9 @@
         size?: ProgressSize;
         showLabel?: boolean;
         label?: string;
+        /** Percent at which the bar turns warning / danger, overriding `variant`
+         *  (e.g. `{ warning: 70, danger: 90 }` for CPU or memory). */
+        thresholds?: { warning?: number; danger?: number };
         class?: string;
     }
 
@@ -22,10 +25,17 @@
         size = "md",
         showLabel = false,
         label,
+        thresholds,
         class: className = "",
     }: Props = $props();
 
     const percentage = $derived(Math.min(Math.max((value / max) * 100, 0), 100));
+
+    const tone = $derived.by((): ProgressVariant => {
+        if (thresholds?.danger !== undefined && percentage >= thresholds.danger) return "danger";
+        if (thresholds?.warning !== undefined && percentage >= thresholds.warning) return "warning";
+        return variant;
+    });
 
     const variantClasses: Record<ProgressVariant, string> = {
         default: "bg-primary",
@@ -55,16 +65,19 @@
         </div>
     {/if}
 
-    <div class="w-full {sizeClasses[size]} overflow-hidden rounded-full bg-surface-sunken">
+    <div
+        class="w-full {sizeClasses[size]} overflow-hidden rounded-full bg-surface-sunken"
+        role="progressbar"
+        aria-label={label}
+        aria-valuenow={value}
+        aria-valuemin={0}
+        aria-valuemax={max}
+    >
         <div
             class="{sizeClasses[size]} {variantClasses[
-                variant
+                tone
             ]} rounded-full transition-[width] duration-200"
             style="width: {percentage}%"
-            role="progressbar"
-            aria-valuenow={value}
-            aria-valuemin={0}
-            aria-valuemax={max}
         ></div>
     </div>
 </div>

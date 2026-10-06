@@ -67,10 +67,6 @@ func (f *fakeTakeoverInstaller) Install(_ context.Context, opts autostart.Instal
 	return nil
 }
 
-func (f *fakeTakeoverInstaller) ComputeUninstallPlan(context.Context, autostart.UninstallOptions) (autostart.Plan, error) {
-	return autostart.Plan{}, nil
-}
-
 func (f *fakeTakeoverInstaller) Uninstall(context.Context, autostart.UninstallOptions, io.Writer) error {
 	return nil
 }

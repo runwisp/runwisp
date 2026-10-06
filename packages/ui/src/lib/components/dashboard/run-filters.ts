@@ -3,8 +3,6 @@
 
 import { TRIGGERS, type Trigger } from "@runwisp/common";
 
-export type RunsListSortDirection = "asc" | "desc" | "";
-
 /**
  * The single filter shape shared by the runs list, the filter popover, the
  * SSE-merge source, and the bulk selector. Every field beyond `search` and
@@ -19,7 +17,7 @@ export type RunsListSortDirection = "asc" | "desc" | "";
 export interface RunsListFilters {
     search: string;
     statuses: string[];
-    sortDirection: RunsListSortDirection;
+    sortDirection: "asc" | "desc" | "";
     // Optional dimensions explicitly admit `undefined` so a dimension can be
     // cleared by reassignment (`{ ...f, x: undefined }`) under the project's
     // exactOptionalPropertyTypes — a fresh object reference is what re-triggers
@@ -53,29 +51,15 @@ export function emptyRunFilters(): RunsListFilters {
 export const FAILURE_STATUS_TOKEN = "failure";
 
 /**
- * The status set backing the "Failed" browse filter and the one-click preset
- * that serves Prime Directive #1 — nothing silently fails. Just the failure
- * sentinel: the server resolves it to the per-task `isFailure` classification
- * rather than a fixed end-reason list.
- */
-export const NEEDS_ATTENTION_STATUSES: readonly string[] = [FAILURE_STATUS_TOKEN];
-
-/** True when `statuses` is exactly the needs-attention set (order-insensitive). */
-export function isNeedsAttention(statuses: string[]): boolean {
-    if (statuses.length !== NEEDS_ATTENTION_STATUSES.length) return false;
-    const set = new Set(statuses);
-    return NEEDS_ATTENTION_STATUSES.every((s) => set.has(s));
-}
-
-/**
  * Outcome buckets: the 14 individual run statuses collapsed into five
  * plain-language groups, so the common case is a five-item pick instead of a
  * flat checklist. Each bucket is purely a UI grouping over `statuses` — toggling
  * one adds/removes its members, and the popover's "Advanced" section still
  * exposes the individual statuses for surgical filters (e.g. only `timeout`).
  *
- * Every status appears in exactly one bucket; `Failed` is the needs-attention
- * set (Prime Directive #1). `dot` mirrors that group's color in
+ * Every status appears in exactly one bucket; `Failed` is the failure sentinel,
+ * which the server resolves to each run's `isFailure` bit. `dot` mirrors that
+ * group's color in
  * RUN_STATUS_CONFIG so the bucket reads at a glance.
  */
 export interface StatusBucket {
@@ -93,7 +77,7 @@ export const STATUS_BUCKETS: readonly StatusBucket[] = [
         key: "failed",
         label: "Failed",
         dot: "bg-danger-surface",
-        statuses: NEEDS_ATTENTION_STATUSES,
+        statuses: [FAILURE_STATUS_TOKEN],
     },
     {
         key: "skipped",
@@ -197,23 +181,6 @@ export function clearDimension(f: RunsListFilters, dim: FilterDimension): RunsLi
         case "retries":
             return { ...f, retriesOnly: undefined };
     }
-}
-
-/**
- * Clear every popover dimension at once, preserving the header search and the
- * sort direction (those are separate toolbar controls, not popover state).
- */
-export function clearPopoverFilters(f: RunsListFilters): RunsListFilters {
-    return {
-        ...f,
-        statuses: [],
-        createdAfter: undefined,
-        createdBefore: undefined,
-        taskName: undefined,
-        triggeredBy: undefined,
-        exitCode: undefined,
-        retriesOnly: undefined,
-    };
 }
 
 /** Human label for a status value, e.g. `log_overflow` → "Log overflow". */
@@ -400,19 +367,4 @@ export function isExitCodeExprValid(expr: string): boolean {
 /** Chip label for an active exit-code filter, e.g. `Exit >100 <150`. */
 export function exitCodeChipLabel(expr: string | undefined): string {
     return `Exit ${(expr ?? "").trim()}`;
-}
-
-/**
- * Whether the popover's exit-code text buffer must resync to the `filters`
- * prop. True only when the committed `exitCode` value actually moved since
- * the buffer last matched it — e.g. the "Exit code" chip was removed, or
- * "clear filters" ran elsewhere. An unrelated filters update (any other
- * dimension) leaves `exitCode` untouched and must not clobber in-progress
- * typing in the still-open popover.
- */
-export function exitCodePropChanged(
-    previous: string | undefined,
-    next: string | undefined,
-): boolean {
-    return previous !== next;
 }

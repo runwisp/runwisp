@@ -26,14 +26,6 @@ type mockTaskRunner struct {
 	mock.Mock
 }
 
-func (m *mockTaskRunner) TriggerRun(taskName string, triggeredBy model.TriggeredBy) (*model.Run, error) {
-	args := m.Called(taskName, triggeredBy)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*model.Run), args.Error(1)
-}
-
 func (m *mockTaskRunner) TriggerRunWithOptions(taskName string, options runtime.TriggerRunOptions) (*model.Run, error) {
 	args := m.Called(taskName, options)
 	if args.Get(0) == nil {
@@ -129,11 +121,11 @@ func (m *mockTaskRunner) ServiceSnapshot(taskName string) (model.ServiceSnapshot
 // helpers
 
 func makeRunService(tasks map[string]*model.Task, repo *testutil.MockRunRepository, runner *mockTaskRunner) *runService {
-	return newRunService(repo, runner, runtime.NewTaskRegistry(tasks), nil, "", nil)
+	return newRunService(repo, runner, runtime.NewTaskRegistry(tasks), nil, "", events.NewEventBus())
 }
 
 // makeRunServiceWithBus is the wait-aware variant: TriggerRunAndWait observes
-// terminal events on the bus, so it needs a real one rather than nil.
+// terminal events on the bus, so the test supplies (and subscribes to) it.
 func makeRunServiceWithBus(tasks map[string]*model.Task, repo *testutil.MockRunRepository, runner *mockTaskRunner, bus *events.Bus) *runService {
 	return newRunService(repo, runner, runtime.NewTaskRegistry(tasks), nil, "", bus)
 }
@@ -1100,7 +1092,7 @@ func TestDeleteRuns_ActiveRunsRejectedConsistently(t *testing.T) {
 		require.NoError(t, db.CreateRun(ctx, r))
 	}
 
-	svc := newRunService(db, nil, runtime.NewTaskRegistry(nil), nil, "", nil)
+	svc := newRunService(db, nil, runtime.NewTaskRegistry(nil), nil, "", events.NewEventBus())
 
 	affected, skipped, err := svc.bulkSoftDelete(ctx,
 		model.RunSelector{IDs: []string{ended.ID, running.ID, pending.ID}})
@@ -1186,7 +1178,7 @@ func TestStopTask_WaitTimesOut(t *testing.T) {
 func TestListTasks_NilSchedulerWithCronTask(t *testing.T) {
 	var sched *runtime.Scheduler
 	tasks := map[string]*model.Task{"nightly": {Name: "nightly", Cron: "0 3 * * *", ManualTrigger: true}}
-	svc := newRunService(nil, nil, runtime.NewTaskRegistry(tasks), sched, "", nil)
+	svc := newRunService(nil, nil, runtime.NewTaskRegistry(tasks), sched, "", events.NewEventBus())
 
 	got := svc.ListTasks()
 	require.Len(t, got, 1)

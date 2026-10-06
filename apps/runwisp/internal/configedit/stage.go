@@ -153,7 +153,7 @@ type rootPlan struct {
 func planRoot(rootPath string) (rootPlan, error) {
 	orig, err := os.ReadFile(rootPath)
 	if errors.Is(err, os.ErrNotExist) {
-		return rootPlan{bytes: []byte(config.TwoTierRootConfig()), outcome: RootCreated}, nil
+		return rootPlan{bytes: []byte(config.TwoTierRootConfig), outcome: RootCreated}, nil
 	}
 	if err != nil {
 		return rootPlan{}, fmt.Errorf("read %s: %w", rootPath, err)

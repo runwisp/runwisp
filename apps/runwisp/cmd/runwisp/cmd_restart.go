@@ -93,7 +93,7 @@ func runRestart(cmd *cobra.Command, args []string, f Flags) error {
 		fmt.Fprintln(out, "No daemon was running — starting one.")
 	}
 
-	if err := spawnDaemon(f); err != nil {
+	if err := spawnDaemon(f, false); err != nil {
 		return err
 	}
 	client := apiclient.NewUnix(localAPISocketPath(f))

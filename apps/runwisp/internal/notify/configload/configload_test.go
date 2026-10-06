@@ -23,8 +23,7 @@ func TestResolve_Slack(t *testing.T) {
 			WebhookURL: "https://hooks.slack.test/T/B/Z",
 		}},
 	}
-	got, err := Resolve(cfg, render.TemplateContext{})
-	require.NoError(t, err)
+	got := Resolve(cfg, render.TemplateContext{})
 	require.Len(t, got.Notifiers, 1)
 	assert.Equal(t, "https://hooks.slack.test/T/B/Z", got.Notifiers[0].WebhookURL)
 }
@@ -37,8 +36,7 @@ func TestResolve_Discord(t *testing.T) {
 			WebhookURL: "https://discord.com/api/webhooks/123/token",
 		}},
 	}
-	got, err := Resolve(cfg, render.TemplateContext{})
-	require.NoError(t, err)
+	got := Resolve(cfg, render.TemplateContext{})
 	require.Len(t, got.Notifiers, 1)
 	assert.Equal(t, "https://discord.com/api/webhooks/123/token", got.Notifiers[0].WebhookURL)
 }
@@ -51,8 +49,7 @@ func TestResolve_PushProviders(t *testing.T) {
 			{ID: "po", Type: "pushover", Token: "app", User: "user"},
 		},
 	}
-	got, err := Resolve(cfg, render.TemplateContext{})
-	require.NoError(t, err)
+	got := Resolve(cfg, render.TemplateContext{})
 	require.Len(t, got.Notifiers, 3)
 	n, g, p := got.Notifiers[0], got.Notifiers[1], got.Notifiers[2]
 	assert.Equal(t, []string{"https://ntfy.example.com", "alerts", "tk"}, []string{n.URL, n.Topic, n.Token})
@@ -69,8 +66,7 @@ func TestResolve_Telegram(t *testing.T) {
 			ChatID:   "-100123",
 		}},
 	}
-	got, err := Resolve(cfg, render.TemplateContext{})
-	require.NoError(t, err)
+	got := Resolve(cfg, render.TemplateContext{})
 	require.Len(t, got.Notifiers, 1)
 	assert.Equal(t, "123456:token", got.Notifiers[0].BotToken)
 	assert.Equal(t, "-100123", got.Notifiers[0].ChatID)
@@ -89,8 +85,7 @@ func TestResolve_SMTP_Password(t *testing.T) {
 			Recipients: []string{"ops@example.com"},
 		}},
 	}
-	got, err := Resolve(cfg, render.TemplateContext{})
-	require.NoError(t, err)
+	got := Resolve(cfg, render.TemplateContext{})
 	require.Len(t, got.Notifiers, 1)
 	n := got.Notifiers[0]
 	assert.Equal(t, "inline-secret", n.Password)
@@ -109,8 +104,7 @@ func TestResolve_SMTP_AuthlessRelay(t *testing.T) {
 			Recipients: []string{"ops@example.com"},
 		}},
 	}
-	got, err := Resolve(cfg, render.TemplateContext{})
-	require.NoError(t, err)
+	got := Resolve(cfg, render.TemplateContext{})
 	require.Len(t, got.Notifiers, 1)
 	assert.Empty(t, got.Notifiers[0].Password, "auth-less relay must resolve with empty password")
 	assert.Equal(t, "127.0.0.1", got.Notifiers[0].Host)
@@ -125,8 +119,7 @@ func TestResolve_Webhook(t *testing.T) {
 			Headers: map[string]string{"Authorization": "Bearer tok"},
 		}},
 	}
-	got, err := Resolve(cfg, render.TemplateContext{})
-	require.NoError(t, err)
+	got := Resolve(cfg, render.TemplateContext{})
 	require.Len(t, got.Notifiers, 1)
 	assert.Equal(t, "https://example.com/hook", got.Notifiers[0].URL)
 	assert.Equal(t, "Bearer tok", got.Notifiers[0].Headers["Authorization"])
@@ -140,8 +133,7 @@ func TestResolve_WebhookNoHeaders(t *testing.T) {
 			URL:  "https://example.com/hook",
 		}},
 	}
-	got, err := Resolve(cfg, render.TemplateContext{})
-	require.NoError(t, err)
+	got := Resolve(cfg, render.TemplateContext{})
 	require.Len(t, got.Notifiers, 1)
 	assert.Nil(t, got.Notifiers[0].Headers)
 }
@@ -159,8 +151,7 @@ func TestResolve_CompiledRulePredicates(t *testing.T) {
 			NotifierID: []string{"ops"},
 		}},
 	}
-	got, err := Resolve(cfg, render.TemplateContext{})
-	require.NoError(t, err)
+	got := Resolve(cfg, render.TemplateContext{})
 	require.Len(t, got.Rules, 1)
 	require.Equal(t, []string{"ops"}, got.Rules[0].ActionIDs)
 

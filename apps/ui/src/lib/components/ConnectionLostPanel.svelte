@@ -3,9 +3,9 @@
 
 <script lang="ts">
     import { RefreshCw, WifiOff, LoaderCircle, Layers } from "@lucide/svelte";
-    import { Button, formatDuration } from "@runwisp/ui";
+    import { Button, formatDuration, Heading, Text } from "@runwisp/ui";
     import { connectionStore } from "$lib/stores";
-    import { appEventStream } from "$lib/stores/app-stream.svelte";
+    import { appEventStream } from "$lib/stores/app-stream";
     import { stalledCopy } from "$lib/utils/connection-copy";
 
     const c = connectionStore;
@@ -44,8 +44,8 @@
         </div>
 
         <div class="max-w-md space-y-2">
-            <h3 class="text-lg font-semibold text-on-surface">{copy.heading}</h3>
-            <p class="text-sm text-on-surface-muted">{copy.body}</p>
+            <Heading level={3} size="lg">{copy.heading}</Heading>
+            <Text size="sm" color="muted">{copy.body}</Text>
         </div>
     </div>
 {:else}
@@ -63,13 +63,13 @@
         </div>
 
         <div class="max-w-md space-y-2">
-            <h3 class="text-lg font-semibold text-on-surface">Connection Lost</h3>
-            <p class="text-sm text-on-surface-muted">
+            <Heading level={3} size="lg">Connection Lost</Heading>
+            <Text size="sm" color="muted">
                 The UI can't reach the runner API at <span
                     class="rounded-[3px] bg-surface-sunken px-1.5 py-0.5 font-mono text-xs text-on-surface"
                     >this site's origin</span
                 >. The daemon may be restarting or your network is down.
-            </p>
+            </Text>
         </div>
 
         <dl

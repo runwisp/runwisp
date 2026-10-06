@@ -29,9 +29,6 @@ func (c *Channel) Close(context.Context) error { return nil }
 // Execute renders the event and hands it to the Coalescer. The Coalescer
 // owns mutex + index + hub fan-out; we just glue.
 func (c *Channel) Execute(ctx context.Context, ev *notify.Event) error {
-	if ev == nil {
-		return nil
-	}
 	rendered, err := c.renderer.Render(ev)
 	if err != nil {
 		return err

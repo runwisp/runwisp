@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import { Bell } from "@lucide/svelte";
-    import { EmptyState, ErrorState, Skeleton } from "@runwisp/ui";
+    import { EmptyState, ErrorState, Link, PageHeader, Skeleton } from "@runwisp/ui";
     import { notificationStore } from "$lib/stores";
     import NotificationItem from "$lib/components/NotificationItem.svelte";
 
@@ -19,30 +19,28 @@
     }
 </script>
 
+{#snippet markAllReadButton()}
+    <button
+        type="button"
+        class="rounded-[3px] border border-primary-soft-border bg-primary-soft px-3 py-1.5 font-mono text-sm font-medium text-primary-soft-text hover:border-outline-hover"
+        onclick={() => void markAllRead()}>Mark all read</button
+    >
+{/snippet}
+
 <svelte:head>
     <title>Notifications · RunWisp</title>
 </svelte:head>
 
 <div class="mx-auto max-w-3xl space-y-4">
-    <header class="flex items-center justify-between">
-        <div>
-            <h1 class="text-2xl font-bold text-on-surface">Notifications</h1>
-            <p class="text-sm text-on-surface-muted">
-                Recent notifications across all tasks
-                {#if unread > 0}· <span
-                        class="font-mono font-medium text-primary-soft-text tabular-nums"
-                        >{unread} unread</span
-                    >{/if}
-            </p>
-        </div>
-        {#if unread > 0}
-            <button
-                type="button"
-                class="rounded-[3px] border border-primary-soft-border bg-primary-soft px-3 py-1.5 font-mono text-sm font-medium text-primary-soft-text hover:border-outline-hover"
-                onclick={() => void markAllRead()}>Mark all read</button
-            >
-        {/if}
-    </header>
+    <PageHeader title="Notifications" actions={unread > 0 ? markAllReadButton : undefined}>
+        {#snippet subtitle()}
+            Recent notifications across all tasks
+            {#if unread > 0}· <span
+                    class="font-mono font-medium text-primary-soft-text tabular-nums"
+                    >{unread} unread</span
+                >{/if}
+        {/snippet}
+    </PageHeader>
 
     {#if notificationStore.loadFailed}
         <ErrorState
@@ -59,14 +57,14 @@
                 icon={Bell}
             >
                 {#snippet actions()}
-                    <a
+                    <Link
                         href="https://docs.runwisp.com/notifications/"
-                        target="_blank"
-                        rel="noreferrer"
-                        class="text-sm font-medium text-primary hover:underline"
+                        external
+                        variant="primary"
+                        class="text-sm font-medium"
                     >
                         Notification docs →
-                    </a>
+                    </Link>
                 {/snippet}
             </EmptyState>
         </div>

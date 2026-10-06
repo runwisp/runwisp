@@ -14,17 +14,11 @@ import (
 	"github.com/cenkalti/backoff/v4"
 )
 
-// HTTPDoer is the minimal http.Client surface the transport requires. Lets
-// tests inject a stub.
-type HTTPDoer interface {
-	Do(req *http.Request) (*http.Response, error)
-}
-
-// HTTPProvider wraps a HTTPDoer with backoff + Retry-After handling for the
+// HTTPProvider wraps an http.Client with backoff + Retry-After handling for the
 // HTTP-based channels. The 429 body inspector is provided by the caller
 // (Telegram exposes parameters.retry_after in JSON).
 type HTTPProvider struct {
-	Client    HTTPDoer
+	Client    *http.Client
 	Backoff   BackoffConfig
 	Body429Fn func(body []byte) time.Duration // optional; returns 0 if not present
 	UserAgent string
@@ -39,16 +33,11 @@ func NewHTTPProvider() *HTTPProvider {
 	}
 }
 
-// PostJSON posts body with backoff + retry-after honoring. Returns nil on
+// Post posts body with backoff + retry-after honoring, merging extra (e.g.
+// operator-configured auth headers) into the request headers. Returns nil on
 // 2xx, a permanent error on 4xx (except 408/429), and the last transport
 // error on backoff exhaustion.
-func (p *HTTPProvider) PostJSON(ctx context.Context, url, contentType string, body []byte) error {
-	return p.PostJSONWithHeaders(ctx, url, contentType, body, nil)
-}
-
-// PostJSONWithHeaders is like PostJSON but merges extra into the request
-// headers. Used by the webhook channel for operator-configured auth headers.
-func (p *HTTPProvider) PostJSONWithHeaders(ctx context.Context, url, contentType string, body []byte, extra http.Header) error {
+func (p *HTTPProvider) Post(ctx context.Context, url, contentType string, body []byte, extra http.Header) error {
 	return RetryWithBackoff(ctx, p.Backoff, func(ctx context.Context) error {
 		return p.doHTTPRequest(ctx, url, contentType, body, extra)
 	})
@@ -60,9 +49,7 @@ func (p *HTTPProvider) doHTTPRequest(ctx context.Context, url, contentType strin
 		return backoff.Permanent(err)
 	}
 	req.Header.Set("Content-Type", contentType)
-	if p.UserAgent != "" {
-		req.Header.Set("User-Agent", p.UserAgent)
-	}
+	req.Header.Set("User-Agent", p.UserAgent)
 	for k, vals := range extra {
 		for _, v := range vals {
 			req.Header.Add(k, v)

@@ -369,11 +369,6 @@ func TestSsrfSafeDialer_DnsFailureBubblesUp(t *testing.T) {
 	assert.Contains(t, err.Error(), "resolve host")
 }
 
-func TestHTTPBackend_Available(t *testing.T) {
-	b := &HTTPBackend{}
-	assert.True(t, b.Available(context.Background()))
-}
-
 // TestStartProcess_SuccessRunsExecuteAndReturnsExitCode exercises the goroutine
 // + Process bookkeeping path that Start sets up after validateHTTPURL passes.
 // validateHTTPURL rejects loopback, so we drive startProcess directly to keep

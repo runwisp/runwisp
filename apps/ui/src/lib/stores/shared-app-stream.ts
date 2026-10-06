@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import type { SSEErrorInfo } from "$lib/utils/event-source";
-import { createLogger } from "$lib/utils/logger";
+import { createLogger } from "@runwisp/common";
 import { isRecord } from "$lib/utils/parse";
 import { EventManager, type AppEventStream } from "./event-manager";
 import {
@@ -65,8 +65,6 @@ export interface LeaderElector {
 interface SharedAppStreamOptions {
     /** SSE path the leader connects to, e.g. `/api/events/stream`. */
     path: string;
-    channelName?: string;
-    lockName?: string;
     /**
      * Builds the leader's real connection. Receives the resume-cursor getter so
      * a freshly promoted leader can seed its EventSource from the id the cohort
@@ -78,10 +76,11 @@ interface SharedAppStreamOptions {
     createElector?: (name: string) => LeaderElector;
 }
 
+const CHANNEL_NAME = "runwisp-app-stream";
+const LOCK_NAME = "runwisp-app-stream-leader";
+
 export class SharedAppStream implements AppEventStream {
     readonly #path: string;
-    readonly #channelName: string;
-    readonly #lockName: string;
     readonly #createLeaderManager: (seed: () => string | null) => EventManager;
     readonly #createBus: (name: string) => SharedBus;
     readonly #createElector: (name: string) => LeaderElector;
@@ -118,8 +117,6 @@ export class SharedAppStream implements AppEventStream {
 
     constructor(options: SharedAppStreamOptions) {
         this.#path = options.path;
-        this.#channelName = options.channelName ?? "runwisp-app-stream";
-        this.#lockName = options.lockName ?? "runwisp-app-stream-leader";
         this.#createLeaderManager =
             options.createLeaderManager ??
             ((seed) => new EventManager({ path: this.#path, initialLastEventId: seed }));
@@ -172,7 +169,7 @@ export class SharedAppStream implements AppEventStream {
         if (this.#started) return;
         this.#started = true;
 
-        this.#bus = this.#createBus(this.#channelName);
+        this.#bus = this.#createBus(CHANNEL_NAME);
         this.#bus.onMessage((raw) => {
             this.#onBusMessage(raw);
         });
@@ -184,7 +181,7 @@ export class SharedAppStream implements AppEventStream {
     }
 
     #startCampaign(): void {
-        this.#releaseCampaign = this.#createElector(this.#lockName).campaign(() => {
+        this.#releaseCampaign = this.#createElector(LOCK_NAME).campaign(() => {
             this.#becomeLeader();
         });
     }

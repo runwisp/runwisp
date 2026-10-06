@@ -75,12 +75,6 @@ func (t *ExecutionTracker) Remove(executionID string) {
 	delete(t.reserved, executionID)
 }
 
-func (t *ExecutionTracker) hasActive() bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return len(t.activeExecutions) > 0
-}
-
 func (t *ExecutionTracker) QueueUpdate(update protocol.ExecutionUpdateMessage, trySend func(any) error) {
 	if trySend != nil {
 		if err := trySend(update); err == nil {
@@ -159,7 +153,7 @@ func mapRunToExecutionUpdate(run *model.Run) *protocol.ExecutionUpdateMessage {
 
 	executionID := *run.ExecutionID
 	if run.Status == model.PhaseRunning {
-		return ptr(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusRunning, nil, run.StartedAt, nil))
+		return new(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusRunning, nil, run.StartedAt, nil))
 	}
 
 	if run.EndReason == nil {
@@ -172,14 +166,5 @@ func mapRunToExecutionUpdate(run *model.Run) *protocol.ExecutionUpdateMessage {
 		// and stranding the execution as "running" on the station.
 		status = protocol.ExecutionStatusFailed
 	}
-	return ptr(NewExecutionUpdateMessage(executionID, status, ptr(run.ExitCode), run.StartedAt, run.EndedAt))
-}
-
-func ptr[T any](value T) *T {
-	return &value
-}
-
-func nowPtr() *time.Time {
-	now := time.Now().UTC()
-	return &now
+	return new(NewExecutionUpdateMessage(executionID, status, new(run.ExitCode), run.StartedAt, run.EndedAt))
 }

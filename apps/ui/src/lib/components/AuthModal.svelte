@@ -8,7 +8,7 @@
     import { authApi, RateLimitedError } from "$lib/api";
     import { authStore } from "$lib/stores";
     import { browserAuthEventBus } from "$lib/adapters/browser";
-    import { createLogger } from "$lib/utils/logger";
+    import { createLogger } from "@runwisp/common";
 
     const logger = createLogger("AuthModal");
 
@@ -20,7 +20,7 @@
     let password = $state("");
     let error = $state("");
     let loading = $state(false);
-    let authRequired = $state(true);
+    const authRequired = $derived(authStore.current.required);
 
     $effect(() => {
         // Auth status is loaded once by the root layout; this modal only reacts
@@ -46,7 +46,6 @@
 
     $effect(() => {
         const status = authStore.current;
-        authRequired = status.required;
 
         if (!status.loaded) {
             return;

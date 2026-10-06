@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -55,7 +56,7 @@ func runStationInteractive(ctx context.Context, f Flags) error {
 		return runTUIConnect(ctx, client, f, tui.DaemonAttached)
 	}
 
-	if err := spawnDaemonProcess(daemonSpawnArgs([]string{"station", "--no-tui"}, f), f.DataDir); err != nil {
+	if err := spawnDaemon(f, true); err != nil {
 		slog.Warn("Failed to spawn background station daemon, running inline", "err", err)
 		return runDaemon(modeStation, f, false)
 	}
@@ -81,7 +82,7 @@ func resolveStationEnv(envFile string, envFileExplicit bool, token, url string) 
 		os.Setenv("RUNWISP_STATION_URL", url)
 	}
 	if os.Getenv("RUNWISP_STATION_TOKEN") == "" {
-		return fmt.Errorf("RUNWISP_STATION_TOKEN is required — set it via environment, .env file, or --token flag")
+		return errors.New("RUNWISP_STATION_TOKEN is required — set it via environment, .env file, or --token flag")
 	}
 	return nil
 }

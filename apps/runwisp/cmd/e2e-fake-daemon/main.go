@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -36,7 +37,7 @@ func run() error {
 	flag.Parse()
 
 	if *token == "" {
-		return fmt.Errorf("--token is required")
+		return errors.New("--token is required")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -92,7 +93,7 @@ func run() error {
 		}
 		return handleDispatch(ctx, conn, raw, *logBody)
 	}
-	return fmt.Errorf("no dispatch within deadline")
+	return errors.New("no dispatch within deadline")
 }
 
 func handleDispatch(ctx context.Context, conn *websocket.Conn, raw []byte, logBody string) error {
@@ -204,7 +205,7 @@ func readMsg(ctx context.Context, conn *websocket.Conn) ([]byte, error) {
 		return nil, err
 	}
 	if len(raw) == 0 {
-		return nil, fmt.Errorf("empty frame")
+		return nil, errors.New("empty frame")
 	}
 	return raw, nil
 }

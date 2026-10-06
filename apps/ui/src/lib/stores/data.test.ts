@@ -3,35 +3,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { AuthRequiredError } from "$lib/api";
-import { createTaskStore, removeRun } from "./data.svelte";
-import type { Run, Task } from "$lib/types";
-
-function makeRun(id: string, overrides: Partial<Run> = {}): Run {
-    return {
-        id,
-        taskName: "backup-db",
-        createdAt: "2026-05-05T12:00:00.000Z",
-        status: "running",
-        triggeredBy: "cron",
-        exitCode: 0,
-        instanceIndex: 0,
-        retryAttempt: 0,
-        isFailure: false,
-        ...overrides,
-    };
-}
-
-describe("removeRun", () => {
-    it("drops the run whose id matches", () => {
-        const list = [makeRun("a"), makeRun("b")];
-        expect(removeRun(list, "a").map((r) => r.id)).toEqual(["b"]);
-    });
-
-    it("returns the list unchanged when the id is absent", () => {
-        const list = [makeRun("a")];
-        expect(removeRun(list, "missing")).toHaveLength(1);
-    });
-});
+import { createTaskStore } from "./data.svelte";
+import type { Task } from "@runwisp/common";
 
 describe("TaskStore.loadIfNeeded", () => {
     const tasks: Task[] = [

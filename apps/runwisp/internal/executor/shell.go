@@ -27,8 +27,6 @@ const defaultShell = "/bin/sh"
 // (default /bin/sh).
 type ShellBackend struct{}
 
-func (b *ShellBackend) Available(_ context.Context) bool { return true }
-
 func (b *ShellBackend) Start(ctx context.Context, task *model.Task, run *model.Run, def model.ExecutionDef) (*Process, error) {
 	shell, ok := def.(*model.ShellExecution)
 	if !ok {

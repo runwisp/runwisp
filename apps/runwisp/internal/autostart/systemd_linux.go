@@ -13,7 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -552,7 +552,7 @@ func envDropInContent(vars map[string]string) (string, error) {
 	if err := rejectControlChars(fields); err != nil {
 		return "", err
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	var b strings.Builder
 	b.WriteString(ManagedMarker + "\n[Service]\n")
@@ -640,8 +640,8 @@ func (s *systemdInstaller) runSystemctlVerb(ctx context.Context, systemWide bool
 	return nil
 }
 
-// ComputeUninstallPlan implements Installer.
-func (s *systemdInstaller) ComputeUninstallPlan(_ context.Context, opts UninstallOptions) (Plan, error) {
+// computeUninstallPlan works out the steps Uninstall will take.
+func (s *systemdInstaller) computeUninstallPlan(_ context.Context, opts UninstallOptions) (Plan, error) {
 	if err := s.requireFingerprint(opts.System); err != nil {
 		return Plan{}, err
 	}
@@ -683,7 +683,7 @@ func (s *systemdInstaller) ComputeUninstallPlan(_ context.Context, opts Uninstal
 
 // Uninstall implements Installer.
 func (s *systemdInstaller) Uninstall(ctx context.Context, opts UninstallOptions, out io.Writer) error {
-	plan, err := s.ComputeUninstallPlan(ctx, opts)
+	plan, err := s.computeUninstallPlan(ctx, opts)
 	if err != nil {
 		return err
 	}

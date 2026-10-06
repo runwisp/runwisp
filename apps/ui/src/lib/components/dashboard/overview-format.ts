@@ -8,6 +8,7 @@ import {
     runDuration,
 } from "@runwisp/ui";
 import type { TaskOverview } from "./overview.js";
+import { taskInstanceCount } from "./instance-count.js";
 import type { Run } from "@runwisp/common";
 
 export function pluralize(count: number): string {
@@ -67,7 +68,7 @@ export function formatTaskNextRunLabel(task: TaskOverview, now: Date = new Date(
 
 export function formatTaskTriggerLabel(task: TaskOverview): string {
     if (task.task.kind === "service") {
-        const instances = Math.max(1, task.task.instances ?? 1);
+        const instances = taskInstanceCount(task.task);
         return instances > 1 ? `Service ×${String(instances)}` : "Service";
     }
 

@@ -56,47 +56,69 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// interceptActiveDialog gives the active modal first claim on the message.
-// Dialogs are checked in precedence order; only the active one runs, and it
-// reports whether it consumed the message (false lets the dispatchers see it,
-// e.g. WindowSizeMsg keeps layout responsive while a dialog is open).
+// handled adapts a handler's (model, cmd) result to a dispatcher's
+// "claimed" return: `return handled(m.handleX(msg))`.
+func handled(model tea.Model, cmd tea.Cmd) (tea.Model, tea.Cmd, bool) {
+	return model, cmd, true
+}
+
+// interceptActiveDialog gives the topmost open dialog first claim on the
+// message. Dialogs consume only key and mouse input (plus the shutdown
+// spinner's own messages); everything else falls through to the dispatchers,
+// e.g. WindowSizeMsg keeps layout responsive and an async TaskSummaryMsg still
+// fills in the open task inspector.
+//
+// A dialog's command (e.g. a confirm callback) is returned, never invoked here:
+// most make a network call, and running one inline would freeze the Update
+// loop for as long as it takes.
 func (m Model) interceptActiveDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	interceptors := []struct {
-		active bool
-		fn     func(tea.Msg) (tea.Model, tea.Cmd, bool)
-	}{
-		{m.dialogs.HasConfirm(), m.interceptConfirmDialog},
-		{m.dialogs.HasParamForm(), m.interceptParamFormDialog},
-		{m.dialogs.HasRunParams(), m.interceptRunParamsDialog},
-		{m.dialogs.HasCopy(), m.interceptCopyDialog},
-		{m.dialogs.HasLogHistory(), m.interceptLogHistoryDialog},
-		{m.dialogs.HasNewRelease(), m.interceptNewReleaseDialog},
-		{m.dialogs.HasTaskDetail(), m.interceptTaskDetailDialog},
-		{m.dialogs.HasRunDetail(), m.interceptRunDetailDialog},
-		{m.dialogs.HasHelp(), m.interceptHelpDialog},
+	kind, d, ok := m.dialogs.top()
+	if !ok {
+		return m, nil, false
 	}
-	for _, ic := range interceptors {
-		if !ic.active {
-			continue
-		}
-		if newModel, cmd, intercepted := ic.fn(msg); intercepted {
-			return newModel, cmd, true
-		}
+	if m.dialogs.IsShuttingDown() {
+		return m.interceptShuttingDownDialog(msg)
 	}
-	return m, nil, false
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case keyCtrlC:
+			if kind == dlgConfirm {
+				m.streams.Shutdown()
+				m.quitAction = uikit.QuitKeepDaemon
+				return m, tea.Quit, true
+			}
+			// In any other dialog, ctrl+c closes it and escalates to the quit confirm.
+			m.dialogs.Dismiss(kind)
+			return m, tea.Batch(m.dialogs.SyncMouseState(), m.requestQuit()), true
+		case "enter":
+			// Enter on a retry's inspector opens the run it retried.
+			if rd, isRun := d.(*RunDetailDialog); isRun {
+				if taskName, runID, hasParent := rd.ParentRef(); hasParent {
+					m.dialogs.Dismiss(dlgRunDetail)
+					return m, m.openRunByID(taskName, runID), true
+				}
+			}
+		}
+	case tea.MouseMsg:
+	default:
+		return m, nil, false
+	}
+	cmd, closed := d.Update(msg)
+	if closed {
+		m.dialogs.Dismiss(kind)
+	}
+	return m, tea.Batch(cmd, m.dialogs.SyncMouseState()), true
 }
 
 func (m Model) dispatchInputMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		model, cmd := m.handleWindowSize(msg)
-		return model, cmd, true
+		return handled(m.handleWindowSize(msg))
 	case tea.MouseMsg:
-		model, cmd := m.handleMouse(msg)
-		return model, cmd, true
+		return handled(m.handleMouse(msg))
 	case tea.KeyPressMsg:
-		model, cmd := m.handleKey(msg)
-		return model, cmd, true
+		return handled(m.handleKey(msg))
 	}
 	return m, nil, false
 }
@@ -104,17 +126,13 @@ func (m Model) dispatchInputMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 func (m Model) dispatchStreamMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case uikit.ExecWindowFetchedMsg:
-		model, cmd := m.handleExecWindowFetched(msg)
-		return model, cmd, true
+		return handled(m.handleExecWindowFetched(msg))
 	case uikit.SSEConnectedMsg:
-		model, cmd := m.handleSSEConnected(msg)
-		return model, cmd, true
+		return handled(m.handleSSEConnected(msg))
 	case uikit.SSEEventMsg:
-		model, cmd := m.handleSSEEventMsg(msg)
-		return model, cmd, true
+		return handled(m.handleSSEEventMsg(msg))
 	case uikit.SSEDisconnectedMsg:
-		model, cmd := m.handleSSEDisconnected(msg)
-		return model, cmd, true
+		return handled(m.handleSSEDisconnected(msg))
 	}
 	return m, nil, false
 }
@@ -122,47 +140,33 @@ func (m Model) dispatchStreamMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 func (m Model) dispatchLogMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case uikit.LogOlderLoadedMsg:
-		model, cmd := m.handleLogOlderLoaded(msg)
-		return model, cmd, true
+		return handled(m.handleLogOlderLoaded(msg))
 	case uikit.LogTailLoadedMsg:
-		model, cmd := m.handleLogTailLoaded(msg)
-		return model, cmd, true
+		return handled(m.handleLogTailLoaded(msg))
 	case uikit.LogStreamConnectedMsg:
-		model, cmd := m.handleLogStreamConnected(msg)
-		return model, cmd, true
+		return handled(m.handleLogStreamConnected(msg))
 	case uikit.LogLineMsg:
-		model, cmd := m.handleLogLine(msg)
-		return model, cmd, true
+		return handled(m.handleLogLine(msg))
 	case uikit.LogRegionMsg:
-		model, cmd := m.handleLogRegion(msg)
-		return model, cmd, true
+		return handled(m.handleLogRegion(msg))
 	case uikit.LogRotatedMsg:
-		model, cmd := m.handleLogRotated(msg)
-		return model, cmd, true
+		return handled(m.handleLogRotated(msg))
 	case uikit.LogDroppedMsg:
-		model, cmd := m.handleLogDropped(msg)
-		return model, cmd, true
+		return handled(m.handleLogDropped(msg))
 	case uikit.LogDoneMsg:
-		model, cmd := m.handleLogDone(msg)
-		return model, cmd, true
+		return handled(m.handleLogDone(msg))
 	case uikit.DebugLogMsg:
-		model, cmd := m.handleDebugLog(msg)
-		return model, cmd, true
+		return handled(m.handleDebugLog(msg))
 	case uikit.ReconnectLogMsg:
-		model, cmd := m.handleReconnectLog(msg)
-		return model, cmd, true
+		return handled(m.handleReconnectLog(msg))
 	case uikit.LogLineHistoryMsg:
-		model, cmd := m.handleLogLineHistory(msg)
-		return model, cmd, true
+		return handled(m.handleLogLineHistory(msg))
 	case uikit.DaemonLogConnectedMsg:
-		model, cmd := m.handleDaemonLogConnected(msg)
-		return model, cmd, true
+		return handled(m.handleDaemonLogConnected(msg))
 	case uikit.DaemonLogLineMsg:
-		model, cmd := m.handleDaemonLogLine(msg)
-		return model, cmd, true
+		return handled(m.handleDaemonLogLine(msg))
 	case uikit.DaemonLogDisconnectedMsg:
-		model, cmd := m.handleDaemonLogDisconnected()
-		return model, cmd, true
+		return handled(m.handleDaemonLogDisconnected())
 	}
 	return m, nil, false
 }
@@ -170,14 +174,11 @@ func (m Model) dispatchLogMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 func (m Model) dispatchNotificationMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case uikit.NotificationUnreadCountMsg:
-		model, cmd := m.handleNotificationUnreadCount(msg)
-		return model, cmd, true
+		return handled(m.handleNotificationUnreadCount(msg))
 	case uikit.NotificationsLoadedMsg:
-		model, cmd := m.handleNotificationsLoaded(msg)
-		return model, cmd, true
+		return handled(m.handleNotificationsLoaded(msg))
 	case uikit.NotificationReadStateMsg:
-		model, cmd := m.handleNotificationReadState(msg)
-		return model, cmd, true
+		return handled(m.handleNotificationReadState(msg))
 	case uikit.NotificationBoundaryFlashClearedMsg:
 		m.notifications.ClearBoundaryFlash()
 		return m, nil, true
@@ -188,23 +189,17 @@ func (m Model) dispatchNotificationMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 func (m Model) dispatchActionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case uikit.TriggerRunMsg:
-		model, cmd := m.handleTriggerRun(msg)
-		return model, cmd, true
+		return handled(m.handleTriggerRun(msg))
 	case uikit.StopRunMsg:
-		model, cmd := m.handleStopRun(msg)
-		return model, cmd, true
+		return handled(m.handleStopRun(msg))
 	case uikit.RestartServiceMsg:
-		model, cmd := m.handleRestartService(msg)
-		return model, cmd, true
+		return handled(m.handleRestartService(msg))
 	case uikit.StopServiceMsg:
-		model, cmd := m.handleStopService(msg)
-		return model, cmd, true
+		return handled(m.handleStopService(msg))
 	case uikit.DeleteRunMsg:
-		model, cmd := m.handleDeleteRun(msg)
-		return model, cmd, true
+		return handled(m.handleDeleteRun(msg))
 	case uikit.SchedulePauseMsg:
-		model, cmd := m.handleSchedulePause(msg)
-		return model, cmd, true
+		return handled(m.handleSchedulePause(msg))
 	case uikit.TaskStateMsg:
 		if msg.Err == nil {
 			m.info.PausedTasks = msg.Paused
@@ -213,11 +208,9 @@ func (m Model) dispatchActionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		return m, nil, true
 	case uikit.BulkActionMsg:
-		model, cmd := m.handleBulkAction(msg)
-		return model, cmd, true
+		return handled(m.handleBulkAction(msg))
 	case uikit.BulkDeleteResultMsg:
-		model, cmd := m.handleBulkDeleteResult(msg)
-		return model, cmd, true
+		return handled(m.handleBulkDeleteResult(msg))
 	}
 	return m, nil, false
 }
@@ -225,11 +218,9 @@ func (m Model) dispatchActionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 func (m Model) dispatchLifecycleMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case logsearch.SelectMsg:
-		model, cmd := m.handleLogSearchSelect(msg)
-		return model, cmd, true
+		return handled(m.handleLogSearchSelect(msg))
 	case uikit.TickMsg:
-		model, cmd := m.handleTick()
-		return model, cmd, true
+		return handled(m.handleTick())
 	case coalesceFlushMsg:
 		// The coalesce window elapsed; the reset at the top of Update already
 		// cleared m.coalesce, so this frame rebuilds fresh. Record it as the last
@@ -238,32 +229,23 @@ func (m Model) dispatchLifecycleMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.lastRenderAt = time.Now()
 		return m, nil, true
 	case uikit.QuitMsg:
-		model, cmd := m.handleQuit(msg)
-		return model, cmd, true
+		return handled(m.handleQuit(msg))
 	case uikit.FlashExpiredMsg:
-		model, cmd := m.handleFlashExpired()
-		return model, cmd, true
+		return handled(m.handleFlashExpired())
 	case uikit.OpenBrowserMsg:
-		model, cmd := m.handleOpenBrowser(msg)
-		return model, cmd, true
+		return handled(m.handleOpenBrowser(msg))
 	case uikit.OpenRunMsg:
-		model, cmd := m.handleOpenRun(msg)
-		return model, cmd, true
+		return handled(m.handleOpenRun(msg))
 	case uikit.SystemStatsMsg:
-		model, cmd := m.handleSystemStats(msg)
-		return model, cmd, true
+		return handled(m.handleSystemStats(msg))
 	case uikit.DaemonInfoMsg:
-		model, cmd := m.handleDaemonInfo(msg)
-		return model, cmd, true
+		return handled(m.handleDaemonInfo(msg))
 	case uikit.ReloadResultMsg:
-		model, cmd := m.handleReloadResult(msg)
-		return model, cmd, true
+		return handled(m.handleReloadResult(msg))
 	case uikit.MetricsHistoryMsg:
-		model, cmd := m.handleMetricsHistory(msg)
-		return model, cmd, true
+		return handled(m.handleMetricsHistory(msg))
 	case uikit.RunSummaryMsg:
-		model, cmd := m.handleRunSummary(msg)
-		return model, cmd, true
+		return handled(m.handleRunSummary(msg))
 	case uikit.TaskSummaryMsg:
 		m.dialogs.ApplyTaskSummary(msg)
 		return m, nil, true
@@ -332,41 +314,9 @@ func (m Model) handleNotificationReadState(msg uikit.NotificationReadStateMsg) (
 	return m, nil
 }
 
-// interceptConfirmDialog handles input while the confirm dialog is visible.
-// Returns intercepted=false to let the main dispatcher process the message
-// (e.g. WindowSizeMsg keeps layout responsive even with a dialog open).
-func (m Model) interceptConfirmDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	if m.dialogs.IsShuttingDown() {
-		return m.interceptShuttingDownDialog(msg)
-	}
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == keyCtrlC {
-			m.streams.Shutdown()
-			m.quitAction = uikit.QuitKeepDaemon
-			return m, tea.Quit, true
-		}
-		cmd, closed := m.dialogs.UpdateConfirmKeep(msg)
-		if cmd != nil {
-			return m, m.execConfirmCmd(cmd, closed), true
-		}
-		if closed {
-			m.dialogs.DismissConfirm()
-		}
-		return m, nil, true
-	case tea.MouseMsg:
-		cmd, closed := m.dialogs.UpdateConfirmKeep(msg)
-		if cmd != nil {
-			return m, m.execConfirmCmd(cmd, closed), true
-		}
-		if closed {
-			m.dialogs.DismissConfirm()
-		}
-		return m, nil, true
-	}
-	return m, nil, false
-}
-
+// interceptShuttingDownDialog handles input while the quit confirm shows its
+// shutdown spinner: ctrl+c quits without waiting, the spinner's own messages
+// drive it, and all other key/mouse input is swallowed.
 func (m Model) interceptShuttingDownDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
@@ -383,184 +333,6 @@ func (m Model) interceptShuttingDownDialog(msg tea.Msg) (tea.Model, tea.Cmd, boo
 		m.shutdownErr = msg.Err
 		return m, tea.Quit, true
 	case tea.MouseMsg:
-		return m, nil, true
-	}
-	return m, nil, false
-}
-
-// interceptParamFormDialog handles input while the parameter form is visible.
-// The form captures all keys (it's a modal); a confirmed submit returns the
-// trigger command, esc cancels, and ctrl+c escalates to the quit confirm.
-func (m Model) interceptParamFormDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == keyCtrlC {
-			m.dialogs.DismissParamForm()
-			cmd := m.requestQuit()
-			return m, cmd, true
-		}
-		cmd, _ := m.dialogs.UpdateParamForm(msg)
-		return m, cmd, true
-	case tea.MouseMsg:
-		cmd, _ := m.dialogs.UpdateParamForm(msg)
-		return m, cmd, true
-	}
-	return m, nil, false
-}
-
-// interceptRunParamsDialog handles input while the read-only run-params modal
-// is visible. Any close key dismisses it; ctrl+c escalates to the quit confirm.
-// Mouse state is re-synced on close so terminal selection is re-enabled.
-func (m Model) interceptRunParamsDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == keyCtrlC {
-			m.dialogs.DismissRunParams()
-			cmd := m.dialogs.SyncMouseState()
-			quitCmd := m.requestQuit()
-			return m, tea.Batch(cmd, quitCmd), true
-		}
-		if m.dialogs.UpdateRunParams(msg) {
-			return m, m.dialogs.SyncMouseState(), true
-		}
-		return m, nil, true
-	case tea.MouseMsg:
-		if m.dialogs.UpdateRunParams(msg) {
-			return m, m.dialogs.SyncMouseState(), true
-		}
-		return m, nil, true
-	}
-	return m, nil, false
-}
-
-// interceptCopyDialog handles input while the copy dialog is visible.
-func (m Model) interceptCopyDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == keyCtrlC {
-			m.dialogs.DismissCopy()
-			cmd := m.dialogs.SyncMouseState()
-			quitCmd := m.requestQuit()
-			return m, tea.Batch(cmd, quitCmd), true
-		}
-		if m.dialogs.UpdateCopy(msg) {
-			return m, m.dialogs.SyncMouseState(), true
-		}
-		return m, nil, true
-	case tea.MouseMsg:
-		if m.dialogs.UpdateCopy(msg) {
-			return m, m.dialogs.SyncMouseState(), true
-		}
-		return m, nil, true
-	}
-	return m, nil, false
-}
-
-// interceptLogHistoryDialog handles input while the frame-history viewer is
-// visible. Scroll keys are consumed by the dialog; any close key dismisses it;
-// ctrl+c escalates to the quit confirm.
-func (m Model) interceptLogHistoryDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == keyCtrlC {
-			m.dialogs.DismissLogHistory()
-			cmd := m.requestQuit()
-			return m, cmd, true
-		}
-		m.dialogs.UpdateLogHistory(msg)
-		return m, nil, true
-	case tea.MouseMsg:
-		m.dialogs.UpdateLogHistory(msg)
-		return m, nil, true
-	}
-	return m, nil, false
-}
-
-// interceptNewReleaseDialog handles input while the update-details modal is
-// visible: tab/click focuses the release-notes link, enter/click on it opens
-// the browser, any other key or click dismisses the dialog; ctrl+c escalates
-// to the quit confirm.
-func (m Model) interceptNewReleaseDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == keyCtrlC {
-			m.dialogs.DismissNewRelease()
-			cmd := m.requestQuit()
-			return m, cmd, true
-		}
-		cmd, _ := m.dialogs.UpdateNewRelease(msg)
-		return m, cmd, true
-	case tea.MouseMsg:
-		cmd, _ := m.dialogs.UpdateNewRelease(msg)
-		return m, cmd, true
-	}
-	return m, nil, false
-}
-
-// interceptTaskDetailDialog handles input while the task inspector is visible.
-// Only key/mouse messages are consumed (so async TaskSummaryMsg fetches still
-// reach the dispatchers and fill in the health line); ctrl+c escalates to quit.
-func (m Model) interceptTaskDetailDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == keyCtrlC {
-			m.dialogs.DismissTaskDetail()
-			cmd := m.requestQuit()
-			return m, cmd, true
-		}
-		m.dialogs.UpdateTaskDetail(msg)
-		return m, nil, true
-	case tea.MouseMsg:
-		m.dialogs.UpdateTaskDetail(msg)
-		return m, nil, true
-	}
-	return m, nil, false
-}
-
-// interceptRunDetailDialog handles input while the run inspector is visible.
-// Enter opens the parent run when the displayed run is a retry; ctrl+c escalates
-// to quit; any other close key dismisses it.
-func (m Model) interceptRunDetailDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	keyMsg, ok := msg.(tea.KeyPressMsg)
-	if !ok {
-		if mouse, isMouse := msg.(tea.MouseMsg); isMouse {
-			m.dialogs.UpdateRunDetail(mouse)
-			return m, nil, true
-		}
-		return m, nil, false
-	}
-	switch keyMsg.String() {
-	case keyCtrlC:
-		m.dialogs.DismissRunDetail()
-		cmd := m.requestQuit()
-		return m, cmd, true
-	case "enter":
-		if taskName, runID, hasParent := m.dialogs.RunDetailParent(); hasParent {
-			m.dialogs.DismissRunDetail()
-			return m, m.openRunByID(taskName, runID), true
-		}
-		return m, nil, true
-	}
-	m.dialogs.UpdateRunDetail(keyMsg)
-	return m, nil, true
-}
-
-// interceptHelpDialog handles input while the help overlay is visible. The
-// overlay is modal: close keys dismiss it, scroll keys move its viewport, and
-// every other key/mouse event is swallowed so it never leaks to the background.
-// ctrl+c escalates to the quit confirm.
-func (m Model) interceptHelpDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == keyCtrlC {
-			m.dialogs.DismissHelp()
-			cmd := m.requestQuit()
-			return m, cmd, true
-		}
-		m.dialogs.UpdateHelp(msg)
-		return m, nil, true
-	case tea.MouseMsg:
-		m.dialogs.UpdateHelp(msg)
 		return m, nil, true
 	}
 	return m, nil, false
@@ -876,7 +648,7 @@ func (m Model) handleRestartService(msg uikit.RestartServiceMsg) (tea.Model, tea
 	// auto-open follows a single-instance service there once it starts).
 	oldID := m.execView.Run.ID
 	cmds := []tea.Cmd{m.closeExecView()}
-	if run := m.latestRunningExec(msg.TaskName); run != nil && run.ID != oldID && m.isSingleInstanceService(msg.TaskName) {
+	if run := m.execWindow.LatestRunning(msg.TaskName); run != nil && run.ID != oldID && m.isSingleInstanceService(msg.TaskName) {
 		cmds = append(cmds, m.openExecView(run))
 	}
 	return m, tea.Batch(cmds...)
@@ -914,7 +686,7 @@ func (m Model) handleLogLineHistory(msg uikit.LogLineHistoryMsg) (tea.Model, tea
 	if len(msg.Frames) == 0 {
 		return m, m.dialogs.Flash("No frame history for this line", 3*time.Second)
 	}
-	m.dialogs.ShowLogHistory(NewLogHistoryDialog(msg.Line, msg.Frames, msg.Committed))
+	m.dialogs.Show(dlgLogHistory, NewLogHistoryDialog(msg.Line, msg.Frames, msg.Committed))
 	return m, nil
 }
 
@@ -981,9 +753,6 @@ func (m Model) handleDaemonInfo(msg uikit.DaemonInfoMsg) (tea.Model, tea.Cmd) {
 // reloadConfig triggers an explicit config reload from inside the TUI. The
 // result arrives as a ReloadResultMsg.
 func (m *Model) reloadConfig() tea.Cmd {
-	if m.client == nil {
-		return nil
-	}
 	return tea.Batch(m.dialogs.Flash("Reloading config…", 3*time.Second), m.streams.Reload())
 }
 
@@ -1164,35 +933,14 @@ func (m *Model) handleNotificationSSEEvent(evt apiclient.RunStreamEvent) (cmd te
 
 const logReconnectDelay = 500 * time.Millisecond
 
-// execConfirmCmd hands a confirm-dialog callback back to Bubble Tea as an
-// ordinary async tea.Cmd. Most callbacks (trigger/restart/stop run, etc.) make
-// a real network call through the client — invoking cmd() synchronously here
-// would block the whole Update loop, freezing repaints and key handling, for
-// as long as that call takes. Whatever message the callback eventually
-// produces — including uikit.QuitMsg — flows back through the normal dispatch
-// tables (dispatchLifecycleMsg → handleQuit, dispatchActionMsg → the
-// trigger/restart/stop handlers, ...), so no special-casing is needed here.
-//
-// closed indicates whether the dialog signalled it should close; when true we
-// dismiss it up front. handleQuit's startShutdownSpinner already tolerates
-// the dialog having been dismissed already (it opens a fresh spinner dialog
-// if none is active), so this is safe for the quit-and-shut-down-daemon path
-// too.
-func (m *Model) execConfirmCmd(cmd tea.Cmd, closed bool) tea.Cmd {
-	if closed {
-		m.dialogs.DismissConfirm()
-	}
-	return cmd
-}
-
 // startShutdownSpinner transitions the confirm dialog into the shutting-down
 // spinner state and fires the shutdown function as a background command.
 // If no dialog is open (e.g. uikit.QuitMsg arrived without a confirm), a new one is
 // created so the spinner has somewhere to render.
 func (m *Model) startShutdownSpinner() tea.Cmd {
-	if !m.dialogs.HasConfirm() {
+	if !m.dialogs.Has(dlgConfirm) {
 		dialog := NewConfirmDialog("Quit", "", nil)
-		m.dialogs.ShowConfirm(dialog)
+		m.dialogs.Show(dlgConfirm, dialog)
 	}
 	spinnerCmd := m.dialogs.StartShutdown()
 	shutdownFn := m.shutdownFunc

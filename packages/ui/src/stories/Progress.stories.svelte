@@ -63,3 +63,29 @@
         <p class="text-sm text-on-surface-muted">Processing 847 of 1,234 records</p>
     </div>
 </Story>
+
+<Story name="Thresholds" asChild>
+    <div class="max-w-md space-y-4">
+        <Progress
+            value={42}
+            size="sm"
+            thresholds={{ warning: 70, danger: 90 }}
+            label="CPU"
+            showLabel
+        />
+        <Progress
+            value={76}
+            size="sm"
+            thresholds={{ warning: 70, danger: 90 }}
+            label="Memory"
+            showLabel
+        />
+        <Progress
+            value={95}
+            size="sm"
+            thresholds={{ warning: 70, danger: 90 }}
+            label="Disk"
+            showLabel
+        />
+    </div>
+</Story>

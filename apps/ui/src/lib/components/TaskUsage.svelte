@@ -4,7 +4,7 @@
 <script lang="ts">
     import { formatBytes, Tooltip } from "@runwisp/ui";
     import { systemStore } from "$lib/stores/system.svelte";
-    import type { Task } from "$lib/types";
+    import type { Task } from "@runwisp/common";
 
     // Live CPU and memory of the task's running shell runs. Renders nothing
     // while nothing is running or the backend can't be measured.

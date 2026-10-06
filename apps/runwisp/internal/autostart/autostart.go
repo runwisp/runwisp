@@ -7,7 +7,7 @@
 // The package is OS-aware via build tags. Common types and helpers
 // (plan computation, path resolution, prompts) live in OS-neutral
 // files; the actual installer is selected at compile time by
-// systemd_linux.go / launchd_darwin.go / unsupported_other.go.
+// systemd_linux.go / launchd_darwin.go.
 package autostart
 
 import (
@@ -250,7 +250,6 @@ type Installer interface {
 
 	ComputePlan(ctx context.Context, opts InstallOptions) (Plan, error)
 	Install(ctx context.Context, opts InstallOptions, out io.Writer) error
-	ComputeUninstallPlan(ctx context.Context, opts UninstallOptions) (Plan, error)
 	Uninstall(ctx context.Context, opts UninstallOptions, out io.Writer) error
 	Status(ctx context.Context, opts InstallOptions) (Status, error)
 
@@ -278,8 +277,8 @@ type Installer interface {
 	EnsurePasswordDropIn(ctx context.Context, opts InstallOptions, password string) (path string, wrote bool, err error)
 
 	// SupportsPasswordDropIn reports whether EnsurePasswordDropIn can actually
-	// write a drop-in on this OS. systemd can; launchd and an unsupported OS
-	// cannot and fall back to manualPasswordHint. Lets a caller (the --dry-run
+	// write a drop-in on this OS. systemd can; launchd cannot and falls
+	// back to manualPasswordHint. Lets a caller (the --dry-run
 	// preview) describe what the real install will do instead of assuming
 	// every OS behaves like systemd.
 	SupportsPasswordDropIn() bool
@@ -384,9 +383,6 @@ func hasServiceEnvPrefix(entry string) bool {
 	}
 	return false
 }
-
-// ErrUnsupported is returned by `New` on platforms without an installer.
-var ErrUnsupported = errors.New("autostart: no installer for this OS — see https://docs.runwisp.com/operations/autostart/ for manual setup")
 
 // ErrConflict means the unit file exists but is missing the managed
 // marker. The caller should suggest `--force` or manual cleanup.

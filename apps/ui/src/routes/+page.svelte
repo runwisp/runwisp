@@ -9,13 +9,13 @@
     import { RunMotion } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { runsApi, tasksApi, systemApi, systemEventSchema, type MetricsSample } from "$lib/api";
-    import { runUpdatesStore, removeRun, systemStore, appEventStream } from "$lib/stores";
+    import { runUpdatesStore, systemStore, taskStore, appEventStream } from "$lib/stores";
     import { toTaskPageId } from "$lib/utils/task-id";
     import { mergeRecentRuns, mergeRunningRuns, upsertRun } from "$lib/utils/overview-runs";
     import { sortByCreatedAtDesc } from "$lib/utils/sort";
     import { safeParseJSON } from "$lib/utils/parse";
     import { AsyncData } from "$lib/utils/async-data.svelte";
-    import { type Run, type Task } from "$lib/types";
+    import type { Run } from "@runwisp/common";
 
     const RECENT_RUN_LIMIT = 16;
     const RUNNING_RUN_LIMIT = 8;
@@ -25,7 +25,6 @@
     const METRICS_HISTORY_LIMIT = 120;
 
     interface DashboardState {
-        tasks: Task[];
         recentRuns: Run[];
         runningRuns: Run[];
         totalRuns: number;
@@ -33,7 +32,6 @@
     }
 
     let dashState = $state<DashboardState>({
-        tasks: [],
         recentRuns: [],
         runningRuns: [],
         totalRuns: 0,
@@ -91,8 +89,9 @@
     $effect(() => {
         const unsubscribe = runUpdatesStore.subscribeToUpdates((event) => {
             if (event.type === "run.deleted") {
-                dashState.recentRuns = removeRun(dashState.recentRuns, event.data.runId);
-                dashState.runningRuns = removeRun(dashState.runningRuns, event.data.runId);
+                const { runId } = event.data;
+                dashState.recentRuns = dashState.recentRuns.filter((r) => r.id !== runId);
+                dashState.runningRuns = dashState.runningRuns.filter((r) => r.id !== runId);
                 dashState.totalRuns = Math.max(0, dashState.totalRuns - 1);
                 return;
             }
@@ -108,6 +107,7 @@
 
             // A new run means the scheduler advanced that task's nextRunAt —
             // refetch tasks so "Up next" and next-run columns stay current.
+            // (tasks.changed is already handled by the layout.)
             // Pointless when the local scheduler is inactive (station mode):
             // nextRunAt is always empty and that UI is hidden anyway.
             if (event.type === "run.created") {
@@ -130,18 +130,12 @@
             );
         });
 
-        // A reload or a schedule pause changes the task list without a run.
-        const unsubscribeTasks = appEventStream.subscribe("tasks.changed", () => {
-            void refreshTasks();
-        });
-
         void pageData.fetch();
         void loadMetricsHistory();
 
         return () => {
             unsubscribe();
             unsubscribeSystem();
-            unsubscribeTasks();
             if (tasksRefreshTimer) {
                 clearTimeout(tasksRefreshTimer);
                 tasksRefreshTimer = null;
@@ -152,7 +146,7 @@
     $effect(() => {
         const data = pageData.data;
         if (data) {
-            dashState.tasks = data.tasks;
+            taskStore.items = data.tasks;
             dashState.totalRuns = data.totalRuns;
             // Merge the snapshot through the same phase-order guard the SSE path
             // uses, so a fetch that resolves with an older view can't revert a
@@ -183,16 +177,8 @@
         if (tasksRefreshTimer) return;
         tasksRefreshTimer = setTimeout(() => {
             tasksRefreshTimer = null;
-            void refreshTasks();
+            void taskStore.refresh();
         }, TASKS_REFRESH_DEBOUNCE_MS);
-    }
-
-    async function refreshTasks() {
-        try {
-            dashState.tasks = await tasksApi.getAll();
-        } catch {
-            // keep the stale list — connection loss is surfaced by connectionStore
-        }
     }
 
     async function loadMetricsHistory() {
@@ -219,15 +205,12 @@
 <AsyncDataView data={pageData}>
     {#snippet skeleton()}<OverviewSkeleton />{/snippet}
     <OverviewPage
-        uptime={systemStore.uptime}
         {stats}
         recentRuns={dashState.recentRuns}
         runningRuns={dashState.runningRuns}
         totalRuns={dashState.totalRuns}
-        tasks={dashState.tasks.map((t) => ({ id: toTaskPageId(t.name), ...t }))}
+        tasks={taskStore.items.map((t) => ({ id: toTaskPageId(t.name), ...t }))}
         metricsHistory={dashState.metricsHistory}
-        stationMode={systemStore.stationEnabled}
-        schedulingActive={systemStore.schedulingActive}
         onViewAllRuns={() => goto(resolve("/runs"))}
         onTaskClick={handleTaskClick}
         onRunClick={handleRunClick}

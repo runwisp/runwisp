@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -142,7 +142,7 @@ func renderError(w io.Writer, title, details, hint string) {
 // the right name.
 func unknownTaskError(taskName string, available []string) error {
 	sorted := append([]string(nil), available...)
-	sort.Strings(sorted)
+	slices.Sort(sorted)
 
 	var b strings.Builder
 	if suggestion := textutil.Closest(taskName, sorted); suggestion != "" {
@@ -177,7 +177,7 @@ func runwispPortConflictError(host string, port int, info *model.InstanceInfo) e
 	fmt.Fprintf(&b, "  - Stop it:              runwisp stop --data %s\n", info.DataDir)
 	b.WriteString("  - Or run on a different port:  runwisp --port <PORT>")
 	return &userFacingError{
-		title:   fmt.Sprintf("another RunWisp daemon (v%s, pid %d) is already running on %s:%d", info.Version, info.Pid, displayHost(host), port),
+		title:   fmt.Sprintf("another RunWisp daemon (v%s, pid %d) is already running on %s:%d", info.Version, info.Pid, bindHost(host), port),
 		details: b.String(),
 	}
 }

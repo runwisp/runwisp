@@ -46,7 +46,7 @@ type fakeTaskRunner struct {
 	jittered []jitteredCall
 }
 
-func (r *fakeTaskRunner) TriggerRun(name string, _ model.TriggeredBy) (*model.Run, error) {
+func (r *fakeTaskRunner) TriggerRunWithOptions(name string, _ TriggerRunOptions) (*model.Run, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.triggerErr != nil {
@@ -54,10 +54,6 @@ func (r *fakeTaskRunner) TriggerRun(name string, _ model.TriggeredBy) (*model.Ru
 	}
 	r.triggers = append(r.triggers, name)
 	return &model.Run{TaskName: name}, nil
-}
-
-func (r *fakeTaskRunner) TriggerRunWithOptions(name string, _ TriggerRunOptions) (*model.Run, error) {
-	return r.TriggerRun(name, model.TriggeredByCron)
 }
 
 func (r *fakeTaskRunner) RecordSkippedFiring(name string, reason model.EndReason, _ model.TriggeredBy) error {

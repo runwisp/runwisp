@@ -4,7 +4,7 @@
 import { tasksApi, AuthRequiredError } from "$lib/api";
 import { toast, extractErrorMessage } from "@runwisp/ui";
 import { connectionStore } from "$lib/stores/connection.svelte";
-import type { Task, Run } from "$lib/types";
+import type { Task } from "@runwisp/common";
 
 interface TaskStoreDeps {
     getTasks?: () => Promise<Task[]>;
@@ -91,7 +91,3 @@ export function createTaskStore(deps: TaskStoreDeps = {}): TaskStore {
 }
 
 export const taskStore = createTaskStore();
-
-export function removeRun(list: Run[], runId: string): Run[] {
-    return list.filter((r) => r.id !== runId);
-}

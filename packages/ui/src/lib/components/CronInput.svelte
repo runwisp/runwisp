@@ -8,10 +8,13 @@
     import cronstrue from "cronstrue";
     import { CronExpressionParser } from "cron-parser";
 
-    let { value = $bindable(), disabled = false } = $props<{
+    let {
+        value = $bindable(),
+        disabled = false,
+    }: {
         value: string;
         disabled?: boolean;
-    }>();
+    } = $props();
 
     let examplesModalOpen = $state(false);
 

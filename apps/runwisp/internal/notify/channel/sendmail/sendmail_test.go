@@ -26,7 +26,7 @@ func newTestRenderer(t *testing.T) render.Renderer {
 	t.Helper()
 	body, err := render.LoadDefaultTemplate("sendmail")
 	require.NoError(t, err)
-	r, err := render.NewTemplateRenderer("sendmail:test", body, "text/plain", render.DefaultTitle)
+	r, err := render.NewTemplateRenderer("sendmail:test", body, "text/plain", render.DefaultTitle, render.TemplateContext{})
 	require.NoError(t, err)
 	return r
 }

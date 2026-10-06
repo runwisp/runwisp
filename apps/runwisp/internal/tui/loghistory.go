@@ -29,7 +29,7 @@ type histRow struct {
 // NewLogHistoryDialog flattens the frames into display rows. committed is the
 // final on-disk text of the anchor line, shown last so the operator sees where
 // the animation landed.
-func NewLogHistoryDialog(line int64, frames [][]string, committed string) LogHistoryDialog {
+func NewLogHistoryDialog(line int64, frames [][]string, committed string) *LogHistoryDialog {
 	var rows []histRow
 	for i, frame := range frames {
 		rows = append(rows, histRow{text: frameLabel(i+1, len(frames)), header: true})
@@ -39,7 +39,7 @@ func NewLogHistoryDialog(line int64, frames [][]string, committed string) LogHis
 	}
 	rows = append(rows, histRow{text: "committed", header: true})
 	rows = append(rows, histRow{text: uikit.SanitizeControls(committed)})
-	return LogHistoryDialog{line: line, rows: rows}
+	return &LogHistoryDialog{line: line, rows: rows}
 }
 
 func frameLabel(n, total int) string {
@@ -51,17 +51,17 @@ func frameLabel(n, total int) string {
 const logHistoryVisibleRows = 16
 
 // Update reports true when the dialog should close.
-func (d *LogHistoryDialog) Update(msg tea.Msg) bool {
+func (d *LogHistoryDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
 	keyMsg, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		if _, ok := msg.(tea.MouseClickMsg); ok {
-			return true
+			return nil, true
 		}
-		return false
+		return nil, false
 	}
 	switch keyMsg.String() {
 	case "esc", "enter", "q":
-		return true
+		return nil, true
 	case "up", "k":
 		if d.scroll > 0 {
 			d.scroll--
@@ -72,28 +72,20 @@ func (d *LogHistoryDialog) Update(msg tea.Msg) bool {
 		}
 	case "pgup":
 		d.scroll -= logHistoryVisibleRows
-		if d.scroll < 0 {
-			d.scroll = 0
-		}
+		d.scroll = max(d.scroll, 0)
 	case "pgdown":
 		d.scroll += logHistoryVisibleRows
-		if d.scroll > d.maxScroll() {
-			d.scroll = d.maxScroll()
-		}
+		d.scroll = min(d.scroll, d.maxScroll())
 	case "g", "home":
 		d.scroll = 0
 	case "G", "end":
 		d.scroll = d.maxScroll()
 	}
-	return false
+	return nil, false
 }
 
 func (d *LogHistoryDialog) maxScroll() int {
-	ms := len(d.rows) - logHistoryVisibleRows
-	if ms < 0 {
-		return 0
-	}
-	return ms
+	return max(len(d.rows)-logHistoryVisibleRows, 0)
 }
 
 func (d *LogHistoryDialog) View(screenWidth, screenHeight int) string {
@@ -105,28 +97,27 @@ func (d *LogHistoryDialog) View(screenWidth, screenHeight int) string {
 		modalEmptyLine(innerWidth),
 	}
 
-	end := d.scroll + logHistoryVisibleRows
-	if end > len(d.rows) {
-		end = len(d.rows)
-	}
+	end := min(d.scroll+logHistoryVisibleRows, len(d.rows))
 	for i := d.scroll; i < end; i++ {
 		lines = append(lines, histContentLine(d.rows[i], innerWidth))
 	}
 
 	lines = append(lines,
 		modalEmptyLine(innerWidth),
-		modalSurfaceLine(scrollHint(d.scroll, d.maxScroll()), innerWidth, uikit.ColorTextMuted, false),
+		modalSurfaceLine(scrollHint(d.maxScroll(), "esc close"), innerWidth, uikit.ColorTextMuted, false),
 		modalEmptyLine(innerWidth),
 	)
 
 	return renderModalBox(screenWidth, screenHeight, dialogWidth, uikit.ColorSecondary, lines).view
 }
 
-func scrollHint(scroll, maxScroll int) string {
+// scrollHint is a scrollable modal's footer: the close hint, prefixed with
+// the scroll keys when there is anything to scroll.
+func scrollHint(maxScroll int, closeHint string) string {
 	if maxScroll == 0 {
-		return "esc close"
+		return closeHint
 	}
-	return "↑/↓ scroll · esc close"
+	return "↑/↓ scroll · " + closeHint
 }
 
 // histContentLine renders one frame row (or frame header) inside the modal,

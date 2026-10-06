@@ -167,10 +167,10 @@ func classifySystemdLine(sections *[]systemdSection, cur *systemdSection, logica
 	if cur == nil {
 		return nil // directive before any section header
 	}
-	if eq := strings.IndexByte(trimmed, '='); eq > 0 {
+	if key, value, ok := strings.Cut(trimmed, "="); ok && key != "" {
 		cur.kvs = append(cur.kvs, systemdKV{
-			key:   strings.TrimSpace(trimmed[:eq]),
-			value: strings.TrimSpace(trimmed[eq+1:]),
+			key:   strings.TrimSpace(key),
+			value: strings.TrimSpace(value),
 		})
 	}
 	return cur
@@ -480,7 +480,7 @@ func systemdNoteDropped(ref itemRef, dropped []string, sawSandbox, sawSocket boo
 // systemdApplyKillSignal maps KillSignal= to stop_signal, noting anything
 // outside RunWisp's allowlist instead of writing an invalid value.
 func systemdApplyKillSignal(b *block, ref itemRef, key, value string) {
-	canonical, ok := normalizeSignal(value)
+	canonical, ok := model.NormalizeSignalName(value)
 	if !ok {
 		ref.note(NoteKeyUnreadable, key+"="+value+" isn't a signal RunWisp can read, so it was dropped.")
 		return

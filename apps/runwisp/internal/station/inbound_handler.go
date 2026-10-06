@@ -6,10 +6,10 @@ package station
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
-
-	"log/slog"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
@@ -91,9 +91,9 @@ func (h *InboundHandler) Uploader() *LogUploader { return h.uploader }
 // either fresh or a recognized duplicate), before the run is triggered —
 // the control plane uses it to stop re-dispatching.
 func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message protocol.ExecutionDispatchMessage, ack func()) error {
-	executionID := strings.TrimSpace(message.Execution.ExecutionID)
-	if executionID == "" {
-		return &StationError{Kind: StationErrorKindValidation, Message: "executionId is required"}
+	executionID, err := requireExecutionID(message.Execution.ExecutionID)
+	if err != nil {
+		return err
 	}
 
 	// Idempotent re-dispatch guard: the control plane re-publishes a dispatch
@@ -122,10 +122,10 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 		}
 	}
 
-	taskName, _, resolveErr := h.resolveDispatchTask(message.Execution)
+	taskName, resolveErr := h.resolveDispatchTask(message.Execution)
 	if resolveErr != nil {
 		h.releaseReservation(executionID)
-		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, ptr(-1), nil, nowPtr()))
+		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, new(-1), nil, new(time.Now().UTC())))
 		if h.uploader != nil {
 			h.uploader.forget(ctx, executionID)
 		}
@@ -154,11 +154,8 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 // terminal run the stored update is re-queued so a control plane that missed the
 // original report converges instead of re-running the task.
 func (h *InboundHandler) isDuplicateDispatch(ctx context.Context, executionID string) bool {
-	if h.tracker != nil && !h.tracker.Reserve(executionID) {
+	if !h.tracker.Reserve(executionID) {
 		return true
-	}
-	if h.runRepo == nil {
-		return false
 	}
 
 	run, err := h.runRepo.GetRunByExecutionID(ctx, executionID)
@@ -178,9 +175,7 @@ func (h *InboundHandler) isDuplicateDispatch(ctx context.Context, executionID st
 
 // releaseReservation drops a dispatch reservation when no run was created.
 func (h *InboundHandler) releaseReservation(executionID string) {
-	if h.tracker != nil {
-		h.tracker.Release(executionID)
-	}
+	h.tracker.Release(executionID)
 }
 
 func (h *InboundHandler) handleTriggerError(ctx context.Context, executionID string, run *model.Run, triggerErr error) error {
@@ -191,11 +186,11 @@ func (h *InboundHandler) handleTriggerError(ctx context.Context, executionID str
 	if run != nil {
 		finishedAt := run.EndedAt
 		if finishedAt == nil {
-			finishedAt = nowPtr()
+			finishedAt = new(time.Now().UTC())
 		}
-		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, ptr(run.ExitCode), run.StartedAt, finishedAt))
+		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, new(run.ExitCode), run.StartedAt, finishedAt))
 	} else {
-		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, ptr(-1), nil, nowPtr()))
+		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, new(-1), nil, new(time.Now().UTC())))
 	}
 	if h.uploader != nil {
 		h.uploader.forget(ctx, executionID)
@@ -204,9 +199,9 @@ func (h *InboundHandler) handleTriggerError(ctx context.Context, executionID str
 }
 
 func (h *InboundHandler) HandleExecutionStop(ctx context.Context, message protocol.ExecutionStopMessage) error {
-	executionID := strings.TrimSpace(message.ExecutionID)
-	if executionID == "" {
-		return &StationError{Kind: StationErrorKindValidation, Message: "executionId is required"}
+	executionID, err := requireExecutionID(message.ExecutionID)
+	if err != nil {
+		return err
 	}
 
 	if err := h.taskManager.TerminateRunByExecutionID(executionID); err == nil {
@@ -232,10 +227,9 @@ func (h *InboundHandler) HandleExecutionStop(ctx context.Context, message protoc
 // it as a single LogReplayChunkMessage. final is true when no more lines
 // remain beyond this page or the run has terminated.
 func (h *InboundHandler) HandleLogReplayRequest(ctx context.Context, message protocol.LogReplayRequestMessage) (protocol.LogReplayChunkMessage, error) {
-	executionID := strings.TrimSpace(message.ExecutionID)
-	if executionID == "" {
-		return NewLogReplayChunkMessage(message.RequestID, message.ExecutionID, nil, true),
-			&StationError{Kind: StationErrorKindValidation, Message: "executionId is required"}
+	executionID, err := requireExecutionID(message.ExecutionID)
+	if err != nil {
+		return NewLogReplayChunkMessage(message.RequestID, message.ExecutionID, nil, true), err
 	}
 
 	run, err := h.runRepo.GetRunByExecutionID(ctx, executionID)
@@ -267,10 +261,9 @@ func (h *InboundHandler) HandleLogReplayRequest(ctx context.Context, message pro
 // execution is not an error — it yields no hits with exhausted=true (nothing on
 // disk to scan). Mirrors HandleLogReplayRequest's resolution and error mapping.
 func (h *InboundHandler) HandleLogSearchRequest(ctx context.Context, message protocol.LogSearchRequestMessage) (protocol.LogSearchChunkMessage, error) {
-	executionID := strings.TrimSpace(message.ExecutionID)
-	if executionID == "" {
-		return NewLogSearchChunkMessage(message.RequestID, message.ExecutionID, nil, 0, true),
-			&StationError{Kind: StationErrorKindValidation, Message: "executionId is required"}
+	executionID, err := requireExecutionID(message.ExecutionID)
+	if err != nil {
+		return NewLogSearchChunkMessage(message.RequestID, message.ExecutionID, nil, 0, true), err
 	}
 
 	run, err := h.runRepo.GetRunByExecutionID(ctx, executionID)
@@ -306,9 +299,9 @@ func (h *InboundHandler) HandleLogSearchRequest(ctx context.Context, message pro
 // — repeated calls keep a single subscription. Tracker-side memory cost is
 // O(set entry); the EventBridge does the actual fan-out + drop-on-full.
 func (h *InboundHandler) HandleLogListen(message protocol.LogListenMessage) error {
-	executionID := strings.TrimSpace(message.ExecutionID)
-	if executionID == "" {
-		return &StationError{Kind: StationErrorKindValidation, Message: "executionId is required"}
+	executionID, err := requireExecutionID(message.ExecutionID)
+	if err != nil {
+		return err
 	}
 
 	h.mu.Lock()
@@ -324,6 +317,15 @@ func (h *InboundHandler) HandleLogStop(message protocol.LogStopMessage) {
 		return
 	}
 	h.RemoveLogListener(executionID)
+}
+
+// requireExecutionID trims raw and rejects an empty id.
+func requireExecutionID(raw string) (string, error) {
+	id := strings.TrimSpace(raw)
+	if id == "" {
+		return "", &StationError{Kind: StationErrorKindValidation, Message: "executionId is required"}
+	}
+	return id, nil
 }
 
 // IsLogListener reports whether the given execution has an active subscription.

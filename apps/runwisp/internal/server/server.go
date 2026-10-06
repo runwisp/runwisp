@@ -191,17 +191,15 @@ func New(opts Options) (*Server, error) {
 	}
 
 	s.appEvents = newAppEventLog()
-	if opts.EventBus != nil {
-		// Single consumer for the app-event SSE stream: subscribe to exactly the
-		// forwarded types (not SubscribeAll, so hot log.line/log.region events
-		// never touch this path). Permanent for the daemon's lifetime.
-		for _, t := range []events.EventType{
-			events.EventRunCreated, events.EventRunStarted, events.EventRunCompleted,
-			events.EventRunFailed, events.EventRunUpdated, events.EventRunDeleted,
-			events.EventSystemSample, events.EventConfigStale, events.EventTasksChanged,
-		} {
-			opts.EventBus.Subscribe(t, s.appEvents.ingest)
-		}
+	// Single consumer for the app-event SSE stream: subscribe to exactly the
+	// forwarded types (not SubscribeAll, so hot log.line/log.region events
+	// never touch this path). Permanent for the daemon's lifetime.
+	for _, t := range []events.EventType{
+		events.EventRunCreated, events.EventRunStarted, events.EventRunCompleted,
+		events.EventRunFailed, events.EventRunUpdated, events.EventRunDeleted,
+		events.EventSystemSample, events.EventConfigStale, events.EventTasksChanged,
+	} {
+		opts.EventBus.Subscribe(t, s.appEvents.ingest)
 	}
 
 	s.runService = newRunService(opts.DB, opts.TaskManager, opts.Tasks, opts.Scheduler, opts.LogDir, opts.EventBus)

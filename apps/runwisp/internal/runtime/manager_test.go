@@ -57,7 +57,7 @@ func TestTriggerRunBasic(t *testing.T) {
 	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
 
 	done := watchCompletions(eb)
-	run, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	run, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	assert.NoError(t, err)
 	assert.NotNil(t, run)
 
@@ -102,14 +102,14 @@ func TestPolicySkip(t *testing.T) {
 	jm.UpsertTask(task)
 
 	// First run holds the only slot until the test releases it.
-	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	assert.NoError(t, err)
 	exec.WaitStarted(t)
 
 	// Second run should skip and persist with end_reason="skipped" — the skip
 	// policy is working as intended, so it must not pose as a failure to
 	// retries, notifications, or stats.
-	run2, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	run2, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	assert.Error(t, err)
 	assert.Equal(t, "task already running, skipping (policy: skip)", err.Error())
 	assert.Equal(t, model.PhaseEnded, run2.Status)
@@ -135,12 +135,12 @@ func TestPolicySkipPublishesTerminalEvent(t *testing.T) {
 	failed := watchRuns(eb, events.EventRunFailed)
 
 	// First run holds the only slot until cleanup releases it.
-	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 	exec.WaitStarted(t)
 
 	// Overlapping second run is skipped: it must emit a terminal failed event.
-	_, err = jm.TriggerRun("task1", model.TriggeredByAPI)
+	_, err = jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.Error(t, err)
 
 	failed.waitFor(t, 1)
@@ -160,12 +160,12 @@ func TestPolicyQueue(t *testing.T) {
 	done := watchCompletions(eb)
 
 	// First run holds the only slot.
-	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	assert.NoError(t, err)
 	exec.WaitStarted(t)
 
 	// Second run should queue behind it.
-	run2, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	run2, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	assert.NoError(t, err)
 	assert.Equal(t, model.PhasePending, run2.Status)
 
@@ -185,19 +185,19 @@ func TestPolicyQueueDropsAtCap(t *testing.T) {
 	task.MaxQueued = 1
 	jm.UpsertTask(task)
 
-	first, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	first, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 	require.Equal(t, model.PhasePending, first.Status)
 	// Once first is executing it holds the slot and the queue is empty.
 	exec.WaitStarted(t)
 
 	// Second firing occupies the queue (fills max_queued = 1).
-	queued, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	queued, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 	require.Equal(t, model.PhasePending, queued.Status)
 
 	// Third firing trips max_queued and is dropped immediately.
-	dropped, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	dropped, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.Error(t, err, "third firing should be rejected")
 	assert.Contains(t, err.Error(), "queue full")
 	assert.Equal(t, model.PhaseEnded, dropped.Status)
@@ -213,12 +213,12 @@ func TestPolicyKill(t *testing.T) {
 
 	done := watchCompletions(eb)
 
-	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	assert.NoError(t, err)
 	exec.WaitStarted(t) // run1 holds the slot
 
 	// Second run should terminate the first, then take the slot.
-	_, err = jm.TriggerRun("task1", model.TriggeredByAPI)
+	_, err = jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	assert.NoError(t, err)
 
 	// run1 is cancelled by the terminate; release so run2 finishes too.
@@ -301,7 +301,7 @@ func TestEvaluateConcurrency_TerminateOnlyExcessAboveLimit(t *testing.T) {
 func TestGetActiveRunsReturnsRunSnapshot(t *testing.T) {
 	jm, exec, _ := newGatedManager(t)
 	jm.UpsertTask(testTask("task1", model.PolicySkip, 1))
-	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 	exec.WaitStarted(t)
 	t.Cleanup(jm.Shutdown)
@@ -323,7 +323,7 @@ func TestTerminateRun(t *testing.T) {
 	jm.UpsertTask(task)
 
 	done := watchCompletions(eb)
-	run, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	run, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	assert.NoError(t, err)
 	exec.WaitStarted(t)
 
@@ -343,7 +343,7 @@ func TestShutdown(t *testing.T) {
 	task := testTask("task1", model.PolicyQueue, 1)
 	jm.UpsertTask(task)
 
-	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 	exec.WaitStarted(t)
 
@@ -364,7 +364,7 @@ func TestTriggerRefusedAfterShutdown(t *testing.T) {
 
 	jm.Shutdown()
 
-	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.ErrorIs(t, err, errShuttingDown, "a trigger after shutdown must be refused, not started")
 }
 
@@ -380,11 +380,11 @@ func TestShutdownDoesNotPromoteQueuedRun(t *testing.T) {
 	task := testTask("task1", model.PolicyQueue, 1)
 	jm.UpsertTask(task)
 
-	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 	exec.WaitStarted(t) // run holds the only slot; the gate keeps it in flight
 
-	_, err = jm.TriggerRun("task1", model.TriggeredByAPI)
+	_, err = jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err) // this run sits in the queue
 
 	done := make(chan struct{})
@@ -415,7 +415,7 @@ func TestReloadDropReAddRevivesQueueTask(t *testing.T) {
 	jm.UpsertTask(testTask("t", model.PolicyQueue, 1))
 
 	// run1 takes the only slot and stays in flight on the gate.
-	_, err := jm.TriggerRun("t", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("t", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 	exec.WaitStarted(t)
 
@@ -424,7 +424,7 @@ func TestReloadDropReAddRevivesQueueTask(t *testing.T) {
 	jm.UpsertTask(testTask("t", model.PolicyQueue, 1))
 
 	// A run enqueued against the revived task; the slot is still held by run1.
-	_, err = jm.TriggerRun("t", model.TriggeredByAPI)
+	_, err = jm.TriggerRunWithOptions("t", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 
 	done := watchCompletions(eb)
@@ -537,7 +537,7 @@ func TestEphemeralTaskReapedAfterRun(t *testing.T) {
 	exec.On("Execute", mock.Anything, mock.Anything, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
 
 	done := watchCompletions(eb)
-	_, err := jm.TriggerRun("station-adhoc", model.TriggeredByStation)
+	_, err := jm.TriggerRunWithOptions("station-adhoc", TriggerRunOptions{TriggeredBy: model.TriggeredByStation})
 	require.NoError(t, err)
 	done.waitFor(t, 1)
 
@@ -562,7 +562,7 @@ func TestTriggerRunReturnsIndependentSnapshot(t *testing.T) {
 	jm, exec, _ := newGatedManager(t)
 	jm.UpsertTask(testTask("task1", model.PolicySkip, 1))
 
-	r, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	r, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 	exec.WaitStarted(t) // the execution goroutine has now set the live run to PhaseRunning
 
@@ -629,7 +629,7 @@ func TestShutdownWithDeadlineMarksSurvivorsDaemonStopped(t *testing.T) {
 	task := testTask("stuck", model.PolicySkip, 1)
 	jm.UpsertTask(task)
 
-	_, err := jm.TriggerRun("stuck", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("stuck", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 
 	select {
@@ -867,7 +867,7 @@ func TestTerminalEventPublishedOffManagerLock(t *testing.T) {
 
 		// First run holds the only slot so the second firing is skip-rejected,
 		// which is the path that publishes the terminal event off the lock.
-		_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+		_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 		require.NoError(t, err)
 		exec.WaitStarted(t)
 
@@ -876,7 +876,7 @@ func TestTerminalEventPublishedOffManagerLock(t *testing.T) {
 		// rejection we are about to trigger.
 		eb.Subscribe(events.EventRunFailed, func(events.Event) { jm.ServiceSnapshot("task1") })
 		assertReturns(t, "TriggerRun (skip rejection)", func() {
-			_, _ = jm.TriggerRun("task1", model.TriggeredByAPI)
+			_, _ = jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 		})
 	})
 }
@@ -899,7 +899,7 @@ func TestPersistenceHook(t *testing.T) {
 	exec.On("Execute", mock.Anything, task, mock.Anything).Return(&executor.ExecuteResult{ExitCode: 0})
 
 	done := watchCompletions(eb)
-	jm.TriggerRun("task1", model.TriggeredByAPI)
+	jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	done.waitFor(t, 1)
 	// The final (update) persist is enqueued just before the completion event;
 	// Flush guarantees the worker has applied every queued write.
@@ -936,7 +936,7 @@ func TestExecute_ProcessSpawnWaitsForRunningPersist(t *testing.T) {
 		Run(func(mock.Arguments) { close(spawned) }).
 		Return(&executor.ExecuteResult{ExitCode: 0})
 
-	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 
 	select {
@@ -997,7 +997,7 @@ func TestRetryFiresOnFailure(t *testing.T) {
 		runs = append(runs, r)
 	})
 
-	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 
 	// Initial + 2 retries = 3 calls.
@@ -1047,7 +1047,7 @@ func TestRetrySkippedForStationRun(t *testing.T) {
 		calls.Add(1)
 	}).Return(&executor.ExecuteResult{ExitCode: 1})
 
-	_, err := jm.TriggerRun("task1", model.TriggeredByStation)
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByStation})
 	require.NoError(t, err)
 
 	// One initial run, then long enough for a retry to fire if it were going
@@ -1124,7 +1124,7 @@ func TestLoadPendingRunsFailedWhenSlotFull(t *testing.T) {
 	jm.UpsertTask(task)
 
 	// Trigger one run that holds the only slot.
-	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 	exec.WaitStarted(t)
 
@@ -1203,11 +1203,11 @@ func TestRemoveTask_FinalizesQueuedRuns(t *testing.T) {
 	task := testTask("q", model.PolicyQueue, 1)
 	jm.UpsertTask(task)
 
-	_, err := jm.TriggerRun("q", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("q", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 	exec.WaitStarted(t)
 
-	queued, err := jm.TriggerRun("q", model.TriggeredByAPI)
+	queued, err := jm.TriggerRunWithOptions("q", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 
 	jm.RemoveTask("q")
@@ -1267,7 +1267,7 @@ func TestGetActiveRuns_KnownTaskReturnsCopy(t *testing.T) {
 
 	task := testTask("task1", model.PolicySkip, 1)
 	jm.UpsertTask(task)
-	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 	exec.WaitStarted(t)
 
@@ -1446,7 +1446,7 @@ func TestInjectedClockStampsCreatedAt(t *testing.T) {
 	exec.On("Execute", mock.Anything, task, mock.Anything).
 		Return(&executor.ExecuteResult{ExitCode: 0}, 50*time.Millisecond)
 
-	run, err := jm.TriggerRun("clocked", model.TriggeredByAPI)
+	run, err := jm.TriggerRunWithOptions("clocked", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 	require.NotNil(t, run)
 	assert.True(t, run.CreatedAt.Equal(fixed),
@@ -1556,11 +1556,11 @@ func TestUpsertTask_PolicyChangeAwayFromQueueFinalizesQueuedRuns(t *testing.T) {
 	task := testTask("q", model.PolicyQueue, 1)
 	jm.UpsertTask(task)
 
-	_, err := jm.TriggerRun("q", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("q", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 	exec.WaitStarted(t)
 
-	queued, err := jm.TriggerRun("q", model.TriggeredByAPI)
+	queued, err := jm.TriggerRunWithOptions("q", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 
 	// Reload flips the policy away from queue while the run is still waiting —
@@ -1656,7 +1656,7 @@ func TestRemoveTask_InFlightCronRunFinishes(t *testing.T) {
 	jm.UpsertTask(testTask("task1", model.PolicySkip, 1))
 
 	done := watchCompletions(eb)
-	_, err := jm.TriggerRun("task1", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("task1", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 	exec.WaitStarted(t)
 
@@ -1803,7 +1803,7 @@ func TestTerminalEventFollowsPersistedTerminalRow(t *testing.T) {
 	})
 
 	jm.UpsertTask(testTask("fastfail", model.PolicySkip, 1))
-	_, err := jm.TriggerRun("fastfail", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("fastfail", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 
 	select {

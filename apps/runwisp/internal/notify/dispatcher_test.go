@@ -66,7 +66,7 @@ func TestDispatcher_DeliversMatchingActions(t *testing.T) {
 	channels := map[string]Channel{channel.id: channel}
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"a"}}}, channels)
 	sink := &recordingFailureSink{}
-	d := newDispatcher(router, channels, 8, RealClock(), sink, nil)
+	d := newDispatcher(router, channels, 8, time.Now, sink, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -77,7 +77,7 @@ func TestDispatcher_DeliversMatchingActions(t *testing.T) {
 
 	require.Eventually(t, func() bool { return channel.hits.Load() == 2 }, time.Second, 10*time.Millisecond)
 	d.closeQueues()
-	d.waitWorkers()
+	d.workers.Wait()
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -98,7 +98,7 @@ func TestDispatcher_PermanentFailureSurfacedToSink(t *testing.T) {
 	channels := map[string]Channel{a.id: a}
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slack:ops"}}}, channels)
 	sink := &recordingFailureSink{}
-	d := newDispatcher(router, channels, 8, RealClock(), sink, nil)
+	d := newDispatcher(router, channels, 8, time.Now, sink, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -116,7 +116,7 @@ func TestDispatcher_PermanentFailureSurfacedToSink(t *testing.T) {
 	assert.Equal(t, "run.failed", got.Extra["original_kind"])
 
 	d.closeQueues()
-	d.waitWorkers()
+	d.workers.Wait()
 }
 
 func TestDispatcher_ContextCancelDoesNotSurfaceFailure(t *testing.T) {
@@ -132,7 +132,7 @@ func TestDispatcher_ContextCancelDoesNotSurfaceFailure(t *testing.T) {
 	channels := map[string]Channel{a.id: a}
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slow"}}}, channels)
 	sink := &recordingFailureSink{}
-	d := newDispatcher(router, channels, 4, RealClock(), sink, nil)
+	d := newDispatcher(router, channels, 4, time.Now, sink, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	d.startWorkers(ctx)
@@ -141,7 +141,7 @@ func TestDispatcher_ContextCancelDoesNotSurfaceFailure(t *testing.T) {
 	cancel()
 	<-released
 	d.closeQueues()
-	d.waitWorkers()
+	d.workers.Wait()
 	assert.Empty(t, sink.Captured(), "ctx cancel must not be surfaced as a delivery failure")
 }
 
@@ -166,7 +166,7 @@ func TestDispatcher_RedactErrorPreservesCancelDetection(t *testing.T) {
 	channels := map[string]Channel{a.id: a}
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slack:ops"}}}, channels)
 	sink := &recordingFailureSink{}
-	d := newDispatcher(router, channels, 4, RealClock(), sink, nil)
+	d := newDispatcher(router, channels, 4, time.Now, sink, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	d.startWorkers(ctx)
@@ -175,7 +175,7 @@ func TestDispatcher_RedactErrorPreservesCancelDetection(t *testing.T) {
 	cancel()
 	<-released
 	d.closeQueues()
-	d.waitWorkers()
+	d.workers.Wait()
 	assert.Empty(t, sink.Captured(),
 		"a RedactError-wrapped context.Canceled must still be recognized as shutdown, not surfaced as a delivery failure")
 }
@@ -199,7 +199,7 @@ func TestDispatcher_HTTPTimeoutNotMisclassifiedAsShutdown(t *testing.T) {
 	channels := map[string]Channel{a.id: a}
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slack:ops"}}}, channels)
 	sink := &recordingFailureSink{}
-	d := newDispatcher(router, channels, 8, RealClock(), sink, nil)
+	d := newDispatcher(router, channels, 8, time.Now, sink, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -214,7 +214,7 @@ func TestDispatcher_HTTPTimeoutNotMisclassifiedAsShutdown(t *testing.T) {
 	assert.Equal(t, "slack:ops", got.Extra["channel"])
 
 	d.closeQueues()
-	d.waitWorkers()
+	d.workers.Wait()
 }
 
 func TestDispatcher_DropsOldestWhenQueueFull(t *testing.T) {
@@ -239,7 +239,7 @@ func TestDispatcher_DropsOldestWhenQueueFull(t *testing.T) {
 	sink := &recordingFailureSink{}
 	// Capacity 1: with the first event held by the worker plus one queued,
 	// any further dispatch must evict the oldest queued event.
-	d := newDispatcher(router, channels, 1, RealClock(), sink, nil)
+	d := newDispatcher(router, channels, 1, time.Now, sink, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -253,7 +253,7 @@ func TestDispatcher_DropsOldestWhenQueueFull(t *testing.T) {
 	d.dispatch(&Event{Kind: KindRunFailed, TaskName: "newest"})
 	close(release)
 	d.closeQueues()
-	d.waitWorkers()
+	d.workers.Wait()
 
 	assert.Greater(t, d.DroppedActionCount(), uint64(0), "must record drops under pressure")
 	seenMu.Lock()
@@ -284,7 +284,7 @@ func TestNewDispatcher_QueueSizeFallback(t *testing.T) {
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"a"}}}, channels)
 
 	// queueSize=0 must fall back to 256; nil logger must fall back to slog.Default.
-	d := newDispatcher(router, channels, 0, RealClock(), nil, nil)
+	d := newDispatcher(router, channels, 0, time.Now, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -297,27 +297,13 @@ func TestNewDispatcher_QueueSizeFallback(t *testing.T) {
 	}
 	close(release)
 	d.closeQueues()
-	d.waitWorkers()
+	d.workers.Wait()
 
 	assert.Equal(t, uint64(0), d.DroppedActionCount(),
 		"with queueSize fallback to 256, 200 buffered events must not drop")
 	mu.Lock()
 	defer mu.Unlock()
 	assert.Equal(t, int64(200), processed, "all events must process after worker resumes")
-}
-
-func TestDispatcher_DispatchNilNoOp(t *testing.T) {
-	a := &executeChannel{id: "a"}
-	channels := map[string]Channel{a.id: a}
-	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"a"}}}, channels)
-	d := newDispatcher(router, channels, 8, RealClock(), nil, nil)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	d.startWorkers(ctx)
-	d.dispatch(nil) // nil → no-op, must not panic
-	d.closeQueues()
-	d.waitWorkers()
-	assert.Equal(t, int64(0), a.hits.Load(), "nil dispatch must not reach worker")
 }
 
 func TestDispatcher_ExecuteOneWithNilFailures_LogsOnly(t *testing.T) {
@@ -329,7 +315,7 @@ func TestDispatcher_ExecuteOneWithNilFailures_LogsOnly(t *testing.T) {
 	channels := map[string]Channel{a.id: a}
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"noSink"}}}, channels)
 	// nil failures sink: error must be logged, not forwarded
-	d := newDispatcher(router, channels, 8, RealClock(), nil, nil)
+	d := newDispatcher(router, channels, 8, time.Now, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -337,7 +323,7 @@ func TestDispatcher_ExecuteOneWithNilFailures_LogsOnly(t *testing.T) {
 	d.dispatch(&Event{Kind: KindRunFailed, Severity: SevError})
 	require.Eventually(t, func() bool { return a.hits.Load() >= 1 }, time.Second, 10*time.Millisecond)
 	d.closeQueues()
-	d.waitWorkers()
+	d.workers.Wait()
 	// No panic, no failure sink to check — just verify the worker ran
 	assert.GreaterOrEqual(t, a.hits.Load(), int64(1))
 }
@@ -368,7 +354,7 @@ func TestDispatcher_CycleGuard_DeliveryFailedDoesNotReRoute(t *testing.T) {
 	// if the synthetic event ever re-entered dispatch. It must not.
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"slack:ops"}}}, channels)
 	sink := &recordingFailureSink{}
-	d := newDispatcher(router, channels, 8, RealClock(), sink, nil)
+	d := newDispatcher(router, channels, 8, time.Now, sink, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -381,7 +367,7 @@ func TestDispatcher_CycleGuard_DeliveryFailedDoesNotReRoute(t *testing.T) {
 	require.Eventually(t, func() bool { return len(sink.Captured()) == 1 }, time.Second, 10*time.Millisecond)
 
 	d.closeQueues()
-	d.waitWorkers()
+	d.workers.Wait()
 
 	syn := sink.Captured()[0]
 	assert.Equal(t, KindNotifyDeliveryFailed, syn.Kind)
@@ -404,12 +390,12 @@ func TestDispatcher_UnknownActionID_Skipped(t *testing.T) {
 	ghost := &executeChannel{id: "ghost"}
 	channels := map[string]Channel{} // intentionally empty
 	router := NewRouter([]Rule{{Match: MatchAll(), ActionIDs: []string{"ghost"}}}, channels)
-	d := newDispatcher(router, channels, 8, RealClock(), nil, nil)
+	d := newDispatcher(router, channels, 8, time.Now, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	d.startWorkers(ctx)
 	d.dispatch(&Event{Kind: KindRunFailed})
 	d.closeQueues()
-	d.waitWorkers()
+	d.workers.Wait()
 	assert.Equal(t, int64(0), ghost.hits.Load(), "unknown action must be skipped")
 }

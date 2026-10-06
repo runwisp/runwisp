@@ -2,7 +2,8 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
-    import type { Snippet } from "svelte";
+    import { setContext, type Snippet } from "svelte";
+    import { RADIO_GROUP_KEY, type RadioGroupContext } from "./radio-group.js";
 
     type Orientation = "horizontal" | "vertical";
 
@@ -19,7 +20,7 @@
 
     let {
         value = $bindable(""),
-        name: _name,
+        name,
         label,
         error,
         hint,
@@ -27,6 +28,18 @@
         children,
         class: className = "",
     }: Props = $props();
+
+    setContext<RadioGroupContext>(RADIO_GROUP_KEY, {
+        get name() {
+            return name;
+        },
+        get value() {
+            return value;
+        },
+        set value(next: string) {
+            value = next;
+        },
+    });
 
     const orientationClasses: Record<Orientation, string> = {
         horizontal: "flex flex-row flex-wrap gap-x-6 gap-y-3",

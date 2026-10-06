@@ -64,10 +64,6 @@ func (f *fakeInstaller) Install(_ context.Context, opts autostart.InstallOptions
 	return f.installErr
 }
 
-func (f *fakeInstaller) ComputeUninstallPlan(context.Context, autostart.UninstallOptions) (autostart.Plan, error) {
-	return autostart.Plan{}, nil
-}
-
 func (f *fakeInstaller) Uninstall(context.Context, autostart.UninstallOptions, io.Writer) error {
 	return nil
 }

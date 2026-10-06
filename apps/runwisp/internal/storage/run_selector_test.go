@@ -106,9 +106,9 @@ func TestBuildRunFilterArgs_SearchStripsLikeWildcards(t *testing.T) {
 }
 
 func TestBuildRunFilterArgs_SearchTruncatedToMaxLength(t *testing.T) {
-	long := strings.Repeat("a", MaxSearchQueryLength+50)
+	long := strings.Repeat("a", maxSearchQueryLength+50)
 	args := buildRunFilterArgs(model.RunFilter{Search: long})
-	assert.Len(t, args.SearchPattern, MaxSearchQueryLength+2, "pattern is truncated body wrapped in %%")
+	assert.Len(t, args.SearchPattern, maxSearchQueryLength+2, "pattern is truncated body wrapped in %%")
 }
 
 func TestBuildRunFilterArgs_SearchTruncationRespectsUTF8Boundary(t *testing.T) {

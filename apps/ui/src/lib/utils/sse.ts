@@ -4,7 +4,7 @@
 import type { EventSourceFactory } from "$lib/adapters/browser";
 import { browserAuthEventSourceFactory } from "$lib/adapters/browser";
 import { type SSEErrorInfo, getMessageEventData } from "$lib/utils/event-source";
-import { createLogger } from "$lib/utils/logger";
+import { createLogger } from "@runwisp/common";
 import { createReconnectingConnection } from "$lib/utils/sse-reconnect";
 
 interface SSEOptions {

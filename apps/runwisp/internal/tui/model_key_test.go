@@ -336,7 +336,7 @@ func TestHandleKeyEnter_SidebarVersionFocused_ShowsNewReleaseDialog(t *testing.T
 	if !handled {
 		t.Fatal("expected handled=true when the version indicator is focused")
 	}
-	if !newM.dialogs.HasNewRelease() {
+	if !newM.dialogs.Has(dlgNewRelease) {
 		t.Fatal("expected the new-release dialog to open")
 	}
 }
@@ -483,7 +483,7 @@ func TestHandleKeyEnterActionButton_NilClient_Actions(t *testing.T) {
 				t.Fatal("expected handled=true")
 			}
 			if cmd != nil {
-				t.Fatalf("expected nil cmd with nil client, got %v", cmd)
+				t.Fatalf("expected nil cmd (confirm dialog opens), got %v", cmd)
 			}
 		})
 	}
@@ -524,8 +524,8 @@ func TestHandleKeyS_NoExecViewReturnsFalse(t *testing.T) {
 
 // TestHandleKeyS_ExecViewActions exercises the three execView-present
 // branches of handleKeyS — ActionStop, ActionStopService, and a non-stop
-// action — under a nil client. Each path should report handled=true with a
-// nil cmd because confirmAction short-circuits on the nil client.
+// action. Each path should report handled=true with a nil cmd because the
+// action opens a confirm dialog rather than running immediately.
 func TestHandleKeyS_ExecViewActions(t *testing.T) {
 	reason := model.ReasonFailed
 	tests := []struct {
@@ -564,7 +564,7 @@ func TestHandleKeyS_ExecViewActions(t *testing.T) {
 				t.Fatal("expected handled=true")
 			}
 			if cmd != nil {
-				t.Fatalf("expected nil cmd with nil client, got %v", cmd)
+				t.Fatalf("expected nil cmd (confirm dialog opens), got %v", cmd)
 			}
 		})
 	}
@@ -590,8 +590,8 @@ func TestHandleKeyDCapital_DeletableRun_ReturnsHandled(t *testing.T) {
 	if !handled {
 		t.Fatal("expected handled=true for D on deletable run")
 	}
-	if cmd != nil {
-		t.Fatalf("expected nil cmd with nil client, got %v", cmd)
+	if cmd == nil {
+		t.Fatal("expected the delete command for a deletable run")
 	}
 }
 
@@ -760,7 +760,6 @@ func TestHandleKeyR_NotificationsExpanded(t *testing.T) {
 
 func TestHandleKeyR_CapitalRReloadsConfig(t *testing.T) {
 	m := newTestModel(nil)
-	m.client = newDummyClient()
 	_, _, handled := handleKeyR(m, tea.KeyPressMsg{Code: 'R', Text: "R"})
 	if !handled {
 		t.Fatal("expected capital R to be handled (triggers config reload)")
@@ -825,21 +824,21 @@ func TestHandleKeyHelp_OpensOverlay(t *testing.T) {
 	if !ok {
 		t.Fatal("expected Model")
 	}
-	if !got.dialogs.HasHelp() {
+	if !got.dialogs.Has(dlgHelp) {
 		t.Fatal("expected '?' to open the help overlay")
 	}
 }
 
 func TestHandleKeyHelp_SecondQuestionMarkCloses(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowHelp()
+	m.dialogs.Show(dlgHelp, &HelpDialog{})
 
 	updated, _ := m.Update(keyMsg("?"))
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatal("expected Model")
 	}
-	if got.dialogs.HasHelp() {
+	if got.dialogs.Has(dlgHelp) {
 		t.Fatal("expected '?' to close an open help overlay")
 	}
 }
@@ -847,31 +846,31 @@ func TestHandleKeyHelp_SecondQuestionMarkCloses(t *testing.T) {
 func TestHandleKeyHelp_CtrlCEscalatesToQuitConfirm(t *testing.T) {
 	m := newTestModel(nil)
 	m.daemon = DaemonStarted
-	m.dialogs.ShowHelp()
+	m.dialogs.Show(dlgHelp, &HelpDialog{})
 
 	updated, _ := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatal("expected Model")
 	}
-	if got.dialogs.HasHelp() {
+	if got.dialogs.Has(dlgHelp) {
 		t.Fatal("expected ctrl+c to dismiss the help overlay")
 	}
-	if !got.dialogs.HasConfirm() {
+	if !got.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected ctrl+c to open the quit confirm")
 	}
 }
 
 func TestInterceptHelpDialog_ScrollKeyConsumedAndStaysOpen(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowHelp()
+	m.dialogs.Show(dlgHelp, &HelpDialog{})
 
-	got, _, intercepted := m.interceptHelpDialog(keyMsgSpecial(tea.KeyDown))
+	got, _, intercepted := m.interceptActiveDialog(keyMsgSpecial(tea.KeyDown))
 	if !intercepted {
 		t.Fatal("expected arrow-down to be consumed by the modal help overlay")
 	}
 	gotModel := got.(Model)
-	if !gotModel.dialogs.HasHelp() {
+	if !gotModel.dialogs.Has(dlgHelp) {
 		t.Fatal("expected help overlay to remain open")
 	}
 }
@@ -885,14 +884,14 @@ func TestInterceptHelpDialog_CloseKeysIntercept(t *testing.T) {
 	}
 	for _, key := range closeKeys {
 		m := newTestModel(nil)
-		m.dialogs.ShowHelp()
+		m.dialogs.Show(dlgHelp, &HelpDialog{})
 
-		got, _, intercepted := m.interceptHelpDialog(key)
+		got, _, intercepted := m.interceptActiveDialog(key)
 		if !intercepted {
 			t.Fatalf("expected close key %v to be intercepted", key)
 		}
 		gotModel := got.(Model)
-		if gotModel.dialogs.HasHelp() {
+		if gotModel.dialogs.Has(dlgHelp) {
 			t.Fatalf("expected help overlay dismissed after close key %v", key)
 		}
 	}
@@ -903,7 +902,7 @@ func TestInterceptHelpDialog_CloseKeysIntercept(t *testing.T) {
 func TestHandleKeyQuit_OpensQuitConfirmDialog(t *testing.T) {
 	m := newTestModel(nil)
 	m.daemon = DaemonStarted
-	if m.dialogs.HasConfirm() {
+	if m.dialogs.Has(dlgConfirm) {
 		t.Fatal("precondition: no dialog expected")
 	}
 	newM, cmd, handled := handleKeyQuit(m, keyMsg("q"))
@@ -913,7 +912,7 @@ func TestHandleKeyQuit_OpensQuitConfirmDialog(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("handleKeyQuit returns nil cmd; requestQuit enqueues the dialog directly")
 	}
-	if !newM.dialogs.HasConfirm() {
+	if !newM.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected a confirm dialog to be queued")
 	}
 }
@@ -923,7 +922,7 @@ func TestHandleKeyQuit_OpensQuitConfirmDialog(t *testing.T) {
 func TestDelegateToExecList_EmptyListReturnsEmptyCmds(t *testing.T) {
 	m := newTestModel(nil)
 	cmds := delegateToExecList(&m, keyMsgSpecial(tea.KeyDown))
-	// Empty exec list, nil client → no fetch cmd, possibly no update cmd.
+	// Empty exec list → no fetch cmd, possibly no update cmd.
 	for _, c := range cmds {
 		if c == nil {
 			t.Fatal("delegateToExecList must not return nil entries in cmds slice")
@@ -954,7 +953,7 @@ func TestHandleKey_GlobalHandledKey(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected Model return, got %T", newM)
 	}
-	if !got.dialogs.HasConfirm() {
+	if !got.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected quit dialog after pressing q")
 	}
 }
@@ -1163,7 +1162,6 @@ func TestHandleKeyEnterHeader_FocusNone(t *testing.T) {
 // Enter on a focused Delete button deletes the run, failed runs included (#298).
 func TestHandleKeyEnterHeader_Delete(t *testing.T) {
 	m := newTestModel(nil)
-	m.client = newDummyClient()
 	ev := execlist.NewExecView(&model.Run{
 		ID:        "r-1234567890",
 		TaskName:  "t1",
@@ -1184,7 +1182,6 @@ func TestHandleKeyR_CronTaskTriggers(t *testing.T) {
 	tasks := []model.Task{{Name: "backup"}}
 	m := newTestModel(tasks)
 	selectSidebarItem(&m, 1)
-	m.client = newDummyClient()
 	_, _, handled := handleKeyR(m, keyMsg("r"))
 	if !handled {
 		t.Fatal("expected handled=true for r on cron task")
@@ -1373,7 +1370,6 @@ func TestCanOpenLogSearch_NoClient(t *testing.T) {
 
 func TestCanOpenLogSearch_ExecViewRun(t *testing.T) {
 	m := newTestModel(nil)
-	m.client = newDummyClient()
 	ev := execlist.NewExecView(&model.Run{ID: "r1", TaskName: "t1"})
 	m.execView = &ev
 	if !m.canOpenLogSearch() {
@@ -1384,7 +1380,6 @@ func TestCanOpenLogSearch_ExecViewRun(t *testing.T) {
 func TestCanOpenLogSearch_SidebarTask(t *testing.T) {
 	tasks := []model.Task{{Name: "alpha"}}
 	m := newTestModel(tasks)
-	m.client = newDummyClient()
 	selectSidebarItem(&m, 1)
 	if m.sidebar.ActiveTask() == "" {
 		t.Fatal("precondition: sidebar should report active task")
@@ -1396,7 +1391,6 @@ func TestCanOpenLogSearch_SidebarTask(t *testing.T) {
 
 func TestCanOpenLogSearch_NoSelection(t *testing.T) {
 	m := newTestModel(nil)
-	m.client = newDummyClient()
 	if m.canOpenLogSearch() {
 		t.Fatal("expected false with no execView and no task selection")
 	}
@@ -1404,7 +1398,6 @@ func TestCanOpenLogSearch_NoSelection(t *testing.T) {
 
 func TestOpenLogSearch_FromExecView(t *testing.T) {
 	m := newTestModel(nil)
-	m.client = newDummyClient()
 	ev := execlist.NewExecView(&model.Run{ID: "r1", TaskName: "task-x"})
 	m.execView = &ev
 
@@ -1424,7 +1417,6 @@ func TestOpenLogSearch_FromExecView(t *testing.T) {
 func TestOpenLogSearch_FromSidebar(t *testing.T) {
 	tasks := []model.Task{{Name: "alpha"}}
 	m := newTestModel(tasks)
-	m.client = newDummyClient()
 	selectSidebarItem(&m, 1)
 
 	newM, _ := m.openLogSearch()
@@ -1436,7 +1428,6 @@ func TestOpenLogSearch_FromSidebar(t *testing.T) {
 
 func TestOpenLogSearch_NoTask_NoOverlay(t *testing.T) {
 	m := newTestModel(nil)
-	m.client = newDummyClient()
 	newM, cmd := m.openLogSearch()
 	if cmd != nil {
 		t.Fatal("expected no cmd when no task")
@@ -1449,7 +1440,6 @@ func TestOpenLogSearch_NoTask_NoOverlay(t *testing.T) {
 
 func TestHandleLogSearchKey_EscClosesOverlay(t *testing.T) {
 	m := newTestModel(nil)
-	m.client = newDummyClient()
 	ls := logsearch.New(m.client, "task-x")
 	m.logSearch = &ls
 
@@ -1465,7 +1455,6 @@ func TestHandleLogSearchKey_EscClosesOverlay(t *testing.T) {
 
 func TestHandleLogSearchKey_ForwardsKey(t *testing.T) {
 	m := newTestModel(nil)
-	m.client = newDummyClient()
 	ls := logsearch.New(m.client, "task-x")
 	m.logSearch = &ls
 
@@ -1484,7 +1473,6 @@ func TestHandleLogSearchKey_ForwardsKey(t *testing.T) {
 
 func TestHandleLogSearchSelect_OpensRunWhenNotAlreadyOpen(t *testing.T) {
 	m := newTestModel(nil)
-	m.client = newDummyClient()
 	ls := logsearch.New(m.client, "task-x")
 	m.logSearch = &ls
 
@@ -1503,7 +1491,6 @@ func TestHandleLogSearchSelect_OpensRunWhenNotAlreadyOpen(t *testing.T) {
 
 func TestHandleLogSearchSelect_JumpsInPlaceIfSameRunOpen(t *testing.T) {
 	m := newTestModel(nil)
-	m.client = newDummyClient()
 	ls := logsearch.New(m.client, "task-x")
 	m.logSearch = &ls
 	ev := execlist.NewExecView(&model.Run{ID: "r-here", TaskName: "task-x"})

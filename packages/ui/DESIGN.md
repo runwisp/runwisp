@@ -10,9 +10,9 @@ the library reads as one system.
 
 ## Hard constraints (do not break these)
 
-1. **Do NOT change component props / public APIs.** This is a restyle, not a rewrite.
-   `apps/ui` has 40+ import sites; changing a prop name, variant enum, or slot breaks the
-   build. Only touch markup classes, scoped `<style>`, and internal structure.
+1. **Props are a published API.** Three apps consume this package (see [Consumers](#consumers)).
+   Add props freely; renaming or removing a prop, variant, or snippet breaks someone's build,
+   so do it only when no consumer uses it.
 2. **No hardcoded colors.** Reference the semantic tokens (`bg-surface`, `text-on-surface`,
    `border-outline`, `text-primary`, `bg-primary`, the `-soft`/`-soft-text`/`-soft-border`
    sets) or the `--rw-*` custom properties. The palette lives in `theme-tokens.css` +
@@ -27,8 +27,9 @@ the library reads as one system.
 - **Headings + all chrome:** `font-mono` = Geist Mono (variable, 100–900). Headings, labels,
   nav, buttons, badges, table headers, code — all mono.
 - **Headings (`h1`–`h3` and `Heading`):** `font-mono`, weight **800**, line-height 1.1,
-  letter-spacing `-0.02em`, `text-wrap: balance`. (Base rule is set globally in `theme.css`;
-  components should not fight it.)
+  letter-spacing `-0.02em`, `text-wrap: balance`. `theme.css` applies this to raw `h1`–`h3`;
+  `Heading` opts out of that rule and carries the same look in its own classes, so reach for
+  `Heading` when a title needs a size other than its level's default.
 - **Eyebrow / kicker:** mono, ~11.5px, weight 500, letter-spacing `0.16em`, `uppercase`,
   color = `text-info` / teal-bright (`--rw-info` bright variant). This is the tab/label voice.
 - **Brand lockup** (the mark + `RunWisp` wordmark): the one deliberate exception — wordmark is
@@ -157,6 +158,12 @@ The tokens in `theme-tokens.css` are the canonical palette for every RunWisp sur
 Express it through the semantic tokens above, never by copying raw hex into a component.
 
 ## Consumers
+
+Three apps ship this package: the **daemon web UI** (`apps/ui`, workspace dependency),
+**Station** (pins a published version from npm) and **runwisp.com** (published version, Astro).
+A component nobody in this repo imports is not dead code: one of the other two may use it, or
+should. Never delete a component because this repo doesn't import it. When an app hand-rolls
+something a component here almost covers, extend the component and adopt it instead.
 
 - **Import from the barrel** (`import { Button } from "@runwisp/ui"`). Deep
   `@runwisp/ui/components/*` imports are rejected by `@runwisp/eslint-config/svelte`.

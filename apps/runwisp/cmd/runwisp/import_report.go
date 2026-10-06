@@ -56,9 +56,7 @@ func newItemLayout(items []importer.Item, width int) itemLayout {
 			longest = w
 		}
 	}
-	if longest > maxItemNameWidth {
-		longest = maxItemNameWidth
-	}
+	longest = min(longest, maxItemNameWidth)
 	return itemLayout{nameCol: longest + itemNameGap, width: width}
 }
 

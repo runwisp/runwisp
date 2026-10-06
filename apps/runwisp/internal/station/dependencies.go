@@ -63,15 +63,6 @@ type TaskRunner interface {
 	ServiceSnapshot(taskName string) (model.ServiceSnapshot, bool)
 }
 
-// TaskSnapshotter returns the daemon's current TOML-defined task set. The
-// station client re-reads it on every sync rather than caching it once, so a
-// `runwisp reload` (which mutates the registry live, without a process
-// restart) is reflected on the next reconnect. *runtime.TaskRegistry
-// satisfies this directly via its existing Snapshot method.
-type TaskSnapshotter interface {
-	Snapshot() map[string]*model.Task
-}
-
 // ExternalRunGetter is the subset of run persistence the station package needs.
 // Mirrors a slice of storage.RunRepository so the station doesn't depend on
 // the SQLite-backed concrete.

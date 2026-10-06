@@ -231,12 +231,12 @@ var noteKindInfo = map[NoteKind]noteSeverity{
 	},
 }
 
-// Slug is the kind's stable identifier, for tests and structured dumps.
-func (k NoteKind) Slug() string { slug, _, _ := k.info(); return slug }
+// slug is the kind's stable identifier, for tests and structured dumps.
+func (k NoteKind) slug() string { slug, _, _ := k.info(); return slug }
 
 // String makes a NoteKind readable in test failures.
 func (k NoteKind) String() string {
-	if slug := k.Slug(); slug != "" {
+	if slug := k.slug(); slug != "" {
 		return slug
 	}
 	return "note-kind-without-severity"
@@ -406,9 +406,6 @@ type Tally struct {
 	Clean, Changed, Blocked, Skipped int
 }
 
-// Total is the number of rows, i.e. jobs the source described.
-func (t Tally) Total() int { return t.Clean + t.Changed + t.Blocked + t.Skipped }
-
 // Tally summarizes the report.
 func (r *Result) Tally() Tally {
 	var t Tally
@@ -446,11 +443,6 @@ type itemRef struct {
 	i   int
 }
 
-// addItem opens a report row for a job the source described.
-func (r *Result) addItem(source string) itemRef {
-	return r.addItemAt(source, 0)
-}
-
 // addItemAt opens a row for a job that came from a known line of the source.
 func (r *Result) addItemAt(source string, line int) itemRef {
 	r.items = append(r.items, Item{Source: source, Line: line})
@@ -466,7 +458,7 @@ func (r *Result) addItemAt(source string, line int) itemRef {
 func (ir itemRef) emit(name string, kind model.TaskKind, schedule, run string, blocks ...block) {
 	it := &ir.res.items[ir.i]
 	it.Name, it.Kind, it.Schedule, it.Run = name, kind, schedule, run
-	// Stamping the owning row onto each block is what lets TOMLFor render a
+	// Stamping the owning row onto each block is what lets tomlFor render a
 	// subset without inferring ownership from table names. Inference would have
 	// to re-derive the header→row mapping that emit already knows, and would get
 	// a `[tasks.x.env]` child wrong.

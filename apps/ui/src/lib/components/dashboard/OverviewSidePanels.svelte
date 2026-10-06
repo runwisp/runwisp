@@ -6,7 +6,7 @@
     import ComposeBadge from "../ComposeBadge.svelte";
     import TaskSourceBadge from "../TaskSourceBadge.svelte";
     import {
-        getRunStatusConfig,
+        RUN_STATUS_CONFIG,
         TaskCard,
         instanceSuffix,
         humanizeStatus,
@@ -14,6 +14,7 @@
         Badge,
         Card,
         formatTriggeredByLabel,
+        Heading,
     } from "@runwisp/ui";
     import type { TaskOverview } from "./overview.js";
     import type { Run } from "@runwisp/common";
@@ -32,7 +33,7 @@
         onTaskClick,
         onRunClick,
         getInstanceCount = () => 1,
-    } = $props<{
+    }: {
         attentionTasks?: TaskOverview[];
         runningNow?: Run[];
         upcomingTasks?: TaskOverview[];
@@ -41,7 +42,7 @@
         onTaskClick?: (taskName: string) => void;
         onRunClick?: (taskName: string, runId: string) => void;
         getInstanceCount?: (taskName: string) => number;
-    }>();
+    } = $props();
 
     function viewTask(taskName: string): void {
         onTaskClick?.(taskName);
@@ -66,7 +67,7 @@
 >
     <Card>
         <div class="flex items-center justify-between gap-3">
-            <h3 class="text-sm font-semibold text-on-surface">Needs attention</h3>
+            <Heading level={3} size="sm">Needs attention</Heading>
             <Badge variant={attentionTasks.length > 0 ? "danger" : "success"}>
                 {attentionTasks.length}
             </Badge>
@@ -80,9 +81,7 @@
         {:else}
             <div class="mt-4 space-y-2">
                 {#each attentionTasks as task (task.task.id)}
-                    {@const statusConfig = task.lastStatus
-                        ? getRunStatusConfig(task.lastStatus)
-                        : undefined}
+                    {@const statusConfig = task.lastStatus && RUN_STATUS_CONFIG[task.lastStatus]}
 
                     <TaskCard accent="danger" onclick={() => viewTask(task.task.name)}>
                         <div class="flex items-start justify-between gap-2">
@@ -126,7 +125,7 @@
 
     <Card>
         <div class="flex items-center justify-between gap-3">
-            <h3 class="text-sm font-semibold text-on-surface">Running now</h3>
+            <Heading level={3} size="sm">Running now</Heading>
             <Badge variant={runningNow.length > 0 ? "primary" : "default"}>
                 {runningNow.length}
             </Badge>
@@ -179,7 +178,7 @@
     {#if showUpcoming}
         <Card>
             <div class="flex items-center justify-between gap-3">
-                <h3 class="text-sm font-semibold text-on-surface">Up next</h3>
+                <Heading level={3} size="sm">Up next</Heading>
                 <Badge variant="info">{upcomingTasks.length}</Badge>
             </div>
 

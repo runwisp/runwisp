@@ -7,7 +7,17 @@
     import TaskHeldBadge from "../TaskHeldBadge.svelte";
     import TaskSourceBadge from "../TaskSourceBadge.svelte";
     import TaskUsage from "../TaskUsage.svelte";
-    import { getRunStatusConfig, Badge, EmptyState, Input, Select, Tooltip } from "@runwisp/ui";
+    import {
+        RUN_STATUS_CONFIG,
+        Badge,
+        CodeBlock,
+        EmptyState,
+        Heading,
+        Input,
+        Link,
+        Select,
+        Tooltip,
+    } from "@runwisp/ui";
     import type {
         OverviewTaskCounts,
         OverviewTaskFilter,
@@ -25,15 +35,19 @@
 
     type BadgeTone = "default" | "primary" | "success" | "warning" | "danger" | "info";
 
+    const exampleTask = '[tasks.hello]\ncron = "*/5 * * * *"\nrun  = "echo hello"';
+
     interface FilterOption {
         value: OverviewTaskFilter;
         label: string;
     }
 
-    interface SortOption {
+    // A type alias (not an interface) so it stays assignable to Select's
+    // index-signatured SelectOption.
+    type SortOption = {
         value: OverviewTaskSortKey;
         label: string;
-    }
+    };
 
     interface TaskStateConfig {
         label: string;
@@ -93,7 +107,7 @@
         now,
         schedulingActive,
         onTaskClick,
-    } = $props<{
+    }: {
         taskOverviews: TaskOverview[];
         filteredTasks: TaskOverview[];
         searchQuery: string;
@@ -105,7 +119,7 @@
         now: Date;
         schedulingActive: boolean;
         onTaskClick?: (taskName: string) => void;
-    }>();
+    } = $props();
 
     function getTaskStateConfig(state: OverviewTaskState): TaskStateConfig {
         return TASK_STATE_CONFIG[state];
@@ -115,7 +129,7 @@
 <div class="space-y-4">
     <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div class="flex items-center gap-3">
-            <h2 class="text-sm font-semibold text-on-surface">Tasks</h2>
+            <Heading level={2} size="sm">Tasks</Heading>
             <span class="font-mono text-xs text-on-surface-muted tabular-nums">
                 {taskOverviews.length} total
             </span>
@@ -177,18 +191,21 @@
         >
             {#snippet actions()}
                 <div class="flex flex-col items-center gap-3">
-                    <pre
-                        class="rounded-[4px] border border-outline bg-surface-sunken px-4 py-3 text-left font-mono text-xs text-on-surface-muted">[tasks.hello]
-cron = "*/5 * * * *"
-run  = "echo hello"</pre>
-                    <a
+                    <CodeBlock
+                        variant="surface"
+                        size="sm"
+                        copyable={false}
+                        class="text-left"
+                        code={exampleTask}
+                    />
+                    <Link
                         href="https://docs.runwisp.com/configuration/tasks/"
-                        target="_blank"
-                        rel="noreferrer"
-                        class="text-sm font-medium text-primary hover:underline"
+                        external
+                        variant="primary"
+                        class="text-sm font-medium"
                     >
                         Task configuration docs →
-                    </a>
+                    </Link>
                 </div>
             {/snippet}
         </EmptyState>
@@ -203,7 +220,7 @@ run  = "echo hello"</pre>
             {#each filteredTasks as task (task.task.id)}
                 {@const taskState = getTaskStateConfig(task.state)}
                 {@const lastStatusConfig = task.lastStatus
-                    ? getRunStatusConfig(task.lastStatus)
+                    ? RUN_STATUS_CONFIG[task.lastStatus]
                     : undefined}
                 {@const TaskIcon = taskIcon(task.task)}
 
@@ -248,9 +265,7 @@ run  = "echo hello"</pre>
                                 {/if}
                                 {#if task.task.kind === "service"}
                                     <Badge variant="info" size="sm">
-                                        {(task.task.instances ?? 1) > 1
-                                            ? `Service ×${task.task.instances}`
-                                            : "Service"}
+                                        {formatTaskTriggerLabel(task)}
                                     </Badge>
                                 {/if}
                                 <TaskUsage task={task.task} />

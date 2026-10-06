@@ -4,10 +4,10 @@
 <script lang="ts">
     import { untrack } from "svelte";
     import type { Run } from "@runwisp/common";
-    import type { LogEvent, LogSlice, RunMotion, RunsListFilters } from "@runwisp/ui";
+    import type { LogEvent, RunMotion, RunsListFilters } from "@runwisp/ui";
     import { RunsList, RunDetailPanel } from "@runwisp/ui";
     import { headerSearchStore, systemStore, taskStore } from "$lib/stores";
-    import { createRunActions } from "$lib/utils/run-actions";
+    import { createRunSelection } from "$lib/utils/run-selection.svelte";
     import { HistoryRail } from "$lib/utils/history-rail.svelte";
 
     let {
@@ -27,7 +27,7 @@
         runNotFound = false,
         runPending = false,
         onSelectRun,
-    } = $props<{
+    }: {
         items: Run[];
         total: number;
         loading?: boolean;
@@ -37,7 +37,7 @@
         onOptimisticRestore: (runs: Run[]) => void;
         getInstanceCount?: (taskName: string) => number;
         // Runs that arrived or were removed live moments ago; they animate.
-        motion?: RunMotion;
+        motion: RunMotion;
         initialRunId?: string | null;
         // True when the deep-linked run id (initialRunId) was fetched and doesn't
         // exist. Distinguishes "deleted/bad permalink" from a stale selection that
@@ -50,32 +50,35 @@
         // Notified when the user picks a run, so the route can mirror it into
         // the address bar. The auto-fallback to newest is not reported.
         onSelectRun?: (runId: string | null) => void;
-        fetchLogs: (
-            runId: string,
-            from: number,
-            to: number,
-        ) => Promise<LogSlice | LogEvent | void> | LogSlice | LogEvent | void;
-        streamLogs?: (
+        fetchLogs: (runId: string, from: number, to: number) => Promise<LogEvent>;
+        streamLogs: (
             runId: string,
             onEvent: (event: LogEvent) => void,
             initialState?: { fromLine: number },
         ) => () => void;
-        fetchLineHistory?: (runId: string, lineNum: number) => Promise<string[][]>;
-    }>();
+        fetchLineHistory: (runId: string, lineNum: number) => Promise<string[][]>;
+    } = $props();
 
-    let userSelectedRunId = $state<string | null>(null);
     const rail = new HistoryRail(untrack(() => !!initialRunId));
+    const selection = createRunSelection({
+        getItems: () => items,
+        getInitialRunId: () => initialRunId,
+        getRunNotFound: () => runNotFound,
+        getRunPending: () => runPending,
+        onOptimisticRemove: (ids) => onOptimisticRemove(ids),
+        onOptimisticRestore: (runs) => onOptimisticRestore(runs),
+    });
 
     // Seed the selection from a deep link (the run-id path segment), on load and
     // on later URL changes. Declared before the emit effect below so the first
     // flush seeds before it reports — otherwise the initial null would clobber it.
     $effect(() => {
-        if (initialRunId) userSelectedRunId = initialRunId;
+        if (initialRunId) selection.userSelectedRunId = initialRunId;
     });
 
     // Report explicit selections upward so the URL can mirror the run on screen.
     $effect(() => {
-        onSelectRun?.(userSelectedRunId);
+        onSelectRun?.(selection.userSelectedRunId);
     });
 
     // The header search filters this list by task name or run ID.
@@ -90,38 +93,7 @@
         return () => headerSearchStore.unregister();
     });
 
-    const { handleBulkDelete, handleBulkCancel, handleBulkRerun, deleteSingle } = createRunActions({
-        getItems: () => items,
-        onOptimisticRemove: (ids) => onOptimisticRemove(ids),
-        onOptimisticRestore: (runs) => onOptimisticRestore(runs),
-        onRemoved: (ids) => {
-            if (userSelectedRunId && ids.has(userSelectedRunId)) userSelectedRunId = null;
-        },
-    });
-
-    // The deep-linked run genuinely doesn't exist: its id is the current URL
-    // selection, the fetch confirmed it missing, and it isn't in the list. In
-    // that case we show a "not found" panel instead of silently falling back to
-    // the newest run under a URL that still points at the dead id.
-    let deepLinkMissing = $derived(
-        runNotFound &&
-            userSelectedRunId !== null &&
-            userSelectedRunId === initialRunId &&
-            !items.some((r: Run) => r.id === userSelectedRunId),
-    );
-
-    let deepLinkPending = $derived(runPending && userSelectedRunId === initialRunId);
-
-    let selectedRunId = $derived.by(() => {
-        if (userSelectedRunId && items.some((r: Run) => r.id === userSelectedRunId)) {
-            return userSelectedRunId;
-        }
-        if (deepLinkMissing || deepLinkPending) return null;
-        return items[0]?.id ?? null;
-    });
-
-    let selectedRun = $derived(items.find((r: Run) => r.id === selectedRunId));
-    let panes = $derived(rail.panes(!!selectedRun, false));
+    let panes = $derived(rail.panes(!!selection.selectedRun, false));
 </script>
 
 <!-- Card-less, full-bleed: the history rail and detail panel fill the content
@@ -130,15 +102,14 @@
 <div class="-m-6 flex h-[calc(100%+3rem)] min-h-0 flex-col md:flex-row">
     {#if panes.list}
         <RunsList
-            flush
             {items}
             {total}
             {loading}
             bind:filters
             {onLoadMore}
-            {selectedRunId}
+            selectedRunId={selection.selectedRunId}
             onselect={(id) => {
-                userSelectedRunId = id;
+                selection.userSelectedRunId = id;
                 rail.picked();
             }}
             showFilters
@@ -149,9 +120,9 @@
             emptyText="No runs found"
             emptyDescription="Trigger a task manually with Re-run, or wait for a schedule to fire."
             bulkActions
-            onBulkCancel={handleBulkCancel}
-            onBulkDelete={handleBulkDelete}
-            onBulkRerun={handleBulkRerun}
+            onBulkCancel={selection.handleBulkCancel}
+            onBulkDelete={selection.handleBulkDelete}
+            onBulkRerun={selection.handleBulkRerun}
             {getInstanceCount}
             {motion}
         />
@@ -159,20 +130,20 @@
 
     {#if panes.detail}
         <RunDetailPanel
-            run={selectedRun}
+            run={selection.selectedRun}
             {fetchLogs}
             {streamLogs}
             {fetchLineHistory}
             showTaskName
-            onDelete={deleteSingle}
+            onDelete={selection.deleteSingle}
             onBack={rail.phone ? rail.back : undefined}
             onToggleList={rail.collapsible ? rail.toggleList : undefined}
             listVisible={panes.list}
             {getInstanceCount}
             getLiveUsage={(id) => systemStore.runUsage(id)}
             {motion}
-            notFound={deepLinkMissing}
-            loading={(loading && items.length === 0) || deepLinkPending}
+            notFound={selection.deepLinkMissing}
+            loading={(loading && items.length === 0) || selection.deepLinkPending}
         />
     {/if}
 </div>

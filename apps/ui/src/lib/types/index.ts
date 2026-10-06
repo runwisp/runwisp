@@ -6,17 +6,10 @@ import {
     RUN_PHASES,
     END_REASONS,
     TRIGGERS,
-    type Run as CommonRun,
-    type Task as CommonTask,
-    type ResourceUsage,
+    type Run,
     type AuthChallengeBody,
     type AuthStatusBody,
-    type AuthLoginBody,
 } from "@runwisp/common";
-
-export type Task = CommonTask;
-export type Run = CommonRun;
-export type { ResourceUsage };
 
 export interface AuthState {
     required: boolean;
@@ -34,12 +27,6 @@ export const authChallengeResponseSchema = z
 export const authStatusResponseSchema = z
     .object({ authRequired: z.boolean(), authenticated: z.boolean() })
     .pipe(z.custom<AuthStatusBody>());
-export type AuthStatusResponse = AuthStatusBody;
-
-export const authLoginResponseSchema = z
-    .object({ token: z.string() })
-    .pipe(z.custom<AuthLoginBody>());
-export type AuthLoginResponse = AuthLoginBody;
 
 const runPhaseSchema = z.enum(RUN_PHASES);
 const endReasonSchema = z.enum(END_REASONS);

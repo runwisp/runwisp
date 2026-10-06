@@ -133,14 +133,11 @@ func (m *Model) currentRun() *model.Run {
 }
 
 func (m *Model) showConfirmDialog(title, message string, onConfirm tea.Cmd) tea.Cmd {
-	m.dialogs.ShowConfirm(NewConfirmDialog(title, message, onConfirm))
+	m.dialogs.Show(dlgConfirm, NewConfirmDialog(title, message, onConfirm))
 	return nil
 }
 
 func (m *Model) confirmAction(action confirmAction) tea.Cmd {
-	if m.client == nil {
-		return nil
-	}
 	switch action {
 	case confirmActionTrigger:
 		return m.triggerRun()
@@ -173,7 +170,7 @@ func (m *Model) triggerRun() tea.Cmd {
 	client := m.client
 	ctx := m.streams.streamCtx
 	if task := m.taskDisplayByName(taskName); task != nil && len(task.Parameters) > 0 {
-		m.dialogs.ShowParamForm(NewParamFormDialog(taskName, task.Parameters, func(params map[string]*string) tea.Cmd {
+		m.dialogs.Show(dlgParamForm, NewParamFormDialog(taskName, task.Parameters, func(params map[string]*string) tea.Cmd {
 			return func() tea.Msg {
 				run, err := client.TriggerRun(ctx, taskName, params, "ui")
 				return uikit.TriggerRunMsg{TaskName: taskName, Run: run, Err: err}

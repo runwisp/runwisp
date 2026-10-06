@@ -9,20 +9,17 @@ import "strings"
 // not I/O: internal/configedit owns writing them to disk, so the loader package
 // stays a pure reader.
 
-// StarterConfig returns the minimal, self-documenting runwisp.toml that
-// `runwisp init` / first-run scaffolds. The full schema reference lives in the
-// docs rather than in the template.
-func StarterConfig() string {
-	return starterConfig
-}
-
 // ComposeStarterConfig returns the runwisp.toml that imports an adjacent
 // docker-compose file. composeFilename is the basename of the discovered compose
 // file (e.g. "docker-compose.yml"); alias is the [compose.<alias>] block name
 // (usually the parent directory name, sanitized).
 func ComposeStarterConfig(composeFilename, alias string) string {
-	r := strings.NewReplacer("{{compose}}", composeFilename, "{{alias}}", alias)
-	return r.Replace(composeStarterConfig)
+	return fillCompose(composeStarterConfig, composeFilename, alias)
+}
+
+// fillCompose substitutes the compose placeholders in a starter template.
+func fillCompose(body, composeFilename, alias string) string {
+	return strings.NewReplacer("{{compose}}", composeFilename, "{{alias}}", alias).Replace(body)
 }
 
 // CronStarterConfig returns the runwisp.toml that reads real crontabs live via
@@ -45,7 +42,6 @@ func CronStarterConfig(patterns []string) string {
 // compose file and a readable crontab are both detected — the interactive
 // scaffold asks a single yes/no question, so a "yes" has to cover both.
 func ComposeAndCronStarterConfig(composeFilename, alias string, patterns []string) string {
-	r := strings.NewReplacer("{{compose}}", composeFilename, "{{alias}}", alias)
 	body := SchemaDirective + `# runwisp.toml
 # Docs: https://docs.runwisp.com/configuration/compose/ and
 #       https://docs.runwisp.com/coming-from/cron/
@@ -57,7 +53,7 @@ func ComposeAndCronStarterConfig(composeFilename, alias string, patterns []strin
 file = "./{{compose}}"
 
 ` + cronIncludeBlock(patterns)
-	return r.Replace(body)
+	return fillCompose(body, composeFilename, alias)
 }
 
 // cronIncludeBlock renders a whole `[daemon]` table whose only key is
@@ -82,16 +78,12 @@ func CronIncludeArray(patterns []string) string {
 	return b.String()
 }
 
-// TwoTierRootConfig returns the root runwisp.toml `runwisp import` scaffold when
+// TwoTierRootConfig is the root runwisp.toml `runwisp import` scaffold when
 // no config exists yet: it wires in the machine-owned runwisp.d staging directory
 // and explains the two-tier layout, while staying a file the operator owns and
 // keeps in git. Imported jobs land in runwisp.d/imported.toml; `runwisp promote`
 // graduates one into this file.
-func TwoTierRootConfig() string {
-	return twoTierRootConfig
-}
-
-const twoTierRootConfig = SchemaDirective + `# runwisp.toml
+const TwoTierRootConfig = SchemaDirective + `# runwisp.toml
 # Docs: https://docs.runwisp.com/coming-from/cron/#staging-and-promoting
 #
 # Your imported jobs live in ` + ImportedStagingSubdir + `/` + ImportedStagingBase + ` (machine-managed by
@@ -103,7 +95,10 @@ const twoTierRootConfig = SchemaDirective + `# runwisp.toml
 include = ["` + StagingIncludeGlob + `"]
 `
 
-const starterConfig = SchemaDirective + `# runwisp.toml
+// StarterConfig is the minimal, self-documenting runwisp.toml that
+// `runwisp init` / first-run scaffolds. The full schema reference lives in the
+// docs rather than in the template.
+const StarterConfig = SchemaDirective + `# runwisp.toml
 # Docs: https://docs.runwisp.com/configuration/overview/
 
 [tasks.hello]

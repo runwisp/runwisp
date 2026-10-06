@@ -79,15 +79,6 @@ func TestServiceStart_IsIdempotent(t *testing.T) {
 		"second Start must be a no-op, not an error")
 }
 
-// TestServiceStart_WithoutBusWarnsAndRunsStopped covers the "no bus" branch
-// where Start returns without subscribing.
-func TestServiceStart_WithoutBusWarnsAndRunsStopped(t *testing.T) {
-	svc := New(Config{Bus: nil})
-	require.NoError(t, svc.Start(context.Background()))
-	// Stop after a bus-less Start is also a no-op via the started=false guard.
-	require.NoError(t, svc.Stop(context.Background()))
-}
-
 // TestServiceStop_NotStartedReturnsNil covers the "not started" early-return.
 func TestServiceStop_NotStartedReturnsNil(t *testing.T) {
 	svc := New(Config{Bus: events.NewEventBus()})

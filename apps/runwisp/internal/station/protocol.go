@@ -208,28 +208,6 @@ func serviceInstanceStateEnum(state string) protocol.ServiceInstanceState {
 	return protocol.ServiceInstanceStateRunning
 }
 
-func linesItemStreamFromString(stream string) protocol.LinesItemStream {
-	switch stream {
-	case "stderr":
-		return protocol.LinesItemStreamStderr
-	case "system":
-		return protocol.LinesItemStreamSystem
-	default:
-		return protocol.LinesItemStreamStdout
-	}
-}
-
-func hitsItemStreamFromString(stream string) protocol.HitsItemStream {
-	switch stream {
-	case "stderr":
-		return protocol.HitsItemStreamStderr
-	case "system":
-		return protocol.HitsItemStreamSystem
-	default:
-		return protocol.HitsItemStreamStdout
-	}
-}
-
 func decodeAs[T any](payload []byte) (any, error) {
 	var msg T
 	if err := decodeStrict(payload, &msg); err != nil {

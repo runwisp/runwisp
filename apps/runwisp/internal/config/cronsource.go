@@ -501,12 +501,9 @@ func dropAnsweredFindings(cfg *Config) {
 // configuration on a box that already ran cron, but an operator who reached for
 // `smtp` instead has answered the same question.
 func hasMailNotifier(cfg *Config) bool {
-	for _, n := range cfg.Notify.Notifiers {
-		if n.Type == "sendmail" || n.Type == "smtp" {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(cfg.Notify.Notifiers, func(n NotifierSpec) bool {
+		return n.Type == "sendmail" || n.Type == "smtp"
+	})
 }
 
 // isRenameNote reports whether a note explains that a job is running under a name

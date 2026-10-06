@@ -108,18 +108,18 @@ const (
 )
 
 // dpkgStatusPath is dpkg's database of installed packages, relative to the root
-// of the fs.FS DetectCronFlavor reads.
+// of the fs.FS detectCronFlavor reads.
 const dpkgStatusPath = "var/lib/dpkg/status"
 
 // HostCronFlavor detects the cron implementation installed on this machine.
-func HostCronFlavor() CronFlavor { return DetectCronFlavor(os.DirFS("/")) }
+func HostCronFlavor() CronFlavor { return detectCronFlavor(os.DirFS("/")) }
 
-// DetectCronFlavor reports CronFlavorDebian when dpkg lists the `cron` package
+// detectCronFlavor reports CronFlavorDebian when dpkg lists the `cron` package
 // as installed under root. It reads dpkg's status file rather than checking
 // /etc/debian_version or a binary path: Debian also packages cronie, and a
 // removed-but-not-purged cron leaves files behind, so only the package state
 // says which cron is really there.
-func DetectCronFlavor(root fs.FS) CronFlavor {
+func detectCronFlavor(root fs.FS) CronFlavor {
 	f, err := root.Open(dpkgStatusPath)
 	if err != nil {
 		return CronFlavorUnknown

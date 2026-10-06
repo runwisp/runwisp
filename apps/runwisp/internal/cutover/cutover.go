@@ -54,7 +54,7 @@ type Deps struct {
 	// unit. Defaults to a config.AssertFileTrusted wrapper.
 	Trusted func(path string) error
 	// WriteConfig scaffolds a new config at path reading patterns. Defaults to
-	// configedit.WriteInitWithCron; the first-run flow overrides it so a single
+	// writing config.CronStarterConfig; the first-run flow overrides it so a single
 	// "yes" can fold in an adjacent docker-compose import too.
 	WriteConfig func(path string, patterns []string) error
 	// WireCron inserts include_cron into a config that already exists. Defaults
@@ -105,7 +105,9 @@ func New(deps Deps, opts Options) *Cutover {
 		}
 	}
 	if deps.WriteConfig == nil {
-		deps.WriteConfig = configedit.WriteInitWithCron
+		deps.WriteConfig = func(path string, patterns []string) error {
+			return configedit.WriteNew(path, config.CronStarterConfig(patterns))
+		}
 	}
 	if deps.WireCron == nil {
 		deps.WireCron = configedit.WireCronInclude

@@ -114,9 +114,7 @@ func shrinkToFit(avail int, floors [5]int) [5]int {
 	used := 0
 	for i := range floors {
 		w[i] = floors[i] * avail / total
-		if w[i] < 1 {
-			w[i] = 1
-		}
+		w[i] = max(w[i], 1)
 		used += w[i]
 	}
 	// Trim any overshoot (from per-column rounding/min-1) off the widest column.

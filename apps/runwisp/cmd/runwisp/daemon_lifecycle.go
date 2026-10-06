@@ -98,10 +98,10 @@ var errRestartRequested = errors.New("restart requested by station; exiting so t
 // execution that flag already gates.
 func requestSelfRestart(allowStationDispatch bool, fatalCh chan<- error) error {
 	if !allowStationDispatch {
-		return fmt.Errorf("station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)")
+		return errors.New("station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)")
 	}
 	if !autostart.RunningUnderServiceManager() {
-		return fmt.Errorf("daemon is not managed by a service manager; restart it manually")
+		return errors.New("daemon is not managed by a service manager; restart it manually")
 	}
 	slog.Info("restarting agent on station request; service manager will bring it back")
 	if err := exitNonZero(fatalCh, errRestartRequested); err != nil {
@@ -417,7 +417,13 @@ func runWithTUI(rt *daemonRuntime, info uikit.StartupInfo, f Flags) error {
 		}
 	}
 
-	quitAction, tuiErr := tui.StartTUI(info, client, rt.debugWriter, shutdownFunc, launchTicketFunc, tui.DaemonStarted)
+	quitAction, tuiErr := tui.StartTUI(tui.TUIConfig{
+		Info:             info,
+		Client:           client,
+		ShutdownFunc:     shutdownFunc,
+		LaunchTicketFunc: launchTicketFunc,
+		Daemon:           tui.DaemonStarted,
+	}, rt.debugWriter)
 	clilog.SetOutput(io.MultiWriter(os.Stderr, rt.logBuffer))
 	if tuiErr != nil {
 		slog.Warn("TUI exited with error", "err", tuiErr)

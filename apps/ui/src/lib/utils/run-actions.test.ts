@@ -205,7 +205,7 @@ describe("handleBulkRerun", () => {
             triggered: [{ taskName: "backup-db", runId: "r1" }],
         });
 
-        await actions.handleBulkRerun(idsSelector(["a"]), [run]);
+        await actions.handleBulkRerun(idsSelector(["a"]));
 
         expect(toastMocks.success).toHaveBeenCalledWith("Triggered 1 task", expect.anything());
     });
@@ -219,7 +219,7 @@ describe("handleBulkRerun", () => {
             ],
         });
 
-        await actions.handleBulkRerun(idsSelector(["a", "b"]), []);
+        await actions.handleBulkRerun(idsSelector(["a", "b"]));
 
         expect(toastMocks.success).toHaveBeenCalledWith("Triggered 2 tasks", expect.anything());
     });
@@ -228,7 +228,7 @@ describe("handleBulkRerun", () => {
         const { actions } = setup();
         vi.mocked(runsApi.bulkRerun).mockResolvedValue({ triggered: [] });
 
-        await actions.handleBulkRerun(idsSelector(["a"]), []);
+        await actions.handleBulkRerun(idsSelector(["a"]));
 
         expect(toastMocks.error).toHaveBeenCalledWith("Could not re-run any of the selected tasks");
         expect(toastMocks.success).not.toHaveBeenCalled();
@@ -238,7 +238,7 @@ describe("handleBulkRerun", () => {
         const { actions } = setup();
         vi.mocked(runsApi.bulkRerun).mockRejectedValue(new Error("rerun failed"));
 
-        await actions.handleBulkRerun(idsSelector(["a"]), []);
+        await actions.handleBulkRerun(idsSelector(["a"]));
 
         expect(toastMocks.error).toHaveBeenCalledWith("rerun failed");
     });
@@ -251,7 +251,7 @@ describe("handleBulkRerun", () => {
         vi.mocked(runsApi.bulkCancel).mockResolvedValue(1);
         vi.mocked(runsApi.bulkDelete).mockResolvedValue(1);
 
-        await actions.handleBulkRerun(idsSelector(["a"]), []);
+        await actions.handleBulkRerun(idsSelector(["a"]));
         lastUndoHandler()?.();
 
         await vi.waitFor(() => {
@@ -269,7 +269,7 @@ describe("handleBulkRerun", () => {
         vi.mocked(runsApi.bulkCancel).mockRejectedValue(new Error("already done"));
         vi.mocked(runsApi.bulkDelete).mockRejectedValue(new Error("undo delete failed"));
 
-        await actions.handleBulkRerun(idsSelector(["a"]), []);
+        await actions.handleBulkRerun(idsSelector(["a"]));
         lastUndoHandler()?.();
 
         await vi.waitFor(() => {

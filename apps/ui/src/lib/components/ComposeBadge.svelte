@@ -6,7 +6,7 @@
 
     interface Props {
         file: string;
-        service?: string;
+        service?: string | undefined;
         projectName?: string;
     }
 

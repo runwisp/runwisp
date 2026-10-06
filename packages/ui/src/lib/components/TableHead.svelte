@@ -3,17 +3,25 @@
 
 <script lang="ts">
     import type { Snippet } from "svelte";
+    import TableRow from "./TableRow.svelte";
 
     interface Props {
         children: Snippet;
+        /** Wrap children in one header row. Turn off to pass your own
+         *  TableRow(s), e.g. for a two-row header. */
+        row?: boolean;
         class?: string;
     }
 
-    let { children, class: className = "" }: Props = $props();
+    let { children, row = true, class: className = "" }: Props = $props();
 </script>
 
-<thead class="bg-surface-sunken/50 {className}">
-    <tr>
+<thead class={className}>
+    {#if row}
+        <TableRow>
+            {@render children()}
+        </TableRow>
+    {:else}
         {@render children()}
-    </tr>
+    {/if}
 </thead>

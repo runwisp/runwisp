@@ -57,7 +57,7 @@ func runDefault(ctx context.Context, f Flags) error {
 		return portErr
 	}
 
-	if err := spawnDaemon(f); err != nil {
+	if err := spawnDaemon(f, false); err != nil {
 		slog.Warn("Failed to spawn background daemon, running inline", "err", err)
 		return runDaemon(modeStandalone, f, false)
 	}
@@ -170,9 +170,15 @@ func launchConnectedTUI(ctx context.Context, client *apiclient.Client, mode tuiC
 		}
 	}
 
-	_, tuiErr := tui.StartTUI(startupInfo, client, nil, mode.shutdownFunc, func() (string, error) {
-		return client.CreateLaunchTicket(ctx)
-	}, mode.daemon)
+	_, tuiErr := tui.StartTUI(tui.TUIConfig{
+		Info:         startupInfo,
+		Client:       client,
+		ShutdownFunc: mode.shutdownFunc,
+		LaunchTicketFunc: func() (string, error) {
+			return client.CreateLaunchTicket(ctx)
+		},
+		Daemon: mode.daemon,
+	}, nil)
 	return tuiErr
 }
 

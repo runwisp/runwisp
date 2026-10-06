@@ -109,10 +109,7 @@ func wrapAfter(text string, width, firstCol, hanging int) []string {
 	if hanging > indent {
 		indent = hanging
 	}
-	limit := width - indent
-	if limit < 1 {
-		limit = 1
-	}
+	limit := max(width-indent, 1)
 	return indentEach(wrapToLimit(text, limit), firstCol, hanging)
 }
 

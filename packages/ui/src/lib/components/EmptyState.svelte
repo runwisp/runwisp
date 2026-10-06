@@ -5,6 +5,7 @@
     import type { Snippet } from "svelte";
     import type { Component } from "svelte";
     import { Inbox } from "@lucide/svelte";
+    import Heading from "./Heading.svelte";
 
     interface Props {
         title?: string;
@@ -32,7 +33,7 @@
         <Icon size={iconSize} class="text-on-surface-faint" />
     </div>
 
-    <h3 class="mb-1 font-mono text-lg font-semibold text-on-surface">{title}</h3>
+    <Heading level={3} size="lg" class="mb-1">{title}</Heading>
 
     {#if description}
         <p class="mb-6 max-w-sm text-sm text-on-surface-muted">{description}</p>

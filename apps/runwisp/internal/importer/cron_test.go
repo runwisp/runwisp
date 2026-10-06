@@ -77,7 +77,7 @@ func findNote(t *testing.T, r *Result, kind NoteKind) Note {
 			return n
 		}
 	}
-	t.Fatalf("no note of kind %q in the report: %+v", kind.Slug(), allNotes(r))
+	t.Fatalf("no note of kind %q in the report: %+v", kind.slug(), allNotes(r))
 	return Note{}
 }
 
@@ -857,8 +857,8 @@ func TestDetectCronFlavor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := DetectCronFlavor(tt.root); got != tt.want {
-				t.Fatalf("DetectCronFlavor = %v, want %v", got, tt.want)
+			if got := detectCronFlavor(tt.root); got != tt.want {
+				t.Fatalf("detectCronFlavor = %v, want %v", got, tt.want)
 			}
 		})
 	}

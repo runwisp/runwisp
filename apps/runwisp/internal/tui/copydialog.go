@@ -17,24 +17,24 @@ type CopyDialog struct {
 	value string
 }
 
-func NewCopyDialog(title, value string) CopyDialog {
-	return CopyDialog{title: title, value: value}
+func NewCopyDialog(title, value string) *CopyDialog {
+	return &CopyDialog{title: title, value: value}
 }
 
-func (d *CopyDialog) Update(msg tea.Msg) bool {
+func (d *CopyDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "esc", "enter", "backspace", "q":
-			return true
+			return nil, true
 		}
 	case tea.MouseClickMsg:
 		// Right-click closes the dialog; left-click is reserved for text selection.
 		if msg.Button == tea.MouseRight {
-			return true
+			return nil, true
 		}
 	}
-	return false
+	return nil, false
 }
 
 func (d *CopyDialog) View(screenWidth, screenHeight int) string {

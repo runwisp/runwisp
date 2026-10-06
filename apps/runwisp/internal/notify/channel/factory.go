@@ -8,15 +8,15 @@
 package channel
 
 import (
+	"cmp"
+	"encoding/json"
 	"fmt"
+	"math"
+	"strings"
+	"time"
 
 	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/channel/discord"
-	"github.com/runwisp/runwisp/internal/notify/channel/gotify"
-	"github.com/runwisp/runwisp/internal/notify/channel/ntfy"
-	"github.com/runwisp/runwisp/internal/notify/channel/pushover"
 	"github.com/runwisp/runwisp/internal/notify/channel/sendmail"
-	"github.com/runwisp/runwisp/internal/notify/channel/slack"
 	"github.com/runwisp/runwisp/internal/notify/channel/smtp"
 	"github.com/runwisp/runwisp/internal/notify/channel/telegram"
 	"github.com/runwisp/runwisp/internal/notify/channel/webhook"
@@ -78,179 +78,141 @@ type NotifierSpec struct {
 	RenderContext render.TemplateContext
 }
 
+// contentTypes maps every supported notifier type to the MIME type of its
+// rendered payload; a type missing here is unknown.
+var contentTypes = map[string]string{
+	"slack":    "application/json",
+	"discord":  "application/json",
+	"ntfy":     "application/json",
+	"gotify":   "application/json",
+	"pushover": "application/json",
+	"webhook":  "application/json",
+	"telegram": "text/html",
+	"smtp":     "text/html",
+	"sendmail": "text/plain",
+}
+
 // Build turns a NotifierSpec into a notify.Channel. Inapp is built separately
 // since it needs the Coalescer/Hub deps.
 func Build(spec NotifierSpec) (notify.Channel, error) {
-	switch spec.Type {
-	case "slack":
-		return buildSlack(spec)
-	case "discord":
-		return buildDiscord(spec)
-	case "telegram":
-		return buildTelegram(spec)
-	case "smtp":
-		return buildSMTP(spec)
-	case "sendmail":
-		return buildSendmail(spec)
-	case "ntfy":
-		return buildNtfy(spec)
-	case "gotify":
-		return buildGotify(spec)
-	case "pushover":
-		return buildPushover(spec)
-	case "webhook":
-		return buildWebhook(spec)
-	default:
+	contentType, ok := contentTypes[spec.Type]
+	if !ok {
 		return nil, fmt.Errorf("unknown notifier type %q (id=%s)", spec.Type, spec.ID)
 	}
-}
-
-// renderer loads the channel's template and builds a renderer keyed by
-// "<type>:<id>", using contentType for the rendered payload's MIME type.
-func renderer(spec NotifierSpec, contentType string) (*render.TemplateRenderer, error) {
 	body, err := render.LoadTemplate(spec.Type, spec.TemplatePath)
 	if err != nil {
 		return nil, err
 	}
-	return render.NewTemplateRendererWithContext(spec.Type+":"+spec.ID, body, contentType, render.DefaultTitle, spec.RenderContext)
-}
-
-func buildSlack(spec NotifierSpec) (notify.Channel, error) {
-	r, err := renderer(spec, "application/json")
+	r, err := render.NewTemplateRenderer(spec.Type+":"+spec.ID, body, contentType, render.DefaultTitle, spec.RenderContext)
 	if err != nil {
 		return nil, err
 	}
-	return slack.New(slack.Config{
-		ID:         spec.ID,
-		WebhookURL: spec.WebhookURL,
-		Channel:    spec.SlackChannel,
-		Renderer:   r,
-		Transport:  spec.Transport,
-	})
+	switch spec.Type {
+	case "telegram":
+		return telegram.New(telegram.Config{
+			ID:        spec.ID,
+			BotToken:  spec.BotToken,
+			ChatID:    spec.ChatID,
+			ParseMode: spec.ParseMode,
+			Renderer:  r,
+			Transport: spec.Transport,
+		})
+	case "smtp":
+		return smtp.New(smtp.Config{
+			ID:            spec.ID,
+			Host:          spec.Host,
+			Port:          spec.Port,
+			TLSMode:       spec.TLSMode,
+			TLSSkipVerify: spec.TLSSkipVerify,
+			Username:      spec.Username,
+			Password:      spec.Password,
+			From:          spec.From,
+			ReplyTo:       spec.ReplyTo,
+			Recipients:    spec.Recipients,
+			CC:            spec.CC,
+			BCC:           spec.BCC,
+			Backoff:       spec.Backoff,
+			Renderer:      r,
+		})
+	case "sendmail":
+		return sendmail.New(sendmail.Config{
+			ID:         spec.ID,
+			Path:       spec.SendmailPath,
+			From:       spec.From,
+			ReplyTo:    spec.ReplyTo,
+			Recipients: spec.Recipients,
+			CC:         spec.CC,
+			BCC:        spec.BCC,
+			Backoff:    spec.Backoff,
+			Renderer:   r,
+		})
+	}
+	cfg := webhookConfig(spec)
+	cfg.Renderer = r
+	return webhook.New(cfg)
 }
 
-func buildDiscord(spec NotifierSpec) (notify.Channel, error) {
-	r, err := renderer(spec, "application/json")
-	if err != nil {
-		return nil, err
+// ntfyDefaultURL is the public ntfy server, used when the notifier sets no url.
+const ntfyDefaultURL = "https://ntfy.sh"
+
+// pushoverEndpoint is the Pushover messages API.
+const pushoverEndpoint = "https://api.pushover.net/1/messages.json"
+
+// webhookConfig maps the JSON-over-HTTP notifier types onto the generic
+// webhook channel: each differs only in its URL, headers and the top-level
+// body fields injected after rendering (kept out of the template so a
+// template_path override can't drop them). Secrets (webhook URLs, tokens,
+// keys) are resolved at config load.
+func webhookConfig(spec NotifierSpec) webhook.Config {
+	cfg := webhook.Config{Kind: spec.Type, ID: spec.ID, Transport: spec.Transport}
+	switch spec.Type {
+	case "slack":
+		cfg.URL = spec.WebhookURL
+		if spec.SlackChannel != "" {
+			cfg.Fields = map[string]string{"channel": spec.SlackChannel}
+		}
+	case "discord":
+		cfg.URL = spec.WebhookURL
+		if cfg.Transport == nil {
+			cfg.Transport = notify.NewHTTPProvider()
+		}
+		if cfg.Transport.Body429Fn == nil {
+			cfg.Transport.Body429Fn = parseDiscordRetryAfter
+		}
+	case "ntfy":
+		// JSON publishes go to the server root; the topic rides in the body.
+		cfg.URL = strings.TrimRight(cmp.Or(spec.URL, ntfyDefaultURL), "/")
+		if spec.Token != "" {
+			cfg.Headers = map[string]string{"Authorization": "Bearer " + spec.Token}
+		}
+		cfg.Fields = map[string]string{"topic": spec.Topic}
+	case "gotify":
+		if spec.URL != "" {
+			cfg.URL = strings.TrimRight(spec.URL, "/") + "/message"
+		}
+		cfg.Headers = map[string]string{"X-Gotify-Key": spec.Token}
+	case "pushover":
+		cfg.URL = pushoverEndpoint
+		cfg.Fields = map[string]string{"token": spec.Token, "user": spec.User}
+	default: // "webhook"
+		cfg.URL = spec.URL
+		cfg.Headers = spec.Headers
 	}
-	return discord.New(discord.Config{
-		ID:         spec.ID,
-		WebhookURL: spec.WebhookURL,
-		Renderer:   r,
-		Transport:  spec.Transport,
-	})
+	return cfg
 }
 
-func buildTelegram(spec NotifierSpec) (notify.Channel, error) {
-	r, err := renderer(spec, "text/html")
-	if err != nil {
-		return nil, err
+// parseDiscordRetryAfter pulls retry_after (seconds, with millisecond
+// precision) out of a Discord 429 body. Returns 0 when the body isn't shaped
+// like a Discord 429.
+func parseDiscordRetryAfter(body []byte) time.Duration {
+	var resp struct {
+		RetryAfter float64 `json:"retry_after"`
 	}
-	return telegram.New(telegram.Config{
-		ID:        spec.ID,
-		BotToken:  spec.BotToken,
-		ChatID:    spec.ChatID,
-		ParseMode: spec.ParseMode,
-		Renderer:  r,
-		Transport: spec.Transport,
-	})
-}
-
-func buildSMTP(spec NotifierSpec) (notify.Channel, error) {
-	r, err := renderer(spec, "text/html")
-	if err != nil {
-		return nil, err
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return 0
 	}
-	return smtp.New(smtp.Config{
-		ID:            spec.ID,
-		Host:          spec.Host,
-		Port:          spec.Port,
-		TLSMode:       spec.TLSMode,
-		TLSSkipVerify: spec.TLSSkipVerify,
-		Username:      spec.Username,
-		Password:      spec.Password,
-		From:          spec.From,
-		ReplyTo:       spec.ReplyTo,
-		Recipients:    spec.Recipients,
-		CC:            spec.CC,
-		BCC:           spec.BCC,
-		Backoff:       spec.Backoff,
-		Renderer:      r,
-	})
-}
-
-func buildSendmail(spec NotifierSpec) (notify.Channel, error) {
-	r, err := renderer(spec, "text/plain")
-	if err != nil {
-		return nil, err
+	if resp.RetryAfter <= 0 {
+		return 0
 	}
-	return sendmail.New(sendmail.Config{
-		ID:         spec.ID,
-		Path:       spec.SendmailPath,
-		From:       spec.From,
-		ReplyTo:    spec.ReplyTo,
-		Recipients: spec.Recipients,
-		CC:         spec.CC,
-		BCC:        spec.BCC,
-		Backoff:    spec.Backoff,
-		Renderer:   r,
-	})
-}
-
-func buildNtfy(spec NotifierSpec) (notify.Channel, error) {
-	r, err := renderer(spec, "application/json")
-	if err != nil {
-		return nil, err
-	}
-	return ntfy.New(ntfy.Config{
-		ID:        spec.ID,
-		URL:       spec.URL,
-		Topic:     spec.Topic,
-		Token:     spec.Token,
-		Renderer:  r,
-		Transport: spec.Transport,
-	})
-}
-
-func buildGotify(spec NotifierSpec) (notify.Channel, error) {
-	r, err := renderer(spec, "application/json")
-	if err != nil {
-		return nil, err
-	}
-	return gotify.New(gotify.Config{
-		ID:        spec.ID,
-		URL:       spec.URL,
-		Token:     spec.Token,
-		Renderer:  r,
-		Transport: spec.Transport,
-	})
-}
-
-func buildPushover(spec NotifierSpec) (notify.Channel, error) {
-	r, err := renderer(spec, "application/json")
-	if err != nil {
-		return nil, err
-	}
-	return pushover.New(pushover.Config{
-		ID:        spec.ID,
-		Token:     spec.Token,
-		User:      spec.User,
-		Renderer:  r,
-		Transport: spec.Transport,
-	})
-}
-
-func buildWebhook(spec NotifierSpec) (notify.Channel, error) {
-	r, err := renderer(spec, "application/json")
-	if err != nil {
-		return nil, err
-	}
-	return webhook.New(webhook.Config{
-		ID:        spec.ID,
-		URL:       spec.URL,
-		Headers:   spec.Headers,
-		Renderer:  r,
-		Transport: spec.Transport,
-	})
+	return time.Duration(math.Round(resp.RetryAfter*1000)) * time.Millisecond
 }

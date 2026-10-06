@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"image/color"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -53,9 +54,7 @@ func NewInfoView(info uikit.StartupInfo) InfoView {
 func (v *InfoView) SetSize(w, h int) {
 	v.width = w
 	v.height = h
-	if v.scroll > v.maxScroll() {
-		v.scroll = v.maxScroll()
-	}
+	v.scroll = min(v.scroll, v.maxScroll())
 }
 
 // UpdateStats pushes new metrics data and updates sparklines.
@@ -98,14 +97,10 @@ func (v *InfoView) Update(msg tea.KeyPressMsg) {
 		}
 	case "pgup":
 		v.scroll -= v.height / 2
-		if v.scroll < 0 {
-			v.scroll = 0
-		}
+		v.scroll = max(v.scroll, 0)
 	case "pgdown":
 		v.scroll += v.height / 2
-		if v.scroll > v.maxScroll() {
-			v.scroll = v.maxScroll()
-		}
+		v.scroll = min(v.scroll, v.maxScroll())
 	case "home", "g":
 		v.scroll = 0
 	case "end", "G":
@@ -116,17 +111,13 @@ func (v *InfoView) Update(msg tea.KeyPressMsg) {
 // ScrollUp scrolls up by n lines (for mouse wheel).
 func (v *InfoView) ScrollUp(n int) {
 	v.scroll -= n
-	if v.scroll < 0 {
-		v.scroll = 0
-	}
+	v.scroll = max(v.scroll, 0)
 }
 
 // ScrollDown scrolls down by n lines (for mouse wheel).
 func (v *InfoView) ScrollDown(n int) {
 	v.scroll += n
-	if v.scroll > v.maxScroll() {
-		v.scroll = v.maxScroll()
-	}
+	v.scroll = min(v.scroll, v.maxScroll())
 }
 
 func (v *InfoView) View() string {
@@ -165,11 +156,7 @@ func (v *InfoView) View() string {
 }
 
 func (v *InfoView) maxScroll() int {
-	maxOffset := v.contentHeight - v.height
-	if maxOffset < 0 {
-		return 0
-	}
-	return maxOffset
+	return max(v.contentHeight-v.height, 0)
 }
 
 func (v *InfoView) renderHealthSection(w int) []string {
@@ -244,10 +231,7 @@ func (v *InfoView) renderSparklineRow(w int, label, pct, detail string, history 
 	headerWidth := lipgloss.Width(headerLeft)
 
 	if headerWidth+sparklineWidth+4 <= w {
-		gap := w - headerWidth - sparklineWidth - 2
-		if gap < 2 {
-			gap = 2
-		}
+		gap := max(w-headerWidth-sparklineWidth-2, 2)
 		gapStr := bgStyle.Render(strings.Repeat(" ", gap))
 		lines = append(lines, uikit.PadLine(headerLeft+gapStr+spark, w, uikit.ColorBg))
 	} else {
@@ -291,11 +275,11 @@ func (v *InfoView) renderActivitySection(w int) []string {
 
 	s := v.runSummary
 	parts := []string{
-		uikit.InfoStatValueStyle.Render(fmt.Sprintf("%d", s.Total)) + uikit.InfoStatLabelStyle.Render(" runs"),
+		uikit.InfoStatValueStyle.Render(strconv.FormatInt(s.Total, 10)) + uikit.InfoStatLabelStyle.Render(" runs"),
 	}
 	if s.Total > 0 {
-		successStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorSuccess).Bold(true).Render(fmt.Sprintf("%d", s.Success))
-		failedStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorError).Bold(true).Render(fmt.Sprintf("%d", s.Failed))
+		successStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorSuccess).Bold(true).Render(strconv.FormatInt(s.Success, 10))
+		failedStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorError).Bold(true).Render(strconv.FormatInt(s.Failed, 10))
 		parts = append(parts, successStr+uikit.InfoStatLabelStyle.Render(" success"))
 		parts = append(parts, failedStr+uikit.InfoStatLabelStyle.Render(" failed"))
 

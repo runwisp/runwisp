@@ -3,8 +3,7 @@
 
 <script lang="ts">
     import { resolve } from "$app/paths";
-    import { browser } from "$app/environment";
-    import { formatShortId, TickingNow } from "@runwisp/ui";
+    import { formatShortId, TickingNow, Heading } from "@runwisp/ui";
     import { phrase } from "$lib/utils/notification-rhythm";
     import NotificationSparkline from "./NotificationSparkline.svelte";
     import type { Notification } from "$lib/stores/notifications.svelte";
@@ -20,10 +19,7 @@
     // Tick once every 30s so relative-time labels and the sparkline window
     // advance without waiting for an SSE event.
     const ticker = new TickingNow();
-    $effect(() => {
-        if (!browser) return;
-        return ticker.start();
-    });
+    $effect(() => ticker.start());
     let now = $derived(ticker.now);
 
     let rhythm = $derived(
@@ -54,9 +50,9 @@
 
     <div class="min-w-0 flex-1 space-y-1">
         <div class="flex items-baseline justify-between gap-2">
-            <h3 class="truncate text-sm font-semibold text-on-surface hover:text-primary-soft-text">
+            <Heading level={3} size="sm" class="truncate hover:text-primary-soft-text">
                 {notification.title || notification.kind}
-            </h3>
+            </Heading>
             <span class="shrink-0 text-2xs text-on-surface-faint">{rhythm}</span>
         </div>
 

@@ -4,7 +4,7 @@
 <script lang="ts">
     import { Star, Bug, X } from "@lucide/svelte";
     import { slide } from "svelte/transition";
-    import { Button, Textarea } from "@runwisp/ui";
+    import { Button, Link, LinkButton, Textarea } from "@runwisp/ui";
     import { feedbackStore, systemStore } from "$lib/stores";
     import {
         MIN_UPTIME_MS,
@@ -72,22 +72,16 @@
 </script>
 
 {#snippet externalLink(href: string, label: string, primary: boolean)}
-    <!-- External GitHub links, not app routes, so resolve() doesn't apply. -->
-    <!-- eslint-disable svelte/no-navigation-without-resolve -->
-    <a
-        {href}
-        target="_blank"
-        rel="noreferrer"
-        class={primary
-            ? "inline-flex items-center justify-center gap-1.5 rounded-[3px] bg-primary px-2.5 py-1 font-mono text-xs font-medium text-on-primary hover:bg-primary-hover"
-            : "text-xs text-primary hover:underline"}
-    >
-        {#if primary}
-            {#if href.endsWith("/issues/new")}<Bug size={12} />{:else}<Star size={12} />{/if}
-        {/if}
-        {label}{primary ? "" : " ↗"}
-    </a>
-    <!-- eslint-enable svelte/no-navigation-without-resolve -->
+    {#if primary}
+        <LinkButton {href} target="_blank" rel="noreferrer" size="xs">
+            {#snippet icon()}
+                {#if href.endsWith("/issues/new")}<Bug size={12} />{:else}<Star size={12} />{/if}
+            {/snippet}
+            {label}
+        </LinkButton>
+    {:else}
+        <Link {href} external variant="primary" class="text-xs">{label} ↗</Link>
+    {/if}
 {/snippet}
 
 {#if systemStore.checkUpdates && feedbackStore.open}

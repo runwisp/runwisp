@@ -19,10 +19,10 @@ func TestTrackRunningAndRemove(t *testing.T) {
 	now := time.Now()
 
 	tracker.TrackRunning("exec-1", &now)
-	assert.True(t, tracker.hasActive())
+	assert.NotEmpty(t, tracker.activeExecutions)
 
 	tracker.Remove("exec-1")
-	assert.False(t, tracker.hasActive())
+	assert.Empty(t, tracker.activeExecutions)
 }
 
 func TestTrackMultipleExecutions(t *testing.T) {
@@ -31,13 +31,13 @@ func TestTrackMultipleExecutions(t *testing.T) {
 
 	tracker.TrackRunning("exec-a", &now)
 	tracker.TrackRunning("exec-b", &now)
-	assert.True(t, tracker.hasActive())
+	assert.NotEmpty(t, tracker.activeExecutions)
 
 	tracker.Remove("exec-a")
-	assert.True(t, tracker.hasActive())
+	assert.NotEmpty(t, tracker.activeExecutions)
 
 	tracker.Remove("exec-b")
-	assert.False(t, tracker.hasActive())
+	assert.Empty(t, tracker.activeExecutions)
 }
 
 func TestQueueUpdateWithNilTrySend(t *testing.T) {

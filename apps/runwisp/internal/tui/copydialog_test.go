@@ -37,37 +37,37 @@ func TestCopyDialog_UpdateClosesOnKeys(t *testing.T) {
 			case "q":
 				msg = tea.KeyPressMsg{Code: 'q', Text: "q"}
 			}
-			assert.True(t, d.Update(msg), "expected close on %q", k)
+			assert.True(t, closes(d, msg), "expected close on %q", k)
 		})
 	}
 }
 
 func TestCopyDialog_UpdateIgnoresOtherKeys(t *testing.T) {
 	d := NewCopyDialog("t", "v")
-	assert.False(t, d.Update(tea.KeyPressMsg{Code: 'a', Text: "a"}))
+	assert.False(t, closes(d, tea.KeyPressMsg{Code: 'a', Text: "a"}))
 }
 
 func TestCopyDialog_UpdateRightClickCloses(t *testing.T) {
 	d := NewCopyDialog("t", "v")
-	closed := d.Update(tea.MouseClickMsg{Button: tea.MouseRight})
+	closed := closes(d, tea.MouseClickMsg{Button: tea.MouseRight})
 	assert.True(t, closed)
 }
 
 func TestCopyDialog_UpdateLeftClickDoesNotClose(t *testing.T) {
 	d := NewCopyDialog("t", "v")
-	closed := d.Update(tea.MouseClickMsg{Button: tea.MouseLeft})
+	closed := closes(d, tea.MouseClickMsg{Button: tea.MouseLeft})
 	assert.False(t, closed)
 }
 
 func TestCopyDialog_UpdateMouseRelease_DoesNotClose(t *testing.T) {
 	d := NewCopyDialog("t", "v")
-	closed := d.Update(tea.MouseReleaseMsg{Button: tea.MouseRight})
+	closed := closes(d, tea.MouseReleaseMsg{Button: tea.MouseRight})
 	assert.False(t, closed)
 }
 
 func TestCopyDialog_UpdateNonKeyOrMouseMsgIsIgnored(t *testing.T) {
 	d := NewCopyDialog("t", "v")
-	closed := d.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	closed := closes(d, tea.WindowSizeMsg{Width: 80, Height: 24})
 	assert.False(t, closed)
 }
 

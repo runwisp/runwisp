@@ -20,7 +20,7 @@ import (
 func errBoom() error { return errors.New("boom") }
 
 // TestModel_Guards covers the early-return / no-op branches of helpers that
-// short-circuit on empty selections, nil execView, nil clients, or out-of-range
+// short-circuit on empty selections, nil execView, or out-of-range
 // cursors. These exist as individual blocks in Go's coverage profile, so the
 // table preserves block coverage while removing per-case boilerplate.
 func TestModel_Guards(t *testing.T) {
@@ -46,7 +46,7 @@ func TestModel_Guards(t *testing.T) {
 
 	t.Run("latestRunningExec on empty window returns nil", func(t *testing.T) {
 		m := newTestModel(nil)
-		if m.latestRunningExec("t1") != nil {
+		if m.execWindow.LatestRunning("t1") != nil {
 			t.Fatal("expected nil for empty window")
 		}
 	})
@@ -55,13 +55,6 @@ func TestModel_Guards(t *testing.T) {
 		m := newTestModel(nil)
 		if m.copyExecField() != nil {
 			t.Fatal("expected nil cmd when no execView")
-		}
-	})
-
-	t.Run("openRunByID with nil client and run not in window returns nil", func(t *testing.T) {
-		m := newTestModel(nil)
-		if m.openRunByID("task", "run-id-123") != nil {
-			t.Fatal("expected nil cmd when client is nil and run not in window")
 		}
 	})
 
@@ -456,7 +449,7 @@ func TestRequestQuit_StartedDaemonOpensConfirmDialog(t *testing.T) {
 	if cmd := m.requestQuit(); cmd != nil {
 		t.Fatal("expected no quit cmd while the dialog asks")
 	}
-	d := m.dialogs.confirmDialog
+	d := m.dialogs.confirm()
 	if d == nil {
 		t.Fatal("expected confirm dialog after requestQuit")
 	}
@@ -487,7 +480,7 @@ func TestRequestQuit_ThrowawayShutsDownWithoutDialog(t *testing.T) {
 	m := newTestModel(nil)
 	m.daemon = DaemonThrowaway
 	cmd := m.requestQuit()
-	if m.dialogs.HasConfirm() {
+	if m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected no quit dialog")
 	}
 	if cmd == nil {
@@ -502,7 +495,7 @@ func TestRequestQuit_ThrowawayShutsDownWithoutDialog(t *testing.T) {
 func assertQuitsKeepingDaemon(t *testing.T, m *Model) {
 	t.Helper()
 	cmd := m.requestQuit()
-	if m.dialogs.HasConfirm() {
+	if m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected no quit dialog")
 	}
 	if cmd == nil {

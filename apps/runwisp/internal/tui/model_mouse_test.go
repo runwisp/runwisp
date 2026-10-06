@@ -206,7 +206,7 @@ func TestHandleMouse_WheelUpPress(t *testing.T) {
 // Scrolling to the top of the loaded log with the wheel must fetch older lines,
 // the same as the keyboard path.
 func TestHandleMouse_WheelUpToTopLoadsOlderLogs(t *testing.T) {
-	m := newTestModelWithClient(nil)
+	m := newTestModel(nil)
 	run := &model.Run{ID: "r-1", TaskName: "t1", Status: model.PhaseEnded}
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
@@ -297,7 +297,7 @@ func TestHandleMouse_ClickVersionIndicator_ShowsNewReleaseDialog(t *testing.T) {
 	if !got.sidebar.VersionFocused() {
 		t.Fatal("expected the version indicator to be focused after the click")
 	}
-	if !got.dialogs.HasNewRelease() {
+	if !got.dialogs.Has(dlgNewRelease) {
 		t.Fatal("expected the new-release dialog to open")
 	}
 }
@@ -421,7 +421,6 @@ func TestHandleExecViewClick_StartedCopiesValue(t *testing.T) {
 func TestHandleExecViewClick_ActionStop(t *testing.T) {
 	m := newTestModel(nil)
 	m, _ = m.applyWindowSize(120, 30)
-	m.client = newDummyClient() // confirmAction needs a non-nil client
 	run := &model.Run{ID: "r-1234567890", TaskName: "t1", Status: model.PhaseRunning}
 	ev := execlist.NewExecView(run)
 	ev.SetSize(80, 20)
@@ -436,7 +435,7 @@ func TestHandleExecViewClick_ActionStop(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected Model, got %T", updated)
 	}
-	if !got.dialogs.HasConfirm() {
+	if !got.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected stop confirm dialog after action click")
 	}
 }
@@ -457,7 +456,6 @@ func assertDeleteClick(t *testing.T, reason model.EndReason) {
 	t.Helper()
 	m := newTestModel(nil)
 	m, _ = m.applyWindowSize(80, 24)
-	m.client = newDummyClient() // confirmAction needs a non-nil client
 	run := &model.Run{
 		ID:        "r-1234567890",
 		TaskName:  "t1",
@@ -482,7 +480,7 @@ func assertDeleteClick(t *testing.T, reason model.EndReason) {
 	if cmd == nil {
 		t.Fatal("expected a delete command after action click")
 	}
-	if got.dialogs.HasConfirm() {
+	if got.dialogs.Has(dlgConfirm) {
 		t.Fatal("delete must act immediately, not open a confirm dialog")
 	}
 }

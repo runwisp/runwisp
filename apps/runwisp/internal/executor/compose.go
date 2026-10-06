@@ -90,13 +90,10 @@ func NewComposeBackend(fingerprint string) *ComposeBackend {
 	return &ComposeBackend{dockerCmd: "docker", fingerprint: fingerprint}
 }
 
-// Available probes `docker compose version` with a short timeout. Returns
+// available probes `docker compose version` with a short timeout. Returns
 // false when the binary is missing, the daemon is unreachable, or the call
 // exceeds composeAvailableTimeout.
-func (b *ComposeBackend) Available(ctx context.Context) bool {
-	if b == nil {
-		return false
-	}
+func (b *ComposeBackend) available(ctx context.Context) bool {
 	probeCtx, cancel := context.WithTimeout(ctx, composeAvailableTimeout)
 	defer cancel()
 	return exec.CommandContext(probeCtx, b.dockerCmd, "compose", "version").Run() == nil
@@ -532,7 +529,7 @@ type LazyComposeBackend struct {
 }
 
 // NewLazyComposeBackend returns a backend that probes `docker compose` on
-// first call to Available()/Start(). fingerprint scopes managed-container
+// first call to Start(). fingerprint scopes managed-container
 // reclaim to this daemon instance.
 func NewLazyComposeBackend(fingerprint string) *LazyComposeBackend {
 	return &LazyComposeBackend{fingerprint: fingerprint}
@@ -548,14 +545,9 @@ func (l *LazyComposeBackend) ensureProbed(ctx context.Context) (*ComposeBackend,
 	// up) must not disable compose for the daemon's lifetime, so re-probe until
 	// it reports available — mirroring LazyContainerBackend's retry-on-failure.
 	if !l.avail {
-		l.avail = l.backend.Available(ctx)
+		l.avail = l.backend.available(ctx)
 	}
 	return l.backend, l.avail
-}
-
-func (l *LazyComposeBackend) Available(ctx context.Context) bool {
-	_, ok := l.ensureProbed(ctx)
-	return ok
 }
 
 func (l *LazyComposeBackend) Start(ctx context.Context, task *model.Task, run *model.Run, def model.ExecutionDef) (*Process, error) {

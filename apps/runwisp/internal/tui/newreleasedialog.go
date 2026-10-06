@@ -31,8 +31,8 @@ type NewReleaseDialog struct {
 	linkX1, linkX2, linkY int
 }
 
-func NewNewReleaseDialog(current, latest string) NewReleaseDialog {
-	return NewReleaseDialog{current: current, latest: latest}
+func NewNewReleaseDialog(current, latest string) *NewReleaseDialog {
+	return &NewReleaseDialog{current: current, latest: latest}
 }
 
 // Update handles input while the dialog is open. Returns a command to run
@@ -75,15 +75,7 @@ func (d *NewReleaseDialog) handleKeyMsg(key string) (tea.Cmd, bool) {
 // open-browser → clipboard-fallback pipeline as every other browser action in
 // the TUI (see handleOpenBrowser).
 func openReleaseNotesCmd() tea.Cmd {
-	return func() tea.Msg {
-		if !canOpenBrowser() {
-			return uikit.OpenBrowserMsg{URL: releaseNotesURL}
-		}
-		if err := openBrowser(releaseNotesURL); err != nil {
-			return uikit.OpenBrowserMsg{URL: releaseNotesURL, Err: err}
-		}
-		return uikit.OpenBrowserMsg{URL: releaseNotesURL, BrowserOpened: true}
-	}
+	return func() tea.Msg { return browseMsg(releaseNotesURL) }
 }
 
 func (d *NewReleaseDialog) View(screenWidth, screenHeight int) string {

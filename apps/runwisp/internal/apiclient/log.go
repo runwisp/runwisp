@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/runwisp/runwisp/internal/server"
 )
@@ -18,12 +20,12 @@ import (
 // an absolute line anchor. limit <= 0 lets the server pick its default.
 func (c *Client) GetLogPage(ctx context.Context, runID string, from, limit int64) (server.LogPageBody, error) {
 	q := url.Values{}
-	q.Set("from", fmt.Sprintf("%d", from))
+	q.Set("from", strconv.FormatInt(from, 10))
 	if limit > 0 {
-		q.Set("limit", fmt.Sprintf("%d", limit))
+		q.Set("limit", strconv.FormatInt(limit, 10))
 	}
 	path := fmt.Sprintf("/api/runs/%s/log?%s", runID, q.Encode())
-	resp, err := c.doRaw(ctx, path)
+	resp, err := c.doRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return server.LogPageBody{}, err
 	}
@@ -41,7 +43,7 @@ func (c *Client) GetLogPage(ctx context.Context, runID string, from, limit int64
 // streaming primitive.
 func (c *Client) GetLogRaw(ctx context.Context, runID string) (io.ReadCloser, error) {
 	path := fmt.Sprintf("/api/runs/%s/log/raw", runID)
-	resp, err := c.doRaw(ctx, path)
+	resp, err := c.doRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +55,7 @@ func (c *Client) GetLogRaw(ctx context.Context, runID string) (io.ReadCloser, er
 // empty slice when the line has no recorded history.
 func (c *Client) GetLogLineHistory(ctx context.Context, runID string, n int64) ([][]string, error) {
 	path := fmt.Sprintf("/api/runs/%s/log/line/%d/history", runID, n)
-	resp, err := c.doRaw(ctx, path)
+	resp, err := c.doRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -92,13 +94,13 @@ func (c *Client) SearchLogs(ctx context.Context, taskName string, opts SearchLog
 		q.Set("runId", opts.RunID)
 	}
 	if opts.Limit > 0 {
-		q.Set("limit", fmt.Sprintf("%d", opts.Limit))
+		q.Set("limit", strconv.Itoa(opts.Limit))
 	}
 	if opts.Cursor != "" {
 		q.Set("cursor", opts.Cursor)
 	}
 	path := fmt.Sprintf("/api/tasks/%s/log/search?%s", taskName, q.Encode())
-	resp, err := c.doRaw(ctx, path)
+	resp, err := c.doRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return server.LogSearchBody{}, err
 	}

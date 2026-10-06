@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 export { authStore } from "./auth.svelte.js";
-export { taskStore, removeRun } from "./data.svelte.js";
+export { taskStore } from "./data.svelte.js";
 export { runUpdatesStore } from "./run-updates.js";
 export type { RunUpdateHandler, RunUpdateEvent } from "./run-updates.js";
-export { appEventStream } from "./app-stream.svelte.js";
+export { appEventStream } from "./app-stream.js";
 export { connectionStore } from "./connection.svelte.js";
 export type { ConnectionStatus } from "./connection.svelte.js";
 export { systemStore } from "./system.svelte.js";

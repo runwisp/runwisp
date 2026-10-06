@@ -106,12 +106,12 @@ type paramZone struct {
 
 // NewParamFormDialog builds a form for the task's parameters. submit is invoked
 // with the collected identity→value map when the operator confirms a valid form.
-func NewParamFormDialog(taskName string, params []model.TaskParam, submit func(map[string]*string) tea.Cmd) ParamFormDialog {
+func NewParamFormDialog(taskName string, params []model.TaskParam, submit func(map[string]*string) tea.Cmd) *ParamFormDialog {
 	fields := make([]paramField, 0, len(params))
 	for _, p := range params {
 		fields = append(fields, newParamField(p))
 	}
-	d := ParamFormDialog{taskName: taskName, fields: fields, submit: submit}
+	d := &ParamFormDialog{taskName: taskName, fields: fields, submit: submit}
 	d.syncFocus()
 	return d
 }

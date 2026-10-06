@@ -16,6 +16,7 @@ import (
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/generated/protocol"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
 )
 
@@ -47,10 +48,13 @@ type Dependencies struct {
 	RunRepo           ExternalRunGetter
 	PendingUploadRepo storage.PendingLogUploadRepository
 	EventBus          EventSubscriber
-	LocalTasks        TaskSnapshotter
-	LogDir            string
-	Availability      executor.Availability
-	OnConnected       func()
+	// LocalTasks is the daemon's TOML-defined task set. The client re-reads it
+	// on every sync rather than caching it once, so a `runwisp reload` is
+	// reflected on the next reconnect.
+	LocalTasks   *runtime.TaskRegistry
+	LogDir       string
+	Availability executor.Availability
+	OnConnected  func()
 	// RequestRestart asks the daemon to restart its own process when station
 	// sends agent:restart. nil rejects the command (e.g. not service-managed).
 	RequestRestart func() error
@@ -72,7 +76,7 @@ type Client struct {
 
 	syncClient   *TaskSyncClient
 	taskManager  TaskRunner
-	localTasks   TaskSnapshotter
+	localTasks   *runtime.TaskRegistry
 	availability executor.Availability
 	onConnected  func()
 	handler      *InboundHandler
@@ -89,9 +93,9 @@ type wsSession struct {
 	outbound     chan []byte
 	lastReceived atomic.Int64
 	// closed is set once sessionRunner.run's loops have all exited (in
-	// particular writeLoop, the only reader of outbound). connectionManager's
-	// ready flag only flips to false after run() returns to its caller, which
-	// leaves a window where ready is still true but nothing will ever drain
+	// particular writeLoop, the only reader of outbound). connectionManager
+	// only detaches the session after run() returns to its caller, which
+	// leaves a window where it is still attached but nothing will ever drain
 	// outbound again; sendMessage consults this field directly so a send
 	// racing that window fails loudly instead of reporting success into a
 	// channel with no reader.
@@ -165,7 +169,7 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 // On success the resulting terminal `execution:update` is queued for
 // delivery once the station session is up. Safe to call before Run.
 func (client *Client) RecoverArchiveBacklog(ctx context.Context) {
-	if client == nil || client.uploader == nil {
+	if client == nil {
 		return
 	}
 	client.uploader.RecoverOrphans(ctx, func(executionID string, result LogUploaderResult) {
@@ -337,16 +341,14 @@ func (client *Client) snapshotForSync() map[string]*model.Task {
 			snapshot[name] = task
 		}
 	}
-	if client.taskManager != nil {
-		for _, svc := range client.taskManager.ListServiceTasks() {
-			if svc == nil {
-				continue
-			}
-			if _, ok := snapshot[svc.Name]; ok {
-				continue // TOML already covers it with its richer definition.
-			}
-			snapshot[svc.Name] = svc
+	for _, svc := range client.taskManager.ListServiceTasks() {
+		if svc == nil {
+			continue
 		}
+		if _, ok := snapshot[svc.Name]; ok {
+			continue // TOML already covers it with its richer definition.
+		}
+		snapshot[svc.Name] = svc
 	}
 	return snapshot
 }
@@ -362,9 +364,7 @@ func (client *Client) startSession(ctx context.Context, connection *websocket.Co
 
 	// Clear stale log listeners from a previous session. This is a safety net
 	// in case the previous session's teardown was interrupted by a panic.
-	if client.handler != nil {
-		client.handler.ClearLogListeners()
-	}
+	client.handler.ClearLogListeners()
 	if isFirstConnect && client.onConnected != nil {
 		client.onConnected()
 	}
@@ -372,15 +372,11 @@ func (client *Client) startSession(ctx context.Context, connection *websocket.Co
 	// Immediately re-seed the control plane's service view on (re)connect: a
 	// stable service emits no lifecycle event to trigger a fresh snapshot, so
 	// without this the view stays empty until the first resend-ticker tick.
-	if client.bridge != nil {
-		client.bridge.EmitAllServiceStatus()
-	}
+	client.bridge.EmitAllServiceStatus()
 
 	sessionErr := client.sessions.run(ctx, session)
 	client.conn.detachSession()
-	if client.handler != nil {
-		client.handler.ClearLogListeners()
-	}
+	client.handler.ClearLogListeners()
 	if sessionErr != nil {
 		return &StationError{Kind: StationErrorKindTransient, Message: "connection lost", Err: sessionErr}
 	}
@@ -409,4 +405,37 @@ func sendMessage(session *wsSession, message any) error {
 	default:
 		return &StationError{Kind: StationErrorKindTransient, Message: "outbound websocket queue is full"}
 	}
+}
+
+func readAuthResult(ctx context.Context, connection *websocket.Conn) (protocol.AuthResultMessage, error) {
+	readCtx, cancel := context.WithTimeout(ctx, authReadTimeout)
+	defer cancel()
+
+	_, payload, err := connection.Read(readCtx)
+	if err != nil {
+		return protocol.AuthResultMessage{}, &StationError{
+			Kind:    StationErrorKindTransient,
+			Message: "failed to read auth result",
+			Err:     err,
+		}
+	}
+
+	message, err := DecodeInboundMessage(payload)
+	if err != nil {
+		return protocol.AuthResultMessage{}, &StationError{
+			Kind:    StationErrorKindValidation,
+			Message: "failed to parse auth result",
+			Err:     err,
+		}
+	}
+
+	authResult, ok := message.(protocol.AuthResultMessage)
+	if !ok {
+		return protocol.AuthResultMessage{}, &StationError{
+			Kind:    StationErrorKindValidation,
+			Message: "first websocket message must be auth:result",
+		}
+	}
+
+	return authResult, nil
 }

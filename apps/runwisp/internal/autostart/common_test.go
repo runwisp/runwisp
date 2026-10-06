@@ -140,8 +140,8 @@ func TestPlanKind_String(t *testing.T) {
 	}
 }
 
-func TestNewRunner_RealCommand(t *testing.T) {
-	r := NewRunner()
+func TestExecRunner_RealCommand(t *testing.T) {
+	r := execRunner{}
 	require.NotNil(t, r)
 	// /bin/true is universally available on Linux/macOS and returns 0.
 	stdout, stderr, err := r.Run(testCtx(t), "true")
@@ -150,20 +150,20 @@ func TestNewRunner_RealCommand(t *testing.T) {
 	assert.Empty(t, stderr)
 }
 
-func TestNewRunner_FailingCommand(t *testing.T) {
-	r := NewRunner()
+func TestExecRunner_FailingCommand(t *testing.T) {
+	r := execRunner{}
 	_, _, err := r.Run(testCtx(t), "false")
 	assert.Error(t, err)
 }
 
-func TestNewRunner_Missing(t *testing.T) {
-	r := NewRunner()
+func TestExecRunner_Missing(t *testing.T) {
+	r := execRunner{}
 	_, _, err := r.Run(testCtx(t), "no-such-binary-7f9a8b6c")
 	assert.Error(t, err)
 }
 
-func TestNewOSFileSystem_WriteReadStatRemove(t *testing.T) {
-	fs := NewOSFileSystem()
+func TestOSFS_WriteReadStatRemove(t *testing.T) {
+	fs := osFS{}
 	require.NotNil(t, fs)
 
 	dir := t.TempDir()
@@ -212,4 +212,16 @@ func TestFakeRunner_LogAndExhaustion(t *testing.T) {
 	log := r.Log()
 	assert.Len(t, log, 2)
 	assert.Equal(t, "systemctl", log[0].Name)
+}
+
+func TestOSFS_WriteFile_MkdirError(t *testing.T) {
+	// Writing under a path whose parent already exists as a file should fail at
+	// the MkdirAll step inside osFS.WriteFile.
+	fs := osFS{}
+	dir := t.TempDir()
+	parentAsFile := dir + "/blocker"
+	require.NoError(t, fs.WriteFile(parentAsFile, []byte("x"), 0o600))
+
+	err := fs.WriteFile(parentAsFile+"/child.txt", []byte("y"), 0o600)
+	require.Error(t, err, "MkdirAll should fail when parent is a regular file")
 }

@@ -342,9 +342,7 @@ func (s *runService) setSchedulePaused(ctx context.Context, taskName string, pau
 	if err != nil {
 		return err
 	}
-	if s.eventBus != nil {
-		s.eventBus.Publish(events.EventTasksChanged, events.TasksChangedEvent{})
-	}
+	s.eventBus.Publish(events.EventTasksChanged, events.TasksChangedEvent{})
 	return nil
 }
 
@@ -558,9 +556,6 @@ func (s *runService) bulkRerun(ctx context.Context, sel model.RunSelector) ([]Tr
 }
 
 func (s *runService) publishDeleted(ref storage.RunRef) {
-	if s.eventBus == nil {
-		return
-	}
 	s.eventBus.Publish(events.EventRunDeleted, events.RunDeletedEvent{
 		RunID:    ref.ID,
 		TaskName: ref.TaskName,
@@ -568,9 +563,6 @@ func (s *runService) publishDeleted(ref storage.RunRef) {
 }
 
 func (s *runService) publishRunUpdated(run *model.Run) {
-	if s.eventBus == nil {
-		return
-	}
 	s.eventBus.Publish(events.EventRunUpdated, events.RunEvent{Run: run.Copy()})
 }
 

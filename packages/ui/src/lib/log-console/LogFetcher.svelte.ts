@@ -1,13 +1,12 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import { createLoggerFactory } from "@runwisp/common";
+import { createLogger } from "@runwisp/common";
 import { SvelteSet } from "svelte/reactivity";
 import type { LogCache } from "./LogCache.svelte.js";
 import type { FetchLogsFn } from "./types.js";
 import { isLogEvent } from "./types.js";
 
-const createLogger = createLoggerFactory();
 const logger = createLogger("LogFetcher");
 
 /**
@@ -20,8 +19,8 @@ const logger = createLogger("LogFetcher");
  */
 export class LogFetcher {
     private readonly cache: LogCache;
-    private fetchLogsFn: FetchLogsFn | undefined;
-    private chunkSize: number;
+    private readonly fetchLogsFn: FetchLogsFn | undefined;
+    private readonly chunkSize = 4096;
 
     readonly MAX_INFLIGHT = 2;
     readonly MIN_REQUEST_INTERVAL_MS = 140;
@@ -38,21 +37,11 @@ export class LogFetcher {
     constructor(
         cache: LogCache,
         fetchLogsFn: FetchLogsFn | undefined,
-        chunkSize: number = 4096,
         onDataLoaded?: (min: number, max: number) => void,
     ) {
         this.cache = cache;
         this.fetchLogsFn = fetchLogsFn;
-        this.chunkSize = Math.max(1, Math.floor(chunkSize));
         this.onDataLoaded = onDataLoaded;
-    }
-
-    setFetchLogsFn(fn: FetchLogsFn | undefined) {
-        this.fetchLogsFn = fn;
-    }
-
-    setChunkSize(size: number) {
-        this.chunkSize = Math.max(1, Math.floor(size));
     }
 
     enqueue(from: number, to: number) {

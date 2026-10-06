@@ -3,14 +3,14 @@
 
 <script lang="ts">
     import { Globe, MessageSquareHeart, TriangleAlert } from "@lucide/svelte";
-    import { formatDuration, Popover, StatusDot, type StatusDotTone } from "@runwisp/ui";
+    import { formatDuration, Link, Popover, StatusDot, type StatusDotTone } from "@runwisp/ui";
     import {
         connectionStore,
         feedbackStore,
         systemStore,
         type ConnectionStatus,
     } from "$lib/stores";
-    import { appEventStream } from "$lib/stores/app-stream.svelte";
+    import { appEventStream } from "$lib/stores/app-stream";
     import { stalledCopy } from "$lib/utils/connection-copy";
 
     interface Theme {
@@ -112,14 +112,14 @@
                             is out, you're on
                             <span class="font-mono">v{systemStore.version}</span>.
                         </span>
-                        <a
+                        <Link
                             href="https://runwisp.com/releases/"
-                            target="_blank"
-                            rel="noreferrer"
-                            class="mt-1 text-primary hover:underline"
+                            external
+                            variant="primary"
+                            class="mt-1"
                         >
                             View release notes ↗
-                        </a>
+                        </Link>
                     </div>
                 </Popover>
             {/if}

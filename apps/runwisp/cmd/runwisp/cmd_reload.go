@@ -32,15 +32,11 @@ under the definition they started with.
 This is equivalent to sending the daemon a SIGHUP.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		return runReload(cmd, flags)
+		return reloadRunningDaemon(cmd.Context(), flags, cmd.OutOrStdout())
 	},
 }
 
-func runReload(cmd *cobra.Command, f Flags) error {
-	return reloadRunningDaemon(cmd.Context(), f, cmd.OutOrStdout())
-}
-
-// reloadRunningDaemon is the cobra-free half, so callers without a command can
+// reloadRunningDaemon takes no *cobra.Command, so callers without one can
 // reload too — internal/cutover hands the held cron jobs to a daemon that was
 // already running, and the first-run flow has no *cobra.Command to hand it.
 func reloadRunningDaemon(ctx context.Context, f Flags, out io.Writer) error {
@@ -66,10 +62,6 @@ func reloadRunningDaemon(ctx context.Context, f Flags, out io.Writer) error {
 // operator needs to be told something, and IsEmpty deliberately doesn't count
 // them so the "no task changes" line stays honest about the task set.
 func printReloadResult(out io.Writer, result *model.ReloadResult) {
-	if result == nil {
-		fmt.Fprintln(out, "Configuration reloaded — no task changes.")
-		return
-	}
 	if result.IsEmpty() {
 		fmt.Fprintln(out, "Configuration reloaded — no task changes.")
 	} else {

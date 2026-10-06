@@ -175,7 +175,7 @@ func (sd *supervisordState) finish() *Result {
 			// TOML, which looks like a skip, but the work it leaves behind is "go
 			// reimplement this" rather than "nothing to do" — which is why
 			// deriveStatus ranks blocking above skipped.
-			sd.res.addItem(s.name).note(NoteSectionUnsupported,
+			sd.res.addItemAt(s.name, 0).note(NoteSectionUnsupported,
 				"["+s.name+"] isn't supported — RunWisp has no event listeners or "+
 					"FastCGI process manager. Nothing was imported for it.")
 		case "supervisord", "supervisorctl", "unix_http_server", "inet_http_server", "rpcinterface":
@@ -217,7 +217,7 @@ func (sd *supervisordState) processProgram(rawName string, s *iniSection, group 
 	taskKind := programKind(s)
 	user, _ := s.get("user")
 	id := OwnedEntry{Kind: taskKind, Run: programCommand(s, rawName), User: user}
-	ref, name, skip := sd.names.resolve(rawName, sanitizeProgramName(rawName), id, 0)
+	ref, name, skip := sd.names.resolve(rawName, finalizeTaskName(strings.TrimSpace(rawName), "program"), id, 0)
 	if skip {
 		return
 	}
@@ -379,7 +379,7 @@ func (sd *supervisordState) applyProgramKeys(b *block, s *iniSection, ref itemRe
 		case "umask":
 			b.set("umask", tomlString(value))
 		case "stopsignal":
-			if canonical, ok := normalizeSignal(value); ok {
+			if canonical, ok := model.NormalizeSignalName(value); ok {
 				b.set("stop_signal", tomlString(canonical))
 			} else {
 				sd.noteUnreadable(ref, key, value)
@@ -509,14 +509,8 @@ func (sd *supervisordState) serviceOnly(key string, ref itemRef, isService bool)
 // splitSectionName splits "program:web" into ("program", "web"). A bare
 // section name like "supervisord" returns ("supervisord", "").
 func splitSectionName(s string) (kind, name string) {
-	if i := strings.IndexByte(s, ':'); i >= 0 {
-		return s[:i], strings.TrimSpace(s[i+1:])
-	}
-	return s, ""
-}
-
-func sanitizeProgramName(name string) string {
-	return finalizeTaskName(strings.TrimSpace(name), "program")
+	kind, name, _ = strings.Cut(s, ":")
+	return kind, strings.TrimSpace(name)
 }
 
 func parseBool(value string) (bool, bool) {
@@ -537,12 +531,6 @@ func secondsValue(value string) (string, bool) {
 		return "", false
 	}
 	return strconv.Itoa(n) + "s", true
-}
-
-// normalizeSignal turns supervisord's "TERM" into RunWisp's "SIGTERM" form,
-// reporting whether the signal is in RunWisp's stop_signal allowlist.
-func normalizeSignal(value string) (string, bool) {
-	return model.NormalizeSignalName(value)
 }
 
 // expandSupervisordTokens resolves the %(program_name)s expansion and reports

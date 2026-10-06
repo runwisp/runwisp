@@ -28,14 +28,6 @@ func TestLazyContainerBackend_NewReturnsBackendImplementation(t *testing.T) {
 	assert.True(t, ok, "NewLazyContainerBackend must return *LazyContainerBackend")
 }
 
-func TestLazyContainerBackend_AvailableReturnsFalseWhenDaemonUnreachable(t *testing.T) {
-	t.Setenv("DOCKER_HOST", "unix:///nonexistent/path/to/docker.sock")
-	l := &LazyContainerBackend{}
-	if l.Available(context.Background()) {
-		t.Skip("docker daemon is reachable on this machine; can't assert unavailability")
-	}
-}
-
 func TestLazyContainerBackend_StartWrapsConnectionError(t *testing.T) {
 	t.Setenv("DOCKER_HOST", "unix:///nonexistent/path/to/docker.sock")
 	l := &LazyContainerBackend{}

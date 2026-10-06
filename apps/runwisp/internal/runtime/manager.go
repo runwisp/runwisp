@@ -262,7 +262,7 @@ func (m *defaultTaskManager) upsertTaskLocked(task *model.Task) []*model.Run {
 			ts = draining
 			ts.removed = false
 		} else {
-			ts = &taskState{active: make([]*ActiveRun, 0)}
+			ts = &taskState{}
 		}
 		m.tasks[task.Name] = ts
 	}
@@ -280,9 +280,6 @@ func (m *defaultTaskManager) upsertTaskLocked(task *model.Task) []*model.Run {
 	}
 
 	if task.OnOverlap == model.PolicyQueue {
-		if ts.queue == nil {
-			ts.queue = make([]queuedRun, 0)
-		}
 		if ts.cond == nil {
 			ts.cond = sync.NewCond(&m.mu)
 		}
@@ -354,7 +351,7 @@ func (m *defaultTaskManager) finalizeOrphanedQueue(ts *taskState) []*model.Run {
 func (m *defaultTaskManager) retireOrphaned(runs []*model.Run) {
 	for _, r := range runs {
 		m.gate.onComplete(r.ID)
-		m.publishTerminal(events.EventRunFailed, r)
+		m.publishTerminal(events.EventRunFailed, r, "")
 	}
 }
 
@@ -461,7 +458,7 @@ func (m *defaultTaskManager) LoadPendingRuns(runs []model.Run) PendingRunsResult
 	var endedRuns []*model.Run
 	defer func() {
 		for _, r := range endedRuns {
-			m.publishTerminal(events.EventRunFailed, r)
+			m.publishTerminal(events.EventRunFailed, r, "")
 		}
 	}()
 	m.mu.Lock()
@@ -539,12 +536,6 @@ func (m *defaultTaskManager) restartOrFailPendingRun(ts *taskState, r *model.Run
 	return r
 }
 
-func (m *defaultTaskManager) TriggerRun(taskName string, triggeredBy model.TriggeredBy) (*model.Run, error) {
-	return m.TriggerRunWithOptions(taskName, TriggerRunOptions{
-		TriggeredBy: triggeredBy,
-	})
-}
-
 func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options TriggerRunOptions) (*model.Run, error) {
 	m.mu.Lock()
 	// A terminal event for a run that never executes is published after the
@@ -581,8 +572,7 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 
 	var executionID *string
 	if options.ExecutionID != "" {
-		externalIDCopy := options.ExecutionID
-		executionID = &externalIDCopy
+		executionID = new(options.ExecutionID)
 	}
 
 	// Resolve declared parameters against supplied values before any run row is
@@ -597,82 +587,67 @@ func (m *defaultTaskManager) TriggerRunWithOptions(taskName string, options Trig
 		resolvedParams = nil
 	}
 
-	if ts.task.Kind.IsService() {
-		idx, err := ts.supervisor.Reserve(options.InstanceIndex)
-		if err != nil {
+	isService := ts.task.Kind.IsService()
+	var instanceIndex int
+	if isService {
+		if instanceIndex, err = ts.supervisor.Reserve(options.InstanceIndex); err != nil {
 			return nil, err
 		}
-		run := &model.Run{
-			ID:            ulid.Make().String(),
-			ExecutionID:   executionID,
-			TaskName:      taskName,
-			Status:        model.PhasePending,
-			TriggeredBy:   triggeredBy,
-			CreatedAt:     m.clock(),
-			RetryAttempt:  options.RetryAttempt,
-			RetryOfRunID:  options.RetryOfRunID,
-			InstanceIndex: idx,
-			Params:        resolvedParams,
-		}
-		m.persistence.PersistNew(run)
-		m.publishRun(events.EventRunCreated, run)
-		// Snapshot before startRun hands the live run to its execution goroutine.
-		// The caller must never read fields (Status, StartedAt, ...) that the run
-		// goroutine concurrently writes, so it gets an independent copy.
-		snapshot := run.Copy()
-		m.startRun(ts.task, run)
-		return snapshot, nil
 	}
 
 	// A jittered cron run records CreatedAt as the tick it belongs to (set by
 	// the scheduler), even though it starts later at tick + offset. Every other
-	// path leaves ScheduledAt zero and stamps the current clock.
+	// path (services included) leaves ScheduledAt zero and stamps the current
+	// clock.
 	createdAt := m.clock()
-	if !options.ScheduledAt.IsZero() {
+	if !isService && !options.ScheduledAt.IsZero() {
 		createdAt = options.ScheduledAt
 	}
 
 	run := &model.Run{
-		ID:           ulid.Make().String(),
-		ExecutionID:  executionID,
-		TaskName:     taskName,
-		Status:       model.PhasePending,
-		TriggeredBy:  triggeredBy,
-		CreatedAt:    createdAt,
-		RetryAttempt: options.RetryAttempt,
-		RetryOfRunID: options.RetryOfRunID,
-		Params:       resolvedParams,
+		ID:            ulid.Make().String(),
+		ExecutionID:   executionID,
+		TaskName:      taskName,
+		Status:        model.PhasePending,
+		TriggeredBy:   triggeredBy,
+		CreatedAt:     createdAt,
+		RetryAttempt:  options.RetryAttempt,
+		RetryOfRunID:  options.RetryOfRunID,
+		InstanceIndex: instanceIndex,
+		Params:        resolvedParams,
 	}
 
 	m.persistence.PersistNew(run)
-	m.publishRun(events.EventRunCreated, run)
+	m.publishRun(events.EventRunCreated, run, "")
 
-	concurrencyLimit := m.getConcurrencyLimit(ts.task)
-	action, actionErr := m.evaluateConcurrency(ts, run, concurrencyLimit)
-
-	switch action {
-	case actionRejected:
-		run.End(ts.task, model.ReasonSkipped, -1, m.clock())
-		m.persistence.PersistExisting(run)
-		publishTerminal = func() { m.publishTerminal(events.EventRunFailed, run) }
-		return run.Copy(), actionErr
-	case actionQueueFull:
-		run.End(ts.task, model.ReasonQueueFull, -1, m.clock())
-		m.persistence.PersistExisting(run)
-		publishTerminal = func() { m.publishTerminal(events.EventRunFailed, run) }
-		return run.Copy(), actionErr
-	case actionQueued:
-		// The run sits in the queue; queueProcessLoop will later hand it to a
-		// goroutine. Return a snapshot so the caller never races that promotion.
-		return run.Copy(), nil
-	case actionStart:
-		// PolicyKill: evaluateConcurrency already cancelled the oldest
-		// run. Do NOT eagerly remove it from active here — let the goroutine
-		// clean up after executor.Execute returns, so the concurrency count
-		// stays accurate.
+	if !isService {
+		action, actionErr := m.evaluateConcurrency(ts, run, m.getConcurrencyLimit(ts.task))
+		switch action {
+		case actionRejected:
+			run.End(ts.task, model.ReasonSkipped, -1, m.clock())
+			m.persistence.PersistExisting(run)
+			publishTerminal = func() { m.publishTerminal(events.EventRunFailed, run, "") }
+			return run.Copy(), actionErr
+		case actionQueueFull:
+			run.End(ts.task, model.ReasonQueueFull, -1, m.clock())
+			m.persistence.PersistExisting(run)
+			publishTerminal = func() { m.publishTerminal(events.EventRunFailed, run, "") }
+			return run.Copy(), actionErr
+		case actionQueued:
+			// The run sits in the queue; queueProcessLoop will later hand it to a
+			// goroutine. Return a snapshot so the caller never races that promotion.
+			return run.Copy(), nil
+		case actionStart:
+			// PolicyKill: evaluateConcurrency already cancelled the oldest
+			// run. Do NOT eagerly remove it from active here — let the goroutine
+			// clean up after executor.Execute returns, so the concurrency count
+			// stays accurate.
+		}
 	}
 
-	// Snapshot before startRun spawns the execution goroutine (see service path).
+	// Snapshot before startRun hands the live run to its execution goroutine.
+	// The caller must never read fields (Status, StartedAt, ...) that the run
+	// goroutine concurrently writes, so it gets an independent copy.
 	snapshot := run.Copy()
 	m.startRun(ts.task, run)
 	return snapshot, nil
@@ -730,58 +705,11 @@ func (m *defaultTaskManager) triggerJittered(taskName string, tick time.Time) (s
 	return run.ID, true
 }
 
-// recordPhantomRun builds a synthetic run that never executes — no process
-// started, no log file, no streams open — persists it, and immediately ends
-// it at the same instant it was created, for callers that need an audit row
-// documenting a run that was suppressed or never fired. errText, when
-// non-empty, rides the terminal event as its RunEvent.Error (the notification
-// body); otherwise the plain terminal event is published. Caller holds m.mu
-// and is responsible for invoking the returned closure after releasing it
-// (see TriggerRunWithOptions: publishing under the lock risks a deadlock if a
-// subscriber re-enters).
-func (m *defaultTaskManager) recordPhantomRun(taskName string, at time.Time, reason model.EndReason, triggeredBy model.TriggeredBy, errText string) (func(), error) {
-	ts, exists := m.tasks[taskName]
-	if !exists {
-		return nil, fmt.Errorf(errTaskNotFoundFmt, taskName)
-	}
-
-	run := &model.Run{
-		ID:          ulid.Make().String(),
-		TaskName:    taskName,
-		Status:      model.PhasePending,
-		TriggeredBy: triggeredBy,
-		CreatedAt:   at,
-	}
-	m.persistence.PersistNew(run)
-	m.publishRun(events.EventRunCreated, run)
-	run.End(ts.task, reason, -1, at)
-	m.persistence.PersistExisting(run)
-
-	if errText != "" {
-		return func() { m.publishTerminalErr(events.EventRunFailed, run, errText) }, nil
-	}
-	return func() { m.publishTerminal(events.EventRunFailed, run) }, nil
-}
-
 // RecordSkippedFiring persists a run that the runtime suppressed before any
 // executor work (e.g. a DST wall-clock duplicate). The run lives only as an
 // audit row, created and immediately ended "now" with the supplied reason.
 func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.EndReason, triggeredBy model.TriggeredBy) error {
-	m.mu.Lock()
-	var publishTerminal func()
-	defer func() {
-		if publishTerminal != nil {
-			publishTerminal()
-		}
-	}()
-	defer m.mu.Unlock()
-
-	fn, err := m.recordPhantomRun(taskName, m.clock(), reason, triggeredBy, "")
-	if err != nil {
-		return err
-	}
-	publishTerminal = fn
-	return nil
+	return m.recordPhantomRun(taskName, m.clock(), reason, triggeredBy, "")
 }
 
 // RecordMissedRun persists a terminal end_reason = "missed" run that documents
@@ -791,20 +719,42 @@ func (m *defaultTaskManager) RecordSkippedFiring(taskName string, reason model.E
 // (scheduledAt), not now, so resolveCatchupAnchor reads it back as the
 // last-alerted point and the next restart never re-alerts.
 func (m *defaultTaskManager) RecordMissedRun(taskName string, scheduledAt time.Time, reason string) error {
+	return m.recordPhantomRun(taskName, scheduledAt, model.ReasonMissed, model.TriggeredByCron, reason)
+}
+
+// recordPhantomRun builds a synthetic run that never executes — no process
+// started, no log file, no streams open — persists it, and immediately ends
+// it at the same instant it was created, for callers that need an audit row
+// documenting a run that was suppressed or never fired. errText rides the
+// terminal event as its RunEvent.Error (the notification body). The terminal
+// event is published after m.mu is released (see TriggerRunWithOptions:
+// publishing under the lock risks a deadlock if a subscriber re-enters).
+func (m *defaultTaskManager) recordPhantomRun(taskName string, at time.Time, reason model.EndReason, triggeredBy model.TriggeredBy, errText string) error {
 	m.mu.Lock()
-	var publishTerminal func()
+	var run *model.Run
 	defer func() {
-		if publishTerminal != nil {
-			publishTerminal()
+		if run != nil {
+			m.publishTerminal(events.EventRunFailed, run, errText)
 		}
 	}()
 	defer m.mu.Unlock()
 
-	fn, err := m.recordPhantomRun(taskName, scheduledAt, model.ReasonMissed, model.TriggeredByCron, reason)
-	if err != nil {
-		return err
+	ts, exists := m.tasks[taskName]
+	if !exists {
+		return fmt.Errorf(errTaskNotFoundFmt, taskName)
 	}
-	publishTerminal = fn
+
+	run = &model.Run{
+		ID:          ulid.Make().String(),
+		TaskName:    taskName,
+		Status:      model.PhasePending,
+		TriggeredBy: triggeredBy,
+		CreatedAt:   at,
+	}
+	m.persistence.PersistNew(run)
+	m.publishRun(events.EventRunCreated, run, "")
+	run.End(ts.task, reason, -1, at)
+	m.persistence.PersistExisting(run)
 	return nil
 }
 
@@ -1123,7 +1073,7 @@ func (m *defaultTaskManager) execute(ctx context.Context, task *model.Task, run 
 	// must be durably 'running' before the OS process exists, or a crash could
 	// leave it 'pending' and boot would spawn a second process for it.
 	m.persistence.Flush()
-	m.publishRun(events.EventRunStarted, run)
+	m.publishRun(events.EventRunStarted, run, "")
 
 	result := m.executor.Execute(ctx, task, run)
 
@@ -1179,7 +1129,7 @@ func (m *defaultTaskManager) recordRunOutcome(task *model.Task, run *model.Run, 
 	run.End(task, outcome.endReason, result.ExitCode, endTime)
 
 	m.persistence.PersistExisting(run)
-	m.publishTerminal(outcome.eventType, run)
+	m.publishTerminal(outcome.eventType, run, "")
 
 	if serviceFatal {
 		m.publishServiceFatal(task.Name, run.InstanceIndex, fatalAttempts, result.ExitCode)
@@ -1282,15 +1232,16 @@ type runOutcome struct {
 	eventType events.EventType
 }
 
-func (m *defaultTaskManager) publishRun(eventType events.EventType, run *model.Run) {
-	if m.eventBus == nil {
-		return
-	}
+// publishRun publishes a run event. errMsg, when non-empty, rides the envelope
+// as RunEvent.Error: a human-readable explanation for runs that never executed
+// (e.g. a missed-run summary), surfaced as the notification body.
+func (m *defaultTaskManager) publishRun(eventType events.EventType, run *model.Run, errMsg string) {
 	// Publish guarantees event ordering: run.created always arrives before
 	// run.started for the same run. The SSE handler's buffered channel
 	// provides the async decoupling.
 	m.eventBus.Publish(eventType, events.RunEvent{
-		Run: run.Copy(),
+		Run:   run.Copy(),
+		Error: errMsg,
 	})
 }
 
@@ -1303,28 +1254,9 @@ func (m *defaultTaskManager) publishRun(eventType events.EventType, run *model.R
 // this event and `runwisp run` then fetches the run, so a lagging row would
 // report a failed run as "running" with exit code 0. Flush is the barrier; it
 // costs one DB write per run, after the process has already exited.
-func (m *defaultTaskManager) publishTerminal(eventType events.EventType, run *model.Run) {
+func (m *defaultTaskManager) publishTerminal(eventType events.EventType, run *model.Run, errMsg string) {
 	m.persistence.Flush()
-	m.publishRun(eventType, run)
-}
-
-// publishTerminalErr is publishTerminal with an explanation string attached.
-func (m *defaultTaskManager) publishTerminalErr(eventType events.EventType, run *model.Run, errMsg string) {
-	m.persistence.Flush()
-	m.publishRunErr(eventType, run, errMsg)
-}
-
-// publishRunErr is publishRun with an error/reason string attached to the
-// envelope. Used for runs that never executed but carry a human-readable
-// explanation (e.g. a missed-run summary), surfaced as the notification body.
-func (m *defaultTaskManager) publishRunErr(eventType events.EventType, run *model.Run, errMsg string) {
-	if m.eventBus == nil {
-		return
-	}
-	m.eventBus.Publish(eventType, events.RunEvent{
-		Run:   run.Copy(),
-		Error: errMsg,
-	})
+	m.publishRun(eventType, run, errMsg)
 }
 
 // publishServiceFatal announces that a service instance exhausted its
@@ -1332,9 +1264,6 @@ func (m *defaultTaskManager) publishRunErr(eventType events.EventType, run *mode
 // this to a SevError in-app bell + global notifiers so the give-up is loud,
 // not silent.
 func (m *defaultTaskManager) publishServiceFatal(taskName string, instanceIndex, attempts, lastExitCode int) {
-	if m.eventBus == nil {
-		return
-	}
 	m.eventBus.Publish(events.EventServiceFatal, events.ServiceFatalEvent{
 		TaskName:      taskName,
 		InstanceIndex: instanceIndex,

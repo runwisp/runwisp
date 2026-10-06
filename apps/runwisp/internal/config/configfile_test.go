@@ -16,5 +16,5 @@ import (
 func TestDockerStarterMatchesStarterConfig(t *testing.T) {
 	got, err := os.ReadFile("../../../../docker/runwisp.toml")
 	require.NoError(t, err)
-	require.Equal(t, StarterConfig(), string(got))
+	require.Equal(t, StarterConfig, string(got))
 }

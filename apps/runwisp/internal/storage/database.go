@@ -8,6 +8,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"time"
 
@@ -23,19 +25,19 @@ var ErrNotFound = errors.New("record not found")
 const (
 	ConfigKeyFingerprint = "fingerprint"
 
-	MaxSearchQueryLength = 100
-	RetentionBatchSize   = 1000
-	SQLiteBusyTimeout    = 5000
-	SQLiteMaxOpenConns   = 1
-	// SQLiteCacheSizeKiB pins the page cache. A negative cache_size is read by
+	maxSearchQueryLength = 100
+	retentionBatchSize   = 1000
+	sqliteBusyTimeout    = 5000
+	sqliteMaxOpenConns   = 1
+	// sqliteCacheSizeKiB pins the page cache. A negative cache_size is read by
 	// SQLite as KiB rather than pages, so this caps the cache at ~2 MiB instead
 	// of letting modernc's allocator drift up to (and hold) its high-water mark.
 	// Plenty for a metadata-only store; log bodies live on disk, not in SQLite.
-	SQLiteCacheSizeKiB = -2000
-	// SQLiteSoftHeapLimitBytes caps the SQLite allocator's heap (16 MiB), forcing
+	sqliteCacheSizeKiB = -2000
+	// sqliteSoftHeapLimitBytes caps the SQLite allocator's heap (16 MiB), forcing
 	// it to spill caches rather than grow unbounded during big list/retention
 	// scans. Bounds worst-case SQLite RSS at steady state.
-	SQLiteSoftHeapLimitBytes = 16 << 20
+	sqliteSoftHeapLimitBytes = 16 << 20
 )
 
 // RunRepository defines the interface for run persistence.
@@ -122,21 +124,21 @@ func New(dbPath string) (Database, error) {
 	}
 
 	// SQLite uses single-writer serialized mode, limit to 1 connection.
-	db.SetMaxOpenConns(SQLiteMaxOpenConns)
+	db.SetMaxOpenConns(sqliteMaxOpenConns)
 
 	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
 		return nil, fmt.Errorf("failed to enable WAL mode: %w", err)
 	}
-	if _, err := db.Exec("PRAGMA busy_timeout=" + strconv.Itoa(SQLiteBusyTimeout) + ";"); err != nil {
+	if _, err := db.Exec("PRAGMA busy_timeout=" + strconv.Itoa(sqliteBusyTimeout) + ";"); err != nil { // NOSONAR: concatenates compile-time constants only
 		return nil, fmt.Errorf("failed to set busy timeout: %w", err)
 	}
 	// Bound SQLite's memory: pin the page cache, cap the allocator's heap, and
 	// keep that bounded cache the only buffer (no growing mmap region). Lowers
-	// idle RSS — see SQLiteCacheSizeKiB / SQLiteSoftHeapLimitBytes.
-	if _, err := db.Exec("PRAGMA cache_size=" + strconv.Itoa(SQLiteCacheSizeKiB) + ";"); err != nil {
+	// idle RSS — see sqliteCacheSizeKiB / sqliteSoftHeapLimitBytes.
+	if _, err := db.Exec("PRAGMA cache_size=" + strconv.Itoa(sqliteCacheSizeKiB) + ";"); err != nil { // NOSONAR: concatenates compile-time constants only
 		return nil, fmt.Errorf("failed to set cache_size: %w", err)
 	}
-	if _, err := db.Exec("PRAGMA soft_heap_limit=" + strconv.Itoa(SQLiteSoftHeapLimitBytes) + ";"); err != nil {
+	if _, err := db.Exec("PRAGMA soft_heap_limit=" + strconv.Itoa(sqliteSoftHeapLimitBytes) + ";"); err != nil { // NOSONAR: concatenates compile-time constants only
 		return nil, fmt.Errorf("failed to set soft_heap_limit: %w", err)
 	}
 	if _, err := db.Exec("PRAGMA mmap_size=0;"); err != nil {
@@ -202,28 +204,13 @@ func (db *SQLiteDatabase) GetRunSummary(ctx context.Context) (*model.RunSummary,
 }
 
 func (db *SQLiteDatabase) CountRunsFiltered(ctx context.Context, filter model.RunFilter) (int64, error) {
-	args := buildRunFilterArgs(filter)
-	return db.q.CountRunsFiltered(ctx, sqlcdb.CountRunsFilteredParams{
-		StatusSet:         args.StatusSet,
-		TaskNameFilter:    args.TaskNameFilter,
-		SearchFilter:      args.SearchFilter,
-		SearchPattern:     args.SearchPattern,
-		CreatedAfter:      args.CreatedAfter,
-		CreatedBefore:     args.CreatedBefore,
-		TriggeredByFilter: args.TriggeredByFilter,
-		ExitCodeMin:       args.ExitCodeMin,
-		ExitCodeMax:       args.ExitCodeMax,
-		RetriesOnly:       args.RetriesOnly,
-		MatchFailure:      args.MatchFailure,
-	})
+	return db.q.CountRunsFiltered(ctx, buildRunFilterArgs(filter))
 }
 
 // QueryRuns dispatches to one of 12 sqlc-generated queries, picked by
 // (q.SortField, q.SortDirection). Each underlying query is a constant SQL
 // string emitted by sqlc, so the call sites are static — no hand-built
-// SQL leaks into the daemon. All 12 row types are structurally identical
-// (the SELECT list is shared); they're collapsed onto QueryRunsCreatedAtAscRow
-// via Go's struct conversion for a single conversion path to model.Run.
+// SQL leaks into the daemon.
 func (db *SQLiteDatabase) QueryRuns(ctx context.Context, q RunQuery) ([]model.Run, error) {
 	filter := buildRunFilterArgs(q.Filter)
 	params := sqlcdb.QueryRunsCreatedAtAscParams{
@@ -272,13 +259,16 @@ type RunRef struct {
 	CreatedAt time.Time
 }
 
-// runRefsFrom projects a slice of sqlc row structs into RunRefs via ref,
-// which extracts the ID/TaskName/CreatedAt fields the row's generated type
-// happens to have.
-func runRefsFrom[T any](rows []T, ref func(T) RunRef) []RunRef {
-	out := make([]RunRef, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, ref(r))
+// runRefsFrom projects the sqlc rows of the bulk-selector queries, which all
+// SELECT exactly id, task_name, created_at, into RunRefs.
+func runRefsFrom[T ~struct {
+	ID        string    `json:"id"`
+	TaskName  string    `json:"task_name"`
+	CreatedAt time.Time `json:"created_at"`
+}](rows []T) []RunRef {
+	out := make([]RunRef, len(rows))
+	for i, r := range rows {
+		out[i] = RunRef(r)
 	}
 	return out
 }
@@ -310,9 +300,7 @@ func (db *SQLiteDatabase) SoftDeleteRuns(ctx context.Context, sel model.RunSelec
 		if err != nil {
 			return nil, err
 		}
-		return runRefsFrom(rows, func(r sqlcdb.SoftDeleteRunsByFilterRow) RunRef {
-			return RunRef{ID: r.ID, TaskName: r.TaskName, CreatedAt: r.CreatedAt}
-		}), nil
+		return runRefsFrom(rows), nil
 	}
 	rows, err := db.q.SoftDeleteRunsByIDs(ctx, sqlcdb.SoftDeleteRunsByIDsParams{
 		DeletedAt:   &deletedAt,
@@ -322,9 +310,7 @@ func (db *SQLiteDatabase) SoftDeleteRuns(ctx context.Context, sel model.RunSelec
 	if err != nil {
 		return nil, err
 	}
-	return runRefsFrom(rows, func(r sqlcdb.SoftDeleteRunsByIDsRow) RunRef {
-		return RunRef{ID: r.ID, TaskName: r.TaskName, CreatedAt: r.CreatedAt}
-	}), nil
+	return runRefsFrom(rows), nil
 }
 
 // RestoreRuns clears deleted_at for every soft-deleted run matched by sel
@@ -383,9 +369,7 @@ func (db *SQLiteDatabase) ResolveSelectorIDs(ctx context.Context, sel model.RunS
 		if err != nil {
 			return nil, err
 		}
-		return runRefsFrom(rows, func(r sqlcdb.ResolveSelectorIDsByFilterRow) RunRef {
-			return RunRef{ID: r.ID, TaskName: r.TaskName, CreatedAt: r.CreatedAt}
-		}), nil
+		return runRefsFrom(rows), nil
 	}
 	rows, err := db.q.ResolveSelectorIDsByIDs(ctx, sqlcdb.ResolveSelectorIDsByIDsParams{
 		Ids:              sel.IDs,
@@ -394,9 +378,7 @@ func (db *SQLiteDatabase) ResolveSelectorIDs(ctx context.Context, sel model.RunS
 	if err != nil {
 		return nil, err
 	}
-	return runRefsFrom(rows, func(r sqlcdb.ResolveSelectorIDsByIDsRow) RunRef {
-		return RunRef{ID: r.ID, TaskName: r.TaskName, CreatedAt: r.CreatedAt}
-	}), nil
+	return runRefsFrom(rows), nil
 }
 
 // SelectExpiredSoftDeletes returns refs for every soft-deleted row whose
@@ -410,9 +392,7 @@ func (db *SQLiteDatabase) SelectExpiredSoftDeletes(ctx context.Context, ttl time
 	if err != nil {
 		return nil, err
 	}
-	return runRefsFrom(rows, func(r sqlcdb.SelectExpiredSoftDeletesRow) RunRef {
-		return RunRef{ID: r.ID, TaskName: r.TaskName, CreatedAt: r.CreatedAt}
-	}), nil
+	return runRefsFrom(rows), nil
 }
 
 // SelectOldRuns returns the runs that KeepFor/KeepRuns retention would evict
@@ -427,7 +407,7 @@ func (db *SQLiteDatabase) SelectOldRuns(ctx context.Context, task *model.Task) (
 		rows, err := db.q.SelectOldRunsByAge(ctx, sqlcdb.SelectOldRunsByAgeParams{
 			TaskName:  task.Name,
 			CreatedAt: cutoff,
-			Limit:     int64(RetentionBatchSize),
+			Limit:     int64(retentionBatchSize),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("query retention days for %s: %w", task.Name, err)
@@ -435,8 +415,8 @@ func (db *SQLiteDatabase) SelectOldRuns(ctx context.Context, task *model.Task) (
 		collectRunsByID(uniqueRuns, rows)
 	}
 
-	if len(uniqueRuns) < RetentionBatchSize && task.KeepRuns != nil {
-		remaining := RetentionBatchSize - len(uniqueRuns)
+	if len(uniqueRuns) < retentionBatchSize && task.KeepRuns != nil {
+		remaining := retentionBatchSize - len(uniqueRuns)
 		rows, err := db.q.SelectOldRunsByCount(ctx, sqlcdb.SelectOldRunsByCountParams{
 			TaskName: task.Name,
 			Limit:    int64(remaining),
@@ -448,16 +428,7 @@ func (db *SQLiteDatabase) SelectOldRuns(ctx context.Context, task *model.Task) (
 		collectRunsByID(uniqueRuns, rows)
 	}
 
-	if len(uniqueRuns) == 0 {
-		return []model.Run{}, nil
-	}
-
-	finalRuns := make([]model.Run, 0, len(uniqueRuns))
-	for _, run := range uniqueRuns {
-		finalRuns = append(finalRuns, run)
-	}
-
-	return finalRuns, nil
+	return slices.AppendSeq(make([]model.Run, 0, len(uniqueRuns)), maps.Values(uniqueRuns)), nil
 }
 
 // MarkCrashedRuns flags runs that never completed (e.g., after a crash).

@@ -46,7 +46,7 @@ func TestStreamManager_FetchTaskState(t *testing.T) {
 
 // The /api/tasks poll feeds live usage to both the task header and the Info page.
 func TestTaskStateMsg_StoresUsage(t *testing.T) {
-	m := newTestModelWithClient(pauseTestTasks())
+	m := newTestModel(pauseTestTasks())
 	usage := map[string]model.ResourceUsage{"web": {CPUPercent: 5, MemoryBytes: 1 << 20}}
 
 	updated, _, handled := m.dispatchActionMsg(uikit.TaskStateMsg{Paused: map[string]time.Time{}, Usage: usage})
@@ -75,7 +75,7 @@ func TestStreamManager_SetSchedulePaused(t *testing.T) {
 // its refusal can name the reason.
 func TestHandleKeyP_OnlyCronTasks(t *testing.T) {
 	for name, handled := range map[string]bool{"backup": true, "locked": true, "held": true, "adhoc": false, "web": false} {
-		m := newTestModelWithClient(pauseTestTasks())
+		m := newTestModel(pauseTestTasks())
 		m.panelFocus = uikit.PanelSidebar
 		m.sidebar.Rebuild(pauseTestTasks())
 		for m.sidebar.CursorTaskName() != name {
@@ -88,7 +88,7 @@ func TestHandleKeyP_OnlyCronTasks(t *testing.T) {
 }
 
 func TestHandleSchedulePause_FlipsHeaderAndArmsUndo(t *testing.T) {
-	m := newTestModelWithClient(pauseTestTasks())
+	m := newTestModel(pauseTestTasks())
 
 	updated, cmd := m.handleSchedulePause(uikit.SchedulePauseMsg{TaskName: "backup", Paused: true})
 	require.NotNil(t, cmd)
@@ -105,7 +105,7 @@ func TestHandleSchedulePause_FlipsHeaderAndArmsUndo(t *testing.T) {
 }
 
 func TestHandleSchedulePause_ErrorShowsDaemonDetail(t *testing.T) {
-	m := newTestModelWithClient(pauseTestTasks())
+	m := newTestModel(pauseTestTasks())
 	err := &apiclient.HTTPStatusError{StatusCode: http.StatusConflict, Body: `{"detail":"task \"held\" is held by cron"}`}
 
 	updated, _ := m.handleSchedulePause(uikit.SchedulePauseMsg{TaskName: "held", Paused: true, Err: err})

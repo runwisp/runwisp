@@ -16,26 +16,19 @@ import (
 // SIGTERM rather than panic. SIGKILL is accepted and means "skip the graceful
 // phase"; startCmd special-cases it.
 func signalFromName(name string) syscall.Signal {
-	canonical, ok := model.NormalizeSignalName(name)
-	if !ok {
-		return syscall.SIGTERM
+	canonical, _ := model.NormalizeSignalName(name)
+	if sig, ok := signalsByName[canonical]; ok {
+		return sig
 	}
-	switch canonical {
-	case "SIGTERM":
-		return syscall.SIGTERM
-	case "SIGINT":
-		return syscall.SIGINT
-	case "SIGQUIT":
-		return syscall.SIGQUIT
-	case "SIGHUP":
-		return syscall.SIGHUP
-	case "SIGKILL":
-		return syscall.SIGKILL
-	case "SIGUSR1":
-		return syscall.SIGUSR1
-	case "SIGUSR2":
-		return syscall.SIGUSR2
-	default:
-		return syscall.SIGTERM
-	}
+	return syscall.SIGTERM
+}
+
+var signalsByName = map[string]syscall.Signal{
+	"SIGTERM": syscall.SIGTERM,
+	"SIGINT":  syscall.SIGINT,
+	"SIGQUIT": syscall.SIGQUIT,
+	"SIGHUP":  syscall.SIGHUP,
+	"SIGKILL": syscall.SIGKILL,
+	"SIGUSR1": syscall.SIGUSR1,
+	"SIGUSR2": syscall.SIGUSR2,
 }

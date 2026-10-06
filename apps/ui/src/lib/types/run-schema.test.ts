@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
-import { runUpdateEventSchema, type Run } from "./index";
+import type { Run } from "@runwisp/common";
+import { runUpdateEventSchema } from "./index";
 
 describe("runUpdateEventSchema", () => {
     // runSchema (module-private) is piped through z.custom<Run>() rather than

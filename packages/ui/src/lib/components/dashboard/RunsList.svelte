@@ -19,9 +19,8 @@
     import type { RunMotion } from "../../utils/run-motion.js";
     import EmptyState from "../EmptyState.svelte";
     import RunFilterPopover from "./RunFilterPopover.svelte";
-    import type { Run } from "./types.js";
-    import type { RunSelector, RunStatus } from "@runwisp/common";
-    import { getRunStatusConfig, runDisplayStatus } from "./status-config.js";
+    import { displayStatus, type Run, type RunSelector, type RunStatus } from "@runwisp/common";
+    import { RUN_STATUS_CONFIG } from "./status-config.js";
     import {
         activeDimensions,
         clearDimension,
@@ -71,7 +70,6 @@
         onBulkRerun,
         getInstanceCount = () => 1,
         motion,
-        flush = false,
         outputSearch = false,
         outputQuery = "",
         outputMatches = null,
@@ -105,11 +103,6 @@
         // Which runs arrived or were removed live moments ago: their rows animate
         // in or out. Page loads, scrolling and filtering never do.
         motion?: RunMotion;
-        // Flush rail mode (task detail page): render as a borderless rail that
-        // fills its column and is divided from the detail panel by a single right
-        // border — no card chrome of its own. Default renders the standalone card
-        // the cross-task /runs grid expects.
-        flush?: boolean;
         // Output search (history rail): filters runs by what they printed. The
         // search box lives in the app header now; the parent owns the box, the
         // query, and the async log search. This component just renders the
@@ -392,17 +385,15 @@
     });
 </script>
 
+<!-- A borderless rail that fills its column, divided from the detail panel by
+     a single right border. -->
 <div
-    class={flush
-        ? "flex h-full w-full flex-col overflow-hidden border-b border-outline bg-surface md:w-[300px] md:shrink-0 md:border-r md:border-b-0"
-        : "flex flex-col overflow-hidden rounded-[4px] border border-outline bg-surface-raised shadow-sm md:col-span-4 lg:col-span-3"}
+    class="flex h-full w-full flex-col overflow-hidden border-b border-outline bg-surface md:w-[300px] md:shrink-0 md:border-r md:border-b-0"
 >
     <div
         class="flex shrink-0 items-center gap-2 border-b px-3 py-2 {hasSelection
             ? 'border-outline-faint bg-primary-soft/40'
-            : flush
-              ? 'border-transparent bg-surface'
-              : 'border-outline-faint bg-surface-sunken'}"
+            : 'border-transparent bg-surface'}"
     >
         {#if bulkActions}
             <label
@@ -483,7 +474,7 @@
             </span>
             <div class="ml-auto flex items-center gap-1">
                 {#if showFilters}
-                    <RunFilterPopover bind:filters {showTask} {tasks} compact={flush} />
+                    <RunFilterPopover bind:filters {showTask} {tasks} />
                 {/if}
                 <Button
                     variant="ghost"
@@ -688,8 +679,8 @@
 {/snippet}
 
 {#snippet runRowButton(run: Run, isActive: boolean, match: RunOutputMatch | undefined)}
-    {@const dstatus = runDisplayStatus(run)}
-    {@const config = getRunStatusConfig(dstatus)}
+    {@const dstatus = displayStatus(run.status, run.endReason)}
+    {@const config = RUN_STATUS_CONFIG[dstatus]}
     {@const running = run.status === "running"}
     {@const spine = config.dot.replace(" animate-pulse", "")}
     {@const startedAt = run.startedAt ?? run.createdAt}

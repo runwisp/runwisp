@@ -4,7 +4,7 @@
 <!-- First-load placeholder for the overview: the same grid, cards and headings
      as OverviewPage, with pulsing bars where the numbers and rows will land. -->
 <script lang="ts">
-    import { PageContainer, Card } from "@runwisp/ui";
+    import { PageContainer, Card, Heading } from "@runwisp/ui";
 
     const STAT_LABELS = ["healthy tasks", "uptime", "total runs", "recent success"];
     const PANEL_TITLES = ["Needs attention", "Running now", "Up next"];
@@ -43,7 +43,7 @@
                 {#each PANEL_TITLES as title (title)}
                     <Card>
                         <div class="flex items-center justify-between gap-3">
-                            <h3 class="text-sm font-semibold text-on-surface">{title}</h3>
+                            <Heading level={3} size="sm">{title}</Heading>
                             {@render bar("h-6 w-6")}
                         </div>
                         <div class="mt-4 space-y-2">
@@ -64,7 +64,7 @@
         <div class="flex flex-col gap-5">
             <Card padding="lg">
                 <div class="flex items-center justify-between gap-3">
-                    <h2 class="text-sm font-semibold text-on-surface">System resources</h2>
+                    <Heading level={2} size="sm">System resources</Heading>
                     {@render bar("h-6 w-16")}
                 </div>
                 <div class="mt-4 space-y-4">
@@ -82,7 +82,7 @@
 
             <Card padding="lg">
                 <div class="flex items-center justify-between gap-3">
-                    <h2 class="text-sm font-semibold text-on-surface">Recent activity</h2>
+                    <Heading level={2} size="sm">Recent activity</Heading>
                     {@render bar("h-3 w-14")}
                 </div>
                 <div class="mt-4 space-y-1.5">
@@ -101,7 +101,7 @@
     </div>
 
     <Card padding="lg">
-        <h2 class="text-sm font-semibold text-on-surface">Tasks</h2>
+        <Heading level={2} size="sm">Tasks</Heading>
         <div class="mt-4 space-y-2">
             {#each [0, 1, 2, 3] as i (i)}
                 <div

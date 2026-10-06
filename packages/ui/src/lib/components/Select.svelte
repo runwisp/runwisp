@@ -34,7 +34,7 @@
         searchable?: boolean;
         size?: SelectSize;
         error?: string;
-        hint?: string;
+        hint?: string | undefined;
         class?: string;
         id?: string;
         name?: string;

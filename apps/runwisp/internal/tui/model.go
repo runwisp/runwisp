@@ -361,9 +361,7 @@ func (m *Model) recalcExecListHeight() {
 	if m.sidebar.ActivePage() == uikit.PageHome {
 		listH -= m.notifications.PanelHeight()
 	}
-	if listH < 5 {
-		listH = 5
-	}
+	listH = max(listH, 5)
 	m.execList.SetSize(panelW, listH)
 }
 
@@ -443,18 +441,13 @@ func (m *Model) serviceInstances(name string) int {
 	return task.Instances
 }
 
-// latestRunningExec returns the most recent running execution for the given task, if any.
-func (m *Model) latestRunningExec(taskName string) *model.Run {
-	return m.execWindow.LatestRunning(taskName)
-}
-
 // autoOpenService opens the latest running execution for single-instance services.
 // Returns a command if a log stream should be started, or nil.
 func (m *Model) autoOpenService(taskName string) tea.Cmd {
 	if !m.isSingleInstanceService(taskName) {
 		return nil
 	}
-	if run := m.latestRunningExec(taskName); run != nil {
+	if run := m.execWindow.LatestRunning(taskName); run != nil {
 		return m.openExecView(run)
 	}
 	return nil
@@ -502,7 +495,7 @@ func (m *Model) requestQuit() tea.Cmd {
 			"survive a reboot (systemd / launchd).",
 		)
 	}
-	m.dialogs.ShowConfirm(dialog)
+	m.dialogs.Show(dlgConfirm, dialog)
 	return nil
 }
 
@@ -542,7 +535,7 @@ func (m *Model) showRunParams() tea.Cmd {
 		return nil
 	}
 	run := m.execView.Run
-	m.dialogs.ShowRunParams(NewRunParamsDialog(run.TaskName, run.Params))
+	m.dialogs.Show(dlgRunParams, NewRunParamsDialog(run.TaskName, run.Params))
 	return m.dialogs.SyncMouseState()
 }
 
@@ -556,9 +549,6 @@ func (m *Model) hasLaunchTicket() bool {
 func (m *Model) openRunByID(taskName, runID string) tea.Cmd {
 	if run := m.execWindow.FindRun(runID); run != nil {
 		return m.openExecView(run)
-	}
-	if m.client == nil {
-		return nil
 	}
 	client := m.client
 	ctx := m.streams.streamCtx
@@ -648,13 +638,7 @@ func (m *Model) launchBrowserCmd(base, target string) tea.Cmd {
 		}
 		launchURL := fmt.Sprintf("%s/api/auth/launch-ticket?ticket=%s&redirect=%s",
 			strings.TrimRight(base, "/"), ticket, url.QueryEscape(target))
-		if !canOpenBrowser() {
-			return uikit.OpenBrowserMsg{URL: launchURL}
-		}
-		if err := openBrowser(launchURL); err != nil {
-			return uikit.OpenBrowserMsg{URL: launchURL, Err: err}
-		}
-		return uikit.OpenBrowserMsg{URL: launchURL, BrowserOpened: true}
+		return browseMsg(launchURL)
 	}
 }
 

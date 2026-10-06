@@ -165,10 +165,14 @@ func New(opts Options) Executor {
 	if clock == nil {
 		clock = time.Now
 	}
+	eventBus := opts.EventBus
+	if eventBus == nil {
+		eventBus = events.NewEventBus() // the demo seeder runs with no subscribers
+	}
 
 	return &RoutingExecutor{
 		logDir:       opts.LogDir,
-		eventBus:     opts.EventBus,
+		eventBus:     eventBus,
 		backends:     backends,
 		availability: avail,
 		minFreeDisk:  opts.MinFreeDisk,
@@ -326,7 +330,7 @@ func (m *outputMatcher) pattern() string {
 	return ""
 }
 
-// notifyRunUpdated fans the post-log-prep run state out to the persistence
+// callback (when wired) and the event bus. logPath is the freshly resolved
 // callback and event bus when each is wired. logPath is the freshly resolved
 // on-disk log file; the executor carries it on the event envelope (not the
 // Run row, which is never persisted with a log path) so station and notify
@@ -335,16 +339,14 @@ func (r *RoutingExecutor) notifyRunUpdated(run *model.Run, logPath string) {
 	if r.onUpdate != nil {
 		r.onUpdate(run)
 	}
-	if r.eventBus != nil {
-		// Copy before publishing: the execute goroutine keeps mutating this
-		// *Run (recordRunOutcome → run.End()) while SSE/station subscribers
-		// marshal the event on their own goroutines. Sharing the pointer is a
-		// data race, matching every other publish site.
-		r.eventBus.Publish(events.EventRunUpdated, events.RunEvent{
-			Run:     run.Copy(),
-			LogPath: logPath,
-		})
-	}
+	// Copy before publishing: the execute goroutine keeps mutating this
+	// *Run (recordRunOutcome → run.End()) while SSE/station subscribers
+	// marshal the event on their own goroutines. Sharing the pointer is a
+	// data race, matching every other publish site.
+	r.eventBus.Publish(events.EventRunUpdated, events.RunEvent{
+		Run:     run.Copy(),
+		LogPath: logPath,
+	})
 }
 
 // resolveBackend picks the execution backend matching the task's resolved
@@ -443,9 +445,6 @@ func (r *RoutingExecutor) prepareLogWriter(task *model.Task, run *model.Run, kil
 		LogDir:      r.logDir,
 		Now:         r.clock,
 		OnDiskPressure: func(free, minFree int64, killed bool) {
-			if r.eventBus == nil {
-				return
-			}
 			r.eventBus.Publish(events.EventLogDiskPressure, events.LogDiskPressureEvent{
 				TaskName:     task.Name,
 				RunID:        run.ID,
@@ -554,9 +553,6 @@ func (r *RoutingExecutor) streamToFile(reader io.Reader, writer *LogWriter, task
 	}
 
 	publishRegion := func(epoch int, rows []string) {
-		if r.eventBus == nil {
-			return
-		}
 		r.eventBus.Publish(events.EventLogRegion, events.LogRegionEvent{
 			TaskName:    task.Name,
 			RunID:       run.ID,
@@ -618,9 +614,6 @@ func (r *RoutingExecutor) systemLine(writer *LogWriter, task *model.Task, run *m
 // publishLine announces one line already written to the run's log on the
 // event bus (SSE, station push).
 func (r *RoutingExecutor) publishLine(task *model.Task, run *model.Run, stream, text string, lineNum int64, continued bool, frameCount int) {
-	if r.eventBus == nil {
-		return
-	}
 	r.eventBus.Publish(events.EventLogLine, events.LogLineEvent{
 		TaskName:    task.Name,
 		RunID:       run.ID,

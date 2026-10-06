@@ -343,7 +343,7 @@ func TestJitterGate_UntrackedCompletionDoesNotAdvance(t *testing.T) {
 	require.Equal(t, 1, mt.pending(), "jit-b is held behind jit-a")
 
 	// A plain run starts and finishes. Its completion is not a gate completion.
-	_, err := jm.TriggerRun("plain", model.TriggeredByAPI)
+	_, err := jm.TriggerRunWithOptions("plain", TriggerRunOptions{TriggeredBy: model.TriggeredByAPI})
 	require.NoError(t, err)
 	exec.release(exec.waitStarted(t))
 	done.waitFor(t, 1) // only the plain run has completed

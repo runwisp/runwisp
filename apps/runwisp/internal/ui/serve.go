@@ -64,18 +64,16 @@ func serve(stripped fs.FS, w http.ResponseWriter, req *http.Request) {
 	// not accept HTML. Browser navigations (refresh, direct URL entry) always
 	// send Accept: text/html — and task names may legally contain dots, so
 	// /tasks/backup.daily must still reach the SPA fallback.
-	if strings.HasPrefix(reqPath, "_app/") || (path.Ext(reqPath) != "" && !acceptsHTML(req)) {
+	acceptsHTML := strings.Contains(req.Header.Get("Accept"), "text/html")
+	if strings.HasPrefix(reqPath, "_app/") || (path.Ext(reqPath) != "" && !acceptsHTML) {
 		http.NotFound(w, req)
 		return
 	}
 
-	serveIndexFallback(stripped, w, req)
-}
-
-// acceptsHTML reports whether the request's Accept header includes text/html,
-// i.e. it is a browser navigation rather than an asset fetch.
-func acceptsHTML(req *http.Request) bool {
-	return strings.Contains(req.Header.Get("Accept"), "text/html")
+	// SPA fallback: every other unmatched path gets the root index.html.
+	if !tryServeFile(stripped, w, req, indexHTML) {
+		http.NotFound(w, req)
+	}
 }
 
 // tryServeFile attempts to serve reqPath from the embedded FS. Returns true
@@ -108,34 +106,7 @@ func tryServeFile(stripped fs.FS, w http.ResponseWriter, req *http.Request, reqP
 	if contentType := mime.TypeByExtension(path.Ext(reqPath)); contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	}
-	rs, ok := f.(io.ReadSeeker)
-	if !ok {
-		http.Error(w, errInternal, http.StatusInternalServerError)
-		return true
-	}
-	http.ServeContent(w, req, reqPath, stat.ModTime(), rs)
+	// Regular files from embed.FS are always seekable.
+	http.ServeContent(w, req, reqPath, stat.ModTime(), f.(io.ReadSeeker))
 	return true
-}
-
-// serveIndexFallback serves the SPA root index.html for any unmatched path.
-func serveIndexFallback(stripped fs.FS, w http.ResponseWriter, req *http.Request) {
-	indexFile, err := stripped.Open(indexHTML)
-	if err != nil {
-		http.NotFound(w, req)
-		return
-	}
-	defer indexFile.Close()
-
-	stat, statErr := indexFile.Stat()
-	if statErr != nil {
-		http.Error(w, errInternal, http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	rs, ok := indexFile.(io.ReadSeeker)
-	if !ok {
-		http.Error(w, errInternal, http.StatusInternalServerError)
-		return
-	}
-	http.ServeContent(w, req, indexHTML, stat.ModTime(), rs)
 }

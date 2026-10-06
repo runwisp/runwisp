@@ -40,7 +40,6 @@
         dayStartIso,
         dayEndIso,
         isExitCodeExprValid,
-        exitCodePropChanged,
         type RunsListFilters,
     } from "./run-filters.js";
 
@@ -48,13 +47,10 @@
         filters = $bindable(),
         showTask = false,
         tasks = [],
-        compact = false,
     }: {
         filters: RunsListFilters;
         showTask?: boolean;
         tasks?: { name: string }[];
-        // Icon-only trigger for narrow rails where a "Filter" label wouldn't fit.
-        compact?: boolean;
     } = $props();
 
     // The individual statuses behind the "Advanced" expander, grouped the way
@@ -121,18 +117,14 @@
         filters = { ...filters, triggeredBy: value || undefined };
     }
 
-    // Exit code: a free-form expression (`137`, `>100`, `>100 <150`) normalized
-    // to an inclusive range at the wire. Edited in a local buffer for smooth
-    // typing and committed on change. `RunFilterPopover` itself is long-lived
-    // (its trigger button stays mounted while the popover is closed), so the
-    // buffer does NOT re-seed on its own — it must explicitly resync whenever
-    // `filters.exitCode` changes from outside (a chip removal, "clear
-    // filters"), without clobbering in-progress typing when some unrelated
-    // filter dimension changes instead.
+    // Exit-code text is edited in a local buffer and committed on change. The
+    // component outlives the popover, so the buffer resyncs only when the
+    // committed `exitCode` itself moves (chip removed, filters cleared); an
+    // update to another dimension must not clobber in-progress typing.
     let exitCodeInput = $state(filters.exitCode ?? "");
     let lastExitCode = filters.exitCode;
     $effect(() => {
-        if (exitCodePropChanged(lastExitCode, filters.exitCode)) {
+        if (lastExitCode !== filters.exitCode) {
             exitCodeInput = filters.exitCode ?? "";
         }
         lastExitCode = filters.exitCode;
@@ -152,8 +144,8 @@
 <Popover placement="right-start" mobileSheet>
     {#snippet trigger()}
         <span
-            class="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-[3px] border font-mono text-xs font-medium {compact &&
-            count === 0
+            class="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-[3px] border font-mono text-xs font-medium {count ===
+            0
                 ? 'w-7 justify-center px-0'
                 : 'px-2'} {count > 0
                 ? 'border-primary-soft-border bg-primary-soft text-primary-soft-text'
@@ -161,7 +153,6 @@
             title="Filter runs"
         >
             <Funnel size={13} />
-            {#if !compact}Filter{/if}
             {#if count > 0}
                 <Badge variant="primary" size="sm" class="px-1.5 py-0">{count}</Badge>
             {/if}

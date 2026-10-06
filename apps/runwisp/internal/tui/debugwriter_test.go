@@ -39,7 +39,7 @@ func (f *fakeMessenger) snapshot() []tea.Msg {
 // forward?) — not a structural check.
 func bufferedMessages(w *DebugLogWriter) []uikit.DebugLogMsg {
 	f := &fakeMessenger{}
-	w.attach(f)
+	w.SetProgram(f)
 	out := make([]uikit.DebugLogMsg, 0, len(f.received))
 	for _, m := range f.snapshot() {
 		if dm, ok := m.(uikit.DebugLogMsg); ok {
@@ -92,7 +92,7 @@ func TestDebugLogWriter_SetProgram_FlushesBufferAndForwardsLater(t *testing.T) {
 	_, _ = w.Write([]byte("buffered-before-attach\n"))
 
 	f := &fakeMessenger{}
-	w.attach(f)
+	w.SetProgram(f)
 
 	// Flush sent the pre-attach line.
 	flushed := f.snapshot()
@@ -109,7 +109,7 @@ func TestDebugLogWriter_SetProgram_FlushesBufferAndForwardsLater(t *testing.T) {
 
 	// Confirm the internal buffer is empty by re-attaching to a fresh fake.
 	f2 := &fakeMessenger{}
-	w.attach(f2)
+	w.SetProgram(f2)
 	assert.Empty(t, f2.snapshot(), "no messages should remain buffered after first flush")
 }
 

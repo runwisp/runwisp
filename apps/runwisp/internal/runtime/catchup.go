@@ -167,7 +167,7 @@ func catchupOneTask(parser cron.ScheduleParser, task *model.Task, runner TaskRun
 	}
 
 	for range triggerCount {
-		if _, err := runner.TriggerRun(task.Name, model.TriggeredByCron); err != nil {
+		if _, err := runner.TriggerRunWithOptions(task.Name, TriggerRunOptions{TriggeredBy: model.TriggeredByCron}); err != nil {
 			slog.Error("Failed to trigger catch-up run", "task", task.Name, "err", err)
 			errors++
 		} else {

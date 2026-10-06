@@ -28,7 +28,7 @@ async function handleBulkCancel(selector: RunSelector, affected: Run[]) {
  * Re-run a batch of runs, with an Undo toast that cancels + deletes the
  * triggered runs.
  */
-async function handleBulkRerun(selector: RunSelector, _affected: Run[]) {
+async function handleBulkRerun(selector: RunSelector) {
     try {
         const { triggered } = await runsApi.bulkRerun(selector);
         if (triggered.length === 0) {

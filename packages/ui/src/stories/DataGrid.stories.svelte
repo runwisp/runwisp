@@ -138,11 +138,6 @@
 
 <Story name="Sortable" args={{ columns, data: tasks, sortKey: "name", sortDirection: "asc" }} />
 
-<Story
-    name="Filterable"
-    args={{ columns, data: tasks, filterable: true, filterPlaceholder: "Filter tasks…" }}
-/>
-
 <Story name="Paginated" args={{ columns, data: tasks, paginate: true, pageSize: 2 }} />
 
 <Story name="Filters, Sort, Selection, Pagination" asChild>

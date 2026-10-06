@@ -27,7 +27,7 @@
     import { headerSearchStore, systemStore } from "$lib/stores";
     import { showScheduleChip } from "$lib/utils/task-schedule";
     import { StoredFlag } from "$lib/utils/stored-flag.svelte";
-    import { ThemeToggle, Logo } from "@runwisp/ui";
+    import { ThemeToggle, Logo, Heading } from "@runwisp/ui";
     import type { Task } from "@runwisp/common";
 
     let {
@@ -35,34 +35,28 @@
         activeTask,
         tasks = [],
         tasksLoading = false,
-        urls = {
-            overview: "#",
-            runs: "#",
-        },
         children,
-    } = $props<{
+    }: {
         activePage: string;
         /** The task whose detail page is open, if any. */
         activeTask?: Task | undefined;
-        tasks?: { id: string; name: string; group?: string; icon: Component; href?: string }[];
+        tasks?: {
+            id: string;
+            name: string;
+            group?: string;
+            icon: Component;
+        }[];
         /** The task list hasn't loaded yet: show placeholders, not an empty list. */
         tasksLoading?: boolean;
-        urls?: { overview: string; runs: string };
         children: Snippet;
-    }>();
+    } = $props();
 
     type TaskGroup = { name: string; tasks: typeof tasks };
 
     let taskGroups: TaskGroup[] = $derived.by(() => {
         const groups: Record<string, typeof tasks> = {};
         for (const task of tasks) {
-            const groupName = task.group ?? "Tasks";
-            let groupTasks = groups[groupName];
-            if (!groupTasks) {
-                groupTasks = [];
-                groups[groupName] = groupTasks;
-            }
-            groupTasks.push(task);
+            (groups[task.group ?? "Tasks"] ??= []).push(task);
         }
         return Object.entries(groups).map(([name, groupTasks]) => ({ name, tasks: groupTasks }));
     });
@@ -208,14 +202,14 @@
         <div class="flex-1 overflow-y-auto px-3 py-6">
             <nav class="mb-6 space-y-0.5">
                 {@render navLink(
-                    resolve(urls.overview),
+                    resolve("/"),
                     activePage === "overview",
                     Activity,
                     "Overview",
                     true,
                 )}
                 {@render navLink(
-                    resolve(urls.runs),
+                    resolve("/runs"),
                     activePage === "runs",
                     RotateCcwClock,
                     "All Runs",
@@ -244,7 +238,7 @@
                     <nav class="mb-2 space-y-0.5">
                         {#each group.tasks as task (task.id)}
                             {@render navLink(
-                                resolve(task.href || "#"),
+                                resolve(`/tasks/${task.name}`),
                                 activePage === task.id,
                                 task.icon,
                                 task.name,
@@ -261,7 +255,7 @@
                 <nav class="mb-8 space-y-0.5">
                     {#each tasks as task (task.id)}
                         {@render navLink(
-                            resolve(task.href || "#"),
+                            resolve(`/tasks/${task.name}`),
                             activePage === task.id,
                             task.icon,
                             task.name,
@@ -312,9 +306,9 @@
                 {#if activeTask}
                     <!-- On a task page the breadcrumb is the page's primary heading:
                          the task name appears here and nowhere else. -->
-                    <h1 class="min-w-0 truncate font-mono text-base font-extrabold text-on-surface">
+                    <Heading level={1} size="md" class="min-w-0 truncate">
                         {activeTask.name}
-                    </h1>
+                    </Heading>
                     {#if showScheduleChip(activeTask, systemStore.schedulingActive)}
                         <TaskScheduleChip task={activeTask} />
                     {/if}

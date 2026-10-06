@@ -3,7 +3,7 @@
 
 import { browser } from "$app/environment";
 import { authApi } from "$lib/api";
-import { createLogger } from "$lib/utils/logger";
+import { createLogger } from "@runwisp/common";
 import type { AuthState } from "$lib/types";
 
 const logger = createLogger("AuthStore");
