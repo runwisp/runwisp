@@ -36,6 +36,7 @@
     import { formatBytes, formatClockTime, formatCalendarDate } from "../../utils/format.js";
     import { formatShortId } from "../../utils/id.js";
     import { TickingNow } from "../../utils/ticking-now.svelte.js";
+    import { CopyFeedback } from "../../utils/clipboard.svelte.js";
     import { displayStatus, type ResourceUsage, type Run } from "@runwisp/common";
     import { RUN_STATUS_CONFIG } from "./status-config.js";
     import {
@@ -276,19 +277,7 @@
     let confirmDeleteOpen = $state(false);
     // Dropdown half of the Run split button (the "reuse parameters" variant).
     let runMenuOpen = $state(false);
-    let copiedId = $state(false);
-    let copyTimer: ReturnType<typeof setTimeout> | null = null;
-
-    async function copyRunId(id: string) {
-        try {
-            await navigator.clipboard.writeText(id);
-            copiedId = true;
-            if (copyTimer) clearTimeout(copyTimer);
-            copyTimer = setTimeout(() => (copiedId = false), 1200);
-        } catch {
-            // Clipboard blocked (insecure context / denied) — leave the chip as-is.
-        }
-    }
+    const runIdCopy = new CopyFeedback(1200);
 
     // The accent for a status that means "something to triage", or undefined
     // when there is nothing wrong. Tint is reserved for alarms (DESIGN.md) so a
@@ -608,11 +597,11 @@
                              interact with. -->
                             <button
                                 type="button"
-                                onclick={() => copyRunId(run.id)}
+                                onclick={() => void runIdCopy.copy(run.id)}
                                 title="Copy run ID"
                                 class="inline-flex items-center gap-1 rounded-[3px] border border-outline-faint bg-surface-sunken px-1.5 text-on-surface-faint hover:border-outline-hover hover:text-primary"
                             >
-                                {#if copiedId}
+                                {#if runIdCopy.copied}
                                     <Check size={11} class="text-success-surface" />Copied
                                 {:else}
                                     <Hash size={11} />{run.id}

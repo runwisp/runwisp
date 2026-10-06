@@ -7,7 +7,15 @@
     import TaskHeldBadge from "../TaskHeldBadge.svelte";
     import TaskSourceBadge from "../TaskSourceBadge.svelte";
     import TaskUsage from "../TaskUsage.svelte";
-    import { RUN_STATUS_CONFIG, Badge, EmptyState, Input, Select, Tooltip } from "@runwisp/ui";
+    import {
+        RUN_STATUS_CONFIG,
+        Badge,
+        CodeBlock,
+        EmptyState,
+        Input,
+        Select,
+        Tooltip,
+    } from "@runwisp/ui";
     import type {
         OverviewTaskCounts,
         OverviewTaskFilter,
@@ -24,6 +32,8 @@
     import { taskIcon, taskTriggerTooltip } from "$lib/utils/task-icon";
 
     type BadgeTone = "default" | "primary" | "success" | "warning" | "danger" | "info";
+
+    const exampleTask = '[tasks.hello]\ncron = "*/5 * * * *"\nrun  = "echo hello"';
 
     interface FilterOption {
         value: OverviewTaskFilter;
@@ -179,10 +189,13 @@
         >
             {#snippet actions()}
                 <div class="flex flex-col items-center gap-3">
-                    <pre
-                        class="rounded-[4px] border border-outline bg-surface-sunken px-4 py-3 text-left font-mono text-xs text-on-surface-muted">[tasks.hello]
-cron = "*/5 * * * *"
-run  = "echo hello"</pre>
+                    <CodeBlock
+                        variant="surface"
+                        size="sm"
+                        copyable={false}
+                        class="text-left"
+                        code={exampleTask}
+                    />
                     <a
                         href="https://docs.runwisp.com/configuration/tasks/"
                         target="_blank"
