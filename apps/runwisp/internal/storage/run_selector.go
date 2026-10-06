@@ -9,32 +9,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
 )
-
-// runFilterArgs is the shared set of filter-gate parameters threaded through
-// every selector-driven sqlc query. Each filter field is typed any so
-// it can hold either nil (gate open, predicate skipped via SQL IS NULL) or
-// a concrete value the gate compares against. Search additionally drives the
-// LIKE pattern via SearchPattern, which is pre-rendered here.
-type runFilterArgs struct {
-	// StatusSet is the pipe-delimited status haystack (|a|b|) the SQL
-	// set-membership gate matches a run's phase OR end reason against.
-	StatusSet         any
-	TaskNameFilter    any
-	SearchFilter      any
-	SearchPattern     string
-	CreatedAfter      any
-	CreatedBefore     any
-	TriggeredByFilter any
-	ExitCodeMin       any
-	ExitCodeMax       any
-	RetriesOnly       any
-	// MatchFailure is 0 or 1 (never nil): the SQL OR-branch `match_failure = 1
-	// AND is_failure = 1` widens the status gate to the run's failure
-	// classification. Distinct from a nullable gate because it composes with an
-	// empty status set (Failed selected alone still filters).
-	MatchFailure int64
-}
 
 // nullable maps the empty-string "no filter" convention to a nil any value
 // so the SQL gate `arg IS NULL OR field = arg` can short-circuit. Non-empty
@@ -101,17 +77,25 @@ func statusSet(csv string) (set any, sawFailure bool) {
 	return "|" + strings.Join(tokens, "|") + "|", sawFailure
 }
 
-// buildRunFilterArgs decomposes a RunFilter into the values consumed by the
-// filter-gate predicates. The status set is rendered here so the SQL itself
-// never branches per status. The search input is truncated and stripped of
-// LIKE wildcards before the pattern is built.
-func buildRunFilterArgs(f model.RunFilter) runFilterArgs {
+// buildRunFilterArgs decomposes a RunFilter into the filter-gate parameters
+// shared by every selector-driven sqlc query (CountRunsFilteredParams carries
+// exactly that set). Each gate holds either nil (gate open, predicate skipped
+// via SQL IS NULL) or a concrete value the gate compares against.
+//
+// StatusSet is the pipe-delimited status haystack (|a|b|) the SQL
+// set-membership gate matches a run's phase OR end reason against, rendered
+// here so the SQL itself never branches per status. MatchFailure is 0 or 1
+// (never nil): the SQL OR-branch `match_failure = 1 AND is_failure = 1` widens
+// the status gate to the run's failure classification, composing with an empty
+// status set (Failed selected alone still filters). The search input is
+// truncated and stripped of LIKE wildcards before SearchPattern is built.
+func buildRunFilterArgs(f model.RunFilter) sqlcdb.CountRunsFilteredParams {
 	statusSetArg, sawFailure := statusSet(f.Status)
 	var matchFailure int64
 	if f.IsFailure || sawFailure {
 		matchFailure = 1
 	}
-	args := runFilterArgs{
+	args := sqlcdb.CountRunsFilteredParams{
 		StatusSet:         statusSetArg,
 		TaskNameFilter:    nullable(f.TaskName),
 		SearchFilter:      nullable(f.Search),
@@ -125,8 +109,8 @@ func buildRunFilterArgs(f model.RunFilter) runFilterArgs {
 	}
 	if f.Search != "" {
 		s := f.Search
-		if len(s) > MaxSearchQueryLength {
-			cut := MaxSearchQueryLength
+		if len(s) > maxSearchQueryLength {
+			cut := maxSearchQueryLength
 			for cut > 0 && !utf8.RuneStart(s[cut]) {
 				cut--
 			}

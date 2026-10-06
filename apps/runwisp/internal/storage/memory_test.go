@@ -21,8 +21,8 @@ func TestNew_AppliesMemoryPragmas(t *testing.T) {
 	require.NoError(t, sdb.db.QueryRow("PRAGMA cache_size;").Scan(&cacheSize))
 	require.NoError(t, sdb.db.QueryRow("PRAGMA soft_heap_limit;").Scan(&softHeapLimit))
 
-	require.Equal(t, int64(SQLiteCacheSizeKiB), cacheSize)
-	require.Equal(t, int64(SQLiteSoftHeapLimitBytes), softHeapLimit)
+	require.Equal(t, int64(sqliteCacheSizeKiB), cacheSize)
+	require.Equal(t, int64(sqliteSoftHeapLimitBytes), softHeapLimit)
 
 	// mmap_size reads back empty on :memory: (mmap is N/A there), so assert the
 	// statement is valid for the driver rather than its readback value.
