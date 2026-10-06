@@ -3,7 +3,7 @@
 
 import { SvelteSet } from "svelte/reactivity";
 import { systemApi, AuthRequiredError } from "$lib/api";
-import { createLogger } from "$lib/utils/logger";
+import { createLogger } from "@runwisp/common";
 import { isRecord } from "$lib/utils/parse";
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "stalled";

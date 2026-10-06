@@ -20,15 +20,12 @@ describe("AsyncData", () => {
         const first = new Promise<string>((r) => (resolveFirst = r));
 
         let call = 0;
-        const ad = new AsyncData<string>(
-            async () => {
-                call += 1;
-                // First call ignores the signal and resolves late.
-                if (call === 1) return first;
-                return "fresh";
-            },
-            { reloadOnReconnect: false, toastOnError: false },
-        );
+        const ad = new AsyncData<string>(async () => {
+            call += 1;
+            // First call ignores the signal and resolves late.
+            if (call === 1) return first;
+            return "fresh";
+        }, false);
 
         const p1 = ad.fetch(); // starts the (pending) first fetch
         const p2 = ad.fetch(); // aborts the first, resolves with "fresh"

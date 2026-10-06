@@ -5,7 +5,7 @@ import { untrack } from "svelte";
 import { systemApi, AuthRequiredError, systemEventSchema, configStaleEventSchema } from "$lib/api";
 import { connectionStore } from "$lib/stores/connection.svelte";
 import { appEventStream } from "$lib/stores/app-stream";
-import { createLogger } from "$lib/utils/logger";
+import { createLogger } from "@runwisp/common";
 import { safeParseJSON } from "$lib/utils/parse";
 import type { ResourceUsage, Task } from "$lib/types";
 

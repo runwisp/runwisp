@@ -4,7 +4,7 @@
 import { z } from "zod";
 import type { AppEventStream } from "./event-manager";
 import { appEventStream } from "./app-stream";
-import { createLogger } from "$lib/utils/logger";
+import { createLogger } from "@runwisp/common";
 import { authFetch, handleUnauthorized } from "$lib/utils/auth-required";
 import { HTTP_STATUS } from "$lib/config/constants";
 import { safeParseJSON } from "$lib/utils/parse";

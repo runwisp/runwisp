@@ -8,7 +8,7 @@
     import { authApi, RateLimitedError } from "$lib/api";
     import { authStore } from "$lib/stores";
     import { browserAuthEventBus } from "$lib/adapters/browser";
-    import { createLogger } from "$lib/utils/logger";
+    import { createLogger } from "@runwisp/common";
 
     const logger = createLogger("AuthModal");
 

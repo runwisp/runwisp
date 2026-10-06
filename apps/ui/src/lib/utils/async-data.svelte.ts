@@ -5,23 +5,16 @@ import { toast, extractErrorMessage } from "@runwisp/ui";
 import { AuthRequiredError } from "$lib/api";
 import { connectionStore } from "$lib/stores/connection.svelte";
 
-interface AsyncDataOptions {
-    toastOnError?: boolean;
-    reloadOnReconnect?: boolean;
-}
-
 export class AsyncData<T> {
     #data = $state<T | undefined>(undefined);
     #error = $state<string | undefined>(undefined);
     #loading = $state(false);
     #controller: AbortController | null = null;
     readonly #fetcher: (signal: AbortSignal) => Promise<T>;
-    readonly #toastOnError: boolean;
 
-    constructor(fetcher: (signal: AbortSignal) => Promise<T>, options: AsyncDataOptions = {}) {
-        const { toastOnError = true, reloadOnReconnect = true } = options;
+    // reloadOnReconnect is a test seam: $effect needs a component context.
+    constructor(fetcher: (signal: AbortSignal) => Promise<T>, reloadOnReconnect = true) {
         this.#fetcher = fetcher;
-        this.#toastOnError = toastOnError;
 
         if (reloadOnReconnect) {
             $effect(() => connectionStore.onReconnect(() => void this.fetch()));
@@ -61,9 +54,7 @@ export class AsyncData<T> {
             const isConnectionErr = connectionStore.reportFetchError(err);
             const message = isConnectionErr ? "Connection lost" : extractErrorMessage(err);
             this.#error = message;
-            if (this.#toastOnError) {
-                toast.error(message);
-            }
+            toast.error(message);
         } finally {
             if (!ac.signal.aborted) {
                 this.#loading = false;

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import type { SSEErrorInfo } from "$lib/utils/event-source";
-import { createLogger } from "$lib/utils/logger";
+import { createLogger } from "@runwisp/common";
 import { isRecord } from "$lib/utils/parse";
 import { EventManager, type AppEventStream } from "./event-manager";
 import {

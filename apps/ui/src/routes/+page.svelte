@@ -9,13 +9,7 @@
     import { RunMotion } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { runsApi, tasksApi, systemApi, systemEventSchema, type MetricsSample } from "$lib/api";
-    import {
-        runUpdatesStore,
-        removeRun,
-        systemStore,
-        taskStore,
-        appEventStream,
-    } from "$lib/stores";
+    import { runUpdatesStore, systemStore, taskStore, appEventStream } from "$lib/stores";
     import { toTaskPageId } from "$lib/utils/task-id";
     import { mergeRecentRuns, mergeRunningRuns, upsertRun } from "$lib/utils/overview-runs";
     import { sortByCreatedAtDesc } from "$lib/utils/sort";
@@ -95,8 +89,9 @@
     $effect(() => {
         const unsubscribe = runUpdatesStore.subscribeToUpdates((event) => {
             if (event.type === "run.deleted") {
-                dashState.recentRuns = removeRun(dashState.recentRuns, event.data.runId);
-                dashState.runningRuns = removeRun(dashState.runningRuns, event.data.runId);
+                const { runId } = event.data;
+                dashState.recentRuns = dashState.recentRuns.filter((r) => r.id !== runId);
+                dashState.runningRuns = dashState.runningRuns.filter((r) => r.id !== runId);
                 dashState.totalRuns = Math.max(0, dashState.totalRuns - 1);
                 return;
             }

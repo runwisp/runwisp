@@ -1,13 +1,12 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import { createLoggerFactory } from "@runwisp/common";
+import { createLogger } from "@runwisp/common";
 import { SvelteSet } from "svelte/reactivity";
 import type { LogCache } from "./LogCache.svelte.js";
 import type { FetchLogsFn } from "./types.js";
 import { isLogEvent } from "./types.js";
 
-const createLogger = createLoggerFactory();
 const logger = createLogger("LogFetcher");
 
 /**

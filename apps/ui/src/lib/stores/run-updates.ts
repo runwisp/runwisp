@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { createLogger } from "$lib/utils/logger";
+import { createLogger } from "@runwisp/common";
 import { handleUnauthorized } from "$lib/utils/auth-required";
 import { HTTP_STATUS } from "$lib/config/constants";
 import { runUpdateEventSchema } from "$lib/types";
