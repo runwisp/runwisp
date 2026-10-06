@@ -10,7 +10,7 @@ import (
 )
 
 // releaseNotesURL is the static link shown (and opened) by NewReleaseDialog.
-const releaseNotesURL = "https://github.com/runwisp/runwisp/releases"
+const releaseNotesURL = "https://runwisp.com/releases/"
 
 // NewReleaseDialog is the "more info" modal behind the sidebar update indicator:
 // a centered card naming the newer release, the running version, and a link to

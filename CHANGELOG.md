@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A plain-HTTP request to the HTTPS port is redirected to the `https://` URL instead of getting "Client sent an HTTP request to an HTTPS server.".
 - Quitting the `runwisp demo` TUI shuts the demo daemon down instead of asking whether to keep it running. Use `runwisp demo --no-tui` to keep it in the background.
 - `runwisp import` maps systemd `Restart=` and supervisord `autorestart` onto the `restart` key (`on-failure` and `unexpected` become `on_failure`, `no` becomes `never`), and reads `no`, `off` and `0` as supervisord's "don't restart". `Restart=on-success` becomes `never`, since it never restarts after a failure.
+- The "update available" release-notes link in the Web UI and the TUI opens [runwisp.com/releases](https://runwisp.com/releases/).
 
 ### Fixed
 

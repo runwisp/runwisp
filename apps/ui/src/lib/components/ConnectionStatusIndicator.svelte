@@ -113,7 +113,7 @@
                             <span class="font-mono">v{systemStore.version}</span>.
                         </span>
                         <a
-                            href="https://github.com/runwisp/runwisp/releases"
+                            href="https://runwisp.com/releases/"
                             target="_blank"
                             rel="noreferrer"
                             class="mt-1 text-primary hover:underline"
