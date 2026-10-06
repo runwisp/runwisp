@@ -23,11 +23,7 @@
 
     let { children } = $props();
 
-    let hydrated = $state(false);
-
     $effect(() => {
-        hydrated = true;
-
         // Best-effort: preload route JS so a click still navigates when the
         // daemon (which serves the chunks) has since gone down.
         void preloadCode("/");
@@ -85,7 +81,7 @@
         })),
     );
 
-    let isAuthenticated = $derived(!hydrated ? false : authStore.current.authenticated);
+    let isAuthenticated = $derived(authStore.current.authenticated);
 
     // The daemon announces task-set changes (a reload, a schedule pause) on the
     // app stream; refetch so the sidebar and top bar follow without a page
@@ -125,7 +121,7 @@
     >
         {@render children()}
     </AppLayout>
-{:else if !hydrated || !authStore.current.loaded}
+{:else if !authStore.current.loaded}
     <div class="flex h-screen items-center justify-center bg-surface-sunken">
         <div
             class="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"

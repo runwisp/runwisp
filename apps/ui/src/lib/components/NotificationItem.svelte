@@ -3,7 +3,6 @@
 
 <script lang="ts">
     import { resolve } from "$app/paths";
-    import { browser } from "$app/environment";
     import { formatShortId, TickingNow } from "@runwisp/ui";
     import { phrase } from "$lib/utils/notification-rhythm";
     import NotificationSparkline from "./NotificationSparkline.svelte";
@@ -20,10 +19,7 @@
     // Tick once every 30s so relative-time labels and the sparkline window
     // advance without waiting for an SSE event.
     const ticker = new TickingNow();
-    $effect(() => {
-        if (!browser) return;
-        return ticker.start();
-    });
+    $effect(() => ticker.start());
     let now = $derived(ticker.now);
 
     let rhythm = $derived(
