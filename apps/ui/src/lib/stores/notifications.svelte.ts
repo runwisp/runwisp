@@ -121,11 +121,7 @@ class NotificationStore {
 
     async #runInit(): Promise<void> {
         try {
-            const page = await this.#fetchPage();
-            this.#items = [...page.items];
-            this.#cursor = page.nextCursor ?? null;
-            this.#hasMore = Boolean(page.nextCursor);
-            this.#unread = await this.#fetchUnread();
+            await this.#loadFirstPage();
             this.#loaded = true;
             this.#loadFailed = false;
             this.#connect();
@@ -247,14 +243,18 @@ class NotificationStore {
     /** Re-fetch the first page and unread count, replacing local state. */
     async #resync(): Promise<void> {
         try {
-            const page = await this.#fetchPage();
-            this.#items = [...page.items];
-            this.#cursor = page.nextCursor ?? null;
-            this.#hasMore = Boolean(page.nextCursor);
-            this.#unread = await this.#fetchUnread();
+            await this.#loadFirstPage();
         } catch (e) {
             this.#logger.error("Failed to resync notifications after reconnect", e);
         }
+    }
+
+    async #loadFirstPage(): Promise<void> {
+        const page = await this.#fetchPage();
+        this.#items = [...page.items];
+        this.#cursor = page.nextCursor ?? null;
+        this.#hasMore = Boolean(page.nextCursor);
+        this.#unread = await this.#fetchUnread();
     }
 
     #applyUpdate(n: Notification): void {
