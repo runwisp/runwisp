@@ -92,7 +92,7 @@ If you're running RunWisp in production, here's the short list:
 4. **Set `RUNWISP_TRUSTED_PROXIES` to your proxy's CIDR** (e.g. `127.0.0.1/32`). The daemon will then honour `X-Forwarded-Proto: https` for secure cookie issuance and `X-Forwarded-For` for rate-limit accounting. Catch-all ranges (`0.0.0.0/0`, `::/0`) are rejected — trusting the entire internet would let any client spoof their IP.
 5. **Don't ignore the non-loopback warning banner.** The daemon prints it to stderr when it starts on a non-loopback address serving plain HTTP (`tls = "off"`). It exists for a reason.
 6. **Run as an unprivileged user** wherever possible. The daemon needs only the permissions required to execute its tasks and own its data dir.
-7. **Stay on the latest release.** Watch [GitHub Releases](https://github.com/runwisp/runwisp/releases) — security fixes ship on the latest version.
+7. **Stay on the latest release.** Watch [runwisp.com/releases](https://runwisp.com/releases/) — security fixes ship on the latest version.
 
 ## Network exposure
 
