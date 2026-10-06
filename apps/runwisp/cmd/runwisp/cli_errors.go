@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -142,7 +142,7 @@ func renderError(w io.Writer, title, details, hint string) {
 // the right name.
 func unknownTaskError(taskName string, available []string) error {
 	sorted := append([]string(nil), available...)
-	sort.Strings(sorted)
+	slices.Sort(sorted)
 
 	var b strings.Builder
 	if suggestion := textutil.Closest(taskName, sorted); suggestion != "" {

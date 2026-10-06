@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -81,7 +82,7 @@ func resolveStationEnv(envFile string, envFileExplicit bool, token, url string) 
 		os.Setenv("RUNWISP_STATION_URL", url)
 	}
 	if os.Getenv("RUNWISP_STATION_TOKEN") == "" {
-		return fmt.Errorf("RUNWISP_STATION_TOKEN is required — set it via environment, .env file, or --token flag")
+		return errors.New("RUNWISP_STATION_TOKEN is required — set it via environment, .env file, or --token flag")
 	}
 	return nil
 }

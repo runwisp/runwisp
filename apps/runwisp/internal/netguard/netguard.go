@@ -14,6 +14,7 @@
 package netguard
 
 import (
+	"errors"
 	"fmt"
 	"net"
 )
@@ -59,7 +60,7 @@ var deniedCIDRs = mustParseCIDRs(
 // each resolved IP before connecting.
 func RejectNonPublicIP(ip net.IP) error {
 	if ip == nil {
-		return fmt.Errorf("nil IP")
+		return errors.New("nil IP")
 	}
 	// Normalize IPv4-mapped IPv6 (::ffff:a.b.c.d) to its v4 form so the v4
 	// prefixes below match and stdlib predicates behave.

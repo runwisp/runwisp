@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"image/color"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -274,11 +275,11 @@ func (v *InfoView) renderActivitySection(w int) []string {
 
 	s := v.runSummary
 	parts := []string{
-		uikit.InfoStatValueStyle.Render(fmt.Sprintf("%d", s.Total)) + uikit.InfoStatLabelStyle.Render(" runs"),
+		uikit.InfoStatValueStyle.Render(strconv.FormatInt(s.Total, 10)) + uikit.InfoStatLabelStyle.Render(" runs"),
 	}
 	if s.Total > 0 {
-		successStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorSuccess).Bold(true).Render(fmt.Sprintf("%d", s.Success))
-		failedStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorError).Bold(true).Render(fmt.Sprintf("%d", s.Failed))
+		successStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorSuccess).Bold(true).Render(strconv.FormatInt(s.Success, 10))
+		failedStr := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorError).Bold(true).Render(strconv.FormatInt(s.Failed, 10))
 		parts = append(parts, successStr+uikit.InfoStatLabelStyle.Render(" success"))
 		parts = append(parts, failedStr+uikit.InfoStatLabelStyle.Render(" failed"))
 

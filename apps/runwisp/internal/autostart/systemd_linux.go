@@ -13,7 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -552,7 +552,7 @@ func envDropInContent(vars map[string]string) (string, error) {
 	if err := rejectControlChars(fields); err != nil {
 		return "", err
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	var b strings.Builder
 	b.WriteString(ManagedMarker + "\n[Service]\n")

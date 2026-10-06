@@ -5,6 +5,7 @@ package composespec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -24,7 +25,7 @@ import (
 // No docker daemon is contacted — this is pure parsing, safe to run offline.
 func Load(file string, profiles, envFiles []string, workingDir string) (*Project, error) {
 	if file == "" {
-		return nil, fmt.Errorf("compose file path is required")
+		return nil, errors.New("compose file path is required")
 	}
 	absFile, err := filepath.Abs(file)
 	if err != nil {

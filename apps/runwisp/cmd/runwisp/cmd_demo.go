@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -93,7 +94,7 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 	// exclusive.
 	if demoFlags.SeedOnly {
 		if demoFlags.Station {
-			return fmt.Errorf("demo: --seed-only cannot be combined with --station")
+			return errors.New("demo: --seed-only cannot be combined with --station")
 		}
 		return setupDemoDir(cmd, f)
 	}

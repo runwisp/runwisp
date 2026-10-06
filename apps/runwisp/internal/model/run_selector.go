@@ -4,7 +4,7 @@
 package model
 
 import (
-	"fmt"
+	"errors"
 	"time"
 )
 
@@ -66,15 +66,15 @@ type RunSelector struct {
 func (s RunSelector) Validate() error {
 	if s.MatchAll {
 		if len(s.IDs) > 0 {
-			return fmt.Errorf("ids must be empty when match_all is true")
+			return errors.New("ids must be empty when match_all is true")
 		}
 		return nil
 	}
 	if len(s.IDs) == 0 {
-		return fmt.Errorf("ids must be non-empty when match_all is false")
+		return errors.New("ids must be non-empty when match_all is false")
 	}
 	if len(s.ExceptIDs) > 0 {
-		return fmt.Errorf("except_ids must be empty when match_all is false")
+		return errors.New("except_ids must be empty when match_all is false")
 	}
 	return nil
 }

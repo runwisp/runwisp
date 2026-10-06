@@ -113,10 +113,8 @@ func usableCert(certPath, keyPath string, hosts []string, now time.Time) bool {
 	if !coversHosts(leaf, hosts) {
 		return false
 	}
-	if _, err := tls.LoadX509KeyPair(certPath, keyPath); err != nil {
-		return false
-	}
-	return true
+	_, err = tls.LoadX509KeyPair(certPath, keyPath)
+	return err == nil
 }
 
 // coversHosts reports whether leaf's SANs include every host requested. A miss

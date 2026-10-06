@@ -868,11 +868,11 @@ func isLikelyUsername(s string) bool {
 // returns its name and unquoted value. Cron assignments have the form
 // `NAME = value` where NAME is a bare identifier and "=" precedes the value.
 func cronEnvLine(line string) (name, value string, ok bool) {
-	eq := strings.IndexByte(line, '=')
-	if eq < 0 {
+	name, value, ok = strings.Cut(line, "=")
+	if !ok {
 		return "", "", false
 	}
-	name = strings.TrimSpace(line[:eq])
+	name = strings.TrimSpace(name)
 	if name == "" || strings.ContainsAny(name, " \t/") {
 		return "", "", false
 	}
@@ -881,7 +881,7 @@ func cronEnvLine(line string) (name, value string, ok bool) {
 			return "", "", false
 		}
 	}
-	value = strings.TrimSpace(line[eq+1:])
+	value = strings.TrimSpace(value)
 	if n := len(value); n >= 2 && (value[0] == '"' || value[0] == '\'') && value[n-1] == value[0] {
 		value = value[1 : n-1] // one matched pair, as cron does
 	}

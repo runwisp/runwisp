@@ -98,10 +98,10 @@ var errRestartRequested = errors.New("restart requested by station; exiting so t
 // execution that flag already gates.
 func requestSelfRestart(allowStationDispatch bool, fatalCh chan<- error) error {
 	if !allowStationDispatch {
-		return fmt.Errorf("station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)")
+		return errors.New("station dispatch disabled (set [daemon] allow_station_dispatch = true to enable)")
 	}
 	if !autostart.RunningUnderServiceManager() {
-		return fmt.Errorf("daemon is not managed by a service manager; restart it manually")
+		return errors.New("daemon is not managed by a service manager; restart it manually")
 	}
 	slog.Info("restarting agent on station request; service manager will bring it back")
 	if err := exitNonZero(fatalCh, errRestartRequested); err != nil {

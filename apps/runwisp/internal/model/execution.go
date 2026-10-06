@@ -5,6 +5,7 @@ package model
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -206,7 +207,7 @@ var executionFactories = map[string]func() ExecutionDef{
 
 func ParseExecutionDef(data json.RawMessage) (ExecutionDef, error) {
 	if len(data) == 0 || string(data) == "null" {
-		return nil, fmt.Errorf("empty execution definition")
+		return nil, errors.New("empty execution definition")
 	}
 
 	var envelope struct {
