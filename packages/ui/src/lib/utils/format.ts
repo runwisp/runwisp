@@ -13,19 +13,75 @@ const RELATIVE_DIVISIONS: [amount: number, unit: Intl.RelativeTimeFormatUnit][] 
     [Number.POSITIVE_INFINITY, "years"],
 ];
 
-// formatDistance renders a signed date delta as "N units ago" / "in N units"
-// using the platform Intl formatter. Negative delta (date before base) reads as
-// past, positive as future.
-function formatDistance(date: Date, base: Date): string {
-    const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "always" });
-    let delta = (date.getTime() - base.getTime()) / 1000;
+const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: "always" });
+
+/** "N units ago" / "in N units" for `date` relative to `now`. */
+export function formatRelativeTime(date: string | Date, now: Date = new Date()): string {
+    let delta = (new Date(date).getTime() - now.getTime()) / 1000;
     for (const [amount, unit] of RELATIVE_DIVISIONS) {
         if (Math.abs(delta) < amount) {
-            return rtf.format(Math.round(delta), unit);
+            return relativeTime.format(Math.round(delta), unit);
         }
         delta /= amount;
     }
-    return rtf.format(Math.round(delta), "years");
+    return relativeTime.format(Math.round(delta), "years");
+}
+
+/** A locale date/time formatter for one fixed option set, built once. */
+function dateFormatter(options: Intl.DateTimeFormatOptions): (date: string | Date) => string {
+    const format = new Intl.DateTimeFormat(undefined, options);
+    return (date) => format.format(new Date(date));
+}
+
+export const formatDateTime = dateFormatter({
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+});
+
+/** Wall-clock time of day, seconds included, 24-hour — e.g. "17:15:02". */
+export const formatClockTime = dateFormatter({
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+});
+
+/** Calendar date without the time — e.g. "22 Jun 2026". */
+export const formatCalendarDate = dateFormatter({
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+});
+
+/** Time of day, no seconds, 24-hour — e.g. "17:15". */
+export const formatTimeHM = dateFormatter({ hour: "2-digit", minute: "2-digit", hour12: false });
+
+/** Day and month, no year — e.g. "22 Jun". */
+export const formatDayMonth = dateFormatter({ month: "short", day: "numeric" });
+
+export const formatFullDateTime = dateFormatter({
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+});
+
+const formatShortTime = dateFormatter({ hour: "numeric", minute: "2-digit", hour12: false });
+
+export function formatRelativeTimeWithAbsolute(
+    dateStr: string | Date,
+    now: Date = new Date(),
+): string {
+    const date = new Date(dateStr);
+    const diffDays = Math.abs(now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
+    const absolute = diffDays < 1 ? formatShortTime(date) : formatDayMonth(date);
+    return `${formatRelativeTime(date, now)} (${absolute})`;
 }
 
 export function formatBytes(bytes: number): string {
@@ -41,79 +97,6 @@ export function formatBytes(bytes: number): string {
     return `${new Intl.NumberFormat("en", { maximumFractionDigits: digits }).format(value)} ${unit}`;
 }
 
-export function formatRelativeTime(dateStr: string | Date, now: Date = new Date()): string {
-    return formatDistance(new Date(dateStr), now);
-}
-
-export function formatRelativeTimeWithAbsolute(
-    dateStr: string | Date,
-    now: Date = new Date(),
-): string {
-    const date = new Date(dateStr);
-    const relative = formatDistance(date, now);
-    const diffMs = Math.abs(now.getTime() - date.getTime());
-    const diffDays = diffMs / (1000 * 60 * 60 * 24);
-
-    let absolute: string;
-    if (diffDays < 1) {
-        absolute = date.toLocaleTimeString(undefined, {
-            hour: "numeric",
-            minute: "2-digit",
-            hour12: false,
-        });
-    } else {
-        absolute = date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-    }
-
-    return `${relative} (${absolute})`;
-}
-
-export function formatDateTime(dateStr: string): string {
-    return new Date(dateStr).toLocaleString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-    });
-}
-
-/** Wall-clock time of day, seconds included, 24-hour — e.g. "17:15:02". */
-export function formatClockTime(dateStr: string): string {
-    return new Date(dateStr).toLocaleTimeString(undefined, {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-    });
-}
-
-/** Calendar date without the time — e.g. "22 Jun 2026". */
-export function formatCalendarDate(dateStr: string): string {
-    return new Date(dateStr).toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-    });
-}
-
-/** Time of day, no seconds, 24-hour — e.g. "17:15". */
-export function formatTimeHM(dateStr: string): string {
-    return new Date(dateStr).toLocaleTimeString(undefined, {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-    });
-}
-
-/** Day and month, no year — e.g. "22 Jun". */
-export function formatDayMonth(dateStr: string): string {
-    return new Date(dateStr).toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-    });
-}
-
 export function formatDuration(ms: number): string {
     if (ms < 1000) return String(ms) + "ms";
     const s = Math.floor(ms / 1000);
@@ -124,16 +107,4 @@ export function formatDuration(ms: number): string {
     const h = Math.floor(m / 60);
     const remM = m % 60;
     return remM > 0 ? String(h) + "h " + String(remM) + "m" : String(h) + "h";
-}
-
-export function formatFullDateTime(date: Date | string): string {
-    return new Intl.DateTimeFormat(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-    }).format(new Date(date));
 }
