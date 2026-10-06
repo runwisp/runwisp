@@ -102,7 +102,6 @@
 <div class="-m-6 flex h-[calc(100%+3rem)] min-h-0 flex-col md:flex-row">
     {#if panes.list}
         <RunsList
-            flush
             {items}
             {total}
             {loading}

@@ -308,7 +308,6 @@
     <div class="flex min-h-0 flex-1 flex-col md:flex-row">
         {#if panes.list}
             <RunsList
-                flush
                 {items}
                 {total}
                 {loading}
@@ -320,7 +319,6 @@
                     rail.picked();
                 }}
                 showFilters
-                emptyText="No runs yet"
                 bulkActions
                 taskNameFilter={task.name}
                 onBulkCancel={selection.handleBulkCancel}

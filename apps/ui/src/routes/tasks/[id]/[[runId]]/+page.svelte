@@ -124,7 +124,7 @@
     {#snippet skeleton()}
         <!-- The task page's own rail and panel, in their loading states. -->
         <div class="-m-6 flex h-[calc(100%+3rem)] min-h-0 flex-col md:flex-row">
-            <RunsList flush items={[]} total={0} loading filters={emptyRunFilters()} />
+            <RunsList items={[]} total={0} loading filters={emptyRunFilters()} />
             <RunDetailPanel run={undefined} loading fetchLogs={() => undefined} />
         </div>
     {/snippet}

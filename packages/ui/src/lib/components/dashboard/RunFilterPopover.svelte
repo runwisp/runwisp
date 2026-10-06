@@ -47,13 +47,10 @@
         filters = $bindable(),
         showTask = false,
         tasks = [],
-        compact = false,
     }: {
         filters: RunsListFilters;
         showTask?: boolean;
         tasks?: { name: string }[];
-        // Icon-only trigger for narrow rails where a "Filter" label wouldn't fit.
-        compact?: boolean;
     } = $props();
 
     // The individual statuses behind the "Advanced" expander, grouped the way
@@ -147,8 +144,8 @@
 <Popover placement="right-start" mobileSheet>
     {#snippet trigger()}
         <span
-            class="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-[3px] border font-mono text-xs font-medium {compact &&
-            count === 0
+            class="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-[3px] border font-mono text-xs font-medium {count ===
+            0
                 ? 'w-7 justify-center px-0'
                 : 'px-2'} {count > 0
                 ? 'border-primary-soft-border bg-primary-soft text-primary-soft-text'
@@ -156,7 +153,6 @@
             title="Filter runs"
         >
             <Funnel size={13} />
-            {#if !compact}Filter{/if}
             {#if count > 0}
                 <Badge variant="primary" size="sm" class="px-1.5 py-0">{count}</Badge>
             {/if}
