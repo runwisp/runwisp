@@ -3,7 +3,7 @@
 
 import { z } from "zod";
 import type { AppEventStream } from "./event-manager";
-import { appEventStream } from "./app-stream.svelte";
+import { appEventStream } from "./app-stream";
 import { createLogger } from "$lib/utils/logger";
 import { authFetch, handleUnauthorized } from "$lib/utils/auth-required";
 import { HTTP_STATUS } from "$lib/config/constants";

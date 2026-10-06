@@ -9,7 +9,7 @@ const h = vi.hoisted(() => {
     return { errorHandlers, handleUnauthorized: vi.fn(), reportSourceDown: vi.fn() };
 });
 
-vi.mock("./app-stream.svelte", () => ({
+vi.mock("./app-stream", () => ({
     appEventStream: {
         onOpen: () => () => undefined,
         onError: (fn: (info: SSEErrorInfo) => void) => {

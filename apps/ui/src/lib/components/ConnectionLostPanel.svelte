@@ -5,7 +5,7 @@
     import { RefreshCw, WifiOff, LoaderCircle, Layers } from "@lucide/svelte";
     import { Button, formatDuration } from "@runwisp/ui";
     import { connectionStore } from "$lib/stores";
-    import { appEventStream } from "$lib/stores/app-stream.svelte";
+    import { appEventStream } from "$lib/stores/app-stream";
     import { stalledCopy } from "$lib/utils/connection-copy";
 
     const c = connectionStore;
