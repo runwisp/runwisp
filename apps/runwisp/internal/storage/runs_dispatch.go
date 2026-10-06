@@ -86,7 +86,7 @@ type queryRunsRow interface {
 		RetryAttempt  int               `json:"retry_attempt"`
 		RetryOfRunID  *string           `json:"retry_of_run_id"`
 		InstanceIndex int               `json:"instance_index"`
-		ParamsJson    *string           `json:"params_json"`
+		ParamsJson    *string           `json:"params_json"` //nolint:revive // must match sqlc's generated field name
 		IsFailure     int64             `json:"is_failure"`
 	}
 }
