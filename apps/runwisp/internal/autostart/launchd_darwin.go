@@ -188,7 +188,7 @@ func (l *launchdInstaller) applyInstall(ctx context.Context, plan Plan, out io.W
 	return nil
 }
 
-func (l *launchdInstaller) ComputeUninstallPlan(_ context.Context, opts UninstallOptions) (Plan, error) {
+func (l *launchdInstaller) computeUninstallPlan(_ context.Context, opts UninstallOptions) (Plan, error) {
 	plistPath := l.plistPath()
 	plan, err := ClassifyUninstall(l.deps.FS, plistPath, opts.Force)
 	if err != nil {
@@ -206,7 +206,7 @@ func (l *launchdInstaller) ComputeUninstallPlan(_ context.Context, opts Uninstal
 }
 
 func (l *launchdInstaller) Uninstall(ctx context.Context, opts UninstallOptions, out io.Writer) error {
-	plan, err := l.ComputeUninstallPlan(ctx, opts)
+	plan, err := l.computeUninstallPlan(ctx, opts)
 	if err != nil {
 		return err
 	}

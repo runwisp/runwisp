@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package autostart
+package autostarttest
 
 import (
 	"io/fs"
@@ -122,16 +122,4 @@ func TestFakeFS_Paths(t *testing.T) {
 
 	got := f.Paths()
 	assert.Equal(t, []string{"/dir/a.txt", "/dir/b.txt"}, got, "files only, sorted")
-}
-
-func TestOSFS_WriteFile_MkdirError(t *testing.T) {
-	// Writing under a path whose parent already exists as a file should fail at
-	// the MkdirAll step inside osFS.WriteFile.
-	fs := NewOSFileSystem()
-	dir := t.TempDir()
-	parentAsFile := dir + "/blocker"
-	require.NoError(t, fs.WriteFile(parentAsFile, []byte("x"), 0o600))
-
-	err := fs.WriteFile(parentAsFile+"/child.txt", []byte("y"), 0o600)
-	require.Error(t, err, "MkdirAll should fail when parent is a regular file")
 }

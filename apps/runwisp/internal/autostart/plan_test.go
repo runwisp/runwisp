@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/runwisp/runwisp/internal/autostart/autostarttest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,7 +25,7 @@ func renderManagedUnit(t *testing.T, settingsHash, body string) []byte {
 }
 
 func TestClassifyExisting_NoFile(t *testing.T) {
-	fs := NewFakeFS()
+	fs := autostarttest.NewFakeFS()
 	desired := renderManagedUnit(t, "deadbeef", "[Unit]\nDescription=demo\n")
 	plan, err := ClassifyExisting(fs, unitPath, desired, false)
 	require.NoError(t, err)
@@ -33,7 +34,7 @@ func TestClassifyExisting_NoFile(t *testing.T) {
 }
 
 func TestClassifyExisting_ManagedMatches_Noop(t *testing.T) {
-	fs := NewFakeFS()
+	fs := autostarttest.NewFakeFS()
 	desired := renderManagedUnit(t, "deadbeef", "[Unit]\nDescription=demo\n")
 	require.NoError(t, fs.WriteFile(unitPath, desired, 0644))
 	plan, err := ClassifyExisting(fs, unitPath, desired, false)
@@ -45,7 +46,7 @@ func TestClassifyExisting_ManagedHashesDiffer_Noop(t *testing.T) {
 	// Same settings content but stale hash markers — should still be
 	// a Noop because the settings hash is computed over the stripped
 	// body.
-	fs := NewFakeFS()
+	fs := autostarttest.NewFakeFS()
 	existing := renderManagedUnit(t, "stale-hash", "[Unit]\nDescription=demo\n")
 	require.NoError(t, fs.WriteFile(unitPath, existing, 0644))
 	desired := renderManagedUnit(t, "fresh-hash", "[Unit]\nDescription=demo\n")
@@ -56,7 +57,7 @@ func TestClassifyExisting_ManagedHashesDiffer_Noop(t *testing.T) {
 }
 
 func TestClassifyExisting_ManagedDrift_Update(t *testing.T) {
-	fs := NewFakeFS()
+	fs := autostarttest.NewFakeFS()
 	existing := renderManagedUnit(t, "deadbeef", "[Unit]\nDescription=old\n")
 	require.NoError(t, fs.WriteFile(unitPath, existing, 0644))
 	desired := renderManagedUnit(t, "deadbeef", "[Unit]\nDescription=new\n")
@@ -68,7 +69,7 @@ func TestClassifyExisting_ManagedDrift_Update(t *testing.T) {
 }
 
 func TestClassifyExisting_HandWritten_Conflict(t *testing.T) {
-	fs := NewFakeFS()
+	fs := autostarttest.NewFakeFS()
 	require.NoError(t, fs.WriteFile(unitPath, []byte("[Unit]\nDescription=mine\n"), 0644))
 	desired := renderManagedUnit(t, "deadbeef", "[Unit]\nDescription=demo\n")
 	plan, err := ClassifyExisting(fs, unitPath, desired, false)
@@ -77,7 +78,7 @@ func TestClassifyExisting_HandWritten_Conflict(t *testing.T) {
 }
 
 func TestClassifyExisting_HandWritten_ForceUpdates(t *testing.T) {
-	fs := NewFakeFS()
+	fs := autostarttest.NewFakeFS()
 	require.NoError(t, fs.WriteFile(unitPath, []byte("[Unit]\nDescription=mine\n"), 0644))
 	desired := renderManagedUnit(t, "deadbeef", "[Unit]\nDescription=demo\n")
 	plan, err := ClassifyExisting(fs, unitPath, desired, true)
@@ -87,13 +88,13 @@ func TestClassifyExisting_HandWritten_ForceUpdates(t *testing.T) {
 }
 
 func TestClassifyUninstall_NoFile_Noop(t *testing.T) {
-	plan, err := ClassifyUninstall(NewFakeFS(), unitPath, false)
+	plan, err := ClassifyUninstall(autostarttest.NewFakeFS(), unitPath, false)
 	require.NoError(t, err)
 	assert.Equal(t, PlanNoop, plan.Kind)
 }
 
 func TestClassifyUninstall_Managed_Uninstall(t *testing.T) {
-	fs := NewFakeFS()
+	fs := autostarttest.NewFakeFS()
 	require.NoError(t, fs.WriteFile(unitPath, renderManagedUnit(t, "x", "body\n"), 0644))
 	plan, err := ClassifyUninstall(fs, unitPath, false)
 	require.NoError(t, err)
@@ -101,7 +102,7 @@ func TestClassifyUninstall_Managed_Uninstall(t *testing.T) {
 }
 
 func TestClassifyUninstall_HandWritten_Conflict(t *testing.T) {
-	fs := NewFakeFS()
+	fs := autostarttest.NewFakeFS()
 	require.NoError(t, fs.WriteFile(unitPath, []byte("hand-written\n"), 0644))
 	plan, err := ClassifyUninstall(fs, unitPath, false)
 	require.NoError(t, err)
@@ -109,7 +110,7 @@ func TestClassifyUninstall_HandWritten_Conflict(t *testing.T) {
 }
 
 func TestClassifyUninstall_HandWritten_ForceUninstalls(t *testing.T) {
-	fs := NewFakeFS()
+	fs := autostarttest.NewFakeFS()
 	require.NoError(t, fs.WriteFile(unitPath, []byte("hand-written\n"), 0644))
 	plan, err := ClassifyUninstall(fs, unitPath, true)
 	require.NoError(t, err)

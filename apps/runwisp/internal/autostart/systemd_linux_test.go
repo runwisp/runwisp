@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/runwisp/runwisp/internal/autostart/autostarttest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,11 +24,11 @@ import (
 // newFakeInstaller wires a systemdInstaller against FakeFS + FakeRunner
 // and a scripted prompter. The returned binary path points at a real
 // temp file (because the installer hashes its content).
-func newFakeInstaller(t *testing.T, wsl bool) (*systemdInstaller, *FakeFS, *FakeRunner, *ScriptedPrompter, string) {
+func newFakeInstaller(t *testing.T, wsl bool) (*systemdInstaller, *autostarttest.FakeFS, *FakeRunner, *ScriptedPrompter, string) {
 	t.Helper()
 	binaryPath := filepath.Join(t.TempDir(), "runwisp")
 	require.NoError(t, os.WriteFile(binaryPath, []byte("fake-binary-content"), 0755))
-	fs := NewFakeFS()
+	fs := autostarttest.NewFakeFS()
 	cmd := NewFakeRunner()
 	prompter := &ScriptedPrompter{}
 	deps := Deps{
@@ -310,7 +311,7 @@ func TestSystemdNew_Validation(t *testing.T) {
 // user scope, whose unit name embeds the fingerprint, needs one — and it
 // says so where the name would be derived rather than at construction.
 func TestSystemdNew_FingerprintOnlyRequiredForUserScope(t *testing.T) {
-	inst, err := New(Deps{Home: "/h", User: "alice", FS: NewFakeFS()})
+	inst, err := New(Deps{Home: "/h", User: "alice", FS: autostarttest.NewFakeFS()})
 	require.NoError(t, err)
 
 	// The system plan may still fail for unrelated reasons (no cron probe
@@ -454,7 +455,7 @@ func TestSystemdApplyUninstall_StopAndDisableErrorsAreWarnings(t *testing.T) {
 		nil, []byte("reload err"), assertErrFake("reload failed"))
 
 	out := &bytes.Buffer{}
-	plan, err := inst.ComputeUninstallPlan(context.Background(), UninstallOptions{})
+	plan, err := inst.computeUninstallPlan(context.Background(), UninstallOptions{})
 	require.NoError(t, err)
 	err = inst.applyUninstall(context.Background(), plan, UninstallOptions{DataDir: opts.DataDir}, out)
 	require.NoError(t, err)
@@ -482,7 +483,7 @@ func TestSystemdApplyUninstall_PurgeRemovesDataDir(t *testing.T) {
 	cmd.Expect("systemctl", []string{"--user", "disable", "runwisp-bright-falcon.service"}, nil, nil, nil)
 	cmd.Expect("systemctl", []string{"--user", "daemon-reload"}, nil, nil, nil)
 
-	plan, err := inst.ComputeUninstallPlan(context.Background(), UninstallOptions{})
+	plan, err := inst.computeUninstallPlan(context.Background(), UninstallOptions{})
 	require.NoError(t, err)
 
 	out := &bytes.Buffer{}
@@ -636,7 +637,7 @@ func TestSystemdComputeUninstallPlan_SystemWide(t *testing.T) {
 	unitPath := "/etc/systemd/system/runwisp.service"
 	require.NoError(t, fs.WriteFile(unitPath, body, 0644))
 
-	plan, err := inst.ComputeUninstallPlan(context.Background(), UninstallOptions{System: true})
+	plan, err := inst.computeUninstallPlan(context.Background(), UninstallOptions{System: true})
 	require.NoError(t, err)
 	assert.Equal(t, unitPath, plan.UnitPath)
 	assert.Equal(t, PlanUninstall, plan.Kind)
@@ -662,7 +663,7 @@ func TestSystemdComputeUninstallPlan_UserScopedUnaffectedByOtherInstance(t *test
 	require.NoError(t, err)
 	require.NoError(t, fs.WriteFile("/etc/systemd/system/runwisp.service", body, 0644))
 
-	plan, err := inst.ComputeUninstallPlan(context.Background(), UninstallOptions{System: false})
+	plan, err := inst.computeUninstallPlan(context.Background(), UninstallOptions{System: false})
 	require.NoError(t, err)
 	assert.Equal(t, PlanNoop, plan.Kind, "a user-scoped uninstall must not see the system unit")
 }
@@ -680,7 +681,7 @@ func TestSystemdApplyUninstall_SystemWide(t *testing.T) {
 	cmd.Expect("sudo", []string{"systemctl", "disable", "runwisp.service"}, nil, nil, nil)
 	cmd.Expect("sudo", []string{"systemctl", "daemon-reload"}, nil, nil, nil)
 
-	plan, err := inst.ComputeUninstallPlan(context.Background(), UninstallOptions{System: true})
+	plan, err := inst.computeUninstallPlan(context.Background(), UninstallOptions{System: true})
 	require.NoError(t, err)
 
 	out := &bytes.Buffer{}

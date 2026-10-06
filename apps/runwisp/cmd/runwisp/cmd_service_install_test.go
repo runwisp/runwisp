@@ -243,7 +243,7 @@ func TestInspectServiceInstall_PrintNeverConsultsThePort(t *testing.T) {
 }
 
 // noDropInInstaller answers --dry-run's plan and reports no password drop-in
-// support (the launchd/unsupported-OS case) — anything else panics on the nil
+// support (the launchd case) — anything else panics on the nil
 // embedded Installer.
 type noDropInInstaller struct {
 	autostart.Installer
