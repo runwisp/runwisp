@@ -13,6 +13,7 @@
         CodeBlock,
         EmptyState,
         Input,
+        Link,
         Select,
         Tooltip,
     } from "@runwisp/ui";
@@ -196,14 +197,14 @@
                         class="text-left"
                         code={exampleTask}
                     />
-                    <a
+                    <Link
                         href="https://docs.runwisp.com/configuration/tasks/"
-                        target="_blank"
-                        rel="noreferrer"
-                        class="text-sm font-medium text-primary hover:underline"
+                        external
+                        variant="primary"
+                        class="text-sm font-medium"
                     >
                         Task configuration docs →
-                    </a>
+                    </Link>
                 </div>
             {/snippet}
         </EmptyState>

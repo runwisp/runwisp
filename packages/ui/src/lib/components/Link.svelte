@@ -3,11 +3,15 @@
 
 <script lang="ts">
     import type { Snippet } from "svelte";
+    import type { HTMLAnchorAttributes } from "svelte/elements";
 
     type LinkVariant = "default" | "muted" | "primary" | "danger";
     type LinkUnderline = "always" | "hover" | "none";
 
-    interface Props {
+    // Use Link for off-site URLs (`external` opens a new tab with rel=noopener
+    // noreferrer). An in-app href must still come from SvelteKit's resolve():
+    // being a component, Link sits outside svelte/no-navigation-without-resolve.
+    interface Props extends Omit<HTMLAnchorAttributes, "href" | "children" | "class"> {
         href: string;
         variant?: LinkVariant;
         external?: boolean;
@@ -23,6 +27,7 @@
         underline = "hover",
         children,
         class: className = "",
+        ...restProps
     }: Props = $props();
 
     const baseClasses = `
@@ -50,6 +55,7 @@
     class="{baseClasses} {variantClasses[variant]} {underlineClasses[underline]} {className}"
     target={external ? "_blank" : undefined}
     rel={external ? "noopener noreferrer" : undefined}
+    {...restProps}
 >
     {@render children()}
 </a>

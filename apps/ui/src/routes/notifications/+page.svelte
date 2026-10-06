@@ -3,7 +3,7 @@
 
 <script lang="ts">
     import { Bell } from "@lucide/svelte";
-    import { EmptyState, ErrorState, Skeleton } from "@runwisp/ui";
+    import { EmptyState, ErrorState, Link, Skeleton } from "@runwisp/ui";
     import { notificationStore } from "$lib/stores";
     import NotificationItem from "$lib/components/NotificationItem.svelte";
 
@@ -59,14 +59,14 @@
                 icon={Bell}
             >
                 {#snippet actions()}
-                    <a
+                    <Link
                         href="https://docs.runwisp.com/notifications/"
-                        target="_blank"
-                        rel="noreferrer"
-                        class="text-sm font-medium text-primary hover:underline"
+                        external
+                        variant="primary"
+                        class="text-sm font-medium"
                     >
                         Notification docs →
-                    </a>
+                    </Link>
                 {/snippet}
             </EmptyState>
         </div>
