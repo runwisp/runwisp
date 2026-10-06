@@ -24,7 +24,7 @@ func runDefault(ctx context.Context, f Flags) error {
 	client := apiclient.NewUnix(localAPISocketPath(f))
 
 	if client.HealthCheck(ctx) == nil {
-		err := runTUIConnect(ctx, client, f, false)
+		err := runTUIConnect(ctx, client, f, tui.DaemonAttached)
 		if err == nil {
 			return nil
 		}
@@ -49,7 +49,7 @@ func runDefault(ctx context.Context, f Flags) error {
 		if err := waitForDaemon(client, logPath, 30*time.Second, f); err != nil {
 			return err
 		}
-		return runTUIConnect(ctx, client, f, false)
+		return runTUIConnect(ctx, client, f, tui.DaemonAttached)
 	}
 
 	spawn, portErr := ensurePortFreeOrHandle(ctx, f)
@@ -66,7 +66,7 @@ func runDefault(ctx context.Context, f Flags) error {
 		return err
 	}
 
-	return runTUIConnect(ctx, client, f, true)
+	return runTUIConnect(ctx, client, f, tui.DaemonStarted)
 }
 
 // ensurePortFreeOrHandle probes the bind port before a spawn.
@@ -85,7 +85,7 @@ func ensurePortFreeOrHandle(ctx context.Context, f Flags) (spawn bool, err error
 	}
 	switch choice {
 	case conflictConnect:
-		return false, runTUIConnect(ctx, apiclient.NewUnix(info.SocketPath), f, false)
+		return false, runTUIConnect(ctx, apiclient.NewUnix(info.SocketPath), f, tui.DaemonAttached)
 	case conflictStopAndLaunch:
 		if stopErr := stopDaemonByInstance(f, info); stopErr != nil {
 			return false, stopErr
@@ -97,11 +97,11 @@ func ensurePortFreeOrHandle(ctx context.Context, f Flags) (spawn bool, err error
 }
 
 // runTUIConnect launches the TUI against a local daemon via Unix socket.
-// startedDaemon is true when the caller just spawned that daemon.
-func runTUIConnect(ctx context.Context, client *apiclient.Client, f Flags, startedDaemon bool) error {
+// daemon says whether the caller just spawned that daemon (see tui.DaemonOwnership).
+func runTUIConnect(ctx context.Context, client *apiclient.Client, f Flags, daemon tui.DaemonOwnership) error {
 	return launchConnectedTUI(ctx, client, tuiConnectMode{
-		shutdownFunc:  func() error { return shutdownConnectedDaemon(ctx, client, f) },
-		startedDaemon: startedDaemon,
+		shutdownFunc: func() error { return shutdownConnectedDaemon(ctx, client, f) },
+		daemon:       daemon,
 	})
 }
 
@@ -131,9 +131,8 @@ type tuiConnectMode struct {
 	// shutdownFunc, when non-nil, lets the quit dialog stop the daemon. Nil for
 	// remote — a local PID file can't kill a daemon on another host.
 	shutdownFunc func() error
-	// startedDaemon is true when this command spawned the daemon. Only then
-	// does quitting the TUI ask whether to keep the daemon running.
-	startedDaemon bool
+	// daemon decides what quitting the TUI does to the daemon.
+	daemon tui.DaemonOwnership
 }
 
 // launchConnectedTUI is the shared tail for local socket and remote HTTP paths.
@@ -173,7 +172,7 @@ func launchConnectedTUI(ctx context.Context, client *apiclient.Client, mode tuiC
 
 	_, tuiErr := tui.StartTUI(startupInfo, client, nil, mode.shutdownFunc, func() (string, error) {
 		return client.CreateLaunchTicket(ctx)
-	}, mode.startedDaemon)
+	}, mode.daemon)
 	return tuiErr
 }
 

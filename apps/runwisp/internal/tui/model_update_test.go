@@ -230,7 +230,7 @@ func TestInterceptConfirmDialog_RoutesToShuttingDown(t *testing.T) {
 
 func TestInterceptNewReleaseDialog_CtrlCEscalatesToQuitConfirm(t *testing.T) {
 	m := newTestModel(nil)
-	m.startedDaemon = true
+	m.daemon = DaemonStarted
 	m.dialogs.ShowNewRelease("1.0.0", "v2.0.0")
 
 	updated, _, intercepted := m.interceptNewReleaseDialog(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
@@ -1463,7 +1463,7 @@ func TestModalCtrlC_DismissesAndOpensQuitConfirm(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newTestModel(nil)
-			m.startedDaemon = true
+			m.daemon = DaemonStarted
 			tc.show(&m)
 
 			updated, _, intercepted := tc.intercept(m, ctrlC)
@@ -1503,7 +1503,7 @@ func TestModalCtrlC_QuitsImmediatelyWhenDaemonNotStartedByTUI(t *testing.T) {
 
 func TestSidebarFilterCtrlC_OpensQuitConfirm(t *testing.T) {
 	m := newTestModel(nil)
-	m.startedDaemon = true
+	m.daemon = DaemonStarted
 	m.sidebar.StartFilter()
 
 	updated, _ := m.handleSidebarFilterKey(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})

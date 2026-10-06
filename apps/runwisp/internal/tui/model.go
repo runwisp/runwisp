@@ -117,18 +117,30 @@ type Model struct {
 	height   int
 	ready    bool
 	isRemote bool
-	// startedDaemon is true when this TUI started the daemon it is attached to
-	// (spawned it, or runs it in-process). Only then does quitting ask whether
-	// to keep the daemon running.
-	startedDaemon bool
+	// daemon decides what quitting does to the attached daemon (see requestQuit).
+	daemon DaemonOwnership
 }
+
+// DaemonOwnership says how the TUI relates to the daemon it is attached to,
+// which decides what quitting does to it.
+type DaemonOwnership int
+
+const (
+	// DaemonAttached: the TUI didn't start the daemon; quitting leaves it running.
+	DaemonAttached DaemonOwnership = iota
+	// DaemonStarted: this TUI started the daemon; quitting asks whether to keep it.
+	DaemonStarted
+	// DaemonThrowaway: the daemon only exists for this TUI session (`runwisp
+	// demo`); quitting always shuts it down.
+	DaemonThrowaway
+)
 
 // TUIConfig holds the dependencies needed to start the interactive TUI.
 type TUIConfig struct {
 	Info             uikit.StartupInfo
 	Client           *apiclient.Client
 	IsRemote         bool                   // true when connecting to a remote daemon (no local debug writer)
-	StartedDaemon    bool                   // true when this TUI started the daemon (see Model.startedDaemon)
+	Daemon           DaemonOwnership        // what quitting does to the daemon (see requestQuit)
 	ShutdownFunc     func() error           // if set, called inside the TUI to shut down the daemon
 	LaunchTicketFunc func() (string, error) // generates a single-use launch ticket for browser auth
 }
@@ -158,7 +170,7 @@ func NewModel(cfg TUIConfig) Model {
 		mouse:            mouseState{homeHover: -1},
 		frame:            new(string),
 		isRemote:         cfg.IsRemote,
-		startedDaemon:    cfg.StartedDaemon,
+		daemon:           cfg.Daemon,
 		shutdownFunc:     cfg.ShutdownFunc,
 		launchTicketFunc: cfg.LaunchTicketFunc,
 	}
@@ -440,12 +452,16 @@ func (m Model) ShutdownErr() error {
 
 // requestQuit handles a quit key. Attached to a daemon the TUI didn't start
 // (a service, `runwisp tui`, --url) it quits right away and the daemon keeps
-// running. Only when this TUI started the daemon does it ask whether to keep it
-// running in the background or shut it down. A daemon that has since come
-// under systemd / launchd is no longer the TUI's to stop, so it quits too.
+// running. A throwaway demo daemon is shut down without asking. Only when this
+// TUI started a regular daemon does it ask whether to keep it running in the
+// background or shut it down. A daemon that has since come under systemd /
+// launchd is no longer the TUI's to stop, so it quits too.
 func (m *Model) requestQuit() tea.Cmd {
-	if !m.startedDaemon || m.info.ServiceManaged {
+	if m.daemon == DaemonAttached || m.info.ServiceManaged {
 		return func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitKeepDaemon} }
+	}
+	if m.daemon == DaemonThrowaway {
+		return func() tea.Msg { return uikit.QuitMsg{Action: uikit.QuitShutdownDaemon} }
 	}
 
 	dialog := NewChoiceDialog(

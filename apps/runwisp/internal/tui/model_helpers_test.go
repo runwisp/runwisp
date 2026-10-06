@@ -929,7 +929,7 @@ func TestToggleSelectedNotificationRead_ReadToUnread(t *testing.T) {
 func TestRequestQuit_RemoteSkipsAutostartHint(t *testing.T) {
 	m := newTestModel(nil)
 	m.isRemote = true
-	m.startedDaemon = true
+	m.daemon = DaemonStarted
 	m.requestQuit()
 	d := m.dialogs.confirmDialog
 	if d == nil {
