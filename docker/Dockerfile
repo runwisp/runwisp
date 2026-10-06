@@ -50,7 +50,8 @@ RUN chmod +x /usr/local/bin/runwisp /usr/local/bin/docker-entrypoint.sh
 ENV RUNWISP_CONFIG=/etc/runwisp/runwisp.toml \
 	RUNWISP_DATA=/var/lib/runwisp \
 	RUNWISP_HOST=0.0.0.0 \
-	RUNWISP_LOG_FORMAT=text
+	RUNWISP_LOG_FORMAT=text \
+	RUNWISP_INSTALL_SOURCE=docker
 
 EXPOSE 9477
 VOLUME ["/var/lib/runwisp"]

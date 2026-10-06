@@ -14,6 +14,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -48,6 +50,7 @@ type Checker struct {
 	current string // running daemon version (may lack a leading "v")
 	os      string
 	arch    string
+	source  string // install channel, see installSource
 	enabled bool
 
 	baseURL string
@@ -66,10 +69,32 @@ func NewChecker(current, goos, goarch string, enabled bool) *Checker {
 		current: current,
 		os:      goos,
 		arch:    goarch,
+		source:  installSource(),
 		enabled: enabled,
 		baseURL: DefaultBaseURL,
 		client:  &http.Client{Timeout: requestTimeout},
 	}
+}
+
+// installSource reports how this binary was installed. The same
+// release binary ships through every channel, so it can't be baked in at build
+// time: the Docker image and npm wrapper set RUNWISP_INSTALL_SOURCE
+// (docker / npm / npx), and get.runwisp.com writes "script" to a
+// .runwisp-source file next to the binary. Anything else is "other".
+func installSource() string {
+	if s := os.Getenv("RUNWISP_INSTALL_SOURCE"); s != "" {
+		return s
+	}
+	if exe, err := os.Executable(); err == nil {
+		if exe, err = filepath.EvalSymlinks(exe); err == nil {
+			if b, err := os.ReadFile(filepath.Join(filepath.Dir(exe), ".runwisp-source")); err == nil {
+				if s := strings.TrimSpace(string(b)); s != "" {
+					return s
+				}
+			}
+		}
+	}
+	return "other"
 }
 
 // Status reports whether a newer release exists and, if so, its version string
@@ -126,6 +151,7 @@ func (c *Checker) fetch(ctx context.Context) (checkResponse, error) {
 	q.Set("current", c.current)
 	q.Set("os", c.os)
 	q.Set("arch", c.arch)
+	q.Set("source", c.source)
 	u := c.baseURL + "/v1/check?" + q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)

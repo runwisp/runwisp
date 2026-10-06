@@ -29,6 +29,15 @@ case $arch in
 esac
 pkg="@runwisp/$os-$arch"
 
+# Tell the daemon how it was installed. One-off runners
+# unpack into a throwaway cache dir (npx: ~/.npm/_npx/<hash>, bunx: /tmp/bunx-*,
+# pnpm dlx: <cache>/dlx/<hash>); anything else is an `npm add` (-g or local).
+case $dir in
+  */_npx/* | */bunx-* | */dlx/*) RUNWISP_INSTALL_SOURCE=npx ;;
+  *) RUNWISP_INSTALL_SOURCE=npm ;;
+esac
+export RUNWISP_INSTALL_SOURCE
+
 # Covers both install layouts: npm nests deps under the package, bun hoists them
 # alongside it.
 for bin in "$dir/../node_modules/$pkg/runwisp" "$dir/../../$pkg/runwisp"; do
