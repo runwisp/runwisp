@@ -129,16 +129,16 @@ func New(dbPath string) (Database, error) {
 	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
 		return nil, fmt.Errorf("failed to enable WAL mode: %w", err)
 	}
-	if _, err := db.Exec("PRAGMA busy_timeout=" + strconv.Itoa(sqliteBusyTimeout) + ";"); err != nil {
+	if _, err := db.Exec("PRAGMA busy_timeout=" + strconv.Itoa(sqliteBusyTimeout) + ";"); err != nil { // NOSONAR: concatenates compile-time constants only
 		return nil, fmt.Errorf("failed to set busy timeout: %w", err)
 	}
 	// Bound SQLite's memory: pin the page cache, cap the allocator's heap, and
 	// keep that bounded cache the only buffer (no growing mmap region). Lowers
 	// idle RSS — see sqliteCacheSizeKiB / sqliteSoftHeapLimitBytes.
-	if _, err := db.Exec("PRAGMA cache_size=" + strconv.Itoa(sqliteCacheSizeKiB) + ";"); err != nil {
+	if _, err := db.Exec("PRAGMA cache_size=" + strconv.Itoa(sqliteCacheSizeKiB) + ";"); err != nil { // NOSONAR: concatenates compile-time constants only
 		return nil, fmt.Errorf("failed to set cache_size: %w", err)
 	}
-	if _, err := db.Exec("PRAGMA soft_heap_limit=" + strconv.Itoa(sqliteSoftHeapLimitBytes) + ";"); err != nil {
+	if _, err := db.Exec("PRAGMA soft_heap_limit=" + strconv.Itoa(sqliteSoftHeapLimitBytes) + ";"); err != nil { // NOSONAR: concatenates compile-time constants only
 		return nil, fmt.Errorf("failed to set soft_heap_limit: %w", err)
 	}
 	if _, err := db.Exec("PRAGMA mmap_size=0;"); err != nil {
