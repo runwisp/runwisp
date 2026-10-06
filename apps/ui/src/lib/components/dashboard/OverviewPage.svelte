@@ -21,6 +21,7 @@
     import { TickingNow, PageContainer, Card } from "@runwisp/ui";
     import type { DaemonStats, RunMotion } from "@runwisp/ui";
     import type { Run, Task } from "@runwisp/common";
+    import { systemStore } from "$lib/stores";
 
     const TASK_FILTERS: { value: OverviewTaskFilter; label: string }[] = [
         { value: "all", label: "All" },
@@ -47,35 +48,31 @@
     const RECENT_ACTIVITY_LIMIT = 6;
 
     let {
-        uptime,
         stats,
         recentRuns = [],
         runningRuns = [],
         totalRuns = 0,
         tasks = [],
         metricsHistory = [],
-        stationMode = false,
-        schedulingActive = true,
         onViewAllRuns,
         onTaskClick,
         onRunClick,
         motion,
-    } = $props<{
-        uptime: string;
+    }: {
         stats: DaemonStats;
         recentRuns?: Run[];
         runningRuns?: Run[];
         totalRuns?: number;
         tasks?: (Task & { id: string })[];
         metricsHistory?: MetricsSample[];
-        stationMode?: boolean;
-        schedulingActive?: boolean;
-        onViewAllRuns?: () => void;
-        onTaskClick?: (taskName: string) => void;
-        onRunClick?: (taskName: string, runId: string) => void;
+        onViewAllRuns: () => void;
+        onTaskClick: (taskName: string) => void;
+        onRunClick: (taskName: string, runId: string) => void;
         // Runs that finished live moments ago; they animate in.
-        motion?: RunMotion;
-    }>();
+        motion: RunMotion;
+    } = $props();
+
+    const schedulingActive = $derived(systemStore.schedulingActive);
 
     let searchQuery = $state("");
     let taskFilter = $state<OverviewTaskFilter>("all");
@@ -148,8 +145,6 @@
                 {totalRuns}
                 {completedRunsCount}
                 {healthyTasksCount}
-                {uptime}
-                {stationMode}
             />
 
             <OverviewSidePanels
