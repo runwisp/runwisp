@@ -11,17 +11,10 @@ import type { ResourceUsage, Task } from "$lib/types";
 
 function createSystemStore() {
     const logger = createLogger("SystemStore");
-    let name = $state("runwisp");
     let version = $state("—");
     let uptime = $state("—");
-    let host = $state("unknown");
-    let cpus = $state(0);
-    let memTotal = $state(0);
     let cpuUsage = $state(0);
     let memUsage = $state(0);
-    let os = $state("—");
-    let arch = $state("—");
-    let workDir = $state("—");
     let fingerprint = $state("—");
     let timezone = $state("");
     let timezoneSource = $state("");
@@ -57,7 +50,7 @@ function createSystemStore() {
         subscribe();
     }
 
-    // seed pulls the one-shot snapshot: static identity (host, os, fingerprint,
+    // seed pulls the one-shot snapshot: static identity (fingerprint,
     // timezone, station/scheduling mode) that never changes for the daemon's
     // lifetime, plus the initial cpu/mem/uptime so gauges aren't blank before
     // the first pushed sample lands.
@@ -69,17 +62,10 @@ function createSystemStore() {
         if (untrack(() => connectionStore.status) === "disconnected") return;
         try {
             const [sys, info] = await Promise.all([systemApi.getStats(), systemApi.getInfo()]);
-            name = sys.name;
             version = sys.version;
             uptime = sys.uptime;
-            host = sys.host;
-            cpus = sys.cpuCores;
-            memTotal = sys.memTotal;
             cpuUsage = sys.cpuUsage;
             memUsage = sys.memUsage;
-            os = sys.os;
-            arch = sys.arch;
-            workDir = sys.workDir;
             fingerprint = info.fingerprint;
             timezone = info.resolvedTimezone;
             timezoneSource = info.timezoneSource;
@@ -109,7 +95,6 @@ function createSystemStore() {
                 }
                 cpuUsage = parsed.data.sample.cpuUsage;
                 memUsage = parsed.data.sample.memUsage;
-                memTotal = parsed.data.sample.memTotal;
                 uptime = parsed.data.uptime;
                 taskUsage = parsed.data.tasks ?? {};
                 runUsage = parsed.data.runs ?? {};
@@ -132,38 +117,17 @@ function createSystemStore() {
     }
 
     return {
-        get name() {
-            return name;
-        },
         get version() {
             return version;
         },
         get uptime() {
             return uptime;
         },
-        get host() {
-            return host;
-        },
-        get cpus() {
-            return cpus;
-        },
-        get memTotal() {
-            return memTotal;
-        },
         get cpuUsage() {
             return cpuUsage;
         },
         get memUsage() {
             return memUsage;
-        },
-        get os() {
-            return os;
-        },
-        get arch() {
-            return arch;
-        },
-        get workDir() {
-            return workDir;
         },
         get fingerprint() {
             return fingerprint;
