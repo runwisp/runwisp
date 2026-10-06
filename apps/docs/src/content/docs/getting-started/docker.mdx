@@ -13,11 +13,6 @@ the same release binary as the install script and the npm package.
 
 ## Quick start
 
-Create a `runwisp.toml` next to the compose file first, for example by copying
-the [starter config](/getting-started/quick-start/#2-start-runwisp). If the
-file is missing, Docker creates a directory of that name and the container
-exits.
-
 ```yaml
 # compose.yaml
 services:
@@ -29,7 +24,7 @@ services:
         environment:
             - RUNWISP_PASSWORD=change-me
         volumes:
-            - ./runwisp.toml:/etc/runwisp/runwisp.toml:ro
+            - ./runwisp:/etc/runwisp
             - runwisp-data:/var/lib/runwisp
 
 volumes:
@@ -37,13 +32,17 @@ volumes:
 ```
 
 Run `docker compose up -d`, open `http://localhost:9477`, and log in with the
-password. The same with `docker run`:
+password. On first start, RunWisp writes a starter config with one example task
+to `./runwisp/runwisp.toml`. Edit it and run
+`docker compose exec runwisp runwisp reload` to apply your changes.
+
+The same with `docker run`:
 
 ```bash
 docker run -d --name runwisp \
   -p 9477:9477 \
   -e RUNWISP_PASSWORD=change-me \
-  -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro \
+  -v ./runwisp:/etc/runwisp \
   -v runwisp-data:/var/lib/runwisp \
   runwisp/runwisp:latest
 ```
@@ -77,8 +76,12 @@ login, trusted networks only). Without one, the daemon would generate a new
 random password on every start, which nobody could read from a container. See
 [Authentication](/operations/auth/).
 
-**A config file** mounted at `/etc/runwisp/runwisp.toml`. Read-only is fine;
-RunWisp never writes it. There is no scaffold prompt in a container.
+**A config file** at `/etc/runwisp/runwisp.toml`. On first start, if the file
+is missing and `/etc/runwisp` is a writable mount, RunWisp writes the starter
+config there. Otherwise a missing config stops the container, including when
+the data volume already holds a database: that means the config volume was
+mounted in the wrong place, and starting with the starter would quietly drop
+your tasks.
 
 Both checks apply to anything that starts a daemon: `daemon`, `station`,
 `restart`, `demo`, bare `runwisp`, and any subcommand the entrypoint doesn't
@@ -86,8 +89,7 @@ know. One-shot commands such as `validate`, `run`, `list`, `status`, `reload`,
 `import`, and `tui` skip them:
 
 ```bash
-docker run --rm -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro \
-  runwisp/runwisp:latest runwisp validate
+docker run --rm -v ./runwisp:/etc/runwisp runwisp/runwisp:latest runwisp validate
 ```
 
 ## Environment defaults
@@ -108,10 +110,14 @@ entrypoint warns if you pass `--data` or `--socket`.
 
 ## Volumes
 
-- **`/etc/runwisp/runwisp.toml`**: your config, read-only. It must be a file.
-  To split config across files, mount a directory at `/etc/runwisp` with
-  `runwisp.toml` inside, and load the rest with
+- **`/etc/runwisp`**: the directory holding `runwisp.toml`. RunWisp only
+  writes to it once, to create the starter, so you can mount it `:ro` after
+  that. Put more config files next to `runwisp.toml` and load them with
   [`include`](/configuration/daemon/#include).
+  Mount the directory rather than the single file: many editors save by
+  replacing the file, and a single-file mount keeps showing the container the
+  old copy, so `reload` misses your edit. If `./runwisp` doesn't exist yet,
+  Docker creates it owned by root; run `mkdir runwisp` first to own it.
 - **`/var/lib/runwisp`**: the database and run logs. Without a volume here,
   every container recreate deletes your run history and logs you out.
 

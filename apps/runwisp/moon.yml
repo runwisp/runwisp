@@ -142,6 +142,8 @@ tasks:
       - 'go.sum'
       - 'scripts/test-go.sh'
       - 'scripts/merge-coverage.sh'
+      # The Docker image's copy of the starter, pinned by a config test.
+      - '/docker/runwisp.toml'
       - 'scripts/ensure-ui-dist.sh'
     outputs:
       - 'coverage.out'

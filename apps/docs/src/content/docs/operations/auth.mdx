@@ -103,7 +103,7 @@ loopback only:
 
 ```bash
 docker run --rm -e RUNWISP_AUTH=off -p 127.0.0.1:9477:9477 \
-  -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro runwisp/runwisp:latest
+  -v ./runwisp:/etc/runwisp runwisp/runwisp:latest
 ```
 
 ## Hooks

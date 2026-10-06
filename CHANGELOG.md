@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - The Web UI and the TUI show live CPU and memory use for running tasks and services, and each run records its peak memory and CPU time. Live use is also exported as the `runwisp_task_cpu_percent` and `runwisp_task_memory_bytes` metrics.
+- The Docker image writes a starter `runwisp.toml` on first start when you mount an empty config directory at `/etc/runwisp`.
 
 ### Changed
 

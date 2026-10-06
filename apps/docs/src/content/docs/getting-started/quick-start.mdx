@@ -61,7 +61,7 @@ of every run. It runs on Linux, macOS, and WSL, on `x86_64` or `arm64`.
         docker run -d --name runwisp \
           -p 9477:9477 \
           -e RUNWISP_PASSWORD=change-me \
-          -v ./runwisp.toml:/etc/runwisp/runwisp.toml:ro \
+          -v ./runwisp:/etc/runwisp \
           -v runwisp-data:/var/lib/runwisp \
           runwisp/runwisp:latest
         ```

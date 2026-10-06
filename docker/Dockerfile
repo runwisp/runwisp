@@ -41,6 +41,8 @@ LABEL org.opencontainers.image.title="RunWisp" \
 
 COPY context/${TARGETARCH}/runwisp /usr/local/bin/runwisp
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+# The starter the entrypoint copies into an empty config mount on first start.
+COPY runwisp.toml /usr/local/share/runwisp/runwisp.toml
 RUN chmod +x /usr/local/bin/runwisp /usr/local/bin/docker-entrypoint.sh
 
 # Bind 0.0.0.0 and rely on the daemon's own plain-HTTP-by-default: a

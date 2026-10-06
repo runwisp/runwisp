@@ -158,29 +158,57 @@ if [ "$subcommand" = daemon ] && [ -n "$extra_positional" ]; then
 	exit 1
 fi
 
+config_dir=$(dirname "$config")
+
+# First start: write the starter so the operator sees a working daemon before
+# they've written any TOML, the same as running `runwisp` on a fresh box. Only
+# when both of these hold, so a misplaced mount fails below instead of booting a
+# throwaway config nobody meant to run:
+#   - the config directory is a mount point (the image never creates it), and
+#   - the data dir has no database yet. A daemon that has run before and now
+#     finds no config was pointed at the wrong directory, not set up fresh.
+# A read-only mount makes the copy fail; its error prints, then the
+# missing-file message below explains what to do. The starter ships in the
+# image (see the Dockerfile) at ../share/runwisp next to this script.
+starter="${0%/*}/../share/runwisp/runwisp.toml"
+db="$data/runwisp.db"
+if [ ! -e "$config" ] && [ ! -e "$db" ] && mountpoint -q "$config_dir" 2>/dev/null &&
+	cp "$starter" "$config"; then
+	# Hand the file to whoever owns the mounted directory, so a host user can edit
+	# it without sudo. Fails harmlessly when not running as root.
+	chown "$(stat -c %u:%g "$config_dir")" "$config" 2>/dev/null || true
+	printf 'Wrote a starter config to %s. Edit it on the host, then run:\n' "$config" >&2
+	printf '  docker exec <container> runwisp reload\n' >&2
+fi
+
 if [ -d "$config" ]; then
 	cat >&2 <<EOF
 error: $config is a directory, but --config must name a single TOML file.
 
-Mount the file itself:
-  -v /path/to/runwisp.toml:$config:ro
-
-To split config across several files, mount the directory one level up, keep
-runwisp.toml inside it, and pull the rest in from there:
-  -v /path/to/conf:$(dirname "$config"):ro
-  # runwisp.toml:
-  #   [daemon]
-  #   include = ["conf.d/*.toml"]
+Docker creates a directory when a file bind mount's source doesn't exist.
+Mount the directory that holds runwisp.toml instead. RunWisp writes a starter
+config into it if it's empty:
+  -v ./runwisp:$config_dir
 EOF
 	exit 1
 fi
 
 if [ ! -f "$config" ]; then
+	if [ -e "$db" ]; then
+		cat >&2 <<EOF
+error: no runwisp.toml found at $config
+
+$data already holds a RunWisp database, so this daemon has run before with a
+config. Check that the volume holding runwisp.toml is mounted at $config_dir.
+EOF
+		exit 1
+	fi
 	cat >&2 <<EOF
 error: no runwisp.toml found at $config
 
-Mount your config, e.g.:
-  -v /path/to/runwisp.toml:$config:ro
+Mount a writable directory for it. RunWisp writes a starter config into it if
+it's empty:
+  -v ./runwisp:$config_dir
 EOF
 	exit 1
 fi
