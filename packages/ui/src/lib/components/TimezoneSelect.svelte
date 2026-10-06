@@ -11,12 +11,12 @@
         label = "Timezone",
         disabled = false,
         hint,
-    } = $props<{
+    }: {
         value: string;
         label?: string;
         disabled?: boolean;
         hint?: string;
-    }>();
+    } = $props();
 
     type ZoneOption = {
         value: string;

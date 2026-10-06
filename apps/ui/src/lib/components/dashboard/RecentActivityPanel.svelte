@@ -25,7 +25,7 @@
         onViewAllRuns,
         getInstanceCount = () => 1,
         motion,
-    } = $props<{
+    }: {
         recentActivity?: Run[];
         now?: Date;
         onRunClick?: (taskName: string, runId: string) => void;
@@ -35,7 +35,7 @@
         // cue. Rows only ever leave this list live (deleted, or pushed off the
         // bottom), so they always sweep out.
         motion?: RunMotion;
-    }>();
+    } = $props();
 
     function viewRun(run: Run): void {
         onRunClick?.(run.taskName, run.id);
