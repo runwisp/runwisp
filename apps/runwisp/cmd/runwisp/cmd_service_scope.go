@@ -42,13 +42,6 @@ func resolveInstallScope(local bool, euid int) (systemWide bool, err error) {
 		return false, nil
 	}
 
-	// An OS with no installer at all falls through to the installer's own
-	// ErrUnsupported (which carries the manual-setup doc link) rather than
-	// being told it needs root for a scope that does not exist here.
-	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
-		return false, nil
-	}
-
 	if runtime.GOOS == "darwin" {
 		return false, &userFacingError{
 			title: "a system-wide service is not supported on macOS yet",

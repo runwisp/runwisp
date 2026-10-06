@@ -10,6 +10,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/runwisp/runwisp/internal/autostart/autostarttest"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -19,7 +20,7 @@ import (
 // can mask it the way the Linux installer masks a systemd cron unit.
 func TestLaunchdComputePlan_RefusesTakeOverCron(t *testing.T) {
 	inst := &launchdInstaller{deps: Deps{
-		FS:          NewFakeFS(),
+		FS:          autostarttest.NewFakeFS(),
 		Cmd:         NewFakeRunner(),
 		Home:        "/Users/alice",
 		User:        "alice",

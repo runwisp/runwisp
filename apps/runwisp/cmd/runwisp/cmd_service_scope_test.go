@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/internal/autostart/autostarttest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -73,7 +74,7 @@ func TestResolveInstallScope_LocalAsRootRefusesOnLinux(t *testing.T) {
 // the named unit files pre-created.
 func scopeDeps(t *testing.T, present ...string) autostart.Deps {
 	t.Helper()
-	fs := autostart.NewFakeFS()
+	fs := autostarttest.NewFakeFS()
 	deps := autostart.Deps{
 		FS:          fs,
 		Home:        "/home/tester",
