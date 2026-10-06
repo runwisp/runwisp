@@ -37,10 +37,7 @@ export function buildTaskOverviews(
     runningRuns: Run[],
 ): TaskOverview[] {
     const recentRunsByTask = buildLatestRunByTask(recentRuns, (run) => toTimestamp(run.createdAt));
-    const runningRunsByTask = buildLatestRunByTask(
-        runningRuns,
-        (run) => toTimestamp(run.startedAt) ?? toTimestamp(run.createdAt),
-    );
+    const runningRunsByTask = buildLatestRunByTask(runningRuns, runStartTime);
 
     return tasks.map((task) => {
         const activeRun = runningRunsByTask.get(task.name);
@@ -106,17 +103,16 @@ export function filterTaskOverviews(
 }
 
 export function sortRunsByStartDesc(runs: Run[]): Run[] {
-    return [...runs].sort((left, right) => {
-        const leftTime =
-            toTimestamp(left.startedAt) ?? toTimestamp(left.createdAt) ?? LOWEST_PRIORITY_TIME;
-        const rightTime =
-            toTimestamp(right.startedAt) ?? toTimestamp(right.createdAt) ?? LOWEST_PRIORITY_TIME;
-        return rightTime - leftTime;
-    });
+    return [...runs].sort(
+        (left, right) =>
+            (runStartTime(right) ?? LOWEST_PRIORITY_TIME) -
+            (runStartTime(left) ?? LOWEST_PRIORITY_TIME),
+    );
 }
 
-function lastTaskActivityAt(task: TaskOverview): number | undefined {
-    return toTimestamp(task.lastRun?.startedAt) ?? toTimestamp(task.lastRun?.createdAt);
+/** When the run started, falling back to when it was created. */
+function runStartTime(run: Run | undefined): number | undefined {
+    return toTimestamp(run?.startedAt) ?? toTimestamp(run?.createdAt);
 }
 
 function buildLatestRunByTask(
@@ -180,10 +176,10 @@ const byName: TaskOverviewComparator = (left, right) =>
     left.task.name.localeCompare(right.task.name);
 
 const byNextRunAscending: TaskOverviewComparator = (left, right) =>
-    compareOptionalAscending(left.nextRunMs, right.nextRunMs);
+    compareOptional(left.nextRunMs, right.nextRunMs, 1);
 
 const byLastActivityDescending: TaskOverviewComparator = (left, right) =>
-    compareOptionalDescending(lastTaskActivityAt(left), lastTaskActivityAt(right));
+    compareOptional(runStartTime(left.lastRun), runStartTime(right.lastRun), -1);
 
 const byStateOrder: TaskOverviewComparator = (left, right) =>
     TASK_STATE_ORDER[left.state] - TASK_STATE_ORDER[right.state];
@@ -202,7 +198,12 @@ function sortTaskOverviews(
     return [...taskOverviews].sort(SORT_COMPARATORS[sortBy]);
 }
 
-function compareOptionalAscending(left: number | undefined, right: number | undefined): number {
+/** Orders numbers by `direction` (1 ascending, -1 descending); undefined always sorts last. */
+function compareOptional(
+    left: number | undefined,
+    right: number | undefined,
+    direction: 1 | -1,
+): number {
     if (left === right) {
         return 0;
     }
@@ -212,20 +213,7 @@ function compareOptionalAscending(left: number | undefined, right: number | unde
     if (right === undefined) {
         return -1;
     }
-    return left - right;
-}
-
-function compareOptionalDescending(left: number | undefined, right: number | undefined): number {
-    if (left === right) {
-        return 0;
-    }
-    if (left === undefined) {
-        return 1;
-    }
-    if (right === undefined) {
-        return -1;
-    }
-    return right - left;
+    return (left - right) * direction;
 }
 
 function toTimestamp(value: string | undefined): number | undefined {
