@@ -98,7 +98,6 @@
         "ansi-to-html": "^0.7.2",
         "cron-parser": "^5.7.0",
         "cronstrue": "^3.24.0",
-        "fuse.js": "^7.5.0",
         "ms": "^2.1.3"
     }
 }

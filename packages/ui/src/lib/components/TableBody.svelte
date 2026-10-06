@@ -12,6 +12,7 @@
     let { children, class: className = "" }: Props = $props();
 </script>
 
-<tbody class={className}>
+<!-- The last row drops its divider: the frame below already draws that line. -->
+<tbody class="[&>tr:last-child]:border-b-0 {className}">
     {@render children()}
 </tbody>

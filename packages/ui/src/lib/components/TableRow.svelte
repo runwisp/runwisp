@@ -3,16 +3,36 @@
 
 <script lang="ts">
     import type { Snippet } from "svelte";
+    import type { HTMLAttributes } from "svelte/elements";
 
-    interface Props {
+    type RowBorder = "default" | "faint" | "none";
+
+    interface Props extends Omit<HTMLAttributes<HTMLTableRowElement>, "children" | "class"> {
         children: Snippet;
         hoverable?: boolean;
+        /** Bottom divider: `default` under a header, `faint` between body rows. */
+        border?: RowBorder;
         class?: string;
     }
 
-    let { children, hoverable = false, class: className = "" }: Props = $props();
+    let {
+        children,
+        hoverable = false,
+        border = "default",
+        class: className = "",
+        ...restProps
+    }: Props = $props();
+
+    const borderClasses: Record<RowBorder, string> = {
+        default: "border-b border-outline",
+        faint: "border-b border-outline-faint",
+        none: "",
+    };
 </script>
 
-<tr class="border-b border-outline {hoverable ? 'hover:bg-surface-sunken' : ''} {className}">
+<tr
+    class="{borderClasses[border]} {hoverable ? 'hover:bg-surface-sunken' : ''} {className}"
+    {...restProps}
+>
     {@render children()}
 </tr>
