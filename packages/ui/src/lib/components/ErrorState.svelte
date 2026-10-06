@@ -5,6 +5,7 @@
     import type { Snippet, Component } from "svelte";
     import { TriangleAlert, RefreshCw, WifiOff } from "@lucide/svelte";
     import Button from "./Button.svelte";
+    import Heading from "./Heading.svelte";
 
     interface Props {
         /** Error message to display */
@@ -56,7 +57,7 @@
     </div>
 
     <div class="space-y-1">
-        <h3 class="font-mono text-lg font-semibold text-on-surface">{defaultTitle}</h3>
+        <Heading level={3} size="lg">{defaultTitle}</Heading>
         <p class="max-w-sm text-sm text-on-surface-muted">{message}</p>
     </div>
 

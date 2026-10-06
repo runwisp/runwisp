@@ -4,6 +4,7 @@
 <script lang="ts">
     import type { Snippet } from "svelte";
     import { X } from "@lucide/svelte";
+    import Heading from "./Heading.svelte";
     import { portal } from "../actions/portal.js";
     import { trapFocus } from "../actions/focusTrap.js";
     import { fly } from "svelte/transition";
@@ -122,12 +123,7 @@
                 >
                     <div>
                         {#if title}
-                            <h2
-                                id="drawer-title"
-                                class="font-mono text-lg font-semibold text-on-surface"
-                            >
-                                {title}
-                            </h2>
+                            <Heading level={2} size="lg" id="drawer-title">{title}</Heading>
                         {/if}
                     </div>
                     {#if closable}

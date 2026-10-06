@@ -255,10 +255,12 @@ body {
     color: var(--rw-on-surface);
 }
 
-/* Headings are mono chrome — the runbook voice. Components should not fight this. */
-h1,
-h2,
-h3 {
+/* Headings are mono chrome — the runbook voice. Unlayered, so it beats the
+   weight/leading/tracking utilities on a raw <h1>-<h3>: every heading reads the
+   same. The Heading component opts out (data-rw-heading) and carries this look
+   in its own classes, so its props are the source of truth. :is()/:where()
+   keep the selector at element specificity, so app stylesheets still win. */
+:is(h1, h2, h3):where(:not([data-rw-heading])) {
     font-family: var(--font-mono);
     font-weight: 800;
     line-height: 1.1;

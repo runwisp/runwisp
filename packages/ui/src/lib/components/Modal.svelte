@@ -4,6 +4,7 @@
 <script lang="ts">
     import type { Snippet } from "svelte";
     import { X } from "@lucide/svelte";
+    import Heading from "./Heading.svelte";
 
     interface Props {
         open?: boolean;
@@ -116,12 +117,7 @@
                 >
                     <div>
                         {#if title}
-                            <h2
-                                id={titleId}
-                                class="font-mono text-lg font-semibold text-on-surface"
-                            >
-                                {title}
-                            </h2>
+                            <Heading level={2} size="lg" id={titleId}>{title}</Heading>
                         {/if}
                         {#if description}
                             <p class="mt-1 text-sm text-on-surface-muted">{description}</p>
