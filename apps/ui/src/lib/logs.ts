@@ -178,7 +178,6 @@ function handleDoneEvent(
 /** Stream a run's log over SSE, resuming after the last received line on
  * reconnect. Returns a function that closes the stream. */
 export function streamRunLog(
-    taskName: string,
     runId: string,
     onEvent: (event: LogEvent) => void,
     initialState?: LogStreamInitialState,
@@ -199,12 +198,12 @@ export function streamRunLog(
         },
         eventTypes: ["line", "region", "rotated", "dropped", "done"],
         onOpen: () => {
-            logger.info(`Log stream connection opened: ${taskName}/${runId}`);
+            logger.info(`Log stream connection opened: ${runId}`);
         },
         onError: (info) => {
             if (state.finished) return;
             logger.warn(
-                "Log stream error for " + taskName + "/" + runId + ":",
+                "Log stream error for " + runId + ":",
                 (info.message ?? "connection lost") +
                     (info.status === undefined ? "" : " (HTTP " + String(info.status) + ")"),
             );
