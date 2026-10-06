@@ -2,12 +2,17 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <script lang="ts">
+    import { getContext } from "svelte";
+    import { RADIO_GROUP_KEY, type RadioGroupContext } from "./radio-group.js";
+
     type RadioSize = "sm" | "md" | "lg";
 
     interface Props {
         value: string;
+        /** Selected value when used without a RadioGroup; inside one, the group owns it. */
         groupValue?: string;
-        name: string;
+        /** Defaults to the enclosing RadioGroup's name. */
+        name?: string;
         label: string;
         description?: string;
         disabled?: boolean;
@@ -32,7 +37,14 @@
         lg: { radio: "h-6 w-6", dot: "h-2.5 w-2.5", text: "text-base" },
     };
 
-    const isChecked = $derived(groupValue === value);
+    const group = getContext<RadioGroupContext | undefined>(RADIO_GROUP_KEY);
+
+    const isChecked = $derived((group ? group.value : groupValue) === value);
+
+    function select() {
+        if (group) group.value = value;
+        else groupValue = value;
+    }
 </script>
 
 <label
@@ -43,11 +55,11 @@
     <div class="relative flex shrink-0 items-center justify-center">
         <input
             type="radio"
-            {name}
+            name={name ?? group?.name}
             {value}
             {disabled}
             checked={isChecked}
-            onchange={() => (groupValue = value)}
+            onchange={select}
             class="
                 peer {sizeClasses[size].radio}
                 cursor-pointer appearance-none rounded-full
