@@ -8,6 +8,7 @@
     import { floating, isOutsideClick } from "../actions/floating.js";
     import { portal } from "../actions/portal.js";
     import { trapFocus } from "../actions/focusTrap.js";
+    import Separator from "./Separator.svelte";
 
     interface MenuItem {
         label?: string;
@@ -111,7 +112,7 @@
             {:else}
                 {#each items as item, idx (idx)}
                     {#if item.divider}
-                        <hr class="my-1 border-outline" />
+                        <Separator class="my-1" />
                     {:else if item.href}
                         <a
                             href={item.href}
