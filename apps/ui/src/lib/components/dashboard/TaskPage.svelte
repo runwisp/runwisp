@@ -3,6 +3,7 @@
 
 <script lang="ts">
     import { Play, Square, RefreshCcw } from "@lucide/svelte";
+    import { untrack } from "svelte";
     import { SvelteMap } from "svelte/reactivity";
     import { isService, type Task, type Run } from "@runwisp/common";
     import type {
@@ -16,6 +17,7 @@
     import { tasksApi } from "$lib/api";
     import { headerSearchStore, systemStore } from "$lib/stores";
     import { createRunActions } from "$lib/utils/run-actions";
+    import { HistoryRail } from "$lib/utils/history-rail.svelte";
     import ParamForm from "./ParamForm.svelte";
 
     let {
@@ -98,8 +100,13 @@
 
     const taskIsService = $derived(isService(task.kind));
     const instanceCount = $derived(taskIsService ? Math.max(1, task.instances ?? 1) : 0);
-    const hideHistory = $derived(taskIsService && instanceCount == 1);
-    let historyExpanded = $state(false);
+    // The page stays mounted across tasks, so a phone opens each task on its
+    // run list (or on the run its URL names).
+    const rail = new HistoryRail();
+    $effect.pre(() => {
+        void task.name;
+        untrack(() => rail.reset(!!initialRunId));
+    });
     let confirmOpen = $state(false);
     let runParamValues = $state<Record<string, string | null>>({});
     let runParamsValid = $state(true);
@@ -193,15 +200,17 @@
                 outputQuery.trim() !== lastDispatched),
     );
 
-    // Register the header search whenever the history rail is on screen, and
-    // re-register on task change so a query never leaks from one task to the
-    // next. The header owns the box + debounce and calls back here.
+    // Register the header search, and re-register on task change so a query
+    // never leaks from one task to the next. The header owns the box + debounce
+    // and calls back here.
     $effect(() => {
-        if (hideHistory && !historyExpanded) return;
         void task.name;
         headerSearchStore.register({
             placeholder: "Search output across runs…",
-            onSearch: (q) => void handleOutputSearch(q),
+            onSearch: (q) => {
+                rail.searched(q);
+                void handleOutputSearch(q);
+            },
         });
         return () => headerSearchStore.unregister();
     });
@@ -291,6 +300,7 @@
     });
 
     let selectedRun = $derived(items.find((r: Run) => r.id === selectedRunId));
+    let panes = $derived(rail.panes(!!selectedRun, !loading && items.length === 0));
 
     const envEntries = $derived(
         task.env ? Object.entries(task.env).sort(([a], [b]) => a.localeCompare(b)) : [],
@@ -332,7 +342,7 @@
     {/if}
 
     <div class="flex min-h-0 flex-1 flex-col md:flex-row">
-        {#if !hideHistory || historyExpanded}
+        {#if panes.list}
             <RunsList
                 flush
                 {items}
@@ -341,7 +351,10 @@
                 bind:filters
                 {onLoadMore}
                 {selectedRunId}
-                onselect={(id) => (userSelectedRunId = id)}
+                onselect={(id) => {
+                    userSelectedRunId = id;
+                    rail.picked();
+                }}
                 showFilters
                 emptyText="No runs yet"
                 bulkActions
@@ -358,33 +371,36 @@
             />
         {/if}
 
-        <RunDetailPanel
-            run={selectedRun}
-            {fetchLogs}
-            {streamLogs}
-            {fetchLineHistory}
-            onDelete={deleteSingle}
-            onRun={runTriggerable ? openRun : undefined}
-            onRunAgain={runTriggerable && hasParams ? openRunAgain : undefined}
-            onRunTask={runTriggerable ? openRun : undefined}
-            onStop={!taskIsService && onStop ? () => (stopConfirmOpen = true) : undefined}
-            onStopService={serviceControllable && onStopService
-                ? () => (stopServiceConfirmOpen = true)
-                : undefined}
-            onRestartService={serviceControllable && onRestart
-                ? () => (restartConfirmOpen = true)
-                : undefined}
-            {serviceStopped}
-            serviceBusy={stoppingService || restarting}
-            onToggleHistory={hideHistory ? () => (historyExpanded = !historyExpanded) : undefined}
-            historyVisible={historyExpanded}
-            {highlightLine}
-            getInstanceCount={() => instanceCount}
-            getLiveUsage={(id) => systemStore.runUsage(id)}
-            {motion}
-            notFound={deepLinkMissing}
-            loading={(loading && items.length === 0) || deepLinkPending}
-        />
+        {#if panes.detail}
+            <RunDetailPanel
+                run={selectedRun}
+                {fetchLogs}
+                {streamLogs}
+                {fetchLineHistory}
+                onDelete={deleteSingle}
+                onRun={runTriggerable ? openRun : undefined}
+                onRunAgain={runTriggerable && hasParams ? openRunAgain : undefined}
+                onRunTask={runTriggerable ? openRun : undefined}
+                onStop={!taskIsService && onStop ? () => (stopConfirmOpen = true) : undefined}
+                onStopService={serviceControllable && onStopService
+                    ? () => (stopServiceConfirmOpen = true)
+                    : undefined}
+                onRestartService={serviceControllable && onRestart
+                    ? () => (restartConfirmOpen = true)
+                    : undefined}
+                {serviceStopped}
+                serviceBusy={stoppingService || restarting}
+                onBack={rail.phone ? rail.back : undefined}
+                onToggleList={rail.collapsible ? rail.toggleList : undefined}
+                listVisible={panes.list}
+                {highlightLine}
+                getInstanceCount={() => instanceCount}
+                getLiveUsage={(id) => systemStore.runUsage(id)}
+                {motion}
+                notFound={deepLinkMissing}
+                loading={(loading && items.length === 0) || deepLinkPending}
+            />
+        {/if}
     </div>
 </div>
 

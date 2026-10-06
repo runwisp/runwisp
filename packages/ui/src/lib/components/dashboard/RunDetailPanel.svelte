@@ -15,8 +15,9 @@
         RotateCw,
         RefreshCcw,
         ChevronDown,
-        RotateCcwClock,
+        ArrowLeft,
         PanelLeftClose,
+        PanelLeftOpen,
         SlidersHorizontal,
         Maximize2,
         Minimize2,
@@ -63,8 +64,9 @@
         onRestartService,
         serviceStopped = false,
         serviceBusy = false,
-        onToggleHistory,
-        historyVisible = false,
+        onBack,
+        onToggleList,
+        listVisible = true,
         highlightLine = null,
         getInstanceCount = () => 1,
         getLiveUsage = () => undefined,
@@ -103,15 +105,18 @@
         // cold-start path so a never-run task is still launchable from here.
         onRunTask?: (() => void) | undefined;
         // Service lifecycle controls. When either is set the cluster swaps the
-        // Run control for Stop Service / Restart Service (chosen by serviceStopped).
+        // Run control for Stop / Restart (chosen by serviceStopped).
         onStopService?: (() => void) | undefined;
         onRestartService?: (() => void) | undefined;
         serviceStopped?: boolean;
         serviceBusy?: boolean;
-        // Toggle the (single-instance service) history rail from the panel header,
-        // since these tasks hide the rail by default and there is no top bar.
-        onToggleHistory?: (() => void) | undefined;
-        historyVisible?: boolean;
+        // Return to the run list when the panel replaces it (a phone), shown as
+        // a back arrow in the header's top-left corner.
+        onBack?: (() => void) | undefined;
+        // Fold the run list away (or back) when it sits beside the panel on a
+        // screen too narrow to keep both comfortably, in the same corner.
+        onToggleList?: (() => void) | undefined;
+        listVisible?: boolean;
         highlightLine?: number | null;
         // Resolves a task's currently configured instance count so multi-instance
         // services render a 1-based #N suffix. Defaults to single-instance.
@@ -424,8 +429,36 @@
             style="--rw-oc: {alarm ?? 'var(--color-surface-raised)'}"
         >
             <div class="pt-[18px] pr-[22px] pb-[16px] pl-[26px]">
-                <div class="flex items-start gap-4">
-                    <div class="min-w-0 flex-1">
+                <!-- The actions wrap onto their own row rather than squeeze the
+                     readout below a legible width on a narrow panel. -->
+                <div class="flex flex-wrap items-start gap-x-3 gap-y-3">
+                    {#if onBack}
+                        <button
+                            type="button"
+                            onclick={() => onBack()}
+                            class="-mt-1 -ml-2 shrink-0 rounded-[3px] p-1.5 text-on-surface-muted hover:bg-surface-sunken hover:text-primary"
+                            title="Back to runs"
+                            aria-label="Back to runs"
+                        >
+                            <ArrowLeft size={20} />
+                        </button>
+                    {:else if onToggleList}
+                        <button
+                            type="button"
+                            onclick={() => onToggleList()}
+                            class="-mt-1 -ml-2 shrink-0 rounded-[3px] p-1.5 text-on-surface-muted hover:bg-surface-sunken hover:text-primary"
+                            title={listVisible ? "Hide run list" : "Show run list"}
+                            aria-label={listVisible ? "Hide run list" : "Show run list"}
+                            aria-expanded={listVisible}
+                        >
+                            {#if listVisible}
+                                <PanelLeftClose size={20} />
+                            {:else}
+                                <PanelLeftOpen size={20} />
+                            {/if}
+                        </button>
+                    {/if}
+                    <div class="min-w-60 flex-1">
                         <!-- Identity, but only where the page around the panel isn't
                          already saying it: the cross-task runs list needs the task
                          name, a task's own page already has it in the breadcrumb. -->
@@ -589,27 +622,9 @@
                         </div>
                     </div>
 
-                    <!-- Actions: history toggle · run (split) / service lifecycle ·
+                    <!-- Actions: run (split) / service lifecycle ·
                      stop · download · delete (delete behind an inline confirm) -->
-                    <div class="flex shrink-0 items-center gap-2">
-                        {#if onToggleHistory}
-                            <button
-                                type="button"
-                                onclick={() => onToggleHistory()}
-                                class="inline-flex items-center justify-center rounded-[3px] border border-outline-faint bg-surface-raised p-2 text-on-surface-muted hover:border-outline-hover hover:bg-surface-sunken hover:text-primary"
-                                title={historyVisible ? "Hide run history" : "Show run history"}
-                                aria-label={historyVisible
-                                    ? "Hide run history"
-                                    : "Show run history"}
-                            >
-                                {#if historyVisible}
-                                    <PanelLeftClose size={15} />
-                                {:else}
-                                    <RotateCcwClock size={15} />
-                                {/if}
-                            </button>
-                        {/if}
-
+                    <div class="flex flex-wrap items-center gap-2">
                         {#if onStopService || onRestartService}
                             <!-- Service lifecycle replaces the run control.
                              Restart is always available (it cancels + respawns
@@ -631,7 +646,7 @@
                                     {:else}
                                         <RefreshCcw size={15} />
                                     {/if}
-                                    <span class="@max-md:hidden"
+                                    <span class="@max-xs:hidden"
                                         >{serviceStopped ? "Start" : "Restart"}</span
                                     >
                                 </button>
@@ -645,7 +660,7 @@
                                     class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-[3px] border border-danger-soft-border bg-surface-raised px-3 font-mono text-sm font-medium text-danger-surface hover:bg-danger-soft active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                     <Square size={15} fill="currentColor" stroke="none" />
-                                    <span class="@max-md:hidden">Stop Service</span>
+                                    <span class="@max-xs:hidden">Stop</span>
                                 </button>
                             {/if}
                         {:else}
@@ -662,7 +677,7 @@
                                         class="inline-flex h-9 cursor-pointer items-center gap-1.5 bg-surface-raised px-3 font-mono text-sm font-medium text-primary hover:bg-primary-soft active:translate-y-px"
                                     >
                                         <Play size={15} fill="currentColor" stroke="none" />
-                                        <span class="@max-md:hidden">Run</span>
+                                        <span class="@max-xs:hidden">Run</span>
                                     </button>
                                     {#if onRunAgain}
                                         <Popover bind:open={runMenuOpen} placement="bottom-end">
@@ -708,7 +723,7 @@
                                     class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-[3px] border border-danger-soft-border bg-surface-raised px-3 font-mono text-sm font-medium text-danger-surface hover:bg-danger-soft active:translate-y-px"
                                 >
                                     <Square size={15} fill="currentColor" stroke="none" />
-                                    <span class="@max-md:hidden">Stop</span>
+                                    <span class="@max-xs:hidden">Stop</span>
                                 </button>
                             {/if}
                         {/if}
@@ -785,7 +800,7 @@
                 : "ml-1 flex min-h-[300px] flex-1 flex-col overflow-hidden border-t border-[var(--rw-con-gutter)] bg-[var(--rw-con-bg)]"}
         >
             <div
-                class="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--rw-con-gutter)] bg-[var(--rw-con-panel)] px-3.5 py-[9px] font-mono text-[11.5px] text-[var(--rw-con-dim)]"
+                class="@container flex shrink-0 items-center justify-between gap-3 border-b border-[var(--rw-con-gutter)] bg-[var(--rw-con-panel)] px-3.5 py-[9px] font-mono text-[11.5px] text-[var(--rw-con-dim)]"
             >
                 <div class="flex min-w-0 items-center gap-3">
                     {#if consoleMaximized}
@@ -800,12 +815,12 @@
                         </span>
                     {:else}
                         <span
-                            class="flex items-center gap-2 font-semibold text-[var(--rw-con-text)]"
+                            class="flex items-center gap-2 font-semibold whitespace-nowrap text-[var(--rw-con-text)]"
                         >
                             <TerminalIcon size={14} class="opacity-70" />
                             Console output
                         </span>
-                        <span class="hidden text-[var(--rw-con-gutter)] sm:inline"
+                        <span class="hidden text-[var(--rw-con-gutter)] @lg:inline"
                             >stdout + stderr</span
                         >
                     {/if}
@@ -822,7 +837,7 @@
                         aria-label="Toggle line wrapping"
                     >
                         <TextWrap size={13} />
-                        <span class="hidden sm:inline">Wrap</span>
+                        <span class="hidden @sm:inline">Wrap</span>
                     </button>
                     <button
                         type="button"

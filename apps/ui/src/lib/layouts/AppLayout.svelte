@@ -2,8 +2,17 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
 <script lang="ts">
-    import { Activity, RotateCcwClock, Menu, X } from "@lucide/svelte";
-    import { type Snippet, type Component, tick } from "svelte";
+    import {
+        Activity,
+        ArrowLeft,
+        RotateCcwClock,
+        Menu,
+        PanelLeftClose,
+        PanelLeftOpen,
+        Search,
+        X,
+    } from "@lucide/svelte";
+    import { type Snippet, type Component, flushSync, tick } from "svelte";
     import { resolve } from "$app/paths";
     import { page } from "$app/stores";
     import AuthDisabledBadge from "$lib/components/AuthDisabledBadge.svelte";
@@ -15,8 +24,9 @@
     import StaleConfigBanner from "$lib/components/StaleConfigBanner.svelte";
     import TaskScheduleChip from "$lib/components/TaskScheduleChip.svelte";
     import TaskUsage from "$lib/components/TaskUsage.svelte";
-    import { systemStore } from "$lib/stores";
+    import { headerSearchStore, systemStore } from "$lib/stores";
     import { showScheduleChip } from "$lib/utils/task-schedule";
+    import { StoredFlag } from "$lib/utils/stored-flag.svelte";
     import { ThemeToggle, Logo } from "@runwisp/ui";
     import type { Task } from "@runwisp/common";
 
@@ -60,6 +70,11 @@
     let showGroupHeaders = $derived(taskGroups.length > 1);
 
     let sidebarOpen = $state(false);
+    // Between lg and 3xl the sidebar sits beside the page but can be folded
+    // away for room; from 3xl it always shows. Below lg it is the drawer.
+    const sidebarHidden = new StoredFlag("runwisp:sidebar-hidden");
+    let searchOpen = $state(false);
+    let headerSearch = $state<HeaderSearch | null>(null);
     let firstLink = $state<HTMLElement | null>(null);
 
     let lastPath = $page.url.pathname;
@@ -68,8 +83,39 @@
         if (path !== lastPath) {
             lastPath = path;
             sidebarOpen = false;
+            searchOpen = false;
         }
     });
+
+    // Below md the header has no room for the search pill, so a search button
+    // swaps the whole bar for the field, the way phone apps enter "search
+    // mode". The back arrow leaves it and drops the query; blurring an empty
+    // field leaves it too, while a live query keeps the bar open so the
+    // operator can see the list is filtered.
+
+    function openSearch() {
+        // Render the field synchronously and focus it inside the tap handler:
+        // iOS only raises the keyboard for a focus made during the gesture.
+        flushSync(() => (searchOpen = true));
+        headerSearch?.focus();
+    }
+
+    function closeSearch() {
+        headerSearchStore.clear();
+        searchOpen = false;
+    }
+
+    function onSearchFocusOut(e: FocusEvent) {
+        const next = e.relatedTarget;
+        if (
+            next instanceof Node &&
+            e.currentTarget instanceof Node &&
+            e.currentTarget.contains(next)
+        ) {
+            return;
+        }
+        if (!headerSearchStore.query) searchOpen = false;
+    }
 
     async function openDrawer() {
         sidebarOpen = true;
@@ -127,7 +173,7 @@
         <button
             type="button"
             aria-label="Close navigation"
-            class="fixed inset-0 z-30 bg-black/40 md:hidden"
+            class="fixed inset-0 z-30 bg-black/40 lg:hidden"
             onclick={closeDrawer}
         ></button>
     {/if}
@@ -135,16 +181,14 @@
     <aside
         id="app-sidebar"
         aria-label="Primary"
-        class="fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-outline bg-surface-raised transition-transform duration-150 ease-out md:static md:translate-x-0 {sidebarOpen
+        class="fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-outline bg-surface-raised transition-transform duration-150 ease-out lg:static lg:translate-x-0 {sidebarOpen
             ? 'translate-x-0'
-            : '-translate-x-full'}"
+            : '-translate-x-full'} {sidebarHidden.current ? 'lg:hidden 3xl:flex' : ''}"
     >
         <!-- Brand — the same lockup as the website nav: teal mark at 21px,
              wordmark in the body sans at 700. Brand voice, not chrome, so it
              deliberately stays out of the mono. -->
-        <div
-            class="flex h-[52px] items-center gap-[9px] border-b border-outline px-5 hover:bg-surface-sunken/50"
-        >
+        <div class="flex h-[52px] items-center gap-[9px] border-b border-outline px-5">
             <Logo size="md" />
             <div class="flex flex-1 flex-col leading-none">
                 <span class="font-sans text-[18px] font-bold tracking-[-0.02em] text-on-surface"
@@ -154,7 +198,7 @@
             <button
                 type="button"
                 aria-label="Close navigation"
-                class="rounded-[3px] p-1 text-on-surface-muted hover:bg-surface-sunken hover:text-primary md:hidden"
+                class="rounded-[3px] p-1 text-on-surface-muted hover:bg-surface-sunken hover:text-primary lg:hidden"
                 onclick={closeDrawer}
             >
                 <X size={18} />
@@ -233,7 +277,7 @@
 
     <main class="flex flex-1 flex-col overflow-hidden">
         <header
-            class="@container flex h-[52px] items-center justify-between gap-2 border-b border-outline bg-surface-raised px-6"
+            class="@container relative flex h-[52px] items-center justify-between gap-2 border-b border-outline bg-surface-raised px-6"
         >
             <div class="flex min-w-0 items-center gap-3">
                 <button
@@ -241,15 +285,30 @@
                     aria-label="Open navigation"
                     aria-expanded={sidebarOpen}
                     aria-controls="app-sidebar"
-                    class="-ml-2 rounded-[3px] p-2 text-on-surface-muted hover:bg-surface-sunken hover:text-primary md:hidden"
+                    class="-ml-2 rounded-[3px] p-2 text-on-surface-muted hover:bg-surface-sunken hover:text-primary lg:hidden"
                     onclick={openDrawer}
                 >
                     <Menu size={20} />
                 </button>
+                <button
+                    type="button"
+                    aria-label={sidebarHidden.current ? "Show sidebar" : "Hide sidebar"}
+                    title={sidebarHidden.current ? "Show sidebar" : "Hide sidebar"}
+                    aria-expanded={!sidebarHidden.current}
+                    aria-controls="app-sidebar"
+                    class="-ml-2 hidden rounded-[3px] p-2 text-on-surface-muted hover:bg-surface-sunken hover:text-primary lg:block 3xl:hidden"
+                    onclick={() => (sidebarHidden.current = !sidebarHidden.current)}
+                >
+                    {#if sidebarHidden.current}
+                        <PanelLeftOpen size={20} />
+                    {:else}
+                        <PanelLeftClose size={20} />
+                    {/if}
+                </button>
                 <!-- The breadcrumb root is the first thing to go when the bar
                      gets tight; the task name and schedule matter more. -->
-                <span class="hidden font-mono text-on-surface-faint @4xl:inline">RunWisp</span>
-                <span class="hidden font-mono text-on-surface-faint @4xl:inline">/</span>
+                <span class="hidden font-mono text-on-surface-faint @5xl:inline">RunWisp</span>
+                <span class="hidden font-mono text-on-surface-faint @5xl:inline">/</span>
                 {#if activeTask}
                     <!-- On a task page the breadcrumb is the page's primary heading:
                          the task name appears here and nowhere else. -->
@@ -270,12 +329,38 @@
             </div>
 
             <!-- Center: page search (filters the run list / searches log output).
-                 Empty space when the active page registers no search. -->
-            <div class="hidden min-w-24 flex-1 justify-center px-4 md:flex lg:px-8">
-                <HeaderSearch />
+                 Empty space when the active page registers no search. On phones
+                 it is hidden until the search button opens it over the bar. -->
+            <div
+                class="{searchOpen
+                    ? 'absolute inset-0 z-10 flex items-center gap-2 bg-surface-raised px-4'
+                    : 'hidden'} md:static md:z-auto md:flex md:min-w-24 md:flex-1 md:justify-center md:bg-transparent md:px-4 lg:px-8"
+                onfocusout={onSearchFocusOut}
+            >
+                {#if searchOpen}
+                    <button
+                        type="button"
+                        aria-label="Close search"
+                        class="shrink-0 rounded-[3px] p-2 text-on-surface-muted hover:bg-surface-sunken hover:text-primary md:hidden"
+                        onclick={closeSearch}
+                    >
+                        <ArrowLeft size={20} />
+                    </button>
+                {/if}
+                <HeaderSearch bind:this={headerSearch} />
             </div>
 
             <div class="flex shrink-0 items-center gap-2 sm:gap-3">
+                {#if headerSearchStore.active}
+                    <button
+                        type="button"
+                        aria-label="Search"
+                        class="rounded-[3px] p-2 text-on-surface-muted hover:bg-surface-sunken hover:text-primary md:hidden"
+                        onclick={openSearch}
+                    >
+                        <Search size={18} />
+                    </button>
+                {/if}
                 <StationModeBadge />
                 <AuthDisabledBadge />
                 <ThemeToggle />

@@ -270,4 +270,122 @@ test.describe("runs page", () => {
         await expect(page).toHaveURL(new RegExp(`/runs/${newer.id}`));
         await expect(page.getByText(newer.id)).toBeVisible({ timeout: 10_000 });
     });
+
+    test("a 960px window folds the sidebar so the runs and log get the full width", async ({
+        authenticatedPage: page,
+    }) => {
+        // Below 1024px a fixed sidebar beside the run list squeezed the log
+        // pane to a strip; the sidebar must collapse into the menu button.
+        await page.setViewportSize({ width: 960, height: 800 });
+        await page.goto("/runs");
+
+        await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
+        await expect(page.getByRole("complementary", { name: "Primary" })).not.toBeInViewport();
+        const main = await page.getByRole("main").boundingBox();
+        expect(main?.width).toBe(960);
+    });
+
+    test("on a phone, picking a run swaps the list for its detail and back", async ({
+        authenticatedPage: page,
+        daemonState,
+    }) => {
+        await seedEndedRun(page, "echo-task", daemonState.token);
+
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto("/runs");
+
+        const main = page.getByRole("main");
+        const row = main.getByRole("button").filter({ hasText: "echo-task" }).first();
+        await expect(row).toBeVisible();
+        await expect(main.getByTestId("run-verdict")).toHaveCount(0);
+
+        await row.click();
+        await expect(main.getByTestId("run-verdict")).toBeVisible();
+        await expect(row).toHaveCount(0);
+
+        await main.getByRole("button", { name: "Back to runs" }).click();
+        await expect(row).toBeVisible();
+        await expect(main.getByTestId("run-verdict")).toHaveCount(0);
+    });
+
+    test("on a phone, the search button opens the header search over the bar", async ({
+        authenticatedPage: page,
+        daemonState,
+    }) => {
+        await seedEndedRun(page, "echo-task", daemonState.token);
+        await seedEndedRun(page, "fail-task", daemonState.token);
+
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto("/runs");
+
+        const main = page.getByRole("main");
+        const field = page.getByRole("textbox", { name: "Search runs by task or ID…" });
+        await expect(field).toBeHidden();
+
+        // Search from a run's detail: the results replace it, or typing would
+        // seem to do nothing.
+        await main.getByRole("button").filter({ hasText: "echo-task" }).first().click();
+        await expect(main.getByTestId("run-verdict")).toBeVisible();
+
+        await page.getByRole("button", { name: "Search", exact: true }).click();
+        await expect(field).toBeFocused();
+        await field.fill("fail-task");
+        await expect(main.getByTestId("run-verdict")).toHaveCount(0);
+        await expect(
+            main.getByRole("button").filter({ hasText: "fail-task" }).first(),
+        ).toBeVisible();
+        await expect(main.getByRole("button").filter({ hasText: "echo-task" })).toHaveCount(0);
+
+        // Leaving search mode drops the query, so the list is whole again.
+        await page.getByRole("button", { name: "Close search" }).click();
+        await expect(field).toBeHidden();
+        await expect(
+            main.getByRole("button").filter({ hasText: "echo-task" }).first(),
+        ).toBeVisible();
+    });
+
+    test("a 1280px window can fold away the sidebar and the run list", async ({
+        authenticatedPage: page,
+        daemonState,
+    }) => {
+        const run = await seedEndedRun(page, "echo-task", daemonState.token);
+
+        await page.setViewportSize({ width: 1280, height: 720 });
+        await page.goto(`/runs/${run.id}`);
+
+        const sidebar = page.getByRole("complementary", { name: "Primary" });
+        const main = page.getByRole("main");
+        const row = main.getByRole("button").filter({ hasText: "echo-task" }).first();
+        await expect(sidebar).toBeVisible();
+        await expect(row).toBeVisible();
+
+        await page.getByRole("button", { name: "Hide sidebar" }).click();
+        await main.getByRole("button", { name: "Hide run list" }).click();
+        await expect(sidebar).toBeHidden();
+        await expect(row).toHaveCount(0);
+        await expect(main.getByTestId("run-verdict")).toBeVisible();
+
+        // Remembered across a reload, then undone from the same buttons.
+        await page.reload();
+        await expect(sidebar).toBeHidden();
+        await page.getByRole("button", { name: "Show sidebar" }).click();
+        await main.getByRole("button", { name: "Show run list" }).click();
+        await expect(sidebar).toBeVisible();
+        await expect(row).toBeVisible();
+    });
+
+    test("a 1600px window keeps the sidebar and run list with no fold buttons", async ({
+        authenticatedPage: page,
+        daemonState,
+    }) => {
+        const run = await seedEndedRun(page, "echo-task", daemonState.token);
+
+        await page.setViewportSize({ width: 1600, height: 900 });
+        await page.goto(`/runs/${run.id}`);
+
+        await expect(page.getByRole("main").getByTestId("run-verdict")).toBeVisible();
+        await expect(page.getByRole("complementary", { name: "Primary" })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Hide sidebar" })).toBeHidden();
+        await expect(page.getByRole("button", { name: "Hide run list" })).toHaveCount(0);
+    });
 });

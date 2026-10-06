@@ -20,6 +20,6 @@
         tooltipPosition="bottom"
     >
         <RadioTower size={12} class="shrink-0" />
-        <span class="hidden sm:inline md:@max-4xl:hidden">RunWisp Station</span>
+        <span class="hidden sm:inline md:@max-5xl:hidden">RunWisp Station</span>
     </Badge>
 {/if}

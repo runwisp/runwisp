@@ -28,7 +28,7 @@
 
     // Icon-only on phones, and beside the page search while the top bar (the
     // nearest @container) is too narrow for the name, label and search at once.
-    const labelClass = "max-sm:sr-only md:@max-2xl:sr-only";
+    const labelClass = "max-sm:sr-only md:@max-4xl:sr-only";
 
     // The task list is only refetched on changes, so "Next run" could be one
     // tick old by the time the popover opens.

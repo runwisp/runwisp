@@ -39,7 +39,7 @@
                 {/each}
             </div>
 
-            <div class="grid flex-1 gap-4 lg:grid-cols-3">
+            <div class="grid flex-1 gap-4 md:grid-cols-3">
                 {#each PANEL_TITLES as title (title)}
                     <Card>
                         <div class="flex items-center justify-between gap-3">
