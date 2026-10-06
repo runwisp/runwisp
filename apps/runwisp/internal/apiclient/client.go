@@ -188,9 +188,13 @@ func (c *Client) doJSON(ctx context.Context, method, path string, reqBody, respB
 	return nil
 }
 
-// doRaw performs a GET request and returns the raw response. Caller must close the body.
-func (c *Client) doRaw(ctx context.Context, path string) (*http.Response, error) {
-	return c.doRequest(ctx, http.MethodGet, path, nil)
+// doJSONAs is doJSON for endpoints that decode into a fresh value of T.
+func doJSONAs[T any](ctx context.Context, c *Client, method, path string, reqBody any) (*T, error) {
+	var v T
+	if err := c.doJSON(ctx, method, path, reqBody, &v); err != nil {
+		return nil, err
+	}
+	return &v, nil
 }
 
 // doRequest is the shared transport helper for all HTTP calls.

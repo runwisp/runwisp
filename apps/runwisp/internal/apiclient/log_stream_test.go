@@ -24,7 +24,6 @@ func TestStreamLogLines_ParsesEvents(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/runs/r/log/stream", r.URL.Path)
 		assert.Equal(t, "0", r.URL.Query().Get("from"))
-		assert.Equal(t, "100", r.URL.Query().Get("replayLimit"))
 
 		w.Header().Set("Content-Type", "text/event-stream")
 
@@ -52,7 +51,7 @@ func TestStreamLogLines_ParsesEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ch, err := c.StreamLogLines(ctx, "r", StreamLogOpts{FromLine: 0, ReplayLimit: 100})
+	ch, err := c.StreamLogLines(ctx, "r", 0)
 	require.NoError(t, err)
 
 	read := func() LogStreamMsg {
@@ -84,10 +83,9 @@ func TestStreamLogLines_ParsesEvents(t *testing.T) {
 	assert.Equal(t, int64(99), fourth.Done.FinalLine)
 }
 
-// TestStreamLogLines_NoReplayLimitOmitsQueryParam asserts the URL excludes
-// the replayLimit param when callers leave it at the default — the server
-// then chooses.
-func TestStreamLogLines_NoReplayLimitOmitsQueryParam(t *testing.T) {
+// TestStreamLogLines_SendsFromAnchor asserts the line anchor lands in the
+// query and no replayLimit is sent, so the server picks the backfill cap.
+func TestStreamLogLines_SendsFromAnchor(t *testing.T) {
 	gotQuery := ""
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.RawQuery
@@ -102,7 +100,7 @@ func TestStreamLogLines_NoReplayLimitOmitsQueryParam(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	ch, err := c.StreamLogLines(ctx, "r", StreamLogOpts{FromLine: -100})
+	ch, err := c.StreamLogLines(ctx, "r", -100)
 	require.NoError(t, err)
 
 	select {
@@ -111,6 +109,6 @@ func TestStreamLogLines_NoReplayLimitOmitsQueryParam(t *testing.T) {
 		t.Fatal("expected at least one event before timeout")
 	}
 
-	assert.NotContains(t, gotQuery, "replayLimit", "default ReplayLimit must not appear in query")
+	assert.NotContains(t, gotQuery, "replayLimit", "replayLimit must not appear in query")
 	assert.True(t, strings.Contains(gotQuery, "from=-100"))
 }

@@ -91,11 +91,7 @@ func (c *Client) TriggerRun(ctx context.Context, taskName string, params map[str
 	if via != "" {
 		path += "?via=" + url.QueryEscape(via)
 	}
-	var run model.Run
-	if err := c.doJSON(ctx, "POST", path, body, &run); err != nil {
-		return nil, err
-	}
-	return &run, nil
+	return doJSONAs[model.Run](ctx, c, "POST", path, body)
 }
 
 // StartTask starts a service (un-parking it and filling empty instance
@@ -147,11 +143,7 @@ func (c *Client) StopRun(ctx context.Context, runID string) error {
 // GetRun fetches a run by its (globally unique) ULID — the endpoint is
 // task-scope-free.
 func (c *Client) GetRun(ctx context.Context, runID string) (*model.Run, error) {
-	var run model.Run
-	if err := c.doJSON(ctx, "GET", fmt.Sprintf("/api/runs/%s", runID), nil, &run); err != nil {
-		return nil, err
-	}
-	return &run, nil
+	return doJSONAs[model.Run](ctx, c, "GET", "/api/runs/"+runID, nil)
 }
 
 func (c *Client) DeleteRun(ctx context.Context, runID string) error {

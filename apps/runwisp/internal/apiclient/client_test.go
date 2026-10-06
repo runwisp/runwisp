@@ -611,7 +611,7 @@ func TestGetLogPage_Error(t *testing.T) {
 }
 
 // TestHealthCheck_CancelledByContext proves doRequest (the shared helper
-// behind doJSON/doRaw) actually honors a caller's context, matching the
+// behind doJSON/doRequest) actually honors a caller's context, matching the
 // SSE-backed methods (doSSE takes a ctx and threads it through via
 // http.NewRequestWithContext). A call against a server that never responds
 // must return promptly once its context is cancelled, instead of blocking
