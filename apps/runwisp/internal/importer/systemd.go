@@ -480,7 +480,7 @@ func systemdNoteDropped(ref itemRef, dropped []string, sawSandbox, sawSocket boo
 // systemdApplyKillSignal maps KillSignal= to stop_signal, noting anything
 // outside RunWisp's allowlist instead of writing an invalid value.
 func systemdApplyKillSignal(b *block, ref itemRef, key, value string) {
-	canonical, ok := normalizeSignal(value)
+	canonical, ok := model.NormalizeSignalName(value)
 	if !ok {
 		ref.note(NoteKeyUnreadable, key+"="+value+" isn't a signal RunWisp can read, so it was dropped.")
 		return

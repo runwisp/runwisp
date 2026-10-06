@@ -230,7 +230,7 @@ func TestTomlStringMultiline(t *testing.T) {
 
 func TestServiceOnlyTaskDropsWithNote(t *testing.T) {
 	sd := newSupervisordState(SupervisordOptions{})
-	ref := sd.res.addItem("web")
+	ref := sd.res.addItemAt("web", 0)
 	// On a service the key applies and no note is added.
 	if !sd.serviceOnly("priority", ref, true) {
 		t.Error("serviceOnly should return true for a service")

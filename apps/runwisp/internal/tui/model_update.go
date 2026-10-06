@@ -645,7 +645,7 @@ func (m Model) handleRestartService(msg uikit.RestartServiceMsg) (tea.Model, tea
 	// auto-open follows a single-instance service there once it starts).
 	oldID := m.execView.Run.ID
 	cmds := []tea.Cmd{m.closeExecView()}
-	if run := m.latestRunningExec(msg.TaskName); run != nil && run.ID != oldID && m.isSingleInstanceService(msg.TaskName) {
+	if run := m.execWindow.LatestRunning(msg.TaskName); run != nil && run.ID != oldID && m.isSingleInstanceService(msg.TaskName) {
 		cmds = append(cmds, m.openExecView(run))
 	}
 	return m, tea.Batch(cmds...)

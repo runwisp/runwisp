@@ -54,7 +54,7 @@ func runStationInteractive(ctx context.Context, f Flags) error {
 		return runTUIConnect(ctx, client, f, false)
 	}
 
-	if err := spawnDaemonProcess(daemonSpawnArgs([]string{"station", "--no-tui"}, f), f.DataDir); err != nil {
+	if err := spawnDaemon(f, true); err != nil {
 		slog.Warn("Failed to spawn background station daemon, running inline", "err", err)
 		return runDaemon(modeStation, f, false)
 	}

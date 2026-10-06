@@ -408,18 +408,13 @@ func (m *Model) serviceInstances(name string) int {
 	return task.Instances
 }
 
-// latestRunningExec returns the most recent running execution for the given task, if any.
-func (m *Model) latestRunningExec(taskName string) *model.Run {
-	return m.execWindow.LatestRunning(taskName)
-}
-
 // autoOpenService opens the latest running execution for single-instance services.
 // Returns a command if a log stream should be started, or nil.
 func (m *Model) autoOpenService(taskName string) tea.Cmd {
 	if !m.isSingleInstanceService(taskName) {
 		return nil
 	}
-	if run := m.latestRunningExec(taskName); run != nil {
+	if run := m.execWindow.LatestRunning(taskName); run != nil {
 		return m.openExecView(run)
 	}
 	return nil

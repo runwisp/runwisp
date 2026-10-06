@@ -57,7 +57,7 @@ func runDefault(ctx context.Context, f Flags) error {
 		return portErr
 	}
 
-	if err := spawnDaemon(f); err != nil {
+	if err := spawnDaemon(f, false); err != nil {
 		slog.Warn("Failed to spawn background daemon, running inline", "err", err)
 		return runDaemon(modeStandalone, f, false)
 	}

@@ -134,7 +134,7 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 	// Hand the temp dir to the spawned daemon; from here it owns cleanup.
 	os.Setenv(envDemoTempDir, tmp)
 
-	if err := spawnDemoDaemon(f); err != nil {
+	if err := spawnDaemon(f, demoFlags.Station); err != nil {
 		os.RemoveAll(tmp)
 		return err
 	}
@@ -210,13 +210,4 @@ func seedDemoHistory(f Flags) error {
 	}
 	fmt.Fprintf(os.Stderr, "Seeded %d demo runs.\n", n)
 	return nil
-}
-
-// spawnDemoDaemon launches the background daemon against the temp dir. Station
-// mode spawns the headless `station` subcommand; standalone reuses spawnDaemon.
-func spawnDemoDaemon(f Flags) error {
-	if demoFlags.Station {
-		return spawnDaemonProcess(daemonSpawnArgs([]string{"station", "--no-tui"}, f), f.DataDir)
-	}
-	return spawnDaemon(f)
 }

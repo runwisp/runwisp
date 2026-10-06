@@ -114,7 +114,7 @@ func runPromote(cmd *cobra.Command, args []string, f Flags, opts promoteOpts) er
 
 	if opts.reload {
 		fmt.Fprintln(out)
-		return runReload(cmd, f)
+		return reloadRunningDaemon(cmd.Context(), f, cmd.OutOrStdout())
 	}
 	return nil
 }
