@@ -56,9 +56,6 @@ func NewRetentionCleaner(db storage.RunRepository, tasks *TaskRegistry, interval
 // instead of only learning about it on their next full refetch. Mirrors
 // runService.publishDeleted in internal/server.
 func (cleaner *RetentionCleaner) publishDeleted(runID, taskName string) {
-	if cleaner.eventBus == nil {
-		return
-	}
 	cleaner.eventBus.Publish(events.EventRunDeleted, events.RunDeletedEvent{
 		RunID:    runID,
 		TaskName: taskName,

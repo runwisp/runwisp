@@ -31,10 +31,6 @@ type stubTaskRunner struct {
 	terminatedErr      error
 }
 
-func (s *stubTaskRunner) TriggerRun(string, model.TriggeredBy) (*model.Run, error) {
-	panic("not used")
-}
-
 func (s *stubTaskRunner) TriggerRunWithOptions(taskName string, opts runtime.TriggerRunOptions) (*model.Run, error) {
 	s.gotTriggerTask = taskName
 	s.gotTrigger = opts

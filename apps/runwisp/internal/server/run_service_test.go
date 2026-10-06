@@ -26,14 +26,6 @@ type mockTaskRunner struct {
 	mock.Mock
 }
 
-func (m *mockTaskRunner) TriggerRun(taskName string, triggeredBy model.TriggeredBy) (*model.Run, error) {
-	args := m.Called(taskName, triggeredBy)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*model.Run), args.Error(1)
-}
-
 func (m *mockTaskRunner) TriggerRunWithOptions(taskName string, options runtime.TriggerRunOptions) (*model.Run, error) {
 	args := m.Called(taskName, options)
 	if args.Get(0) == nil {
