@@ -63,7 +63,7 @@ func TestParseBool(t *testing.T) {
 // its severity is a red test rather than a note that silently reads as harmless.
 func TestNoteKindsAreTotal(t *testing.T) {
 	for k := NoteKind(0); k < noteKindCount; k++ {
-		if k.Slug() == "" {
+		if k.slug() == "" {
 			t.Errorf("NoteKind(%d) has no entry in info() — decide its slug and whether it blocks", int(k))
 		}
 	}
@@ -74,7 +74,7 @@ func TestNoteKindsAreTotal(t *testing.T) {
 func TestNoteSlugsAreUnique(t *testing.T) {
 	seen := map[string]NoteKind{}
 	for k := NoteKind(0); k < noteKindCount; k++ {
-		slug := k.Slug()
+		slug := k.slug()
 		if prev, dup := seen[slug]; dup {
 			t.Errorf("slug %q is used by both NoteKind(%d) and NoteKind(%d)", slug, int(prev), int(k))
 		}
@@ -129,10 +129,11 @@ func TestTallyCoversEveryRow(t *testing.T) {
 	in := "0 1 * * * /bin/job\n0 2 * * * /bin/job\n99 99 * * * /bin/bad\nnot-a-cron-line\n"
 	res := parseCron(t, in, CronOptions{Existing: Owned{"rollup": {Kind: "task", Run: "/bin/rollup"}}})
 	tally := res.Tally()
-	if got, want := tally.Total(), len(res.Items()); got != want {
-		t.Errorf("marks account for %d rows, but there are %d", got, want)
+	total := tally.Clean + tally.Changed + tally.Blocked + tally.Skipped
+	if want := len(res.Items()); total != want {
+		t.Errorf("marks account for %d rows, but there are %d", total, want)
 	}
-	if tally.Total() != 4 {
+	if total != 4 {
 		t.Errorf("expected a row per job line, got %+v", tally)
 	}
 }

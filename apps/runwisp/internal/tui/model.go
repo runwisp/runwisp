@@ -638,13 +638,7 @@ func (m *Model) launchBrowserCmd(base, target string) tea.Cmd {
 		}
 		launchURL := fmt.Sprintf("%s/api/auth/launch-ticket?ticket=%s&redirect=%s",
 			strings.TrimRight(base, "/"), ticket, url.QueryEscape(target))
-		if !canOpenBrowser() {
-			return uikit.OpenBrowserMsg{URL: launchURL}
-		}
-		if err := openBrowser(launchURL); err != nil {
-			return uikit.OpenBrowserMsg{URL: launchURL, Err: err}
-		}
-		return uikit.OpenBrowserMsg{URL: launchURL, BrowserOpened: true}
+		return browseMsg(launchURL)
 	}
 }
 
