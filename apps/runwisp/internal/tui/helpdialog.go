@@ -23,19 +23,15 @@ type HelpDialog struct {
 	total    int
 }
 
-func NewHelpDialog() HelpDialog {
-	return HelpDialog{}
-}
-
-// Update reports true when the dialog should close.
-func (d *HelpDialog) Update(msg tea.Msg) bool {
+// Update reports whether the dialog should close.
+func (d *HelpDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
-		return d.handleKey(msg.String())
+		return nil, d.handleKey(msg.String())
 	case tea.MouseMsg:
-		return d.handleMouse(msg)
+		return nil, d.handleMouse(msg)
 	}
-	return false
+	return nil, false
 }
 
 // handleKey applies a keypress, returning true on a close key.

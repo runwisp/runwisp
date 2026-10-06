@@ -336,7 +336,7 @@ func TestHandleKeyEnter_SidebarVersionFocused_ShowsNewReleaseDialog(t *testing.T
 	if !handled {
 		t.Fatal("expected handled=true when the version indicator is focused")
 	}
-	if !newM.dialogs.HasNewRelease() {
+	if !newM.dialogs.Has(dlgNewRelease) {
 		t.Fatal("expected the new-release dialog to open")
 	}
 }
@@ -825,21 +825,21 @@ func TestHandleKeyHelp_OpensOverlay(t *testing.T) {
 	if !ok {
 		t.Fatal("expected Model")
 	}
-	if !got.dialogs.HasHelp() {
+	if !got.dialogs.Has(dlgHelp) {
 		t.Fatal("expected '?' to open the help overlay")
 	}
 }
 
 func TestHandleKeyHelp_SecondQuestionMarkCloses(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowHelp()
+	m.dialogs.Show(dlgHelp, &HelpDialog{})
 
 	updated, _ := m.Update(keyMsg("?"))
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatal("expected Model")
 	}
-	if got.dialogs.HasHelp() {
+	if got.dialogs.Has(dlgHelp) {
 		t.Fatal("expected '?' to close an open help overlay")
 	}
 }
@@ -847,31 +847,31 @@ func TestHandleKeyHelp_SecondQuestionMarkCloses(t *testing.T) {
 func TestHandleKeyHelp_CtrlCEscalatesToQuitConfirm(t *testing.T) {
 	m := newTestModel(nil)
 	m.startedDaemon = true
-	m.dialogs.ShowHelp()
+	m.dialogs.Show(dlgHelp, &HelpDialog{})
 
 	updated, _ := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	got, ok := updated.(Model)
 	if !ok {
 		t.Fatal("expected Model")
 	}
-	if got.dialogs.HasHelp() {
+	if got.dialogs.Has(dlgHelp) {
 		t.Fatal("expected ctrl+c to dismiss the help overlay")
 	}
-	if !got.dialogs.HasConfirm() {
+	if !got.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected ctrl+c to open the quit confirm")
 	}
 }
 
 func TestInterceptHelpDialog_ScrollKeyConsumedAndStaysOpen(t *testing.T) {
 	m := newTestModel(nil)
-	m.dialogs.ShowHelp()
+	m.dialogs.Show(dlgHelp, &HelpDialog{})
 
-	got, _, intercepted := m.interceptHelpDialog(keyMsgSpecial(tea.KeyDown))
+	got, _, intercepted := m.interceptActiveDialog(keyMsgSpecial(tea.KeyDown))
 	if !intercepted {
 		t.Fatal("expected arrow-down to be consumed by the modal help overlay")
 	}
 	gotModel := got.(Model)
-	if !gotModel.dialogs.HasHelp() {
+	if !gotModel.dialogs.Has(dlgHelp) {
 		t.Fatal("expected help overlay to remain open")
 	}
 }
@@ -885,14 +885,14 @@ func TestInterceptHelpDialog_CloseKeysIntercept(t *testing.T) {
 	}
 	for _, key := range closeKeys {
 		m := newTestModel(nil)
-		m.dialogs.ShowHelp()
+		m.dialogs.Show(dlgHelp, &HelpDialog{})
 
-		got, _, intercepted := m.interceptHelpDialog(key)
+		got, _, intercepted := m.interceptActiveDialog(key)
 		if !intercepted {
 			t.Fatalf("expected close key %v to be intercepted", key)
 		}
 		gotModel := got.(Model)
-		if gotModel.dialogs.HasHelp() {
+		if gotModel.dialogs.Has(dlgHelp) {
 			t.Fatalf("expected help overlay dismissed after close key %v", key)
 		}
 	}
@@ -903,7 +903,7 @@ func TestInterceptHelpDialog_CloseKeysIntercept(t *testing.T) {
 func TestHandleKeyQuit_OpensQuitConfirmDialog(t *testing.T) {
 	m := newTestModel(nil)
 	m.startedDaemon = true
-	if m.dialogs.HasConfirm() {
+	if m.dialogs.Has(dlgConfirm) {
 		t.Fatal("precondition: no dialog expected")
 	}
 	newM, cmd, handled := handleKeyQuit(m, keyMsg("q"))
@@ -913,7 +913,7 @@ func TestHandleKeyQuit_OpensQuitConfirmDialog(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("handleKeyQuit returns nil cmd; requestQuit enqueues the dialog directly")
 	}
-	if !newM.dialogs.HasConfirm() {
+	if !newM.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected a confirm dialog to be queued")
 	}
 }
@@ -954,7 +954,7 @@ func TestHandleKey_GlobalHandledKey(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected Model return, got %T", newM)
 	}
-	if !got.dialogs.HasConfirm() {
+	if !got.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected quit dialog after pressing q")
 	}
 }

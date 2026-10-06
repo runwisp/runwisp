@@ -230,18 +230,18 @@ func TestTaskDetailDialog_View_HealthError(t *testing.T) {
 func TestTaskDetailDialog_Update_ClosesOnKeys(t *testing.T) {
 	for _, key := range []string{"i", "q"} {
 		d := NewTaskDetailDialog("alpha", nil)
-		if !d.Update(tea.KeyPressMsg{Code: []rune(key)[0], Text: key}) {
+		if !closes(d, tea.KeyPressMsg{Code: []rune(key)[0], Text: key}) {
 			t.Fatalf("rune %q should close the dialog", key)
 		}
 	}
 	for _, kt := range []rune{tea.KeyEsc, tea.KeyEnter} {
 		d := NewTaskDetailDialog("alpha", nil)
-		if !d.Update(tea.KeyPressMsg{Code: kt}) {
+		if !closes(d, tea.KeyPressMsg{Code: kt}) {
 			t.Fatalf("key %v should close the dialog", kt)
 		}
 	}
 	d := NewTaskDetailDialog("alpha", nil)
-	if d.Update(tea.KeyPressMsg{Code: 'x', Text: "x"}) {
+	if closes(d, tea.KeyPressMsg{Code: 'x', Text: "x"}) {
 		t.Fatal("unrelated key should not close the dialog")
 	}
 }
@@ -256,7 +256,7 @@ func TestHandleKeyI_OpensInspectorForCursorTask(t *testing.T) {
 	if !ok {
 		t.Fatal("handleKey did not return a Model")
 	}
-	if !got.dialogs.HasTaskDetail() {
+	if !got.dialogs.Has(dlgTaskDetail) {
 		t.Fatal("pressing i with a task in focus should open the inspector")
 	}
 	if cmd == nil {
@@ -272,7 +272,7 @@ func TestHandleKeyI_FallsThroughWithoutTask(t *testing.T) {
 	if !ok {
 		t.Fatal("handleKey did not return a Model")
 	}
-	if got.dialogs.HasTaskDetail() {
+	if got.dialogs.Has(dlgTaskDetail) {
 		t.Fatal("pressing i with no task in focus must not open the inspector")
 	}
 }

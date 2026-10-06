@@ -30,8 +30,8 @@ type RunDetailDialog struct {
 
 // NewRunDetailDialog builds the inspector for a run. run is never nil here — the
 // caller only opens the inspector when an exec view has a run.
-func NewRunDetailDialog(run *model.Run, isService bool, instanceCount int) RunDetailDialog {
-	return RunDetailDialog{run: run, isService: isService, instanceCount: instanceCount}
+func NewRunDetailDialog(run *model.Run, isService bool, instanceCount int) *RunDetailDialog {
+	return &RunDetailDialog{run: run, isService: isService, instanceCount: instanceCount}
 }
 
 // ParentRef returns the task + run id of the run this one retried, and whether
@@ -45,17 +45,17 @@ func (d *RunDetailDialog) ParentRef() (taskName, runID string, ok bool) {
 
 // Update reports true when the dialog should close. Enter is handled by the
 // interceptor (it may open the parent run), so it isn't a plain close key here.
-func (d *RunDetailDialog) Update(msg tea.Msg) bool {
+func (d *RunDetailDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "i", "esc", "q":
-			return true
+			return nil, true
 		}
 	case tea.MouseClickMsg:
-		return true
+		return nil, true
 	}
-	return false
+	return nil, false
 }
 
 func (d *RunDetailDialog) View(screenWidth, screenHeight int) string {

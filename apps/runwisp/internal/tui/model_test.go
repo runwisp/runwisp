@@ -456,7 +456,7 @@ func TestRequestQuit_StartedDaemonOpensConfirmDialog(t *testing.T) {
 	if cmd := m.requestQuit(); cmd != nil {
 		t.Fatal("expected no quit cmd while the dialog asks")
 	}
-	d := m.dialogs.confirmDialog
+	d := m.dialogs.confirm()
 	if d == nil {
 		t.Fatal("expected confirm dialog after requestQuit")
 	}
@@ -484,7 +484,7 @@ func TestRequestQuit_ServiceManagedQuitsWithoutDialog(t *testing.T) {
 func assertQuitsKeepingDaemon(t *testing.T, m *Model) {
 	t.Helper()
 	cmd := m.requestQuit()
-	if m.dialogs.HasConfirm() {
+	if m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected no quit dialog")
 	}
 	if cmd == nil {

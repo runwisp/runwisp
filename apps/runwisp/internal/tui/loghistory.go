@@ -29,7 +29,7 @@ type histRow struct {
 // NewLogHistoryDialog flattens the frames into display rows. committed is the
 // final on-disk text of the anchor line, shown last so the operator sees where
 // the animation landed.
-func NewLogHistoryDialog(line int64, frames [][]string, committed string) LogHistoryDialog {
+func NewLogHistoryDialog(line int64, frames [][]string, committed string) *LogHistoryDialog {
 	var rows []histRow
 	for i, frame := range frames {
 		rows = append(rows, histRow{text: frameLabel(i+1, len(frames)), header: true})
@@ -39,7 +39,7 @@ func NewLogHistoryDialog(line int64, frames [][]string, committed string) LogHis
 	}
 	rows = append(rows, histRow{text: "committed", header: true})
 	rows = append(rows, histRow{text: uikit.SanitizeControls(committed)})
-	return LogHistoryDialog{line: line, rows: rows}
+	return &LogHistoryDialog{line: line, rows: rows}
 }
 
 func frameLabel(n, total int) string {
@@ -51,17 +51,17 @@ func frameLabel(n, total int) string {
 const logHistoryVisibleRows = 16
 
 // Update reports true when the dialog should close.
-func (d *LogHistoryDialog) Update(msg tea.Msg) bool {
+func (d *LogHistoryDialog) Update(msg tea.Msg) (tea.Cmd, bool) {
 	keyMsg, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		if _, ok := msg.(tea.MouseClickMsg); ok {
-			return true
+			return nil, true
 		}
-		return false
+		return nil, false
 	}
 	switch keyMsg.String() {
 	case "esc", "enter", "q":
-		return true
+		return nil, true
 	case "up", "k":
 		if d.scroll > 0 {
 			d.scroll--
@@ -85,7 +85,7 @@ func (d *LogHistoryDialog) Update(msg tea.Msg) bool {
 	case "G", "end":
 		d.scroll = d.maxScroll()
 	}
-	return false
+	return nil, false
 }
 
 func (d *LogHistoryDialog) maxScroll() int {

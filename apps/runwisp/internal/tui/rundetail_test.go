@@ -98,18 +98,18 @@ func TestRunDetailDialog_ParentRef(t *testing.T) {
 func TestRunDetailDialog_Update_CloseKeys(t *testing.T) {
 	for _, key := range []string{"i", "q"} {
 		d := NewRunDetailDialog(endedRun(), false, 1)
-		if !d.Update(tea.KeyPressMsg{Code: []rune(key)[0], Text: key}) {
+		if !closes(d, tea.KeyPressMsg{Code: []rune(key)[0], Text: key}) {
 			t.Fatalf("rune %q should close the dialog", key)
 		}
 	}
 	d := NewRunDetailDialog(endedRun(), false, 1)
-	if !d.Update(tea.KeyPressMsg{Code: tea.KeyEsc}) {
+	if !closes(d, tea.KeyPressMsg{Code: tea.KeyEsc}) {
 		t.Fatal("esc should close the dialog")
 	}
 	// Enter is reserved for the interceptor (open parent), so the dialog itself
 	// must not treat it as a close.
 	enterDialog := NewRunDetailDialog(endedRun(), false, 1)
-	if enterDialog.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) {
+	if closes(enterDialog, tea.KeyPressMsg{Code: tea.KeyEnter}) {
 		t.Fatal("enter must not close the dialog directly")
 	}
 }
@@ -124,19 +124,19 @@ func TestHandleKeyI_ExecViewOpensRunDetail(t *testing.T) {
 	if !ok {
 		t.Fatal("handleKey did not return a Model")
 	}
-	if !got.dialogs.HasRunDetail() {
+	if !got.dialogs.Has(dlgRunDetail) {
 		t.Fatal("pressing i in an exec view should open the run inspector")
 	}
-	if got.dialogs.HasTaskDetail() {
+	if got.dialogs.Has(dlgTaskDetail) {
 		t.Fatal("the exec view inspects the run, not the task")
 	}
 }
 
 func TestInterceptRunDetail_EnterOpensParent(t *testing.T) {
 	m := newTestModelWithClient([]model.Task{{Name: "backup-db"}})
-	m.dialogs.ShowRunDetail(endedRun(), false, 1, nil)
+	m.dialogs.Show(dlgRunDetail, NewRunDetailDialog(endedRun(), false, 1))
 
-	updated, cmd, intercepted := m.interceptRunDetailDialog(tea.KeyPressMsg{Code: tea.KeyEnter})
+	updated, cmd, intercepted := m.interceptActiveDialog(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if !intercepted {
 		t.Fatal("run inspector should intercept enter")
 	}
@@ -144,7 +144,7 @@ func TestInterceptRunDetail_EnterOpensParent(t *testing.T) {
 	if !ok {
 		t.Fatal("interceptor did not return a Model")
 	}
-	if got.dialogs.HasRunDetail() {
+	if got.dialogs.Has(dlgRunDetail) {
 		t.Fatal("opening the parent should dismiss the inspector")
 	}
 	if cmd == nil {
@@ -169,7 +169,7 @@ func TestRunDetailDialog_ShowsTimesInDaemonZone(t *testing.T) {
 	if !ok {
 		t.Fatal("handleKey did not return a Model")
 	}
-	out := got.dialogs.runDetail.View(80, 30)
+	out := got.dialogs.open[dlgRunDetail].View(80, 30)
 	if !strings.Contains(out, "2026-10-04 03:15:00") {
 		t.Fatalf("started time should be shown in the daemon's zone (03:15), got:\n%s", out)
 	}

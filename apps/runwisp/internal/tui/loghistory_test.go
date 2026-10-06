@@ -75,7 +75,7 @@ func TestLogHistoryDialog_UpdateClosesOnKeys(t *testing.T) {
 			case "q":
 				msg = tea.KeyPressMsg{Code: 'q', Text: "q"}
 			}
-			assert.True(t, d.Update(msg))
+			assert.True(t, closes(d, msg))
 		})
 	}
 }
@@ -89,11 +89,11 @@ func TestLogHistoryDialog_ScrollClampsAndDoesNotClose(t *testing.T) {
 	d := NewLogHistoryDialog(0, frames, "final")
 
 	// Up at the top is a no-op (stays at 0) and never closes.
-	assert.False(t, d.Update(tea.KeyPressMsg{Code: tea.KeyUp}))
+	assert.False(t, closes(d, tea.KeyPressMsg{Code: tea.KeyUp}))
 	assert.Equal(t, 0, d.scroll)
 
 	// Down advances; End jumps to the bottom; Down at the bottom clamps.
-	assert.False(t, d.Update(tea.KeyPressMsg{Code: tea.KeyDown}))
+	assert.False(t, closes(d, tea.KeyPressMsg{Code: tea.KeyDown}))
 	assert.Equal(t, 1, d.scroll)
 
 	d.Update(tea.KeyPressMsg{Code: 'G', Text: "G"})
@@ -105,7 +105,7 @@ func TestLogHistoryDialog_ScrollClampsAndDoesNotClose(t *testing.T) {
 
 func TestLogHistoryDialog_RightClickCloses(t *testing.T) {
 	d := NewLogHistoryDialog(0, [][]string{{"x"}}, "y")
-	assert.True(t, d.Update(tea.MouseClickMsg{Button: tea.MouseRight}))
+	assert.True(t, closes(d, tea.MouseClickMsg{Button: tea.MouseRight}))
 }
 
 func TestLogHistoryDialog_ScrollHintReflectsScrollability(t *testing.T) {
@@ -142,7 +142,7 @@ func TestHandleLogLineHistory_OpensViewerWithFrames(t *testing.T) {
 		Frames:    [][]string{{"a"}, {"b"}},
 		Committed: "c",
 	}))
-	assert.True(t, m.dialogs.HasLogHistory(), "expected frame-history viewer to open")
+	assert.True(t, m.dialogs.Has(dlgLogHistory), "expected frame-history viewer to open")
 }
 
 func TestHandleLogLineHistory_EmptyFramesFlashesNoViewer(t *testing.T) {
@@ -152,7 +152,7 @@ func TestHandleLogLineHistory_EmptyFramesFlashesNoViewer(t *testing.T) {
 	m.execView = &ev
 
 	m, cmd := mustModel(m.handleLogLineHistory(uikit.LogLineHistoryMsg{RunID: "run-1", Line: 4}))
-	assert.False(t, m.dialogs.HasLogHistory())
+	assert.False(t, m.dialogs.Has(dlgLogHistory))
 	assert.NotNil(t, cmd, "expected a flash cmd")
 }
 
@@ -165,7 +165,7 @@ func TestHandleLogLineHistory_ErrorFlashesNoViewer(t *testing.T) {
 	m, cmd := mustModel(m.handleLogLineHistory(uikit.LogLineHistoryMsg{
 		RunID: "run-1", Line: 4, Err: assertAnError,
 	}))
-	assert.False(t, m.dialogs.HasLogHistory())
+	assert.False(t, m.dialogs.Has(dlgLogHistory))
 	assert.NotNil(t, cmd)
 }
 
@@ -178,7 +178,7 @@ func TestHandleLogLineHistory_IgnoredWhenNotViewingRun(t *testing.T) {
 	m, _ = mustModel(m.handleLogLineHistory(uikit.LogLineHistoryMsg{
 		RunID: "other", Line: 4, Frames: [][]string{{"a"}},
 	}))
-	assert.False(t, m.dialogs.HasLogHistory())
+	assert.False(t, m.dialogs.Has(dlgLogHistory))
 }
 
 func TestAnchorNav_MovesCursorAndEnterFetchesHistory(t *testing.T) {

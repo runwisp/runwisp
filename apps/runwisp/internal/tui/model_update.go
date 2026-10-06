@@ -55,34 +55,53 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// interceptActiveDialog gives the active modal first claim on the message.
-// Dialogs are checked in precedence order; only the active one runs, and it
-// reports whether it consumed the message (false lets the dispatchers see it,
-// e.g. WindowSizeMsg keeps layout responsive while a dialog is open).
+// interceptActiveDialog gives the topmost open dialog first claim on the
+// message. Dialogs consume only key and mouse input (plus the shutdown
+// spinner's own messages); everything else falls through to the dispatchers,
+// e.g. WindowSizeMsg keeps layout responsive and an async TaskSummaryMsg still
+// fills in the open task inspector.
+//
+// A dialog's command (e.g. a confirm callback) is returned, never invoked here:
+// most make a network call, and running one inline would freeze the Update
+// loop for as long as it takes.
 func (m Model) interceptActiveDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	interceptors := []struct {
-		active bool
-		fn     func(tea.Msg) (tea.Model, tea.Cmd, bool)
-	}{
-		{m.dialogs.HasConfirm(), m.interceptConfirmDialog},
-		{m.dialogs.HasParamForm(), m.interceptParamFormDialog},
-		{m.dialogs.HasRunParams(), m.interceptRunParamsDialog},
-		{m.dialogs.HasCopy(), m.interceptCopyDialog},
-		{m.dialogs.HasLogHistory(), m.interceptLogHistoryDialog},
-		{m.dialogs.HasNewRelease(), m.interceptNewReleaseDialog},
-		{m.dialogs.HasTaskDetail(), m.interceptTaskDetailDialog},
-		{m.dialogs.HasRunDetail(), m.interceptRunDetailDialog},
-		{m.dialogs.HasHelp(), m.interceptHelpDialog},
+	kind, d, ok := m.dialogs.top()
+	if !ok {
+		return m, nil, false
 	}
-	for _, ic := range interceptors {
-		if !ic.active {
-			continue
-		}
-		if newModel, cmd, intercepted := ic.fn(msg); intercepted {
-			return newModel, cmd, true
-		}
+	if m.dialogs.IsShuttingDown() {
+		return m.interceptShuttingDownDialog(msg)
 	}
-	return m, nil, false
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case keyCtrlC:
+			if kind == dlgConfirm {
+				m.streams.Shutdown()
+				m.quitAction = uikit.QuitKeepDaemon
+				return m, tea.Quit, true
+			}
+			// In any other dialog, ctrl+c closes it and escalates to the quit confirm.
+			m.dialogs.Dismiss(kind)
+			return m, tea.Batch(m.dialogs.SyncMouseState(), m.requestQuit()), true
+		case "enter":
+			// Enter on a retry's inspector opens the run it retried.
+			if rd, isRun := d.(*RunDetailDialog); isRun {
+				if taskName, runID, hasParent := rd.ParentRef(); hasParent {
+					m.dialogs.Dismiss(dlgRunDetail)
+					return m, m.openRunByID(taskName, runID), true
+				}
+			}
+		}
+	case tea.MouseMsg:
+	default:
+		return m, nil, false
+	}
+	cmd, closed := d.Update(msg)
+	if closed {
+		m.dialogs.Dismiss(kind)
+	}
+	return m, tea.Batch(cmd, m.dialogs.SyncMouseState()), true
 }
 
 func (m Model) dispatchInputMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
@@ -329,41 +348,9 @@ func (m Model) handleNotificationReadState(msg uikit.NotificationReadStateMsg) (
 	return m, nil
 }
 
-// interceptConfirmDialog handles input while the confirm dialog is visible.
-// Returns intercepted=false to let the main dispatcher process the message
-// (e.g. WindowSizeMsg keeps layout responsive even with a dialog open).
-func (m Model) interceptConfirmDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	if m.dialogs.IsShuttingDown() {
-		return m.interceptShuttingDownDialog(msg)
-	}
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == keyCtrlC {
-			m.streams.Shutdown()
-			m.quitAction = uikit.QuitKeepDaemon
-			return m, tea.Quit, true
-		}
-		cmd, closed := m.dialogs.UpdateConfirmKeep(msg)
-		if cmd != nil {
-			return m, m.execConfirmCmd(cmd, closed), true
-		}
-		if closed {
-			m.dialogs.DismissConfirm()
-		}
-		return m, nil, true
-	case tea.MouseMsg:
-		cmd, closed := m.dialogs.UpdateConfirmKeep(msg)
-		if cmd != nil {
-			return m, m.execConfirmCmd(cmd, closed), true
-		}
-		if closed {
-			m.dialogs.DismissConfirm()
-		}
-		return m, nil, true
-	}
-	return m, nil, false
-}
-
+// interceptShuttingDownDialog handles input while the quit confirm shows its
+// shutdown spinner: ctrl+c quits without waiting, the spinner's own messages
+// drive it, and all other key/mouse input is swallowed.
 func (m Model) interceptShuttingDownDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
@@ -380,184 +367,6 @@ func (m Model) interceptShuttingDownDialog(msg tea.Msg) (tea.Model, tea.Cmd, boo
 		m.shutdownErr = msg.Err
 		return m, tea.Quit, true
 	case tea.MouseMsg:
-		return m, nil, true
-	}
-	return m, nil, false
-}
-
-// interceptParamFormDialog handles input while the parameter form is visible.
-// The form captures all keys (it's a modal); a confirmed submit returns the
-// trigger command, esc cancels, and ctrl+c escalates to the quit confirm.
-func (m Model) interceptParamFormDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == keyCtrlC {
-			m.dialogs.DismissParamForm()
-			cmd := m.requestQuit()
-			return m, cmd, true
-		}
-		cmd, _ := m.dialogs.UpdateParamForm(msg)
-		return m, cmd, true
-	case tea.MouseMsg:
-		cmd, _ := m.dialogs.UpdateParamForm(msg)
-		return m, cmd, true
-	}
-	return m, nil, false
-}
-
-// interceptRunParamsDialog handles input while the read-only run-params modal
-// is visible. Any close key dismisses it; ctrl+c escalates to the quit confirm.
-// Mouse state is re-synced on close so terminal selection is re-enabled.
-func (m Model) interceptRunParamsDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == keyCtrlC {
-			m.dialogs.DismissRunParams()
-			cmd := m.dialogs.SyncMouseState()
-			quitCmd := m.requestQuit()
-			return m, tea.Batch(cmd, quitCmd), true
-		}
-		if m.dialogs.UpdateRunParams(msg) {
-			return m, m.dialogs.SyncMouseState(), true
-		}
-		return m, nil, true
-	case tea.MouseMsg:
-		if m.dialogs.UpdateRunParams(msg) {
-			return m, m.dialogs.SyncMouseState(), true
-		}
-		return m, nil, true
-	}
-	return m, nil, false
-}
-
-// interceptCopyDialog handles input while the copy dialog is visible.
-func (m Model) interceptCopyDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == keyCtrlC {
-			m.dialogs.DismissCopy()
-			cmd := m.dialogs.SyncMouseState()
-			quitCmd := m.requestQuit()
-			return m, tea.Batch(cmd, quitCmd), true
-		}
-		if m.dialogs.UpdateCopy(msg) {
-			return m, m.dialogs.SyncMouseState(), true
-		}
-		return m, nil, true
-	case tea.MouseMsg:
-		if m.dialogs.UpdateCopy(msg) {
-			return m, m.dialogs.SyncMouseState(), true
-		}
-		return m, nil, true
-	}
-	return m, nil, false
-}
-
-// interceptLogHistoryDialog handles input while the frame-history viewer is
-// visible. Scroll keys are consumed by the dialog; any close key dismisses it;
-// ctrl+c escalates to the quit confirm.
-func (m Model) interceptLogHistoryDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == keyCtrlC {
-			m.dialogs.DismissLogHistory()
-			cmd := m.requestQuit()
-			return m, cmd, true
-		}
-		m.dialogs.UpdateLogHistory(msg)
-		return m, nil, true
-	case tea.MouseMsg:
-		m.dialogs.UpdateLogHistory(msg)
-		return m, nil, true
-	}
-	return m, nil, false
-}
-
-// interceptNewReleaseDialog handles input while the update-details modal is
-// visible: tab/click focuses the release-notes link, enter/click on it opens
-// the browser, any other key or click dismisses the dialog; ctrl+c escalates
-// to the quit confirm.
-func (m Model) interceptNewReleaseDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == keyCtrlC {
-			m.dialogs.DismissNewRelease()
-			cmd := m.requestQuit()
-			return m, cmd, true
-		}
-		cmd, _ := m.dialogs.UpdateNewRelease(msg)
-		return m, cmd, true
-	case tea.MouseMsg:
-		cmd, _ := m.dialogs.UpdateNewRelease(msg)
-		return m, cmd, true
-	}
-	return m, nil, false
-}
-
-// interceptTaskDetailDialog handles input while the task inspector is visible.
-// Only key/mouse messages are consumed (so async TaskSummaryMsg fetches still
-// reach the dispatchers and fill in the health line); ctrl+c escalates to quit.
-func (m Model) interceptTaskDetailDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == keyCtrlC {
-			m.dialogs.DismissTaskDetail()
-			cmd := m.requestQuit()
-			return m, cmd, true
-		}
-		m.dialogs.UpdateTaskDetail(msg)
-		return m, nil, true
-	case tea.MouseMsg:
-		m.dialogs.UpdateTaskDetail(msg)
-		return m, nil, true
-	}
-	return m, nil, false
-}
-
-// interceptRunDetailDialog handles input while the run inspector is visible.
-// Enter opens the parent run when the displayed run is a retry; ctrl+c escalates
-// to quit; any other close key dismisses it.
-func (m Model) interceptRunDetailDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	keyMsg, ok := msg.(tea.KeyPressMsg)
-	if !ok {
-		if mouse, isMouse := msg.(tea.MouseMsg); isMouse {
-			m.dialogs.UpdateRunDetail(mouse)
-			return m, nil, true
-		}
-		return m, nil, false
-	}
-	switch keyMsg.String() {
-	case keyCtrlC:
-		m.dialogs.DismissRunDetail()
-		cmd := m.requestQuit()
-		return m, cmd, true
-	case "enter":
-		if taskName, runID, hasParent := m.dialogs.RunDetailParent(); hasParent {
-			m.dialogs.DismissRunDetail()
-			return m, m.openRunByID(taskName, runID), true
-		}
-		return m, nil, true
-	}
-	m.dialogs.UpdateRunDetail(keyMsg)
-	return m, nil, true
-}
-
-// interceptHelpDialog handles input while the help overlay is visible. The
-// overlay is modal: close keys dismiss it, scroll keys move its viewport, and
-// every other key/mouse event is swallowed so it never leaks to the background.
-// ctrl+c escalates to the quit confirm.
-func (m Model) interceptHelpDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == keyCtrlC {
-			m.dialogs.DismissHelp()
-			cmd := m.requestQuit()
-			return m, cmd, true
-		}
-		m.dialogs.UpdateHelp(msg)
-		return m, nil, true
-	case tea.MouseMsg:
-		m.dialogs.UpdateHelp(msg)
 		return m, nil, true
 	}
 	return m, nil, false
@@ -911,7 +720,7 @@ func (m Model) handleLogLineHistory(msg uikit.LogLineHistoryMsg) (tea.Model, tea
 	if len(msg.Frames) == 0 {
 		return m, m.dialogs.Flash("No frame history for this line", 3*time.Second)
 	}
-	m.dialogs.ShowLogHistory(NewLogHistoryDialog(msg.Line, msg.Frames, msg.Committed))
+	m.dialogs.Show(dlgLogHistory, NewLogHistoryDialog(msg.Line, msg.Frames, msg.Committed))
 	return m, nil
 }
 
@@ -1137,35 +946,14 @@ func (m *Model) handleNotificationSSEEvent(evt apiclient.RunStreamEvent) (cmd te
 
 const logReconnectDelay = 500 * time.Millisecond
 
-// execConfirmCmd hands a confirm-dialog callback back to Bubble Tea as an
-// ordinary async tea.Cmd. Most callbacks (trigger/restart/stop run, etc.) make
-// a real network call through the client — invoking cmd() synchronously here
-// would block the whole Update loop, freezing repaints and key handling, for
-// as long as that call takes. Whatever message the callback eventually
-// produces — including uikit.QuitMsg — flows back through the normal dispatch
-// tables (dispatchLifecycleMsg → handleQuit, dispatchActionMsg → the
-// trigger/restart/stop handlers, ...), so no special-casing is needed here.
-//
-// closed indicates whether the dialog signalled it should close; when true we
-// dismiss it up front. handleQuit's startShutdownSpinner already tolerates
-// the dialog having been dismissed already (it opens a fresh spinner dialog
-// if none is active), so this is safe for the quit-and-shut-down-daemon path
-// too.
-func (m *Model) execConfirmCmd(cmd tea.Cmd, closed bool) tea.Cmd {
-	if closed {
-		m.dialogs.DismissConfirm()
-	}
-	return cmd
-}
-
 // startShutdownSpinner transitions the confirm dialog into the shutting-down
 // spinner state and fires the shutdown function as a background command.
 // If no dialog is open (e.g. uikit.QuitMsg arrived without a confirm), a new one is
 // created so the spinner has somewhere to render.
 func (m *Model) startShutdownSpinner() tea.Cmd {
-	if !m.dialogs.HasConfirm() {
+	if !m.dialogs.Has(dlgConfirm) {
 		dialog := NewConfirmDialog("Quit", "", nil)
-		m.dialogs.ShowConfirm(dialog)
+		m.dialogs.Show(dlgConfirm, dialog)
 	}
 	spinnerCmd := m.dialogs.StartShutdown()
 	shutdownFn := m.shutdownFunc

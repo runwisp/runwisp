@@ -13,94 +13,86 @@ import (
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
-func TestDialogManager_ConfirmLifecycle(t *testing.T) {
-	var dm DialogManager
+// closes feeds msg to d and reports whether the dialog asked to close.
+func closes(d dialog, msg tea.Msg) bool {
+	_, closed := d.Update(msg)
+	return closed
+}
 
-	if dm.HasConfirm() {
-		t.Fatal("expected no confirm dialog initially")
-	}
-
-	dialog := NewConfirmDialog("Test", "Are you sure?", func() tea.Msg { return nil })
-	dm.ShowConfirm(dialog)
-
-	if !dm.HasConfirm() {
-		t.Fatal("expected confirm dialog after ShowConfirm")
-	}
-
-	dm.DismissConfirm()
-
-	if dm.HasConfirm() {
-		t.Fatal("expected no confirm dialog after DismissConfirm")
+// oneOfEachDialog returns a dialog for every kind, in precedence order.
+func oneOfEachDialog() []dialog {
+	return []dialog{
+		dlgConfirm:    NewConfirmDialog("Confirm", "Sure?", func() tea.Msg { return nil }),
+		dlgParamForm:  NewParamFormDialog("deploy", []model.TaskParam{{Kind: model.ParamArg, Key: "branch"}}, func(map[string]*string) tea.Cmd { return nil }),
+		dlgRunParams:  NewRunParamsDialog("task", map[string]string{"k": "v"}),
+		dlgCopy:       NewCopyDialog("Title", "value"),
+		dlgLogHistory: NewLogHistoryDialog(0, [][]string{{"frame"}}, "committed"),
+		dlgNewRelease: NewNewReleaseDialog("1.0.0", "v2.0.0"),
+		dlgTaskDetail: NewTaskDetailDialog("alpha", &model.Task{Name: "alpha"}),
+		dlgRunDetail:  NewRunDetailDialog(&model.Run{ID: "r1", TaskName: "t1"}, false, 1),
+		dlgHelp:       &HelpDialog{},
 	}
 }
 
-func TestDialogManager_CopyLifecycle(t *testing.T) {
-	var dm DialogManager
-
-	if dm.HasCopy() {
-		t.Fatal("expected no copy dialog initially")
-	}
-
-	dm.ShowCopy("Title", "some-value")
-
-	if !dm.HasCopy() {
-		t.Fatal("expected copy dialog after ShowCopy")
-	}
-
-	dm.DismissCopy()
-
-	if dm.HasCopy() {
-		t.Fatal("expected no copy dialog after DismissCopy")
-	}
-}
-
-func TestDialogManager_RunParamsLifecycle(t *testing.T) {
-	var dm DialogManager
-
-	if dm.HasRunParams() {
-		t.Fatal("expected no run-params dialog initially")
-	}
-
-	dm.ShowRunParams(NewRunParamsDialog("task", map[string]string{"k": "v"}))
-	if !dm.HasRunParams() {
-		t.Fatal("expected run-params dialog after ShowRunParams")
-	}
-
-	if !dm.UpdateRunParams(tea.KeyPressMsg{Code: tea.KeyEscape}) {
-		t.Fatal("expected run-params dialog to close on Esc")
-	}
-	if dm.HasRunParams() {
-		t.Fatal("expected run-params dialog to be nil after close")
+func TestDialogManager_ShowHasDismiss(t *testing.T) {
+	for kind, d := range oneOfEachDialog() {
+		var dm DialogManager
+		k := dialogKind(kind)
+		if dm.Has(k) {
+			t.Fatalf("kind %d: expected no dialog initially", k)
+		}
+		dm.Show(k, d)
+		if !dm.Has(k) {
+			t.Fatalf("kind %d: expected dialog after Show", k)
+		}
+		if dm.RenderOverlays("base", 80, 24) == "base" {
+			t.Fatalf("kind %d: expected RenderOverlays to render the dialog", k)
+		}
+		dm.Dismiss(k)
+		if dm.Has(k) {
+			t.Fatalf("kind %d: expected no dialog after Dismiss", k)
+		}
 	}
 }
 
-func TestDialogManager_UpdateConfirm_Closes(t *testing.T) {
-	var dm DialogManager
-	dialog := NewConfirmDialog("Test", "Confirm?", func() tea.Msg { return nil })
-	dm.ShowConfirm(dialog)
-
-	// Pressing Esc should close the dialog. Production dismisses via
-	// UpdateConfirmKeep + DismissConfirm.
-	_, closed := dm.UpdateConfirmKeep(tea.KeyPressMsg{Code: tea.KeyEscape})
-	if !closed {
-		t.Fatal("expected confirm dialog to close on Esc")
-	}
-	dm.DismissConfirm()
-	if dm.HasConfirm() {
-		t.Fatal("expected confirm dialog to be nil after Esc")
+// Every dialog closes on Esc (the run inspector and task inspector included).
+func TestDialogs_CloseOnEsc(t *testing.T) {
+	for kind, d := range oneOfEachDialog() {
+		if !closes(d, tea.KeyPressMsg{Code: tea.KeyEscape}) {
+			t.Fatalf("kind %d: expected Esc to close the dialog", kind)
+		}
 	}
 }
 
-func TestDialogManager_UpdateCopy_Closes(t *testing.T) {
+func TestDialogManager_TopFollowsPrecedence(t *testing.T) {
 	var dm DialogManager
-	dm.ShowCopy("Test", "value")
-
-	closed := dm.UpdateCopy(tea.KeyPressMsg{Code: tea.KeyEscape})
-	if !closed {
-		t.Fatal("expected copy dialog to close on Esc")
+	all := oneOfEachDialog()
+	// Open in reverse so insertion order can't be what decides.
+	for k := len(all) - 1; k >= 0; k-- {
+		dm.Show(dialogKind(k), all[k])
 	}
-	if dm.HasCopy() {
-		t.Fatal("expected copy dialog to be nil after close")
+	for want := range all {
+		got, d, ok := dm.top()
+		if !ok || got != dialogKind(want) || d != all[want] {
+			t.Fatalf("expected kind %d on top, got %d (ok=%v)", want, got, ok)
+		}
+		dm.Dismiss(got)
+	}
+	if _, _, ok := dm.top(); ok {
+		t.Fatal("expected no dialog after dismissing all")
+	}
+}
+
+func TestDialogManager_ApplyTaskSummary(t *testing.T) {
+	var dm DialogManager
+	// A no-op with no inspector open.
+	dm.ApplyTaskSummary(uikit.TaskSummaryMsg{TaskName: "alpha"})
+
+	d := NewTaskDetailDialog("alpha", &model.Task{Name: "alpha"})
+	dm.Show(dlgTaskDetail, d)
+	dm.ApplyTaskSummary(uikit.TaskSummaryMsg{TaskName: "alpha", Total: 5, Success: 4, Failed: 1})
+	if !d.health.loaded || d.health.summary.Total != 5 {
+		t.Fatalf("expected the open inspector to receive the summary, got %+v", d.health)
 	}
 }
 
@@ -204,7 +196,7 @@ func TestDialogManager_SyncMouseState(t *testing.T) {
 	}
 
 	// Show copy dialog -> should disable mouse.
-	dm.ShowCopy("Test", "val")
+	dm.Show(dlgCopy, NewCopyDialog("Test", "val"))
 	cmd = dm.SyncMouseState()
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd to disable mouse")
@@ -220,7 +212,7 @@ func TestDialogManager_SyncMouseState(t *testing.T) {
 	}
 
 	// Dismiss dialog -> should re-enable mouse.
-	dm.DismissCopy()
+	dm.Dismiss(dlgCopy)
 	cmd = dm.SyncMouseState()
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd to re-enable mouse")
@@ -257,7 +249,7 @@ func TestDialogManager_SyncMouseState_Hold(t *testing.T) {
 	// dialog is open must keep mouse disabled.
 	dm.SetMouseHold(true)
 	_ = dm.SyncMouseState()
-	dm.ShowCopy("Test", "val")
+	dm.Show(dlgCopy, NewCopyDialog("Test", "val"))
 	dm.SetMouseHold(false)
 	cmd = dm.SyncMouseState()
 	if cmd != nil {
@@ -288,7 +280,7 @@ func TestDialogManager_IsShuttingDown(t *testing.T) {
 
 	// Dialog present but not in shutdown mode.
 	d := NewConfirmDialog("Quit?", "Are you sure?", func() tea.Msg { return nil })
-	dm.ShowConfirm(d)
+	dm.Show(dlgConfirm, d)
 	if dm.IsShuttingDown() {
 		t.Fatal("expected IsShuttingDown=false before StartShutdown")
 	}
@@ -325,232 +317,19 @@ func TestDialogManager_UpdateSpinner_NoDialog(t *testing.T) {
 func TestDialogManager_UpdateSpinner_WithDialog(t *testing.T) {
 	var dm DialogManager
 	d := NewConfirmDialog("Quit?", "Stopping...", func() tea.Msg { return nil })
-	dm.ShowConfirm(d)
+	dm.Show(dlgConfirm, d)
 	dm.StartShutdown() //nolint:errcheck
 
 	// Produce a real spinner tick message via wrapSpinnerCmd.
-	tickCmd := dm.confirmDialog.spinnerTick()
+	tickCmd := dm.confirm().spinnerTick()
 	tickMsg := tickCmd()
 
 	// Forward to UpdateSpinner; must not panic.
 	_ = dm.UpdateSpinner(tickMsg)
 }
 
-// TestDialogManager_UpdateConfirmKeep does not dismiss the dialog after a key press.
-func TestDialogManager_UpdateConfirmKeep(t *testing.T) {
-	var dm DialogManager
-	d := NewConfirmDialog("Test", "Keep?", func() tea.Msg { return nil })
-	dm.ShowConfirm(d)
-
-	// Press Esc — normally closes; UpdateConfirmKeep must NOT dismiss it.
-	_, closed := dm.UpdateConfirmKeep(tea.KeyPressMsg{Code: tea.KeyEscape})
-	if !closed {
-		t.Fatal("expected closed=true from Esc")
-	}
-	// Dialog must still be present because UpdateConfirmKeep doesn't dismiss.
-	if !dm.HasConfirm() {
-		t.Fatal("expected dialog still present after UpdateConfirmKeep")
-	}
-}
-
-// TestDialogManager_UpdateConfirmKeep_YesCmd returns the confirm cmd without dismissing.
-func TestDialogManager_UpdateConfirmKeep_YesCmd(t *testing.T) {
-	var dm DialogManager
-	var fired bool
-	d := NewConfirmDialog("Test", "Sure?", func() tea.Msg { fired = true; return nil })
-	dm.ShowConfirm(d)
-
-	// Drive the keyboard shortcut for "yes".
-	cmd, closed := dm.UpdateConfirmKeep(tea.KeyPressMsg{Code: 'y', Text: "y"})
-	if !closed {
-		t.Fatal("expected closed=true on y")
-	}
-	if cmd == nil {
-		t.Fatal("expected non-nil cmd on y")
-	}
-	if !dm.HasConfirm() {
-		t.Fatal("dialog must survive UpdateConfirmKeep")
-	}
-	cmd() //nolint:errcheck
-	if !fired {
-		t.Fatal("expected confirm callback to fire")
-	}
-}
-
-func TestDialogManager_ParamFormLifecycle(t *testing.T) {
-	var dm DialogManager
-	if dm.HasParamForm() {
-		t.Fatal("expected no param form initially")
-	}
-
-	params := []model.TaskParam{{Kind: model.ParamArg, Key: "branch"}}
-	submit := func(map[string]*string) tea.Cmd { return nil }
-	dm.ShowParamForm(NewParamFormDialog("deploy", params, submit))
-	if !dm.HasParamForm() {
-		t.Fatal("expected param form after ShowParamForm")
-	}
-
-	// Esc closes the form; UpdateParamForm reports closed and clears it.
-	_, closed := dm.UpdateParamForm(tea.KeyPressMsg{Code: tea.KeyEscape})
-	if !closed {
-		t.Fatal("expected param form to close on Esc")
-	}
-	if dm.HasParamForm() {
-		t.Fatal("expected param form nil after close")
-	}
-
-	// DismissParamForm is also idempotent / safe to call directly.
-	dm.ShowParamForm(NewParamFormDialog("deploy", params, submit))
-	dm.DismissParamForm()
-	if dm.HasParamForm() {
-		t.Fatal("expected param form nil after DismissParamForm")
-	}
-}
-
-func TestDialogManager_DismissRunParams(t *testing.T) {
-	var dm DialogManager
-	dm.ShowRunParams(NewRunParamsDialog("task", map[string]string{"k": "v"}))
-	dm.DismissRunParams()
-	if dm.HasRunParams() {
-		t.Fatal("expected run-params nil after DismissRunParams")
-	}
-}
-
-func TestDialogManager_TaskDetailLifecycle(t *testing.T) {
-	var dm DialogManager
-	if dm.HasTaskDetail() {
-		t.Fatal("expected no task detail initially")
-	}
-
-	dm.ShowTaskDetail("alpha", &model.Task{Name: "alpha"}, false, nil)
-	if !dm.HasTaskDetail() {
-		t.Fatal("expected task detail after ShowTaskDetail")
-	}
-
-	// Async health figures flow in via ApplyTaskSummary while open (a no-op when
-	// the message is for another task).
-	dm.ApplyTaskSummary(uikit.TaskSummaryMsg{TaskName: "alpha", Total: 5, Success: 4, Failed: 1})
-
-	// Esc closes the inspector.
-	if !dm.UpdateTaskDetail(tea.KeyPressMsg{Code: tea.KeyEscape}) {
-		t.Fatal("expected task detail to close on Esc")
-	}
-	if dm.HasTaskDetail() {
-		t.Fatal("expected task detail nil after close")
-	}
-
-	// ApplyTaskSummary is a no-op once the inspector has closed.
-	dm.ApplyTaskSummary(uikit.TaskSummaryMsg{TaskName: "alpha"})
-
-	dm.ShowTaskDetail("beta", nil, false, nil)
-	dm.DismissTaskDetail()
-	if dm.HasTaskDetail() {
-		t.Fatal("expected task detail nil after DismissTaskDetail")
-	}
-}
-
-func TestDialogManager_RunDetailLifecycle(t *testing.T) {
-	var dm DialogManager
-	if dm.HasRunDetail() {
-		t.Fatal("expected no run detail initially")
-	}
-
-	dm.ShowRunDetail(&model.Run{ID: "r1", TaskName: "t1"}, false, 1, nil)
-	if !dm.HasRunDetail() {
-		t.Fatal("expected run detail after ShowRunDetail")
-	}
-
-	if !dm.UpdateRunDetail(tea.KeyPressMsg{Code: tea.KeyEscape}) {
-		t.Fatal("expected run detail to close on Esc")
-	}
-	if dm.HasRunDetail() {
-		t.Fatal("expected run detail nil after close")
-	}
-}
-
-func TestDialogManager_LogHistoryLifecycle(t *testing.T) {
-	var dm DialogManager
-	if dm.HasLogHistory() {
-		t.Fatal("expected no log history initially")
-	}
-
-	dm.ShowLogHistory(NewLogHistoryDialog(0, [][]string{{"frame"}}, "committed"))
-	if !dm.HasLogHistory() {
-		t.Fatal("expected log history after ShowLogHistory")
-	}
-
-	if !dm.UpdateLogHistory(tea.KeyPressMsg{Code: tea.KeyEscape}) {
-		t.Fatal("expected log history to close on Esc")
-	}
-	if dm.HasLogHistory() {
-		t.Fatal("expected log history nil after close")
-	}
-
-	dm.ShowLogHistory(NewLogHistoryDialog(0, [][]string{{"x"}}, "y"))
-	dm.DismissLogHistory()
-	if dm.HasLogHistory() {
-		t.Fatal("expected log history nil after DismissLogHistory")
-	}
-}
-
-func TestDialogManager_NewReleaseLifecycle(t *testing.T) {
-	var dm DialogManager
-	if dm.HasNewRelease() {
-		t.Fatal("expected no new-release dialog initially")
-	}
-
-	dm.ShowNewRelease("1.0.0", "v2.0.0")
-	if !dm.HasNewRelease() {
-		t.Fatal("expected new-release dialog after ShowNewRelease")
-	}
-
-	if dm.RenderOverlays("base", 80, 24) == "base" {
-		t.Fatal("expected RenderOverlays to render the new-release modal, not fall through")
-	}
-
-	cmd, closed := dm.UpdateNewRelease(tea.KeyPressMsg{Code: 'x', Text: "x"})
-	if !closed {
-		t.Fatal("expected an unrecognized key to close the dialog")
-	}
-	if cmd != nil {
-		t.Fatal("expected no command from a plain dismiss")
-	}
-	if dm.HasNewRelease() {
-		t.Fatal("expected new-release dialog nil after close")
-	}
-
-	dm.ShowNewRelease("1.0.0", "v2.0.0")
-	dm.DismissNewRelease()
-	if dm.HasNewRelease() {
-		t.Fatal("expected new-release dialog nil after DismissNewRelease")
-	}
-}
-
-func TestDialogManager_HelpLifecycle(t *testing.T) {
-	var dm DialogManager
-
-	if dm.HasHelp() {
-		t.Fatal("expected no help dialog initially")
-	}
-
-	dm.ShowHelp()
-
-	if !dm.HasHelp() {
-		t.Fatal("expected help dialog after ShowHelp")
-	}
-
-	dm.DismissHelp()
-
-	if dm.HasHelp() {
-		t.Fatal("expected no help dialog after DismissHelp")
-	}
-}
-
-func TestDialogManager_UpdateHelp_ClosesOnCloseKeys(t *testing.T) {
+func TestHelpDialog_ClosesOnCloseKeys(t *testing.T) {
 	for _, key := range []string{"?", "esc", "enter", "q"} {
-		var dm DialogManager
-		dm.ShowHelp()
-
 		msg := tea.KeyPressMsg{Code: []rune(key)[0], Text: key}
 		if key == "esc" {
 			msg = tea.KeyPressMsg{Code: tea.KeyEscape}
@@ -558,32 +337,23 @@ func TestDialogManager_UpdateHelp_ClosesOnCloseKeys(t *testing.T) {
 		if key == "enter" {
 			msg = tea.KeyPressMsg{Code: tea.KeyEnter}
 		}
-		if !dm.UpdateHelp(msg) {
+		if !closes(&HelpDialog{}, msg) {
 			t.Fatalf("expected %q to close the help dialog", key)
-		}
-		if dm.HasHelp() {
-			t.Fatalf("expected help dialog dismissed after %q", key)
 		}
 	}
 }
 
-func TestDialogManager_UpdateHelp_IgnoresOtherKeys(t *testing.T) {
-	var dm DialogManager
-	dm.ShowHelp()
-
-	if dm.UpdateHelp(tea.KeyPressMsg{Code: 'x', Text: "x"}) {
+func TestHelpDialog_IgnoresOtherKeys(t *testing.T) {
+	if closes(&HelpDialog{}, tea.KeyPressMsg{Code: 'x', Text: "x"}) {
 		t.Fatal("expected 'x' to keep the help dialog open")
-	}
-	if !dm.HasHelp() {
-		t.Fatal("expected help dialog still active")
 	}
 }
 
 func TestDialogManager_RenderOverlays_ConfirmTakesPrecedenceOverHelp(t *testing.T) {
 	var dm DialogManager
-	dm.ShowHelp()
+	dm.Show(dlgHelp, &HelpDialog{})
 	dialog := NewConfirmDialog("Quit", "Sure?", func() tea.Msg { return nil })
-	dm.ShowConfirm(dialog)
+	dm.Show(dlgConfirm, dialog)
 
 	out := dm.RenderOverlays("base", 80, 40)
 	if out == "base" {
@@ -597,7 +367,7 @@ func TestDialogManager_RenderOverlays_ConfirmTakesPrecedenceOverHelp(t *testing.
 }
 
 func TestHelpDialog_ViewListsSections(t *testing.T) {
-	d := NewHelpDialog()
+	d := &HelpDialog{}
 	// A tall screen fits the whole reference table without scrolling.
 	out := d.View(100, 80)
 	for _, want := range []string{"Keyboard Shortcuts", "Global", "Navigate", "Exec view", "Notifications"} {
@@ -608,7 +378,7 @@ func TestHelpDialog_ViewListsSections(t *testing.T) {
 }
 
 func TestHelpDialog_ScrollsWhenTallerThanScreen(t *testing.T) {
-	d := NewHelpDialog()
+	d := &HelpDialog{}
 
 	// A short screen can't fit every section; the last one is below the fold.
 	top := d.View(100, 24)
@@ -623,7 +393,7 @@ func TestHelpDialog_ScrollsWhenTallerThanScreen(t *testing.T) {
 	}
 
 	// Jump to the end and the last section comes into view.
-	if d.Update(tea.KeyPressMsg{Code: 'G', Text: "G"}) {
+	if closes(d, tea.KeyPressMsg{Code: 'G', Text: "G"}) {
 		t.Fatal("end key should scroll, not close")
 	}
 	bottom := d.View(100, 24)
@@ -633,7 +403,7 @@ func TestHelpDialog_ScrollsWhenTallerThanScreen(t *testing.T) {
 }
 
 func TestHelpDialog_ScrollKeysKeepOpen(t *testing.T) {
-	d := NewHelpDialog()
+	d := &HelpDialog{}
 	d.View(100, 24) // prime the viewport/total cache
 	for _, key := range []tea.KeyPressMsg{
 		{Code: tea.KeyDown},
@@ -643,7 +413,7 @@ func TestHelpDialog_ScrollKeysKeepOpen(t *testing.T) {
 		{Code: tea.KeyHome},
 		{Code: tea.KeyEnd},
 	} {
-		if d.Update(key) {
+		if closes(d, key) {
 			t.Fatalf("scroll key %v should not close the help dialog", key)
 		}
 	}

@@ -41,7 +41,7 @@ func TestOpenLaunchURL_InsecureRemoteShowsConfirm(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("insecure remote launch must defer to a confirm dialog, not return a launch cmd")
 	}
-	if !m.dialogs.HasConfirm() {
+	if !m.dialogs.Has(dlgConfirm) {
 		t.Fatal("insecure remote launch must raise a confirmation dialog")
 	}
 }
@@ -60,7 +60,7 @@ func TestOpenLaunchURL_SecureBaseOpensDirectly(t *testing.T) {
 		if cmd == nil {
 			t.Fatalf("secure base %q must open directly", base)
 		}
-		if m.dialogs.HasConfirm() {
+		if m.dialogs.Has(dlgConfirm) {
 			t.Fatalf("secure base %q must not raise a confirmation dialog", base)
 		}
 	}

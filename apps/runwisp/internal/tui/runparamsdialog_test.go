@@ -34,24 +34,24 @@ func TestRunParamsDialog_UpdateClosesOnKeys(t *testing.T) {
 	for name, msg := range closeKeys {
 		t.Run(name, func(t *testing.T) {
 			d := NewRunParamsDialog("t", map[string]string{"k": "v"})
-			assert.True(t, d.Update(msg), "expected close on %q", name)
+			assert.True(t, closes(d, msg), "expected close on %q", name)
 		})
 	}
 }
 
 func TestRunParamsDialog_UpdateIgnoresOtherKeys(t *testing.T) {
 	d := NewRunParamsDialog("t", map[string]string{"k": "v"})
-	assert.False(t, d.Update(tea.KeyPressMsg{Code: 'a', Text: "a"}))
+	assert.False(t, closes(d, tea.KeyPressMsg{Code: 'a', Text: "a"}))
 }
 
 func TestRunParamsDialog_UpdateRightClickCloses(t *testing.T) {
 	d := NewRunParamsDialog("t", map[string]string{"k": "v"})
-	assert.True(t, d.Update(tea.MouseClickMsg{Button: tea.MouseRight}))
+	assert.True(t, closes(d, tea.MouseClickMsg{Button: tea.MouseRight}))
 }
 
 func TestRunParamsDialog_UpdateLeftClickDoesNotClose(t *testing.T) {
 	d := NewRunParamsDialog("t", map[string]string{"k": "v"})
-	assert.False(t, d.Update(tea.MouseClickMsg{Button: tea.MouseLeft}))
+	assert.False(t, closes(d, tea.MouseClickMsg{Button: tea.MouseLeft}))
 }
 
 func TestRunParamsDialog_ViewContainsTitleAndPairs(t *testing.T) {

@@ -338,7 +338,7 @@ func TestConfirmHelpers_Guards(t *testing.T) {
 		if cmd := m.confirmRestartService(); cmd != nil {
 			t.Fatalf("showConfirmDialog returns nil itself, got %v", cmd)
 		}
-		if !m.dialogs.HasConfirm() {
+		if !m.dialogs.Has(dlgConfirm) {
 			t.Fatal("expected a confirm dialog to be queued")
 		}
 	})
@@ -354,7 +354,7 @@ func TestConfirmHelpers_Guards(t *testing.T) {
 		m := newTestModel(svc)
 		selectSidebarItem(&m, 1)
 		m.confirmStopService()
-		if !m.dialogs.HasConfirm() {
+		if !m.dialogs.Has(dlgConfirm) {
 			t.Fatal("expected a confirm dialog to be queued")
 		}
 	})
@@ -393,7 +393,7 @@ func TestTriggerRun_ShowsConfirmDialog(t *testing.T) {
 	m.client = newDummyClient()
 
 	m.triggerRun()
-	if !m.dialogs.HasConfirm() {
+	if !m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected trigger to queue a confirm dialog for a cron task")
 	}
 }
@@ -407,7 +407,7 @@ func TestTriggerRun_ServiceDelegatesToRestart(t *testing.T) {
 	m.client = newDummyClient()
 
 	m.triggerRun()
-	if !m.dialogs.HasConfirm() {
+	if !m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected a restart-service dialog to be queued")
 	}
 }
@@ -430,7 +430,7 @@ func TestDeleteCurrentRun_ActsImmediately(t *testing.T) {
 	if m.deleteCurrentRun() == nil {
 		t.Fatal("expected a delete command for a deletable run")
 	}
-	if m.dialogs.HasConfirm() {
+	if m.dialogs.Has(dlgConfirm) {
 		t.Fatal("delete must act immediately, not queue a confirm dialog")
 	}
 }
@@ -442,7 +442,7 @@ func TestShowRunParams_OpensDialogWhenRunHasParams(t *testing.T) {
 	m.execView = &ev
 
 	m.showRunParams()
-	if !m.dialogs.HasRunParams() {
+	if !m.dialogs.Has(dlgRunParams) {
 		t.Fatal("expected run-params dialog to open for run with params")
 	}
 }
@@ -454,7 +454,7 @@ func TestShowRunParams_NoopWhenNoParams(t *testing.T) {
 	m.execView = &ev
 
 	m.showRunParams()
-	if m.dialogs.HasRunParams() {
+	if m.dialogs.Has(dlgRunParams) {
 		t.Fatal("expected no run-params dialog when run has no params")
 	}
 }
@@ -471,7 +471,7 @@ func TestDeleteCurrentRun_GuardsAgainstRunning(t *testing.T) {
 	if m.deleteCurrentRun() != nil {
 		t.Fatal("expected nil cmd for running run")
 	}
-	if m.dialogs.HasConfirm() {
+	if m.dialogs.Has(dlgConfirm) {
 		t.Fatal("running run must not queue a delete dialog")
 	}
 }
@@ -491,7 +491,7 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 		selectSidebarItem(&m, 1)
 		m.client = newDummyClient()
 		m.confirmAction(confirmActionTrigger)
-		if !m.dialogs.HasConfirm() {
+		if !m.dialogs.Has(dlgConfirm) {
 			t.Fatal("expected Trigger to queue a confirm dialog")
 		}
 	})
@@ -501,7 +501,7 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 		selectSidebarItem(&m, 2) // svc
 		m.client = newDummyClient()
 		m.confirmAction(confirmActionRestartService)
-		if !m.dialogs.HasConfirm() {
+		if !m.dialogs.Has(dlgConfirm) {
 			t.Fatal("expected RestartService to queue a dialog")
 		}
 	})
@@ -511,7 +511,7 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 		selectSidebarItem(&m, 2) // svc
 		m.client = newDummyClient()
 		m.confirmAction(confirmActionStopService)
-		if !m.dialogs.HasConfirm() {
+		if !m.dialogs.Has(dlgConfirm) {
 			t.Fatal("expected StopService to queue a dialog")
 		}
 	})
@@ -523,7 +523,7 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 		ev := execlist.NewExecView(run)
 		m.execView = &ev
 		m.confirmAction(confirmActionStop)
-		if !m.dialogs.HasConfirm() {
+		if !m.dialogs.Has(dlgConfirm) {
 			t.Fatal("expected Stop to queue a dialog for a running run")
 		}
 	})
@@ -539,7 +539,7 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 			t.Skip("precondition: ended run with error reason must be retryable")
 		}
 		m.confirmAction(confirmActionRetry)
-		if !m.dialogs.HasConfirm() {
+		if !m.dialogs.Has(dlgConfirm) {
 			t.Fatal("expected Retry to queue a confirm dialog")
 		}
 	})
@@ -554,7 +554,7 @@ func TestConfirmAction_DispatchesToEveryAction(t *testing.T) {
 		if m.confirmAction(confirmActionDelete) == nil {
 			t.Fatal("expected Delete to return a command for a deletable run")
 		}
-		if m.dialogs.HasConfirm() {
+		if m.dialogs.Has(dlgConfirm) {
 			t.Fatal("Delete must act immediately, not queue a confirm dialog")
 		}
 	})
@@ -606,7 +606,7 @@ func TestConfirmStop_HappyPath(t *testing.T) {
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
 	m.confirmStop()
-	if !m.dialogs.HasConfirm() {
+	if !m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected Stop dialog for running execution")
 	}
 }
@@ -621,7 +621,7 @@ func TestRetryRun_HappyPath(t *testing.T) {
 	ev := execlist.NewExecView(run)
 	m.execView = &ev
 	m.retryRun()
-	if !m.dialogs.HasConfirm() {
+	if !m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected retry to queue a confirm dialog for a retryable run")
 	}
 }
@@ -634,7 +634,7 @@ func TestConfirmRestartService_MultipleInstancesUsesPluralPrompt(t *testing.T) {
 	selectSidebarItem(&m, 1)
 	m.client = newDummyClient()
 	m.confirmRestartService()
-	if !m.dialogs.HasConfirm() {
+	if !m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected restart-service dialog")
 	}
 }
@@ -774,7 +774,7 @@ func TestConfirmStopService_HappyPath(t *testing.T) {
 	selectSidebarItem(&m, 1)
 	m.client = newDummyClient()
 	m.confirmStopService()
-	if !m.dialogs.HasConfirm() {
+	if !m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected stop-service dialog to be queued")
 	}
 }
@@ -788,7 +788,7 @@ func TestConfirmStopService_FromHome(t *testing.T) {
 	m.openExecView(&model.Run{ID: "r-svc", TaskName: "svc", Status: model.PhaseRunning})
 	m.panelFocus = uikit.PanelMain
 	m.confirmStopService()
-	if !m.dialogs.HasConfirm() {
+	if !m.dialogs.Has(dlgConfirm) {
 		t.Fatal("expected stop-service dialog for the open run's task")
 	}
 }
@@ -931,7 +931,7 @@ func TestRequestQuit_RemoteSkipsAutostartHint(t *testing.T) {
 	m.isRemote = true
 	m.startedDaemon = true
 	m.requestQuit()
-	d := m.dialogs.confirmDialog
+	d := m.dialogs.confirm()
 	if d == nil {
 		t.Fatal("expected confirm dialog after requestQuit with isRemote=true")
 	}
