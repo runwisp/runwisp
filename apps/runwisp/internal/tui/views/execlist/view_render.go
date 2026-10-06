@@ -125,10 +125,7 @@ func (v *ExecView) renderTitleRow(w int) string {
 	idX1 := uikit.SidebarWidth + lipgloss.Width(headerLeft)
 	v.headerLayout.add(HeaderFocusID, idX0, idX1, 1)
 	headerRight := statusBadge + bgLight.Render("  ")
-	headerGap := w - lipgloss.Width(headerLeft) - lipgloss.Width(headerRight)
-	if headerGap < 1 {
-		headerGap = 1
-	}
+	headerGap := max(w-lipgloss.Width(headerLeft)-lipgloss.Width(headerRight), 1)
 	return headerLeft + bgLight.Render(strings.Repeat(" ", headerGap)) + headerRight
 }
 

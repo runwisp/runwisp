@@ -237,10 +237,7 @@ func (w *ExecWindow) FetchAroundCmd(scroll, vpH int) func() (FetchResult, error)
 
 	return func() (FetchResult, error) {
 		// Center the window on the current scroll position.
-		offset := scroll - windowSize/2
-		if offset < 0 {
-			offset = 0
-		}
+		offset := max(scroll-windowSize/2, 0)
 
 		// The list is always newest-first.
 		params := apiclient.RunsParams{
@@ -371,10 +368,7 @@ func (w *ExecWindow) UpdateVisibleTimes(scroll, vpH int) {
 	if end > w.windowStart+len(w.items) {
 		end = w.windowStart + len(w.items)
 	}
-	start := scroll
-	if start < w.windowStart {
-		start = w.windowStart
-	}
+	start := max(scroll, w.windowStart)
 	for i := start; i < end; i++ {
 		local := i - w.windowStart
 		if local < 0 || local >= len(w.items) {

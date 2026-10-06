@@ -184,10 +184,7 @@ func (s *seeder) planScheduled(task *model.Task) []*runSpec {
 	loc := taskLocation(task, s.cfg)
 	fires := pastFires(sched, s.now.In(loc), s.opts.lookback)
 
-	limit := effectiveCap(task, s.cfg)
-	if limit > s.opts.maxPerScheduled {
-		limit = s.opts.maxPerScheduled
-	}
+	limit := min(effectiveCap(task, s.cfg), s.opts.maxPerScheduled)
 	if len(fires) > limit {
 		fires = fires[len(fires)-limit:]
 	}
@@ -284,10 +281,7 @@ func sampleParamValue(p model.TaskParam, rng *rand.Rand) (string, bool) {
 // loops, so their terminal reason is assigned, not derived: most are clean
 // cycles (Stopped, from the real cancellation), a fraction are forced Crashed.
 func (s *seeder) planService(task *model.Task, rng *rand.Rand) []*runSpec {
-	instances := task.Instances
-	if instances < 1 {
-		instances = 1
-	}
+	instances := max(task.Instances, 1)
 	var specs []*runSpec
 	for inst := 0; inst < instances; inst++ {
 		for i := 0; i < s.opts.servicePerInstance; i++ {
@@ -358,10 +352,7 @@ func (s *seeder) runAll(ctx context.Context, specs []*runSpec) error {
 	if len(specs) == 0 {
 		return nil
 	}
-	workers := 8 * runtime.NumCPU()
-	if workers < 8 {
-		workers = 8
-	}
+	workers := max(8*runtime.NumCPU(), 8)
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(workers)
 	for _, spec := range specs {
