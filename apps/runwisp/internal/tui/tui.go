@@ -15,7 +15,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
-	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
@@ -42,20 +41,12 @@ var (
 
 // StartTUI launches the interactive Bubble Tea TUI connected to a daemon via API.
 // If debugWriter is non-nil, it is wired to the program so that writes to it
-// appear in the TUI's debug view.
-// launchTicketFunc, when non-nil, enables one-click "Open Web UI" via launch tickets.
-// startedDaemon is true when the caller started the daemon, so quitting asks
-// whether to keep it running.
+// appear in the TUI's debug view; a nil debugWriter marks the session remote
+// (cfg.IsRemote is derived from it).
 // It blocks until the user quits. Returns the chosen uikit.QuitAction and any error.
-func StartTUI(info uikit.StartupInfo, client *apiclient.Client, debugWriter *DebugLogWriter, shutdownFunc func() error, launchTicketFunc func() (string, error), startedDaemon bool) (uikit.QuitAction, error) {
-	m := NewModel(TUIConfig{
-		Info:             info,
-		Client:           client,
-		IsRemote:         debugWriter == nil,
-		ShutdownFunc:     shutdownFunc,
-		LaunchTicketFunc: launchTicketFunc,
-		StartedDaemon:    startedDaemon,
-	})
+func StartTUI(cfg TUIConfig, debugWriter *DebugLogWriter) (uikit.QuitAction, error) {
+	cfg.IsRemote = debugWriter == nil
+	m := NewModel(cfg)
 
 	p := tea.NewProgram(m)
 

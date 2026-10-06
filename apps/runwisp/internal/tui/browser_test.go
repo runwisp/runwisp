@@ -24,7 +24,7 @@ func TestCanOpenBrowser(t *testing.T) {
 		t.Setenv("DISPLAY", "")
 		t.Setenv("WAYLAND_DISPLAY", "wayland-0")
 		assert.True(t, canOpenBrowser(), "linux with WAYLAND_DISPLAY set → true")
-	case "darwin", "windows":
+	case "darwin":
 		assert.True(t, canOpenBrowser(), "%s is always graphical", runtime.GOOS)
 	default:
 		assert.False(t, canOpenBrowser(), "unsupported platforms → false")
@@ -37,7 +37,7 @@ func TestOpenBrowser_UnsupportedPlatformErrors(t *testing.T) {
 	// a supported platform would spawn a browser, so only the fallback arm is
 	// exercised — everywhere else the switch reaches exec and there is nothing
 	// to assert that wouldn't put a window on someone's screen.
-	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		err := openBrowserDefault("about:blank")
 		assert.ErrorContains(t, err, "unsupported platform")
 	}

@@ -171,9 +171,15 @@ func launchConnectedTUI(ctx context.Context, client *apiclient.Client, mode tuiC
 		}
 	}
 
-	_, tuiErr := tui.StartTUI(startupInfo, client, nil, mode.shutdownFunc, func() (string, error) {
-		return client.CreateLaunchTicket(ctx)
-	}, mode.startedDaemon)
+	_, tuiErr := tui.StartTUI(tui.TUIConfig{
+		Info:         startupInfo,
+		Client:       client,
+		ShutdownFunc: mode.shutdownFunc,
+		LaunchTicketFunc: func() (string, error) {
+			return client.CreateLaunchTicket(ctx)
+		},
+		StartedDaemon: mode.startedDaemon,
+	}, nil)
 	return tuiErr
 }
 

@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+
+	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
 // canOpenBrowser reports whether the current environment has a graphical
@@ -15,14 +17,14 @@ import (
 // without X11/Wayland forwarding, headless servers, and containers.
 //
 // Indirected through a function variable so tests can force the headless
-// branch on graphical platforms (macOS CI runners, Windows).
+// branch on graphical platforms (macOS CI runners).
 var canOpenBrowser = canOpenBrowserDefault
 
 func canOpenBrowserDefault() bool {
 	switch runtime.GOOS {
 	case "linux":
 		return os.Getenv("DISPLAY") != "" || os.Getenv("WAYLAND_DISPLAY") != ""
-	case "darwin", "windows":
+	case "darwin":
 		return true
 	default:
 		return false
@@ -37,16 +39,27 @@ func canOpenBrowserDefault() bool {
 var openBrowser = openBrowserDefault
 
 // openBrowserDefault uses platform-specific commands: xdg-open (Linux),
-// open (macOS), cmd /c start (Windows).
+// open (macOS).
 func openBrowserDefault(url string) error {
 	switch runtime.GOOS {
 	case "linux":
 		return exec.Command("xdg-open", url).Start()
 	case "darwin":
 		return exec.Command("open", url).Start()
-	case "windows":
-		return exec.Command("cmd", "/c", "start", url).Start()
 	default:
 		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
+}
+
+// browseMsg opens url in a browser when the session has one and reports the
+// outcome; without a browser it carries just the URL so the handler can fall
+// back to the clipboard.
+func browseMsg(url string) uikit.OpenBrowserMsg {
+	if !canOpenBrowser() {
+		return uikit.OpenBrowserMsg{URL: url}
+	}
+	if err := openBrowser(url); err != nil {
+		return uikit.OpenBrowserMsg{URL: url, Err: err}
+	}
+	return uikit.OpenBrowserMsg{URL: url, BrowserOpened: true}
 }
