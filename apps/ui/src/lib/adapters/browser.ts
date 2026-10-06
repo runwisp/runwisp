@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { EventSourcePolyfill } from "event-source-polyfill";
-import { AUTH_EVENTS } from "$lib/config/constants";
+
+const AUTH_REQUIRED_EVENT = "auth-required";
 
 /**
  * Minimal SSE consumer surface — exactly what the EventManager and connectSSE
@@ -28,13 +29,13 @@ export type EventSourceFactory = (url: string) => SSEStream;
 
 export const browserAuthEventBus = {
     onAuthRequired(handler: EventListener) {
-        globalThis.addEventListener(AUTH_EVENTS.REQUIRED, handler);
+        globalThis.addEventListener(AUTH_REQUIRED_EVENT, handler);
         return () => {
-            globalThis.removeEventListener(AUTH_EVENTS.REQUIRED, handler);
+            globalThis.removeEventListener(AUTH_REQUIRED_EVENT, handler);
         };
     },
     emitAuthRequired() {
-        globalThis.dispatchEvent(new CustomEvent(AUTH_EVENTS.REQUIRED));
+        globalThis.dispatchEvent(new CustomEvent(AUTH_REQUIRED_EVENT));
     },
 };
 

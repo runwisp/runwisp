@@ -4,7 +4,7 @@
 import type { LogEvent } from "@runwisp/ui";
 import { z } from "zod";
 import { connectSSE } from "$lib/utils/sse";
-import { createLogger } from "$lib/utils/logger";
+import { createLogger } from "@runwisp/common";
 
 const logger = createLogger("LogStreamer");
 

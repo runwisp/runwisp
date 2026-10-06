@@ -1,10 +1,6 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-export const AUTH_EVENTS = {
-    REQUIRED: "auth-required",
-} as const;
-
 export const SSE_CONFIG = {
     RECONNECT_DELAY: 3000,
     MAX_RECONNECT_DELAY: 30000,

@@ -8,7 +8,7 @@ import {
     type SSEStream,
 } from "$lib/adapters/browser";
 import { type SSEErrorInfo, getMessageEventData } from "$lib/utils/event-source";
-import { createLogger } from "$lib/utils/logger";
+import { createLogger } from "@runwisp/common";
 import {
     createReconnectingConnection,
     type ReconnectingConnection,

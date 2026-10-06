@@ -6,13 +6,16 @@
     import { NotificationBell } from "@runwisp/ui";
     import { notificationStore } from "$lib/stores";
     import NotificationItem from "./NotificationItem.svelte";
-    import { hasUnreadError } from "./notification-bell.js";
 
     const POPOVER_LIMIT = 10;
 
     let open = $state(false);
     let items = $derived(notificationStore.items.slice(0, POPOVER_LIMIT));
     let extra = $derived(Math.max(0, notificationStore.items.length - POPOVER_LIMIT));
+    // An unread error notification turns the badge red.
+    let hasUnreadError = $derived(
+        notificationStore.items.some((n) => n.severity === "error" && !n.readAt),
+    );
 
     function close(): void {
         open = false;
@@ -22,7 +25,7 @@
 <NotificationBell
     bind:open
     unread={notificationStore.unread}
-    tone={hasUnreadError(notificationStore.items) ? "danger" : "primary"}
+    tone={hasUnreadError ? "danger" : "primary"}
 >
     {#snippet actions()}
         {#if notificationStore.unread > 0}
