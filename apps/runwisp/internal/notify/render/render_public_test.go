@@ -4,8 +4,6 @@
 package render_test
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,48 +14,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// ---- LoadTemplate ----
+// ---- LoadDefaultTemplate ----
 
-func TestLoadTemplate_FallsBackToEmbeddedDefault(t *testing.T) {
-	body, err := render.LoadTemplate("slack", "")
-	require.NoError(t, err)
-	assert.NotEmpty(t, body)
-	// Embedded slack template is JSON — it must contain "blocks".
-	assert.Contains(t, body, "blocks")
-}
-
-func TestLoadTemplate_TrimSpacesUserPath(t *testing.T) {
-	body, err := render.LoadTemplate("inapp", "   ")
-	require.NoError(t, err)
-	assert.NotEmpty(t, body)
-}
-
-func TestLoadTemplate_UserPathOverridesDefault(t *testing.T) {
-	dir := t.TempDir()
-	custom := filepath.Join(dir, "custom.tmpl.txt")
-	require.NoError(t, os.WriteFile(custom, []byte("custom body"), 0644))
-
-	body, err := render.LoadTemplate("slack", custom)
-	require.NoError(t, err)
-	assert.Equal(t, "custom body", body)
-}
-
-func TestLoadTemplate_UserPathMissingReturnsError(t *testing.T) {
-	_, err := render.LoadTemplate("slack", "/nonexistent/path/tmpl.txt")
+func TestLoadDefaultTemplate_UnknownNameReturnsError(t *testing.T) {
+	_, err := render.LoadDefaultTemplate("unknown-provider")
 	assert.Error(t, err)
 }
 
-func TestLoadTemplate_UnknownDefaultNameReturnsError(t *testing.T) {
-	_, err := render.LoadTemplate("unknown-provider", "")
-	assert.Error(t, err)
-}
-
-func TestLoadTemplate_AllKnownDefaultsLoad(t *testing.T) {
+func TestLoadDefaultTemplate_AllKnownDefaultsLoad(t *testing.T) {
 	for _, name := range []string{"slack", "telegram", "inapp"} {
-		body, err := render.LoadTemplate(name, "")
+		body, err := render.LoadDefaultTemplate(name)
 		assert.NoError(t, err, "provider %q should have an embedded default", name)
 		assert.NotEmpty(t, body, "embedded template for %q should not be empty", name)
 	}
+	// Embedded slack template is JSON — it must contain "blocks".
+	body, err := render.LoadDefaultTemplate("slack")
+	require.NoError(t, err)
+	assert.Contains(t, body, "blocks")
 }
 
 // ---- NewTemplateRenderer / Render ----

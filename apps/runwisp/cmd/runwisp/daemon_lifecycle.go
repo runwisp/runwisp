@@ -143,7 +143,7 @@ func gracefulShutdown(cancelStation context.CancelFunc, stationWG *sync.WaitGrou
 	defer cancelInput()
 	waitInput(inputCtx, stationWG, srv)
 
-	taskTimeout := svc.TaskShutdownTimeout
+	taskTimeout := time.Duration(svc.TaskShutdownTimeout.Load())
 	if taskTimeout <= 0 {
 		// Operator hasn't configured one — fall back to the historical 3s
 		// to keep developer setups responsive.
@@ -211,15 +211,13 @@ func waitDrain(ctx context.Context, svc *daemonServices, taskTimeout time.Durati
 			svc.Scheduler.Stop()
 		}()
 	}
-	if svc.Notify.Service != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := svc.Notify.Service.Stop(ctx); err != nil {
-				slog.Warn("notification service shutdown error", "err", err)
-			}
-		}()
-	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := svc.Notify.Stop(ctx); err != nil {
+			slog.Warn("notification service shutdown error", "err", err)
+		}
+	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -371,7 +369,8 @@ func handleReloadSignal(rt *daemonRuntime) {
 		return
 	}
 	slog.Info("reload applied",
-		"added", len(result.Added), "changed", len(result.Changed), "removed", len(result.Removed))
+		"added", len(result.Added), "changed", len(result.Changed), "removed", len(result.Removed),
+		"settings", result.Settings)
 }
 
 // runWithTUI starts the interactive TUI, waits for it to exit, then shuts down

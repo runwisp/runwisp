@@ -1137,6 +1137,16 @@
               "null"
             ]
           },
+          "settings": {
+            "description": "Daemon-wide settings the reload applied, as TOML keys; notifications covers [notify], [notifiers.*] and [[route]]",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "warnings": {
             "description": "Non-fatal findings in the newly-live config, e.g. crontab jobs that could not be scheduled",
             "items": {
@@ -2754,7 +2764,7 @@
     },
     "/api/daemon/reload": {
       "post": {
-        "description": "Re-reads the config file and reconciles the live task set (added/changed/removed). Validate-first: a config that fails to load or changes a restart-only setting is rejected and nothing is applied.",
+        "description": "Re-reads the config file, reconciles the live task set (added/changed/removed) and applies changed daemon-wide settings. Validate-first: a config that fails to load or changes a restart-only setting is rejected and nothing is applied.",
         "operationId": "reload",
         "responses": {
           "200": {

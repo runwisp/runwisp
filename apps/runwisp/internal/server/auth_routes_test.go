@@ -60,13 +60,13 @@ func TestProtectedRoute_RejectsTokenWithWrongIssuer(t *testing.T) {
 
 func TestParseTrustedProxies_RejectsCatchAll(t *testing.T) {
 	for _, cidr := range []string{"0.0.0.0/0", "::/0"} {
-		_, err := parseTrustedProxies(cidr)
+		_, err := parseTrustedProxies([]string{cidr})
 		assert.Error(t, err, "expected %s to be rejected", cidr)
 	}
 }
 
 func TestParseTrustedProxies_AcceptsValidCIDR(t *testing.T) {
-	opts, err := parseTrustedProxies("10.0.0.0/8,127.0.0.1")
+	opts, err := parseTrustedProxies([]string{"10.0.0.0/8", "127.0.0.1"})
 	require.NoError(t, err)
 	require.Len(t, opts, 2)
 	assert.Equal(t, "127.0.0.1/32", opts[1].String())
@@ -142,7 +142,7 @@ func TestIsProxiedRequest(t *testing.T) {
 	})
 
 	t.Run("trusted proxy peer without headers", func(t *testing.T) {
-		opts, err := parseTrustedProxies("127.0.0.1")
+		opts, err := parseTrustedProxies([]string{"127.0.0.1"})
 		require.NoError(t, err)
 		r := httptest.NewRequest("GET", "/", nil)
 		r.RemoteAddr = "127.0.0.1:1234"
@@ -458,7 +458,7 @@ func TestAuthStatus_AuthenticatedViaCookie(t *testing.T) {
 // Behind a trusted proxy the limiter must key off the hop the proxy appended,
 // not the client-controlled left end of X-Forwarded-For.
 func TestAuthRateLimit_NotBypassableViaSpoofedXFFBehindTrustedProxy(t *testing.T) {
-	s, _, _, _ := setupServerWithOpts(t, func(o *Options) { o.TrustedProxies = "10.0.0.0/8" })
+	s, _, _, _ := setupServerWithOpts(t, func(o *Options) { o.TrustedProxies = []string{"10.0.0.0/8"} })
 
 	var lastCode int
 	for i := 0; i < auth.MaxAuthAttempts+3; i++ {

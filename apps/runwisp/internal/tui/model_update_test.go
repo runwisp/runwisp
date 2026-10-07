@@ -1121,6 +1121,11 @@ func TestReloadSummary(t *testing.T) {
 			},
 			"✓ Config reloaded: +1 added, -2 removed, ~1 changed",
 		},
+		{
+			"settings only",
+			&model.ReloadResult{Settings: []string{"notifications"}},
+			"✓ Config reloaded: settings updated",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

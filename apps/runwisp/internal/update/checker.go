@@ -51,14 +51,17 @@ type Checker struct {
 	os      string
 	arch    string
 	source  string // install channel, see installSource
-	enabled bool
 
 	baseURL string
 	client  *http.Client
+	wake    chan struct{} // nudges Run when SetEnabled flips the toggle
 
 	mu        sync.RWMutex
+	enabled   bool
 	available bool
 	latest    string
+	// cancelCheck cancels the check in flight, if any; see startCheck.
+	cancelCheck context.CancelFunc
 }
 
 // NewChecker builds a checker for the running build. current is version.Version;
@@ -73,7 +76,50 @@ func NewChecker(current, goos, goarch string, enabled bool) *Checker {
 		enabled: enabled,
 		baseURL: DefaultBaseURL,
 		client:  &http.Client{Timeout: requestTimeout},
+		wake:    make(chan struct{}, 1),
 	}
+}
+
+// SetEnabled applies a reloaded [daemon] check_updates. Turning it on checks
+// right away; turning it off cancels a check in flight, stops further checks,
+// and clears any "newer release" result, since nothing would keep it current.
+func (c *Checker) SetEnabled(enabled bool) {
+	c.mu.Lock()
+	changed := c.enabled != enabled
+	c.enabled = enabled
+	if !enabled {
+		c.available, c.latest = false, ""
+		if c.cancelCheck != nil {
+			c.cancelCheck()
+		}
+	}
+	c.mu.Unlock()
+	if changed {
+		select {
+		case c.wake <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// startCheck returns the context for one check, which SetEnabled(false)
+// cancels, or false while checking is off. Pair with finishCheck.
+func (c *Checker) startCheck(ctx context.Context) (context.Context, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.enabled {
+		return nil, false
+	}
+	checkCtx, cancel := context.WithCancel(ctx)
+	c.cancelCheck = cancel
+	return checkCtx, true
+}
+
+func (c *Checker) finishCheck() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cancelCheck()
+	c.cancelCheck = nil
 }
 
 // installSource reports how this binary was installed. The same
@@ -107,18 +153,24 @@ func (c *Checker) Status() (available bool, latest string) {
 }
 
 // Run checks once immediately, then reschedules using the ttl each response
-// carries. It returns when ctx is cancelled. A disabled checker or a
-// non-release (dev) build returns immediately without ever reaching out.
+// carries. It returns when ctx is cancelled. A non-release (dev) build returns
+// immediately without ever reaching out; a disabled checker idles until
+// SetEnabled turns it on.
 func (c *Checker) Run(ctx context.Context) {
-	if !c.enabled || !IsRelease(c.current) {
+	if !IsRelease(c.current) {
 		return
 	}
 	for {
-		next := c.checkOnce(ctx)
+		var next <-chan time.Time // nil while disabled: wait for a wake only
+		if checkCtx, ok := c.startCheck(ctx); ok {
+			next = time.After(c.checkOnce(checkCtx))
+			c.finishCheck()
+		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(next):
+		case <-next:
+		case <-c.wake:
 		}
 	}
 }
@@ -136,8 +188,10 @@ func (c *Checker) checkOnce(ctx context.Context) time.Duration {
 
 	available := !resp.Prerelease && isNewer(resp.Version, c.current)
 	c.mu.Lock()
-	c.available = available
-	c.latest = resp.Version
+	if c.enabled { // turned off mid-request: keep the cleared state
+		c.available = available
+		c.latest = resp.Version
+	}
 	c.mu.Unlock()
 
 	if resp.TTL <= 0 {

@@ -81,7 +81,7 @@ type RoutingExecutor struct {
 	eventBus         *events.Bus
 	backends         map[string]Backend
 	availability     Availability
-	minFreeDisk      int64
+	minFreeDisk      atomic.Int64 // swapped by SetMinFreeDisk on a config reload
 	clock            func() time.Time
 	sampler          *procstat.Sampler
 }
@@ -117,7 +117,7 @@ type Options struct {
 // that's the sole type that doesn't run peer-supplied code or make a
 // peer-directed network call. HTTP, shell, container, compose — and any future
 // dispatchable type — require the opt-in.
-func New(opts Options) Executor {
+func New(opts Options) *RoutingExecutor {
 	backends := make(map[string]Backend)
 	avail := Availability{}
 
@@ -170,15 +170,22 @@ func New(opts Options) Executor {
 		eventBus = events.NewEventBus() // the demo seeder runs with no subscribers
 	}
 
-	return &RoutingExecutor{
+	r := &RoutingExecutor{
 		logDir:       opts.LogDir,
 		eventBus:     eventBus,
 		backends:     backends,
 		availability: avail,
-		minFreeDisk:  opts.MinFreeDisk,
 		clock:        clock,
 		sampler:      opts.Sampler,
 	}
+	r.minFreeDisk.Store(opts.MinFreeDisk)
+	return r
+}
+
+// SetMinFreeDisk changes [storage] min_free_space for runs started from now on;
+// a run already writing keeps the threshold it started with.
+func (r *RoutingExecutor) SetMinFreeDisk(n int64) {
+	r.minFreeDisk.Store(n)
 }
 
 func (r *RoutingExecutor) Availability() Availability {
@@ -441,7 +448,7 @@ func (r *RoutingExecutor) prepareLogWriter(task *model.Task, run *model.Run, kil
 		MaxSize:     task.LogMaxSize,
 		Overflow:    task.LogOnFull,
 		Kill:        func() { killer.kill(model.ReasonLogOverflow) },
-		MinFreeDisk: r.minFreeDisk,
+		MinFreeDisk: r.minFreeDisk.Load(),
 		LogDir:      r.logDir,
 		Now:         r.clock,
 		OnDiskPressure: func(free, minFree int64, killed bool) {
@@ -464,11 +471,11 @@ func (r *RoutingExecutor) checkDisk() error {
 	if err := os.MkdirAll(r.logDir, 0755); err != nil {
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
-	if r.minFreeDisk > 0 {
-		if free := freeDiskSpace(r.logDir); free >= 0 && free < r.minFreeDisk {
+	if minFree := r.minFreeDisk.Load(); minFree > 0 {
+		if free := freeDiskSpace(r.logDir); free >= 0 && free < minFree {
 			return fmt.Errorf(
 				"insufficient disk space: %s free, minimum %s required",
-				config.FormatByteSize(free), config.FormatByteSize(r.minFreeDisk))
+				config.FormatByteSize(free), config.FormatByteSize(minFree))
 		}
 	}
 	return nil

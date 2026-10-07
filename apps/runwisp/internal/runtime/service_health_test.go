@@ -9,9 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/robfig/cron/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/runwisp/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
@@ -148,4 +150,32 @@ func TestServiceHealthCheck_MissedDeadlineIsAFailedStart(t *testing.T) {
 		defer djm.mu.RUnlock()
 		return djm.tasks["svc"].supervisor.IsFatal(0)
 	}, 3*time.Second, 10*time.Millisecond, "missing the deadline counts toward FATAL")
+}
+
+// TestProbeScheduleFollowsLiveDaemonZone proves a running health watcher picks
+// up a [daemon] timezone reload on its next tick, a probe that pins its own
+// zone ignores it, and an unset daemon zone falls back to time.Local.
+func TestProbeScheduleFollowsLiveDaemonZone(t *testing.T) {
+	m := &defaultTaskManager{}
+	parse := func(probe *model.Task) cron.Schedule {
+		spec, _ := resolveTaskSchedule(probe, nil)
+		schedule, err := cronspec.NewScheduleParser().Parse(spec)
+		require.NoError(t, err)
+		return probeSchedule{schedule, probe.Timezone == "", m}
+	}
+	daemonZoned := parse(&model.Task{Cron: "0 3 * * *"})
+	pinned := parse(&model.Task{Cron: "0 3 * * *", Timezone: "UTC"})
+	from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	assert.Equal(t, time.Date(2026, 1, 1, 3, 0, 0, 0, time.Local).UTC().Hour(),
+		daemonZoned.Next(from).UTC().Hour(), "no daemon zone means time.Local")
+
+	m.SetDaemonLocation(time.UTC)
+	assert.Equal(t, 3, daemonZoned.Next(from).UTC().Hour())
+
+	tokyo, err := time.LoadLocation("Asia/Tokyo") // UTC+9, no DST
+	require.NoError(t, err)
+	m.SetDaemonLocation(tokyo)
+	assert.Equal(t, 18, daemonZoned.Next(from).UTC().Hour(), "03:00 Tokyo is 18:00 UTC")
+	assert.Equal(t, 3, pinned.Next(from).UTC().Hour(), "a pinned probe keeps its own zone")
 }

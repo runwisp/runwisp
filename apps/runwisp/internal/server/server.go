@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -52,12 +53,14 @@ type Server struct {
 	auth              *auth.Service
 	passwordEphemeral bool
 	noAuth            bool
-	trustedProxies    proxySet
-	daemonLogBuffer   *DaemonLogBuffer
-	runService        *runService
-	stats             *statsProvider
-	configStale       func() bool
-	configWarnings    func() []string
+	// trustedProxies is swapped whole by SetTrustedProxies on a config reload;
+	// readers go through proxies().
+	trustedProxies  atomic.Pointer[proxySet]
+	daemonLogBuffer *DaemonLogBuffer
+	runService      *runService
+	stats           *statsProvider
+	configStale     func() bool
+	configWarnings  func() []string
 	// updateStatus reports (available, latestVersion) from the background update
 	// checker. nil (station mode, or check disabled) reports never-available.
 	updateStatus func() (bool, string)
@@ -124,7 +127,7 @@ type Options struct {
 	PasswordEphemeral bool                                  // True when the daemon minted Password in memory at boot (no RUNWISP_PASSWORD)
 	JWTSecret         string                                // JWT signing secret (derived in-memory)
 	NoAuth            bool                                  // RUNWISP_AUTH=off: serve all /api/* routes over TCP without JWT/CHAP
-	TrustedProxies    string                                // RUNWISP_TRUSTED_PROXIES value (comma-separated CIDRs/IPs); read by the caller, parsed here
+	TrustedProxies    []string                              // [daemon] trusted_proxies as config resolved it (RUNWISP_TRUSTED_PROXIES applied)
 	DaemonInfo        *model.DaemonInfo                     // Static identity/config info for /api/daemon
 	ConfigStale       func() bool                           // Per-request staleness probe for /api/daemon (optional; nil reports never-stale)
 	ConfigWarnings    func() []string                       // Per-request live-config warnings for /api/daemon (optional; nil reports none)
@@ -147,13 +150,6 @@ func New(opts Options) (*Server, error) {
 	trustedProxies, err := parseTrustedProxies(opts.TrustedProxies)
 	if err != nil {
 		return nil, fmt.Errorf("parse trusted proxies: %w", err)
-	}
-
-	authSvc, err := auth.NewService(opts.Password, opts.JWTSecret, func(r *http.Request) bool {
-		return isFromTrustedProxy(r, trustedProxies)
-	})
-	if err != nil {
-		return nil, fmt.Errorf("init auth service: %w", err)
 	}
 
 	router := chi.NewRouter()
@@ -180,14 +176,20 @@ func New(opts Options) (*Server, error) {
 		scheme:            schemeFor(opts.TLSCert, opts.TLSKey),
 		logDir:            opts.LogDir,
 		eventBus:          opts.EventBus,
-		auth:              authSvc,
 		passwordEphemeral: opts.PasswordEphemeral,
 		noAuth:            opts.NoAuth,
-		trustedProxies:    trustedProxies,
 		metricsEnabled:    opts.MetricsEnabled,
 		metricsListen:     opts.MetricsListen,
 		reload:            opts.Reload,
 		ready:             make(chan struct{}),
+	}
+	s.trustedProxies.Store(&trustedProxies)
+
+	s.auth, err = auth.NewService(opts.Password, opts.JWTSecret, func(r *http.Request) bool {
+		return isFromTrustedProxy(r, s.proxies())
+	})
+	if err != nil {
+		return nil, fmt.Errorf("init auth service: %w", err)
 	}
 
 	s.appEvents = newAppEventLog()

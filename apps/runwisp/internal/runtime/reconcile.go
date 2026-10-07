@@ -20,9 +20,10 @@ import (
 
 // Reconciler applies an explicit `runwisp reload` (CLI over the local socket or
 // SIGHUP) to the running daemon. It is validate-first and atomic at the config
-// layer: the whole runwisp.toml is re-loaded and re-validated, and any change
-// to a non-reloadable setting is rejected, before a single live task is
-// touched. On rejection nothing is applied and the running set is unchanged.
+// layer: the whole runwisp.toml is re-loaded and re-validated, a change to a
+// restart-only setting is rejected, and the daemon-wide settings are prepared
+// (see SettingsHook), all before a single live task is touched. On rejection
+// nothing is applied and the running daemon is unchanged.
 //
 // Reload never re-runs boot-only behaviour: added tasks get no catch-up and no
 // run_on_start firing. The reconciler owns one mutex so a CLI reload and a
@@ -34,16 +35,22 @@ type Reconciler struct {
 	manager    TaskManager
 	db         storage.RunRepository
 	snapshot   *config.Snapshot
+	settings   SettingsHook
 	now        func() time.Time
 
 	mu       sync.Mutex // serialises reloads
 	baseline *config.Config
+
+	// cronProbe and stopCronWatcher drive the cron-hold watcher; see
+	// WatchCronHolds. Guarded by mu.
+	cronProbe       func() cronprobe.State
+	stopCronWatcher context.CancelFunc
 }
 
 // ReconcilerDeps wires a Reconciler. Baseline is the config the daemon booted
 // with (the current live set); the reconciler replaces it after each successful
 // reload. Snapshot is re-pinned on success so config_stale reflects the applied
-// config. Now may be nil — NewReconciler defaults it to time.Now.
+// config. Settings and Now may be nil; NewReconciler defaults Now to time.Now.
 type ReconcilerDeps struct {
 	ConfigPath string
 	Baseline   *config.Config
@@ -52,8 +59,19 @@ type ReconcilerDeps struct {
 	Manager    TaskManager
 	DB         storage.RunRepository
 	Snapshot   *config.Snapshot
+	Settings   SettingsHook
 	Now        func() time.Time
 }
+
+// SettingsHook prepares the daemon-wide (non-task) side of a reload: notifiers
+// and routes, storage limits, and the [daemon] keys a reload applies live. It
+// runs after validation and before anything live changes, and must change
+// nothing itself; an error rejects the whole reload. It returns the TOML keys
+// the reload changes, reported in the reload result, and the commit that
+// applies exactly those. Commit runs before the task set is reconciled, so
+// services the reload starts and runs it triggers already see the new
+// settings and report through the new notifiers.
+type SettingsHook func(old, updated *config.Config) (keys []string, commit func(), err error)
 
 // NewReconciler wires a reconciler from its dependencies.
 func NewReconciler(deps ReconcilerDeps) *Reconciler {
@@ -68,6 +86,7 @@ func NewReconciler(deps ReconcilerDeps) *Reconciler {
 		manager:    deps.Manager,
 		db:         deps.DB,
 		snapshot:   deps.Snapshot,
+		settings:   deps.Settings,
 		now:        now,
 		baseline:   deps.Baseline,
 	}
@@ -75,13 +94,18 @@ func NewReconciler(deps ReconcilerDeps) *Reconciler {
 
 // Reconcile re-reads runwisp.toml and brings the live task set in line with it.
 // It returns the diff that was applied, or an error (leaving the live set
-// untouched) when the new config fails to load/validate or changes a setting
-// that requires a full restart.
+// untouched) when the new config fails to load/validate, changes a setting
+// that requires a full restart, or carries settings the daemon can't apply.
 func (r *Reconciler) Reconcile() (model.ReloadResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	newCfg, err := config.Load(r.configPath)
+	if err == nil {
+		// Boot applied the env override too (loadConfigFile); without it here
+		// every reload would see trusted_proxies change while the env pins it.
+		err = config.ApplyTrustedProxiesEnv(newCfg)
+	}
 	if err != nil {
 		return model.ReloadResult{}, fmt.Errorf("reload rejected: %w", err)
 	}
@@ -93,24 +117,102 @@ func (r *Reconciler) Reconcile() (model.ReloadResult, error) {
 		return model.ReloadResult{}, fmt.Errorf("reload rejected: %w", err)
 	}
 
-	if err := checkNonReloadable(r.baseline, newCfg); err != nil {
+	if err := CheckNonReloadable(r.baseline, newCfg); err != nil {
 		return model.ReloadResult{}, err
+	}
+
+	// An unset [daemon] timezone resolves to the host zone on every load. Keep
+	// the zone the daemon booted with: the TOML didn't change, and a host zone
+	// change is picked up by a restart, not by whichever unrelated reload
+	// happens to run next.
+	if newCfg.Scheduler.Source == config.TimezoneSourceSystem && r.baseline.Scheduler.Source == config.TimezoneSourceSystem {
+		newCfg.Scheduler.Timezone = r.baseline.Scheduler.Timezone
+	}
+
+	var settings []string
+	var newLoc *time.Location
+	if newCfg.Scheduler.Timezone != r.baseline.Scheduler.Timezone {
+		if newLoc, err = config.ResolveTimezone("daemon.timezone", newCfg.Scheduler.Timezone); err != nil {
+			return model.ReloadResult{}, fmt.Errorf("reload rejected: %w", err)
+		}
+		settings = append(settings, "daemon.timezone")
+	}
+
+	commitSettings := func() {}
+	if r.settings != nil {
+		keys, commit, err := r.settings(r.baseline, newCfg)
+		if err != nil {
+			return model.ReloadResult{}, fmt.Errorf("reload rejected: %w", err)
+		}
+		settings, commitSettings = append(settings, keys...), commit
 	}
 
 	oldTasks := r.registry.Snapshot()
 	newTasks := tasksByName(newCfg)
 	diff := config.DiffTasks(oldTasks, newTasks)
 
+	// Settings first, so what apply starts already runs under them.
+	commitSettings()
+	if newLoc != nil {
+		r.manager.SetDaemonLocation(newLoc)
+	}
 	applyWarnings := r.apply(diff, oldTasks, newTasks)
+	if newLoc != nil && r.scheduler != nil {
+		// After apply, so the entries it re-bases are the new task set's.
+		applyWarnings = append(applyWarnings, r.scheduler.SetLocation(newLoc, newTasks)...)
+	}
+
+	result := diff.ToResult()
+	result.Settings = settings
+	result.Warnings = append(config.Warnings(newCfg), applyWarnings...)
 
 	r.baseline = newCfg
 	r.snapshot.Refresh(r.configPath, newCfg, r.now())
+	r.syncCronWatcher()
 
-	result := diff.ToResult()
-	result.Warnings = append(config.Warnings(newCfg), applyWarnings...)
 	slog.Info("Configuration reloaded",
-		"added", len(result.Added), "removed", len(result.Removed), "changed", len(result.Changed))
+		"added", len(result.Added), "removed", len(result.Removed), "changed", len(result.Changed),
+		"settings", result.Settings)
 	return result, nil
+}
+
+// WatchCronHolds keeps the cron holds honest while the daemon runs, so an
+// operator who retires cron gets their jobs back without a `runwisp reload`,
+// and a cron that comes back reclaims them before both schedulers fire the same
+// job. probe answers whether a system cron daemon is live.
+//
+// The watcher runs only while the live config reads a crontab: with no
+// include_cron the probe could not change a single decision, and running it
+// anyway would exec systemctl every minute on every ordinary install. A reload
+// that adds include_cron starts it, and one that drops the last crontab stops
+// it. The returned func stops watching for good.
+func (r *Reconciler) WatchCronHolds(probe func() cronprobe.State) (stop func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cronProbe = probe
+	r.syncCronWatcher()
+	return func() {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.cronProbe = nil
+		r.syncCronWatcher()
+	}
+}
+
+// syncCronWatcher (re)starts or stops the cron-hold watcher to match the
+// baseline. Called with r.mu held. A running watcher is replaced, not kept: a
+// reload re-probes cron, and a watcher still remembering the old answer would
+// see a later flip back to it as "no change" and never re-hold the tasks.
+func (r *Reconciler) syncCronWatcher() {
+	if r.stopCronWatcher != nil {
+		// Only cancels; a tick already waiting on r.mu runs once more with a fresh
+		// probe answer, which is still the right one to apply.
+		r.stopCronWatcher()
+		r.stopCronWatcher = nil
+	}
+	if state, readsCron := config.CronHold(r.baseline); readsCron && r.cronProbe != nil {
+		r.stopCronWatcher = StartCronHoldWatcher(r.cronProbe, r.RefreshCronHolds, state)
+	}
 }
 
 // CronHoldChange is what a cron-liveness refresh moved: the tasks whose hold was
@@ -399,23 +501,38 @@ func tasksByName(cfg *config.Config) map[string]*model.Task {
 	return out
 }
 
-// checkNonReloadable rejects a reload that touches daemon-wide settings the
-// running process can't safely swap. These require a full `runwisp restart`.
-// Server bind host/port are CLI flags, not config, so they can't change here.
-func checkNonReloadable(old, updated *config.Config) error {
-	if !reflect.DeepEqual(old.Daemon, updated.Daemon) {
+// CheckNonReloadable rejects a reload that changes a restart-only [daemon] key:
+// TLS and the dedicated metrics listener are bound once at boot, and the
+// station dispatch gate is fixed into the executor and station client at boot,
+// so they require a full `runwisp restart`. Server bind host/port are CLI
+// flags, not config, so they can't change here. Exported for the daemon's test
+// that every [daemon] key is either restart-only or applied by its SettingsHook.
+func CheckNonReloadable(old, updated *config.Config) error {
+	o, n := restartOnly(old.Daemon), restartOnly(updated.Daemon)
+	switch {
+	case o.TLS != n.TLS || o.TLSCert != n.TLSCert || o.TLSKey != n.TLSKey:
+		return nonReloadableErr("[daemon] tls")
+	case o.MetricsEnabled != n.MetricsEnabled || o.MetricsListen != n.MetricsListen:
+		return nonReloadableErr("[daemon] metrics")
+	case o.AllowStationDispatch != n.AllowStationDispatch:
+		return nonReloadableErr("[daemon] allow_station_dispatch")
+	case !reflect.DeepEqual(o, n):
 		return nonReloadableErr("[daemon]")
 	}
-	if old.Scheduler.Timezone != updated.Scheduler.Timezone {
-		return nonReloadableErr("[daemon] timezone")
-	}
-	if old.Storage != updated.Storage {
-		return nonReloadableErr("[storage]")
-	}
-	if !reflect.DeepEqual(old.Notify, updated.Notify) {
-		return nonReloadableErr("[notify]")
-	}
 	return nil
+}
+
+// restartOnly zeroes the [daemon] keys a reload applies live, leaving the ones
+// that need a restart. A key added to config.Daemon later is restart-only
+// until it is zeroed here and applied by the daemon's SettingsHook
+// (settingsApplier.prepare in cmd/runwisp); TestReloadCoversEveryDaemonKey
+// there holds the two in step.
+func restartOnly(d config.Daemon) config.Daemon {
+	d.ShutdownTimeout = 0
+	d.ExternalURL = ""
+	d.CheckUpdates = false
+	d.TrustedProxies = nil
+	return d
 }
 
 func nonReloadableErr(section string) error {

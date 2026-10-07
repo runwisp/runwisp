@@ -61,7 +61,7 @@ retry_delay = "3s"
 retry_backoff = "linear"
 `)
 	assert.Equal(t, "*/5 * * * *", probe.Cron)
-	assert.Equal(t, "Europe/Bratislava", probe.Timezone, "the cron runs in the daemon timezone")
+	assert.Empty(t, probe.Timezone, "the daemon timezone is read live by the health watcher, not copied in")
 	assert.Equal(t, 7*time.Second, probe.TimeoutValue(), "[defaults].timeout beats the probe fallback")
 	assert.False(t, probe.IsFailureReason(model.ReasonTimeout, -1, false))
 	assert.Zero(t, probe.RetryAttempts, "an explicit 0 is kept")

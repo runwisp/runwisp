@@ -504,9 +504,7 @@ func newTestExecutor(t *testing.T, opts Options) *RoutingExecutor {
 	if opts.LogDir == "" {
 		opts.LogDir = t.TempDir()
 	}
-	e, ok := New(opts).(*RoutingExecutor)
-	require.True(t, ok, "New must return *RoutingExecutor")
-	return e
+	return New(opts)
 }
 
 func TestRoutingExecutor_Availability_DefaultsConfigOnly(t *testing.T) {

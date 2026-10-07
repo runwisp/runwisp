@@ -4,7 +4,6 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -140,13 +139,20 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	defer cancelUpdate()
 	go updateChecker.Run(updateCtx)
 
-	reconciler, reloadFn := newReconciler(mode, cfg, svc, f, configSnap)
-	defer startCronHoldWatcher(reconciler, cfg.Config)()
+	settings := &settingsApplier{
+		svc:         svc,
+		fingerprint: cfg.Fingerprint,
+		updates:     updateChecker,
+	}
+	reconciler, reloadFn := newReconciler(mode, cfg, svc, f, configSnap, settings.prepare)
+	if reconciler != nil {
+		defer reconciler.WatchCronHolds(cronprobe.Probe)()
+	}
 
 	srv, err := server.New(server.Options{
 		DB:                svc.DB,
 		NotificationDB:    svc.DB,
-		NotificationHub:   svc.Notify.serverHub(),
+		NotificationHub:   svc.Notify.Hub,
 		TaskManager:       svc.TaskManager,
 		Tasks:             svc.Tasks,
 		Scheduler:         svc.Scheduler,
@@ -161,7 +167,7 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		PasswordEphemeral: cfg.PasswordEphemeral,
 		JWTSecret:         cfg.JWTSecret,
 		NoAuth:            cfg.NoAuth,
-		TrustedProxies:    cmp.Or(os.Getenv("RUNWISP_TRUSTED_PROXIES"), strings.Join(cfg.Config.Daemon.TrustedProxies, ",")),
+		TrustedProxies:    cfg.Config.Daemon.TrustedProxies,
 		DaemonInfo:        daemonInfo,
 		ConfigStale:       configSnap.Stale,
 		ConfigWarnings:    configWarningsFn(reconciler, cfg.Config),
@@ -178,6 +184,8 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 	if err != nil {
 		return err
 	}
+	// Before any listener starts, so every reload sees it.
+	settings.srv = srv
 
 	startupInfo := uikit.StartupInfo{
 		Version:    version.Version,
@@ -271,7 +279,7 @@ func rerouteLogsToStderrOnError(err *error) {
 // SIGHUP. Standalone only: station mode has no local scheduler to reconcile, so
 // it returns (nil, nil), leaving POST /api/daemon/reload reporting "not available in
 // this mode".
-func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Flags, snap *config.Snapshot) (*runtime.Reconciler, func() (model.ReloadResult, error)) {
+func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Flags, snap *config.Snapshot, settings runtime.SettingsHook) (*runtime.Reconciler, func() (model.ReloadResult, error)) {
 	if mode != modeStandalone {
 		return nil, nil
 	}
@@ -283,6 +291,7 @@ func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Fl
 		Manager:    svc.TaskManager,
 		DB:         svc.DB,
 		Snapshot:   snap,
+		Settings:   settings,
 		Now:        time.Now,
 	})
 	// The `failures` policy lives on model.Task, so Reconcile() swaps it into the
@@ -297,25 +306,6 @@ func newReconciler(mode daemonMode, cfg *daemonConfig, svc *daemonServices, f Fl
 		}
 		return result, err
 	}
-}
-
-// startCronHoldWatcher starts the loop that keeps the cron holds honest, so an
-// operator who retires cron gets their jobs back without running `runwisp
-// reload` — and, in the other direction, a cron that comes back reclaims them
-// before both schedulers fire the same job.
-//
-// Skipped unless this config actually reads a crontab: with no include_cron the
-// probe could not change a single decision, and starting it anyway would exec
-// systemctl every minute on every ordinary install. Also skipped in station mode,
-// which has no local scheduler to refresh (nil reconciler).
-//
-// Always returns a non-nil stop func so the caller can defer it unconditionally.
-func startCronHoldWatcher(r *runtime.Reconciler, cfg *config.Config) context.CancelFunc {
-	state, readsCron := config.CronHold(cfg)
-	if r == nil || !readsCron {
-		return func() {}
-	}
-	return runtime.StartCronHoldWatcher(cronprobe.Probe, r.RefreshCronHolds, state)
 }
 
 // configWarningsFn returns the hook /api/daemon calls for the live config's

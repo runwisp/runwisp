@@ -50,8 +50,8 @@ If a manual trigger is refused, the task has
 The daemon never watches the file. Apply edits yourself:
 
 ```bash
-runwisp reload    # tasks, services, [defaults]
-runwisp restart   # [daemon], [storage], [notify]
+runwisp reload    # everything else
+runwisp restart   # [daemon] TLS, metrics, allow_station_dispatch
 ```
 
 If the reload is rejected, nothing changed at all. The error tells you why: a
@@ -124,8 +124,9 @@ See [When a service can't start](/configuration/services/#when-a-service-cant-st
    [`[[route]]`](/configuration/routes/).
 2. **Did delivery fail?** A permanent failure puts a `notify.delivery_failed`
    entry in the bell in the Web UI and TUI.
-3. **Did you change it without restarting?** `[notify]`, `[notifiers.*]`, and
-   `[[route]]` need `runwisp restart`.
+3. **Did you reload?** The daemon picks up edits to `[notify]`,
+   `[notifiers.*]`, `[[route]]`, and `template_path` files only after
+   `runwisp reload`.
 
 See [Notifications](/notifications/).
 

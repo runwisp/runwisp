@@ -141,16 +141,17 @@ func minimalServices(t *testing.T) *daemonServices {
 	purger := runtime.NewSoftDeletePurger(db, f.LogDir())
 	purger.Start()
 
-	return &daemonServices{
-		DB:                  db,
-		EventBus:            bus,
-		Executor:            exec,
-		TaskManager:         tm,
-		Tasks:               tasks,
-		RetentionCleaner:    cleaner,
-		SoftDeletePurger:    purger,
-		TaskShutdownTimeout: 100 * time.Millisecond,
+	svc := &daemonServices{
+		DB:               db,
+		EventBus:         bus,
+		Executor:         exec,
+		TaskManager:      tm,
+		Tasks:            tasks,
+		RetentionCleaner: cleaner,
+		SoftDeletePurger: purger,
 	}
+	svc.TaskShutdownTimeout.Store(int64(100 * time.Millisecond))
+	return svc
 }
 
 func TestWaitDrain_NilSchedulerAndNotifyReturnsPromptly(t *testing.T) {
@@ -210,7 +211,7 @@ func TestGracefulShutdown_NoSrvNoStation(t *testing.T) {
 func TestGracefulShutdown_AppliesFallbackTimeoutWhenUnset(t *testing.T) {
 	svc := minimalServices(t)
 	// 0 forces the helper down the fallback-timeout branch.
-	svc.TaskShutdownTimeout = 0
+	svc.TaskShutdownTimeout.Store(0)
 
 	cancelStation := func() {}
 	var stationWG sync.WaitGroup
@@ -233,15 +234,15 @@ func TestGracefulShutdown_WithScheduler(t *testing.T) {
 	_, _ = scheduler.Start()
 
 	svc := &daemonServices{
-		DB:                  db,
-		EventBus:            bus,
-		Executor:            exec,
-		TaskManager:         tm,
-		Tasks:               tasks,
-		Scheduler:           scheduler,
-		RetentionCleaner:    initRetentionCleaner(dc, db, tasks, f.LogDir(), bus),
-		TaskShutdownTimeout: 100 * time.Millisecond,
+		DB:               db,
+		EventBus:         bus,
+		Executor:         exec,
+		TaskManager:      tm,
+		Tasks:            tasks,
+		Scheduler:        scheduler,
+		RetentionCleaner: initRetentionCleaner(dc, db, tasks, f.LogDir(), bus),
 	}
+	svc.TaskShutdownTimeout.Store(int64(100 * time.Millisecond))
 
 	cancelStation := func() {}
 	var stationWG sync.WaitGroup

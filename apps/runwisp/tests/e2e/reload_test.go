@@ -6,6 +6,7 @@
 package e2e
 
 import (
+	"context"
 	"os"
 	"sort"
 	"syscall"
@@ -166,7 +167,7 @@ func TestReloadRejectsInvalidConfig(t *testing.T) {
 }
 
 // TestReloadRejectsNonReloadableKey confirms a change to a restart-only setting
-// ([daemon] timezone here) is rejected with guidance, and nothing changes.
+// (the metrics listener here) is rejected with guidance, and nothing changes.
 func TestReloadRejectsNonReloadableKey(t *testing.T) {
 	t.Parallel()
 	projectDir := runwispProjectDir(t)
@@ -179,21 +180,18 @@ func TestReloadRejectsNonReloadableKey(t *testing.T) {
 	daemon := startDaemon(t, projectDir, binaryPath, configPath)
 	client := socketClient(t, daemon.dataDir)
 
-	// Same tasks, but flip the daemon timezone — a non-reloadable change.
-	tzChanged := `
+	// Same tasks, but turn on metrics: a listener setting, so restart-only.
+	metricsChanged := `
 [daemon]
 shutdown_timeout = "500ms"
-timezone = "America/New_York"
+timezone = "UTC"
+metrics_enabled = true
 
 [tasks.keep]
 cron = "0 0 * * *"
 run = "echo keep"
-
-[tasks.drop]
-cron = "0 0 * * *"
-run = "echo drop"
 `
-	writeReloadConfig(t, configPath, tzChanged)
+	writeReloadConfig(t, configPath, metricsChanged)
 
 	out, err := runCLI(t, projectDir, binaryPath,
 		"reload", "--data", daemon.dataDir, "--config", configPath)
@@ -203,4 +201,53 @@ run = "echo drop"
 
 	assert.Equal(t, []string{"drop", "keep"}, taskNames(t, client),
 		"a rejected reload must leave the live task set untouched")
+}
+
+// TestReloadAppliesDaemonSettings confirms daemon-wide settings apply live: a
+// timezone change and a new notification route reload without a restart, are
+// listed as settings, and /api/daemon reports the new timezone.
+func TestReloadAppliesDaemonSettings(t *testing.T) {
+	t.Parallel()
+	projectDir := runwispProjectDir(t)
+	binaryPath := buildRunwispBinary(t, projectDir)
+
+	configDir := t.TempDir()
+	configPath := configDir + "/runwisp.toml"
+	writeReloadConfig(t, configPath, reloadBaseConfig)
+
+	daemon := startDaemon(t, projectDir, binaryPath, configPath)
+	client := socketClient(t, daemon.dataDir)
+
+	settingsChanged := `
+[daemon]
+shutdown_timeout = "500ms"
+timezone = "America/New_York"
+
+[storage]
+max_size = "1gb"
+
+[[route]]
+match = { task = "keep" }
+notifiers = ["inapp"]
+
+[tasks.keep]
+cron = "0 0 * * *"
+run = "echo keep"
+
+[tasks.drop]
+cron = "0 0 * * *"
+run = "echo drop"
+`
+	writeReloadConfig(t, configPath, settingsChanged)
+
+	out, err := runCLI(t, projectDir, binaryPath,
+		"reload", "--data", daemon.dataDir, "--config", configPath)
+	require.NoError(t, err, "reload of live settings must succeed: %s", out)
+	for _, key := range []string{"daemon.timezone", "storage.max_size", "notifications"} {
+		assert.Contains(t, out, "~ setting "+key)
+	}
+
+	info, err := client.GetDaemonInfo(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "America/New_York", info.ResolvedTimezone)
 }

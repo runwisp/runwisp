@@ -205,8 +205,9 @@ func TestCoalesce_EventAfterWindowCloseForwardsImmediately(t *testing.T) {
 	assert.Nil(t, got[len(got)-1].Extra, "the fresh forward is a plain event, not a summary")
 }
 
-// TestCoalesce_CloseStopsTimers verifies Close cancels pending timers without
-// leaking goroutines or causing further deliveries after shutdown.
+// TestCoalesce_CloseStopsTimers verifies Close cancels pending timers, sends
+// the open window's summary early instead of dropping it, and causes no
+// further deliveries after shutdown.
 func TestCoalesce_CloseStopsTimers(t *testing.T) {
 	inner := testutil.NewFakeChannel("slack-ops")
 	c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, testutil.NewFakeClock(time.Unix(0, 0)).Now, nil, nil)
@@ -219,12 +220,37 @@ func TestCoalesce_CloseStopsTimers(t *testing.T) {
 	require.NoError(t, c.Close(context.Background()))
 	assert.True(t, inner.Closed(), "inner channel must be closed")
 	assert.Equal(t, 0, mt.Pending(), "Close must stop the pending timer")
+	got := inner.Received()
+	require.Len(t, got, 2, "Close must flush the held-back event as a summary")
+	assert.Equal(t, true, got[1].Extra["coalesced_summary"])
+	assert.Equal(t, 1, got[1].Extra["coalesced_count"])
 
 	// Even if a stopped timer somehow fired, the timerDone guard must suppress
 	// any post-close delivery. Firing manually proves it deterministically.
 	mt.FireAll()
 	c.wg.Wait()
-	assert.Len(t, inner.Received(), 1)
+	assert.Len(t, inner.Received(), 2)
+}
+
+// TestCoalesce_CloseRacingTimerFlushStillSends covers a window whose timer
+// fired just before Close: timerFlush has already taken the window out of the
+// state Close flushes, so the summary goroutine it spawned is the only one left
+// to send it and must not bail out because Close began.
+func TestCoalesce_CloseRacingTimerFlushStillSends(t *testing.T) {
+	for range 200 {
+		inner := testutil.NewFakeChannel("slack-ops")
+		c := New(inner, Config{Window: time.Hour, CoalesceLimit: 1000}, testutil.NewFakeClock(time.Unix(0, 0)).Now, nil, nil)
+		mt := withManualTimers(c)
+
+		require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
+		require.NoError(t, c.Execute(context.Background(), failEvent("etl")))
+		mt.FireAll() // timerFlush hands the window to its goroutine
+		require.NoError(t, c.Close(context.Background()))
+
+		got := inner.Received()
+		require.Len(t, got, 2, "the window-close summary must survive a racing Close")
+		assert.Equal(t, true, got[1].Extra["coalesced_summary"])
+	}
 }
 
 // recordingFailureSink captures synthetic delivery-failure events emitted by the

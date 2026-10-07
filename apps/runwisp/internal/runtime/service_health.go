@@ -6,7 +6,9 @@ package runtime
 import (
 	"context"
 	"log/slog"
+	"time"
 
+	"github.com/robfig/cron/v3"
 	"github.com/runwisp/runwisp/internal/config"
 	"github.com/runwisp/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/internal/executor"
@@ -38,7 +40,7 @@ func (m *defaultTaskManager) watchRun(ctx context.Context, task *model.Task, run
 	}
 	w := &health.Watcher{
 		Probe:        probe,
-		Schedule:     schedule,
+		Schedule:     probeSchedule{schedule, probe.Timezone == "", m},
 		Started:      *run.StartedAt,
 		HealthyAfter: config.OrDefault(task.HealthyAfter, config.DefaultHealthyAfter),
 		Now:          m.clock,
@@ -52,6 +54,24 @@ func (m *defaultTaskManager) watchRun(ctx context.Context, task *model.Task, run
 	if w.Watch(ctx) {
 		ctl.Kill(model.ReasonUnhealthy)
 	}
+}
+
+// probeSchedule evaluates a health check cron. One that pins its own timezone
+// carries it in its CRON_TZ= spec; one that doesn't follows the manager's live
+// daemon zone, read on every tick rather than stamped into the probe, so a
+// [daemon] timezone reload re-bases running watchers and leaves the service
+// definition (and so the service) untouched.
+type probeSchedule struct {
+	cron.Schedule
+	daemonZone bool
+	m          *defaultTaskManager
+}
+
+func (s probeSchedule) Next(t time.Time) time.Time {
+	if s.daemonZone {
+		t = t.In(s.m.location())
+	}
+	return s.Schedule.Next(t)
 }
 
 // markServiceHealthy records a passed health check on the slot run occupies.

@@ -101,7 +101,7 @@ func authOrLocalTrusted(authSvc *auth.Service) func(http.Handler) http.Handler {
 func (srv *Server) savePeerAddr(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), peerAddrContextKey, r.RemoteAddr)
-		ctx = context.WithValue(ctx, proxiedContextKey, isProxiedRequest(r, srv.trustedProxies))
+		ctx = context.WithValue(ctx, proxiedContextKey, isProxiedRequest(r, srv.proxies()))
 		ctx = context.WithValue(ctx, secureContextKey, srv.auth.IsSecureRequest(r))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

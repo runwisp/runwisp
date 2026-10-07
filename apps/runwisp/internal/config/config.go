@@ -76,6 +76,25 @@ func applyTLSEnvOverride(cfg *Config) error {
 	return nil
 }
 
+// ApplyTrustedProxiesEnv lets RUNWISP_TRUSTED_PROXIES (comma-separated)
+// override [daemon] trusted_proxies. Only the daemon calls it, at boot and on
+// every reload, so a reload sees no trusted_proxies change while the env var
+// pins the list. It stays out of Load so a stray value in the operator's shell
+// can't fail `validate`, `list`, `import` and the other commands that never
+// serve HTTP.
+func ApplyTrustedProxiesEnv(cfg *Config) error {
+	raw := strings.TrimSpace(os.Getenv("RUNWISP_TRUSTED_PROXIES"))
+	if raw == "" {
+		return nil
+	}
+	proxies, err := parseTrustedProxies(strings.Split(raw, ","))
+	if err != nil {
+		return fmt.Errorf("RUNWISP_TRUSTED_PROXIES: %w", err)
+	}
+	cfg.Daemon.TrustedProxies = proxies
+	return nil
+}
+
 // collectWatchFiles resolves every on-disk input Snapshot should watch beyond
 // the root config: included TOML files plus each env_file, each against the dir
 // of the config that declared it, plus every crontab read via include_cron, so
@@ -1414,7 +1433,7 @@ func ApplyDefaults(cfg *Config) {
 			applyTaskDefaults(task)
 		}
 		applyInheritedDefaults(task, cfg.Defaults)
-		applyHealthCheckDefaults(task, cfg.Defaults, cfg.Scheduler.Timezone)
+		applyHealthCheckDefaults(task, cfg.Defaults)
 	}
 }
 

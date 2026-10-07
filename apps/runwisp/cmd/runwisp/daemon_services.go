@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"log/slog"
@@ -21,6 +23,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/procstat"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
@@ -30,24 +33,26 @@ import (
 
 // daemonServices holds all long-lived services created during daemon startup.
 type daemonServices struct {
-	DB                  storage.Database
-	EventBus            *events.Bus
-	Executor            executor.Executor
-	Usage               *procstat.Sampler
-	TaskManager         runtime.TaskManager
-	Tasks               *runtime.TaskRegistry
-	Scheduler           *runtime.Scheduler
-	RetentionCleaner    *runtime.RetentionCleaner
-	SoftDeletePurger    *runtime.SoftDeletePurger
-	MemoryReclaimer     *runtime.MemoryReclaimer
-	DebugServer         *debugServer
-	Notify              notifyBundle
-	ScheduleResult      runtime.ScheduleResult
-	CrashedRuns         int64
-	PendingSummary      uikit.PendingRunsSummary
-	CatchUpResult       runtime.CatchUpResult
-	RunOnStartResult    runtime.RunOnStartResult
-	TaskShutdownTimeout time.Duration
+	DB               storage.Database
+	EventBus         *events.Bus
+	Executor         *executor.RoutingExecutor
+	Usage            *procstat.Sampler
+	TaskManager      runtime.TaskManager
+	Tasks            *runtime.TaskRegistry
+	Scheduler        *runtime.Scheduler
+	RetentionCleaner *runtime.RetentionCleaner
+	SoftDeletePurger *runtime.SoftDeletePurger
+	MemoryReclaimer  *runtime.MemoryReclaimer
+	DebugServer      *debugServer
+	Notify           *liveNotify
+	ScheduleResult   runtime.ScheduleResult
+	CrashedRuns      int64
+	PendingSummary   uikit.PendingRunsSummary
+	CatchUpResult    runtime.CatchUpResult
+	RunOnStartResult runtime.RunOnStartResult
+	// TaskShutdownTimeout is [daemon] shutdown_timeout, read at shutdown. Atomic
+	// because a reload can change it from another goroutine.
+	TaskShutdownTimeout atomic.Int64
 	// ServiceLaunchCancel aborts the background depends_on launcher goroutines.
 	// Called at the start of graceful shutdown so a dependent still waiting on a
 	// dependency doesn't start mid-teardown. Services are supervised in both
@@ -89,6 +94,16 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	// registry so a later `runwisp reload` mutation is race-free.
 	tasks := runtime.NewTaskRegistry(tasksMap)
 
+	// Health check crons without their own timezone run in the daemon zone, and
+	// services run in every mode, so the manager needs it even with no
+	// scheduler. Load validated the name, so this fails only on a host missing
+	// its zoneinfo database.
+	schedLoc, err := config.ResolveTimezone("daemon.timezone", cfg.Config.Scheduler.Timezone)
+	if err != nil {
+		return nil, err
+	}
+	taskManager.SetDaemonLocation(schedLoc)
+
 	// Resolving a prior crash's stale run state (marking crashed runs terminal,
 	// then resuming/queuing/skipping whatever was left pending) is a boot
 	// invariant in every mode, not just standalone — station mode still owns the
@@ -97,11 +112,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 
 	var boot standaloneBoot
 	if mode == modeStandalone {
-		var err error
-		boot, err = startStandaloneScheduling(ctx, cfg, db, taskManager, tasksMap, &initWarnings)
-		if err != nil {
-			return nil, err
-		}
+		boot = startStandaloneScheduling(ctx, db, taskManager, tasksMap, schedLoc, &initWarnings)
 	}
 
 	// Bring services up to their desired instance count in both modes (a
@@ -122,7 +133,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 
 	debugSrv := startDebugServer()
 
-	notifyB := startNotify(ctx, cfg, db, eventBus, addWarning)
+	notifyLive := startNotify(cfg, db, eventBus, addWarning)
 
 	if mode == modeStandalone {
 		// Run catch-up now that notify is subscribed, so a missed-run gap
@@ -132,7 +143,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		boot.catchUpResult = runMissedTickCatchUp(tasksMap, taskManager, boot.catchUpNow, boot.schedLoc, boot.catchUpAnchors, boot.catchUpSnapshotErrors)
 	}
 
-	return &daemonServices{
+	svc := &daemonServices{
 		DB:                  db,
 		EventBus:            eventBus,
 		Executor:            exec,
@@ -144,16 +155,17 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 		SoftDeletePurger:    softDeletePurger,
 		MemoryReclaimer:     memoryReclaimer,
 		DebugServer:         debugSrv,
-		Notify:              notifyB,
+		Notify:              notifyLive,
 		ScheduleResult:      boot.schedResult,
 		CrashedRuns:         crashed,
 		PendingSummary:      pendingSummary,
 		CatchUpResult:       boot.catchUpResult,
 		RunOnStartResult:    boot.runOnStartResult,
-		TaskShutdownTimeout: cfg.Config.Daemon.ShutdownTimeout,
 		ServiceLaunchCancel: serviceLaunchCancel,
 		InitWarnings:        initWarnings,
-	}, nil
+	}
+	svc.TaskShutdownTimeout.Store(int64(cfg.Config.Daemon.ShutdownTimeout))
+	return svc, nil
 }
 
 // standaloneBoot collects the per-boot results produced only in standalone
@@ -177,20 +189,11 @@ type standaloneBoot struct {
 // startStandaloneScheduling brings up the scheduler and fires run_on_start
 // tasks — the standalone-only boot steps that run before notify subscribes.
 // Pending-run resume happens earlier in initDaemonServices, in every mode, not
-// here. It returns the collected results and a hard error (timezone
-// resolution) that must abort daemon startup. Non-fatal hiccups are appended to
+// here. It returns the collected results; non-fatal hiccups are appended to
 // warnings. Service instances are launched separately by initDaemonServices in
 // both modes.
-func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storage.Database, taskManager runtime.TaskManager, tasksMap map[string]*model.Task, warnings *[]string) (standaloneBoot, error) {
+func startStandaloneScheduling(ctx context.Context, db storage.Database, taskManager runtime.TaskManager, tasksMap map[string]*model.Task, schedLoc *time.Location, warnings *[]string) standaloneBoot {
 	var boot standaloneBoot
-
-	// [daemon] timezone is required at config-load time when any cron task
-	// lacks a per-task timezone, so by the point we get here it's either set
-	// explicitly or there are no cron expressions to interpret.
-	schedLoc, locErr := config.ResolveTimezone("daemon.timezone", cfg.Config.Scheduler.Timezone)
-	if locErr != nil {
-		return boot, locErr
-	}
 	boot.schedLoc = schedLoc
 
 	// Snapshot catch-up anchors now, before anything below can create a run
@@ -231,23 +234,25 @@ func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storag
 	}
 	boot.runOnStartResult = runOnStartResult
 
-	return boot, nil
+	return boot
 }
 
 // startNotify initializes the notify subsystem and starts its service, routing
-// both the init failure and the start failure to warnings (non-fatal: the
-// daemon must boot even when notify is misconfigured or unavailable).
-func startNotify(ctx context.Context, cfg *daemonConfig, db storage.Database, eventBus *events.Bus, addWarning func(string, ...any)) notifyBundle {
-	notifyB, err := initNotify(cfg, db, eventBus, slog.Default())
+// an init failure to a warning (non-fatal: the daemon must boot even when
+// notify is misconfigured).
+func startNotify(cfg *daemonConfig, db storage.Database, eventBus *events.Bus, addWarning func(string, ...any)) *liveNotify {
+	live := newLiveNotify()
+	templates, err := readNotifyTemplates(cfg.Config.Notify, os.ReadFile)
+	var svc *notify.Service
+	if err == nil {
+		svc, err = initNotify(cfg.Config, templates, cfg.Fingerprint, live.Hub, db, eventBus, slog.Default())
+	}
 	if err != nil {
 		addWarning("Failed to initialize notify subsystem: %v", err)
 	}
-	if notifyB.Service != nil {
-		if startErr := notifyB.Service.Start(ctx); startErr != nil {
-			addWarning("Failed to start notify subsystem: %v", startErr)
-		}
-	}
-	return notifyB
+	live.templates = templates
+	live.swap(svc)
+	return live
 }
 
 // runMissedTickCatchUp runs missed-tick catch-up and narrates the outcome via
@@ -269,7 +274,7 @@ func runMissedTickCatchUp(tasksMap map[string]*model.Task, taskManager runtime.T
 
 // initExecutor builds the routing executor. sampler may be nil (one-shot CLI
 // runs, which display no resource usage).
-func initExecutor(cfg *config.Config, eventBus *events.Bus, logDir, fingerprint string, sampler *procstat.Sampler) executor.Executor {
+func initExecutor(cfg *config.Config, eventBus *events.Bus, logDir, fingerprint string, sampler *procstat.Sampler) *executor.RoutingExecutor {
 	dockerBackend := executor.NewLazyContainerBackend()
 	composeBackend := executor.NewLazyComposeBackend(fingerprint)
 

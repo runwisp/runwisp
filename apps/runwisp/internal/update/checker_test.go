@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -162,5 +163,67 @@ func TestInstallSourceMarkerAndFallback(t *testing.T) {
 	t.Cleanup(func() { os.Remove(marker) })
 	if got := installSource(); got != "script" {
 		t.Fatalf("marker: installSource() = %q, want \"script\"", got)
+	}
+}
+
+// TestSetEnabledFalseCancelsInFlightCheck: turning check_updates off must stop
+// a request already on the wire, not just discard its answer.
+func TestSetEnabledFalseCancelsInFlightCheck(t *testing.T) {
+	started := make(chan struct{})
+	cancelled := make(chan struct{})
+	c := newTestChecker("0.2.0", roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		close(started)
+		<-r.Context().Done()
+		close(cancelled)
+		return nil, r.Context().Err()
+	}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { c.Run(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+
+	<-started
+	c.SetEnabled(false)
+	select {
+	case <-cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("disabling the checker left the in-flight request running")
+	}
+}
+
+// TestSetEnabledTogglesARunningChecker covers a reload flipping check_updates:
+// a disabled checker never reaches out, turning it on checks right away, and
+// turning it off clears the result it had.
+func TestSetEnabledTogglesARunningChecker(t *testing.T) {
+	var calls atomic.Int32
+	c := newTestChecker("0.2.0", roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return stubRT{status: 200, body: `{"version":"v0.3.0","ttl":21600}`}.RoundTrip(r)
+	}))
+	c.SetEnabled(false)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { c.Run(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+
+	time.Sleep(20 * time.Millisecond)
+	if n := calls.Load(); n != 0 {
+		t.Fatalf("disabled checker made %d requests", n)
+	}
+
+	c.SetEnabled(true)
+	deadline := time.Now().Add(time.Second)
+	for available, _ := c.Status(); !available; available, _ = c.Status() {
+		if time.Now().After(deadline) {
+			t.Fatal("enabling the checker did not trigger a check")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	c.SetEnabled(false)
+	if available, latest := c.Status(); available || latest != "" {
+		t.Fatalf("disabling kept a stale result: available=%v latest=%q", available, latest)
 	}
 }

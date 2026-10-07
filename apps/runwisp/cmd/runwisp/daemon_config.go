@@ -194,6 +194,9 @@ func loadConfigFile(path string, stationEnabled bool) (*config.Config, bool, err
 		if terr := config.AssertPrivilegedConfigTrust(cfg, path); terr != nil {
 			return nil, false, terr
 		}
+		if perr := config.ApplyTrustedProxiesEnv(cfg); perr != nil {
+			return nil, false, perr
+		}
 		return cfg, false, nil
 	}
 
@@ -204,6 +207,9 @@ func loadConfigFile(path string, stationEnabled bool) (*config.Config, bool, err
 	if stationEnabled {
 		cfg := &config.Config{}
 		config.ApplyDefaults(cfg)
+		if perr := config.ApplyTrustedProxiesEnv(cfg); perr != nil {
+			return nil, false, perr
+		}
 		return cfg, false, nil
 	}
 

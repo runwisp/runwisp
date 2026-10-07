@@ -796,6 +796,9 @@ func reloadSummary(r *model.ReloadResult) string {
 	if n := len(r.Changed); n > 0 {
 		parts = append(parts, fmt.Sprintf("~%d changed", n))
 	}
+	if len(r.Settings) > 0 {
+		parts = append(parts, "settings updated")
+	}
 	return "✓ Config reloaded: " + strings.Join(parts, ", ")
 }
 
