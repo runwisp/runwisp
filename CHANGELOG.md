@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-07
+
 ### Added
 
 - **The Web UI works on your phone**: check why a job failed without reaching for a laptop. Tap a run and its log fills the screen, the back arrow takes you to the list. On narrow windows the sidebar tucks into a menu, and up to 1600px wide you can fold the sidebar and run list away to give the log more room.
@@ -927,7 +929,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CHAP authentication for the HTTP API.
 - Deterministic human-readable instance fingerprint based on machine-id and working directory.
 
-[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.4.0...main
+[Unreleased]: https://github.com/runwisp/runwisp/compare/v1.5.0...main
+[1.5.0]: https://github.com/runwisp/runwisp/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/runwisp/runwisp/compare/v1.3.1...v1.4.0
 [1.3.1]: https://github.com/runwisp/runwisp/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/runwisp/runwisp/compare/v1.2.0...v1.3.0
