@@ -23,7 +23,7 @@
         "astro": "^7.3.6",
         "js-yaml": "^4.3.2",
         "sharp": "^0.35.5",
-        "starlight-openapi": "^0.26.3",
+        "starlight-openapi": "^0.27.0",
         "svelte": "^5.57.2",
       },
       "devDependencies": {
@@ -2007,7 +2007,7 @@
 
     "sprintf-js": ["sprintf-js@1.0.3", "", {}, "sha512-D9cPgkvLlV3t3IzL0D0YLvGA9Ahk4PcvVwUbN0dSGr1aP0Nrt4AEnTUbuGvquEC0mA64Gqt1fzirlRs5ibXx8g=="],
 
-    "starlight-openapi": ["starlight-openapi@0.26.3", "", { "dependencies": { "@readme/openapi-parser": "^4.1.2", "github-slugger": "^2.0.0", "httpsnippet": "^3.0.10", "url-template": "^3.1.1" }, "peerDependencies": { "@astrojs/markdown-satteri": ">=0.3.2", "@astrojs/starlight": ">=0.41.0", "astro": ">=7.0.2" } }, "sha512-YOlABiJeT7yUtPNzyr30pgF1J9dwG0UaOLMGvlQAjIJ70a7FRT+i3zVoursmQAL6oOkCLjarGms3JvDIsr/xWA=="],
+    "starlight-openapi": ["starlight-openapi@0.27.0", "", { "dependencies": { "@readme/openapi-parser": "^4.1.2", "github-slugger": "^2.0.0", "httpsnippet": "^3.0.10", "url-template": "^3.1.1" }, "peerDependencies": { "@astrojs/markdown-satteri": ">=0.3.2", "@astrojs/starlight": ">=0.41.0", "astro": ">=7.0.2" } }, "sha512-M8oZ7CEgQ1d+lyyBHPin44HrBgpVLVzJhTQ+O7SCdUhMfgg6Zj2t6kgQb1BVs/e/HnZbKlWFZuOdKeHqh9jaYw=="],
 
     "std-env": ["std-env@4.2.0", "", {}, "sha512-oCUKSupKTHX53EyjDtuZQ64pjLJ6yYCtpmEw0goYxtjG9KpbRe8KAsl2tBUGU9DyMcJ0RwJ8GqJAFzMXcXW1Rw=="],
 

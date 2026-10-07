@@ -3,12 +3,7 @@
 
 package main
 
-import (
-	"context"
-
-	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/spf13/cobra"
-)
+import "github.com/spf13/cobra"
 
 var startCmd = &cobra.Command{
 	Use:   "start <target...>",
@@ -24,6 +19,9 @@ already active or queued, in which case it's a no-op. A target locked with
 manual_trigger = false is rejected (403); a glob silently skips locked
 entries instead of failing.
 
+With --attach, it then follows the logs of the targets it acted on, as
+'runwisp logs -f' does: each run it starts is shown from its first line.
+
 With --url (or RUNWISP_URL), targets are started on a remote daemon instead —
 the same CHAP login and session caching as 'runwisp run --url'.
 
@@ -31,16 +29,15 @@ the same CHAP login and session caching as 'runwisp run --url'.
 need one.`,
 	Example: `  runwisp start web
   runwisp start web worker 'batch-*'
+  runwisp start --attach web
   runwisp start '*' --url https://ci.example.com --password "$RUNWISP_PASSWORD"`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		start := func(c *apiclient.Client, ctx context.Context, name string) error {
-			return c.StartTask(ctx, name, "cli")
-		}
-		return controlTargets(cmd, flags, controlRemote, args, "start", "started", start, nil, controllableTargets)
+		return controlTargets(cmd, flags, controlRemote, args, startVerb, controlAttach)
 	},
 }
 
 func init() {
 	addRemoteFlags(startCmd)
+	addAttachFlag(startCmd)
 }

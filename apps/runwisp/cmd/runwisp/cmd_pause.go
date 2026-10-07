@@ -4,7 +4,6 @@
 package main
 
 import (
-	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/spf13/cobra"
 )
@@ -48,7 +47,7 @@ the same CHAP login and session caching as 'runwisp run --url'.`,
   runwisp pause '*' --url https://ci.example.com --password "$RUNWISP_PASSWORD"`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return controlTargets(cmd, flags, controlRemote, args, "pause", "paused", (*apiclient.Client).PauseTask, nil, pausableTargets)
+		return controlTargets(cmd, flags, controlRemote, args, pauseVerb, false)
 	},
 }
 
@@ -65,7 +64,7 @@ Targets and --url otherwise work as for 'runwisp pause'.`,
   runwisp resume '*'`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return controlTargets(cmd, flags, controlRemote, args, "resume", "resumed", (*apiclient.Client).ResumeTask, nil, pausedTargets)
+		return controlTargets(cmd, flags, controlRemote, args, resumeVerb, false)
 	},
 }
 
