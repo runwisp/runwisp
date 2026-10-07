@@ -8,10 +8,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -41,6 +45,17 @@ func addRemoteFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&controlRemote.Password, "password", "", "remote daemon password for --url (env: RUNWISP_PASSWORD)")
 }
 
+// controlAttach backs --attach on start/stop/restart; like controlRemote, it
+// is shared because only one command runs per process.
+var controlAttach bool
+
+func addAttachFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&controlAttach, "attach", false, "then follow the targets' logs, like 'runwisp logs -f'")
+}
+
+// errAttachNeedsTarget rejects --attach on a daemon-wide stop/restart.
+var errAttachNeedsTarget = errors.New("--attach needs a target: it follows the logs of the tasks and services you name")
+
 // resolve applies the RUNWISP_URL/RUNWISP_PASSWORD environment fallback, the
 // same precedence run --url uses.
 func (rf remoteFlags) resolve() (url, password string) {
@@ -57,6 +72,30 @@ type targetFilter struct {
 	eligible func(model.TaskResponse) bool
 	noun     string
 }
+
+// controlVerb is one control action: its present/past-tense words for
+// messages ("stop"/"stopped"), how to dispatch it for a task or service name
+// and, when it takes run IDs, for a run, and what a glob may match.
+type controlVerb struct {
+	verb, done   string
+	act, stopRun controlFunc
+	filter       targetFilter
+}
+
+var (
+	startVerb = controlVerb{verb: "start", done: "started", filter: controllableTargets,
+		act: func(c *apiclient.Client, ctx context.Context, name string) error {
+			return c.StartTask(ctx, name, "cli")
+		}}
+	stopVerb = controlVerb{verb: "stop", done: "stopped", filter: controllableTargets,
+		act: (*apiclient.Client).StopTask, stopRun: (*apiclient.Client).StopRun}
+	restartVerb = controlVerb{verb: "restart", done: "restarted", filter: controllableTargets,
+		act: func(c *apiclient.Client, ctx context.Context, name string) error {
+			return c.RestartTask(ctx, name, "cli")
+		}}
+	pauseVerb  = controlVerb{verb: "pause", done: "paused", filter: pausableTargets, act: (*apiclient.Client).PauseTask}
+	resumeVerb = controlVerb{verb: "resume", done: "resumed", filter: pausedTargets, act: (*apiclient.Client).ResumeTask}
+)
 
 // controllableTargets is the start/stop/restart filter: anything not locked
 // with manual_trigger = false.
@@ -131,45 +170,75 @@ func matchTasks(arg string, tasks []model.TaskResponse, filter targetFilter) ([]
 	return out, nil
 }
 
-// controlTargets resolves args (tasks, services, globs across both, and — when
-// stopRun is set — run IDs) and applies act to each over the local daemon
-// socket or a remote daemon (--url/RUNWISP_URL). Name errors fail before
-// anything is dispatched; after that every target is attempted and each
-// failure is reported in the joined error. verb/done are the present/past-
-// tense words for messages ("stop"/"stopped"); filter picks what a glob may
-// match.
-func controlTargets(cmd *cobra.Command, f Flags, rf remoteFlags, args []string, verb, done string, act, stopRun controlFunc, filter targetFilter) error {
+// controlTargets resolves args (tasks, services, globs across both, and, when
+// v takes them, run IDs) and applies v to each over the local daemon socket or
+// a remote daemon (--url/RUNWISP_URL). Name errors fail before anything is
+// dispatched; after that every target is attempted and each failure is
+// reported in the joined error.
+//
+// With attach, it then follows the logs of the targets that succeeded, as
+// `logs -f` does. The event stream is opened and the targets' active runs listed
+// before anything is dispatched, so every run the action starts is followed
+// from its first line, however quickly it ends.
+func controlTargets(cmd *cobra.Command, f Flags, rf remoteFlags, args []string, v controlVerb, attach bool) error {
 	ctx := cmd.Context()
+	if attach {
+		var stop context.CancelFunc
+		ctx, stop = signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+		defer stop()
+	}
 	client, baseURL, tasks, err := connectAndListTasks(ctx, f, rf)
 	if err != nil {
 		return err
 	}
-	targets, runIDs, err := resolveTargets(args, tasks, stopRun != nil, filter)
+	targets, runIDs, err := resolveTargets(args, tasks, v.stopRun != nil, v.filter)
 	if err != nil {
 		return err
 	}
 
-	out := cmd.OutOrStdout()
+	var att *logAttach
+	if attach {
+		if att, err = openLogAttach(ctx, client, baseURL, tasks, targets, runIDs); err != nil {
+			return err
+		}
+	}
+	targets, runIDs, err = v.dispatch(ctx, cmd.OutOrStdout(), client, baseURL, targets, runIDs)
+	if att == nil || len(targets)+len(runIDs) == 0 {
+		return err
+	}
+	if err != nil {
+		slog.Warn("Following only the targets that succeeded", "error", err)
+	}
+	return errors.Join(err, att.follow(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), targets, runIDs))
+}
+
+// dispatch applies v to every target and run ID, confirming each on out. It
+// returns the ones that succeeded and the joined failures.
+func (v controlVerb) dispatch(ctx context.Context, out io.Writer, client *apiclient.Client, baseURL string, targets []model.TaskResponse, runIDs []string) ([]model.TaskResponse, []string, error) {
 	var errs []error
+	var okTargets []model.TaskResponse
+	var okRuns []string
 	for _, t := range targets {
-		if err := act(client, ctx, t.Name); err != nil {
-			errs = append(errs, controlError(err, baseURL, verb, t.Name, false))
+		if err := v.act(client, ctx, t.Name); err != nil {
+			errs = append(errs, controlError(err, baseURL, v.verb, t.Name, false))
 			continue
 		}
 		label := "Task"
 		if t.Kind.IsService() {
 			label = "Service"
 		}
-		fmt.Fprintf(out, "%s %q %s.\n", label, t.Name, done)
+		fmt.Fprintf(out, "%s %q %s.\n", label, t.Name, v.done)
+		okTargets = append(okTargets, t)
 	}
 	for _, id := range runIDs {
-		if err := stopRun(client, ctx, id); err != nil {
-			errs = append(errs, controlError(err, baseURL, verb, id, true))
+		if err := v.stopRun(client, ctx, id); err != nil {
+			errs = append(errs, controlError(err, baseURL, v.verb, id, true))
 			continue
 		}
-		fmt.Fprintf(out, "Run %s %s.\n", id, done)
+		fmt.Fprintf(out, "Run %s %s.\n", id, v.done)
+		okRuns = append(okRuns, id)
 	}
-	return errors.Join(errs...)
+	return okTargets, okRuns, errors.Join(errs...)
 }
 
 // connectAndListTasks connects to the local or remote daemon (see

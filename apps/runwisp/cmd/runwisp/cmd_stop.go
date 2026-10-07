@@ -10,7 +10,6 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/autostart"
 	"github.com/runwisp/runwisp/internal/datadir"
 	"github.com/spf13/cobra"
@@ -36,6 +35,9 @@ it). A run ID stops just that
 run, wherever it came from. A target locked with manual_trigger = false is
 rejected (403); a glob silently skips locked entries instead of failing.
 
+With --attach, it then follows the logs of the targets it acted on, as
+'runwisp logs -f' does: each run it starts is shown from its first line.
+
 With --url (or RUNWISP_URL), targets are stopped on a remote daemon instead —
 the same CHAP login and session caching as 'runwisp run --url'.
 
@@ -54,23 +56,28 @@ The delegation finds whichever unit is installed on its own. Pass --local to
 pin the per-user one when both a system and a user unit are present.`,
 	Example: `  runwisp stop web
   runwisp stop web worker 'batch-*'
+  runwisp stop --attach 'web*'
   runwisp stop 01J8Z3K9QK6VN8XG2R5F7T1C4M
   runwisp stop '*' --url https://ci.example.com --password "$RUNWISP_PASSWORD"
   runwisp stop`,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runStop(cmd, args, flags)
+		return runStop(cmd, args, flags, controlAttach)
 	},
 }
 
 func init() {
 	stopCmd.Flags().BoolVar(&stopOpts.Local, "local", false, localFlagUsage)
 	addRemoteFlags(stopCmd)
+	addAttachFlag(stopCmd)
 }
 
-func runStop(cmd *cobra.Command, args []string, f Flags) error {
+func runStop(cmd *cobra.Command, args []string, f Flags, attach bool) error {
 	if len(args) > 0 {
-		return controlTargets(cmd, f, controlRemote, args, "stop", "stopped", (*apiclient.Client).StopTask, (*apiclient.Client).StopRun, controllableTargets)
+		return controlTargets(cmd, f, controlRemote, args, stopVerb, attach)
+	}
+	if attach {
+		return errAttachNeedsTarget
 	}
 
 	if url, _ := controlRemote.resolve(); url != "" {

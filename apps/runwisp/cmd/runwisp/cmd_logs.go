@@ -148,7 +148,7 @@ func runLogs(ctx context.Context, out, errOut io.Writer, f Flags, rf remoteFlags
 		}
 	}
 
-	runs, err := selectRuns(ctx, client, baseURL, targets, runIDs)
+	runs, err := selectRuns(ctx, client, baseURL, targets, runIDs, true)
 	if err != nil {
 		return err
 	}
@@ -159,9 +159,60 @@ func runLogs(ctx context.Context, out, errOut io.Writer, f Flags, rf remoteFlags
 	return printSnapshots(ctx, client, sink, runs, opts)
 }
 
+// logAttach is what a control verb's --attach sets up before it dispatches:
+// the event stream is open and the targets' active runs are known, so a run
+// the verb starts can only show up as an event, and is streamed from its
+// first line.
+type logAttach struct {
+	client *apiclient.Client
+	tasks  []model.TaskResponse
+	events <-chan apiclient.RunStreamEvent
+	runs   []*model.Run
+}
+
+// openLogAttach subscribes to run events, then lists what is already running.
+// A finished run is left out: it's not what the verb acted on.
+//
+// ponytail: nothing reads the event stream while the verb dispatches, so its
+// events wait in the client channel and socket buffers. Only a dispatch long
+// enough to fill those (a restart draining for minutes) makes the daemon drop
+// the stream; reading it in a goroutine from here is the fix if that bites.
+func openLogAttach(ctx context.Context, client *apiclient.Client, baseURL string, tasks, targets []model.TaskResponse, runIDs []string) (*logAttach, error) {
+	a := &logAttach{client: client, tasks: tasks}
+	var err error
+	if len(targets) > 0 {
+		if a.events, err = client.StreamRunEvents(ctx, ""); err != nil {
+			return nil, fmt.Errorf("open event stream: %w", err)
+		}
+	}
+	if a.runs, err = selectRuns(ctx, client, baseURL, targets, runIDs, false); err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+// follow streams the runs of the targets the verb succeeded on, as `logs -f`
+// does, matching new runs by exact task name.
+func (a *logAttach) follow(ctx context.Context, out, errOut io.Writer, targets []model.TaskResponse, runIDs []string) error {
+	names := make([]string, len(targets))
+	for i, t := range targets {
+		names[i] = t.Name
+	}
+	runs := slices.DeleteFunc(a.runs, func(r *model.Run) bool {
+		return !slices.Contains(names, r.TaskName) && !slices.Contains(runIDs, r.ID)
+	})
+	events := a.events
+	if len(names) == 0 {
+		events = nil // only run IDs succeeded: exit once they end
+	}
+	sink := newLogSink(out, errOut, false, a.tasks, targets, runIDs, runs)
+	return followLogs(ctx, a.client, sink, runs, events, names, logsOptions{Follow: true, Lines: followTailLines})
+}
+
 // selectRuns picks the runs the targets name: each task's, then each run ID's.
-func selectRuns(ctx context.Context, client *apiclient.Client, baseURL string, targets []model.TaskResponse, runIDs []string) ([]*model.Run, error) {
-	runs, err := selectTaskRuns(ctx, client, targets)
+// lastEnded is selectTaskRuns'.
+func selectRuns(ctx context.Context, client *apiclient.Client, baseURL string, targets []model.TaskResponse, runIDs []string, lastEnded bool) ([]*model.Run, error) {
+	runs, err := selectTaskRuns(ctx, client, targets, lastEnded)
 	if err != nil {
 		return nil, err
 	}
@@ -176,9 +227,9 @@ func selectRuns(ctx context.Context, client *apiclient.Client, baseURL string, t
 }
 
 // selectTaskRuns gives each task or service its active runs, oldest first, or
-// else its most recent finished run. A task that has never run is reported
-// and skipped.
-func selectTaskRuns(ctx context.Context, client *apiclient.Client, targets []model.TaskResponse) ([]*model.Run, error) {
+// else, with lastEnded, its most recent finished run. A task that has never
+// run is reported and skipped.
+func selectTaskRuns(ctx context.Context, client *apiclient.Client, targets []model.TaskResponse, lastEnded bool) ([]*model.Run, error) {
 	if len(targets) == 0 {
 		return nil, nil
 	}
@@ -192,7 +243,7 @@ func selectTaskRuns(ctx context.Context, client *apiclient.Client, targets []mod
 	var runs []*model.Run
 	for _, t := range targets {
 		mine := runsOf(active, t.Name)
-		if len(mine) == 0 {
+		if len(mine) == 0 && lastEnded {
 			last, _, err := client.ListRunsByTask(ctx, t.Name, apiclient.RunsParams{Status: string(model.PhaseEnded), Limit: 1})
 			if err != nil {
 				return nil, fmt.Errorf("list runs of %q: %w", t.Name, err)

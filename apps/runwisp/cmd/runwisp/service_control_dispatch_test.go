@@ -5,11 +5,9 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"net/http"
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/testutil"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -35,14 +33,11 @@ func serveServiceSocket(t *testing.T, mux http.Handler) (Flags, *bytes.Buffer, *
 // stopTargets and restartTargets drive controlTargets the way runStop and
 // runRestart do, against the local socket.
 func stopTargets(cmd *cobra.Command, f Flags, args ...string) error {
-	return controlTargets(cmd, f, remoteFlags{}, args, "stop", "stopped", (*apiclient.Client).StopTask, (*apiclient.Client).StopRun, controllableTargets)
+	return controlTargets(cmd, f, remoteFlags{}, args, stopVerb, false)
 }
 
 func restartTargets(cmd *cobra.Command, f Flags, args ...string) error {
-	restart := func(c *apiclient.Client, ctx context.Context, name string) error {
-		return c.RestartTask(ctx, name, "cli")
-	}
-	return controlTargets(cmd, f, remoteFlags{}, args, "restart", "restarted", restart, nil, controllableTargets)
+	return controlTargets(cmd, f, remoteFlags{}, args, restartVerb, false)
 }
 
 // tasksHandler serves a fixed /api/tasks list plus a best-effort health check,

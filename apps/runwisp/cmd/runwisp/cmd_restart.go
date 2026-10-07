@@ -36,6 +36,9 @@ task, any active run is cancelled, RunWisp waits for it to actually end, then
 triggers exactly one fresh run. A target locked with manual_trigger = false is
 rejected (403); a glob silently skips locked entries instead of failing.
 
+With --attach, it then follows the logs of the targets it acted on, as
+'runwisp logs -f' does: each run it starts is shown from its first line.
+
 With --url (or RUNWISP_URL), targets are restarted on a remote daemon instead
 — the same CHAP login and session caching as 'runwisp run --url'.
 
@@ -53,25 +56,27 @@ The delegation finds whichever unit is installed on its own. Pass --local to
 pin the per-user one when both a system and a user unit are present.`,
 	Example: `  runwisp restart web
   runwisp restart web worker 'batch-*'
+  runwisp restart --attach 'web*'
   runwisp restart '*' --url https://ci.example.com --password "$RUNWISP_PASSWORD"
   runwisp restart`,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runRestart(cmd, args, flags)
+		return runRestart(cmd, args, flags, controlAttach)
 	},
 }
 
 func init() {
 	restartCmd.Flags().BoolVar(&restartOpts.Local, "local", false, localFlagUsage)
 	addRemoteFlags(restartCmd)
+	addAttachFlag(restartCmd)
 }
 
-func runRestart(cmd *cobra.Command, args []string, f Flags) error {
+func runRestart(cmd *cobra.Command, args []string, f Flags, attach bool) error {
 	if len(args) > 0 {
-		restart := func(c *apiclient.Client, ctx context.Context, name string) error {
-			return c.RestartTask(ctx, name, "cli")
-		}
-		return controlTargets(cmd, f, controlRemote, args, "restart", "restarted", restart, nil, controllableTargets)
+		return controlTargets(cmd, f, controlRemote, args, restartVerb, attach)
+	}
+	if attach {
+		return errAttachNeedsTarget
 	}
 
 	if url, _ := controlRemote.resolve(); url != "" {

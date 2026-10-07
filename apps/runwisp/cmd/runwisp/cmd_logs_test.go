@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/server"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -53,6 +55,9 @@ type fakeLogDaemon struct {
 	unlisted       map[string]bool // runs lookups find but listings don't (yet)
 	events         []string        // raw "event: ...\ndata: ...\n\n" frames
 	eventHits      int
+	// control answers POST /api/tasks/{name}/{action} under mu with an HTTP
+	// status; it may add runs and events.
+	control func(action, name string) int
 }
 
 func newFakeLogDaemon() *fakeLogDaemon {
@@ -84,6 +89,19 @@ func (d *fakeLogDaemon) addRun(id, task string, instance int, reason model.EndRe
 	}
 	d.runs = append([]model.Run{run}, d.runs...)
 	return run
+}
+
+// end finishes a running run with reason, as a stop would.
+func (d *fakeLogDaemon) end(id string, reason model.EndReason) model.Run {
+	for i := range d.runs {
+		if d.runs[i].ID == id {
+			d.runs[i].Status = model.PhaseEnded
+			d.runs[i].EndReason = &reason
+			d.runs[i].IsFailure = reason != model.ReasonSuccess
+			return d.runs[i]
+		}
+	}
+	panic("no run " + id)
 }
 
 func (d *fakeLogDaemon) run(id string) (model.Run, bool) {
@@ -173,14 +191,28 @@ func (d *fakeLogDaemon) handler() http.Handler {
 		w.Header().Set("Content-Type", "text/event-stream")
 		d.mu.Lock()
 		d.eventHits++
-		frames := d.events
 		d.mu.Unlock()
 		fmt.Fprint(w, "event: ping\ndata: {}\n\n")
-		for _, f := range frames {
-			fmt.Fprint(w, f)
+		for sent := 0; ; {
+			d.mu.Lock()
+			frames := d.events[sent:]
+			sent = len(d.events)
+			d.mu.Unlock()
+			for _, f := range frames {
+				fmt.Fprint(w, f)
+			}
+			w.(http.Flusher).Flush()
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(5 * time.Millisecond):
+			}
 		}
-		w.(http.Flusher).Flush()
-		<-r.Context().Done()
+	})
+	mux.HandleFunc("POST /api/tasks/{name}/{action}", func(w http.ResponseWriter, r *http.Request) {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		w.WriteHeader(d.control(r.PathValue("action"), r.PathValue("name")))
 	})
 	return mux
 }
@@ -459,5 +491,157 @@ func TestLogs_FollowPicksUpNewRuns(t *testing.T) {
 		require.NoError(t, err, "Ctrl+C ends a follow cleanly")
 	case <-time.After(5 * time.Second):
 		t.Fatal("follow did not stop on cancel")
+	}
+}
+
+// attachAgainst runs `runwisp <verb> --attach args...` against d until the
+// CLI log shows every string in until, then interrupts it like Ctrl+C.
+func attachAgainst(t *testing.T, d *fakeLogDaemon, v controlVerb, slogBuf *syncBuffer, until []string, args ...string) (stdout string, err error) {
+	t.Helper()
+	return runAttached(t, d, slogBuf, until, func(cmd *cobra.Command, f Flags) error {
+		return controlTargets(cmd, f, remoteFlags{}, args, v, true)
+	})
+}
+
+// runAttached serves d, starts run with a command whose output it captures,
+// waits for the CLI log to show every string in until, then interrupts run
+// like Ctrl+C and returns its stdout.
+func runAttached(t *testing.T, d *fakeLogDaemon, slogBuf *syncBuffer, until []string, run func(*cobra.Command, Flags) error) (stdout string, err error) {
+	t.Helper()
+	f, _, _ := serveServiceSocket(t, d.handler())
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var out, errOut syncBuffer
+	cmd := &cobra.Command{}
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	errCh := make(chan error, 1)
+	go func() { errCh <- run(cmd, f) }()
+
+	require.Eventually(t, func() bool {
+		for _, s := range until {
+			if !strings.Contains(slogBuf.String(), s) {
+				return false
+			}
+		}
+		return true
+	}, 5*time.Second, 10*time.Millisecond, "logs so far: %s", slogBuf.String())
+	cancel()
+	select {
+	case err = <-errCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("attach did not stop on Ctrl+C")
+	}
+	return out.String(), err
+}
+
+// A restart --attach shows the end of the run it cancelled and every line of
+// the run it started, even one that ended before its stream was opened, and
+// nothing of runs that finished earlier.
+func TestAttach_RestartShowsWholeNewRun(t *testing.T) {
+	slogBuf := captureCLISlog(t)
+	d := newFakeLogDaemon()
+	d.addTask("backup", model.KindTask, 0)
+	d.tasks[0].ManualTrigger = true
+	d.addRun("01J00000000000000000000001", "backup", 0, model.ReasonFailed, 1, "stale output")
+	old := make([]string, 15)
+	for i := range old {
+		old[i] = "old " + strconv.Itoa(i)
+	}
+	d.addRun("01J00000000000000000000002", "backup", 0, "", 0, old...)
+	d.control = func(action, name string) int {
+		if action != "restart" || name != "backup" {
+			return http.StatusNotFound
+		}
+		stopped := d.end("01J00000000000000000000002", model.ReasonStopped)
+		fresh := d.addRun("01J00000000000000000000003", "backup", 0, model.ReasonSuccess, 0, "new first", "new middle", "new last")
+		d.events = append(d.events, runEventFrame("run.failed", stopped), runEventFrame("run.started", fresh), runEventFrame("run.completed", fresh))
+		return http.StatusNoContent
+	}
+
+	out, err := attachAgainst(t, d, restartVerb, slogBuf, []string{"reason=stopped", "run succeeded"}, "backup")
+	require.NoError(t, err, "Ctrl+C ends an attach cleanly")
+
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	assert.Equal(t, `Task "backup" restarted.`, lines[0])
+	assert.ElementsMatch(t, append(old[15-followTailLines:], "new first", "new middle", "new last"), lines[1:])
+	newLines := slices.DeleteFunc(slices.Clone(lines), func(l string) bool { return !strings.HasPrefix(l, "new ") })
+	assert.Equal(t, []string{"new first", "new middle", "new last"}, newLines, "the new run is shown whole and in order")
+}
+
+// A glob --attach follows only what the verb acted on: not a locked task the
+// glob skipped, not a target that failed, not a run that ended before. The
+// failure still fails the command.
+func TestAttach_FollowsOnlyTargetsActedOn(t *testing.T) {
+	slogBuf := captureCLISlog(t)
+	d := newFakeLogDaemon()
+	for _, name := range []string{"web", "worker", "locked"} {
+		d.addTask(name, model.KindService, 1)
+	}
+	d.tasks[0].ManualTrigger, d.tasks[1].ManualTrigger = true, true
+	d.addRun("01J00000000000000000000000", "web", 0, model.ReasonFailed, 1, "web crashed yesterday")
+	d.addRun("01J00000000000000000000001", "worker", 0, "", 0, "worker running")
+	d.addRun("01J00000000000000000000002", "locked", 0, "", 0, "locked running")
+	d.control = func(action, name string) int {
+		switch name {
+		case "worker":
+			return http.StatusConflict
+		case "web":
+			web := d.addRun("01J00000000000000000000003", "web", 0, model.ReasonSuccess, 0, "web up")
+			locked := d.addRun("01J00000000000000000000004", "locked", 0, model.ReasonSuccess, 0, "locked again")
+			d.events = append(d.events, runEventFrame("run.started", locked), runEventFrame("run.started", web))
+			return http.StatusNoContent
+		}
+		return http.StatusNotFound
+	}
+
+	out, err := attachAgainst(t, d, startVerb, slogBuf, []string{"run succeeded"}, "*")
+	require.ErrorContains(t, err, `cannot start "worker"`)
+	assert.Equal(t, "Service \"web\" started.\nweb up\n", out)
+	assert.Contains(t, slogBuf.String(), "Following only the targets that succeeded")
+}
+
+// --attach on a daemon-wide stop or restart is rejected before anything stops.
+func TestAttach_NeedsTarget(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	f := Flags{DataDir: t.TempDir()}
+	require.ErrorIs(t, runStop(cmd, nil, f, true), errAttachNeedsTarget)
+	require.ErrorIs(t, runRestart(cmd, nil, f, true), errAttachNeedsTarget)
+}
+
+// The start, stop and restart commands hand a parsed --attach to the control
+// path: each follows the run its action starts.
+func TestAttach_FlagReachesEachVerb(t *testing.T) {
+	t.Setenv("RUNWISP_URL", "")
+	savedFlags := flags
+	t.Cleanup(func() { flags, controlAttach = savedFlags, false })
+
+	for _, c := range []*cobra.Command{startCmd, stopCmd, restartCmd} {
+		t.Run(c.Name(), func(t *testing.T) {
+			slogBuf := captureCLISlog(t)
+			d := newFakeLogDaemon()
+			d.addTask("fast", model.KindTask, 0)
+			d.tasks[0].ManualTrigger = true
+			d.control = func(_, _ string) int {
+				run := d.addRun("01J00000000000000000000001", "fast", 0, model.ReasonSuccess, 0, "fast output")
+				d.events = append(d.events, runEventFrame("run.started", run))
+				return http.StatusNoContent
+			}
+			controlAttach = false
+			require.NoError(t, c.ParseFlags([]string{"--attach"}))
+
+			out, err := runAttached(t, d, slogBuf, []string{"run succeeded"}, func(cmd *cobra.Command, f Flags) error {
+				flags = f
+				c.SetContext(cmd.Context())
+				c.SetOut(cmd.OutOrStdout())
+				c.SetErr(cmd.ErrOrStderr())
+				t.Cleanup(func() { c.SetContext(nil); c.SetOut(nil); c.SetErr(nil) })
+				return c.RunE(c, []string{"fast"})
+			})
+			require.NoError(t, err)
+			assert.Contains(t, out, "fast output\n")
+		})
 	}
 }
