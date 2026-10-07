@@ -48,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- HTTP task logs hide URL credentials and query values, and a redirect to another host no longer carries credential headers or the original URL along. SSRF checks also reject deprecated IPv4-compatible IPv6 addresses.
+- Browser CSRF checks refuse a plain `http` page on the same host when the daemon is reached over HTTPS, and a non-Bearer `Authorization` header (such as a proxy's Basic auth) no longer exempts a request from them.
 - When one secret value is a prefix of another, the longer one is now always fully masked in run output.
 - Slack notifications escape `&`, `<` and `>` and keep task output inside its code block, so output can't produce `@channel` mentions or links.
 

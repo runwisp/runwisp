@@ -75,6 +75,14 @@ func TestNoAuth_CrossOriginUnsafeRequestRefused(t *testing.T) {
 	}
 
 	assert.Equal(t, http.StatusForbidden, post(map[string]string{"Origin": "https://evil.example"}))
+	assert.Equal(t, http.StatusForbidden, post(map[string]string{
+		"Authorization": "Basic dXNlcjpwYXNz",
+		"Origin":        "https://evil.example",
+	}), "ambient proxy/basic credentials must not bypass CSRF checks")
+	assert.Equal(t, http.StatusForbidden, post(map[string]string{
+		"Authorization": "Bearer proxy-injected-token",
+		"Origin":        "https://evil.example",
+	}), "auth-off mode must not treat proxy-injected bearer credentials as verified JWT auth")
 	assert.Equal(t, http.StatusForbidden, post(map[string]string{"Sec-Fetch-Site": "cross-site"}))
 	assert.NotEqual(t, http.StatusForbidden, post(nil), "headless clients send no Origin")
 	assert.NotEqual(t, http.StatusForbidden, post(map[string]string{"Origin": "http://example.com"}),

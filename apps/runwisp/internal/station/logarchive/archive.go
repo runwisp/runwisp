@@ -7,7 +7,6 @@
 package logarchive
 
 import (
-	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -49,17 +48,18 @@ func Archive(ctx context.Context, client *http.Client, uploadURL, logFilePath st
 // Archive so transport tests can exercise the mechanics against a loopback test
 // server, which validateUploadURL rejects.
 func archive(ctx context.Context, client *http.Client, uploadURL, logFilePath string) (int64, error) {
-	body, size, err := gzipFile(logFilePath)
+	compressed, size, err := gzipFile(logFilePath)
 	if err != nil {
 		return 0, err
 	}
+	defer compressed.Close()
 
 	var lastErr error
 	for attempt := 1; attempt <= MaxAttempts; attempt++ {
 		if ctx.Err() != nil {
 			return 0, ctx.Err()
 		}
-		err := putOnce(ctx, client, uploadURL, body)
+		err := putOnce(ctx, client, uploadURL, compressed, size)
 		if err == nil {
 			return size, nil
 		}
@@ -80,26 +80,51 @@ func archive(ctx context.Context, client *http.Client, uploadURL, logFilePath st
 	return 0, fmt.Errorf("logarchive: upload failed after %d attempts: %w", MaxAttempts, lastErr)
 }
 
-func gzipFile(path string) ([]byte, int64, error) {
+func gzipFile(path string) (*os.File, int64, error) {
 	src, err := os.Open(path)
 	if err != nil {
 		return nil, 0, fmt.Errorf("logarchive: open log file: %w", err)
 	}
 	defer src.Close()
 
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
+	tmp, err := os.CreateTemp("", "runwisp-log-*.gz")
+	if err != nil {
+		return nil, 0, fmt.Errorf("logarchive: create compressed log spool: %w", err)
+	}
+	tmpPath := tmp.Name()
+	keep := false
+	defer func() {
+		if !keep {
+			_ = tmp.Close()
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	gz := gzip.NewWriter(tmp)
 	if _, err := io.Copy(gz, src); err != nil {
+		_ = gz.Close()
 		return nil, 0, fmt.Errorf("logarchive: gzip log file: %w", err)
 	}
 	if err := gz.Close(); err != nil {
 		return nil, 0, fmt.Errorf("logarchive: close gzip writer: %w", err)
 	}
-	return buf.Bytes(), int64(buf.Len()), nil
+	info, err := tmp.Stat()
+	if err != nil {
+		return nil, 0, fmt.Errorf("logarchive: stat compressed log spool: %w", err)
+	}
+	// Keep the open descriptor for retries, but remove the directory entry so a
+	// crash during upload cannot leave a stale compressed copy on disk. CreateTemp
+	// uses mode 0600, so the spool is private while it exists.
+	if err := os.Remove(tmpPath); err != nil {
+		return nil, 0, fmt.Errorf("logarchive: unlink compressed log spool: %w", err)
+	}
+	keep = true
+	return tmp, info.Size(), nil
 }
 
-func putOnce(ctx context.Context, client *http.Client, url string, body []byte) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(body))
+func putOnce(ctx context.Context, client *http.Client, uploadURL string, compressed *os.File, size int64) error {
+	body := io.NopCloser(io.NewSectionReader(compressed, 0, size))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL, body)
 	if err != nil {
 		return fmt.Errorf("build PUT request: %w", err)
 	}
@@ -111,11 +136,18 @@ func putOnce(ctx context.Context, client *http.Client, url string, body []byte) 
 	// does not break the signature.)
 	req.Header.Set("Content-Encoding", "gzip")
 	req.Header.Set("Content-Type", "text/plain; charset=utf-8")
-	req.Header.Set("Content-Length", fmt.Sprintf("%d", len(body)))
-	req.ContentLength = int64(len(body))
+	req.Header.Set("Content-Length", fmt.Sprintf("%d", size))
+	req.ContentLength = size
 
 	resp, err := client.Do(req)
 	if err != nil {
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			// A presigned upload URL is a bearer credential. net/http includes the
+			// complete URL in url.Error, so unwrap only the transport cause before
+			// the error reaches daemon logs.
+			return fmt.Errorf("logarchive: PUT request failed: %w", urlErr.Err)
+		}
 		return err
 	}
 	defer func() {
@@ -149,7 +181,8 @@ func (e *PermanentError) Error() string {
 func validateUploadURL(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return fmt.Errorf("logarchive: invalid upload URL: %w", err)
+		// url.Parse may echo a signed URL, including its query credentials.
+		return errors.New("logarchive: invalid upload URL")
 	}
 	if !strings.EqualFold(parsed.Scheme, "https") {
 		return fmt.Errorf("logarchive: upload URL must use https, got %q", parsed.Scheme)

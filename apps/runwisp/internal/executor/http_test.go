@@ -25,6 +25,13 @@ func TestValidateHTTPURL_InvalidParse(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid URL")
 }
 
+func TestValidateHTTPURL_InvalidParseDoesNotEchoURL(t *testing.T) {
+	err := validateHTTPURL("http://example.com/%zz?token=secret")
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "token")
+	assert.NotContains(t, err.Error(), "secret")
+}
+
 func TestValidateHTTPURL_UnsupportedScheme(t *testing.T) {
 	err := validateHTTPURL("ftp://example.com/file.txt")
 	require.Error(t, err)
@@ -430,6 +437,51 @@ func TestHTTPClientCheckRedirect_BlocksLoopback(t *testing.T) {
 	err = client.CheckRedirect(req, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "blocked")
+}
+
+func TestHTTPClientCheckRedirect_StripsCredentialsCrossHost(t *testing.T) {
+	client := (&HTTPBackend{}).httpClient()
+	from, err := http.NewRequest("GET", "https://93.184.216.34/start?token=secret", nil)
+	require.NoError(t, err)
+	to, err := http.NewRequest("GET", "https://93.184.216.35/collect", nil)
+	require.NoError(t, err)
+	to.Header.Set("X-API-Key", "secret")
+	to.Header.Set("Referer", "https://93.184.216.34/start?token=secret")
+	to.Header.Set("Accept", "application/json")
+
+	require.NoError(t, client.CheckRedirect(to, []*http.Request{from}), "cross-host redirects are still followed")
+	assert.Empty(t, to.Header.Get("X-API-Key"))
+	assert.Empty(t, to.Header.Get("Referer"))
+	assert.Equal(t, "application/json", to.Header.Get("Accept"))
+}
+
+func TestHTTPClientCheckRedirect_KeepsHeadersOnSchemeUpgrade(t *testing.T) {
+	client := (&HTTPBackend{}).httpClient()
+	from, err := http.NewRequest("GET", "http://93.184.216.34/start", nil)
+	require.NoError(t, err)
+	to, err := http.NewRequest("GET", "https://93.184.216.34/start", nil)
+	require.NoError(t, err)
+	to.Header.Set("X-API-Key", "secret")
+
+	require.NoError(t, client.CheckRedirect(to, []*http.Request{from}))
+	assert.Equal(t, "secret", to.Header.Get("X-API-Key"))
+}
+
+func TestRedactURL_HidesCredentialsQueryValuesAndFragment(t *testing.T) {
+	got := redactURL("https://user:password@example.test/path-credential/run?token=secret&mode=fast#private")
+	assert.Contains(t, got, "https://example.test/path-credential/run?")
+	assert.NotContains(t, got, "user")
+	assert.Contains(t, got, "token=")
+	assert.Contains(t, got, "mode=")
+	assert.NotContains(t, got, "password")
+	assert.NotContains(t, got, "secret")
+	assert.NotContains(t, got, "fast")
+	assert.NotContains(t, got, "private")
+}
+
+func TestRedactHeaderValue_HidesPasswordHeaders(t *testing.T) {
+	assert.Equal(t, "[redacted]", redactHeaderValue("X-Password", "plain-secret"))
+	assert.Equal(t, "[redacted]", redactHeaderValue("X-Credential", "plain-secret"))
 }
 
 // TestStart_HappyPathReturnsProcess covers Start's terminal `return
