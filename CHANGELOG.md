@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `runwisp restart --attach` follows only the new runs, and `runwisp logs` and `--attach` report a stopped run as `run ended` instead of `run failed`.
+
 ## [1.5.0] - 2026-10-07
 
 ### Added

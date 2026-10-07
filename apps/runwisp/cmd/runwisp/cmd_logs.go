@@ -154,7 +154,7 @@ func runLogs(ctx context.Context, out, errOut io.Writer, f Flags, rf remoteFlags
 	}
 	sink := newLogSink(out, errOut, opts.JSON, tasks, targets, runIDs, runs)
 	if opts.Follow {
-		return followLogs(ctx, client, sink, runs, events, livePatterns(args, runIDs), opts)
+		return followLogs(ctx, client, sink, runs, nil, events, livePatterns(args, runIDs), opts)
 	}
 	return printSnapshots(ctx, client, sink, runs, opts)
 }
@@ -192,8 +192,10 @@ func openLogAttach(ctx context.Context, client *apiclient.Client, baseURL string
 }
 
 // follow streams the runs of the targets the verb succeeded on, as `logs -f`
-// does, matching new runs by exact task name.
-func (a *logAttach) follow(ctx context.Context, out, errOut io.Writer, targets []model.TaskResponse, runIDs []string) error {
+// does, matching new runs by exact task name. With replaced, the runs listed
+// before dispatch are the ones the verb ended, so they are skipped rather than
+// followed.
+func (a *logAttach) follow(ctx context.Context, out, errOut io.Writer, targets []model.TaskResponse, runIDs []string, replaced bool) error {
 	names := make([]string, len(targets))
 	for i, t := range targets {
 		names[i] = t.Name
@@ -201,12 +203,16 @@ func (a *logAttach) follow(ctx context.Context, out, errOut io.Writer, targets [
 	runs := slices.DeleteFunc(a.runs, func(r *model.Run) bool {
 		return !slices.Contains(names, r.TaskName) && !slices.Contains(runIDs, r.ID)
 	})
+	var skip []*model.Run
+	if replaced {
+		skip, runs = runs, nil
+	}
 	events := a.events
 	if len(names) == 0 {
 		events = nil // only run IDs succeeded: exit once they end
 	}
 	sink := newLogSink(out, errOut, false, a.tasks, targets, runIDs, runs)
-	return followLogs(ctx, a.client, sink, runs, events, names, logsOptions{Follow: true, Lines: followTailLines})
+	return followLogs(ctx, a.client, sink, runs, skip, events, names, logsOptions{Follow: true, Lines: followTailLines})
 }
 
 // selectRuns picks the runs the targets name: each task's, then each run ID's.
@@ -366,15 +372,19 @@ func matchesAny(patterns []string, name string) bool {
 
 // followLogs streams every selected run, plus — when events is set — every new
 // run of a matching task, until ctx is cancelled. With no events (run IDs only)
-// it returns once all the runs have ended.
+// it returns once all the runs have ended. Events about the skip runs are
+// ignored.
 //
 // ponytail: one SSE stream per followed run. A remote daemon allows 16 streams
 // per client IP, so -f over --url tops out around 15 live runs; a server-side
 // multiplexed log stream is the upgrade if that ever matters.
-func followLogs(ctx context.Context, client *apiclient.Client, sink *logSink, runs []*model.Run, events <-chan apiclient.RunStreamEvent, patterns []string, opts logsOptions) error {
+func followLogs(ctx context.Context, client *apiclient.Client, sink *logSink, runs, skip []*model.Run, events <-chan apiclient.RunStreamEvent, patterns []string, opts logsOptions) error {
 	ctx, cancel := context.WithCancel(ctx)
 	fl := &logFollower{ctx: ctx, cancel: cancel, client: client, sink: sink, patterns: patterns,
 		results: make(chan error), tracked: map[string]bool{}}
+	for _, r := range skip {
+		fl.tracked[r.ID] = true
+	}
 
 	if err := fl.start(runs, opts); err != nil {
 		return fl.stop(err)

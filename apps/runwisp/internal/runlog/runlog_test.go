@@ -172,11 +172,11 @@ func TestLogEnded(t *testing.T) {
 		assert.Contains(t, out, "exit=7")
 	})
 
-	t.Run("an operator stop stays visible at INFO", func(t *testing.T) {
+	t.Run("an operator stop is an INFO end, not a failure", func(t *testing.T) {
 		buf := captureSlog(t)
 		LogEnded(sampleRun(model.ReasonStopped, -1))
 		out := buf.String()
-		assert.Contains(t, out, "level=INFO msg=\"run failed\"")
+		assert.Contains(t, out, "level=INFO msg=\"run ended\"")
 		assert.Contains(t, out, "reason=stopped")
 	})
 }
