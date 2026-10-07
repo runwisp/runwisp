@@ -6,9 +6,7 @@ package render
 import (
 	"embed"
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/runwisp/runwisp/internal/notify"
 )
@@ -27,19 +25,6 @@ func LoadDefaultTemplate(name string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no embedded template for %q", name)
-}
-
-// LoadTemplate returns the body of a template, preferring an on-disk override
-// at userPath when non-empty and falling back to the embedded default.
-func LoadTemplate(name, userPath string) (string, error) {
-	if userPath = strings.TrimSpace(userPath); userPath != "" {
-		b, err := os.ReadFile(userPath)
-		if err != nil {
-			return "", fmt.Errorf("read template %s: %w", userPath, err)
-		}
-		return string(b), nil
-	}
-	return LoadDefaultTemplate(name)
 }
 
 // DefaultTitle is the in-app title formatter shared across providers.

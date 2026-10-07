@@ -143,7 +143,6 @@ func runDaemon(mode daemonMode, f Flags, headless bool) (err error) {
 		svc:         svc,
 		fingerprint: cfg.Fingerprint,
 		updates:     updateChecker,
-		templates:   notifyTemplates(cfg.Config.Notify),
 	}
 	reconciler, reloadFn := newReconciler(mode, cfg, svc, f, configSnap, settings.prepare)
 	if reconciler != nil {

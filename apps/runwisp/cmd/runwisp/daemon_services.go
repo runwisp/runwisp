@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -22,6 +23,7 @@ import (
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/internal/procstat"
 	"github.com/runwisp/runwisp/internal/runtime"
 	"github.com/runwisp/runwisp/internal/storage"
@@ -92,6 +94,16 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 	// registry so a later `runwisp reload` mutation is race-free.
 	tasks := runtime.NewTaskRegistry(tasksMap)
 
+	// Health check crons without their own timezone run in the daemon zone, and
+	// services run in every mode, so the manager needs it even with no
+	// scheduler. Load validated the name, so this fails only on a host missing
+	// its zoneinfo database.
+	schedLoc, err := config.ResolveTimezone("daemon.timezone", cfg.Config.Scheduler.Timezone)
+	if err != nil {
+		return nil, err
+	}
+	taskManager.SetDaemonLocation(schedLoc)
+
 	// Resolving a prior crash's stale run state (marking crashed runs terminal,
 	// then resuming/queuing/skipping whatever was left pending) is a boot
 	// invariant in every mode, not just standalone — station mode still owns the
@@ -100,11 +112,7 @@ func initDaemonServices(ctx context.Context, cfg *daemonConfig, db storage.Datab
 
 	var boot standaloneBoot
 	if mode == modeStandalone {
-		var err error
-		boot, err = startStandaloneScheduling(ctx, cfg, db, taskManager, tasksMap, &initWarnings)
-		if err != nil {
-			return nil, err
-		}
+		boot = startStandaloneScheduling(ctx, db, taskManager, tasksMap, schedLoc, &initWarnings)
 	}
 
 	// Bring services up to their desired instance count in both modes (a
@@ -181,20 +189,11 @@ type standaloneBoot struct {
 // startStandaloneScheduling brings up the scheduler and fires run_on_start
 // tasks — the standalone-only boot steps that run before notify subscribes.
 // Pending-run resume happens earlier in initDaemonServices, in every mode, not
-// here. It returns the collected results and a hard error (timezone
-// resolution) that must abort daemon startup. Non-fatal hiccups are appended to
+// here. It returns the collected results; non-fatal hiccups are appended to
 // warnings. Service instances are launched separately by initDaemonServices in
 // both modes.
-func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storage.Database, taskManager runtime.TaskManager, tasksMap map[string]*model.Task, warnings *[]string) (standaloneBoot, error) {
+func startStandaloneScheduling(ctx context.Context, db storage.Database, taskManager runtime.TaskManager, tasksMap map[string]*model.Task, schedLoc *time.Location, warnings *[]string) standaloneBoot {
 	var boot standaloneBoot
-
-	// [daemon] timezone is required at config-load time when any cron task
-	// lacks a per-task timezone, so by the point we get here it's either set
-	// explicitly or there are no cron expressions to interpret.
-	schedLoc, locErr := config.ResolveTimezone("daemon.timezone", cfg.Config.Scheduler.Timezone)
-	if locErr != nil {
-		return boot, locErr
-	}
 	boot.schedLoc = schedLoc
 
 	// Snapshot catch-up anchors now, before anything below can create a run
@@ -235,7 +234,7 @@ func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storag
 	}
 	boot.runOnStartResult = runOnStartResult
 
-	return boot, nil
+	return boot
 }
 
 // startNotify initializes the notify subsystem and starts its service, routing
@@ -243,10 +242,15 @@ func startStandaloneScheduling(ctx context.Context, cfg *daemonConfig, db storag
 // notify is misconfigured).
 func startNotify(cfg *daemonConfig, db storage.Database, eventBus *events.Bus, addWarning func(string, ...any)) *liveNotify {
 	live := newLiveNotify()
-	svc, err := initNotify(cfg.Config, cfg.Fingerprint, live.Hub, db, eventBus, slog.Default())
+	templates, err := readNotifyTemplates(cfg.Config.Notify, os.ReadFile)
+	var svc *notify.Service
+	if err == nil {
+		svc, err = initNotify(cfg.Config, templates, cfg.Fingerprint, live.Hub, db, eventBus, slog.Default())
+	}
 	if err != nil {
 		addWarning("Failed to initialize notify subsystem: %v", err)
 	}
+	live.templates = templates
 	live.swap(svc)
 	return live
 }

@@ -32,6 +32,12 @@ type liveNotify struct {
 	service *notify.Service // nil when nothing is configured
 	stopped bool
 
+	// templates holds the template_path bodies the current service was built
+	// from (see readNotifyTemplates), so a reload notices an edited template
+	// even when runwisp.toml is unchanged. Written at boot and by a reload's
+	// commit; the reconciler serialises reloads.
+	templates map[string]string
+
 	// retiring tracks services a swap replaced that are still draining, so Stop
 	// can wait for them. cancelRetire cuts their drain short when the shutdown
 	// deadline passes.
@@ -99,10 +105,13 @@ func (l *liveNotify) Stop(ctx context.Context) error {
 }
 
 // initNotify builds (but does not start) the notification service for cfg,
-// delivering in-app notifications to hub. Returns nil when there are no
-// notifiers and no routes; the daemon then runs without notifications wired.
+// delivering in-app notifications to hub. templates holds each notifier's
+// template_path body, as read by readNotifyTemplates. Returns nil when there
+// are no notifiers and no routes; the daemon then runs without notifications
+// wired.
 func initNotify(
 	cfg *config.Config,
+	templates map[string]string,
 	fingerprint string,
 	hub *inapp.Hub,
 	db storage.Database,
@@ -121,6 +130,10 @@ func initNotify(
 		OutputTail:  render.NewOutputTail(),
 	}
 	resolved := configload.Resolve(notifyCfg, renderCtx)
+	// Resolve keeps the notifiers in config order.
+	for i, n := range notifyCfg.Notifiers {
+		resolved.Notifiers[i].Template = templates[n.TemplatePath]
+	}
 
 	// No notifiers and no rules: nothing to do. Skip every goroutine and the
 	// bus subscription. The server's notification routes still respond from

@@ -61,7 +61,9 @@ type NotifierSpec struct {
 	Token string // ntfy access token, gotify/pushover application token
 	User  string // pushover user or group key
 
-	TemplatePath string // optional override
+	// Template is the body of the operator's template_path override, read by
+	// the caller; "" means the embedded default for Type.
+	Template string
 	// Transport overrides the channel's HTTP transport. Nil means use defaults.
 	// Daemon-level glue uses this to apply a global backoff override on HTTP
 	// providers (Slack, Discord, Telegram, ntfy, Gotify, Pushover, webhook).
@@ -99,9 +101,12 @@ func Build(spec NotifierSpec) (notify.Channel, error) {
 	if !ok {
 		return nil, fmt.Errorf("unknown notifier type %q (id=%s)", spec.Type, spec.ID)
 	}
-	body, err := render.LoadTemplate(spec.Type, spec.TemplatePath)
-	if err != nil {
-		return nil, err
+	body := spec.Template
+	if body == "" {
+		var err error
+		if body, err = render.LoadDefaultTemplate(spec.Type); err != nil {
+			return nil, err
+		}
 	}
 	r, err := render.NewTemplateRenderer(spec.Type+":"+spec.ID, body, contentType, render.DefaultTitle, spec.RenderContext)
 	if err != nil {

@@ -59,9 +59,11 @@ run [`runwisp validate`](/reference/cli/#runwisp-validate).
   to. Notifications sent after the reload use the new settings. Deliveries
   already being retried finish under the old ones.
 - [`[storage]`](/configuration/storage/).
-- [`timezone`](/configuration/daemon/#timezone). Every cron schedule that doesn't
-  set its own timezone moves to the new zone from now on. Ticks the move skips
-  over are not caught up.
+- [`timezone`](/configuration/daemon/#timezone). Every cron schedule and health
+  check that doesn't set its own timezone moves to the new zone from now on.
+  Ticks the move skips over are not caught up. With `timezone` unset, the
+  daemon keeps the host zone it started with; a host zone change needs a
+  restart.
 - Every other [`[daemon]`](/configuration/daemon/) key, except the ones below.
 
 `runwisp reload` lists the changed settings on `~ setting` lines.

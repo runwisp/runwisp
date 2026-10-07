@@ -267,6 +267,9 @@ func (c *Channel) timerFlush(fp string) {
 	// window-close summary because "now" is still within Window of the reset.
 	delete(c.state, fp)
 	// Registered under c.mu, before Close can take the lock and start wg.Wait.
+	// From here this goroutine is the summary's only owner: the window is gone
+	// from c.state, so Close won't flush it, and Close waits for us anyway.
+	// It must not bail out on timerDone, or a Close racing it drops the summary.
 	c.wg.Add(1)
 	c.mu.Unlock()
 
@@ -277,11 +280,6 @@ func (c *Channel) timerFlush(fp string) {
 				c.logger.Error("notify channel panicked", "channel", c.inner.ID(), "panic", r)
 			}
 		}()
-		select {
-		case <-c.timerDone:
-			return
-		default:
-		}
 		c.sendSummary(context.Background(), fp, ev, count)
 	}()
 }

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 	"time"
 
@@ -35,7 +34,7 @@ func TestCheckNonReloadable_AcceptsLiveSettings(t *testing.T) {
 			TrustedProxies:  []string{"10.0.0.0/8"},
 		},
 	}
-	assert.NoError(t, checkNonReloadable(old, updated))
+	assert.NoError(t, CheckNonReloadable(old, updated))
 }
 
 func TestCheckNonReloadable_RejectsRestartOnlySettings(t *testing.T) {
@@ -55,56 +54,12 @@ func TestCheckNonReloadable_RejectsRestartOnlySettings(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			updated := &config.Config{}
 			tc.mutate(&updated.Daemon)
-			err := checkNonReloadable(&config.Config{}, updated)
+			err := CheckNonReloadable(&config.Config{}, updated)
 			require.Error(t, err, "%s change must be rejected", tc.name)
 			assert.Contains(t, err.Error(), tc.want)
 			assert.Contains(t, err.Error(), "runwisp restart")
 		})
 	}
-}
-
-// TestReloadCoversEveryDaemonKey guards config.Daemon growing a field nobody
-// classified: every field must either be rejected as restart-only or be
-// reported by changedSettings (and so applied by the settings hook). A field
-// that is neither would be silently accepted by reload and never take effect.
-func TestReloadCoversEveryDaemonKey(t *testing.T) {
-	typ := reflect.TypeFor[config.Daemon]()
-	for i := range typ.NumField() {
-		field := typ.Field(i)
-		t.Run(field.Name, func(t *testing.T) {
-			updated := &config.Config{}
-			v := reflect.ValueOf(&updated.Daemon).Elem().Field(i)
-			switch v.Kind() {
-			case reflect.Bool:
-				v.SetBool(true)
-			case reflect.String:
-				v.SetString("x")
-			case reflect.Int64:
-				v.SetInt(1)
-			case reflect.Slice:
-				v.Set(reflect.Append(v, reflect.ValueOf("x")))
-			default:
-				t.Fatalf("unhandled kind %s; extend this test", v.Kind())
-			}
-			rejected := checkNonReloadable(&config.Config{}, updated) != nil
-			reported := len(changedSettings(&config.Config{}, updated)) > 0
-			assert.True(t, rejected != reported,
-				"[daemon] %s must be exactly one of restart-only or reported live (rejected=%v reported=%v)",
-				field.Name, rejected, reported)
-		})
-	}
-}
-
-func TestChangedSettings(t *testing.T) {
-	old := &config.Config{Scheduler: config.Scheduler{Timezone: "UTC"}}
-	assert.Empty(t, changedSettings(old, old))
-
-	updated := &config.Config{
-		Scheduler: config.Scheduler{Timezone: "Asia/Tokyo"},
-		Storage:   config.Storage{MaxSize: 1},
-		Notify:    config.NotifyConfig{Routes: []config.NotificationRoute{{NotifierID: []string{"inapp"}}}},
-	}
-	assert.Equal(t, []string{"daemon.timezone", "storage.max_size", "notifications"}, changedSettings(old, updated))
 }
 
 // TestCheckNonReloadable_RUNWISPTLSDoesNotFlapReload proves reload survives
@@ -128,7 +83,7 @@ func TestCheckNonReloadable_RUNWISPTLSDoesNotFlapReload(t *testing.T) {
 
 	require.Equal(t, "off", oldCfg.Daemon.TLS)
 	require.Equal(t, "off", newCfg.Daemon.TLS)
-	assert.NoError(t, checkNonReloadable(oldCfg, newCfg))
+	assert.NoError(t, CheckNonReloadable(oldCfg, newCfg))
 }
 
 // recordingManager is a TaskManager that records the lifecycle calls a reconcile
@@ -146,6 +101,11 @@ type recordingManager struct {
 	// means "no snapshot" (ok=false); set it to model.ServiceStopped/Running to
 	// drive the autostart-flip reload warning.
 	snapState string
+	location  *time.Location
+}
+
+func (m *recordingManager) SetDaemonLocation(loc *time.Location) {
+	m.location = loc
 }
 
 func (m *recordingManager) UpsertTask(task *model.Task) {
@@ -360,14 +320,16 @@ func TestReconcile_ClearsPauseTheConfigNoLongerAllows(t *testing.T) {
 // TestReconcile_SettingsHookGatesTimezoneAndCommit proves the settings hook is
 // part of validate-first: when it fails, the reload is rejected and nothing
 // moves (the schedule keeps its zone, the commit never runs). When it passes, a
-// timezone change re-bases the schedule and the commit runs.
+// timezone change re-bases the schedule and the manager's health check zone,
+// the hook's keys are reported after the timezone, and the commit runs before
+// the task set changes, so what the reload starts runs under the new settings.
 func TestReconcile_SettingsHookGatesTimezoneAndCommit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runwisp.toml")
-	write := func(tz string) {
-		body := "[daemon]\ntimezone = \"" + tz + "\"\n\n[tasks.t]\nrun = \"/bin/true\"\ncron = \"0 3 * * *\"\n"
+	write := func(tz, run string) {
+		body := "[daemon]\ntimezone = \"" + tz + "\"\n\n[tasks.t]\nrun = \"" + run + "\"\ncron = \"0 3 * * *\"\n"
 		require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 	}
-	write("UTC")
+	write("UTC", "/bin/true")
 	base, err := config.Load(path)
 	require.NoError(t, err)
 
@@ -392,34 +354,70 @@ func TestReconcile_SettingsHookGatesTimezoneAndCommit(t *testing.T) {
 	require.Equal(t, 3, hourOfNextRun())
 
 	hookErr := errors.New("bad notifier")
-	committed := false
+	committed, committedBeforeApply := false, false
+	mgr := &recordingManager{}
 	r := NewReconciler(ReconcilerDeps{
 		ConfigPath: path,
 		Baseline:   base,
 		Registry:   NewTaskRegistry(tasks),
 		Scheduler:  sched,
-		Manager:    &recordingManager{},
+		Manager:    mgr,
 		Snapshot:   config.NewSnapshot(path, base, time.Now()),
-		Settings: func(_, _ *config.Config) (func(), error) {
+		Settings: func(_, _ *config.Config) ([]string, func(), error) {
 			if hookErr != nil {
-				return nil, hookErr
+				return nil, nil, hookErr
 			}
-			return func() { committed = true }, nil
+			return []string{"storage.max_size"}, func() {
+				committed = true
+				committedBeforeApply = len(mgr.upserted) == 0
+			}, nil
 		},
 	})
 
-	write("Asia/Tokyo") // UTC+9, no DST: 03:00 Tokyo is 18:00 UTC
+	write("Asia/Tokyo", "/bin/false") // UTC+9, no DST: 03:00 Tokyo is 18:00 UTC
 	_, err = r.Reconcile()
 	require.ErrorContains(t, err, "bad notifier")
 	assert.False(t, committed)
+	assert.Nil(t, mgr.location)
 	assert.Equal(t, 3, hourOfNextRun(), "a rejected reload must not move the schedule")
 
 	hookErr = nil
 	result, err := r.Reconcile()
 	require.NoError(t, err)
 	assert.True(t, committed)
-	assert.Equal(t, []string{"daemon.timezone"}, result.Settings)
+	assert.True(t, committedBeforeApply, "settings must be live before the changed task is swapped in")
+	assert.Equal(t, []string{"t"}, mgr.upserted)
+	assert.Equal(t, []string{"daemon.timezone", "storage.max_size"}, result.Settings)
+	require.NotNil(t, mgr.location)
+	assert.Equal(t, "Asia/Tokyo", mgr.location.String(), "health checks follow the new zone")
 	assert.Equal(t, 18, hourOfNextRun())
+}
+
+// TestReconcile_UnsetTimezoneKeepsBootZone proves a reload doesn't pick up a
+// host zone change on its own: with [daemon] timezone unset, the zone the
+// daemon booted with stays until a restart, however the host zone moved.
+func TestReconcile_UnsetTimezoneKeepsBootZone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runwisp.toml")
+	require.NoError(t, os.WriteFile(path, []byte("[tasks.t]\nrun = \"/bin/true\"\ncron = \"0 3 * * *\"\n"), 0o600))
+	t.Setenv("TZ", "UTC")
+	base, err := config.Load(path)
+	require.NoError(t, err)
+	require.Equal(t, config.TimezoneSourceSystem, base.Scheduler.Source)
+
+	mgr := &recordingManager{}
+	r := NewReconciler(ReconcilerDeps{
+		ConfigPath: path,
+		Baseline:   base,
+		Registry:   NewTaskRegistry(tasksByName(base)),
+		Manager:    mgr,
+		Snapshot:   config.NewSnapshot(path, base, time.Now()),
+	})
+
+	t.Setenv("TZ", "Asia/Tokyo") // the host zone moves under the daemon
+	result, err := r.Reconcile()
+	require.NoError(t, err)
+	assert.Empty(t, result.Settings)
+	assert.Nil(t, mgr.location)
 }
 
 // TestReconcile_CronHoldWatcherFollowsIncludeCron proves the cron-hold watcher

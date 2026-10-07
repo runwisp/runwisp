@@ -200,38 +200,20 @@ func TestBuild_SmtpPropagatesBackoff(t *testing.T) {
 	}
 }
 
-func TestBuild_SlackTemplatePathMissing(t *testing.T) {
+func TestBuild_TemplateOverridesDefault(t *testing.T) {
 	_, err := Build(NotifierSpec{
-		ID:           "ops",
-		Type:         "slack",
-		WebhookURL:   "https://hooks.slack.test/T/B/Z",
-		TemplatePath: "/no/such/template/file/here.tmpl",
+		ID:         "ops",
+		Type:       "slack",
+		WebhookURL: "https://hooks.slack.test/T/B/Z",
+		Template:   `{"text": "{{ .TaskName }}"}`,
 	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "read template")
-}
+	require.NoError(t, err)
 
-func TestBuild_TelegramTemplatePathMissing(t *testing.T) {
-	_, err := Build(NotifierSpec{
-		ID:           "alerts",
-		Type:         "telegram",
-		BotToken:     "secret",
-		ChatID:       "-100123",
-		TemplatePath: "/no/such/template/file/here.tmpl",
+	_, err = Build(NotifierSpec{
+		ID:         "ops",
+		Type:       "slack",
+		WebhookURL: "https://hooks.slack.test/T/B/Z",
+		Template:   "{{ .TaskName ",
 	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "read template")
-}
-
-func TestBuild_SmtpTemplatePathMissing(t *testing.T) {
-	_, err := Build(NotifierSpec{
-		ID:           "mail",
-		Type:         "smtp",
-		Host:         "smtp.example.test",
-		From:         "f@example.test",
-		Recipients:   []string{"r@example.test"},
-		TemplatePath: "/no/such/template/file/here.tmpl",
-	})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "read template")
+	require.Error(t, err, "a template that doesn't parse must fail the build")
 }

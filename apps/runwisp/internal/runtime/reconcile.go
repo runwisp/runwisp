@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"slices"
 	"sync"
 	"time"
 
@@ -67,9 +66,12 @@ type ReconcilerDeps struct {
 // SettingsHook prepares the daemon-wide (non-task) side of a reload: notifiers
 // and routes, storage limits, and the [daemon] keys a reload applies live. It
 // runs after validation and before anything live changes, and must change
-// nothing itself; an error rejects the whole reload. The returned commit
-// applies the new settings and runs once the task set has been reconciled.
-type SettingsHook func(old, updated *config.Config) (commit func(), err error)
+// nothing itself; an error rejects the whole reload. It returns the TOML keys
+// the reload changes, reported in the reload result, and the commit that
+// applies exactly those. Commit runs before the task set is reconciled, so
+// services the reload starts and runs it triggers already see the new
+// settings and report through the new notifiers.
+type SettingsHook func(old, updated *config.Config) (keys []string, commit func(), err error)
 
 // NewReconciler wires a reconciler from its dependencies.
 func NewReconciler(deps ReconcilerDeps) *Reconciler {
@@ -115,36 +117,53 @@ func (r *Reconciler) Reconcile() (model.ReloadResult, error) {
 		return model.ReloadResult{}, fmt.Errorf("reload rejected: %w", err)
 	}
 
-	if err := checkNonReloadable(r.baseline, newCfg); err != nil {
+	if err := CheckNonReloadable(r.baseline, newCfg); err != nil {
 		return model.ReloadResult{}, err
 	}
 
+	// An unset [daemon] timezone resolves to the host zone on every load. Keep
+	// the zone the daemon booted with: the TOML didn't change, and a host zone
+	// change is picked up by a restart, not by whichever unrelated reload
+	// happens to run next.
+	if newCfg.Scheduler.Source == config.TimezoneSourceSystem && r.baseline.Scheduler.Source == config.TimezoneSourceSystem {
+		newCfg.Scheduler.Timezone = r.baseline.Scheduler.Timezone
+	}
+
+	var settings []string
 	var newLoc *time.Location
 	if newCfg.Scheduler.Timezone != r.baseline.Scheduler.Timezone {
 		if newLoc, err = config.ResolveTimezone("daemon.timezone", newCfg.Scheduler.Timezone); err != nil {
 			return model.ReloadResult{}, fmt.Errorf("reload rejected: %w", err)
 		}
+		settings = append(settings, "daemon.timezone")
 	}
 
 	commitSettings := func() {}
 	if r.settings != nil {
-		if commitSettings, err = r.settings(r.baseline, newCfg); err != nil {
+		keys, commit, err := r.settings(r.baseline, newCfg)
+		if err != nil {
 			return model.ReloadResult{}, fmt.Errorf("reload rejected: %w", err)
 		}
+		settings, commitSettings = append(settings, keys...), commit
 	}
 
 	oldTasks := r.registry.Snapshot()
 	newTasks := tasksByName(newCfg)
 	diff := config.DiffTasks(oldTasks, newTasks)
 
+	// Settings first, so what apply starts already runs under them.
+	commitSettings()
+	if newLoc != nil {
+		r.manager.SetDaemonLocation(newLoc)
+	}
 	applyWarnings := r.apply(diff, oldTasks, newTasks)
 	if newLoc != nil && r.scheduler != nil {
+		// After apply, so the entries it re-bases are the new task set's.
 		applyWarnings = append(applyWarnings, r.scheduler.SetLocation(newLoc, newTasks)...)
 	}
-	commitSettings()
 
 	result := diff.ToResult()
-	result.Settings = changedSettings(r.baseline, newCfg)
+	result.Settings = settings
 	result.Warnings = append(config.Warnings(newCfg), applyWarnings...)
 
 	r.baseline = newCfg
@@ -482,12 +501,13 @@ func tasksByName(cfg *config.Config) map[string]*model.Task {
 	return out
 }
 
-// checkNonReloadable rejects a reload that changes a restart-only [daemon] key:
+// CheckNonReloadable rejects a reload that changes a restart-only [daemon] key:
 // TLS and the dedicated metrics listener are bound once at boot, and the
 // station dispatch gate is fixed into the executor and station client at boot,
 // so they require a full `runwisp restart`. Server bind host/port are CLI
-// flags, not config, so they can't change here.
-func checkNonReloadable(old, updated *config.Config) error {
+// flags, not config, so they can't change here. Exported for the daemon's test
+// that every [daemon] key is either restart-only or applied by its SettingsHook.
+func CheckNonReloadable(old, updated *config.Config) error {
 	o, n := restartOnly(old.Daemon), restartOnly(updated.Daemon)
 	switch {
 	case o.TLS != n.TLS || o.TLSCert != n.TLSCert || o.TLSKey != n.TLSKey:
@@ -504,36 +524,15 @@ func checkNonReloadable(old, updated *config.Config) error {
 
 // restartOnly zeroes the [daemon] keys a reload applies live, leaving the ones
 // that need a restart. A key added to config.Daemon later is restart-only
-// until it is zeroed here, reported by changedSettings, and applied by the
-// daemon's SettingsHook (settingsApplier.prepare in cmd/runwisp). The first two
-// are held in step by TestReloadCoversEveryDaemonKey; the third is on you.
+// until it is zeroed here and applied by the daemon's SettingsHook
+// (settingsApplier.prepare in cmd/runwisp); TestReloadCoversEveryDaemonKey
+// there holds the two in step.
 func restartOnly(d config.Daemon) config.Daemon {
 	d.ShutdownTimeout = 0
 	d.ExternalURL = ""
 	d.CheckUpdates = false
 	d.TrustedProxies = nil
 	return d
-}
-
-// changedSettings names the daemon-wide settings a reload changed, as TOML
-// keys, for the reload result. Notifiers, routes and [notify] report together
-// as "notifications".
-func changedSettings(old, updated *config.Config) []string {
-	var out []string
-	add := func(changed bool, key string) {
-		if changed {
-			out = append(out, key)
-		}
-	}
-	add(old.Scheduler.Timezone != updated.Scheduler.Timezone, "daemon.timezone")
-	add(old.Daemon.ExternalURL != updated.Daemon.ExternalURL, "daemon.external_url")
-	add(old.Daemon.CheckUpdates != updated.Daemon.CheckUpdates, "daemon.check_updates")
-	add(old.Daemon.ShutdownTimeout != updated.Daemon.ShutdownTimeout, "daemon.shutdown_timeout")
-	add(!slices.Equal(old.Daemon.TrustedProxies, updated.Daemon.TrustedProxies), "daemon.trusted_proxies")
-	add(old.Storage.MaxSize != updated.Storage.MaxSize, "storage.max_size")
-	add(old.Storage.MinFreeSpace != updated.Storage.MinFreeSpace, "storage.min_free_space")
-	add(!reflect.DeepEqual(old.Notify, updated.Notify), "notifications")
-	return out
 }
 
 func nonReloadableErr(section string) error {

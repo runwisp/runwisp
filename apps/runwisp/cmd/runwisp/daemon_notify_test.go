@@ -204,7 +204,7 @@ func TestInitNotify_NoNotifiersNoRoutesReturnsZero(t *testing.T) {
 
 	cfg := &config.Config{Notify: config.NotifyConfig{}}
 
-	svc, err := initNotify(cfg, "fp", inapp.NewHub(32), db, events.NewEventBus(), slog.Default())
+	svc, err := initNotify(cfg, nil, "fp", inapp.NewHub(32), db, events.NewEventBus(), slog.Default())
 	require.NoError(t, err)
 	assert.Nil(t, svc, "expected no service when nothing is configured")
 }
@@ -227,7 +227,7 @@ func TestInitNotify_InappRouteWiresService(t *testing.T) {
 		},
 	}
 
-	svc, err := initNotify(cfg, "fp", inapp.NewHub(32), db, events.NewEventBus(), slog.Default())
+	svc, err := initNotify(cfg, nil, "fp", inapp.NewHub(32), db, events.NewEventBus(), slog.Default())
 	require.NoError(t, err)
 	require.NotNil(t, svc, "expected Service when inapp route is wired")
 }
@@ -334,9 +334,12 @@ func TestLiveNotify_SwapRetiresOldService(t *testing.T) {
 	assert.Equal(t, int64(1), first.delivered.Load(), "the retired service must stop delivering")
 
 	require.NoError(t, live.Stop(context.Background()))
-	live.swap(build(late))
+	lateSvc := build(late)
+	live.swap(lateSvc)
+	assert.NotSame(t, lateSvc, live.service, "swap after Stop must not install a service")
+	// Both services are unsubscribed by now (Stop and a never-started service),
+	// so a publish reaches neither; no async delivery to wait out.
 	publishRun(bus, "c", true)
-	time.Sleep(50 * time.Millisecond) // let any async dispatch settle
 	assert.Equal(t, int64(0), late.delivered.Load(), "swap after Stop must not start a service")
 	assert.Equal(t, int64(1), second.delivered.Load(), "Stop must detach the current service")
 }

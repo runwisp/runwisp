@@ -4,6 +4,7 @@
 package runtime
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -120,18 +121,33 @@ type defaultTaskManager struct {
 	// schedule; set by NewScheduler (nil until then). Consulted only for a
 	// jittered fire already waiting in the gate (see triggerJittered).
 	schedulePaused func(string) bool
-	// daemonLocation is the scheduler's live daemon timezone, which a health
-	// check cron with no timezone of its own runs in; set by NewScheduler (nil
-	// until then, meaning time.Local).
-	daemonLocation func() *time.Location
+	// daemonLocation is the [daemon] timezone a health check cron with no
+	// timezone of its own runs in; nil means time.Local. Set at boot in every
+	// mode and on a reload that changes it (SetDaemonLocation).
+	daemonLocation *time.Location
 }
 
-// bindScheduler wires the scheduler's pause check and timezone; see NewScheduler.
-func (m *defaultTaskManager) bindScheduler(paused func(string) bool, location func() *time.Location) {
+// setSchedulePaused wires the scheduler's pause check; see NewScheduler.
+func (m *defaultTaskManager) setSchedulePaused(fn func(string) bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.schedulePaused = paused
-	m.daemonLocation = location
+	m.schedulePaused = fn
+}
+
+// SetDaemonLocation sets the zone health check crons without their own
+// timezone run in. Running health watchers read it on every tick, so a reload
+// re-bases them without recycling the service.
+func (m *defaultTaskManager) SetDaemonLocation(loc *time.Location) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.daemonLocation = loc
+}
+
+// location is the live daemon zone, falling back to time.Local.
+func (m *defaultTaskManager) location() *time.Location {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return cmp.Or(m.daemonLocation, time.Local)
 }
 
 // NewTaskManager constructs the default run-manager. clock must not be nil;

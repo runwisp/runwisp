@@ -53,7 +53,6 @@ func resolveNotifier(n config.NotifierSpec, renderCtx render.TemplateContext) ch
 		Type:          n.Type,
 		ParseMode:     n.ParseMode,
 		ChatID:        n.ChatID,
-		TemplatePath:  n.TemplatePath,
 		RenderContext: renderCtx,
 	}
 	switch n.Type {

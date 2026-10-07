@@ -100,6 +100,9 @@ type TaskManager interface {
 	// for at least healthy_after. The live readiness signal depends_on boot
 	// gating waits on. Non-services report false.
 	ServiceHealthy(taskName string) bool
+	// SetDaemonLocation sets the [daemon] timezone health check crons without
+	// a timezone of their own run in. nil means time.Local.
+	SetDaemonLocation(loc *time.Location)
 	// WaitServiceHealthy blocks until ServiceHealthy is true, the context is
 	// cancelled, or the service can no longer reach healthy without operator
 	// intervention. It returns nil only when the service became healthy.

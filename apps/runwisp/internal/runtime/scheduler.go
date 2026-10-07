@@ -148,14 +148,13 @@ func NewScheduler(taskManager TaskRunner, tasks map[string]*model.Task, location
 		now:         clock,
 	}
 	// A jittered fire can wait in the manager's gate past the moment its task
-	// is paused, so the manager asks back before starting it; and it evaluates
-	// health check crons in the live daemon timezone. Optional so the
+	// is paused; the manager asks back before starting it. Optional so the
 	// TaskRunner interface (and every fake of it) stays unchanged.
-	type schedulerBinder interface {
-		bindScheduler(paused func(string) bool, location func() *time.Location)
+	type pauseGuardSetter interface {
+		setSchedulePaused(func(string) bool)
 	}
-	if binder, ok := taskManager.(schedulerBinder); ok {
-		binder.bindScheduler(scheduler.IsPaused, scheduler.Location)
+	if setter, ok := taskManager.(pauseGuardSetter); ok {
+		setter.setSchedulePaused(scheduler.IsPaused)
 	}
 	return scheduler
 }
@@ -283,10 +282,16 @@ func (scheduler *Scheduler) SetLocation(location *time.Location, tasks map[strin
 
 	scheduler.location = location
 	scheduler.tasks = tasks
+	// One snapshot up front: cron.Entry takes a full snapshot through the run
+	// loop per call, which would make this O(n²) under the scheduler mutex.
+	schedules := make(map[cron.EntryID]cron.Schedule, len(scheduler.entryIDs))
+	for _, entry := range scheduler.cron.Entries() {
+		schedules[entry.ID] = entry.Schedule
+	}
 	var warnings []string
 	for _, name := range slices.Sorted(maps.Keys(scheduler.entryIDs)) {
 		entryID, task := scheduler.entryIDs[name], tasks[name]
-		zoned, ok := scheduler.cron.Entry(entryID).Schedule.(zonedSchedule)
+		zoned, ok := schedules[entryID].(zonedSchedule)
 		if task == nil || task.Timezone != "" || !ok || isFixedInterval(zoned.Schedule) {
 			continue
 		}
@@ -300,13 +305,6 @@ func (scheduler *Scheduler) SetLocation(location *time.Location, tasks map[strin
 	scheduler.jitterPlans = make(map[string]jitterPlan)
 	scheduler.computeJitterPlans()
 	return warnings
-}
-
-// Location is the daemon timezone schedules without their own are read in.
-func (scheduler *Scheduler) Location() *time.Location {
-	scheduler.mutex.Lock()
-	defer scheduler.mutex.Unlock()
-	return scheduler.location
 }
 
 func (scheduler *Scheduler) Stop() {
