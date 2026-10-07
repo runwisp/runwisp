@@ -419,6 +419,19 @@ jobs:
       - name: Move docs-release to the released commit
         run: git push origin "HEAD:refs/heads/docs-release" --force
 
+  rebuild-website:
+    # The marketing site (separate repo, Cloudflare Pages) reads release data at
+    # build time, so kick a rebuild via its deploy hook once a stable release is
+    # published. Same stability rule as deploy-docs.
+    if: github.event_name == 'release' && !contains(github.event.release.tag_name, '-')
+    name: Rebuild website
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Cloudflare Pages deploy hook
+        env:
+          HOOK: ${{ secrets.CF_PAGES_DEPLOY_HOOK }}
+        run: curl -fsS -X POST "$HOOK"
+
   docker-publish:
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     name: Publish Docker image (${{ matrix.base }}${{ matrix.variant == 'docker' && '-docker' || '' }})
