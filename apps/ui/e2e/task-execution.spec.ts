@@ -4,10 +4,12 @@
 import { test, expect } from "./fixtures/test-base";
 import {
     expectRunDetailMatchesApi,
+    markAllReadViaAPI,
     runVerdict,
     triggerRunViaAPI,
     triggerRunViaUI,
     waitForRunEnded,
+    waitForUnreadNotification,
 } from "./fixtures/api";
 
 test.describe("task execution", () => {
@@ -260,5 +262,51 @@ test.describe("task execution", () => {
 
         releaseLog();
         await expect(main.getByText("echo-line-1")).toBeVisible({ timeout: 10_000 });
+    });
+
+    test("on a phone, a filter with no matches keeps the run list on screen", async ({
+        authenticatedPage: page,
+        daemonState,
+    }) => {
+        const run = await triggerRunViaAPI(page, "echo-task", daemonState.token);
+        await waitForRunEnded(page, "echo-task", run.id, daemonState.token);
+
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto("/tasks/echo-task");
+        const filter = page.getByTitle("Filter runs");
+        await filter.click();
+        // echo-task never fails, so this matches nothing. The list (and its
+        // filter, to undo it) must stay, not give way to the "never ran" state.
+        await page.getByRole("checkbox", { name: "Failed", exact: true }).check();
+        const main = page.getByRole("main");
+        await expect(main.getByText("No runs yet")).toBeVisible();
+        await expect(main.getByText("This task hasn't run yet.", { exact: false })).toHaveCount(0);
+        await expect(filter).toBeVisible();
+    });
+
+    test("on a phone, opening a run from a notification shows that run", async ({
+        authenticatedPage: page,
+        daemonState,
+    }) => {
+        await markAllReadViaAPI(page, daemonState.token);
+        const run = await triggerRunViaAPI(page, "fail-task", daemonState.token);
+        await waitForRunEnded(page, "fail-task", run.id, daemonState.token);
+        await waitForUnreadNotification(page, daemonState.token);
+
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto("/tasks/fail-task");
+        const main = page.getByRole("main");
+        await expect(main.getByTitle("Filter runs")).toBeVisible();
+        await expect(main.getByTestId("run-verdict")).toHaveCount(0);
+
+        await page.getByRole("button", { name: "Notifications" }).click();
+        await page
+            .getByRole("dialog", { name: "Notifications" })
+            .getByTestId("notification-item")
+            .filter({ hasText: "fail-task" })
+            .first()
+            .click();
+        await expect(page).toHaveURL(new RegExp(`/tasks/fail-task/${run.id}`));
+        await expect(main.getByTestId("run-verdict")).toBeVisible();
     });
 });

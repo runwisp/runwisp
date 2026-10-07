@@ -99,6 +99,20 @@ func TestSamplerIntervalIsFastForYoungRuns(t *testing.T) {
 	assert.Equal(t, slowInterval, s.interval())
 }
 
+func TestSamplerSamplesNewRunBesideOldOneWithinFastInterval(t *testing.T) {
+	clk := newClock()
+	stats := map[int]groupStat{1: {RSS: 1}, 2: {RSS: 2}}
+	s := newSampler(func(map[int]struct{}) map[int]groupStat { return stats }, clk.Now, 20*time.Millisecond)
+	defer s.Track("svc", "old", 1)()
+	clk.Advance(youngFor)
+	// Let the loop settle into its slow sleep now that "old" is no longer young.
+	time.Sleep(100 * time.Millisecond)
+
+	defer s.Track("cron", "new", 2)()
+	assert.Eventually(t, func() bool { _, ok := s.RunUsage()["new"]; return ok },
+		500*time.Millisecond, 5*time.Millisecond, "a new run waited out the slow interval")
+}
+
 func TestParsePS(t *testing.T) {
 	out := []byte(`  100  2048  0:01.50
   100  1024  1:00:00.00

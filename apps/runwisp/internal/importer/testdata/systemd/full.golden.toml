@@ -5,8 +5,8 @@
 description = "Tempo Ledger API"
 run = "/usr/local/bin/bun run start"
 working_dir = "/srv/tempoledger"
-graceful_stop = "30s"
 stop_signal = "SIGTERM"
+graceful_stop = "30s"
 user = "deploy:deploy"
 
 [services.full.env]

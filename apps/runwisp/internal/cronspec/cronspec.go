@@ -51,14 +51,36 @@ func (p specParser) Parse(spec string) (cron.Schedule, error) {
 	}
 	if s, ok := sched.(*cron.SpecSchedule); ok {
 		markStarDays(s, spec)
-	}
-	// robfig parses specs like "0 0 30 2 *" happily but Next never finds a
-	// match and returns the zero time. Any fixed reference works: Next looks
-	// five years ahead, which covers every real calendar (leap days included).
-	if sched.Next(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)).IsZero() {
-		return nil, errors.New("schedule never fires (the day of month does not exist in the given months)")
+		if neverFires(s) {
+			return nil, errors.New("schedule never fires (the day of month does not exist in the given months)")
+		}
 	}
 	return sched, nil
+}
+
+// daysIn is the longest each month gets, February counting its leap day.
+var daysIn = [13]uint{0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
+
+// neverFires reports a spec like "0 0 30 2 *", which robfig parses but never
+// matches: the day of month exists in none of the months, and day-of-week
+// can't stand in for it because the two are ANDed (one carries starBit). It
+// reads the fields instead of asking Next, which gives up after five years
+// and so would also reject rare but real dates like "0 9 25 12 */7".
+func neverFires(s *cron.SpecSchedule) bool {
+	if s.Dom&starBit != 0 || s.Dow&starBit == 0 {
+		return false
+	}
+	for month := uint(1); month <= 12; month++ {
+		if s.Month&(1<<month) == 0 {
+			continue
+		}
+		for day := uint(1); day <= daysIn[month]; day++ {
+			if s.Dom&(1<<day) != 0 {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // starBit is robfig/cron's unexported "field was *" flag (spec.go). dayMatches

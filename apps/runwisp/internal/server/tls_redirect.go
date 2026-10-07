@@ -42,6 +42,9 @@ func newSniffListener(ln net.Listener) *sniffListener {
 			ReadHeaderTimeout: 10 * time.Second,
 		},
 	}
+	// One redirect per conn: an idle keep-alive would otherwise be held open
+	// with no timeout, even after the listener closes.
+	l.redirect.SetKeepAlivesEnabled(false)
 	go l.acceptLoop()
 	return l
 }

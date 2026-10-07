@@ -87,3 +87,11 @@ func TestSecretRedactor_PrefixSecretMasksLongerWhole(t *testing.T) {
 		assert.Equal(t, "x [redacted] y", r.text("x abcdef y"))
 	}
 }
+
+// A shorter secret overlapping the start of a longer one must not leave the
+// rest of the longer one in clear.
+func TestSecretRedactor_OverlappingSecretsMaskBoth(t *testing.T) {
+	r := newSecretRedactor(map[string]string{"A": "tok", "B": "ken-9f8e7d6c5b4a"})
+	assert.Equal(t, "x [redacted] y", r.text("x token-9f8e7d6c5b4a y"))
+	assert.Equal(t, "[redacted] [redacted]", r.text("tok ken-9f8e7d6c5b4a"))
+}

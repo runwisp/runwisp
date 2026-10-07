@@ -176,9 +176,10 @@ func TestSystemdEscape_EscapesPercent(t *testing.T) {
 	assert.Equal(t, `\"`, systemdEscape(`"`))
 }
 
-// ExecStart expands $VAR, so a "$" in the binary, config or data path must be
-// written "$$"; Environment= values never expand it, so they stay untouched.
-func TestRenderSystemdUnit_EscapesDollarInExecStartOnly(t *testing.T) {
+// ExecStart expands $VAR in its arguments, so a "$" in the config or data path
+// must be written "$$". The executable path and Environment= values are never
+// expanded, so they stay untouched (a "$$" there would reach exec as is).
+func TestRenderSystemdUnit_EscapesDollarInExecStartArgsOnly(t *testing.T) {
 	body, err := RenderSystemdUnit(SystemdParams{
 		Binary:  "/opt/$bin/runwisp",
 		Config:  "/etc/$HOME/runwisp.toml",
@@ -189,7 +190,7 @@ func TestRenderSystemdUnit_EscapesDollarInExecStartOnly(t *testing.T) {
 		Path:    "/usr/bin",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, string(body), `ExecStart="/opt/$$bin/runwisp" daemon --config "/etc/$$HOME/runwisp.toml" --data "/var/lib/$${x}"`)
+	assert.Contains(t, string(body), `ExecStart="/opt/$bin/runwisp" daemon --config "/etc/$$HOME/runwisp.toml" --data "/var/lib/$${x}"`)
 	assert.Contains(t, string(body), `Environment="HOME=/home/a$b"`)
 }
 

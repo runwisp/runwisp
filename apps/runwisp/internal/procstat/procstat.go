@@ -47,6 +47,7 @@ type Sampler struct {
 	mu      sync.Mutex
 	runs    map[string]*tracked // by run ID
 	running bool
+	wake    chan struct{} // Track nudges a loop sleeping at slowInterval
 }
 
 type tracked struct {
@@ -69,7 +70,7 @@ func New() *Sampler {
 }
 
 func newSampler(read reader, now func() time.Time, fast time.Duration) *Sampler {
-	return &Sampler{read: read, now: now, fast: fast, runs: make(map[string]*tracked)}
+	return &Sampler{read: read, now: now, fast: fast, runs: make(map[string]*tracked), wake: make(chan struct{}, 1)}
 }
 
 // Track starts sampling the process group pgid for a run. Call stop after the
@@ -81,6 +82,11 @@ func (s *Sampler) Track(taskName, runID string, pgid int) (stop func() (peakByte
 	if !s.running {
 		s.running = true
 		go s.loop()
+	} else {
+		select {
+		case s.wake <- struct{}{}:
+		default:
+		}
 	}
 	s.mu.Unlock()
 
@@ -126,12 +132,26 @@ func (s *Sampler) RunUsage() map[string]model.ResourceUsage {
 	return out
 }
 
+// loop samples on interval. A Track wake re-evaluates the pending sleep, so a
+// new run beside an old one is sampled within fast, not after the slow sleep
+// already under way; the deadline only ever moves earlier, so a stream of
+// Track calls can't postpone sampling.
 func (s *Sampler) loop() {
 	defer crashguard.Guard()
+	deadline := time.Now().Add(s.interval())
 	for {
-		time.Sleep(s.interval())
-		if !s.sampleOnce() {
-			return
+		timer := time.NewTimer(time.Until(deadline))
+		select {
+		case <-timer.C:
+			if !s.sampleOnce() {
+				return
+			}
+			deadline = time.Now().Add(s.interval())
+		case <-s.wake:
+			timer.Stop()
+			if d := time.Now().Add(s.interval()); d.Before(deadline) {
+				deadline = d
+			}
 		}
 	}
 }

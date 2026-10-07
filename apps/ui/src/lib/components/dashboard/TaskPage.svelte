@@ -7,7 +7,15 @@
     import { SvelteMap } from "svelte/reactivity";
     import { isService, type Task, type Run } from "@runwisp/common";
     import type { LogEvent, RunMotion, RunsListFilters, RunOutputMatch } from "@runwisp/ui";
-    import { RunsList, RunDetailPanel, Button, Modal, Alert, AlertDialog } from "@runwisp/ui";
+    import {
+        activeFilterCount,
+        RunsList,
+        RunDetailPanel,
+        Button,
+        Modal,
+        Alert,
+        AlertDialog,
+    } from "@runwisp/ui";
     import { tasksApi } from "$lib/api";
     import { headerSearchStore, systemStore } from "$lib/stores";
     import { createRunSelection } from "$lib/utils/run-selection.svelte";
@@ -249,12 +257,18 @@
         }
     });
 
+    // A run named from outside the list (a notification link, a run just
+    // triggered) is picked too, so a phone shows it rather than the list.
     $effect(() => {
-        if (initialRunId) selection.userSelectedRunId = initialRunId;
+        if (!initialRunId) return;
+        selection.userSelectedRunId = initialRunId;
+        rail.picked();
     });
 
     $effect(() => {
-        if (selectRunId) selection.userSelectedRunId = selectRunId;
+        if (!selectRunId) return;
+        selection.userSelectedRunId = selectRunId;
+        rail.picked();
     });
 
     // Report explicit selections upward so the URL can mirror the run on screen.
@@ -265,7 +279,14 @@
         onSelectRun?.(selection.userSelectedRunId);
     });
 
-    let panes = $derived(rail.panes(!!selection.selectedRun, !loading && items.length === 0));
+    // Filters are applied server-side, so an empty list under a filter means
+    // "no matches", not "never ran": keep the list and its filter on screen.
+    let panes = $derived(
+        rail.panes(
+            !!selection.selectedRun,
+            !loading && items.length === 0 && activeFilterCount(filters) === 0,
+        ),
+    );
 
     const envEntries = $derived(
         task.env ? Object.entries(task.env).sort(([a], [b]) => a.localeCompare(b)) : [],

@@ -55,6 +55,7 @@ type iniParser struct {
 	sections []iniSection
 	cur      *iniSection
 	lastKey  string
+	blanks   int // blank lines since lastKey's value; kept if the value goes on
 }
 
 // feed classifies one raw line and folds it into the parser state.
@@ -66,15 +67,17 @@ func (p *iniParser) feed(raw string) {
 	raw = stripInlineComment(raw)
 	trimmed = strings.TrimSpace(raw)
 	if trimmed == "" {
-		p.lastKey = ""
+		p.blanks++ // like ConfigParser, a blank line alone doesn't end a value
 		return
 	}
 	// Continuation: indented line that isn't a new section/comment and we have a
 	// key in flight.
 	if p.isContinuation(raw, trimmed) {
-		p.cur.values[p.lastKey] += "\n" + trimmed
+		p.cur.values[p.lastKey] += strings.Repeat("\n", p.blanks+1) + trimmed
+		p.blanks = 0
 		return
 	}
+	p.blanks = 0
 	if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
 		p.startSection(trimmed)
 		return

@@ -73,7 +73,9 @@
     // on later URL changes. Declared before the emit effect below so the first
     // flush seeds before it reports — otherwise the initial null would clobber it.
     $effect(() => {
-        if (initialRunId) selection.userSelectedRunId = initialRunId;
+        if (!initialRunId) return;
+        selection.userSelectedRunId = initialRunId;
+        rail.picked();
     });
 
     // Report explicit selections upward so the URL can mirror the run on screen.
