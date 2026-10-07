@@ -6,6 +6,7 @@ package server
 import (
 	"bufio"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -46,9 +47,14 @@ func TestSniffListenerRedirectsPlainHTTP(t *testing.T) {
 	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
 	go func() { _, _ = client.Write([]byte("GET /runs?x=1 HTTP/1.1\r\nHost: example.test:8080\r\n\r\n")) }()
 
-	resp, err := http.ReadResponse(bufio.NewReader(client), nil)
+	br := bufio.NewReader(client)
+	resp, err := http.ReadResponse(br, nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if _, err := br.ReadByte(); !errors.Is(err, io.EOF) {
+		t.Fatalf("conn left open after the redirect: %v", err)
 	}
 	if resp.StatusCode != http.StatusPermanentRedirect {
 		t.Fatalf("status = %d, want 308", resp.StatusCode)

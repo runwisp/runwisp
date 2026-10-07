@@ -33,8 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Copying a run ID in the Web UI works when the dashboard is served over plain HTTP.
 - A search hit opened in a running run's log is scrolled to once, so new output doesn't pull the view back.
 - `runwisp run` exits 1 when a run is marked failed but the process exited 0 or never started, such as a `failures` output pattern match, a timeout the task handled, or a skipped run.
-- `runwisp import` reads supervisord configs the way supervisord does (inline `;` and `#` comments are dropped, and a comment line doesn't end a multi-line value), keeps matched quote pairs in crontab environment values, writes control characters in commands as valid TOML, and quotes systemd `ExecStart` arguments such as `*` and `;` so the shell doesn't act on them while `$VAR` and `${VAR}` still expand.
-- `runwisp import systemd` leaves out an `EnvironmentFile=-path` that doesn't exist yet (with a note) and no longer turns `TimeoutStopSec=0` into an immediate kill.
+- `runwisp import` reads supervisord configs the way supervisord does (inline `;` and `#` comments are dropped, and a comment or blank line doesn't end a multi-line value), keeps matched quote pairs in crontab environment values, writes control characters in commands as valid TOML, and reads systemd `ExecStart` arguments the way systemd does (quotes, escapes, `$$`, `%%`), quoting them so the shell passes them on unchanged while `$VAR` and `${VAR}` still expand.
+- `runwisp import systemd` leaves out an `EnvironmentFile=-path` that doesn't exist yet (with a note), no longer turns `TimeoutStopSec=0` into an immediate kill, uses the last of `TimeoutSec=` and `TimeoutStopSec=`, and no longer lets a comment ending in `\` hide the next line.
 - The systemd unit written by `runwisp service install` keeps a literal `$` in the binary, config or data path.
 - Two daemons can no longer end up sharing a data dir when one starts as another stops.
 - Failures held back by notification coalescing are sent as a summary when the daemon stops, instead of being dropped.
@@ -52,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - HTTP task logs hide URL credentials and query values, and a redirect to another host no longer carries credential headers or the original URL along. SSRF checks also reject deprecated IPv4-compatible IPv6 addresses.
 - Browser CSRF checks refuse a plain `http` page on the same host when the daemon is reached over HTTPS, and a non-Bearer `Authorization` header (such as a proxy's Basic auth) no longer exempts a request from them.
-- When one secret value is a prefix of another, the longer one is now always fully masked in run output.
+- When secret values overlap in run output, such as one being a prefix of another, each is now fully masked.
 - Slack notifications escape `&`, `<` and `>` and keep task output inside its code block, so output can't produce `@channel` mentions or links.
 
 ## [1.4.0] - 2026-10-05

@@ -119,11 +119,13 @@ func RenderLaunchdPlist(p LaunchdParams) ([]byte, error) {
 
 // templateFuncs escape interpolated values for their target format.
 //   - sysq:   systemd double-quoted argument (ExecStart tokens)
+//   - sysexe: systemd double-quoted ExecStart executable path
 //   - sysesc: systemd escape without wrapping (inside Environment="KEY=…")
 //   - xml:    XML text/attribute escaping (launchd <string> bodies)
 var templateFuncs = template.FuncMap{
 	"sysesc": systemdEscape,
 	"sysq":   systemdExecArg,
+	"sysexe": systemdExecPath,
 	"xml":    xmlEscape,
 }
 
@@ -142,6 +144,12 @@ func systemdEscape(s string) string {
 // systemdEscape), so a literal "$" in a path is written "$$".
 func systemdExecArg(s string) string {
 	return `"` + strings.ReplaceAll(systemdEscape(s), "$", "$$") + `"`
+}
+
+// systemdExecPath quotes the ExecStart executable. systemd expands variables
+// only in the arguments, so a "$" in the path stays as written.
+func systemdExecPath(s string) string {
+	return `"` + systemdEscape(s) + `"`
 }
 
 func xmlEscape(s string) string {

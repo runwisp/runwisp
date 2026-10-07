@@ -210,6 +210,38 @@ func TestSystemdZeroTimeoutIsNotImportedAsInstantKill(t *testing.T) {
 	mustContain(t, parseUnit(t, "[Service]\nExecStart=/bin/app\nTimeoutStopSec=30\n").TOML(), `graceful_stop = "30s"`)
 }
 
+// TestSystemdLastStopTimeoutWins: TimeoutSec and TimeoutStopSec both set the
+// stop timeout and the last one wins, so the import writes one key (two would
+// be a TOML error) and a later 0 clears an earlier value.
+func TestSystemdLastStopTimeoutWins(t *testing.T) {
+	out := parseUnit(t, "[Service]\nExecStart=/bin/app\nTimeoutSec=20\nTimeoutStopSec=10\n").TOML()
+	if n := strings.Count(out, "graceful_stop"); n != 1 {
+		t.Fatalf("graceful_stop written %d times:\n%s", n, out)
+	}
+	mustContain(t, out, `graceful_stop = "10s"`)
+	mustNotContain(t, parseUnit(t, "[Service]\nExecStart=/bin/app\nTimeoutStopSec=10\nTimeoutStopSec=0\n").TOML(), "graceful_stop")
+}
+
+// TestSystemdEscapedPercentIsNotASpecifier: %% is a literal % to systemd, so it
+// is resolved on import and doesn't ask the operator to fill anything in.
+func TestSystemdEscapedPercentIsNotASpecifier(t *testing.T) {
+	res := parseUnit(t, "[Service]\nExecStart=/bin/date +%%Y\n")
+	mustContain(t, res.TOML(), `run = "/bin/date +%Y"`)
+	if hasNoteKind(res, NoteSystemdTemplate) {
+		t.Errorf("%%%% flagged as a specifier: %+v", allNotes(res))
+	}
+	if !hasNoteKind(parseUnit(t, "[Service]\nExecStart=/bin/app %i\n"), NoteSystemdTemplate) {
+		t.Error("%i not flagged as a specifier")
+	}
+}
+
+// TestSystemdCommentDoesNotContinue: a comment line ending in a backslash is
+// still just a comment; it must not swallow the directive after it.
+func TestSystemdCommentDoesNotContinue(t *testing.T) {
+	res := parseUnit(t, "[Service]\n# old flags \\\nExecStart=/bin/app\n")
+	mustContain(t, res.TOML(), `run = "/bin/app"`)
+}
+
 // TestSystemdOptionalEnvironmentFileMustExist: RunWisp's env_file has to exist,
 // so EnvironmentFile=-path is imported only when the file is there.
 func TestSystemdOptionalEnvironmentFileMustExist(t *testing.T) {
@@ -237,23 +269,35 @@ func TestSystemdOptionalEnvironmentFileMustExist(t *testing.T) {
 }
 
 // TestSystemdExecStartShellMetacharactersAreQuoted: systemd execs ExecStart
-// without a shell, but RunWisp runs `run` through sh -c, so a bare `*` or `;`
-// argument would be globbed or end the command.
+// without a shell, but RunWisp runs `run` through sh -c, so each argument must
+// reach the program exactly as systemd would pass it: no globbing, no command
+// chaining or substitution, and only the variable expansion systemd itself does.
 func TestSystemdExecStartShellMetacharactersAreQuoted(t *testing.T) {
 	cases := map[string]string{
-		`/bin/app --glob *.log`:                `/bin/app --glob '*.log'`,
-		`/bin/app a;b`:                         `/bin/app 'a;b'`,
-		`/bin/app --x=$HOME/a`:                 `/bin/app --x=$HOME/a`,
-		`/bin/app "a b;c" --y`:                 `/bin/app "a b;c" --y`,
-		`/bin/app 'x*' $(id)`:                  `/bin/app 'x*' '$(id)'`,
-		`/bin/a ; /bin/b`:                      `/bin/a ; /bin/b`,
-		`/bin/app | tee`:                       `/bin/app '|' tee`,
-		`-/bin/app plain`:                      `/bin/app plain`,
-		`/bin/app --name=a\;b`:                 `/bin/app --name=a\;b`,
-		`/bin/app   spaced   args`:             `/bin/app   spaced   args`,
-		`/bin/x --port ${PORT} --a=$HOME/${X}`: `/bin/x --port ${PORT} --a=$HOME/${X}`,
-		`/bin/app a=${X}*`:                     `/bin/app 'a='"${X}"'*'`,
-		`/bin/sh -c "echo \" x* done"`:         `/bin/sh -c "echo \" x* done"`,
+		`/bin/app --glob *.log`:        `/bin/app --glob '*.log'`,
+		`/bin/app a;b`:                 `/bin/app 'a;b'`,
+		`/bin/app "a b;c" --y`:         `/bin/app 'a b;c' --y`,
+		`/bin/app 'x*' $(id)`:          `/bin/app 'x*' '$(id)'`,
+		`/bin/a ; /bin/b`:              `/bin/a ; /bin/b`,
+		`/bin/app | tee`:               `/bin/app '|' tee`,
+		`-/bin/app plain`:              `/bin/app plain`,
+		`/bin/app   spaced   args`:     `/bin/app spaced args`,
+		`/bin/sh -c "echo \" x* done"`: `/bin/sh -c 'echo " x* done'`,
+		"/bin/echo \"`id -u`\"":        "/bin/echo '`id -u`'",
+		`/bin/echo "a"*`:               `/bin/echo 'a*'`,
+		`/bin/echo 'it\'s'`:            `/bin/echo 'it'\''s'`,
+		`/bin/echo ""`:                 `/bin/echo ''`,
+		// Unknown escapes keep their backslash; `\;` alone is a literal `;`.
+		`/bin/app --name=a\;b`: `/bin/app '--name=a\;b'`,
+		`/bin/echo foo\\|bar`:  `/bin/echo 'foo\|bar'`,
+		`/bin/echo x \; ";"`:   `/bin/echo x ';' ';'`,
+		// ${VAR} expands anywhere (even in single quotes) as one argument; $VAR
+		// only as a whole word; $$ and %% are a literal $ and %.
+		`/bin/x --port ${PORT} --a=$HOME/${X}`: `/bin/x --port "${PORT}" '--a=$HOME/'"${X}"`,
+		`/bin/app a=${X}*`:                     `/bin/app a="${X}"'*'`,
+		`/bin/echo $FOO '${FOO}'`:              `/bin/echo $FOO "${FOO}"`,
+		`/usr/bin/printf [%%s] $$HOME a$$b`:    `/usr/bin/printf '[%s]' '$HOME' 'a$b'`,
+		`/bin/date +%%Y %i`:                    `/bin/date +%Y %i`,
 	}
 	for in, want := range cases {
 		got, _ := stripExecPrefixes(in)

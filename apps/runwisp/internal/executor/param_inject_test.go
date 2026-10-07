@@ -9,13 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestShellQuote_NeutralisesMetacharacters(t *testing.T) {
-	// A value crafted to break out of the command must survive as one inert
-	// literal — the core trust-model guarantee for operator-supplied values.
-	got := shellQuote(`'; rm -rf / #`)
-	assert.Equal(t, `''\''; rm -rf / #'`, got)
-}
-
 func TestAppendArgTokens_NoTokensLeavesScriptUnchanged(t *testing.T) {
 	assert.Equal(t, "backup.sh", appendArgTokens("backup.sh", nil))
 }

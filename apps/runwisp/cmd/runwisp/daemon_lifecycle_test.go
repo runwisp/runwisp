@@ -157,11 +157,8 @@ func minimalServices(t *testing.T) *daemonServices {
 func TestWaitDrain_NilSchedulerAndNotifyReturnsPromptly(t *testing.T) {
 	svc := minimalServices(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
 	start := time.Now()
-	waitDrain(ctx, svc, 100*time.Millisecond)
+	waitDrain(svc, 100*time.Millisecond)
 	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
 		t.Fatalf("waitDrain took too long with empty TaskManager: %v", elapsed)
 	}
@@ -191,6 +188,29 @@ func TestGracefulShutdown_WaitsForTaskManagerKill(t *testing.T) {
 	gracefulShutdown(func() {}, &stationWG, svc, nil)
 
 	if !slow.finished.Load() {
+		t.Fatal("gracefulShutdown returned before the task manager finished its force-kill")
+	}
+}
+
+// stuckServiceManager has a service that never stops on its own.
+type stuckServiceManager struct{ slowShutdownManager }
+
+func (m *stuckServiceManager) StopService(string) error     { return nil }
+func (m *stuckServiceManager) GetActiveRunCount(string) int { return 1 }
+
+// TestGracefulShutdown_SlowServiceStopStillWaitsForKill: stopping services
+// first used to spend the outer deadline, so with a service that ignored its
+// stop signal the daemon exited before the task manager's kill.
+func TestGracefulShutdown_SlowServiceStopStillWaitsForKill(t *testing.T) {
+	svc := minimalServices(t)
+	stuck := &stuckServiceManager{slowShutdownManager{TaskManager: svc.TaskManager}}
+	svc.TaskManager = stuck
+	svc.Tasks = runtime.NewTaskRegistry(map[string]*model.Task{"web": {Name: "web", Kind: model.KindService}})
+
+	var stationWG sync.WaitGroup
+	gracefulShutdown(func() {}, &stationWG, svc, nil)
+
+	if !stuck.finished.Load() {
 		t.Fatal("gracefulShutdown returned before the task manager finished its force-kill")
 	}
 }

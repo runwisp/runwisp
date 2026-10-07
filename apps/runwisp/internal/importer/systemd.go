@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/textutil"
 )
 
 // SystemdOptions tunes systemd unit parsing.
@@ -127,7 +128,10 @@ func foldSystemdLines(r io.Reader) ([]string, error) {
 	inCont := false
 	for sc.Scan() {
 		payload := strings.TrimRight(sc.Text(), " \t")
-		cont := strings.HasSuffix(payload, "\\")
+		// A comment line is never continued, even when it ends in a backslash.
+		trimmed := strings.TrimSpace(payload)
+		comment := !inCont && (strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, ";"))
+		cont := !comment && strings.HasSuffix(payload, "\\")
 		payload = strings.TrimRight(strings.TrimSuffix(payload, "\\"), " \t")
 		if inCont {
 			logical.WriteByte(' ')
@@ -297,64 +301,184 @@ func stripExecPrefixes(cmd string) (string, bool) {
 	return quoteExecForShell(trimmed), trimmed != strings.TrimSpace(cmd)
 }
 
-// shellMeta are the characters `sh -c` treats specially but systemd's exec-style
-// ExecStart passes through as plain argument text. `$` is left out on purpose:
-// systemd expands $VAR and ${VAR} itself, so the shell doing it is the same.
-const shellMeta = "*?[]{}~;|&<>()!#`"
-
-// shellVarRef matches a $VAR or ${VAR} reference. Its braces aren't shell
-// metacharacters, and a quoted word splices it back out so it still expands.
-var shellVarRef = regexp.MustCompile(`\$(\{[^}]*\}|[A-Za-z_][A-Za-z0-9_]*)`)
-
-// quoteExecForShell single-quotes each bare word of an ExecStart line that holds
-// a shell metacharacter, so `sh -c` passes it through the way systemd's direct
-// exec does. A word with quotes or backslashes is left as written (the shell
-// reads those like systemd does), and so is a lone `;`, which systemd uses to
-// chain commands.
+// quoteExecForShell rewrites an ExecStart line as an `sh -c` command that runs
+// the same argv. It splits the line the way systemd does (quotes and C escapes
+// anywhere in a word, a lone `;` chaining commands), resolves `%%` to `%`, and
+// re-emits each argument single-quoted where the shell would otherwise act on
+// it. systemd's own variable expansion is kept: `${VAR}` becomes `"${VAR}"`
+// (one argument, wherever it sits in a word) and a whole-word `$VAR` stays bare
+// (split on whitespace). A `$VAR` inside a word, which systemd leaves alone, and
+// `$$` are literal. Other `%` specifiers are left in place for the operator.
 func quoteExecForShell(cmd string) string {
-	var out strings.Builder
-	var word strings.Builder
-	var quote byte
-	plain := true // the word so far has no quotes or backslashes
-	flush := func() {
-		w := word.String()
-		if plain && w != ";" && strings.ContainsAny(shellVarRef.ReplaceAllString(w, ""), shellMeta) {
-			w = "'" + shellVarRef.ReplaceAllString(w, `'"${0}"'`) + "'"
+	var out []string
+	for _, w := range splitExecWords(cmd) {
+		if w.sep {
+			out = append(out, ";")
+			continue
 		}
-		out.WriteString(w)
-		word.Reset()
-		plain = true
+		out = append(out, shellExecArg(strings.ReplaceAll(w.text, "%%", "%")))
 	}
+	return strings.Join(out, " ")
+}
+
+// execWord is one ExecStart word, unquoted and unescaped; sep marks a lone
+// unquoted `;`, which systemd reads as a command separator.
+type execWord struct {
+	text string
+	sep  bool
+}
+
+// splitExecWords splits an ExecStart line into words the way systemd does:
+// quotes and C escapes may appear anywhere in a word.
+func splitExecWords(cmd string) []execWord {
+	var words []execWord
+	for _, raw := range rawExecWords(cmd) {
+		switch raw {
+		case ";":
+			words = append(words, execWord{sep: true})
+		case `\;`: // systemd's escape for a literal lone semicolon
+			words = append(words, execWord{text: ";"})
+		default:
+			words = append(words, execWord{text: unquoteExecWord(raw)})
+		}
+	}
+	return words
+}
+
+// rawExecWords splits cmd on whitespace outside quotes, keeping each word as
+// written.
+func rawExecWords(cmd string) []string {
+	var words []string
+	start := -1 // byte offset where the current word began
+	var quote byte
 	for i := 0; i < len(cmd); i++ {
 		c := cmd[i]
+		if quote == 0 && (c == ' ' || c == '\t') {
+			if start >= 0 {
+				words = append(words, cmd[start:i])
+				start = -1
+			}
+			continue
+		}
+		if start < 0 {
+			start = i
+		}
 		switch {
-		case quote != 0:
-			word.WriteByte(c)
-			if c == '\\' && quote == '"' && i+1 < len(cmd) {
-				i++ // \" doesn't close a double-quoted string
-				word.WriteByte(cmd[i])
-			} else if c == quote {
-				quote = 0
-			}
-		case c == '"' || c == '\'':
-			quote, plain = c, false
-			word.WriteByte(c)
 		case c == '\\':
-			plain = false
-			word.WriteByte(c)
-			if i+1 < len(cmd) {
-				i++
-				word.WriteByte(cmd[i])
-			}
-		case c == ' ' || c == '\t':
-			flush()
-			out.WriteByte(c)
-		default:
-			word.WriteByte(c)
+			i++ // an escaped quote or space doesn't end anything
+		case quote != 0 && c == quote:
+			quote = 0
+		case quote == 0 && (c == '"' || c == '\''):
+			quote = c
 		}
 	}
+	if start >= 0 {
+		words = append(words, cmd[start:])
+	}
+	return words
+}
+
+// unquoteExecWord drops the quotes from one raw word and decodes its escapes.
+func unquoteExecWord(raw string) string {
+	var w strings.Builder
+	var quote byte
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		switch {
+		case quote != 0 && c == quote:
+			quote = 0
+		case quote == 0 && (c == '"' || c == '\''):
+			quote = c
+		case c == '\\' && i+1 < len(raw):
+			i += unescapeExec(raw[i+1:], &w)
+		default:
+			w.WriteByte(c)
+		}
+	}
+	return w.String()
+}
+
+// execEscapes are the single-character C escapes systemd decodes.
+var execEscapes = map[byte]byte{'a': '\a', 'b': '\b', 'f': '\f', 'n': '\n', 'r': '\r', 't': '\t', 'v': '\v',
+	'\\': '\\', '"': '"', '\'': '\'', 's': ' '}
+
+// unescapeExec decodes the C escape at the start of s (just past the backslash)
+// into w and returns how many bytes it consumed. An escape systemd doesn't know
+// is kept with its backslash, as systemd does.
+func unescapeExec(s string, w *strings.Builder) int {
+	if r, ok := execEscapes[s[0]]; ok {
+		w.WriteByte(r)
+		return 1
+	}
+	if s[0] == 'x' && len(s) >= 3 {
+		if v, err := strconv.ParseUint(s[1:3], 16, 8); err == nil {
+			w.WriteByte(byte(v))
+			return 3
+		}
+	}
+	if s[0] >= '0' && s[0] <= '7' && len(s) >= 3 {
+		if v, err := strconv.ParseUint(s[:3], 8, 8); err == nil {
+			w.WriteByte(byte(v))
+			return 3
+		}
+	}
+	w.WriteByte('\\')
+	w.WriteByte(s[0])
+	return 1
+}
+
+// execVarName matches a whole-word `$VAR`, the only place systemd expands one;
+// execBracedVar matches a `${VAR}` at the start of a string.
+var (
+	execVarName   = regexp.MustCompile(`^\$[A-Za-z_][A-Za-z0-9_]*$`)
+	execBracedVar = regexp.MustCompile(`^\$\{[A-Za-z_][A-Za-z0-9_]*\}`)
+)
+
+// shellExecArg renders one unquoted ExecStart argument for the shell.
+func shellExecArg(arg string) string {
+	if execVarName.MatchString(arg) {
+		return arg
+	}
+	var out, lit strings.Builder
+	flush := func() {
+		if lit.Len() > 0 {
+			out.WriteString(shellWord(lit.String()))
+			lit.Reset()
+		}
+	}
+	for i := 0; i < len(arg); i++ {
+		if arg[i] == '$' && i+1 < len(arg) {
+			if arg[i+1] == '$' {
+				lit.WriteByte('$')
+				i++
+				continue
+			}
+			if ref := execBracedVar.FindString(arg[i:]); ref != "" {
+				flush()
+				out.WriteString(`"` + ref + `"`)
+				i += len(ref) - 1
+				continue
+			}
+		}
+		lit.WriteByte(arg[i])
+	}
 	flush()
+	if out.Len() == 0 {
+		return "''"
+	}
 	return out.String()
+}
+
+// shellWord leaves a word the shell reads literally as it is, and
+// single-quotes anything else.
+func shellWord(s string) string {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.IndexByte("_-./:=,+@%^", c) >= 0) {
+			return textutil.ShellQuote(s)
+		}
+	}
+	return s
 }
 
 // systemdApplyRun sets the run line from ExecStart, flagging the cases RunWisp
@@ -376,7 +500,7 @@ func systemdApplyRun(b *block, svc *systemdSection, ref itemRef, execStarts []st
 			"stripped a special ExecStart prefix (@, -, +, ! …) — it changed argv[0] or "+
 				"privileges in a way RunWisp doesn't reproduce. Review the run line.")
 	}
-	if strings.Contains(run, "%") {
+	if strings.Contains(strings.ReplaceAll(execStarts[0], "%%", ""), "%") {
 		ref.note(NoteSystemdTemplate,
 			"ExecStart uses systemd specifiers (%i, %n, %h …) RunWisp doesn't fill in. "+
 				"Replace them with concrete values in the run line.")
@@ -399,6 +523,7 @@ func systemdApplyServiceKeys(b *block, svc *systemdSection, ref itemRef, kind mo
 	env := map[string]string{}
 	var dropped []string
 	var sawSandbox, sawSocket bool
+	gracefulStop := ""
 
 	for _, kv := range svc.kvs {
 		switch kv.key {
@@ -421,18 +546,8 @@ func systemdApplyServiceKeys(b *block, svc *systemdSection, ref itemRef, kind mo
 		case "KillSignal":
 			systemdApplyKillSignal(b, ref, kv.key, kv.value)
 		case "TimeoutStopSec", "TimeoutSec":
-			if d, ok := systemdSeconds(kv.value); ok && isZeroDuration(d) {
-				// systemd's 0 means "wait forever"; RunWisp's 0s kills at once, and
-				// it has no wait-forever setting, so leave graceful_stop at its default.
-				ref.note(NoteKeyUnreadable,
-					kv.key+"="+kv.value+" means no timeout in systemd, but RunWisp has no such "+
-						"setting (graceful_stop = \"0s\" would kill at once), so graceful_stop was left at its default.")
-			} else if ok {
-				b.set("graceful_stop", tomlString(d))
-			} else {
-				ref.note(NoteKeyUnreadable,
-					kv.key+"="+kv.value+" isn't a duration RunWisp can read, so it was dropped.")
-			}
+			// A later value overrides an earlier one, even one RunWisp can't read.
+			gracefulStop = systemdStopTimeout(ref, kv.key, kv.value)
 		case "Restart":
 			// Behavior note handled after the loop (needs the resolved kind).
 		default:
@@ -449,12 +564,36 @@ func systemdApplyServiceKeys(b *block, svc *systemdSection, ref itemRef, kind mo
 		}
 	}
 
+	if gracefulStop != "" {
+		b.set("graceful_stop", tomlString(gracefulStop))
+	}
 	systemdApplyUser(b, svc)
 	systemdApplyEnvFiles(b, svc, ref)
 	systemdApplyType(svc, ref)
 	systemdApplyRestart(b, svc, ref, kind)
 	systemdNoteDropped(ref, dropped, sawSandbox, sawSocket)
 	return env
+}
+
+// systemdStopTimeout reads a TimeoutStopSec/TimeoutSec value as graceful_stop,
+// or "" (with a note) when there is nothing RunWisp can set.
+func systemdStopTimeout(ref itemRef, key, value string) string {
+	d, ok := systemdSeconds(value)
+	switch {
+	case ok && isZeroDuration(d):
+		// systemd's 0 means "wait forever"; RunWisp's 0s kills at once, and
+		// it has no wait-forever setting, so leave graceful_stop at its default.
+		ref.note(NoteKeyUnreadable,
+			key+"="+value+" means no timeout in systemd, but RunWisp has no such "+
+				"setting (graceful_stop = \"0s\" would kill at once), so graceful_stop was left at its default.")
+		return ""
+	case ok:
+		return d
+	default:
+		ref.note(NoteKeyUnreadable,
+			key+"="+value+" isn't a duration RunWisp can read, so it was dropped.")
+		return ""
+	}
 }
 
 // systemdNoteDropped emits the notes for directives that had no home in the

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/textutil"
 )
 
 // defaultShell mirrors config.DefaultShell. It is duplicated rather than
@@ -294,17 +295,9 @@ func appendArgTokens(script string, tokens []string) string {
 	b.WriteString(strings.TrimRight(script, " \t\r\n"))
 	for _, t := range tokens {
 		b.WriteByte(' ')
-		b.WriteString(shellQuote(t))
+		b.WriteString(textutil.ShellQuote(t))
 	}
 	return b.String()
-}
-
-// shellQuote single-quote-wraps a token for /bin/sh, rendering an embedded
-// single quote as close-quote, escaped quote, reopen. Single quotes suppress
-// every shell metacharacter, so a value like `'; rm -rf /` becomes an inert
-// literal.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func exitCodeFromError(err error) int {

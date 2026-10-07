@@ -149,13 +149,7 @@ func gracefulShutdown(cancelStation context.CancelFunc, stationWG *sync.WaitGrou
 		// to keep developer setups responsive.
 		taskTimeout = 3 * time.Second
 	}
-	// The task manager enforces taskTimeout itself (SIGKILL on survivors, then
-	// it waits for them to be reaped). The outer wait only has to outlast
-	// that; a timer of the same length would fire first and let the daemon
-	// exit before the kill landed.
-	drainCtx, cancelDrain := context.WithTimeout(context.Background(), taskTimeout+drainKillMargin)
-	defer cancelDrain()
-	waitDrain(drainCtx, svc, taskTimeout)
+	waitDrain(svc, taskTimeout)
 }
 
 // waitInput waits for the request-accepting layer to quiesce: HTTP server
@@ -186,10 +180,10 @@ func waitInput(ctx context.Context, stationWG *sync.WaitGroup, srv *server.Serve
 }
 
 // waitDrain stops worker subsystems. Order within is irrelevant — they don't
-// call into each other — but they all share the global deadline. The task
-// manager drain is bounded by taskTimeout so survivors get SIGKILLed and
-// recorded as ReasonDaemonStopped if their per-task graceful_stop overruns.
-func waitDrain(ctx context.Context, svc *daemonServices, taskTimeout time.Duration) {
+// call into each other — but they all share one deadline. The task manager
+// drain is bounded by taskTimeout so survivors get SIGKILLed and recorded as
+// ReasonDaemonStopped if their per-task graceful_stop overruns.
+func waitDrain(svc *daemonServices, taskTimeout time.Duration) {
 	if inflight := inflightRunCount(svc); inflight > 0 {
 		slog.Info("stopping scheduler and waiting for in-flight runs",
 			"in_flight", inflight, "timeout", taskTimeout)
@@ -200,7 +194,17 @@ func waitDrain(ctx context.Context, svc *daemonServices, taskTimeout time.Durati
 	// Tear services down in reverse-dependency order before the bulk drain, so
 	// a dependent stops before the services it relies on. ShutdownWithDeadline
 	// below stays the safety net for cron tasks and anything that didn't drain.
-	preStopServices(ctx, svc)
+	stopCtx, cancelStop := context.WithTimeout(context.Background(), taskTimeout)
+	preStopServices(stopCtx, svc)
+	cancelStop()
+
+	// The task manager enforces taskTimeout itself (SIGKILL on survivors, then
+	// it waits for them to be reaped). The outer wait only has to outlast
+	// that; a timer of the same length would fire first and let the daemon
+	// exit before the kill landed. It starts after the service stops above, so
+	// a service ignoring its stop signal can't use it up before the kill.
+	ctx, cancel := context.WithTimeout(context.Background(), taskTimeout+drainKillMargin)
+	defer cancel()
 
 	var wg sync.WaitGroup
 

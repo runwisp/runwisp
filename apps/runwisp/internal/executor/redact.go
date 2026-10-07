@@ -22,7 +22,7 @@ const redactMask = "[redacted]"
 // caught — this keeps a value that lands verbatim in stdout/stderr out of the
 // log, it is not a guarantee against a program that deliberately mangles it.
 type secretRedactor struct {
-	r *strings.Replacer
+	values []string
 }
 
 // newSecretRedactor returns a redactor for the given secret values, or nil when
@@ -31,38 +31,52 @@ type secretRedactor struct {
 func newSecretRedactor(secrets map[string]string) *secretRedactor {
 	var values []string
 	for _, v := range secrets {
-		if v == "" {
-			// An empty old string makes strings.Replacer match between every
-			// rune; skip it (an empty secret value can't leak anyway).
-			continue
+		if v != "" { // an empty value matches everywhere and can't leak anyway
+			values = append(values, v)
 		}
-		values = append(values, v)
 	}
 	if len(values) == 0 {
 		return nil
 	}
-	// strings.Replacer tries pairs in argument order at each position, so a
-	// secret that is a prefix of another must come after it or the longer one
-	// is only partly masked. Map order is random; sort for a fixed result.
-	slices.SortFunc(values, func(a, b string) int {
-		if len(a) != len(b) {
-			return len(b) - len(a)
-		}
-		return strings.Compare(a, b)
-	})
-	pairs := make([]string, 0, 2*len(values))
-	for _, v := range values {
-		pairs = append(pairs, v, redactMask)
-	}
-	return &secretRedactor{r: strings.NewReplacer(pairs...)}
+	return &secretRedactor{values: values}
 }
 
-// text returns s with every secret value replaced by the mask.
+// text returns t with every secret value replaced by the mask. It masks the
+// union of every occurrence of every secret, so secrets that overlap (one a
+// prefix of another, or one starting inside another) are hidden whole; a
+// left-to-right replacer would mask the first and print the rest of the other.
 func (s *secretRedactor) text(t string) string {
 	if s == nil {
 		return t
 	}
-	return s.r.Replace(t)
+	var spans [][2]int
+	for _, v := range s.values {
+		for off := 0; ; {
+			i := strings.Index(t[off:], v)
+			if i < 0 {
+				break
+			}
+			spans = append(spans, [2]int{off + i, off + i + len(v)})
+			off += i + 1
+		}
+	}
+	if len(spans) == 0 {
+		return t
+	}
+	slices.SortFunc(spans, func(a, b [2]int) int { return a[0] - b[0] })
+	var out strings.Builder
+	last := 0 // end of the text already written or masked
+	for i := 0; i < len(spans); {
+		start, end := spans[i][0], spans[i][1]
+		for i++; i < len(spans) && spans[i][0] < end; i++ {
+			end = max(end, spans[i][1])
+		}
+		out.WriteString(t[last:start])
+		out.WriteString(redactMask)
+		last = end
+	}
+	out.WriteString(t[last:])
+	return out.String()
 }
 
 // rows returns a redacted copy of a region's rows, leaving the input untouched
@@ -73,7 +87,7 @@ func (s *secretRedactor) rows(in []string) []string {
 	}
 	out := make([]string, len(in))
 	for i, row := range in {
-		out[i] = s.r.Replace(row)
+		out[i] = s.text(row)
 	}
 	return out
 }

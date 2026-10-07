@@ -286,6 +286,13 @@ func TestSupervisordCommentInsideContinuation(t *testing.T) {
 	mustContain(t, out, `B = "2"`)
 }
 
+// A blank line inside a multi-line value is kept, as ConfigParser does; it used
+// to end the value and drop the rest of the command.
+func TestSupervisordBlankLineInsideContinuation(t *testing.T) {
+	in := "[program:x]\ncommand=/bin/sh -c \"\n  echo a\n\n  echo b\"\n\nautostart=true\n"
+	mustContain(t, parseSup(t, in).TOML(), "/bin/sh -c \"\necho a\n\necho b\"")
+}
+
 func TestSupervisordExistingSkipsSameProgram(t *testing.T) {
 	// A program already promoted into the root TOML — same name, same kind, same
 	// command — is skipped on re-import rather than emitted a second time, which

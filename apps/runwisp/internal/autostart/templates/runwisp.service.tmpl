@@ -17,7 +17,7 @@ OnFailure={{.CronFailsafeUnit}}
 
 [Service]
 Type=simple
-ExecStart={{.Binary | sysq}} daemon --config {{.Config | sysq}} --data {{.DataDir | sysq}} --port {{.Port}} --host {{.Host | sysq}}
+ExecStart={{.Binary | sysexe}} daemon --config {{.Config | sysq}} --data {{.DataDir | sysq}} --port {{.Port}} --host {{.Host | sysq}}
 Restart=on-failure
 RestartSec=5s
 KillMode=mixed
