@@ -15,6 +15,9 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func writeLog(t *testing.T, content string) string {
@@ -74,6 +77,26 @@ func TestArchiveSuccess(t *testing.T) {
 	if string(got) != "hello world\nline two\n" {
 		t.Errorf("got %q", string(got))
 	}
+}
+
+func TestGzipFileKeepsSpoolUnlinkedAndReadable(t *testing.T) {
+	logPath := writeLog(t, "private output\n")
+	compressed, size, err := gzipFile(logPath)
+	require.NoError(t, err)
+	defer compressed.Close()
+
+	_, err = os.Stat(compressed.Name())
+	assert.ErrorIs(t, err, os.ErrNotExist, "compressed spool must not leave a directory entry")
+	info, err := compressed.Stat()
+	require.NoError(t, err)
+	assert.Equal(t, info.Size(), size)
+
+	gz, err := gzip.NewReader(io.NewSectionReader(compressed, 0, size))
+	require.NoError(t, err)
+	defer gz.Close()
+	got, err := io.ReadAll(gz)
+	require.NoError(t, err)
+	assert.Equal(t, "private output\n", string(got))
 }
 
 func TestArchiveRetriesOn5xx(t *testing.T) {
@@ -164,6 +187,37 @@ func TestArchiveRejectsNonHTTPSURL(t *testing.T) {
 	if !errors.As(err, &perm) {
 		t.Fatalf("expected PermanentError, got %v", err)
 	}
+}
+
+func TestArchiveInvalidSignedURLDoesNotEchoCredentials(t *testing.T) {
+	_, err := Archive(context.Background(), nil, "https://upload.example/%zz?token=secret", "/does/not/exist")
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "token")
+	assert.NotContains(t, err.Error(), "secret")
+}
+
+func TestPutOnceDoesNotEchoSignedURLOnTransportError(t *testing.T) {
+	compressed, err := os.CreateTemp(t.TempDir(), "archive-*.gz")
+	require.NoError(t, err)
+	defer compressed.Close()
+	defer os.Remove(compressed.Name())
+	_, err = compressed.Write([]byte("body"))
+	require.NoError(t, err)
+
+	client := &http.Client{Transport: errorRoundTripper{err: errors.New("dial failed")}}
+	err = putOnce(context.Background(), client, "https://upload.example/put?X-Amz-Signature=secret", compressed, 4)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "dial failed")
+	assert.NotContains(t, err.Error(), "X-Amz-Signature")
+	assert.NotContains(t, err.Error(), "secret")
+}
+
+type errorRoundTripper struct {
+	err error
+}
+
+func (rt errorRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, rt.err
 }
 
 func TestSafeClientRejectsInternalAddress(t *testing.T) {

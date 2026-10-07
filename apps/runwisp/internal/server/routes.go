@@ -160,35 +160,56 @@ func securityHeaders(next http.Handler) http.Handler {
 //     host or Sec-Fetch-Site says cross-site. Headless clients (CLI, curl,
 //     apiclient) send neither and keep working under RUNWISP_AUTH=off.
 //
-// It is inert for safe methods (GET/HEAD/OPTIONS), local-trusted requests on the
-// Unix socket (CLI/TUI), and Bearer-authenticated requests (a cross-site page
-// cannot set an Authorization header on a simple request).
-func csrfGuard(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet, http.MethodHead, http.MethodOptions:
+// It is inert for safe methods (GET/HEAD/OPTIONS), local-trusted requests on
+// the Unix socket (CLI/TUI), and explicit Bearer requests when JWT auth is
+// enabled. In auth-off mode, Authorization may be ambient proxy/basic auth, so
+// it does not exempt a browser request. Headless clients without browser source
+// headers keep working in either mode.
+func csrfGuard(allowBearer bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if csrfExempt(r, allowBearer) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			// Launch-ticket mint is CSRF-safe on its own: its only effect is
+			// returning a short-lived ticket in the response body, which the
+			// browser's same-origin policy stops a cross-origin attacker from
+			// reading. The remote-TUI/CLI hand-off mints it without a browser Origin.
+			if r.URL.Path == "/api/auth/launch-ticket" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if csrfSourceRejected(r) {
+				http.Error(w, "cross-origin request refused", http.StatusForbidden)
+				return
+			}
 			next.ServeHTTP(w, r)
-			return
-		}
-		if IsLocalTrusted(r) || r.Header.Get("Authorization") != "" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		// Launch-ticket mint is CSRF-safe on its own: its only effect is
-		// returning a short-lived ticket in the response body, which the
-		// browser's same-origin policy stops a cross-origin attacker from
-		// reading. The remote-TUI/CLI hand-off mints it without a browser Origin.
-		if r.URL.Path == "/api/auth/launch-ticket" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		_, cookieErr := r.Cookie(auth.CookieName)
-		if cookieErr == nil && !sameOriginRequest(r) || cookieErr != nil && declaredCrossOrigin(r) {
-			http.Error(w, "cross-origin request refused", http.StatusForbidden)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+		})
+	}
+}
+
+func csrfExempt(r *http.Request, allowBearer bool) bool {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	}
+	if IsLocalTrusted(r) {
+		return true
+	}
+	if !allowBearer {
+		return false
+	}
+	authorization := strings.TrimSpace(r.Header.Get("Authorization"))
+	return len(authorization) > len("Bearer ") && strings.EqualFold(authorization[:len("Bearer ")], "Bearer ")
+}
+
+func csrfSourceRejected(r *http.Request) bool {
+	_, cookieErr := r.Cookie(auth.CookieName)
+	if cookieErr == nil {
+		return !sameOriginRequest(r)
+	}
+	return declaredCrossOrigin(r)
 }
 
 // sameOriginRequest reports whether the request's Origin (or, as a fallback,
@@ -203,7 +224,7 @@ func sameOriginRequest(r *http.Request) bool {
 	if src == "" {
 		return false
 	}
-	return sourceMatchesHost(src, r.Host)
+	return sourceMatchesRequest(src, r)
 }
 
 // declaredCrossOrigin reports whether the request itself says it came from
@@ -215,15 +236,28 @@ func declaredCrossOrigin(r *http.Request) bool {
 		return true
 	}
 	origin := r.Header.Get("Origin")
-	return origin != "" && !sourceMatchesHost(origin, r.Host)
+	return origin != "" && !sourceMatchesRequest(origin, r)
 }
 
-func sourceMatchesHost(src, host string) bool {
+func sourceMatchesRequest(src string, r *http.Request) bool {
 	u, err := url.Parse(src)
-	if err != nil || u.Host == "" {
+	if err != nil || u.Host == "" || u.User != nil || u.Opaque != "" {
 		return false
 	}
-	return strings.EqualFold(u.Host, host)
+	if !strings.EqualFold(u.Host, r.Host) {
+		return false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		return true
+	case "http":
+		// A plaintext page on the same host (e.g. script injected by a network
+		// attacker) must not drive a daemon that is reached over HTTPS. When the
+		// request does not look secure the scheme is unknowable (a TLS proxy
+		// outside trusted_proxies looks like plain HTTP), so either one passes.
+		return r.TLS == nil && !isSecureCtx(r.Context())
+	}
+	return false
 }
 
 func (srv *Server) setupRoutes() error {
@@ -305,7 +339,7 @@ func (srv *Server) setupRoutes() error {
 	// body-size cap stays in place.
 	srv.router.Group(func(r chi.Router) {
 		r.Use(maxBodySize(maxProtectedBodySize))
-		r.Use(csrfGuard)
+		r.Use(csrfGuard(!srv.noAuth))
 		if !srv.noAuth {
 			r.Use(authOrLocalTrusted(srv.auth))
 		}

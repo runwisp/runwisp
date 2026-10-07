@@ -26,7 +26,7 @@ func TestRejectNonPublicIP_Blocked(t *testing.T) {
 		"203.0.113.1",                  // TEST-NET-3
 		"224.0.0.1",                    // multicast
 		"240.0.0.1", "255.255.255.255", // reserved / broadcast
-		"::", "::1",
+		"::", "::1", "::a9fe:a9fe", "::a00:1", // IPv4-compatible forms of link-local/private IPv4
 		"64:ff9b::1",         // NAT64
 		"100::1",             // discard-only
 		"2001:db8::1",        // documentation

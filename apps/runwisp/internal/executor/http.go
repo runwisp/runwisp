@@ -5,6 +5,7 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -27,7 +28,10 @@ var blockedMetadataHosts = []string{"metadata.google.internal", "169.254.169.254
 func validateHTTPURL(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return fmt.Errorf("invalid URL: %w", err)
+		// url.Parse errors may include the full input string, including a
+		// credential-bearing query. The caller surfaces validation errors in run
+		// records, so keep parser details out of the error.
+		return errors.New("invalid URL")
 	}
 
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
@@ -162,7 +166,7 @@ func (b *HTTPBackend) execute(ctx context.Context, def *model.HTTPExecution, out
 
 	req, err := http.NewRequestWithContext(ctx, def.Method, def.URL, body)
 	if err != nil {
-		fmt.Fprintf(out, "[ERROR] Failed to create request: %v\n", err)
+		fmt.Fprintf(out, "[ERROR] Failed to create request for %s\n", redactURL(def.URL))
 		return 1
 	}
 
@@ -188,7 +192,7 @@ func (b *HTTPBackend) execute(ctx context.Context, def *model.HTTPExecution, out
 	resp, err := client.Do(req)
 	elapsed := time.Since(start)
 	if err != nil {
-		fmt.Fprintf(out, "[ERROR] Request failed: %v\n", err)
+		fmt.Fprintf(out, "[ERROR] Request failed: %s\n", redactRequestError(err))
 		return 1
 	}
 	defer resp.Body.Close()
@@ -232,23 +236,52 @@ func (b *HTTPBackend) buildBody(body *model.HTTPBody) (io.Reader, string, error)
 	}
 }
 
-// redactURL blanks any userinfo password before the request line is written to
-// the run log (net/url.Redacted keeps the username but replaces the password
-// with "xxxxx"). The URL was already validated by validateHTTPURL, so a parse
-// error here is unreachable; returning the raw string on error would leak, so
-// on the impossible error we blank the whole URL instead.
+// redactURL removes URL credentials before they reach a run log. Query values
+// often carry API keys, signatures, or access tokens, so only the parameter
+// names stay visible; the path stays so tasks hitting one host remain
+// distinguishable. The URL was already validated by validateHTTPURL; returning
+// the raw string on parse error would leak, so the whole value is blanked.
 func redactURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return "[redacted]"
 	}
+	if u.RawQuery != "" {
+		query := u.Query()
+		for key, values := range query {
+			for i := range values {
+				values[i] = "[redacted]"
+			}
+			query[key] = values
+		}
+		u.RawQuery = query.Encode()
+	}
+	// Usernames often hold API keys when a URL omits a password. URL.Redacted
+	// only masks the password, so remove all userinfo before logging.
+	u.User = nil
+	u.Fragment = ""
 	return u.Redacted()
+}
+
+// redactRequestError removes the URL carried by net/http's url.Error. Query
+// values can contain credentials and are already printed separately in
+// redacted form above; emitting url.Error directly would persist them.
+func redactRequestError(err error) string {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return fmt.Sprintf("%s: %v", urlErr.Op, urlErr.Err)
+	}
+	return err.Error()
 }
 
 // redactHeaderValue hides the values of headers that commonly carry
 // credentials, so request/response header dumps in the run log don't persist
 // bearer tokens, cookies, or API keys to disk (viewable over API/SSE).
 func redactHeaderValue(key, value string) string {
+	switch strings.ToLower(key) {
+	case "location", "content-location", "referer":
+		return redactURL(value)
+	}
 	if isSensitiveHeader(key) {
 		return "[redacted]"
 	}
@@ -261,7 +294,8 @@ func isSensitiveHeader(key string) bool {
 	case "authorization", "proxy-authorization", "cookie", "set-cookie":
 		return true
 	}
-	return strings.Contains(k, "token") || strings.Contains(k, "secret") ||
+	return strings.Contains(k, "token") || strings.Contains(k, "secret") || strings.Contains(k, "password") ||
+		strings.Contains(k, "credential") ||
 		strings.Contains(k, "api-key") || strings.Contains(k, "apikey")
 }
 
@@ -277,7 +311,22 @@ func (b *HTTPBackend) httpClient() *http.Client {
 			if len(via) >= 10 {
 				return fmt.Errorf("stopped after 10 redirects")
 			}
+			if len(via) > 0 && !strings.EqualFold(via[0].URL.Hostname(), req.URL.Hostname()) {
+				stripCrossHostHeaders(req.Header)
+			}
 			return validateHTTPURL(req.URL.String())
 		},
+	}
+}
+
+// stripCrossHostHeaders drops credential-looking headers and the Referer before
+// a redirect leaves the configured host. net/http strips only Authorization and
+// Cookie there, so a custom X-API-Key would otherwise follow an open redirect,
+// and its Referer would carry the original URL's query to the new host.
+func stripCrossHostHeaders(h http.Header) {
+	for key := range h {
+		if isSensitiveHeader(key) || strings.EqualFold(key, "Referer") {
+			h.Del(key)
+		}
 	}
 }

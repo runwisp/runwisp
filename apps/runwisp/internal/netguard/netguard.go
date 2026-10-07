@@ -44,6 +44,7 @@ var deniedCIDRs = mustParseCIDRs(
 	// --- IPv6 ---
 	"::/128",         // unspecified
 	"::1/128",        // loopback
+	"::/96",          // deprecated IPv4-compatible addresses; do not let them bypass IPv4 range checks
 	"64:ff9b::/96",   // NAT64 well-known prefix
 	"64:ff9b:1::/48", // NAT64 local-use
 	"100::/64",       // discard-only
