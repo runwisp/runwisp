@@ -30,16 +30,17 @@ const (
 	ScanWorkers = 4
 )
 
-// Hit is one match — exactly what the wire format returns. TS is the run's
-// CreatedAt in Unix ms; the per-line timestamp would require parsing a
-// timestamp prefix that not every line carries, and the run timestamp is
-// already what sorts the result set newest-first.
+// Hit is one match. TS is the run's CreatedAt in Unix ms; the per-line
+// timestamp would require parsing a timestamp prefix that not every line
+// carries, and the run timestamp is already what sorts the result set
+// newest-first. server.LogSearchHit mirrors these fields and must stay
+// convertible from Hit.
 type Hit struct {
-	RunID  string `json:"run_id"`
-	N      int64  `json:"n"`
-	Stream string `json:"stream"`
-	Text   string `json:"text"`
-	TS     int64  `json:"ts"`
+	RunID  string
+	N      int64
+	Stream string
+	Text   string
+	TS     int64
 }
 
 // RunRef identifies one run on disk for a task-wide scan. Ordered by the
