@@ -3,7 +3,10 @@
 
 import type { LogEvent } from "@runwisp/ui";
 import { z } from "zod";
-import { connectSSE } from "$lib/utils/sse";
+import { browserAuthEventSourceFactory } from "$lib/adapters/browser";
+import { getMessageEventData } from "$lib/utils/event-source";
+import { safeParseJSON } from "$lib/utils/parse";
+import { createReconnectingConnection } from "$lib/utils/sse-reconnect";
 import { createLogger } from "@runwisp/common";
 
 const logger = createLogger("LogStreamer");
@@ -110,7 +113,7 @@ function buildLineEvent(state: StreamerState, line: LogPageLine): LogEvent {
 }
 
 function handleLineEvent(state: StreamerState, data: string, onEvent: (event: LogEvent) => void) {
-    const result = logPageLineSchema.safeParse(JSON.parse(data));
+    const result = safeParseJSON(data, logPageLineSchema);
     if (!result.success) return;
     const line = result.data;
     state.lastReceivedId = line.n;
@@ -119,7 +122,7 @@ function handleLineEvent(state: StreamerState, data: string, onEvent: (event: Lo
 }
 
 function handleRegionEvent(state: StreamerState, data: string, onEvent: (event: LogEvent) => void) {
-    const result = regionSchema.safeParse(JSON.parse(data));
+    const result = safeParseJSON(data, regionSchema);
     if (!result.success) return;
     const region = result.data;
     // Region snapshots carry no line number and are never persisted; they only
@@ -137,7 +140,7 @@ function handleRotatedEvent(
     data: string,
     onEvent: (event: LogEvent) => void,
 ) {
-    const result = rotatedSchema.safeParse(JSON.parse(data));
+    const result = safeParseJSON(data, rotatedSchema);
     if (!result.success) return;
     if (result.data.firstAvailable > state.firstAvailable) {
         state.firstAvailable = result.data.firstAvailable;
@@ -151,7 +154,7 @@ function handleRotatedEvent(
 }
 
 function handleDroppedEvent(data: string) {
-    const result = droppedSchema.safeParse(JSON.parse(data));
+    const result = safeParseJSON(data, droppedSchema);
     if (!result.success) return;
     logger.warn(
         `Log stream dropped ${String(result.data.count)} line(s) after #${String(
@@ -165,7 +168,7 @@ function handleDoneEvent(
     data: string,
     onEvent: (event: LogEvent) => void,
 ): boolean {
-    const result = doneSchema.safeParse(JSON.parse(data));
+    const result = safeParseJSON(data, doneSchema);
     if (!result.success) return false;
     state.finished = true;
     const sz = Math.max(result.data.finalLine + 1, state.totalLines);
@@ -191,12 +194,35 @@ export function streamRunLog(
 
     const startFrom = initialState?.fromLine ?? -1000;
     const base = `/api/runs/${runId}/log/stream`;
-    const connection = connectSSE({
-        path: () => {
+    const dispatch = (eventType: string, data: string) => {
+        if (eventType === "line") {
+            handleLineEvent(state, data, onEvent);
+        } else if (eventType === "region") {
+            handleRegionEvent(state, data, onEvent);
+        } else if (eventType === "rotated") {
+            handleRotatedEvent(state, data, onEvent);
+        } else if (eventType === "dropped") {
+            handleDroppedEvent(data);
+        } else if (eventType === "done" && handleDoneEvent(state, data, onEvent)) {
+            connection.dispose();
+        }
+    };
+    const connection = createReconnectingConnection({
+        resolve: () => {
             const from = state.lastReceivedId >= 0 ? state.lastReceivedId + 1 : startFrom;
-            return base + "?from=" + String(from);
+            const path = base + "?from=" + String(from);
+            return { url: path, label: path };
         },
-        eventTypes: ["line", "region", "rotated", "dropped", "done"],
+        createEventSource: browserAuthEventSourceFactory,
+        logger,
+        onCreated: (es) => {
+            for (const eventType of ["line", "region", "rotated", "dropped", "done"]) {
+                es.addEventListener(eventType, (event: MessageEvent) => {
+                    const data = getMessageEventData(event);
+                    if (data !== undefined) dispatch(eventType, data);
+                });
+            }
+        },
         onOpen: () => {
             logger.info(`Log stream connection opened: ${runId}`);
         },
@@ -208,27 +234,12 @@ export function streamRunLog(
                     (info.status === undefined ? "" : " (HTTP " + String(info.status) + ")"),
             );
         },
-        onEvent: (eventType, data) => {
-            try {
-                if (eventType === "line") {
-                    handleLineEvent(state, data, onEvent);
-                } else if (eventType === "region") {
-                    handleRegionEvent(state, data, onEvent);
-                } else if (eventType === "rotated") {
-                    handleRotatedEvent(state, data, onEvent);
-                } else if (eventType === "dropped") {
-                    handleDroppedEvent(data);
-                } else if (eventType === "done" && handleDoneEvent(state, data, onEvent)) {
-                    connection.disconnect();
-                }
-            } catch (err) {
-                logger.error(`Failed to parse SSE ${eventType} payload`, err);
-            }
-        },
+        shouldReconnect: () => true,
     });
+    connection.connect();
 
     return () => {
         state.finished = true;
-        connection.disconnect();
+        connection.dispose();
     };
 }
