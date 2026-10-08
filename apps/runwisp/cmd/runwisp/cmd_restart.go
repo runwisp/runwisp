@@ -102,8 +102,7 @@ func runRestart(cmd *cobra.Command, args []string, f Flags, attach bool) error {
 		return err
 	}
 	client := apiclient.NewUnix(localAPISocketPath(f))
-	logPath := filepath.Join(f.DataDir, "daemon.log")
-	if err := waitForDaemon(client, logPath, 10*time.Second, f); err != nil {
+	if err := waitForDaemon(client, 10*time.Second, f); err != nil {
 		return err
 	}
 	printRestarted(out, f)

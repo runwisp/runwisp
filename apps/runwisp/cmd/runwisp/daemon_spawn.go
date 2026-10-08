@@ -77,6 +77,11 @@ func daemonSpawnArgs(subcommand []string, f Flags) []string {
 	return args
 }
 
+// daemonLogPath is where a spawned daemon's stdout/stderr land.
+func daemonLogPath(dataDir string) string {
+	return filepath.Join(dataDir, "daemon.log")
+}
+
 // spawnDaemonProcess execs `runwisp <args...>` as a detached background process
 // (new session, stdio redirected to the data dir's daemon.log) so it outlives
 // the foreground process that launched it. The leading arg selects the
@@ -98,7 +103,7 @@ func spawnDaemonProcess(args []string, dataDir string) error {
 
 	// Redirect daemon stdout/stderr to a log file (truncated per spawn so
 	// failure output only contains this session).
-	logPath := filepath.Join(dataDir, "daemon.log")
+	logPath := daemonLogPath(dataDir)
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("cannot open daemon log file: %w", err)
@@ -248,7 +253,8 @@ func (d *daemonLogDrainer) close() {
 // health endpoint. It returns immediately on success, aborts early on fatal
 // log lines or process exit, and always dumps a log tail when startup fails
 // so the user can see why — regardless of which detection path tripped first.
-func waitForDaemon(client *apiclient.Client, logPath string, timeout time.Duration, f Flags) error {
+func waitForDaemon(client *apiclient.Client, timeout time.Duration, f Flags) error {
+	logPath := daemonLogPath(f.DataDir)
 	fmt.Fprintf(os.Stderr, "Starting daemon...\n")
 
 	drainer := &daemonLogDrainer{path: logPath}

@@ -337,7 +337,7 @@ func TestWaitForDaemon_SurfacesEmptyLogTailNote(t *testing.T) {
 	require.NoError(t, os.WriteFile(logPath, nil, 0o600))
 
 	client := apiclient.New("http://127.0.0.1:1", "")
-	err := waitForDaemon(client, logPath, 50*time.Millisecond, Flags{DataDir: dir})
+	err := waitForDaemon(client, 50*time.Millisecond, Flags{DataDir: dir})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timed out")
 }
@@ -363,7 +363,7 @@ func TestWaitForDaemon_SuccessDoesNotDumpLogTail(t *testing.T) {
 	go func() { _, _ = buf.ReadFrom(r); close(done) }()
 
 	client := apiclient.New(srv.URL, "")
-	waitErr := waitForDaemon(client, logPath, time.Second, Flags{DataDir: dir})
+	waitErr := waitForDaemon(client, time.Second, Flags{DataDir: dir})
 
 	w.Close()
 	os.Stderr = orig
@@ -380,7 +380,7 @@ func TestWaitForDaemon_PromotesBindFailureHint(t *testing.T) {
 	require.NoError(t, os.WriteFile(logPath, []byte("listen tcp 0.0.0.0:9477: bind: address already in use\n"), 0o600))
 
 	client := apiclient.New("http://127.0.0.1:1", "")
-	err := waitForDaemon(client, logPath, 50*time.Millisecond, Flags{DataDir: dir})
+	err := waitForDaemon(client, 50*time.Millisecond, Flags{DataDir: dir})
 	require.Error(t, err)
 	_, ok := isUserFacing(err)
 	assert.True(t, ok, "bind-failure must surface as a userFacingError")

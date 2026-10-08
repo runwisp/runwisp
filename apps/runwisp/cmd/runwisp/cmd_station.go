@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"log/slog"
@@ -61,8 +60,7 @@ func runStationInteractive(ctx context.Context, f Flags) error {
 		return runDaemon(modeStation, f, false)
 	}
 
-	logPath := filepath.Join(f.DataDir, "daemon.log")
-	if err := waitForDaemon(client, logPath, 10*time.Second, f); err != nil {
+	if err := waitForDaemon(client, 10*time.Second, f); err != nil {
 		return err
 	}
 	return runTUIConnect(ctx, client, f, tui.DaemonStarted)

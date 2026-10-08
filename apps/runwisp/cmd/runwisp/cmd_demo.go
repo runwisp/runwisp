@@ -139,8 +139,7 @@ func runDemo(cmd *cobra.Command, f Flags) error {
 	}
 
 	client := apiclient.NewUnix(localAPISocketPath(f))
-	logPath := filepath.Join(f.DataDir, "daemon.log")
-	if err := waitForDaemon(client, logPath, 15*time.Second, f); err != nil {
+	if err := waitForDaemon(client, 15*time.Second, f); err != nil {
 		// The daemon may have died before reaching its cleanup defer; make sure
 		// the temp dir doesn't leak.
 		_ = shutdownDaemon(f)
