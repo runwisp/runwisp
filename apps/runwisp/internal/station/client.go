@@ -101,9 +101,6 @@ type wsSession struct {
 }
 
 func NewClient(cfg Config, deps Dependencies) (*Client, error) {
-	if !cfg.Enabled {
-		return nil, nil
-	}
 	if deps.TaskManager == nil {
 		return nil, fmt.Errorf("station client requires task manager")
 	}
@@ -169,9 +166,6 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 // On success the resulting terminal `execution:update` is queued for
 // delivery once the station session is up. Safe to call before Run.
 func (client *Client) RecoverArchiveBacklog(ctx context.Context) {
-	if client == nil {
-		return
-	}
 	client.uploader.RecoverOrphans(ctx, func(executionID string, result LogUploaderResult) {
 		// Build a synthetic terminal update from the run record, then
 		// overlay the recovered logPath/logSize. We re-fetch via the
@@ -191,9 +185,6 @@ func (client *Client) RecoverArchiveBacklog(ctx context.Context) {
 }
 
 func (client *Client) Run(ctx context.Context) error {
-	if client == nil {
-		return nil
-	}
 	client.bridge.Start(ctx)
 	defer client.bridge.Shutdown()
 

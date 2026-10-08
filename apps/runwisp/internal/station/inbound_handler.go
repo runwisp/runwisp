@@ -117,19 +117,15 @@ func (h *InboundHandler) HandleExecutionDispatch(ctx context.Context, message pr
 	// Persist the signed PUT URL + key BEFORE we trigger the run. A crash
 	// after trigger but before persistence would lose the upload metadata
 	// and orphan the local log file with no way to archive it.
-	if h.uploader != nil {
-		if err := h.uploader.RegisterDispatch(ctx, executionID, message.Execution.LogUploadURL, message.Execution.LogPath); err != nil {
-			slog.Warn("failed to register dispatch for log archival", "executionId", executionID, "err", err)
-		}
+	if err := h.uploader.RegisterDispatch(ctx, executionID, message.Execution.LogUploadURL, message.Execution.LogPath); err != nil {
+		slog.Warn("failed to register dispatch for log archival", "executionId", executionID, "err", err)
 	}
 
 	taskName, resolveErr := h.resolveDispatchTask(message.Execution)
 	if resolveErr != nil {
 		h.releaseReservation(executionID)
 		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, new(-1), nil, new(time.Now().UTC())))
-		if h.uploader != nil {
-			h.uploader.forget(ctx, executionID)
-		}
+		h.uploader.forget(ctx, executionID)
 		return resolveErr
 	}
 
@@ -199,9 +195,7 @@ func (h *InboundHandler) handleTriggerError(ctx context.Context, executionID str
 	} else {
 		h.queueExecUpdate(NewExecutionUpdateMessage(executionID, protocol.ExecutionStatusFailed, new(-1), nil, new(time.Now().UTC())))
 	}
-	if h.uploader != nil {
-		h.uploader.forget(ctx, executionID)
-	}
+	h.uploader.forget(ctx, executionID)
 	return &StationError{Kind: StationErrorKindConflict, Message: triggerErr.Error()}
 }
 

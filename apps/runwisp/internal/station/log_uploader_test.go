@@ -240,18 +240,7 @@ func TestArchiveNoPendingEntryIsNoop(t *testing.T) {
 	}
 }
 
-// Nil receiver and empty executionID are documented no-ops.
-func TestArchiveNilReceiverIsNoop(t *testing.T) {
-	var u *LogUploader
-	result, err := u.Archive(context.Background(), "exec-1", "/tmp/x")
-	if err != nil {
-		t.Fatalf("Archive on nil receiver returned err: %v", err)
-	}
-	if result != nil {
-		t.Errorf("Archive on nil receiver result = %+v, want nil", result)
-	}
-}
-
+// An empty executionID is a documented no-op.
 func TestArchiveEmptyExecutionIDIsNoop(t *testing.T) {
 	u := NewLogUploader(newFakePendingRepo(), &fakeRunRepo{}, t.TempDir(), fixedClock())
 	result, err := u.Archive(context.Background(), "", "/tmp/x")
@@ -433,12 +422,6 @@ func TestRecoverOrphansRetriesTerminatedRun(t *testing.T) {
 	}
 }
 
-func TestRecoverOrphansNilUploaderIsNoop(t *testing.T) {
-	var u *LogUploader
-	// Must not panic.
-	u.RecoverOrphans(context.Background(), func(string, LogUploaderResult) {})
-}
-
 // fakeRunRepoError fakes a transient RunRepo failure so recoverOrphanRecord
 // exercises the "lookup failed but row not dropped" branch.
 type fakeRunRepoError struct {
@@ -471,13 +454,6 @@ func TestRecoverOrphansKeepsRowOnTransientLookupError(t *testing.T) {
 }
 
 // --- RegisterDispatch: edge cases ---
-
-func TestRegisterDispatchNilUploaderIsNoop(t *testing.T) {
-	var u *LogUploader
-	if err := u.RegisterDispatch(context.Background(), "exec-1", "https://upload/x", "key/x.log.gz"); err != nil {
-		t.Fatalf("RegisterDispatch on nil receiver returned err: %v", err)
-	}
-}
 
 func TestRegisterDispatchEmptyExecutionIDIsNoop(t *testing.T) {
 	repo := newFakePendingRepo()

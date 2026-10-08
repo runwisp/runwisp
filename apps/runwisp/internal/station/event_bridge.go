@@ -156,18 +156,15 @@ func (b *EventBridge) finalizeRun(ctx context.Context, run *model.Run, update pr
 	b.flushLogBatch(executionID)
 	b.tracker.QueueUpdate(update, b.sendReady)
 
-	uploader := b.handler.Uploader()
-	if uploader != nil {
-		logFilePath := logutil.ResolveRunLogPath(b.handler.LogDir(), run.TaskName, run.ID, run.CreatedAt)
-		result, err := uploader.Archive(ctx, executionID, logFilePath)
-		switch {
-		case err != nil:
-			slog.Warn("log archival failed; archive coordinates not reported", "executionId", executionID, "err", err)
-		case result != nil:
-			update.LogPath = result.LogPath
-			update.LogSize = result.LogSize
-			b.tracker.QueueUpdate(update, b.sendReady)
-		}
+	logFilePath := logutil.ResolveRunLogPath(b.handler.LogDir(), run.TaskName, run.ID, run.CreatedAt)
+	result, err := b.handler.Uploader().Archive(ctx, executionID, logFilePath)
+	switch {
+	case err != nil:
+		slog.Warn("log archival failed; archive coordinates not reported", "executionId", executionID, "err", err)
+	case result != nil:
+		update.LogPath = result.LogPath
+		update.LogSize = result.LogSize
+		b.tracker.QueueUpdate(update, b.sendReady)
 	}
 
 	b.handler.RemoveLogListener(executionID)

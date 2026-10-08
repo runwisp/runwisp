@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
@@ -22,6 +23,7 @@ func newTestInboundHandler() *InboundHandler {
 		LogDir:          "/tmp/logs",
 		QueueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
 		Tracker:         NewExecutionTracker(),
+		Uploader:        NewLogUploader(nil, nil, "", time.Now),
 	})
 }
 
@@ -49,6 +51,7 @@ func newDispatchInboundHandler(runner TaskRunner, repo ExternalRunGetter, avail 
 		availability:    avail,
 		queueExecUpdate: func(protocol.ExecutionUpdateMessage) {},
 		tracker:         NewExecutionTracker(),
+		uploader:        NewLogUploader(nil, nil, "", time.Now),
 		logListeners:    make(map[string]struct{}),
 	}
 }
@@ -369,13 +372,13 @@ func TestHandleLogReplayRequest_TransientError(t *testing.T) {
 	assert.Equal(t, StationErrorKindTransient, ce.Kind)
 }
 
-// TestInboundHandler_FreshHandlerGetters covers the four "zero-state" getter
-// branches in one place: LogDir/Uploader propagate from construction; the
-// listener queries return false because no listener was registered yet.
+// TestInboundHandler_FreshHandlerGetters covers the "zero-state" getters:
+// LogDir/Uploader propagate from construction; the listener queries return
+// false because no listener was registered yet.
 func TestInboundHandler_FreshHandlerGetters(t *testing.T) {
 	h := newTestInboundHandler()
 	assert.Equal(t, "/tmp/logs", h.LogDir())
-	assert.Nil(t, h.Uploader(), "uploader must be nil when not configured")
+	assert.NotNil(t, h.Uploader())
 	assert.False(t, h.IsLogListener("exec-1"), "no listener registered → must be false")
 	assert.NotPanics(t, func() { h.RemoveLogListener("exec-1") }, "removing an absent listener must be a no-op")
 }
