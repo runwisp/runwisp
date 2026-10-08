@@ -49,22 +49,22 @@
 
     let {
         stats,
-        recentRuns = [],
-        runningRuns = [],
-        totalRuns = 0,
-        tasks = [],
-        metricsHistory = [],
+        recentRuns,
+        runningRuns,
+        totalRuns,
+        tasks,
+        metricsHistory,
         onViewAllRuns,
         onTaskClick,
         onRunClick,
         motion,
     }: {
         stats: DaemonStats;
-        recentRuns?: Run[];
-        runningRuns?: Run[];
-        totalRuns?: number;
-        tasks?: Task[];
-        metricsHistory?: MetricsSample[];
+        recentRuns: Run[];
+        runningRuns: Run[];
+        totalRuns: number;
+        tasks: Task[];
+        metricsHistory: MetricsSample[];
         onViewAllRuns: () => void;
         onTaskClick: (taskName: string) => void;
         onRunClick: (taskName: string, runId: string) => void;
