@@ -39,10 +39,17 @@ func TestServe(t *testing.T) {
 		wantContentType string
 	}{
 		{
-			name:       "root serves index",
-			path:       "/",
-			wantStatus: http.StatusOK,
-			wantBody:   indexBody,
+			name:            "root serves index",
+			path:            "/",
+			wantStatus:      http.StatusOK,
+			wantBody:        indexBody,
+			wantContentType: "text/html",
+		},
+		{
+			name:            "svg asset served with its content type",
+			path:            "/favicon.svg",
+			wantStatus:      http.StatusOK,
+			wantContentType: "image/svg+xml",
 		},
 		{
 			name:       "existing asset served with content type",
