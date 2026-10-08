@@ -53,7 +53,7 @@ func TestParseResumeID(t *testing.T) {
 
 // logsTestServer wires a Server with just the fields the log handlers need:
 // a real in-memory SQLite RunRepository and a temp logDir on disk.
-func logsTestServer(t *testing.T) (*Server, storage.Database, string) {
+func logsTestServer(t *testing.T) (*Server, *storage.SQLiteDatabase, string) {
 	t.Helper()
 	db, err := storage.New(":memory:")
 	require.NoError(t, err)

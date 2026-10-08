@@ -64,7 +64,7 @@ type Scheduler struct {
 	// pauses persists it; nil (tests that never call RestorePauses) keeps
 	// pauses in memory only.
 	paused  map[string]time.Time
-	pauses  storage.TaskPauseRepository
+	pauses  *storage.SQLiteDatabase
 	now     func() time.Time
 	mutex   sync.Mutex
 	started bool
@@ -535,7 +535,7 @@ func pauseClearReason(task *model.Task) string {
 // clears any the current config no longer allows (see PrunePauses). store
 // becomes the write-through target for later Pause/Resume calls. The returned
 // strings describe the cleared pauses, for the boot warnings.
-func (scheduler *Scheduler) RestorePauses(ctx context.Context, store storage.TaskPauseRepository) ([]string, error) {
+func (scheduler *Scheduler) RestorePauses(ctx context.Context, store *storage.SQLiteDatabase) ([]string, error) {
 	paused, err := store.ListPausedTaskSchedules(ctx)
 	scheduler.mutex.Lock()
 	defer scheduler.mutex.Unlock()

@@ -17,7 +17,7 @@ import (
 	"github.com/runwisp/runwisp/internal/storage"
 )
 
-func newDB(t *testing.T) storage.Database {
+func newDB(t *testing.T) *storage.SQLiteDatabase {
 	t.Helper()
 	db, err := storage.New(":memory:")
 	require.NoError(t, err)

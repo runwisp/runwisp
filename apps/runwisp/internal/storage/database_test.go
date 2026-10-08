@@ -732,7 +732,7 @@ func TestListRuns_CreatedAfterFilterAcrossTimezoneOffsets(t *testing.T) {
 func intPtr(n int) *int { return &n }
 
 // setupFullTestDB returns the full Database interface (includes PendingLogUploadRepository).
-func setupFullTestDB(t *testing.T) Database {
+func setupFullTestDB(t *testing.T) *SQLiteDatabase {
 	t.Helper()
 	db, err := New(":memory:")
 	require.NoError(t, err)
@@ -1159,9 +1159,6 @@ func TestSelectOldRunsByAgeOrdersOldestFirst(t *testing.T) {
 	db, err := New(":memory:")
 	require.NoError(t, err)
 	defer db.Close()
-	sdb, ok := db.(*SQLiteDatabase)
-	require.True(t, ok)
-
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	oldest := base
 	middle := base.Add(time.Hour)
@@ -1179,7 +1176,7 @@ func TestSelectOldRunsByAgeOrdersOldestFirst(t *testing.T) {
 	}
 
 	// Take only 2 of the 3 eligible rows; the newest must be the one left behind.
-	rows, err := sdb.q.SelectOldRunsByAge(ctx, sqlcdb.SelectOldRunsByAgeParams{
+	rows, err := db.q.SelectOldRunsByAge(ctx, sqlcdb.SelectOldRunsByAgeParams{
 		TaskName:  "t",
 		CreatedAt: base.Add(24 * time.Hour), // cutoff after all three
 		Limit:     2,

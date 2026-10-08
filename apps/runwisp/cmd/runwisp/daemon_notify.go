@@ -110,7 +110,7 @@ func initNotify(
 	templates map[string]string,
 	fingerprint string,
 	hub *inapp.Hub,
-	db storage.Database,
+	db *storage.SQLiteDatabase,
 	bus *events.Bus,
 	logger *slog.Logger,
 ) (*notify.Service, error) {

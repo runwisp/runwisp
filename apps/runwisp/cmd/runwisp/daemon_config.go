@@ -40,7 +40,7 @@ type daemonConfig struct {
 	NoAuth            bool
 }
 
-func loadDaemonConfig(ctx context.Context, configRepo storage.ConfigRepository, mode daemonMode, f Flags) (*daemonConfig, error) {
+func loadDaemonConfig(ctx context.Context, configRepo *storage.SQLiteDatabase, mode daemonMode, f Flags) (*daemonConfig, error) {
 	// Fingerprint resolution priority: an env override (not persisted), then the
 	// DB (canonical store), then a freshly generated one persisted for next boot.
 	fp, err := resolveFingerprint(ctx, configRepo)
@@ -169,7 +169,7 @@ func deriveJWTSecret(password, fp string) (string, error) {
 // resolveFingerprint resolves the daemon's per-install fingerprint: an env
 // override wins (not persisted), else the DB's stored value, else a freshly
 // generated one persisted for next boot.
-func resolveFingerprint(ctx context.Context, configRepo storage.ConfigRepository) (string, error) {
+func resolveFingerprint(ctx context.Context, configRepo *storage.SQLiteDatabase) (string, error) {
 	if fp := strings.TrimSpace(os.Getenv("RUNWISP_FINGERPRINT")); fp != "" {
 		return fp, nil
 	}

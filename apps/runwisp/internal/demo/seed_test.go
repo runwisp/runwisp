@@ -262,7 +262,7 @@ func TestSeed(t *testing.T) {
 }
 
 // queryAll pages through every run for a task (empty taskName = all tasks).
-func queryAll(t *testing.T, db storage.Database, taskName string) []model.Run {
+func queryAll(t *testing.T, db *storage.SQLiteDatabase, taskName string) []model.Run {
 	t.Helper()
 	var all []model.Run
 	const page = 500
