@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/generated/protocol"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 type activeExecution struct {

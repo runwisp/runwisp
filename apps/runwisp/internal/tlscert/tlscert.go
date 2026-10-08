@@ -31,7 +31,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/datadir"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 )
 
 const (

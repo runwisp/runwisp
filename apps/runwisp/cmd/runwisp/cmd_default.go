@@ -13,9 +13,9 @@ import (
 	"log/slog"
 
 	"github.com/mattn/go-isatty"
-	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/tui"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui"
 )
 
 // runDefault detects a running daemon or spawns one, then opens the TUI.

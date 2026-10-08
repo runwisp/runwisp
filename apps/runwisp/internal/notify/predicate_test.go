@@ -6,8 +6,8 @@ package notify_test
 import (
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
 )
 
 // TestMatchOutcomes matches on the fine-grained end reason, distinguishing

@@ -15,10 +15,10 @@ import (
 	"log/slog"
 
 	"github.com/mattn/go-isatty"
-	"github.com/runwisp/runwisp/internal/clilog"
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/datadir"
-	"github.com/runwisp/runwisp/internal/version"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/clilog"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/version"
 	"github.com/spf13/cobra"
 )
 

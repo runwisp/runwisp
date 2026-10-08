@@ -12,8 +12,8 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/go-chi/chi/v5"
-	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel/inapp"
 )
 
 // appStreamPingInterval is how often pumpAppStream sends a keepalive ping

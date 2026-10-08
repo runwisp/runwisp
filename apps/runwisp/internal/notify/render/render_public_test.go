@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/render"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

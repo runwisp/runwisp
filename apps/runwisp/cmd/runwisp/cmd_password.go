@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/server"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
 	"github.com/spf13/cobra"
 )
 

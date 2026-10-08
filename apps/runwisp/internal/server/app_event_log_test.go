@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/events"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/stretchr/testify/require"
 )
 

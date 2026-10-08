@@ -14,7 +14,7 @@ import (
 
 	str2duration "github.com/xhit/go-str2duration/v2"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // umaskPattern requires 3 or 4 octal digits. Demanding at least three digits

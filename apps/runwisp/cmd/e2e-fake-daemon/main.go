@@ -19,7 +19,7 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/runwisp/runwisp/internal/station/logarchive"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/station/logarchive"
 )
 
 func main() {

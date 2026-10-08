@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
 	"github.com/stretchr/testify/require"
 )
 

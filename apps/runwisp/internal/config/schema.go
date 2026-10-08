@@ -6,8 +6,8 @@ package config
 import (
 	"time"
 
-	"github.com/runwisp/runwisp/internal/cronprobe"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cronprobe"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // Config is the in-memory representation of runwisp.toml after load + defaults.

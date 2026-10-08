@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/spf13/cobra"
 )
 

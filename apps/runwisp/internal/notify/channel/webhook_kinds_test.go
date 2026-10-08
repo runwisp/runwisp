@@ -17,9 +17,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/channel/webhook"
-	notifytest "github.com/runwisp/runwisp/internal/notify/testutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel/webhook"
+	notifytest "github.com/runwisp/runwisp/apps/runwisp/internal/notify/testutil"
 )
 
 var failedEvent = &notify.Event{Kind: notify.KindRunFailed, Severity: notify.SevError, TaskName: "backup-db", Reason: "exit 1", Timestamp: time.Now().UTC()}

@@ -8,7 +8,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // heldNamesShown caps how many task names the held block lists before collapsing

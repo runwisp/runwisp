@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
 )
 
 // ErrNoCronUnit means none of the known cron unit names are known to systemd

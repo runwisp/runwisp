@@ -8,7 +8,7 @@ import (
 	"io"
 	"syscall"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // Backend executes a specific task execution type. Start launches the work and

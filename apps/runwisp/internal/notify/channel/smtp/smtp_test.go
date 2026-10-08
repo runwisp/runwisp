@@ -18,8 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 	gomail "github.com/wneessen/go-mail"
 
-	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/render"
 )
 
 func newTestRenderer(t *testing.T) render.Renderer {

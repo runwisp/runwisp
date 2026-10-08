@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/logutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

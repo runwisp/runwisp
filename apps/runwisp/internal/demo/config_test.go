@@ -6,7 +6,7 @@ package demo
 import (
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/stretchr/testify/assert"
 )
 

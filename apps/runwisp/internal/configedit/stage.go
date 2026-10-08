@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 )
 
 // Layout is RunWisp's two-tier config layout rooted at one runwisp.toml: the

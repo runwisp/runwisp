@@ -12,8 +12,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/generated/protocol"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // ErrUnsupportedMessageType is returned by DecodeInboundMessage when the

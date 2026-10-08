@@ -22,8 +22,8 @@ import (
 	"github.com/go-chi/jwtauth/v5"
 	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/lestrrat-go/jwx/v3/jwt"
-	"github.com/runwisp/runwisp/internal/chap"
-	"github.com/runwisp/runwisp/internal/datadir"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/chap"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 )
 
 const (

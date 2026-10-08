@@ -9,7 +9,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/runwisp/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

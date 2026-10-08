@@ -5,7 +5,7 @@
 
 package server
 
-import "github.com/runwisp/runwisp/internal/model"
+import "github.com/runwisp/runwisp/apps/runwisp/internal/model"
 
 // populatePlatformSample has no host-metrics backend on unsupported platforms,
 // so it reports the daemon's own Go heap and leaves CPU at zero.

@@ -13,11 +13,11 @@ import (
 	"strings"
 
 	"github.com/mattn/go-isatty"
-	"github.com/runwisp/runwisp/internal/autostart"
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/configedit"
-	"github.com/runwisp/runwisp/internal/cutover"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/autostart"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/configedit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cutover"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // scaffoldIfMissing checks for a runwisp.toml at f.CfgFile. If it is absent and

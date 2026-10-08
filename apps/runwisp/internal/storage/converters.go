@@ -8,8 +8,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage/sqlcdb"
 )
 
 // runFromRow maps a storage row to model.Run, dropping DeletedAt and decoding

@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
-	"github.com/runwisp/runwisp/internal/composespec"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/composespec"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // ComposeAutoDiscoveryFilenames is the ordered fallback list `docker compose`

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/oklog/ulid/v2"
-	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )

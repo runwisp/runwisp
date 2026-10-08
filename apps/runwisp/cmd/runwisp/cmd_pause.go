@@ -4,7 +4,7 @@
 package main
 
 import (
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/spf13/cobra"
 )
 

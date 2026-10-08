@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
-	"github.com/runwisp/runwisp/internal/textutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/textutil"
 )
 
 // LocatedError is a config error that carries a structured source location

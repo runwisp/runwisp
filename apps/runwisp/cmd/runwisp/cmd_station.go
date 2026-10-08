@@ -10,8 +10,8 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
-	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/tui"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui"
 	"github.com/spf13/cobra"
 )
 

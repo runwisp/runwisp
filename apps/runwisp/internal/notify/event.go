@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // Severity classifies how attention-worthy an event is.

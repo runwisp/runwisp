@@ -11,14 +11,14 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/tui/uikit"
-	"github.com/runwisp/runwisp/internal/tui/views/execlist"
-	"github.com/runwisp/runwisp/internal/tui/views/home"
-	"github.com/runwisp/runwisp/internal/tui/views/info"
-	"github.com/runwisp/runwisp/internal/tui/views/logsearch"
-	"github.com/runwisp/runwisp/internal/tui/views/notifications"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/execlist"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/home"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/info"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/logsearch"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/views/notifications"
 )
 
 const (

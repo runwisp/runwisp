@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/crashguard"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // groupStat is one reading of a process group, summed over its live members.

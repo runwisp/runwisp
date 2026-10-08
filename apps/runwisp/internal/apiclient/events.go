@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/runwisp/runwisp/internal/server"
-	"github.com/runwisp/runwisp/internal/server/logstream"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server/logstream"
 )
 
 // StreamRunEvents opens an SSE connection to the unified /api/events/stream feed and

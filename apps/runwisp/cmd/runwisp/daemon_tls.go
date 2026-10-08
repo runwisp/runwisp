@@ -6,8 +6,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/tlscert"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tlscert"
 )
 
 // tlsSetup is the resolved transport configuration for the main listener: the

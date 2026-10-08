@@ -20,8 +20,8 @@ import (
 	"unicode"
 
 	"github.com/pelletier/go-toml/v2"
-	"github.com/runwisp/runwisp/internal/cronspec"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // Load reads, decodes, defaults, and validates a runwisp.toml file, merging in

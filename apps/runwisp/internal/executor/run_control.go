@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // RunWatcher observes one live run for the whole time its process is up. The

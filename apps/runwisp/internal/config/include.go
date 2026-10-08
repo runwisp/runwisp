@@ -11,9 +11,9 @@ import (
 	"reflect"
 	"slices"
 
-	"github.com/runwisp/runwisp/internal/cronprobe"
-	"github.com/runwisp/runwisp/internal/importer"
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cronprobe"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // loadWithIncludes loads the root config and any files pulled in via

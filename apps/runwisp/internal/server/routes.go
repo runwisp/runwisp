@@ -16,10 +16,10 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
 	"github.com/go-chi/jwtauth/v5"
-	"github.com/runwisp/runwisp/internal/server/auth"
-	"github.com/runwisp/runwisp/internal/ui"
-	"github.com/runwisp/runwisp/internal/update"
-	"github.com/runwisp/runwisp/internal/version"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/ui"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/update"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/version"
 )
 
 type contextKey string

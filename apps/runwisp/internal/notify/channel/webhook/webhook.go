@@ -13,8 +13,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/render"
 )
 
 // Channel is a generic HTTP webhook notifier.

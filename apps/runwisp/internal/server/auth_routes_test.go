@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/server/auth"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

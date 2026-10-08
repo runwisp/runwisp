@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // MetricsCollector periodically samples system resource usage into a

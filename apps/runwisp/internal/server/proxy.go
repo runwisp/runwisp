@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/proxycidr"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/proxycidr"
 )
 
 // proxySet is the parsed [daemon] trusted_proxies list (RUNWISP_TRUSTED_PROXIES

@@ -6,7 +6,7 @@ package executor
 import (
 	"syscall"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // signalFromName resolves a stop_signal name to the syscall.Signal that opens

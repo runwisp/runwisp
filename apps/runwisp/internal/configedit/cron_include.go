@@ -9,7 +9,7 @@ import (
 	"os"
 
 	"github.com/pelletier/go-toml/v2"
-	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 )
 
 // ErrCronIncludeAlreadySet signals that the root config already declares a

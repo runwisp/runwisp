@@ -9,8 +9,8 @@ import (
 
 	"log/slog"
 
-	"github.com/runwisp/runwisp/internal/logutil"
-	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/logutil"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 // SoftDeleteTTL is the server-side window between a run being soft-deleted

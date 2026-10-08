@@ -4,7 +4,7 @@
 package main
 
 import (
-	"github.com/runwisp/runwisp/internal/datadir"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 )
 
 // localAPISocketPath resolves the daemon control socket: the explicit --socket

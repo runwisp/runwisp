@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/server"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
 )
 
 func unreadNotification(id, sev string, occurredAt time.Time, title string) server.NotificationDTO {

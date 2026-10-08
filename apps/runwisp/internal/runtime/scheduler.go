@@ -15,11 +15,11 @@ import (
 	"log/slog"
 
 	"github.com/robfig/cron/v3"
-	"github.com/runwisp/runwisp/internal/crashguard"
-	"github.com/runwisp/runwisp/internal/cronspec"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/runtime/jitter"
-	"github.com/runwisp/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/crashguard"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cronspec"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runtime/jitter"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
 )
 
 // ErrNotPausable is returned by Scheduler.Pause for a task whose cron schedule

@@ -6,7 +6,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/runwisp/runwisp/internal/cutover"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/cutover"
 	"github.com/spf13/cobra"
 )
 

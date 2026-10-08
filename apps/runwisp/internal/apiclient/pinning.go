@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/runwisp/runwisp/internal/tlscert"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/tlscert"
 )
 
 // CertPinStore persists trust-on-first-use certificate pins keyed by daemon

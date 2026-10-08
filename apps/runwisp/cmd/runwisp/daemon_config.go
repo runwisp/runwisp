@@ -13,13 +13,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/chap"
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/datadir"
-	"github.com/runwisp/runwisp/internal/fingerprint"
-	"github.com/runwisp/runwisp/internal/station"
-	"github.com/runwisp/runwisp/internal/storage"
-	"github.com/runwisp/runwisp/internal/version"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/chap"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/fingerprint"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/station"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/storage"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/version"
 )
 
 // jwtKDFInfo namespaces the JWT signing-key derivation (folded into the PBKDF2

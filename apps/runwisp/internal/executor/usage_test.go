@@ -6,8 +6,8 @@ package executor
 import (
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/procstat"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/procstat"
 	"github.com/stretchr/testify/assert"
 )
 

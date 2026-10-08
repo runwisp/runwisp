@@ -10,7 +10,7 @@ import (
 	rdebug "runtime/debug"
 
 	"github.com/charmbracelet/fang"
-	"github.com/runwisp/runwisp/internal/version"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/version"
 
 	// Embed the IANA time zone database so [daemon] timezone and per-task
 	// timezone resolve on slim images (Alpine/distroless) without an installed

@@ -12,10 +12,10 @@ import (
 	"reflect"
 	"slices"
 
-	"github.com/runwisp/runwisp/internal/config"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/server"
-	"github.com/runwisp/runwisp/internal/update"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/update"
 )
 
 // settingsApplier is the reconciler's SettingsHook: it swaps the daemon-wide

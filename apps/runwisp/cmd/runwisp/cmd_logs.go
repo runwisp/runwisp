@@ -20,11 +20,11 @@ import (
 	"syscall"
 
 	"github.com/charmbracelet/colorprofile"
-	"github.com/runwisp/runwisp/internal/apiclient"
-	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/runlog"
-	"github.com/runwisp/runwisp/internal/server"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/runlog"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
 	"github.com/spf13/cobra"
 )
 

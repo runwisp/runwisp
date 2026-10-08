@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // containerConnectTimeout bounds the first-connect probe (NewContainerBackend

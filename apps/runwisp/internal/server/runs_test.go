@@ -11,9 +11,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2/sse"
 	"github.com/oklog/ulid/v2"
-	"github.com/runwisp/runwisp/internal/events"
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/notify/channel/inapp"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel/inapp"
 	"github.com/stretchr/testify/assert"
 )
 

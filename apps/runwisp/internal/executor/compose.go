@@ -17,7 +17,7 @@ import (
 
 	"log/slog"
 
-	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 )
 
 // composeAvailableTimeout caps the `docker compose version` probe we use to

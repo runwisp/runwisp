@@ -9,8 +9,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/server"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/server"
 )
 
 func (c *Client) GetSystemStats(ctx context.Context) (*model.SystemStats, error) {

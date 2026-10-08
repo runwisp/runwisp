@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/runwisp/runwisp/internal/importer"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/importer"
 )
 
 func TestResolveCronOptions(t *testing.T) {

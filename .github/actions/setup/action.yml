@@ -27,7 +27,7 @@ runs:
     - uses: actions/setup-go@v6
       if: inputs.go == 'true'
       with:
-        go-version-file: apps/runwisp/go.mod
+        go-version-file: go.mod
         cache: false
 
     - name: Locate Go caches
@@ -47,7 +47,7 @@ runs:
           ${{ steps.go-env.outputs.mod }}
           ~/.cache/golangci-lint
           .bin
-        key: go-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/runwisp/go.mod', 'apps/runwisp/go.sum', 'apps/runwisp/scripts/sqlc-generate.sh', 'apps/runwisp/scripts/lint-go.sh', 'apps/runwisp/scripts/check-go.sh') }}
+        key: go-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum', 'apps/runwisp/scripts/sqlc-generate.sh', 'apps/runwisp/scripts/lint-go.sh', 'apps/runwisp/scripts/check-go.sh') }}
         restore-keys: go-${{ github.job }}-${{ runner.os }}-${{ runner.arch }}-
 
     - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2

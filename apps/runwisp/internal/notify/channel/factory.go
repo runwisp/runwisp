@@ -16,12 +16,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/notify"
-	"github.com/runwisp/runwisp/internal/notify/channel/sendmail"
-	"github.com/runwisp/runwisp/internal/notify/channel/smtp"
-	"github.com/runwisp/runwisp/internal/notify/channel/telegram"
-	"github.com/runwisp/runwisp/internal/notify/channel/webhook"
-	"github.com/runwisp/runwisp/internal/notify/render"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel/sendmail"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel/smtp"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel/telegram"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/channel/webhook"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/render"
 )
 
 // NotifierSpec is the resolved-from-TOML, secret-substituted description of a

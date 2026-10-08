@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/runwisp/runwisp/internal/model"
-	"github.com/runwisp/runwisp/internal/proxycidr"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/proxycidr"
 )
 
 // tomlConfig is the over-the-wire config shape used only during TOML decoding.

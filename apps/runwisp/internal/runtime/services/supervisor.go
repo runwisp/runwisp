@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/runwisp/runwisp/internal/config"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 )
 
 // slotState is one instance slot's state: whether it's currently occupied,
