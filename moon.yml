@@ -37,6 +37,20 @@ tasks:
       - 'apps/*/package.json'
       - 'packages/*/package.json'
 
+  check-latest:
+    # Same gate as the "Latest deps" CI jobs. Needs the network, so it runs in
+    # the `ci` script rather than `check` (CI has its own jobs for it).
+    description: 'Fail when a direct dependency is behind its latest release.'
+    script: 'rc=0; for app in runwisp ui docs; do bun scripts/check-latest.ts $app || rc=1; done; exit $rc'
+    inputs:
+      - 'scripts/check-latest.ts'
+      - 'go.mod'
+      - 'bun.lock'
+      - 'apps/*/package.json'
+      - 'packages/*/package.json'
+    options:
+      cache: false
+
   check:
     deps:
       - '~:check-installed-deps'
