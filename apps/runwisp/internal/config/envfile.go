@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/runwisp/runwisp/internal/textutil"
 )
 
 // loadEnvFile resolves path relative to baseDir, parses it literally, and runs
@@ -63,13 +65,7 @@ func parseEnvFile(r io.Reader) (map[string]string, error) {
 			return nil, fmt.Errorf("line %d: missing '=' separator", lineNum)
 		}
 		key = strings.TrimSpace(key)
-		val = strings.TrimSpace(val)
-		if len(val) >= 2 {
-			if q := val[0]; (q == '"' || q == '\'') && val[len(val)-1] == q {
-				val = val[1 : len(val)-1]
-			}
-		}
-		values[key] = val
+		values[key] = textutil.TrimMatchedQuotes(strings.TrimSpace(val))
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err

@@ -13,6 +13,7 @@ import (
 
 	"github.com/runwisp/runwisp/internal/cronspec"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/textutil"
 )
 
 // CronOptions tunes crontab parsing.
@@ -881,11 +882,7 @@ func cronEnvLine(line string) (name, value string, ok bool) {
 			return "", "", false
 		}
 	}
-	value = strings.TrimSpace(value)
-	if n := len(value); n >= 2 && (value[0] == '"' || value[0] == '\'') && value[n-1] == value[0] {
-		value = value[1 : n-1] // one matched pair, as cron does
-	}
-	return name, value, true
+	return name, textutil.TrimMatchedQuotes(strings.TrimSpace(value)), true
 }
 
 // deriveCronName builds a readable task name from a command: it finds the first

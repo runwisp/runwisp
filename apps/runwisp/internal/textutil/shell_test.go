@@ -14,3 +14,18 @@ func TestShellQuoteNeutralisesMetacharacters(t *testing.T) {
 	// literal — the core trust-model guarantee for operator-supplied values.
 	assert.Equal(t, `''\''; rm -rf / #'`, ShellQuote(`'; rm -rf / #`))
 }
+
+func TestTrimMatchedQuotes(t *testing.T) {
+	cases := map[string]string{
+		`"a b"`: "a b",
+		`'a b'`: "a b",
+		`""`:    "",
+		`"`:     `"`,
+		`"a'`:   `"a'`,
+		`""a""`: `"a"`,
+		`a`:     "a",
+	}
+	for in, want := range cases {
+		assert.Equal(t, want, TrimMatchedQuotes(in), "input=%s", in)
+	}
+}

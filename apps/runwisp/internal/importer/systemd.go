@@ -759,14 +759,14 @@ func isZeroDuration(d string) bool {
 // reproduced — a value that relies on it lands verbatim for the operator to fix.
 func parseSystemdEnvInto(env map[string]string, value string) {
 	for _, tok := range splitSystemdEnv(value) {
-		tok = unquoteSystemd(tok) // handles Environment="VAR=value with spaces"
+		tok = textutil.TrimMatchedQuotes(tok) // handles Environment="VAR=value with spaces"
 		eq := strings.IndexByte(tok, '=')
 		if eq <= 0 {
 			continue
 		}
 		key := strings.TrimSpace(tok[:eq])
 		val := strings.TrimSpace(tok[eq+1:])
-		val = unquoteSystemd(val)
+		val = textutil.TrimMatchedQuotes(val)
 		if key != "" {
 			env[key] = val
 		}
@@ -803,12 +803,4 @@ func splitSystemdEnv(s string) []string {
 		out = append(out, cur.String())
 	}
 	return out
-}
-
-// unquoteSystemd strips a single matching pair of surrounding quotes.
-func unquoteSystemd(s string) string {
-	if len(s) >= 2 && (s[0] == '"' || s[0] == '\'') && s[len(s)-1] == s[0] {
-		return s[1 : len(s)-1]
-	}
-	return s
 }
