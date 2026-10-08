@@ -13,10 +13,10 @@ export type StallHandler = () => void;
 export type ErrorHandler = (info: SSEErrorInfo) => void;
 
 /**
- * One named "signal" with any number of listeners, the shape EventManager
- * and SharedAppStream each repeat three times over (open/error/stall):
- * subscribing adds a listener and returns an unsubscribe function, emitting
- * invokes every listener and logs (rather than throws) if one does.
+ * One named signal with any number of listeners (EventManager and
+ * SharedAppStream each keep open/error/stall ones): subscribing adds a
+ * listener and returns an unsubscribe function, emitting invokes every
+ * listener and logs (rather than throws) if one does.
  */
 export class Signal<Args extends unknown[]> {
     readonly #listeners = new Set<(...args: Args) => void>();

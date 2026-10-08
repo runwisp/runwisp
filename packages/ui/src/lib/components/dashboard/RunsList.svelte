@@ -78,10 +78,10 @@
         // in or out. Page loads, scrolling and filtering never do.
         motion?: RunMotion;
         // Output search (history rail): filters runs by what they printed. The
-        // search box lives in the app header now; the parent owns the box, the
-        // query, and the async log search. This component just renders the
-        // matched rows. `outputSearch` enables the mode; `outputQuery` is the
-        // live query (drives the active state and snippet highlighting).
+        // parent owns the search box, the query and the async log search; this
+        // component just renders the matched rows. `outputSearch` enables the
+        // mode; `outputQuery` is the live query (drives the active state and
+        // snippet highlighting).
         outputSearch?: boolean;
         outputQuery?: string;
         // run id → first matching line, supplied by the parent after a search.
@@ -102,8 +102,8 @@
 
     let scrollElement: HTMLDivElement | undefined = $state();
 
-    // Output search filters the rail by what each run printed. The query lives
-    // in the app header now; this component only renders against it.
+    // Output search filters the rail by what each run printed; the query is the
+    // parent's, this component only renders against it.
     const outputSearchActive = $derived(outputSearch && outputQuery.trim().length > 0);
 
     // Loaded runs that matched the output search, in list order. A match in a
