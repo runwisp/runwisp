@@ -343,16 +343,6 @@ func parseWire(data []byte, baseDir string) (*tomlConfig, error) {
 	return &raw, nil
 }
 
-// decode parses TOML bytes into a Config. baseDir is the runwisp.toml
-// directory; ${file:...} substitutions resolve relative paths against it.
-func decode(data []byte, baseDir string) (*Config, error) {
-	raw, err := parseWire(data, baseDir)
-	if err != nil {
-		return nil, err
-	}
-	return buildConfig(raw)
-}
-
 // buildConfig turns a (possibly merged) wire config into a Config. It runs
 // exactly once over the combined task/service/notifier set, so cross-file
 // references (a route targeting an included task, a task naming a notifier from
