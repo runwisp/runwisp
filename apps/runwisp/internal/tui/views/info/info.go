@@ -60,8 +60,8 @@ func (v *InfoView) SetSize(w, h int) {
 // UpdateStats pushes new metrics data and updates sparklines.
 func (v *InfoView) UpdateStats(stats *model.SystemStats) {
 	v.stats = stats
-	v.cpuHistory = appendCapped(v.cpuHistory, stats.CPUUsage, maxHistorySamples)
-	v.memHistory = appendCapped(v.memHistory, stats.MemUsage, maxHistorySamples)
+	v.cpuHistory = appendCapped(v.cpuHistory, stats.CPUUsage)
+	v.memHistory = appendCapped(v.memHistory, stats.MemUsage)
 }
 
 // SetTaskUsage replaces the live per-task CPU and memory shown in the task list.
@@ -74,8 +74,8 @@ func (v *InfoView) LoadHistory(samples []model.MetricsSample) {
 	v.cpuHistory = v.cpuHistory[:0]
 	v.memHistory = v.memHistory[:0]
 	for _, s := range samples {
-		v.cpuHistory = appendCapped(v.cpuHistory, s.CPUUsage, maxHistorySamples)
-		v.memHistory = appendCapped(v.memHistory, s.MemUsage, maxHistorySamples)
+		v.cpuHistory = appendCapped(v.cpuHistory, s.CPUUsage)
+		v.memHistory = appendCapped(v.memHistory, s.MemUsage)
 	}
 }
 
@@ -295,11 +295,11 @@ func (v *InfoView) renderActivitySection(w int) []string {
 		parts = append(parts, rateStr)
 	}
 	sep := uikit.InfoStatLabelStyle.Render("  ·  ")
-	line := bgSpace(2) + strings.Join(parts, sep)
+	line := bgIndent() + strings.Join(parts, sep)
 	lines = append(lines, uikit.PadLine(line, w, uikit.ColorBg))
 
 	if s.LastFailure != nil {
-		failLine := bgSpace(2) + uikit.InfoStatLabelStyle.Render("Last failure  ") +
+		failLine := bgIndent() + uikit.InfoStatLabelStyle.Render("Last failure  ") +
 			lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextMuted).Render(s.LastFailure.In(v.loc).Format(time.RFC3339))
 		lines = append(lines, uikit.PadLine(failLine, w, uikit.ColorBg))
 	}
@@ -331,7 +331,7 @@ func (v *InfoView) renderQuickInfoSection(w int) []string {
 		}
 		label := uikit.InfoLabelStyle.Render(f.label)
 		value := uikit.InfoValueStyle.Render(f.value)
-		lines = append(lines, uikit.PadLine(bgSpace(2)+label+value, w, uikit.ColorBg))
+		lines = append(lines, uikit.PadLine(bgIndent()+label+value, w, uikit.ColorBg))
 	}
 
 	if len(v.info.Capabilities) > 0 {
@@ -352,10 +352,10 @@ func (v *InfoView) renderCapabilitiesLines(caps []model.CapInfo, w int) []string
 			capStrs = append(capStrs, uikit.InfoCapsUnavailableStyle.Render("✗ "+capInfo.Name))
 		}
 	}
-	capLine := bgSpace(2) + strings.Join(capStrs, bgSpace(2))
+	capLine := bgIndent() + strings.Join(capStrs, bgIndent())
 	if lipgloss.Width(capLine) > w-2 {
 		for _, c := range capStrs {
-			lines = append(lines, uikit.PadLine(bgSpace(2)+c, w, uikit.ColorBg))
+			lines = append(lines, uikit.PadLine(bgIndent()+c, w, uikit.ColorBg))
 		}
 	} else {
 		lines = append(lines, uikit.PadLine(capLine, w, uikit.ColorBg))
@@ -384,7 +384,7 @@ func (v *InfoView) renderConfigSection(w int) []string {
 		}
 		label := uikit.InfoLabelStyle.Render(f.label)
 		value := uikit.InfoValueStyle.Render(f.value)
-		lines = append(lines, uikit.PadLine(bgSpace(2)+label+value, w, uikit.ColorBg))
+		lines = append(lines, uikit.PadLine(bgIndent()+label+value, w, uikit.ColorBg))
 	}
 
 	return lines
@@ -408,9 +408,9 @@ func (v *InfoView) renderTasksSection(w int) []string {
 		}
 		name := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextBright).Bold(true).Render(task.Name)
 		schedStyle := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorTextMuted).Render(sched)
-		line := bgSpace(2) + name + bgSpace(2) + schedStyle
+		line := bgIndent() + name + bgIndent() + schedStyle
 		if u, ok := v.taskUsage[task.Name]; ok {
-			line += bgSpace(2) + lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorRunning).Render(uikit.FormatUsage(u))
+			line += bgIndent() + lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorRunning).Render(uikit.FormatUsage(u))
 		}
 		lines = append(lines, uikit.PadLine(line, w, uikit.ColorBg))
 	}
@@ -426,7 +426,7 @@ func (v *InfoView) renderWarningsSection(w int) []string {
 
 	for _, warn := range v.info.ScheduleWarnings {
 		warnStyle := lipgloss.NewStyle().Background(uikit.ColorBg).Foreground(uikit.ColorWarning).Render("⚠ " + warn)
-		lines = append(lines, uikit.PadLine(bgSpace(2)+warnStyle, w, uikit.ColorBg))
+		lines = append(lines, uikit.PadLine(bgIndent()+warnStyle, w, uikit.ColorBg))
 	}
 
 	return lines
@@ -441,14 +441,16 @@ func (v *InfoView) sectionDivider(w int) []string {
 	}
 }
 
-func bgSpace(n int) string {
-	return lipgloss.NewStyle().Background(uikit.ColorBg).Render(strings.Repeat(" ", n))
+// bgIndent is the two-column left indent on the page background.
+func bgIndent() string {
+	return lipgloss.NewStyle().Background(uikit.ColorBg).Render("  ")
 }
 
-func appendCapped(s []float64, val float64, maxLen int) []float64 {
+// appendCapped appends val, keeping only the newest maxHistorySamples values.
+func appendCapped(s []float64, val float64) []float64 {
 	s = append(s, val)
-	if len(s) > maxLen {
-		s = s[len(s)-maxLen:]
+	if len(s) > maxHistorySamples {
+		s = s[len(s)-maxHistorySamples:]
 	}
 	return s
 }

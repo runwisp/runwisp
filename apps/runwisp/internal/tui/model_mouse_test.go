@@ -147,14 +147,14 @@ func TestHandleHomePageClick_ClickOnTaskButtonTriggers(t *testing.T) {
 	selectSidebarItem(&m, 1)
 	m.layout.taskBtnY = 7
 	// client is nil → confirmAction returns nil. We still exercise the branch.
-	_, _ = m.handleHomePageClick(uikit.SidebarWidth+5, 7)
+	_, _ = m.handleHomePageClick(7)
 }
 
 func TestHandleHomePageClick_ClickOnHomeFieldFocusesField(t *testing.T) {
 	m := newTestModel(nil)
 	m.layout.homeFieldsY = 5
 	// Try to click at y == homeFieldsY (field 0).
-	newM, _ := m.handleHomePageClick(uikit.SidebarWidth+5, 5)
+	newM, _ := m.handleHomePageClick(5)
 	if nm, ok := newM.(Model); ok {
 		// Could be either home field or pass-through to exec list, depending on
 		// whether fields are present. Either way, no panic + return is enough.
@@ -165,7 +165,7 @@ func TestHandleHomePageClick_ClickOnHomeFieldFocusesField(t *testing.T) {
 func TestHandleHomePageClick_NoTaskAndOutsideFieldsDelegatesToExecList(t *testing.T) {
 	m := newTestModel(nil)
 	m.layout.homeFieldsY = 100 // ensure y < fieldsStartY → fieldIdx negative
-	_, _ = m.handleHomePageClick(uikit.SidebarWidth+5, 0)
+	_, _ = m.handleHomePageClick(0)
 }
 
 // ─── handleExecListClick ─────────────────────────────────────────────────────
@@ -599,7 +599,7 @@ func TestHandleHomePageClick_DoubleClickActivatesField(t *testing.T) {
 	m.info.Port = 8181
 	m.layout.homeFieldsY = 5
 	// First click primes detectDoubleClick.
-	m.handleHomePageClick(uikit.SidebarWidth+5, 5)
+	m.handleHomePageClick(5)
 	// Second click at same Y within threshold → double click → activate.
-	_, _ = m.handleHomePageClick(uikit.SidebarWidth+5, 5)
+	_, _ = m.handleHomePageClick(5)
 }

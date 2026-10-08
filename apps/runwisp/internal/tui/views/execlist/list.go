@@ -329,7 +329,7 @@ func (e *ExecList) buildRowText(item *uikit.ExecListItem, rowIdx int, cw colWidt
 			padCell(string(item.Run.TriggeredBy), cw.trigger))
 }
 
-func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, w, contentW int, cw colWidths, sb scrollbarRender) {
+func (e *ExecList) renderDataSection(b *strings.Builder, vpH, n, contentW int, cw colWidths, sb scrollbarRender) {
 	end := min(e.Scroll+vpH, n)
 	// contentW is w when no scrollbar shows and w-1 when it does; the scrollbar
 	// glyph is exactly one cell. So a row padded to contentW plus the scrollbar
@@ -437,7 +437,7 @@ func (e *ExecList) View() string {
 	if n == 0 {
 		e.renderEmptySection(&b, vpH, w)
 	} else {
-		e.renderDataSection(&b, vpH, n, w, contentW, cw, sb)
+		e.renderDataSection(&b, vpH, n, contentW, cw, sb)
 	}
 
 	var footerText string

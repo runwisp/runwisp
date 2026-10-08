@@ -95,9 +95,9 @@ func (m Model) interceptActiveDialog(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		case "enter":
 			// Enter on a retry's inspector opens the run it retried.
 			if rd, isRun := d.(*RunDetailDialog); isRun {
-				if taskName, runID, hasParent := rd.ParentRef(); hasParent {
+				if runID, hasParent := rd.ParentRef(); hasParent {
 					m.dialogs.Dismiss(dlgRunDetail)
-					return m, m.openRunByID(taskName, runID), true
+					return m, m.openRunByID(runID), true
 				}
 			}
 		}

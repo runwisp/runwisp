@@ -279,7 +279,7 @@ func handleKeyEnterNotifications(m Model) (Model, tea.Cmd, bool) {
 		// The panel stays open until the run actually opens (openExecView
 		// collapses it), so a run that no longer exists leaves the operator
 		// where they were, with a flash explaining why.
-		return m, m.openRunByID(sel.TaskName, sel.RunID), true
+		return m, m.openRunByID(sel.RunID), true
 	}
 	return m, nil, true
 }
@@ -703,5 +703,5 @@ func (m Model) handleLogSearchSelect(msg logsearch.SelectMsg) (tea.Model, tea.Cm
 		m.pendingHighlightRun = ""
 		return m, nil
 	}
-	return m, m.openRunByID(msg.TaskName, msg.RunID)
+	return m, m.openRunByID(msg.RunID)
 }

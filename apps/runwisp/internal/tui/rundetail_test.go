@@ -101,13 +101,13 @@ func TestRunDetailDialog_View_SuccessServiceInstance(t *testing.T) {
 
 func TestRunDetailDialog_ParentRef(t *testing.T) {
 	d := NewRunDetailDialog(endedRun(), false, 1)
-	taskName, runID, ok := d.ParentRef()
-	if !ok || taskName != "backup-db" || runID != "01HZRUNPARENTAAAAAAAAAAAAAA" {
-		t.Fatalf("parent ref: got (%q,%q,%v)", taskName, runID, ok)
+	runID, ok := d.ParentRef()
+	if !ok || runID != "01HZRUNPARENTAAAAAAAAAAAAAA" {
+		t.Fatalf("parent ref: got (%q,%v)", runID, ok)
 	}
 
 	noParent := NewRunDetailDialog(&model.Run{ID: "r1", TaskName: "t1"}, false, 1)
-	if _, _, ok := noParent.ParentRef(); ok {
+	if _, ok := noParent.ParentRef(); ok {
 		t.Fatal("a non-retry run must report no parent")
 	}
 }

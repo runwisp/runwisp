@@ -944,7 +944,7 @@ func TestCopyExecField_WithFocusedIDReturnsCmd(t *testing.T) {
 // not invoked so no network call happens.
 func TestOpenRunByID_NotInWindowWithClientReturnsCmd(t *testing.T) {
 	m := newTestModel(nil)
-	cmd := m.openRunByID("task-A", "run-missing")
+	cmd := m.openRunByID("run-missing")
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd when run not in window and client present")
 	}

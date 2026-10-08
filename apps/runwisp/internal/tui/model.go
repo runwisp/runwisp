@@ -545,9 +545,9 @@ func (m *Model) hasLaunchTicket() bool {
 	return m.launchTicketFunc != nil
 }
 
-// openRunByID opens the exec view for a run identified by task + run ID.
+// openRunByID opens the exec view for a run identified by its ID.
 // Looks the run up in the in-memory window first; falls back to a REST call.
-func (m *Model) openRunByID(taskName, runID string) tea.Cmd {
+func (m *Model) openRunByID(runID string) tea.Cmd {
 	if run := m.execWindow.FindRun(runID); run != nil {
 		return m.openExecView(run)
 	}

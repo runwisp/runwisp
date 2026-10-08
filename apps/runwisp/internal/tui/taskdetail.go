@@ -87,7 +87,7 @@ func (d *TaskDetailDialog) View(screenWidth, screenHeight int) string {
 		lines = append(lines, desc...)
 	}
 	lines = append(lines, modalEmptyLine(innerWidth))
-	lines = append(lines, d.definitionRows(row, innerWidth)...)
+	lines = append(lines, d.definitionRows(row)...)
 	lines = append(lines,
 		modalEmptyLine(innerWidth),
 		modalSectionLine("Recent health", innerWidth),
@@ -128,7 +128,7 @@ func (d *TaskDetailDialog) descriptionLines(innerWidth int) []string {
 // definitionRows renders the static task definition: kind, schedule, concurrency
 // and any dependencies/parameters. Each field is shown only when it carries
 // information, so a plain cron task stays compact.
-func (d *TaskDetailDialog) definitionRows(row func(label, value string, color color.Color) string, innerWidth int) []string {
+func (d *TaskDetailDialog) definitionRows(row func(label, value string, color color.Color) string) []string {
 	task := d.task
 	if task == nil {
 		return []string{row("", "definition unavailable", uikit.ColorTextMuted)}
