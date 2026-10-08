@@ -242,9 +242,7 @@ func waitDrain(svc *daemonServices, taskTimeout time.Duration) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := svc.Notify.Stop(ctx); err != nil {
-			slog.Warn("notification service shutdown error", "err", err)
-		}
+		svc.Notify.Stop(ctx)
 	}()
 	wg.Add(1)
 	go func() {

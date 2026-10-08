@@ -77,7 +77,7 @@ func NewSupervisor(taskName string, instances int, healthyAfter time.Duration, s
 	}
 	return &Supervisor{
 		taskName:     taskName,
-		instances:    clampInstances(instances),
+		instances:    max(instances, 1),
 		slots:        make(map[int]*slotState),
 		healthyAfter: healthyAfter,
 		stopped:      startStopped,
@@ -109,7 +109,7 @@ func (s *Supervisor) mutateSlot(idx int) *slotState {
 // new range remain live until they exit; the supervisor simply won't hand
 // them out again.
 func (s *Supervisor) SetInstances(instances int) {
-	s.instances = clampInstances(instances)
+	s.instances = max(instances, 1)
 }
 
 // SetHealthyAfter updates the "run was healthy" threshold that drives both the
@@ -312,8 +312,4 @@ func (s *Supervisor) ClearFatal() {
 			st.startFails = 0
 		}
 	}
-}
-
-func clampInstances(n int) int {
-	return max(n, 1)
 }
