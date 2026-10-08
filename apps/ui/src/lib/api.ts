@@ -15,6 +15,7 @@ import {
     logLineHistorySchema,
 } from "./logs";
 import { authChallengeResponseSchema, authStatusResponseSchema } from "./types";
+import { isRecord } from "./utils/parse";
 
 export class AuthRequiredError extends Error {
     constructor() {
@@ -34,21 +35,36 @@ export class RateLimitedError extends Error {
 }
 
 // The browser session is authenticated by the HttpOnly cookie, which the
-// browser attaches automatically to same-origin requests — there is no
+// browser attaches automatically to same-origin requests, so there is no
 // JS-readable token to set as a Bearer header. This middleware reacts to a 401
 // by driving the login modal, and throws on any other non-ok response so every
-// generated-client call rejects on failure instead of resolving with `{error}`
-// — callers never have to check `error` themselves.
+// generated-client call rejects on failure instead of resolving with `{error}`.
+// The thrown message is the server's huma `detail` when it sent one, so an
+// operator-actionable reason (a rejected reload, a refused trigger) reaches the
+// toast instead of a bare status line.
 const errorMiddleware: Middleware = {
-    onResponse({ response }) {
+    async onResponse({ response }) {
         if (response.ok) return response;
         if (response.status === HTTP_STATUS.UNAUTHORIZED) {
             handleUnauthorized();
             throw new AuthRequiredError();
         }
-        throw new Error(`Request failed: ${String(response.status)} ${response.statusText}`);
+        throw await requestError(response);
     },
 };
+
+/** The Error for a failed (non-401) response: huma's `detail`, else the status line. */
+export async function requestError(response: Response): Promise<Error> {
+    try {
+        const body: unknown = await response.clone().json();
+        if (isRecord(body) && typeof body.detail === "string" && body.detail) {
+            return new Error(body.detail);
+        }
+    } catch {
+        // Not a JSON problem body; fall back to the status line.
+    }
+    return new Error(`Request failed: ${String(response.status)} ${response.statusText}`);
+}
 
 const apiClient = createClient<APIPaths>();
 apiClient.use(errorMiddleware);
@@ -246,14 +262,11 @@ export const systemApi = {
         return unwrap(data).items ?? [];
     },
 
-    // Reload re-reads runwisp.toml and reconciles the live task set. Unlike this
-    // file's other methods, a rejected reload (parse error, a restart-only
-    // setting changed) carries an operator-actionable reason in `detail`, so
-    // that reason is surfaced instead of a generic fallback message.
+    // Reload re-reads runwisp.toml and reconciles the live task set. A rejected
+    // reload rejects with the daemon's reason (see errorMiddleware).
     reload: async () => {
-        const { data, error } = await apiClient.POST("/api/daemon/reload");
-        if (error) throw new Error(error.detail ?? "Failed to reload config");
-        return data;
+        const { data } = await apiClient.POST("/api/daemon/reload");
+        return unwrap(data);
     },
 };
 
