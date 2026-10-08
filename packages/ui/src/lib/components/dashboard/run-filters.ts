@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { TRIGGERS, type Trigger } from "@runwisp/common";
+import { TRIGGER_LABELS } from "./run-helpers.js";
 
 /**
  * The single filter shape shared by the runs list, the filter popover, the
@@ -190,37 +191,10 @@ export function humanizeStatus(status: string): string {
     return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-/**
- * Descriptive label for a run's trigger source — fuller than the one-word row
- * badge (`formatTriggeredByLabel`) for the "cron"/"station"/"service"/"startup"
- * sources, where the extra words disambiguate (e.g. "REST API" vs a bare
- * "API"). "ui", "cli" and "hook" already read fine as their bare badge word,
- * so those three match `formatTriggeredByLabel` exactly.
- *
- * Note `cron` covers both on-time schedule firings and catch-up for missed
- * runs, and `startup` is specifically `run_on_start` (not catch-up).
- */
+/** Descriptive label for a run's trigger source (see {@link TRIGGER_LABELS}). */
 export function triggerDescription(trigger: string): string {
-    switch (trigger) {
-        case "cron":
-            return "Scheduled (cron)";
-        case "api":
-            return "REST API";
-        case "ui":
-            return "UI";
-        case "cli":
-            return "CLI";
-        case "station":
-            return "Control plane";
-        case "service":
-            return "Service auto-start";
-        case "startup":
-            return "On daemon start";
-        case "hook":
-            return "Hook";
-        default:
-            return humanizeStatus(trigger);
-    }
+    const known = TRIGGERS.find((t) => t === trigger);
+    return known ? TRIGGER_LABELS[known].long : humanizeStatus(trigger);
 }
 
 /**

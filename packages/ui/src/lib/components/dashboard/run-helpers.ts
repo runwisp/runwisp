@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: Apache-2.0
 
-import type { APIPaths, Run, RunStatus } from "@runwisp/common";
+import type { APIPaths, Run, RunStatus, Trigger } from "@runwisp/common";
 import { formatBytes, formatDuration } from "../../utils/format.js";
 
 export interface RunVerdict {
@@ -91,16 +91,25 @@ export function runLogDownloadUrl(runId: string): string {
     return RAW_LOG_PATH.replace("{runId}", encodeURIComponent(runId));
 }
 
+/**
+ * Labels per trigger source: `short` for the one-word row badge, `long` where
+ * extra words disambiguate (e.g. "REST API" vs a bare "API"). `cron` covers
+ * both on-time firings and catch-up; `startup` is specifically `run_on_start`.
+ */
+export const TRIGGER_LABELS: Record<Trigger, { short: string; long: string }> = {
+    cron: { short: "Cron", long: "Scheduled (cron)" },
+    api: { short: "API", long: "REST API" },
+    ui: { short: "UI", long: "UI" },
+    cli: { short: "CLI", long: "CLI" },
+    station: { short: "Station", long: "Control plane" },
+    service: { short: "Service", long: "Service auto-start" },
+    startup: { short: "Startup", long: "On daemon start" },
+    hook: { short: "Hook", long: "Hook" },
+};
+
 /** Human label for why a run fired (the `triggeredBy` source). */
 export function formatTriggeredByLabel(triggeredBy: Run["triggeredBy"]): string {
-    if (triggeredBy === "api") return "API";
-    if (triggeredBy === "ui") return "UI";
-    if (triggeredBy === "cli") return "CLI";
-    if (triggeredBy === "cron") return "Cron";
-    if (triggeredBy === "service") return "Service";
-    if (triggeredBy === "startup") return "Startup";
-    if (triggeredBy === "hook") return "Hook";
-    return "Station";
+    return TRIGGER_LABELS[triggeredBy].short;
 }
 
 /**
