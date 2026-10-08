@@ -27,15 +27,15 @@ var ErrUnsupportedMessageType = errors.New("unsupported message type")
 
 const ProtocolVersion = 2
 
-func newEnvelopeFields() (int, string) {
-	return ProtocolVersion, time.Now().UTC().Format(time.RFC3339Nano)
+func newEnvelopeFields() (int, time.Time) {
+	return ProtocolVersion, time.Now().UTC()
 }
 
 // NewPingMessage builds a heartbeat frame. stats, when non-nil, piggybacks a
 // live system snapshot so the control plane can surface the runner's
 // CPU/memory/identity without a dedicated message (add-only field; old station
 // ignores it).
-func NewPingMessage(stats *protocol.SystemStats) protocol.PingMessage {
+func NewPingMessage(stats *protocol.SystemStatsInfo) protocol.PingMessage {
 	v, s := newEnvelopeFields()
 	return protocol.PingMessage{Type: "ping", ProtocolVersion: v, SentAt: s, SystemStats: stats}
 }
@@ -43,11 +43,11 @@ func NewPingMessage(stats *protocol.SystemStats) protocol.PingMessage {
 // makeSystemStatsProvider adapts the daemon's model-typed stats source into the
 // wire-typed provider the heartbeat loop calls. Returns nil when no source is
 // wired so the session sends plain pings.
-func makeSystemStatsProvider(fn func() model.SystemStats) func() *protocol.SystemStats {
+func makeSystemStatsProvider(fn func() model.SystemStats) func() *protocol.SystemStatsInfo {
 	if fn == nil {
 		return nil
 	}
-	return func() *protocol.SystemStats {
+	return func() *protocol.SystemStatsInfo {
 		return toProtocolSystemStats(fn())
 	}
 }
@@ -55,12 +55,12 @@ func makeSystemStatsProvider(fn func() model.SystemStats) func() *protocol.Syste
 // toProtocolSystemStats maps the daemon's internal stats snapshot onto the wire
 // type. Identity-only fields the station already learns at auth (name) or that
 // could leak a local path (workDir) are intentionally dropped.
-func toProtocolSystemStats(s model.SystemStats) *protocol.SystemStats {
-	return &protocol.SystemStats{
+func toProtocolSystemStats(s model.SystemStats) *protocol.SystemStatsInfo {
+	return &protocol.SystemStatsInfo{
 		CpuUsage: s.CPUUsage,
 		MemUsage: s.MemUsage,
-		MemTotal: int(s.MemTotal),
-		MemUsed:  int(s.MemUsed),
+		MemTotal: int64(s.MemTotal),
+		MemUsed:  int64(s.MemUsed),
 		CpuCores: s.CPUCores,
 		Uptime:   s.Uptime,
 		Version:  s.Version,
@@ -77,7 +77,7 @@ func NewExecutionUpdateMessage(executionID string, status protocol.ExecutionStat
 		ProtocolVersion: v,
 		SentAt:          s,
 		ExecutionID:     executionID,
-		Status:          &status,
+		Status:          status,
 		ExitCode:        exitCode,
 		StartedAt:       startedAt,
 		FinishedAt:      finishedAt,
@@ -87,7 +87,7 @@ func NewExecutionUpdateMessage(executionID string, status protocol.ExecutionStat
 // NewLogLinesMessage builds a coalesced batch of live line events for one
 // execution, so a burst ships as a single frame. lines must be in ascending n
 // order.
-func NewLogLinesMessage(executionID string, lines []protocol.LinesItem) protocol.LogLinesMessage {
+func NewLogLinesMessage(executionID string, lines []protocol.LogLineEntry) protocol.LogLinesMessage {
 	v, s := newEnvelopeFields()
 	return protocol.LogLinesMessage{
 		Type:            "log:lines",
@@ -100,7 +100,7 @@ func NewLogLinesMessage(executionID string, lines []protocol.LinesItem) protocol
 
 // NewLogReplayChunkMessage builds one page of historical lines for a
 // log:replayRequest reply. final=true marks the last chunk in the reply set.
-func NewLogReplayChunkMessage(requestID, executionID string, lines []protocol.LinesItem, final bool) protocol.LogReplayChunkMessage {
+func NewLogReplayChunkMessage(requestID, executionID string, lines []protocol.LogLineEntry, final bool) protocol.LogReplayChunkMessage {
 	v, s := newEnvelopeFields()
 	return protocol.LogReplayChunkMessage{
 		Type:            "log:replayChunk",
@@ -116,7 +116,7 @@ func NewLogReplayChunkMessage(requestID, executionID string, lines []protocol.Li
 // NewLogSearchChunkMessage builds the single reply to a log:searchRequest.
 // exhausted=true means the whole on-disk log was scanned; otherwise nextLine
 // carries the resume cursor.
-func NewLogSearchChunkMessage(requestID, executionID string, hits []protocol.HitsItem, nextLine int64, exhausted bool) protocol.LogSearchChunkMessage {
+func NewLogSearchChunkMessage(requestID, executionID string, hits []protocol.LogLineEntry, nextLine int64, exhausted bool) protocol.LogSearchChunkMessage {
 	v, s := newEnvelopeFields()
 	return protocol.LogSearchChunkMessage{
 		Type:            "log:searchChunk",
@@ -125,7 +125,7 @@ func NewLogSearchChunkMessage(requestID, executionID string, hits []protocol.Hit
 		RequestID:       requestID,
 		ExecutionID:     executionID,
 		Hits:            hits,
-		NextLine:        int(nextLine),
+		NextLine:        nextLine,
 		Exhausted:       exhausted,
 	}
 }
@@ -163,19 +163,17 @@ func NewExecutionAckMessage(executionID string) protocol.ExecutionAckMessage {
 // station ignores it).
 func NewServiceStatusMessage(snapshot model.ServiceSnapshot) protocol.ServiceStatusMessage {
 	v, s := newEnvelopeFields()
-	state := serviceStateEnum(snapshot.State)
-	instances := make([]protocol.InstancesItem, 0, len(snapshot.Instances))
+	instances := make([]protocol.ServiceInstanceSnapshot, 0, len(snapshot.Instances))
 	for _, inst := range snapshot.Instances {
-		instState := serviceInstanceStateEnum(inst.State)
-		item := protocol.InstancesItem{
+		item := protocol.ServiceInstanceSnapshot{
 			Index:        inst.Index,
-			State:        &instState,
-			Pid:          inst.Pid,
+			State:        protocol.ServiceInstanceState(inst.State),
 			StartedAt:    inst.StartedAt,
 			RestartCount: inst.RestartCount,
+			LastExitCode: inst.LastExitCode,
 		}
-		if inst.LastExitCode != nil {
-			item.LastExitCode = *inst.LastExitCode
+		if inst.Pid != 0 {
+			item.Pid = &inst.Pid
 		}
 		instances = append(instances, item)
 	}
@@ -184,28 +182,11 @@ func NewServiceStatusMessage(snapshot model.ServiceSnapshot) protocol.ServiceSta
 		ProtocolVersion:  v,
 		SentAt:           s,
 		TaskID:           snapshot.TaskName,
-		State:            &state,
+		State:            protocol.ServiceState(snapshot.State),
 		DesiredInstances: snapshot.DesiredInstances,
 		RunningInstances: snapshot.RunningInstances,
 		Instances:        instances,
 	}
-}
-
-// serviceStateEnum maps the daemon's string rollup state onto the wire enum,
-// defaulting to "running" if an unrecognized value ever slips through (the enum
-// is closed; this keeps the message well-formed rather than zero-valued by luck).
-func serviceStateEnum(state string) protocol.ServiceState {
-	if e, ok := protocol.ValuesToServiceState[state]; ok {
-		return e
-	}
-	return protocol.ServiceStateRunning
-}
-
-func serviceInstanceStateEnum(state string) protocol.ServiceInstanceState {
-	if e, ok := protocol.ValuesToServiceInstanceState[state]; ok {
-		return e
-	}
-	return protocol.ServiceInstanceStateRunning
 }
 
 func decodeAs[T any](payload []byte) (any, error) {

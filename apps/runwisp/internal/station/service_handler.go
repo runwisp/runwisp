@@ -96,7 +96,7 @@ func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControlMes
 	if taskName == "" {
 		return &StationError{Kind: StationErrorKindValidation, Message: "taskId is required"}
 	}
-	if message.Action == nil {
+	if message.Action == "" {
 		return &StationError{Kind: StationErrorKindValidation, Message: "action is required"}
 	}
 	if task, ok := h.taskManager.GetTask(taskName); ok && !task.ManuallyControllable() {
@@ -106,8 +106,7 @@ func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControlMes
 		}
 	}
 
-	action, _ := message.Action.Value().(string)
-	switch action {
+	switch message.Action {
 	case "start":
 		// StartService (not StartServiceInstances): the control plane's "start"
 		// means un-park it if the operator (or an earlier control message)
@@ -119,13 +118,13 @@ func (h *InboundHandler) HandleServiceControl(message protocol.ServiceControlMes
 	case "restart":
 		err = h.taskManager.RestartServiceInstances(taskName)
 	default:
-		return &StationError{Kind: StationErrorKindValidation, Message: fmt.Sprintf("unknown service action %q", action)}
+		return &StationError{Kind: StationErrorKindValidation, Message: fmt.Sprintf("unknown service action %q", message.Action)}
 	}
 	if err != nil {
 		return &StationError{Kind: StationErrorKindConflict, Message: err.Error()}
 	}
 
-	slog.Info("service control applied", "task", taskName, "action", action)
+	slog.Info("service control applied", "task", taskName, "action", message.Action)
 	return nil
 }
 
@@ -168,7 +167,7 @@ func (h *InboundHandler) HandleServiceRemove(message protocol.ServiceRemoveMessa
 // The task name is derived the same way as an inline execution (sanitized
 // taskId, falling back to taskName) so control messages and status reports
 // resolve to the same registered task.
-func (h *InboundHandler) buildServiceTask(svc *protocol.Service) (*model.Task, error) {
+func (h *InboundHandler) buildServiceTask(svc *protocol.ServiceApplyPayload) (*model.Task, error) {
 	execDef, err := h.parseAvailableDef(svc.Script)
 	if err != nil {
 		return nil, err
@@ -216,13 +215,11 @@ func (h *InboundHandler) buildServiceTask(svc *protocol.Service) (*model.Task, e
 		d := time.Duration(svc.BackoffResetAfter) * time.Millisecond
 		task.HealthyAfter = &d
 	}
-	if svc.RestartBackoff != nil {
-		if s, ok := svc.RestartBackoff.Value().(string); ok && s != "" {
-			task.RestartBackoff = model.BackoffCurve(s)
-		}
+	if svc.RestartBackoff != "" {
+		task.RestartBackoff = model.BackoffCurve(svc.RestartBackoff)
 	}
 
-	applyServiceTaskConfig(task, svc.TaskConfig)
+	applyStationTaskConfig(task, svc.TaskConfig)
 
 	return task, nil
 }
@@ -286,7 +283,7 @@ func (h *InboundHandler) resolveServiceTarget(taskID, taskName string) (name str
 // Treat that `null` exactly like an absent field — keep the live TOML command —
 // instead of feeding it to ParseExecutionDef (which rejects it). Only a real def
 // overrides the command.
-func (h *InboundHandler) mergeServiceApply(task *model.Task, svc *protocol.Service) error {
+func (h *InboundHandler) mergeServiceApply(task *model.Task, svc *protocol.ServiceApplyPayload) error {
 	// manual_trigger = false locks a service to its TOML definition, the same
 	// gate HandleServiceControl applies; an apply would otherwise rescale or
 	// retune it.
@@ -319,17 +316,15 @@ func (h *InboundHandler) mergeServiceApply(task *model.Task, svc *protocol.Servi
 		d := time.Duration(svc.BackoffResetAfter) * time.Millisecond
 		task.HealthyAfter = &d
 	}
-	if svc.RestartBackoff != nil {
-		if s, ok := svc.RestartBackoff.Value().(string); ok && s != "" {
-			task.RestartBackoff = model.BackoffCurve(s)
-		}
+	if svc.RestartBackoff != "" {
+		task.RestartBackoff = model.BackoffCurve(svc.RestartBackoff)
 	}
 
 	if err := h.checkEnvOverrideAllowed(task, svc.TaskConfig); err != nil {
 		return err
 	}
 
-	applyServiceTaskConfig(task, svc.TaskConfig)
+	applyStationTaskConfig(task, svc.TaskConfig)
 	return nil
 }
 
@@ -350,7 +345,7 @@ func (h *InboundHandler) mergeServiceApply(task *model.Task, svc *protocol.Servi
 // to protect was also the one shape that dereferenced nil — a peer-triggerable
 // crash instead of a verdict. A service with no resolvable definition at all
 // can't be checked, so it is refused rather than waved through.
-func (h *InboundHandler) checkEnvOverrideAllowed(task *model.Task, cfg *protocol.ServiceTaskConfig) error {
+func (h *InboundHandler) checkEnvOverrideAllowed(task *model.Task, cfg *protocol.ExecutionTaskConfig) error {
 	if cfg == nil || len(cfg.Env) == 0 {
 		return nil
 	}
@@ -368,19 +363,4 @@ func (h *InboundHandler) checkEnvOverrideAllowed(task *model.Task, cfg *protocol
 		}
 	}
 	return nil
-}
-
-// applyServiceTaskConfig overlays the optional per-process knobs a service
-// carries onto the built task. The service-scoped ServiceTaskConfig is a
-// distinct generated type from the execution-side ExecutionTaskConfig but has
-// the same shape, so both funnel into applyTaskConfigKnobs.
-func applyServiceTaskConfig(task *model.Task, cfg *protocol.ServiceTaskConfig) {
-	if cfg == nil {
-		return
-	}
-	logOnFull := ""
-	if cfg.LogOnFull != nil {
-		logOnFull, _ = cfg.LogOnFull.Value().(string)
-	}
-	applyTaskConfigKnobs(task, cfg.Env, cfg.GracefulStop, cfg.LogMaxSize, logOnFull)
 }

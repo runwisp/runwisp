@@ -26,12 +26,12 @@ type sessionRunner struct {
 	handler *InboundHandler
 	// systemStats, when set, returns the live host snapshot piggybacked on each
 	// heartbeat. nil (no provider wired) sends a plain ping.
-	systemStats func() *protocol.SystemStats
+	systemStats func() *protocol.SystemStatsInfo
 }
 
 // currentSystemStats reads the snapshot provider, tolerating a nil provider so
 // the heartbeat degrades to a plain ping rather than panicking.
-func (sr *sessionRunner) currentSystemStats() *protocol.SystemStats {
+func (sr *sessionRunner) currentSystemStats() *protocol.SystemStatsInfo {
 	if sr.systemStats == nil {
 		return nil
 	}
@@ -147,7 +147,7 @@ func (sr *sessionRunner) heartbeatLoop(ctx context.Context, session *wsSession) 
 			// the mostly-static identity fields never do, so shipping them every
 			// heartbeat is a per-runner Valkey write and payload the control plane
 			// throws away. Plain pings in between keep the socket warm.
-			var stats *protocol.SystemStats
+			var stats *protocol.SystemStatsInfo
 			if beat%statsEveryNHeartbeats == 0 {
 				stats = sr.currentSystemStats()
 			}

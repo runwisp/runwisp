@@ -8,109 +8,23 @@ import (
 	"testing"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/generated/protocol"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestExecutionStatusJSON(t *testing.T) {
-	cases := []struct {
-		val  protocol.ExecutionStatus
-		want string
-	}{
-		{protocol.ExecutionStatusRunning, `"running"`},
-		{protocol.ExecutionStatusSucceeded, `"succeeded"`},
-		{protocol.ExecutionStatusFailed, `"failed"`},
-		{protocol.ExecutionStatusStopped, `"stopped"`},
-		{protocol.ExecutionStatusTimeout, `"timeout"`},
-	}
-	for _, c := range cases {
-		got, err := json.Marshal(c.val)
-		if err != nil {
-			t.Fatalf("marshal %v: %v", c.val, err)
-		}
-		if string(got) != c.want {
-			t.Fatalf("marshal %v: got %s, want %s", c.val, got, c.want)
-		}
-		var rt protocol.ExecutionStatus
-		if err := json.Unmarshal(got, &rt); err != nil {
-			t.Fatalf("unmarshal %s: %v", got, err)
-		}
-		if rt != c.val {
-			t.Fatalf("round-trip mismatch: got %v want %v", rt, c.val)
-		}
-	}
+// TestProtocolEnumsKeepUnknownValues pins forward-compat rule 4 in
+// asyncapi.yaml: a value this daemon doesn't know must decode as itself, never
+// as a known (semantically loaded) zero value such as "running" or "start".
+func TestProtocolEnumsKeepUnknownValues(t *testing.T) {
+	var update protocol.ExecutionUpdateMessage
+	require.NoError(t, json.Unmarshal([]byte(`{"type":"execution:update","executionId":"e","status":"paused"}`), &update))
+	assert.Equal(t, protocol.ExecutionStatus("paused"), update.Status)
 
-	if v := protocol.ExecutionStatus(99).Value(); v != nil {
-		t.Fatalf("out-of-range Value: got %v want nil", v)
-	}
-	var bad protocol.ExecutionStatus
-	if err := bad.UnmarshalJSON([]byte("not json")); err == nil {
-		t.Fatal("expected error on invalid json")
-	}
-}
+	var control protocol.ServiceControlMessage
+	require.NoError(t, json.Unmarshal([]byte(`{"type":"service:control","taskId":"t","action":"pause"}`), &control))
+	assert.Equal(t, protocol.Action("pause"), control.Action)
 
-func TestStreamJSON(t *testing.T) {
-	cases := []struct {
-		val  protocol.Stream
-		want string
-	}{
-		{protocol.StreamStdout, `"stdout"`},
-		{protocol.StreamStderr, `"stderr"`},
-		{protocol.StreamSystem, `"system"`},
-	}
-	for _, c := range cases {
-		got, err := json.Marshal(c.val)
-		if err != nil {
-			t.Fatalf("marshal %v: %v", c.val, err)
-		}
-		if string(got) != c.want {
-			t.Fatalf("marshal %v: got %s, want %s", c.val, got, c.want)
-		}
-		var rt protocol.Stream
-		if err := json.Unmarshal(got, &rt); err != nil {
-			t.Fatalf("unmarshal %s: %v", got, err)
-		}
-		if rt != c.val {
-			t.Fatalf("round-trip mismatch: got %v want %v", rt, c.val)
-		}
-	}
-	if v := protocol.Stream(99).Value(); v != nil {
-		t.Fatalf("out-of-range Value: got %v want nil", v)
-	}
-	var bad protocol.Stream
-	if err := bad.UnmarshalJSON([]byte("{")); err == nil {
-		t.Fatal("expected error on invalid json")
-	}
-}
-
-func TestLinesItemStreamJSON(t *testing.T) {
-	cases := []struct {
-		val  protocol.LinesItemStream
-		want string
-	}{
-		{protocol.LinesItemStreamStdout, `"stdout"`},
-		{protocol.LinesItemStreamStderr, `"stderr"`},
-		{protocol.LinesItemStreamSystem, `"system"`},
-	}
-	for _, c := range cases {
-		got, err := json.Marshal(c.val)
-		if err != nil {
-			t.Fatalf("marshal %v: %v", c.val, err)
-		}
-		if string(got) != c.want {
-			t.Fatalf("marshal %v: got %s, want %s", c.val, got, c.want)
-		}
-		var rt protocol.LinesItemStream
-		if err := json.Unmarshal(got, &rt); err != nil {
-			t.Fatalf("unmarshal %s: %v", got, err)
-		}
-		if rt != c.val {
-			t.Fatalf("round-trip mismatch: got %v want %v", rt, c.val)
-		}
-	}
-	if v := protocol.LinesItemStream(99).Value(); v != nil {
-		t.Fatalf("out-of-range Value: got %v want nil", v)
-	}
-	var bad protocol.LinesItemStream
-	if err := bad.UnmarshalJSON([]byte("[")); err == nil {
-		t.Fatal("expected error on invalid json")
-	}
+	out, err := json.Marshal(protocol.LogLineEntry{N: 1, Stream: protocol.StreamStderr, Text: "x"})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"n":1,"stream":"stderr","text":"x"}`, string(out))
 }

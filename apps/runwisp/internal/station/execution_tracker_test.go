@@ -113,7 +113,7 @@ func TestMapRunToExecutionUpdateRunning(t *testing.T) {
 	assert.Equal(t, "execution:update", result.Type)
 	assert.Equal(t, execID, result.ExecutionID)
 	require.NotNil(t, result.Status)
-	assert.Equal(t, protocol.ExecutionStatusRunning, *result.Status)
+	assert.Equal(t, protocol.ExecutionStatusRunning, result.Status)
 }
 
 func TestMapRunToExecutionUpdateEndedSuccess(t *testing.T) {
@@ -133,7 +133,7 @@ func TestMapRunToExecutionUpdateEndedSuccess(t *testing.T) {
 	require.NotNil(t, result)
 	assert.Equal(t, execID, result.ExecutionID)
 	require.NotNil(t, result.Status)
-	assert.Equal(t, protocol.ExecutionStatusSucceeded, *result.Status)
+	assert.Equal(t, protocol.ExecutionStatusSucceeded, result.Status)
 }
 
 func TestMapRunToExecutionUpdateEndedStartFailed(t *testing.T) {
@@ -154,7 +154,7 @@ func TestMapRunToExecutionUpdateEndedStartFailed(t *testing.T) {
 	result := mapRunToExecutionUpdate(run)
 	require.NotNil(t, result)
 	require.NotNil(t, result.Status)
-	assert.Equal(t, protocol.ExecutionStatusFailed, *result.Status)
+	assert.Equal(t, protocol.ExecutionStatusFailed, result.Status)
 }
 
 func TestMapRunToExecutionUpdateEndedNilReason(t *testing.T) {
@@ -203,7 +203,7 @@ func TestMapRunToExecutionUpdateTerminalReasonsExhaustive(t *testing.T) {
 			result := mapRunToExecutionUpdate(run)
 			require.NotNil(t, result, "terminal reason %q must produce an update", reason)
 			require.NotNil(t, result.Status)
-			assert.Equal(t, want, *result.Status)
+			assert.Equal(t, want, result.Status)
 		})
 	}
 }
@@ -224,7 +224,7 @@ func TestMapRunToExecutionUpdateUnknownReasonFailsSafe(t *testing.T) {
 	result := mapRunToExecutionUpdate(run)
 	require.NotNil(t, result)
 	require.NotNil(t, result.Status)
-	assert.Equal(t, protocol.ExecutionStatusFailed, *result.Status)
+	assert.Equal(t, protocol.ExecutionStatusFailed, result.Status)
 }
 
 // FlushPending must include synthetic "running" snapshots for every currently

@@ -16,7 +16,7 @@ import (
 // resolveDispatchTask resolves a dispatch to a runnable task name: one of this
 // daemon's TOML-defined tasks for a config execution, otherwise an ephemeral
 // task synthesized from the inline definition.
-func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.Execution) (string, error) {
+func (h *InboundHandler) resolveDispatchTask(dispatch *protocol.ExecutionPayload) (string, error) {
 	execDef, err := h.parseAvailableDef(dispatch.Script)
 	if err != nil {
 		return "", err
@@ -86,7 +86,7 @@ func (h *InboundHandler) parseAvailableDef(script json.RawMessage) (model.Execut
 	return execDef, nil
 }
 
-func buildDynamicStationTask(dispatch *protocol.Execution, execDef model.ExecutionDef) *model.Task {
+func buildDynamicStationTask(dispatch *protocol.ExecutionPayload, execDef model.ExecutionDef) *model.Task {
 	taskName := sanitizeStationTaskName(dispatch.TaskID)
 	if taskName == "" {
 		taskName = sanitizeStationTaskName(dispatch.TaskName)
@@ -126,40 +126,27 @@ func buildDynamicStationTask(dispatch *protocol.Execution, execDef model.Executi
 	return task
 }
 
-// applyStationTaskConfig overlays the optional per-run execution knobs the station
-// control plane carries in ExecutionPayload.taskConfig onto the dynamically
-// built task.
+// applyStationTaskConfig overlays the optional per-run/per-process knobs the
+// control plane carries in taskConfig (execution:dispatch and service:apply)
+// onto task. Each field is honored only when set; an omitted/zero value leaves
+// the daemon default in place. gracefulStop arrives in milliseconds and is
+// stored as a Duration.
 func applyStationTaskConfig(task *model.Task, cfg *protocol.ExecutionTaskConfig) {
 	if cfg == nil {
 		return
 	}
-	logOnFull := ""
-	if cfg.LogOnFull != nil {
-		logOnFull, _ = cfg.LogOnFull.Value().(string)
+	if len(cfg.Env) > 0 {
+		task.Env = cfg.Env
 	}
-	applyTaskConfigKnobs(task, cfg.Env, cfg.GracefulStop, cfg.LogMaxSize, logOnFull)
-}
-
-// applyTaskConfigKnobs overlays the optional per-run/per-process execution knobs
-// (env, graceful-stop, log limits) onto task. Shared by the execution- and
-// service-dispatch paths, whose generated taskConfig messages are structurally
-// identical but distinctly typed (ExecutionTaskConfig / ServiceTaskConfig). Each
-// field is honored only when set; an omitted/zero value leaves the daemon
-// default in place. gracefulStop arrives in milliseconds and is stored as a
-// Duration.
-func applyTaskConfigKnobs(task *model.Task, env map[string]string, gracefulStop, logMaxSize int, logOnFull string) {
-	if len(env) > 0 {
-		task.Env = env
-	}
-	if gracefulStop > 0 {
-		g := time.Duration(gracefulStop) * time.Millisecond
+	if cfg.GracefulStop > 0 {
+		g := time.Duration(cfg.GracefulStop) * time.Millisecond
 		task.GracefulStop = &g
 	}
-	if logMaxSize > 0 {
-		task.LogMaxSize = int64(logMaxSize)
+	if cfg.LogMaxSize > 0 {
+		task.LogMaxSize = int64(cfg.LogMaxSize)
 	}
-	if logOnFull != "" {
-		task.LogOnFull = logOnFull
+	if cfg.LogOnFull != "" {
+		task.LogOnFull = string(cfg.LogOnFull)
 	}
 }
 

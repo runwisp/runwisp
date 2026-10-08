@@ -158,7 +158,7 @@ func httpScript(t *testing.T, url string) json.RawMessage {
 
 func TestResolveDispatchTask_InvalidJSON(t *testing.T) {
 	h := newDispatchHandler(executor.Availability{}, nil)
-	_, err := h.resolveDispatchTask(&protocol.Execution{Script: json.RawMessage(`not-json`)})
+	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: json.RawMessage(`not-json`)})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -170,7 +170,7 @@ func TestResolveDispatchTask_UnavailableBackend(t *testing.T) {
 		Shell: executor.BackendStatus{Available: false, Reason: "no shell"},
 	}
 	h := newDispatchHandler(avail, nil)
-	_, err := h.resolveDispatchTask(&protocol.Execution{Script: shellScript(t, "echo hi")})
+	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: shellScript(t, "echo hi")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -184,7 +184,7 @@ func TestResolveDispatchTask_ConfigTaskFound(t *testing.T) {
 	tasks := map[string]*model.Task{"mytask": {Name: "mytask", ManualTrigger: true}}
 	h := newDispatchHandler(avail, tasks)
 
-	name, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "mytask")})
+	name, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "mytask")})
 	require.NoError(t, err)
 	assert.Equal(t, "mytask", name)
 }
@@ -199,7 +199,7 @@ func TestResolveDispatchTask_ConfigTaskManualTriggerDisabled(t *testing.T) {
 	tasks := map[string]*model.Task{"mytask": {Name: "mytask", ManualTrigger: false}}
 	h := newDispatchHandler(avail, tasks)
 
-	_, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "mytask")})
+	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "mytask")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -218,7 +218,7 @@ func TestResolveDispatchTask_ConfigTaskIsService(t *testing.T) {
 	tasks := map[string]*model.Task{"myservice": {Name: "myservice", Kind: model.KindService, ManualTrigger: true}}
 	h := newDispatchHandler(avail, tasks)
 
-	_, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "myservice")})
+	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "myservice")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -232,7 +232,7 @@ func TestResolveDispatchTask_ConfigTaskNotFound(t *testing.T) {
 	}
 	h := newDispatchHandler(avail, nil)
 
-	_, err := h.resolveDispatchTask(&protocol.Execution{Script: configScript(t, "missing")})
+	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{Script: configScript(t, "missing")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -252,7 +252,7 @@ func TestResolveDispatchTask_ShellInlineUpserted(t *testing.T) {
 		logListeners:    make(map[string]struct{}),
 	}
 
-	name, err := h.resolveDispatchTask(&protocol.Execution{
+	name, err := h.resolveDispatchTask(&protocol.ExecutionPayload{
 		TaskID: "my-task",
 		Script: shellScript(t, "echo hello"),
 	})
@@ -279,7 +279,7 @@ func TestResolveDispatchTask_ContainerRejectedWhenDispatchDisabled(t *testing.T)
 		logListeners:    make(map[string]struct{}),
 	}
 
-	_, err := h.resolveDispatchTask(&protocol.Execution{TaskID: "evil", Script: containerScript(t, "rm -rf /")})
+	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{TaskID: "evil", Script: containerScript(t, "rm -rf /")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -300,7 +300,7 @@ func TestResolveDispatchTask_ContainerInlineUpsertedWhenEnabled(t *testing.T) {
 		logListeners:    make(map[string]struct{}),
 	}
 
-	name, err := h.resolveDispatchTask(&protocol.Execution{TaskID: "build", Script: containerScript(t, "echo hi")})
+	name, err := h.resolveDispatchTask(&protocol.ExecutionPayload{TaskID: "build", Script: containerScript(t, "echo hi")})
 	require.NoError(t, err)
 	assert.NotEmpty(t, name)
 	assert.Len(t, runner.upserted, 1)
@@ -322,7 +322,7 @@ func TestResolveDispatchTask_HTTPRejectedWithoutDispatch(t *testing.T) {
 		logListeners:    make(map[string]struct{}),
 	}
 
-	_, err := h.resolveDispatchTask(&protocol.Execution{TaskID: "probe", Script: httpScript(t, "https://example.com")})
+	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{TaskID: "probe", Script: httpScript(t, "https://example.com")})
 	require.Error(t, err)
 	var ce *StationError
 	require.ErrorAs(t, err, &ce)
@@ -345,7 +345,7 @@ func TestResolveDispatchTask_HTTPAllowedWithDispatch(t *testing.T) {
 		logListeners:    make(map[string]struct{}),
 	}
 
-	name, err := h.resolveDispatchTask(&protocol.Execution{TaskID: "probe", Script: httpScript(t, "https://example.com")})
+	name, err := h.resolveDispatchTask(&protocol.ExecutionPayload{TaskID: "probe", Script: httpScript(t, "https://example.com")})
 	require.NoError(t, err)
 	assert.NotEmpty(t, name)
 }
@@ -364,7 +364,7 @@ func TestResolveDispatchTask_RejectsConfigTaskNameCollision(t *testing.T) {
 		map[string]*model.Task{"station-sync": local})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	_, err := h.resolveDispatchTask(&protocol.Execution{
+	_, err := h.resolveDispatchTask(&protocol.ExecutionPayload{
 		TaskID: "sync",
 		Script: httpScript(t, "https://attacker.example/p"),
 	})
@@ -384,7 +384,7 @@ func TestResolveDispatchTask_EphemeralNameCollisionAllowed(t *testing.T) {
 		map[string]*model.Task{"station-probe": prior})
 	runner := h.taskManager.(*fakeTaskRunner)
 
-	name, err := h.resolveDispatchTask(&protocol.Execution{
+	name, err := h.resolveDispatchTask(&protocol.ExecutionPayload{
 		TaskID: "probe",
 		Script: httpScript(t, "https://example.com"),
 	})
@@ -397,45 +397,45 @@ func TestResolveDispatchTask_EphemeralNameCollisionAllowed(t *testing.T) {
 
 func TestBuildDynamicStationTask_UsesTaskID(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := buildDynamicStationTask(&protocol.Execution{TaskID: "my-task"}, def)
+	task := buildDynamicStationTask(&protocol.ExecutionPayload{TaskID: "my-task"}, def)
 	assert.Equal(t, "station-my-task", task.Name)
 }
 
 func TestBuildDynamicStationTask_FallsBackToTaskName(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := buildDynamicStationTask(&protocol.Execution{TaskName: "backup"}, def)
+	task := buildDynamicStationTask(&protocol.ExecutionPayload{TaskName: "backup"}, def)
 	assert.Equal(t, "station-backup", task.Name)
 }
 
 func TestBuildDynamicStationTask_DefaultsToStationInline(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := buildDynamicStationTask(&protocol.Execution{}, def)
+	task := buildDynamicStationTask(&protocol.ExecutionPayload{}, def)
 	assert.Equal(t, "station-inline", task.Name)
 }
 
 func TestBuildDynamicStationTask_SetsTimeout(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := buildDynamicStationTask(&protocol.Execution{TaskID: "t", Timeout: 5000}, def)
+	task := buildDynamicStationTask(&protocol.ExecutionPayload{TaskID: "t", Timeout: 5000}, def)
 	assert.Equal(t, 5000*time.Millisecond, task.TimeoutValue())
 }
 
 func TestBuildDynamicStationTask_ZeroTimeoutIgnored(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := buildDynamicStationTask(&protocol.Execution{TaskID: "t", Timeout: 0}, def)
+	task := buildDynamicStationTask(&protocol.ExecutionPayload{TaskID: "t", Timeout: 0}, def)
 	assert.Nil(t, task.Timeout)
 	assert.Equal(t, time.Duration(0), task.TimeoutValue())
 }
 
 func TestBuildDynamicStationTask_AppliesTaskConfig(t *testing.T) {
-	logOnFull := protocol.ExecutionTaskConfigLogOnFullDropOld
+	logOnFull := protocol.LogOnFullDropOld
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := buildDynamicStationTask(&protocol.Execution{
+	task := buildDynamicStationTask(&protocol.ExecutionPayload{
 		TaskID: "t",
 		TaskConfig: &protocol.ExecutionTaskConfig{
 			Env:          map[string]string{"KEY": "val"},
 			GracefulStop: 3000,
 			LogMaxSize:   2048,
-			LogOnFull:    &logOnFull,
+			LogOnFull:    logOnFull,
 		},
 	}, def)
 
@@ -447,7 +447,7 @@ func TestBuildDynamicStationTask_AppliesTaskConfig(t *testing.T) {
 
 func TestBuildDynamicStationTask_NilTaskConfigLeavesDefaults(t *testing.T) {
 	def := &model.ShellExecution{Script: "echo hi"}
-	task := buildDynamicStationTask(&protocol.Execution{TaskID: "t", TaskConfig: nil}, def)
+	task := buildDynamicStationTask(&protocol.ExecutionPayload{TaskID: "t", TaskConfig: nil}, def)
 	assert.Empty(t, task.Env)
 	assert.Zero(t, task.GracefulStopValue())
 	assert.Zero(t, task.LogMaxSize)

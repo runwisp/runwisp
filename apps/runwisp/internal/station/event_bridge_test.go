@@ -358,7 +358,7 @@ func TestEventBridge_FinalizeRun_TerminalBeforeArchiveThenAttach(t *testing.T) {
 		}
 		mu.Lock()
 		sent = append(sent, update)
-		if update.LogPath == "" {
+		if update.LogPath == nil {
 			journal = append(journal, "terminal-update")
 		} else {
 			journal = append(journal, "attach-update")
@@ -386,8 +386,8 @@ func TestEventBridge_FinalizeRun_TerminalBeforeArchiveThenAttach(t *testing.T) {
 	if assert.Len(t, sent, 2) {
 		assert.Empty(t, sent[0].LogPath, "first update must not carry archive coordinates")
 		assert.Zero(t, sent[0].LogSize)
-		assert.Equal(t, "logs/org/key.gz", sent[1].LogPath)
-		assert.Positive(t, sent[1].LogSize)
+		assert.Equal(t, "logs/org/key.gz", *sent[1].LogPath)
+		assert.Positive(t, *sent[1].LogSize)
 		assert.Equal(t, sent[0].ExecutionID, sent[1].ExecutionID)
 		assert.Equal(t, sent[0].Status, sent[1].Status,
 			"attach update must repeat the same terminal status")

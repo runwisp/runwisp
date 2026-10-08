@@ -575,8 +575,8 @@ func TestRecoverArchiveBacklog_SuccessfulUploadQueuesTerminalUpdate(t *testing.T
 	require.Len(t, c.tracker.pendingExecutionUpdates, 1)
 	update := c.tracker.pendingExecutionUpdates[0]
 	assert.Equal(t, "exec-backlog-1", update.ExecutionID)
-	assert.Equal(t, "archive/exec-backlog-1.log.gz", update.LogPath)
-	assert.Greater(t, update.LogSize, int64(0))
+	assert.Equal(t, "archive/exec-backlog-1.log.gz", *update.LogPath)
+	assert.Greater(t, *update.LogSize, int64(0))
 }
 
 func TestRecoverArchiveBacklog_RunMissingDropsRow(t *testing.T) {

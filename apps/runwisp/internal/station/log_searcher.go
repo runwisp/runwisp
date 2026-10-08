@@ -35,7 +35,7 @@ type logSearchParams struct {
 // dispatch may not have reached this daemon, or the run was deleted). Errors
 // are *StationError: a malformed query is a validation error, a scan failure
 // is transient.
-func searchExecutionLog(ctx context.Context, run *model.Run, logDir string, p logSearchParams) (hits []protocol.HitsItem, nextLine int64, exhausted bool, err error) {
+func searchExecutionLog(ctx context.Context, run *model.Run, logDir string, p logSearchParams) (hits []protocol.LogLineEntry, nextLine int64, exhausted bool, err error) {
 	if run == nil {
 		return nil, 0, true, nil
 	}
@@ -54,13 +54,12 @@ func searchExecutionLog(ctx context.Context, run *model.Run, logDir string, p lo
 		return nil, 0, false, &StationError{Kind: StationErrorKindTransient, Message: "failed to search execution logs", Err: serr}
 	}
 
-	hits = make([]protocol.HitsItem, len(found))
+	hits = make([]protocol.LogLineEntry, len(found))
 	for i, h := range found {
-		stream := protocol.ValuesToHitsItemStream[h.Stream]
-		hits[i] = protocol.HitsItem{
+		hits[i] = protocol.LogLineEntry{
 			N:      h.N,
 			Ts:     h.TS,
-			Stream: &stream,
+			Stream: protocol.Stream(h.Stream),
 			Text:   h.Text,
 		}
 	}
@@ -77,7 +76,7 @@ func searchExecutionLog(ctx context.Context, run *model.Run, logDir string, p lo
 // run is terminal. A nil run is NOT final: the daemon may simply not have
 // received the dispatch yet, and claiming final would end the viewer's
 // stream on an execution that hasn't started.
-func readExecutionLogReplay(run *model.Run, logDir string, fromLine, limit int64) ([]protocol.LinesItem, bool, error) {
+func readExecutionLogReplay(run *model.Run, logDir string, fromLine, limit int64) ([]protocol.LogLineEntry, bool, error) {
 	if run == nil {
 		return nil, false, nil
 	}
@@ -94,12 +93,11 @@ func readExecutionLogReplay(run *model.Run, logDir string, fromLine, limit int64
 		return nil, run.Status.IsTerminal(), err
 	}
 
-	items := make([]protocol.LinesItem, len(records))
+	items := make([]protocol.LogLineEntry, len(records))
 	for i, r := range records {
-		stream := protocol.ValuesToLinesItemStream[r.Stream]
-		items[i] = protocol.LinesItem{
+		items[i] = protocol.LogLineEntry{
 			N:      r.LineNum,
-			Stream: &stream,
+			Stream: protocol.Stream(r.Stream),
 			Text:   r.Text,
 		}
 	}
