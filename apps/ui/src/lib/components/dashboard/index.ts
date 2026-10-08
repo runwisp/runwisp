@@ -5,4 +5,3 @@ export { default as OverviewPage } from "./OverviewPage.svelte";
 export { default as OverviewSkeleton } from "./OverviewSkeleton.svelte";
 export { default as TaskPage } from "./TaskPage.svelte";
 export { default as RunsPage } from "./RunsPage.svelte";
-export type { DaemonStats } from "@runwisp/ui";

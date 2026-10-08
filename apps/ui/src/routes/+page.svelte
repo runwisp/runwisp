@@ -5,8 +5,8 @@
     import { untrack } from "svelte";
     import { goto } from "$app/navigation";
     import { resolve } from "$app/paths";
-    import { OverviewPage, OverviewSkeleton, type DaemonStats } from "$lib/components/dashboard";
-    import { RunMotion } from "@runwisp/ui";
+    import { OverviewPage, OverviewSkeleton } from "$lib/components/dashboard";
+    import { RunMotion, type DaemonStats } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { runsApi, tasksApi, systemApi, systemEventSchema, type MetricsSample } from "$lib/api";
     import { runUpdatesStore, systemStore, taskStore, appEventStream } from "$lib/stores";

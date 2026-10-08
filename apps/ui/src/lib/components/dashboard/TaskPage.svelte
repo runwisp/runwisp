@@ -229,12 +229,12 @@
     // A run can always be *triggered* — at max concurrency it queues (the modal
     // says so), so concurrency must not gate the button, only its warning.
     // Disabled only when the task forbids API triggering or a trigger is mid-flight.
-    const runTriggerable = $derived(!taskIsService && (task.manualTrigger ?? true) && !triggering);
+    const runTriggerable = $derived(!taskIsService && task.manualTrigger && !triggering);
 
     // manualTrigger means something different on a service: whether it can be
     // stopped/restarted from here at all, rather than run-triggered. false
     // locks it to its restart policy until a runwisp.toml edit + reload.
-    const serviceControllable = $derived(taskIsService && (task.manualTrigger ?? true));
+    const serviceControllable = $derived(taskIsService && task.manualTrigger);
     const serviceStopped = $derived(isServiceStopped(task));
 
     // In station mode the station owns scheduling/dispatch; triggering here is the
@@ -252,7 +252,7 @@
     let highlightLine = $state<number | null>(null);
 
     $effect(() => {
-        if (initialHighlightLine !== null && initialHighlightLine !== undefined) {
+        if (initialHighlightLine !== null) {
             highlightLine = initialHighlightLine;
         }
     });

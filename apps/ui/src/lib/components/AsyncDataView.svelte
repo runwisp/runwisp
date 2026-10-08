@@ -20,15 +20,18 @@
     } = $props();
 </script>
 
-{#if data.loading && typeof data.data === "undefined"}
+<!-- Once data has loaded, keep showing it through refetches, errors and drops. -->
+{#if typeof data.data !== "undefined"}
+    {@render children()}
+{:else if data.loading}
     {#if skeleton}
         {@render skeleton()}
     {:else}
         <Skeleton rows={4} />
     {/if}
-{:else if connectionStore.status !== "connected" && typeof data.data === "undefined"}
+{:else if connectionStore.status !== "connected"}
     <ConnectionLostPanel />
-{:else if typeof data.error !== "undefined" && typeof data.data === "undefined"}
+{:else if typeof data.error !== "undefined"}
     <ErrorState message={data.error} onRetry={data.fetch} retrying={data.loading} />
 {:else}
     {@render children()}
