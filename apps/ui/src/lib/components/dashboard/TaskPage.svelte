@@ -223,6 +223,11 @@
         onOptimisticRemove: (ids) => onOptimisticRemove(ids),
         onOptimisticRestore: (runs) => onOptimisticRestore(runs),
         preferRunning: true,
+        getSelectRunId: () => selectRunId,
+        // A run named from outside the list (a notification link, a run just
+        // triggered) is picked too, so a phone shows it rather than the list.
+        onSeeded: () => rail.picked(),
+        onSelectRun: (id) => onSelectRun?.(id),
     });
 
     // A run can always be *triggered* — at max concurrency it queues (the modal
@@ -254,28 +259,6 @@
         if (initialHighlightLine !== null) {
             highlightLine = initialHighlightLine;
         }
-    });
-
-    // A run named from outside the list (a notification link, a run just
-    // triggered) is picked too, so a phone shows it rather than the list.
-    $effect(() => {
-        if (!initialRunId) return;
-        selection.userSelectedRunId = initialRunId;
-        rail.picked();
-    });
-
-    $effect(() => {
-        if (!selectRunId) return;
-        selection.userSelectedRunId = selectRunId;
-        rail.picked();
-    });
-
-    // Report explicit selections upward so the URL can mirror the run on screen.
-    // Must stay after the seed effects above: on the first flush they run in
-    // declaration order, so userSelectedRunId is already seeded from the deep
-    // link when this reports — otherwise the initial null would clobber it.
-    $effect(() => {
-        onSelectRun?.(selection.userSelectedRunId);
     });
 
     // Filters are applied server-side, so an empty list under a filter means

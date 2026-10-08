@@ -67,20 +67,8 @@
         getRunPending: () => runPending,
         onOptimisticRemove: (ids) => onOptimisticRemove(ids),
         onOptimisticRestore: (runs) => onOptimisticRestore(runs),
-    });
-
-    // Seed the selection from a deep link (the run-id path segment), on load and
-    // on later URL changes. Declared before the emit effect below so the first
-    // flush seeds before it reports — otherwise the initial null would clobber it.
-    $effect(() => {
-        if (!initialRunId) return;
-        selection.userSelectedRunId = initialRunId;
-        rail.picked();
-    });
-
-    // Report explicit selections upward so the URL can mirror the run on screen.
-    $effect(() => {
-        onSelectRun?.(selection.userSelectedRunId);
+        onSeeded: () => rail.picked(),
+        onSelectRun: (id) => onSelectRun?.(id),
     });
 
     // The header search filters this list by task name or run ID.
