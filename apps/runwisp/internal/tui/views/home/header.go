@@ -30,6 +30,13 @@ const (
 // in the copy modal.
 const PasswordMaskWidth = 22
 
+// starLines are the quiet "star the repo" note on the Home title row, longest
+// first; the short one keeps it on a plain 80-column terminal.
+var starLines = []string{
+	"Like RunWisp? Star it on github.com/runwisp/runwisp",
+	"Star it on github.com/runwisp/runwisp",
+}
+
 // Fields returns the list of active fields based on the startup info.
 // hasLaunchTicket indicates whether the one-click browser open action is available.
 func Fields(info uikit.StartupInfo, hasLaunchTicket bool) []Field {
@@ -66,11 +73,19 @@ func RenderHeader(info uikit.StartupInfo, hasLaunchTicket bool, w, homeCursor, h
 	title := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextBright).
 		Bold(true).
 		Render("  Home")
+	muted := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted)
+	// A static, right-aligned star line on the title row: no prompt, no network
+	// call, and dropped when the panel is too narrow to fit it beside the title.
+	for _, star := range starLines {
+		if gap := w - lipgloss.Width(title) - lipgloss.Width(star) - 2; gap >= 2 {
+			title += muted.Render(strings.Repeat(" ", gap) + star)
+			break
+		}
+	}
 	b.WriteString(uikit.PadLine(title, w, uikit.ColorBgLight))
 	b.WriteString("\n")
 	lineCount++
 
-	muted := uikit.OnBg(uikit.ColorBgLight, uikit.ColorTextMuted)
 	var parts []string
 	if info.StationEnabled {
 		parts = append(parts, muted.Render("Station connected"))

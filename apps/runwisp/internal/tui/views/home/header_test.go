@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui/uikit"
 	"github.com/stretchr/testify/assert"
@@ -344,5 +345,19 @@ func TestNextCronRun_ShownInGivenZone(t *testing.T) {
 	result := NextCronRun("15 3 * * *", loc)
 	if !strings.HasPrefix(result, "03:15:00 (in ") {
 		t.Fatalf("next run should read 03:15:00 in the task's zone, got %q", result)
+	}
+}
+
+func TestRenderHeader_StarLineFitsOrDrops(t *testing.T) {
+	for w, want := range map[int]string{80: starLines[0], 52: starLines[1], 40: ""} {
+		header, _ := RenderHeader(uikit.StartupInfo{Port: 9477}, false, w, -1, -1)
+		if want == "" {
+			assert.NotContains(t, header, "github.com", "width %d", w)
+		} else {
+			assert.Contains(t, header, want, "width %d", w)
+		}
+		for _, ln := range strings.Split(strings.TrimRight(header, "\n"), "\n") {
+			assert.Equal(t, w, lipgloss.Width(ln), "width %d: line %q", w, ln)
+		}
 	}
 }

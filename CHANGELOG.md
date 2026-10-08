@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The TUI Home screen shows the GitHub repo link in its title row.
+
 ### Changed
 
 - The TUI shows run durations the same way notifications do (`3m 4s`, `12s`), and runs started in the last 30 seconds read `just now`.
