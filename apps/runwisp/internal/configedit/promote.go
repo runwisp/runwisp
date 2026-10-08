@@ -245,12 +245,7 @@ func Promote(req PromoteRequest) (PromoteResult, error) {
 		}
 	}
 
-	if err := txn.Apply(func() error {
-		if _, err := config.Load(req.Layout.RootPath); err != nil {
-			return &ConflictError{Err: err}
-		}
-		return nil
-	}); err != nil {
+	if err := txn.Apply(loadGate(req.Layout.RootPath)); err != nil {
 		return PromoteResult{}, err
 	}
 	return res, nil

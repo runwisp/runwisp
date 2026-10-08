@@ -71,6 +71,17 @@ type ConflictError struct{ Err error }
 func (e *ConflictError) Error() string { return "config conflict: " + e.Err.Error() }
 func (e *ConflictError) Unwrap() error { return e.Err }
 
+// loadGate is the Txn.Apply gate every config edit shares: the edited config
+// must still load, or the write is a *ConflictError and rolls back.
+func loadGate(path string) func() error {
+	return func() error {
+		if _, err := config.Load(path); err != nil {
+			return &ConflictError{Err: err}
+		}
+		return nil
+	}
+}
+
 // PreexistingError reports that the root config already failed to load *before*
 // this write. The write was rolled back, but the operator's problem predates it
 // — reporting it as a conflict with the incoming import would send them looking
@@ -107,13 +118,11 @@ func Stage(req StageRequest) (StageResult, error) {
 	}
 
 	err = txn.Apply(func() error {
-		if _, err := config.Load(req.Layout.RootPath); err != nil {
-			if plan.preLoadErr != nil {
-				return &PreexistingError{Err: plan.preLoadErr}
-			}
-			return &ConflictError{Err: err}
+		err := loadGate(req.Layout.RootPath)()
+		if err != nil && plan.preLoadErr != nil {
+			return &PreexistingError{Err: plan.preLoadErr}
 		}
-		return nil
+		return err
 	})
 	return res, err
 }

@@ -73,10 +73,5 @@ func WireCronInclude(path string, patterns []string) error {
 
 	txn := New()
 	txn.Write(path, wired, DefaultPerm)
-	return txn.Apply(func() error {
-		if _, err := config.Load(path); err != nil {
-			return &ConflictError{Err: err}
-		}
-		return nil
-	})
+	return txn.Apply(loadGate(path))
 }
