@@ -243,7 +243,7 @@ func (m *Model) confirmStop() tea.Cmd {
 		fmt.Sprintf("Stop the running execution of\n'%s'?", taskName),
 		func() tea.Msg {
 			err := client.StopRun(ctx, runID)
-			return uikit.StopRunMsg{RunID: runID, TaskName: taskName, Err: err}
+			return uikit.StopRunMsg{TaskName: taskName, Err: err}
 		},
 	)
 }
