@@ -87,3 +87,17 @@ func TestRun_Copy_PointerFieldsAreIndependent(t *testing.T) {
 	assert.NotSame(t, orig.RetryOfRunID, cpy.RetryOfRunID)
 	assert.Equal(t, retryID, *cpy.RetryOfRunID)
 }
+
+func TestRun_Duration(t *testing.T) {
+	start := time.Date(2026, 5, 14, 17, 11, 0, 0, time.UTC)
+	end := start.Add(12 * time.Second)
+
+	d, ok := (&Run{StartedAt: &start, EndedAt: &end}).Duration()
+	assert.True(t, ok)
+	assert.Equal(t, 12*time.Second, d)
+
+	_, ok = (&Run{StartedAt: &start}).Duration()
+	assert.False(t, ok)
+	_, ok = (&Run{EndedAt: &end}).Duration()
+	assert.False(t, ok)
+}
