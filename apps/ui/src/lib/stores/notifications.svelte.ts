@@ -5,10 +5,9 @@ import { z } from "zod";
 import type { AppEventStream } from "./event-manager";
 import { appEventStream } from "./app-stream";
 import { createLogger } from "@runwisp/common";
-import { authFetch, handleUnauthorized } from "$lib/utils/auth-required";
-import { HTTP_STATUS } from "$lib/config/constants";
+import { authFetch } from "$lib/utils/auth-required";
 import { safeParseJSON } from "$lib/utils/parse";
-import { connectionStore } from "./connection.svelte";
+import { connectionStore, trackStreamHealth } from "./connection.svelte";
 
 const notificationSchema = z.object({
     id: z.string(),
@@ -191,22 +190,7 @@ class NotificationStore {
         if (this.#subscribed) return;
         this.#subscribed = true;
         this.#unsubscribes.push(
-            this.#events.onOpen(() => {
-                connectionStore.reportSourceUp(SOURCE_ID);
-            }),
-            this.#events.onError((info) => {
-                if (info.status === HTTP_STATUS.UNAUTHORIZED) {
-                    handleUnauthorized();
-                } else {
-                    connectionStore.reportSourceDown(
-                        SOURCE_ID,
-                        info.message ?? "Notifications stream error",
-                    );
-                }
-            }),
-            this.#events.onStall(() => {
-                connectionStore.reportSourceStalled(SOURCE_ID);
-            }),
+            trackStreamHealth(this.#events, SOURCE_ID),
             // The notification hub has no replay of its own (unlike the
             // id-sequenced run/system event ring), so any reconnect gap —
             // a real network drop, or a cross-tab leader handoff — can drop

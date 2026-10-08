@@ -1,8 +1,16 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import { describe, expect, it } from "vitest";
-import { connectionStore } from "./connection.svelte";
+import { describe, expect, it, vi } from "vitest";
+import type { SSEErrorInfo } from "$lib/utils/event-source";
+
+const h = vi.hoisted(() => ({ handleUnauthorized: vi.fn() }));
+vi.mock("$lib/utils/auth-required", () => ({
+    handleUnauthorized: h.handleUnauthorized,
+    authFetch: fetch,
+}));
+
+import { connectionStore, trackStreamHealth } from "./connection.svelte";
 import { AuthRequiredError } from "$lib/api";
 
 // ─── reportFetchError (exercises isConnectionError + formatError) ─────────────
@@ -178,6 +186,36 @@ describe("connectionStore.reportSourceStalled", () => {
         connectionStore.reportSourceDown("a");
         expect(connectionStore.status).toBe("stalled");
         drain("a", "b");
+    });
+});
+
+describe("trackStreamHealth", () => {
+    it("treats a 401 as an expired session, not a lost connection", () => {
+        let onError: ((info: SSEErrorInfo) => void) | undefined;
+        const off = trackStreamHealth(
+            {
+                subscribe: () => () => undefined,
+                onOpen: () => () => undefined,
+                onError: (fn) => {
+                    onError = fn;
+                    return () => undefined;
+                },
+                onStall: () => () => undefined,
+            },
+            "health-test",
+        );
+        connectionStore.markConnected();
+
+        onError?.({ status: 401, message: "unauthorized" });
+        expect(h.handleUnauthorized).toHaveBeenCalledOnce();
+        expect(connectionStore.status).toBe("connected");
+
+        onError?.({ status: 502, message: "bad gateway" });
+        expect(h.handleUnauthorized).toHaveBeenCalledOnce();
+        expect(connectionStore.status).toBe("disconnected");
+
+        off();
+        connectionStore.markConnected();
     });
 });
 

@@ -10,6 +10,7 @@ import {
     type AuthChallengeBody,
     type AuthStatusBody,
 } from "@runwisp/common";
+import { safeParseJSON } from "$lib/utils/parse";
 
 export interface AuthState {
     required: boolean;
@@ -53,26 +54,37 @@ const runSchema = z
     })
     .pipe(z.custom<Run>());
 
-const runMutationEventSchema = z.object({
-    type: z.enum(["run.created", "run.started", "run.completed", "run.failed", "run.updated"]),
-    timestamp: z.string(),
-    data: z.object({
-        run: runSchema,
-        error: z.string().optional(),
-    }),
-});
+const RUN_MUTATION_EVENT_TYPES = [
+    "run.created",
+    "run.started",
+    "run.completed",
+    "run.failed",
+    "run.updated",
+] as const;
 
-const runDeletedEventSchema = z.object({
-    type: z.literal("run.deleted"),
-    timestamp: z.string(),
-    data: z.object({
-        runId: z.string(),
-        taskName: z.string(),
-    }),
-});
+export const RUN_EVENT_TYPES = [...RUN_MUTATION_EVENT_TYPES, "run.deleted"] as const;
 
-export const runUpdateEventSchema = z.union([runMutationEventSchema, runDeletedEventSchema]);
+const runMutationPayloadSchema = z.object({ run: runSchema });
+const runDeletedPayloadSchema = z.object({ runId: z.string(), taskName: z.string() });
 
-export type RunUpdateEvent = z.infer<typeof runUpdateEventSchema>;
+export type RunUpdateEvent =
+    | {
+          type: (typeof RUN_MUTATION_EVENT_TYPES)[number];
+          data: z.infer<typeof runMutationPayloadSchema>;
+      }
+    | { type: "run.deleted"; data: z.infer<typeof runDeletedPayloadSchema> };
 export type RunUpdateEventType = RunUpdateEvent["type"];
 export type RunUpdateHandler = (event: RunUpdateEvent) => void;
+
+/** Validate a run event's SSE payload against the schema for its type. */
+export function parseRunUpdate(
+    type: RunUpdateEventType,
+    data: string,
+): { success: true; data: RunUpdateEvent } | { success: false; error: unknown } {
+    if (type === "run.deleted") {
+        const result = safeParseJSON(data, runDeletedPayloadSchema);
+        return result.success ? { success: true, data: { type, data: result.data } } : result;
+    }
+    const result = safeParseJSON(data, runMutationPayloadSchema);
+    return result.success ? { success: true, data: { type, data: result.data } } : result;
+}

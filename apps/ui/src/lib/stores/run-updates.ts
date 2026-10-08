@@ -2,23 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { createLogger } from "@runwisp/common";
-import { handleUnauthorized } from "$lib/utils/auth-required";
-import { HTTP_STATUS } from "$lib/config/constants";
-import { runUpdateEventSchema } from "$lib/types";
+import { RUN_EVENT_TYPES, parseRunUpdate } from "$lib/types";
 import { appEventStream } from "./app-stream";
-import { connectionStore } from "./connection.svelte";
+import { connectionStore, trackStreamHealth } from "./connection.svelte";
 import type { RunUpdateEventType, RunUpdateHandler } from "$lib/types";
-
-export type { RunUpdateEvent, RunUpdateHandler } from "$lib/types";
-
-const RUN_EVENT_TYPES: RunUpdateEventType[] = [
-    "run.created",
-    "run.started",
-    "run.completed",
-    "run.failed",
-    "run.updated",
-    "run.deleted",
-];
 
 const SOURCE_ID = "run-updates";
 
@@ -33,31 +20,7 @@ class RunUpdateManager {
         if (this.connected) return;
         this.connected = true;
 
-        this.unsubscribes.push(
-            this.events.onOpen(() => {
-                this.logger.info("SSE connection established");
-                connectionStore.reportSourceUp(SOURCE_ID);
-            }),
-            this.events.onError((info) => {
-                this.logger.warn(
-                    `SSE connection error: ${info.message ?? "unknown"}`,
-                    info.status === undefined ? "" : `(HTTP ${info.status.toString()})`,
-                );
-                // 401 means the daemon is up but rejected our auth — not a connection loss.
-                if (info.status === HTTP_STATUS.UNAUTHORIZED) {
-                    handleUnauthorized();
-                } else {
-                    connectionStore.reportSourceDown(
-                        SOURCE_ID,
-                        info.message ?? "SSE connection error",
-                    );
-                }
-            }),
-            this.events.onStall(() => {
-                this.logger.warn("SSE connection stalled (browser connection cap likely full)");
-                connectionStore.reportSourceStalled(SOURCE_ID);
-            }),
-        );
+        this.unsubscribes.push(trackStreamHealth(this.events, SOURCE_ID));
 
         for (const eventType of RUN_EVENT_TYPES) {
             this.unsubscribes.push(
@@ -69,32 +32,12 @@ class RunUpdateManager {
     }
 
     private dispatch(eventType: RunUpdateEventType, data: string): void {
-        try {
-            const parsed: unknown = JSON.parse(data);
-            const envelope = {
-                type: eventType,
-                timestamp: new Date().toISOString(),
-                data: parsed,
-            };
-            const result = runUpdateEventSchema.safeParse(envelope);
-            if (!result.success) {
-                this.logger.error(
-                    "Invalid SSE event",
-                    result.error.message,
-                    "raw envelope:",
-                    JSON.stringify(envelope, null, 2),
-                );
-                return;
-            }
-            const identity =
-                result.data.type === "run.deleted"
-                    ? result.data.data.runId
-                    : result.data.data.run.id;
-            this.logger.debug("SSE event validated OK", eventType, identity);
-            for (const handler of this.handlers) handler(result.data);
-        } catch (e) {
-            this.logger.error("Malformed SSE event JSON", data, e);
+        const result = parseRunUpdate(eventType, data);
+        if (!result.success) {
+            this.logger.error("Invalid SSE event", eventType, data, result.error);
+            return;
         }
+        for (const handler of this.handlers) handler(result.data);
     }
 
     disconnect(): void {

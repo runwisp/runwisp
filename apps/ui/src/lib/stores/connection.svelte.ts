@@ -5,6 +5,9 @@ import { SvelteSet } from "svelte/reactivity";
 import { systemApi, AuthRequiredError } from "$lib/api";
 import { createLogger } from "@runwisp/common";
 import { isRecord } from "$lib/utils/parse";
+import { handleUnauthorized } from "$lib/utils/auth-required";
+import { HTTP_STATUS } from "$lib/config/constants";
+import type { AppEventStream } from "./event-manager";
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "stalled";
 
@@ -254,3 +257,30 @@ function formatError(err: unknown): string | null {
 }
 
 export const connectionStore = createConnectionStore();
+
+/**
+ * Mirror a live stream's health into {@link connectionStore} under `id`: open
+ * reports the source up, a stall reports it stalled, and an error reports it
+ * down. A 401 is an expired session on a reachable daemon, not a lost
+ * connection, so it routes to the login flow instead. Returns the unsubscribe.
+ */
+export function trackStreamHealth(events: AppEventStream, id: string): () => void {
+    const offs = [
+        events.onOpen(() => {
+            connectionStore.reportSourceUp(id);
+        }),
+        events.onError((info) => {
+            if (info.status === HTTP_STATUS.UNAUTHORIZED) {
+                handleUnauthorized();
+            } else {
+                connectionStore.reportSourceDown(id, info.message ?? "Event stream error");
+            }
+        }),
+        events.onStall(() => {
+            connectionStore.reportSourceStalled(id);
+        }),
+    ];
+    return () => {
+        for (const off of offs) off();
+    };
+}
