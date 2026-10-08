@@ -18,7 +18,7 @@ import (
 
 	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/mattn/go-isatty"
+	"golang.org/x/term"
 )
 
 // Format selects the slog handler shape.
@@ -58,7 +58,7 @@ var (
 	// stderrTTY and noColor are detected once at process start. The daemon's
 	// stderr destination does not change for the life of the process, so a
 	// cached snapshot is correct and avoids re-probing on every reconfigure.
-	stderrTTY = isatty.IsTerminal(os.Stderr.Fd()) || isatty.IsCygwinTerminal(os.Stderr.Fd())
+	stderrTTY = term.IsTerminal(int(os.Stderr.Fd()))
 	noColor   = os.Getenv("NO_COLOR") != ""
 )
 

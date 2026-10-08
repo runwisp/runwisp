@@ -22,7 +22,7 @@ func TestLoadStationEnvFile_ValidFile(t *testing.T) {
 	path := filepath.Join(dir, "env")
 	require.NoError(t, os.WriteFile(path, []byte("RUNWISP_STATION_ENVFILE_TEST_KEY=loaded\n"), 0o600))
 
-	// godotenv.Load does not override pre-set env vars; ensure clean slate.
+	// Pre-set env vars are not overridden; ensure clean slate.
 	require.NoError(t, os.Unsetenv("RUNWISP_STATION_ENVFILE_TEST_KEY"))
 	t.Cleanup(func() { _ = os.Unsetenv("RUNWISP_STATION_ENVFILE_TEST_KEY") })
 
@@ -57,4 +57,25 @@ func TestLoadStationEnvFile_ExplicitPresentValid(t *testing.T) {
 
 	require.NoError(t, loadEnvFileInto(path, true))
 	assert.Equal(t, "ok", os.Getenv("RUNWISP_EXPLICIT_TEST"))
+}
+
+func TestLoadStationEnvFile_ValuesAreLiteral(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "env")
+	require.NoError(t, os.WriteFile(path, []byte("RUNWISP_LITERAL_TEST=p@ss$1 #word\n"), 0o600))
+	t.Setenv("RUNWISP_LITERAL_TEST", "")
+	require.NoError(t, os.Unsetenv("RUNWISP_LITERAL_TEST"))
+
+	require.NoError(t, loadEnvFileInto(path, true))
+	assert.Equal(t, "p@ss$1 #word", os.Getenv("RUNWISP_LITERAL_TEST"))
+}
+
+func TestLoadStationEnvFile_DoesNotOverrideSetVars(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "env")
+	require.NoError(t, os.WriteFile(path, []byte("RUNWISP_PRESET_TEST=from-file\n"), 0o600))
+	t.Setenv("RUNWISP_PRESET_TEST", "from-env")
+
+	require.NoError(t, loadEnvFileInto(path, true))
+	assert.Equal(t, "from-env", os.Getenv("RUNWISP_PRESET_TEST"))
 }

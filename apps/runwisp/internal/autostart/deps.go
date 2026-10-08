@@ -9,7 +9,7 @@ import (
 	"os/user"
 	"time"
 
-	"github.com/mattn/go-isatty"
+	"golang.org/x/term"
 
 	"github.com/runwisp/runwisp/apps/runwisp/internal/fingerprint"
 )
@@ -68,7 +68,7 @@ func DefaultDeps(stdout io.Writer, stdin *os.File, autoOK bool) (Deps, error) {
 	if err != nil {
 		return Deps{}, err
 	}
-	isTTY := stdin != nil && isatty.IsTerminal(stdin.Fd())
+	isTTY := stdin != nil && term.IsTerminal(int(stdin.Fd()))
 	d := Deps{
 		FS:          osFS{},
 		Cmd:         execRunner{},

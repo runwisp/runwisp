@@ -7,10 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 
-	"github.com/joho/godotenv"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/apiclient"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -81,15 +82,23 @@ func init() {
 }
 
 // loadEnvFileInto loads variables from the .env file into the process
-// environment. If the file is missing and was explicitly requested, an error is
-// returned; a missing default ".env" is silently ignored.
+// environment, without overriding variables that are already set. Values are
+// literal, like task env_file. If the file is missing and was explicitly
+// requested, an error is returned; a missing default ".env" is silently ignored.
 func loadEnvFileInto(envFile string, envFileExplicit bool) error {
-	err := godotenv.Load(envFile)
-	if err == nil {
+	values, err := config.ReadEnvFile(envFile)
+	if errors.Is(err, fs.ErrNotExist) && !envFileExplicit {
 		return nil
 	}
-	if os.IsNotExist(err) && !envFileExplicit {
-		return nil
+	if err != nil {
+		return fmt.Errorf("cannot load env file %q: %w", envFile, err)
 	}
-	return fmt.Errorf("cannot load env file %q: %w", envFile, err)
+	for key, value := range values {
+		if _, set := os.LookupEnv(key); !set {
+			if err := os.Setenv(key, value); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

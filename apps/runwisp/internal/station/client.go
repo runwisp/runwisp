@@ -212,7 +212,7 @@ func (client *Client) Run(ctx context.Context) error {
 			return nil
 		}
 
-		delay := backoff.NextBackOff()
+		delay := backoff.Next()
 		slog.Info("reconnecting", "delay", delay.String())
 
 		select {

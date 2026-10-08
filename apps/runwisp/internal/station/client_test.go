@@ -405,9 +405,9 @@ func TestRunConnectionAttempt_ShortSessionDoesNotResetBackoff(t *testing.T) {
 
 func TestReconnectBackoffIncreases(t *testing.T) {
 	b := newReconnectBackoff()
-	first := b.NextBackOff()
-	second := b.NextBackOff()
-	third := b.NextBackOff()
+	first := b.Next()
+	second := b.Next()
+	third := b.Next()
 	// Due to jitter, we can't assert exact values, but the trend should increase
 	assert.LessOrEqual(t, first, second+200*time.Millisecond)
 	assert.LessOrEqual(t, second, third+500*time.Millisecond)
@@ -416,10 +416,10 @@ func TestReconnectBackoffIncreases(t *testing.T) {
 func TestReconnectBackoffReset(t *testing.T) {
 	b := newReconnectBackoff()
 	for i := 0; i < 10; i++ {
-		b.NextBackOff()
+		b.Next()
 	}
 	b.Reset()
-	afterReset := b.NextBackOff()
+	afterReset := b.Next()
 	// After reset, delay should be close to the initial interval
 	assert.Less(t, afterReset, 2*time.Second)
 }

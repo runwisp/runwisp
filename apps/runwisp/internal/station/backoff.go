@@ -6,7 +6,7 @@ package station
 import (
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/backoff"
 )
 
 const (
@@ -21,12 +21,13 @@ const (
 	minStableSessionDuration = reconnectMaxDelay
 )
 
-func newReconnectBackoff() backoff.BackOff {
-	b := backoff.NewExponentialBackOff()
-	b.InitialInterval = reconnectBaseDelay
-	b.MaxInterval = reconnectMaxDelay
-	b.Multiplier = reconnectMultiplier
-	b.RandomizationFactor = reconnectJitterFraction
-	b.MaxElapsedTime = 0 // Never stop reconnecting
-	return b
+// newReconnectBackoff never gives up: the daemon keeps reconnecting for as
+// long as it runs.
+func newReconnectBackoff() *backoff.Exponential {
+	return &backoff.Exponential{
+		Initial:    reconnectBaseDelay,
+		Max:        reconnectMaxDelay,
+		Multiplier: reconnectMultiplier,
+		Jitter:     reconnectJitterFraction,
+	}
 }

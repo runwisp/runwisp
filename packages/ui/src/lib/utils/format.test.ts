@@ -8,6 +8,8 @@ import {
     formatClockTime,
     formatDayMonth,
     formatDuration,
+    formatDurationExact,
+    parseDuration,
     formatRelativeTime,
     formatRelativeTimeWithAbsolute,
     formatTimeHM,
@@ -154,5 +156,37 @@ describe("formatDayMonth", () => {
         const r = formatDayMonth("2026-06-22T12:00:00Z");
         expect(r).toMatch(/\d/);
         expect(r).not.toContain("2026");
+    });
+});
+
+describe("parseDuration", () => {
+    it("reads the placeholder's own format", () => {
+        expect(parseDuration("5m 30s")).toBe(330_000);
+    });
+
+    it("reads compact, fractional and sub-second forms", () => {
+        expect(parseDuration("1h30m")).toBe(5_400_000);
+        expect(parseDuration("1.5h")).toBe(5_400_000);
+        expect(parseDuration("250ms")).toBe(250);
+        expect(parseDuration("2d")).toBe(172_800_000);
+    });
+
+    it("rejects text that isn't number+unit throughout", () => {
+        expect(parseDuration("")).toBeNull();
+        expect(parseDuration("5")).toBeNull();
+        expect(parseDuration("5x")).toBeNull();
+        expect(parseDuration("5m abc")).toBeNull();
+    });
+});
+
+describe("formatDurationExact", () => {
+    it("keeps every non-zero unit instead of rounding", () => {
+        expect(formatDurationExact(330_000)).toBe("5m 30s");
+        expect(formatDurationExact(3_930_000)).toBe("1h 5m 30s");
+        expect(formatDurationExact(0)).toBe("0ms");
+    });
+
+    it("round-trips through parseDuration", () => {
+        expect(parseDuration(formatDurationExact(90_061_001))).toBe(90_061_001);
     });
 });

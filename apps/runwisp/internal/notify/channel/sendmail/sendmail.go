@@ -28,8 +28,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
-
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/notify/render"
 )
@@ -116,10 +114,6 @@ func New(cfg Config) (*Channel, error) {
 	if cfg.Renderer == nil {
 		return nil, fmt.Errorf("sendmail channel %q: renderer is required", cfg.ID)
 	}
-	bo := cfg.Backoff
-	if bo.IsZero() {
-		bo = notify.DefaultBackoff()
-	}
 
 	c := &Channel{
 		id:        cfg.ID,
@@ -129,7 +123,7 @@ func New(cfg Config) (*Channel, error) {
 		to:        append([]string(nil), cfg.Recipients...),
 		cc:        append([]string(nil), cfg.CC...),
 		bcc:       append([]string(nil), cfg.BCC...),
-		backoff:   bo,
+		backoff:   cfg.Backoff,
 		renderer:  cfg.Renderer,
 		now:       cfg.Now,
 		lookPath:  cfg.LookPath,
@@ -200,7 +194,7 @@ func (c *Channel) resolve() (string, error) {
 	if found, err := c.lookPath("sendmail"); err == nil {
 		return found, nil
 	}
-	return "", backoff.Permanent(fmt.Errorf(
+	return "", notify.Permanent(fmt.Errorf(
 		"no sendmail binary found in %s or $PATH; install an MTA (Postfix, exim, msmtp) "+
 			"or set sendmail_path", strings.Join(defaultPaths, ", ")))
 }
@@ -271,7 +265,7 @@ func runCommand(ctx context.Context, path string, args []string, stdin []byte) e
 	}
 	// The binary could not be started at all: it is missing, not executable, or
 	// not a binary. Retrying will not change any of those.
-	return backoff.Permanent(fmt.Errorf("run %s: %w", path, err))
+	return notify.Permanent(fmt.Errorf("run %s: %w", path, err))
 }
 
 // ExitError reports a sendmail binary that ran and exited non-zero. It is
@@ -303,7 +297,7 @@ func (e *ExitError) Permanent() bool { return e.Code != exTempFail }
 func classifyExit(err error) error {
 	var exitErr *ExitError
 	if errors.As(err, &exitErr) && exitErr.Permanent() {
-		return backoff.Permanent(exitErr)
+		return notify.Permanent(exitErr)
 	}
 	return err
 }

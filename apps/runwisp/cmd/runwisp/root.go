@@ -14,12 +14,12 @@ import (
 
 	"log/slog"
 
-	"github.com/mattn/go-isatty"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/clilog"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/config"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/datadir"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/version"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // Flags consolidates persistent CLI flag values into a single struct so that
@@ -124,7 +124,7 @@ func init() {
 	rootCmd.AddCommand(takeoverCmd)
 	rootCmd.AddCommand(demoCmd)
 
-	installAgentHelpPointer(rootCmd, func() bool { return isatty.IsTerminal(os.Stdout.Fd()) })
+	installAgentHelpPointer(rootCmd, func() bool { return term.IsTerminal(int(os.Stdout.Fd())) })
 }
 
 // installAgentHelpPointer makes every subcommand's --help append the
