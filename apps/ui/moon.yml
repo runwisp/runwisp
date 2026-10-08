@@ -36,8 +36,8 @@ tasks:
             - "common:generate-api"
             - "asyncapi:generate"
         inputs:
-            - "@globs(sources)"
-            - "@globs(upstream)"
+            - "@group(sources)"
+            - "@group(upstream)"
         outputs:
             - "build"
         options:
@@ -50,8 +50,8 @@ tasks:
             - "common:generate-api"
             - "asyncapi:generate"
         inputs:
-            - "@globs(sources)"
-            - "@globs(upstream)"
+            - "@group(sources)"
+            - "@group(upstream)"
         options:
             mutex: "svelte-kit-sync"
 
@@ -84,8 +84,8 @@ tasks:
             - "common:generate-api"
             - "asyncapi:generate"
         inputs:
-            - "@globs(sources)"
-            - "@globs(upstream)"
+            - "@group(sources)"
+            - "@group(upstream)"
             - "test/**/*"
             - "vitest.config.ts"
             - "scripts/rewrite-lcov-paths.ts"
