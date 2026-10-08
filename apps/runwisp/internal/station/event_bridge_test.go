@@ -478,6 +478,35 @@ func TestEventBridge_FinalizeRun_NoUploaderSendsSingleUpdate(t *testing.T) {
 	assert.False(t, h.IsLogListener(execID))
 }
 
+func TestEventBridge_FinalizeRun_FlushesPendingLinesBeforeTerminal(t *testing.T) {
+	execID := "exec-tail"
+	reason := model.ReasonSuccess
+	run := newTerminalRun("task-a", "run-1", execID)
+	run.EndReason = &reason
+
+	h := newTestInboundHandler()
+	_ = h.HandleLogListen(protocol.LogListenMessage{ExecutionID: execID})
+
+	var sent []any
+	b := NewEventBridge(events.NewEventBus(), h, NewExecutionTracker(), func(msg any) error {
+		sent = append(sent, msg)
+		return nil
+	})
+	b.handleLogLineEvent(events.Event{
+		Data: events.LogLineEvent{ExecutionID: execID, LineNum: 1, Text: "last line"},
+	})
+
+	update := mapRunToExecutionUpdate(run)
+	require.NotNil(t, update)
+	b.finalizeRun(context.Background(), run, *update, execID)
+
+	// The station closes a viewer's live stream on the terminal update, so the
+	// buffered tail must go out first or the viewer never sees it.
+	require.Len(t, sent, 2)
+	assert.IsType(t, protocol.LogLinesMessage{}, sent[0])
+	assert.IsType(t, protocol.ExecutionUpdateMessage{}, sent[1])
+}
+
 // --- handleLogLineEvent ---
 
 func TestEventBridge_HandleLogLineEvent_IsListener(t *testing.T) {

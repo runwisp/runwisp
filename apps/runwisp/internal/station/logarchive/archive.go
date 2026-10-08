@@ -27,10 +27,11 @@ const MaxAttempts = 3
 
 // Archive gzips logFilePath and PUTs it to uploadURL. Returns the gzipped
 // byte count on success. Retries up to MaxAttempts on network errors and
-// 5xx responses with exponential backoff.
-func Archive(ctx context.Context, client *http.Client, uploadURL, logFilePath string) (int64, error) {
+// 5xx responses with exponential backoff. allowInsecure (local testing only)
+// also accepts http:// upload URLs; pair it with SafeClient(true).
+func Archive(ctx context.Context, client *http.Client, uploadURL, logFilePath string, allowInsecure bool) (int64, error) {
 	if client == nil {
-		client = SafeClient()
+		client = SafeClient(allowInsecure)
 	}
 	if uploadURL == "" {
 		return 0, errors.New("logarchive: empty upload URL")
@@ -38,7 +39,7 @@ func Archive(ctx context.Context, client *http.Client, uploadURL, logFilePath st
 	// The URL originates from the (untrusted) control-plane peer. Reject
 	// non-https and internal targets before touching the disk so the daemon
 	// cannot be used as an SSRF egress toward internal services.
-	if err := validateUploadURL(uploadURL); err != nil {
+	if err := validateUploadURL(uploadURL, allowInsecure); err != nil {
 		return 0, &PermanentError{StatusCode: 0, Status: err.Error()}
 	}
 	return archive(ctx, client, uploadURL, logFilePath)
@@ -175,16 +176,17 @@ func (e *PermanentError) Error() string {
 }
 
 // validateUploadURL rejects any upload target that isn't an https URL with a
-// host. Scheme/host are checked offline here; the resolved IPs (including
-// IP-literal hosts and DNS-rebind targets) are rejected at connect time by
-// SafeClient's dialer, so the daemon never PUTs to an internal address.
-func validateUploadURL(rawURL string) error {
+// host (http is also accepted when allowInsecure). Scheme/host are checked
+// offline here; the resolved IPs (including IP-literal hosts and DNS-rebind
+// targets) are rejected at connect time by SafeClient's dialer, so the daemon
+// never PUTs to an internal address.
+func validateUploadURL(rawURL string, allowInsecure bool) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		// url.Parse may echo a signed URL, including its query credentials.
 		return errors.New("logarchive: invalid upload URL")
 	}
-	if !strings.EqualFold(parsed.Scheme, "https") {
+	if !strings.EqualFold(parsed.Scheme, "https") && (!allowInsecure || !strings.EqualFold(parsed.Scheme, "http")) {
 		return fmt.Errorf("logarchive: upload URL must use https, got %q", parsed.Scheme)
 	}
 	if parsed.Hostname() == "" {
@@ -205,13 +207,19 @@ func rejectInternalIP(ip net.IP) error {
 // SafeClient returns the hardened http.Client used for peer-supplied uploads:
 // it refuses to follow redirects (a signed-S3 URL that 302s to an internal
 // host is a red flag) and re-validates every resolved IP at connect time to
-// defeat DNS rebinding.
-func SafeClient() *http.Client {
+// defeat DNS rebinding. allowInsecure (RUNWISP_STATION_ALLOW_INSECURE, local
+// testing only) drops the IP check so a dev stack's private object storage is
+// reachable; redirects stay refused.
+func SafeClient(allowInsecure bool) *http.Client {
+	noRedirect := func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	if allowInsecure {
+		return &http.Client{CheckRedirect: noRedirect}
+	}
 	base := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 	return &http.Client{
-		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+		CheckRedirect: noRedirect,
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				host, port, err := net.SplitHostPort(addr)

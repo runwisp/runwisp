@@ -144,7 +144,7 @@ func TestArchivePermanentError(t *testing.T) {
 
 func TestArchiveEmptyURL(t *testing.T) {
 	logPath := writeLog(t, "x")
-	if _, err := Archive(context.Background(), nil, "", logPath); err == nil {
+	if _, err := Archive(context.Background(), nil, "", logPath, false); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -164,7 +164,7 @@ func TestValidateUploadURL(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			err := validateUploadURL(c.url)
+			err := validateUploadURL(c.url, false)
 			if c.wantErr && err == nil {
 				t.Fatalf("validateUploadURL(%q) = nil, want error", c.url)
 			}
@@ -179,7 +179,7 @@ func TestArchiveRejectsNonHTTPSURL(t *testing.T) {
 	logPath := writeLog(t, "secret log data")
 	// A non-https URL is rejected as a permanent failure before any network
 	// call, so the daemon can't be used as a plaintext SSRF egress.
-	_, err := Archive(context.Background(), nil, "http://169.254.169.254/steal", logPath)
+	_, err := Archive(context.Background(), nil, "http://169.254.169.254/steal", logPath, false)
 	if err == nil {
 		t.Fatal("expected error for non-https URL")
 	}
@@ -189,8 +189,23 @@ func TestArchiveRejectsNonHTTPSURL(t *testing.T) {
 	}
 }
 
+func TestArchiveAllowInsecureReachesLoopbackHTTP(t *testing.T) {
+	logPath := writeLog(t, "dev stack log")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	// A local dev stack's object storage is plain http on a private address:
+	// hardened by default, reachable only with the insecure opt-in.
+	_, err := Archive(context.Background(), nil, srv.URL+"/key", logPath, false)
+	require.Error(t, err)
+	_, err = Archive(context.Background(), nil, srv.URL+"/key", logPath, true)
+	require.NoError(t, err)
+}
+
 func TestArchiveInvalidSignedURLDoesNotEchoCredentials(t *testing.T) {
-	_, err := Archive(context.Background(), nil, "https://upload.example/%zz?token=secret", "/does/not/exist")
+	_, err := Archive(context.Background(), nil, "https://upload.example/%zz?token=secret", "/does/not/exist", false)
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "token")
 	assert.NotContains(t, err.Error(), "secret")
@@ -224,7 +239,7 @@ func TestSafeClientRejectsInternalAddress(t *testing.T) {
 	// The hardened client's dialer must refuse to connect to internal
 	// addresses even when the URL passed scheme/host validation — this is the
 	// guard for IP-literal and DNS-rebind SSRF targets.
-	client := SafeClient()
+	client := SafeClient(false)
 	for _, target := range []string{
 		"https://127.0.0.1:9/key",
 		"https://169.254.169.254/latest/meta-data",

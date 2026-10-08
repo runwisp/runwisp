@@ -25,6 +25,10 @@ type Config struct {
 	StationToken string
 	AgentVersion string
 	Fingerprint  string
+	// AllowInsecure mirrors RUNWISP_STATION_ALLOW_INSECURE=true: besides an
+	// http:// station URL it lets log archives go to http:// and private-IP
+	// upload URLs (a local dev stack's MinIO). Local testing only.
+	AllowInsecure bool
 }
 
 // LoadConfig loads station configuration. CLI overrides (tokenOverride, urlOverride)
@@ -56,8 +60,9 @@ func LoadConfig(agentVersion, tokenOverride, urlOverride, fingerprint string) (C
 		return Config{}, fmt.Errorf("invalid RUNWISP_STATION_URL scheme %q (expected https or http)", baseURL.Scheme)
 	}
 
+	allowInsecure := strings.EqualFold(os.Getenv("RUNWISP_STATION_ALLOW_INSECURE"), "true")
 	if baseURL.Scheme == "http" {
-		if !strings.EqualFold(os.Getenv("RUNWISP_STATION_ALLOW_INSECURE"), "true") {
+		if !allowInsecure {
 			return Config{}, fmt.Errorf("insecure http:// station URL rejected; set RUNWISP_STATION_ALLOW_INSECURE=true to allow")
 		}
 		slog.Warn("RUNWISP_STATION_ALLOW_INSECURE=true: control-plane traffic (bearer token, dispatch frames) runs over plaintext with no TLS — a network attacker can read the token and inject task dispatches; never use this outside local testing",
@@ -73,11 +78,12 @@ func LoadConfig(agentVersion, tokenOverride, urlOverride, fingerprint string) (C
 	}
 
 	return Config{
-		Enabled:      true,
-		BaseURL:      baseURL,
-		StationToken: stationToken,
-		AgentVersion: agentVersion,
-		Fingerprint:  fingerprint,
+		Enabled:       true,
+		BaseURL:       baseURL,
+		StationToken:  stationToken,
+		AgentVersion:  agentVersion,
+		Fingerprint:   fingerprint,
+		AllowInsecure: allowInsecure,
 	}, nil
 }
 

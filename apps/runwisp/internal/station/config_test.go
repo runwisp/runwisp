@@ -60,6 +60,7 @@ func TestLoadConfigHTTPWithAllowInsecure(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, cfg.Enabled)
 	assert.Equal(t, "http", cfg.BaseURL.Scheme)
+	assert.True(t, cfg.AllowInsecure)
 }
 
 func TestLoadConfigDefaultAgentVersion(t *testing.T) {

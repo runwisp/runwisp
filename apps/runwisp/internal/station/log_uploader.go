@@ -40,6 +40,7 @@ type LogUploader struct {
 	runRepo    ExternalRunGetter
 	logDir     string
 	httpClient *http.Client
+	insecure   bool
 	now        func() time.Time
 
 	mu      sync.Mutex
@@ -63,10 +64,17 @@ func NewLogUploader(repo storage.PendingLogUploadRepository, runRepo ExternalRun
 		repo:       repo,
 		runRepo:    runRepo,
 		logDir:     logDir,
-		httpClient: logarchive.SafeClient(),
+		httpClient: logarchive.SafeClient(false),
 		now:        func() time.Time { return now().UTC() },
 		pending:    make(map[string]uploadEntry),
 	}
+}
+
+// AllowInsecure lifts the https + public-IP upload guard
+// (RUNWISP_STATION_ALLOW_INSECURE). Call before the first Archive.
+func (u *LogUploader) AllowInsecure() {
+	u.insecure = true
+	u.httpClient = logarchive.SafeClient(true)
 }
 
 // RegisterDispatch persists the upload coordinates the station handed us. An
@@ -122,7 +130,7 @@ func (u *LogUploader) Archive(ctx context.Context, executionID, logFilePath stri
 
 	archiveCtx, cancel := context.WithTimeout(ctx, archiveTimeout)
 	defer cancel()
-	size, err := logarchive.Archive(archiveCtx, u.httpClient, entry.uploadURL, logFilePath)
+	size, err := logarchive.Archive(archiveCtx, u.httpClient, entry.uploadURL, logFilePath, u.insecure)
 	if err != nil {
 		return nil, err
 	}

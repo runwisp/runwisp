@@ -151,6 +151,9 @@ func (b *EventBridge) handleRunEvent(ctx context.Context, event events.Event) {
 // its archive coordinates to the already-terminal row.
 func (b *EventBridge) finalizeRun(ctx context.Context, run *model.Run, update protocol.ExecutionUpdateMessage, executionID string) {
 	defer crashguard.Guard()
+	// Ship the still-coalescing tail before the terminal update: viewers close
+	// the live stream on terminal, so lines sent after it never reach them.
+	b.flushLogBatch(executionID)
 	b.tracker.QueueUpdate(update, b.sendReady)
 
 	uploader := b.handler.Uploader()
@@ -259,6 +262,17 @@ func (b *EventBridge) flushLogBatches() {
 	b.batchMu.Unlock()
 
 	for execID, lines := range batches {
+		b.sendLogBatch(execID, lines)
+	}
+}
+
+// flushLogBatch ships execID's pending lines now instead of on the next window.
+func (b *EventBridge) flushLogBatch(execID string) {
+	b.batchMu.Lock()
+	lines := b.pendingLogs[execID]
+	delete(b.pendingLogs, execID)
+	b.batchMu.Unlock()
+	if len(lines) > 0 {
 		b.sendLogBatch(execID, lines)
 	}
 }

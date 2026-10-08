@@ -120,6 +120,9 @@ func NewClient(cfg Config, deps Dependencies) (*Client, error) {
 	connMgr := newConnectionManager(tracker)
 
 	uploader := NewLogUploader(deps.PendingUploadRepo, deps.RunRepo, deps.LogDir, deps.Now)
+	if cfg.AllowInsecure {
+		uploader.AllowInsecure()
+	}
 
 	client := &Client{
 		config:       cfg,

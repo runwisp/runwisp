@@ -157,7 +157,7 @@ func archiveExecutionLog(ctx context.Context, uploadURL, stationLogPath, localLo
 		slog.Warn("dispatch has empty logUploadUrl; skipping archive")
 		return "", 0, nil
 	}
-	size, err := logarchive.Archive(ctx, http.DefaultClient, uploadURL, localLogPath)
+	size, err := logarchive.Archive(ctx, http.DefaultClient, uploadURL, localLogPath, true)
 	if err != nil {
 		return "", 0, fmt.Errorf("archive: %w", err)
 	}
