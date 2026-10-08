@@ -6,7 +6,6 @@ package storage
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/runwisp/runwisp/internal/model"
 	"github.com/runwisp/runwisp/internal/storage/sqlcdb"
@@ -68,61 +67,10 @@ func dispatchQueryRuns(
 	return nil, fmt.Errorf("unknown sort column %q", col)
 }
 
-// queryRunsRow is the row type of every QueryRuns variant: they share one
-// SELECT list, so sqlc emits structurally identical row structs. Keep in
-// sync with sqlcdb.QueryRunsCreatedAtAscRow (the compiler flags drift).
-type queryRunsRow interface {
-	~struct {
-		ID            string            `json:"id"`
-		ExecutionID   *string           `json:"execution_id"`
-		TaskName      string            `json:"task_name"`
-		Status        model.RunPhase    `json:"status"`
-		EndReason     *model.EndReason  `json:"end_reason"`
-		ExitCode      int               `json:"exit_code"`
-		StartedAt     *time.Time        `json:"started_at"`
-		EndedAt       *time.Time        `json:"ended_at"`
-		TriggeredBy   model.TriggeredBy `json:"triggered_by"`
-		CreatedAt     time.Time         `json:"created_at"`
-		RetryAttempt  int               `json:"retry_attempt"`
-		RetryOfRunID  *string           `json:"retry_of_run_id"`
-		InstanceIndex int               `json:"instance_index"`
-		ParamsJson    *string           `json:"params_json"` //nolint:revive // must match sqlc's generated field name
-		IsFailure     int64             `json:"is_failure"`
-
-		PeakMemoryBytes *int64 `json:"peak_memory_bytes"`
-		CpuTimeMs       *int64 `json:"cpu_time_ms"` //nolint:revive // must match sqlc's generated field name
-	}
-}
-
-// finishQueryRuns turns a sqlc row slice and the call's error into the
-// domain row type.
-func finishQueryRuns[R queryRunsRow](rows []R, err error) ([]model.Run, error) {
+// finishQueryRuns turns a sqlc row slice and the call's error into domain runs.
+func finishQueryRuns(rows []sqlcdb.Run, err error) ([]model.Run, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]model.Run, len(rows))
-	for i, row := range rows {
-		r := sqlcdb.QueryRunsCreatedAtAscRow(row)
-		out[i] = model.Run{
-			ID:            r.ID,
-			ExecutionID:   r.ExecutionID,
-			TaskName:      r.TaskName,
-			Status:        r.Status,
-			EndReason:     r.EndReason,
-			ExitCode:      r.ExitCode,
-			StartedAt:     r.StartedAt,
-			EndedAt:       r.EndedAt,
-			TriggeredBy:   r.TriggeredBy,
-			CreatedAt:     r.CreatedAt,
-			RetryAttempt:  r.RetryAttempt,
-			RetryOfRunID:  r.RetryOfRunID,
-			InstanceIndex: r.InstanceIndex,
-			IsFailure:     r.IsFailure != 0,
-			Params:        decodeParams(r.ParamsJson, r.ID),
-
-			PeakMemoryBytes: r.PeakMemoryBytes,
-			CPUTimeMs:       r.CpuTimeMs,
-		}
-	}
-	return out, nil
+	return runsFromRows(rows), nil
 }

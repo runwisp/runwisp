@@ -37,10 +37,7 @@ SELECT COUNT(*) FROM runs WHERE deleted_at IS NULL
   AND (sqlc.arg(search_filter) IS NULL OR (instr(lower(task_name), sqlc.arg(search_term)) > 0 OR instr(lower(id), sqlc.arg(search_term)) > 0));
 
 -- name: QueryRunsCreatedAtDesc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
-  peak_memory_bytes, cpu_time_ms
-FROM runs WHERE deleted_at IS NULL
+SELECT * FROM runs WHERE deleted_at IS NULL
   AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
@@ -56,10 +53,7 @@ FROM runs WHERE deleted_at IS NULL
 ORDER BY created_at DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsCreatedAtAsc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
-  peak_memory_bytes, cpu_time_ms
-FROM runs WHERE deleted_at IS NULL
+SELECT * FROM runs WHERE deleted_at IS NULL
   AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
@@ -75,10 +69,7 @@ FROM runs WHERE deleted_at IS NULL
 ORDER BY created_at ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsStartAtDesc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
-  peak_memory_bytes, cpu_time_ms
-FROM runs WHERE deleted_at IS NULL
+SELECT * FROM runs WHERE deleted_at IS NULL
   AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
@@ -94,10 +85,7 @@ FROM runs WHERE deleted_at IS NULL
 ORDER BY COALESCE(started_at, created_at) DESC, created_at DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsStartAtAsc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
-  peak_memory_bytes, cpu_time_ms
-FROM runs WHERE deleted_at IS NULL
+SELECT * FROM runs WHERE deleted_at IS NULL
   AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
@@ -113,10 +101,7 @@ FROM runs WHERE deleted_at IS NULL
 ORDER BY COALESCE(started_at, created_at) ASC, created_at ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsTaskNameDesc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
-  peak_memory_bytes, cpu_time_ms
-FROM runs WHERE deleted_at IS NULL
+SELECT * FROM runs WHERE deleted_at IS NULL
   AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
@@ -132,10 +117,7 @@ FROM runs WHERE deleted_at IS NULL
 ORDER BY task_name DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsTaskNameAsc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
-  peak_memory_bytes, cpu_time_ms
-FROM runs WHERE deleted_at IS NULL
+SELECT * FROM runs WHERE deleted_at IS NULL
   AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
@@ -151,10 +133,7 @@ FROM runs WHERE deleted_at IS NULL
 ORDER BY task_name ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsStatusDesc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
-  peak_memory_bytes, cpu_time_ms
-FROM runs WHERE deleted_at IS NULL
+SELECT * FROM runs WHERE deleted_at IS NULL
   AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
@@ -170,10 +149,7 @@ FROM runs WHERE deleted_at IS NULL
 ORDER BY status DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsStatusAsc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
-  peak_memory_bytes, cpu_time_ms
-FROM runs WHERE deleted_at IS NULL
+SELECT * FROM runs WHERE deleted_at IS NULL
   AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
@@ -189,10 +165,7 @@ FROM runs WHERE deleted_at IS NULL
 ORDER BY status ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsExitCodeDesc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
-  peak_memory_bytes, cpu_time_ms
-FROM runs WHERE deleted_at IS NULL
+SELECT * FROM runs WHERE deleted_at IS NULL
   AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
@@ -208,10 +181,7 @@ FROM runs WHERE deleted_at IS NULL
 ORDER BY exit_code DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsExitCodeAsc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
-  peak_memory_bytes, cpu_time_ms
-FROM runs WHERE deleted_at IS NULL
+SELECT * FROM runs WHERE deleted_at IS NULL
   AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
@@ -227,10 +197,7 @@ FROM runs WHERE deleted_at IS NULL
 ORDER BY exit_code ASC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsDurationDesc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
-  peak_memory_bytes, cpu_time_ms
-FROM runs WHERE deleted_at IS NULL
+SELECT * FROM runs WHERE deleted_at IS NULL
   AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
@@ -246,10 +213,7 @@ FROM runs WHERE deleted_at IS NULL
 ORDER BY (COALESCE(julianday(ended_at) - julianday(started_at), 0)) DESC LIMIT sqlc.arg(rows_limit) OFFSET sqlc.arg(rows_offset);
 
 -- name: QueryRunsDurationAsc :many
-SELECT id, execution_id, task_name, status, end_reason, exit_code,
-  started_at, ended_at, triggered_by, created_at, retry_attempt, retry_of_run_id, instance_index, params_json, is_failure,
-  peak_memory_bytes, cpu_time_ms
-FROM runs WHERE deleted_at IS NULL
+SELECT * FROM runs WHERE deleted_at IS NULL
   AND ((sqlc.arg(status_set) IS NULL AND sqlc.arg(match_failure) = 0)
        OR instr(sqlc.arg(status_set), '|' || status || '|') > 0
        OR (end_reason IS NOT NULL AND instr(sqlc.arg(status_set), '|' || end_reason || '|') > 0)
