@@ -283,7 +283,7 @@ func initExecutor(cfg *config.Config, eventBus *events.Bus, logDir, fingerprint 
 	return executor.New(executor.Options{
 		LogDir:                 logDir,
 		EventBus:               eventBus,
-		StationDispatchEnabled: cfg.IsStationDispatchEnabled(),
+		StationDispatchEnabled: cfg.Daemon.AllowStationDispatch,
 		HasLocalTasks:          len(cfg.Tasks) > 0,
 		Docker:                 dockerBackend,
 		Compose:                composeBackend,

@@ -111,10 +111,7 @@ func markStarDays(s *cron.SpecSchedule, spec string) {
 // spec. robfig peels a TZ= / CRON_TZ= prefix off before counting fields, so it
 // is skipped here too. ok is false for descriptors and wrong field counts.
 func dayFields(spec string) (dom, dow string, ok bool) {
-	body := strings.Fields(spec)
-	if len(body) > 0 && (strings.HasPrefix(body[0], "TZ=") || strings.HasPrefix(body[0], "CRON_TZ=")) {
-		body = body[1:]
-	}
+	body := fieldsAfterTZ(spec)
 	if len(body) != 5 && len(body) != 6 {
 		return "", "", false
 	}
@@ -237,15 +234,22 @@ func Validate(spec, timezone string) error {
 // rounded a zero or sub-second interval up to 1s by the time Parse returns, so
 // the original text is the only place to reject it.
 func everyDuration(spec string) (time.Duration, bool) {
-	fields := strings.Fields(spec)
-	if len(fields) > 0 && (strings.HasPrefix(fields[0], "TZ=") || strings.HasPrefix(fields[0], "CRON_TZ=")) {
-		fields = fields[1:]
-	}
+	fields := fieldsAfterTZ(spec)
 	if len(fields) != 2 || fields[0] != "@every" {
 		return 0, false
 	}
 	d, err := time.ParseDuration(fields[1])
 	return d, err == nil
+}
+
+// fieldsAfterTZ splits spec into fields, dropping a leading TZ= / CRON_TZ=
+// prefix the way robfig does before it counts fields.
+func fieldsAfterTZ(spec string) []string {
+	fields := strings.Fields(spec)
+	if len(fields) > 0 && (strings.HasPrefix(fields[0], "TZ=") || strings.HasPrefix(fields[0], "CRON_TZ=")) {
+		return fields[1:]
+	}
+	return fields
 }
 
 // sundayAliased rewrites the day-of-week field so 7 means Sunday, the vixie-cron

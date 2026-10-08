@@ -87,9 +87,9 @@ func parseDurationPtr(raw string) (*time.Duration, error) {
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
 	}
-	d, err := str2duration.ParseDuration(raw)
+	d, err := parseDuration(raw)
 	if err != nil {
-		return nil, fmt.Errorf("%q is not a valid duration; use a duration like \"30s\", \"5m\", \"2h30m\", \"2d\", \"1w\"", raw)
+		return nil, err
 	}
 	return &d, nil
 }

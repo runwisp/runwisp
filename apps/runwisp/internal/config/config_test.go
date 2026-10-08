@@ -77,7 +77,6 @@ run = "echo hello"
 		assert.Equal(t, int64(5*1024*1024*1024), cfg.Storage.MaxSize)
 		assert.Equal(t, int64(500*1024*1024), cfg.Storage.MinFreeSpace)
 		assert.True(t, cfg.Daemon.AllowStationDispatch)
-		assert.True(t, cfg.IsStationDispatchEnabled())
 		assert.Equal(t, "UTC", cfg.Scheduler.Timezone)
 		assert.Equal(t, TimezoneSourceConfig, cfg.Scheduler.Source)
 	})
