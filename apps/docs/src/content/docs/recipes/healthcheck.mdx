@@ -38,24 +38,24 @@ curl --silent --show-error --fail-with-body \\
 
 ## What each setting does
 
-- **`cron = "*/5 * * * *"`:** you learn about an outage within five minutes. Use
+- **[`cron = "*/5 * * * *"`](/configuration/tasks/#cron):** you learn about an outage within five minutes. Use
   `* * * * *` for tighter checks or `*/15 * * * *` for internal tools.
-- **`on_overlap = "skip"`:** a slow probe doesn't get a second one stacked on
+- **[`on_overlap = "skip"`](/configuration/tasks/#on_overlap):** a slow probe doesn't get a second one stacked on
   it. The dropped firing is recorded as `skipped`, which isn't a failure and
   doesn't alert.
-- **`catch_up = 0`:** probes missed while the daemon was down are not run
+- **[`catch_up = 0`](/configuration/tasks/#catch_up):** probes missed while the daemon was down are not run
   when it comes back. They would only report on a past you can't change. See
   [`catch_up`](/configuration/tasks/#catch_up).
-- **`timeout = "30s"` with `curl --max-time 25`:** curl gives up first, so the
-  log shows curl's own error message. The `timeout` is the backstop.
-- **`retry_attempts = 2`, `retry_delay = "30s"`, `retry_backoff = "linear"`:**
+- **[`timeout = "30s"`](/configuration/tasks/#timeout) with `curl --max-time 25`:** curl gives up first, so the
+  log shows curl's own error message. The [`timeout`](/configuration/tasks/#timeout) is the backstop.
+- **[`retry_attempts = 2`](/configuration/tasks/#retry_attempts), [`retry_delay = "30s"`](/configuration/tasks/#retry_delay), [`retry_backoff = "linear"`](/configuration/tasks/#retry_backoff):**
   a failed probe is tried again after 30s, then after 60s more. A short blip
   heals on its own and the task goes green again within about 90 seconds.
   Each failed attempt still alerts, but repeats are grouped (see below). See
   [`retry_attempts`](/configuration/tasks/#retry_attempts).
-- **`keep_runs = 500`:** five-minute checks make 288 runs a day, so this keeps
+- **[`keep_runs = 500`](/configuration/tasks/#keep_runs):** five-minute checks make 288 runs a day, so this keeps
   well over a day of history. See [`keep_runs`](/configuration/tasks/#keep_runs).
-- **`notify`:** alerts `slack-ops` on every failed run. During a long outage,
+- **[`notify`](/configuration/tasks/#notify):** alerts `slack-ops` on every failed run. During a long outage,
   repeats inside [`coalesce_window`](/configuration/notify/#coalesce_window)
   (default `1h`) are grouped: the first alert goes out right away, then
   occasional check-ins with a count, instead of one message every five minutes.
@@ -66,7 +66,7 @@ curl --silent --show-error --fail-with-body \\
 ## Bell only, no messages
 
 For a flaky service where you'd rather look than be messaged, drop the retries
-and `notify`. Failures then go only to the bell in the Web UI and TUI, grouped
+and [`notify`](/configuration/tasks/#notify). Failures then go only to the bell in the Web UI and TUI, grouped
 into one row with a count and a sparkline:
 
 ```diff

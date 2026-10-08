@@ -41,7 +41,7 @@ handles its own batch of work.
 The queue has a limit, [`max_queued`](/configuration/tasks/#max_queued). When
 it's full, the new run is recorded as `queue_full` and dropped. If you see
 `queue_full` runs, the task can't keep up: run it less often, raise
-`max_concurrent`, or switch to `skip`.
+[`max_concurrent`](/configuration/tasks/#max_concurrent), or switch to `skip`.
 
 ### skip
 
@@ -86,7 +86,7 @@ request makes out of date.
 ## Running several at once
 
 Raise [`max_concurrent`](/configuration/tasks/#max_concurrent) to let several
-runs of the same task go at once. `on_overlap` applies only once all of them are
+runs of the same task go at once. [`on_overlap`](/configuration/tasks/#on_overlap) applies only once all of them are
 busy.
 
 ```toml title="runwisp.toml"

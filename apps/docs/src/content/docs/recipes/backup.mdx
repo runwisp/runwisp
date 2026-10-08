@@ -46,26 +46,26 @@ echo "Wrote $FILE ($(du -h "$FILE" | cut -f1))"
 
 ## What each setting does
 
-- **`cron = "30 2 * * *"`:** off-peak, and off the full hour when other jobs
+- **[`cron = "30 2 * * *"`](/configuration/tasks/#cron):** off-peak, and off the full hour when other jobs
   tend to start. The time is the daemon's timezone; see
   [Scheduling](/concepts/scheduling/).
-- **`on_overlap = "skip"`:** if last night's dump is somehow still running, the
+- **[`on_overlap = "skip"`](/configuration/tasks/#on_overlap):** if last night's dump is somehow still running, the
   new one doesn't start. It's recorded as `skipped`, and you get no fresh dump,
   which is the signal you want.
-- **`keep_for = "90d"`:** three months of run history and output, long enough
+- **[`keep_for = "90d"`](/configuration/tasks/#keep_for):** three months of run history and output, long enough
   to look back after a slow-burning incident.
   See [`keep_for`](/configuration/tasks/#keep_for).
-- **`notify`:** alerts on every run your
+- **[`notify`](/configuration/tasks/#notify):** alerts on every run your
   [`failures`](/configuration/tasks/#failures) policy counts as failed. By
   default that includes a timeout, a crash, and a missed run (the daemon was
   down at 02:30). The bell in the Web UI gets it too.
-- **`shell = "/bin/bash"` and `set -o pipefail`:** RunWisp already stops the
+- **[`shell = "/bin/bash"`](/configuration/tasks/#shell) and `set -o pipefail`:** RunWisp already stops the
   script at the first failing command
   ([fail-fast](/configuration/tasks/#fail-fast)), but a pipeline only reports
   its last command. Without `pipefail`, a `pg_dump` that dies halfway leaves a
   truncated file and a green run. `pipefail` is a bash feature; the default
   `/bin/sh` rejects it.
-- **No `timeout`:** a safe limit depends on your database size. The next
+- **No [`timeout`](/configuration/tasks/#timeout):** a safe limit depends on your database size. The next
   night's firing already acts as a ceiling. If you want a hard stop, set
   [`timeout`](/configuration/tasks/#timeout) to about 1.5 times your slowest
   dump.
@@ -75,13 +75,13 @@ echo "Wrote $FILE ($(du -h "$FILE" | cut -f1))"
 
 ## Copying it off the host
 
-A backup on the same disk dies with the host. Add a copy at the end of `run`:
+A backup on the same disk dies with the host. Add a copy at the end of [`run`](/configuration/tasks/#run):
 
 ```bash
 aws s3 cp "$FILE" "s3://my-backups/postgres/$(hostname)/" --storage-class GLACIER_IR
 ```
 
-Or make the upload its own task with a later `cron`, so a failed upload and a
+Or make the upload its own task with a later [`cron`](/configuration/tasks/#cron), so a failed upload and a
 failed dump alert separately.
 
 ## Checking that it restores

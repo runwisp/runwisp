@@ -123,7 +123,7 @@ entrypoint warns if you pass `--data` or `--socket`.
 
 ## Tasks run inside this container
 
-When a task runs, RunWisp runs its `run` command with `/bin/sh -c` inside the
+When a task runs, RunWisp runs its [`run`](/configuration/tasks/#run) command with `/bin/sh -c` inside the
 RunWisp container. So every tool your tasks call must be in the image. The
 image has `bash`, `tzdata`, and `ca-certificates`, and nothing else: no curl,
 no git, no database clients, no Docker CLI. A task that calls a missing tool

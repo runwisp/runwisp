@@ -92,26 +92,26 @@ one enabled in both.
 
 ## How the pieces map
 
-| supervisord                     | runwisp.toml                                                    | Notes                                        |
-| ------------------------------- | --------------------------------------------------------------- | -------------------------------------------- |
-| `[program:web]`                 | `[services.web]`                                                |                                              |
-| `command`                       | [`run`](/configuration/services/#run)                           | `%(program_name)s` is filled in.             |
-| `directory`                     | [`working_dir`](/configuration/services/#working_dir)           |                                              |
-| `user`                          | [`user`](/configuration/services/#user)                         | The daemon must run as root to switch users. |
-| `umask`                         | [`umask`](/configuration/services/#umask)                       |                                              |
-| `numprocs`                      | [`instances`](/configuration/services/#instances)               | Each gets `RUNWISP_INSTANCE_INDEX` (from 0). |
-| `startsecs`                     | [`healthy_after`](/configuration/services/#healthy_after)       |                                              |
-| `startretries`                  | [`restart_attempts`](/configuration/services/#restart_attempts) |                                              |
-| `stopsignal`                    | [`stop_signal`](/configuration/services/#stop_signal)           | `INT` becomes `SIGINT`.                      |
-| `stopwaitsecs`                  | [`graceful_stop`](/configuration/services/#graceful_stop)       |                                              |
-| `priority`                      | [`priority`](/configuration/services/#priority)                 |                                              |
-| `autostart`                     | [`autostart`](/configuration/services/#autostart)               |                                              |
-| `environment`                   | [`env`](/configuration/services/#env)                           |                                              |
-| `autorestart`                   | [`restart`](/configuration/services/#restart)                   | `false` becomes a task. See below.           |
-| `exitcodes`                     | _(dropped)_                                                     | See below.                                   |
-| `stdout_logfile` and similar    | _(dropped)_                                                     | RunWisp captures output for every run.       |
-| `[group:site] programs=web,…`   | `group = "site"` on each member                                 |                                              |
-| `[include] files=conf.d/*.conf` | _(followed and merged)_                                         | Relative to the config file.                 |
+| supervisord                     | runwisp.toml                                                      | Notes                                        |
+| ------------------------------- | ----------------------------------------------------------------- | -------------------------------------------- |
+| `[program:web]`                 | `[services.web]`                                                  |                                              |
+| `command`                       | [`run`](/configuration/services/#run)                             | `%(program_name)s` is filled in.             |
+| `directory`                     | [`working_dir`](/configuration/services/#working_dir)             |                                              |
+| `user`                          | [`user`](/configuration/services/#user)                           | The daemon must run as root to switch users. |
+| `umask`                         | [`umask`](/configuration/services/#umask)                         |                                              |
+| `numprocs`                      | [`instances`](/configuration/services/#instances)                 | Each gets `RUNWISP_INSTANCE_INDEX` (from 0). |
+| `startsecs`                     | [`healthy_after`](/configuration/services/#healthy_after)         |                                              |
+| `startretries`                  | [`restart_attempts`](/configuration/services/#restart_attempts)   |                                              |
+| `stopsignal`                    | [`stop_signal`](/configuration/services/#stop_signal)             | `INT` becomes `SIGINT`.                      |
+| `stopwaitsecs`                  | [`graceful_stop`](/configuration/services/#graceful_stop)         |                                              |
+| `priority`                      | [`priority`](/configuration/services/#priority)                   |                                              |
+| `autostart`                     | [`autostart`](/configuration/services/#autostart)                 |                                              |
+| `environment`                   | [`env`](/configuration/services/#env)                             |                                              |
+| `autorestart`                   | [`restart`](/configuration/services/#restart)                     | `false` becomes a task. See below.           |
+| `exitcodes`                     | _(dropped)_                                                       | See below.                                   |
+| `stdout_logfile` and similar    | _(dropped)_                                                       | RunWisp captures output for every run.       |
+| `[group:site] programs=web,…`   | [`group = "site"`](/configuration/services/#group) on each member |                                              |
+| `[include] files=conf.d/*.conf` | _(followed and merged)_                                           | Relative to the config file.                 |
 
 ## What needs a human
 
@@ -127,7 +127,7 @@ program's row. Unknown keys are dropped and listed by name.
   [`run_on_start = true`](/configuration/tasks/#run_on_start). Like under
   supervisord, it runs again whenever the daemon starts.
 - **`exitcodes`.** RunWisp treats exit `0` as success and anything else as
-  `failed`. If your program exits non-zero on purpose, end its `run` with
+  `failed`. If your program exits non-zero on purpose, end its [`run`](/configuration/tasks/#run) with
   `|| true`. [`failures`](/configuration/tasks/#failures) controls which
   outcomes count for alerts.
 - **`%(...)s` expansions.** Only `%(program_name)s` is filled in. For

@@ -18,7 +18,7 @@ keep_runs  = 30               # keep the last 30 runs in the history
 run        = "pg_dump mydb | gzip > /backups/mydb-$(date +%F).sql.gz"
 ```
 
-`cron` is the usual five-field expression, in the host's timezone. `run` goes
+[`cron`](/configuration/tasks/#cron) is the usual five-field expression, in the host's timezone. [`run`](/configuration/tasks/#run) goes
 to a shell, so pipes and `$(...)` work like they do in your terminal.
 
 ## Apply the change

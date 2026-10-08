@@ -8,7 +8,7 @@ head:
       content: "Running Docker containers from RunWisp tasks (recipe)"
 ---
 
-This page is about tasks whose `run` command uses `docker`. To supervise the
+This page is about tasks whose [`run`](/configuration/tasks/#run) command uses `docker`. To supervise the
 services in an existing `docker-compose.yml`, see
 [From docker-compose](/coming-from/docker-compose/). To run RunWisp itself in a
 container, see [Running in Docker](/getting-started/docker/).
@@ -94,14 +94,14 @@ docker rm -f "$NAME" >/dev/null 2>&1 || true
 docker run --rm --init --name "$NAME" ghcr.io/example/analytics:current
 ```
 
-With `on_overlap = "skip"`, two copies can never run at once.
+With [`on_overlap = "skip"`](/configuration/tasks/#on_overlap), two copies can never run at once.
 
 ## Run a command in an existing container
 
 If the work belongs to an app that already runs in a container (an `artisan`
 command, a `manage.py` job, `psql` against your database), run it there
 instead of installing the app's tools a second time. Name the compose service
-and set `run`:
+and set [`run`](/configuration/tasks/#run):
 
 ```toml title="runwisp.toml"
 [tasks.laravel-schedule]
@@ -112,12 +112,12 @@ run             = "php artisan schedule:run"
 ```
 
 RunWisp runs the command with `docker compose exec` in the running container.
-The task's `env`, `secrets`, and `params` are passed in, stdout and stderr stay
+The task's [`env`](/configuration/tasks/#env), [`secrets`](/configuration/tasks/#secrets), and [`params`](/configuration/tasks/#params) are passed in, stdout and stderr stay
 separate, and [fail-fast](/configuration/tasks/#fail-fast) applies. It works
 whether you started the app with `docker compose up` or RunWisp runs it via
 [`[compose.*]`](/configuration/compose/).
 
-The container must already be running, and `timeout` can't stop the process
+The container must already be running, and [`timeout`](/configuration/tasks/#timeout) can't stop the process
 inside it. [`compose_mode`](/configuration/compose/#running-a-command-in-a-service-compose_mode)
 has the details and the workaround.
 
@@ -142,7 +142,7 @@ run  = "docker exec myapp-app-1 php artisan schedule:run"
 ## A fresh container each run
 
 If the job is already a service in your compose file, point a task at it and
-leave out `run`:
+leave out [`run`](/configuration/tasks/#run):
 
 ```toml title="runwisp.toml"
 [tasks.nightly-backup]
@@ -153,7 +153,7 @@ compose_service = "backup"
 
 RunWisp runs `docker compose run --rm`: a new container from the compose
 file's image, env, and networks, removed afterwards. To run your own command in
-a fresh container, set `run` and `compose_mode = "run"`.
+a fresh container, set `run` and [`compose_mode = "run"`](/configuration/tasks/#compose_mode).
 
 ## Which one to use
 
@@ -181,7 +181,7 @@ docker pull ghcr.io/example/worker:current
 """
 ```
 
-This is only worth it if the tag changes often. There is no `notify` here on
+This is only worth it if the tag changes often. There is no [`notify`](/configuration/tasks/#notify) here on
 purpose: a failed prefetch only slows the next deploy. Registries (GHCR, Docker
 Hub, ECR) rate-limit pulls, so don't run it more often than you need. To start
 the deploy itself from CI, see [Remote triggers](/recipes/remote-trigger/).

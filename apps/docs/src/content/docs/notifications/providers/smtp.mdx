@@ -41,7 +41,7 @@ password = "${SMTP_PASSWORD}"
 | `template_path`   | no       | A Go template file that replaces the built-in HTML message.                                                      |
 
 To send one task's mail to another address through the same server, use
-`"email-ops:db-team@example.com"` in `notify`. It replaces the `to`, `cc`, and
+`"email-ops:db-team@example.com"` in [`notify`](/configuration/tasks/#notify). It replaces the `to`, `cc`, and
 `bcc` lists for that task. See
 [One channel, several destinations](/notifications/#one-channel-several-destinations).
 

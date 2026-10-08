@@ -173,7 +173,7 @@ the task by hand. `runwisp status` lists paused tasks.
 
 The pause survives `runwisp reload` and restarts. Pausing needs
 [`manual_trigger`](/configuration/tasks/#manual_trigger) on, and a reload that
-removes the task's `cron` or sets `manual_trigger = false` clears the pause with
+removes the task's [`cron`](/configuration/tasks/#cron) or sets `manual_trigger = false` clears the pause with
 a warning. A task cron still runs ([held](/coming-from/cron/#held-jobs)) can't
 be paused.
 

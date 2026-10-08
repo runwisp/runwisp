@@ -74,7 +74,7 @@ A reload that changes any of these is rejected:
 
 - [`tls`, `tls_cert`, and `tls_key`](/configuration/daemon/#tls-tls_cert-tls_key).
 - [`metrics_enabled`](/configuration/daemon/#metrics_enabled) and
-  `metrics_listen`.
+  [`metrics_listen`](/configuration/daemon/#metrics_listen).
 - [`allow_station_dispatch`](/configuration/daemon/#allow_station_dispatch).
 
 The bind address and port are [command-line flags](/reference/cli/#global-options),
@@ -98,7 +98,7 @@ to finish before the daemon stops. See
   never kills a run that's already going. The next run uses the new definition.
 - **Removed services are stopped.**
 - **A stopped service stays stopped,** even if the new definition says
-  `autostart = true`. The reload prints a `!` warning about it. Start it with
+  [`autostart = true`](/configuration/services/#autostart). The reload prints a `!` warning about it. Start it with
   `runwisp start <service>`.
 
 If you want `run_on_start` and catch-up to happen, use `runwisp restart`.

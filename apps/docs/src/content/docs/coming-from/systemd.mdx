@@ -110,7 +110,7 @@ unit's row.
   `restart = "on_failure"`, and `no` (or none) becomes `restart = "never"`.
   `on-success`, `on-abnormal`, `on-abort`, and `on-watchdog` have no exact
   equal, so they land on the closest value with a note.
-- **More than one command.** RunWisp runs one `run` command. Only the first
+- **More than one command.** RunWisp runs one [`run`](/configuration/tasks/#run) command. Only the first
   `ExecStart` is imported; other `ExecStart`, `ExecStartPre`, `ExecStartPost`,
   and `ExecStop` lines are flagged. Put them into the `run` script, or setup
   steps into a separate task.

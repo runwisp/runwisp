@@ -269,6 +269,17 @@ nav.sidebar .sidebar-content .group-label .large {
     color: var(--rw-primary);
 }
 
+/* ─── Links: a thin underline faded to a hairline, full strength on hover. */
+a {
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.2em;
+    text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+}
+
+a:hover {
+    text-decoration-color: currentColor;
+}
+
 /* ─── Config key reference (configuration/{tasks,services,compose}.mdx): a
  * flat key list that needs clear per-key boundaries. Global lives here, but
  * scoped to those pages: each marks itself with an empty `.rw-config-ref`
@@ -340,4 +351,10 @@ nav.sidebar .sidebar-content .group-label .large {
     -webkit-text-fill-color: transparent;
     background-clip: text;
     color: transparent;
+}
+
+/* ─── Tabs: labels stay on one line; Starlight's tablist scrolls if they overflow. */
+starlight-tabs [role="tab"] {
+    white-space: nowrap;
+    padding-inline: 0.875rem;
 }

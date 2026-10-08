@@ -21,7 +21,7 @@ timeout        = "10m"
 ## What counts as a failure
 
 By default, a run fails when the command exits non-zero, times out, is stopped
-by `log_on_full = "kill"`, or was still running when the daemon crashed. A
+by [`log_on_full = "kill"`](/configuration/tasks/#log_on_full), or was still running when the daemon crashed. A
 scheduled run [missed](/concepts/scheduling/#missed-run-alerts) while the daemon
 was down counts too. A failed run turns red in the UI, sends
 [notifications](/notifications/), and can be retried.
@@ -37,13 +37,13 @@ tries after the first one fails. It's `0` by default, so nothing retries until
 you set it. The retry keys are per task; they can't go in
 [`[defaults]`](/configuration/defaults/).
 
-A run is retried only when it failed **and** the task's `failures` list counts
+A run is retried only when it failed **and** the task's [`failures`](/configuration/tasks/#failures) list counts
 it as a failure. With `failures = ["1-23"]`, exit code `42` isn't a failure, so
 it isn't retried either.
 
 Some endings never retry:
 
-- `stopped`: someone stopped the run, or `on_overlap = "kill"` replaced it.
+- `stopped`: someone stopped the run, or [`on_overlap = "kill"`](/configuration/tasks/#on_overlap) replaced it.
   This also ends the retry chain.
 - `skipped`: the previous run is still going.
 - `missed`: nothing ran, so there is nothing to retry.
@@ -95,7 +95,7 @@ When the time is up, RunWisp sends the task's
 [`stop_signal`](/configuration/tasks/#stop_signal) (`SIGTERM` by default) to the
 whole process group, waits [`graceful_stop`](/configuration/tasks/#graceful_stop)
 (`5s` by default), then kills whatever is left. The run is recorded as
-`timeout`. Manual stops, `on_overlap = "kill"`, and daemon shutdown stop runs
+`timeout`. Manual stops, [`on_overlap = "kill"`](/configuration/tasks/#on_overlap), and daemon shutdown stop runs
 the same way.
 
 - The limit is per attempt. Each retry gets the full time again, and the wait
@@ -116,5 +116,5 @@ RunWisp stops trying and marks it FATAL. The keys are
 [`restart_attempts`](/configuration/services/#restart_attempts); see
 [When a service can't start](/configuration/services/#when-a-service-cant-start-fatal).
 
-If you want a limited number of tries, use a task with `retry_attempts`. If you
+If you want a limited number of tries, use a task with [`retry_attempts`](/configuration/tasks/#retry_attempts). If you
 want a process kept alive indefinitely, use a service.

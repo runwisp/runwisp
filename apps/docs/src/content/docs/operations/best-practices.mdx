@@ -47,7 +47,7 @@ the slow jobs. See [`timeout`](/configuration/tasks/#timeout).
 
 ### Choose an overlap rule on purpose
 
-Probes and backups usually want `on_overlap = "skip"`: a second copy helps
+Probes and backups usually want [`on_overlap = "skip"`](/configuration/tasks/#on_overlap): a second copy helps
 nobody. Jobs where every run matters want the default queue. See
 [Choosing a policy](/concepts/concurrency/#choosing-a-policy).
 
@@ -109,7 +109,7 @@ See [Running without a password](/operations/auth/#running-without-a-password).
 ### Put TLS in front of the Web UI
 
 Before you open the port beyond the host, put it behind a reverse proxy and set
-`trusted_proxies`, or turn on RunWisp's own TLS. See
+[`trusted_proxies`](/configuration/daemon/#trusted_proxies), or turn on RunWisp's own TLS. See
 [Reverse proxies](/operations/auth/#reverse-proxies).
 
 ### Send hook tokens in the header

@@ -24,7 +24,7 @@ notify = ["slack-ops"]
 
 Without any configuration, every run that counts as a failure adds a row to the
 bell. By default that's a non-zero exit, a timeout, a run cut off by a crash, a
-log that hit `log_on_full = "kill"`, a [missed run](#missed-runs), and a service
+log that hit [`log_on_full = "kill"`](/configuration/tasks/#log_on_full), a [missed run](#missed-runs), and a service
 that gave up restarting. The task's [`failures`](/configuration/tasks/#failures)
 list decides what counts.
 
@@ -92,7 +92,7 @@ channel's own endpoint.
 ### For one task
 
 Put [`notify`](/configuration/tasks/#notify) on the task or service. Its
-failures go to those channels, plus everything in `global_notifiers` (the bell,
+failures go to those channels, plus everything in [`global_notifiers`](/configuration/notify/#global_notifiers) (the bell,
 by default):
 
 ```toml title="runwisp.toml"
@@ -155,7 +155,7 @@ A scheduled run missed while the daemon was down
 [counts as a failure](/concepts/scheduling/#missed-run-alerts) by default. It
 goes to the same channels as the task's other failures, with nothing to set up.
 
-For a task that's expected to miss runs, take `missed` out of its `failures`.
+For a task that's expected to miss runs, take `missed` out of its [`failures`](/configuration/tasks/#failures).
 The missed run is still recorded; it doesn't alert:
 
 ```toml title="runwisp.toml"
@@ -210,5 +210,5 @@ Network errors, server errors (5xx), timeouts, and rate limits (429, honouring
 
 When a delivery gives up, a `notify.delivery_failed` warning naming the task
 goes to the bell. It only ever goes to the bell, and a `[[route]]` can't match
-it. If you need a backup path, list a second channel in `notify`: both get
+it. If you need a backup path, list a second channel in [`notify`](/configuration/tasks/#notify): both get
 every event, so one keeps working when the other is down.
