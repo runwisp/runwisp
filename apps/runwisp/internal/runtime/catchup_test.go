@@ -23,12 +23,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// runCatchUp recreates the pre-refactor single-call shape (resolve anchors,
-// then run catch-up) so the scenario tests below — written against that
-// shape — don't need rewriting just to exercise the now-two-phase production
-// API (SnapshotCatchupAnchors + RunMissedTickCatchUp). See
-// TestSnapshotCatchupAnchors_FreezesBeforeContaminatingWrites for a test of
-// the split itself.
+// runCatchUp resolves anchors then runs catch-up in one call, the way the
+// scenario tests below want it. See
+// TestSnapshotCatchupAnchors_FreezesBeforeContaminatingWrites for the split
+// itself.
 func runCatchUp(ctx context.Context, db storage.RunRepository, tasks map[string]*model.Task, runner RunTrigger, now time.Time, loc *time.Location) CatchUpResult {
 	anchors, errs := SnapshotCatchupAnchors(ctx, db, tasks, now)
 	return RunMissedTickCatchUp(tasks, runner, now, loc, anchors, errs)

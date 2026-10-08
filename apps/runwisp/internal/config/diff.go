@@ -139,19 +139,15 @@ func changeReasons(oldTask, newTask *model.Task) []ChangeReason {
 
 // sameDefinition reports whether two resolved definitions of one task are
 // identical apart from derived provenance. The structs are copied so masking
-// never mutates the caller's config; the copies share the same maps and slices,
-// which DeepEqual compares by value anyway.
+// never mutates the caller's config.
 //
-// Both provenance fields are masked, not just Source. A cron-sourced task whose
-// crontab was renamed, or one promoted into the root, changes SourceFile without
-// changing a thing about what runs — and an unmasked field here would report it
-// as Changed, which reschedules the cron entry and recycles a service.
+// Both Source and SourceFile are masked: a renamed crontab or a promoted task
+// changes SourceFile without changing what runs, and reporting it as Changed
+// would reschedule the cron entry and recycle a service.
 //
-// HeldBy is derived too, but is deliberately NOT masked. It is not provenance: it
-// decides whether the task fires at all. Masking it would make retiring cron and
-// reloading a Restamped no-op — the registry would take the new pointer, the
-// scheduler would never be told, and jobs the operator just handed over would go
-// from "held, and visibly so" to silently never running.
+// HeldBy is deliberately NOT masked. It decides whether the task fires at all:
+// masking it would make retiring cron and reloading a Restamped no-op, and the
+// jobs the operator just handed over would silently never run.
 func sameDefinition(oldTask, newTask *model.Task) bool {
 	a, b := *oldTask, *newTask
 	a.Source, b.Source = model.SourceNative, model.SourceNative

@@ -13,16 +13,13 @@ import (
 )
 
 // AssertFileTrusted refuses a path that someone other than root or this daemon
-// could have written — the general form of the check assertCronFileTrusted
-// applies to a cron source, with no run-as account to widen the acceptable
-// owners by. Callers that bake a path into a privileged context without
-// asking the operator first (a --system unit's config path, say) use this so
-// that trust decision isn't silently skipped just because the path came from
-// a shell default rather than an explicit flag.
+// could have written: assertCronFileTrusted's check without a run-as account to
+// widen the acceptable owners. Callers that bake a path into a privileged
+// context (a --system unit's config path) use it so the trust decision isn't
+// skipped just because the path came from a shell default.
 //
-// The file itself and every directory on the path to it are checked: a writable
-// ancestor lets an attacker swap a directory component (or the file) after the
-// check, so validating only the leaf is a TOCTOU hole.
+// The file and every directory on the path to it are checked: a writable
+// ancestor lets an attacker swap a component after the check.
 func AssertFileTrusted(path, what string) error {
 	if err := assertPathTrusted(path, what, -1); err != nil {
 		return err
@@ -34,22 +31,15 @@ func AssertFileTrusted(path, what string) error {
 // every included TOML file, but only when the daemon is running privileged
 // (euid 0). A root daemon executes whatever the config says, so a config (or an
 // included file) reachable through a user-writable directory or a repointable
-// symlink is a root-RCE path. Running it on every Load — boot and reload alike —
-// closes the gap where the install-time check on the baked path is not repeated
-// when the file is actually read. Cron sources pulled via include_cron are
-// already re-checked by assertCronFileTrusted inside every Load, so they are not
-// repeated here.
+// symlink is a root-RCE path. Cron sources pulled via include_cron are already
+// re-checked by assertCronFileTrusted inside every Load.
 //
-// Non-privileged daemons are unaffected: a user-run daemon can only ever execute
-// what that user could already run.
-//
-// Also a no-op inside a container: the official image runs as root deliberately
-// (see docker/Dockerfile) and expects the operator's own `-v host.toml:/etc/
-// runwisp/runwisp.toml:ro` bind mount, which almost never carries root
-// ownership on the host side. The ownership check's threat model is a *lower-
-// privileged local user* planting a file root then trusts — inside a
-// single-tenant container that user doesn't exist; the bind mount itself is
-// the operator's trust decision, made once at `docker run`.
+// A no-op for non-privileged daemons (they can only run what that user could
+// already run) and inside a container: the official image runs as root and
+// expects the operator's own bind-mounted config, which rarely carries root
+// ownership on the host. The threat model is a lower-privileged local user
+// planting a file root then trusts; a single-tenant container has none, and the
+// bind mount is the operator's trust decision.
 func AssertPrivilegedConfigTrust(cfg *Config, rootPath string) error {
 	return assertPrivilegedConfigTrust(cfg, rootPath, os.Geteuid())
 }
