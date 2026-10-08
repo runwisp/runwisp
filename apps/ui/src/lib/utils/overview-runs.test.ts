@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { Run } from "@runwisp/common";
-import { mergeRecentRuns, mergeRunningRuns, upsertRun } from "./overview-runs";
+import { mergeRuns } from "./overview-runs";
 
 function makeRun(id: string, overrides: Partial<Run> = {}): Run {
     return {
@@ -21,7 +21,9 @@ function makeRun(id: string, overrides: Partial<Run> = {}): Run {
     };
 }
 
-describe("mergeRecentRuns", () => {
+const isRunning = (run: Run) => run.status === "running";
+
+describe("mergeRuns", () => {
     // An SSE event advanced a run to "ended"; a snapshot fetched
     // before that landed still carries it as "running". Merging the snapshot
     // must not revert the run's phase.
@@ -29,53 +31,26 @@ describe("mergeRecentRuns", () => {
         const live = [makeRun("r1", { status: "ended", endReason: "succeeded" })];
         const snapshot = [makeRun("r1", { status: "running" })];
 
-        const merged = mergeRecentRuns(live, snapshot, 16);
+        const merged = mergeRuns(live, snapshot, 16);
         expect(merged).toHaveLength(1);
         expect(merged[0]?.status).toBe("ended");
     });
 
-    it("seeds from a snapshot when the live list is empty", () => {
+    it("returns newest first, capped at the limit", () => {
         const snapshot = [
             makeRun("a", { createdAt: "2026-06-22T12:00:00.000Z" }),
+            makeRun("c", { createdAt: "2026-06-22T14:00:00.000Z" }),
             makeRun("b", { createdAt: "2026-06-22T13:00:00.000Z" }),
         ];
-        const merged = mergeRecentRuns([], snapshot, 16);
-        // Newest first.
-        expect(merged.map((r) => r.id)).toEqual(["b", "a"]);
-    });
-});
-
-describe("mergeRunningRuns", () => {
-    it("drops a stale snapshot's running copy of a finished run", () => {
-        const live = [makeRun("r1", { status: "ended", endReason: "succeeded" })];
-        const snapshot = [makeRun("r1", { status: "running" })];
-
-        const merged = mergeRunningRuns(live, snapshot, 8);
-        expect(merged).toHaveLength(0);
-    });
-
-    it("keeps genuinely running runs", () => {
-        const live: Run[] = [];
-        const snapshot = [makeRun("r1", { status: "running" })];
-        const merged = mergeRunningRuns(live, snapshot, 8);
-        expect(merged.map((r) => r.id)).toEqual(["r1"]);
-    });
-});
-
-describe("upsertRun", () => {
-    it("inserts a new run at the requested end", () => {
-        const a = makeRun("a");
-        const b = makeRun("b");
-
-        expect(upsertRun([a], b, "start").map((r) => r.id)).toEqual(["b", "a"]);
-        expect(upsertRun([a], b, "end").map((r) => r.id)).toEqual(["a", "b"]);
+        expect(mergeRuns([], snapshot, 16).map((r) => r.id)).toEqual(["c", "b", "a"]);
+        expect(mergeRuns([], snapshot, 2).map((r) => r.id)).toEqual(["c", "b"]);
     });
 
     it("updates an existing run in place when its status advances", () => {
         const existing = makeRun("a", { status: "running" });
         const advanced = makeRun("a", { status: "ended", endReason: "succeeded" });
 
-        const result = upsertRun([existing], advanced, "start");
+        const result = mergeRuns([existing], [advanced], 16);
 
         expect(result).toHaveLength(1);
         expect(result[0]?.status).toBe("ended");
@@ -86,8 +61,27 @@ describe("upsertRun", () => {
         const existing = makeRun("a", { status: "running" });
         const stale = makeRun("a", { status: "pending" });
 
-        const result = upsertRun([existing], stale, "start");
+        expect(mergeRuns([existing], [stale], 16)[0]?.status).toBe("running");
+    });
 
-        expect(result[0]?.status).toBe("running");
+    it("drops a stale snapshot's running copy of a finished run under keep", () => {
+        const live = [makeRun("r1", { status: "ended", endReason: "succeeded" })];
+        const snapshot = [makeRun("r1", { status: "running" })];
+
+        expect(mergeRuns(live, snapshot, 8, isRunning)).toHaveLength(0);
+    });
+
+    it("keeps genuinely running runs under keep", () => {
+        const snapshot = [makeRun("r1", { status: "running" })];
+        expect(mergeRuns([], snapshot, 8, isRunning).map((r) => r.id)).toEqual(["r1"]);
+    });
+
+    it("does not mutate the input list", () => {
+        const live = [
+            makeRun("a", { createdAt: "2026-06-22T12:00:00.000Z" }),
+            makeRun("b", { createdAt: "2026-06-22T13:00:00.000Z" }),
+        ];
+        mergeRuns(live, [], 16);
+        expect(live.map((r) => r.id)).toEqual(["a", "b"]);
     });
 });

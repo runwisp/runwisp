@@ -10,8 +10,7 @@
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { runsApi, systemApi, systemEventSchema, type MetricsSample } from "$lib/api";
     import { runUpdatesStore, systemStore, taskStore, appEventStream } from "$lib/stores";
-    import { mergeRecentRuns, mergeRunningRuns, upsertRun } from "$lib/utils/overview-runs";
-    import { sortByCreatedAtDesc } from "$lib/utils/sort";
+    import { mergeRuns } from "$lib/utils/overview-runs";
     import { safeParseJSON } from "$lib/utils/parse";
     import { AsyncData } from "$lib/utils/async-data.svelte";
     import type { Run } from "@runwisp/common";
@@ -22,6 +21,8 @@
     // Live window for the metrics chart: seeded from /api/system/metrics, then
     // grown by pushed samples (one every ~5s). 120 ≈ 10 minutes.
     const METRICS_HISTORY_LIMIT = 120;
+
+    const isRunning = (run: Run) => run.status === "running";
 
     interface DashboardState {
         recentRuns: Run[];
@@ -98,12 +99,13 @@
             const run = event.data.run;
             if (run.status === "ended") motion.markArrived(run.id);
 
-            dashState.recentRuns = sortByCreatedAtDesc(
-                upsertRun(dashState.recentRuns, run, "start"),
-            ).slice(0, RECENT_RUN_LIMIT);
-            dashState.runningRuns = upsertRun(dashState.runningRuns, run, "start")
-                .filter((r) => r.status === "running")
-                .slice(0, RUNNING_RUN_LIMIT);
+            dashState.recentRuns = mergeRuns(dashState.recentRuns, [run], RECENT_RUN_LIMIT);
+            dashState.runningRuns = mergeRuns(
+                dashState.runningRuns,
+                [run],
+                RUNNING_RUN_LIMIT,
+                isRunning,
+            );
 
             // A new run means the scheduler advanced that task's nextRunAt —
             // refetch tasks so "Up next" and next-run columns stay current.
@@ -154,15 +156,16 @@
             // so tracking them here would make this effect re-trigger on its own
             // writes and loop until Svelte aborts it (effect_update_depth_exceeded).
             untrack(() => {
-                dashState.recentRuns = mergeRecentRuns(
+                dashState.recentRuns = mergeRuns(
                     dashState.recentRuns,
                     data.recentRuns,
                     RECENT_RUN_LIMIT,
                 );
-                dashState.runningRuns = mergeRunningRuns(
+                dashState.runningRuns = mergeRuns(
                     dashState.runningRuns,
                     data.runningRuns,
                     RUNNING_RUN_LIMIT,
+                    isRunning,
                 );
             });
         }

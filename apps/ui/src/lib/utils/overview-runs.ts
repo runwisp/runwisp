@@ -3,16 +3,14 @@
 
 import type { Run } from "@runwisp/common";
 import { runPhaseOrder } from "@runwisp/ui";
-import { sortByCreatedAtDesc } from "$lib/utils/sort";
 
 // upsertRun folds one run into the list without ever regressing its phase. A
 // snapshot (or stale HTTP response) fetched before an SSE `run.completed` lands
 // carries the run as still "running"; the guard keeps the SSE-advanced "ended"
-// row intact instead of reverting it. A run not yet in the list is inserted at
-// `insertAt`.
-export function upsertRun(list: Run[], run: Run, insertAt: "start" | "end"): Run[] {
+// row intact instead of reverting it.
+function upsertRun(list: Run[], run: Run): Run[] {
     const idx = list.findIndex((r) => r.id === run.id);
-    if (idx === -1) return insertAt === "start" ? [run, ...list] : [...list, run];
+    if (idx === -1) return [...list, run];
     const existing = list[idx];
     if (!existing) return list;
     if (runPhaseOrder(run.status) < runPhaseOrder(existing.status)) return list;
@@ -21,23 +19,21 @@ export function upsertRun(list: Run[], run: Run, insertAt: "start" | "end"): Run
     return copy;
 }
 
-// mergeRecentRuns reconciles a freshly-fetched snapshot of recent runs into the
-// live (SSE-fed) list, preserving the newest known phase for each run, and
-// returns the newest `limit` runs.
-export function mergeRecentRuns(existing: Run[], snapshot: Run[], limit: number): Run[] {
+/**
+ * Reconcile `incoming` runs (an SSE event or a fetched snapshot) into the live
+ * list, preserving the newest known phase of each run, and return the newest
+ * `limit` runs that pass `keep`.
+ */
+export function mergeRuns(
+    existing: Run[],
+    incoming: Run[],
+    limit: number,
+    keep: (run: Run) => boolean = () => true,
+): Run[] {
     let merged = existing;
-    for (const run of snapshot) merged = upsertRun(merged, run, "end");
-    return sortByCreatedAtDesc(merged).slice(0, limit);
-}
-
-// mergeRunningRuns reconciles a snapshot of running runs into the live list.
-// The phase guard drops a stale snapshot's "running" copy of a run the live
-// state already advanced past, and the final filter keeps only rows that are
-// still running.
-export function mergeRunningRuns(existing: Run[], snapshot: Run[], limit: number): Run[] {
-    let merged = existing;
-    for (const run of snapshot) merged = upsertRun(merged, run, "end");
-    return sortByCreatedAtDesc(merged)
-        .filter((run) => run.status === "running")
+    for (const run of incoming) merged = upsertRun(merged, run);
+    return [...merged]
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .filter(keep)
         .slice(0, limit);
 }
