@@ -1,0 +1,67 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Handling failures
+description: See why a run failed, stop runs that hang with a timeout, retry failed runs, and get a Slack or email alert when something breaks.
+---
+
+A run fails when its command exits non-zero, runs past its timeout, or was
+still running when the daemon died. The full list, and how to change it per
+task, is in [`failures`](/configuration/tasks/#failures).
+
+## See what went wrong
+
+A failed run is red in the Web UI and the TUI. Its header shows why it ended
+and the exit code; below is everything the command printed. See
+[Failed runs](/getting-started/web-ui-tour/#failed-runs) in the Web UI and
+[Reading a failure](/getting-started/tui-tour/#reading-a-failure) in the TUI.
+From the shell:
+
+```bash
+runwisp logs backup-db
+```
+
+## Stop runs that hang
+
+Without a timeout, a stuck command runs forever. Give the task a limit:
+
+```toml title="runwisp.toml"
+[tasks.backup-db]
+# ...
+timeout = "30m"
+```
+
+## Try again
+
+For a job that sometimes fails for a passing reason (a flaky network, a busy
+API), let RunWisp retry it:
+
+```toml title="runwisp.toml"
+[tasks.publish-feed]
+# ...
+retry_attempts = 3
+retry_delay    = "1m"
+```
+
+Each attempt is its own run, with its own log. See
+[Failures, retries & timeouts](/concepts/retries/).
+
+## Get told
+
+Every failure already shows up in the bell in the Web UI and the TUI, with no
+setup. To get it in Slack, email, or another channel, add a notifier and point
+the task at it:
+
+```toml title="runwisp.toml"
+[notifiers.slack-ops]
+type        = "slack"
+webhook_url = "${SLACK_OPS_URL}"
+
+[tasks.backup-db]
+# ...
+notify = ["slack-ops"]
+```
+
+[Notifications](/notifications/) covers every channel, alerting for all tasks
+at once, keeping the webhook URL out of the file, and
+[testing a channel](/notifications/#testing-a-channel).

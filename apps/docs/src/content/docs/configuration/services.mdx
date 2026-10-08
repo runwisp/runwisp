@@ -52,7 +52,7 @@ directory.
 - Must be unique across `[services.*]` and [`[tasks.*]`](/configuration/tasks/).
 - Quote names that aren't a bare TOML key (`[services."api:v2"]`).
 
-```toml
+```toml title="runwisp.toml"
 [services.api-worker]
 run = "/usr/local/bin/worker"
 ```
@@ -93,12 +93,12 @@ or a [hook](#hook_tokens), changes its running state.
 How many copies of the process run at once.
 
 - Each instance is its own run with an `instance_index` (`0`, `1`, `2`, …). The
-  Web UI and TUI show them as `name#1`, `name#2`; a single instance is just
+  Web UI and TUI show them as `name#1`, `name#2`; a single instance is plain
   `name`.
 - All instances share the config and the log view.
 - When one instance exits, only that one is restarted.
 
-```toml
+```toml title="runwisp.toml"
 [services.api-worker]
 instances = 3
 run       = "/usr/local/bin/worker"
@@ -115,8 +115,9 @@ For a command that should run once and exit, use a
 
 When an instance is started again after it exits.
 
-```toml
+```toml title="runwisp.toml"
 [services.worker]
+# ...
 restart = "on_failure"
 ```
 
@@ -138,8 +139,9 @@ The base wait before an automatic restart. [`restart_backoff`](#restart_backoff)
 decides how it grows. `0` is allowed and means no wait. A manual **Restart**
 never waits.
 
-```toml
+```toml title="runwisp.toml"
 [services.flaky]
+# ...
 restart_delay = "2s"
 ```
 
@@ -154,8 +156,9 @@ restart backoff and the failed-start count used by
 With a [`health_check`](#health_check), it is the deadline for the first passing
 check instead, and `0` is rejected.
 
-```toml
+```toml title="runwisp.toml"
 [services.api-worker]
+# ...
 healthy_after = "2m"
 ```
 
@@ -167,8 +170,9 @@ How many failed starts in a row an instance may have before it goes
 [FATAL](#when-a-service-cant-start-fatal) and stops restarting. `0` gives up
 after the first failed start.
 
-```toml
+```toml title="runwisp.toml"
 [services.flaky]
+# ...
 restart_attempts = 2
 ```
 
@@ -179,8 +183,9 @@ restart_attempts = 2
 How [`restart_delay`](#restart_delay) grows after each restart. The delay has an
 upper limit.
 
-```toml
+```toml title="runwisp.toml"
 [services.flaky]
+# ...
 restart_backoff = "exponential"
 ```
 
@@ -202,7 +207,7 @@ it reached [`healthy_after`](#healthy_after), or, with a
   API, resets the count and tries again.
 - The `start_failed` runs stay in history.
 
-```toml
+```toml title="runwisp.toml"
 [services.flaky]
 run              = "exit 1"   # can never come up
 healthy_after    = "5s"       # must stay up 5s to count as healthy
@@ -213,13 +218,13 @@ restart_attempts = 2          # give up after 2 failed starts in a row
 
 ### health_check
 
-**type**: `table` **default**: none
+**type**: `table` **default**: none **since**: `1.3`
 
 A command that decides when an instance is healthy, and stops it when it stops
 passing. Without it, uptime ([`healthy_after`](#healthy_after)) is the only
 signal.
 
-```toml
+```toml title="runwisp.toml"
 [services.api]
 run = "./api-server"
 
@@ -261,7 +266,9 @@ To check inside a running compose container, set `compose_file` and
 `compose_service`. Only `compose_mode = "exec"` is allowed, and the check then
 takes nothing from the service:
 
-```toml
+```toml title="runwisp.toml"
+# ...
+
 [services.api.health_check]
 run             = "curl -fsS http://127.0.0.1:8080/healthz"
 compose_file    = "./compose.yaml"
@@ -281,8 +288,9 @@ This is read from `runwisp.toml` at every boot, not saved: a manually started
 `autostart = false` service is stopped again after a daemon restart, and a
 manually stopped `autostart = true` service starts again.
 
-```toml
+```toml title="runwisp.toml"
 [services.migration-runner]
+# ...
 autostart = false
 ```
 
@@ -294,11 +302,13 @@ Start order at boot. Lower starts first; equal values start in name order. It
 doesn't wait for a service to be ready. For that, use
 [`depends_on`](#depends_on).
 
-```toml
+```toml title="runwisp.toml"
 [services.db]
+# ...
 priority = 0
 
 [services.api]
+# ...
 priority = 10
 ```
 
@@ -312,7 +322,7 @@ Services that must be healthy (at least one instance up for its
 [`healthy_after`](#healthy_after), or passing its
 [`health_check`](#health_check)) before this one starts at boot.
 
-```toml
+```toml title="runwisp.toml"
 [services.db]
 run           = "postgres -D /var/lib/pg"
 healthy_after = "3s"
@@ -347,8 +357,9 @@ is set by [`instances`](#instances).
 The longest an instance may run. After that it is stopped and recorded as
 `timeout`, then [`restart`](#restart) decides what happens next.
 
-```toml
+```toml title="runwisp.toml"
 [services.report-server]
+# ...
 timeout = "24h"
 ```
 
@@ -360,8 +371,9 @@ Which outcomes count as a failure: they turn the run red, fire [`notify`](#notif
 and (with `restart = "on_failure"`) cause a restart. Same syntax as on tasks; see
 [What counts as a failure](/configuration/tasks/#what-counts-as-a-failure).
 
-```toml
+```toml title="runwisp.toml"
 [services.web]
+# ...
 failures = ["-missed"]
 ```
 
@@ -461,7 +473,7 @@ All instances use the same directory, shell, environment base, user, and umask.
 A service can run a service from an existing `docker-compose.yml` instead of a
 shell command:
 
-```toml
+```toml title="runwisp.toml"
 [services.api]
 compose_file    = "./docker-compose.yml"
 compose_service = "api"

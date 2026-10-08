@@ -11,7 +11,7 @@ head:
 RunWisp can serve a `/metrics` endpoint in OpenMetrics 1.0 text format. It's off
 by default. Turn it on in `runwisp.toml` and restart the daemon:
 
-```toml
+```toml title="runwisp.toml"
 [daemon]
 metrics_enabled = true
 ```
@@ -63,7 +63,9 @@ Values are computed on every scrape; there's no cache.
 
 ## Task CPU and memory
 
-RunWisp measures the CPU and memory of every `run` command while it runs. The
+**since**: `1.5`
+
+RunWisp measures the CPU and memory of every [`run`](/configuration/tasks/#run) command while it runs. The
 web UI shows the live values next to each running task. The TUI shows them in
 the task header and in the task list on the Info page. The per-task gauges above
 export them too. Each finished run also records its peak memory and total CPU
@@ -85,7 +87,7 @@ Pick the setup that matches how the daemon is reachable:
   reach `/metrics`.
 - **Web UI on the network, metrics local.** Serve metrics on their own address:
 
-    ```toml
+    ```toml title="runwisp.toml"
     [daemon]
     metrics_listen = "127.0.0.1:9478"
     ```

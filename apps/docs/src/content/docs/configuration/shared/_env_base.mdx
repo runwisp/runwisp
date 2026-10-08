@@ -4,7 +4,7 @@ What the environment starts from, before [`env`](/configuration/tasks/#env) and
 [`secrets`](/configuration/tasks/#secrets) are added. Host processes only: it is an error on a
 compose unit.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup-db]
 env_base = "clean"
 run      = "/usr/local/bin/nightly"

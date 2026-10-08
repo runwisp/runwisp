@@ -6,7 +6,7 @@ description: An HTTP health check every 5 minutes with RunWisp. Skips on overlap
 ---
 
 A health check is a `curl` on a schedule. The settings around it decide how
-quickly you hear about an outage and how much noise a flaky service makes.
+soon you hear about an outage and how much noise a flaky service makes.
 
 To check a service RunWisp runs itself, and restart it when the check keeps
 failing, use its [`health_check`](/configuration/services/#health_check)
@@ -14,12 +14,13 @@ instead.
 
 ## The task
 
-```toml
+```toml title="runwisp.toml"
 [tasks.healthcheck-api]
 group          = "Health checks"
 description    = "External probe of the public API every 5 minutes"
 cron           = "*/5 * * * *"
 on_overlap     = "skip"
+catch_up       = 0
 timeout        = "30s"
 retry_attempts = 2
 retry_delay    = "30s"
@@ -37,21 +38,24 @@ curl --silent --show-error --fail-with-body \\
 
 ## What each setting does
 
-- **`cron = "*/5 * * * *"`:** you learn about an outage within five minutes. Use
+- **[`cron = "*/5 * * * *"`](/configuration/tasks/#cron):** you learn about an outage within five minutes. Use
   `* * * * *` for tighter checks or `*/15 * * * *` for internal tools.
-- **`on_overlap = "skip"`:** a slow probe doesn't get a second one stacked on
+- **[`on_overlap = "skip"`](/configuration/tasks/#on_overlap):** a slow probe doesn't get a second one stacked on
   it. The dropped firing is recorded as `skipped`, which isn't a failure and
   doesn't alert.
-- **`timeout = "30s"` with `curl --max-time 25`:** curl gives up first, so the
-  log shows curl's own error message. The `timeout` is the backstop.
-- **`retry_attempts = 2`, `retry_delay = "30s"`, `retry_backoff = "linear"`:**
+- **[`catch_up = 0`](/configuration/tasks/#catch_up):** probes missed while the daemon was down are not run
+  when it comes back. They would only report on a past you can't change. See
+  [`catch_up`](/configuration/tasks/#catch_up).
+- **[`timeout = "30s"`](/configuration/tasks/#timeout) with `curl --max-time 25`:** curl gives up first, so the
+  log shows curl's own error message. The [`timeout`](/configuration/tasks/#timeout) is the backstop.
+- **[`retry_attempts = 2`](/configuration/tasks/#retry_attempts), [`retry_delay = "30s"`](/configuration/tasks/#retry_delay), [`retry_backoff = "linear"`](/configuration/tasks/#retry_backoff):**
   a failed probe is tried again after 30s, then after 60s more. A short blip
   heals on its own and the task goes green again within about 90 seconds.
   Each failed attempt still alerts, but repeats are grouped (see below). See
   [`retry_attempts`](/configuration/tasks/#retry_attempts).
-- **`keep_runs = 500`:** five-minute checks make 288 runs a day, so this keeps
+- **[`keep_runs = 500`](/configuration/tasks/#keep_runs):** five-minute checks make 288 runs a day, so this keeps
   well over a day of history. See [`keep_runs`](/configuration/tasks/#keep_runs).
-- **`notify`:** alerts `slack-ops` on every failed run. During a long outage,
+- **[`notify`](/configuration/tasks/#notify):** alerts `slack-ops` on every failed run. During a long outage,
   repeats inside [`coalesce_window`](/configuration/notify/#coalesce_window)
   (default `1h`) are grouped: the first alert goes out right away, then
   occasional check-ins with a count, instead of one message every five minutes.
@@ -62,7 +66,7 @@ curl --silent --show-error --fail-with-body \\
 ## Bell only, no messages
 
 For a flaky service where you'd rather look than be messaged, drop the retries
-and `notify`. Failures then go only to the bell in the Web UI and TUI, grouped
+and [`notify`](/configuration/tasks/#notify). Failures then go only to the bell in the Web UI and TUI, grouped
 into one row with a count and a sparkline:
 
 ```diff
@@ -82,7 +86,7 @@ keeping its default `["inapp"]`.
 
 ## Probing internal services
 
-Probe something that uses the service, not just its port. A database that
+Probe something that uses the service, not only its port. A database that
 accepts connections but refuses queries passes a port check. For Postgres:
 
 ```bash
@@ -93,7 +97,7 @@ PGPASSWORD="$HEALTHCHECK_PG_PWD" psql --host=db.internal --username=healthcheck 
 `pg_isready` is cheaper if you only need to know the server accepts connections.
 
 When all you can check is an open port (a device you can't log in to), `nc` is
-fine. Just don't treat it as more than that:
+fine, but don't treat it as more than that:
 
 ```bash
 nc -zw5 host.internal 5432 || { echo "host.internal:5432 not reachable"; exit 1; }

@@ -5,12 +5,14 @@ title: Gotify
 description: Send RunWisp notifications to your self-hosted Gotify server as push messages.
 ---
 
+**since**: `1.2`
+
 The Gotify notifier sends each event as a message to your [Gotify][gotify]
 server. The Gotify Android app and web UI show it as a push notification.
 
 [gotify]: https://gotify.net
 
-```toml
+```toml title="runwisp.toml"
 [notifiers.gotify]
 type  = "gotify"
 url   = "https://gotify.example.com"

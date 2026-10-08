@@ -8,42 +8,89 @@ head:
       content: "RunWisp: install, configure, run cron jobs and supervised services"
 ---
 
-import { CardGrid, LinkCard } from "@astrojs/starlight/components";
-
 RunWisp is a single binary that replaces cron and a process supervisor. You
 describe your scheduled tasks and long-running services in one `runwisp.toml`.
 Every run gets an exit code, duration, and captured output, which you can browse
 in the built-in Web UI, the terminal UI, or the REST API.
 
-<CardGrid>
-    <LinkCard
-        title="Quick start"
-        description="Install RunWisp, create a runwisp.toml, and run your first task."
-        href="/getting-started/quick-start/"
-    />
-    <LinkCard
-        title="Migrating"
-        description="Bring over jobs from cron, supervisord, systemd, or docker-compose."
-        href="/coming-from/"
-    />
-</CardGrid>
+## Where to start
 
-## What's in these docs
-
-- **[Getting started](/getting-started/quick-start/):** install, run in Docker,
-  and a tour of the Web UI and TUI.
-- **[Guides](/concepts/tasks-vs-services/):** tasks and services, scheduling,
-  overlapping runs, retries, parameters, run logs, and notifications.
-- **[Examples](/recipes/backup/):** complete configs for a nightly backup and a
-  health check.
-- **[Migrating](/coming-from/):** move from cron, supervisord, systemd, or
-  docker-compose.
-- **[Operations](/operations/autostart/):** start on boot, reload config, log
-  in, read the daemon log, export metrics, and fix common problems.
-- **[Reference](/configuration/overview/):** every `runwisp.toml` key, every
-  CLI command, the [REST API](/api/), and notes for [AI agents](/reference/agents/).
+- **New to RunWisp?** Follow [Getting started](/getting-started/quick-start/),
+  five short pages from install to a server.
+- **Coming from cron, supervisord, systemd, or docker-compose?** Start with
+  [Migrating](/coming-from/).
+- **Want to look around first?** Run `runwisp demo` for a throwaway instance
+  with hundreds of past runs.
+- **Looking up a key or a command?** Go to the
+  [configuration reference](/configuration/overview/) or the
+  [CLI reference](/reference/cli/).
 
 Something broken? Start with [Troubleshooting](/operations/troubleshooting/).
+
+## Getting started
+
+- [Installation](/getting-started/quick-start/)
+- [Your first task](/getting-started/first-task/)
+- [Running a service](/getting-started/first-service/)
+- [Handling failures](/getting-started/failures/)
+- [Running on a server](/getting-started/server/)
+
+## Guides
+
+- [Tasks and services](/concepts/tasks-vs-services/)
+- [Scheduling / cron, timezones, catch-up](/concepts/scheduling/)
+- [Overlapping runs / concurrency, flock](/concepts/concurrency/)
+- [Failures, retries & timeouts](/concepts/retries/)
+- [Parameters / arguments, inputs](/concepts/parameters/)
+- [Run logs / output, retention, search](/concepts/logs/)
+- [Web UI](/getting-started/web-ui-tour/) and [TUI](/getting-started/tui-tour/)
+- [Notifications / alerts](/notifications/): [Slack](/notifications/providers/slack/),
+  [Discord](/notifications/providers/discord/),
+  [Telegram](/notifications/providers/telegram/),
+  [ntfy](/notifications/providers/ntfy/),
+  [Gotify](/notifications/providers/gotify/),
+  [Pushover](/notifications/providers/pushover/),
+  [email over SMTP](/notifications/providers/smtp/),
+  [email via a local MTA](/notifications/providers/sendmail/),
+  [webhook](/notifications/providers/webhook/)
+- [Docker tasks / containers](/recipes/docker/)
+- [Remote triggers / webhooks, CI deploy hooks](/recipes/remote-trigger/)
+
+## Examples
+
+- [Nightly backup](/recipes/backup/)
+- [Health checks](/recipes/healthcheck/)
+
+## Migrating
+
+- [Overview](/coming-from/)
+- [From cron / crontab](/coming-from/cron/)
+- [From supervisord](/coming-from/supervisord/)
+- [From systemd units and timers](/coming-from/systemd/)
+- [From docker-compose](/coming-from/docker-compose/)
+
+## Production
+
+- [Best practices](/operations/best-practices/)
+- [Running in Docker](/getting-started/docker/)
+- [Autostart / systemd, launchd](/operations/autostart/)
+- [Reload & restart / SIGHUP](/operations/reload/)
+- [Authentication / password, reverse proxy](/operations/auth/)
+- [Daemon log](/operations/logging/)
+- [Metrics / Prometheus](/operations/metrics/)
+- [Troubleshooting](/operations/troubleshooting/)
+
+## Reference
+
+- Configuration: [overview](/configuration/overview/),
+  [`[tasks.*]`](/configuration/tasks/), [`[services.*]`](/configuration/services/),
+  [`[compose.*]`](/configuration/compose/), [`[defaults]`](/configuration/defaults/),
+  [`[daemon]`](/configuration/daemon/), [`[storage]`](/configuration/storage/),
+  [`[notify]`](/configuration/notify/), [`[[route]]`](/configuration/routes/),
+  [`${...}` substitution](/configuration/substitution/)
+- [CLI](/reference/cli/)
+- [REST API](/api/)
+- [AI agents](/reference/agents/)
 
 RunWisp is open source (GPL-3.0-or-later) at
 [github.com/runwisp/runwisp](https://github.com/runwisp/runwisp). Release notes

@@ -7,7 +7,8 @@ The octal file-creation mask for the run: `"027"` makes new files `rw-r-----`.
 - Empty keeps the daemon's umask.
 - Host processes only: it is an error on a compose unit.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup-db]
+# ...
 umask = "027"
 ```

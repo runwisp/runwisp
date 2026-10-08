@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Parameters
-description: Declare per-run inputs on a task with params and fill them in when you start it from the Web UI, TUI, CLI, or REST API.
+description: Declare per-run inputs (arguments) on a task with params and fill them in when you start it from the Web UI, TUI, CLI, or REST API.
 ---
 
 import Screenshot from "../../../components/Screenshot.astro";
@@ -12,7 +12,7 @@ customer to export, which date to start from, whether this is a dry run. You
 declare them on the task with [`params`](/configuration/tasks/#params), and the
 Web UI, TUI, CLI, and REST API all show a form for them.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.export-org-data]
 run = "/usr/local/bin/export.sh"
 params = [
@@ -28,7 +28,7 @@ params = [
     alt="Run Task modal for export-org-data: a form of text fields, dropdowns, a number input, and a toggle, one control per declared parameter, each with help text underneath."
 />
 
-Each entry passes its value in one way: as an environment variable (`env`), a
+Each entry passes its value in one way: as an environment variable ([`env`](/configuration/tasks/#env)), a
 positional argument (`arg`), an `--option value` pair (`option`), or an on/off
 flag (`flag`). Entries can also have a default, a list of choices, a type, and
 help text. The [`params`](/configuration/tasks/#params) reference lists every
@@ -51,7 +51,7 @@ fill in values, but can't add parameters or change the command.
     runwisp run export-org-data --param ORG_ID=acme --param format=csv
     ```
 
-- **REST API:** send a `params` object with the trigger request. See
+- **REST API:** send a [`params`](/configuration/tasks/#params) object with the trigger request. See
   [Remote triggers](/recipes/remote-trigger/).
 
 Each run records the values it actually got, with defaults filled in and
@@ -75,5 +75,5 @@ with those values, so you only change what you need.
 
 Every value reaches your command as a real argument or environment variable. It
 is never pasted into the shell string, so typing `; rm -rf /` into a field
-passes that text as a harmless argument. The command itself (`run`) always
+passes that text as a harmless argument. The command itself ([`run`](/configuration/tasks/#run)) always
 comes from `runwisp.toml`.

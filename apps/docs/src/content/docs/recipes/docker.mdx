@@ -8,7 +8,7 @@ head:
       content: "Running Docker containers from RunWisp tasks (recipe)"
 ---
 
-This page is about tasks whose `run` command uses `docker`. To supervise the
+This page is about tasks whose [`run`](/configuration/tasks/#run) command uses `docker`. To supervise the
 services in an existing `docker-compose.yml`, see
 [From docker-compose](/coming-from/docker-compose/). To run RunWisp itself in a
 container, see [Running in Docker](/getting-started/docker/).
@@ -26,7 +26,7 @@ stderr go into the run log, and its exit code becomes the run's exit code.
 
 ## A one-shot container
 
-```toml
+```toml title="runwisp.toml"
 [tasks.crunch-numbers]
 group       = "Analytics"
 description = "Nightly aggregation of yesterday's events"
@@ -63,7 +63,7 @@ Keep the values in RunWisp's [`secrets`](/configuration/tasks/#secrets) or
 [`secrets_file`](/configuration/tasks/#secrets_file), and pass them with `-e`
 and no value:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.crunch-numbers]
 secrets_file = "/etc/runwisp/analytics-secrets.env"
 
@@ -94,16 +94,16 @@ docker rm -f "$NAME" >/dev/null 2>&1 || true
 docker run --rm --init --name "$NAME" ghcr.io/example/analytics:current
 ```
 
-With `on_overlap = "skip"`, two copies can never run at once.
+With [`on_overlap = "skip"`](/configuration/tasks/#on_overlap), two copies can never run at once.
 
 ## Run a command in an existing container
 
 If the work belongs to an app that already runs in a container (an `artisan`
 command, a `manage.py` job, `psql` against your database), run it there
 instead of installing the app's tools a second time. Name the compose service
-and set `run`:
+and set [`run`](/configuration/tasks/#run):
 
-```toml
+```toml title="runwisp.toml"
 [tasks.laravel-schedule]
 cron            = "* * * * *"
 compose_file    = "/srv/myapp/compose.yaml"
@@ -112,12 +112,12 @@ run             = "php artisan schedule:run"
 ```
 
 RunWisp runs the command with `docker compose exec` in the running container.
-The task's `env`, `secrets`, and `params` are passed in, stdout and stderr stay
+The task's [`env`](/configuration/tasks/#env), [`secrets`](/configuration/tasks/#secrets), and [`params`](/configuration/tasks/#params) are passed in, stdout and stderr stay
 separate, and [fail-fast](/configuration/tasks/#fail-fast) applies. It works
 whether you started the app with `docker compose up` or RunWisp runs it via
 [`[compose.*]`](/configuration/compose/).
 
-The container must already be running, and `timeout` can't stop the process
+The container must already be running, and [`timeout`](/configuration/tasks/#timeout) can't stop the process
 inside it. [`compose_mode`](/configuration/compose/#running-a-command-in-a-service-compose_mode)
 has the details and the workaround.
 
@@ -125,7 +125,7 @@ has the details and the workaround.
 
 For a container that isn't compose-managed, call `docker exec` yourself:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.laravel-schedule]
 cron = "* * * * *"
 run  = "docker exec myapp-app-1 php artisan schedule:run"
@@ -142,9 +142,9 @@ run  = "docker exec myapp-app-1 php artisan schedule:run"
 ## A fresh container each run
 
 If the job is already a service in your compose file, point a task at it and
-leave out `run`:
+leave out [`run`](/configuration/tasks/#run):
 
-```toml
+```toml title="runwisp.toml"
 [tasks.nightly-backup]
 cron            = "0 3 * * *"
 compose_file    = "./docker-compose.yml"
@@ -153,7 +153,7 @@ compose_service = "backup"
 
 RunWisp runs `docker compose run --rm`: a new container from the compose
 file's image, env, and networks, removed afterwards. To run your own command in
-a fresh container, set `run` and `compose_mode = "run"`.
+a fresh container, set `run` and [`compose_mode = "run"`](/configuration/tasks/#compose_mode).
 
 ## Which one to use
 
@@ -168,7 +168,7 @@ a fresh container, set `run` and `compose_mode = "run"`.
 
 Pull images ahead of time so deploys start faster:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.docker-prefetch]
 group       = "Deploys"
 description = "Pull the latest production images"
@@ -181,14 +181,14 @@ docker pull ghcr.io/example/worker:current
 """
 ```
 
-This is only worth it if the tag changes often. There is no `notify` here on
+This is only worth it if the tag changes often. There is no [`notify`](/configuration/tasks/#notify) here on
 purpose: a failed prefetch only slows the next deploy. Registries (GHCR, Docker
 Hub, ECR) rate-limit pulls, so don't run it more often than you need. To start
 the deploy itself from CI, see [Remote triggers](/recipes/remote-trigger/).
 
 ## Prune unused images
 
-```toml
+```toml title="runwisp.toml"
 [tasks.docker-prune]
 group       = "Maintenance"
 description = "Remove dangling images and stopped containers"
@@ -218,7 +218,7 @@ docker volume prune --filter 'label!=keep'
 
 Don't restart a container from cron:
 
-```toml
+```toml title="runwisp.toml"
 # Don't do this
 [tasks.run-worker-forever]
 cron = "* * * * *"
@@ -227,7 +227,7 @@ run  = "docker run --rm ghcr.io/example/worker:current"
 
 Use a [service](/configuration/services/). RunWisp restarts it when it exits:
 
-```toml
+```toml title="runwisp.toml"
 [services.worker]
 restart_delay   = "2s"
 restart_backoff = "exponential"
@@ -245,23 +245,8 @@ code reaches RunWisp directly.
 ## If RunWisp runs in a container
 
 A task runs inside the RunWisp container, so every tool it calls must be in
-that image. The plain image has only `bash`, `tzdata`, and `ca-certificates`.
-A task that calls a missing tool fails with `pg_dump: not found` in its log.
-To check an image quickly:
-
-```bash
-docker run --rm --entrypoint sh runwisp/runwisp:latest -c 'command -v pg_dump curl'
-```
-
-To add tools, extend the image:
-
-```dockerfile
-FROM runwisp/runwisp:latest
-RUN apk add --no-cache postgresql17-client curl
-```
-
-On a `-debian` tag, use `apt-get install`. The entrypoint, healthcheck, and
-environment defaults are kept.
+that image; see
+[Tasks run inside this container](/getting-started/docker/#tasks-run-inside-this-container).
 
 To run `docker` from a task (anything on this page), the container also needs:
 

@@ -5,13 +5,15 @@ title: ntfy
 description: Send RunWisp notifications as phone push alerts through ntfy.sh or your own ntfy server.
 ---
 
+**since**: `1.2`
+
 The ntfy notifier publishes each event to an [ntfy][ntfy] topic. Subscribe to
 the topic in the ntfy app on your phone or desktop, and failures arrive as push
 alerts. It works with the public `ntfy.sh` server or one you host yourself.
 
 [ntfy]: https://ntfy.sh
 
-```toml
+```toml title="runwisp.toml"
 [notifiers.phone]
 type  = "ntfy"
 topic = "runwisp-7f3kq9"
@@ -34,7 +36,7 @@ like a secret.
 
 On your own server, lock the topic down and give RunWisp a token:
 
-```toml
+```toml title="runwisp.toml"
 [notifiers.phone]
 type  = "ntfy"
 url   = "https://ntfy.example.com"
@@ -45,7 +47,7 @@ token = "${NTFY_TOKEN}"
 Create the token with `ntfy token add <user>` on the server. RunWisp sends it as
 `Authorization: Bearer <token>`.
 
-To send some tasks to another topic, use `"phone:<topic>"` in `notify`; see
+To send some tasks to another topic, use `"phone:<topic>"` in [`notify`](/configuration/tasks/#notify); see
 [One channel, several destinations](/notifications/#one-channel-several-destinations).
 
 ## What a message looks like

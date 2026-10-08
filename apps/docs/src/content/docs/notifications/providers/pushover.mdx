@@ -5,12 +5,14 @@ title: Pushover
 description: Send RunWisp notifications to your phone through Pushover.
 ---
 
+**since**: `1.2`
+
 The Pushover notifier sends each event to your devices through
 [Pushover][pushover].
 
 [pushover]: https://pushover.net
 
-```toml
+```toml title="runwisp.toml"
 [notifiers.po]
 type  = "pushover"
 token = "${PUSHOVER_TOKEN}"
@@ -34,7 +36,7 @@ user  = "${PUSHOVER_USER}"
 
 Both look like `azGDORePK8gMaC0QOYAMyEEuzJnyUi`. Treat them as secrets.
 
-To send some tasks to another user or group, use `"po:<user key>"` in `notify`;
+To send some tasks to another user or group, use `"po:<user key>"` in [`notify`](/configuration/tasks/#notify);
 see
 [One channel, several destinations](/notifications/#one-channel-several-destinations).
 

@@ -17,7 +17,7 @@ The containers still run under Docker, and RunWisp never edits the compose file.
 Run `runwisp` in the directory with your `docker-compose.yml`. It detects the
 file and offers to create a `runwisp.toml` that imports it:
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp]
 file = "./docker-compose.yml"
 ```
@@ -56,28 +56,28 @@ Per-service settings go in a sub-table named after the compose service.
 
 Restart after every exit, not only failures:
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp.api]
 restart = "always"
 ```
 
 Get notified on failure (see [Notifications](/notifications/)):
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp.api]
 notify = ["slack-prod"]
 ```
 
 Run four copies of a worker. Each gets `RUNWISP_INSTANCE_INDEX` (0 to 3):
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp.worker]
 instances = 4
 ```
 
 Import only some services, or leave some out:
 
-```toml
+```toml title="runwisp.toml"
 [compose.myapp]
 services = ["api", "worker"]   # only these
 # services = ["-db"]           # everything except db
@@ -85,7 +85,7 @@ services = ["api", "worker"]   # only these
 
 Run a compose service on a schedule, in a fresh container each time:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.nightly-backup]
 cron            = "0 3 * * *"
 compose_file    = "./docker-compose.yml"

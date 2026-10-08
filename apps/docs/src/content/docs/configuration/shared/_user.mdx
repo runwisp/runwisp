@@ -8,7 +8,8 @@ form as `chown` and Compose). RunWisp looks up the account at start, sets
 - Empty keeps the daemon's user.
 - Host processes only: it is an error on a compose unit.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup-db]
+# ...
 user = "reporter:reporter"
 ```

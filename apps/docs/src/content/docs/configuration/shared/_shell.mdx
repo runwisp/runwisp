@@ -6,7 +6,7 @@ The shell for [`run`](/configuration/tasks/#run), as an absolute path. Use
 for POSIX shells. RunWisp warns at boot when it can't turn fail-fast on.
 Host processes only: it is an error on a compose unit.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.nightly-report]
 shell = "/bin/bash"
 run   = "set -o pipefail; make report | tee out.log"

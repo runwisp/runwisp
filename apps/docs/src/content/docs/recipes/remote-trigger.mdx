@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: PoppyCake, s.r.o.
 # SPDX-License-Identifier: GPL-3.0-or-later
 title: Remote triggers
-description: Run a RunWisp task on another machine from a script or CI and get its output and exit code back, with runwisp run --url or plain curl. Includes deploy hooks from CI.
+description: Run a RunWisp task on another machine from a script or CI and get its output and exit code back, with runwisp run --url or plain curl. Includes webhooks and deploy hooks from CI.
 ---
 
 Run a task on a daemon on another machine, from a script, a CI job, or your
@@ -92,7 +92,7 @@ jq '{id, status, endReason, exitCode}' <<<"$RUN"
 ### Passing parameters
 
 If the task declares [parameters](/concepts/parameters/), send their values in a
-`params` object:
+[`params`](/configuration/tasks/#params) object:
 
 ```bash
 curl -sSf -X POST "$RUNWISP_URL/api/tasks/export-org-data/run?wait=true" \
@@ -101,7 +101,7 @@ curl -sSf -X POST "$RUNWISP_URL/api/tasks/export-org-data/run?wait=true" \
   -d '{"params": {"ORG_ID": "acme", "--region": "eu", "--include-attachments": "true"}}'
 ```
 
-The keys are what you declared: the `env` or `arg` name, or the `option` or
+The keys are what you declared: the [`env`](/configuration/tasks/#env) or `arg` name, or the `option` or
 `flag` token. For each key:
 
 - a string (even `""`) passes that value,
@@ -132,11 +132,11 @@ stream with `line` events and a final `done` event. The
 
 ## Deploy hooks from CI
 
-A deploy hook is a task with no `cron` that your CI starts after a build. Every
+A deploy hook is a task with no [`cron`](/configuration/tasks/#cron) that your CI starts after a build. Every
 deploy is stored as a run with its output and exit code, and anyone can re-run
 it from the Web UI or TUI.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.deploy-app]
 group       = "Deploys"
 description = "Pull the new image, migrate, restart"
@@ -160,11 +160,11 @@ notifiers = ["slack-deploys"]
 
 - **No `cron`:** the task runs only when triggered. `runwisp list` shows it as
   `(manual)`.
-- **`on_overlap = "kill"`:** the newest deploy wins. The older run ends as
+- **[`on_overlap = "kill"`](/configuration/tasks/#on_overlap):** the newest deploy wins. The older run ends as
   `stopped`.
-- **`params`:** CI passes the version to deploy. See
+- **[`params`](/configuration/tasks/#params):** CI passes the version to deploy. See
   [`params`](/configuration/tasks/#params).
-- **`notify` and `[[route]]`:** `notify` alerts on failures. The route also
+- **[`notify`](/configuration/tasks/#notify) and `[[route]]`:** `notify` alerts on failures. The route also
   announces successes to the team channel. See
   [`[[route]]`](/configuration/routes/).
 

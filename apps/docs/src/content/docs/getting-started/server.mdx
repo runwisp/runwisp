@@ -1,0 +1,51 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Running on a server
+description: Install RunWisp as a system service so it starts on boot, log in to the Web UI with a stable password, and change the config safely.
+---
+
+So far the daemon runs in the background of your session. On a server, install
+it as a service so it starts on boot:
+
+```bash
+sudo runwisp service install
+runwisp service status
+```
+
+The system service reads `/etc/runwisp/runwisp.toml` and keeps its data in
+`/var/lib/runwisp`. Move your config there first, or pass `--config`. On macOS,
+or to run it as your own user, use `--local`. See
+[Autostart](/operations/autostart/). In a container, see
+[Running in Docker](/getting-started/docker/) instead.
+
+## Log in to the Web UI
+
+The installer generates a Web UI password, saves it next to the service, and
+prints it once. Store it right away. To use your own password instead, set
+`RUNWISP_PASSWORD` before you install. See
+[A stable Web UI password](/operations/autostart/#a-stable-web-ui-password).
+
+The Web UI listens on `127.0.0.1:9477`. To reach it from another machine, put a
+reverse proxy in front of it, or bind another address with `--host` and turn on
+TLS. See [Network clients](/operations/auth/#network-clients-web-ui-remote-rest).
+
+## Change the config
+
+Edit the file, then check and apply it. As root, the CLI uses the same config
+and data paths as the system service:
+
+```bash
+sudo runwisp validate
+sudo runwisp reload
+```
+
+A config with an error changes nothing: the daemon keeps running what it had.
+TLS and metrics settings need `runwisp restart` instead; see
+[What needs a restart](/operations/reload/#what-needs-a-restart).
+
+## Next steps
+
+You now have the basics. [Best practices](/operations/best-practices/) lists the
+settings worth getting right before you rely on RunWisp, and the
+[Guides](/concepts/tasks-vs-services/) cover each feature in depth.

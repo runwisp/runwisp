@@ -56,7 +56,7 @@ directory.
 - Must be unique across `[tasks.*]` and [`[services.*]`](/configuration/services/).
 - A name with `.` or `:` must be quoted (`[tasks."db:backup"]`).
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup-db]
 run = "pg_dump app | gzip > /backups/app.sql.gz"
 
@@ -96,7 +96,7 @@ When the task runs, as a cron expression. Without it, the task runs only when
 started by hand. Accepts 5 fields (`min hour day month weekday`), 6 fields with
 a leading seconds field, or an `@` shorthand.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.healthcheck]
 cron = "*/30 * * * * *" # every 30s, aligned to :00 and :30
 run  = "curl -fsS http://localhost:8080/healthz"
@@ -122,7 +122,7 @@ startup, so it catches a bad cron expression before you deploy.
 Run the task once at startup. This is separate from [`cron`](#cron) and
 [`catch_up`](#catch_up).
 
-```toml
+```toml title="runwisp.toml"
 [tasks.warm-cache]
 run_on_start = true
 run          = "/usr/local/bin/warm-cache"
@@ -159,8 +159,9 @@ How many runs missed while the daemon was down are run at startup.
 A value above `1` requires `on_overlap = "queue"`, because the missed runs start
 one after another.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.hourly-roll]
+# ...
 cron       = "0 * * * *"
 catch_up   = 24
 on_overlap = "queue"
@@ -178,8 +179,9 @@ starts on time.
 - Doesn't apply to manual runs, retries, or catch-up runs.
 - Needs [`cron`](#cron).
 
-```toml
+```toml title="runwisp.toml"
 [tasks.nightly-report]
+# ...
 cron   = "0 3 * * *"
 jitter = "30m"  # start may slip up to 30m while other jittered runs are busy
 ```
@@ -194,8 +196,9 @@ task.
 The IANA zone this task's [`cron`](#cron) is read in. Follows daylight saving
 time.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.eu-market-open]
+# ...
 cron     = "0 9 * * 1-5"
 timezone = "Europe/Bratislava"
 ```
@@ -209,8 +212,9 @@ timezone = "Europe/Bratislava"
 What happens when the task is triggered while already at
 [`max_concurrent`](#max_concurrent) (default `1`).
 
-```toml
+```toml title="runwisp.toml"
 [tasks.queue-drain]
+# ...
 cron       = "*/10 * * * *"
 on_overlap = "skip"
 ```
@@ -228,8 +232,9 @@ Possible values:
 How many runs of this task may be active at once. At the limit,
 [`on_overlap`](#on_overlap) decides what happens to the next trigger.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.thumbnailer]
+# ...
 max_concurrent = 4
 ```
 
@@ -241,8 +246,9 @@ With `on_overlap = "queue"`, the cap on runs waiting in line. Past the cap,
 further triggers record `end_reason = "queue_full"`. With `0`, no run waits: a
 trigger that finds every slot busy records `queue_full` right away.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.ingest]
+# ...
 on_overlap = "queue"
 max_queued = 500
 ```
@@ -257,8 +263,9 @@ The longest one attempt may run. A longer run is stopped (with
 [`stop_signal`](#stop_signal), then [`graceful_stop`](#graceful_stop)) and
 recorded as `timeout`. `"0s"` turns off a `[defaults]` timeout.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.queue-drain]
+# ...
 cron    = "*/10 * * * *"
 timeout = "9m"
 ```
@@ -273,8 +280,9 @@ is `failed`, `timeout`, `crashed`, `log_overflow`, `start_failed`, or
 [`failures`](#failures) counts the run as a failure. A manual stop or a kill ends
 the retries.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.flaky-fetch]
+# ...
 retry_attempts = 3
 retry_delay    = "2s"
 ```
@@ -287,8 +295,9 @@ The wait before the first retry. Used only when
 [`retry_attempts`](#retry_attempts) is above `0`;
 [`retry_backoff`](#retry_backoff) decides how it grows.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.flaky-fetch]
+# ...
 retry_attempts = 3
 retry_delay    = "5s"
 ```
@@ -299,8 +308,9 @@ retry_delay    = "5s"
 
 How [`retry_delay`](#retry_delay) grows across attempts.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.flaky-fetch]
+# ...
 retry_attempts = 4
 retry_delay    = "2s"
 retry_backoff  = "exponential"  # 2s, 4s, 8s, 16s
@@ -360,14 +370,17 @@ It also limits [`retry_attempts`](#retry_attempts) and services'
 
 Which run outcomes count as a failure.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.web]
+# ...
 failures = ["-missed"]              # stop paging on a missed tick
 
 [tasks.rsync]
+# ...
 failures = ["timeout", "23", "24"]  # only these exits fail
 
 [tasks.report]
+# ...
 failures = ['+output:(?i)error']    # also fail when a line says "error"
 ```
 
@@ -389,10 +402,12 @@ Possible values:
 
 ### Output patterns
 
+**since**: `1.3`
+
 Some commands print an error and still exit 0. Add an `output:` token to catch
 that:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.report]
 run = "./report.sh"
 failures = ['+output:ERROR']
@@ -409,7 +424,9 @@ failures = ['+output:ERROR']
 
 Add several tokens to fail on any of them:
 
-```toml
+```toml title="runwisp.toml"
+[tasks.report]
+# ...
 failures = ['+output:(?i)\berror\b', '+output:^Traceback']
 ```
 
@@ -505,7 +522,7 @@ UI, TUI, and REST API. Each entry has exactly one kind keyword (`env`, `arg`,
   string, so input like `; rm -rf /` is harmless.
 - Scheduled runs (cron, catch-up, retries) use the declared defaults.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup]
 run = "/usr/local/bin/backup.sh"
 params = [
@@ -579,7 +596,7 @@ original run.
 
 A task can run a compose service instead of a shell command:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.nightly-backup]
 cron            = "0 3 * * *"
 compose_file    = "./docker-compose.yml"
@@ -609,7 +626,7 @@ To import every service in a compose file, see
 arguments: they replace the service's `command:` and go to the image's
 `ENTRYPOINT`.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.nightly-backup]
 cron            = "0 3 * * *"
 compose_file    = "./docker-compose.yml"

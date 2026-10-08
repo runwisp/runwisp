@@ -9,7 +9,7 @@ Give a task a [`cron`](/configuration/tasks/#cron) expression and RunWisp starts
 it on that schedule. Every scheduled start becomes a run in the history, with
 its exit code and output.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.heartbeat]
 cron = "*/5 * * * *"
 run  = "/usr/local/bin/heartbeat"
@@ -57,11 +57,12 @@ expressions run at second `:00`.
 Cron expressions use the host's timezone unless you set one. Set it for the
 whole daemon, or per task:
 
-```toml
+```toml title="runwisp.toml"
 [daemon]
 timezone = "Europe/Bratislava"   # every task without its own timezone
 
 [tasks.nightly-backup]
+# ...
 cron     = "30 2 * * *"
 timezone = "Atlantic/Faroe"      # this task only
 ```
@@ -91,8 +92,9 @@ When the daemon was down (a reboot, a deploy, a crash), scheduled runs didn't
 happen. [`catch_up`](/configuration/tasks/#catch_up) decides how many of them
 run when the daemon starts again:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.metrics-rollup]
+# ...
 cron     = "*/15 * * * *"
 catch_up = 1      # default: run the most recent missed one
 ```
@@ -118,8 +120,9 @@ to, and the alert always reports the full count.
 For a task that is expected to miss runs (a laptop that's off at night), take
 `missed` out of its [`failures`](/configuration/tasks/#failures):
 
-```toml
+```toml title="runwisp.toml"
 [tasks.daytime-sync]
+# ...
 cron     = "*/30 9-17 * * 1-5"
 failures = ["-missed"]   # still recorded, but not a failure and no alert
 ```
@@ -133,12 +136,14 @@ When many tasks share a start time (say, `0 3 * * *`), they all start at the
 same second. [`jitter`](/configuration/tasks/#jitter) lets RunWisp spread them
 out:
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup-a]
+# ...
 cron   = "0 3 * * *"
 jitter = "30m"
 
 [tasks.backup-b]
+# ...
 cron   = "0 3 * * *"
 jitter = "30m"
 ```
@@ -168,7 +173,7 @@ the task by hand. `runwisp status` lists paused tasks.
 
 The pause survives `runwisp reload` and restarts. Pausing needs
 [`manual_trigger`](/configuration/tasks/#manual_trigger) on, and a reload that
-removes the task's `cron` or sets `manual_trigger = false` clears the pause with
+removes the task's [`cron`](/configuration/tasks/#cron) or sets `manual_trigger = false` clears the pause with
 a warning. A task cron still runs ([held](/coming-from/cron/#held-jobs)) can't
 be paused.
 

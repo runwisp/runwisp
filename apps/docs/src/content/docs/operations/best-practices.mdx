@@ -1,0 +1,156 @@
+---
+# SPDX-FileCopyrightText: PoppyCake, s.r.o.
+# SPDX-License-Identifier: GPL-3.0-or-later
+title: Best practices
+description: The RunWisp settings worth getting right before you rely on it. Config in git, timeouts, overlap, retention, secrets, the Web UI password, alerts, and containers.
+---
+
+RunWisp works without any of this. These are the settings that save you a bad
+morning later. Each one links to the page that explains it.
+
+## The config file
+
+### Keep `runwisp.toml` in git
+
+It is the whole definition of what runs on the host. With it in git, every
+change has an author and a reason, and a broken edit is one revert away. Keep
+secrets out of it (see [below](#keep-secrets-out-of-the-file)).
+
+### Turn on editor checks
+
+Add the `#:schema` line at the top, and your editor flags unknown keys and wrong
+types as you type. See
+[Editor support and validation](/configuration/overview/#editor-support-and-validation).
+
+### Validate before you reload, and in CI
+
+`runwisp validate` checks the file exactly like the daemon does and exits
+non-zero on any error. Run it in CI on every change to `runwisp.toml`. It also
+resolves [`${VAR}`](/configuration/substitution/), so set every variable the
+file uses, with placeholder values, in the CI job. A reload that fails
+validation [changes nothing](/operations/reload/#a-bad-config-changes-nothing),
+but catching it in CI is earlier.
+
+### Put shared settings in `[defaults]`
+
+A timeout, a log size limit, and a history limit for every task belong in
+[`[defaults]`](/configuration/defaults/), not copied onto each task. A task
+that needs something else sets its own value.
+
+## Tasks
+
+### Give every task a timeout
+
+Without one, a hung command runs forever, and with the default overlap rule
+every later run waits behind it. Set a default in `[defaults]` and raise it for
+the slow jobs. See [`timeout`](/configuration/tasks/#timeout).
+
+### Choose an overlap rule on purpose
+
+Probes and backups usually want [`on_overlap = "skip"`](/configuration/tasks/#on_overlap): a second copy helps
+nobody. Jobs where every run matters want the default queue. See
+[Choosing a policy](/concepts/concurrency/#choosing-a-policy).
+
+### Don't catch up on probes
+
+A health check missed during downtime tells you nothing now. Set
+[`catch_up = 0`](/configuration/tasks/#catch_up) on probes. Keep it on for jobs
+where each run handles its own slice of time.
+
+### Retry what fails for a passing reason
+
+Retry probes and API calls that fail on a network blip. Don't retry a backup
+that failed halfway; fix the cause. See
+[Retrying failed runs](/concepts/retries/#retrying-failed-runs).
+
+### Limit the history of frequent tasks
+
+A task that runs every minute keeps thousands of runs. Set
+[`keep_runs`](/configuration/tasks/#keep_runs) or
+[`keep_for`](/configuration/tasks/#keep_for), and size
+[`[storage]`](/configuration/storage/#suggested-values) for the machine.
+
+### Spread out jobs that share a start time
+
+Ten tasks at `0 3 * * *` all start in the same second and fight over the disk
+and the database. Add [jitter](/concepts/scheduling/#spreading-out-start-times)
+and they take turns.
+
+### Give every parameter a default
+
+Scheduled runs can't ask for input. See
+[Scheduled runs use the defaults](/concepts/parameters/#scheduled-runs-use-the-defaults).
+
+### Let tasks stop in time
+
+A task's [`graceful_stop`](/configuration/tasks/#graceful_stop) should fit
+inside the daemon's [`shutdown_timeout`](/configuration/daemon/#shutdown_timeout),
+or a restart cuts it off before it finishes cleaning up.
+
+## Secrets and access
+
+### Keep secrets out of the file
+
+Load tokens and passwords with `${VAR}`, `${file:...}`, or
+[`secrets_file`](/configuration/tasks/#secrets_file), and `chmod 600` the files.
+See [Storing the secret](/notifications/#storing-the-secret).
+
+### Use a stable Web UI password
+
+A daemon without `RUNWISP_PASSWORD` makes up a new one on every start and logs
+everyone out. `runwisp service install` sets one up for you. See
+[The password](/operations/auth/#the-password).
+
+### Turn off login only on a trusted network
+
+`RUNWISP_AUTH=off` is for a daemon bound to loopback or an isolated network.
+See [Running without a password](/operations/auth/#running-without-a-password).
+
+### Put TLS in front of the Web UI
+
+Before you open the port beyond the host, put it behind a reverse proxy and set
+[`trusted_proxies`](/configuration/daemon/#trusted_proxies), or turn on RunWisp's own TLS. See
+[Reverse proxies](/operations/auth/#reverse-proxies).
+
+### Send hook tokens in the header
+
+A token in a URL ends up in proxy logs and CI output. Send it in the
+`Authorization` header, and give a caller that can only use a URL its own token
+so you can rotate it alone. See [Hooks](/operations/auth/#hooks).
+
+### Keep `/metrics` private
+
+See [Keeping it private](/operations/metrics/#keeping-it-private).
+
+## Alerts
+
+### Send failures somewhere you look
+
+The bell works with no setup, but nobody watches it at 3am. Add one channel
+for every task with
+[`global_notifiers`](/notifications/#for-every-task).
+
+### Test the channel
+
+Find out about a typo in a webhook URL now, not during the first real outage.
+See [Testing a channel](/notifications/#testing-a-channel).
+
+### Silence expected misses
+
+A task on a laptop that sleeps misses runs on purpose. Take `missed` out of
+its failures; see [Missed runs](/notifications/#missed-runs).
+
+## Containers
+
+### Run containers in the foreground
+
+A task that starts a container uses `docker run --rm`, never `-d`, so RunWisp
+sees its output and exit code. See
+[Two flags to get right](/recipes/docker/#two-flags-to-get-right).
+
+### Mount the config directory, not the file
+
+When RunWisp itself runs in Docker, mount the directory that holds
+`runwisp.toml`. Many editors save by replacing the file, and a single-file mount
+keeps showing the container the old copy. See
+[Volumes](/getting-started/docker/#volumes).

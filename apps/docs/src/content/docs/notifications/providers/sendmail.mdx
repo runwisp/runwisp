@@ -14,7 +14,7 @@ Use it when the machine already sends mail. If it doesn't, the
 [SMTP notifier](/notifications/providers/smtp/) talks to Gmail, SES, or another
 server directly.
 
-```toml
+```toml title="runwisp.toml"
 [notifiers.mta]
 type = "sendmail"
 from = "runwisp@example.com"
@@ -34,7 +34,7 @@ to   = ["ops@example.com"]
 | `template_path` | no       | A Go template file that replaces the built-in plain-text message.         |
 
 To send one task's mail to another address, use `"mta:reports@example.com"` in
-`notify`, much like a per-crontab `MAILTO`. See
+[`notify`](/configuration/tasks/#notify), much like a per-crontab `MAILTO`. See
 [One channel, several destinations](/notifications/#one-channel-several-destinations).
 
 ## Finding the sendmail program
@@ -45,7 +45,7 @@ order. Every common mail system installs one of these.
 
 Set `sendmail_path` to use a specific program:
 
-```toml
+```toml title="runwisp.toml"
 [notifiers.mta]
 type          = "sendmail"
 from          = "runwisp@example.com"

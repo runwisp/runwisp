@@ -5,7 +5,8 @@ deleted by the hourly cleanup. `0` keeps no completed runs; unset means no
 count limit. With
 [`keep_for`](/configuration/tasks/#keep_for) also set, whichever deletes more wins.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup-db]
+# ...
 keep_runs = 200
 ```

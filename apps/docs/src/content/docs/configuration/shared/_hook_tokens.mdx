@@ -1,11 +1,11 @@
-**type**: `array of strings or tables`
+**type**: `array of strings or tables` **since**: `1.2`
 
 Tokens that let CI or a webhook control this unit over a
 [hook](/operations/auth/#hooks) without the dashboard password. Each token works
 for this unit only. Load them with `${VAR}` or `${file:...}` so they stay out of
 the file. Tokens are never shown in the API or Web UI.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.deploy]
 run         = "./deploy.sh"
 hook_tokens = [

@@ -9,7 +9,7 @@ RunWisp reads one file, `runwisp.toml`. It defines everything that runs; the
 Web UI and REST API can trigger runs but never change the config. After an
 edit, run [`runwisp reload`](/operations/reload/).
 
-```toml
+```toml title="runwisp.toml"
 [defaults]
 timeout = "1h"
 
@@ -51,8 +51,9 @@ Start the file with a `#:schema` line and editors with TOML support (Even Better
 TOML, taplo) autocomplete and check it as you type. Files RunWisp creates
 already have it.
 
-```toml
+```toml title="runwisp.toml"
 #:schema https://docs.runwisp.com/config.schema.json
+# ...
 ```
 
 ```bash

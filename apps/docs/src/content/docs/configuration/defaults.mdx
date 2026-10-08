@@ -8,7 +8,7 @@ description: "Fallback values inherited by every task and service unless overrid
 `[defaults]` sets fallback values for every `[tasks.*]` and `[services.*]`. A
 task or service that sets the key itself wins.
 
-```toml
+```toml title="runwisp.toml"
 [defaults]
 timeout       = "30m"
 log_max_size  = "50mb"

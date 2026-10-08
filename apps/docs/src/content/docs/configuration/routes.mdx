@@ -12,7 +12,7 @@ A `[[route]]` sends matching events to a list of notifiers. Use it when one rule
 should cover many tasks, or for outcomes other than failures. For one task's
 failures, [`notify`](/configuration/tasks/#notify) on the task is simpler.
 
-```toml
+```toml title="runwisp.toml"
 # Every failure goes to the team channel
 [[route]]
 match     = { failure = true }
@@ -79,7 +79,7 @@ error.
 A shell-style glob on the task or service name: `*` (any run of characters),
 `?` (one character), `[abc]` (one of these). Case-sensitive. No `{a,b}` braces.
 
-```toml
+```toml title="runwisp.toml"
 [[route]]
 match     = { task = "backup-*", kinds = ["timeout"] }
 notifiers = ["tg-oncall"]

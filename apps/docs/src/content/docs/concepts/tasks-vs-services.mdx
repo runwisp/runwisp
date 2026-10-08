@@ -10,7 +10,7 @@ a health probe. A **service** is meant to stay up: a queue worker, an agent, a
 server. If the command exits on its own when it's done, it's a task. If it runs
 until you stop it, it's a service.
 
-```toml
+```toml title="runwisp.toml"
 [tasks.backup-db]
 cron = "0 3 * * *"
 run  = "pg_dump app | gzip > /backups/app.sql.gz"
@@ -70,7 +70,7 @@ written as a service gets restarted over and over.
 ### A polling loop
 
 `while true; do work; sleep 60; done` is usually better as a task with
-`cron = "* * * * *"` and `on_overlap = "skip"`. Each poll then gets its own run,
+[`cron = "* * * * *"`](/configuration/tasks/#cron) and [`on_overlap = "skip"`](/configuration/tasks/#on_overlap). Each poll then gets its own run,
 exit code, and log, so you can see exactly which one failed.
 
 Keep it a service when the process holds state worth keeping between rounds: a
