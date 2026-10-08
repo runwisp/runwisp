@@ -565,9 +565,7 @@ func (srv *Server) pumpAppStream(ctx context.Context, sub *appSub, notifyCh <-ch
 }
 
 // toSSEEventData converts an internal event to the correct SSE wrapper type
-// so that huma/sse emits the right event name. The run payload is projected
-// from model.Run onto model.Run so the SSE wire shape matches the REST
-// response (row-internal fields like deleted_at stay invisible).
+// so that huma/sse emits the right event name.
 func toSSEEventData(event events.Event) any {
 	switch d := event.Data.(type) {
 	case events.RunDeletedEvent:

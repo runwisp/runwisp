@@ -94,18 +94,11 @@ type Server struct {
 	// outside standalone mode (station mode has no local scheduler to reconcile),
 	// in which case POST /api/daemon/reload reports the operation is unavailable.
 	reload func() (model.ReloadResult, error)
-	// shutdownCtx/shutdownCancel let Shutdown interrupt long-lived SSE handler
-	// goroutines directly: http.Server.Shutdown only stops accepting new
-	// connections and waits for in-flight ones to finish on their own, it
-	// never cancels a handler's request context, so an open SSE stream would
-	// otherwise keep running until the client disconnects or Shutdown's
-	// deadline expires. SSE handlers derive their working context from this
-	// via withShutdown instead of using the raw request context directly.
+	// shutdownCtx is cancelled by Shutdown so SSE handlers (via withShutdown)
+	// exit; http.Server.Shutdown never cancels a handler's request context.
 	shutdownCtx    context.Context
 	shutdownCancel context.CancelFunc
 }
-
-// DaemonInfo and CapInfo live in the model package.
 
 type Options struct {
 	DB              storage.RunRepository
