@@ -79,7 +79,7 @@ func TestRunDuration(t *testing.T) {
 	start := time.Date(2026, 5, 14, 17, 11, 0, 0, time.UTC)
 	end := start.Add(12*time.Second + 400*time.Millisecond)
 	r := &model.Run{StartedAt: &start, EndedAt: &end}
-	assert.Equal(t, "12.4s", runDuration(r))
+	assert.Equal(t, "12s", runDuration(r))
 
 	assert.Equal(t, "", runDuration(nil))
 	assert.Equal(t, "", runDuration(&model.Run{StartedAt: &start}))
@@ -103,18 +103,18 @@ func TestEventSentence(t *testing.T) {
 		ev   *notify.Event
 		want string
 	}{
-		{"failed with run + duration", &notify.Event{Kind: notify.KindRunFailed, Run: withDur}, "Exited with code 1 after 300ms."},
+		{"failed with run + duration", &notify.Event{Kind: notify.KindRunFailed, Run: withDur}, "Exited with code 1 after 0.3s."},
 		{"failed with run, no duration", &notify.Event{Kind: notify.KindRunFailed, Run: noDur}, "Exited with code 2."},
 		{"failed without run", &notify.Event{Kind: notify.KindRunFailed}, "Exited with code ?."},
-		{"unhealthy", &notify.Event{Kind: notify.KindRunFailed, Run: unhealthy}, "Stopped for failing its health check after 300ms."},
+		{"unhealthy", &notify.Event{Kind: notify.KindRunFailed, Run: unhealthy}, "Stopped for failing its health check after 0.3s."},
 		{"log overflow", &notify.Event{Kind: notify.KindRunFailed, Run: overflow}, "Killed for exceeding log_max_size."},
-		{"succeeded with duration", &notify.Event{Kind: notify.KindRunSucceeded, Run: withDur}, "Completed in 300ms."},
+		{"succeeded with duration", &notify.Event{Kind: notify.KindRunSucceeded, Run: withDur}, "Completed in 0.3s."},
 		{"succeeded without duration", &notify.Event{Kind: notify.KindRunSucceeded}, "Completed."},
-		{"timeout with duration", &notify.Event{Kind: notify.KindRunTimeout, Run: withDur}, "The task was killed after the configured timeout (300ms elapsed)."},
+		{"timeout with duration", &notify.Event{Kind: notify.KindRunTimeout, Run: withDur}, "The task was killed after the configured timeout (0.3s elapsed)."},
 		{"timeout without duration", &notify.Event{Kind: notify.KindRunTimeout}, "The task was killed after the configured timeout."},
-		{"stopped with duration", &notify.Event{Kind: notify.KindRunStopped, Run: withDur}, "Stopped manually after 300ms."},
+		{"stopped with duration", &notify.Event{Kind: notify.KindRunStopped, Run: withDur}, "Stopped manually after 0.3s."},
 		{"stopped without duration", &notify.Event{Kind: notify.KindRunStopped}, "Stopped manually."},
-		{"stopped by daemon shutdown", &notify.Event{Kind: notify.KindRunStopped, Run: daemonStopped}, "Stopped by daemon shutdown after 300ms."},
+		{"stopped by daemon shutdown", &notify.Event{Kind: notify.KindRunStopped, Run: daemonStopped}, "Stopped by daemon shutdown after 0.3s."},
 		{"crashed with reason", &notify.Event{Kind: notify.KindRunCrashed, Reason: "exec format error"}, "The process couldn't start: exec format error."},
 		{"crashed without reason", &notify.Event{Kind: notify.KindRunCrashed}, "The process couldn't start."},
 		{"missed with reason", &notify.Event{Kind: notify.KindRunMissed, Reason: "3 scheduled runs missed since 2026-06-09 03:00 (daemon was down)"}, "3 scheduled runs missed since 2026-06-09 03:00 (daemon was down)"},

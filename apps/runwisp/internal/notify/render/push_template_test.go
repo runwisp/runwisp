@@ -62,7 +62,7 @@ func TestPushTemplates_RunFailed_WithURLAndTail(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			p := renderPush(t, kind, ctx, ev)
 			assert.Equal(t, "❌ dc-fail failed", p["title"])
-			assert.Equal(t, "Exited with code 1 after 300ms.\nTriggered via the REST API · 14 May, 17:11.\n\n"+
+			assert.Equal(t, "Exited with code 1 after 0.3s.\nTriggered via the REST API · 14 May, 17:11.\n\n"+
 				"Error: connection refused\ndial tcp 127.0.0.1:5432: connect:\nconnection refused\n\n"+
 				"from runwisp · bright-falcon", p["message"])
 			assert.Equal(t, prio.err, p["priority"])
