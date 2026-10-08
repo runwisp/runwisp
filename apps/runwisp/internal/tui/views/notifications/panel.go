@@ -17,7 +17,6 @@ import (
 
 	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/tui/keys"
-	"github.com/runwisp/runwisp/internal/tui/rhythm"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 )
 
@@ -526,7 +525,7 @@ func relativeTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
-	return rhythm.Relative(t, time.Now())
+	return uikit.RelativeTime(t, time.Now())
 }
 
 // truncateLine trims a (possibly ANSI-styled) line to at most max display
