@@ -20,19 +20,16 @@ func newTestModel(t *testing.T) Model {
 
 func TestNew_InitializesFields(t *testing.T) {
 	m := newTestModel(t)
-	if m.TaskName() != "task1" {
-		t.Fatalf("TaskName: got %q want %q", m.TaskName(), "task1")
+	if m.taskName != "task1" {
+		t.Fatalf("taskName: got %q want %q", m.taskName, "task1")
 	}
 	if m.hits != nil {
 		t.Fatalf("Hits should be nil initially, got %#v", m.hits)
 	}
-	if m.selectedIndex() != -1 {
-		t.Fatalf("Cursor should be -1 when no hits, got %d", m.selectedIndex())
-	}
 	if m.SelectedHit() != nil {
 		t.Fatalf("SelectedHit should be nil initially")
 	}
-	if m.Regex() {
+	if m.regex {
 		t.Fatal("Regex should default to false")
 	}
 	if m.caseSensitive {
@@ -52,11 +49,11 @@ func TestNew_InitializesFields(t *testing.T) {
 func TestUpdate_TabTogglesRegex(t *testing.T) {
 	m := newTestModel(t)
 	m2, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if !m2.Regex() {
+	if !m2.regex {
 		t.Fatal("expected regex on after tab")
 	}
 	m3, _ := m2.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if m3.Regex() {
+	if m3.regex {
 		t.Fatal("expected regex off after second tab")
 	}
 }
@@ -80,26 +77,26 @@ func TestUpdate_CursorMovement(t *testing.T) {
 	// Use the "j"/"k" runes. Note: the Update switch on tea.KeyMsg.String()
 	// translates KeyRunes("j") to "j".
 	m2, _ := m.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
-	if m2.selectedIndex() != 1 {
-		t.Fatalf("Cursor after j: got %d want 1", m2.selectedIndex())
+	if m2.cursor != 1 {
+		t.Fatalf("Cursor after j: got %d want 1", m2.cursor)
 	}
 	m3, _ := m2.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
-	if m3.selectedIndex() != 2 {
-		t.Fatalf("Cursor after second j: got %d want 2", m3.selectedIndex())
+	if m3.cursor != 2 {
+		t.Fatalf("Cursor after second j: got %d want 2", m3.cursor)
 	}
 	// At end — should clamp.
 	m4, _ := m3.Update(tea.KeyPressMsg{Code: 'j', Text: "j"})
-	if m4.selectedIndex() != 2 {
-		t.Fatalf("Cursor clamp at end: got %d want 2", m4.selectedIndex())
+	if m4.cursor != 2 {
+		t.Fatalf("Cursor clamp at end: got %d want 2", m4.cursor)
 	}
 	m5, _ := m4.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
-	if m5.selectedIndex() != 1 {
-		t.Fatalf("Cursor after k: got %d want 1", m5.selectedIndex())
+	if m5.cursor != 1 {
+		t.Fatalf("Cursor after k: got %d want 1", m5.cursor)
 	}
 	m6, _ := m5.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
 	m7, _ := m6.Update(tea.KeyPressMsg{Code: 'k', Text: "k"})
-	if m7.selectedIndex() != 0 {
-		t.Fatalf("Cursor clamp at start: got %d want 0", m7.selectedIndex())
+	if m7.cursor != 0 {
+		t.Fatalf("Cursor clamp at start: got %d want 0", m7.cursor)
 	}
 }
 
@@ -110,12 +107,12 @@ func TestUpdate_ArrowKeys_AlsoMoveCursor(t *testing.T) {
 		{RunID: "r2", N: 2, Text: "two"},
 	}
 	m2, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
-	if m2.selectedIndex() != 1 {
-		t.Fatalf("Cursor after down: got %d want 1", m2.selectedIndex())
+	if m2.cursor != 1 {
+		t.Fatalf("Cursor after down: got %d want 1", m2.cursor)
 	}
 	m3, _ := m2.Update(tea.KeyPressMsg{Code: tea.KeyUp})
-	if m3.selectedIndex() != 0 {
-		t.Fatalf("Cursor after up: got %d want 0", m3.selectedIndex())
+	if m3.cursor != 0 {
+		t.Fatalf("Cursor after up: got %d want 0", m3.cursor)
 	}
 }
 
@@ -126,7 +123,6 @@ func TestUpdate_EnterOnHitEmitsSelectMsg(t *testing.T) {
 	// arrived, so an Enter with the query unchanged selects the hit.
 	m.input.SetValue("hello")
 	m.lastSearched = "hello"
-	m.searched = true
 	m2, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("expected select cmd")
@@ -138,8 +134,8 @@ func TestUpdate_EnterOnHitEmitsSelectMsg(t *testing.T) {
 	if sel.TaskName != "task1" || sel.RunID != "rA" || sel.Line != 43 {
 		t.Fatalf("SelectMsg fields wrong: %+v", sel)
 	}
-	if m2.selectedIndex() != 0 {
-		t.Fatalf("Cursor should still be 0, got %d", m2.selectedIndex())
+	if m2.cursor != 0 {
+		t.Fatalf("Cursor should still be 0, got %d", m2.cursor)
 	}
 }
 
@@ -192,8 +188,8 @@ func TestUpdate_ResultsMsg_Success(t *testing.T) {
 	if m2.errMsg != "" {
 		t.Fatalf("expected error cleared, got %q", m2.errMsg)
 	}
-	if len(m2.hits) != 1 || m2.selectedIndex() != 0 {
-		t.Fatalf("hits/cursor wrong: hits=%d cursor=%d", len(m2.hits), m2.selectedIndex())
+	if len(m2.hits) != 1 || m2.cursor != 0 {
+		t.Fatalf("hits/cursor wrong: hits=%d cursor=%d", len(m2.hits), m2.cursor)
 	}
 }
 
@@ -263,8 +259,8 @@ func TestView_RendersNoMatches(t *testing.T) {
 
 func TestView_RendersHits_AndOverflow(t *testing.T) {
 	m := newTestModel(t)
-	// Build more hits than MaxVisibleHits to exercise the "more hits" branch.
-	for i := 0; i < MaxVisibleHits+5; i++ {
+	// Build more hits than maxVisibleHits to exercise the "more hits" branch.
+	for i := 0; i < maxVisibleHits+5; i++ {
 		m.hits = append(m.hits, server.LogSearchHit{
 			RunID: "01ARZ3NDEKTSV4RRFFQ69G5FA" + string(rune('A'+i%10)),
 			N:     int64(i + 1),
@@ -272,7 +268,7 @@ func TestView_RendersHits_AndOverflow(t *testing.T) {
 		})
 	}
 	out := m.View(80, 24)
-	if !strings.Contains(out, fmt.Sprintf("of %d", MaxVisibleHits+5)) {
+	if !strings.Contains(out, fmt.Sprintf("of %d", maxVisibleHits+5)) {
 		t.Fatalf("expected windowed hit-count marker, got:\n%s", out)
 	}
 	if !strings.Contains(out, "▶") {
@@ -282,10 +278,10 @@ func TestView_RendersHits_AndOverflow(t *testing.T) {
 
 // TestView_WindowFollowsCursor exercises M10: with more hits than the visible
 // window, the highlighted row must scroll into view instead of staying pinned
-// to a fixed [0:MaxVisibleHits] slice.
+// to a fixed [0:maxVisibleHits] slice.
 func TestView_WindowFollowsCursor(t *testing.T) {
 	m := newTestModel(t)
-	for i := 0; i < MaxVisibleHits+8; i++ {
+	for i := 0; i < maxVisibleHits+8; i++ {
 		m.hits = append(m.hits, server.LogSearchHit{
 			RunID: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			N:     int64(i + 1),
@@ -293,7 +289,7 @@ func TestView_WindowFollowsCursor(t *testing.T) {
 		})
 	}
 	// Cursor well past the fixed window's bottom edge.
-	m.cursor = MaxVisibleHits + 4
+	m.cursor = maxVisibleHits + 4
 	out := m.View(120, 40)
 	want := fmt.Sprintf("match-%02d", m.cursor)
 	if !strings.Contains(out, want) {

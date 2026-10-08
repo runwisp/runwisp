@@ -86,24 +86,24 @@ func (m *Model) renderHits(b *strings.Builder, width int) {
 		b.WriteString(prefix + style.Render(line))
 		b.WriteString("\n")
 	}
-	if total > MaxVisibleHits {
+	if total > maxVisibleHits {
 		b.WriteString(mutedStyle.Render(fmt.Sprintf("hits %d–%d of %d", start+1, end, total)))
 	}
 }
 
 // hitWindow returns the [start, end) slice of hit indices to render so the
-// window of at most MaxVisibleHits rows always contains the cursor. Once the
+// window of at most maxVisibleHits rows always contains the cursor. Once the
 // cursor passes the bottom of the window the view scrolls to follow it.
 func hitWindow(cursor, total int) (start, end int) {
-	if total <= MaxVisibleHits {
+	if total <= maxVisibleHits {
 		return 0, total
 	}
 	start = 0
-	if cursor >= MaxVisibleHits {
-		start = cursor - MaxVisibleHits + 1
+	if cursor >= maxVisibleHits {
+		start = cursor - maxVisibleHits + 1
 	}
-	if start > total-MaxVisibleHits {
-		start = total - MaxVisibleHits
+	if start > total-maxVisibleHits {
+		start = total - maxVisibleHits
 	}
-	return start, start + MaxVisibleHits
+	return start, start + maxVisibleHits
 }
