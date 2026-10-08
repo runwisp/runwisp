@@ -93,11 +93,8 @@ func printStartupTo(w io.Writer, info uikit.StartupInfo) {
 	fmt.Fprintf(w, "    %s\n", dimStyle.Render(runtime.GOOS+"/"+runtime.GOARCH))
 	fmt.Fprintln(w)
 
-	// Database and log paths are deterministic suffixes of Data
-	// (<data>/runwisp.db and <data>/logs), so listing them as separate fields
-	// padded the banner with three lines for the same root directory. The
-	// banner shows the absolute Data dir once; the interactive Info tab still
-	// breaks it down for operators who want the full layout.
+	// The database and logs live under Data, so the banner names only that; the
+	// Info tab breaks it down.
 	printDotField(w, "Config", info.ConfigPath)
 	printDotField(w, "Data", info.DataDir)
 	if info.Fingerprint != "" {
