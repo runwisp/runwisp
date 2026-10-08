@@ -28,12 +28,9 @@ func hostDescription(host string) string {
 
 // renderInstallBanner prints the confirmation banner shown before an
 // install — steps, resolved settings, and a diff on PlanUpdate. Shared
-// across systemd and launchd installers.
-//
-// The headline names what is about to happen rather than the command that asked
-// for it. `runwisp takeover` routes through this same install path, and reading
-// back "service install" from a command whose entire point is retiring cron told
-// the operator about the mechanism instead of the consequence.
+// across systemd and launchd installers. `runwisp takeover` routes through
+// here too, so the headline names the consequence (taking over from cron)
+// rather than the command.
 func renderInstallBanner(out io.Writer, plan Plan, opts InstallOptions) {
 	if opts.TakeOverCron && plan.CronUnit != "" {
 		fmt.Fprintf(out, "RunWisp is taking over from %s — about to perform these actions:\n", plan.CronUnit)

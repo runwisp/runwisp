@@ -141,11 +141,9 @@ func UserSpoolOwner(path string) (string, bool) {
 }
 
 // IsSpoolCrontabDir reports whether dir is one of the per-user cron spool
-// directories UserSpoolDirs recognizes. Exported so a caller can apply the
-// spool naming rule (see IsPlausibleAccountName) to a directory before it has
-// any filenames to check — `[daemon] include_cron`'s glob-eligibility filter
-// needs exactly that to avoid guessing "spool" for an arbitrary directory
-// that merely happens to be named `crontabs`.
+// directories UserSpoolDirs recognizes. `[daemon] include_cron`'s glob filter
+// uses it to avoid guessing "spool" for an arbitrary directory that merely
+// happens to be named `crontabs`.
 func IsSpoolCrontabDir(dir string) bool {
 	return slices.Contains(UserSpoolDirs(), filepath.Clean(dir))
 }
@@ -153,10 +151,8 @@ func IsSpoolCrontabDir(dir string) bool {
 // IsPlausibleAccountName reports whether a spool basename can be an account
 // name. Deliberately strict: a name that has to survive being handed to the OS
 // as a run-as identity, so anything exotic is better refused than resolved.
-// Exported because `[daemon] include_cron`'s own glob-eligibility filter needs
-// the same rule — crond takes a spool filename as-is (getpwnam, no naming
-// restriction beyond what a real account name allows), so a stricter local
-// rule there would silently drop crontabs crond runs just fine.
+// `[daemon] include_cron`'s glob filter shares this rule, since a stricter one
+// there would silently drop crontabs crond runs just fine.
 func IsPlausibleAccountName(name string) bool {
 	for _, r := range name {
 		switch {

@@ -134,26 +134,14 @@ type InstallOptions struct {
 	// preconditions hold; this package only executes the mechanics.
 	TakeOverCron bool
 
-	// PreConfirmed says the caller has already rendered a plan covering
-	// every step below and taken the operator's consent, so Install must
-	// not banner-and-ask again. internal/cutover sets it: its plan is a
-	// superset of this one (it also writes the config), and asking twice
-	// for one decision is how an operator learns to stop reading prompts.
-	//
-	// It suppresses the up-front "Proceed?" for a plan the caller showed.
-	// Nothing further down asks either: the mask is spelled out in both that
-	// plan and this package's own banner, so consent for it has always been
-	// taken by the time any cron unit is touched.
+	// PreConfirmed says the caller (internal/cutover) already showed a plan
+	// covering every step and took the operator's consent, so Install skips its
+	// own banner and "Proceed?".
 	PreConfirmed bool
 
-	// maskedCronUnit is the cron unit name to record in the rendered
-	// unit's marker comment. It is unexported so only this package can
-	// set it: ComputePlan resolves it (via discovery when TakeOverCron
-	// is set, or by carrying forward an existing unit's marker
-	// otherwise) on a local copy of InstallOptions before calling
-	// renderUnit, so a caller outside the package can never force a
-	// take-over marker into a rendered unit without going through the
-	// real discovery/masking path.
+	// maskedCronUnit is the cron unit name recorded in the rendered unit's
+	// marker comment. Unexported so a marker only ever comes from ComputePlan's
+	// discovery (or an existing unit's marker), never from a caller.
 	maskedCronUnit string
 	// cronPriorState is resolved alongside maskedCronUnit: the state that
 	// cron unit was in before RunWisp first masked it.
@@ -162,9 +150,8 @@ type InstallOptions struct {
 
 // UninstallOptions is the input to Uninstall.
 type UninstallOptions struct {
-	// Purge requests that the data dir be removed too. The caller is
-	// responsible for confirming the literal-word prompt before
-	// passing true.
+	// Purge requests that the data dir be removed too. Uninstall asks for the
+	// literal-word confirmation itself.
 	Purge bool
 	// DataDir is the resolved data dir — needed by --purge so the
 	// installer knows what to remove.
@@ -222,12 +209,11 @@ type Status struct {
 	CronActive bool
 }
 
-// Installer is implemented per-OS. The interface keeps the cobra
-// commands OS-neutral and is the natural seam for unit tests against
-// FakeFS / FakeRunner.
+// Installer is implemented per-OS (systemd, launchd). It keeps the cobra
+// commands OS-neutral and is the seam for unit tests.
 type Installer interface {
-	// Render returns the unit/plist body without touching disk.
-	// Powers `service install --print`.
+	// Render returns the unit/plist body without touching disk
+	// (`service install --print`).
 	Render(opts InstallOptions) ([]byte, error)
 
 	ComputePlan(ctx context.Context, opts InstallOptions) (Plan, error)
@@ -235,60 +221,33 @@ type Installer interface {
 	Uninstall(ctx context.Context, opts UninstallOptions, out io.Writer) error
 	Status(ctx context.Context, opts InstallOptions) (Status, error)
 
-	// Stop stops the managed daemon through the init system (systemctl
-	// --user stop / launchctl kill SIGTERM). The unit stays installed and
-	// enabled — it will come back on the next boot or `Restart`. Going
-	// through the manager instead of signalling the PID directly keeps the
-	// manager's view of the service in sync.
+	// Stop and Restart go through the init system rather than signalling the
+	// PID, so the manager's view of the service stays in sync. Stop leaves the
+	// unit installed and enabled.
 	Stop(ctx context.Context, opts InstallOptions) error
-	// Restart restarts the managed daemon through the init system
-	// (systemctl --user restart / launchctl kickstart -k).
 	Restart(ctx context.Context, opts InstallOptions) error
 
-	// EnsurePasswordDropIn writes a 0600 drop-in next to the managed unit
-	// that sets RUNWISP_PASSWORD, so a service install has a stable Web UI
-	// password instead of one the daemon regenerates every boot. The secret
-	// goes in a drop-in, never the world-readable unit file. It is idempotent
-	// and never rotates an existing secret: if a password drop-in is already
-	// present it is left untouched and (path, false, nil) is returned; only a
-	// fresh write returns wrote=true. On a fresh write it reloads the unit
-	// definition (systemd daemon-reload) so a following Restart picks the
-	// password up. A platform with no drop-in mechanism (launchd) returns
-	// ("", false, nil) — the caller then tells the operator to set
-	// RUNWISP_PASSWORD themselves.
+	// EnsurePasswordDropIn writes a 0600 drop-in beside the managed unit that
+	// sets RUNWISP_PASSWORD, so the service has a stable Web UI password. It
+	// never rotates: an existing drop-in is left alone and wrote is false.
+	// launchd has no drop-ins and returns ("", false, nil).
 	EnsurePasswordDropIn(ctx context.Context, opts InstallOptions, password string) (path string, wrote bool, err error)
 
-	// SupportsPasswordDropIn reports whether EnsurePasswordDropIn can actually
-	// write a drop-in on this OS. systemd can; launchd cannot and falls
-	// back to manualPasswordHint. Lets a caller (the --dry-run
-	// preview) describe what the real install will do instead of assuming
-	// every OS behaves like systemd.
+	// SupportsPasswordDropIn reports whether EnsurePasswordDropIn can write a
+	// drop-in on this OS, so a --dry-run can describe what install will do.
 	SupportsPasswordDropIn() bool
 
-	// WriteEnvDropIn refreshes a 0600 drop-in next to the managed unit holding
-	// one Environment="KEY=VALUE" line per entry in vars (sorted for
-	// deterministic output), so `service install` carries the operator's
-	// RUNWISP_* environment (RUNWISP_AUTH, RUNWISP_TLS, an operator-supplied
-	// RUNWISP_PASSWORD, …) into the service — the install shell's env never
-	// reaches the unit on its own. Unlike EnsurePasswordDropIn this is not
-	// write-once: every call replaces the file's content with exactly what
-	// vars says, so re-running `service install` with a changed or removed
-	// RUNWISP_* value actually takes effect. An empty vars removes the file.
-	// It reloads the unit definition (systemd daemon-reload) whenever the
-	// content changes, so a following Restart picks it up; the returned
-	// DropInChange tells the caller whether it wrote/refreshed content or
-	// removed a file that was there from a previous install (versus
-	// DropInUnchanged, including "already absent") — removal is
-	// security-relevant (it can silently flip auth back on) and must be
-	// reported differently than a normal write. A platform with no drop-in
-	// mechanism (launchd) returns ("", DropInUnchanged, nil) and does nothing.
+	// WriteEnvDropIn replaces a 0600 drop-in holding one Environment line per
+	// entry in vars (sorted), carrying the operator's RUNWISP_* environment into
+	// the service. Every call rewrites the file to match vars exactly; empty
+	// vars removes it. The returned DropInChange separates a removal from a
+	// write because removing a captured RUNWISP_AUTH=off silently turns auth
+	// back on. launchd returns ("", DropInUnchanged, nil).
 	WriteEnvDropIn(ctx context.Context, opts InstallOptions, name string, vars map[string]string) (path string, change DropInChange, err error)
 
-	// CronStatus reports the host's system cron unit and whether it is
-	// currently running. An empty unit name means there is nothing to take
-	// over — no cron unit on this host, or an OS where masking cron is not
-	// something RunWisp can do. It never errors just because cron is
-	// absent; that is a legitimate answer.
+	// CronStatus reports the host's system cron unit and whether it is running.
+	// An empty unit means there is nothing to take over; that is a legitimate
+	// answer, not an error.
 	CronStatus(ctx context.Context) (unit string, active bool, err error)
 }
 
