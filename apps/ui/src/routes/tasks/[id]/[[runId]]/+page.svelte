@@ -5,7 +5,7 @@
     import { page } from "$app/stores";
     import { resolve } from "$app/paths";
     import { TaskPage } from "$lib/components/dashboard";
-    import { toast, ErrorState, RunsList, RunDetailPanel } from "@runwisp/ui";
+    import { toast, extractErrorMessage, ErrorState, RunsList, RunDetailPanel } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
     import { tasksApi } from "$lib/api";
     import { appEventStream } from "$lib/stores";
@@ -73,8 +73,8 @@
             source.upsert(newRun);
             selectRunId = newRun.id;
             toast.success(`Triggered "${taskName}"`);
-        } catch {
-            toast.error(`Failed to trigger "${taskName}"`);
+        } catch (err) {
+            toast.error(extractErrorMessage(err, `Failed to trigger "${taskName}"`));
         } finally {
             triggering = false;
         }
@@ -84,9 +84,9 @@
         if (!taskName) return;
         try {
             await tasksApi.stopRun(runId);
-            toast.success(`Stopped run`);
-        } catch {
-            toast.error(`Failed to stop run`);
+            toast.success("Stopped run");
+        } catch (err) {
+            toast.error(extractErrorMessage(err, "Failed to stop run"));
         }
     }
 
@@ -97,8 +97,8 @@
             await tasksApi.restartService(taskName);
             void taskData.fetch();
             toast.success(`Restarting "${taskName}"`);
-        } catch {
-            toast.error(`Failed to restart "${taskName}"`);
+        } catch (err) {
+            toast.error(extractErrorMessage(err, `Failed to restart "${taskName}"`));
         } finally {
             restarting = false;
         }
@@ -111,8 +111,8 @@
             await tasksApi.stopService(taskName);
             void taskData.fetch();
             toast.success(`Stopped "${taskName}"`);
-        } catch {
-            toast.error(`Failed to stop "${taskName}"`);
+        } catch (err) {
+            toast.error(extractErrorMessage(err, `Failed to stop "${taskName}"`));
         } finally {
             stoppingService = false;
         }
