@@ -148,7 +148,7 @@
     // lineTop / totalHeight / the scroll-position→line lookup stay O(1) or
     // O(log n) even though rows are no longer uniform. A plain Map is
     // deliberate: reactivity is driven by the `rowCountVersion` counter (bumped
-    // on any change), not by per-key subscriptions — iterating a SvelteMap of
+    // on any change), not by per-key subscriptions, iterating a SvelteMap of
     // tens of thousands of lines on every streamed line would be wasteful.
     // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const rowCounts = new Map<number, number>();
@@ -175,7 +175,7 @@
     // Measures wrapped row counts for exactly the lines in [min, max] and bumps
     // rowCountVersion if anything changed. Called directly wherever new line
     // text lands in the cache (streamed append, on-demand backfill), each of
-    // which already knows the touched range from LogCache's merge result — so
+    // which already knows the touched range from LogCache's merge result, so
     // a single appended line costs O(1) here instead of re-walking the whole
     // (up to 50k-line) cache. Plain function, not an $effect: reads/writes
     // rowCounts and cache.lines by key, never by iterating the map.
@@ -201,7 +201,7 @@
     // or the available column width changes (wrap width affects every line's
     // row count, so there's no way to scope that to a range). Line
     // appends/backfills are measured incrementally at their call sites via
-    // measureRange instead — reading `cache.lines` in this effect's tracked
+    // measureRange instead, reading `cache.lines` in this effect's tracked
     // scope would resubscribe it to the SvelteMap's shared version signal and
     // re-run this full O(n) walk on every single appended line. `untrack`
     // (same pattern as the fetch/prune effects below) keeps that read out of
@@ -372,7 +372,7 @@
 
     // Width of the virtual scroll surface: wide enough for the longest line
     // seen so far, never narrower than the viewport (so short logs show no
-    // horizontal scrollbar). Wrapping pins the surface to the viewport — there
+    // horizontal scrollbar). Wrapping pins the surface to the viewport, there
     // is no horizontal axis to scroll.
     let surfaceWidth = $derived(
         wrap
@@ -429,14 +429,14 @@
         }
     });
 
-    // Prune stale cache entries — separate from reads to avoid a read-write cycle on SvelteMap.
+    // Prune stale cache entries, separate from reads to avoid a read-write cycle on SvelteMap.
     $effect(() => {
         const vs = visibleStart;
         const ve = visibleEnd;
         untrack(() => cache.prune(vs, ve));
     });
 
-    let prevTailRows = 0; // plain variable — intentionally non-reactive
+    let prevTailRows = 0; // plain variable, intentionally non-reactive
 
     $effect(() => {
         // Track committed lines AND live overlay rows so an animating region at
@@ -493,7 +493,7 @@
             containerWidth = containerEl.clientWidth;
             // Resync the reactive scroll position with the DOM. The browser
             // clamps scrollTop when the viewport grows (e.g. maximizing the
-            // console), but no scroll event fires for that clamp — so without
+            // console), but no scroll event fires for that clamp, so without
             // this the virtualizer keeps a stale, too-large scrollTop and
             // renders an empty window until the first manual scroll.
             scrollTop = containerEl.scrollTop;
@@ -649,7 +649,7 @@
                                     : 'text-[var(--rw-con-dim)] hover:text-aurora-400'}"
                                 title="{line.frameCount} earlier frame{line.frameCount === 1
                                     ? ''
-                                    : 's'} — click to {expandedLine === line.num
+                                    : 's'}, click to {expandedLine === line.num
                                     ? 'hide'
                                     : 'rewind'}"
                                 aria-label="Toggle frame history for line {line.num + 1}"
@@ -909,7 +909,7 @@
         border-top-color: color-mix(in srgb, var(--rw-term-warn) 30%, transparent);
     }
 
-    /* Subtle row hover on the fixed-dark console surface — a faint lift of the
+    /* Subtle row hover on the fixed-dark console surface, a faint lift of the
        console text colour, never a theme-flipping fill. */
     .log-line:hover {
         background-color: color-mix(in srgb, var(--rw-con-text) 4%, transparent);
@@ -939,7 +939,7 @@
 
     /* Blinking teal block caret shown while a run is actively streaming. One
        monospace cell wide so it reads as a terminal cursor parked at the write
-       position — inline after a still-appending line, or alone on the next. */
+       position, inline after a still-appending line, or alone on the next. */
     .stream-cursor {
         display: inline-block;
         width: 1ch;

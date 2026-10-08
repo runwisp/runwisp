@@ -1,7 +1,7 @@
 /* SPDX-FileCopyrightText: PoppyCake, s.r.o. */
 /* SPDX-License-Identifier: Apache-2.0 */
 
-/* RunWisp Design Tokens — plain CSS, no Tailwind directives.
+/* RunWisp Design Tokens, plain CSS, no Tailwind directives.
  *
  * Single source of truth for the OKLch palette and the semantic `--rw-*`
  * tokens that drive all apps:
@@ -19,7 +19,7 @@
  *   The union selector covers both. Light mode is the default.
  *
  * Webfonts are @imported here (not in theme.css) so every consumer that reads
- * these tokens also gets the faces they name — apps/docs imports this file
+ * these tokens also gets the faces they name, apps/docs imports this file
  * alone. Both families ship in the binary; nothing is fetched from a CDN.
  */
 
@@ -30,13 +30,13 @@
 @import "@fontsource-variable/geist-mono/index.css";
 
 :root {
-    /* Typography — body sans for prose, mono for all chrome and identifiers.
+    /* Typography, body sans for prose, mono for all chrome and identifiers.
      * Geist Mono is variable (100–900), so heading weight 800 is a real cut. */
     --rw-font-sans: "TASA Orbiter", system-ui, -apple-system, sans-serif;
     --rw-font-mono:
         "Geist Mono Variable", "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
-    /* Primary — Wisp Teal (brand = #0E7C86, the artifact's deep teal). Deeper
+    /* Primary, Wisp Teal (brand = #0E7C86, the artifact's deep teal). Deeper
      * and less cyan than Aurora (running/info) so the two stay distinct. */
     --rw-color-wisp-50: oklch(0.97 0.02 205);
     --rw-color-wisp-100: oklch(0.95 0.035 205);
@@ -50,7 +50,7 @@
     --rw-color-wisp-900: oklch(0.3 0.048 208);
     --rw-color-wisp-950: oklch(0.2 0.034 210);
 
-    /* Accent — Aurora Teal (running status = #13A0A8, a cyan-leaning teal) */
+    /* Accent, Aurora Teal (running status = #13A0A8, a cyan-leaning teal) */
     --rw-color-aurora-50: oklch(0.97 0.02 192);
     --rw-color-aurora-100: oklch(0.94 0.045 192);
     --rw-color-aurora-200: oklch(0.88 0.075 190);
@@ -62,7 +62,7 @@
     --rw-color-aurora-800: oklch(0.35 0.07 192);
     --rw-color-aurora-900: oklch(0.28 0.055 192);
 
-    /* Mist — teal-gray neutrals (the runbook's #F3F6F6 / #E0E7E7 /
+    /* Mist, teal-gray neutrals (the runbook's #F3F6F6 / #E0E7E7 /
      * #14262A / #0C1719 family). No purple tint; hue ~195-205, low chroma,
      * so bg-mist-* utilities agree with the new teal-black surfaces. The light
      * end stays near-neutral to match the desaturated canvas. */
@@ -78,7 +78,7 @@
     --rw-color-mist-900: oklch(0.266 0.025 204); /* ≈ #16292B */
     --rw-color-mist-950: oklch(0.195 0.016 208); /* ≈ #0C1719 */
 
-    /* Success — Field Green (success status = #1F9D57, a true grass green) */
+    /* Success, Field Green (success status = #1F9D57, a true grass green) */
     --rw-color-success-50: oklch(0.97 0.02 150);
     --rw-color-success-100: oklch(0.94 0.04 150);
     --rw-color-success-200: oklch(0.88 0.07 150);
@@ -88,7 +88,7 @@
     --rw-color-success-600: oklch(0.5 0.13 150);
     --rw-color-success-700: oklch(0.42 0.11 150);
 
-    /* Danger — Signal Red (failed status = #D6453D, a warm tomato red) */
+    /* Danger, Signal Red (failed status = #D6453D, a warm tomato red) */
     --rw-color-danger-50: oklch(0.97 0.016 27);
     --rw-color-danger-100: oklch(0.94 0.03 27);
     --rw-color-danger-200: oklch(0.88 0.06 27);
@@ -98,7 +98,7 @@
     --rw-color-danger-600: oklch(0.5 0.17 27);
     --rw-color-danger-700: oklch(0.42 0.145 27);
 
-    /* Warning — Ember Amber (stopped status = #D98324, a warm orange-amber) */
+    /* Warning, Ember Amber (stopped status = #D98324, a warm orange-amber) */
     --rw-color-warning-50: oklch(0.97 0.03 78);
     --rw-color-warning-100: oklch(0.94 0.07 74);
     --rw-color-warning-200: oklch(0.9 0.11 72);
@@ -108,7 +108,7 @@
     --rw-color-warning-600: oklch(0.6 0.14 62);
     --rw-color-warning-700: oklch(0.52 0.12 60);
 
-    /* ANSI console palette — 16-color map for the log console, tuned for
+    /* ANSI console palette, 16-color map for the log console, tuned for
      * its always-dark surface (no .dark override needed). Hues follow the
      * semantic scales: red→danger, green→success, yellow→warning,
      * blue→wisp, cyan→aurora, grays→mist. */
@@ -129,11 +129,11 @@
     --rw-ansi-bright-cyan: var(--rw-color-aurora-300);
     --rw-ansi-bright-white: var(--rw-color-mist-50);
 
-    /* Fixed-dark sibling palettes — the `--rw-con-*` log console (a "black box"
+    /* Fixed-dark sibling palettes, the `--rw-con-*` log console (a "black box"
      * device) and the `--rw-term-*`/`--rw-syn-*` website terminal surfaces both
      * keep their own dark palette in BOTH themes; they never flip light/dark. */
 
-    /* Console device surface — the log console instrument.
+    /* Console device surface, the log console instrument.
      * Exact values from the approved execution-detail design. */
     --rw-con-bg: #0e141b; /* body / gutter backing */
     --rw-con-panel: #11181f; /* toolbar + footer chrome */
@@ -141,7 +141,7 @@
     --rw-con-dim: #6c7d8c; /* footer + muted readouts */
     --rw-con-gutter: #3c4a58; /* line numbers + sentinel rule */
 
-    /* Terminal surface — always dark in both themes (website --term-* set) */
+    /* Terminal surface, always dark in both themes (website --term-* set) */
     --rw-term: #0a1116;
     --rw-term-2: #0d151b;
     --rw-term-line: #1d2932;
@@ -161,7 +161,7 @@
     --rw-syn-punc: #9aa7b0;
     --rw-syn-fn: #2fd4dd;
 
-    /* Elevation — light-mode drop shadows; flipped to `none` in dark so the
+    /* Elevation, light-mode drop shadows; flipped to `none` in dark so the
      * UI reads as borders-only there. */
     --rw-shadow-xs: 0 1px 2px rgba(16, 41, 43, 0.04);
     --rw-shadow-sm: 0 1px 2px rgba(16, 41, 43, 0.04), 0 12px 28px -20px rgba(16, 41, 43, 0.22);
@@ -169,7 +169,7 @@
     --rw-shadow-lg: 0 1px 2px rgba(16, 41, 43, 0.06), 0 30px 60px -28px rgba(16, 41, 43, 0.45);
     --rw-shadow-xl: 0 1px 2px rgba(16, 41, 43, 0.06), 0 40px 80px -30px rgba(16, 41, 43, 0.5);
 
-    /* Light-mode semantic tokens (default) — runbook palette (exact hex).
+    /* Light-mode semantic tokens (default), runbook palette (exact hex).
      *
      * The canvas carries only a whisper of the brand teal. The website can
      * afford a minty `--ground` because dark panes and terminals cover most
@@ -223,7 +223,7 @@
     --rw-warning-soft: rgba(196, 120, 26, 0.1);
     --rw-warning-soft-text: #c4781a;
     --rw-warning-soft-border: rgba(196, 120, 26, 0.25);
-    /* Info — matches primary teal */
+    /* Info, matches primary teal */
     --rw-info: #15a0a8;
     --rw-info-hover: #0e7c86;
     --rw-on-info: #ffffff;
@@ -235,7 +235,7 @@
     --rw-glass-blur: blur(12px);
 }
 
-/* Dark-mode semantic tokens — `.dark` class for Svelte apps, `[data-theme="dark"]`
+/* Dark-mode semantic tokens, `.dark` class for Svelte apps, `[data-theme="dark"]`
  * attribute for Starlight. Both selectors apply the same token set. */
 :root.dark,
 :root[data-theme="dark"] {
@@ -254,7 +254,7 @@
     --rw-outline-faint: #1d2932;
     --rw-ring: #2fd4dd;
     --rw-backdrop: rgba(4, 10, 12, 0.7);
-    /* Primary — bright teal in dark, matches info */
+    /* Primary, bright teal in dark, matches info */
     --rw-primary: #2fd4dd;
     --rw-primary-hover: #5fe3ea;
     --rw-primary-active: #5fe3ea;
@@ -284,7 +284,7 @@
     --rw-warning-soft: rgba(224, 165, 46, 0.14);
     --rw-warning-soft-text: #e0a52e;
     --rw-warning-soft-border: rgba(224, 165, 46, 0.28);
-    /* Info — bright teal in dark */
+    /* Info, bright teal in dark */
     --rw-info: #2fd4dd;
     --rw-info-hover: #5fe3ea;
     --rw-on-info: #04181a;
@@ -293,7 +293,7 @@
     --rw-info-soft-border: rgba(47, 212, 221, 0.28);
     /* Glass */
     --rw-glass: rgba(8, 15, 17, 0.9);
-    /* Elevation — borders-only in dark, no drop shadow */
+    /* Elevation, borders-only in dark, no drop shadow */
     --rw-shadow-xs: none;
     --rw-shadow-sm: none;
     --rw-shadow-md: none;
@@ -301,7 +301,7 @@
     --rw-shadow-xl: none;
 }
 
-/* Platform polish — focus ring, text selection, scrollbar. Lifted from
+/* Platform polish, focus ring, text selection, scrollbar. Lifted from
  * theme.css so apps/docs (no Tailwind) gets the same treatment as the
  * Svelte apps. */
 

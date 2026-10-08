@@ -1,6 +1,6 @@
 /* Copyright (c) PoppyCake, s.r.o. SPDX-License-Identifier: Apache-2.0 */
 
-/* RunWisp Design System — Tailwind v4 entrypoint.
+/* RunWisp Design System, Tailwind v4 entrypoint.
  *
  * Raw OKLch palette + semantic tokens live in ./theme-tokens.css (plain CSS),
  * so apps/docs (Starlight, no Tailwind pipeline) can consume the same source.
@@ -23,7 +23,7 @@
      * side for good; below it the operator can fold the first two away. */
     --breakpoint-3xl: 100rem;
 
-    /* Palette aliases — Tailwind utilities (bg-wisp-500, text-mist-900, …)
+    /* Palette aliases, Tailwind utilities (bg-wisp-500, text-mist-900, …)
      * resolve through to --rw-color-* declared in theme-tokens.css. */
     --color-wisp-50: var(--rw-color-wisp-50);
     --color-wisp-100: var(--rw-color-wisp-100);
@@ -87,7 +87,7 @@
     --color-warning-600: var(--rw-color-warning-600);
     --color-warning-700: var(--rw-color-warning-700);
 
-    /* Typography — stacks and @font-face live in theme-tokens.css so the
+    /* Typography, stacks and @font-face live in theme-tokens.css so the
      * non-Tailwind consumers (apps/docs) share one definition. */
     --font-sans: var(--rw-font-sans);
     --font-mono: var(--rw-font-mono);
@@ -126,18 +126,18 @@
     --spacing-20: 5rem;
     --spacing-24: 6rem;
 
-    /* Border radius — runbook scale (small radii are signature). lg/xl/2xl/3xl
+    /* Border radius, runbook scale (small radii are signature). lg/xl/2xl/3xl
      * remain for legacy call sites but should not be used going forward. */
     --radius-none: 0;
-    --radius-sm: 0.1875rem; /* 3px — controls */
-    --radius-md: 0.25rem; /* 4px — panels / cards */
+    --radius-sm: 0.1875rem; /* 3px, controls */
+    --radius-md: 0.25rem; /* 4px, panels / cards */
     --radius-lg: 0.5rem;
     --radius-xl: 0.75rem;
     --radius-2xl: 1rem;
     --radius-3xl: 1.5rem;
     --radius-full: 9999px;
 
-    /* Shadows — mapped to the flip tokens in theme-tokens.css so every
+    /* Shadows, mapped to the flip tokens in theme-tokens.css so every
      * shadow-* utility resolves to `none` in dark (borders-only look). */
     --shadow-xs: var(--rw-shadow-xs);
     --shadow-sm: var(--rw-shadow-sm);
@@ -146,7 +146,7 @@
     --shadow-xl: var(--rw-shadow-xl);
 }
 
-/* Semantic Design Tokens — Tailwind utility aliases.
+/* Semantic Design Tokens, Tailwind utility aliases.
  * Components use `bg-surface`, `text-primary`, etc.; the values live in
  * theme-tokens.css under the --rw-* namespace and flip on light/dark. */
 
@@ -206,7 +206,7 @@
     --color-warning-soft-border: var(--rw-warning-soft-border);
     --color-info-soft-border: var(--rw-info-soft-border);
 
-    /* Terminal surface — fixed dark in both themes */
+    /* Terminal surface, fixed dark in both themes */
     --color-term: var(--rw-term);
     --color-term-2: var(--rw-term-2);
     --color-term-line: var(--rw-term-line);
@@ -228,8 +228,8 @@
 
     /* Motion. Deliberately minimal: hover, focus and state changes are
      * instant, so there is no scale of durations to pick from. The few things
-     * that still move — a drawer sliding, a toggle knob, an accordion's
-     * height, a progress bar's width — set their own timing inline. */
+     * that still move, a drawer sliding, a toggle knob, an accordion's
+     * height, a progress bar's width, set their own timing inline. */
     --ease-out: cubic-bezier(0, 0, 0.2, 1);
 }
 
@@ -255,7 +255,7 @@ body {
     color: var(--rw-on-surface);
 }
 
-/* Headings are mono chrome — the runbook voice. Unlayered, so it beats the
+/* Headings are mono chrome, the runbook voice. Unlayered, so it beats the
    weight/leading/tracking utilities on a raw <h1>-<h3>: every heading reads the
    same. The Heading component opts out (data-rw-heading) and carries this look
    in its own classes, so its props are the source of truth. :is()/:where()
@@ -295,7 +295,7 @@ body {
     backdrop-filter: var(--rw-glass-blur);
 }
 
-/* Legacy aliases — prefer .rw-bg-glass which adapts to light/dark */
+/* Legacy aliases, prefer .rw-bg-glass which adapts to light/dark */
 .rw-bg-glass-dark {
     background: var(--rw-glass);
     backdrop-filter: var(--rw-glass-blur);

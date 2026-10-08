@@ -25,7 +25,7 @@ export function getFocusableElements(container: HTMLElement): HTMLElement[] {
  * Pure decision function: given a keydown event, the currently focusable
  * elements (in order), and whatever currently has focus, returns the element
  * that Tab/Shift+Tab should wrap focus to in order to keep it trapped inside
- * the set — or `null` if the key doesn't need handling.
+ * the set, or `null` if the key doesn't need handling.
  *
  * Framework- and DOM-free on purpose (elements are compared by identity only)
  * so this can be unit tested without a browser or jsdom.
@@ -59,7 +59,7 @@ export interface TrapFocusOptions {
  * Svelte action that keeps keyboard focus inside `node` while it's mounted:
  * Tab from the last focusable descendant wraps to the first (and Shift+Tab
  * from the first wraps to the last), and focus is restored to whatever was
- * focused beforehand once the trap is torn down — unless a click on some
+ * focused beforehand once the trap is torn down, unless a click on some
  * other real element already moved focus there, in which case that's left
  * alone.
  */
@@ -97,7 +97,7 @@ export function trapFocus(node: HTMLElement, options: TrapFocusOptions = {}) {
         destroy() {
             node.removeEventListener("keydown", handleKeydown);
             // By the time an action's destroy() runs, `node` (and whatever
-            // inside it held focus) has already been detached — removing a
+            // inside it held focus) has already been detached, removing a
             // focused element resets focus to <body> as a browser default, so
             // that can't be told apart from an explicit close (Escape, item
             // activation) by checking `node.contains(activeElement)` here.

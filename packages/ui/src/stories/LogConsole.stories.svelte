@@ -24,7 +24,7 @@
         `  ${ESC}32m✓${ESC}0m users            ${ESC}90m(184,221 rows, 48 MB)${ESC}0m`,
         `  ${ESC}32m✓${ESC}0m sessions         ${ESC}90m(902,114 rows, 210 MB)${ESC}0m`,
         `  ${ESC}32m✓${ESC}0m invoices         ${ESC}90m(45,002 rows, 12 MB)${ESC}0m`,
-        `${ESC}33m[warn]${ESC}0m table ${ESC}1maudit_log${ESC}0m exceeds 1 GB — consider partitioning`,
+        `${ESC}33m[warn]${ESC}0m table ${ESC}1maudit_log${ESC}0m exceeds 1 GB, consider partitioning`,
         `  ${ESC}32m✓${ESC}0m audit_log        ${ESC}90m(7,212,330 rows, 1.2 GB)${ESC}0m`,
         `${ESC}31m[error]${ESC}0m checksum mismatch on chunk 7, retrying ${ESC}90m(attempt 1/3)${ESC}0m`,
         `  ${ESC}32m✓${ESC}0m retry succeeded`,
@@ -53,7 +53,7 @@
     const LONG_LINES = [
         `${ESC}36m[info]${ESC}0m starting request trace`,
         `${ESC}90m2026-06-05T03:00:00Z${ESC}0m GET /api/v1/tasks?include=runs,logs,schedule&limit=100&offset=0 → ${ESC}32m200${ESC}0m ${ESC}90m{"trace":"a1b2c3d4-e5f6-7890-abcd-ef1234567890","upstream":"https://internal.example.com/very/long/path/segment/that/keeps/going/and/going","latency_ms":1287,"bytes":204812}${ESC}0m`,
-        `${ESC}31m[error]${ESC}0m panic: runtime error: index out of range [12] with length 8 — goroutine 42 [running]: main.process(0xc0000b4000, 0x1f4) /home/runner/work/app/app/internal/pipeline/process.go:317 +0x4a5`,
+        `${ESC}31m[error]${ESC}0m panic: runtime error: index out of range [12] with length 8, goroutine 42 [running]: main.process(0xc0000b4000, 0x1f4) /home/runner/work/app/app/internal/pipeline/process.go:317 +0x4a5`,
         "  short line in between",
         `tab-separated\tcolumns\there\tshould\tstay\taligned\tand\textend\tfar\tpast\tthe\tviewport\tedge\tto\tprove\thorizontal\tscroll`,
         `${ESC}32m[done]${ESC}0m ${"=".repeat(400)}|END`,

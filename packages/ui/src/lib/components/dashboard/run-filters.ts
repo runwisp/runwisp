@@ -12,7 +12,7 @@ import { TRIGGER_LABELS } from "./run-helpers.js";
  *
  * `statuses` is a multi-select set joined to a comma-separated string only at
  * the two wire boundaries (the list query and the bulk selector). Time bounds
- * are absolute RFC3339 instants — presets resolve to `now − delta` at apply
+ * are absolute RFC3339 instants, presets resolve to `now − delta` at apply
  * time so a live SSE row created after the boundary keeps matching.
  */
 export interface RunsListFilters {
@@ -21,13 +21,13 @@ export interface RunsListFilters {
     sortDirection: "asc" | "desc" | "";
     // Optional dimensions explicitly admit `undefined` so a dimension can be
     // cleared by reassignment (`{ ...f, x: undefined }`) under the project's
-    // exactOptionalPropertyTypes — a fresh object reference is what re-triggers
+    // exactOptionalPropertyTypes, a fresh object reference is what re-triggers
     // the parent's fetch effect through several levels of `bind:`.
     taskName?: string | undefined;
     createdAfter?: string | undefined;
     createdBefore?: string | undefined;
     triggeredBy?: string | undefined;
-    // A human exit-code expression — a bare code (`137`), a comparison (`>100`,
+    // A human exit-code expression, a bare code (`137`), a comparison (`>100`,
     // `<=150`), or a space-separated combination (`>100 <150`). Normalized to an
     // inclusive [min, max] range (`exitCodeRange`) at the wire boundary; the
     // server only ever sees `exitCodeMin` / `exitCodeMax`.
@@ -35,7 +35,7 @@ export interface RunsListFilters {
     retriesOnly?: boolean | undefined;
 }
 
-/** A fresh default filter — no dimensions active, newest-first. */
+/** A fresh default filter, no dimensions active, newest-first. */
 export function emptyRunFilters(): RunsListFilters {
     return { search: "", statuses: [], sortDirection: "desc" };
 }
@@ -44,7 +44,7 @@ export function emptyRunFilters(): RunsListFilters {
  * Reserved `status` token the "Failed" browse filter sends instead of a fixed
  * end-reason list. The server (splitFailureToken in api_types.go) strips it and
  * matches on each run's persisted `isFailure` bit, so the browse filter agrees
- * with the attention badges, the failed stat, and notifications — all of which
+ * with the attention badges, the failed stat, and notifications, all of which
  * follow the per-task `failures` policy. It is not a real status/end-reason, so
  * it OR-combines with the other buckets. Must match `failureStatusToken` in the
  * daemon.
@@ -54,7 +54,7 @@ export const FAILURE_STATUS_TOKEN = "failure";
 /**
  * Outcome buckets: the 14 individual run statuses collapsed into five
  * plain-language groups, so the common case is a five-item pick instead of a
- * flat checklist. Each bucket is purely a UI grouping over `statuses` — toggling
+ * flat checklist. Each bucket is purely a UI grouping over `statuses`, toggling
  * one adds/removes its members, and the popover's "Advanced" section still
  * exposes the individual statuses for surgical filters (e.g. only `timeout`).
  *
@@ -123,7 +123,7 @@ function exactBucket(statuses: string[]): StatusBucket | undefined {
 
 /**
  * The popover-managed dimensions, in display (most→least useful) order.
- * `task` only ever applies on the cross-task /runs view — on a single task's
+ * `task` only ever applies on the cross-task /runs view, on a single task's
  * page the task name is the page scope (injected at fetch time), never a
  * popover-set filter, so it stays absent from those filters and is not counted.
  */
@@ -156,12 +156,12 @@ export function dimensionActive(f: RunsListFilters, dim: FilterDimension): boole
     }
 }
 
-/** The active dimensions, in display order — drives the chip row. */
+/** The active dimensions, in display order, drives the chip row. */
 export function activeDimensions(f: RunsListFilters): FilterDimension[] {
     return DIMENSION_ORDER.filter((dim) => dimensionActive(f, dim));
 }
 
-/** How many dimensions are active — the count badge on the Filter button. */
+/** How many dimensions are active, the count badge on the Filter button. */
 export function activeFilterCount(f: RunsListFilters): number {
     return activeDimensions(f).length;
 }
@@ -199,12 +199,12 @@ export function triggerDescription(trigger: string): string {
 
 /**
  * The triggers offered in the filter dropdown. `station` is intentionally
- * excluded for now — control-plane runs still carry the `station` trigger, but
+ * excluded for now, control-plane runs still carry the `station` trigger, but
  * it isn't a selectable filter dimension.
  */
 export const FILTERABLE_TRIGGERS: readonly Trigger[] = TRIGGERS.filter((t) => t !== "station");
 
-/** Chip label for the status dimension — names a whole bucket when it matches. */
+/** Chip label for the status dimension, names a whole bucket when it matches. */
 export function statusChipLabel(statuses: string[]): string {
     const bucket = exactBucket(statuses);
     if (bucket) return bucket.label;
@@ -217,8 +217,8 @@ export function statusChipLabel(statuses: string[]): string {
 //
 // A bare calendar day (`YYYY-MM-DD` from a native date input) maps to a local
 // instant: the "from" edge is that day's 00:00, the "to" edge is its end
-// (23:59:59.999) so picking the same day for both bounds — or the one-click
-// "on day" shortcut — captures the whole day and round-trips back to the same
+// (23:59:59.999) so picking the same day for both bounds, or the one-click
+// "on day" shortcut, captures the whole day and round-trips back to the same
 // date in the inputs. Bounds are stored as absolute RFC3339 (UTC) instants, the
 // shape the list query and SSE-merge filter already expect.
 
@@ -272,7 +272,7 @@ export function isWholeDay(after?: string, before?: string): boolean {
 // --- Exit-code expression ------------------------------------------------
 //
 // The popover takes a free-form exit-code expression and normalizes it to an
-// inclusive integer [min, max] range — the shape the server gates on. Because
+// inclusive integer [min, max] range, the shape the server gates on. Because
 // exit codes are integers, a strict comparison collapses to an inclusive
 // bound: `>100` is min 101, `<150` is max 149. Tokens combine (`>100 <150`),
 // and a bare number is an exact match (min = max = n).
@@ -333,7 +333,7 @@ export function exitCodeRangeActive(expr: string | undefined): boolean {
     return min !== undefined || max !== undefined;
 }
 
-/** True when the expression is empty or fully parseable — drives input validation. */
+/** True when the expression is empty or fully parseable, drives input validation. */
 export function isExitCodeExprValid(expr: string): boolean {
     return parseExitCodeRange(expr).valid;
 }

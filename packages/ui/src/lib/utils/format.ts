@@ -41,7 +41,7 @@ export const formatDateTime = dateFormatter({
     minute: "2-digit",
 });
 
-/** Wall-clock time of day, seconds included, 24-hour — e.g. "17:15:02". */
+/** Wall-clock time of day, seconds included, 24-hour, e.g. "17:15:02". */
 export const formatClockTime = dateFormatter({
     hour: "2-digit",
     minute: "2-digit",
@@ -49,17 +49,17 @@ export const formatClockTime = dateFormatter({
     hour12: false,
 });
 
-/** Calendar date without the time — e.g. "22 Jun 2026". */
+/** Calendar date without the time, e.g. "22 Jun 2026". */
 export const formatCalendarDate = dateFormatter({
     year: "numeric",
     month: "short",
     day: "numeric",
 });
 
-/** Time of day, no seconds, 24-hour — e.g. "17:15". */
+/** Time of day, no seconds, 24-hour, e.g. "17:15". */
 export const formatTimeHM = dateFormatter({ hour: "2-digit", minute: "2-digit", hour12: false });
 
-/** Day and month, no year — e.g. "22 Jun". */
+/** Day and month, no year, e.g. "22 Jun". */
 export const formatDayMonth = dateFormatter({ month: "short", day: "numeric" });
 
 export const formatFullDateTime = dateFormatter({

@@ -5,7 +5,7 @@
 // reflect which rows on the current page are ACTUALLY selected, not merely
 // how many rows are selected. A bare count comparison is wrong the moment
 // `selectedRows` holds a different set of rows than `pagedRows` but happens
-// to be the same size — e.g. rows selected on a page the grid has since
+// to be the same size, e.g. rows selected on a page the grid has since
 // paged/filtered away from. Extracted so the membership check is unit
 // testable without a component-render harness.
 

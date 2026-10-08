@@ -55,7 +55,7 @@ export function runDuration(
 
 /**
  * Gap between when a run was scheduled (`createdAt`, the cron tick) and when
- * it actually started (`startedAt`), formatted — or undefined when the two are
+ * it actually started (`startedAt`), formatted, or undefined when the two are
  * within a second of each other. This is the visible face of `jitter`: a
  * jittered run is created at its tick but starts later inside the window, and
  * this is by how much. It also surfaces queue-wait, since a queued run is

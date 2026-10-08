@@ -52,7 +52,7 @@ describe("humanizeCron", () => {
         expect(result.isHumanized).toBe(false);
     });
 
-    it("falls back to raw for unparseable expressions — never 'Invalid'", () => {
+    it("falls back to raw for unparseable expressions, never 'Invalid'", () => {
         const result = humanizeCron("not a cron");
         expect(result.humanized).toBe("not a cron");
         expect(result.isHumanized).toBe(false);

@@ -41,7 +41,7 @@
     // External writes to `value` (Reset / clear-all) win immediately: adopt them
     // and drop any pending debounce. Depends only on `value` (raw is read
     // untracked), so typing never re-enters here. Tiny race: a reset that leaves
-    // `value` unchanged ("" -> "") can't cancel a first-keystroke debounce —
+    // `value` unchanged ("" -> "") can't cancel a first-keystroke debounce,
     // negligible at 250ms. ponytail: guarded two-way sync, fine for one field.
     $effect(() => {
         const v = value;
