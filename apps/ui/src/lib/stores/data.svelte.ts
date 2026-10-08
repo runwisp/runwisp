@@ -33,10 +33,6 @@ class TaskStore {
         return this.#items;
     }
 
-    set items(value: Task[]) {
-        this.#items = value;
-    }
-
     get loaded(): boolean {
         return this.#loaded;
     }
@@ -45,6 +41,16 @@ class TaskStore {
      * UI can stop showing a loading state. A later refresh() clears it. */
     get loadFailed(): boolean {
         return this.#loadFailed;
+    }
+
+    /** Fetch the task list into the store. Rejects on failure, leaving the
+     * error to the caller (pages pass it to AsyncData for their error UI). */
+    async load(): Promise<Task[]> {
+        const items = await this.#getTasks();
+        this.#items = items;
+        this.#loaded = true;
+        this.#loadFailed = false;
+        return items;
     }
 
     async loadIfNeeded(): Promise<void> {
@@ -56,9 +62,7 @@ class TaskStore {
      * by the connection tracker. */
     async refresh({ notify = false }: { notify?: boolean } = {}): Promise<void> {
         try {
-            this.#items = await this.#getTasks();
-            this.#loaded = true;
-            this.#loadFailed = false;
+            await this.load();
         } catch (err) {
             const message = this.#fetchErrorMessage(err, "Failed to load tasks");
             if (message === null) return;

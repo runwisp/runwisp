@@ -8,7 +8,7 @@
     import { OverviewPage, OverviewSkeleton } from "$lib/components/dashboard";
     import { RunMotion, type DaemonStats } from "@runwisp/ui";
     import AsyncDataView from "$lib/components/AsyncDataView.svelte";
-    import { runsApi, tasksApi, systemApi, systemEventSchema, type MetricsSample } from "$lib/api";
+    import { runsApi, systemApi, systemEventSchema, type MetricsSample } from "$lib/api";
     import { runUpdatesStore, systemStore, taskStore, appEventStream } from "$lib/stores";
     import { mergeRecentRuns, mergeRunningRuns, upsertRun } from "$lib/utils/overview-runs";
     import { sortByCreatedAtDesc } from "$lib/utils/sort";
@@ -38,8 +38,10 @@
     });
 
     const pageData = new AsyncData(async () => {
-        const [tasksData, recentRunsRes, runningRunsRes] = await Promise.all([
-            tasksApi.getAll(),
+        // Refetch tasks too: next-run times may have advanced while this page
+        // was closed. The overview reads them from taskStore.
+        const [, recentRunsRes, runningRunsRes] = await Promise.all([
+            taskStore.load(),
             runsApi.getAll({
                 limit: RECENT_RUN_LIMIT,
                 sortField: "startedAt",
@@ -53,7 +55,6 @@
             }),
         ]);
         return {
-            tasks: tasksData,
             recentRuns: recentRunsRes.runs,
             runningRuns: runningRunsRes.runs,
             // Unfiltered total → every run ever recorded, for the "total runs" pane.
@@ -145,7 +146,6 @@
     $effect(() => {
         const data = pageData.data;
         if (data) {
-            taskStore.items = data.tasks;
             dashState.totalRuns = data.totalRuns;
             // Merge the snapshot through the same phase-order guard the SSE path
             // uses, so a fetch that resolves with an older view can't revert a
