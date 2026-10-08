@@ -75,11 +75,11 @@ func logFailed(e events.Event) {
 			level = slog.LevelDebug
 		}
 	}
-	logFailure(level, run)
+	logEnd(level, "run failed", run)
 }
 
-func logFailure(level slog.Level, run *model.Run) {
-	slog.Log(context.Background(), level, "run failed",
+func logEnd(level slog.Level, msg string, run *model.Run) {
+	slog.Log(context.Background(), level, msg,
 		"task", run.TaskName, "run", run.ID,
 		"exit", run.ExitCode, "reason", reasonString(run),
 		"dur", runDuration(run))
@@ -88,17 +88,17 @@ func logFailure(level slog.Level, run *model.Run) {
 // LogEnded emits the line the daemon logs when run ends, for a caller holding
 // the ended run rather than its bus event. Unlike the daemon's handler it keeps
 // an operator stop at INFO: someone reading this run's log asked to see how it
-// ended. Only runs the task's `failures` policy classifies as failures warn.
+// ended. Only runs the task's `failures` policy classifies as failures warn and
+// read "run failed"; any other end (an operator stop, by default) "run ended".
 func LogEnded(run *model.Run) {
-	if run.EndReason != nil && *run.EndReason == model.ReasonSuccess {
+	switch {
+	case run.EndReason != nil && *run.EndReason == model.ReasonSuccess:
 		logSucceeded(run)
-		return
+	case run.IsFailure:
+		logEnd(slog.LevelWarn, "run failed", run)
+	default:
+		logEnd(slog.LevelInfo, "run ended", run)
 	}
-	level := slog.LevelInfo
-	if run.IsFailure {
-		level = slog.LevelWarn
-	}
-	logFailure(level, run)
 }
 
 func logDiskPressure(e events.Event) {

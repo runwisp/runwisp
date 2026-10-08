@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -76,7 +75,7 @@ func (d *fakeLogDaemon) addRun(id, task string, instance int, reason model.EndRe
 	if reason != "" {
 		run.Status = model.PhaseEnded
 		run.EndReason = &reason
-		run.IsFailure = reason != model.ReasonSuccess
+		run.IsFailure = (&model.Task{}).IsFailureReason(reason, exit, false)
 		end := now.Add(time.Second)
 		run.EndedAt = &end
 	}
@@ -97,7 +96,7 @@ func (d *fakeLogDaemon) end(id string, reason model.EndReason) model.Run {
 		if d.runs[i].ID == id {
 			d.runs[i].Status = model.PhaseEnded
 			d.runs[i].EndReason = &reason
-			d.runs[i].IsFailure = reason != model.ReasonSuccess
+			d.runs[i].IsFailure = (&model.Task{}).IsFailureReason(reason, d.runs[i].ExitCode, false)
 			return d.runs[i]
 		}
 	}
@@ -536,20 +535,16 @@ func runAttached(t *testing.T, d *fakeLogDaemon, slogBuf *syncBuffer, until []st
 	return out.String(), err
 }
 
-// A restart --attach shows the end of the run it cancelled and every line of
-// the run it started, even one that ended before its stream was opened, and
-// nothing of runs that finished earlier.
-func TestAttach_RestartShowsWholeNewRun(t *testing.T) {
+// A restart --attach shows every line of the run it started, even one that
+// ended before its stream was opened, and nothing of the run it replaced or of
+// runs that finished earlier.
+func TestAttach_RestartShowsOnlyNewRun(t *testing.T) {
 	slogBuf := captureCLISlog(t)
 	d := newFakeLogDaemon()
 	d.addTask("backup", model.KindTask, 0)
 	d.tasks[0].ManualTrigger = true
 	d.addRun("01J00000000000000000000001", "backup", 0, model.ReasonFailed, 1, "stale output")
-	old := make([]string, 15)
-	for i := range old {
-		old[i] = "old " + strconv.Itoa(i)
-	}
-	d.addRun("01J00000000000000000000002", "backup", 0, "", 0, old...)
+	d.addRun("01J00000000000000000000002", "backup", 0, "", 0, "old output")
 	d.control = func(action, name string) int {
 		if action != "restart" || name != "backup" {
 			return http.StatusNotFound
@@ -560,14 +555,33 @@ func TestAttach_RestartShowsWholeNewRun(t *testing.T) {
 		return http.StatusNoContent
 	}
 
-	out, err := attachAgainst(t, d, restartVerb, slogBuf, []string{"reason=stopped", "run succeeded"}, "backup")
+	out, err := attachAgainst(t, d, restartVerb, slogBuf, []string{"run succeeded"}, "backup")
 	require.NoError(t, err, "Ctrl+C ends an attach cleanly")
 
-	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
-	assert.Equal(t, `Task "backup" restarted.`, lines[0])
-	assert.ElementsMatch(t, append(old[15-followTailLines:], "new first", "new middle", "new last"), lines[1:])
-	newLines := slices.DeleteFunc(slices.Clone(lines), func(l string) bool { return !strings.HasPrefix(l, "new ") })
-	assert.Equal(t, []string{"new first", "new middle", "new last"}, newLines, "the new run is shown whole and in order")
+	assert.Equal(t, "Task \"backup\" restarted.\nnew first\nnew middle\nnew last\n", out)
+	assert.NotContains(t, slogBuf.String(), "01J00000000000000000000002", "the replaced run's end is not reported")
+}
+
+// A stop --attach shows the tail of the run it stopped and reports the stop
+// as an end, not a failure.
+func TestAttach_StopShowsStoppedRunEnd(t *testing.T) {
+	slogBuf := captureCLISlog(t)
+	d := newFakeLogDaemon()
+	d.addTask("web", model.KindService, 1)
+	d.tasks[0].ManualTrigger = true
+	d.addRun("01J00000000000000000000001", "web", 0, "", 0, "serving")
+	d.control = func(action, name string) int {
+		if action != "stop" || name != "web" {
+			return http.StatusNotFound
+		}
+		d.end("01J00000000000000000000001", model.ReasonStopped)
+		return http.StatusNoContent
+	}
+
+	out, err := attachAgainst(t, d, stopVerb, slogBuf, []string{"reason=stopped"}, "web")
+	require.NoError(t, err)
+	assert.Equal(t, "Service \"web\" stopped.\nserving\n", out)
+	assert.Contains(t, slogBuf.String(), `level=INFO msg="run ended"`)
 }
 
 // A glob --attach follows only what the verb acted on: not a locked task the

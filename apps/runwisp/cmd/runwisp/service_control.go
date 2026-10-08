@@ -75,11 +75,14 @@ type targetFilter struct {
 
 // controlVerb is one control action: its present/past-tense words for
 // messages ("stop"/"stopped"), how to dispatch it for a task or service name
-// and, when it takes run IDs, for a run, and what a glob may match.
+// and, when it takes run IDs, for a run, and what a glob may match. replaces
+// marks a verb that ends the targets' active runs to start new ones: --attach
+// follows only the new ones.
 type controlVerb struct {
 	verb, done   string
 	act, stopRun controlFunc
 	filter       targetFilter
+	replaces     bool
 }
 
 var (
@@ -89,7 +92,7 @@ var (
 		}}
 	stopVerb = controlVerb{verb: "stop", done: "stopped", filter: controllableTargets,
 		act: (*apiclient.Client).StopTask, stopRun: (*apiclient.Client).StopRun}
-	restartVerb = controlVerb{verb: "restart", done: "restarted", filter: controllableTargets,
+	restartVerb = controlVerb{verb: "restart", done: "restarted", filter: controllableTargets, replaces: true,
 		act: func(c *apiclient.Client, ctx context.Context, name string) error {
 			return c.RestartTask(ctx, name, "cli")
 		}}
@@ -209,7 +212,7 @@ func controlTargets(cmd *cobra.Command, f Flags, rf remoteFlags, args []string, 
 	if err != nil {
 		slog.Warn("Following only the targets that succeeded", "error", err)
 	}
-	return errors.Join(err, att.follow(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), targets, runIDs))
+	return errors.Join(err, att.follow(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), targets, runIDs, v.replaces))
 }
 
 // dispatch applies v to every target and run ID, confirming each on out. It
