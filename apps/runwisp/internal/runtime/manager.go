@@ -118,7 +118,7 @@ type defaultTaskManager struct {
 	// idle and breaching held tasks at their slots under congestion.
 	gate *jitterGate
 	// schedulePaused reports whether an operator paused the task's cron
-	// schedule; set by NewScheduler (nil until then). Consulted only for a
+	// schedule; set by SetSchedulePaused (nil until then). Consulted only for a
 	// jittered fire already waiting in the gate (see triggerJittered).
 	schedulePaused func(string) bool
 	// daemonLocation is the [daemon] timezone a health check cron with no
@@ -127,8 +127,8 @@ type defaultTaskManager struct {
 	daemonLocation *time.Location
 }
 
-// setSchedulePaused wires the scheduler's pause check; see NewScheduler.
-func (m *defaultTaskManager) setSchedulePaused(fn func(string) bool) {
+// SetSchedulePaused wires the scheduler's pause check (Scheduler.IsPaused).
+func (m *defaultTaskManager) SetSchedulePaused(fn func(string) bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.schedulePaused = fn
@@ -1350,7 +1350,7 @@ func (m *defaultTaskManager) GetActiveRunCount(taskName string) int {
 // WaitIdle blocks until taskName has no active runs, or returns ctx.Err()
 // once ctx is done. Used to wait out a stop's graceful teardown before acting
 // on the task again.
-func WaitIdle(ctx context.Context, r TaskRunner, taskName string) error {
+func WaitIdle(ctx context.Context, r interface{ GetActiveRunCount(string) int }, taskName string) error {
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 	for r.GetActiveRunCount(taskName) > 0 {

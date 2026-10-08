@@ -207,6 +207,7 @@ func startStandaloneScheduling(ctx context.Context, db *storage.SQLiteDatabase, 
 	boot.catchUpAnchors, boot.catchUpSnapshotErrors = runtime.SnapshotCatchupAnchors(ctx, db, tasksMap, boot.catchUpNow)
 
 	scheduler := runtime.NewScheduler(taskManager, tasksMap, schedLoc, nil)
+	taskManager.SetSchedulePaused(scheduler.IsPaused)
 	boot.scheduler = scheduler
 	// Restore operator schedule pauses before the first tick can fire. A read
 	// failure is not fatal (the daemon must boot), but it does mean paused

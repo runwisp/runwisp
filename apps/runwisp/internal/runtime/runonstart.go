@@ -36,7 +36,7 @@ type RunOnStartResult struct {
 //
 // Tasks are visited in name order so the firing sequence is deterministic; the
 // function reads no clock, filesystem, or randomness (bootID is injected).
-func RunStartupTasks(ctx context.Context, tasks map[string]*model.Task, runner TaskRunner, db storage.RunRepository, bootID string, paused func(string) bool) RunOnStartResult {
+func RunStartupTasks(ctx context.Context, tasks map[string]*model.Task, runner RunTrigger, db storage.RunRepository, bootID string, paused func(string) bool) RunOnStartResult {
 	var result RunOnStartResult
 	if bootID == "" {
 		warnNoBootID(tasks)

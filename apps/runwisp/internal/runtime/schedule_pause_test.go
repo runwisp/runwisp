@@ -213,6 +213,7 @@ func TestScheduleJitteredRun_PausedTaskFireRefused(t *testing.T) {
 	jm.UpsertTask(a)
 	jm.UpsertTask(b)
 	sched := NewScheduler(jm, map[string]*model.Task{"a": a, "b": b}, time.UTC, clk.Now)
+	jm.SetSchedulePaused(sched.IsPaused)
 
 	created := watchRuns(eb, events.EventRunCreated)
 
