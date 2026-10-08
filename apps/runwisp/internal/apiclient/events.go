@@ -143,21 +143,18 @@ func parseLogStreamFrame(event, data string) (LogStreamMsg, bool) {
 	return LogStreamMsg{}, false
 }
 
-// SSEEvent is the client-side SSE dispatch frame: event type + raw JSON
+// RunStreamEvent is the client-side SSE dispatch frame: event type + raw JSON
 // payload, plus the frame's id (empty when the server sent none — pings and
 // notification updates carry no id and stay out of the resume sequence).
-type SSEEvent struct {
+type RunStreamEvent struct {
 	Type string
 	ID   string
 	Data json.RawMessage
 }
 
-// RunStreamEvent is an SSEEvent from the unified /api/events/stream endpoint.
-type RunStreamEvent = SSEEvent
-
 // simpleSSELoop sends every named SSE frame from body on ch until the body
 // closes or ctx cancels. Unnamed frames are dropped.
-func simpleSSELoop(ctx context.Context, body io.ReadCloser, ch chan<- SSEEvent) {
+func simpleSSELoop(ctx context.Context, body io.ReadCloser, ch chan<- RunStreamEvent) {
 	defer close(ch)
 	defer body.Close()
 
@@ -166,7 +163,7 @@ func simpleSSELoop(ctx context.Context, body io.ReadCloser, ch chan<- SSEEvent) 
 			return true
 		}
 		select {
-		case ch <- SSEEvent{Type: f.event, ID: f.id, Data: json.RawMessage(f.data)}:
+		case ch <- RunStreamEvent{Type: f.event, ID: f.id, Data: json.RawMessage(f.data)}:
 			return true
 		case <-ctx.Done():
 			return false
