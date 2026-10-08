@@ -129,7 +129,7 @@ func (s *systemdInstaller) runSystemctl(ctx context.Context, systemWide bool, ar
 }
 
 // renderUnit assembles the SystemdParams + renders the template.
-func (s *systemdInstaller) renderUnit(opts InstallOptions) ([]byte, string, error) {
+func (s *systemdInstaller) renderUnit(opts InstallOptions) ([]byte, error) {
 	binarySHA := ""
 	if data, err := os.ReadFile(opts.Binary); err == nil {
 		binarySHA = hashContent(data)
@@ -153,8 +153,7 @@ func (s *systemdInstaller) renderUnit(opts InstallOptions) ([]byte, string, erro
 	if wantsCronFailsafe(opts) {
 		params.CronFailsafeUnit = cronFailsafeUnitName
 	}
-	body, err := RenderSystemdUnit(params)
-	return body, binarySHA, err
+	return RenderSystemdUnit(params)
 }
 
 // Render returns the rendered unit file without touching disk. Used
@@ -169,8 +168,7 @@ func (s *systemdInstaller) Render(opts InstallOptions) ([]byte, error) {
 		return nil, err
 	}
 	resolved.maskedCronUnit, resolved.cronPriorState = maskedUnit, prior
-	body, _, err := s.renderUnit(resolved)
-	return body, err
+	return s.renderUnit(resolved)
 }
 
 // ComputePlan implements Installer.
@@ -185,7 +183,7 @@ func (s *systemdInstaller) ComputePlan(ctx context.Context, opts InstallOptions)
 	}
 	resolved.maskedCronUnit, resolved.cronPriorState = maskedUnit, prior
 
-	desired, _, err := s.renderUnit(resolved)
+	desired, err := s.renderUnit(resolved)
 	if err != nil {
 		return Plan{}, err
 	}

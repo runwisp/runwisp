@@ -108,7 +108,7 @@ func TestSystemdComputePlan_NoopWhenInstalled(t *testing.T) {
 
 	// First-time install to produce the desired body, then write it
 	// to FakeFS so the second ComputePlan call sees a match.
-	body, _, err := inst.renderUnit(defaultInstallOpts(binary))
+	body, err := inst.renderUnit(defaultInstallOpts(binary))
 	require.NoError(t, err)
 	require.NoError(t, fs.WriteFile("/home/alice/.config/systemd/user/runwisp-bright-falcon.service", body, 0644))
 
@@ -212,7 +212,7 @@ func TestSystemdUninstall_Symmetric(t *testing.T) {
 	inst, fs, cmd, prompter, binary := newFakeInstaller(t, false)
 	opts := defaultInstallOpts(binary)
 	prompter.YesNo = []bool{true}
-	body, _, err := inst.renderUnit(opts)
+	body, err := inst.renderUnit(opts)
 	require.NoError(t, err)
 	unitPath := "/home/alice/.config/systemd/user/runwisp-bright-falcon.service"
 	require.NoError(t, fs.WriteFile(unitPath, body, 0644))
@@ -232,7 +232,7 @@ func TestSystemdUninstall_Symmetric(t *testing.T) {
 
 func TestSystemdUninstall_PurgeRequiresLiteralWord(t *testing.T) {
 	inst, fs, _, prompter, binary := newFakeInstaller(t, false)
-	body, _, err := inst.renderUnit(defaultInstallOpts(binary))
+	body, err := inst.renderUnit(defaultInstallOpts(binary))
 	require.NoError(t, err)
 	unitPath := "/home/alice/.config/systemd/user/runwisp-bright-falcon.service"
 	require.NoError(t, fs.WriteFile(unitPath, body, 0644))
@@ -440,7 +440,7 @@ func TestSystemdRunEnableNow_UserModeError(t *testing.T) {
 func TestSystemdApplyUninstall_StopAndDisableErrorsAreWarnings(t *testing.T) {
 	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
 	opts := defaultInstallOpts(binary)
-	body, _, err := inst.renderUnit(opts)
+	body, err := inst.renderUnit(opts)
 	require.NoError(t, err)
 	unitPath := "/home/alice/.config/systemd/user/runwisp-bright-falcon.service"
 	require.NoError(t, fs.WriteFile(unitPath, body, 0o644))
@@ -470,7 +470,7 @@ func TestSystemdApplyUninstall_StopAndDisableErrorsAreWarnings(t *testing.T) {
 func TestSystemdApplyUninstall_PurgeRemovesDataDir(t *testing.T) {
 	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
 	opts := defaultInstallOpts(binary)
-	body, _, err := inst.renderUnit(opts)
+	body, err := inst.renderUnit(opts)
 	require.NoError(t, err)
 	unitPath := "/home/alice/.config/systemd/user/runwisp-bright-falcon.service"
 	require.NoError(t, fs.WriteFile(unitPath, body, 0o644))
@@ -500,7 +500,7 @@ func TestSystemdStatus_Installed_FullPath(t *testing.T) {
 	opts := defaultInstallOpts(binary)
 
 	// Write a managed unit (using a real render so markers match).
-	body, _, err := inst.renderUnit(opts)
+	body, err := inst.renderUnit(opts)
 	require.NoError(t, err)
 	unitPath := "/home/alice/.config/systemd/user/runwisp-bright-falcon.service"
 	require.NoError(t, fs.WriteFile(unitPath, body, 0o644))
@@ -632,7 +632,7 @@ func TestSystemdComputeUninstallPlan_SystemWide(t *testing.T) {
 	inst, fs, _, _, binary := newFakeInstaller(t, false)
 	opts := defaultInstallOpts(binary)
 	opts.System = true
-	body, _, err := inst.renderUnit(opts)
+	body, err := inst.renderUnit(opts)
 	require.NoError(t, err)
 	unitPath := "/etc/systemd/system/runwisp.service"
 	require.NoError(t, fs.WriteFile(unitPath, body, 0644))
@@ -659,7 +659,7 @@ func TestSystemdComputeUninstallPlan_UserScopedUnaffectedByOtherInstance(t *test
 	inst, fs, _, _, binary := newFakeInstaller(t, false)
 	opts := defaultInstallOpts(binary)
 	opts.System = true
-	body, _, err := inst.renderUnit(opts)
+	body, err := inst.renderUnit(opts)
 	require.NoError(t, err)
 	require.NoError(t, fs.WriteFile("/etc/systemd/system/runwisp.service", body, 0644))
 
@@ -672,7 +672,7 @@ func TestSystemdApplyUninstall_SystemWide(t *testing.T) {
 	inst, fs, cmd, _, binary := newFakeInstaller(t, false)
 	opts := defaultInstallOpts(binary)
 	opts.System = true
-	body, _, err := inst.renderUnit(opts)
+	body, err := inst.renderUnit(opts)
 	require.NoError(t, err)
 	unitPath := "/etc/systemd/system/runwisp.service"
 	require.NoError(t, fs.WriteFile(unitPath, body, 0644))
