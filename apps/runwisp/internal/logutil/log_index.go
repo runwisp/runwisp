@@ -150,7 +150,7 @@ func ReadLineRange(logPath string, from, limit int64) (lines []LogLineRecord, fi
 		return nil, firstAvailable, totalLines, nil
 	}
 
-	startLine := resolveStartLine(from, firstAvailable, totalLines)
+	startLine := ResolveStartLine(from, firstAvailable, totalLines)
 	if startLine >= totalLines {
 		return nil, firstAvailable, totalLines, nil
 	}
@@ -203,10 +203,10 @@ func resolvePrevSegment(logPath string, meta LogMeta) (prevPath string, exists b
 	return prevPath, exists, firstAvailable
 }
 
-// resolveStartLine converts `from` into an absolute line number: negative
+// ResolveStartLine converts `from` into an absolute line number: negative
 // values count back from totalLines (a tail request), then the result is
 // clamped to the oldest surviving line, firstAvailable.
-func resolveStartLine(from, firstAvailable, totalLines int64) int64 {
+func ResolveStartLine(from, firstAvailable, totalLines int64) int64 {
 	start := from
 	if start < 0 {
 		start = totalLines + from
