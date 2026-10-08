@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: PoppyCake, s.r.o.
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-import type { SSEErrorInfo } from "$lib/utils/event-source";
+import { parseErrorInfo, type SSEErrorInfo } from "$lib/utils/event-source";
 import { createLogger } from "@runwisp/common";
 import { isRecord } from "$lib/utils/parse";
 import { EventManager, type AppEventStream } from "./event-manager";
@@ -430,16 +430,6 @@ function parseEventMessage(type: unknown, data: unknown, id: unknown): SharedMes
 
 function parseStringArray(value: unknown): string[] {
     return Array.isArray(value) ? value.filter((x): x is string => typeof x === "string") : [];
-}
-
-function parseErrorInfo(value: unknown): SSEErrorInfo {
-    const info: SSEErrorInfo = {};
-    if (!isRecord(value)) return info;
-    if (typeof value.status === "number") info.status = value.status;
-    if (typeof value.message === "string") info.message = value.message;
-    if (typeof value.readyState === "number") info.readyState = value.readyState;
-    if (typeof value.url === "string") info.url = value.url;
-    return info;
 }
 
 // ─── default browser transports ──────────────────────────────────────────────

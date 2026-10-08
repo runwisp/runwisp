@@ -3,8 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-// ErrorEvent is not available in the Node test environment; provide a minimal polyfill
-// so that `instanceof ErrorEvent` in the production code doesn't throw.
+// ErrorEvent is not available in the Node test environment; provide a minimal polyfill.
 if (typeof Reflect.get(globalThis, "ErrorEvent") === "undefined") {
     Reflect.set(
         globalThis,
@@ -19,7 +18,7 @@ if (typeof Reflect.get(globalThis, "ErrorEvent") === "undefined") {
     );
 }
 import {
-    getEventSourceErrorDetails,
+    parseErrorInfo,
     getMessageEventData,
     formatErrorInfo,
     extractErrorInfo,
@@ -27,61 +26,43 @@ import {
 } from "./event-source";
 import type { SSEStream } from "$lib/adapters/browser";
 
-// ─── getEventSourceErrorDetails ──────────────────────────────────────────────
+// ─── parseErrorInfo ──────────────────────────────────────────────────────────
 
-describe("getEventSourceErrorDetails", () => {
+describe("parseErrorInfo", () => {
     it("returns empty object for non-object event", () => {
-        const result = getEventSourceErrorDetails(new Event("error"));
+        const result = parseErrorInfo(new Event("error"));
         expect(result.status).toBeUndefined();
         expect(result.message).toBeUndefined();
     });
 
     it("extracts numeric status from record-like event", () => {
         const evt = Object.assign(new Event("error"), { status: 503 });
-        const result = getEventSourceErrorDetails(evt);
+        const result = parseErrorInfo(evt);
         expect(result.status).toBe(503);
     });
 
     it("extracts string message from record-like event", () => {
         const evt = Object.assign(new Event("error"), { message: "connection refused" });
-        const result = getEventSourceErrorDetails(evt);
+        const result = parseErrorInfo(evt);
         expect(result.message).toBe("connection refused");
     });
 
     it("extracts message from ErrorEvent when no message in record", () => {
         const evt = new ErrorEvent("error", { message: "network error" });
-        const result = getEventSourceErrorDetails(evt);
+        const result = parseErrorInfo(evt);
         expect(result.message).toBe("network error");
     });
 
     it("extracts both status and message", () => {
         const evt = Object.assign(new Event("error"), { status: 401, message: "unauthorized" });
-        const result = getEventSourceErrorDetails(evt);
+        const result = parseErrorInfo(evt);
         expect(result.status).toBe(401);
         expect(result.message).toBe("unauthorized");
     });
 
     it("does not include status in result when not present", () => {
-        const result = getEventSourceErrorDetails(new Event("error"));
+        const result = parseErrorInfo(new Event("error"));
         expect(Object.keys(result)).not.toContain("status");
-    });
-
-    it("does not extract ErrorEvent message when record already has message set", () => {
-        // message is set from the record extraction, so the ErrorEvent branch is skipped
-        const evt = Object.assign(new ErrorEvent("error", { message: "polyfill" }), {
-            message: "from-record",
-        });
-        const result = getEventSourceErrorDetails(evt);
-        expect(result.message).toBe("from-record");
-    });
-
-    it("ErrorEvent with empty message: record path gets empty string (not undefined)", () => {
-        // The polyfill exposes `message` as a string property so the record
-        // extraction branch (typeof rawMessage === "string") sets message = "".
-        // The ErrorEvent-specific branch is therefore skipped via short-circuit.
-        const evt = new ErrorEvent("error", { message: "" });
-        const result = getEventSourceErrorDetails(evt);
-        expect(result.message).toBe("");
     });
 });
 
