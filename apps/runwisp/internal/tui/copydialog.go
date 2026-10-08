@@ -33,9 +33,7 @@ func (d *CopyDialog) View(screenWidth, screenHeight int) string {
 	// Value rendered as bright text on a slightly distinct background
 	// so the user can visually identify and triple-click to select.
 	valueBg := uikit.ColorSidebarBg
-	valueStr := lipgloss.NewStyle().
-		Foreground(uikit.ColorWhite).
-		Background(valueBg).
+	valueStr := uikit.OnBg(valueBg, uikit.ColorWhite).
 		Bold(true).
 		Padding(0, 1).
 		Width(innerWidth).

@@ -150,9 +150,7 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 		textAreaWidth--
 	}
 
-	lineNumStyle := lipgloss.NewStyle().
-		Foreground(uikit.ColorTextMuted).
-		Background(uikit.ColorBg).
+	lineNumStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorTextMuted).
 		Width(lnw + 1)
 
 	highlightBg := uikit.OnBg(uikit.ColorWarning, uikit.ColorBg).
@@ -161,9 +159,7 @@ func (p *Pane) renderLinesWithNumbers(o lineRenderOpts) {
 
 	// Anchor lines (a settled progress bar / redraw with rewindable frames) get
 	// a ↻ marker; the selected anchor under the cursor is shown in reverse.
-	anchorGutterStyle := lipgloss.NewStyle().
-		Foreground(uikit.ColorSecondary).
-		Background(uikit.ColorBg).
+	anchorGutterStyle := uikit.OnBg(uikit.ColorBg, uikit.ColorSecondary).
 		Width(lnw + 1)
 
 	cursorGutterStyle := uikit.OnBg(uikit.ColorSecondary, uikit.ColorBg).

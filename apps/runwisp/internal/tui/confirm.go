@@ -209,9 +209,7 @@ func (d *ConfirmDialog) renderShuttingDownLines(innerWidth int, titleStr string)
 	// Render spinner and message as separately styled strings so the
 	// spinner's internal ANSI reset doesn't kill the outer background.
 	spinnerPart := d.spinner.View()
-	msgPart := lipgloss.NewStyle().
-		Foreground(uikit.ColorText).
-		Background(uikit.ColorBgLight).
+	msgPart := uikit.OnBg(uikit.ColorBgLight, uikit.ColorText).
 		Render(" " + d.message)
 	spinnerLine := lipgloss.NewStyle().
 		Background(uikit.ColorBgLight).
