@@ -16,6 +16,7 @@ import (
 	"github.com/runwisp/runwisp/internal/apiclient"
 	"github.com/runwisp/runwisp/internal/events"
 	"github.com/runwisp/runwisp/internal/model"
+	"github.com/runwisp/runwisp/internal/server"
 	"github.com/runwisp/runwisp/internal/textutil"
 	"github.com/runwisp/runwisp/internal/tui/uikit"
 	"github.com/runwisp/runwisp/internal/tui/views/execlist"
@@ -869,11 +870,7 @@ func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 		return nil
 	}
 
-	var runEvt struct {
-		Run      *model.Run     `json:"run"`
-		TaskName string         `json:"taskName"`
-		Status   model.RunPhase `json:"status"`
-	}
+	var runEvt server.RunEventBody
 	if err := json.Unmarshal(evt.Data, &runEvt); err != nil {
 		m.debugView.AppendLine("Failed to parse event: " + err.Error())
 		return nil
@@ -893,8 +890,8 @@ func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 
 		// Auto-open when a single-instance service starts and user is viewing that task.
 		if m.execView == nil && runEvt.Run.Status == model.PhaseRunning &&
-			m.sidebar.ActiveTask() == runEvt.TaskName &&
-			m.isSingleInstanceService(runEvt.TaskName) {
+			m.sidebar.ActiveTask() == runEvt.Run.TaskName &&
+			m.isSingleInstanceService(runEvt.Run.TaskName) {
 			return m.openExecView(runEvt.Run)
 		}
 	}
@@ -906,10 +903,7 @@ func (m *Model) handleSSEEvent(evt apiclient.RunStreamEvent) tea.Cmd {
 // the task header, the Info page and an open run's header follow it as it
 // changes.
 func (m *Model) handleSystemSample(evt apiclient.RunStreamEvent) {
-	var sample struct {
-		Tasks map[string]model.ResourceUsage `json:"tasks"`
-		Runs  map[string]model.ResourceUsage `json:"runs"`
-	}
+	var sample server.SystemSampleSSEEvent
 	if err := json.Unmarshal(evt.Data, &sample); err != nil {
 		m.debugView.AppendLine("Failed to parse system sample: " + err.Error())
 		return

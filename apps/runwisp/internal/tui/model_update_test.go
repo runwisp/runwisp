@@ -355,7 +355,7 @@ func TestHandleSSEEvent_InvalidJSONAppendsDebugLine(t *testing.T) {
 
 func TestHandleSSEEvent_UpsertsRunIntoWindow(t *testing.T) {
 	m := newTestModel(nil)
-	payload := []byte(`{"run":{"id":"r-1","task_name":"t1","status":"running"},"task_name":"t1","status":"running"}`)
+	payload := []byte(`{"run":{"id":"r-1","taskName":"t1","status":"running"}}`)
 	_ = m.handleSSEEvent(apiclient.RunStreamEvent{Type: "run.updated", Data: payload})
 	if m.execWindow.FindRun("r-1") == nil {
 		t.Fatal("expected exec window to contain the upserted run")
@@ -371,7 +371,7 @@ func TestHandleSSEEvent_UpdatesExecViewWhenWatching(t *testing.T) {
 	// Status flips pending → running and the client is nil, so StartLogStream
 	// (which guards on client==nil) returns nil. We still expect the run
 	// pointer on the exec view to be replaced with the freshly-decoded one.
-	payload := []byte(`{"run":{"id":"r-1","task_name":"t1","status":"running"},"task_name":"t1","status":"running"}`)
+	payload := []byte(`{"run":{"id":"r-1","taskName":"t1","status":"running"}}`)
 	_ = m.handleSSEEvent(apiclient.RunStreamEvent{Type: "run.updated", Data: payload})
 	if m.execView.Run.Status != model.PhaseRunning {
 		t.Fatalf("expected execView.Run.Status to be running, got %v", m.execView.Run.Status)
@@ -399,7 +399,7 @@ func TestHandleSSEEvent_SystemSampleUpdatesLiveUsage(t *testing.T) {
 
 func TestHandleSSEEventMsg_DispatchesViaHandleSSEEvent(t *testing.T) {
 	m := newTestModel(nil)
-	evt := apiclient.RunStreamEvent{Type: "run.created", Data: json.RawMessage(`{"run":{"id":"r-x","task_name":"t","status":"running"}}`)}
+	evt := apiclient.RunStreamEvent{Type: "run.created", Data: json.RawMessage(`{"run":{"id":"r-x","taskName":"t","status":"running"}}`)}
 	_, cmd := m.handleSSEEventMsg(uikit.SSEEventMsg{Event: evt})
 	// tea.Batch with all-nil children is itself nil, which is what we get
 	// because there's no sseCh wired and StartLogStream needs a client.
@@ -1559,5 +1559,20 @@ func TestStoppedServiceOffersStartFromDaemonState(t *testing.T) {
 	m.openExecView(run)
 	if m.execView.Action() == execlist.ActionRestartService {
 		t.Fatal("after a restart the service is running again and must not offer Start")
+	}
+}
+
+// A single-instance service the operator is viewing opens its run as soon as
+// the server reports it running. The payload is the server's own SSE shape.
+func TestHandleSSEEvent_AutoOpensViewedSingleInstanceService(t *testing.T) {
+	m := newTestModel([]model.Task{{Name: "svc", Kind: model.KindService, MaxConcurrent: 1}})
+	selectSidebarItem(&m, 1)
+	payload, err := json.Marshal(server.RunEventBody{Run: &model.Run{ID: "r-svc", TaskName: "svc", Status: model.PhaseRunning}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = m.handleSSEEvent(apiclient.RunStreamEvent{Type: "run.started", Data: payload})
+	if m.execView == nil || m.execView.RunID() != "r-svc" {
+		t.Fatalf("expected the service run to auto-open, got %+v", m.execView)
 	}
 }
