@@ -7,8 +7,9 @@
 // of `bun run ci` — screenshots are regenerated on demand and committed.
 
 import { defineConfig, devices } from "@playwright/test";
+import { runPort } from "./e2e/fixtures/daemon-boot";
 
-const port = Number(process.env.SCREENSHOT_PORT) || 19299;
+const port = await runPort("SCREENSHOT_PORT");
 
 export default defineConfig({
     testDir: "./e2e/screenshots",

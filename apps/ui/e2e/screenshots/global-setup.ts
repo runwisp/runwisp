@@ -9,8 +9,9 @@
 // Two-step boot, both using the real binary:
 //   1. `runwisp demo --seed-only` writes the embedded demo config and seeds the
 //      data dir, then exits (no daemon, no TUI).
-//   2. spawn `runwisp daemon` against that config/data, exactly like the e2e
-//      setup, and hand the JWT to the specs via .state.json.
+//   2. start `runwisp daemon` against that config/data via the same
+//      startDaemon helper as the e2e setup, and hand the JWT to the specs via
+//      .state.json.
 //
 // It writes the same .state.json the e2e harness uses, so the screenshot config
 // reuses fixtures/test-base.ts (authenticatedPage) and global-teardown.ts.
@@ -22,13 +23,13 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DaemonState } from "../fixtures/daemon-state.js";
-import { generatePassword, obtainToken, waitForHealth } from "../fixtures/daemon-boot.js";
+import { generatePassword, obtainToken, runPort, startDaemon } from "../fixtures/daemon-boot.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATE_PATH = resolve(__dirname, "../.state.json");
-const SCREENSHOT_PORT = Number(process.env.SCREENSHOT_PORT) || 19299;
 
 async function globalSetup(_config: FullConfig): Promise<void> {
+    const port = await runPort("SCREENSHOT_PORT");
     const runnerRoot = resolve(__dirname, "../../../runwisp");
     const binaryPath = join(runnerRoot, "runwisp");
     const dataDir = await mkdtemp(join(tmpdir(), "runwisp-screenshots-"));
@@ -37,40 +38,22 @@ async function globalSetup(_config: FullConfig): Promise<void> {
 
     console.log(`[screenshots] Binary: ${binaryPath}`);
     console.log(`[screenshots] Data dir: ${dataDir}`);
-    console.log(`[screenshots] Port: ${SCREENSHOT_PORT}`);
+    console.log(`[screenshots] Port: ${port}`);
 
     await seedDemoData(binaryPath, runnerRoot, configPath, dataDir);
 
-    const daemon = spawn(
+    const pid = await startDaemon({
         binaryPath,
-        ["--config", configPath, "--data", dataDir, "--port", String(SCREENSHOT_PORT), "daemon"],
-        {
-            cwd: runnerRoot,
-            stdio: ["ignore", "pipe", "pipe"],
-            detached: true,
-            env: { ...process.env, RUNWISP_PASSWORD: password },
-        },
-    );
-
-    let daemonOutput = "";
-    daemon.stdout?.on("data", (chunk: Buffer) => {
-        daemonOutput += chunk.toString();
+        args: ["--config", configPath, "--data", dataDir, "--port", String(port), "daemon"],
+        cwd: runnerRoot,
+        port,
+        password,
+        label: "screenshots",
     });
-    daemon.stderr?.on("data", (chunk: Buffer) => {
-        daemonOutput += chunk.toString();
-    });
-    daemon.on("exit", (code, signal) => {
-        console.error(`[screenshots] daemon exited: code=${code} signal=${signal}`);
-        if (daemonOutput) console.error("[screenshots] daemon output:\n", daemonOutput);
-    });
-    daemon.unref();
-
-    const baseURL = `http://127.0.0.1:${SCREENSHOT_PORT}`;
-    await waitForHealth(baseURL, 15_000);
+    const baseURL = `http://127.0.0.1:${port}`;
     const token = await obtainToken(baseURL, password);
 
-    if (daemon.pid === undefined) throw new Error("Daemon process has no PID");
-    const state: DaemonState = { pid: daemon.pid, port: SCREENSHOT_PORT, dataDir, password, token };
+    const state: DaemonState = { pid, port, dataDir, password, token };
     await writeFile(STATE_PATH, JSON.stringify(state));
 }
 

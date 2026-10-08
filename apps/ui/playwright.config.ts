@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import { defineConfig, devices } from "@playwright/test";
+import { runPort } from "./e2e/fixtures/daemon-boot";
 
-const port = Number(process.env.E2E_PORT) || 19287;
+const port = await runPort("E2E_PORT");
 
 export default defineConfig({
     testDir: "./e2e",
