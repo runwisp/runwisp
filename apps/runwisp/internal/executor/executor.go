@@ -31,8 +31,14 @@ const (
 	MaxLineBufferSize    = 64 * 1024 // 64KB max cells per row before an oversized-line split
 )
 
+// Executor runs a task. The run manager also installs its callbacks through
+// the three setters: SetRunWatcher when it is built, the other two when its
+// persistence hook is bound.
 type Executor interface {
 	Execute(ctx context.Context, task *model.Task, run *model.Run) *ExecuteResult
+	SetRunWatcher(watcher RunWatcher)
+	SetRunUpdateCallback(callback func(*model.Run))
+	SetOnProcessStarted(callback func(runID string, forceKill func()))
 }
 
 type ExecuteResult struct {
@@ -192,7 +198,6 @@ func (r *RoutingExecutor) Availability() Availability {
 }
 
 // SetRunUpdateCallback registers a hook to persist run updates.
-// This is a concrete method (not on the Executor interface) for late binding.
 func (r *RoutingExecutor) SetRunUpdateCallback(callback func(*model.Run)) {
 	r.onUpdate = callback
 }
@@ -200,13 +205,13 @@ func (r *RoutingExecutor) SetRunUpdateCallback(callback func(*model.Run)) {
 // SetOnProcessStarted registers a hook fired immediately after a backend
 // successfully starts a process. The hook receives the run ID and the
 // process's ForceKill closure (when present), letting the manager wire a
-// daemon-shutdown SIGKILL path. Late-binding mirrors SetRunUpdateCallback.
+// daemon-shutdown SIGKILL path.
 func (r *RoutingExecutor) SetOnProcessStarted(callback func(runID string, forceKill func())) {
 	r.onProcessStarted = callback
 }
 
 // SetRunWatcher registers the RunWatcher started alongside every run's
-// process. Late-binding mirrors SetOnProcessStarted.
+// process.
 func (r *RoutingExecutor) SetRunWatcher(watcher RunWatcher) {
 	r.watcher = watcher
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
 )
 
 // probeExecutor plays the RoutingExecutor's part in the RunWatcher contract:
@@ -24,6 +25,7 @@ import (
 // running next to it and joined before the result is returned. Probes answer
 // from pass, in order, then keep passing.
 type probeExecutor struct {
+	testutil.NoExecutorHooks
 	watcher executor.RunWatcher
 
 	mu   sync.Mutex

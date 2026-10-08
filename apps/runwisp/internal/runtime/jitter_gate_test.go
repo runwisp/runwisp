@@ -12,6 +12,7 @@ import (
 	"github.com/runwisp/runwisp/apps/runwisp/internal/events"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/executor"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/model"
+	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil"
 	"github.com/runwisp/runwisp/apps/runwisp/internal/testutil/fakeclock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,6 +24,7 @@ import (
 // announces its run ID, then blocks until that ID is released or its context is
 // cancelled.
 type stepExecutor struct {
+	testutil.NoExecutorHooks
 	mu       sync.Mutex
 	started  chan string
 	releases map[string]chan struct{}

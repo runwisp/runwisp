@@ -167,27 +167,17 @@ func NewTaskManager(exec executor.Executor, bus *events.Bus, clock func() time.T
 	}
 	m.gate = newJitterGate(clock, m.triggerJittered)
 
-	type runWatcherSetter interface {
-		SetRunWatcher(executor.RunWatcher)
-	}
-	if setter, ok := exec.(runWatcherSetter); ok {
-		setter.SetRunWatcher(m.watchRun)
-	}
+	exec.SetRunWatcher(m.watchRun)
 	return m
 }
 
 // BindPersistenceHook wires persistence to both the manager and executor.
-// Also wires the executor's process-started callback so the manager can
-// reach each active run's ForceKill closure during shutdown.
+// The executor's process-started callback lets the manager reach each active
+// run's ForceKill closure during shutdown.
 func (m *defaultTaskManager) BindPersistenceHook(hook RunPersistenceHook) {
-	m.persistence.BindHook(hook, m.executor)
-
-	type onStartedSetter interface {
-		SetOnProcessStarted(func(runID string, forceKill func()))
-	}
-	if setter, ok := m.executor.(onStartedSetter); ok {
-		setter.SetOnProcessStarted(m.registerForceKill)
-	}
+	m.persistence.BindHook(hook)
+	m.executor.SetRunUpdateCallback(m.persistence.PersistExisting)
+	m.executor.SetOnProcessStarted(m.registerForceKill)
 }
 
 // registerForceKill stores the executor's ForceKill closure on the matching

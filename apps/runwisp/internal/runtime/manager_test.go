@@ -597,6 +597,7 @@ func TestTriggerRunReturnsIndependentSnapshot(t *testing.T) {
 // the manager's per-task Cancel has no effect, so the only way out is the
 // deadline-triggered ForceKill.
 type stuckExecutor struct {
+	testutil.NoExecutorHooks
 	onStarted     func(runID string, forceKill func())
 	startedCh     chan struct{}
 	forceKilledCh chan struct{}

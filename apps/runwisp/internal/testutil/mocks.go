@@ -155,9 +155,18 @@ func (m *MockRunRepository) Close() error {
 	return args.Error(0)
 }
 
+// NoExecutorHooks supplies no-op executor.Executor hook setters; embed it in a
+// fake executor that has nothing to do with the run manager's callbacks.
+type NoExecutorHooks struct{}
+
+func (NoExecutorHooks) SetRunWatcher(executor.RunWatcher)                        {}
+func (NoExecutorHooks) SetRunUpdateCallback(func(*model.Run))                    {}
+func (NoExecutorHooks) SetOnProcessStarted(func(runID string, forceKill func())) {}
+
 // MockExecutor is a testify mock for executor.Executor.
 type MockExecutor struct {
 	mock.Mock
+	NoExecutorHooks
 }
 
 func (m *MockExecutor) Execute(ctx context.Context, task *model.Task, run *model.Run) *executor.ExecuteResult {
@@ -199,6 +208,8 @@ func cancelledResult(err error) *executor.ExecuteResult {
 // hold a run "in flight" while it triggers overlapping runs and asserts on
 // concurrency policy — with no sleeps to guess at timing.
 type GateExecutor struct {
+	NoExecutorHooks
+
 	// Result is returned when Execute is released normally. Defaults to a clean
 	// exit-0 result when nil.
 	Result *executor.ExecuteResult
